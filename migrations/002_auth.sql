@@ -1,3 +1,7 @@
+-- SPDX-FileCopyrightText: The OpenArtifact Authors
+--
+-- SPDX-License-Identifier: AGPL-3.0-or-later
+
 -- Authentication / authorization fixes.
 
 -- permission_targets.org_id is NOT NULL with no default, and every permission-target

@@ -1,3 +1,7 @@
+-- SPDX-FileCopyrightText: The OpenArtifact Authors
+--
+-- SPDX-License-Identifier: AGPL-3.0-or-later
+
 -- API-layer constraints.
 
 -- Repository names are routed globally (URLs carry only the bare name), so they
