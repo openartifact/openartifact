@@ -70,7 +70,7 @@ func (w *RPMetadataWorker) NotifyStale(repoID string) {
 
 		start := time.Now()
 
-		err := w.regenerate(context.Background(), repoID)
+		err := w.Regenerate(context.Background(), repoID)
 		if w.reg != nil {
 			w.reg.MetadataRegenerationDurationSeconds.WithLabelValues("rpm").Observe(time.Since(start).Seconds())
 			w.reg.MetadataRegenerationsTotal.WithLabelValues("rpm").Inc()
@@ -99,7 +99,10 @@ func (w *RPMetadataWorker) Stop() {
 	}
 }
 
-func (w *RPMetadataWorker) regenerate(ctx context.Context, repoID string) error {
+// Regenerate synchronously rebuilds the repository's RPM metadata, including
+// writing new metadata blobs and reclaiming superseded ones. NotifyStale is the
+// debounced asynchronous entry point.
+func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error {
 	conn := w.db.GetDB()
 
 	var (

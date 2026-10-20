@@ -10,18 +10,18 @@ import (
 	"context"
 	"strings"
 	"testing"
-	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/worker"
 )
 
+// runMetadataRegen rebuilds repoID's RPM metadata synchronously.
 func runMetadataRegen(t *testing.T, repoID string) {
 	t.Helper()
 	w := worker.NewRPMetadataWorker(harness.Database, harness.BlobStore, nil, harness.Log, nil)
-	w.NotifyStale(repoID)
-	time.Sleep(700 * time.Millisecond)
-	w.Stop()
+	if err := w.Regenerate(context.Background(), repoID); err != nil {
+		t.Fatalf("Regenerate: %v", err)
+	}
 }
 
 func TestRPMMetadataRegeneration(t *testing.T) {
