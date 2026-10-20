@@ -36,3 +36,45 @@ func principalIsAdmin(ctx context.Context, p *auth.Principal, evaluator *auth.Ev
 
 	return evaluator.Evaluate(ctx, *p, "", "", "manage")
 }
+
+// requireAdmin writes a 500/403 and returns false unless the request's
+// principal holds the global `manage` permission. The RBAC middleware only
+// performs a coarse check (and lets sessions reach a few self-service
+// routes), so every administrative handler must call this itself.
+func requireAdmin(w http.ResponseWriter, r *http.Request, evaluator *auth.Evaluator) bool {
+	isAdmin, err := principalIsAdmin(r.Context(), currentPrincipal(r), evaluator)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+		return false
+	}
+
+	if !isAdmin {
+		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+		return false
+	}
+
+	return true
+}
+
+// checkPasswordPolicy validates plain against the shared password policy
+// (auth.ValidatePassword) and writes a 400 invalid_request carrying the
+// sentinel's message when it fails. It returns true when the password is
+// acceptable.
+func checkPasswordPolicy(w http.ResponseWriter, plain string) bool {
+	if err := auth.ValidatePassword(plain); err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_request", err.Error())
+		return false
+	}
+
+	return true
+}
+
+// sessionCookieValue returns the raw oa_session cookie value, or "" if absent.
+func sessionCookieValue(r *http.Request) string {
+	c, err := r.Cookie(auth.SessionCookieName)
+	if err != nil {
+		return ""
+	}
+
+	return c.Value
+}

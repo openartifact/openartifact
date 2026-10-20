@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	db "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -279,6 +280,11 @@ func (h *HTTPHandler) handlePoolFile(w http.ResponseWriter, r *http.Request) {
 
 	if comp == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	poolPath := "pool/" + vars["comp"] + "/" + vars["prefix"] + "/" + vars["pkg"] + "/" + filename
+	if quarantine.Enforce(w, r, h.db, repoID, quarantine.PathKeys(comp.ID, poolPath, filename, r.URL.Path)...) {
 		return
 	}
 

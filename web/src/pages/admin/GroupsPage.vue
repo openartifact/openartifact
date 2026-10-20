@@ -11,14 +11,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div>
         <div class="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
           <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" />
+          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ t('nav.groups') }}</span>
         </div>
         <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.groups.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">Organize users into groups for permission management</p>
+        <p class="mt-1 text-sm text-muted">{{ t('adm.groups.description') }}</p>
       </div>
       <div class="flex items-center gap-2">
         <button
+          type="button"
           @click="openCreate"
           class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
         >
@@ -31,19 +32,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
         <span class="w-9 h-9 rounded-lg flex items-center justify-center text-primary bg-primary-soft">
-          <FolderIcon class="w-4 h-4" />
+          <FolderIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">Total Groups</div>
-          <div class="text-xl font-bold tabular-nums">{{ total }}</div>
+          <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('adm.groups.stat.groups') }}</div>
+          <div class="text-xl font-bold tabular-nums">{{ groups.length }}</div>
         </div>
       </div>
       <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
         <span class="w-9 h-9 rounded-lg flex items-center justify-center text-success bg-success-soft/60">
-          <UsersIcon class="w-4 h-4" />
+          <UsersIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">Total Members</div>
+          <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('adm.groups.stat.memberships') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ totalMembers }}</div>
         </div>
       </div>
@@ -52,19 +53,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- TableCard -->
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h3 class="text-sm font-semibold tracking-tight">Groups</h3>
-        <span class="text-[11px] font-mono text-muted">{{ groups.length }} total</span>
+        <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.groups.listTitle') }}</h3>
+        <span class="text-[11px] font-mono text-muted">{{ groups.length }} {{ t('adm.common.total') }}</span>
       </div>
-      <div v-if="loading" class="px-4 py-8 text-center text-muted">Loading...</div>
-      <div v-else-if="groups.length === 0" class="px-4 py-8 text-center text-muted">No groups found</div>
+      <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
+      <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
+      <div v-else-if="groups.length === 0" class="px-4 py-8 text-center text-muted">{{ t('adm.groups.empty') }}</div>
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted bg-surface-hover/30">
-              <th class="text-left px-4 py-2.5 font-medium">Name</th>
-              <th class="text-left px-4 py-2.5 font-medium">Members</th>
-              <th class="text-left px-4 py-2.5 font-medium">Created</th>
-              <th class="text-left px-4 py-2.5 font-medium">Actions</th>
+              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.name') }}</th>
+              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.members') }}</th>
+              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.created') }}</th>
+              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('common.actions') }}</th>
             </tr>
           </thead>
           <tbody class="divide-y divide-border">
@@ -74,28 +76,34 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </td>
               <td class="px-4 py-3">
                 <button
+                  type="button"
                   @click="openMembers(group)"
+                  :aria-label="`${t('admin.groups.manageMembers')}: ${group.name}`"
                   class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-mono bg-surface-hover text-foreground hover:bg-surface-hover/80 transition-colors"
                 >
-                  {{ group.member_count || 0 }}
+                  {{ memberCounts[String(group.id)] ?? '—' }}
                 </button>
               </td>
               <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(group.created_at) }}</td>
               <td class="px-4 py-3">
                 <div class="flex items-center gap-1">
                   <button
+                    type="button"
                     @click="openMembers(group)"
-                    title="Manage members"
+                    :title="t('admin.groups.manageMembers')"
+                    :aria-label="`${t('admin.groups.manageMembers')}: ${group.name}`"
                     class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
                   >
-                    <UsersIcon class="w-4 h-4" />
+                    <UsersIcon class="w-4 h-4" aria-hidden="true" />
                   </button>
                   <button
-                    @click="deleteOne(String(group.id))"
-                    title="Delete"
+                    type="button"
+                    @click="deleteOne(group)"
+                    :title="t('common.delete')"
+                    :aria-label="`${t('common.delete')}: ${group.name}`"
                     class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
                   >
-                    <TrashIcon class="w-4 h-4" />
+                    <TrashIcon class="w-4 h-4" aria-hidden="true" />
                   </button>
                 </div>
               </td>
@@ -106,135 +114,133 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <!-- Create Drawer -->
-    <Teleport to="body">
-      <div v-if="createDrawerOpen" class="fixed inset-0 z-50 flex items-stretch justify-end animate-fade-in">
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeCreateDrawer" />
-        <div class="relative w-full max-w-xl bg-surface border-l border-border shadow-2xl shadow-black/30 flex flex-col animate-slideRight">
-          <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-            <div>
-              <div class="text-[11px] uppercase tracking-[0.14em] text-muted font-mono">Group</div>
-              <h2 class="mt-0.5 text-lg font-semibold tracking-tight">Create Group</h2>
-            </div>
-            <button @click="closeCreateDrawer" class="text-muted hover:text-foreground p-1 rounded hover:bg-surface-hover">
-              <XMarkIcon class="w-5 h-5" />
-            </button>
-          </div>
-          <div class="flex-1 overflow-y-auto nice-scroll px-6 py-5 space-y-5">
-            <div>
-              <label class="block text-sm font-medium text-foreground mb-1.5">Name</label>
-              <input
-                v-model="newGroupName"
-                type="text"
-                placeholder="Group name"
-                class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
-              />
-            </div>
-          </div>
-          <div class="px-6 py-3 border-t border-border bg-surface-hover/30 flex items-center justify-end gap-2">
-            <button
-              @click="closeCreateDrawer"
-              class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
-            >
-              Cancel
-            </button>
-            <button
-              @click="submitCreate"
-              class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
-            >
-              Create
-            </button>
-          </div>
+    <AdminDialog
+      :open="createDrawerOpen"
+      drawer
+      :eyebrow="t('adm.groups.eyebrow')"
+      :title="t('adm.groups.createTitle')"
+      @close="closeCreateDrawer"
+    >
+      <form id="group-form" class="space-y-5" @submit.prevent="submitCreate">
+        <div>
+          <label for="group-name" class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.groups.field.name') }}</label>
+          <input
+            id="group-name"
+            v-model="newGroupName"
+            type="text"
+            required
+            :placeholder="t('adm.groups.field.namePlaceholder')"
+            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          />
+          <p class="text-xs text-muted mt-1">{{ t('adm.groups.field.nameHint') }}</p>
         </div>
-      </div>
-    </Teleport>
+      </form>
+      <template #footer>
+        <button
+          type="button"
+          @click="closeCreateDrawer"
+          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
+        >
+          {{ t('common.cancel') }}
+        </button>
+        <button
+          type="submit"
+          form="group-form"
+          :disabled="saving"
+          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium disabled:opacity-50"
+        >
+          {{ t('common.create') }}
+        </button>
+      </template>
+    </AdminDialog>
 
     <!-- Members Drawer -->
-    <Teleport to="body">
-      <div v-if="membersDrawerOpen && selectedGroup" class="fixed inset-0 z-50 flex items-stretch justify-end animate-fade-in">
-        <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="closeMembersDrawer" />
-        <div class="relative w-full max-w-xl bg-surface border-l border-border shadow-2xl shadow-black/30 flex flex-col animate-slideRight">
-          <div class="px-6 py-4 border-b border-border flex items-center justify-between">
-            <div>
-              <div class="text-[11px] uppercase tracking-[0.14em] text-muted font-mono">Members</div>
-              <h2 class="mt-0.5 text-lg font-semibold tracking-tight">{{ selectedGroup.name }}</h2>
-            </div>
-            <button @click="closeMembersDrawer" class="text-muted hover:text-foreground p-1 rounded hover:bg-surface-hover">
-              <XMarkIcon class="w-5 h-5" />
-            </button>
+    <AdminDialog
+      :open="membersDrawerOpen"
+      drawer
+      :eyebrow="t('admin.groups.column.members')"
+      :title="selectedGroup?.name ?? ''"
+      @close="closeMembersDrawer"
+    >
+      <div class="space-y-5">
+        <div>
+          <label for="group-member-search" class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.groups.addMember') }}</label>
+          <div class="relative">
+            <MagnifyingGlassIcon class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
+            <input
+              id="group-member-search"
+              v-model="memberSearch"
+              type="search"
+              :placeholder="t('adm.groups.searchUsers')"
+              class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            />
           </div>
-          <div class="flex-1 overflow-y-auto nice-scroll px-6 py-5 space-y-5">
-            <!-- Search to add members -->
-            <div>
-              <label class="block text-sm font-medium text-foreground mb-1.5">Add member</label>
-              <div class="relative">
-                <MagnifyingGlassIcon class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-                <input
-                  v-model="memberSearch"
-                  type="search"
-                  placeholder="Search users..."
-                  class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
-                />
-              </div>
-              <div v-if="memberSearch" class="mt-2 space-y-1 max-h-40 overflow-y-auto">
-                <button
-                  v-for="user in filteredAvailableUsers"
-                  :key="user.id"
-                  @click="addMember(user)"
-                  class="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-surface-hover transition-colors text-foreground"
-                >
-                  {{ user.username }}
-                </button>
-              </div>
-            </div>
-
-            <!-- Current members -->
-            <div>
-              <label class="block text-sm font-medium text-foreground mb-1.5">Current members</label>
-              <div v-if="currentMembers.length === 0" class="text-sm text-muted">No members</div>
-              <div v-else class="space-y-1">
-                <div
-                  v-for="memberId in currentMembers"
-                  :key="memberId"
-                  class="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/40 border border-border"
-                >
-                  <span class="text-sm text-foreground">{{ getMemberName(memberId) }}</span>
-                  <button
-                    @click="removeMember(memberId)"
-                    class="p-1 rounded text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                  >
-                    <XMarkIcon class="w-4 h-4" />
-                  </button>
-                </div>
-              </div>
-            </div>
-          </div>
-          <div class="px-6 py-3 border-t border-border bg-surface-hover/30 flex items-center justify-end gap-2">
+          <div v-if="memberSearch" class="mt-2 space-y-1 max-h-40 overflow-y-auto">
             <button
-              @click="closeMembersDrawer"
-              class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
+              v-for="user in filteredAvailableUsers"
+              :key="user.id"
+              type="button"
+              :disabled="busyMember !== null"
+              @click="addMember(user)"
+              class="w-full text-left px-3 py-2 rounded-lg text-sm hover:bg-surface-hover transition-colors text-foreground disabled:opacity-50"
             >
-              Close
+              {{ user.username }}
             </button>
+            <p v-if="filteredAvailableUsers.length === 0" class="px-3 py-2 text-sm text-muted">{{ t('adm.groups.noMatches') }}</p>
           </div>
         </div>
+
+        <div>
+          <h3 class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.groups.currentMembers') }}</h3>
+          <div v-if="membersLoading" class="text-sm text-muted">{{ t('common.loading') }}</div>
+          <div v-else-if="currentMembers.length === 0" class="text-sm text-muted">{{ t('adm.groups.noMembers') }}</div>
+          <ul v-else class="space-y-1">
+            <li
+              v-for="member in currentMembers"
+              :key="member.id"
+              class="flex items-center justify-between px-3 py-2 rounded-lg bg-surface-hover/40 border border-border"
+            >
+              <span class="text-sm text-foreground">{{ member.full_name || member.username }}</span>
+              <button
+                type="button"
+                :disabled="busyMember !== null"
+                @click="removeMember(member)"
+                :aria-label="`${t('adm.groups.removeMember')}: ${member.username}`"
+                class="p-1 rounded text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-50"
+              >
+                <XMarkIcon class="w-4 h-4" aria-hidden="true" />
+              </button>
+            </li>
+          </ul>
+        </div>
       </div>
-    </Teleport>
+      <template #footer>
+        <button
+          type="button"
+          @click="closeMembersDrawer"
+          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
+        >
+          {{ t('common.close') }}
+        </button>
+      </template>
+    </AdminDialog>
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, Teleport } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   listGroups,
   createGroup,
   deleteGroup,
-  updateGroupMembers,
-  listUsers,
-  type GroupItem as AdminGroupItem,
+  listGroupMembers,
+  addGroupMember,
+  removeGroupMember,
+  listAllUsers,
+  type GroupItem,
   type UserItem,
 } from '../../api/admin'
-// The runtime API response includes member_count and members
-type GroupItem = AdminGroupItem & { member_count?: number; members?: string[] }
+import AdminDialog from '../../components/AdminDialog.vue'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import {
@@ -249,25 +255,31 @@ import {
 const toasts = useToastStore()
 
 const groups = ref<GroupItem[]>([])
+const memberCounts = ref<Record<string, number>>({})
 const allUsers = ref<UserItem[]>([])
 const loading = ref(false)
+const loadError = ref('')
+const saving = ref(false)
 const createDrawerOpen = ref(false)
 const membersDrawerOpen = ref(false)
+const membersLoading = ref(false)
+const busyMember = ref<string | null>(null)
 const selectedGroup = ref<GroupItem | null>(null)
 const newGroupName = ref('')
 const memberSearch = ref('')
-const currentMembers = ref<string[]>([])
+const currentMembers = ref<UserItem[]>([])
 
-const total = computed(() => groups.value.length)
-const totalMembers = computed(() => groups.value.reduce((sum, g) => sum + (g.member_count || 0), 0))
+const totalMembers = computed(() => Object.values(memberCounts.value).reduce((sum, n) => sum + n, 0))
 
 const filteredAvailableUsers = computed(() => {
   if (!memberSearch.value) return []
   const query = memberSearch.value.toLowerCase()
+  const memberIds = new Set(currentMembers.value.map((m) => m.id))
   return allUsers.value.filter(
     (u) =>
-      !currentMembers.value.includes(String(u.id)) &&
-      (u.username?.toLowerCase().includes(query) ||       u.full_name?.toLowerCase().includes(query))
+      !memberIds.has(u.id) &&
+      !u.disabled &&
+      (u.username?.toLowerCase().includes(query) || u.full_name?.toLowerCase().includes(query)),
   )
 })
 
@@ -280,22 +292,20 @@ function formatDate(date?: string): string {
   })
 }
 
-function getMemberName(memberId: string): string {
-  const user = allUsers.value.find((u) => u.id === memberId)
-  return user?.full_name || user?.username || memberId
-}
-
 async function load(): Promise<void> {
   loading.value = true
+  loadError.value = ''
   try {
-    const [groupsRes, usersRes] = await Promise.all([
-      listGroups({ limit: 1000 }),
-      listUsers({ limit: 1000 }),
-    ])
+    const [groupsRes, usersRes] = await Promise.all([listGroups(), listAllUsers()])
     groups.value = groupsRes.items
     allUsers.value = usersRes.items
+    // The group payload carries no member count, so derive it from the
+    // membership lists (one small request per group).
+    const lists = await Promise.all(groupsRes.items.map((g) => listGroupMembers(String(g.id))))
+    memberCounts.value = Object.fromEntries(groupsRes.items.map((g, i) => [String(g.id), lists[i].items.length]))
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to load data')
+    loadError.value = err instanceof Error ? err.message : t('adm.groups.loadFailed')
+    toasts.error(loadError.value)
   } finally {
     loading.value = false
   }
@@ -312,25 +322,43 @@ function closeCreateDrawer(): void {
 }
 
 async function submitCreate(): Promise<void> {
-  if (!newGroupName.value.trim()) {
-    toasts.error('Group name is required')
+  const name = newGroupName.value.trim()
+  if (!name) {
+    toasts.error(t('adm.groups.nameRequired'))
     return
   }
+  saving.value = true
   try {
-    await createGroup({ name: newGroupName.value })
-    toasts.success('Group created')
+    await createGroup({ name })
+    toasts.success(t('adm.groups.created'))
     closeCreateDrawer()
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to create group')
+    toasts.error(err instanceof Error ? err.message : t('adm.groups.createFailed'))
+  } finally {
+    saving.value = false
   }
 }
 
-function openMembers(group: GroupItem): void {
+async function refreshMembers(group: GroupItem): Promise<void> {
+  const res = await listGroupMembers(String(group.id))
+  currentMembers.value = res.items
+  memberCounts.value = { ...memberCounts.value, [String(group.id)]: res.items.length }
+}
+
+async function openMembers(group: GroupItem): Promise<void> {
   selectedGroup.value = group
-  currentMembers.value = group.members || []
+  currentMembers.value = []
   memberSearch.value = ''
   membersDrawerOpen.value = true
+  membersLoading.value = true
+  try {
+    await refreshMembers(group)
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('adm.groups.loadMembersFailed'))
+  } finally {
+    membersLoading.value = false
+  }
 }
 
 function closeMembersDrawer(): void {
@@ -340,29 +368,47 @@ function closeMembersDrawer(): void {
   memberSearch.value = ''
 }
 
+// Membership changes use the single-member endpoints so concurrent edits and
+// members this page has not loaded are never overwritten.
 async function addMember(user: UserItem): Promise<void> {
-  if (!selectedGroup.value) return
-  currentMembers.value.push(String(user.id))
-  memberSearch.value = ''
-  await updateGroupMembers(String(selectedGroup.value.id), currentMembers.value)
-  toasts.success('Member added')
-}
-
-async function removeMember(memberId: string): Promise<void> {
-  if (!selectedGroup.value) return
-  currentMembers.value = currentMembers.value.filter((id) => id !== memberId)
-  await updateGroupMembers(String(selectedGroup.value.id), currentMembers.value)
-  toasts.success('Member removed')
-}
-
-async function deleteOne(id: string): Promise<void> {
-  if (!window.confirm('Delete this group?')) return
+  const group = selectedGroup.value
+  if (!group || !user.id) return
+  busyMember.value = user.id
   try {
-    await deleteGroup(id)
-    toasts.success('Group deleted')
+    await addGroupMember(String(group.id), user.id)
+    memberSearch.value = ''
+    await refreshMembers(group)
+    toasts.success(t('adm.groups.memberAdded'))
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('adm.groups.memberAddFailed'))
+  } finally {
+    busyMember.value = null
+  }
+}
+
+async function removeMember(member: UserItem): Promise<void> {
+  const group = selectedGroup.value
+  if (!group || !member.id) return
+  busyMember.value = member.id
+  try {
+    await removeGroupMember(String(group.id), member.id)
+    await refreshMembers(group)
+    toasts.success(t('adm.groups.memberRemoved'))
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('adm.groups.memberRemoveFailed'))
+  } finally {
+    busyMember.value = null
+  }
+}
+
+async function deleteOne(group: GroupItem): Promise<void> {
+  if (!window.confirm(`${t('adm.groups.confirmDelete')} "${group.name}"?`)) return
+  try {
+    await deleteGroup(String(group.id))
+    toasts.success(t('adm.groups.deleted'))
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Delete failed')
+    toasts.error(err instanceof Error ? err.message : t('adm.groups.deleteFailed'))
   }
 }
 

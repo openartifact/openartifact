@@ -7,7 +7,9 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"sync"
 	"sync/atomic"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -47,6 +49,9 @@ type Logger struct {
 	log  *logger.Logger
 	reg  *metrics.Registry
 	done chan struct{}
+
+	mu     sync.RWMutex
+	closed bool
 }
 
 func NewLogger(db database.Database, log *logger.Logger, reg *metrics.Registry, bufferSize int) *Logger {
@@ -83,10 +88,8 @@ func (l *Logger) run() {
 
 	for event := range l.ch {
 		detailsJSON := "{}"
-		if event.Details != "" {
+		if event.Details != "" || event.Actor != "" {
 			detailsJSON = buildDetailsJSON(event.Details, event.Actor)
-		} else if event.Actor != "" {
-			detailsJSON = buildDetailsJSON("", event.Actor)
 		}
 
 		entry := &models.AuditLog{
@@ -101,61 +104,79 @@ func (l *Logger) run() {
 			IPAddress:    event.IPAddress,
 		}
 		if err := l.db.InsertAuditLog(context.Background(), entry); err != nil {
-			l.log.Errorw("audit log insert failed", "error", err)
+			l.log.Errorw("audit log insert failed", "action", event.Action, "error", err)
 		}
 	}
 
 	close(l.done)
 }
 
+// buildDetailsJSON always yields valid JSON regardless of input bytes.
 func buildDetailsJSON(message, actor string) string {
-	// Minimal JSON builder without importing encoding/json for speed.
-	if message != "" && actor != "" {
-		return `{"message":"` + escapeJSON(message) + `","actor":"` + escapeJSON(actor) + `"}`
-	}
+	m := make(map[string]string, 2)
 	if message != "" {
-		return `{"message":"` + escapeJSON(message) + `"}`
+		m["message"] = message
 	}
-	return `{"actor":"` + escapeJSON(actor) + `"}`
-}
-
-func escapeJSON(s string) string {
-	// Replace JSON meta-characters in a fire-and-forget audit logger.
-	b := make([]byte, 0, len(s)+8)
-	for i := 0; i < len(s); i++ {
-		switch s[i] {
-		case '"':
-			b = append(b, '\\', '"')
-		case '\\':
-			b = append(b, '\\', '\\')
-		case '\n':
-			b = append(b, '\\', 'n')
-		case '\r':
-			b = append(b, '\\', 'r')
-		case '\t':
-			b = append(b, '\\', 't')
-		default:
-			b = append(b, s[i])
-		}
+	if actor != "" {
+		m["actor"] = actor
+	}
+	b, err := json.Marshal(m)
+	if err != nil {
+		return "{}"
 	}
 	return string(b)
 }
 
+// Log enqueues an event. It never panics, even after Shutdown. If the buffer is
+// full the event is written synchronously (bounded wait) rather than dropped.
 func (l *Logger) Log(_ context.Context, event AuditEvent) {
+	l.mu.RLock()
+	defer l.mu.RUnlock()
+
+	if l.closed {
+		l.dropped(event.Action, "audit event after shutdown dropped")
+		return
+	}
+
 	select {
 	case l.ch <- event:
+		return
 	default:
-		l.reg.AuditDroppedTotal.Inc()
+	}
+
+	// Buffer full: block briefly instead of silently dropping security events.
+	t := time.NewTimer(2 * time.Second)
+	defer t.Stop()
+	select {
+	case l.ch <- event:
+	case <-t.C:
+		l.dropped(event.Action, "audit buffer full; event dropped")
 	}
 }
 
+// Shutdown stops accepting events, drains the buffer and waits for the writer.
+// Safe to call more than once.
 func (l *Logger) Shutdown(ctx context.Context) error {
-	close(l.ch)
+	l.mu.Lock()
+	if !l.closed {
+		l.closed = true
+		close(l.ch)
+	}
+	l.mu.Unlock()
 
 	select {
 	case <-l.done:
 		return nil
 	case <-ctx.Done():
 		return ctx.Err()
+	}
+}
+
+func (l *Logger) dropped(action, msg string) {
+	if l.reg != nil {
+		l.reg.AuditDroppedTotal.Inc()
+	}
+	if l.log != nil {
+		l.log.Warnw(msg, "action", action)
 	}
 }

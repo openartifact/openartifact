@@ -1,0 +1,114 @@
+// SPDX-FileCopyrightText: The OpenArtifact Authors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+package nuget
+
+import (
+	"bytes"
+	"context"
+	"mime/multipart"
+	"net/http"
+	"testing"
+
+	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/webhook"
+)
+
+type nugetDB struct {
+	*formattest.DB
+
+	pkg *models.NuGetPackage
+}
+
+func (d *nugetDB) CreateNuGetPackage(_ context.Context, p *models.NuGetPackage) error {
+	d.pkg = p
+	return nil
+}
+
+func (d *nugetDB) GetNuGetPackage(_ context.Context, _, _, _ string) (*models.NuGetPackage, error) {
+	return d.pkg, nil
+}
+
+func (d *nugetDB) DeleteNuGetPackage(_ context.Context, _, _, _ string) error {
+	d.pkg = nil
+	return nil
+}
+
+func (d *nugetDB) IncrementNuGetDownloadCount(_ context.Context, _, _, _ string) error { return nil }
+
+func newTestHandler(t *testing.T) (*HTTPHandler, *nugetDB, *formattest.BlobStore, *formattest.Publisher) {
+	t.Helper()
+
+	db := &nugetDB{DB: formattest.NewDB()}
+	bs := formattest.NewBlobStore()
+	pub := &formattest.Publisher{}
+	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
+	h.SetPublisher(pub)
+
+	return h, db, bs, pub
+}
+
+func register(h *HTTPHandler) func(chi.Router) { return h.RegisterRepoRoutes }
+
+func TestPushAndDeleteEmitEvents(t *testing.T) {
+	h, db, bs, pub := newTestHandler(t)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("package", "x.nupkg")
+	_, _ = fw.Write(createNupkg(t, "Newtonsoft.Json.nuspec", sampleNuspec))
+	_ = mw.Close()
+
+	req := formattest.Request(http.MethodPut, "/repos/myrepo/v3/package", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	if w := formattest.Do(register(h), req); w.Code != http.StatusCreated {
+		t.Fatalf("push status = %d: %s", w.Code, w.Body.String())
+	}
+
+	evs := pub.Events()
+	if len(evs) != 1 || evs[0].Type != webhook.EventArtifactUploaded || evs[0].RepoID != "repo-1" {
+		t.Fatalf("events = %+v", evs)
+	}
+
+	if a := evs[0].Artifact(); a["name"] != "newtonsoft.json" || a["version"] != "13.0.3" {
+		t.Errorf("artifact = %v", a)
+	}
+
+	if _, ok := bs.Blobs[db.pkg.BlobKey]; !ok {
+		t.Fatal("blob not stored under the package's BlobKey")
+	}
+
+	if w := formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/v3/package/Newtonsoft.Json/13.0.3", nil)); w.Code != http.StatusNoContent {
+		t.Fatalf("delete status = %d", w.Code)
+	}
+
+	evs = pub.Events()
+	if len(evs) != 2 || evs[1].Type != webhook.EventArtifactDeleted {
+		t.Fatalf("events after delete = %+v", evs)
+	}
+}
+
+func TestDownloadQuarantine(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	db.pkg = &models.NuGetPackage{PackageID: "foo", Version: "1.0.0", BlobKey: "abc", PackageSize: 3}
+	bs.Blobs["abc"] = []byte("xyz")
+
+	get := func() int {
+		return formattest.Do(register(h), formattest.Request(http.MethodGet, "/repos/myrepo/v3/package/foo/1.0.0/foo.1.0.0.nupkg", nil)).Code
+	}
+
+	if c := get(); c != http.StatusOK {
+		t.Fatalf("status = %d, want 200", c)
+	}
+
+	db.Keys["foo.1.0.0.nupkg"] = true
+
+	if c := get(); c != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", c)
+	}
+}

@@ -19,9 +19,9 @@ import (
 func TestSystemInfo_AllKeysPresent(t *testing.T) {
 	handler := api.NewSystemInfoHandler("v1.0.0", "abc1234", "2026-01-01T00:00:00Z", nil, nil, "")
 	router := chi.NewRouter()
-	handler.RegisterPublic(router)
+	handler.RegisterAuthed(router)
 
-	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/system/info", nil)
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/system/info", nil)
 	w := httptest.NewRecorder()
 	router.ServeHTTP(w, req)
 

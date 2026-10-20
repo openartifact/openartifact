@@ -24,6 +24,7 @@ var (
 	errMissingDBDriver    = errors.New("database driver is required")
 	errMissingStorageType = errors.New("storage type is required")
 	errMissingLogLevel    = errors.New("logger level is required")
+	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
 )
 
 type Config struct {
@@ -301,6 +302,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Storage.AzureAccountName, "OPENARTIFACT_AZURE_ACCOUNT_NAME")
 	overrideString(&cfg.Storage.AzureAccountKey, "OPENARTIFACT_AZURE_ACCOUNT_KEY")
 	overrideString(&cfg.Storage.AzureContainerName, "OPENARTIFACT_AZURE_CONTAINER_NAME")
+	overrideString(&cfg.Storage.OCIUsername, "STORAGE_OCI_USERNAME")
+	overrideString(&cfg.Storage.OCIPassword, "STORAGE_OCI_PASSWORD")
+	overrideBool(&cfg.Storage.OCIInsecure, "STORAGE_OCI_INSECURE")
 
 	// Logger config
 	overrideString(&cfg.Logger.Level, "LOG_LEVEL")
@@ -317,6 +321,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideBool(&cfg.Auth.AllowAnonymousRead, "ALLOW_ANONYMOUS_READ")
 	overrideBool(&cfg.Auth.LegacyAPIKeyEnabled, "LEGACY_API_KEY_ENABLED")
 	overrideInt(&cfg.Auth.SessionDurationHours, "SESSION_DURATION_HOURS")
+	overrideString(&cfg.Auth.HMACKey, "AUTH_HMAC_KEY")
 	overrideString(&cfg.Auth.SAMLSPCertPEM, "OPENARTIFACT_SAML_SP_CERT")
 	overrideString(&cfg.Auth.SAMLSPKeyPEM, "OPENARTIFACT_SAML_SP_KEY")
 
@@ -394,10 +399,20 @@ func (c *Config) Validate() error {
 		return errMissingLogLevel
 	}
 
+	if c.Server.TLSEnabled && (c.Server.TLSCert == "" || c.Server.TLSKey == "") {
+		return errTLSFilesRequired
+	}
+
 	return nil
 }
 
 // Override helper functions — only override if env var is set.
+
+// warnBadEnv reports an unparseable env override without echoing the value
+// (it may be a secret) and keeps the previous setting.
+func warnBadEnv(key, _ string, err error) {
+	fmt.Fprintf(os.Stderr, "WARN: ignoring invalid value for %s: %v\n", key, err)
+}
 
 func overrideString(cfg *string, key string) {
 	if v, ok := os.LookupEnv(key); ok {
@@ -407,15 +422,23 @@ func overrideString(cfg *string, key string) {
 
 func overrideInt(cfg *int, key string) {
 	if v, ok := os.LookupEnv(key); ok {
-		if n, err := strconv.Atoi(v); err == nil {
-			*cfg = n
+		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			warnBadEnv(key, v, err)
+			return
 		}
+		*cfg = n
 	}
 }
 
 func overrideBool(cfg *bool, key string) {
 	if v, ok := os.LookupEnv(key); ok {
-		*cfg = v == "true" || v == "1" || v == "yes"
+		b, err := strconv.ParseBool(strings.TrimSpace(v))
+		if err != nil {
+			warnBadEnv(key, v, err)
+			return
+		}
+		*cfg = b
 	}
 }
 
@@ -438,8 +461,11 @@ func overrideSlice(cfg *[]string, key string) {
 
 func overrideDuration(cfg *time.Duration, key string) {
 	if v, ok := os.LookupEnv(key); ok {
-		if d, err := time.ParseDuration(v); err == nil {
-			*cfg = d
+		d, err := time.ParseDuration(v)
+		if err != nil {
+			warnBadEnv(key, v, err)
+			return
 		}
+		*cfg = d
 	}
 }

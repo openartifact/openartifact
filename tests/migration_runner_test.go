@@ -27,7 +27,7 @@ func setupTestDB(t *testing.T) *sql.DB {
 
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
+		skipOrFailMissingEnv(t, "TEST_DATABASE_URL")
 	}
 
 	db, err := sql.Open("pgx", dsn)

@@ -18,10 +18,14 @@ package api
 
 import (
 	"bytes"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"regexp"
 	"strconv"
+	"strings"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
@@ -33,8 +37,23 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+var sha256HexRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
+
+// errDeltaInputTooLarge is returned when a delta source blob exceeds the cap.
+var errDeltaInputTooLarge = errors.New("delta input exceeds size limit")
+
+// deltaCall is a single in-flight delta generation shared by concurrent callers.
+type deltaCall struct {
+	wg    sync.WaitGroup
+	delta *models.PackageDelta
+	err   error
+}
+
 // DeltaHandler handles package delta requests.
 type DeltaHandler struct {
+	inflightMu sync.Mutex
+	inflight   map[string]*deltaCall
+
 	log       *logger.Logger
 	db        database.Database
 	blobStore storage.BlobStore
@@ -42,7 +61,7 @@ type DeltaHandler struct {
 
 // NewDeltaHandler creates a new DeltaHandler.
 func NewDeltaHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *DeltaHandler {
-	return &DeltaHandler{log: log, db: db, blobStore: blobStore}
+	return &DeltaHandler{log: log, db: db, blobStore: blobStore, inflight: map[string]*deltaCall{}}
 }
 
 // Register registers the delta routes on the given router.
@@ -59,9 +78,14 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	toID := vars["id"] // component ID of the target package
 
-	fromSHA256 := r.URL.Query().Get("from")
+	fromSHA256 := strings.ToLower(r.URL.Query().Get("from"))
 	if fromSHA256 == "" {
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "missing 'from' query parameter (sha256 of source package)")
+		return
+	}
+
+	if !sha256HexRe.MatchString(fromSHA256) {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "'from' must be a 64-character hex sha256")
 		return
 	}
 
@@ -75,6 +99,18 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 	toComp, err := h.db.GetComponentByID(r.Context(), toID)
 	if err != nil || toComp == nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "target package not found")
+		return
+	}
+
+	if toComp.RepositoryID != repo.ID {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "target package not found")
+		return
+	}
+
+	// The source package must also live in this repository.
+	fromFilename, found := h.findFromFilename(r, repo.ID, fromSHA256)
+	if !found {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "source package not found in repository")
 		return
 	}
 
@@ -94,7 +130,12 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// No pre-computed delta — generate on-the-fly.
-	delta, err := h.generateDelta(r, repo.ID, fromSHA256, toComp)
+	delta, err := h.generateDeltaOnce(r, repo.ID, fromSHA256, fromFilename, toComp)
+	if errors.Is(err, errDeltaInputTooLarge) {
+		writeError(w, http.StatusRequestEntityTooLarge, "DELTA_TOO_LARGE", "package too large for delta generation")
+		return
+	}
+
 	if err != nil {
 		h.log.Errorw("failed to generate delta", "from", fromSHA256, "to", toComp.SHA256, "error", err)
 		writeError(w, http.StatusInternalServerError, "DELTA_ERROR", "failed to generate delta")
@@ -119,6 +160,11 @@ func (h *DeltaHandler) handleListDeltas(w http.ResponseWriter, r *http.Request) 
 
 	toComp, err := h.db.GetComponentByID(r.Context(), toID)
 	if err != nil || toComp == nil {
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "target package not found")
+		return
+	}
+
+	if toComp.RepositoryID != repo.ID {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "target package not found")
 		return
 	}
@@ -153,40 +199,101 @@ func (h *DeltaHandler) handleListDeltas(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, Response{Success: true, Data: result})
 }
 
+// findFromFilename looks up the source component by sha256 within the repository.
+func (h *DeltaHandler) findFromFilename(r *http.Request, repoID, sha string) (string, bool) {
+	comps, err := h.db.GetComponentsByRepo(r.Context(), repoID)
+	if err != nil {
+		h.log.Errorw("failed to list repository components", "error", err)
+		return "", false
+	}
+
+	for _, c := range comps {
+		if c.SHA256 == sha {
+			return c.Filename, true
+		}
+	}
+
+	return "", false
+}
+
+// generateDeltaOnce collapses concurrent requests for the same
+// (repo, from, to) delta into a single generation.
+func (h *DeltaHandler) generateDeltaOnce(r *http.Request, repoID, fromSHA256, fromFilename string, toComp *models.Component) (*models.PackageDelta, error) {
+	key := repoID + "|" + fromSHA256 + "|" + toComp.SHA256
+
+	h.inflightMu.Lock()
+
+	if c, ok := h.inflight[key]; ok {
+		h.inflightMu.Unlock()
+		c.wg.Wait()
+
+		return c.delta, c.err
+	}
+
+	c := &deltaCall{}
+	c.wg.Add(1)
+	h.inflight[key] = c
+	h.inflightMu.Unlock()
+
+	defer func() {
+		h.inflightMu.Lock()
+		delete(h.inflight, key)
+		h.inflightMu.Unlock()
+		c.wg.Done()
+	}()
+
+	c.delta, c.err = h.generateDelta(r, repoID, fromSHA256, fromFilename, toComp)
+
+	return c.delta, c.err
+}
+
+// readCapped reads a blob after verifying its stored size is within the delta cap.
+func (h *DeltaHandler) readCapped(r *http.Request, id string) ([]byte, error) {
+	size, err := h.blobStore.GetSize(r.Context(), id)
+	if err != nil {
+		return nil, fmt.Errorf("stat blob %s: %w", id, err)
+	}
+
+	if size > pkgdelta.MaxInputSize {
+		return nil, fmt.Errorf("%w: %s is %d bytes", errDeltaInputTooLarge, id, size)
+	}
+
+	rc, err := h.blobStore.Get(r.Context(), id)
+	if err != nil {
+		return nil, fmt.Errorf("fetch blob %s: %w", id, err)
+	}
+	defer func() { base.CloseLog(rc, h.log) }()
+
+	data, err := io.ReadAll(io.LimitReader(rc, pkgdelta.MaxInputSize+1))
+	if err != nil {
+		return nil, fmt.Errorf("read blob %s: %w", id, err)
+	}
+
+	if len(data) > pkgdelta.MaxInputSize {
+		return nil, fmt.Errorf("%w: %s", errDeltaInputTooLarge, id)
+	}
+
+	return data, nil
+}
+
 // generateDelta generates a bsdiff patch from fromSHA256 to toComp, stores it,
 // and returns the PackageDelta record.
-func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256 string, toComp *models.Component) (*models.PackageDelta, error) {
-	// Fetch the "from" blob.
-	fromReader, err := h.blobStore.Get(r.Context(), fromSHA256)
+func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256, fromFilename string, toComp *models.Component) (*models.PackageDelta, error) {
+	fromData, err := h.readCapped(r, fromSHA256)
 	if err != nil {
-		return nil, fmt.Errorf("fetch from-blob %s: %w", fromSHA256, err)
-	}
-	defer func() { base.CloseLog(fromReader, h.log) }()
-
-	fromData, err := io.ReadAll(fromReader)
-	if err != nil {
-		return nil, fmt.Errorf("read from-blob: %w", err)
+		return nil, err
 	}
 
-	// Fetch the "to" blob.
-	toReader, err := h.blobStore.Get(r.Context(), toComp.SHA256)
+	toData, err := h.readCapped(r, toComp.SHA256)
 	if err != nil {
-		return nil, fmt.Errorf("fetch to-blob %s: %w", toComp.SHA256, err)
-	}
-	defer func() { base.CloseLog(toReader, h.log) }()
-
-	toData, err := io.ReadAll(toReader)
-	if err != nil {
-		return nil, fmt.Errorf("read to-blob: %w", err)
+		return nil, err
 	}
 
-	// Generate the binary diff.
 	patch, patchSHA256, err := pkgdelta.Generate(fromData, toData)
 	if err != nil {
 		return nil, fmt.Errorf("generate diff: %w", err)
 	}
 
-	// Store the delta blob.
 	_, err = h.blobStore.Put(r.Context(), bytes.NewReader(patch), map[string]string{
 		"sha256": patchSHA256,
 		"type":   "delta",
@@ -195,20 +302,6 @@ func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256 string,
 		return nil, fmt.Errorf("store delta blob: %w", err)
 	}
 
-	// Look up the from-component to get its filename.
-	fromComp, err := h.db.GetComponentsByRepo(r.Context(), repoID)
-	fromFilename := fromSHA256 // fallback
-
-	if err == nil {
-		for _, c := range fromComp {
-			if c.SHA256 == fromSHA256 {
-				fromFilename = c.Filename
-				break
-			}
-		}
-	}
-
-	// Persist the delta record.
 	d := &models.PackageDelta{
 		RepositoryID: repoID,
 		FromSHA256:   fromSHA256,
@@ -239,7 +332,7 @@ func (h *DeltaHandler) serveDeltaBlob(w http.ResponseWriter, r *http.Request, d 
 	defer func() { base.CloseLog(reader, h.log) }()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.delta"`, d.ToFilename))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.delta"`, strings.NewReplacer("\"", "", "\r", "", "\n", "").Replace(d.ToFilename)))
 	w.Header().Set("ETag", `"`+d.DeltaSHA256+`"`)
 	w.Header().Set("X-Delta-From", d.FromSHA256)
 	w.Header().Set("X-Delta-To", d.ToSHA256)

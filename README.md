@@ -69,10 +69,13 @@ the host by default.
 On first start, with an empty user table, OpenArtifact creates an `admin`
 user with a random password that is printed once in the server log, and
 requires it to be changed at first login. To reset the admin password later
-(database settings are read from `DB_*` env vars):
+(database settings are read from `DB_*` env vars; the password must be at
+least 12 characters and is read from `OPENARTIFACT_RESET_PASSWORD` or stdin,
+never from the command line; existing sessions of that user are revoked):
 
 ```sh
-go run ./cmd/resetpw '<new-password>'
+OPENARTIFACT_RESET_PASSWORD='<new-password>' go run ./cmd/resetpw
+# or: printf '%s\n' '<new-password>' | go run ./cmd/resetpw -username admin
 ```
 
 ## Build from source
@@ -93,7 +96,9 @@ Run `make help` for all targets.
 Configuration is loaded from defaults, then an optional YAML file
 (`-config path` or `OPENARTIFACT_CONFIG`), then environment variables, which
 take precedence. See [`openartifact.example.yaml`](openartifact.example.yaml)
-and [`.env.example`](.env.example) for every option.
+and [`.env.example`](.env.example) for every option and its environment variable.
+Read/write timeouts default to `0` (unlimited) so large uploads are never truncated.
+`METRICS_AUTH_TOKEN` and `OPENARTIFACT_SECRET_KEY` are read from the environment only.
 
 ```sh
 openartifact verify openartifact.yaml    # validate a config file
@@ -119,6 +124,11 @@ oa version
 
 Run `oa` without arguments for the full command list. Server and token can
 also be set with `OA_SERVER` and `OA_TOKEN`.
+
+Passwords are never accepted on the command line. `oa auth login` prompts
+without echo; for scripts pipe the password and pass `--password-stdin`
+(with `--username`): `echo "$PW" | oa auth login --username alice --password-stdin`.
+The token file (`config.json` in the config directory) is written with mode 0600.
 
 ## API and operations
 

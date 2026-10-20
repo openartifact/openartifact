@@ -6,6 +6,7 @@ package middleware
 
 import (
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
 )
@@ -68,19 +69,16 @@ func TestIsSPARepoPathAndBypass(t *testing.T) {
 		path       string
 		wantBypass bool
 	}{
-		// Legitimate Vue-router SPA pages — must bypass RBAC.
-		{"repo list", "/repos", true},
-		{"new repo wizard", "/repos/new", true},
+		// Legitimate Vue-router SPA pages: served as the SPA to browser navigations.
 		{"repo detail", "/repos/myrepo", true},
+		{"new repo wizard", "/repos/new", true},
 		{"repo edit", "/repos/myrepo/edit", true},
 		{"repo browse", "/repos/myrepo/browse", true},
 		{"repo graph", "/repos/myrepo/graph", true},
 		{"package detail", "/repos/myrepo/packages/npm/lodash", true},
 
-		// Real format-handler endpoints that must NOT bypass (a path-segment
-		// count heuristic would wrongly bypass these).
+		// Real format-handler endpoints that must NOT be treated as pages.
 		{"npm packument", "/repos/myrepo/lodash", false},
-		{"npm publish", "/repos/myrepo/lodash", false},
 		{"pypi upload", "/repos/myrepo/legacy/", false},
 		{"pypi simple index", "/repos/myrepo/simple/", false},
 		{"helm chart upload", "/repos/myrepo/charts", false},
@@ -93,26 +91,66 @@ func TestIsSPARepoPathAndBypass(t *testing.T) {
 		{"sbt bare", "/repos/sbt/myrepo", false},
 		{"ivy bare", "/repos/ivy/myrepo", false},
 
-		// Docker/OCI and /api/ paths are always excluded from the /repos/
-		// SPA-bypass branch entirely (handled by the prefix checks, not
-		// isSPARepoPath), verified here via the same bypass decision used
-		// in RBACMiddleware.
+		// Docker/OCI and /api/ paths are never SPA pages.
 		{"docker manifest", "/v2/myimage/manifests/latest", false},
 		{"admin api", "/api/v1/admin/users", false},
 	}
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			isRepoSPA := strings.HasPrefix(tc.path, "/repos/") &&
-				isSPARepoPath(strings.Split(strings.Trim(tc.path, "/"), "/"))
+			browser := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.path, nil)
+			browser.Header.Set("Accept", "text/html,application/xhtml+xml,*/*;q=0.8")
+			browser.Header.Set("Sec-Fetch-Mode", "navigate")
 
-			bypass := !strings.HasPrefix(tc.path, "/api/") && !strings.HasPrefix(tc.path, "/v2/") &&
-				(!strings.HasPrefix(tc.path, "/repos/") || isRepoSPA)
+			if got := isSPANavigation(browser); got != tc.wantBypass {
+				t.Errorf("isSPANavigation(browser GET %q) = %v, want %v", tc.path, got, tc.wantBypass)
+			}
 
-			if bypass != tc.wantBypass {
-				t.Errorf("bypass decision for %q = %v, want %v", tc.path, bypass, tc.wantBypass)
+			// A non-navigation request (package manager / fetch) to the very
+			// same URL is never a page load, whatever the path shape.
+			pkg := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.path, nil)
+			pkg.Header.Set("Accept", "application/vnd.npm.install-v1+json")
+
+			if isSPANavigation(pkg) {
+				t.Errorf("isSPANavigation(non-HTML GET %q) = true, want false", tc.path)
+			}
+
+			// Credentials mean it is an API call, not a page load.
+			authed := httptest.NewRequestWithContext(t.Context(), http.MethodGet, tc.path, nil)
+			authed.Header.Set("Accept", "text/html")
+			authed.Header.Set("Authorization", "Bearer x")
+
+			if isSPANavigation(authed) {
+				t.Errorf("isSPANavigation(authorized GET %q) = true, want false", tc.path)
+			}
+
+			// /repos/ paths are never plain static content.
+			if strings.HasPrefix(tc.path, "/repos/") && isStaticPath(tc.path, RBACConfig{}) {
+				t.Errorf("isStaticPath(%q) = true, want false", tc.path)
 			}
 		})
+	}
+}
+
+func TestIsStaticPath(t *testing.T) {
+	cfg := RBACConfig{MCPPath: "/mcp"}
+
+	for path, want := range map[string]bool{
+		"/":                    true,
+		"/login":               true,
+		"/assets/app.js":       true,
+		"/repos":               true,
+		"/repos/x":             false,
+		"/api/v1/auth/me":      false,
+		"/v2/":                 false,
+		"/mcp":                 false,
+		"/mcp/sse":             false,
+		"/mcpish":              true,
+		"/repos/raw/x/a/b.txt": false,
+	} {
+		if got := isStaticPath(path, cfg); got != want {
+			t.Errorf("isStaticPath(%q) = %v, want %v", path, got, want)
+		}
 	}
 }
 

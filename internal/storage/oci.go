@@ -82,11 +82,23 @@ func (o *OCIBlobStore) blobURL(sha256hex string) string {
 
 // do executes an HTTP request with optional Basic auth.
 func (o *OCIBlobStore) do(req *http.Request) (*http.Response, error) {
-	if o.username != "" {
+	// Credentials are sent only to the configured registry host, never to a
+	// foreign host named in a Location header.
+	if o.username != "" && o.sameHost(req.URL) {
 		req.SetBasicAuth(o.username, o.password)
 	}
 
 	return o.client.Do(req)
+}
+
+// sameHost reports whether u points at the configured registry host.
+func (o *OCIBlobStore) sameHost(u *url.URL) bool {
+	b, err := url.Parse(o.base)
+	if err != nil {
+		return false
+	}
+
+	return strings.EqualFold(b.Scheme, u.Scheme) && strings.EqualFold(b.Host, u.Host)
 }
 
 // Put uploads a blob to the OCI registry using the monolithic upload flow.
@@ -95,6 +107,10 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 	sha, ok := metadata["sha256"]
 	if !ok || sha == "" {
 		return "", ErrOCIPutRequiresSHA256
+	}
+
+	if err := ValidateBlobID(sha); err != nil {
+		return "", err
 	}
 
 	// Check if blob already exists (avoid re-upload).
@@ -172,6 +188,10 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 
 // Get retrieves a blob by its SHA-256 identifier.
 func (o *OCIBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.blobURL(id), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("oci: get %s: %w", id, err)
@@ -201,6 +221,10 @@ func (o *OCIBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error
 
 // Delete removes a blob by its SHA-256 identifier.
 func (o *OCIBlobStore) Delete(ctx context.Context, id string) error {
+	if err := ValidateBlobID(id); err != nil {
+		return err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodDelete, o.blobURL(id), http.NoBody)
 	if err != nil {
 		return fmt.Errorf("oci: delete %s: %w", id, err)
@@ -225,6 +249,10 @@ func (o *OCIBlobStore) Delete(ctx context.Context, id string) error {
 
 // Exists checks whether a blob exists using HEAD.
 func (o *OCIBlobStore) Exists(ctx context.Context, id string) (bool, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return false, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, o.blobURL(id), http.NoBody)
 	if err != nil {
 		return false, fmt.Errorf("oci: head %s: %w", id, err)
@@ -250,6 +278,10 @@ func (o *OCIBlobStore) Exists(ctx context.Context, id string) (bool, error) {
 
 // GetMetadata returns a minimal metadata map derived from the HEAD response.
 func (o *OCIBlobStore) GetMetadata(ctx context.Context, id string) (map[string]string, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, o.blobURL(id), http.NoBody)
 	if err != nil {
 		return nil, fmt.Errorf("oci: head %s: %w", id, err)
@@ -290,6 +322,10 @@ func (o *OCIBlobStore) List(_ context.Context, _ string, _ int, _ int) ([]string
 
 // GetSize returns the size of a blob in bytes using HEAD.
 func (o *OCIBlobStore) GetSize(ctx context.Context, id string) (int64, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return 0, err
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodHead, o.blobURL(id), http.NoBody)
 	if err != nil {
 		return 0, fmt.Errorf("oci: head %s: %w", id, err)
@@ -325,6 +361,10 @@ func (o *OCIBlobStore) GetSize(ctx context.Context, id string) (int64, error) {
 // ExistsBySHA256 checks whether a blob with the given SHA-256 hash exists.
 // In OCI, blobs are natively addressed by digest, so this is equivalent to Exists.
 func (o *OCIBlobStore) ExistsBySHA256(ctx context.Context, sha256hex string) (string, bool, error) {
+	if err := ValidateBlobID(sha256hex); err != nil {
+		return "", false, err
+	}
+
 	exists, err := o.Exists(ctx, sha256hex)
 	if err != nil {
 		return "", false, err

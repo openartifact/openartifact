@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="overflow-x-auto" role="region" aria-label="Data table">
+  <div class="overflow-x-auto" role="region" :aria-label="t('shell.dataTable')">
     <table class="min-w-full divide-y divide-border bg-surface">
       <thead class="bg-surface-hover">
         <tr>
@@ -36,6 +36,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { t } from '../i18n/en'
+
 export interface Column {
   key: string
   label: string

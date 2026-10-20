@@ -11,6 +11,7 @@ export default defineConfig({
   plugins: [vue(), tailwindcss()],
   build: {
     outDir: 'dist',
+    manifest: true,
     rollupOptions: {
       output: {
         chunkFileNames: 'assets/[name]-[hash].js',

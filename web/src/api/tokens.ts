@@ -26,7 +26,7 @@ export async function listMyTokens(): Promise<PagedResult<ApiToken>> {
   }
 }
 
-export async function createMyToken(body: { name: string; expires_at?: string }): Promise<CreatedToken> {
+export async function createMyToken(body: { name: string; kind: 'access' | 'deploy'; expires_at?: string }): Promise<CreatedToken> {
   return request<CreatedToken>('/api/v1/auth/tokens', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -55,11 +55,11 @@ export async function listTokens(params?: { page?: number; limit?: number; princ
   }
 }
 
-export async function createTokenFor(principal: string, body: { name: string; expires_at?: string }): Promise<CreatedToken> {
+export async function createTokenFor(principal: string, body: { name: string; kind?: 'access' | 'deploy'; expires_at?: string }): Promise<CreatedToken> {
   return request<CreatedToken>('/api/v1/admin/tokens', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ ...body, principal }),
+    body: JSON.stringify({ kind: 'access', ...body, principal }),
   })
 }
 

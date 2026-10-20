@@ -643,3 +643,31 @@ func (f *fakeBlobStore) ExistsBySHA256(context.Context, string) (string, bool, e
 func (f *fakeBlobStore) PresignURL(context.Context, string, time.Duration) (string, error) {
 	return "", storage.ErrPresignNotSupported
 }
+
+func TestRestoreBlob_RejectsTraversalAndDigestMismatch(t *testing.T) {
+	ctx := context.Background()
+	eng, store := newTestEngine(t, newFakeDB("x"))
+
+	content := "good bytes"
+	sum := sha256.Sum256([]byte(content))
+	sha := hex.EncodeToString(sum[:])
+
+	for _, name := range []string{"blobs/../../evil", "blobs/ab", "blobs/" + sha + "/../x", "blobs/" + strings.Repeat("0", 64)} {
+		err := eng.restoreBlob(ctx, strings.NewReader(content), &tar.Header{Name: name})
+		if err == nil {
+			t.Errorf("restoreBlob(%q) succeeded, want error", name)
+		}
+	}
+
+	if ok, _ := store.Exists(ctx, strings.Repeat("0", 64)); ok {
+		t.Error("mismatched-digest blob was stored")
+	}
+
+	if err := eng.restoreBlob(ctx, strings.NewReader(content), &tar.Header{Name: "blobs/" + sha}); err != nil {
+		t.Fatalf("valid blob rejected: %v", err)
+	}
+
+	if ok, _ := store.Exists(ctx, sha); !ok {
+		t.Error("valid blob not stored")
+	}
+}

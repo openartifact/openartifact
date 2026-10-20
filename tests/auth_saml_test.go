@@ -163,7 +163,3 @@ func TestSAML_MetadataXML_ServesSPMetadata(t *testing.T) {
 		t.Errorf("expected SP entity ID in metadata body, got:\n%s", body)
 	}
 }
-
-func TestSAML_ACS_HappyPath(t *testing.T) {
-	t.Skip("requires signed SAML fixture; covered by manual QA")
-}

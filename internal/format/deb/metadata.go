@@ -36,12 +36,13 @@ type ReleaseFileGenerator struct {
 // NewReleaseFileGenerator creates a new Release file generator.
 func NewReleaseFileGenerator(origin, label, suite, codename string) *ReleaseFileGenerator {
 	return &ReleaseFileGenerator{
-		Origin:        origin,
-		Label:         label,
-		Suite:         suite,
-		Codename:      codename,
-		Date:          time.Now().UTC(),
-		ValidUntil:    time.Now().UTC().AddDate(0, 0, 30), // 30 days validity
+		Origin:   origin,
+		Label:    label,
+		Suite:    suite,
+		Codename: codename,
+		Date:     time.Now().UTC(),
+		// ValidUntil is deliberately left unset: metadata is only regenerated on
+		// upload, so an expiry would make apt reject an idle repository.
 		Architectures: make([]string, 0),
 		Components:    make([]string, 0),
 	}
@@ -83,7 +84,10 @@ func (rfg *ReleaseFileGenerator) GenerateRelease(files []FileInfo) string {
 	fmt.Fprintf(&buf, "Suite: %s\n", rfg.Suite)
 	fmt.Fprintf(&buf, "Codename: %s\n", rfg.Codename)
 	fmt.Fprintf(&buf, "Date: %s\n", rfg.Date.Format("Mon, 02 Jan 2006 15:04:05 MST"))
-	fmt.Fprintf(&buf, "Valid-Until: %s\n", rfg.ValidUntil.Format("Mon, 02 Jan 2006 15:04:05 MST"))
+
+	if !rfg.ValidUntil.IsZero() {
+		fmt.Fprintf(&buf, "Valid-Until: %s\n", rfg.ValidUntil.Format("Mon, 02 Jan 2006 15:04:05 MST"))
+	}
 
 	if rfg.Description != "" {
 		fmt.Fprintf(&buf, "Description: %s\n", rfg.Description)

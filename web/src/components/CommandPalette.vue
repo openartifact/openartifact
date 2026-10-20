@@ -94,7 +94,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         class="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between"
                         :class="active ? 'bg-surface-hover text-foreground' : 'text-foreground'"
                       >
-                        <span class="truncate">{{ pkg.name }} <span class="text-muted">{{ pkg.version }}</span></span>
+                        <span class="flex items-center gap-2 min-w-0">
+                          <FormatBadge :format="pkg.format" size="sm" />
+                          <span class="truncate">{{ pkg.name }} <span class="text-muted">{{ pkg.version }}</span></span>
+                        </span>
                         <span class="text-xs text-muted">{{ pkg.repository }}</span>
                       </div>
                     </ComboboxOption>
@@ -115,7 +118,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         :class="active ? 'bg-surface-hover text-foreground' : 'text-foreground'"
                       >
                         <span class="truncate">{{ repo.name }}</span>
-                        <span class="text-xs text-muted uppercase">{{ repo.format }}</span>
+                        <FormatBadge :format="repo.format" size="sm" />
                       </div>
                     </ComboboxOption>
                   </template>
@@ -146,6 +149,7 @@ import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import { useUIStore } from '../stores/ui'
 import { listCommands, type CommandEntry } from '../composables/useCommands'
 import { search, type SearchResult } from '../api/search'
+import FormatBadge from './FormatBadge.vue'
 import { t } from '../i18n/en'
 
 const ui = useUIStore()
@@ -154,22 +158,12 @@ const router = useRouter()
 const query = ref('')
 const searchResults = ref<SearchResult>({ packages: [], repositories: [] })
 let debounceHandle: ReturnType<typeof setTimeout> | null = null
-let fuseLoader: Promise<typeof import('fuse.js')> | null = null
-
-function ensureFuse() {
-  if (!fuseLoader) {
-    // Lazy-load fuse.js so it isn't in the initial bundle.
-    fuseLoader = import('fuse.js')
-  }
-  return fuseLoader
-}
+let searchGeneration = 0
 
 const commandResults = computed<CommandEntry[]>(() => {
   const q = query.value.trim().toLowerCase()
   const all = listCommands().filter((c) => c.group === 'commands')
   if (!q) return all
-  // Fuse loads on the first keystroke.
-  void ensureFuse()
   return all.filter((c) => c.title.toLowerCase().includes(q))
 })
 
@@ -180,18 +174,28 @@ const hasAny = computed(
     searchResults.value.repositories.length > 0,
 )
 
+// Cancels the pending debounce and invalidates any in-flight request.
+function resetPending(): void {
+  if (debounceHandle) clearTimeout(debounceHandle)
+  debounceHandle = null
+  searchGeneration++
+}
+
 function onQueryChange(value: string): void {
   query.value = value
-  if (debounceHandle) clearTimeout(debounceHandle)
+  resetPending()
   if (!value.trim()) {
     searchResults.value = { packages: [], repositories: [] }
     return
   }
+  const generation = searchGeneration
   debounceHandle = setTimeout(async () => {
+    debounceHandle = null
     try {
-      searchResults.value = await search({ q: value, limit: 8 })
+      const res = await search({ q: value, limit: 8 })
+      if (generation === searchGeneration) searchResults.value = res
     } catch {
-      searchResults.value = { packages: [], repositories: [] }
+      if (generation === searchGeneration) searchResults.value = { packages: [], repositories: [] }
     }
   }, 200)
 }
@@ -200,6 +204,7 @@ watch(
   () => ui.commandPaletteOpen,
   (open) => {
     if (!open) {
+      resetPending()
       query.value = ''
       searchResults.value = { packages: [], repositories: [] }
     }

@@ -123,8 +123,6 @@ func (h *SecretsHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleListScans lists all secret scan results for a repository.
-//
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *SecretsHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()

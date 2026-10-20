@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"strings"
 	"time"
@@ -22,15 +23,41 @@ import (
 
 // VulnHandler handles vulnerability scanning endpoints.
 type VulnHandler struct {
-	db  database.Database
-	log *logger.Logger
+	db        database.Database
+	log       *logger.Logger
+	evaluator *auth.Evaluator
+
+	// scanSem bounds the number of concurrently running background scans.
+	scanSem chan struct{}
+}
+
+const (
+	// maxConcurrentVulnScans bounds background scan goroutines per handler.
+	maxConcurrentVulnScans = 4
+
+	// vulnScanTimeout bounds the scanner backend call.
+	vulnScanTimeout = 120 * time.Second
+
+	// vulnPersistTimeout bounds the final DB write, independent of the scan context.
+	vulnPersistTimeout = 30 * time.Second
+)
+
+func isValidVulnScanner(scanner string) bool {
+	switch scanner {
+	case "osv", "trivy", "grype":
+		return true
+	}
+
+	return false
 }
 
 // NewVulnHandler creates a new vulnerability handler.
-func NewVulnHandler(db database.Database, log *logger.Logger) *VulnHandler {
+func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *VulnHandler {
 	return &VulnHandler{
-		db:  db,
-		log: log,
+		db:        db,
+		log:       log,
+		evaluator: evaluator,
+		scanSem:   make(chan struct{}, maxConcurrentVulnScans),
 	}
 }
 
@@ -63,7 +90,7 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
+	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
 	if err != nil || !isAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
 		return
@@ -81,13 +108,40 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.ArtifactID == "" || body.PackageName == "" || body.PackageVersion == "" || body.Ecosystem == "" {
+	if msg := validateArtifactID(body.ArtifactID); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	if body.PackageName == "" || body.PackageVersion == "" || body.Ecosystem == "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_id, package_name, package_version, and ecosystem are required")
 		return
 	}
 
+	if len(body.PackageName) > maxArtifactIDLen || len(body.PackageVersion) > maxNameLen || len(body.Ecosystem) > maxNameLen {
+		writeError(w, http.StatusBadRequest, "validation_failed", "package_name, package_version or ecosystem is too long")
+		return
+	}
+
+	body.Scanner = strings.ToLower(body.Scanner)
 	if body.Scanner == "" {
 		body.Scanner = "osv"
+	}
+
+	if !isValidVulnScanner(body.Scanner) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "scanner must be one of: osv, trivy, grype")
+		return
+	}
+
+	// Reserve a background-scan slot before creating any state, so a flood of
+	// requests cannot spawn unbounded goroutines or leave rows stuck "scanning".
+	select {
+	case h.scanSem <- struct{}{}:
+	default:
+		w.Header().Set("Retry-After", "10")
+		writeError(w, http.StatusTooManyRequests, "too_many_scans", "too many vulnerability scans in progress")
+
+		return
 	}
 
 	// Create initial scan result with "scanning" status
@@ -106,15 +160,24 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err := h.db.CreateVulnScanResult(ctx, scanResult); err != nil {
+		<-h.scanSem
+
 		h.log.Errorw("scan vuln: db error creating scan result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
+	// The goroutine owns its own copy: the handler keeps reading scanResult
+	// below while the scan mutates its result, which would be a data race.
+	job := *scanResult
+
 	// Run scan asynchronously
-	//nolint:gosec // G118: scan runs in background goroutine by design
-	go h.performScan(scanResult)
+	go func() {
+		defer func() { <-h.scanSem }()
+
+		h.performScan(&job)
+	}()
 
 	writeJSON(w, http.StatusOK, vulnScanResultToMap(scanResult))
 }
@@ -122,7 +185,7 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 // performScan performs the actual vulnerability scan.
 func (h *VulnHandler) performScan(scanResult *models.VulnScanResult) {
 	// Use background context for async operation
-	ctx, cancel := context.WithTimeout(context.Background(), 120*time.Second)
+	ctx, cancel := context.WithTimeout(context.Background(), vulnScanTimeout)
 	defer cancel()
 
 	// Create scanner backend based on scanner field
@@ -158,15 +221,17 @@ func (h *VulnHandler) performScan(scanResult *models.VulnScanResult) {
 	scanResult.ScannedAt = &now
 	scanResult.UpdatedAt = now
 
-	// Update the scan result in database
-	if err := h.db.UpdateVulnScanResult(ctx, scanResult); err != nil {
+	// Persist with a fresh context: the scan context may already have expired
+	// (scanner timeout), which would otherwise leave the row stuck "scanning".
+	persistCtx, persistCancel := context.WithTimeout(context.Background(), vulnPersistTimeout)
+	defer persistCancel()
+
+	if err := h.db.UpdateVulnScanResult(persistCtx, scanResult); err != nil {
 		h.log.Errorw("vuln scan: db error updating scan result", "error", err)
 	}
 }
 
 // handleListScans lists all vulnerability scan results for a repository.
-//
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *VulnHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
@@ -186,7 +251,7 @@ func (h *VulnHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
+	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
 	if err != nil || !isAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
 		return
@@ -217,6 +282,8 @@ func (h *VulnHandler) handleListScans(w http.ResponseWriter, r *http.Request) {
 }
 
 // handleGetScan gets a specific vulnerability scan result.
+//
+//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *VulnHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
@@ -237,28 +304,23 @@ func (h *VulnHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
+	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
 	if err != nil || !isAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
 		return
 	}
 
-	// Get all scans and find the one with matching ID
-	results, err := h.db.ListVulnScanResults(ctx, repo.ID, false)
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+		return
+	}
+
+	result, err := h.db.GetVulnScanResultByID(ctx, repo.ID, id)
 	if err != nil {
 		h.log.Errorw("get vuln scan: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
-	}
-
-	var result *models.VulnScanResult
-
-	for _, r := range results {
-		if r.ID == id {
-			result = r
-			break
-		}
 	}
 
 	if result == nil {
@@ -290,7 +352,7 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
+	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
 	if err != nil || !isAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
 		return
@@ -304,31 +366,19 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get the scan result to find artifact ID
-	results, err := h.db.ListVulnScanResults(ctx, repo.ID, false)
-	if err != nil {
-		h.log.Errorw("quarantine vuln artifact: db error listing scans", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	var result *models.VulnScanResult
-
-	for _, r := range results {
-		if r.ID == id {
-			result = r
-			break
-		}
-	}
-
-	if result == nil {
+	if !isUUIDString(id) {
 		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
 		return
 	}
 
-	// Update quarantine status
-	if err := h.db.QuarantineVulnArtifact(ctx, repo.ID, result.ArtifactID, body.Quarantined); err != nil {
+	// Quarantine exactly the addressed scan result; the artifact-wide helper
+	// would fail (multiple rows) when several scanners scanned the artifact.
+	if err := h.db.SetVulnScanQuarantine(ctx, repo.ID, id, body.Quarantined); err != nil {
+		if errors.Is(err, database.ErrVulnScanNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+			return
+		}
+
 		h.log.Errorw("quarantine vuln artifact: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
@@ -336,11 +386,16 @@ func (h *VulnHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Fetch updated result
-	updated, err := h.db.GetVulnScanResult(ctx, repo.ID, result.ArtifactID)
+	updated, err := h.db.GetVulnScanResultByID(ctx, repo.ID, id)
 	if err != nil {
 		h.log.Errorw("quarantine vuln artifact: db error fetching updated result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
+		return
+	}
+
+	if updated == nil {
+		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
 		return
 	}
 
@@ -368,36 +423,29 @@ func (h *VulnHandler) handleDeleteScan(w http.ResponseWriter, r *http.Request) {
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, auth.NewEvaluator(h.db, h.log, false))
+	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
 	if err != nil || !isAdmin {
 		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
 		return
 	}
 
-	// Get all scans and find the one with matching ID
-	results, err := h.db.ListVulnScanResults(ctx, repo.ID, false)
-	if err != nil {
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+		return
+	}
+
+	if err := h.db.DeleteVulnScanResult(ctx, repo.ID, id); err != nil {
+		if errors.Is(err, database.ErrVulnScanNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+			return
+		}
+
 		h.log.Errorw("delete vuln scan: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	var result *models.VulnScanResult
-
-	for _, r := range results {
-		if r.ID == id {
-			result = r
-			break
-		}
-	}
-
-	if result == nil {
-		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
-		return
-	}
-
-	// The spec says DELETE returns 204.
 	writeNoContent(w)
 }
 

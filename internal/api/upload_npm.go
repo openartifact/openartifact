@@ -8,6 +8,8 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
+	"fmt"
 	"net/http"
 	"strings"
 	"time"
@@ -17,8 +19,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
@@ -33,6 +37,7 @@ type NPMUploadHandler struct {
 	baseURL   string
 	reg       *metrics.Registry
 	npmWorker *worker.NPMMetadataWorker
+	publisher webhook.Publisher
 }
 
 func NewNPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string, reg *metrics.Registry) *NPMUploadHandler {
@@ -45,11 +50,33 @@ func (h *NPMUploadHandler) SetNPMWorker(w *worker.NPMMetadataWorker) {
 	h.npmWorker = w
 }
 
+// SetPublisher wires the webhook publisher used for artifact.uploaded and
+// artifact.deleted events. It must be called before the handler serves requests.
+func (h *NPMUploadHandler) SetPublisher(p webhook.Publisher) {
+	h.publisher = p
+}
+
+// Register mounts the publish/unpublish routes under /repos/{name} on a router
+// that has no other /repos/{name} subrouter (tests). Production code shares the
+// /repos/{name} subrouter with the other formats and calls RegisterRepoRoutes.
 func (h *NPMUploadHandler) Register(router chi.Router) {
-	router.Put("/repos/{repo}/-/package/{pkg}/dist-tags/{tag}", h.handlePutDistTag)
-	router.Delete("/repos/{repo}/-/package/{pkg}/dist-tags/{tag}", h.handleDeleteDistTag)
-	router.Put("/repos/{repo}/*", h.handlePublish)
-	router.Delete("/repos/{repo}/*", h.handleUnpublish)
+	router.Route("/repos/{name}", h.RegisterRepoRoutes)
+}
+
+// RegisterRepoRoutes registers the routes relative to a /repos/{name}
+// subrouter. They must live inside that subrouter: a sibling /repos/{repo}/*
+// route is shadowed by the mount and every PUT/DELETE 404s.
+func (h *NPMUploadHandler) RegisterRepoRoutes(r chi.Router) {
+	r.Put("/-/package/{pkg}/dist-tags/{tag}", h.handlePutDistTag)
+	r.Delete("/-/package/{pkg}/dist-tags/{tag}", h.handleDeleteDistTag)
+	r.Put("/*", h.handlePublish)
+	r.Delete("/*", h.handleUnpublish)
+}
+
+// HandlePublish serves an npm publish (or `-rev` unpublish) PUT. It is
+// exported for routers that share PUT "/*" with another format.
+func (h *NPMUploadHandler) HandlePublish(w http.ResponseWriter, r *http.Request) {
+	h.handlePublish(w, r)
 }
 
 func (h *NPMUploadHandler) resolveRepo(ctx context.Context, name string) (*models.Repository, error) {
@@ -61,9 +88,12 @@ func (h *NPMUploadHandler) resolveRepo(ctx context.Context, name string) (*model
 	return repo, nil
 }
 
+// requireAuth requires a principal that the RBAC middleware actually
+// authenticated (valid session, token or legacy key). Merely carrying an
+// "Authorization: Bearer ..." header proves nothing: any string passes that
+// check, so it must never be the authentication decision.
 func requireAuth(w http.ResponseWriter, r *http.Request) bool {
-	auth := r.Header.Get("Authorization")
-	if strings.HasPrefix(auth, "Bearer ") && len(auth) > len("Bearer ") {
+	if p := currentPrincipal(r); p != nil && !p.IsAnonymous {
 		return true
 	}
 
@@ -85,6 +115,114 @@ type npmPublishBody struct {
 	DistTags    map[string]string          `json:"dist-tags"`
 }
 
+type npmPreparedVersion struct {
+	version  string
+	manifest json.RawMessage
+	filename string
+	data     []byte
+	integrity,
+	sha1Hex,
+	sha256Hex string
+}
+
+// npmPublishError carries an HTTP status for failures during publish.
+type npmPublishError struct {
+	status int
+	msg    string
+}
+
+func (e *npmPublishError) Error() string { return e.msg }
+
+var (
+	errEmptyDistTag     = errors.New("empty dist-tag")
+	errDistTagIsVersion = errors.New("dist-tag must not be a valid semver version")
+)
+
+func validateNPMTagName(tag string) error {
+	if tag == "" {
+		return errEmptyDistTag
+	}
+
+	if pkgnpm.ValidateSemver(tag) == nil {
+		return fmt.Errorf("%w: %s", errDistTagIsVersion, tag)
+	}
+
+	return nil
+}
+
+// prepareNPMVersions validates and decodes every version in a publish body
+// before anything is written, so validation failures leave no partial state.
+func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublishError) {
+	prepared := make([]*npmPreparedVersion, 0, len(pub.Versions))
+
+	for version, manifestRaw := range pub.Versions {
+		if err := pkgnpm.ValidateSemver(version); err != nil {
+			return nil, &npmPublishError{http.StatusBadRequest, "invalid semver: " + version}
+		}
+
+		var manifestMap map[string]any
+
+		dec := json.NewDecoder(bytes.NewReader(manifestRaw))
+		dec.UseNumber()
+
+		if err := dec.Decode(&manifestMap); err != nil {
+			return nil, &npmPublishError{http.StatusBadRequest, "invalid manifest JSON"}
+		}
+
+		if name, _ := manifestMap["name"].(string); name != pub.Name {
+			return nil, &npmPublishError{http.StatusBadRequest, "manifest name does not match package name"}
+		}
+
+		if mv, _ := manifestMap["version"].(string); mv != version {
+			return nil, &npmPublishError{http.StatusBadRequest, "manifest version does not match version key: " + version}
+		}
+
+		filename := formatnpm.TarballFilename(pub.Name, version)
+
+		// The npm CLI keys attachments by the full (scoped) name,
+		// "@scope/pkg-1.0.0.tgz"; accept the bare filename too.
+		att, ok := pub.Attachments[pub.Name+"-"+version+".tgz"]
+		if !ok {
+			att, ok = pub.Attachments[filename]
+		}
+		if !ok {
+			return nil, &npmPublishError{http.StatusBadRequest, "missing attachment: " + filename}
+		}
+
+		data, _, err := pkgnpm.DecodeAttachment(att)
+		if err != nil {
+			return nil, &npmPublishError{http.StatusBadRequest, "invalid attachment: " + err.Error()}
+		}
+
+		integrity, sha1Hex, sha256Hex, _, err := pkgnpm.ComputeIntegrity(bytes.NewReader(data))
+		if err != nil {
+			return nil, &npmPublishError{http.StatusInternalServerError, "internal error"}
+		}
+
+		if dist, ok := manifestMap["dist"].(map[string]any); ok {
+			if declared, ok := dist["integrity"].(string); ok && declared != "" && declared != integrity {
+				return nil, &npmPublishError{http.StatusBadRequest, "integrity mismatch"}
+			}
+		}
+
+		prepared = append(prepared, &npmPreparedVersion{
+			version: version, manifest: manifestRaw, filename: filename, data: data,
+			integrity: integrity, sha1Hex: sha1Hex, sha256Hex: sha256Hex,
+		})
+	}
+
+	return prepared, nil
+}
+
+func writeJSONStatus(w http.ResponseWriter, status int, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(status)
+
+	if encErr := json.NewEncoder(w).Encode(v); encErr != nil {
+		_ = encErr // response header already written
+	}
+}
+
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
@@ -98,23 +236,29 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 	}
 
 	vars := urlparams.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["name"]
 	rawPkg := vars["*"]
+
+	// `npm unpublish pkg@ver` PUTs the reduced packument to /pkg/-rev/<rev>.
+	revPut := false
+
+	if base, _, ok := strings.Cut(rawPkg, "/-rev/"); ok {
+		rawPkg = base
+		revPut = true
+	}
+
 	pkgName := npmDecodePackageName(rawPkg)
 
 	body := http.MaxBytesReader(w, r.Body, MaxNPMUploadBytes)
 
 	var buf bytes.Buffer
 	if _, err := buf.ReadFrom(body); err != nil {
-		if err.Error() == "http: request body too large" {
-			uploadResult = "error"
+		uploadResult = "error"
 
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
-
 			return
 		}
-
-		uploadResult = "error"
 
 		h.log.Errorw("failed to read npm publish body", "error", err)
 		http.Error(w, "failed to read body", http.StatusBadRequest)
@@ -178,151 +322,188 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	for version, manifestRaw := range pub.Versions {
-		if err := pkgnpm.ValidateSemver(version); err != nil {
+	if revPut {
+		h.handleRevPut(w, r, repo, pkg, &pub)
+		return
+	}
+
+	for tag := range pub.DistTags {
+		if err := validateNPMTagName(tag); err != nil {
 			uploadResult = "error"
 
-			http.Error(w, "invalid semver: "+version, http.StatusBadRequest)
+			http.Error(w, err.Error(), http.StatusBadRequest)
 
 			return
 		}
+	}
 
-		tarballFilename := formatnpm.TarballFilename(pub.Name, version)
+	prepared, perr := prepareNPMVersions(&pub)
+	if perr != nil {
+		uploadResult = "error"
 
-		att, ok := pub.Attachments[tarballFilename]
-		if !ok {
-			uploadResult = "error"
+		http.Error(w, perr.msg, perr.status)
 
-			http.Error(w, "missing attachment: "+tarballFilename, http.StatusBadRequest)
+		return
+	}
 
-			return
+	// Every dist-tag must target a version in this publish or an existing one.
+	for tag, ver := range pub.DistTags {
+		if _, ok := pub.Versions[ver]; ok {
+			continue
 		}
 
-		data, _, err := pkgnpm.DecodeAttachment(att)
-		if err != nil {
-			uploadResult = "error"
+		var existing *models.NPMVersion
 
-			http.Error(w, "invalid attachment: "+err.Error(), http.StatusBadRequest)
-
-			return
-		}
-
-		integrity, sha1Hex, sha256Hex, _, err := pkgnpm.ComputeIntegrity(bytes.NewReader(data))
-		if err != nil {
-			uploadResult = "error"
-
-			h.log.Errorw("failed to compute integrity", "pkg", pub.Name, "version", version, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-
-			return
-		}
-
-		var manifestMap map[string]any
-
-		dec2 := json.NewDecoder(bytes.NewReader(manifestRaw))
-		dec2.UseNumber()
-
-		if err := dec2.Decode(&manifestMap); err != nil {
-			uploadResult = "error"
-
-			http.Error(w, "invalid manifest JSON", http.StatusBadRequest)
-
-			return
-		}
-
-		if dist, ok := manifestMap["dist"].(map[string]any); ok {
-			if declaredIntegrity, ok := dist["integrity"].(string); ok && declaredIntegrity != "" {
-				if declaredIntegrity != integrity {
-					uploadResult = "error"
-
-					http.Error(w, "integrity mismatch", http.StatusBadRequest)
-
-					return
-				}
-			}
-		}
-
-		if pkg == nil {
-			scope := ""
-
-			name := pub.Name
-			if strings.HasPrefix(pub.Name, "@") {
-				if idx := strings.Index(pub.Name, "/"); idx > 0 {
-					scope = pub.Name[:idx]
-					name = pub.Name[idx+1:]
-				}
-			}
-
-			pkg, err = h.db.CreateNPMPackage(r.Context(), &models.NPMPackage{
-				RepositoryID:   repo.ID,
-				Scope:          scope,
-				Name:           name,
-				FullName:       pub.Name,
-				LatestVersion:  version,
-				PackumentStale: true,
-			})
+		if pkg != nil {
+			existing, err = h.db.GetNPMVersion(r.Context(), pkg.ID, ver)
 			if err != nil {
 				uploadResult = "error"
 
-				h.log.Errorw("failed to create npm package", "name", pub.Name, "error", err)
+				h.log.Errorw("failed to check dist-tag version", "pkg", pub.Name, "tag", tag, "error", err)
 				http.Error(w, "internal error", http.StatusInternalServerError)
 
 				return
 			}
 		}
 
-		_, err = h.blobStore.Put(r.Context(), bytes.NewReader(data), map[string]string{
-			"sha256": sha256Hex,
-			"format": "npm",
-		})
-		if err != nil {
+		if existing == nil {
 			uploadResult = "error"
 
-			h.log.Errorw("failed to store tarball blob", "pkg", pub.Name, "version", version, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
+			http.Error(w, "dist-tag "+tag+" points to unknown version "+ver, http.StatusBadRequest)
 
 			return
 		}
+	}
 
-		// Upsert into blobs table to get UUID for npm_versions.blob_id FK.
-		blobUUID, err := h.db.UpsertBlob(r.Context(), sha256Hex, sha256Hex, int64(len(data)))
-		if err != nil {
-			uploadResult = "error"
-			h.log.Errorw("failed to upsert npm blob", "pkg", pub.Name, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-			return
+	// Reject duplicate versions before storing anything.
+	if pkg != nil {
+		for _, pv := range prepared {
+			existing, err := h.db.GetNPMVersion(r.Context(), pkg.ID, pv.version)
+			if err != nil {
+				uploadResult = "error"
+
+				h.log.Errorw("failed to check existing version", "pkg", pub.Name, "version", pv.version, "error", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+
+				return
+			}
+
+			if existing != nil {
+				uploadResult = "error"
+
+				writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "version already exists"})
+
+				return
+			}
+		}
+	}
+
+	createdPkg := false
+	createdVersions := make([]*npmPreparedVersion, 0, len(prepared))
+
+	// rollback undoes everything this request created so a failed publish
+	// leaves no empty package or partial version set.
+	rollback := func() {
+		ctx := context.WithoutCancel(r.Context())
+
+		if pkg != nil {
+			for _, pv := range createdVersions {
+				if delErr := h.db.DeleteNPMVersion(ctx, pkg.ID, pv.version); delErr != nil {
+					// The row is still there, so it keeps its blob and its quota.
+					h.log.Errorw("npm publish rollback: delete version", "pkg", pub.Name, "version", pv.version, "error", delErr)
+					continue
+				}
+
+				h.releaseQuota(ctx, repo.ID, int64(len(pv.data)))
+
+				if delErr := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, pv.sha256Hex); delErr != nil {
+					h.log.Warnw("npm publish rollback: delete blob", "sha256", pv.sha256Hex, "error", delErr)
+				}
+			}
+
+			if createdPkg {
+				if delErr := h.db.DeleteNPMPackage(ctx, pkg.ID); delErr != nil {
+					h.log.Errorw("npm publish rollback: delete package", "pkg", pub.Name, "error", delErr)
+				}
+			}
+		}
+	}
+
+	fail := func(logMsg string, err error) {
+		uploadResult = "error"
+
+		h.log.Errorw(logMsg, "pkg", pub.Name, "error", err)
+		rollback()
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}
+
+	if pkg == nil && len(prepared) > 0 {
+		scope := ""
+
+		name := pub.Name
+		if strings.HasPrefix(pub.Name, "@") {
+			if idx := strings.Index(pub.Name, "/"); idx > 0 {
+				scope = pub.Name[:idx]
+				name = pub.Name[idx+1:]
+			}
 		}
 
-		h.log.Debugw("npm publish", "repo", repoName, "pkg", pub.Name, "version", version)
-
-		_, err = h.db.CreateNPMVersion(r.Context(), &models.NPMVersion{
-			PackageID:       pkg.ID,
-			Version:         version,
-			ManifestJSON:    manifestRaw,
-			Integrity:       integrity,
-			Shasum:          sha1Hex,
-			BlobID:          blobUUID,
-			TarballFilename: tarballFilename,
+		pkg, err = h.db.CreateNPMPackage(r.Context(), &models.NPMPackage{
+			RepositoryID:   repo.ID,
+			Scope:          scope,
+			Name:           name,
+			FullName:       pub.Name,
+			LatestVersion:  prepared[0].version,
+			PackumentStale: true,
 		})
 		if err != nil {
 			uploadResult = "error"
 
 			if isUniqueViolation(err) {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusConflict)
-
-				if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "version already exists"}); encErr != nil {
-					_ = encErr // response header already written
-				}
-
+				writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "package already exists"})
 				return
 			}
 
-			h.log.Errorw("failed to create npm version", "pkg", pub.Name, "version", version, "error", err)
+			h.log.Errorw("failed to create npm package", "name", pub.Name, "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
 
 			return
 		}
+
+		createdPkg = true
+	}
+
+	if pkg == nil {
+		uploadResult = "error"
+
+		http.Error(w, "no versions to publish", http.StatusBadRequest)
+
+		return
+	}
+
+	for _, pv := range prepared {
+		h.log.Debugw("npm publish", "repo", repoName, "pkg", pub.Name, "version", pv.version)
+
+		if err := h.storeNPMVersion(r.Context(), repo.ID, pkg.ID, pv); err != nil {
+			switch {
+			case errors.Is(err, quota.ErrExceeded):
+				uploadResult = "error"
+
+				rollback()
+				quota.WriteExceeded(w)
+			case errors.Is(err, errNPMVersionExists):
+				uploadResult = "error"
+
+				rollback()
+				writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "version already exists"})
+			default:
+				fail("failed to store npm version", err)
+			}
+
+			return
+		}
+
+		createdVersions = append(createdVersions, pv)
 	}
 
 	for tag, ver := range pub.DistTags {
@@ -331,7 +512,8 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 			Tag:       tag,
 			Version:   ver,
 		}); err != nil {
-			h.log.Errorw("failed to upsert dist-tag", "pkg", pub.Name, "tag", tag, "error", err)
+			fail("failed to upsert dist-tag", err)
+			return
 		}
 	}
 
@@ -343,26 +525,282 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		h.npmWorker.NotifyStale(pkg.ID)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
+	for _, pv := range createdVersions {
+		webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+			Repository: repo.Name,
+			Format:     "npm",
+			Name:       pub.Name,
+			Version:    pv.version,
+			Path:       pv.filename,
+			SHA256:     pv.sha256Hex,
+			Size:       int64(len(pv.data)),
+		}))
+	}
 
-	if encErr := json.NewEncoder(w).Encode(map[string]any{
+	writeJSONStatus(w, http.StatusCreated, map[string]any{
 		"ok":  true,
 		"id":  pub.Name,
 		"rev": "1-" + time.Now().UTC().Format("20060102150405"),
-	}); encErr != nil {
-		_ = encErr // response header already written
+	})
+}
+
+var errNPMVersionExists = errors.New("npm version already exists")
+
+func (h *NPMUploadHandler) releaseQuota(ctx context.Context, repoID string, size int64) {
+	if err := quota.Release(ctx, h.db, repoID, size); err != nil {
+		h.log.Warnw("failed to release npm quota", "repo_id", repoID, "error", err)
 	}
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
+// storeNPMVersion reserves quota for one tarball and persists its blob and
+// version row. The dedup check, blob write and referencing insert run under the
+// blob lock so a concurrent unpublish cannot delete the blob in between. The
+// reservation is released on every failure path.
+func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID string, pv *npmPreparedVersion) error {
+	size := int64(len(pv.data))
+
+	if err := quota.Enforce(ctx, h.db, repoID, size); err != nil {
+		return err
+	}
+
+	newBlob := false
+
+	err := storage.WithBlobLock(ctx, h.db, pv.sha256Hex, func(ctx context.Context) error {
+		_, exists, err := h.blobStore.ExistsBySHA256(ctx, pv.sha256Hex)
+		if err != nil {
+			return fmt.Errorf("failed to check tarball blob: %w", err)
+		}
+
+		if !exists {
+			if _, err := h.blobStore.Put(ctx, bytes.NewReader(pv.data), map[string]string{
+				"sha256": pv.sha256Hex,
+				"format": "npm",
+			}); err != nil {
+				return fmt.Errorf("failed to store tarball blob: %w", err)
+			}
+
+			newBlob = true
+		}
+
+		// Upsert into blobs table to get UUID for npm_versions.blob_id FK.
+		blobUUID, err := h.db.UpsertBlob(ctx, pv.sha256Hex, pv.sha256Hex, size)
+		if err != nil {
+			return fmt.Errorf("failed to upsert npm blob: %w", err)
+		}
+
+		if _, err := h.db.CreateNPMVersion(ctx, &models.NPMVersion{
+			PackageID:       pkgID,
+			Version:         pv.version,
+			ManifestJSON:    pv.manifest,
+			Integrity:       pv.integrity,
+			Shasum:          pv.sha1Hex,
+			BlobID:          blobUUID,
+			TarballFilename: pv.filename,
+		}); err != nil {
+			if isUniqueViolation(err) {
+				return errNPMVersionExists
+			}
+
+			return fmt.Errorf("failed to create npm version: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		h.releaseQuota(ctx, repoID, size)
+
+		// Drop the blob we just wrote unless a row references it.
+		if newBlob {
+			if delErr := storage.SafeDeleteBlob(context.WithoutCancel(ctx), h.db, h.blobStore, pv.sha256Hex); delErr != nil {
+				h.log.Warnw("failed to clean up npm blob after failed publish", "sha256", pv.sha256Hex, "error", delErr)
+			}
+		}
+
+		return err
+	}
+
+	return nil
+}
+
+const npmUnpublishWindow = 72 * time.Hour
+
+// canUnpublish applies npm's policy: versions may be removed freely within
+// 72 hours of publication; afterwards only repos allowing full unpublish may.
+func canUnpublish(repo *models.Repository, v *models.NPMVersion) bool {
+	return repo.AllowFullUnpublish || time.Since(v.CreatedAt) <= npmUnpublishWindow
+}
+
+// npmVersionSize resolves the stored size of a version's tarball so its quota
+// reservation can be released. Unresolvable blobs (missing sha or object)
+// report 0: the artifact slot is still returned.
+func (h *NPMUploadHandler) npmVersionSize(ctx context.Context, v *models.NPMVersion) int64 {
+	if v.BlobSizeBytes > 0 {
+		return v.BlobSizeBytes
+	}
+
+	if v.BlobSHA256 == "" {
+		return 0
+	}
+
+	id, exists, err := h.blobStore.ExistsBySHA256(ctx, v.BlobSHA256)
+	if err != nil || !exists {
+		return 0
+	}
+
+	size, err := h.blobStore.GetSize(ctx, id)
+	if err != nil {
+		return 0
+	}
+
+	return size
+}
+
+// removeNPMVersions deletes the given versions (rows, orphaned dist-tags, and
+// unreferenced blobs), releases each version's quota and emits artifact.deleted
+// once its row is gone. Callers must have checked canUnpublish.
+func (h *NPMUploadHandler) removeNPMVersions(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, versions []*models.NPMVersion) error {
+	removed := make(map[string]bool, len(versions))
+
+	for _, v := range versions {
+		// Resolve the size while the blob is still referenced by this row.
+		size := h.npmVersionSize(ctx, v)
+
+		if err := h.db.DeleteNPMVersion(ctx, pkg.ID, v.Version); err != nil {
+			return err
+		}
+
+		removed[v.Version] = true
+
+		h.releaseQuota(ctx, repo.ID, size)
+
+		webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repo.Name,
+			Format:     "npm",
+			Name:       pkg.FullName,
+			Version:    v.Version,
+			Path:       v.TarballFilename,
+			SHA256:     v.BlobSHA256,
+			Size:       size,
+		}))
+
+		if v.BlobSHA256 == "" {
+			continue
+		}
+
+		if delErr := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, v.BlobSHA256); delErr != nil {
+			h.log.Warnw("failed to clean up blob after unpublish", "sha256", v.BlobSHA256, "error", delErr)
+		}
+	}
+
+	tags, err := h.db.GetNPMDistTags(ctx, pkg.ID)
+	if err != nil {
+		return err
+	}
+
+	for tag, ver := range tags {
+		if removed[ver] {
+			if err := h.db.DeleteNPMDistTag(ctx, pkg.ID, tag); err != nil {
+				return err
+			}
+		}
+	}
+
+	return nil
+}
+
+// handleRevPut handles the PUT /pkg/-rev/<rev> step of `npm unpublish pkg@ver`:
+// versions missing from the submitted packument are removed.
+func (h *NPMUploadHandler) handleRevPut(w http.ResponseWriter, r *http.Request, repo *models.Repository, pkg *models.NPMPackage, pub *npmPublishBody) {
+	if pkg == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	existing, err := h.db.GetNPMVersionsByPackage(r.Context(), pkg.ID)
+	if err != nil {
+		h.log.Errorw("failed to get npm versions", "pkg", pub.Name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	var toRemove []*models.NPMVersion
+
+	for _, v := range existing {
+		if _, keep := pub.Versions[v.Version]; keep {
+			continue
+		}
+
+		if !canUnpublish(repo, v) {
+			writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
+			return
+		}
+
+		toRemove = append(toRemove, v)
+	}
+
+	for tag, ver := range pub.DistTags {
+		if err := validateNPMTagName(tag); err != nil {
+			http.Error(w, err.Error(), http.StatusBadRequest)
+			return
+		}
+
+		if _, ok := pub.Versions[ver]; !ok {
+			http.Error(w, "dist-tag "+tag+" points to unknown version "+ver, http.StatusBadRequest)
+			return
+		}
+	}
+
+	if len(toRemove) == len(existing) && len(existing) > 0 {
+		if err := h.removeNPMVersions(r.Context(), repo, pkg, toRemove); err != nil {
+			h.log.Errorw("failed to delete npm versions", "pkg", pub.Name, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+
+			return
+		}
+
+		if err := h.db.DeleteNPMPackage(r.Context(), pkg.ID); err != nil {
+			h.log.Errorw("failed to delete npm package", "pkg", pub.Name, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+
+			return
+		}
+	} else {
+		if err := h.removeNPMVersions(r.Context(), repo, pkg, toRemove); err != nil {
+			h.log.Errorw("failed to delete npm versions", "pkg", pub.Name, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+
+			return
+		}
+
+		for tag, ver := range pub.DistTags {
+			if _, err := h.db.UpsertNPMDistTag(r.Context(), &models.NPMDistTag{PackageID: pkg.ID, Tag: tag, Version: ver}); err != nil {
+				h.log.Errorw("failed to upsert dist-tag", "pkg", pub.Name, "tag", tag, "error", err)
+				http.Error(w, "internal error", http.StatusInternalServerError)
+
+				return
+			}
+		}
+	}
+
+	if h.npmWorker != nil {
+		h.npmWorker.NotifyStale(pkg.ID)
+	}
+
+	writeJSONStatus(w, http.StatusOK, map[string]any{"ok": true, "id": pub.Name, "rev": "2-" + time.Now().UTC().Format("20060102150405")})
+}
+
+// handleUnpublish serves two DELETE forms:
+//
+//	DELETE /pkg/-rev/<rev>               remove the whole package
+//	DELETE /pkg/-/<file>.tgz/-rev/<rev>  final step of `npm unpublish pkg@ver`
 func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
 		return
 	}
 
 	vars := urlparams.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["name"]
 	rawPkg := vars["*"]
 
 	repo, err := h.resolveRepo(r.Context(), repoName)
@@ -378,17 +816,16 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	parts := strings.Split(rawPkg, "/-rev/")
-	pkgName := npmDecodePackageName(parts[0])
+	base, _, _ := strings.Cut(rawPkg, "/-rev/")
 
-	var targetVersion string
+	var tarball string
 
-	if len(parts) == 2 {
-		revAndVersion := parts[1]
-		if idx := strings.Index(revAndVersion, "/"); idx > 0 {
-			targetVersion = revAndVersion[idx+1:]
-		}
+	if before, after, ok := strings.Cut(base, "/-/"); ok {
+		base = before
+		tarball = after
 	}
+
+	pkgName := npmDecodePackageName(base)
 
 	pkg, err := h.db.GetNPMPackageByName(r.Context(), repo.ID, pkgName)
 	if err != nil {
@@ -411,64 +848,41 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if targetVersion != "" { //nolint:nestif // complex version resolution logic
-		var found *models.NPMVersion
-
+	if tarball != "" {
+		// The preceding PUT normally removed the version already; deleting
+		// the tarball of a version that is gone is a successful no-op.
 		for _, v := range versions {
-			if v.Version == targetVersion {
-				found = v
-				break
+			if v.TarballFilename != tarball {
+				continue
 			}
-		}
 
-		if found == nil {
-			http.NotFound(w, r)
-			return
-		}
+			if !canUnpublish(repo, v) {
+				writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
+				return
+			}
 
-		if time.Since(found.CreatedAt) > 72*time.Hour || repo.AllowFullUnpublish {
-			if err := h.db.DeleteNPMVersion(r.Context(), pkg.ID, targetVersion); err != nil {
-				h.log.Errorw("failed to delete npm version", "pkg", pkgName, "version", targetVersion, "error", err)
+			if err := h.removeNPMVersions(r.Context(), repo, pkg, []*models.NPMVersion{v}); err != nil {
+				h.log.Errorw("failed to delete npm version", "pkg", pkgName, "version", v.Version, "error", err)
 				http.Error(w, "internal error", http.StatusInternalServerError)
 
 				return
 			}
 
-			if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, found.BlobID); delErr != nil {
-				h.log.Warnw("failed to clean up blob after unpublish", "sha256", found.BlobID, "error", delErr)
-			}
-		} else {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusForbidden)
-
-			if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "cannot unpublish within 72h, use npm deprecate instead"}); encErr != nil {
-				_ = encErr // response header already written
-			}
-
-			return
+			break
 		}
 	} else {
 		for _, v := range versions {
-			if time.Since(v.CreatedAt) <= 72*time.Hour && !repo.AllowFullUnpublish {
-				w.Header().Set("Content-Type", "application/json")
-				w.WriteHeader(http.StatusForbidden)
-
-				if encErr := json.NewEncoder(w).Encode(map[string]string{"error": "cannot unpublish within 72h, use npm deprecate instead"}); encErr != nil {
-					_ = encErr // response header already written
-				}
-
+			if !canUnpublish(repo, v) {
+				writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
 				return
 			}
 		}
 
-		for _, v := range versions {
-			if err := h.db.DeleteNPMVersion(r.Context(), pkg.ID, v.Version); err != nil {
-				h.log.Errorw("failed to delete npm version", "pkg", pkgName, "version", v.Version, "error", err)
-			}
+		if err := h.removeNPMVersions(r.Context(), repo, pkg, versions); err != nil {
+			h.log.Errorw("failed to delete npm versions", "pkg", pkgName, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
 
-			if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, v.BlobID); delErr != nil {
-				h.log.Warnw("failed to clean up blob after unpublish", "sha256", v.BlobID, "error", delErr)
-			}
+			return
 		}
 
 		if err := h.db.DeleteNPMPackage(r.Context(), pkg.ID); err != nil {
@@ -483,7 +897,7 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 		h.npmWorker.NotifyStale(pkg.ID)
 	}
 
-	w.WriteHeader(http.StatusOK)
+	writeJSONStatus(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (h *NPMUploadHandler) handlePutDistTag(w http.ResponseWriter, r *http.Request) {
@@ -492,9 +906,14 @@ func (h *NPMUploadHandler) handlePutDistTag(w http.ResponseWriter, r *http.Reque
 	}
 
 	vars := urlparams.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["name"]
 	pkgName := npmDecodePackageName(vars["pkg"])
 	tag := vars["tag"]
+
+	if err := validateNPMTagName(tag); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
+	}
 
 	repo, err := h.resolveRepo(r.Context(), repoName)
 	if err != nil {
@@ -574,7 +993,7 @@ func (h *NPMUploadHandler) handleDeleteDistTag(w http.ResponseWriter, r *http.Re
 	}
 
 	vars := urlparams.Vars(r)
-	repoName := vars["repo"]
+	repoName := vars["name"]
 	pkgName := npmDecodePackageName(vars["pkg"])
 	tag := vars["tag"]
 

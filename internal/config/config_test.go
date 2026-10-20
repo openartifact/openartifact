@@ -513,3 +513,44 @@ func TestLoad_TrustedProxies(t *testing.T) {
 		}
 	})
 }
+
+func TestEnvOverrides_HMACAndOCI(t *testing.T) {
+	t.Setenv("AUTH_HMAC_KEY", "k-from-env")
+	t.Setenv("STORAGE_OCI_USERNAME", "u")
+	t.Setenv("STORAGE_OCI_PASSWORD", "p")
+	t.Setenv("STORAGE_OCI_INSECURE", "true")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Auth.HMACKey != "k-from-env" || cfg.Storage.OCIUsername != "u" || cfg.Storage.OCIPassword != "p" || !cfg.Storage.OCIInsecure {
+		t.Fatalf("env overrides not applied: %+v %+v", cfg.Auth.HMACKey, cfg.Storage)
+	}
+}
+
+func TestBadBoolIgnoredNotFalse(t *testing.T) {
+	t.Setenv("SERVER_TLS_ENABLED", "maybe")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Server.TLSEnabled {
+		t.Fatal("invalid bool must keep default")
+	}
+}
+
+func TestValidate_TLSRequiresFiles(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Server.TLSEnabled = true
+	if cfg.Validate() == nil {
+		t.Fatal("TLS without cert/key must fail validation")
+	}
+}

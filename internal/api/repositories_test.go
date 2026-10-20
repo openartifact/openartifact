@@ -58,7 +58,7 @@ func TestRepositoriesHandlerHandleListFiltersBeforePagination(t *testing.T) {
 			{Name: "hidden-after", Format: "rpm"},
 		},
 		targets: []*models.PermissionTarget{{
-			RepositoryFilter: `^visible-`,
+			RepositoryFilter: `visible-.*`,
 			PathPattern:      `.*`,
 			Actions:          []string{"read"},
 		}},

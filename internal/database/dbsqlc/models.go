@@ -49,11 +49,11 @@ type ArtifactRef struct {
 
 // Compliance-grade audit trail. actor_id FK to auth_users, details_json JSONB.
 type AuditLog struct {
-	ID           string    `db:"id" json:"id"`
-	Action       string    `db:"action" json:"action"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	OrgID        *string   `db:"org_id" json:"org_id"`
-	RepositoryID *string   `db:"repository_id" json:"repository_id"`
+	ID           string     `db:"id" json:"id"`
+	Action       string     `db:"action" json:"action"`
+	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
+	OrgID        *string    `db:"org_id" json:"org_id"`
+	RepositoryID *string    `db:"repository_id" json:"repository_id"`
 	// FK to auth_users.
 	ActorID   *string `db:"actor_id" json:"actor_id"`
 	ActorType *string `db:"actor_type" json:"actor_type"`
@@ -73,6 +73,14 @@ type AuthGroup struct {
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 	// Organization this group belongs to. NULL = system-level group (pre-multitenancy).
 	OrgID *string `db:"org_id" json:"org_id"`
+}
+
+// Consumed SAML assertion IDs (replay protection); rows are purgeable after expires_at
+type AuthSamlAssertion struct {
+	AssertionID  string    `db:"assertion_id" json:"assertion_id"`
+	ProviderSlug string    `db:"provider_slug" json:"provider_slug"`
+	ExpiresAt    time.Time `db:"expires_at" json:"expires_at"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 }
 
 // Browser session tokens stored as SHA-256 hashes
@@ -113,27 +121,27 @@ type AuthToken struct {
 	Kind       string          `db:"kind" json:"kind"`
 	TokenHash  string          `db:"token_hash" json:"token_hash"`
 	Scopes     json.RawMessage `db:"scopes" json:"scopes"`
-	ExpiresAt  time.Time       `db:"expires_at" json:"expires_at"`
-	LastUsedAt time.Time       `db:"last_used_at" json:"last_used_at"`
+	ExpiresAt  *time.Time      `db:"expires_at" json:"expires_at"`
+	LastUsedAt *time.Time      `db:"last_used_at" json:"last_used_at"`
 	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
-	RevokedAt  time.Time       `db:"revoked_at" json:"revoked_at"`
+	RevokedAt  *time.Time      `db:"revoked_at" json:"revoked_at"`
 }
 
 // User accounts for authentication and authorization
 type AuthUser struct {
-	ID                 string    `db:"id" json:"id"`
-	Username           string    `db:"username" json:"username"`
-	Email              *string   `db:"email" json:"email"`
-	PasswordHash       *string   `db:"password_hash" json:"password_hash"`
-	FullName           *string   `db:"full_name" json:"full_name"`
-	Disabled           bool      `db:"disabled" json:"disabled"`
-	MustChangePassword bool      `db:"must_change_password" json:"must_change_password"`
-	LastLoginAt        time.Time `db:"last_login_at" json:"last_login_at"`
-	CreatedAt          time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt          time.Time `db:"updated_at" json:"updated_at"`
-	ExternalID         *string   `db:"external_id" json:"external_id"`
-	ProviderSlug       *string   `db:"provider_slug" json:"provider_slug"`
-	SsoManagedGroups   bool      `db:"sso_managed_groups" json:"sso_managed_groups"`
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updated_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
 }
 
 // Many-to-many membership between users and groups
@@ -147,16 +155,16 @@ type AuthUserGroup struct {
 
 // Backup job tracking
 type BackupJob struct {
-	ID           string    `db:"id" json:"id"`
-	Status       string    `db:"status" json:"status"`
-	Type         string    `db:"type" json:"type"`
-	StoragePath  *string   `db:"storage_path" json:"storage_path"`
-	SizeBytes    *int64    `db:"size_bytes" json:"size_bytes"`
-	ErrorMessage *string   `db:"error_message" json:"error_message"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
+	Status       string     `db:"status" json:"status"`
+	Type         string     `db:"type" json:"type"`
+	StoragePath  *string    `db:"storage_path" json:"storage_path"`
+	SizeBytes    *int64     `db:"size_bytes" json:"size_bytes"`
+	ErrorMessage *string    `db:"error_message" json:"error_message"`
+	StartedAt    *time.Time `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // Global content-addressed blob store. One row per unique sha256. Cross-format, cross-repo deduplication. GC via ref_count. All format tables reference blobs via blob_id FK.
@@ -175,17 +183,17 @@ type Blob struct {
 
 // Immutable audit trail of every bundle promotion attempt
 type BundlePromotion struct {
-	ID           string    `db:"id" json:"id"`
-	BundleID     string    `db:"bundle_id" json:"bundle_id"`
-	FromStage    *string   `db:"from_stage" json:"from_stage"`
-	ToStage      string    `db:"to_stage" json:"to_stage"`
-	TargetRepoID string    `db:"target_repo_id" json:"target_repo_id"`
-	Status       string    `db:"status" json:"status"`
-	Notes        *string   `db:"notes" json:"notes"`
-	ErrorMessage *string   `db:"error_message" json:"error_message"`
-	ItemCount    int32     `db:"item_count" json:"item_count"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
+	ID           string     `db:"id" json:"id"`
+	BundleID     string     `db:"bundle_id" json:"bundle_id"`
+	FromStage    *string    `db:"from_stage" json:"from_stage"`
+	ToStage      string     `db:"to_stage" json:"to_stage"`
+	TargetRepoID string     `db:"target_repo_id" json:"target_repo_id"`
+	Status       string     `db:"status" json:"status"`
+	Notes        *string    `db:"notes" json:"notes"`
+	ErrorMessage *string    `db:"error_message" json:"error_message"`
+	ItemCount    int32      `db:"item_count" json:"item_count"`
+	StartedAt    time.Time  `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
 	// FK to auth_users.
 	PromoterID *string `db:"promoter_id" json:"promoter_id"`
 }
@@ -216,20 +224,20 @@ type CargoCrate struct {
 
 // Cleanup/retention policies for automatic artifact deletion
 type CleanupPolicy struct {
-	ID                      string    `db:"id" json:"id"`
-	RepositoryID            string    `db:"repository_id" json:"repository_id"`
-	Name                    string    `db:"name" json:"name"`
-	Enabled                 bool      `db:"enabled" json:"enabled"`
-	KeepLastN               *int32    `db:"keep_last_n" json:"keep_last_n"`
-	KeepSinceDays           *int32    `db:"keep_since_days" json:"keep_since_days"`
-	KeepDownloadedSinceDays *int32    `db:"keep_downloaded_since_days" json:"keep_downloaded_since_days"`
-	NamePattern             *string   `db:"name_pattern" json:"name_pattern"`
-	ScheduleCron            string    `db:"schedule_cron" json:"schedule_cron"`
-	LastRunAt               time.Time `db:"last_run_at" json:"last_run_at"`
-	LastRunDeleted          *int32    `db:"last_run_deleted" json:"last_run_deleted"`
-	LastRunError            *string   `db:"last_run_error" json:"last_run_error"`
-	CreatedAt               time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt               time.Time `db:"updated_at" json:"updated_at"`
+	ID                      string     `db:"id" json:"id"`
+	RepositoryID            string     `db:"repository_id" json:"repository_id"`
+	Name                    string     `db:"name" json:"name"`
+	Enabled                 bool       `db:"enabled" json:"enabled"`
+	KeepLastN               *int32     `db:"keep_last_n" json:"keep_last_n"`
+	KeepSinceDays           *int32     `db:"keep_since_days" json:"keep_since_days"`
+	KeepDownloadedSinceDays *int32     `db:"keep_downloaded_since_days" json:"keep_downloaded_since_days"`
+	NamePattern             *string    `db:"name_pattern" json:"name_pattern"`
+	ScheduleCron            string     `db:"schedule_cron" json:"schedule_cron"`
+	LastRunAt               *time.Time `db:"last_run_at" json:"last_run_at"`
+	LastRunDeleted          *int32     `db:"last_run_deleted" json:"last_run_deleted"`
+	LastRunError            *string    `db:"last_run_error" json:"last_run_error"`
+	CreatedAt               time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt               time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 type ConanPackage struct {
@@ -261,24 +269,25 @@ type CondaPackage struct {
 
 // Debian packages. Canonical table for Debian format. Scoped to distribution+component for proper Debian model. blob_id FK to global blobs table.
 type DebPackage struct {
-	ID             string      `db:"id" json:"id"`
-	RepositoryID   string      `db:"repository_id" json:"repository_id"`
-	DistributionID string      `db:"distribution_id" json:"distribution_id"`
-	ComponentID    string      `db:"component_id" json:"component_id"`
-	BlobID         string      `db:"blob_id" json:"blob_id"`
-	Name           string      `db:"name" json:"name"`
-	Version        string      `db:"version" json:"version"`
-	Arch           string      `db:"arch" json:"arch"`
-	Summary        *string     `db:"summary" json:"summary"`
-	Description    *string     `db:"description" json:"description"`
-	License        *string     `db:"license" json:"license"`
-	Maintainer     *string     `db:"maintainer" json:"maintainer"`
-	Homepage       *string     `db:"homepage" json:"homepage"`
-	Filename       *string     `db:"filename" json:"filename"`
-	InstalledSize  *int64      `db:"installed_size" json:"installed_size"`
-	SearchTsv      interface{} `db:"search_tsv" json:"search_tsv"`
-	CreatedAt      time.Time   `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time   `db:"updated_at" json:"updated_at"`
+	ID             string          `db:"id" json:"id"`
+	RepositoryID   string          `db:"repository_id" json:"repository_id"`
+	DistributionID string          `db:"distribution_id" json:"distribution_id"`
+	ComponentID    string          `db:"component_id" json:"component_id"`
+	BlobID         string          `db:"blob_id" json:"blob_id"`
+	Name           string          `db:"name" json:"name"`
+	Version        string          `db:"version" json:"version"`
+	Arch           string          `db:"arch" json:"arch"`
+	Summary        *string         `db:"summary" json:"summary"`
+	Description    *string         `db:"description" json:"description"`
+	License        *string         `db:"license" json:"license"`
+	Maintainer     *string         `db:"maintainer" json:"maintainer"`
+	Homepage       *string         `db:"homepage" json:"homepage"`
+	Filename       *string         `db:"filename" json:"filename"`
+	InstalledSize  *int64          `db:"installed_size" json:"installed_size"`
+	SearchTsv      interface{}     `db:"search_tsv" json:"search_tsv"`
+	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
+	ControlFields  json.RawMessage `db:"control_fields" json:"control_fields"`
 }
 
 type DebianArchitecture struct {
@@ -438,6 +447,9 @@ type MavenArtifact struct {
 	UpdatedAt           time.Time   `db:"updated_at" json:"updated_at"`
 	SearchTsv           interface{} `db:"search_tsv" json:"search_tsv"`
 	BlobID              string      `db:"blob_id" json:"blob_id"`
+	Md5                 string      `db:"md5" json:"md5"`
+	Sha1                string      `db:"sha1" json:"sha1"`
+	Sha512              string      `db:"sha512" json:"sha512"`
 }
 
 // Distribution tags for npm packages, e.g. latest, next, beta
@@ -591,11 +603,11 @@ type ProxyCacheEntry struct {
 	StatusCode   int32   `db:"status_code" json:"status_code"`
 	SizeBytes    int64   `db:"size_bytes" json:"size_bytes"`
 	// Cache hit counter; BIGINT to avoid overflow on high-traffic repos
-	HitCount  int64     `db:"hit_count" json:"hit_count"`
-	LastHitAt time.Time `db:"last_hit_at" json:"last_hit_at"`
-	ExpiresAt time.Time `db:"expires_at" json:"expires_at"`
-	CreatedAt time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+	HitCount  int64      `db:"hit_count" json:"hit_count"`
+	LastHitAt *time.Time `db:"last_hit_at" json:"last_hit_at"`
+	ExpiresAt time.Time  `db:"expires_at" json:"expires_at"`
+	CreatedAt time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // PyPI Python packages
@@ -632,20 +644,20 @@ type RawArtifact struct {
 
 // Versioned, named collections of artifacts moving through a promotion pipeline
 type ReleaseBundle struct {
-	ID           string    `db:"id" json:"id"`
-	Name         string    `db:"name" json:"name"`
-	Version      string    `db:"version" json:"version"`
-	Description  *string   `db:"description" json:"description"`
-	State        string    `db:"state" json:"state"`
-	PipelineID   *string   `db:"pipeline_id" json:"pipeline_id"`
-	CurrentStage *string   `db:"current_stage" json:"current_stage"`
-	SourceQuery  []byte    `db:"source_query" json:"source_query"`
-	SealedAt     time.Time `db:"sealed_at" json:"sealed_at"`
-	ArchivedAt   time.Time `db:"archived_at" json:"archived_at"`
-	GpgKeyID     *string   `db:"gpg_key_id" json:"gpg_key_id"`
-	GpgSignature *string   `db:"gpg_signature" json:"gpg_signature"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
+	Name         string     `db:"name" json:"name"`
+	Version      string     `db:"version" json:"version"`
+	Description  *string    `db:"description" json:"description"`
+	State        string     `db:"state" json:"state"`
+	PipelineID   *string    `db:"pipeline_id" json:"pipeline_id"`
+	CurrentStage *string    `db:"current_stage" json:"current_stage"`
+	SourceQuery  []byte     `db:"source_query" json:"source_query"`
+	SealedAt     *time.Time `db:"sealed_at" json:"sealed_at"`
+	ArchivedAt   *time.Time `db:"archived_at" json:"archived_at"`
+	GpgKeyID     *string    `db:"gpg_key_id" json:"gpg_key_id"`
+	GpgSignature *string    `db:"gpg_signature" json:"gpg_signature"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 	// FK to auth_users.
 	CreatorID *string `db:"creator_id" json:"creator_id"`
 	// FK to auth_users.
@@ -714,31 +726,34 @@ type RepositoryMetadatum struct {
 
 // RPM packages. Canonical table for RPM format. blob_id FK to global blobs table.
 type RpmPackage struct {
-	ID            string      `db:"id" json:"id"`
-	RepositoryID  string      `db:"repository_id" json:"repository_id"`
-	BlobID        string      `db:"blob_id" json:"blob_id"`
-	Name          string      `db:"name" json:"name"`
-	Version       string      `db:"version" json:"version"`
-	Release       string      `db:"release" json:"release"`
-	Epoch         int32       `db:"epoch" json:"epoch"`
-	Arch          string      `db:"arch" json:"arch"`
-	Summary       *string     `db:"summary" json:"summary"`
-	Description   *string     `db:"description" json:"description"`
-	License       *string     `db:"license" json:"license"`
-	Url           *string     `db:"url" json:"url"`
-	Vendor        *string     `db:"vendor" json:"vendor"`
-	GroupName     *string     `db:"group_name" json:"group_name"`
-	Packager      *string     `db:"packager" json:"packager"`
-	SourceRpm     *string     `db:"source_rpm" json:"source_rpm"`
-	BuildHost     *string     `db:"build_host" json:"build_host"`
-	BuildTime     time.Time   `db:"build_time" json:"build_time"`
-	Filename      *string     `db:"filename" json:"filename"`
-	PackageSize   *int64      `db:"package_size" json:"package_size"`
-	InstalledSize *int64      `db:"installed_size" json:"installed_size"`
-	ArchiveSize   *int64      `db:"archive_size" json:"archive_size"`
-	SearchTsv     interface{} `db:"search_tsv" json:"search_tsv"`
-	CreatedAt     time.Time   `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time   `db:"updated_at" json:"updated_at"`
+	ID            string          `db:"id" json:"id"`
+	RepositoryID  string          `db:"repository_id" json:"repository_id"`
+	BlobID        string          `db:"blob_id" json:"blob_id"`
+	Name          string          `db:"name" json:"name"`
+	Version       string          `db:"version" json:"version"`
+	Release       string          `db:"release" json:"release"`
+	Epoch         int32           `db:"epoch" json:"epoch"`
+	Arch          string          `db:"arch" json:"arch"`
+	Summary       *string         `db:"summary" json:"summary"`
+	Description   *string         `db:"description" json:"description"`
+	License       *string         `db:"license" json:"license"`
+	Url           *string         `db:"url" json:"url"`
+	Vendor        *string         `db:"vendor" json:"vendor"`
+	GroupName     *string         `db:"group_name" json:"group_name"`
+	Packager      *string         `db:"packager" json:"packager"`
+	SourceRpm     *string         `db:"source_rpm" json:"source_rpm"`
+	BuildHost     *string         `db:"build_host" json:"build_host"`
+	BuildTime     *time.Time      `db:"build_time" json:"build_time"`
+	Filename      *string         `db:"filename" json:"filename"`
+	PackageSize   *int64          `db:"package_size" json:"package_size"`
+	InstalledSize *int64          `db:"installed_size" json:"installed_size"`
+	ArchiveSize   *int64          `db:"archive_size" json:"archive_size"`
+	SearchTsv     interface{}     `db:"search_tsv" json:"search_tsv"`
+	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
+	HeaderStart   int64           `db:"header_start" json:"header_start"`
+	HeaderEnd     int64           `db:"header_end" json:"header_end"`
+	RpmExtra      json.RawMessage `db:"rpm_extra" json:"rpm_extra"`
 }
 
 type RpmRepo struct {
@@ -771,6 +786,7 @@ type RubygemsGem struct {
 	CreatedAt     time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 	BlobID        string    `db:"blob_id" json:"blob_id"`
+	Size          int64     `db:"size" json:"size"`
 }
 
 // SBOM report payloads. FK to scan_jobs. Content in blobs (not inline).
@@ -802,13 +818,13 @@ type ScanJob struct {
 	ArtifactRefID string `db:"artifact_ref_id" json:"artifact_ref_id"`
 	ScanType      string `db:"scan_type" json:"scan_type"`
 	// Scanner implementation: osv, trivy, grype, internal, etc. NULL = default for type.
-	Scanner      *string   `db:"scanner" json:"scanner"`
-	Status       string    `db:"status" json:"status"`
-	ErrorMessage *string   `db:"error_message" json:"error_message"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	Scanner      *string    `db:"scanner" json:"scanner"`
+	Status       string     `db:"status" json:"status"`
+	ErrorMessage *string    `db:"error_message" json:"error_message"`
+	StartedAt    *time.Time `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 // Secret detection payloads. FK to scan_jobs.
@@ -829,7 +845,7 @@ type StorageBackend struct {
 	Config        json.RawMessage `db:"config" json:"config"`
 	Status        string          `db:"status" json:"status"`
 	StatusMessage *string         `db:"status_message" json:"status_message"`
-	LastCheckedAt time.Time       `db:"last_checked_at" json:"last_checked_at"`
+	LastCheckedAt *time.Time      `db:"last_checked_at" json:"last_checked_at"`
 	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -898,8 +914,8 @@ type WebhookDelivery struct {
 	ResponseStatus *int32          `db:"response_status" json:"response_status"`
 	ResponseBody   *string         `db:"response_body" json:"response_body"`
 	AttemptCount   int32           `db:"attempt_count" json:"attempt_count"`
-	NextRetryAt    time.Time       `db:"next_retry_at" json:"next_retry_at"`
-	DeliveredAt    time.Time       `db:"delivered_at" json:"delivered_at"`
+	NextRetryAt    *time.Time      `db:"next_retry_at" json:"next_retry_at"`
+	DeliveredAt    *time.Time      `db:"delivered_at" json:"delivered_at"`
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }

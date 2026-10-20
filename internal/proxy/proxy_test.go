@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -79,6 +80,8 @@ func newTestProxyHandler(t *testing.T, db database.Database) (*Handler, storage.
 	if err != nil {
 		t.Fatalf("failed to create blob store: %v", err)
 	}
+
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true") // httptest upstreams listen on loopback
 
 	return NewHandler(log, db, blobStore), blobStore
 }
@@ -233,5 +236,36 @@ func TestServeProxy_Upstream404_NoCacheEntryLeak(t *testing.T) {
 
 	if entry.BlobKey != "" {
 		t.Fatalf("negative cache entry should not reference a blob, got BlobKey=%q", entry.BlobKey)
+	}
+}
+
+func TestServeProxy_NegativeCacheHit_Returns404(t *testing.T) {
+	db := newFakeCacheDB()
+	h, _ := newTestProxyHandler(t, db)
+	db.entries["repo1|k"] = &models.ProxyCacheEntry{
+		RepositoryID: "repo1", CacheKey: "k", StatusCode: http.StatusNotFound,
+		ExpiresAt: time.Now().Add(time.Minute),
+	}
+	repo := &models.Repository{ID: "repo1", UpstreamURL: "http://unused.invalid"}
+	w := httptest.NewRecorder()
+	h.ServeProxy(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil), repo, "k", "/x")
+	if w.Code != http.StatusNotFound {
+		t.Fatalf("status = %d, want 404", w.Code)
+	}
+}
+
+func TestServeProxy_BlocksLoopbackUpstreamByDefault(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) { _, _ = w.Write([]byte("x")) }))
+	defer upstream.Close()
+
+	db := newFakeCacheDB()
+	h, _ := newTestProxyHandler(t, db)
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "false")
+
+	repo := &models.Repository{ID: "repo1", UpstreamURL: upstream.URL}
+	w := httptest.NewRecorder()
+	h.ServeProxy(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil), repo, "k", "/x")
+	if w.Code != http.StatusBadGateway {
+		t.Fatalf("status = %d, want 502", w.Code)
 	}
 }

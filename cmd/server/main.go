@@ -15,6 +15,7 @@ import (
 	"os/signal"
 	"strconv"
 	"strings"
+	"sync"
 	"syscall"
 	"time"
 
@@ -25,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/config"
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
@@ -108,6 +110,11 @@ func main() {
 		os.Exit(1)
 	}
 
+	if err := crypto.InitFromEnv(); err != nil {
+		fmt.Fprintf(os.Stderr, "Invalid %s: %v\n", crypto.EnvKey, err)
+		os.Exit(1)
+	}
+
 	// Initialize logger
 	log, err := logger.New(cfg.Logger.Level, cfg.Logger.Format, cfg.Logger.OutputPath)
 	if err != nil {
@@ -115,6 +122,10 @@ func main() {
 		os.Exit(1)
 	}
 	defer func() { _ = log.Sync() }()
+
+	if !crypto.Enabled() {
+		log.Warnw("OPENARTIFACT_SECRET_KEY not set: webhook secrets, upstream passwords and other stored credentials are NOT encrypted at rest")
+	}
 
 	log.Infow("Starting artifact repository manager",
 		"version", version,
@@ -198,26 +209,45 @@ func main() {
 	debWorker := worker.NewDebMetadataWorker(db, blobStore, signer, log)
 	mavenWorker := worker.NewMavenMetadataWorker(db, blobStore, db.GetDB(), log, reg)
 	npmWorker := worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg)
-	proxyCacheWorker := worker.NewProxyCacheWorker(db, log)
+	proxyCacheWorker := worker.NewProxyCacheWorker(db, blobStore, log)
 	proxyCacheWorker.Start()
 
-	defer rpmWorker.Stop()
-	defer debWorker.Stop()
-	defer mavenWorker.Stop()
-	defer npmWorker.Stop()
-	defer proxyCacheWorker.Stop()
+	authPurgeWorker := worker.NewAuthPurgeWorker(db, log)
+	authPurgeWorker.Start()
 
 	// Initialize cleanup worker
 	cleanupWorker := worker.NewCleanupWorker(db, blobStore, log)
 
 	cleanupWorker.Start()
-	defer cleanupWorker.Stop()
 
 	// Initialize webhook dispatcher
 	webhookDispatcher := webhook.NewDispatcher(db, log)
 
 	webhookDispatcher.Start()
-	defer webhookDispatcher.Stop()
+
+	// stopWorkers stops every background worker exactly once. It runs in the
+	// shutdown sequence (after HTTP stops, before the audit logger flushes) and
+	// also via defer so early-return paths never leak goroutines.
+	var (
+		stopWorkersOnce sync.Once
+		extraStops      []func()
+	)
+
+	stopWorkers := func() {
+		stopWorkersOnce.Do(func() {
+			for _, stop := range []func(){
+				webhookDispatcher.Stop, cleanupWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
+				npmWorker.Stop, mavenWorker.Stop, debWorker.Stop, rpmWorker.Stop,
+			} {
+				stop()
+			}
+
+			for _, stop := range extraStops {
+				stop()
+			}
+		})
+	}
+	defer stopWorkers()
 
 	// Initialize AI analysis worker
 	var (
@@ -318,7 +348,8 @@ func main() {
 	aiWorker = worker.NewAIAnalysisWorker(db, aiClient, log)
 
 	aiWorker.Start()
-	defer aiWorker.Stop()
+
+	extraStops = append(extraStops, aiWorker.Stop)
 
 	// Initialize MCP server
 	var mcpServer *aimcp.Server
@@ -336,6 +367,11 @@ func main() {
 		time.Duration(cfg.Server.ReadHeaderTimeout)*time.Second,
 	)
 
+	if cfg.Server.TLSEnabled {
+		server.EnableTLS(cfg.Server.TLSCert, cfg.Server.TLSKey)
+	}
+
+	server.AddMiddleware(middleware.SecurityHeadersMiddleware(cfg.Server.TLSEnabled))
 	server.AddMiddleware(middleware.RecoveryMiddleware(log))
 	server.AddMiddleware(middleware.RequestIDMiddleware)
 	server.AddMiddleware(middleware.TracingMiddleware)
@@ -357,13 +393,31 @@ func main() {
 		log.Infow("Rate limiting middleware enabled", "rps", cfg.Server.RateLimitRPS)
 	}
 
+	// Login, logout and SSO callbacks are on the bare router, outside the
+	// authenticated chain's AuditMiddleware, so audit them explicitly.
+	server.AddMiddleware(middleware.AuthAuditMiddleware(auditLogger, db, trustedProxies))
+
 	evaluator := auth.NewEvaluator(db, log, cfg.Auth.AllowAnonymousRead)
 	rbacCfg := middleware.RBACConfig{
 		LegacyAPIKey:        cfg.Server.APIKey,
 		LegacyAPIKeyEnabled: cfg.Auth.LegacyAPIKeyEnabled,
 		AllowAnonymousRead:  cfg.Auth.AllowAnonymousRead,
 		MCPPath:             cfg.MCP.HTTPPath,
+		SPAHandler:          webhandler.Handler(),
 	}
+	if mcpServer != nil {
+		mcpServer.SetAuthorizer(func(ctx context.Context, repoName, action string) bool {
+			principal := middleware.PrincipalFromContext(ctx)
+			if principal == nil {
+				return false
+			}
+
+			ok, err := evaluator.Evaluate(ctx, *principal, repoName, "", action)
+
+			return err == nil && ok
+		})
+	}
+
 	rbacMiddleware := middleware.RBACMiddleware(rbacCfg, db, evaluator, log)
 	log.Infow("RBAC middleware enabled",
 		"allow_anonymous_read", cfg.Auth.AllowAnonymousRead,
@@ -392,7 +446,8 @@ func main() {
 		dbStatus := componentStatus{Status: "ok"}
 		if err := db.Ping(r.Context()); err != nil {
 			dbStatus.Status = "error"
-			dbStatus.Message = err.Error()
+			log.Errorw("health: database ping failed", "error", err)
+			dbStatus.Message = "unavailable"
 		}
 
 		components["database"] = dbStatus
@@ -403,7 +458,8 @@ func main() {
 		if s3store, ok := rawBlobStore.(*storage.S3BlobStore); ok {
 			if err := s3store.HealthCheck(r.Context()); err != nil {
 				storageStatus.Status = "error"
-				storageStatus.Message = err.Error()
+				log.Errorw("health: storage check failed", "error", err)
+				storageStatus.Message = "unavailable"
 			}
 		}
 
@@ -447,7 +503,13 @@ func main() {
 	})
 
 	metricsToken := os.Getenv("METRICS_AUTH_TOKEN")
-	metricsHandler := metricsAuthMiddleware(metricsToken)(promhttp.Handler())
+	metricsAnonymous := os.Getenv("METRICS_ALLOW_ANONYMOUS") == "true"
+
+	if metricsToken == "" && !metricsAnonymous {
+		log.Warnw("/metrics is disabled: set METRICS_AUTH_TOKEN (or METRICS_ALLOW_ANONYMOUS=true to expose it without authentication)")
+	}
+
+	metricsHandler := metricsAuthMiddleware(metricsToken, metricsAnonymous)(promhttp.Handler())
 	router.Method("GET", "/metrics", metricsHandler)
 
 	router.Get("/ready", func(w http.ResponseWriter, r *http.Request) {
@@ -478,8 +540,8 @@ func main() {
 	authHandler.RegisterPublic(router)
 
 	hmacKey := []byte(cfg.Auth.HMACKey)
-	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).RegisterPublic(router)
-	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).RegisterPublic(router)
+	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(trustedProxies).RegisterPublic(router)
+	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(trustedProxies).RegisterPublic(router)
 
 	sysInfoHandler := api.NewSystemInfoHandler(version, commit, buildTime, db, blobStore, cfg.Storage.Type)
 	sysInfoHandler.RegisterPublic(router)
@@ -509,6 +571,7 @@ func main() {
 	api.NewAdminAuditHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminStorageHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminGPGHandler(db, log, evaluator).Register(authedAPI)
+	sysInfoHandler.RegisterAuthed(authedAPI)
 	api.NewAdminAIHandler(db, log, evaluator).Register(authedAPI)
 
 	orgsHandler := api.NewOrgsHandler(db, log)
@@ -541,9 +604,12 @@ func main() {
 	sbtHTTP := formatsbt.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
 	mavenHTTP := formatmaven.NewHTTPHandler(log, db, blobStore)
 
-	// All repo-scoped format handlers share the /repos/{name} subrouter. The npm
-	// publish/unpublish catch-all is registered separately AFTER this mount (see
-	// below) to avoid a chi Mount() panic on the shared prefix.
+	// All repo-scoped format handlers, including the npm publish/unpublish
+	// catch-all, share the /repos/{name} subrouter. A sibling /repos/{x}/*
+	// route outside it is shadowed by the mount and 404s.
+	npmUpload := api.NewNPMUploadHandler(log, db, blobStore, cfg.BaseURL, reg)
+	npmUpload.SetNPMWorker(npmWorker)
+	gomodHTTP := formatgomod.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
 
 	authedAPI.Route("/repos/{name}", func(r chi.Router) {
 		rpmHTTP.RegisterRepoRoutes(r)
@@ -556,17 +622,17 @@ func main() {
 		rubygemsHTTP.RegisterRepoRoutes(r)
 		condaHTTP.RegisterRepoRoutes(r)
 		conanHTTP.RegisterRepoRoutes(r)
+		gomodHTTP.RegisterRepoRoutes(r)
+		npmUpload.RegisterRepoRoutes(r)
+		// npm publish and GOPROXY upload both need PUT "/*"; dispatch by tail.
+		r.Put("/*", func(w http.ResponseWriter, req *http.Request) {
+			if formatgomod.IsUploadPath(chi.URLParam(req, "*")) {
+				gomodHTTP.HandlePut(w, req)
+				return
+			}
+			npmUpload.HandlePublish(w, req)
+		})
 	})
-
-	// NPM publish/unpublish use a catch-all (/repos/{repo}/*) to match scoped
-	// names and multi-segment /-rev/ and /-/<tarball> paths. It MUST be registered
-	// AFTER the /repos/{name} subrouter mount above: chi's Mount() panics if a
-	// catch-all already exists on the prefix, and a later explicit PUT/DELETE
-	// catch-all correctly overrides the mount's per-method entry without touching
-	// the GET packument/tarball routes registered inside the mount.
-	npmUpload := api.NewNPMUploadHandler(log, db, blobStore, cfg.BaseURL, reg)
-	npmUpload.SetNPMWorker(npmWorker)
-	npmUpload.Register(authedAPI)
 	log.Infow("Repository HTTP handlers registered", "prefix", "/repos/{name}")
 
 	// Wildcard handlers isolated to avoid shadowing specific routes.
@@ -581,13 +647,10 @@ func main() {
 	dockerHTTP := formatdocker.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
 	dockerHTTP.RegisterRoutes(authedAPI)
 
-	gomodHTTP := formatgomod.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	gomodHTTP.RegisterRoutes(authedAPI)
-
-	repoHandler := api.NewRepositoriesHandler(db, log, evaluator)
+	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(blobStore).WithPublisher(webhookDispatcher)
 	repoHandler.RegisterAuthed(authedAPI)
 
-	cleanupHandler := api.NewCleanupHandler(db, log, evaluator)
+	cleanupHandler := api.NewCleanupHandler(db, log, evaluator, cleanupWorker)
 	cleanupHandler.RegisterAuthed(authedAPI)
 
 	api.NewBundlesHandler(db, log, evaluator).RegisterAuthed(authedAPI)
@@ -611,10 +674,10 @@ func main() {
 	secretsHandler := api.NewSecretsHandler(db, log, secretScanner)
 	secretsHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
-	vulnHandler := api.NewVulnHandler(db, log)
+	vulnHandler := api.NewVulnHandler(db, log, evaluator)
 	vulnHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
-	quotasHandler := api.NewQuotasHandler(log, db)
+	quotasHandler := api.NewQuotasHandler(log, db, evaluator)
 	quotasHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
 	propertiesHandler := api.NewPropertiesHandler(log, db)
@@ -628,6 +691,17 @@ func main() {
 	mavenUpload := api.NewMavenUploadHandler(log, db, blobStore, reg)
 	mavenUpload.SetMavenWorker(mavenWorker)
 	mavenUpload.Register(authedAPI)
+
+	// Every handler that stores or removes artifacts announces artifact.uploaded /
+	// artifact.deleted through the webhook dispatcher. The download-only rpm and
+	// deb HTTP handlers do not publish events.
+	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
+		rpmUpload, debUpload, npmUpload, mavenUpload,
+		helmHTTP, pypiHTTP, nugetHTTP, npmHTTP, cargoHTTP, rubygemsHTTP, rawHTTP,
+		condaHTTP, conanHTTP, ivyHTTP, sbtHTTP, mavenHTTP, dockerHTTP, gomodHTTP,
+	} {
+		h.SetPublisher(webhookDispatcher)
+	}
 
 	// Mount MCP server if enabled with HTTP transport. Mounted under authedAPI
 	// (not the bare router) so it inherits the same RBAC/CSRF/audit chain as
@@ -662,12 +736,14 @@ func main() {
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Server.ShutdownTimeout)*time.Second)
 	defer cancel()
 
-	// Flush the audit log on shutdown even if the HTTP server failed to stop
-	// cleanly — a degraded shutdown must never silently drop pending audit
-	// events.
+	// Ordered shutdown: stop accepting HTTP, stop workers (they may still emit
+	// audit events), then flush audit; the DB closes last via defer. Audit is
+	// flushed even if a prior step failed.
 	if err := server.Stop(ctx); err != nil {
 		log.Errorw("Server shutdown error", "error", err)
 	}
+
+	stopWorkers()
 
 	auditCtx, auditCancel := context.WithTimeout(context.Background(), 5*time.Second)
 	defer auditCancel()
@@ -679,11 +755,19 @@ func main() {
 	log.Infow("Server stopped successfully")
 }
 
-func metricsAuthMiddleware(token string) func(http.Handler) http.Handler {
+// metricsAuthMiddleware fails closed: with no token configured the endpoint
+// answers 401 unless anonymous access was explicitly enabled.
+func metricsAuthMiddleware(token string, allowAnonymous bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if token == "" {
-				next.ServeHTTP(w, r)
+				if allowAnonymous {
+					next.ServeHTTP(w, r)
+					return
+				}
+
+				w.WriteHeader(http.StatusUnauthorized)
+
 				return
 			}
 

@@ -142,7 +142,7 @@ async function startFor(file: File): Promise<void> {
     emit('uploaded')
   } catch (err) {
     if (entry.status !== 'cancelled') {
-      const msg = err instanceof Error ? err.message : 'Upload failed'
+      const msg = err instanceof Error ? err.message : t('upload.failed')
       toasts.error(t('upload.failed'), `${file.name}: ${msg}`)
     }
   }

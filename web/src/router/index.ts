@@ -220,6 +220,14 @@ const routes: RouteRecordRaw[] = [
     path: '/profile',
     redirect: '/settings/profile',
   },
+
+  // Catch-all: must stay last
+  {
+    path: '/:pathMatch(.*)*',
+    name: 'not-found',
+    component: () => import('../pages/NotFoundPage.vue'),
+    meta: { requiresAuth: true },
+  },
 ]
 
 const router = createRouter({
@@ -234,9 +242,7 @@ router.beforeEach(async (to) => {
 
   if (!sessionInitialized) {
     sessionInitialized = true
-    if (to.name === 'login') {
-      session.ready = true
-    } else if (!session.isAuthenticated) {
+    if (!session.isAuthenticated) {
       await session.fetchMe()
     }
   }

@@ -9,10 +9,10 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 
-	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -37,22 +37,56 @@ type RBACConfig struct {
 	// It lives outside /api/, /v2/, and /repos/ but must never fall through
 	// the SPA/static bypass below — MCP tools require auth like the REST API.
 	MCPPath string
+	// SPAHandler serves the web UI. Browser navigations to Vue-router page
+	// shapes under /repos/ (which collide with format-handler routes such as
+	// the npm packument GET /repos/{name}/{pkg}) are answered by it directly,
+	// never by the format handler and never without going through RBAC for
+	// any non-navigation request. When nil, those paths get full RBAC
+	// evaluation like every other /repos/ path.
+	SPAHandler http.Handler
+}
+
+// routeScope is what the permission evaluator is asked about for a request.
+type routeScope struct {
+	action       string
+	repoName     string
+	artifactPath string
+	// anyAuthenticated marks list-style endpoints whose handler filters the
+	// result per repository itself; RBAC only requires a real (non-anonymous)
+	// principal for them.
+	anyAuthenticated bool
 }
 
 func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evaluator, log *logger.Logger) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			ctx := r.Context()
-			principal, credential := resolvePrincipal(ctx, r, cfg, db, log)
 
-			// SPA/static paths bypass RBAC. Only the exact known Vue-router
-			// page shapes under /repos/ are client-side routing; every other
-			// /repos/… path (and /v2/, /api/…, the MCP mount) is a
-			// format-handler or REST API endpoint and always requires the
-			// full evaluation below.
-			if isStaticPath(r.URL.Path, cfg) {
-				next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
+			// The repository RBAC authorizes must be the repository the router
+			// and handler will serve: refuse dot-dot segments and encoded
+			// separators in the segments that select it.
+			if hasAmbiguousPath(r.URL) {
+				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_path"})
+
 				return
+			}
+
+			principal, credential := resolvePrincipal(ctx, r, cfg, db, log)
+			r = r.WithContext(WithPrincipal(ctx, principal))
+
+			// Only GET/HEAD can be an SPA page load. Every other method on any
+			// path gets the full evaluation below, so an SPA-shaped URL can never
+			// be used to reach a mutating format handler unauthenticated.
+			if isSafeMethod(r.Method) {
+				if isStaticPath(r.URL.Path, cfg) {
+					next.ServeHTTP(w, r)
+					return
+				}
+
+				if cfg.SPAHandler != nil && isSPANavigation(r) {
+					cfg.SPAHandler.ServeHTTP(w, r)
+					return
+				}
 			}
 
 			if passwordChangeBlocked(r, principal) {
@@ -64,20 +98,21 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 				return
 			}
 
-			// Self-service auth endpoints are scoped to the caller's own session
-			// and don't require any explicit permission target. Skipping the
-			// RBAC evaluator here lets an authenticated user always view their
-			// profile, log out, or rotate their own password regardless of the
-			// permission_assignments configured for them.
-			if !principal.IsAnonymous && isSelfServiceAuthPath(r.Method, r.URL.Path) {
-				next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
+			// Self-service endpoints operate solely on the caller's own account
+			// and don't require any permission target.
+			if isSelfServiceRequest(r, principal) {
+				next.ServeHTTP(w, r)
 				return
 			}
 
-			action := methodToAction(r.Method, r.URL.Path)
-			repoName, artifactPath := extractRepoAndPath(r.URL.Path)
+			scope := classifyRoute(r)
 
-			allowed, err := evaluator.Evaluate(ctx, *principal, repoName, artifactPath, action)
+			if scope.anyAuthenticated && !principal.IsAnonymous {
+				next.ServeHTTP(w, r)
+				return
+			}
+
+			allowed, err := evaluator.Evaluate(ctx, *principal, scope.repoName, scope.artifactPath, scope.action)
 			if err != nil {
 				log.Errorw("auth evaluation error",
 					"error", err,
@@ -90,26 +125,87 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 			}
 
 			if !allowed {
-				writeAccessDenied(w, log, principal, credential, repoName, artifactPath, action)
+				writeAccessDenied(w, r, log, principal, credential, scope)
 
 				return
 			}
 
-			next.ServeHTTP(w, r.WithContext(WithPrincipal(ctx, principal)))
+			next.ServeHTTP(w, r)
 		})
 	}
 }
 
-// isStaticPath reports whether urlPath bypasses RBAC: SPA/static paths that
-// are neither API, OCI, MCP, nor a format-handler endpoint under /repos/.
+func isSafeMethod(method string) bool {
+	return method == http.MethodGet || method == http.MethodHead
+}
+
+// isStaticPath reports whether urlPath is plain SPA/static content that needs
+// no RBAC: neither API, OCI, MCP, nor anything under /repos/. Callers must
+// additionally restrict this to GET/HEAD.
 func isStaticPath(urlPath string, cfg RBACConfig) bool {
-	isRepoSPA := strings.HasPrefix(urlPath, "/repos/") &&
-		isSPARepoPath(strings.Split(strings.Trim(urlPath, "/"), "/"))
 	isMCPPath := cfg.MCPPath != "" &&
 		(urlPath == cfg.MCPPath || strings.HasPrefix(urlPath, cfg.MCPPath+"/"))
 
 	return !strings.HasPrefix(urlPath, "/api/") && !strings.HasPrefix(urlPath, "/v2/") && !isMCPPath &&
-		(!strings.HasPrefix(urlPath, "/repos/") || isRepoSPA)
+		!strings.HasPrefix(urlPath, "/repos/")
+}
+
+// isSPANavigation reports whether r is a browser page navigation to one of the
+// exact Vue-router page shapes under /repos/. It requires the browser's own
+// navigation signals so a package-manager request for a package that happens
+// to be called "edit"/"browse"/"graph" is never treated as a page load.
+func isSPANavigation(r *http.Request) bool {
+	if !strings.HasPrefix(r.URL.Path, "/repos/") ||
+		!isSPARepoPath(strings.Split(strings.Trim(r.URL.Path, "/"), "/")) {
+		return false
+	}
+
+	if r.Header.Get("Authorization") != "" || !strings.Contains(r.Header.Get("Accept"), "text/html") {
+		return false
+	}
+
+	mode := r.Header.Get("Sec-Fetch-Mode")
+
+	return mode == "" || mode == "navigate"
+}
+
+// hasAmbiguousPath reports whether the URL could make the RBAC decision and the
+// router/handler disagree about which repository is addressed: any ".." path
+// segment (decoded or not), and an encoded "/" or "\" inside the segments that
+// name the repository of a /repos/ or /v2/ request.
+func hasAmbiguousPath(u *url.URL) bool {
+	escaped := u.EscapedPath()
+
+	for seg := range strings.SplitSeq(escaped, "/") {
+		dec, err := url.PathUnescape(seg)
+		if err != nil || dec == ".." || (strings.Contains(dec, `\`) && strings.Contains(dec, "..")) {
+			return true
+		}
+	}
+
+	if strings.HasPrefix(u.Path, "/v2/") {
+		return hasEncodedSeparator(escaped)
+	}
+
+	if after, ok := strings.CutPrefix(escaped, "/repos/"); ok {
+		segs := strings.SplitN(after, "/", 3)
+
+		if hasEncodedSeparator(segs[0]) {
+			return true
+		}
+
+		if len(segs) > 1 && slices.Contains(isolatedRepoNamespaces(), segs[0]) && hasEncodedSeparator(segs[1]) {
+			return true
+		}
+	}
+
+	return false
+}
+
+func hasEncodedSeparator(s string) bool {
+	s = strings.ToLower(s)
+
+	return strings.Contains(s, "%2f") || strings.Contains(s, "%5c")
 }
 
 // passwordChangeBlocked reports whether the principal must change its password
@@ -123,7 +219,7 @@ func passwordChangeBlocked(r *http.Request, principal *auth.Principal) bool {
 		(r.URL.Path != "/api/v1/auth/change-password" && r.URL.Path != "/api/v1/auth/logout")
 }
 
-func writeAccessDenied(w http.ResponseWriter, log *logger.Logger, principal *auth.Principal, credential, repoName, artifactPath, action string) {
+func writeAccessDenied(w http.ResponseWriter, r *http.Request, log *logger.Logger, principal *auth.Principal, credential string, scope routeScope) {
 	principalName := "anonymous"
 	if principal.Username != "" {
 		principalName = principal.Username
@@ -133,13 +229,21 @@ func writeAccessDenied(w http.ResponseWriter, log *logger.Logger, principal *aut
 		"event", "auth_deny",
 		"principal", principalName,
 		"credential", credential,
-		"repo", repoName,
-		"path", artifactPath,
-		"action", action,
+		"repo", scope.repoName,
+		"path", scope.artifactPath,
+		"action", scope.action,
 	)
 
 	if principal.IsAnonymous {
-		w.Header().Set("WWW-Authenticate", `Bearer realm="openartifact"`)
+		w.Header().Add("WWW-Authenticate", `Bearer realm="openartifact"`)
+
+		// Package managers (maven, pip, helm, docker) only send credentials
+		// after a Basic challenge. Never challenge /api/ with Basic: browsers
+		// would pop a native login dialog over the SPA on every expired session.
+		if !strings.HasPrefix(r.URL.Path, "/api/") {
+			w.Header().Add("WWW-Authenticate", `Basic realm="openartifact"`)
+		}
+
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 
 		return
@@ -147,94 +251,66 @@ func writeAccessDenied(w http.ResponseWriter, log *logger.Logger, principal *aut
 
 	writeJSON(w, http.StatusForbidden, map[string]any{
 		"error":  "forbidden",
-		"action": action,
-		"path":   artifactPath,
+		"action": scope.action,
+		"path":   scope.artifactPath,
 	})
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
-func resolvePrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, db database.Database, log *logger.Logger) (*auth.Principal, string) {
-	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil && cookie.Value != "" {
-		session, err := auth.ValidateSession(ctx, db, cookie.Value)
-		if err == nil && session != nil {
-			user, err := db.GetUserByID(ctx, session.UserID)
-			if err == nil && user != nil && !user.Disabled {
-				groups, _ := db.ListGroupsByUser(ctx, user.ID)
-
-				groupIDs := make([]string, 0, len(groups))
-				for _, g := range groups {
-					groupIDs = append(groupIDs, g.ID)
-				}
-
-				p := &auth.Principal{
-					UserID:             &user.ID,
-					Username:           user.Username,
-					GroupIDs:           groupIDs,
-					IsAnonymous:        false,
-					IsLegacy:           false,
-					MustChangePassword: user.MustChangePassword,
-				}
-
-				//nolint:gosec // G118: audit logging runs in background goroutine by design
-				go func() {
-					bgCtx := context.Background()
-					if extErr := auth.ExtendSession(bgCtx, db, session.ID); extErr != nil {
-						log.Debugw("extend session error", "error", extErr, "session_id", session.ID)
-					}
-				}()
-
-				return p, "session"
-			}
-		}
+// principalForUser builds the request principal of an authenticated user.
+func principalForUser(ctx context.Context, db database.Database, log *logger.Logger, user principalUser) *auth.Principal {
+	groups, err := db.ListGroupsByUser(ctx, user.id)
+	if err != nil {
+		// Fewer groups can only mean fewer rights: fail closed.
+		log.Warnw("list groups for principal failed", "error", err, "user_id", user.id)
 	}
 
-	authHeader := r.Header.Get("Authorization")
-	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
-		tokenValue := after
-		if strings.HasPrefix(tokenValue, auth.TokenPrefixAccess) || strings.HasPrefix(tokenValue, auth.TokenPrefixDeploy) {
-			token, user, err := auth.ValidateToken(ctx, db, tokenValue)
+	groupIDs := make([]string, 0, len(groups))
+	for _, g := range groups {
+		groupIDs = append(groupIDs, g.ID)
+	}
 
-			if al := audit.Default(); al != nil {
-				actor := "unknown"
-				details := "failure"
+	userID := user.id
 
-				if err == nil && token != nil && user != nil {
-					actor = user.Username
-					details = "success"
-				}
+	return &auth.Principal{
+		UserID:             &userID,
+		Username:           user.username,
+		GroupIDs:           groupIDs,
+		MustChangePassword: user.mustChangePassword,
+	}
+}
 
-				al.Log(ctx, audit.AuditEvent{
-					Action:  "auth.token_validate",
-					Actor:   actor,
-					Details: details,
-				})
-			}
+type principalUser struct {
+	id                 string
+	username           string
+	mustChangePassword bool
+}
 
-			if err == nil && token != nil && user != nil {
-				groups, _ := db.ListGroupsByUser(ctx, user.ID)
+// resolvePrincipal authenticates the request. Credential precedence: session
+// cookie, then token (Authorization: Bearer or Basic password), then the
+// deprecated legacy API key. It returns the principal and the credential kind
+// (also stored in principal.Credential so CSRF can tell ambient cookie auth
+// from explicit header auth).
+func resolvePrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, db database.Database, log *logger.Logger) (*auth.Principal, string) {
+	if p := sessionPrincipal(ctx, r, db, log); p != nil {
+		return p, auth.CredentialSession
+	}
 
-				groupIDs := make([]string, 0, len(groups))
-				for _, g := range groups {
-					groupIDs = append(groupIDs, g.ID)
-				}
+	bearer, basicSecret := authorizationSecrets(r)
 
-				p := &auth.Principal{
-					UserID:             &user.ID,
-					Username:           user.Username,
-					GroupIDs:           groupIDs,
-					IsAnonymous:        false,
-					IsLegacy:           false,
-					MustChangePassword: user.MustChangePassword,
-				}
-				auth.UpdateLastUsed(ctx, db, token.ID)
-
-				return p, "bearer_token"
-			}
+	for _, c := range []struct {
+		value string
+		kind  string
+	}{
+		{bearer, auth.CredentialBearerToken},
+		{basicSecret, auth.CredentialBasicToken},
+	} {
+		if p := tokenPrincipal(ctx, c.value, c.kind, db, log); p != nil {
+			return p, c.kind
 		}
 	}
 
 	if cfg.LegacyAPIKeyEnabled && cfg.LegacyAPIKey != "" {
-		candidate := extractLegacyKey(r)
+		candidate := extractLegacyKey(r, bearer, basicSecret)
 		if subtle.ConstantTimeCompare([]byte(candidate), []byte(cfg.LegacyAPIKey)) == 1 {
 			log.Warnw("request authenticated via deprecated API_KEY; migrate to user tokens",
 				"event", "legacy_api_key_used",
@@ -243,53 +319,172 @@ func resolvePrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, db d
 				"remote_addr", r.RemoteAddr,
 			)
 
-			p := &auth.Principal{
-				Username:    "system/legacy-api-key",
-				IsAnonymous: false,
-				IsLegacy:    true,
-			}
-
-			return p, "legacy"
+			return &auth.Principal{
+				Username:   "system/legacy-api-key",
+				IsLegacy:   true,
+				Credential: auth.CredentialLegacy,
+			}, auth.CredentialLegacy
 		}
 	}
 
-	return &auth.Principal{IsAnonymous: true}, "none"
+	return &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}, auth.CredentialNone
 }
 
-func extractLegacyKey(r *http.Request) string {
+func sessionPrincipal(ctx context.Context, r *http.Request, db database.Database, log *logger.Logger) *auth.Principal {
+	cookie, err := r.Cookie(auth.SessionCookieName)
+	if err != nil || cookie.Value == "" {
+		return nil
+	}
+
+	session, err := auth.ValidateSession(ctx, db, cookie.Value)
+	if err != nil || session == nil {
+		return nil
+	}
+
+	user, err := db.GetUserByID(ctx, session.UserID)
+	if err != nil || user == nil || user.Disabled {
+		return nil
+	}
+
+	p := principalForUser(ctx, db, log, principalUser{id: user.ID, username: user.Username, mustChangePassword: user.MustChangePassword})
+	p.Credential = auth.CredentialSession
+
+	// Sliding expiry: one bounded write per session per minute, never beyond
+	// the absolute session lifetime. No per-request goroutine.
+	if extErr := auth.TouchSession(ctx, db, session); extErr != nil {
+		log.Debugw("touch session error", "error", extErr, "session_id", session.ID)
+	}
+
+	return p
+}
+
+func tokenPrincipal(ctx context.Context, tokenValue, kind string, db database.Database, log *logger.Logger) *auth.Principal {
+	if !strings.HasPrefix(tokenValue, auth.TokenPrefixAccess) && !strings.HasPrefix(tokenValue, auth.TokenPrefixDeploy) {
+		return nil
+	}
+
+	token, user, err := auth.ValidateToken(ctx, db, tokenValue)
+	if err != nil {
+		log.Warnw("token validation error", "error", err)
+		return nil
+	}
+
+	// Failed validations are intentionally not audited: an unauthenticated
+	// caller must not be able to write one audit row per request.
+	if token == nil || user == nil {
+		return nil
+	}
+
+	p := principalForUser(ctx, db, log, principalUser{id: user.ID, username: user.Username, mustChangePassword: user.MustChangePassword})
+	p.Credential = kind
+	p.TokenKind = token.Kind
+	p.TokenScopes = token.Scopes
+
+	auth.TouchToken(ctx, db, token)
+
+	return p
+}
+
+// authorizationSecrets extracts the credential strings carried by the
+// Authorization header: the Bearer value, and the password part of Basic
+// credentials (package managers send tokens as `user:<token>`).
+func authorizationSecrets(r *http.Request) (string, string) {
+	header := r.Header.Get("Authorization")
+
+	if after, ok := strings.CutPrefix(header, "Bearer "); ok {
+		return strings.TrimSpace(after), ""
+	}
+
+	if strings.HasPrefix(header, "Basic ") {
+		if _, password, ok := r.BasicAuth(); ok {
+			return "", password
+		}
+	}
+
+	return "", ""
+}
+
+func extractLegacyKey(r *http.Request, bearer, basicSecret string) string {
 	if v := r.Header.Get("X-Api-Key"); v != "" {
 		return v
 	}
 
-	authHeader := r.Header.Get("Authorization")
-	if after, ok := strings.CutPrefix(authHeader, "Bearer "); ok {
-		return after
+	if bearer != "" {
+		return bearer
 	}
 
-	return ""
+	return basicSecret
 }
 
-// isSelfServiceAuthPath reports whether the given request targets one of the
-// auth endpoints that operate solely on the caller's own session/account and
-// should therefore bypass the permission evaluator.
-func isSelfServiceAuthPath(method, path string) bool {
-	switch path {
-	case "/api/v1/auth/me":
+// isSelfServiceRequest reports whether the request targets one of the endpoints
+// that operate solely on the caller's own account and therefore bypass the
+// permission evaluator. Everything except reading one's own identity requires
+// an interactive session: API tokens must not be able to mint further tokens
+// or change passwords, and the legacy key has no account at all.
+func isSelfServiceRequest(r *http.Request, principal *auth.Principal) bool {
+	if principal.IsAnonymous {
+		return false
+	}
+
+	method, path := r.Method, r.URL.Path
+
+	if path == "/api/v1/auth/me" {
 		return method == http.MethodGet
-	case "/api/v1/auth/change-password":
+	}
+
+	if principal.Credential != auth.CredentialSession || principal.UserID == nil {
+		return false
+	}
+
+	switch path {
+	case "/api/v1/auth/change-password", "/api/v1/auth/logout":
 		return method == http.MethodPost
-	case "/api/v1/auth/logout":
-		return method == http.MethodPost
+	case "/api/v1/auth/tokens":
+		return method == http.MethodGet || method == http.MethodPost
+	}
+
+	if id, ok := strings.CutPrefix(path, "/api/v1/auth/tokens/"); ok {
+		return method == http.MethodDelete && isSingleSegment(id)
+	}
+
+	rest, ok := strings.CutPrefix(path, "/api/v1/users/")
+	if !ok {
+		return false
+	}
+
+	segs := strings.Split(rest, "/")
+	if segs[0] != *principal.UserID {
+		return false
+	}
+
+	switch len(segs) {
+	case 1:
+		return method == http.MethodPatch
+	case 2:
+		return segs[1] == "tokens" && (method == http.MethodGet || method == http.MethodPost)
+	case 3:
+		return segs[1] == "tokens" && segs[2] != "" && method == http.MethodDelete
 	}
 
 	return false
 }
 
+func isSingleSegment(s string) bool {
+	return s != "" && !strings.Contains(s, "/")
+}
+
+// methodToAction maps an HTTP method to a permission action. Every /api/v1/
+// path is a management endpoint ("manage"); classifyRoute narrows the few
+// repository-scoped API routes.
 func methodToAction(method, path string) string {
 	if strings.HasPrefix(path, "/api/v1/") {
 		return "manage"
 	}
 
+	return actionForMethod(method)
+}
+
+func actionForMethod(method string) string {
 	switch method {
 	case http.MethodGet, http.MethodHead, http.MethodOptions:
 		return "read"
@@ -298,6 +493,56 @@ func methodToAction(method, path string) string {
 	default:
 		return "write"
 	}
+}
+
+// classifyRoute decides which (action, repository, path) the evaluator checks.
+func classifyRoute(r *http.Request) routeScope {
+	if strings.HasPrefix(r.URL.Path, "/api/v1/") {
+		return classifyAPIRoute(r.Method, r.URL.EscapedPath())
+	}
+
+	repoName, artifactPath := extractRepoAndPath(r.URL.Path)
+
+	return routeScope{action: methodToAction(r.Method, r.URL.Path), repoName: repoName, artifactPath: artifactPath}
+}
+
+// repoDataSegments are the sub-resources of /api/v1/repositories/{name}/ that
+// carry package data (upload/list/download/delete). Their handlers verify the
+// package belongs to {name}, so they are authorized against that repository
+// with a data action instead of the global "manage" permission.
+func repoDataSegments() []string {
+	return []string{"debs", "packages", "comps"}
+}
+
+func classifyAPIRoute(method, escapedPath string) routeScope {
+	manage := routeScope{action: "manage"}
+
+	segs := strings.Split(strings.Trim(strings.TrimPrefix(escapedPath, "/api/v1/"), "/"), "/")
+
+	switch {
+	case isSafeMethod(method) && len(segs) == 1 && (segs[0] == "repositories" || segs[0] == "search"):
+		// Handlers filter per repository (RepoReadFilter / per-hit Evaluate).
+		// The action stays "manage" so that an anonymous principal, which the
+		// pass-through does not cover, can never satisfy it (the handlers'
+		// anonymous branch is unfiltered).
+		return routeScope{action: "manage", anyAuthenticated: true}
+	case isSafeMethod(method) && len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]):
+		return routeScope{action: "read", repoName: segs[1]}
+	case len(segs) >= 3 && segs[0] == "repositories" && isPlainName(segs[1]) && slices.Contains(repoDataSegments(), segs[2]):
+		switch method {
+		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete:
+			return routeScope{action: actionForMethod(method), repoName: segs[1]}
+		}
+	}
+
+	return manage
+}
+
+// isPlainName reports whether an escaped path segment is a repository name
+// that decodes to itself (no percent-escapes), so the name RBAC authorizes is
+// the name the handler reads.
+func isPlainName(seg string) bool {
+	return seg != "" && !strings.Contains(seg, "%")
 }
 
 // isolatedRepoNamespaces are literal path markers registered as their own

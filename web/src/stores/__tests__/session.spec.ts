@@ -6,6 +6,15 @@ import { describe, it, expect, beforeEach, spyOn, type Mock } from 'bun:test'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSessionStore, type User } from '../session'
 
+// Adds the Response surface that request() reads (headers, text) to a partial mock.
+function mk(o: { status: number; ok: boolean; json?: () => Promise<unknown> }) {
+  return {
+    ...o,
+    headers: new Headers(),
+    text: async () => (o.json ? JSON.stringify(await o.json()) : ''),
+  }
+}
+
 describe('useSessionStore', () => {
   let fetchMock: Mock<typeof fetch>
 
@@ -32,10 +41,10 @@ describe('useSessionStore', () => {
     const store = useSessionStore()
     store.user = { id: '1', username: 'testuser' } as User
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 401,
       ok: false,
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 
@@ -51,11 +60,11 @@ describe('useSessionStore', () => {
       is_admin: false,
     } as User
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 200,
       ok: true,
       json: async () => mockUser,
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 
@@ -66,18 +75,19 @@ describe('useSessionStore', () => {
   it('fetchMe() sends correct headers and credentials', async () => {
     const store = useSessionStore()
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 200,
       ok: true,
       json: async () => ({ id: '1', username: 'test' } as User),
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 
-    expect(fetchMock).toHaveBeenCalledWith('/api/v1/auth/me', {
-      headers: { 'X-Requested-With': 'XMLHttpRequest' },
-      credentials: 'include',
-    })
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+    const [url, init] = fetchMock.mock.calls[0] as [string, RequestInit]
+    expect(url).toBe('/api/v1/auth/me')
+    expect((init.headers as Headers).get('X-Requested-With')).toBe('XMLHttpRequest')
+    expect(init.credentials).toBe('include')
   })
 
   it('isAdmin is true when user.is_admin === true', () => {
@@ -160,11 +170,11 @@ describe('useSessionStore', () => {
   it('fetchMe() with 403 and PASSWORD_CHANGE_REQUIRED code sets locked user', async () => {
     const store = useSessionStore()
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 403,
       ok: false,
       json: async () => ({ code: 'password_change_required' }),
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 
@@ -176,11 +186,11 @@ describe('useSessionStore', () => {
   it('fetchMe() with 403 and PASSWORD_CHANGE_REQUIRED error sets locked user', async () => {
     const store = useSessionStore()
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 403,
       ok: false,
       json: async () => ({ error: 'password_change_required' }),
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 
@@ -191,13 +201,13 @@ describe('useSessionStore', () => {
   it('fetchMe() with 403 and invalid JSON sets user to null', async () => {
     const store = useSessionStore()
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 403,
       ok: false,
       json: async () => {
         throw new Error('Invalid JSON')
       },
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 
@@ -207,11 +217,11 @@ describe('useSessionStore', () => {
   it('fetchMe() with 403 and unrecognized error sets user to null', async () => {
     const store = useSessionStore()
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 403,
       ok: false,
       json: async () => ({ error: 'SOME_OTHER_ERROR' }),
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 
@@ -232,10 +242,10 @@ describe('useSessionStore', () => {
   it('fetchMe() ignores non-2xx responses that are not 401 or 403', async () => {
     const store = useSessionStore()
 
-    fetchMock.mockResolvedValueOnce({
+    fetchMock.mockResolvedValueOnce(mk({
       status: 500,
       ok: false,
-    } as unknown as Response)
+    }) as unknown as Response)
 
     await store.fetchMe()
 

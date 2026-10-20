@@ -6,6 +6,9 @@ services:
   postgres:
     image: docker.io/postgres:18-alpine
     container_name: artifact-repo-postgres
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
     environment:
       POSTGRES_USER: ${POSTGRES_USER:-postgres}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in docker/.env}
@@ -42,8 +45,7 @@ services:
     environment:
       SERVER_HOST: 0.0.0.0
       SERVER_PORT: 8080
-      SERVER_READ_TIMEOUT: 15
-      SERVER_WRITE_TIMEOUT: 15
+      # Read/write timeouts default to 0 (unlimited) so large uploads are not truncated.
       SERVER_SHUTDOWN_TIMEOUT: 30
       DB_DRIVER: postgres
       DB_HOST: postgres
@@ -55,12 +57,25 @@ services:
       DB_SSLMODE: disable
       STORAGE_BACKEND: filesystem
       STORAGE_PATH: /var/lib/artifacts
+      # Required for OIDC/SAML login state to survive restarts. Set in docker/.env.
+      AUTH_HMAC_KEY: ${AUTH_HMAC_KEY:-}
+      OPENARTIFACT_BACKUP_DIR: /var/lib/openartifact/backups
       LOG_LEVEL: info
       LOG_FORMAT: json
+    restart: unless-stopped
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop:
+      - ALL
+    security_opt:
+      - no-new-privileges:true
     ports:
-      - "8080:8080"
+      # Bound to loopback; put a TLS reverse proxy in front or change to 0.0.0.0.
+      - "${OPENARTIFACT_BIND:-127.0.0.1}:8080:8080"
     volumes:
       - artifacts_data:/var/lib/artifacts
+      - backups_data:/var/lib/openartifact/backups
     networks:
       - artifact-repo-network
     healthcheck:
@@ -81,6 +96,7 @@ services:
 volumes:
   postgres_data:
   artifacts_data:
+  backups_data:
 
 networks:
   artifact-repo-network:

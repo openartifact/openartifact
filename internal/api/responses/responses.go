@@ -163,7 +163,6 @@ type BackupJobResponse struct {
 	SizeBytes    int64   `json:"size_bytes"`
 	CreatedAt    string  `json:"created_at"`
 	UpdatedAt    string  `json:"updated_at"`
-	StoragePath  *string `json:"storage_path"`
 	ErrorMessage *string `json:"error_message"`
 	StartedAt    *string `json:"started_at"`
 	CompletedAt  *string `json:"completed_at"`
@@ -281,23 +280,6 @@ type LicensePolicyResponse struct {
 	CreatedAt       string   `json:"created_at"`
 	UpdatedAt       string   `json:"updated_at"`
 	RepositoryID    *string  `json:"repo_id"`
-}
-
-// WebhookResponse represents a webhook in API responses.
-type WebhookResponse struct {
-	ID             string   `json:"id"`
-	Name           string   `json:"name"`
-	URL            string   `json:"url"`
-	Secret         *string  `json:"secret"`
-	Events         []string `json:"events"`
-	ContentType    *string  `json:"content_type"`
-	SSLVerify      *bool    `json:"ssl_verify"`
-	MaxRetries     *int     `json:"max_retries"`
-	TimeoutSeconds *int     `json:"timeout_seconds"`
-	Enabled        *bool    `json:"enabled"`
-	RepositoryID   *string  `json:"repository_id"`
-	CreatedAt      string   `json:"created_at"`
-	UpdatedAt      string   `json:"updated_at"`
 }
 
 // RepositoryMemberResponse represents a repository member.

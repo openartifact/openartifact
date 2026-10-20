@@ -8,6 +8,7 @@ import type { Repository } from './generated/types.gen'
 export type { Repository }
 
 export interface PackageItem {
+  id: string
   name: string
   version: string
   size?: number
@@ -35,11 +36,23 @@ export function listRepositories(params?: { page?: number; limit?: number; forma
   return request<ListRepositoriesResult>(`/api/v1/repositories${query}`)
 }
 
+/** Walks the paginated list endpoint (page size is clamped server-side). */
+export async function listAllRepositories(): Promise<Repository[]> {
+  const all: Repository[] = []
+  for (let page = 1; page <= 50; page++) {
+    const res = await listRepositories({ page, limit: 100 })
+    const batch = res.repositories || []
+    all.push(...batch)
+    if (batch.length === 0 || all.length >= res.total) break
+  }
+  return all
+}
+
 export function getRepository(name: string): Promise<Repository> {
   return request<Repository>(`/api/v1/repository/${encodeURIComponent(name)}`)
 }
 
-export function createRepository(body: Partial<Repository>): Promise<Repository> {
+export function createRepository(body: Partial<Repository> & { upstream_password?: string }): Promise<Repository> {
   return request<Repository>('/api/v1/repositories', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
@@ -71,6 +84,7 @@ export function listPackages(name: string, params?: { page?: number; limit?: num
 }
 
 export interface ComponentItem {
+  id: string
   name: string
   version: string
   format: string
@@ -78,11 +92,6 @@ export interface ComponentItem {
   sha256?: string
   created_at?: string
   path?: string
-}
-
-interface ListComponentsResult {
-  total: number
-  components: ComponentItem[]
 }
 
 // ── SBOM ──────────────────────────────────────────────────────────────────────
@@ -129,45 +138,30 @@ export function getSbom(repoName: string, id: string): Promise<SbomData> {
   return request<SbomData>(`/api/v1/repositories/${encodeURIComponent(repoName)}/sbom/${encodeURIComponent(id)}`)
 }
 
-export function deletePackage(repoName: string, format: string, name: string): Promise<void> {
+// Deletes a package by its component id (the backend route is
+// DELETE /repositories/{name}/packages/{id}).
+export function deletePackage(repoName: string, id: string): Promise<void> {
   return request<void>(
-    `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(format)}/${encodeURIComponent(name)}`,
+    `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(id)}`,
     { method: 'DELETE' },
   )
 }
 
 // ── Components ────────────────────────────────────────────────────────────────
 
-export async function listComponents(
-  name: string,
-  params?: { page?: number; limit?: number; prefix?: string },
-): Promise<{ total: number; items: ComponentItem[] }> {
-  const qs = new URLSearchParams()
-  if (params?.page != null) qs.set('page', String(params.page))
-  if (params?.limit != null) qs.set('limit', String(params.limit))
-  if (params?.prefix) qs.set('prefix', params.prefix)
-  const query = qs.toString() ? `?${qs}` : ''
+const COMPONENT_PAGE_SIZE = 100 // backend clamps `limit` to 100
+const COMPONENT_MAX_PAGES = 20
 
-  try {
-    const res = await request<ListComponentsResult>(
-      `/api/v1/repositories/${encodeURIComponent(name)}/components${query}`,
-    )
-    return { total: res.total, items: res.components }
-  } catch {
-    // Fall back to packages endpoint
-    const res = await request<ListPackagesResult>(
-      `/api/v1/repositories/${encodeURIComponent(name)}/packages${query}`,
-    )
-    return {
-      total: res.total,
-      items: res.packages.map((p) => ({
-        name: p.name,
-        version: p.version,
-        format: p.format,
-        size: p.size,
-        sha256: p.sha256,
-        created_at: p.created_at,
-      })),
-    }
+// Collects every package of a repository by walking the paginated
+// /packages endpoint (there is no separate components route).
+export async function listComponents(name: string): Promise<{ total: number; items: ComponentItem[] }> {
+  const items: ComponentItem[] = []
+  let total = 0
+  for (let page = 1; page <= COMPONENT_MAX_PAGES; page++) {
+    const res = await listPackages(name, { page, limit: COMPONENT_PAGE_SIZE })
+    total = res.total
+    items.push(...res.packages)
+    if (items.length >= total || res.packages.length === 0) break
   }
+  return { total, items }
 }

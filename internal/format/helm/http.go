@@ -6,6 +6,7 @@ package helm
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -21,8 +22,11 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"gopkg.in/yaml.v3"
@@ -113,16 +117,9 @@ func (h *HTTPHandler) handleDownloadChart(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Parse filename as {chartname}-{version}.tgz
-	chartName, version, err := parseChartFilename(filename)
+	chart, err := h.findChart(r.Context(), repoID, filename)
 	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	chart, err := h.DB.GetHelmChart(r.Context(), repoID, chartName, version)
-	if err != nil {
-		h.Log.Errorw("failed to get helm chart", "chart", chartName, "version", version, "error", err)
+		h.Log.Errorw("failed to get helm chart", "filename", filename, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -130,6 +127,10 @@ func (h *HTTPHandler) handleDownloadChart(w http.ResponseWriter, r *http.Request
 
 	if chart == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(chart.ID, "charts/"+filename, filename, r.URL.Path)...) {
 		return
 	}
 
@@ -207,21 +208,26 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Calculate digest
-	digest := calculateSHA256(chartData)
+	if !validChartIdent(chartName) || !validChartIdent(version) {
+		http.Error(w, "invalid chart name or version", http.StatusBadRequest)
+		return
+	}
 
-	// Store in blob store
-	blobKey, err := h.BlobStore.Put(r.Context(), bytes.NewReader(chartData), map[string]string{
-		"filename": fmt.Sprintf("%s-%s.tgz", chartName, version),
-		"chart":    chartName,
-		"version":  version,
-	})
+	existing, err := h.DB.GetHelmChart(r.Context(), repoID, chartName, version)
 	if err != nil {
-		h.Log.Errorw("failed to store chart blob", "error", err)
+		h.Log.Errorw("failed to check existing chart", "chart", chartName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	if existing != nil {
+		http.Error(w, "chart version already exists", http.StatusConflict)
+		return
+	}
+
+	digest := calculateSHA256(chartData)
+	size := int64(len(chartData))
 
 	// Extract optional fields
 	appVersion, _ := metadata["appVersion"].(string)
@@ -242,7 +248,10 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 	// Convert keywords
 	var keywords []string
 
-	if kw, ok := metadata["keywords"].([]any); ok {
+	switch kw := metadata["keywords"].(type) {
+	case []string:
+		keywords = kw
+	case []any:
 		for _, k := range kw {
 			if s, ok := k.(string); ok {
 				keywords = append(keywords, s)
@@ -253,7 +262,10 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 	// Convert sources
 	var sources []string
 
-	if src, ok := metadata["sources"].([]any); ok {
+	switch src := metadata["sources"].(type) {
+	case []string:
+		sources = src
+	case []any:
 		for _, s := range src {
 			if str, ok := s.(string); ok {
 				sources = append(sources, str)
@@ -264,21 +276,30 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 	// Convert maintainers
 	var maintainers []map[string]string
 
-	if maint, ok := metadata["maintainers"].([]any); ok {
+	var maintRaw []map[string]any
+
+	switch maint := metadata["maintainers"].(type) {
+	case []map[string]any:
+		maintRaw = maint
+	case []any:
 		for _, m := range maint {
-			if maintMap, ok := m.(map[string]any); ok {
-				strMap := make(map[string]string)
-
-				for k, v := range maintMap {
-					if s, ok := v.(string); ok {
-						strMap[k] = s
-					}
-				}
-
-				if len(strMap) > 0 {
-					maintainers = append(maintainers, strMap)
-				}
+			if mm, ok := m.(map[string]any); ok {
+				maintRaw = append(maintRaw, mm)
 			}
+		}
+	}
+
+	for _, maintMap := range maintRaw {
+		strMap := make(map[string]string)
+
+		for k, v := range maintMap {
+			if s, ok := v.(string); ok {
+				strMap[k] = s
+			}
+		}
+
+		if len(strMap) > 0 {
+			maintainers = append(maintainers, strMap)
 		}
 	}
 
@@ -296,17 +317,45 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 		Icon:         icon,
 		APIVersion:   apiVersion,
 		Type:         chartType,
-		BlobKey:      blobKey,
 		Digest:       digest,
-		SizeBytes:    int64(len(chartData)),
+		SizeBytes:    size,
 	}
 
-	if err := h.DB.CreateHelmChart(r.Context(), chart); err != nil {
-		h.Log.Errorw("failed to create helm chart record", "chart", chartName, "error", err)
+	// Reserve quota before anything is persisted; every failure path below
+	// returns the reservation.
+	if err := quota.Enforce(r.Context(), h.DB, repoID, size); err != nil {
+		if errors.Is(err, quota.ErrExceeded) {
+			quota.WriteExceeded(w)
+			return
+		}
+
+		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	if status, msg := h.storeChart(r.Context(), chart, chartData); status != 0 {
+		if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
+			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
+		}
+
+		http.Error(w, msg, status)
+
+		return
+	}
+
+	filename := fmt.Sprintf("%s-%s.tgz", chart.Name, chart.Version)
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "helm",
+		Name:       chart.Name,
+		Version:    chart.Version,
+		Path:       "charts/" + filename,
+		SHA256:     digest,
+		Size:       size,
+	}))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -338,17 +387,9 @@ func (h *HTTPHandler) handleDeleteChart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Parse filename
-	chartName, version, err := parseChartFilename(filename)
+	chart, err := h.findChart(r.Context(), repoID, filename)
 	if err != nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Get chart to find blob key
-	chart, err := h.DB.GetHelmChart(r.Context(), repoID, chartName, version)
-	if err != nil {
-		h.Log.Errorw("failed to get helm chart", "chart", chartName, "version", version, "error", err)
+		h.Log.Errorw("failed to get helm chart", "filename", filename, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -359,21 +400,39 @@ func (h *HTTPHandler) handleDeleteChart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Delete from blob store
-	if err := h.BlobStore.Delete(r.Context(), chart.BlobKey); err != nil {
-		h.Log.Errorw("failed to delete chart blob", "key", chart.BlobKey, "error", err)
+	// Resolve the size to release before the blob can go away.
+	size := chart.SizeBytes
+	if size <= 0 {
+		if n, sizeErr := h.BlobStore.GetSize(r.Context(), chart.BlobKey); sizeErr == nil {
+			size = n
+		}
+	}
+
+	// Delete the record first, then the blob only if nothing else references it.
+	if err := h.DB.DeleteHelmChart(r.Context(), repoID, chart.Name, chart.Version); err != nil {
+		h.Log.Errorw("failed to delete helm chart record", "chart", chart.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// Delete from database
-	if err := h.DB.DeleteHelmChart(r.Context(), repoID, chartName, version); err != nil {
-		h.Log.Errorw("failed to delete helm chart record", "chart", chartName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
+	if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
+		h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
 	}
+
+	if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, chart.Digest); err != nil {
+		h.Log.Warnw("failed to delete chart blob", "sha256", chart.Digest, "error", err)
+	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "helm",
+		Name:       chart.Name,
+		Version:    chart.Version,
+		Path:       "charts/" + filename,
+		SHA256:     chart.Digest,
+		Size:       size,
+	}))
 
 	w.WriteHeader(http.StatusOK)
 }
@@ -433,26 +492,130 @@ func (h *HTTPHandler) handleListCharts(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions
 
-func parseChartFilename(filename string) (string, string, error) {
-	// Expected format: {name}-{version}.tgz
-	if !strings.HasSuffix(filename, ".tgz") {
-		return "", "", errors.New("invalid filename") //nolint:err113 // static error
+// storeChart persists the chart blob and its row under the per-blob lock so a
+// concurrent delete cannot remove the blob between the dedup check, the Put and
+// the insert. It returns a zero status on success, otherwise the HTTP status
+// and message to report; the caller releases the quota reservation.
+func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, data []byte) (int, string) {
+	status, msg := 0, ""
+
+	lockErr := storage.WithBlobLock(ctx, h.DB, chart.Digest, func(ctx context.Context) error {
+		blobKey, exists, err := h.BlobStore.ExistsBySHA256(ctx, chart.Digest)
+		if err != nil {
+			h.Log.Errorw("failed to check chart blob", "error", err)
+
+			status, msg = http.StatusInternalServerError, "internal error"
+
+			return err
+		}
+
+		if !exists {
+			blobKey, err = h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+				"sha256":   chart.Digest,
+				"filename": fmt.Sprintf("%s-%s.tgz", chart.Name, chart.Version),
+				"chart":    chart.Name,
+				"version":  chart.Version,
+			})
+			if err != nil {
+				h.Log.Errorw("failed to store chart blob", "error", err)
+
+				status, msg = http.StatusInternalServerError, "internal error"
+
+				return err
+			}
+		}
+
+		chart.BlobKey = blobKey
+
+		if err := h.DB.CreateHelmChart(ctx, chart); err != nil {
+			if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
+				status, msg = http.StatusConflict, "chart version already exists"
+
+				return err
+			}
+
+			h.Log.Errorw("failed to create helm chart record", "chart", chart.Name, "error", err)
+
+			status, msg = http.StatusInternalServerError, "internal error"
+
+			return err
+		}
+
+		return nil
+	})
+	if lockErr == nil {
+		return 0, ""
 	}
 
-	// Remove .tgz extension
-	base := strings.TrimSuffix(filename, ".tgz")
+	if status == 0 {
+		h.Log.Errorw("chart blob lock failed", "chart", chart.Name, "error", lockErr)
 
-	// Find the last hyphen to split name and version
-	name, version, found := strings.CutLast(base, "-")
-	if !found {
-		return "", "", errors.New("invalid filename format") //nolint:err113 // static error
+		status, msg = http.StatusInternalServerError, "internal error"
 	}
 
-	if name == "" || version == "" {
-		return "", "", errors.New("invalid filename format") //nolint:err113 // static error
+	// The row was not created: drop the blob if nothing else references it.
+	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, chart.Digest); err != nil {
+		h.Log.Warnw("failed to clean up chart blob", "sha256", chart.Digest, "error", err)
 	}
 
-	return name, version, nil
+	return status, msg
+}
+
+// findChart resolves "{name}-{version}.tgz". Both chart names and versions may
+// contain hyphens (mychart-1.0.0-rc1.tgz), so every hyphen followed by a digit
+// (or 'v' + digit) is tried as the name/version split point.
+func (h *HTTPHandler) findChart(ctx context.Context, repoID, filename string) (*models.HelmChart, error) {
+	base, ok := strings.CutSuffix(filename, ".tgz")
+	if !ok {
+		return nil, nil //nolint:nilnil // not found
+	}
+
+	for i := 1; i < len(base)-1; i++ {
+		if base[i] != '-' {
+			continue
+		}
+
+		if !startsVersion(base[i+1:]) {
+			continue
+		}
+
+		chart, err := h.DB.GetHelmChart(ctx, repoID, base[:i], base[i+1:])
+		if err != nil {
+			return nil, err
+		}
+
+		if chart != nil {
+			return chart, nil
+		}
+	}
+
+	return nil, nil //nolint:nilnil // not found
+}
+
+// startsVersion reports whether s begins like a chart version: a digit, or 'v'
+// followed by a digit.
+func startsVersion(s string) bool {
+	if s != "" && s[0] == 'v' {
+		s = s[1:]
+	}
+
+	return s != "" && s[0] >= '0' && s[0] <= '9'
+}
+
+// validChartIdent rejects empty values and anything that could escape a
+// filename or URL path segment.
+func validChartIdent(s string) bool {
+	if s == "" || len(s) > 255 {
+		return false
+	}
+
+	for _, r := range s {
+		if r == '/' || r == '\\' || r <= ' ' || r == 0x7f {
+			return false
+		}
+	}
+
+	return s != "." && s != ".."
 }
 
 func calculateSHA256(data []byte) string {

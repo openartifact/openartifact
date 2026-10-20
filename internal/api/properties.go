@@ -5,8 +5,12 @@
 package api
 
 import (
+	"encoding/json"
 	"net/http"
 	"net/url"
+	"strconv"
+	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
@@ -21,6 +25,72 @@ type PropertiesHandler struct {
 
 func NewPropertiesHandler(log *logger.Logger, db database.Database) *PropertiesHandler {
 	return &PropertiesHandler{db: db, log: log}
+}
+
+// validatePropertyKey returns a message for an unusable property key, or "".
+func validatePropertyKey(key string) string {
+	switch {
+	case key == "":
+		return "property key must not be empty"
+	case len(key) > maxPropertyKeyLen:
+		return "property key is too long (max 255 bytes)"
+	case !utf8.ValidString(key):
+		return "property key must be valid UTF-8"
+	}
+
+	for _, r := range key {
+		if r < 0x20 || r == 0x7f {
+			return "property key must not contain control characters"
+		}
+	}
+
+	return ""
+}
+
+// decodeProperties reads a properties request body and validates it. The body
+// is a flat string map, or the same map wrapped as {"properties": {...}} (the
+// shape the web UI sends). It returns a client-facing message on failure.
+func decodeProperties(r *http.Request) (map[string]string, string) {
+	var raw map[string]json.RawMessage
+	if err := decodeJSON(r, &raw); err != nil {
+		return nil, "invalid JSON body"
+	}
+
+	if inner, ok := raw["properties"]; ok && len(raw) == 1 {
+		var wrapped map[string]json.RawMessage
+		if json.Unmarshal(inner, &wrapped) == nil && wrapped != nil {
+			raw = wrapped
+		}
+	}
+
+	if len(raw) > maxPropertyCount {
+		return nil, "too many properties (max " + strconv.Itoa(maxPropertyCount) + ")"
+	}
+
+	props := make(map[string]string, len(raw))
+
+	for key, rawValue := range raw {
+		if msg := validatePropertyKey(key); msg != "" {
+			return nil, msg
+		}
+
+		var value string
+		if err := json.Unmarshal(rawValue, &value); err != nil {
+			return nil, "property values must be strings"
+		}
+
+		if len(value) > maxPropertyValueLen {
+			return nil, "property value is too long (max 4096 bytes)"
+		}
+
+		if !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+			return nil, "property value must be valid UTF-8 without NUL bytes"
+		}
+
+		props[key] = value
+	}
+
+	return props, ""
 }
 
 func (h *PropertiesHandler) RegisterRoutes(r chi.Router, pathPrefix string) {
@@ -40,6 +110,11 @@ func (h *PropertiesHandler) handleGetProperties(w http.ResponseWriter, r *http.R
 	artifactID, err := url.PathUnescape(artifactIDEncoded)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid artifact_id")
+		return
+	}
+
+	if msg := validateArtifactID(artifactID); msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
 		return
 	}
 
@@ -83,6 +158,11 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if msg := validateArtifactID(artifactID); msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
+
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
 		h.log.Errorw("set properties: db error getting repo", "error", err)
@@ -96,39 +176,19 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	var body map[string]string
-	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+	body, msg := decodeProperties(r)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
 		return
 	}
 
-	// Get existing properties to delete them
-	existingProps, err := h.db.ListArtifactProperties(ctx, repo.ID, artifactID)
-	if err != nil {
-		h.log.Errorw("set properties: db error getting existing properties", "error", err)
+	// Replace atomically: delete-all + insert in one transaction so a failure
+	// midway can never leave the artifact with a partial property set.
+	if err := h.db.SetArtifactProperties(ctx, repo.ID, artifactID, body, true); err != nil {
+		h.log.Errorw("set properties: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
-	}
-
-	// Delete all existing properties
-	for key := range existingProps {
-		if err := h.db.DeleteArtifactProperty(ctx, repo.ID, artifactID, key); err != nil {
-			h.log.Errorw("set properties: db error deleting property", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-	}
-
-	// Set new properties
-	for key, value := range body {
-		if err := h.db.SetArtifactProperty(ctx, repo.ID, artifactID, key, value); err != nil {
-			h.log.Errorw("set properties: db error setting property", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
 	}
 
 	writeJSON(w, http.StatusOK, body)
@@ -146,6 +206,11 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 		return
 	}
 
+	if msg := validateArtifactID(artifactID); msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
+
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
 		h.log.Errorw("patch properties: db error getting repo", "error", err)
@@ -159,20 +224,18 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 		return
 	}
 
-	var body map[string]string
-	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+	body, msg := decodeProperties(r)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
 		return
 	}
 
-	// Upsert each property
-	for key, value := range body {
-		if err := h.db.SetArtifactProperty(ctx, repo.ID, artifactID, key, value); err != nil {
-			h.log.Errorw("patch properties: db error setting property", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+	// Upsert all properties in one transaction.
+	if err := h.db.SetArtifactProperties(ctx, repo.ID, artifactID, body, false); err != nil {
+		h.log.Errorw("patch properties: db error setting properties", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
-			return
-		}
+		return
 	}
 
 	// Return all properties
@@ -204,6 +267,11 @@ func (h *PropertiesHandler) handleDeleteProperty(w http.ResponseWriter, r *http.
 		return
 	}
 
+	if msg := validateArtifactID(artifactID); msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
+		return
+	}
+
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
 		h.log.Errorw("delete property: db error getting repo", "error", err)
@@ -214,6 +282,11 @@ func (h *PropertiesHandler) handleDeleteProperty(w http.ResponseWriter, r *http.
 
 	if repo == nil {
 		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return
+	}
+
+	if msg := validatePropertyKey(key); msg != "" {
+		writeError(w, http.StatusBadRequest, "bad_request", msg)
 		return
 	}
 
@@ -236,6 +309,11 @@ func (h *PropertiesHandler) handleSearchByProperty(w http.ResponseWriter, r *htt
 
 	if key == "" || value == "" {
 		writeError(w, http.StatusBadRequest, "bad_request", "key and value query parameters are required")
+		return
+	}
+
+	if len(key) > maxPropertyKeyLen || len(value) > maxPropertyValueLen {
+		writeError(w, http.StatusBadRequest, "bad_request", "key or value is too long")
 		return
 	}
 

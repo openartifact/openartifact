@@ -8,16 +8,47 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"errors"
 	"fmt"
+	"sort"
 	"sync"
 	"time"
 
 	sq "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+var errDebLockBusy = errors.New("could not acquire advisory lock")
+
+// listOldMetadata returns path -> blob sha256 of the generated dists/ metadata rows.
+func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND path LIKE 'dists/%'`, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("deb worker: listing repo_metadata: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	old := make(map[string]string)
+
+	for rows.Next() {
+		var path, sum string
+		if err := rows.Scan(&path, &sum); err != nil {
+			return nil, fmt.Errorf("deb worker: scanning repo_metadata: %w", err)
+		}
+
+		old[path] = sum
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("deb worker: listing repo_metadata: %w", err)
+	}
+
+	return old, nil
+}
 
 type DebMetadataWorker struct {
 	db        sq.Database
@@ -84,16 +115,16 @@ func (w *DebMetadataWorker) Stop() {
 
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error {
-	conn := w.db.GetDB()
-
-	var locked bool
-
-	err := conn.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1))", repoID).Scan(&locked)
-	if err != nil || !locked {
-		return fmt.Errorf("deb worker: could not acquire advisory lock for %s", repoID) //nolint:err113 // dynamic error with runtime context
+	release, locked, err := tryAdvisoryLock(ctx, w.db.GetDB(), "deb:"+repoID)
+	if err != nil {
+		return fmt.Errorf("deb worker: could not acquire advisory lock for %s: %w", repoID, err)
 	}
 
-	defer func() { _, _ = conn.ExecContext(ctx, "SELECT pg_advisory_unlock(hashtext($1))", repoID) }()
+	if !locked {
+		return fmt.Errorf("%w: deb worker repository %s", errDebLockBusy, repoID)
+	}
+
+	defer release()
 
 	tx, err := w.db.BeginTx(ctx)
 	if err != nil {
@@ -101,144 +132,40 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	// Get all distributions for this repository
 	distributions, err := w.db.GetDebianDistributionsByRepo(ctx, repoID)
 	if err != nil {
 		return fmt.Errorf("deb worker: querying distributions: %w", err)
 	}
 
+	// One query for every package in the repository; grouped in memory below.
+	entries, err := w.db.ListDebPackageEntries(ctx, repoID, "", "", "")
+	if err != nil {
+		return fmt.Errorf("deb worker: querying packages: %w", err)
+	}
+
+	byDist := make(map[string][]models.DebPackageEntry)
+	for _, e := range entries {
+		byDist[e.Distribution] = append(byDist[e.Distribution], e)
+	}
+
 	blobs := make(map[string][]byte)
 
 	for _, dist := range distributions {
-		// Reset fileInfos for each distribution
-		fileInfos := make([]formatdeb.FileInfo, 0)
-
-		releaseGen := formatdeb.NewReleaseFileGenerator("openartifact", "openartifact", dist.Name, dist.Name)
-
-		// Get all components for this distribution
-		components, err := w.db.GetDebianComponentsByDist(ctx, dist.ID)
-		if err != nil {
-			return fmt.Errorf("deb worker: querying components for dist %s: %w", dist.Name, err)
-		}
-
-		// Get all architectures for this distribution
-		architectures, err := w.db.GetDebianArchitecturesByDist(ctx, dist.ID)
-		if err != nil {
-			return fmt.Errorf("deb worker: querying architectures for dist %s: %w", dist.Name, err)
-		}
-
-		// Build map of component/arch -> packages generator
-		packagesGens := make(map[string]map[string]*formatdeb.PackagesFileGenerator)
-
-		// For each component and architecture combination, get packages
-		for _, comp := range components {
-			for _, arch := range architectures {
-				// Query packages for this dist/component/arch combination
-				packages, err := w.db.GetDebianPackagesByDistComp(ctx, repoID, dist.Name, comp.Name, arch.Name)
-				if err != nil {
-					return fmt.Errorf("deb worker: querying packages for %s/%s/%s: %w", dist.Name, comp.Name, arch.Name, err)
-				}
-
-				if len(packages) == 0 {
-					continue
-				}
-
-				// Initialize nested map if needed
-				if _, ok := packagesGens[comp.Name]; !ok {
-					packagesGens[comp.Name] = make(map[string]*formatdeb.PackagesFileGenerator)
-				}
-
-				if _, ok := packagesGens[comp.Name][arch.Name]; !ok {
-					packagesGens[comp.Name][arch.Name] = formatdeb.NewPackagesFileGenerator()
-					releaseGen.AddComponent(comp.Name)
-					releaseGen.AddArchitecture(arch.Name)
-				}
-
-				// Add each package to the Packages file
-				for _, pkg := range packages {
-					// Build proper Debian control format entry
-					entry := fmt.Sprintf("Package: %s\nVersion: %s\nArchitecture: %s\nInstalled-Size: %d\nFilename: %s\nSize: %d\nSHA256: %s\nDescription: %s\n\n",
-						pkg.Name, pkg.Version, pkg.Arch, pkg.PackageSize/1024, pkg.Filename, pkg.PackageSize, pkg.SHA256, pkg.Summary)
-
-					packagesGens[comp.Name][arch.Name].AddEntry(entry)
-				}
-			}
-		}
-
-		// Generate Packages files for each component/arch pair
-		for comp, archMap := range packagesGens {
-			for arch, gen := range archMap {
-				content := gen.Generate()
-				packagesPath := fmt.Sprintf("dists/%s/%s/binary-%s/Packages", dist.Name, comp, arch)
-				blobs[packagesPath] = []byte(content)
-
-				// Add checksums for plain Packages file
-				md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums([]byte(content))
-				fileInfos = append(fileInfos, formatdeb.FileInfo{
-					Filename: packagesPath,
-					Size:     int64(len(content)),
-					MD5sum:   md5sum,
-					SHA1:     sha1sum,
-					SHA256:   sha256sum,
-				})
-
-				gzipped, err := gen.GenerateGzipped()
-				if err != nil {
-					return fmt.Errorf("deb worker: compressing packages for %s/%s/%s: %w", dist.Name, comp, arch, err)
-				}
-
-				packagesGzPath := fmt.Sprintf("dists/%s/%s/binary-%s/Packages.gz", dist.Name, comp, arch)
-				blobs[packagesGzPath] = gzipped
-
-				md5sum, sha1sum, sha256sum = formatdeb.CalculateChecksums(gzipped)
-				fileInfos = append(fileInfos, formatdeb.FileInfo{
-					Filename: packagesGzPath,
-					Size:     int64(len(gzipped)),
-					MD5sum:   md5sum,
-					SHA1:     sha1sum,
-					SHA256:   sha256sum,
-				})
-
-				xzipped, err := gen.GenerateXZipped()
-				if err != nil {
-					return fmt.Errorf("deb worker: xz compressing packages for %s/%s/%s: %w", dist.Name, comp, arch, err)
-				}
-
-				packagesXzPath := fmt.Sprintf("dists/%s/%s/binary-%s/Packages.xz", dist.Name, comp, arch)
-				blobs[packagesXzPath] = xzipped
-
-				md5sum, sha1sum, sha256sum = formatdeb.CalculateChecksums(xzipped)
-				fileInfos = append(fileInfos, formatdeb.FileInfo{
-					Filename: packagesXzPath,
-					Size:     int64(len(xzipped)),
-					MD5sum:   md5sum,
-					SHA1:     sha1sum,
-					SHA256:   sha256sum,
-				})
-			}
-		}
-
-		releaseContent := releaseGen.GenerateRelease(fileInfos)
-		releasePath := fmt.Sprintf("dists/%s/Release", dist.Name)
-		blobs[releasePath] = []byte(releaseContent)
-
-		if w.signer != nil {
-			signer := formatdeb.NewReleaseSigner(w.signer)
-
-			signed, err := signer.SignRelease([]byte(releaseContent))
-			if err != nil {
-				w.log.Warnw("failed to sign release", "dist", dist.Name, "error", err)
-			} else {
-				inReleasePath := fmt.Sprintf("dists/%s/InRelease", dist.Name)
-				releaseGPGPath := fmt.Sprintf("dists/%s/Release.gpg", dist.Name)
-				blobs[inReleasePath] = signed.InRelease
-				blobs[releaseGPGPath] = signed.ReleaseGPG
-			}
+		if err := w.generateDistribution(ctx, dist, byDist[dist.Name], blobs); err != nil {
+			return err
 		}
 	}
 
+	// Existing generated metadata, so rows/blobs for removed paths can be reclaimed.
+	oldSHA, err := listOldMetadata(ctx, tx, repoID)
+	if err != nil {
+		return err
+	}
+	newSHA := make(map[string]string, len(blobs))
+
 	for path, data := range blobs {
 		checksum := fmt.Sprintf("%x", sha256.Sum256(data))
+		newSHA[path] = checksum
 
 		_, err = w.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
 			"path":    path,
@@ -261,11 +188,160 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 		}
 	}
 
+	// Drop rows for paths that are no longer generated (removed dists/comps/archs).
+	for path := range oldSHA {
+		if _, ok := newSHA[path]; ok {
+			continue
+		}
+
+		if _, err := tx.ExecContext(ctx, `DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`, repoID, path); err != nil {
+			return fmt.Errorf("deb worker: deleting stale repo_metadata %s: %w", path, err)
+		}
+	}
+
+	// Superseded blobs: old checksums no longer referenced by any metadata row.
+	var reclaim []string
+
+	seen := make(map[string]bool)
+
+	for path, old := range oldSHA {
+		if old == "" || seen[old] || newSHA[path] == old {
+			continue
+		}
+
+		seen[old] = true
+
+		var refs int
+		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, old).Scan(&refs); err != nil {
+			return fmt.Errorf("deb worker: counting metadata refs: %w", err)
+		}
+
+		if refs == 0 {
+			reclaim = append(reclaim, old)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("deb worker: commit: %w", err)
 	}
 
+	for _, sum := range reclaim {
+		if err := w.blobStore.Delete(ctx, sum); err != nil {
+			w.log.Warnw("deb worker: failed to delete superseded metadata blob", "sha256", sum, "error", err)
+		}
+	}
+
 	w.log.Infow("deb metadata regeneration complete", "repo_id", repoID, "distributions", len(distributions))
+
+	return nil
+}
+
+// generateDistribution renders Packages{,.gz,.xz}, Release, InRelease and
+// Release.gpg for one distribution into blobs, keyed by full "dists/..." path.
+// Every component x architecture pair gets an index (empty when no packages
+// remain) so stale listings can never be served after deletions.
+func (w *DebMetadataWorker) generateDistribution(ctx context.Context, dist models.DebianDistribution, entries []models.DebPackageEntry, blobs map[string][]byte) error {
+	components, err := w.db.GetDebianComponentsByDist(ctx, dist.ID)
+	if err != nil {
+		return fmt.Errorf("deb worker: querying components for dist %s: %w", dist.Name, err)
+	}
+
+	architectures, err := w.db.GetDebianArchitecturesByDist(ctx, dist.ID)
+	if err != nil {
+		return fmt.Errorf("deb worker: querying architectures for dist %s: %w", dist.Name, err)
+	}
+
+	compNames := make([]string, 0, len(components))
+	for _, c := range components {
+		compNames = append(compNames, c.Name)
+	}
+
+	sort.Strings(compNames)
+
+	// Architecture "all" packages are listed in every real architecture's
+	// index; a dist that only has "all" keeps a binary-all index.
+	var archNames []string
+
+	for _, a := range architectures {
+		if a.Name != "all" {
+			archNames = append(archNames, a.Name)
+		}
+	}
+
+	if len(archNames) == 0 && len(architectures) > 0 {
+		archNames = []string{"all"}
+	}
+
+	sort.Strings(archNames)
+
+	releaseGen := formatdeb.NewReleaseFileGenerator("openartifact", "openartifact", dist.Name, dist.Name)
+	for _, c := range compNames {
+		releaseGen.AddComponent(c)
+	}
+
+	for _, a := range archNames {
+		releaseGen.AddArchitecture(a)
+	}
+
+	fileInfos := make([]formatdeb.FileInfo, 0, len(compNames)*len(archNames)*3)
+
+	addFile := func(rel string, data []byte) {
+		blobs["dists/"+dist.Name+"/"+rel] = data
+
+		md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(data)
+		fileInfos = append(fileInfos, formatdeb.FileInfo{
+			Filename: rel,
+			Size:     int64(len(data)),
+			MD5sum:   md5sum,
+			SHA1:     sha1sum,
+			SHA256:   sha256sum,
+		})
+	}
+
+	for _, comp := range compNames {
+		for _, arch := range archNames {
+			gen := formatdeb.NewPackagesFileGenerator()
+
+			for _, e := range entries {
+				if e.ComponentName != comp || (e.Arch != arch && e.Arch != "all") {
+					continue
+				}
+
+				gen.AddEntry(formatdeb.FormatPackagesEntry(e))
+			}
+
+			base := fmt.Sprintf("%s/binary-%s/Packages", comp, arch)
+
+			addFile(base, []byte(gen.Generate()))
+
+			gzipped, err := gen.GenerateGzipped()
+			if err != nil {
+				return fmt.Errorf("deb worker: compressing packages for %s/%s/%s: %w", dist.Name, comp, arch, err)
+			}
+
+			addFile(base+".gz", gzipped)
+
+			xzipped, err := gen.GenerateXZipped()
+			if err != nil {
+				return fmt.Errorf("deb worker: xz compressing packages for %s/%s/%s: %w", dist.Name, comp, arch, err)
+			}
+
+			addFile(base+".xz", xzipped)
+		}
+	}
+
+	releaseContent := releaseGen.GenerateRelease(fileInfos)
+	blobs["dists/"+dist.Name+"/Release"] = []byte(releaseContent)
+
+	if w.signer != nil {
+		signed, err := formatdeb.NewReleaseSigner(w.signer).SignRelease([]byte(releaseContent))
+		if err != nil {
+			w.log.Warnw("failed to sign release", "dist", dist.Name, "error", err)
+		} else {
+			blobs["dists/"+dist.Name+"/InRelease"] = signed.InRelease
+			blobs["dists/"+dist.Name+"/Release.gpg"] = signed.ReleaseGPG
+		}
+	}
 
 	return nil
 }

@@ -124,6 +124,10 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 		return "", ErrS3PutRequiresSHA256
 	}
 
+	if err := ValidateBlobID(sha); err != nil {
+		return "", err
+	}
+
 	key := objectKey(sha)
 
 	_, err := s.uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
@@ -141,6 +145,10 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 
 // Get retrieves a blob by its SHA-256 identifier.
 func (s *S3BlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	key := objectKey(id)
 
 	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
@@ -161,6 +169,10 @@ func (s *S3BlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error)
 
 // Delete removes a blob by its SHA-256 identifier. NoSuchKey is treated as success.
 func (s *S3BlobStore) Delete(ctx context.Context, id string) error {
+	if err := ValidateBlobID(id); err != nil {
+		return err
+	}
+
 	key := objectKey(id)
 
 	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{
@@ -176,6 +188,10 @@ func (s *S3BlobStore) Delete(ctx context.Context, id string) error {
 
 // Exists checks whether a blob exists using HeadObject.
 func (s *S3BlobStore) Exists(ctx context.Context, id string) (bool, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return false, err
+	}
+
 	key := objectKey(id)
 
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -195,6 +211,10 @@ func (s *S3BlobStore) Exists(ctx context.Context, id string) (bool, error) {
 
 // GetSize returns the size of a blob in bytes using HeadObject.
 func (s *S3BlobStore) GetSize(ctx context.Context, id string) (int64, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return 0, err
+	}
+
 	key := objectKey(id)
 
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -219,6 +239,10 @@ func (s *S3BlobStore) GetSize(ctx context.Context, id string) (int64, error) {
 
 // GetMetadata returns object metadata via HeadObject. Returns nil, nil if not found.
 func (s *S3BlobStore) GetMetadata(ctx context.Context, id string) (map[string]string, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	key := objectKey(id)
 
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -277,6 +301,10 @@ func (s *S3BlobStore) List(ctx context.Context, prefix string, limit int, offset
 
 // ExistsBySHA256 checks whether a blob with the given SHA-256 hash exists using HeadObject.
 func (s *S3BlobStore) ExistsBySHA256(ctx context.Context, sha256 string) (string, bool, error) {
+	if err := ValidateBlobID(sha256); err != nil {
+		return "", false, err
+	}
+
 	key := objectKey(sha256)
 
 	_, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{
@@ -296,6 +324,10 @@ func (s *S3BlobStore) ExistsBySHA256(ctx context.Context, sha256 string) (string
 
 // PresignURL returns a presigned GetObject URL with a clamped TTL.
 func (s *S3BlobStore) PresignURL(ctx context.Context, sha256 string, ttl time.Duration) (string, error) {
+	if err := ValidateBlobID(sha256); err != nil {
+		return "", err
+	}
+
 	ttl = clampTTL(ttl)
 	key := objectKey(sha256)
 

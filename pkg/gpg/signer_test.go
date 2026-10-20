@@ -11,6 +11,7 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
 )
 
 func TestGenerateKey(t *testing.T) {
@@ -236,5 +237,39 @@ func TestExportPrivateKey(t *testing.T) {
 
 	if !bytes.Contains(exported, []byte("-----BEGIN PGP PRIVATE KEY BLOCK-----")) {
 		t.Fatal("Exported key missing PGP armor header")
+	}
+}
+
+func TestCleartextSignVerifiesAsTextSignature(t *testing.T) {
+	entity, err := GenerateKey("Test User", "", "test@example.com")
+	if err != nil {
+		t.Fatalf("GenerateKey failed: %v", err)
+	}
+
+	signer := &LocalSigner{entity: entity}
+
+	r, err := signer.CleartextSign(bytes.NewReader([]byte("Origin: x\n-dash line\nSuite: y\n")))
+	if err != nil {
+		t.Fatalf("CleartextSign failed: %v", err)
+	}
+
+	out, _ := io.ReadAll(r)
+
+	block, _ := clearsign.Decode(out)
+	if block == nil {
+		t.Fatalf("not a valid clearsigned message: %q", out)
+	}
+
+	if !bytes.Contains(out, []byte("- -dash line")) {
+		t.Error("lines starting with '-' must be dash-escaped")
+	}
+
+	if string(block.Bytes) != "Origin: x\r\n-dash line\r\nSuite: y\r\n" {
+		t.Errorf("unexpected plaintext %q", block.Bytes)
+	}
+
+	_, err = openpgp.CheckDetachedSignature(openpgp.EntityList{entity}, bytes.NewReader(block.Bytes), block.ArmoredSignature.Body, nil)
+	if err != nil {
+		t.Fatalf("signature does not verify: %v", err)
 	}
 }

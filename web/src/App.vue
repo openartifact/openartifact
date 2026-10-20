@@ -19,7 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <div v-if="session.ready" class="mx-auto max-w-[1400px] px-8 py-7">
           <Suspense>
-            <router-view />
+            <router-view :key="route.path" />
             <template #fallback>
               <PageLoadingFallback />
             </template>

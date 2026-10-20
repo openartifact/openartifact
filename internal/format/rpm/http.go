@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	db "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -90,6 +91,7 @@ func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, r
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/repodata/repomd.xml", h.handleRepomdXML)
 	r.Get("/repodata/repomd.xml.asc", h.handleRepomdXMLAsc)
+	r.Get("/repodata/comps.xml", h.handleComps)
 	r.Get("/repodata/{checksum}-{type}.xml.gz", h.handleMetadataFile)
 	r.Get("/repodata/{checksum}-{type}.xml.xz", h.handleMetadataFile)
 	r.Get("/Packages/{filename}", h.handlePackageDownload)
@@ -118,13 +120,11 @@ func (h *HTTPHandler) handleRepomdXML(w http.ResponseWriter, r *http.Request) {
 	if h.tryServeRepoBlob(w, r, repoID, "repodata/repomd.xml", "application/xml") {
 		return
 	}
-	// Streaming fallback: generate minimal repomd.xml on-the-fly.
-	w.Header().Set("Content-Type", "application/xml")
-	w.Header().Set("Cache-Control", "no-cache")
-
-	if err := StreamRepomd(r.Context(), h.db, repoID, w); err != nil {
-		h.log.Errorw("failed to stream repomd.xml", "repo_id", repoID, "error", err)
-	}
+	// Metadata has not been generated yet; clients must retry rather than
+	// receive a repomd.xml without valid checksums.
+	w.Header().Set("Cache-Control", "no-store")
+	w.Header().Set("Retry-After", "5")
+	http.Error(w, "repository metadata is being generated", http.StatusServiceUnavailable)
 }
 
 func (h *HTTPHandler) handleRepomdXMLAsc(w http.ResponseWriter, r *http.Request) {
@@ -171,32 +171,7 @@ func (h *HTTPHandler) handleMetadataFile(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Streaming fallback: only supported for .gz (gzip) and only for primary/filelists/other.
-	if !isGZ {
-		http.NotFound(w, r)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/x-gzip")
-	w.Header().Set("Cache-Control", "no-cache")
-
-	var streamErr error
-
-	switch metaType {
-	case "primary":
-		streamErr = StreamPrimaryXML(r.Context(), h.db, repoID, w)
-	case "filelists":
-		streamErr = StreamFilelistsXML(r.Context(), h.db, repoID, w)
-	case "other":
-		streamErr = StreamOtherXML(r.Context(), h.db, repoID, w)
-	default:
-		http.NotFound(w, r)
-		return
-	}
-
-	if streamErr != nil {
-		h.log.Errorw("failed to stream metadata file", "type", metaType, "error", streamErr)
-	}
+	http.NotFound(w, r)
 }
 
 func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Request) {
@@ -223,6 +198,10 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if quarantine.Enforce(w, r, h.db, repoID, quarantine.PathKeys(comp.ID, "Packages/"+filename, filename, r.URL.Path)...) {
+		return
+	}
+
 	reader, err := h.blobStore.Get(r.Context(), comp.SHA256)
 	if err != nil {
 		h.log.Errorw("failed to read package blob", "artifact_id", comp.ArtifactID, "error", err)
@@ -237,6 +216,20 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 
 	if _, err := io.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write package response", "filename", filename, "error", err)
+	}
+}
+
+func (h *HTTPHandler) handleComps(w http.ResponseWriter, r *http.Request) {
+	repoID, err := h.resolveRepoID(r.Context(), urlparams.Vars(r)["name"])
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	w.Header().Set("Cache-Control", "public, max-age=300")
+
+	if !h.tryServeRepoBlob(w, r, repoID, "comps.xml", "application/xml") {
+		http.NotFound(w, r)
 	}
 }
 

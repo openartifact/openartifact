@@ -6,6 +6,7 @@ package cargo
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/json"
@@ -18,8 +19,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -181,6 +184,11 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
+		fmt.Sprintf("%s-%s.crate", crateName, version), crateName+"/"+version, r.URL.Path)...) {
+		return
+	}
+
 	// Get blob from storage
 	rc, err := h.BlobStore.Get(r.Context(), crate.BlobKey)
 	if err != nil {
@@ -283,18 +291,6 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	checksum := fmt.Sprintf("%x", sha256.Sum256(crateBytes))
 
-	// Store crate in blob store
-	blobKey, err := h.BlobStore.Put(r.Context(), bytes.NewReader(crateBytes), map[string]string{
-		"cargo-name":    crateName,
-		"cargo-version": version,
-	})
-	if err != nil {
-		h.Log.Errorw("failed to store crate blob", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
 	// Extract optional fields
 	description, _ := metadata["description"].(string)
 	homepage, _ := metadata["homepage"].(string)
@@ -345,18 +341,46 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		Authors:       authors,
 		Readme:        readme,
 		MetadataJSON:  metadataBytes,
-		BlobKey:       blobKey,
 		Checksum:      checksum,
 		Yanked:        false,
 		DownloadCount: 0,
 	}
 
-	if err := h.DB.CreateCargoCrate(r.Context(), crate); err != nil {
-		h.Log.Errorw("failed to create cargo crate", "name", crateName, "version", version, "error", err)
+	// Store the blob and insert the referencing row under the per-blob lock so
+	// a concurrent unpublish cannot delete the blob in between.
+	if err := storage.WithBlobLock(r.Context(), h.DB, checksum, func(ctx context.Context) error {
+		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(crateBytes), map[string]string{
+			"sha256":        checksum,
+			"cargo-name":    crateName,
+			"cargo-version": version,
+		})
+		if err != nil {
+			return fmt.Errorf("store crate blob: %w", err)
+		}
+
+		crate.BlobKey = blobKey
+
+		if err := h.DB.CreateCargoCrate(ctx, crate); err != nil {
+			return fmt.Errorf("create cargo crate: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		h.Log.Errorw("failed to store cargo crate", "name", crateName, "version", version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "cargo",
+		Name:       crateName,
+		Version:    version,
+		Path:       fmt.Sprintf("%s-%s.crate", crateName, version),
+		SHA256:     checksum,
+		Size:       int64(len(crateBytes)),
+	}))
 
 	// Return success response
 	response := map[string]any{

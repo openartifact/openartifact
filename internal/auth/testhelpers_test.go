@@ -572,9 +572,6 @@ func (m *tokenMockDB) UpdateWebhookDelivery(_ context.Context, _ *models.Webhook
 func (m *tokenMockDB) ListWebhookDeliveries(_ context.Context, _ string, _ int) ([]*models.WebhookDelivery, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) ListPendingWebhookDeliveries(_ context.Context) ([]*models.WebhookDelivery, error) {
-	return nil, nil
-}
 
 // Backup methods
 func (m *tokenMockDB) CreateBackupJob(_ context.Context, _ *models.BackupJob) error { return nil }

@@ -2,26 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, ApiError } from './client'
-import { pagedResponse, emptyPaged, type PagedResult } from './transform'
+import { request } from './client'
+import { pagedResponse, type PagedResult } from './transform'
 import type { GpgKey } from './generated/types.gen'
 
 export type { GpgKey }
 
-function empty(): PagedResult<GpgKey> {
-  return emptyPaged<GpgKey>()
-}
-
 export async function listGpgKeys(): Promise<PagedResult<GpgKey>> {
-  try {
-    const raw = await request<Record<string, unknown>>('/api/v1/admin/gpg/keys')
-    return pagedResponse<GpgKey>(raw)
-  } catch (err) {
-    if (err instanceof ApiError && (err.status === 404 || err.status === 501)) {
-      return empty()
-    }
-    throw err
-  }
+  const raw = await request<Record<string, unknown>>('/api/v1/admin/gpg/keys')
+  return pagedResponse<GpgKey>(raw)
 }
 
 export interface ImportKeyInput {

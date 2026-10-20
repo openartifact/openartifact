@@ -5,22 +5,37 @@
 package api
 
 import (
+	"context"
+	"errors"
+	"fmt"
+	"io"
+	"mime"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
+	"strings"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 var repoNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
+// validFormats mirrors the chk_repo_format CHECK constraint in the schema.
+//
 //nolint:gochecknoglobals // immutable lookup table
 var validFormats = map[string]bool{
 	"deb":      true,
@@ -31,7 +46,7 @@ var validFormats = map[string]bool{
 	"helm":     true,
 	"pypi":     true,
 	"nuget":    true,
-	"gomod":    true,
+	"go":       true,
 	"cargo":    true,
 	"rubygems": true,
 	"raw":      true,
@@ -41,15 +56,63 @@ var validFormats = map[string]bool{
 	"sbt":      true,
 }
 
+const (
+	// maxListPage bounds the page number so (page-1)*limit cannot overflow.
+	maxListPage = 1_000_000
+	// repoListBatch is the batch size used while scanning repositories to
+	// filter them by the caller's permissions.
+	repoListBatch = 500
+	// maxGroupMembers bounds the size of a group repository.
+	maxGroupMembers = 200
+
+	defaultCacheTTLSeconds         = 3600
+	defaultNegativeCacheTTLSeconds = 60
+	maxCacheTTLSeconds             = 30 * 24 * 3600
+	maxNegativeCacheTTLSeconds     = 24 * 3600
+)
+
+func validFormatList() string {
+	names := make([]string, 0, len(validFormats))
+	for name := range validFormats {
+		names = append(names, name)
+	}
+
+	sort.Strings(names)
+
+	return strings.Join(names, ", ")
+}
+
 type RepositoriesHandler struct {
 	db        database.Database
 	log       *logger.Logger
 	evaluator *auth.Evaluator
+	blobStore storage.BlobStore
+	publisher webhook.Publisher
+
+	// gc tracks background orphan-blob collections started by repository deletes.
+	gc sync.WaitGroup
 }
 
 func NewRepositoriesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *RepositoriesHandler {
 	return &RepositoriesHandler{db: db, log: log, evaluator: evaluator}
 }
+
+// WithBlobStore enables the package download endpoint.
+func (h *RepositoriesHandler) WithBlobStore(store storage.BlobStore) *RepositoriesHandler {
+	h.blobStore = store
+
+	return h
+}
+
+// WithPublisher enables repository.created / repository.deleted webhook events.
+func (h *RepositoriesHandler) WithPublisher(p webhook.Publisher) *RepositoriesHandler {
+	h.publisher = p
+
+	return h
+}
+
+// WaitBackground blocks until background orphan-blob collections finish.
+func (h *RepositoriesHandler) WaitBackground() { h.gc.Wait() }
 
 func (h *RepositoriesHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/repositories", h.handleList)
@@ -58,6 +121,7 @@ func (h *RepositoriesHandler) RegisterAuthed(r chi.Router) {
 	r.Patch("/api/v1/repository/{name}", h.handleUpdate)
 	r.Delete("/api/v1/repository/{name}", h.handleDelete)
 	r.Get("/api/v1/repositories/{name}/packages", h.handlePackages)
+	r.Get("/api/v1/repositories/{name}/packages/{id}/download", h.handleDownloadPackage)
 	r.Get("/api/v1/repositories/{name}/members", h.handleGetMembers)
 	r.Put("/api/v1/repositories/{name}/members", h.handleUpdateMembers)
 }
@@ -65,7 +129,7 @@ func (h *RepositoriesHandler) RegisterAuthed(r chi.Router) {
 func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	q := r.URL.Query()
 	formatFilter := q.Get("format")
-	page := parseIntMin(q.Get("page"), 1, 1)
+	page := min(parseIntMin(q.Get("page"), 1, 1), maxListPage)
 	limit := parseIntClamp(q.Get("limit"), 25, 1, 100)
 
 	ctx := r.Context()
@@ -77,8 +141,18 @@ func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request)
 	)
 
 	if p != nil && !p.IsAnonymous {
+		// Load the principal's permission targets once and match in memory:
+		// one query for the targets plus one per batch of repositories.
+		canRead, err := h.evaluator.RepoReadFilter(ctx, *p)
+		if err != nil {
+			h.log.Errorw("list repositories: permission lookup failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return
+		}
+
 		for dbPage := 1; ; dbPage++ {
-			batch, err := h.db.ListRepositories(ctx, dbPage, 100, formatFilter)
+			batch, err := h.db.ListRepositories(ctx, dbPage, repoListBatch, formatFilter)
 			if err != nil {
 				h.log.Errorw("list repositories: db error", "error", err)
 				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -87,13 +161,13 @@ func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request)
 			}
 
 			for _, repo := range batch {
-				ok, err := h.evaluator.Evaluate(ctx, *p, repo.Name, "", "read")
+				ok, err := canRead(repo.Name)
 				if err == nil && ok {
 					repos = append(repos, repo)
 				}
 			}
 
-			if len(batch) < 100 {
+			if len(batch) < repoListBatch {
 				break
 			}
 		}
@@ -168,6 +242,82 @@ func (h *RepositoriesHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, repoToMap(repo))
 }
 
+// validateUpstreamURL rejects non-http(s) schemes and private/metadata hosts.
+func validateUpstreamURL(raw string) error {
+	if err := netutil.ValidateOutboundURL(raw); err != nil {
+		return fmt.Errorf("upstream_url is not allowed: %w", err)
+	}
+
+	return nil
+}
+
+// normalizeTTL validates a cache TTL: negative values are rejected, values
+// above max are clamped.
+func normalizeTTL(field string, v, def, maxV int) (int, error) {
+	if v < 0 {
+		return 0, validationError(field + " must not be negative")
+	}
+
+	if v == 0 {
+		return def, nil
+	}
+
+	return min(v, maxV), nil
+}
+
+// resolveGroupMembers validates a member list for a group repository and
+// returns the member repository IDs in priority order.
+func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, groupName, groupFormat string, names []string) ([]string, int, string, string) {
+	if len(names) > maxGroupMembers {
+		return nil, http.StatusBadRequest, "validation_failed", fmt.Sprintf("a group may have at most %d members", maxGroupMembers)
+	}
+
+	seen := make(map[string]bool, len(names))
+	ids := make([]string, 0, len(names))
+
+	for _, memberName := range names {
+		if memberName == groupName {
+			return nil, http.StatusBadRequest, "validation_failed", "a group cannot contain itself"
+		}
+
+		if seen[memberName] {
+			return nil, http.StatusBadRequest, "validation_failed", "duplicate member repository: " + memberName
+		}
+
+		seen[memberName] = true
+
+		member, err := h.db.GetRepositoryByName(ctx, memberName)
+		if err != nil {
+			h.log.Errorw("failed to get member repo", "name", memberName, "error", err)
+			return nil, http.StatusInternalServerError, "internal_error", "database error"
+		}
+
+		if member == nil {
+			return nil, http.StatusBadRequest, "validation_failed", "member repository not found: " + memberName
+		}
+
+		if member.Format != groupFormat {
+			return nil, http.StatusBadRequest, "validation_failed",
+				fmt.Sprintf("member repository %q has format %q, group format is %q", memberName, member.Format, groupFormat)
+		}
+
+		ids = append(ids, member.ID)
+	}
+
+	return ids, 0, "", ""
+}
+
+// encryptUpstreamPassword encrypts a proxy upstream password for storage.
+func encryptUpstreamPassword(plain string) (string, error) {
+	enc, err := crypto.Encrypt(plain)
+	if err != nil {
+		return "", fmt.Errorf("encrypt upstream password: %w", err)
+	}
+
+	return enc, nil
+}
+
+//nolint:gocyclo,cyclop // validation-heavy request handler
 func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	p := currentPrincipal(r)
 
@@ -201,11 +351,10 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !validFormats[body.Format] {
-		writeError(w, http.StatusBadRequest, "validation_failed", "format must be one of: deb, rpm, maven, npm, docker, helm")
+		writeError(w, http.StatusBadRequest, "validation_failed", "format must be one of: "+validFormatList())
 		return
 	}
 
-	// Validate repo_type
 	repoType := body.RepoType
 	if repoType == "" {
 		repoType = "hosted"
@@ -216,77 +365,104 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Validate proxy-specific fields
-	if repoType == "proxy" {
+	repo := &models.Repository{
+		Name:        body.Name,
+		Format:      body.Format,
+		Description: body.Description,
+		Public:      body.Public,
+		RepoType:    repoType,
+	}
+
+	hasUpstream := body.UpstreamURL != "" || body.UpstreamUsername != "" || body.UpstreamPassword != ""
+
+	switch repoType {
+	case "proxy":
 		if body.UpstreamURL == "" {
 			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_url is required for proxy repositories")
 			return
 		}
 
-		if body.CacheTTLSeconds == 0 {
-			body.CacheTTLSeconds = 3600
+		if err := validateUpstreamURL(body.UpstreamURL); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
 		}
 
-		if body.NegativeCacheTTLSeconds == 0 {
-			body.NegativeCacheTTLSeconds = 60
+		ttl, err := normalizeTTL("cache_ttl_seconds", body.CacheTTLSeconds, defaultCacheTTLSeconds, maxCacheTTLSeconds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
 		}
+
+		negTTL, err := normalizeTTL("negative_cache_ttl_seconds", body.NegativeCacheTTLSeconds, defaultNegativeCacheTTLSeconds, maxNegativeCacheTTLSeconds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		encPassword, err := encryptUpstreamPassword(body.UpstreamPassword)
+		if err != nil {
+			h.log.Errorw("create repository: encrypt upstream password", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
+
+			return
+		}
+
+		repo.UpstreamURL = body.UpstreamURL
+		repo.UpstreamUsername = body.UpstreamUsername
+		repo.UpstreamPasswordEnc = encPassword
+		repo.CacheTTLSeconds = ttl
+		repo.NegativeCacheTTLSeconds = negTTL
+	default:
+		if hasUpstream {
+			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_* fields are only valid for proxy repositories")
+			return
+		}
+
+		repo.CacheTTLSeconds = defaultCacheTTLSeconds
+		repo.NegativeCacheTTLSeconds = defaultNegativeCacheTTLSeconds
 	}
 
-	now := time.Now()
+	var memberIDs []string
+
+	switch {
+	case repoType == "group":
+		ids, status, code, msg := h.resolveGroupMembers(r.Context(), body.Name, body.Format, body.MemberRepos)
+		if status != 0 {
+			writeError(w, status, code, msg)
+			return
+		}
+
+		memberIDs = ids
+	case len(body.MemberRepos) > 0:
+		writeError(w, http.StatusBadRequest, "validation_failed", "member_repos is only valid for group repositories")
+		return
+	}
+
 	systemOrgID := "00000000-0000-0000-0000-000000000001"
+	now := time.Now()
+	repo.OrgID = &systemOrgID
+	repo.CreatedAt = now
+	repo.UpdatedAt = now
 
-	repo := &models.Repository{
-		Name:                    body.Name,
-		Format:                  body.Format,
-		Description:             body.Description,
-		Public:                  body.Public,
-		RepoType:                repoType,
-		UpstreamURL:             body.UpstreamURL,
-		UpstreamUsername:        body.UpstreamUsername,
-		UpstreamPasswordEnc:     body.UpstreamPassword,
-		OrgID:                   &systemOrgID,
-		CacheTTLSeconds:         body.CacheTTLSeconds,
-		NegativeCacheTTLSeconds: body.NegativeCacheTTLSeconds,
-		CreatedAt:               now,
-		UpdatedAt:               now,
-	}
-	if err := h.db.CreateRepository(r.Context(), repo); err != nil {
+	if err := h.db.CreateRepositoryWithMembers(r.Context(), repo, memberIDs); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a repository with this name already exists")
+			return
+		}
+
 		h.log.Errorw("create repository: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	// Add group members if this is a group repo
-	if repoType == "group" {
-		ctx := r.Context()
-		for priority, memberName := range body.MemberRepos {
-			memberRepo, err := h.db.GetRepositoryByName(ctx, memberName)
-			if err != nil {
-				h.log.Errorw("failed to get member repo", "name", memberName, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
-
-			if memberRepo == nil {
-				writeError(w, http.StatusBadRequest, "validation_failed", "member repository not found: "+memberName)
-				return
-			}
-
-			if err := h.db.AddGroupMember(ctx, repo.ID, memberRepo.ID, priority); err != nil {
-				h.log.Errorw("failed to add group member", "group_id", repo.ID, "member_id", memberRepo.ID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
-		}
-	}
+	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventRepoCreated,
+		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
 	writeJSON(w, http.StatusCreated, repoToMap(repo))
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
+//nolint:gocyclo,cyclop // validation-heavy request handler
 func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	p := currentPrincipal(r)
 
@@ -312,19 +488,33 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// MemberRepos is a pointer so that an explicit empty list ([]) clears the
+	// group while an absent/null field leaves it unchanged.
 	var body struct {
-		Description             *string  `json:"description"`
-		Public                  *bool    `json:"public"`
-		UpstreamURL             *string  `json:"upstream_url"`
-		UpstreamUsername        *string  `json:"upstream_username"`
-		UpstreamPassword        *string  `json:"upstream_password"`
-		CacheTTLSeconds         *int     `json:"cache_ttl_seconds"`
-		NegativeCacheTTLSeconds *int     `json:"negative_cache_ttl_seconds"`
-		Blocked                 *bool    `json:"blocked"`
-		MemberRepos             []string `json:"member_repos"`
+		Description             *string   `json:"description"`
+		Public                  *bool     `json:"public"`
+		UpstreamURL             *string   `json:"upstream_url"`
+		UpstreamUsername        *string   `json:"upstream_username"`
+		UpstreamPassword        *string   `json:"upstream_password"`
+		CacheTTLSeconds         *int      `json:"cache_ttl_seconds"`
+		NegativeCacheTTLSeconds *int      `json:"negative_cache_ttl_seconds"`
+		Blocked                 *bool     `json:"blocked"`
+		MemberRepos             *[]string `json:"member_repos"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+
+	touchesUpstream := body.UpstreamURL != nil || body.UpstreamUsername != nil || body.UpstreamPassword != nil ||
+		body.CacheTTLSeconds != nil || body.NegativeCacheTTLSeconds != nil
+	if touchesUpstream && repo.RepoType != "proxy" {
+		writeError(w, http.StatusBadRequest, "validation_failed", "upstream and cache fields are only valid for proxy repositories")
+		return
+	}
+
+	if body.MemberRepos != nil && repo.RepoType != "group" {
+		writeError(w, http.StatusBadRequest, "validation_failed", "member_repos is only valid for group repositories")
 		return
 	}
 
@@ -337,6 +527,16 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if body.UpstreamURL != nil {
+		if *body.UpstreamURL == "" {
+			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_url cannot be empty for a proxy repository")
+			return
+		}
+
+		if err := validateUpstreamURL(*body.UpstreamURL); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
 		repo.UpstreamURL = *body.UpstreamURL
 	}
 
@@ -345,19 +545,51 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if body.UpstreamPassword != nil {
-		repo.UpstreamPasswordEnc = *body.UpstreamPassword
+		enc, err := encryptUpstreamPassword(*body.UpstreamPassword)
+		if err != nil {
+			h.log.Errorw("update repository: encrypt upstream password", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
+
+			return
+		}
+
+		repo.UpstreamPasswordEnc = enc
 	}
 
 	if body.CacheTTLSeconds != nil {
-		repo.CacheTTLSeconds = *body.CacheTTLSeconds
+		ttl, err := normalizeTTL("cache_ttl_seconds", *body.CacheTTLSeconds, defaultCacheTTLSeconds, maxCacheTTLSeconds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		repo.CacheTTLSeconds = ttl
 	}
 
 	if body.NegativeCacheTTLSeconds != nil {
-		repo.NegativeCacheTTLSeconds = *body.NegativeCacheTTLSeconds
+		ttl, err := normalizeTTL("negative_cache_ttl_seconds", *body.NegativeCacheTTLSeconds, defaultNegativeCacheTTLSeconds, maxNegativeCacheTTLSeconds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		repo.NegativeCacheTTLSeconds = ttl
 	}
 
 	if body.Blocked != nil {
 		repo.Blocked = *body.Blocked
+	}
+
+	var memberIDs []string
+
+	if body.MemberRepos != nil {
+		ids, status, code, msg := h.resolveGroupMembers(ctx, repo.Name, repo.Format, *body.MemberRepos)
+		if status != 0 {
+			writeError(w, status, code, msg)
+			return
+		}
+
+		memberIDs = ids
 	}
 
 	if err := h.db.UpdateRepository(ctx, repo); err != nil {
@@ -367,47 +599,12 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Update group members if provided
-	if len(body.MemberRepos) > 0 && repo.RepoType == "group" {
-		// Remove all existing members
-		existingMembers, err := h.db.ListGroupMembers(ctx, repo.ID)
-		if err != nil {
-			h.log.Errorw("failed to list group members", "repo_id", repo.ID, "error", err)
+	if body.MemberRepos != nil {
+		if err := h.db.ReplaceGroupMembers(ctx, repo.ID, memberIDs); err != nil {
+			h.log.Errorw("update repository: replace group members", "group_id", repo.ID, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 			return
-		}
-
-		for _, member := range existingMembers {
-			if err := h.db.RemoveGroupMember(ctx, repo.ID, member.MemberRepoID); err != nil {
-				h.log.Errorw("failed to remove group member", "group_id", repo.ID, "member_id", member.MemberRepoID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
-		}
-
-		// Add new members
-		for priority, memberName := range body.MemberRepos {
-			memberRepo, err := h.db.GetRepositoryByName(ctx, memberName)
-			if err != nil {
-				h.log.Errorw("failed to get member repo", "name", memberName, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
-
-			if memberRepo == nil {
-				writeError(w, http.StatusBadRequest, "validation_failed", "member repository not found: "+memberName)
-				return
-			}
-
-			if err := h.db.AddGroupMember(ctx, repo.ID, memberRepo.ID, priority); err != nil {
-				h.log.Errorw("failed to add group member", "group_id", repo.ID, "member_id", memberRepo.ID, "error", err)
-				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-				return
-			}
 		}
 	}
 
@@ -440,20 +637,62 @@ func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.db.DeleteRepository(ctx, repo.ID); err != nil {
+		if database.IsForeignKeyViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "repository is still referenced (for example by a release bundle or promotion)")
+			return
+		}
+
 		h.log.Errorw("delete repository: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
+	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventRepoDeleted,
+		webhook.RepositoryPayload(webhook.EventRepoDeleted, repo.Name, repo.Format, repo.RepoType))
+
+	// The delete cascaded the repository's package rows away; reclaim the blobs
+	// only it referenced.
+	h.collectOrphansAsync()
+
 	writeNoContent(w)
+}
+
+// maxOrphanPasses bounds how many batches one repository delete reclaims; the
+// cleanup worker's periodic pass picks up whatever is left.
+const maxOrphanPasses = 100
+
+// collectOrphansAsync reclaims blobs left unreferenced by a repository delete.
+// It runs detached from the request (the client must not wait for storage
+// deletes) and is best-effort: failures are logged and retried by the cleanup
+// worker's periodic pass.
+func (h *RepositoriesHandler) collectOrphansAsync() {
+	if h.blobStore == nil {
+		return
+	}
+
+	ctx := context.WithoutCancel(context.Background())
+
+	h.gc.Go(func() {
+		for range maxOrphanPasses {
+			removed, err := storage.CollectOrphanBlobs(ctx, h.db, h.blobStore, storage.OrphanMinAge, storage.OrphanBatch)
+			if err != nil {
+				h.log.Warnw("orphan blob collection after repository delete failed", "removed", removed, "error", err)
+				return
+			}
+
+			if removed < storage.OrphanBatch {
+				return
+			}
+		}
+	})
 }
 
 func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	q := r.URL.Query()
 	formatFilter := q.Get("format")
-	page := parseIntMin(q.Get("page"), 1, 1)
+	page := min(parseIntMin(q.Get("page"), 1, 1), maxListPage)
 	limit := parseIntClamp(q.Get("limit"), 25, 1, 100)
 
 	ctx := r.Context()
@@ -497,6 +736,7 @@ func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Requ
 			"format":     c.Format,
 			"arch":       c.Arch,
 			"size":       c.PackageSize,
+			"sha256":     c.SHA256,
 			"filename":   c.Filename,
 			"created_at": c.CreatedAt,
 		})
@@ -508,6 +748,103 @@ func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Requ
 		"limit":    limit,
 		"packages": packages,
 	})
+}
+
+// handleDownloadPackage streams the blob of a package (by component ID) that
+// belongs to the repository named in the URL.
+//
+//	GET /api/v1/repositories/{name}/packages/{id}/download
+func (h *RepositoriesHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Request) {
+	vars := urlparams.Vars(r)
+	ctx := r.Context()
+
+	if h.blobStore == nil {
+		writeError(w, http.StatusNotImplemented, "not_implemented", "package download is not available")
+		return
+	}
+
+	repo, err := h.db.GetRepositoryByName(ctx, vars["name"])
+	if err != nil {
+		h.log.Errorw("download package: db error getting repo", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return
+	}
+
+	comp, err := h.db.GetComponentByID(ctx, vars["id"])
+	if err != nil {
+		h.log.Errorw("download package: db error getting component", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if comp == nil || comp.RepositoryID != repo.ID {
+		writeError(w, http.StatusNotFound, "not_found", "package not found")
+		return
+	}
+
+	p := currentPrincipal(r)
+	if p == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	filename := comp.Filename
+	if filename == "" {
+		filename = comp.Name + "-" + comp.Version
+	}
+
+	ok, err := h.evaluator.Evaluate(ctx, *p, repo.Name, filename, "read")
+	if err != nil || !ok {
+		writeError(w, http.StatusForbidden, "forbidden", "access denied")
+		return
+	}
+
+	// The UI scans and quarantines packages by their row id.
+	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(comp.ID, filename, r.URL.Path)...) {
+		return
+	}
+
+	reader, err := h.blobStore.Get(ctx, comp.SHA256)
+	if err != nil {
+		h.log.Errorw("download package: blob read failed", "package_id", comp.ID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to read package")
+
+		return
+	}
+
+	defer func() { _ = reader.Close() }()
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+
+	if comp.PackageSize > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(comp.PackageSize, 10))
+	}
+
+	if _, err := io.Copy(w, reader); err != nil && !errors.Is(err, context.Canceled) {
+		h.log.Errorw("download package: write failed", "package_id", comp.ID, "error", err)
+	}
+}
+
+func (h *RepositoriesHandler) memberListResponse(members []*models.RepositoryGroupMember) map[string]any {
+	memberList := make([]map[string]any, 0, len(members))
+
+	for _, member := range members {
+		memberList = append(memberList, map[string]any{
+			"id":       member.MemberRepoID,
+			"priority": member.Priority,
+		})
+	}
+
+	return map[string]any{"members": memberList}
 }
 
 func (h *RepositoriesHandler) handleGetMembers(w http.ResponseWriter, r *http.Request) {
@@ -540,22 +877,7 @@ func (h *RepositoriesHandler) handleGetMembers(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	var memberList []map[string]any
-
-	for _, member := range members {
-		memberList = append(memberList, map[string]any{
-			"id":       member.MemberRepoID,
-			"priority": member.Priority,
-		})
-	}
-
-	if memberList == nil {
-		memberList = []map[string]any{}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"members": memberList,
-	})
+	writeJSON(w, http.StatusOK, h.memberListResponse(members))
 }
 
 func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http.Request) {
@@ -596,48 +918,19 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Remove all existing members
-	existingMembers, err := h.db.ListGroupMembers(ctx, repo.ID)
-	if err != nil {
-		h.log.Errorw("failed to list group members", "repo_id", repo.ID, "error", err)
+	memberIDs, status, code, msg := h.resolveGroupMembers(ctx, repo.Name, repo.Format, body.MemberRepos)
+	if status != 0 {
+		writeError(w, status, code, msg)
+		return
+	}
+
+	if err := h.db.ReplaceGroupMembers(ctx, repo.ID, memberIDs); err != nil {
+		h.log.Errorw("update members: replace group members", "group_id", repo.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	for _, member := range existingMembers {
-		if err := h.db.RemoveGroupMember(ctx, repo.ID, member.MemberRepoID); err != nil {
-			h.log.Errorw("failed to remove group member", "group_id", repo.ID, "member_id", member.MemberRepoID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-	}
-
-	// Add new members
-	for priority, memberName := range body.MemberRepos {
-		memberRepo, err := h.db.GetRepositoryByName(ctx, memberName)
-		if err != nil {
-			h.log.Errorw("failed to get member repo", "name", memberName, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-
-		if memberRepo == nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", "member repository not found: "+memberName)
-			return
-		}
-
-		if err := h.db.AddGroupMember(ctx, repo.ID, memberRepo.ID, priority); err != nil {
-			h.log.Errorw("failed to add group member", "group_id", repo.ID, "member_id", memberRepo.ID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-	}
-
-	// Return updated members
 	members, err := h.db.ListGroupMembers(ctx, repo.ID)
 	if err != nil {
 		h.log.Errorw("update members: db error listing members", "error", err)
@@ -646,21 +939,7 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 		return
 	}
 
-	var memberList []map[string]any
-	for _, member := range members {
-		memberList = append(memberList, map[string]any{
-			"id":       member.MemberRepoID,
-			"priority": member.Priority,
-		})
-	}
-
-	if memberList == nil {
-		memberList = []map[string]any{}
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"members": memberList,
-	})
+	writeJSON(w, http.StatusOK, h.memberListResponse(members))
 }
 
 func repoToMap(r *models.Repository) responses.RepositoryResponse {

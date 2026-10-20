@@ -69,7 +69,7 @@ run: build
 
 test:
 	@echo "Running tests..."
-	$(GO) test -short -race -timeout 60s ./...
+	$(GO) test -short -race -timeout 5m ./...
 
 test-race:
 	@echo "Running tests with race detector..."
@@ -77,11 +77,11 @@ test-race:
 
 test-integration:
 	@echo "Running integration tests..."
-	$(GO) test -tags=integration ./tests/integration/... -timeout 120s
+	$(GO) test -tags=integration -race -count=1 ./tests/... -timeout 10m
 
 test-coverage:
 	@echo "Running tests with coverage..."
-	$(GO) test -v -race -timeout 30s -coverprofile=coverage.out ./...
+	$(GO) test -v -race -timeout 10m -coverprofile=coverage.out ./...
 	$(GO) tool cover -html=coverage.out -o coverage.html
 	@echo "Coverage report: coverage.html"
 
@@ -131,7 +131,7 @@ deps:
 
 docker-build:
 	@echo "Building Docker image: $(DOCKER_IMAGE)"
-	docker build --build-arg VERSION=$(VERSION) -t $(DOCKER_IMAGE) -f docker/Dockerfile .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) --build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) -t $(DOCKER_IMAGE) -f docker/Dockerfile .
 	@echo "Docker image built: $(DOCKER_IMAGE)"
 
 docker-run: docker-build
@@ -140,6 +140,9 @@ docker-run: docker-build
 	docker run -d \
 		--name $(DOCKER_CONTAINER) \
 		-p 8080:8080 \
+		--add-host=host.docker.internal:host-gateway \
+		-v openartifact_data:/var/lib/artifacts \
+		-v openartifact_backups:/var/lib/openartifact/backups \
 		--env-file docker/.env \
 		-e SERVER_HOST=0.0.0.0 \
 		-e SERVER_PORT=8080 \

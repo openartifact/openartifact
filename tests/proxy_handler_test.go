@@ -33,6 +33,7 @@ func TestProxyHandler_BlockedRepo(t *testing.T) {
 	blobStore, _ := storage.NewFilesystemStore(filepath.Join(dir, "blobs"))
 	db := newMockDatabase()
 	log := newProxyLogger(t)
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true") // httptest upstreams are loopback
 	h := proxy.NewHandler(log, db, blobStore)
 
 	repo := &models.Repository{ID: "repo1", Blocked: true}
@@ -56,6 +57,7 @@ func TestProxyHandler_CacheMiss_FetchFromUpstream(t *testing.T) {
 	blobStore, _ := storage.NewFilesystemStore(filepath.Join(dir, "blobs"))
 	db := newMockDatabase()
 	log := newProxyLogger(t)
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true") // httptest upstreams are loopback
 	h := proxy.NewHandler(log, db, blobStore)
 
 	repo := &models.Repository{
@@ -83,6 +85,7 @@ func TestProxyHandler_CacheMiss_Upstream404(t *testing.T) {
 	blobStore, _ := storage.NewFilesystemStore(filepath.Join(dir, "blobs"))
 	db := newMockDatabase()
 	log := newProxyLogger(t)
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true") // httptest upstreams are loopback
 	h := proxy.NewHandler(log, db, blobStore)
 
 	repo := &models.Repository{
@@ -110,6 +113,7 @@ func TestProxyHandler_CacheMiss_UpstreamError(t *testing.T) {
 	blobStore, _ := storage.NewFilesystemStore(filepath.Join(dir, "blobs"))
 	db := newMockDatabase()
 	log := newProxyLogger(t)
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true") // httptest upstreams are loopback
 	h := proxy.NewHandler(log, db, blobStore)
 
 	repo := &models.Repository{

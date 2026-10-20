@@ -10,8 +10,9 @@
 server:
   host: "0.0.0.0"
   port: 8080
-  readTimeout: 15      # seconds
-  writeTimeout: 15     # seconds
+  # 0 (default) = unlimited so large uploads are never truncated
+  # readTimeout: 0       # seconds
+  # writeTimeout: 0      # seconds
   shutdownTimeout: 30  # seconds
   # tlsEnabled: false
   # tlsCert: /etc/openartifact/tls/cert.pem
@@ -23,6 +24,11 @@ server:
   #   - "10.0.0.0/8"
   #   - "192.168.0.0/16"
   # rateLimitRps: 100
+  # readHeaderTimeout: 10   # seconds
+  # trustedProxies:         # CIDRs whose X-Forwarded-For is trusted
+  #   - "10.0.0.0/8"
+  # apiKey: ""              # legacy write API key
+  # instanceId: "node-1"
 
 baseUrl: "http://localhost:8080"
 
@@ -49,8 +55,21 @@ storage:
   # region: us-east-1
   # accessKey: CHANGE_ME
   # secretKey: CHANGE_ME
-  # endpoint: http://minio:9000
+  # endpoint: http://garage:3900
   # forcePathStyle: true
+  # presignTtl: 5m
+  # GCS (S3-compatible XML API):
+  # gcsBucket: my-bucket
+  # gcsHmacKey: CHANGE_ME
+  # gcsHmacSecret: CHANGE_ME
+  # Azure Blob:
+  # azureAccountName: myaccount
+  # azureAccountKey: CHANGE_ME
+  # azureContainerName: artifacts
+  # OCI registry:
+  # ociUsername: user
+  # ociPassword: CHANGE_ME
+  # ociInsecure: false
 
 log:
   level: "info"    # debug | info | warn | error
@@ -59,9 +78,11 @@ log:
 
 auth:
   allowAnonymousRead: false
-  legacyApiKeyEnabled: false
+  legacyApiKeyEnabled: true  # default true; set false to disable the legacy API key
   sessionDurationHours: 24
-  # hmacKey: "CHANGE_ME"  # generated ephemerally if not set
+  # hmacKey: "CHANGE_ME"  # REQUIRED for restart/replica-safe SSO; random per boot if unset
+  # samlSpCert: ""         # PEM, persistent SAML SP certificate
+  # samlSpKey: ""          # PEM, persistent SAML SP key
 
 gpg:
   enabled: false
@@ -74,7 +95,7 @@ backup:
 
 ai:
   enabled: false
-  provider: "openai"   # openai | azure | ollama | custom
+  provider: "openai"   # openai | azure | vertex | ollama
   # baseUrl: "https://api.openai.com/v1"
   # apiKey: "CHANGE_ME"
   model: "gpt-4o-mini"

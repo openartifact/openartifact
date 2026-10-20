@@ -6,9 +6,12 @@ package api
 
 import (
 	_ "embed"
+	"encoding/json"
 	"net/http"
+	"sync"
 
 	"github.com/go-chi/chi/v5"
+	"gopkg.in/yaml.v3"
 )
 
 //go:embed openapi.json
@@ -34,16 +37,43 @@ func (h *OpenAPIHandler) handleSpec(w http.ResponseWriter, r *http.Request) {
 	_, _ = w.Write(openapiSpec)
 }
 
+//nolint:gochecknoglobals // lazily rendered, immutable after first use
+var (
+	openapiYAMLOnce sync.Once
+	openapiYAML     []byte
+	errOpenapiYAML  error
+)
+
+// renderOpenAPIYAML converts the embedded JSON spec to YAML once.
+func renderOpenAPIYAML() ([]byte, error) {
+	openapiYAMLOnce.Do(func() {
+		var doc any
+		if err := json.Unmarshal(openapiSpec, &doc); err != nil {
+			errOpenapiYAML = err
+			return
+		}
+
+		openapiYAML, errOpenapiYAML = yaml.Marshal(doc)
+	})
+
+	return openapiYAML, errOpenapiYAML
+}
+
 func (h *OpenAPIHandler) handleSpecYAML(w http.ResponseWriter, r *http.Request) {
-	// For simplicity, serve the JSON with yaml content-type
-	// JSON is a valid YAML superset
+	out, err := renderOpenAPIYAML()
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to render OpenAPI spec")
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/yaml")
-	_, _ = w.Write(openapiSpec)
+	w.Header().Set("X-Content-Type-Options", "nosniff")
+	_, _ = w.Write(out)
 }
 
 func (h *OpenAPIHandler) handleSwaggerUI(w http.ResponseWriter, r *http.Request) {
 	// Serve inline Swagger UI HTML that loads from CDN
-	w.Header().Set("Content-Type", "text/html")
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
 	_, _ = w.Write([]byte(swaggerUIHTML))
 }
 
@@ -53,11 +83,11 @@ const swaggerUIHTML = `<!DOCTYPE html>
   <title>OpenArtifact API</title>
   <meta charset="utf-8"/>
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5/swagger-ui.css" >
+  <link rel="stylesheet" type="text/css" href="https://unpkg.com/swagger-ui-dist@5.34.0/swagger-ui.css" integrity="sha384-4c3vsE5f+trhFyHrFrLM1fFGUn531NIaC7dcqEWIJdoRQJ5CkJbSuSCwXLpaS1KF" crossorigin="anonymous">
 </head>
 <body>
 <div id="swagger-ui"></div>
-<script src="https://unpkg.com/swagger-ui-dist@5/swagger-ui-bundle.js"> </script>
+<script src="https://unpkg.com/swagger-ui-dist@5.34.0/swagger-ui-bundle.js" integrity="sha384-9Td7MKiIr2S83E1kZyyVi8KdJw/S8CpAvu0llLyMeg0xq/hDGiZJfVn0fV4llCmK" crossorigin="anonymous"></script>
 <script>
 window.onload = function() {
   SwaggerUIBundle({

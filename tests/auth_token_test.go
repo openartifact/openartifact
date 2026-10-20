@@ -177,16 +177,11 @@ func TestToken_UpdateLastUsed(t *testing.T) {
 
 	auth.UpdateLastUsed(ctx, db, record.ID)
 
-	time.Sleep(100 * time.Millisecond)
+	waitUntil(t, 5*time.Second, "last_used_at update", func() bool {
+		stored, err := db.GetTokenByID(ctx, record.ID)
 
-	stored, err := db.GetTokenByID(ctx, record.ID)
-	if err != nil {
-		t.Fatalf("GetTokenByID: %v", err)
-	}
-
-	if stored == nil {
-		t.Fatal("token not found")
-	}
+		return err == nil && stored != nil && stored.LastUsedAt != nil
+	})
 }
 
 func TestToken_InvalidKind(t *testing.T) {

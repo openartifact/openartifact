@@ -28,12 +28,21 @@ import (
 // Sentinel errors for delta operations.
 var (
 	ErrSHA256Mismatch = errors.New("sha256 mismatch")
+	ErrInputTooLarge  = errors.New("input too large for delta generation")
 )
+
+// MaxInputSize is the largest old/new input (bytes) Generate accepts. bsdiff
+// needs several times the input size in memory, so this bounds worst-case use.
+const MaxInputSize = 64 << 20
 
 // Generate computes a binary diff patch from oldData to newData using bsdiff.
 // The returned patch can be applied to oldData to reconstruct newData exactly.
 // Returns the patch bytes and its SHA-256 hex digest.
 func Generate(oldData, newData []byte) ([]byte, string, error) {
+	if len(oldData) > MaxInputSize || len(newData) > MaxInputSize {
+		return nil, "", ErrInputTooLarge
+	}
+
 	patch, err := bsdiff.Diff(oldData, newData)
 	if err != nil {
 		return nil, "", fmt.Errorf("delta: generate: %w", err)
@@ -96,7 +105,11 @@ func readAll(ctx context.Context, r io.Reader) ([]byte, error) {
 	done := make(chan error, 1)
 
 	go func() {
-		_, err := io.Copy(&buf, r)
+		n, err := io.Copy(&buf, io.LimitReader(r, MaxInputSize+1))
+		if err == nil && n > MaxInputSize {
+			err = ErrInputTooLarge
+		}
+
 		done <- err
 	}()
 

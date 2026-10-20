@@ -14,7 +14,7 @@ import (
 
 var errNoSnapshotTimestamp = errors.New("filename does not contain a snapshot timestamp")
 
-var snapshotTimestampRe = regexp.MustCompile(`^(.+?)-(\d{8}\.\d{6})-(\d+)(\..+)$`)
+var snapshotTimestampRe = regexp.MustCompile(`^(.+?)-(\d{8}\.\d{6})-(\d+)([-.].+)$`)
 
 func IsSnapshot(version string) bool {
 	return strings.HasSuffix(version, "-SNAPSHOT")

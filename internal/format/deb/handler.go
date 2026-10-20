@@ -152,60 +152,60 @@ func (rh *RepositoryHandler) GeneratePackagesEntry(debFile *deb.DebFile, filenam
 	pkg := debFile.Package
 
 	var entry strings.Builder
-	entry.WriteString(fmt.Sprintf("Package: %s\n", pkg.Package))
-	entry.WriteString(fmt.Sprintf("Version: %s\n", pkg.Version))
-	entry.WriteString(fmt.Sprintf("Architecture: %s\n", pkg.Architecture))
+	fmt.Fprintf(&entry, "Package: %s\n", pkg.Package)
+	fmt.Fprintf(&entry, "Version: %s\n", pkg.Version)
+	fmt.Fprintf(&entry, "Architecture: %s\n", pkg.Architecture)
 
 	if pkg.Maintainer != "" {
-		entry.WriteString(fmt.Sprintf("Maintainer: %s\n", pkg.Maintainer))
+		fmt.Fprintf(&entry, "Maintainer: %s\n", pkg.Maintainer)
 	}
 
 	if pkg.InstalledSize > 0 {
-		entry.WriteString(fmt.Sprintf("Installed-Size: %d\n", pkg.InstalledSize))
+		fmt.Fprintf(&entry, "Installed-Size: %d\n", pkg.InstalledSize)
 	}
 
 	if pkg.Depends != "" {
-		entry.WriteString(fmt.Sprintf("Depends: %s\n", pkg.Depends))
+		fmt.Fprintf(&entry, "Depends: %s\n", pkg.Depends)
 	}
 
 	if pkg.PreDepends != "" {
-		entry.WriteString(fmt.Sprintf("Pre-Depends: %s\n", pkg.PreDepends))
+		fmt.Fprintf(&entry, "Pre-Depends: %s\n", pkg.PreDepends)
 	}
 
 	if pkg.Recommends != "" {
-		entry.WriteString(fmt.Sprintf("Recommends: %s\n", pkg.Recommends))
+		fmt.Fprintf(&entry, "Recommends: %s\n", pkg.Recommends)
 	}
 
 	if pkg.Suggests != "" {
-		entry.WriteString(fmt.Sprintf("Suggests: %s\n", pkg.Suggests))
+		fmt.Fprintf(&entry, "Suggests: %s\n", pkg.Suggests)
 	}
 
 	if pkg.Conflicts != "" {
-		entry.WriteString(fmt.Sprintf("Conflicts: %s\n", pkg.Conflicts))
+		fmt.Fprintf(&entry, "Conflicts: %s\n", pkg.Conflicts)
 	}
 
 	if pkg.Breaks != "" {
-		entry.WriteString(fmt.Sprintf("Breaks: %s\n", pkg.Breaks))
+		fmt.Fprintf(&entry, "Breaks: %s\n", pkg.Breaks)
 	}
 
 	if pkg.Replaces != "" {
-		entry.WriteString(fmt.Sprintf("Replaces: %s\n", pkg.Replaces))
+		fmt.Fprintf(&entry, "Replaces: %s\n", pkg.Replaces)
 	}
 
 	if pkg.Provides != "" {
-		entry.WriteString(fmt.Sprintf("Provides: %s\n", pkg.Provides))
+		fmt.Fprintf(&entry, "Provides: %s\n", pkg.Provides)
 	}
 
 	if pkg.Section != "" {
-		entry.WriteString(fmt.Sprintf("Section: %s\n", pkg.Section))
+		fmt.Fprintf(&entry, "Section: %s\n", pkg.Section)
 	}
 
 	if pkg.Priority != "" {
-		entry.WriteString(fmt.Sprintf("Priority: %s\n", pkg.Priority))
+		fmt.Fprintf(&entry, "Priority: %s\n", pkg.Priority)
 	}
 
 	if pkg.Homepage != "" {
-		entry.WriteString(fmt.Sprintf("Homepage: %s\n", pkg.Homepage))
+		fmt.Fprintf(&entry, "Homepage: %s\n", pkg.Homepage)
 	}
 
 	if pkg.Essential {
@@ -213,44 +213,44 @@ func (rh *RepositoryHandler) GeneratePackagesEntry(debFile *deb.DebFile, filenam
 	}
 
 	if pkg.MultiArch != "" {
-		entry.WriteString(fmt.Sprintf("Multi-Arch: %s\n", pkg.MultiArch))
+		fmt.Fprintf(&entry, "Multi-Arch: %s\n", pkg.MultiArch)
 	}
 
 	if pkg.Source != "" {
-		entry.WriteString(fmt.Sprintf("Source: %s\n", pkg.Source))
+		fmt.Fprintf(&entry, "Source: %s\n", pkg.Source)
 	}
 
 	if pkg.SourceVersion != "" {
-		entry.WriteString(fmt.Sprintf("Source-Version: %s\n", pkg.SourceVersion))
+		fmt.Fprintf(&entry, "Source-Version: %s\n", pkg.SourceVersion)
 	}
 
 	if pkg.BuiltUsing != "" {
-		entry.WriteString(fmt.Sprintf("Built-Using: %s\n", pkg.BuiltUsing))
+		fmt.Fprintf(&entry, "Built-Using: %s\n", pkg.BuiltUsing)
 	}
 
 	// Add file information
-	entry.WriteString(fmt.Sprintf("Filename: %s\n", filename))
-	entry.WriteString(fmt.Sprintf("Size: %d\n", size))
+	fmt.Fprintf(&entry, "Filename: %s\n", filename)
+	fmt.Fprintf(&entry, "Size: %d\n", size)
 
 	if md5sum != "" {
-		entry.WriteString(fmt.Sprintf("MD5sum: %s\n", md5sum))
+		fmt.Fprintf(&entry, "MD5sum: %s\n", md5sum)
 	}
 
 	if sha1 != "" {
-		entry.WriteString(fmt.Sprintf("SHA1: %s\n", sha1))
+		fmt.Fprintf(&entry, "SHA1: %s\n", sha1)
 	}
 
 	if sha256 != "" {
-		entry.WriteString(fmt.Sprintf("SHA256: %s\n", sha256))
+		fmt.Fprintf(&entry, "SHA256: %s\n", sha256)
 	}
 
 	if pkg.Description != "" {
-		entry.WriteString(fmt.Sprintf("Description: %s\n", pkg.Description))
+		fmt.Fprintf(&entry, "Description: %s\n", pkg.Description)
 	}
 
 	// Add custom fields
 	for k, v := range pkg.Custom {
-		entry.WriteString(fmt.Sprintf("%s: %s\n", k, v))
+		fmt.Fprintf(&entry, "%s: %s\n", k, v)
 	}
 
 	entry.WriteString("\n")

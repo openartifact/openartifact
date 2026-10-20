@@ -47,7 +47,8 @@ func TestMavenWorkerNotifyStale_Debounce(t *testing.T) {
 		w.NotifyStale("repo-1", "com.example", "myapp")
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	waitUntil(t, 5*time.Second, "first UpsertRepoMetadata", func() bool { return db.upsertCalls.Load() >= 1 })
+	time.Sleep(150 * time.Millisecond) // ensure no extra debounced runs fire
 
 	calls := db.upsertCalls.Load()
 	if calls != 1 {

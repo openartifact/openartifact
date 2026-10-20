@@ -30,16 +30,7 @@ func (h *AdminAuditHandler) Register(r chi.Router) {
 }
 
 func (h *AdminAuditHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return
-	}
-
-	if !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+	if !requireAdmin(w, r, h.evaluator) {
 		return
 	}
 

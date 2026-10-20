@@ -6,7 +6,10 @@ package api
 
 import (
 	"context"
+	"crypto/tls"
 	"errors"
+	"fmt"
+	"net"
 	"net/http"
 	"slices"
 	"time"
@@ -15,15 +18,14 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-var errHandlerNil = errors.New("handler cannot be nil")
-
 // HTTPServer implements the Server interface.
 type HTTPServer struct {
 	router      chi.Router
 	httpServer  *http.Server
 	log         *logger.Logger
-	handlers    []Handler
 	middlewares []func(http.Handler) http.Handler
+	tlsCert     string
+	tlsKey      string
 }
 
 // NewHTTPServer creates a new HTTP server. Defaults favor never truncating
@@ -41,8 +43,7 @@ func NewHTTPServer(addr string, log *logger.Logger) *HTTPServer {
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20 * time.Second,
 		},
-		log:      log,
-		handlers: make([]Handler, 0),
+		log: log,
 	}
 }
 
@@ -50,33 +51,36 @@ func NewHTTPServer(addr string, log *logger.Logger) *HTTPServer {
 func (s *HTTPServer) Start(ctx context.Context) error {
 	s.log.Infow("Starting HTTP server", "address", s.httpServer.Addr)
 
+	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.httpServer.Addr)
+	if err != nil {
+		return fmt.Errorf("listen on %s: %w", s.httpServer.Addr, err)
+	}
+
 	go func() {
-		if err := s.httpServer.ListenAndServe(); err != nil && !errors.Is(err, http.ErrServerClosed) {
-			s.log.Errorw("HTTP server error", "error", err)
+		var serveErr error
+		if s.tlsCert != "" && s.tlsKey != "" {
+			serveErr = s.httpServer.ServeTLS(ln, s.tlsCert, s.tlsKey)
+		} else {
+			serveErr = s.httpServer.Serve(ln)
+		}
+		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
+			s.log.Errorw("HTTP server error", "error", serveErr)
 		}
 	}()
 
 	return nil
 }
 
+// EnableTLS makes Start serve HTTPS using the given certificate and key files.
+func (s *HTTPServer) EnableTLS(certFile, keyFile string) {
+	s.tlsCert, s.tlsKey = certFile, keyFile
+	s.httpServer.TLSConfig = &tls.Config{MinVersion: tls.VersionTLS12}
+}
+
 // Stop gracefully stops the server.
 func (s *HTTPServer) Stop(ctx context.Context) error {
 	s.log.Infow("Stopping HTTP server")
 	return s.httpServer.Shutdown(ctx)
-}
-
-// RegisterHandler registers an API handler.
-func (s *HTTPServer) RegisterHandler(handler Handler) error {
-	if handler == nil {
-		return errHandlerNil
-	}
-
-	handler.Register(s.router)
-
-	s.handlers = append(s.handlers, handler)
-	s.log.Infow("Handler registered", "name", handler.Name())
-
-	return nil
 }
 
 // GetRouter returns the underlying chi router.
@@ -109,6 +113,3 @@ func (s *HTTPServer) SetTimeouts(readTimeout, writeTimeout, readHeaderTimeout ti
 	s.httpServer.WriteTimeout = writeTimeout
 	s.httpServer.ReadHeaderTimeout = readHeaderTimeout
 }
-
-// Ensure HTTPServer implements Server interface.
-var _ Server = (*HTTPServer)(nil)

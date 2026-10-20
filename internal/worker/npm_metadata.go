@@ -88,12 +88,12 @@ func (w *NPMMetadataWorker) regenerate(packageID string) {
 	ctx := context.Background()
 
 	if w.sqlDB != nil {
-		var locked bool
-		if err := w.sqlDB.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1))", packageID).Scan(&locked); err != nil || !locked {
-			w.log.Warnw("npm regenerate skipped: lock unavailable", "package_id", packageID)
+		release, locked, err := tryAdvisoryLock(ctx, w.sqlDB, "npm:"+packageID)
+		if err != nil || !locked {
+			w.log.Warnw("npm regenerate skipped: lock unavailable", "package_id", packageID, "error", err)
 			return
 		}
-		defer func() { _, _ = w.sqlDB.ExecContext(ctx, "SELECT pg_advisory_unlock(hashtext($1))", packageID) }()
+		defer release()
 	}
 
 	versions, err := w.db.GetNPMVersionsByPackage(ctx, packageID)

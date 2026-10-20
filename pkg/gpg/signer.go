@@ -14,6 +14,7 @@ import (
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
+	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
 	"github.com/ProtonMail/go-crypto/openpgp/packet"
 )
 
@@ -112,35 +113,22 @@ func (s *LocalSigner) CleartextSign(data io.Reader) (io.Reader, error) {
 		return nil, fmt.Errorf("failed to buffer data: %w", err)
 	}
 
-	var sigBuf bytes.Buffer
-
-	w, err := armor.Encode(&sigBuf, "PGP SIGNATURE", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create armor encoder: %w", err)
-	}
-
-	if err := openpgp.ArmoredDetachSign(w, s.entity, bytes.NewReader(msgBuf.Bytes()), nil); err != nil {
-		return nil, fmt.Errorf("failed to create signature: %w", err)
-	}
-
-	_ = w.Close()
-
+	// clearsign.Encode performs dash-escaping, line-ending canonicalisation
+	// and emits a text-mode (0x01) signature, as required for InRelease.
 	var result bytes.Buffer
-	result.WriteString("-----BEGIN PGP SIGNED MESSAGE-----\n")
-	result.WriteString("Hash: SHA256\n")
-	result.WriteString("\n")
 
-	lines := bytes.SplitSeq(msgBuf.Bytes(), []byte("\n"))
-	for line := range lines {
-		if bytes.HasPrefix(line, []byte("-")) {
-			result.WriteString("- ")
-		}
-
-		result.Write(line)
-		result.WriteString("\n")
+	cw, err := clearsign.Encode(&result, s.entity.PrivateKey, &packet.Config{DefaultHash: crypto.SHA256})
+	if err != nil {
+		return nil, fmt.Errorf("failed to start clearsign: %w", err)
 	}
 
-	result.WriteString(sigBuf.String())
+	if _, err := cw.Write(msgBuf.Bytes()); err != nil {
+		return nil, fmt.Errorf("failed to write clearsign body: %w", err)
+	}
+
+	if err := cw.Close(); err != nil {
+		return nil, fmt.Errorf("failed to finish clearsign: %w", err)
+	}
 
 	return bytes.NewReader(result.Bytes()), nil
 }

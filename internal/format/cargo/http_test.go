@@ -5,8 +5,16 @@
 package cargo
 
 import (
+	"bytes"
+	"context"
+	"encoding/binary"
 	"encoding/json"
+	"net/http"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/webhook"
 )
 
 // TestTransformCargoIndexDeps exercises the publish-API -> registry-index
@@ -98,5 +106,86 @@ func TestTransformCargoIndexDepsNilOrMalformed(t *testing.T) {
 
 	if got := transformCargoIndexDeps("not an array"); len(got) != 0 {
 		t.Errorf("malformed deps = %#v, want empty slice", got)
+	}
+}
+
+type cargoDB struct {
+	*formattest.DB
+
+	crate *models.CargoCrate
+}
+
+func (d *cargoDB) CreateCargoCrate(_ context.Context, c *models.CargoCrate) error {
+	d.crate = c
+	return nil
+}
+
+func (d *cargoDB) GetCargoCrate(_ context.Context, _, _, _ string) (*models.CargoCrate, error) {
+	return d.crate, nil
+}
+
+func (d *cargoDB) IncrementCargoDownloadCount(_ context.Context, _, _, _ string) error { return nil }
+
+func newCargoHandler(t *testing.T) (*HTTPHandler, *cargoDB, *formattest.BlobStore, *formattest.Publisher) {
+	t.Helper()
+
+	db := &cargoDB{DB: formattest.NewDB()}
+	bs := formattest.NewBlobStore()
+	pub := &formattest.Publisher{}
+	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
+	h.SetPublisher(pub)
+
+	return h, db, bs, pub
+}
+
+func TestPublishEmitsEvent(t *testing.T) {
+	h, db, bs, pub := newCargoHandler(t)
+
+	meta := []byte(`{"name":"demo","vers":"0.1.0"}`)
+	crateData := []byte("crate-bytes")
+
+	var body bytes.Buffer
+
+	_ = binary.Write(&body, binary.LittleEndian, uint32(len(meta)))
+	body.Write(meta)
+	_ = binary.Write(&body, binary.LittleEndian, uint32(len(crateData)))
+	body.Write(crateData)
+
+	w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodPut, "/repos/myrepo/api/v1/crates/new", &body))
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+
+	evs := pub.Events()
+	if len(evs) != 1 || evs[0].Type != webhook.EventArtifactUploaded || evs[0].RepoID != "repo-1" {
+		t.Fatalf("events = %+v", evs)
+	}
+
+	if a := evs[0].Artifact(); a["name"] != "demo" || a["version"] != "0.1.0" || a["sha256"] != db.crate.Checksum {
+		t.Errorf("artifact = %v", a)
+	}
+
+	if _, ok := bs.Blobs[db.crate.Checksum]; !ok {
+		t.Error("blob not stored")
+	}
+}
+
+func TestDownloadQuarantine(t *testing.T) {
+	h, db, bs, _ := newCargoHandler(t)
+	db.crate = &models.CargoCrate{Name: "demo", Version: "0.1.0", BlobKey: "abc", Checksum: "abc"}
+	bs.Blobs["abc"] = []byte("xyz")
+
+	get := func() int {
+		return formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodGet, "/repos/myrepo/api/v1/crates/demo/0.1.0/download", nil)).Code
+	}
+
+	if c := get(); c != http.StatusOK {
+		t.Fatalf("status = %d, want 200", c)
+	}
+
+	db.Keys["demo-0.1.0.crate"] = true
+
+	if c := get(); c != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", c)
 	}
 }

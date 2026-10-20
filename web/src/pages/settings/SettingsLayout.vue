@@ -11,7 +11,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div>
         <div class="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
           <span>{{ t('nav.settings') }}</span>
-          <ChevronRightIcon class="w-3 h-3" />
+          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ activeLabel }}</span>
         </div>
         <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ activeLabel }}</h1>
@@ -21,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Content: left nav + page -->
     <div class="grid grid-cols-[13rem_1fr] gap-6 items-start">
       <!-- Left Nav -->
-      <nav class="bg-surface rounded-xl border border-border overflow-hidden" aria-label="Settings sections">
+      <nav class="bg-surface rounded-xl border border-border overflow-hidden" :aria-label="t('shell.settingsSections')">
         <div class="px-3 py-2 border-b border-border">
           <span class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('nav.settings') }}</span>
         </div>
@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="flex items-center gap-2.5 px-3 py-2 rounded-lg text-sm text-foreground/70 hover:bg-surface-hover hover:text-foreground transition-colors"
             active-class="bg-primary-soft text-primary font-medium"
           >
-            <component :is="entry.icon" class="w-4 h-4 shrink-0" />
+            <component :is="entry.icon" class="w-4 h-4 shrink-0" aria-hidden="true" />
             {{ entry.label }}
           </router-link>
         </div>

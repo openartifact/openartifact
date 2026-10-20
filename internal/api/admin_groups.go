@@ -44,6 +44,10 @@ func (h *AdminGroupsHandler) Register(r chi.Router) {
 }
 
 func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	var body struct {
 		Name        string  `json:"name"`
 		Description *string `json:"description"`
@@ -76,6 +80,10 @@ func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request
 }
 
 func (h *AdminGroupsHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	groups, err := h.db.ListGroups(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -91,6 +99,10 @@ func (h *AdminGroupsHandler) handleList(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *AdminGroupsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 
 	group, err := h.db.GetGroupByID(r.Context(), id)
@@ -108,6 +120,10 @@ func (h *AdminGroupsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
@@ -154,6 +170,10 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminGroupsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 	if err := h.db.DeleteGroup(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -164,6 +184,10 @@ func (h *AdminGroupsHandler) handleDelete(w http.ResponseWriter, r *http.Request
 }
 
 func (h *AdminGroupsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	vars := urlparams.Vars(r)
 	if err := h.db.AddUserToGroup(r.Context(), vars["userId"], vars["id"]); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -174,6 +198,10 @@ func (h *AdminGroupsHandler) handleAddMember(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *AdminGroupsHandler) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	vars := urlparams.Vars(r)
 	if err := h.db.RemoveUserFromGroup(r.Context(), vars["userId"], vars["id"]); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -184,6 +212,10 @@ func (h *AdminGroupsHandler) handleRemoveMember(w http.ResponseWriter, r *http.R
 }
 
 func (h *AdminGroupsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 
 	users, err := h.db.ListUsersByGroup(r.Context(), id)
@@ -201,6 +233,10 @@ func (h *AdminGroupsHandler) handleListMembers(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
@@ -246,6 +282,9 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 		if !desiredSet[u.ID] {
 			if err := h.db.RemoveUserFromGroup(ctx, u.ID, id); err != nil {
 				h.log.Errorw("set members: remove failed", "error", err, "user", u.ID)
+				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+				return
 			}
 		}
 	}
@@ -255,6 +294,9 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 		if !currentSet[m] {
 			if err := h.db.AddUserToGroup(ctx, m, id); err != nil {
 				h.log.Errorw("set members: add failed", "error", err, "user", m)
+				writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+				return
 			}
 		}
 	}
@@ -263,6 +305,10 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 }
 
 func (h *AdminGroupsHandler) handleListUserGroups(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 
 	groups, err := h.db.ListGroupsByUser(r.Context(), id)

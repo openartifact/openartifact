@@ -154,6 +154,7 @@ func TestProvisioning_OIDC_LinkByEmail(t *testing.T) {
 		"sub":                "ext-alice-001",
 		"preferred_username": "alice-oidc",
 		"email":              email,
+		"email_verified":     true,
 		"nonce":              nonce,
 		"aud":                []string{"test-client"},
 	})
@@ -226,5 +227,89 @@ func TestProvisioning_DisabledUser_Blocked(t *testing.T) {
 	_ = json.NewDecoder(rw.Body).Decode(&resp)
 	if resp["code"] != "account_disabled" {
 		t.Errorf("expected code=account_disabled, got %v", resp["code"])
+	}
+}
+
+func TestProvisioning_OIDC_LinkByEmail_UnverifiedEmailNotLinked(t *testing.T) {
+	oidcSrv := newMockOIDCServer(t)
+	db := newMockDatabase()
+
+	ctx := context.Background()
+	email := "admin@example.com"
+
+	existingUser, err := db.CreateUser(ctx, &models.User{
+		ID:        "admin-user-1",
+		Username:  "admin",
+		Email:     &email,
+		CreatedAt: time.Now(),
+		UpdatedAt: time.Now(),
+	})
+	if err != nil {
+		t.Fatalf("CreateUser: %v", err)
+	}
+
+	seedOIDCProviderWithGroupMapping(t, db, "unverifiedprov", oidcSrv.Server.URL, true, nil, true)
+
+	// No email_verified claim at all: the IdP asserts nothing about the address.
+	nonce := "unv-nonce-1"
+	idToken := oidcSrv.signIDToken(t, map[string]any{
+		"sub":                "ext-attacker-001",
+		"preferred_username": "attacker",
+		"email":              email,
+		"nonce":              nonce,
+		"aud":                []string{"test-client"},
+	})
+	oidcSrv.addCode(t, "unv-code-1", idToken)
+
+	router := setupOIDCCallbackRouter(t, db, oidcSrv)
+	rw := doOIDCCallback(t, router, "unverifiedprov", "unv-code-1", "unv-state-1", nonce)
+
+	if rw.Code == http.StatusFound {
+		t.Fatalf("login with an unverified email must be denied, got 302")
+	}
+
+	if rw.Code != http.StatusConflict {
+		t.Errorf("expected 409, got %d (body: %s)", rw.Code, rw.Body.String())
+	}
+
+	if got := db.authUsers[existingUser.ID]; got == nil || got.ExternalID != nil {
+		t.Errorf("existing account must not be linked, got %+v", got)
+	}
+}
+
+func TestOIDC_DisabledProvider_Rejected(t *testing.T) {
+	oidcSrv := newMockOIDCServer(t)
+	db := newMockDatabase()
+
+	p := seedOIDCProviderWithGroupMapping(t, db, "offprov", oidcSrv.Server.URL, true, nil, false)
+	p.Enabled = false
+
+	if err := db.UpdateSSOProvider(context.Background(), p); err != nil {
+		t.Fatalf("UpdateSSOProvider: %v", err)
+	}
+
+	router := setupOIDCCallbackRouter(t, db, oidcSrv)
+
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/auth/sso/oidc/offprov/login", nil)
+	rw := httptest.NewRecorder()
+	router.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for disabled provider login, got %d", rw.Code)
+	}
+
+	nonce := "off-nonce"
+	idToken := oidcSrv.signIDToken(t, map[string]any{
+		"sub": "ext-off", "preferred_username": "off", "nonce": nonce, "aud": []string{"test-client"},
+	})
+	oidcSrv.addCode(t, "off-code", idToken)
+
+	rw = doOIDCCallback(t, router, "offprov", "off-code", "off-state", nonce)
+	if rw.Code != http.StatusNotFound {
+		t.Fatalf("expected 404 for disabled provider callback, got %d (body: %s)", rw.Code, rw.Body.String())
+	}
+
+	if db.authUsersByName["off"] != nil {
+		t.Error("disabled provider must not provision users")
 	}
 }

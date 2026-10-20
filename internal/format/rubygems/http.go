@@ -8,18 +8,28 @@ import (
 	"bytes"
 	"compress/gzip"
 	"compress/zlib"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"github.com/openartifact/openartifact/pkg/rubymarshal"
 )
@@ -42,7 +52,7 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/gems/{filename}", h.handleGemDownload)
 	r.Post("/api/v1/gems", h.handleUploadGem)
 	r.Delete("/api/v1/gems/yank", h.handleYankGem)
-	r.Get("/api/v1/gems/{name}.json", h.handleGemInfo)
+	r.Get("/api/v1/gems/{gem}.json", h.handleGemInfo)
 	r.Get("/api/v1/search.json", h.handleSearch)
 }
 
@@ -79,11 +89,12 @@ func (h *HTTPHandler) handleSpecsGz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Filter out yanked gems
+	// specs.4.8 lists released versions only; prereleases live in
+	// prerelease_specs.4.8. Yanked gems are listed nowhere.
 	var activeGems []*models.RubyGem
 
 	for _, g := range gems {
-		if !g.Yanked {
+		if !g.Yanked && !isPrerelease(g.Version) {
 			activeGems = append(activeGems, g)
 		}
 	}
@@ -130,11 +141,12 @@ func (h *HTTPHandler) handleLatestSpecsGz(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Filter to only latest versions per gem name
+	// Latest released version per gem name and platform; prereleases are
+	// listed in prerelease_specs.4.8 only.
 	latestByName := make(map[string]*models.RubyGem)
 
 	for _, g := range gems {
-		if g.Yanked {
+		if g.Yanked || isPrerelease(g.Version) {
 			continue
 		}
 
@@ -222,6 +234,8 @@ func (h *HTTPHandler) handlePrereleaseSpecsGz(w http.ResponseWriter, r *http.Req
 }
 
 // handleGemspec returns a zlib-compressed gemspec.
+const maxGemUploadBytes = 200 << 20
+
 func (h *HTTPHandler) handleGemspec(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
@@ -237,12 +251,6 @@ func (h *HTTPHandler) handleGemspec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	nameVersion := strings.TrimSuffix(filename, suffix)
-	// Split on the last hyphen to separate name and version
-	gemname, version, found := strings.CutLast(nameVersion, "-")
-	if !found {
-		http.NotFound(w, r)
-		return
-	}
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -257,15 +265,15 @@ func (h *HTTPHandler) handleGemspec(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	gem, err := h.DB.GetRubyGem(r.Context(), repoID, gemname, version, "ruby")
+	gem, err := h.findGem(r.Context(), repoID, nameVersion)
 	if err != nil {
-		h.Log.Errorw("failed to get gem", "name", gemname, "version", version, "error", err)
+		h.Log.Errorw("failed to get gem", "file", nameVersion, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	if gem == nil {
+	if gem == nil || gem.Yanked {
 		http.NotFound(w, r)
 		return
 	}
@@ -284,7 +292,7 @@ func (h *HTTPHandler) handleGemspec(w http.ResponseWriter, r *http.Request) {
 
 	data, err := rubymarshal.EncodeSpecification(spec)
 	if err != nil {
-		h.Log.Errorw("failed to encode gemspec", "name", gemname, "version", version, "error", err)
+		h.Log.Errorw("failed to encode gemspec", "name", gem.Name, "version", gem.Version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -313,12 +321,6 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 	}
 
 	nameVersion := strings.TrimSuffix(filename, suffix)
-	// Split on the last hyphen to separate name and version
-	gemname, version, found := strings.CutLast(nameVersion, "-")
-	if !found {
-		http.NotFound(w, r)
-		return
-	}
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -333,16 +335,20 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	gem, err := h.DB.GetRubyGem(r.Context(), repoID, gemname, version, "ruby")
+	gem, err := h.findGem(r.Context(), repoID, nameVersion)
 	if err != nil {
-		h.Log.Errorw("failed to get gem", "name", gemname, "version", version, "error", err)
+		h.Log.Errorw("failed to get gem", "file", nameVersion, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	if gem == nil {
+	if gem == nil || gem.Yanked {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(gem.ID, "gems/"+filename, filename, r.URL.Path)...) {
 		return
 	}
 
@@ -357,7 +363,7 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 	defer func() { _ = blob.Close() }()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s-%s.gem"`, gemname, version))
+	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.gem"`, nameVersion))
 	_, _ = io.Copy(w, blob)
 }
 
@@ -380,8 +386,13 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read gem file from request body
-	gemData, err := io.ReadAll(r.Body)
+	gemData, err := base.ReadAllLimited(r.Body, maxGemUploadBytes)
 	if err != nil {
+		if errors.Is(err, base.ErrContentTooLarge) {
+			http.Error(w, "gem too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+
 		h.Log.Errorw("failed to read request body", "error", err)
 		http.Error(w, "failed to read gem", http.StatusBadRequest)
 
@@ -400,15 +411,12 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Extract gem name and version from metadata
-	name, ok := metadata["name"].(string)
-	if !ok {
-		name = "unknown"
-	}
+	name, _ := metadata["name"].(string)
+	version, _ := metadata["version"].(string)
 
-	version, ok := metadata["version"].(string)
-	if !ok {
-		version = "0.0.0"
+	if !validGemIdent(name) || !validGemIdent(version) {
+		http.Error(w, "gem metadata is missing a valid name or version", http.StatusBadRequest)
+		return
 	}
 
 	platform := getStringFromMetadata(metadata, "platform")
@@ -416,41 +424,70 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 		platform = "ruby"
 	}
 
-	// Store blob
-	blobKey, err := h.BlobStore.Put(r.Context(), bytes.NewReader(gemData), map[string]string{
-		"gem_name": name,
-		"version":  version,
-	})
+	if !validGemIdent(platform) {
+		http.Error(w, "invalid gem platform", http.StatusBadRequest)
+		return
+	}
+
+	existing, err := h.DB.GetRubyGem(r.Context(), repoID, name, version, platform)
 	if err != nil {
-		h.Log.Errorw("failed to store blob", "error", err)
+		h.Log.Errorw("failed to check existing gem", "name", name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// Create database record
+	if existing != nil {
+		http.Error(w, "gem version already exists", http.StatusConflict)
+		return
+	}
+
+	digestSum := sha256.Sum256(gemData)
+	digest := hex.EncodeToString(digestSum[:])
+	size := int64(len(gemData))
+
 	gem := &models.RubyGem{
-		RepositoryID:  repoID,
-		Name:          name,
-		Version:       version,
-		Platform:      platform,
-		Summary:       getStringFromMetadata(metadata, "summary"),
-		Description:   getStringFromMetadata(metadata, "description"),
-		Homepage:      getStringFromMetadata(metadata, "homepage"),
-		Authors:       getStringArrayFromMetadata(metadata, "authors"),
-		Licenses:      getStringArrayFromMetadata(metadata, "licenses"),
-		Dependencies:  mustMarshalJSON(metadata["dependencies"]),
-		BlobKey:       blobKey,
-		MetadataJSON:  mustMarshalJSON(metadata),
-		DownloadCount: 0,
+		RepositoryID:   repoID,
+		Name:           name,
+		Version:        version,
+		Platform:       platform,
+		Summary:        getStringFromMetadata(metadata, "summary"),
+		Description:    getStringFromMetadata(metadata, "description"),
+		Homepage:       getStringFromMetadata(metadata, "homepage"),
+		Authors:        getStringArrayFromMetadata(metadata, "authors"),
+		Licenses:       getStringArrayFromMetadata(metadata, "licenses"),
+		Dependencies:   mustMarshalJSON(metadata["dependencies"]),
+		ChecksumSHA256: digest,
+		MetadataJSON:   mustMarshalJSON(metadata),
+		DownloadCount:  0,
+		Size:           size,
 	}
 
-	if err := h.DB.CreateRubyGem(r.Context(), gem); err != nil {
-		h.Log.Errorw("failed to create gem record", "name", name, "version", version, "error", err)
+	// Reserve quota before anything is persisted; every failure path below
+	// returns the reservation.
+	if err := quota.Enforce(r.Context(), h.DB, repoID, size); err != nil {
+		if errors.Is(err, quota.ErrExceeded) {
+			quota.WriteExceeded(w)
+			return
+		}
+
+		h.Log.Errorw("failed to reserve quota", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	if status, msg := h.storeGem(r.Context(), gem, gemData); status != 0 {
+		if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
+			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
+		}
+
+		http.Error(w, msg, status)
+
+		return
+	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, gemArtifact(repoName, gem)))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -462,6 +499,96 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 	}); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// storeGem persists the gem blob and its row under the per-blob lock so a
+// concurrent cleanup cannot remove the blob between the dedup check, the Put
+// and the insert. It returns a zero status on success, otherwise the HTTP
+// status and message to report; the caller releases the quota reservation.
+func (h *HTTPHandler) storeGem(ctx context.Context, gem *models.RubyGem, data []byte) (int, string) {
+	status, msg := 0, ""
+
+	lockErr := storage.WithBlobLock(ctx, h.DB, gem.ChecksumSHA256, func(ctx context.Context) error {
+		blobKey, exists, err := h.BlobStore.ExistsBySHA256(ctx, gem.ChecksumSHA256)
+		if err != nil {
+			h.Log.Errorw("failed to check gem blob", "error", err)
+
+			status, msg = http.StatusInternalServerError, "internal error"
+
+			return err
+		}
+
+		if !exists {
+			blobKey, err = h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+				"sha256":   gem.ChecksumSHA256,
+				"gem_name": gem.Name,
+				"version":  gem.Version,
+			})
+			if err != nil {
+				h.Log.Errorw("failed to store blob", "error", err)
+
+				status, msg = http.StatusInternalServerError, "internal error"
+
+				return err
+			}
+		}
+
+		gem.BlobKey = blobKey
+
+		if err := h.DB.CreateRubyGem(ctx, gem); err != nil {
+			if database.IsUniqueViolation(err) || errors.Is(err, database.ErrDuplicate) {
+				status, msg = http.StatusConflict, "gem version already exists"
+
+				return err
+			}
+
+			h.Log.Errorw("failed to create gem record", "name", gem.Name, "version", gem.Version, "error", err)
+
+			status, msg = http.StatusInternalServerError, "internal error"
+
+			return err
+		}
+
+		return nil
+	})
+	if lockErr == nil {
+		return 0, ""
+	}
+
+	if status == 0 {
+		h.Log.Errorw("gem blob lock failed", "name", gem.Name, "error", lockErr)
+
+		status, msg = http.StatusInternalServerError, "internal error"
+	}
+
+	// The row was not created: drop the blob if nothing else references it.
+	if err := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, gem.ChecksumSHA256); err != nil {
+		h.Log.Warnw("failed to clean up gem blob", "sha256", gem.ChecksumSHA256, "error", err)
+	}
+
+	return status, msg
+}
+
+// gemArtifact describes gem for webhook payloads.
+func gemArtifact(repoName string, gem *models.RubyGem) webhook.Artifact {
+	return webhook.Artifact{
+		Repository: repoName,
+		Format:     "rubygems",
+		Name:       gem.Name,
+		Version:    gem.Version,
+		Path:       "gems/" + gemFilename(gem),
+		SHA256:     gem.ChecksumSHA256,
+		Size:       gem.Size,
+	}
+}
+
+// gemFilename is "{name}-{version}[-{platform}].gem".
+func gemFilename(gem *models.RubyGem) string {
+	if gem.Platform == "" || gem.Platform == "ruby" {
+		return gem.Name + "-" + gem.Version + ".gem"
+	}
+
+	return gem.Name + "-" + gem.Version + "-" + gem.Platform + ".gem"
 }
 
 // handleYankGem yanks a gem version.
@@ -482,17 +609,42 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse form data
-	if err := r.ParseForm(); err != nil {
+	// `gem yank` sends gem_name/version as a form-encoded DELETE body, which
+	// net/http's ParseForm only reads for POST/PUT/PATCH.
+	form, err := yankForm(r)
+	if err != nil {
 		http.Error(w, "invalid form data", http.StatusBadRequest)
 		return
 	}
 
-	gemName := r.FormValue("gem_name")
-	version := r.FormValue("version")
+	gemName := form.Get("gem_name")
+	version := form.Get("version")
 
 	if gemName == "" || version == "" {
 		http.Error(w, "gem_name and version are required", http.StatusBadRequest)
+		return
+	}
+
+	versions, err := h.DB.ListRubyGemVersions(r.Context(), repoID, gemName)
+	if err != nil {
+		h.Log.Errorw("failed to list gem versions", "name", gemName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	// Only gems that are currently listed are yanked (and announced) so a
+	// repeated yank does not emit a second event.
+	var yanked []*models.RubyGem
+
+	for _, g := range versions {
+		if g.Version == version && !g.Yanked {
+			yanked = append(yanked, g)
+		}
+	}
+
+	if len(yanked) == 0 {
+		http.NotFound(w, r)
 		return
 	}
 
@@ -501,6 +653,10 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
+	}
+
+	for _, g := range yanked {
+		h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, gemArtifact(repoName, g)))
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -513,11 +669,38 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+const maxYankFormBytes = 64 << 10
+
+// yankForm returns the query parameters merged with the form-encoded body.
+func yankForm(r *http.Request) (url.Values, error) {
+	form := r.URL.Query()
+
+	if r.Body == nil {
+		return form, nil
+	}
+
+	body, err := base.ReadAllLimited(r.Body, maxYankFormBytes)
+	if err != nil {
+		return nil, fmt.Errorf("read yank form: %w", err)
+	}
+
+	bodyValues, err := url.ParseQuery(string(body))
+	if err != nil {
+		return nil, fmt.Errorf("parse yank form: %w", err)
+	}
+
+	for k, vs := range bodyValues {
+		form[k] = append(vs, form[k]...)
+	}
+
+	return form, nil
+}
+
 // handleGemInfo returns gem information as JSON.
 func (h *HTTPHandler) handleGemInfo(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	gemName := vars["name"]
+	gemName := chi.URLParam(r, "gem")
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -636,23 +819,149 @@ func mustMarshalJSON(v any) []byte {
 	return data
 }
 
+// isPrerelease follows Gem::Version#prerelease?: any letter in the version.
 func isPrerelease(version string) bool {
-	lower := strings.ToLower(version)
-
-	return strings.Contains(lower, "alpha") || strings.Contains(lower, "beta") ||
-		strings.Contains(lower, "rc") || strings.Contains(lower, "pre") ||
-		strings.Contains(lower, "dev")
+	return strings.ContainsFunc(version, unicode.IsLetter)
 }
 
+// gemVersionSegments splits a version into numeric (int) and string segments.
+func gemVersionSegments(v string) []any {
+	var (
+		segs []any
+		cur  strings.Builder
+		num  bool
+	)
+
+	flush := func() {
+		if cur.Len() == 0 {
+			return
+		}
+
+		if num {
+			n, err := strconv.Atoi(cur.String())
+			if err != nil {
+				n = 1<<31 - 1
+			}
+
+			segs = append(segs, n)
+		} else {
+			segs = append(segs, cur.String())
+		}
+
+		cur.Reset()
+	}
+
+	for _, r := range v {
+		switch {
+		case r == '.' || r == '-':
+			flush()
+		case unicode.IsDigit(r):
+			if !num {
+				flush()
+			}
+
+			num = true
+
+			cur.WriteRune(r)
+		default:
+			if num {
+				flush()
+			}
+
+			num = false
+
+			cur.WriteRune(r)
+		}
+	}
+
+	flush()
+
+	return segs
+}
+
+// compareVersions implements Gem::Version#<=>: numeric segments compare
+// numerically, string segments (prerelease) sort before numbers.
 func compareVersions(v1, v2 string) int {
-	// Lexicographic string comparison.
-	if v1 > v2 {
-		return 1
-	} else if v1 < v2 {
-		return -1
+	a, b := gemVersionSegments(v1), gemVersionSegments(v2)
+
+	for i := 0; i < len(a) || i < len(b); i++ {
+		var x, y any = 0, 0
+		if i < len(a) {
+			x = a[i]
+		}
+
+		if i < len(b) {
+			y = b[i]
+		}
+
+		xs, xIsStr := x.(string)
+		ys, yIsStr := y.(string)
+
+		switch {
+		case xIsStr && yIsStr:
+			if c := strings.Compare(xs, ys); c != 0 {
+				return c
+			}
+		case xIsStr:
+			return -1
+		case yIsStr:
+			return 1
+		default:
+			xi, _ := x.(int)
+			yi, _ := y.(int)
+
+			if xi != yi {
+				if xi < yi {
+					return -1
+				}
+
+				return 1
+			}
+		}
 	}
 
 	return 0
+}
+
+// findGem resolves "{name}-{version}[-{platform}]". Names may contain hyphens
+// and versions never do, so each hyphen followed by a digit is tried as the
+// name/version boundary.
+func (h *HTTPHandler) findGem(ctx context.Context, repoID, nameVersion string) (*models.RubyGem, error) {
+	for i := 1; i < len(nameVersion)-1; i++ {
+		if nameVersion[i] != '-' || nameVersion[i+1] < '0' || nameVersion[i+1] > '9' {
+			continue
+		}
+
+		version, platform, hasPlatform := strings.Cut(nameVersion[i+1:], "-")
+		if !hasPlatform {
+			platform = "ruby"
+		}
+
+		gem, err := h.DB.GetRubyGem(ctx, repoID, nameVersion[:i], version, platform)
+		if err != nil {
+			return nil, err
+		}
+
+		if gem != nil {
+			return gem, nil
+		}
+	}
+
+	return nil, nil //nolint:nilnil // not found
+}
+
+func validGemIdent(s string) bool {
+	if s == "" || len(s) > 255 {
+		return false
+	}
+
+	for _, r := range s {
+		if r == '/' || r == '\\' || r <= ' ' || r == 0x7f {
+			return false
+		}
+	}
+
+	return s != "." && s != ".."
 }
 
 // marshalSpecsList creates a Ruby Marshal 4.8 encoded array of gem specs:

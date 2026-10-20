@@ -36,7 +36,7 @@ const (
 // directly to w, applying the requested compression. Returns the number of bytes
 // written and any error.
 func StreamPackages(ctx context.Context, database db.Database, repoID, dist, comp, arch string, compression Compression, w io.Writer) (int64, error) {
-	packages, err := database.GetDebianPackagesByDistComp(ctx, repoID, dist, comp, arch)
+	packages, err := database.ListDebPackageEntries(ctx, repoID, dist, comp, arch)
 	if err != nil {
 		return 0, fmt.Errorf("stream packages: query: %w", err)
 	}
@@ -45,14 +45,7 @@ func StreamPackages(ctx context.Context, database db.Database, repoID, dist, com
 	var sb strings.Builder
 
 	for _, pkg := range packages {
-		description := pkg.Summary
-		if idx := strings.Index(description, "\n"); idx != -1 {
-			description = description[:idx]
-		}
-
-		fmt.Fprintf(&sb, "Package: %s\nVersion: %s\nArchitecture: %s\nInstalled-Size: %d\nFilename: %s\nSize: %d\nSHA256: %s\nDescription: %s\n\n",
-			pkg.Name, pkg.Version, pkg.Arch, pkg.PackageSize/1024,
-			pkg.Filename, pkg.PackageSize, pkg.SHA256, description)
+		sb.WriteString(FormatPackagesEntry(pkg))
 	}
 
 	content := sb.String()

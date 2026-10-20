@@ -6,6 +6,7 @@ package audit
 
 import (
 	"context"
+	"encoding/json"
 	"testing"
 	"time"
 )
@@ -205,4 +206,23 @@ func TestAuditEvent_WithArtifactID(t *testing.T) {
 			t.Errorf("expected ResourceID=abc-123-def, got %s", *e.ResourceID)
 		}
 	})
+}
+
+func TestLogAfterShutdownDoesNotPanic(t *testing.T) {
+	l := NewLogger(nil, nil, nil, 1)
+	// db is nil, so drain by closing without events.
+	if err := l.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+	l.Log(context.Background(), AuditEvent{Action: "x"})
+	if err := l.Shutdown(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestBuildDetailsJSONValidWithControlChars(t *testing.T) {
+	out := buildDetailsJSON("bad\x00\x01\"\\ msg", "us\ber\u2028")
+	if !json.Valid([]byte(out)) {
+		t.Fatalf("invalid JSON: %q", out)
+	}
 }

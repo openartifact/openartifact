@@ -135,3 +135,11 @@ func TestValidatePackageName_RejectUppercaseScope(t *testing.T) {
 		t.Fatalf("expected ErrInvalidPackageName, got %v", err)
 	}
 }
+
+func TestValidatePackageName_RejectsSlashInUnscoped(t *testing.T) {
+	for _, n := range []string{"a/-/b", "foo/../x", "a/b"} {
+		if err := ValidatePackageName(n); err == nil {
+			t.Errorf("ValidatePackageName(%q) = nil, want error", n)
+		}
+	}
+}

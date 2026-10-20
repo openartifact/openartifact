@@ -16,7 +16,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
-	_ "github.com/jackc/pgx/v5/stdlib"
+	"github.com/jackc/pgx/v5/stdlib"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -58,43 +58,56 @@ type PostgresDB struct {
 	pool *pgxpool.Pool
 	q    *dbsqlc.Queries
 	log  *logger.Logger
+
+	// lockSlots bounds how many blob-lock transactions (WithBlobLocks,
+	// DeleteBlobIfUnreferenced) may hold a pooled connection at once. The
+	// callback of a blob lock needs further connections of the same pool; if
+	// every connection were pinned by a lock holder waiting for one, the pool
+	// would deadlock. Keeping holders at half the pool leaves the rest for
+	// their callbacks. nil means the pool is unbounded.
+	lockSlots chan struct{}
 }
 
 func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) {
-	dsn := fmt.Sprintf(
-		"host=%s port=%d user=%s password=%s dbname=%s sslmode=%s",
-		cfg.Host,
-		cfg.Port,
-		cfg.User,
-		cfg.Password,
-		cfg.Database,
-		cfg.SSLMode,
-	)
-
-	// sql.DB via pgx stdlib — for migrate.go, GetDB(), manual queries
-	db, err := sql.Open("pgx", dsn)
+	poolCfg, err := poolConfig(cfg)
 	if err != nil {
-		return nil, fmt.Errorf("failed to open database: %w", err)
+		return nil, err
 	}
+
+	// sql.DB via pgx stdlib — for migrate.go, GetDB(), manual queries. It is
+	// built from the parsed pgx config, so no DSN string is ever re-parsed.
+	db := stdlib.OpenDB(*poolCfg.ConnConfig.Copy())
 
 	db.SetMaxOpenConns(cfg.MaxOpenConns)
 	db.SetMaxIdleConns(cfg.MaxIdleConns)
 	db.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute)
 
 	if err := db.PingContext(context.Background()); err != nil {
+		_ = db.Close()
+
 		return nil, fmt.Errorf("failed to ping database: %w", err)
 	}
 
-	// pgxpool for sqlc-generated queries (requires pgx-native connection)
-	pool, err := pgxpool.New(context.Background(), dsn)
+	// pgxpool for sqlc-generated queries (requires pgx-native connection),
+	// bounded by the same configured limits.
+	pool, err := pgxpool.NewWithConfig(context.Background(), poolCfg)
 	if err != nil {
+		_ = db.Close()
+
 		return nil, fmt.Errorf("failed to create pgx pool: %w", err)
 	}
+
+	var lockSlots chan struct{}
+	if cfg.MaxOpenConns > 0 {
+		lockSlots = make(chan struct{}, max(1, cfg.MaxOpenConns/2))
+	}
+
 	return &PostgresDB{
-		db:   db,
-		pool: pool,
-		q:    dbsqlc.New(pool),
-		log:  log,
+		db:        db,
+		pool:      pool,
+		q:         dbsqlc.New(pool),
+		log:       log,
+		lockSlots: lockSlots,
 	}, nil
 }
 
@@ -178,12 +191,12 @@ func (p *PostgresDB) ListRepositories(ctx context.Context, page, limit int, form
 	)
 	if formatFilter != "" {
 		rows, err = p.db.QueryContext(ctx,
-			`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(blocked, false), org_id, created_at, updated_at FROM repositories WHERE format = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`,
+			`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(blocked, false), org_id, created_at, updated_at FROM repositories WHERE format = $1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
 			formatFilter, limit, offset,
 		)
 	} else {
 		rows, err = p.db.QueryContext(ctx,
-			`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(blocked, false), org_id, created_at, updated_at FROM repositories ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+			`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(blocked, false), org_id, created_at, updated_at FROM repositories ORDER BY created_at DESC, id LIMIT $1 OFFSET $2`,
 			limit, offset,
 		)
 	}
@@ -274,7 +287,7 @@ func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFil
 	}
 
 	//nolint:gosec // G201: fromClause/whereClause are built from internal constants; user input is bound via placeholders
-	query := fmt.Sprintf("SELECT id, repository_id, name, version, format, arch, sha256, release, epoch, build_time, archive_size, package_size, installed_size, filename, created_at, updated_at FROM %s%s ORDER BY created_at DESC LIMIT $%d OFFSET $%d", fromClause, whereClause, len(countArgs)+1, len(countArgs)+2)
+	query := fmt.Sprintf("SELECT id, repository_id, name, version, format, arch, sha256, release, epoch, build_time, archive_size, package_size, installed_size, filename, created_at, updated_at FROM %s%s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d", fromClause, whereClause, len(countArgs)+1, len(countArgs)+2)
 	args := append(countArgs, limit, offset)
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
@@ -302,8 +315,8 @@ func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Reposito
 	}
 
 	return p.db.QueryRowContext(ctx,
-		`INSERT INTO repositories (id, name, format, description, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, blocked, org_id) VALUES (gen_random_uuid(), $1, $2, $3, $4, NULLIF($5,''), NULLIF($6,''), NULLIF($7,''), $8, $9, $10, $11) RETURNING id, created_at, updated_at`,
-		repo.Name, repo.Format, repo.Description, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.Blocked, repo.OrgID,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, blocked, org_id) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12) RETURNING id, created_at, updated_at`,
+		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.Blocked, repo.OrgID,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 }
 
@@ -377,8 +390,8 @@ func (p *PostgresDB) CreateDebPackage(ctx context.Context, pkg *models.Component
 // CreateRpmPackage inserts an RPM package.
 func (p *PostgresDB) CreateRpmPackage(ctx context.Context, pkg *models.Component) error {
 	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21)
+		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename, header_start, header_end, rpm_extra)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21,$22,$23,COALESCE($24::jsonb,'{}'::jsonb))
 		 ON CONFLICT DO NOTHING
 		 RETURNING id, created_at, updated_at`,
 		pkg.RepositoryID, pkg.ArtifactID, pkg.Name, pkg.Version,
@@ -386,7 +399,7 @@ func (p *PostgresDB) CreateRpmPackage(ctx context.Context, pkg *models.Component
 		pkg.Description, pkg.Summary, pkg.License, pkg.URL,
 		pkg.Vendor, pkg.Group, pkg.Packager, pkg.SourceRPM,
 		pkg.BuildHost, pkg.BuildTime, pkg.PackageSize, pkg.ArchiveSize,
-		pkg.InstalledSize, pkg.Filename,
+		pkg.InstalledSize, pkg.Filename, pkg.HeaderStart, pkg.HeaderEnd, nullableJSON(pkg.RPMExtra),
 	).Scan(&pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrDuplicate
@@ -932,11 +945,10 @@ func (p *PostgresDB) CreateMavenArtifact(ctx context.Context, a *models.MavenArt
 		return fmt.Errorf("failed to create maven artifact: %w", err)
 	}
 
-	if a.ID == "" {
-		a.ID = id
-	}
+	// ON CONFLICT returns the existing row id; always bind the returned id.
+	a.ID = id
 
-	return nil
+	return p.storeMavenChecksums(ctx, a)
 }
 
 func (p *PostgresDB) GetMavenArtifactByPath(ctx context.Context, repoID, path string) (*models.MavenArtifact, error) {
@@ -952,7 +964,7 @@ func (p *PostgresDB) GetMavenArtifactByPath(ctx context.Context, repoID, path st
 		return nil, fmt.Errorf("failed to get maven artifact by path: %w", err)
 	}
 
-	return &models.MavenArtifact{
+	art := &models.MavenArtifact{
 		ID:                  row.ID,
 		RepositoryID:        row.RepositoryID,
 		BlobID:              row.BlobID,
@@ -967,7 +979,13 @@ func (p *PostgresDB) GetMavenArtifactByPath(ctx context.Context, repoID, path st
 		RepoPath:            row.RepoPath,
 		CreatedAt:           row.CreatedAt,
 		UpdatedAt:           row.UpdatedAt,
-	}, nil
+	}
+
+	if err := p.fillMavenChecksums(ctx, art); err != nil {
+		return nil, err
+	}
+
+	return art, nil
 }
 
 func (p *PostgresDB) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID, artifactID, version string) ([]*models.MavenArtifact, error) {
@@ -1000,6 +1018,10 @@ func (p *PostgresDB) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID
 			CreatedAt:           row.CreatedAt,
 			UpdatedAt:           row.UpdatedAt,
 		})
+	}
+
+	if err := p.fillMavenChecksums(ctx, artifacts...); err != nil {
+		return nil, err
 	}
 
 	return artifacts, nil
@@ -1036,6 +1058,10 @@ func (p *PostgresDB) GetMavenArtifactsByGA(ctx context.Context, repoID, groupID,
 		})
 	}
 
+	if err := p.fillMavenChecksums(ctx, artifacts...); err != nil {
+		return nil, err
+	}
+
 	return artifacts, nil
 }
 
@@ -1054,7 +1080,7 @@ func (p *PostgresDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, art
 		return nil, fmt.Errorf("failed to get latest snapshot: %w", err)
 	}
 
-	return &models.MavenArtifact{
+	art := &models.MavenArtifact{
 		ID:                  row.ID,
 		RepositoryID:        row.RepositoryID,
 		BlobID:              row.BlobID,
@@ -1069,7 +1095,13 @@ func (p *PostgresDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, art
 		RepoPath:            row.RepoPath,
 		CreatedAt:           row.CreatedAt,
 		UpdatedAt:           row.UpdatedAt,
-	}, nil
+	}
+
+	if err := p.fillMavenChecksums(ctx, art); err != nil {
+		return nil, err
+	}
+
+	return art, nil
 }
 
 func (p *PostgresDB) DeleteMavenArtifact(ctx context.Context, id string) error {
@@ -1210,7 +1242,7 @@ func (p *PostgresDB) GetNPMVersion(ctx context.Context, packageID, version strin
 		return nil, fmt.Errorf("failed to get npm version: %w", err)
 	}
 
-	return &models.NPMVersion{
+	nv := &models.NPMVersion{
 		ID:              row.ID,
 		PackageID:       row.PackageID,
 		Version:         row.Version,
@@ -1220,7 +1252,13 @@ func (p *PostgresDB) GetNPMVersion(ctx context.Context, packageID, version strin
 		BlobID:          row.BlobID,
 		TarballFilename: row.TarballFilename,
 		CreatedAt:       row.CreatedAt,
-	}, nil
+	}
+
+	if err := p.fillNPMBlobSHA256(ctx, packageID, nv); err != nil {
+		return nil, err
+	}
+
+	return nv, nil
 }
 
 func (p *PostgresDB) GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error) {
@@ -1243,6 +1281,10 @@ func (p *PostgresDB) GetNPMVersionsByPackage(ctx context.Context, packageID stri
 			TarballFilename: row.TarballFilename,
 			CreatedAt:       row.CreatedAt,
 		})
+	}
+
+	if err := p.fillNPMBlobSHA256(ctx, packageID, versions...); err != nil {
+		return nil, err
 	}
 
 	return versions, nil
@@ -1425,10 +1467,11 @@ func (p *PostgresDB) ArtifactExistsBySHA256(ctx context.Context, sha256 string) 
 // storage (see SafeDeleteBlob in internal/storage/refcount.go). A blob that
 // does not exist in the blobs table at all is treated as unreferenced (0).
 func (p *PostgresDB) BlobReferenceCount(ctx context.Context, sha256 string) (int, error) {
-	var count int
+	return blobRefCount(ctx, p.db, sha256)
+}
 
-	err := p.db.QueryRowContext(ctx,
-		`SELECT
+// blobRefSumExpr is the SQL sum of every reference to blob alias b.
+const blobRefSumExpr = `
 			(SELECT COUNT(*) FROM rpm_packages   WHERE blob_id = b.id) +
 			(SELECT COUNT(*) FROM deb_packages   WHERE blob_id = b.id) +
 			(SELECT COUNT(*) FROM npm_versions    WHERE blob_id = b.id) +
@@ -1448,6 +1491,19 @@ func (p *PostgresDB) BlobReferenceCount(ctx context.Context, sha256 string) (int
 			(SELECT COUNT(*) FROM raw_artifacts   WHERE blob_id = b.id) +
 			(SELECT COUNT(*) FROM release_bundle_items WHERE sha256 = b.sha256) +
 			(SELECT COUNT(*) FROM sbom_results   WHERE blob_id = b.id)
+`
+
+// rowQuerier is satisfied by *sql.DB and *sql.Tx.
+type rowQuerier interface {
+	QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row
+}
+
+func blobRefCount(ctx context.Context, q rowQuerier, sha256 string) (int, error) {
+	var count int
+
+	err := q.QueryRowContext(ctx,
+		`SELECT
+			`+blobRefSumExpr+`
 		 FROM blobs b WHERE b.sha256 = $1`,
 		sha256,
 	).Scan(&count)
@@ -1597,8 +1653,6 @@ func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey st
 		return nil, fmt.Errorf("failed to get proxy cache entry: %w", err)
 	}
 
-	lastHitAt := row.LastHitAt
-
 	return &models.ProxyCacheEntry{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
@@ -1608,7 +1662,7 @@ func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey st
 		StatusCode:   int(row.StatusCode),
 		SizeBytes:    row.SizeBytes,
 		HitCount:     int(row.HitCount),
-		LastHitAt:    &lastHitAt,
+		LastHitAt:    row.LastHitAt,
 		ExpiresAt:    row.ExpiresAt,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
@@ -1616,11 +1670,6 @@ func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey st
 }
 
 func (p *PostgresDB) UpsertProxyCacheEntry(ctx context.Context, entry *models.ProxyCacheEntry) error {
-	var lastHitAt time.Time
-	if entry.LastHitAt != nil {
-		lastHitAt = *entry.LastHitAt
-	}
-
 	row, err := p.q.UpsertProxyCacheEntry(ctx, dbsqlc.UpsertProxyCacheEntryParams{
 		RepositoryID: entry.RepositoryID,
 		CacheKey:     entry.CacheKey,
@@ -1629,7 +1678,7 @@ func (p *PostgresDB) UpsertProxyCacheEntry(ctx context.Context, entry *models.Pr
 		StatusCode:   int32(entry.StatusCode), //nolint:gosec // G115: status code is bounded
 		SizeBytes:    entry.SizeBytes,
 		HitCount:     int64(entry.HitCount),
-		LastHitAt:    lastHitAt,
+		LastHitAt:    entry.LastHitAt,
 		ExpiresAt:    entry.ExpiresAt,
 	})
 	if err != nil {
@@ -2126,7 +2175,7 @@ func (p *PostgresDB) ListNuGetPackageVersions(ctx context.Context, repoID, packa
 }
 
 func (p *PostgresDB) SearchNuGetPackages(ctx context.Context, repoID, query string, skip, take int) ([]*models.NuGetPackage, int, error) {
-	searchQuery := "%" + strings.ToLower(query) + "%"
+	searchQuery := "%" + escapeLike(strings.ToLower(query)) + "%"
 
 	total, err := p.q.SearchNuGetPackagesCount(ctx, dbsqlc.SearchNuGetPackagesCountParams{
 		RepositoryID: repoID,
@@ -2192,14 +2241,22 @@ func (p *PostgresDB) InsertAuditLog(ctx context.Context, event *models.AuditLog)
 	return nil
 }
 
-func (p *PostgresDB) ListAuditLogs(ctx context.Context, page, perPage int, action, actor string) ([]*models.AuditLog, int, error) {
+func (p *PostgresDB) ListAuditLogs(ctx context.Context, page, perPage int, actor, action string) ([]*models.AuditLog, int, error) {
 	where := "WHERE 1=1"
 	args := []any{}
 
 	idx := 1
 	if action != "" {
 		where += fmt.Sprintf(" AND action ILIKE $%d", idx)
-		args = append(args, "%"+action+"%")
+		args = append(args, "%"+escapeLike(action)+"%")
+		idx++
+	}
+
+	// The human-readable actor (username / token name) is stored in
+	// details_json; the user UUID is in actor_id. Accept either.
+	if actor != "" {
+		where += fmt.Sprintf(" AND (details_json->>'actor' ILIKE $%[1]d OR actor_id::text ILIKE $%[1]d)", idx)
+		args = append(args, "%"+escapeLike(actor)+"%")
 		idx++
 	}
 
@@ -2210,7 +2267,7 @@ func (p *PostgresDB) ListAuditLogs(ctx context.Context, page, perPage int, actio
 		return nil, 0, fmt.Errorf("count audit logs: %w", err)
 	}
 
-	query := fmt.Sprintf("SELECT id, action, org_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC LIMIT $%d OFFSET $%d", where, idx, idx+1)
+	query := fmt.Sprintf("SELECT id, action, org_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d", where, idx, idx+1)
 	args = append(args, perPage, (page-1)*perPage)
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
@@ -2243,7 +2300,7 @@ func (p *PostgresDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*m
 
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
-		FROM auth_tokens WHERE revoked_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2`,
+		FROM auth_tokens WHERE revoked_at IS NULL ORDER BY created_at DESC, id LIMIT $1 OFFSET $2`,
 		perPage, (page-1)*perPage,
 	)
 	if err != nil {
@@ -2472,11 +2529,7 @@ func (p *PostgresDB) GetLatestGoModule(ctx context.Context, repoID, modulePath s
 
 // cleanupPolicyToModel converts a dbsqlc.CleanupPolicy to *models.CleanupPolicy.
 func cleanupPolicyToModel(row dbsqlc.CleanupPolicy) *models.CleanupPolicy {
-	var lastRunAt *time.Time
-	if !row.LastRunAt.IsZero() {
-		t := row.LastRunAt
-		lastRunAt = &t
-	}
+	lastRunAt := row.LastRunAt
 
 	var keepLastN *int
 	if row.KeepLastN != nil {
@@ -2916,18 +2969,6 @@ func webhookDeliveryToModel(row dbsqlc.WebhookDelivery) (*models.WebhookDelivery
 		responseBody = *row.ResponseBody
 	}
 
-	var nextRetryAt *time.Time
-	if !row.NextRetryAt.IsZero() {
-		t := row.NextRetryAt
-		nextRetryAt = &t
-	}
-
-	var deliveredAt *time.Time
-	if !row.DeliveredAt.IsZero() {
-		t := row.DeliveredAt
-		deliveredAt = &t
-	}
-
 	return &models.WebhookDelivery{
 		ID:             row.ID,
 		WebhookID:      row.WebhookID,
@@ -2937,8 +2978,8 @@ func webhookDeliveryToModel(row dbsqlc.WebhookDelivery) (*models.WebhookDelivery
 		ResponseStatus: responseStatus,
 		ResponseBody:   responseBody,
 		AttemptCount:   int(row.AttemptCount),
-		NextRetryAt:    nextRetryAt,
-		DeliveredAt:    deliveredAt,
+		NextRetryAt:    row.NextRetryAt,
+		DeliveredAt:    row.DeliveredAt,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil
@@ -2957,6 +2998,7 @@ func (p *PostgresDB) CreateWebhookDelivery(ctx context.Context, delivery *models
 		Payload:      payloadJSON,
 		Status:       delivery.Status,
 		AttemptCount: int32(delivery.AttemptCount), //nolint:gosec // G115: bounded by retry logic
+		NextRetryAt:  delivery.NextRetryAt,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create webhook delivery: %w", err)
@@ -2982,24 +3024,14 @@ func (p *PostgresDB) UpdateWebhookDelivery(ctx context.Context, delivery *models
 		responseStatus = &rs
 	}
 
-	var nextRetryAt time.Time
-	if delivery.NextRetryAt != nil {
-		nextRetryAt = *delivery.NextRetryAt
-	}
-
-	var deliveredAt time.Time
-	if delivery.DeliveredAt != nil {
-		deliveredAt = *delivery.DeliveredAt
-	}
-
 	if err := p.q.UpdateWebhookDelivery(ctx, dbsqlc.UpdateWebhookDeliveryParams{
 		ID:             delivery.ID,
 		Status:         delivery.Status,
 		ResponseStatus: responseStatus,
 		ResponseBody:   strPtr(delivery.ResponseBody),
 		AttemptCount:   int32(delivery.AttemptCount), //nolint:gosec // G115: bounded by retry logic
-		NextRetryAt:    nextRetryAt,
-		DeliveredAt:    deliveredAt,
+		NextRetryAt:    delivery.NextRetryAt,
+		DeliveredAt:    delivery.DeliveredAt,
 		Payload:        payloadJSON,
 	}); err != nil {
 		return fmt.Errorf("failed to update webhook delivery: %w", err)
@@ -3031,11 +3063,19 @@ func (p *PostgresDB) ListWebhookDeliveries(ctx context.Context, webhookID string
 	return deliveries, nil
 }
 
-// ListPendingWebhookDeliveries lists all pending webhook deliveries that need retry.
-func (p *PostgresDB) ListPendingWebhookDeliveries(ctx context.Context) ([]*models.WebhookDelivery, error) {
-	rows, err := p.q.ListPendingWebhookDeliveries(ctx)
+// ClaimPendingWebhookDeliveries atomically claims up to limit due deliveries
+// (pending, next_retry_at unset or elapsed) for lease: it pushes their
+// next_retry_at to the end of the lease under FOR UPDATE SKIP LOCKED, so
+// concurrent pollers on any number of server instances never receive the same
+// row. A claimed delivery that is never completed becomes claimable again once
+// the lease expires.
+func (p *PostgresDB) ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error) {
+	rows, err := p.q.ClaimPendingWebhookDeliveries(ctx, dbsqlc.ClaimPendingWebhookDeliveriesParams{
+		LeaseSeconds: lease.Seconds(),
+		BatchSize:    toInt32(limit),
+	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list pending webhook deliveries: %w", err)
+		return nil, fmt.Errorf("failed to claim pending webhook deliveries: %w", err)
 	}
 
 	deliveries := make([]*models.WebhookDelivery, 0, len(rows))
@@ -3053,14 +3093,6 @@ func (p *PostgresDB) ListPendingWebhookDeliveries(ctx context.Context) ([]*model
 
 // CreateBackupJob creates a new backup job.
 func (p *PostgresDB) CreateBackupJob(ctx context.Context, job *models.BackupJob) error {
-	var startedAt, completedAt time.Time
-	if job.StartedAt != nil {
-		startedAt = *job.StartedAt
-	}
-	if job.CompletedAt != nil {
-		completedAt = *job.CompletedAt
-	}
-
 	sizeBytes := job.SizeBytes
 
 	id, err := p.q.CreateBackupJob(ctx, dbsqlc.CreateBackupJobParams{
@@ -3069,8 +3101,8 @@ func (p *PostgresDB) CreateBackupJob(ctx context.Context, job *models.BackupJob)
 		StoragePath:  strPtr(job.StoragePath),
 		SizeBytes:    &sizeBytes,
 		ErrorMessage: strPtr(job.ErrorMessage),
-		StartedAt:    startedAt,
-		CompletedAt:  completedAt,
+		StartedAt:    job.StartedAt,
+		CompletedAt:  job.CompletedAt,
 		CreatedAt:    job.CreatedAt,
 		UpdatedAt:    job.UpdatedAt,
 	})
@@ -3094,9 +3126,6 @@ func (p *PostgresDB) GetBackupJob(ctx context.Context, id string) (*models.Backu
 		return nil, fmt.Errorf("failed to get backup job: %w", err)
 	}
 
-	startedAt := row.StartedAt
-	completedAt := row.CompletedAt
-
 	return &models.BackupJob{
 		ID:           row.ID,
 		Status:       row.Status,
@@ -3104,8 +3133,8 @@ func (p *PostgresDB) GetBackupJob(ctx context.Context, id string) (*models.Backu
 		StoragePath:  row.StoragePath,
 		SizeBytes:    row.SizeBytes,
 		ErrorMessage: row.ErrorMessage,
-		StartedAt:    &startedAt,
-		CompletedAt:  &completedAt,
+		StartedAt:    row.StartedAt,
+		CompletedAt:  row.CompletedAt,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 	}, nil
@@ -3113,14 +3142,6 @@ func (p *PostgresDB) GetBackupJob(ctx context.Context, id string) (*models.Backu
 
 // UpdateBackupJob updates an existing backup job.
 func (p *PostgresDB) UpdateBackupJob(ctx context.Context, job *models.BackupJob) error {
-	var startedAt, completedAt time.Time
-	if job.StartedAt != nil {
-		startedAt = *job.StartedAt
-	}
-	if job.CompletedAt != nil {
-		completedAt = *job.CompletedAt
-	}
-
 	sizeBytes := job.SizeBytes
 
 	err := p.q.UpdateBackupJob(ctx, dbsqlc.UpdateBackupJobParams{
@@ -3129,8 +3150,8 @@ func (p *PostgresDB) UpdateBackupJob(ctx context.Context, job *models.BackupJob)
 		StoragePath:  strPtr(job.StoragePath),
 		SizeBytes:    &sizeBytes,
 		ErrorMessage: strPtr(job.ErrorMessage),
-		StartedAt:    startedAt,
-		CompletedAt:  completedAt,
+		StartedAt:    job.StartedAt,
+		CompletedAt:  job.CompletedAt,
 		UpdatedAt:    job.UpdatedAt,
 		ID:           job.ID,
 	})
@@ -3151,8 +3172,6 @@ func (p *PostgresDB) ListBackupJobs(ctx context.Context, limit int) ([]*models.B
 	jobs := make([]*models.BackupJob, 0, len(rows))
 
 	for _, row := range rows {
-		startedAt := row.StartedAt
-		completedAt := row.CompletedAt
 		jobs = append(jobs, &models.BackupJob{
 			ID:           row.ID,
 			Status:       row.Status,
@@ -3160,8 +3179,8 @@ func (p *PostgresDB) ListBackupJobs(ctx context.Context, limit int) ([]*models.B
 			StoragePath:  row.StoragePath,
 			SizeBytes:    row.SizeBytes,
 			ErrorMessage: row.ErrorMessage,
-			StartedAt:    &startedAt,
-			CompletedAt:  &completedAt,
+			StartedAt:    row.StartedAt,
+			CompletedAt:  row.CompletedAt,
 			CreatedAt:    row.CreatedAt,
 			UpdatedAt:    row.UpdatedAt,
 		})
@@ -3301,7 +3320,7 @@ func (p *PostgresDB) ListCargoCrateVersions(ctx context.Context, repoID, name st
 func (p *PostgresDB) SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error) {
 	rows, err := p.q.SearchCargoCrates(ctx, dbsqlc.SearchCargoCratesParams{
 		RepositoryID: repoID,
-		Name:         "%" + query + "%",
+		Name:         "%" + escapeLike(query) + "%",
 		//nolint:gosec // G115: value is bounded by API validation
 		Limit: int32(limit),
 	})
@@ -3420,10 +3439,10 @@ func nugetRowToModel(row dbsqlc.GetNuGetPackageRow) *models.NuGetPackage {
 
 // CreateRubyGem creates a new RubyGem.
 //
-// rubygems_gems has no size_bytes column; the gem
-// blob is upserted with size_bytes=0.
+// gem.Size is persisted on the row (for quota release) and recorded as the
+// blob's size_bytes.
 func (p *PostgresDB) CreateRubyGem(ctx context.Context, gem *models.RubyGem) error {
-	blobID, err := p.upsertBlobWithMediaType(ctx, gem.ChecksumSHA256, gem.BlobKey, "application/gzip", 0)
+	blobID, err := p.upsertBlobWithMediaType(ctx, gem.ChecksumSHA256, gem.BlobKey, "application/gzip", gem.Size)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for ruby gem: %w", err)
 	}
@@ -3443,6 +3462,7 @@ func (p *PostgresDB) CreateRubyGem(ctx context.Context, gem *models.RubyGem) err
 		BlobID:        blobID,
 		Yanked:        gem.Yanked,
 		DownloadCount: int64(gem.DownloadCount),
+		Size:          gem.Size,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create ruby gem: %w", err)
@@ -3487,6 +3507,7 @@ func (p *PostgresDB) GetRubyGem(ctx context.Context, repoID, name, version, plat
 		ChecksumSHA256: row.ChecksumSha256,
 		Yanked:         row.Yanked,
 		DownloadCount:  int(row.DownloadCount),
+		Size:           row.Size,
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil
@@ -3527,6 +3548,7 @@ func (p *PostgresDB) ListRubyGems(ctx context.Context, repoID string) ([]*models
 			ChecksumSHA256: row.ChecksumSha256,
 			Yanked:         row.Yanked,
 			DownloadCount:  int(row.DownloadCount),
+			Size:           row.Size,
 			CreatedAt:      row.CreatedAt,
 			UpdatedAt:      row.UpdatedAt,
 		}
@@ -3565,6 +3587,7 @@ func (p *PostgresDB) ListRubyGemVersions(ctx context.Context, repoID, name strin
 			ChecksumSHA256: row.ChecksumSha256,
 			Yanked:         row.Yanked,
 			DownloadCount:  int(row.DownloadCount),
+			Size:           row.Size,
 			CreatedAt:      row.CreatedAt,
 			UpdatedAt:      row.UpdatedAt,
 		}
@@ -3577,7 +3600,7 @@ func (p *PostgresDB) ListRubyGemVersions(ctx context.Context, repoID, name strin
 func (p *PostgresDB) SearchRubyGems(ctx context.Context, repoID, query string) ([]*models.RubyGem, error) {
 	rows, err := p.q.SearchRubyGems(ctx, dbsqlc.SearchRubyGemsParams{
 		RepositoryID: repoID,
-		Name:         "%" + query + "%",
+		Name:         "%" + escapeLike(query) + "%",
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to search ruby gems: %w", err)
@@ -3603,6 +3626,7 @@ func (p *PostgresDB) SearchRubyGems(ctx context.Context, repoID, query string) (
 			ChecksumSHA256: row.ChecksumSha256,
 			Yanked:         row.Yanked,
 			DownloadCount:  int(row.DownloadCount),
+			Size:           row.Size,
 			CreatedAt:      row.CreatedAt,
 			UpdatedAt:      row.UpdatedAt,
 		}
@@ -3713,7 +3737,7 @@ func (p *PostgresDB) ListRawArtifacts(ctx context.Context, repoID, prefix string
 	} else {
 		prefixRows, prefixErr := p.q.ListRawArtifactsByPrefix(ctx, dbsqlc.ListRawArtifactsByPrefixParams{
 			RepositoryID: repoID,
-			Path:         prefix + "%",
+			Path:         escapeLike(prefix) + "%",
 		})
 
 		err = prefixErr
@@ -4603,7 +4627,9 @@ func (p *PostgresDB) QuarantineVulnArtifact(ctx context.Context, repoID, artifac
 
 // GetOrCreateStorageQuota gets or creates a storage quota for a repository.
 func (p *PostgresDB) GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error) {
-	_ = p.q.InsertStorageQuotaIfNotExists(ctx, repoID)
+	if err := p.q.InsertStorageQuotaIfNotExists(ctx, repoID); err != nil {
+		return nil, fmt.Errorf("failed to create storage quota: %w", err)
+	}
 
 	quota, err := p.q.GetStorageQuota(ctx, repoID)
 	if err != nil {
@@ -4694,7 +4720,6 @@ func (p *PostgresDB) ListStorageBackends(ctx context.Context) ([]*models.Storage
 	backends := make([]*models.StorageBackend, 0, len(rows))
 
 	for _, row := range rows {
-		lastChecked := row.LastCheckedAt
 		backends = append(backends, &models.StorageBackend{
 			ID:            row.ID,
 			Name:          row.Name,
@@ -4703,7 +4728,7 @@ func (p *PostgresDB) ListStorageBackends(ctx context.Context) ([]*models.Storage
 			Config:        row.Config,
 			Status:        row.Status,
 			StatusMessage: row.StatusMessage,
-			LastCheckedAt: &lastChecked,
+			LastCheckedAt: row.LastCheckedAt,
 			CreatedAt:     row.CreatedAt,
 			UpdatedAt:     row.UpdatedAt,
 		})
@@ -4723,8 +4748,6 @@ func (p *PostgresDB) GetStorageBackend(ctx context.Context, name string) (*model
 		return nil, err
 	}
 
-	lastChecked := row.LastCheckedAt
-
 	return &models.StorageBackend{
 		ID:            row.ID,
 		Name:          row.Name,
@@ -4733,7 +4756,7 @@ func (p *PostgresDB) GetStorageBackend(ctx context.Context, name string) (*model
 		Config:        row.Config,
 		Status:        row.Status,
 		StatusMessage: row.StatusMessage,
-		LastCheckedAt: &lastChecked,
+		LastCheckedAt: row.LastCheckedAt,
 		CreatedAt:     row.CreatedAt,
 		UpdatedAt:     row.UpdatedAt,
 	}, nil

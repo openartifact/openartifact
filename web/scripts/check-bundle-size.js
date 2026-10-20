@@ -20,7 +20,31 @@ try {
   process.exit(1)
 }
 
-const initial = files.filter((f) => f.endsWith('.js') || f.endsWith('.css'))
+// Only count the entry chunk and its static imports (from the Vite manifest);
+// lazy chunks are excluded. Falls back to all assets if the manifest is absent.
+let initial = files.filter((f) => f.endsWith('.js') || f.endsWith('.css'))
+try {
+  const manifest = JSON.parse(
+    readFileSync(join(assetsDir, '..', '.vite', 'manifest.json'), 'utf8'),
+  )
+  const seen = new Set()
+  const walk = (key) => {
+    const c = manifest[key]
+    if (!c || seen.has(key)) return
+    seen.add(key)
+    ;(c.imports || []).forEach(walk)
+  }
+  Object.keys(manifest).filter((k) => manifest[k].isEntry).forEach(walk)
+  const names = new Set()
+  for (const k of seen) {
+    const c = manifest[k]
+    names.add(c.file.replace(/^assets\//, ''))
+    ;(c.css || []).forEach((x) => names.add(x.replace(/^assets\//, '')))
+  }
+  initial = initial.filter((f) => names.has(f))
+} catch {
+  console.warn('dist/.vite/manifest.json not found — counting all assets')
+}
 
 let totalGzip = 0
 for (const file of initial) {

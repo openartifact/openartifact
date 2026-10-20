@@ -143,4 +143,25 @@ describe('useSearch', () => {
     await s.execute().catch(() => {})
     expect(s.searched.value).toBe(true)
   })
+
+  it('clear() invalidates an in-flight request so it cannot repopulate results', async () => {
+    const s = useSearch()
+    s.query.value = 'react'
+    const { promise, resolve } = Promise.withResolvers<{ repositories: unknown[]; packages: unknown[] }>()
+    mockSearch.mockReturnValue(promise)
+    const execPromise = s.execute()
+    s.clear()
+    resolve({ repositories: [{ id: '1', name: 'late', format: 'npm' }], packages: [] })
+    await execPromise
+    expect(s.repoResults.value).toEqual([])
+    expect(s.loading.value).toBe(false)
+  })
+
+  it('records an error message when the API fails', async () => {
+    const s = useSearch()
+    s.query.value = 'react'
+    mockSearch.mockRejectedValue(new Error('boom'))
+    await s.execute()
+    expect(s.error.value).toBe('boom')
+  })
 })

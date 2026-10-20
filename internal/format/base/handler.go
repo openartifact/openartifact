@@ -13,7 +13,9 @@ import (
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -24,6 +26,9 @@ type Handler struct {
 	DB        database.Database
 	BlobStore storage.BlobStore
 	BaseURL   string
+
+	// Publisher receives artifact.* events; nil disables event publishing.
+	Publisher webhook.Publisher
 }
 
 // New creates a new base handler with the common dependencies.
@@ -34,6 +39,23 @@ func New(log *logger.Logger, db database.Database, blobStore storage.BlobStore, 
 		BlobStore: blobStore,
 		BaseURL:   baseURL,
 	}
+}
+
+// SetPublisher sets the webhook publisher used by Emit. It must be called
+// before the handler serves requests.
+func (h *Handler) SetPublisher(p webhook.Publisher) { h.Publisher = p }
+
+// Emit publishes a webhook event (a no-op without a Publisher). It never fails
+// the caller.
+func (h *Handler) Emit(ctx context.Context, repoID, eventType string, payload map[string]any) {
+	webhook.Emit(ctx, h.Publisher, repoID, eventType, payload)
+}
+
+// DenyIfQuarantined refuses the download with 403 when the artifact is
+// quarantined and returns true; the caller MUST then return immediately. keys
+// are every identifier the artifact is known by (see quarantine.PathKeys).
+func (h *Handler) DenyIfQuarantined(w http.ResponseWriter, r *http.Request, repoID string, keys ...string) bool {
+	return quarantine.Enforce(w, r, h.DB, repoID, keys...)
 }
 
 // ResolveRepoID resolves a repository name to its ID. Returns empty string if not found.

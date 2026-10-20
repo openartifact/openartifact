@@ -23,9 +23,9 @@ jobs:
     name: build / vet / test
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -36,35 +36,88 @@ jobs:
       - name: go vet
         run: go vet ./...
 
+      - name: go mod tidy (verify no drift)
+        run: go mod tidy -diff
+
+      - name: govulncheck
+        run: go run golang.org/x/vuln/cmd/govulncheck@v1.1.4 ./...
+
       - name: go test (race, unit packages)
-        run: go test -race -timeout 120s ./...
+        run: go test -race -timeout 10m ./...
 
   integration:
-    name: integration (testcontainers)
+    name: integration (postgres + garage + testcontainers)
     runs-on: ubuntu-latest
+    env:
+      TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/openartifact_test?sslmode=disable
+      TEST_S3_ENDPOINT: http://localhost:3900
+      TEST_S3_BUCKET: openartifact-test
+      TEST_S3_REGION: garage
+      # Throwaway credentials imported into the ephemeral Garage node below.
+      TEST_S3_ACCESS_KEY: GK0123456789abcdef01234567
+      TEST_S3_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
+    services:
+      postgres:
+        image: postgres:18-alpine
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: openartifact_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - name: go test (integration tag)
-        run: go test -tags integration -count=1 ./tests/...
+      # MinIO no longer publishes container images; Garage is the S3 test backend.
+      - name: start Garage
+        run: |
+          cat > /tmp/garage.toml <<EOF
+          metadata_dir = "/var/lib/garage/meta"
+          data_dir = "/var/lib/garage/data"
+          db_engine = "sqlite"
+          replication_factor = 1
+          rpc_bind_addr = "[::]:3901"
+          rpc_public_addr = "127.0.0.1:3901"
+          rpc_secret = "$(openssl rand -hex 32)"
+          [s3_api]
+          s3_region = "garage"
+          api_bind_addr = "[::]:3900"
+          root_domain = ".s3.garage.localhost"
+          [admin]
+          api_bind_addr = "[::]:3903"
+          EOF
+          docker run -d --name garage -p 3900:3900 \
+            -v /tmp/garage.toml:/etc/garage.toml docker.io/dxflrs/garage:v2.1.0
+          G="docker exec garage /garage"
+          for i in $(seq 1 30); do $G status >/dev/null 2>&1 && break; sleep 1; done
+          NODE=$($G node id -q | cut -d@ -f1)
+          $G layout assign -z dc1 -c 1G "$NODE"
+          $G layout apply --version 1
+          $G bucket create "$TEST_S3_BUCKET"
+          $G key import --yes -n ci "$TEST_S3_ACCESS_KEY" "$TEST_S3_SECRET_KEY"
+          $G bucket allow --read --write --owner "$TEST_S3_BUCKET" --key ci
+
+      - name: go test (integration tag, race)
+        run: go test -race -tags integration -count=1 -timeout 15m ./tests/...
 
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
 
-      - uses: golangci/golangci-lint-action@v9
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: --config=.golangci.yaml
@@ -73,17 +126,17 @@ jobs:
     name: REUSE compliance
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: fsfe/reuse-action@v6
+      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6
 
   sqlc:
     name: sqlc generate (verify no drift)
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: actions/setup-go@v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
@@ -102,6 +155,22 @@ jobs:
             exit 1
           fi
 
+  docker:
+    name: docker build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+
+      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
+        with:
+          context: .
+          file: docker/Dockerfile
+          push: false
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   web:
     name: web build
     runs-on: ubuntu-latest
@@ -109,14 +178,19 @@ jobs:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
 
-      - uses: oven-sh/setup-bun@v2
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
         with:
           bun-version: "1.4.3"
 
-      - run: bun install
+      - run: bun install --frozen-lockfile
       - run: bun run typecheck
+
+      - name: generated API client is up to date
+        run: |
+          bun run generate-api
+          git diff --exit-code -- src/api/generated
 
       - run: bun test
 

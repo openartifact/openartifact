@@ -5,6 +5,32 @@
 import { ref, computed } from 'vue'
 import { ApiError, csrfHeader } from '../api/client'
 
+// Mirrors request()'s error handling for XHR uploads: JSON `{error, code}`
+// bodies become the message instead of the raw response text.
+function parseXhrError(xhr: XMLHttpRequest): ApiError {
+  let message = `HTTP ${xhr.status}`
+  let code: string | undefined
+  try {
+    const body = JSON.parse(xhr.responseText) as { error?: string; code?: string }
+    if (body.error) message = body.error
+    if (body.code) code = body.code
+  } catch {
+    // non-JSON body: keep the HTTP status message
+  }
+  return new ApiError(message, xhr.status, code)
+}
+
+// Same 401 handling as request(): drop the session and go to /login.
+async function expireSession(): Promise<void> {
+  const { useSessionStore } = await import('../stores/session')
+  useSessionStore().clearSession()
+  const currentPath = window.location.pathname + window.location.search
+  if (currentPath !== '/login') {
+    const { default: router } = await import('../router')
+    await router.push({ name: 'login', query: { next: currentPath } })
+  }
+}
+
 export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'failed' | 'cancelled'
 
 export interface UploadEntry {
@@ -63,11 +89,13 @@ export function useUpload() {
           entry.status = 'complete'
           entry.loaded = entry.total
           resolve()
-        } else {
-          entry.status = 'failed'
-          entry.error = xhr.responseText || `HTTP ${xhr.status}`
-          reject(new ApiError(entry.error, xhr.status))
+          return
         }
+        const err = parseXhrError(xhr)
+        entry.status = 'failed'
+        entry.error = err.message
+        if (xhr.status === 401) void expireSession()
+        reject(err)
       })
       xhr.addEventListener('error', () => {
         entry.status = 'failed'
@@ -75,7 +103,7 @@ export function useUpload() {
         reject(new ApiError('network error', 0))
       })
       xhr.addEventListener('abort', () => {
-        entry.status = 'cancelled'
+        if (entry.status !== 'complete' && entry.status !== 'failed') entry.status = 'cancelled'
         reject(new ApiError('aborted', 0))
       })
       const form = new FormData()
@@ -92,7 +120,9 @@ export function useUpload() {
         // ignore
       }
     }
-    entry.status = 'cancelled'
+    // Only entries that are still pending can be cancelled; completed and
+    // failed ones keep their final status.
+    if (entry.status === 'uploading' || entry.status === 'queued') entry.status = 'cancelled'
   }
 
   function cancelAll(): void {

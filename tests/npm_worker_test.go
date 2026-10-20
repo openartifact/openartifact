@@ -55,7 +55,8 @@ func TestNPMWorker_NotifyStale_Debounce(t *testing.T) {
 		w.NotifyStale("pkg-1")
 	}
 
-	time.Sleep(200 * time.Millisecond)
+	waitUntil(t, 5*time.Second, "first update", func() bool { return db.updateCalls.Load() >= 1 })
+	time.Sleep(150 * time.Millisecond) // ensure no extra debounced runs fire
 
 	calls := db.updateCalls.Load()
 	if calls != 1 {
@@ -80,7 +81,7 @@ func TestNPMWorker_LatestVersionRecomputation(t *testing.T) {
 	w := worker.NewNPMMetadataWorker(db, log, nil, nil).WithDebounce(50 * time.Millisecond)
 	w.NotifyStale("pkg-1")
 
-	time.Sleep(200 * time.Millisecond)
+	waitUntil(t, 5*time.Second, "latest version update", func() bool { return db.updateCalls.Load() >= 1 })
 
 	if v := db.getLastVersion(); v != "2.0.0" {
 		t.Errorf("latest version = %q, want 2.0.0", v)

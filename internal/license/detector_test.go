@@ -178,3 +178,11 @@ func TestEvaluatePolicy(t *testing.T) {
 		}
 	})
 }
+
+func TestEvaluatePolicy_CompoundExpressionDenied(t *testing.T) {
+	d := NewDetector(nil)
+	ok, v := d.EvaluatePolicy([]string{"GPL-3.0-only AND MIT"}, &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{"gpl-3.0-only"}})
+	if ok || len(v) == 0 {
+		t.Fatalf("compound expression must be denied, ok=%v v=%v", ok, v)
+	}
+}

@@ -56,6 +56,13 @@ type MockDatabase struct {
 	userExternalIDs         map[string]*models.User
 	storageBackends         map[string]*models.StorageBackend
 	AuditLogs               []*models.AuditLog
+
+	// Quota fakes shared by the upload tests. Guarded by mu.
+	quotaExceeded     bool  // ReserveStorageUsage reports "over quota" while set
+	quotaReserved     int64 // bytes currently reserved (reserve - release)
+	quotaArtifacts    int   // artifacts currently reserved
+	quotaReserveCalls int   // successful reservations ever made
+	quotaReleaseCalls int   // releases ever made
 }
 
 func newMockDatabase() *MockDatabase {
@@ -153,6 +160,14 @@ func (m *MockDatabase) CreateRepository(ctx context.Context, repo *models.Reposi
 	m.repositories[repo.ID] = repo
 
 	return nil
+}
+
+func (m *MockDatabase) CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, _ []string) error {
+	return m.CreateRepository(ctx, repo)
+}
+
+func (m *MockDatabase) CountBlobsOnStorageBackend(_ context.Context, _ string) (int64, error) {
+	return 0, nil
 }
 
 func (m *MockDatabase) ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error) {
@@ -782,6 +797,26 @@ func (m *MockDatabase) GetSessionByTokenHash(ctx context.Context, hash string) (
 
 func (m *MockDatabase) DeleteSession(ctx context.Context, tokenHash string) error {
 	delete(m.authSessions, tokenHash)
+	return nil
+}
+
+func (m *MockDatabase) DeleteSessionsByUser(ctx context.Context, userID string) error {
+	for hash, s := range m.authSessions {
+		if s.UserID == userID {
+			delete(m.authSessions, hash)
+		}
+	}
+
+	return nil
+}
+
+func (m *MockDatabase) DeleteOtherSessionsByUser(ctx context.Context, userID, keepTokenHash string) error {
+	for hash, s := range m.authSessions {
+		if s.UserID == userID && hash != keepTokenHash {
+			delete(m.authSessions, hash)
+		}
+	}
+
 	return nil
 }
 
@@ -1416,7 +1451,7 @@ func (m *MockDatabase) UpdateWebhookDelivery(ctx context.Context, delivery *mode
 func (m *MockDatabase) ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*models.WebhookDelivery, error) {
 	return nil, nil
 }
-func (m *MockDatabase) ListPendingWebhookDeliveries(ctx context.Context) ([]*models.WebhookDelivery, error) {
+func (m *MockDatabase) ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error) {
 	return nil, nil
 }
 
@@ -1566,7 +1601,46 @@ func (m *MockDatabase) IncrementStorageUsage(ctx context.Context, repoID string,
 	return nil
 }
 func (m *MockDatabase) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.quotaReserved -= sizeBytes
+	m.quotaArtifacts -= artifactCount
+	m.quotaReleaseCalls++
+
 	return nil
+}
+
+// ReserveStorageUsage models the atomic quota reservation: it succeeds unless
+// setQuotaExceeded(true) was called.
+func (m *MockDatabase) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if m.quotaExceeded {
+		return false, nil
+	}
+
+	m.quotaReserved += sizeBytes
+	m.quotaArtifacts += artifactCount
+	m.quotaReserveCalls++
+
+	return true, nil
+}
+
+func (m *MockDatabase) setQuotaExceeded(v bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	m.quotaExceeded = v
+}
+
+// quotaState returns the net reserved bytes/artifacts and the call counters.
+func (m *MockDatabase) quotaState() (int64, int, int, int) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	return m.quotaReserved, m.quotaArtifacts, m.quotaReserveCalls, m.quotaReleaseCalls
 }
 
 // Artifact properties methods

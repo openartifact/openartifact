@@ -71,6 +71,10 @@ describe('AppSidebar', () => {
     session.$onAction(({ name }) => {
       sessionActions.push(name)
     })
+    // The sidebar reads the server version from /system/info; keep the network out of it.
+    spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ version: '9.9.9' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+    )
     mockLogout = spyOn(authApi, 'logout').mockResolvedValue(undefined)
   })
 

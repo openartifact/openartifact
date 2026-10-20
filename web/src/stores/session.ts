@@ -4,6 +4,7 @@
 
 import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
+import { request, ApiError } from '../api/client'
 import { ErrorCodes } from '../api/error-codes'
 import type { UserExtended as User } from '../api/generated/types.gen'
 
@@ -26,35 +27,19 @@ export const useSessionStore = defineStore('session', () => {
 
   async function fetchMe(): Promise<void> {
     try {
-      const res = await fetch('/api/v1/auth/me', {
-        headers: { 'X-Requested-With': 'XMLHttpRequest' },
-        credentials: 'include',
-      })
-      if (res.status === 401) {
-        user.value = null
-        return
-      }
-      if (res.status === 403) {
+      user.value = await request<User>('/api/v1/auth/me')
+    } catch (err) {
+      if (
+        err instanceof ApiError &&
+        err.status === 403 &&
+        (err.code === ErrorCodes.PASSWORD_CHANGE_REQUIRED || err.message === ErrorCodes.PASSWORD_CHANGE_REQUIRED)
+      ) {
         // RBAC middleware blocks all routes when must_change_password is set,
-        // including /auth/me. Treat that response as "authenticated but locked"
-        // so the SPA can route the user to the change-password screen on reload.
-        try {
-          const body = (await res.json()) as { error?: string; code?: string }
-          if (body?.code === ErrorCodes.PASSWORD_CHANGE_REQUIRED || body?.error === ErrorCodes.PASSWORD_CHANGE_REQUIRED) {
-            user.value = { id: '', username: '', must_change_password: true }
-            return
-          }
-        } catch {
-          // fall through
-        }
+        // including /auth/me. Treat that as "authenticated but locked".
+        user.value = { id: '', username: '', must_change_password: true }
+      } else {
         user.value = null
-        return
       }
-      if (res.ok) {
-        user.value = (await res.json()) as User
-      }
-    } catch {
-      user.value = null
     } finally {
       ready.value = true
     }

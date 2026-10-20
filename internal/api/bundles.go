@@ -5,9 +5,15 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
+	"errors"
+	"io"
 	"net/http"
+	"strconv"
+	"strings"
 	"time"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -21,6 +27,93 @@ type BundlesHandler struct {
 	db        database.Database
 	log       *logger.Logger
 	evaluator *auth.Evaluator
+}
+
+const (
+	maxBundleItemsPerRequest = 500
+	maxPipelineStages        = 50
+	maxFormatLen             = 50 // release_bundle_items.format is varchar(50)
+)
+
+// validateBundleLabel validates a pipeline/bundle name or version: names end up
+// in URL path segments, so they must be non-empty, bounded, and free of path
+// separators and control characters.
+func validateBundleLabel(field, value string) string {
+	switch {
+	case value == "":
+		return field + " is required"
+	case len(value) > maxNameLen:
+		return field + " is too long (max 255 bytes)"
+	case !utf8.ValidString(value):
+		return field + " must be valid UTF-8"
+	case strings.ContainsAny(value, "/\\"):
+		return field + " must not contain path separators"
+	}
+
+	for _, r := range value {
+		if r < 0x20 || r == 0x7f {
+			return field + " must not contain control characters"
+		}
+	}
+
+	return ""
+}
+
+func isHexSHA256(s string) bool {
+	if len(s) != 64 {
+		return false
+	}
+
+	for _, c := range []byte(s) {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+
+	return true
+}
+
+// validateStages checks pipeline stages: bounded count, unique valid names, and
+// any referenced repository id must be an existing repository.
+// It returns a client-facing message for invalid input, or an error for a
+// database failure.
+func (h *BundlesHandler) validateStages(ctx context.Context, stages []models.PipelineStage) (string, error) {
+	if len(stages) > maxPipelineStages {
+		return "too many stages (max " + strconv.Itoa(maxPipelineStages) + ")", nil
+	}
+
+	seen := make(map[string]struct{}, len(stages))
+
+	for i, stage := range stages {
+		if msg := validateBundleLabel("stage name", stage.Name); msg != "" {
+			return "stages[" + strconv.Itoa(i) + "]: " + msg, nil
+		}
+
+		if _, dup := seen[stage.Name]; dup {
+			return "duplicate stage name: " + stage.Name, nil
+		}
+
+		seen[stage.Name] = struct{}{}
+
+		if stage.RepositoryID == "" {
+			continue
+		}
+
+		if !isUUIDString(stage.RepositoryID) {
+			return "stages[" + strconv.Itoa(i) + "]: repo_id must be a valid UUID", nil
+		}
+
+		repo, err := h.db.GetRepositoryByID(ctx, stage.RepositoryID)
+		if err != nil {
+			return "", err //nolint:wrapcheck // caller logs and maps to 500
+		}
+
+		if repo == nil {
+			return "stages[" + strconv.Itoa(i) + "]: repo_id does not reference an existing repository", nil
+		}
+	}
+
+	return "", nil
 }
 
 func NewBundlesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *BundlesHandler {
@@ -113,8 +206,21 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if body.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", "name is required")
+	if msg := validateBundleLabel("name", body.Name); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	msg, err := h.validateStages(ctx, body.Stages)
+	if err != nil {
+		h.log.Errorw("create pipeline: db error validating stages", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
 	}
 
@@ -137,6 +243,11 @@ func (h *BundlesHandler) handleCreatePipeline(w http.ResponseWriter, r *http.Req
 	}
 
 	if err := h.db.CreatePromotionPipeline(ctx, pipeline); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "pipeline already exists")
+			return
+		}
+
 		h.log.Errorw("create pipeline: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
@@ -223,6 +334,19 @@ func (h *BundlesHandler) handleUpdatePipeline(w http.ResponseWriter, r *http.Req
 	}
 
 	if body.Stages != nil {
+		msg, err := h.validateStages(ctx, *body.Stages)
+		if err != nil {
+			h.log.Errorw("update pipeline: db error validating stages", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return
+		}
+
+		if msg != "" {
+			writeError(w, http.StatusBadRequest, "validation_failed", msg)
+			return
+		}
+
 		pipeline.Stages = *body.Stages
 
 		stagesJSON, err := json.Marshal(pipeline.Stages)
@@ -356,6 +480,36 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if msg := validateBundleLabel("name", body.Name); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	if msg := validateBundleLabel("version", body.Version); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	if body.PipelineID != nil {
+		if !isUUIDString(*body.PipelineID) {
+			writeError(w, http.StatusBadRequest, "validation_failed", "pipeline_id must be a valid UUID")
+			return
+		}
+
+		pipeline, err := h.db.GetPromotionPipelineByID(ctx, *body.PipelineID)
+		if err != nil {
+			h.log.Errorw("create bundle: db error getting pipeline", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return
+		}
+
+		if pipeline == nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", "pipeline_id does not reference an existing pipeline")
+			return
+		}
+	}
+
 	bundle := &models.ReleaseBundle{
 		Name:        body.Name,
 		Version:     body.Version,
@@ -368,6 +522,16 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 	}
 
 	if err := h.db.CreateReleaseBundle(ctx, bundle); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "bundle with this name and version already exists")
+			return
+		}
+
+		if database.IsForeignKeyViolation(err) {
+			writeError(w, http.StatusBadRequest, "validation_failed", "pipeline_id does not reference an existing pipeline")
+			return
+		}
+
 		h.log.Errorw("create bundle: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
@@ -500,6 +664,114 @@ func (h *BundlesHandler) handleListItems(w http.ResponseWriter, r *http.Request)
 	})
 }
 
+// bundleItemInput is one requested entry of an add-items request.
+type bundleItemInput struct {
+	SourceRepoID string  `json:"source_repo_id"`
+	ComponentID  *string `json:"component_id"`
+	SHA256       string  `json:"sha256"`
+	ArtifactPath string  `json:"artifact_path"`
+	Format       string  `json:"format"`
+	SizeBytes    int64   `json:"size_bytes"`
+}
+
+// apiFailure is an HTTP error to be written by the caller.
+type apiFailure struct {
+	status int
+	code   string
+	msg    string
+}
+
+func validationFailure(msg string) *apiFailure {
+	return &apiFailure{http.StatusBadRequest, "validation_failed", msg}
+}
+
+// validateBundleItemFields checks the request-local fields of one item and
+// returns its normalized (lowercase) sha256.
+func validateBundleItemFields(itemData *bundleItemInput, seenSHA map[string]struct{}, prefix string) (string, *apiFailure) {
+	if !isUUIDString(itemData.SourceRepoID) {
+		return "", validationFailure(prefix + "source_repo_id must be a valid UUID")
+	}
+
+	sha := strings.ToLower(itemData.SHA256)
+	if !isHexSHA256(sha) {
+		return "", validationFailure(prefix + "sha256 must be 64 hex characters")
+	}
+
+	if _, dup := seenSHA[sha]; dup {
+		return "", validationFailure(prefix + "duplicate sha256 in request")
+	}
+
+	seenSHA[sha] = struct{}{}
+
+	if msg := validateArtifactID(itemData.ArtifactPath); msg != "" {
+		return "", validationFailure(prefix + strings.Replace(msg, "artifact_id", "artifact_path", 1))
+	}
+
+	if itemData.SizeBytes < 0 {
+		return "", validationFailure(prefix + "size_bytes must not be negative")
+	}
+
+	return sha, nil
+}
+
+// buildBundleItems validates every item before touching the database so the
+// request is all-or-nothing, and verifies each source repository once.
+func (h *BundlesHandler) buildBundleItems(ctx context.Context, bundleID, username string, in []bundleItemInput) ([]*models.ReleaseBundleItem, *apiFailure) {
+	knownRepos := make(map[string]*models.Repository, len(in))
+	items := make([]*models.ReleaseBundleItem, 0, len(in))
+	seenSHA := make(map[string]struct{}, len(in))
+
+	for idx := range in {
+		itemData := &in[idx]
+		prefix := "items[" + strconv.Itoa(idx) + "]: "
+
+		sha, fail := validateBundleItemFields(itemData, seenSHA, prefix)
+		if fail != nil {
+			return nil, fail
+		}
+
+		srcRepo, ok := knownRepos[itemData.SourceRepoID]
+		if !ok {
+			var err error
+
+			srcRepo, err = h.db.GetRepositoryByID(ctx, itemData.SourceRepoID)
+			if err != nil {
+				h.log.Errorw("add items: db error getting source repo", "error", err)
+				return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "database error"}
+			}
+
+			knownRepos[itemData.SourceRepoID] = srcRepo
+		}
+
+		if srcRepo == nil {
+			return nil, validationFailure(prefix + "source_repo_id does not reference an existing repository")
+		}
+
+		format := itemData.Format
+		if format == "" {
+			format = srcRepo.Format
+		}
+
+		if len(format) > maxFormatLen {
+			return nil, validationFailure(prefix + "format is too long")
+		}
+
+		items = append(items, &models.ReleaseBundleItem{
+			BundleID:     bundleID,
+			SourceRepoID: itemData.SourceRepoID,
+			ComponentID:  itemData.ComponentID,
+			SHA256:       sha,
+			ArtifactPath: itemData.ArtifactPath,
+			Format:       format,
+			SizeBytes:    itemData.SizeBytes,
+			AddedBy:      username,
+			AddedAt:      time.Now(),
+		})
+	}
+
+	return items, nil
+}
+
 func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	version := urlparams.Vars(r)["version"]
@@ -532,42 +804,46 @@ func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) 
 	}
 
 	var body struct {
-		Items []struct {
-			SourceRepoID string  `json:"source_repo_id"`
-			ComponentID  *string `json:"component_id"`
-			SHA256       string  `json:"sha256"`
-			ArtifactPath string  `json:"artifact_path"`
-			Format       string  `json:"format"`
-			SizeBytes    int64   `json:"size_bytes"`
-		} `json:"items"`
+		Items []bundleItemInput `json:"items"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
 
-	var result []map[string]any
+	if len(body.Items) == 0 || len(body.Items) > maxBundleItemsPerRequest {
+		writeError(w, http.StatusBadRequest, "validation_failed",
+			"items must contain between 1 and "+strconv.Itoa(maxBundleItemsPerRequest)+" entries")
 
-	for _, itemData := range body.Items {
-		item := &models.ReleaseBundleItem{
-			BundleID:     bundle.ID,
-			SourceRepoID: itemData.SourceRepoID,
-			ComponentID:  itemData.ComponentID,
-			SHA256:       itemData.SHA256,
-			ArtifactPath: itemData.ArtifactPath,
-			Format:       itemData.Format,
-			SizeBytes:    itemData.SizeBytes,
-			AddedBy:      p.Username,
-			AddedAt:      time.Now(),
-		}
+		return
+	}
 
-		if err := h.db.AddBundleItem(ctx, item); err != nil {
-			h.log.Errorw("add items: db error adding item", "error", err)
+	items, fail := h.buildBundleItems(ctx, bundle.ID, p.Username, body.Items)
+	if fail != nil {
+		writeError(w, fail.status, fail.code, fail.msg)
+		return
+	}
+
+	// One transaction: the bundle row is locked and must still be a draft, so
+	// a concurrent seal cannot interleave with the inserts.
+	if err := h.db.AddBundleItems(ctx, bundle.ID, items); err != nil {
+		switch {
+		case errors.Is(err, database.ErrBundleNotDraft):
+			writeError(w, http.StatusConflict, "conflict", "can only add items to draft bundles")
+		case errors.Is(err, database.ErrBundleNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+		case database.IsForeignKeyViolation(err):
+			writeError(w, http.StatusBadRequest, "validation_failed", "source_repo_id does not reference an existing repository")
+		default:
+			h.log.Errorw("add items: db error adding items", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
 		}
 
+		return
+	}
+
+	result := make([]map[string]any, 0, len(items))
+	for _, item := range items {
 		result = append(result, itemToMap(item))
 	}
 
@@ -683,8 +959,11 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	var body struct {
 		GPGKeyID *string `json:"gpg_key_id"`
 	}
-	if err := decodeJSON(r, &body); err != nil {
-		// Body is optional, so ignore decode errors
+	// The body is optional, but a present, malformed body is a client error
+	// rather than something to silently ignore.
+	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
 	}
 
 	// GPG signing is not yet implemented
@@ -694,19 +973,72 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	}
 
 	now := time.Now()
-	bundle.State = models.BundleStateSealed
-	bundle.SealedAt = &now
-	bundle.SealedBy = &p.Username
-	bundle.UpdatedAt = now
 
-	if err := h.db.UpdateReleaseBundle(ctx, bundle); err != nil {
+	// Conditional UPDATE ... WHERE state = 'draft': a concurrent seal/archive
+	// (or item removal) between the checks above and here cannot be overwritten.
+	sealed, err := h.db.SealReleaseBundle(ctx, bundle.ID, p.Username, now)
+	if err != nil {
 		h.log.Errorw("seal bundle: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
+	if !sealed {
+		writeError(w, http.StatusConflict, "conflict", "bundle is no longer a sealable draft")
+		return
+	}
+
+	bundle.State = models.BundleStateSealed
+	bundle.SealedAt = &now
+	bundle.SealedBy = &p.Username
+	bundle.UpdatedAt = now
+
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
+}
+
+// validatePromotionStage validates the requested stage against the bundle's
+// pipeline and the target repository.
+func (h *BundlesHandler) validatePromotionStage(ctx context.Context, bundle *models.ReleaseBundle, targetRepo *models.Repository, toStage string) *apiFailure {
+	if bundle.PipelineID == nil {
+		return validationFailure("bundle has no pipeline; cannot promote")
+	}
+
+	pipeline, err := h.db.GetPromotionPipelineByID(ctx, *bundle.PipelineID)
+	if err != nil {
+		h.log.Errorw("promote bundle: db error getting pipeline", "error", err)
+		return &apiFailure{http.StatusInternalServerError, "internal_error", "database error"}
+	}
+
+	if pipeline == nil {
+		return &apiFailure{http.StatusConflict, "conflict", "bundle's pipeline no longer exists"}
+	}
+
+	toIdx, curIdx := -1, -1
+
+	for i, stage := range pipeline.Stages {
+		if stage.Name == toStage {
+			toIdx = i
+		}
+
+		if bundle.CurrentStage != nil && stage.Name == *bundle.CurrentStage {
+			curIdx = i
+		}
+	}
+
+	if toIdx < 0 {
+		return validationFailure("to_stage is not a stage of the bundle's pipeline")
+	}
+
+	if toIdx <= curIdx {
+		return &apiFailure{http.StatusConflict, "conflict", "to_stage must come after the bundle's current stage"}
+	}
+
+	if want := pipeline.Stages[toIdx].RepositoryID; want != "" && want != targetRepo.ID {
+		return validationFailure("target_repo does not match the repository configured for to_stage")
+	}
+
+	return nil
 }
 
 func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
@@ -769,59 +1101,18 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Count items
-	items, err := h.db.ListBundleItems(ctx, bundle.ID)
-	if err != nil {
-		h.log.Errorw("promote bundle: db error listing items", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	if fail := h.validatePromotionStage(ctx, bundle, targetRepo, body.ToStage); fail != nil {
+		writeError(w, fail.status, fail.code, fail.msg)
 		return
 	}
 
-	// Create promotion record
-	now := time.Now()
-	promotion := &models.BundlePromotion{
-		BundleID:     bundle.ID,
-		FromStage:    bundle.CurrentStage,
-		ToStage:      body.ToStage,
-		TargetRepoID: targetRepo.ID,
-		Status:       models.PromotionStatusInProgress,
-		PromotedBy:   p.Username,
-		Notes:        body.Notes,
-		ItemCount:    len(items),
-		StartedAt:    now,
-	}
-
-	if err := h.db.CreateBundlePromotion(ctx, promotion); err != nil {
-		h.log.Errorw("promote bundle: db error creating promotion", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	// Update bundle current stage
-	bundle.CurrentStage = &body.ToStage
-	bundle.UpdatedAt = now
-
-	if err := h.db.UpdateReleaseBundle(ctx, bundle); err != nil {
-		h.log.Errorw("promote bundle: db error updating bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	// Update promotion status to success
-	promotion.Status = models.PromotionStatusSuccess
-	promotion.CompletedAt = &now
-
-	if err := h.db.UpdateBundlePromotion(ctx, promotion); err != nil {
-		h.log.Errorw("promote bundle: db error updating promotion", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	writeJSON(w, http.StatusOK, promotionToMap(promotion))
+	// Promotion must copy every bundle item into the target repository, which
+	// needs per-format storage logic (each format keeps its metadata in its own
+	// tables) that does not exist. Report that honestly instead of recording a
+	// "successful" promotion that moved nothing: no promotion row is created
+	// and the bundle's current stage is left untouched.
+	writeError(w, http.StatusNotImplemented, "not_implemented",
+		"bundle promotion (copying artifacts into the target repository) is not implemented")
 }
 
 func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {

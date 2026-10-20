@@ -51,11 +51,7 @@ export type ReadyResponse = {
 
 export type SystemInfo = {
     version?: string;
-    commit?: string;
-    build_time?: string;
-    go_version?: string;
-    os?: string;
-    arch?: string;
+    status?: string;
 };
 
 export type User = {
@@ -156,13 +152,16 @@ export type CleanupPolicy = {
     repository_id?: string;
     name?: string;
     enabled?: boolean;
-    keep_last_n_versions?: number;
     keep_since_days?: number;
     keep_downloaded_since_days?: number;
     name_pattern?: string;
     schedule_cron?: string;
     created_at?: string;
     updated_at?: string;
+    keep_last_n?: number | null;
+    last_run_at?: string | null;
+    last_run_deleted?: number | null;
+    last_run_error?: string;
 };
 
 export type Webhook = {
@@ -170,15 +169,18 @@ export type Webhook = {
     repository_id?: string;
     name?: string;
     url?: string;
-    secret?: string;
-    events?: Array<'push' | 'delete' | 'cleanup'>;
+    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
     content_type?: string;
     ssl_verify?: boolean;
-    active?: boolean;
     max_retries?: number;
     timeout_seconds?: number;
     created_at?: string;
     updated_at?: string;
+    enabled?: boolean;
+    /**
+     * Secret is write-only and never returned
+     */
+    has_secret?: boolean;
 };
 
 export type WebhookDelivery = {
@@ -413,7 +415,10 @@ export type GetApiV1SystemInfoResponses = {
     /**
      * System information
      */
-    200: SystemInfo;
+    200: {
+        version?: string;
+        status?: string;
+    };
 };
 
 export type GetApiV1SystemInfoResponse = GetApiV1SystemInfoResponses[keyof GetApiV1SystemInfoResponses];
@@ -680,99 +685,6 @@ export type PostApiV1RepositoriesResponses = {
 
 export type PostApiV1RepositoriesResponse = PostApiV1RepositoriesResponses[keyof PostApiV1RepositoriesResponses];
 
-export type DeleteApiV1RepositoriesByNameData = {
-    body?: never;
-    path: {
-        name: string;
-    };
-    query?: never;
-    url: '/api/v1/repositories/{name}';
-};
-
-export type DeleteApiV1RepositoriesByNameErrors = {
-    /**
-     * Admin access required
-     */
-    403: unknown;
-    /**
-     * Repository not found
-     */
-    404: unknown;
-};
-
-export type DeleteApiV1RepositoriesByNameResponses = {
-    /**
-     * Repository deleted
-     */
-    204: void;
-};
-
-export type DeleteApiV1RepositoriesByNameResponse = DeleteApiV1RepositoriesByNameResponses[keyof DeleteApiV1RepositoriesByNameResponses];
-
-export type GetApiV1RepositoriesByNameData = {
-    body?: never;
-    path: {
-        name: string;
-    };
-    query?: never;
-    url: '/api/v1/repositories/{name}';
-};
-
-export type GetApiV1RepositoriesByNameErrors = {
-    /**
-     * Repository not found
-     */
-    404: unknown;
-};
-
-export type GetApiV1RepositoriesByNameResponses = {
-    /**
-     * Repository details
-     */
-    200: Repository;
-};
-
-export type GetApiV1RepositoriesByNameResponse = GetApiV1RepositoriesByNameResponses[keyof GetApiV1RepositoriesByNameResponses];
-
-export type PatchApiV1RepositoriesByNameData = {
-    body: {
-        description?: string;
-        public?: boolean;
-        upstream_url?: string;
-        upstream_username?: string;
-        upstream_password?: string;
-        cache_ttl_seconds?: number;
-        negative_cache_ttl_seconds?: number;
-        blocked?: boolean;
-        member_repos?: Array<string>;
-    };
-    path: {
-        name: string;
-    };
-    query?: never;
-    url: '/api/v1/repositories/{name}';
-};
-
-export type PatchApiV1RepositoriesByNameErrors = {
-    /**
-     * Admin access required
-     */
-    403: unknown;
-    /**
-     * Repository not found
-     */
-    404: unknown;
-};
-
-export type PatchApiV1RepositoriesByNameResponses = {
-    /**
-     * Repository updated
-     */
-    200: Repository;
-};
-
-export type PatchApiV1RepositoriesByNameResponse = PatchApiV1RepositoriesByNameResponses[keyof PatchApiV1RepositoriesByNameResponses];
-
 export type GetApiV1RepositoriesByNamePackagesData = {
     body?: never;
     path: {
@@ -889,11 +801,10 @@ export type PostApiV1RepositoriesByNameCleanupPoliciesData = {
     body: {
         name: string;
         enabled?: boolean;
-        keep_last_n_versions?: number;
         keep_since_days?: number;
-        keep_downloaded_since_days?: number;
         name_pattern?: string;
         schedule_cron?: string;
+        keep_last_n?: number;
     };
     path: {
         name: string;
@@ -943,11 +854,12 @@ export type PostApiV1RepositoriesByNameWebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'push' | 'delete' | 'cleanup'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
         content_type?: string;
         ssl_verify?: boolean;
         max_retries?: number;
         timeout_seconds?: number;
+        enabled?: boolean;
     };
     path: {
         name: string;
@@ -1672,12 +1584,12 @@ export type PostApiV1WebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'push' | 'delete' | 'cleanup'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
         content_type?: string;
         ssl_verify?: boolean;
-        active?: boolean;
         max_retries?: number;
         timeout_seconds?: number;
+        enabled?: boolean;
     };
     path?: never;
     query?: never;
@@ -1748,12 +1660,12 @@ export type PutApiV1WebhooksByIdData = {
         name?: string;
         url?: string;
         secret?: string;
-        events?: Array<string>;
+        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
         content_type?: string;
         ssl_verify?: boolean;
-        active?: boolean;
         max_retries?: number;
         timeout_seconds?: number;
+        enabled?: boolean;
     };
     path: {
         id: string;
@@ -3375,3 +3287,1056 @@ export type GetSwaggerResponses = {
      */
     200: unknown;
 };
+
+export type GetApiV1AdminSystemInfoData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/system/info';
+};
+
+export type GetApiV1AdminSystemInfoErrors = {
+    /**
+     * Administrator access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminSystemInfoResponses = {
+    /**
+     * System information
+     */
+    200: SystemInfo;
+};
+
+export type GetApiV1AdminSystemInfoResponse = GetApiV1AdminSystemInfoResponses[keyof GetApiV1AdminSystemInfoResponses];
+
+export type GetApiV1RepositoriesByNamePackagesByIdDownloadData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/packages/{id}/download';
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDownloadErrors = {
+    /**
+     * Package not found in this repository
+     */
+    404: unknown;
+    /**
+     * No blob store configured
+     */
+    501: unknown;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDownloadResponses = {
+    /**
+     * Package file
+     */
+    200: Blob | File;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDownloadResponse = GetApiV1RepositoriesByNamePackagesByIdDownloadResponses[keyof GetApiV1RepositoriesByNamePackagesByIdDownloadResponses];
+
+export type DeleteApiV1RepositoryByNameData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repository/{name}';
+};
+
+export type DeleteApiV1RepositoryByNameErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1RepositoryByNameResponses = {
+    /**
+     * Repository deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1RepositoryByNameResponse = DeleteApiV1RepositoryByNameResponses[keyof DeleteApiV1RepositoryByNameResponses];
+
+export type GetApiV1RepositoryByNameData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repository/{name}';
+};
+
+export type GetApiV1RepositoryByNameErrors = {
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoryByNameResponses = {
+    /**
+     * Repository details
+     */
+    200: Repository;
+};
+
+export type GetApiV1RepositoryByNameResponse = GetApiV1RepositoryByNameResponses[keyof GetApiV1RepositoryByNameResponses];
+
+export type PatchApiV1RepositoryByNameData = {
+    body: {
+        description?: string;
+        public?: boolean;
+        upstream_url?: string;
+        upstream_username?: string;
+        upstream_password?: string;
+        cache_ttl_seconds?: number;
+        negative_cache_ttl_seconds?: number;
+        blocked?: boolean;
+        member_repos?: Array<string>;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repository/{name}';
+};
+
+export type PatchApiV1RepositoryByNameErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type PatchApiV1RepositoryByNameResponses = {
+    /**
+     * Repository updated
+     */
+    200: Repository;
+};
+
+export type PatchApiV1RepositoryByNameResponse = PatchApiV1RepositoryByNameResponses[keyof PatchApiV1RepositoryByNameResponses];
+
+export type GetApiV1PipelinesData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/pipelines';
+};
+
+export type GetApiV1PipelinesErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1PipelinesError = GetApiV1PipelinesErrors[keyof GetApiV1PipelinesErrors];
+
+export type GetApiV1PipelinesResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1PipelinesData = {
+    body: {
+        name?: string;
+        description?: string;
+        stages?: Array<{
+            [key: string]: unknown;
+        }>;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/pipelines';
+};
+
+export type PostApiV1PipelinesErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1PipelinesError = PostApiV1PipelinesErrors[keyof PostApiV1PipelinesErrors];
+
+export type PostApiV1PipelinesResponses = {
+    /**
+     * Created
+     */
+    201: unknown;
+};
+
+export type DeleteApiV1PipelinesByNameData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/pipelines/{name}';
+};
+
+export type DeleteApiV1PipelinesByNameErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type DeleteApiV1PipelinesByNameError = DeleteApiV1PipelinesByNameErrors[keyof DeleteApiV1PipelinesByNameErrors];
+
+export type DeleteApiV1PipelinesByNameResponses = {
+    /**
+     * No content
+     */
+    204: void;
+};
+
+export type DeleteApiV1PipelinesByNameResponse = DeleteApiV1PipelinesByNameResponses[keyof DeleteApiV1PipelinesByNameResponses];
+
+export type GetApiV1PipelinesByNameData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/pipelines/{name}';
+};
+
+export type GetApiV1PipelinesByNameErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1PipelinesByNameError = GetApiV1PipelinesByNameErrors[keyof GetApiV1PipelinesByNameErrors];
+
+export type GetApiV1PipelinesByNameResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PatchApiV1PipelinesByNameData = {
+    body: {
+        description?: string;
+        stages?: Array<{
+            [key: string]: unknown;
+        }>;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/pipelines/{name}';
+};
+
+export type PatchApiV1PipelinesByNameErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PatchApiV1PipelinesByNameError = PatchApiV1PipelinesByNameErrors[keyof PatchApiV1PipelinesByNameErrors];
+
+export type PatchApiV1PipelinesByNameResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type GetApiV1BundlesData = {
+    body?: never;
+    path?: never;
+    query?: {
+        name?: string;
+        state?: string;
+        page?: string;
+        limit?: string;
+    };
+    url: '/api/v1/bundles';
+};
+
+export type GetApiV1BundlesErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1BundlesError = GetApiV1BundlesErrors[keyof GetApiV1BundlesErrors];
+
+export type GetApiV1BundlesResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1BundlesData = {
+    body: {
+        name?: string;
+        version?: string;
+        description?: string;
+        pipeline_id?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/bundles';
+};
+
+export type PostApiV1BundlesErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1BundlesError = PostApiV1BundlesErrors[keyof PostApiV1BundlesErrors];
+
+export type PostApiV1BundlesResponses = {
+    /**
+     * Created
+     */
+    201: unknown;
+};
+
+export type DeleteApiV1BundlesByNameByVersionData = {
+    body?: never;
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}';
+};
+
+export type DeleteApiV1BundlesByNameByVersionErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type DeleteApiV1BundlesByNameByVersionError = DeleteApiV1BundlesByNameByVersionErrors[keyof DeleteApiV1BundlesByNameByVersionErrors];
+
+export type DeleteApiV1BundlesByNameByVersionResponses = {
+    /**
+     * No content
+     */
+    204: void;
+};
+
+export type DeleteApiV1BundlesByNameByVersionResponse = DeleteApiV1BundlesByNameByVersionResponses[keyof DeleteApiV1BundlesByNameByVersionResponses];
+
+export type GetApiV1BundlesByNameByVersionData = {
+    body?: never;
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}';
+};
+
+export type GetApiV1BundlesByNameByVersionErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1BundlesByNameByVersionError = GetApiV1BundlesByNameByVersionErrors[keyof GetApiV1BundlesByNameByVersionErrors];
+
+export type GetApiV1BundlesByNameByVersionResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type GetApiV1BundlesByNameByVersionItemsData = {
+    body?: never;
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/items';
+};
+
+export type GetApiV1BundlesByNameByVersionItemsErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1BundlesByNameByVersionItemsError = GetApiV1BundlesByNameByVersionItemsErrors[keyof GetApiV1BundlesByNameByVersionItemsErrors];
+
+export type GetApiV1BundlesByNameByVersionItemsResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1BundlesByNameByVersionItemsData = {
+    body: {
+        items?: Array<{
+            [key: string]: unknown;
+        }>;
+    };
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/items';
+};
+
+export type PostApiV1BundlesByNameByVersionItemsErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1BundlesByNameByVersionItemsError = PostApiV1BundlesByNameByVersionItemsErrors[keyof PostApiV1BundlesByNameByVersionItemsErrors];
+
+export type PostApiV1BundlesByNameByVersionItemsResponses = {
+    /**
+     * Created
+     */
+    201: unknown;
+};
+
+export type DeleteApiV1BundlesByNameByVersionItemsBySha256Data = {
+    body?: never;
+    path: {
+        name: string;
+        version: string;
+        sha256: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/items/{sha256}';
+};
+
+export type DeleteApiV1BundlesByNameByVersionItemsBySha256Errors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type DeleteApiV1BundlesByNameByVersionItemsBySha256Error = DeleteApiV1BundlesByNameByVersionItemsBySha256Errors[keyof DeleteApiV1BundlesByNameByVersionItemsBySha256Errors];
+
+export type DeleteApiV1BundlesByNameByVersionItemsBySha256Responses = {
+    /**
+     * No content
+     */
+    204: void;
+};
+
+export type DeleteApiV1BundlesByNameByVersionItemsBySha256Response = DeleteApiV1BundlesByNameByVersionItemsBySha256Responses[keyof DeleteApiV1BundlesByNameByVersionItemsBySha256Responses];
+
+export type PostApiV1BundlesByNameByVersionSealData = {
+    body: {
+        gpg_key_id?: string;
+    };
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/seal';
+};
+
+export type PostApiV1BundlesByNameByVersionSealErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1BundlesByNameByVersionSealError = PostApiV1BundlesByNameByVersionSealErrors[keyof PostApiV1BundlesByNameByVersionSealErrors];
+
+export type PostApiV1BundlesByNameByVersionSealResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1BundlesByNameByVersionPromoteData = {
+    body: {
+        to_stage?: string;
+        target_repo?: string;
+        notes?: string;
+    };
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/promote';
+};
+
+export type PostApiV1BundlesByNameByVersionPromoteErrors = {
+    /**
+     * 501
+     */
+    501: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1BundlesByNameByVersionPromoteError = PostApiV1BundlesByNameByVersionPromoteErrors[keyof PostApiV1BundlesByNameByVersionPromoteErrors];
+
+export type PostApiV1BundlesByNameByVersionPromoteResponses = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1BundlesByNameByVersionPromoteResponse = PostApiV1BundlesByNameByVersionPromoteResponses[keyof PostApiV1BundlesByNameByVersionPromoteResponses];
+
+export type PostApiV1BundlesByNameByVersionArchiveData = {
+    body?: never;
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/archive';
+};
+
+export type PostApiV1BundlesByNameByVersionArchiveErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1BundlesByNameByVersionArchiveError = PostApiV1BundlesByNameByVersionArchiveErrors[keyof PostApiV1BundlesByNameByVersionArchiveErrors];
+
+export type PostApiV1BundlesByNameByVersionArchiveResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type GetApiV1BundlesByNameByVersionPromotionsData = {
+    body?: never;
+    path: {
+        name: string;
+        version: string;
+    };
+    query?: never;
+    url: '/api/v1/bundles/{name}/{version}/promotions';
+};
+
+export type GetApiV1BundlesByNameByVersionPromotionsErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1BundlesByNameByVersionPromotionsError = GetApiV1BundlesByNameByVersionPromotionsErrors[keyof GetApiV1BundlesByNameByVersionPromotionsErrors];
+
+export type GetApiV1BundlesByNameByVersionPromotionsResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/cleanup-policies/{id}';
+};
+
+export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdError = DeleteApiV1RepositoriesByNameCleanupPoliciesByIdErrors[keyof DeleteApiV1RepositoriesByNameCleanupPoliciesByIdErrors];
+
+export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdResponses = {
+    /**
+     * No content
+     */
+    204: void;
+};
+
+export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdResponse = DeleteApiV1RepositoriesByNameCleanupPoliciesByIdResponses[keyof DeleteApiV1RepositoriesByNameCleanupPoliciesByIdResponses];
+
+export type GetApiV1RepositoriesByNameCleanupPoliciesByIdData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/cleanup-policies/{id}';
+};
+
+export type GetApiV1RepositoriesByNameCleanupPoliciesByIdErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1RepositoriesByNameCleanupPoliciesByIdError = GetApiV1RepositoriesByNameCleanupPoliciesByIdErrors[keyof GetApiV1RepositoriesByNameCleanupPoliciesByIdErrors];
+
+export type GetApiV1RepositoriesByNameCleanupPoliciesByIdResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PutApiV1RepositoriesByNameCleanupPoliciesByIdData = {
+    body: {
+        name?: string;
+        enabled?: boolean;
+        keep_last_n?: number;
+        keep_since_days?: number;
+        name_pattern?: string;
+        schedule_cron?: string;
+    };
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/cleanup-policies/{id}';
+};
+
+export type PutApiV1RepositoriesByNameCleanupPoliciesByIdErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PutApiV1RepositoriesByNameCleanupPoliciesByIdError = PutApiV1RepositoriesByNameCleanupPoliciesByIdErrors[keyof PutApiV1RepositoriesByNameCleanupPoliciesByIdErrors];
+
+export type PutApiV1RepositoriesByNameCleanupPoliciesByIdResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesByIdRunData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/cleanup-policies/{id}/run';
+};
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesByIdRunErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesByIdRunError = PostApiV1RepositoriesByNameCleanupPoliciesByIdRunErrors[keyof PostApiV1RepositoriesByNameCleanupPoliciesByIdRunErrors];
+
+export type PostApiV1RepositoriesByNameCleanupPoliciesByIdRunResponses = {
+    /**
+     * Accepted
+     */
+    202: unknown;
+};
+
+export type GetApiV1RepositoriesByNameAiAnalysisData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        status?: string;
+        limit?: string;
+        offset?: string;
+    };
+    url: '/api/v1/repositories/{name}/ai-analysis';
+};
+
+export type GetApiV1RepositoriesByNameAiAnalysisErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1RepositoriesByNameAiAnalysisError = GetApiV1RepositoriesByNameAiAnalysisErrors[keyof GetApiV1RepositoriesByNameAiAnalysisErrors];
+
+export type GetApiV1RepositoriesByNameAiAnalysisResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type GetApiV1RepositoriesByNameAiAnalysisByArtifactIdData = {
+    body?: never;
+    path: {
+        name: string;
+        artifactID: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/ai-analysis/{artifactID}';
+};
+
+export type GetApiV1RepositoriesByNameAiAnalysisByArtifactIdErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1RepositoriesByNameAiAnalysisByArtifactIdError = GetApiV1RepositoriesByNameAiAnalysisByArtifactIdErrors[keyof GetApiV1RepositoriesByNameAiAnalysisByArtifactIdErrors];
+
+export type GetApiV1RepositoriesByNameAiAnalysisByArtifactIdResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerData = {
+    body: {
+        manifest_text?: string;
+    };
+    path: {
+        name: string;
+        artifactID: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger';
+};
+
+export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerError = PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerErrors[keyof PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerErrors];
+
+export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerResponses = {
+    /**
+     * Accepted
+     */
+    202: unknown;
+};
+
+export type GetApiV1AdminAiConfigData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/ai/config';
+};
+
+export type GetApiV1AdminAiConfigErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AdminAiConfigError = GetApiV1AdminAiConfigErrors[keyof GetApiV1AdminAiConfigErrors];
+
+export type GetApiV1AdminAiConfigResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PutApiV1AdminAiConfigData = {
+    body: {
+        enabled?: boolean;
+        provider?: string;
+        base_url?: string;
+        api_key?: string;
+        model?: string;
+        max_tokens?: number;
+        timeout_secs?: number;
+        system_prompt?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/ai/config';
+};
+
+export type PutApiV1AdminAiConfigErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PutApiV1AdminAiConfigError = PutApiV1AdminAiConfigErrors[keyof PutApiV1AdminAiConfigErrors];
+
+export type PutApiV1AdminAiConfigResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type GetApiV1AdminAiModelsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/ai/models';
+};
+
+export type GetApiV1AdminAiModelsErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AdminAiModelsError = GetApiV1AdminAiModelsErrors[keyof GetApiV1AdminAiModelsErrors];
+
+export type GetApiV1AdminAiModelsResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1AdminAiTestData = {
+    body: {
+        base_url?: string;
+        api_key?: string;
+        model?: string;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/ai/test';
+};
+
+export type PostApiV1AdminAiTestErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1AdminAiTestError = PostApiV1AdminAiTestErrors[keyof PostApiV1AdminAiTestErrors];
+
+export type PostApiV1AdminAiTestResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type GetApiV1AuthSsoOidcBySlugLoginData = {
+    body?: never;
+    path: {
+        slug: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sso/oidc/{slug}/login';
+};
+
+export type GetApiV1AuthSsoOidcBySlugLoginErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AuthSsoOidcBySlugLoginError = GetApiV1AuthSsoOidcBySlugLoginErrors[keyof GetApiV1AuthSsoOidcBySlugLoginErrors];
+
+export type GetApiV1AuthSsoOidcBySlugLoginResponses = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AuthSsoOidcBySlugLoginResponse = GetApiV1AuthSsoOidcBySlugLoginResponses[keyof GetApiV1AuthSsoOidcBySlugLoginResponses];
+
+export type GetApiV1AuthSsoOidcBySlugCallbackData = {
+    body?: never;
+    path: {
+        slug: string;
+    };
+    query?: {
+        code?: string;
+        state?: string;
+    };
+    url: '/api/v1/auth/sso/oidc/{slug}/callback';
+};
+
+export type GetApiV1AuthSsoOidcBySlugCallbackErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AuthSsoOidcBySlugCallbackError = GetApiV1AuthSsoOidcBySlugCallbackErrors[keyof GetApiV1AuthSsoOidcBySlugCallbackErrors];
+
+export type GetApiV1AuthSsoOidcBySlugCallbackResponses = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AuthSsoOidcBySlugCallbackResponse = GetApiV1AuthSsoOidcBySlugCallbackResponses[keyof GetApiV1AuthSsoOidcBySlugCallbackResponses];
+
+export type PostApiV1AuthSsoOidcBySlugLogoutData = {
+    body?: never;
+    path: {
+        slug: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sso/oidc/{slug}/logout';
+};
+
+export type PostApiV1AuthSsoOidcBySlugLogoutErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1AuthSsoOidcBySlugLogoutError = PostApiV1AuthSsoOidcBySlugLogoutErrors[keyof PostApiV1AuthSsoOidcBySlugLogoutErrors];
+
+export type PostApiV1AuthSsoOidcBySlugLogoutResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type GetApiV1AuthSsoSamlBySlugLoginData = {
+    body?: never;
+    path: {
+        slug: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sso/saml/{slug}/login';
+};
+
+export type GetApiV1AuthSsoSamlBySlugLoginErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AuthSsoSamlBySlugLoginError = GetApiV1AuthSsoSamlBySlugLoginErrors[keyof GetApiV1AuthSsoSamlBySlugLoginErrors];
+
+export type GetApiV1AuthSsoSamlBySlugLoginResponses = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AuthSsoSamlBySlugLoginResponse = GetApiV1AuthSsoSamlBySlugLoginResponses[keyof GetApiV1AuthSsoSamlBySlugLoginResponses];
+
+export type GetApiV1AuthSsoSamlBySlugMetadataData = {
+    body?: never;
+    path: {
+        slug: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sso/saml/{slug}/metadata';
+};
+
+export type GetApiV1AuthSsoSamlBySlugMetadataErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AuthSsoSamlBySlugMetadataError = GetApiV1AuthSsoSamlBySlugMetadataErrors[keyof GetApiV1AuthSsoSamlBySlugMetadataErrors];
+
+export type GetApiV1AuthSsoSamlBySlugMetadataResponses = {
+    /**
+     * Success
+     */
+    200: unknown;
+};
+
+export type PostApiV1AuthSsoSamlBySlugAcsData = {
+    body?: never;
+    path: {
+        slug: string;
+    };
+    query?: never;
+    url: '/api/v1/auth/sso/saml/{slug}/acs';
+};
+
+export type PostApiV1AuthSsoSamlBySlugAcsErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1AuthSsoSamlBySlugAcsError = PostApiV1AuthSsoSamlBySlugAcsErrors[keyof PostApiV1AuthSsoSamlBySlugAcsErrors];
+
+export type PostApiV1AuthSsoSamlBySlugAcsResponses = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1AuthSsoSamlBySlugAcsResponse = PostApiV1AuthSsoSamlBySlugAcsResponses[keyof PostApiV1AuthSsoSamlBySlugAcsResponses];

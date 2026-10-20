@@ -28,7 +28,7 @@ func TestSearchIntegration(t *testing.T) {
 	}
 	dsn := os.Getenv("TEST_DATABASE_URL")
 	if dsn == "" {
-		t.Skip("TEST_DATABASE_URL not set")
+		skipOrFailMissingEnv(t, "TEST_DATABASE_URL")
 	}
 
 	cfg := database.DatabaseConfig{

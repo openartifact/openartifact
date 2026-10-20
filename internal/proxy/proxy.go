@@ -13,12 +13,20 @@ import (
 	"strconv"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// maxUpstreamBody caps any single upstream response copied through the proxy.
+const maxUpstreamBody = 4 << 30 // 4 GiB
+
+// maxUpstreamErrorBody caps upstream error bodies relayed to clients.
+const maxUpstreamErrorBody = 1 << 20
 
 type Handler struct {
 	log       *logger.Logger
@@ -32,9 +40,7 @@ func NewHandler(log *logger.Logger, db database.Database, blobStore storage.Blob
 		log:       log,
 		db:        db,
 		blobStore: blobStore,
-		client: &http.Client{
-			Timeout: 30 * time.Second,
-		},
+		client:    netutil.SafeHTTPClient(5 * time.Minute),
 	}
 }
 
@@ -61,6 +67,12 @@ func (h *Handler) ServeProxy(w http.ResponseWriter, r *http.Request, repo *model
 	// Cache HIT: serve from blobStore
 	if cacheEntry != nil && cacheEntry.ExpiresAt.After(time.Now()) {
 		h.log.Debugw("proxy cache hit", "repo_id", repo.ID, "cache_key", cacheKey)
+
+		// Negative cache entry: upstream said 404 and no blob exists.
+		if cacheEntry.StatusCode == http.StatusNotFound || cacheEntry.BlobKey == "" {
+			http.NotFound(w, r)
+			return
+		}
 
 		// Serve from blob store
 		blob, err := h.blobStore.Get(ctx, cacheEntry.BlobKey)
@@ -105,6 +117,9 @@ func (h *Handler) ServeProxy(w http.ResponseWriter, r *http.Request, repo *model
 
 	upstreamURL := repo.UpstreamURL + upstreamPath
 
+	// SSRF protection is enforced at dial time by the client (blocked
+	// destination addresses, re-checked on every redirect hop).
+
 	req, err := http.NewRequestWithContext(ctx, r.Method, upstreamURL, nil)
 	if err != nil {
 		h.log.Errorw("failed to create upstream request", "url", upstreamURL, "error", err)
@@ -114,7 +129,7 @@ func (h *Handler) ServeProxy(w http.ResponseWriter, r *http.Request, repo *model
 	}
 
 	// Copy relevant headers from original request
-	for _, header := range []string{"Accept", "Accept-Encoding", "User-Agent"} {
+	for _, header := range []string{"Accept", "User-Agent"} {
 		if val := r.Header.Get(header); val != "" {
 			req.Header.Set(header, val)
 		}
@@ -122,7 +137,14 @@ func (h *Handler) ServeProxy(w http.ResponseWriter, r *http.Request, repo *model
 
 	// Add basic auth if configured
 	if repo.UpstreamUsername != "" {
-		req.SetBasicAuth(repo.UpstreamUsername, repo.UpstreamPasswordEnc)
+		pw, derr := crypto.Decrypt(repo.UpstreamPasswordEnc)
+		if derr != nil {
+			h.log.Errorw("failed to decrypt upstream password", "repo_id", repo.ID, "error", derr)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+
+			return
+		}
+		req.SetBasicAuth(repo.UpstreamUsername, pw)
 	}
 
 	// Fetch from upstream
@@ -163,7 +185,7 @@ func (h *Handler) ServeProxy(w http.ResponseWriter, r *http.Request, repo *model
 	if resp.StatusCode >= 400 {
 		h.log.Warnw("upstream returned error", "url", upstreamURL, "status", resp.StatusCode)
 		w.WriteHeader(resp.StatusCode)
-		_, _ = io.Copy(w, resp.Body)
+		_, _ = io.Copy(w, io.LimitReader(resp.Body, maxUpstreamErrorBody))
 
 		return
 	}
@@ -180,12 +202,19 @@ func (h *Handler) ServeProxy(w http.ResponseWriter, r *http.Request, repo *model
 		}
 	}
 
+	if resp.ContentLength > maxUpstreamBody {
+		http.Error(w, "upstream response too large", http.StatusBadGateway)
+		return
+	}
+
 	w.WriteHeader(http.StatusOK)
+
+	body := io.LimitReader(resp.Body, maxUpstreamBody+1)
 
 	spool, err := os.CreateTemp("", "openartifact-proxy-*")
 	if err != nil {
 		h.log.Errorw("failed to create spool file", "cache_key", cacheKey, "error", err)
-		_, _ = io.Copy(w, resp.Body)
+		_, _ = io.Copy(w, body)
 		return
 	}
 	defer func() {
@@ -196,9 +225,13 @@ func (h *Handler) ServeProxy(w http.ResponseWriter, r *http.Request, repo *model
 	}()
 
 	hasher := sha256.New()
-	sizeBytes, err := io.Copy(io.MultiWriter(w, spool, hasher), resp.Body)
+	sizeBytes, err := io.Copy(io.MultiWriter(w, spool, hasher), body)
 	if err != nil {
 		h.log.Errorw("failed to stream response", "cache_key", cacheKey, "error", err)
+		return
+	}
+	if sizeBytes > maxUpstreamBody || (resp.ContentLength >= 0 && sizeBytes != resp.ContentLength) {
+		h.log.Warnw("upstream body oversized or truncated; not caching", "cache_key", cacheKey, "size", sizeBytes)
 		return
 	}
 

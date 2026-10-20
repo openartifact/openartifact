@@ -7,10 +7,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div>
     <!-- Title -->
-    <h1 class="text-2xl font-semibold text-foreground">Statistics</h1>
+    <h1 class="text-2xl font-semibold text-foreground">{{ t('stats.title') }}</h1>
 
     <!-- KPI Cards -->
-    <div class="grid grid-cols-4 gap-4 mt-6">
+    <div class="grid grid-cols-2 lg:grid-cols-4 gap-4 mt-6">
       <div
         v-for="(kpi, idx) in kpiCards"
         :key="idx"
@@ -24,10 +24,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <!-- Main Content: 2-column layout -->
-    <div class="grid grid-cols-5 gap-6 mt-6">
+    <div class="grid grid-cols-1 lg:grid-cols-5 gap-6 mt-6">
       <!-- Left Column (3 cols): Repositories by Format -->
       <div class="bg-surface rounded-xl border border-border p-6 col-span-3">
-        <h2 class="text-sm font-semibold">Repositories by Format</h2>
+        <h2 class="text-sm font-semibold">{{ t('stats.byFormat') }}</h2>
         <div v-if="loading" class="space-y-4 mt-4">
           <div v-for="n in 5" :key="n" class="space-y-2">
             <div class="h-4 bg-surface-hover rounded animate-pulse w-3/4" />
@@ -35,7 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </div>
         <div v-else-if="formatCounts.size === 0" class="text-muted text-sm py-4 mt-4">
-          No repositories
+          {{ t('repos.empty') }}
         </div>
         <div v-else class="mt-4 space-y-3">
           <div
@@ -44,7 +44,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="space-y-1"
           >
             <div class="flex items-center justify-between">
-              <span class="text-sm text-foreground">{{ item.format }}</span>
+              <FormatBadge :format="item.format" />
               <span class="text-sm text-muted">{{ item.count }}</span>
             </div>
             <div class="h-2 rounded-full bg-surface-hover overflow-hidden">
@@ -62,16 +62,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <!-- Right Column (2 cols): Format Distribution Donut -->
       <div class="bg-surface rounded-xl border border-border p-6 col-span-2">
-        <h2 class="text-sm font-semibold">Format Distribution</h2>
+        <h2 class="text-sm font-semibold">{{ t('stats.distribution') }}</h2>
         <div v-if="loading" class="flex items-center justify-center h-64">
           <div class="w-32 h-32 bg-surface-hover rounded-full animate-pulse" />
         </div>
         <div v-else-if="repos.length === 0" class="flex items-center justify-center h-64 text-muted">
-          No data
+          {{ t('stats.noData') }}
         </div>
         <div v-else class="mt-4 flex flex-col items-center">
           <!-- Donut Chart -->
-          <svg viewBox="0 0 180 180" class="w-32 h-32">
+          <svg viewBox="0 0 180 180" class="w-32 h-32" role="img" :aria-label="t('stats.distribution')">
             <circle
               cx="90"
               cy="90"
@@ -99,7 +99,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ repos.length }}
             </text>
             <text x="90" y="100" text-anchor="middle" class="text-xs fill-muted">
-              repos
+              {{ t('stats.repoUnit') }}
             </text>
           </svg>
 
@@ -110,11 +110,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :key="item.format"
               class="flex items-center gap-2 text-xs"
             >
-              <div
-                class="w-2 h-2 rounded-full shrink-0"
-                :style="{ backgroundColor: formatColor(item.format) }"
-              />
-              <span class="text-foreground">{{ item.format }}</span>
+              <FormatBadge :format="item.format" size="sm" />
               <span class="text-muted ml-auto">{{ item.count }}</span>
             </div>
           </div>
@@ -125,26 +121,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Repository Table -->
     <div class="bg-surface rounded-xl border border-border mt-6 overflow-hidden">
       <div class="px-6 py-4 bg-surface-hover/50">
-        <h2 class="text-sm font-semibold">All Repositories</h2>
+        <h2 class="text-sm font-semibold">{{ t('stats.allRepos') }}</h2>
       </div>
 
       <div v-if="loading" class="px-6 py-8 text-muted text-sm text-center">
-        Loading...
+        {{ t('common.loading') }}
+      </div>
+      <div v-else-if="loadError" class="px-6 py-8 text-danger text-sm text-center" role="alert">
+        {{ loadError }}
       </div>
 
       <EmptyState
         v-else-if="repos.length === 0"
-        title="No repositories"
-        description="Create your first repository to get started"
+        :title="t('repos.empty')"
+        :description="t('repos.emptyHint')"
       />
 
       <table v-else class="w-full text-sm">
         <thead>
           <tr class="bg-surface-hover/50 text-xs text-muted uppercase tracking-wider border-b border-border">
-            <th scope="col" class="text-left px-6 py-3 font-semibold">Name</th>
-            <th scope="col" class="text-left px-6 py-3 font-semibold">Format</th>
-            <th scope="col" class="text-left px-6 py-3 font-semibold">Type</th>
-            <th scope="col" class="text-left px-6 py-3 font-semibold">Description</th>
+            <th scope="col" class="text-left px-6 py-3 font-semibold">{{ t('repos.column.name') }}</th>
+            <th scope="col" class="text-left px-6 py-3 font-semibold">{{ t('repos.column.format') }}</th>
+            <th scope="col" class="text-left px-6 py-3 font-semibold">{{ t('repos.column.visibility') }}</th>
+            <th scope="col" class="text-left px-6 py-3 font-semibold">{{ t('wizard.description') }}</th>
           </tr>
         </thead>
         <tbody>
@@ -155,7 +154,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >
             <td class="px-6 py-3">
               <router-link
-                :to="`/repos/${repo.name}`"
+                :to="`/repos/${encodeURIComponent(repo.name)}`"
                 class="font-medium text-foreground hover:text-primary"
               >
                 {{ repo.name }}
@@ -169,7 +168,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 class="inline-block px-2 py-1 rounded text-xs font-medium"
                 :class="repo.public ? 'bg-success/10 text-success' : 'bg-surface-hover text-muted'"
               >
-                {{ repo.public ? 'Public' : 'Private' }}
+                {{ repo.public ? t('repos.public') : t('repos.private') }}
               </span>
             </td>
             <td class="px-6 py-3 text-sm text-muted truncate">
@@ -184,14 +183,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { listRepositories } from '../api/repositories'
+import { listAllRepositories } from '../api/repositories'
 import type { Repository } from '../api/repositories'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { formatColor } from '../lib/formats'
+import { t } from '../i18n/en'
 
-const router = useRouter()
+const loadError = ref('')
 const repos = ref<Repository[]>([])
 const loading = ref(true)
 
@@ -219,19 +218,19 @@ const formatCountsArray = computed(() => {
 // KPI Cards
 const kpiCards = computed(() => [
   {
-    label: 'Total Repositories',
+    label: t('stats.totalRepos'),
     value: repos.value.length,
   },
   {
-    label: 'Public Repos',
+    label: t('stats.publicRepos'),
     value: repos.value.filter(r => r.public).length,
   },
   {
-    label: 'Private Repos',
+    label: t('stats.privateRepos'),
     value: repos.value.filter(r => !r.public).length,
   },
   {
-    label: 'Formats',
+    label: t('stats.formats'),
     value: formatCounts.value.size,
   },
 ])
@@ -268,8 +267,9 @@ const donutSlices = computed(() => {
 // Load repositories
 onMounted(async () => {
   try {
-    const res = await listRepositories({ limit: 200 })
-    repos.value = res.repositories || []
+    repos.value = await listAllRepositories()
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : t('repos.loadFailed')
   } finally {
     loading.value = false
   }

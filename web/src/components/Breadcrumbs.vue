@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <nav v-if="segments.length" aria-label="Breadcrumbs" class="text-sm text-muted px-6 py-2 border-b border-border bg-surface">
+  <nav v-if="segments.length" :aria-label="t('shell.breadcrumbs')" class="text-sm text-muted px-6 py-2 border-b border-border bg-surface">
     <ol class="flex items-center gap-1 flex-wrap">
       <li v-for="(seg, idx) in segments" :key="idx" class="flex items-center gap-1">
         <ChevronRightIcon v-if="idx > 0" class="w-3 h-3 text-muted" aria-hidden="true" />

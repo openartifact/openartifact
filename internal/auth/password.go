@@ -8,9 +8,13 @@ import (
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
+	"errors"
 	"fmt"
 	"runtime"
+	"strconv"
 	"strings"
+	"sync"
+	"unicode/utf8"
 
 	"golang.org/x/crypto/argon2"
 )
@@ -27,6 +31,55 @@ const (
 //
 //nolint:gochecknoglobals // rate-limits concurrent Argon2id hashing
 var argonSemaphore = make(chan struct{}, runtime.NumCPU())
+
+const (
+	// MinPasswordLength is the minimum length of any local password, enforced
+	// on every path that sets one (self-service change, admin create/patch,
+	// resetpw).
+	MinPasswordLength = 12
+	// MaxPasswordLength bounds the input handed to Argon2id.
+	MaxPasswordLength = 1024
+)
+
+var (
+	// ErrPasswordTooShort is returned by ValidatePassword for short passwords.
+	ErrPasswordTooShort = errors.New("password must be at least " + strconv.Itoa(MinPasswordLength) + " characters")
+	// ErrPasswordTooLong is returned by ValidatePassword for oversized passwords.
+	ErrPasswordTooLong = errors.New("password must be at most " + strconv.Itoa(MaxPasswordLength) + " characters")
+)
+
+// ValidatePassword is the single password policy shared by every code path that
+// sets a local password.
+func ValidatePassword(plain string) error {
+	switch n := utf8.RuneCountInString(plain); {
+	case n < MinPasswordLength:
+		return ErrPasswordTooShort
+	case len(plain) > MaxPasswordLength:
+		return ErrPasswordTooLong
+	}
+
+	return nil
+}
+
+//nolint:gochecknoglobals // lazily computed decoy hash for constant-time login failures
+var (
+	dummyHashOnce sync.Once
+	dummyHash     string
+)
+
+// BurnPasswordVerification runs a full Argon2id verification against a decoy
+// hash. Call it on login paths where no real hash exists (unknown user,
+// disabled account, SSO-only account) so that the response time does not reveal
+// which usernames exist.
+func BurnPasswordVerification(plain string) {
+	dummyHashOnce.Do(func() {
+		dummyHash, _ = HashPassword("openartifact-decoy-password")
+	})
+
+	if dummyHash != "" {
+		_, _ = VerifyPassword(plain, dummyHash)
+	}
+}
 
 // HashPassword hashes a plaintext password using Argon2id and returns an encoded string.
 // Format: $argon2id$v=19$m=65536,t=1,p=4$<base64-no-padding-salt>$<base64-no-padding-hash>.

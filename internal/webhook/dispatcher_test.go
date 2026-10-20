@@ -163,6 +163,7 @@ func (db *deliveryTestDB) UpdateWebhookDelivery(_ context.Context, delivery *mod
 
 func newResponseDelivery(t *testing.T, body string) (*deliveryTestDB, *models.WebhookDelivery) {
 	t.Helper()
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
 
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(body))
@@ -213,5 +214,44 @@ func TestDeliveryTruncatesOversizedResponseBody(t *testing.T) {
 	}
 	if !strings.HasSuffix(db.delivery.ResponseBody, webhookResponseTruncatedMarker) {
 		t.Fatalf("persisted response body = %q, want truncation marker", db.delivery.ResponseBody[len(db.delivery.ResponseBody)-len(webhookResponseTruncatedMarker):])
+	}
+}
+
+func TestDeliveryNetworkErrorEventuallyFails(t *testing.T) {
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+	db := &deliveryTestDB{BaseMockDB: &database.BaseMockDB{}}
+	d := NewDispatcher(db, log)
+	wh := &models.Webhook{ID: "w", URL: "http://127.0.0.1:1/", ContentType: "application/json", MaxRetries: 2, TimeoutSeconds: 1}
+	delivery := &models.WebhookDelivery{Payload: map[string]any{}}
+
+	d.deliver(wh, delivery)
+	if delivery.Status != "pending" || delivery.AttemptCount != 1 {
+		t.Fatalf("after 1st failure: status=%s attempts=%d", delivery.Status, delivery.AttemptCount)
+	}
+	d.deliver(wh, delivery)
+	if delivery.Status != "failed" || delivery.AttemptCount != 2 {
+		t.Fatalf("after 2nd failure: status=%s attempts=%d", delivery.Status, delivery.AttemptCount)
+	}
+}
+
+func TestEnqueueDeduplicatesInflight(t *testing.T) {
+	d := NewDispatcher(nil, nil)
+	del := &models.WebhookDelivery{ID: "1"}
+	if !d.enqueue(del) || d.enqueue(del) {
+		t.Fatal("second enqueue of in-flight delivery must be rejected")
+	}
+}
+
+func TestDeliveryBlocksLoopbackByDefault(t *testing.T) {
+	log, _ := logger.New("error", "json", "stderr")
+	db := &deliveryTestDB{BaseMockDB: &database.BaseMockDB{}}
+	delivery := &models.WebhookDelivery{Payload: map[string]any{}}
+	NewDispatcher(db, log).deliver(&models.Webhook{ID: "w", URL: "http://127.0.0.1:1/", MaxRetries: 1, TimeoutSeconds: 1}, delivery)
+	if delivery.Status != "failed" {
+		t.Fatalf("status=%s", delivery.Status)
 	}
 }

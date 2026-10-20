@@ -12,6 +12,7 @@ export function useSearch() {
   const packageResults = ref<SearchPackageHit[]>([])
   const loading = ref(false)
   const searched = ref(false)
+  const error = ref('')
 
   let debounceTimer: ReturnType<typeof setTimeout> | undefined
   let requestId = 0
@@ -30,17 +31,27 @@ export function useSearch() {
     const currentRequestId = ++requestId
     loading.value = true
     searched.value = true
+    error.value = ''
     try {
       const res = await search({ q, limit: 20 })
       if (currentRequestId !== requestId) return
       repoResults.value = res.repositories || []
       packageResults.value = res.packages || []
+    } catch (err) {
+      if (currentRequestId !== requestId) return
+      repoResults.value = []
+      packageResults.value = []
+      error.value = err instanceof Error ? err.message : 'Search failed'
     } finally {
       if (currentRequestId === requestId) loading.value = false
     }
   }
 
   function clear(): void {
+    // Invalidate any in-flight request so it cannot repopulate the results.
+    requestId++
+    loading.value = false
+    error.value = ''
     query.value = ''
     repoResults.value = []
     packageResults.value = []
@@ -49,5 +60,5 @@ export function useSearch() {
     debounceTimer = undefined
   }
 
-  return { query, repoResults, packageResults, loading, searched, scheduleSearch, execute, clear }
+  return { query, repoResults, packageResults, loading, searched, error, scheduleSearch, execute, clear }
 }

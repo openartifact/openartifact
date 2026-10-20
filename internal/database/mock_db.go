@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // BaseMockDB provides stub implementations of every Database method.
@@ -128,8 +129,32 @@ func (m *BaseMockDB) GetDebianPackagesByDistComp(ctx context.Context, repoID str
 func (m *BaseMockDB) GetDebPackageByID(ctx context.Context, id string) (*models.DebPackage, error) {
 	return nil, errNotImpl("GetDebPackageByID")
 }
+func (m *BaseMockDB) GetOrCreateDebianDistribution(ctx context.Context, repoID, name string) (*models.DebianDistribution, error) {
+	return nil, errNotImpl("GetOrCreateDebianDistribution")
+}
+func (m *BaseMockDB) GetOrCreateDebianComponent(ctx context.Context, distID, name string) (*models.DebianComponent, error) {
+	return nil, errNotImpl("GetOrCreateDebianComponent")
+}
+func (m *BaseMockDB) GetOrCreateDebianArchitecture(ctx context.Context, distID, name string) (*models.DebianArchitecture, error) {
+	return nil, errNotImpl("GetOrCreateDebianArchitecture")
+}
+func (m *BaseMockDB) SetDebControlFields(ctx context.Context, packageID, maintainer, homepage string, fields map[string]string) error {
+	return errNotImpl("SetDebControlFields")
+}
+func (m *BaseMockDB) GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error) {
+	return "", 0, errNotImpl("GetDebBlobInfo")
+}
+func (m *BaseMockDB) ListDebPackageEntries(ctx context.Context, repoID, dist, comp, arch string) ([]models.DebPackageEntry, error) {
+	return nil, errNotImpl("ListDebPackageEntries")
+}
 func (m *BaseMockDB) ListDebPackagesByRepo(ctx context.Context, repoID string) ([]*models.DebPackage, error) {
 	return nil, errNotImpl("ListDebPackagesByRepo")
+}
+func (m *BaseMockDB) RpmPackageExists(ctx context.Context, repoID, name, version, release string, epoch int, arch string) (bool, error) {
+	return false, errNotImpl("RpmPackageExists")
+}
+func (m *BaseMockDB) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+	return nil, errNotImpl("ListRpmPackagesForMetadata")
 }
 func (m *BaseMockDB) GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error) {
 	return nil, errNotImpl("GetRpmPackageByID")
@@ -381,6 +406,21 @@ func (m *BaseMockDB) DeleteSession(ctx context.Context, tokenHash string) error 
 func (m *BaseMockDB) UpdateSessionLastSeen(ctx context.Context, sessionID string, expiresAt time.Time) error {
 	return errNotImpl("UpdateSessionLastSeen")
 }
+func (m *BaseMockDB) ConsumeSAMLAssertion(ctx context.Context, providerSlug, assertionID string, expiresAt time.Time) (bool, error) {
+	return false, errNotImpl("ConsumeSAMLAssertion")
+}
+func (m *BaseMockDB) DeleteSessionsByUser(ctx context.Context, userID string) error {
+	return errNotImpl("DeleteSessionsByUser")
+}
+func (m *BaseMockDB) DeleteOtherSessionsByUser(ctx context.Context, userID, keepTokenHash string) error {
+	return errNotImpl("DeleteOtherSessionsByUser")
+}
+func (m *BaseMockDB) CreateBootstrapAdmin(ctx context.Context, username, passwordHash string) (bool, error) {
+	return false, errNotImpl("CreateBootstrapAdmin")
+}
+func (m *BaseMockDB) RepairBootstrapAdmin(ctx context.Context, username string) (bool, error) {
+	return false, errNotImpl("RepairBootstrapAdmin")
+}
 func (m *BaseMockDB) CreateToken(ctx context.Context, token *models.Token) (*models.Token, error) {
 	return nil, errNotImpl("CreateToken")
 }
@@ -555,8 +595,8 @@ func (m *BaseMockDB) UpdateWebhookDelivery(ctx context.Context, delivery *models
 func (m *BaseMockDB) ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*models.WebhookDelivery, error) {
 	return nil, errNotImpl("ListWebhookDeliveries")
 }
-func (m *BaseMockDB) ListPendingWebhookDeliveries(ctx context.Context) ([]*models.WebhookDelivery, error) {
-	return nil, errNotImpl("ListPendingWebhookDeliveries")
+func (m *BaseMockDB) ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error) {
+	return nil, errNotImpl("ClaimPendingWebhookDeliveries")
 }
 func (m *BaseMockDB) CreateBackupJob(ctx context.Context, job *models.BackupJob) error {
 	return errNotImpl("CreateBackupJob")
@@ -704,6 +744,18 @@ func (m *BaseMockDB) IncrementStorageUsage(ctx context.Context, repoID string, s
 }
 func (m *BaseMockDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	return errNotImpl("DecrementStorageUsage")
+}
+func (m *BaseMockDB) CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error) {
+	return 0, errNotImpl("CountBlobsOnStorageBackend")
+}
+func (m *BaseMockDB) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
+	return false, errNotImpl("ReserveStorageUsage")
+}
+func (m *BaseMockDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error {
+	return errNotImpl("ReplaceGroupMembers")
+}
+func (m *BaseMockDB) CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
+	return errNotImpl("CreateRepositoryWithMembers")
 }
 func (m *BaseMockDB) CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error {
 	return errNotImpl("CreateStorageBackend")
@@ -896,6 +948,36 @@ func (m *BaseMockDB) UpdateBundlePromotion(ctx context.Context, p *models.Bundle
 }
 func (m *BaseMockDB) ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error) {
 	return nil, errNotImpl("ListBundlePromotions")
+}
+func (m *BaseMockDB) AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error {
+	return errNotImpl("AddBundleItems")
+}
+func (m *BaseMockDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time) (bool, error) {
+	return false, errNotImpl("SealReleaseBundle")
+}
+func (m *BaseMockDB) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
+	return nil, errNotImpl("GetVulnScanResultByID")
+}
+func (m *BaseMockDB) DeleteVulnScanResult(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteVulnScanResult")
+}
+func (m *BaseMockDB) SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error {
+	return errNotImpl("SetVulnScanQuarantine")
+}
+func (m *BaseMockDB) GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error) {
+	return nil, errNotImpl("GetLicenseScanResultByID")
+}
+func (m *BaseMockDB) ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error) {
+	return nil, errNotImpl("ListGlobalLicensePolicies")
+}
+func (m *BaseMockDB) GetSBOMReportByID(ctx context.Context, repoID, id string) (*models.SBOMReport, error) {
+	return nil, errNotImpl("GetSBOMReportByID")
+}
+func (m *BaseMockDB) DeleteSBOMReportInRepo(ctx context.Context, repoID, id string) (string, error) {
+	return "", errNotImpl("DeleteSBOMReportInRepo")
+}
+func (m *BaseMockDB) SetArtifactProperties(ctx context.Context, repoID, artifactID string, props map[string]string, replace bool) error {
+	return errNotImpl("SetArtifactProperties")
 }
 func (m *BaseMockDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error {
 	return errNotImpl("UpsertAIAnalysis")

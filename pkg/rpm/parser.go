@@ -5,8 +5,10 @@
 package rpm
 
 import (
+	"encoding/json"
 	"fmt"
 	"io"
+	"strings"
 )
 
 type FileEntry struct {
@@ -109,13 +111,17 @@ func ParseRPM(r io.Reader) (*Package, error) {
 		HeaderEnd:   headerEnd,
 	}
 
+	if err := validateRequired(pkg); err != nil {
+		return nil, err
+	}
+
 	pkg.Provides, _ = ParseDependencies(pkgHeader, RPMTAG_PROVIDES, RPMTAG_PROVIDEFLAGS, RPMTAG_PROVIDEVERSION)
 	pkg.Requires, _ = ParseDependencies(pkgHeader, RPMTAG_REQUIRENAME, RPMTAG_REQUIREFLAGS, RPMTAG_REQUIREVERSION)
 	pkg.Conflicts, _ = ParseDependencies(pkgHeader, RPMTAG_CONFLICTNAME, RPMTAG_CONFLICTFLAGS, RPMTAG_CONFLICTVERSION)
 	pkg.Obsoletes, _ = ParseDependencies(pkgHeader, RPMTAG_OBSOLETENAME, RPMTAG_OBSOLETEFLAGS, RPMTAG_OBSOLETEVERSION)
-	pkg.Suggests, _ = ParseDependencies(pkgHeader, RPMTAG_SUGGESTSNAME, RPMTAG_SUGGESTSFLAGS, TagType(0))
-	pkg.Supplements, _ = ParseDependencies(pkgHeader, RPMTAG_SUPPLEMENTNAME, RPMTAG_SUPPLEMENTFLAGS, TagType(0))
-	pkg.Enhances, _ = ParseDependencies(pkgHeader, RPMTAG_ENHANCENAME, RPMTAG_ENHANCEFLAGS, TagType(0))
+	pkg.Suggests, _ = ParseDependencies(pkgHeader, RPMTAG_SUGGESTSNAME, RPMTAG_SUGGESTSFLAGS, RPMTAG_SUGGESTSVERSION)
+	pkg.Supplements, _ = ParseDependencies(pkgHeader, RPMTAG_SUPPLEMENTNAME, RPMTAG_SUPPLEMENTFLAGS, RPMTAG_SUPPLEMENTVERSION)
+	pkg.Enhances, _ = ParseDependencies(pkgHeader, RPMTAG_ENHANCENAME, RPMTAG_ENHANCEFLAGS, RPMTAG_ENHANCEVERSION)
 
 	pkg.Files = extractFiles(pkgHeader)
 	pkg.Changelogs = extractChangelogs(pkgHeader)
@@ -133,21 +139,44 @@ func getUint32(h *Header, tag TagType) uint32 {
 	return val
 }
 
+// validateRequired rejects packages missing identity tags or containing
+// characters that are unsafe in a filename.
+func validateRequired(p *Package) error {
+	for name, v := range map[string]string{"NAME": p.Name, "VERSION": p.Version, "RELEASE": p.Release, "ARCH": p.Arch} {
+		if v == "" {
+			return fmt.Errorf("%w: missing %s tag", ErrInvalidHeader, name)
+		}
+
+		if strings.ContainsAny(v, "/\\\x00 \t\r\n") || strings.Contains(v, "..") {
+			return fmt.Errorf("%w: invalid characters in %s tag", ErrInvalidHeader, name)
+		}
+	}
+
+	return nil
+}
+
 func extractFiles(h *Header) []FileEntry {
-	dirs, _ := h.GetStringArray(RPMTAG_FILENAMES)
-	if dirs == nil {
+	bases, _ := h.GetStringArray(RPMTAG_BASENAMES)
+	if len(bases) == 0 {
 		return nil
 	}
 
+	dirNames, _ := h.GetStringArray(RPMTAG_DIRNAMES)
+	dirIdx, _ := h.GetInt32s(RPMTAG_DIRINDEXES)
 	sizes, _ := h.GetInt32s(RPMTAG_FILESIZES)
 	modes, _ := h.GetInt32s(RPMTAG_FILEMODES)
 	mtimes, _ := h.GetInt32s(RPMTAG_FILEMTIMES)
 	digests, _ := h.GetStringArray(RPMTAG_FILEDIGESTS)
 	linktos, _ := h.GetStringArray(RPMTAG_FILELINKTOS)
 
-	files := make([]FileEntry, 0, len(dirs))
-	for i, path := range dirs {
-		entry := FileEntry{Path: path}
+	files := make([]FileEntry, 0, len(bases))
+	for i, base := range bases {
+		dir := ""
+		if i < len(dirIdx) && dirIdx[i] >= 0 && int(dirIdx[i]) < len(dirNames) {
+			dir = dirNames[dirIdx[i]]
+		}
+
+		entry := FileEntry{Path: dir + base}
 
 		if i < len(sizes) {
 			entry.Size = int64(sizes[i])
@@ -155,7 +184,7 @@ func extractFiles(h *Header) []FileEntry {
 
 		if i < len(modes) {
 			entry.Mode = uint16(modes[i] & 0xFFFF)
-			entry.IsDir = (modes[i] & 0x4000) != 0
+			entry.IsDir = (modes[i] & 0xF000) == 0x4000
 		}
 
 		if i < len(mtimes) {
@@ -262,4 +291,44 @@ func (p *Package) GetMetadata() map[string]any {
 	}
 
 	return metadata
+}
+
+// extraData is the persisted (JSON) subset of a Package not stored in scalar columns.
+type extraData struct {
+	Provides    []Dependency     `json:"provides,omitempty"`
+	Requires    []Dependency     `json:"requires,omitempty"`
+	Conflicts   []Dependency     `json:"conflicts,omitempty"`
+	Obsoletes   []Dependency     `json:"obsoletes,omitempty"`
+	Suggests    []Dependency     `json:"suggests,omitempty"`
+	Supplements []Dependency     `json:"supplements,omitempty"`
+	Enhances    []Dependency     `json:"enhances,omitempty"`
+	Files       []FileEntry      `json:"files,omitempty"`
+	Changelogs  []ChangelogEntry `json:"changelogs,omitempty"`
+}
+
+// MarshalExtra encodes dependencies, files and changelogs for persistence.
+func (p *Package) MarshalExtra() ([]byte, error) {
+	return json.Marshal(extraData{
+		Provides: p.Provides, Requires: p.Requires, Conflicts: p.Conflicts, Obsoletes: p.Obsoletes,
+		Suggests: p.Suggests, Supplements: p.Supplements, Enhances: p.Enhances,
+		Files: p.Files, Changelogs: p.Changelogs,
+	})
+}
+
+// UnmarshalExtra restores data written by MarshalExtra.
+func (p *Package) UnmarshalExtra(data []byte) error {
+	var e extraData
+	if len(data) == 0 {
+		return nil
+	}
+
+	if err := json.Unmarshal(data, &e); err != nil {
+		return fmt.Errorf("rpm: decoding extra data: %w", err)
+	}
+
+	p.Provides, p.Requires, p.Conflicts, p.Obsoletes = e.Provides, e.Requires, e.Conflicts, e.Obsoletes
+	p.Suggests, p.Supplements, p.Enhances = e.Suggests, e.Supplements, e.Enhances
+	p.Files, p.Changelogs = e.Files, e.Changelogs
+
+	return nil
 }

@@ -5,13 +5,11 @@
 package main
 
 import (
-	"bufio"
 	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
-	"mime/multipart"
 	"net/http"
 	"net/url"
 	"os"
@@ -20,7 +18,6 @@ import (
 	"strconv"
 	"strings"
 	"text/tabwriter"
-	"time"
 )
 
 // version is injected at build time via -ldflags "-X main.version=...".
@@ -61,17 +58,12 @@ func loadConfig() (*Config, error) {
 }
 
 func saveConfig(cfg *Config) error {
-	dir := filepath.Dir(configPath())
-	if err := os.MkdirAll(dir, 0700); err != nil {
-		return err
-	}
-
 	data, err := json.MarshalIndent(cfg, "", "  ")
 	if err != nil {
 		return err
 	}
 
-	return os.WriteFile(configPath(), data, 0600)
+	return writeFileAtomic(configPath(), data, configDirMode, configFileMode)
 }
 
 func getEnv(key, def string) string {
@@ -94,7 +86,7 @@ func newClient(serverURL, token string) *Client {
 	return &Client{
 		baseURL:    strings.TrimSuffix(serverURL, "/"),
 		token:      token,
-		httpClient: &http.Client{Timeout: 60 * time.Second},
+		httpClient: newHTTPClient(),
 	}
 }
 
@@ -199,15 +191,6 @@ func decodeJSON(resp *http.Response, v any) {
 
 func newTabWriter() *tabwriter.Writer {
 	return tabwriter.NewWriter(os.Stdout, 0, 0, 2, ' ', 0)
-}
-
-func readPassword(prompt string) string {
-	fmt.Print(prompt)
-
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-
-	return strings.TrimSpace(scanner.Text())
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
@@ -345,7 +328,7 @@ func main() {
 // ─── Usage ────────────────────────────────────────────────────────────────────
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "OpenArtifact CLI v%s\n\nUsage:\n  oa [--server URL] [--token TOKEN] [--format table|json] <command> [args]\n\nGlobal flags:\n  --server    Server URL  (default: http://localhost:8080, env: OA_SERVER)\n  --token     API token   (env: OA_TOKEN)\n  --format    Output format: table|json  (default: table)\n\nAuth:\n  auth login [--server URL]          Login with username/password or token\n  auth logout                        Clear saved credentials\n  auth whoami                        Show current user\n  auth passwd                        Change your password\n  auth token list                    List your personal API tokens\n  auth token create --name N         Create a personal API token\n  auth token revoke <id>             Revoke a personal API token\n\nRepositories:\n  repo list                          List repositories\n  repo create <name> --format <fmt>  Create repository\n  repo show <name>                   Show repository details\n  repo update <name> [flags]         Update repository\n  repo delete <name>                 Delete repository\n  repo packages <name>               List packages in repository\n  repo members <name>                List repository members\n\nArtifacts:\n  artifact list <repo>               List packages in repository\n  artifact upload <repo> <file>      Upload artifact (auto-detects deb/rpm)\n  artifact delete <repo> <id>        Delete artifact by ID\n\nSearch:\n  search <query> [--repo R] [--fmt F]  Search artifacts\n\nUsers (admin):\n  user list                          List users\n  user create --username U --email E --password P  Create user\n  show <id>                     Show user\n  update <id> [flags]           Update user\n  delete <id>                   Delete user\n\nGroups (admin):\n  group list                         List groups\n  group create <name>                Create group\n  show <id>                    Show group\n  delete <id>                  Delete group\n  members <id>                 List group members\n  group add-member <id> <user-id>    Add member to group\n  rm-member <id> <user-id>     Remove member from group\n\nOrganizations:\n  org list                           List organizations\n  org create <name>                  Create organization\n  org show <name>                    Show organization\n  org delete <name>                  Delete organization\n  org members <name>                 List org members\n  org add-member <name> <user-id>    Add member to org\n  rm-member <name> <user-id>     Remove member from org\n\nTokens (admin):\n  token list                         List all tokens\n  token revoke <id>                  Revoke any token\n\nGPG keys (admin):\n  gpg list                           List GPG keys\n  gpg import --key <file>            Import GPG key\n  gpg generate --name N --email E    Generate GPG key\n  gpg delete <fingerprint>           Delete GPG key\n\nStorage backends (admin):\n  storage list                       List storage backends\n  storage create [flags]             Create storage backend\n  storage show <name>                Show storage backend\n  storage update <name> [flags]      Update storage backend\n  storage delete <name>              Delete storage backend\n  storage test <name>                Test storage backend\n\nBackup & restore (admin):\n  backup list                        List backups\n  backup create [--type full|meta]   Create backup\n  show <id>                   Show backup\n  download <id> <dest>        Download backup\n  restore <id>                Restore from backup\n\nAudit log (admin):\n  audit list [--limit N] [--action A] [--user U]  List audit entries\n\nWebhooks:\n  webhook list                       List global webhooks\n  webhook create [flags]             Create webhook\n  show <id>                  Show webhook\n  update <id> [flags]        Update webhook\n  delete <id>                Delete webhook\n  test <id>                  Test webhook\n  deliveries <id>            List webhook deliveries\n  webhook repo list <repo>           List repo webhooks\n  webhook repo create <repo> [flags] Create repo webhook\n\nSBOM:\n  sbom list <repo>                   List SBOMs for repository\n  sbom generate <repo>               Generate SBOM for repository\n  sbom show <repo> <id>              Show SBOM\n  sbom download <repo> <id> <dest>   Download SBOM\n  sbom delete <repo> <id>            Delete SBOM\n\nVulnerability scanning:\n  vuln scan <repo>                   Scan repository for vulnerabilities\n  vuln list <repo>                   List vulnerability scans\n  vuln show <repo> <id>              Show vulnerability scan\n  vuln quarantine <repo> <id>        Quarantine vulnerable package\n  vuln delete <repo> <id>            Delete vulnerability scan\n\nLicense scanning:\n  license scan <repo>                Scan repository for license issues\n  license list <repo>                List license scans\n  license show <repo> <id>           Show license scan\n  license delete <repo> <id>         Delete license scan\n\nSecret scanning:\n  secret scan <repo>                 Scan repository for secrets\n  secret list <repo>                 List secret scans\n  secret show <repo> <id>            Show secret scan\n  secret quarantine <repo> <id>      Quarantine secret\n  delete <repo> <id>          Delete secret scan\n\nCleanup policies:\n  cleanup list <repo>                List cleanup policies\n  cleanup create <repo> [flags]      Create cleanup policy\n  cleanup show <repo> <id>           Show cleanup policy\n  cleanup update <repo> <id> [flags] Update cleanup policy\n  cleanup delete <repo> <id>         Delete cleanup policy\n  cleanup run <repo> <id>            Run cleanup policy now\n\nStorage quotas:\n  quota show <repo>                  Show repository quota\n  set <repo> --limit N --unit MB|GB|TB  Set quota\n  delete <repo>                Remove quota\n\nArtifact properties:\n  props list <repo> <artifact-id>    List artifact properties\n  props set <repo> <artifact-id> <key> <value>  Set property\n  props delete <repo> <artifact-id> <key>       Delete property\n  props search <repo> <key> <value>  Search artifacts by property\n\nPackage deltas:\n  delta list <repo> <pkg-id>         List available deltas for package\n  delta get <repo> <pkg-id> --from <sha256> <dest>  Download delta patch\n\nSystem:\n  system info                        Show system information\n\n  version                            Show CLI version\n  help                               Show this help\n\n", version)
+	fmt.Fprintf(os.Stderr, "OpenArtifact CLI v%s\n\nUsage:\n  oa [--server URL] [--token TOKEN] [--format table|json] <command> [args]\n\nGlobal flags:\n  --server    Server URL  (default: http://localhost:8080, env: OA_SERVER)\n  --token     API token   (env: OA_TOKEN)\n  --format    Output format: table|json  (default: table)\n\nAuth:\n  auth login [--server URL] [--username U] [--password-stdin]\n                                     Login with username/password (prompted without echo) or token\n  auth logout                        Clear saved credentials\n  auth whoami                        Show current user\n  auth passwd [--password-stdin]     Change your password (stdin: current, then new, one per line)\n  auth token list                    List your personal API tokens\n  auth token create --name N         Create a personal API token\n  auth token revoke <id>             Revoke a personal API token\n\nRepositories:\n  repo list                          List repositories\n  repo create <name> --format <fmt>  Create repository\n  repo show <name>                   Show repository details\n  repo update <name> [flags]         Update repository\n  repo delete <name>                 Delete repository\n  repo packages <name>               List packages in repository\n  repo members <name>                List repository members\n\nArtifacts:\n  artifact list <repo>               List packages in repository\n  artifact upload <repo> <file>      Upload artifact (auto-detects deb/rpm)\n  artifact delete <repo> <id>        Delete artifact by ID\n\nSearch:\n  search <query> [--repo R] [--fmt F]  Search artifacts\n\nUsers (admin):\n  user list                          List users\n  user create --username U --email E [--password-stdin]  Create user (password prompted without echo)\n  show <id>                     Show user\n  update <id> [flags]           Update user\n  delete <id>                   Delete user\n\nGroups (admin):\n  group list                         List groups\n  group create <name>                Create group\n  show <id>                    Show group\n  delete <id>                  Delete group\n  members <id>                 List group members\n  group add-member <id> <user-id>    Add member to group\n  rm-member <id> <user-id>     Remove member from group\n\nOrganizations:\n  org list                           List organizations\n  org create <name>                  Create organization\n  org show <name>                    Show organization\n  org delete <name>                  Delete organization\n  org members <name>                 List org members\n  org add-member <name> <user-id>    Add member to org\n  rm-member <name> <user-id>     Remove member from org\n\nTokens (admin):\n  token list                         List all tokens\n  token revoke <id>                  Revoke any token\n\nGPG keys (admin):\n  gpg list                           List GPG keys\n  gpg import --key <file>            Import GPG key\n  gpg generate --name N --email E    Generate GPG key\n  gpg delete <fingerprint>           Delete GPG key\n\nStorage backends (admin):\n  storage list                       List storage backends\n  storage create [flags]             Create storage backend\n  storage show <name>                Show storage backend\n  storage update <name> [flags]      Update storage backend\n  storage delete <name>              Delete storage backend\n  storage test <name>                Test storage backend\n\nBackup & restore (admin):\n  backup list                        List backups\n  backup create [--type full|meta]   Create backup\n  show <id>                   Show backup\n  download <id> <dest>        Download backup\n  restore <id>                Restore from backup\n\nAudit log (admin):\n  audit list [--limit N] [--action A] [--user U]  List audit entries\n\nWebhooks:\n  webhook list                       List global webhooks\n  webhook create [flags]             Create webhook\n  show <id>                  Show webhook\n  update <id> [flags]        Update webhook\n  delete <id>                Delete webhook\n  test <id>                  Test webhook\n  deliveries <id>            List webhook deliveries\n  webhook repo list <repo>           List repo webhooks\n  webhook repo create <repo> [flags] Create repo webhook\n\nSBOM:\n  sbom list <repo>                   List SBOMs for repository\n  sbom generate <repo>               Generate SBOM for repository\n  sbom show <repo> <id>              Show SBOM\n  sbom download <repo> <id> <dest>   Download SBOM\n  sbom delete <repo> <id>            Delete SBOM\n\nVulnerability scanning:\n  vuln scan <repo>                   Scan repository for vulnerabilities\n  vuln list <repo>                   List vulnerability scans\n  vuln show <repo> <id>              Show vulnerability scan\n  vuln quarantine <repo> <id>        Quarantine vulnerable package\n  vuln delete <repo> <id>            Delete vulnerability scan\n\nLicense scanning:\n  license scan <repo>                Scan repository for license issues\n  license list <repo>                List license scans\n  license show <repo> <id>           Show license scan\n  license delete <repo> <id>         Delete license scan\n\nSecret scanning:\n  secret scan <repo>                 Scan repository for secrets\n  secret list <repo>                 List secret scans\n  secret show <repo> <id>            Show secret scan\n  secret quarantine <repo> <id>      Quarantine secret\n  delete <repo> <id>          Delete secret scan\n\nCleanup policies:\n  cleanup list <repo>                List cleanup policies\n  cleanup create <repo> [flags]      Create cleanup policy\n  cleanup show <repo> <id>           Show cleanup policy\n  cleanup update <repo> <id> [flags] Update cleanup policy\n  cleanup delete <repo> <id>         Delete cleanup policy\n  cleanup run <repo> <id>            Run cleanup policy now\n\nStorage quotas:\n  quota show <repo>                  Show repository quota\n  set <repo> --limit N --unit MB|GB|TB  Set quota\n  delete <repo>                Remove quota\n\nArtifact properties:\n  props list <repo> <artifact-id>    List artifact properties\n  props set <repo> <artifact-id> <key> <value>  Set property\n  props delete <repo> <artifact-id> <key>       Delete property\n  props search <repo> <key> <value>  Search artifacts by property\n\nPackage deltas:\n  delta list <repo> <pkg-id>         List available deltas for package\n  delta get <repo> <pkg-id> --from <sha256> <dest>  Download delta patch\n\nSystem:\n  system info                        Show system information\n\n  version                            Show CLI version\n  help                               Show this help\n\n", version)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -365,7 +348,7 @@ func handleAuth(args []string, client *Client, cfg *Config, outFmt string) {
 	case "whoami":
 		authWhoami(client, outFmt)
 	case "passwd":
-		authPasswd(client)
+		authPasswd(args[1:], client)
 	case "token":
 		authToken(args[1:], client, outFmt)
 	default:
@@ -376,20 +359,37 @@ func handleAuth(args []string, client *Client, cfg *Config, outFmt string) {
 func authLogin(args []string, cfg *Config) {
 	fs := flag.NewFlagSet("auth login", flag.ExitOnError)
 	serverURL := fs.String("server", cfg.Server, "Server URL")
+	usernameFlag := fs.String("username", "", "Username (required with --password-stdin)")
+	passwordStdin := fs.Bool("password-stdin", false, "Read the password from stdin")
+	legacyPassword := fs.String("password", "", "removed; use --password-stdin")
 	_ = fs.Parse(args)
 
-	fmt.Print("Username (leave blank to use token): ")
+	if *legacyPassword != "" {
+		dief("%v", errPasswordFlag)
+	}
 
-	scanner := bufio.NewScanner(os.Stdin)
-	scanner.Scan()
-	username := strings.TrimSpace(scanner.Text())
+	username := *usernameFlag
+
+	switch {
+	case *passwordStdin:
+		if username == "" {
+			dief("--username is required with --password-stdin")
+		}
+	case username == "":
+		username = promptLine("Username (leave blank to use token): ")
+	}
 
 	var savedToken string
 
 	if username == "" {
 		savedToken = readPassword("API token: ")
 	} else {
-		password := readPassword("Password: ")
+		var password string
+		if *passwordStdin {
+			password = readPasswordStdin()
+		} else {
+			password = readPassword("Password: ")
+		}
 		c := newClient(*serverURL, "")
 
 		resp, err := c.doJSON("POST", "/api/v1/auth/login", map[string]string{
@@ -460,13 +460,31 @@ func authWhoami(client *Client, outFmt string) {
 	_ = w.Flush()
 }
 
-func authPasswd(client *Client) {
-	current := readPassword("Current password: ")
-	newPw := readPassword("New password: ")
+func authPasswd(args []string, client *Client) {
+	fs := flag.NewFlagSet("auth passwd", flag.ExitOnError)
+	passwordStdin := fs.Bool("password-stdin", false, "Read current then new password from two lines on stdin")
+	legacyPassword := fs.String("password", "", "removed; use --password-stdin")
+	legacyOld := fs.String("old-password", "", "removed; use --password-stdin")
+	legacyNew := fs.String("new-password", "", "removed; use --password-stdin")
+	_ = fs.Parse(args)
 
-	confirm := readPassword("Confirm new password: ")
-	if newPw != confirm {
-		dief("passwords do not match")
+	if *legacyPassword != "" || *legacyOld != "" || *legacyNew != "" {
+		dief("%v", errPasswordFlag)
+	}
+
+	var current, newPw string
+
+	if *passwordStdin {
+		current = readPasswordStdin()
+		newPw = readPasswordStdin()
+	} else {
+		current = readPassword("Current password: ")
+		newPw = readPassword("New password: ")
+
+		confirm := readPassword("Confirm new password: ")
+		if newPw != confirm {
+			dief("passwords do not match")
+		}
 	}
 
 	resp, err := client.doJSON("POST", "/api/v1/auth/change-password", map[string]string{
@@ -837,19 +855,8 @@ func artifactUpload(client *Client, repo, filePath string) {
 	}
 	defer func() { _ = file.Close() }()
 
-	body := &bytes.Buffer{}
-	writer := multipart.NewWriter(body)
-
-	part, err := writer.CreateFormFile("file", filepath.Base(filePath))
-	if err != nil {
-		dief("creating form: %v", err)
-	}
-
-	if _, err := io.Copy(part, file); err != nil {
-		dief("copying file: %v", err)
-	}
-
-	_ = writer.Close()
+	body, contentType := multipartStream(file, "file", filepath.Base(filePath))
+	defer func() { _ = body.Close() }()
 
 	// Choose endpoint based on file extension
 	ext := strings.ToLower(filepath.Ext(filePath))
@@ -863,7 +870,7 @@ func artifactUpload(client *Client, repo, filePath string) {
 		endpoint = "/api/v1/repositories/" + repo + "/packages"
 	}
 
-	resp, err := client.do("POST", endpoint, body, writer.FormDataContentType())
+	resp, err := client.do("POST", endpoint, body, contentType)
 	if err != nil {
 		dief("%v", err)
 	}
@@ -961,7 +968,8 @@ func handleUser(args []string, client *Client, outFmt string) {
 		fs := flag.NewFlagSet("user create", flag.ExitOnError)
 		username := fs.String("username", "", "Username")
 		email := fs.String("email", "", "Email")
-		password := fs.String("password", "", "Password")
+		passwordStdin := fs.Bool("password-stdin", false, "Read the password from stdin")
+		legacyPassword := fs.String("password", "", "removed; use --password-stdin")
 		fullName := fs.String("full-name", "", "Full name")
 		isAdmin := fs.Bool("admin", false, "Admin user")
 		_ = fs.Parse(args[1:])
@@ -970,14 +978,21 @@ func handleUser(args []string, client *Client, outFmt string) {
 			dief("--username and --email are required")
 		}
 
-		if *password == "" {
-			*password = readPassword("Password: ")
+		if *legacyPassword != "" {
+			dief("%v", errPasswordFlag)
+		}
+
+		var password string
+		if *passwordStdin {
+			password = readPasswordStdin()
+		} else {
+			password = readPassword("Password: ")
 		}
 
 		body := map[string]any{
 			"username":  *username,
 			"email":     *email,
-			"password":  *password,
+			"password":  password,
 			"full_name": *fullName,
 			"is_admin":  *isAdmin,
 		}
@@ -2453,15 +2468,9 @@ func downloadFile(client *Client, path, dest string) {
 
 	checkOK(resp)
 
-	f, err := os.Create(dest)
+	n, err := downloadTo(resp, dest)
 	if err != nil {
-		dief("creating file: %v", err)
-	}
-	defer func() { _ = f.Close() }()
-
-	n, err := io.Copy(f, resp.Body)
-	if err != nil {
-		dief("writing file: %v", err)
+		dief("%v", err)
 	}
 
 	fmt.Printf("Downloaded %d bytes to '%s'.\n", n, dest)

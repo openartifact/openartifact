@@ -61,8 +61,13 @@ type Component struct {
 	InstalledSize int64
 	ArchiveSize   int64
 	Filename      string
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	// HeaderStart/HeaderEnd are the RPM header byte range (rpm packages only).
+	HeaderStart int64
+	HeaderEnd   int64
+	// RPMExtra is JSON-encoded dependency/file/changelog data (rpm packages only).
+	RPMExtra  []byte
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type RepoMetadata struct {

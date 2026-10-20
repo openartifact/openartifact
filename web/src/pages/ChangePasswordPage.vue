@@ -107,6 +107,13 @@ async function handleSubmit(): Promise<void> {
       new_password: form.value.new_password,
     })
     await session.fetchMe()
+    if (!session.isAuthenticated || session.mustChangePassword) {
+      // The password change itself succeeded, but we cannot continue into the app.
+      session.clearSession()
+      errorMsg.value = t('auth.passwordNotApplied')
+      await router.replace({ name: 'login' })
+      return
+    }
     await router.replace('/')
   } catch (err: unknown) {
     errorMsg.value = err instanceof Error ? err.message : t('auth.passwordChangeFailed')

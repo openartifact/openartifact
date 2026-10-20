@@ -8,23 +8,23 @@ import "time"
 
 // AIAnalysis stores the AI-generated analysis for an artifact.
 type AIAnalysis struct {
-	ID                    string
-	RepositoryID          string
-	ArtifactID            string // generic reference (component ID, npm version ID, etc.)
-	ArtifactFormat        string // "npm", "maven", "deb", "rpm", "helm", "pypi", etc.
-	ArtifactName          string
-	ArtifactVersion       string
-	Summary               string
-	Tags                  []string // stored as JSONB
-	LicenseStatus         string   // "SAFE", "REVIEW_REQUIRED", "UNKNOWN"
-	LicenseName           string
-	SecurityNotes         string
-	QuarantineRecommended bool
-	Status                string // "pending", "processing", "completed", "failed"
-	ErrorMessage          string
-	ModelUsed             string
-	PromptTokens          int
-	CompletionTokens      int
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	ID                    string    `json:"id"`
+	RepositoryID          string    `json:"repository_id"`
+	ArtifactID            string    `json:"artifact_id"`     // generic reference (component ID, npm version ID, etc.)
+	ArtifactFormat        string    `json:"artifact_format"` // "npm", "maven", "deb", "rpm", "helm", "pypi", etc.
+	ArtifactName          string    `json:"artifact_name"`
+	ArtifactVersion       string    `json:"artifact_version"`
+	Summary               string    `json:"summary"`
+	Tags                  []string  `json:"tags"`           // stored as JSONB
+	LicenseStatus         string    `json:"license_status"` // "SAFE", "REVIEW_REQUIRED", "UNKNOWN"
+	LicenseName           string    `json:"license_name"`
+	SecurityNotes         string    `json:"security_notes"`
+	QuarantineRecommended bool      `json:"quarantine_recommended"`
+	Status                string    `json:"status"` // "pending", "processing", "completed", "failed"
+	ErrorMessage          string    `json:"error_message"`
+	ModelUsed             string    `json:"model_used"`
+	PromptTokens          int       `json:"prompt_tokens"`
+	CompletionTokens      int       `json:"completion_tokens"`
+	CreatedAt             time.Time `json:"created_at"`
+	UpdatedAt             time.Time `json:"updated_at"`
 }

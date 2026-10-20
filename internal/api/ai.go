@@ -5,13 +5,13 @@
 package api
 
 import (
-	"encoding/json"
 	"net/http"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -24,6 +24,13 @@ type AIHandler struct {
 	evaluator *auth.Evaluator
 	aiWorker  *worker.AIAnalysisWorker
 }
+
+const (
+	// aiMaxManifestBytes caps manifest_text forwarded to the LLM.
+	aiMaxManifestBytes = 256 * 1024
+	aiMaxNameLen       = 512
+	aiMaxListOffset    = 1_000_000
+)
 
 // NewAIHandler creates a new AI analysis handler.
 func NewAIHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, aiWorker *worker.AIAnalysisWorker) *AIHandler {
@@ -42,13 +49,30 @@ func (h *AIHandler) RegisterRoutes(router chi.Router, prefix string) {
 	})
 }
 
-func (h *AIHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
+// loadRepo resolves the repository named in the URL, writing the error
+// response (404 only for a genuinely missing repository) on failure.
+func (h *AIHandler) loadRepo(w http.ResponseWriter, r *http.Request) (*models.Repository, bool) {
+	repoName := urlparams.Vars(r)["name"]
 
 	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
-	if err != nil || repo == nil {
-		http.Error(w, `{"error":"repository not found"}`, http.StatusNotFound)
+	if err != nil {
+		h.log.Errorw("ai handler: get repository failed", "repo", repoName, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return nil, false
+	}
+
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return nil, false
+	}
+
+	return repo, true
+}
+
+func (h *AIHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	repo, ok := h.loadRepo(w, r)
+	if !ok {
 		return
 	}
 
@@ -64,14 +88,14 @@ func (h *AIHandler) handleList(w http.ResponseWriter, r *http.Request) {
 
 	if v := r.URL.Query().Get("offset"); v != "" {
 		if n, err := strconv.Atoi(v); err == nil && n >= 0 {
-			offset = n
+			offset = min(n, aiMaxListOffset)
 		}
 	}
 
 	analyses, total, err := h.db.ListAIAnalyses(r.Context(), repo.ID, status, limit, offset)
 	if err != nil {
-		h.log.Errorw("ai handler: list analyses failed", "repo", repoName, "error", err)
-		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		h.log.Errorw("ai handler: list analyses failed", "repo", repo.Name, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
@@ -85,26 +109,23 @@ func (h *AIHandler) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AIHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	artifactID := vars["artifactID"]
+	artifactID := urlparams.Vars(r)["artifactID"]
 
-	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
-	if err != nil || repo == nil {
-		http.Error(w, `{"error":"repository not found"}`, http.StatusNotFound)
+	repo, ok := h.loadRepo(w, r)
+	if !ok {
 		return
 	}
 
 	analysis, err := h.db.GetAIAnalysis(r.Context(), repo.ID, artifactID)
 	if err != nil {
 		h.log.Errorw("ai handler: get analysis failed", "artifact_id", artifactID, "error", err)
-		http.Error(w, `{"error":"internal server error"}`, http.StatusInternalServerError)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
 	if analysis == nil {
-		http.Error(w, `{"error":"analysis not found"}`, http.StatusNotFound)
+		writeError(w, http.StatusNotFound, "not_found", "analysis not found")
 		return
 	}
 
@@ -112,18 +133,15 @@ func (h *AIHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	artifactID := vars["artifactID"]
+	artifactID := urlparams.Vars(r)["artifactID"]
 
 	if h.aiWorker == nil {
-		http.Error(w, `{"error":"AI analysis is not enabled (AI_ENABLED=false)"}`, http.StatusServiceUnavailable)
+		writeError(w, http.StatusServiceUnavailable, "ai_disabled", "AI analysis is not enabled")
 		return
 	}
 
-	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
-	if err != nil || repo == nil {
-		http.Error(w, `{"error":"repository not found"}`, http.StatusNotFound)
+	repo, ok := h.loadRepo(w, r)
+	if !ok {
 		return
 	}
 
@@ -133,13 +151,27 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		ArtifactName    string `json:"artifact_name"`
 		ArtifactVersion string `json:"artifact_version"`
 	}
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		http.Error(w, `{"error":"invalid request body"}`, http.StatusBadRequest)
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+
+	if len(body.ManifestText) > aiMaxManifestBytes {
+		writeError(w, http.StatusRequestEntityTooLarge, "payload_too_large", "manifest_text exceeds "+strconv.Itoa(aiMaxManifestBytes)+" bytes")
+		return
+	}
+
+	if body.ArtifactFormat != "" && !validFormats[body.ArtifactFormat] {
+		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_format must be one of: "+validFormatList())
+		return
+	}
+
+	if len(body.ArtifactName) > aiMaxNameLen || len(body.ArtifactVersion) > aiMaxNameLen {
+		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_name/artifact_version too long")
 		return
 	}
 
 	h.aiWorker.Notify(worker.AIAnalysisRequest{
-
 		RepositoryID:    repo.ID,
 		ArtifactID:      artifactID,
 		ArtifactFormat:  body.ArtifactFormat,

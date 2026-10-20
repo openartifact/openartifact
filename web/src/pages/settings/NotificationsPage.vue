@@ -86,7 +86,7 @@ async function load(): Promise<void> {
     if (err instanceof ApiError && (err.status === 404 || err.status === 501)) {
       supported.value = false
     } else {
-      toasts.error(err instanceof Error ? err.message : 'Failed to load')
+      toasts.error(err instanceof Error ? err.message : t('settings.notifications.loadFailed'))
     }
   } finally {
     loading.value = false
@@ -102,7 +102,7 @@ async function save(): Promise<void> {
     })
     toasts.success(t('common.saved'))
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed')
+    toasts.error(err instanceof Error ? err.message : t('settings.notifications.saveFailed'))
   }
 }
 

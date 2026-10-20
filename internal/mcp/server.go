@@ -14,16 +14,26 @@ import (
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// Authorizer reports whether the caller identified by ctx may perform action
+// ("read", "write", ...) on the named repository.
+type Authorizer func(ctx context.Context, repoName, action string) bool
+
+// maxManifestTextBytes bounds manifest text accepted from MCP callers.
+const maxManifestTextBytes = 64 * 1024
+
 // Server wraps the MCP server with OpenArtifact dependencies.
 type Server struct {
-	mcpServer *server.MCPServer
-	db        database.Database
-	aiWorker  *worker.AIAnalysisWorker
-	log       *logger.Logger
+	authorizer Authorizer // nil only for the trusted local stdio transport
+	httpMode   bool
+	mcpServer  *server.MCPServer
+	db         database.Database
+	aiWorker   *worker.AIAnalysisWorker
+	log        *logger.Logger
 }
 
 // NewServer creates a new MCP server with all OpenArtifact tools registered.
@@ -46,8 +56,34 @@ func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *log
 	return s
 }
 
+// SetAuthorizer installs the per-repository authorization check. It MUST be
+// set before HTTPHandler is used; without it HTTP tool calls are denied.
+func (s *Server) SetAuthorizer(a Authorizer) { s.authorizer = a }
+
+// allowed enforces per-repository authorization. The stdio transport is a
+// trusted local process and is only unrestricted when no HTTP handler exists.
+func (s *Server) allowed(ctx context.Context, repoName, action string) bool {
+	if s.authorizer == nil {
+		return !s.httpMode
+	}
+
+	return s.authorizer(ctx, repoName, action)
+}
+
+// allowedByID resolves a repository ID to its name and checks authorization.
+func (s *Server) allowedByID(ctx context.Context, repoID, action string) bool {
+	repo, err := s.db.GetRepositoryByID(ctx, repoID)
+	if err != nil || repo == nil {
+		return false
+	}
+
+	return s.allowed(ctx, repo.Name, action)
+}
+
 // HTTPHandler returns an http.Handler for embedding in the main router (HTTP transport).
 func (s *Server) HTTPHandler() http.Handler {
+	s.httpMode = true
+
 	return server.NewStreamableHTTPServer(s.mcpServer)
 }
 
@@ -206,6 +242,7 @@ func (s *Server) handleListRepositories(ctx context.Context, req mcp.CallToolReq
 			return mcp.NewToolResultError(fmt.Sprintf("failed to list repositories: %v", listErr)), nil
 		}
 
+		repoList = s.filterRepos(ctx, repoList)
 		repoCount, _ := s.db.CountRepositories(ctx, format)
 		result := map[string]any{
 			"repositories": repoList,
@@ -220,6 +257,7 @@ func (s *Server) handleListRepositories(ctx context.Context, req mcp.CallToolReq
 	_ = repos
 
 	repoList, _ := s.db.ListRepositories(ctx, page, limit, format)
+	repoList = s.filterRepos(ctx, repoList)
 	repoCount, _ := s.db.CountRepositories(ctx, format)
 	_ = total
 
@@ -247,7 +285,7 @@ func (s *Server) handleSearchArtifacts(ctx context.Context, req mcp.CallToolRequ
 
 	if repoName != "" {
 		repo, err := s.db.GetRepositoryByName(ctx, repoName)
-		if err != nil || repo == nil {
+		if err != nil || repo == nil || !s.allowed(ctx, repo.Name, "read") {
 			return mcp.NewToolResultError(fmt.Sprintf("repository %q not found", repoName)), nil //nolint:nilerr // MCP tool errors are returned as tool results, not Go errors
 		}
 
@@ -272,6 +310,10 @@ func (s *Server) handleSearchArtifacts(ctx context.Context, req mcp.CallToolRequ
 		queryLower := strings.ToLower(query)
 
 		for _, repo := range repos {
+			if !s.allowed(ctx, repo.Name, "read") {
+				continue
+			}
+
 			components, _, err := s.db.ListComponentsByRepo(ctx, repo.ID, format, 1, 20)
 			if err != nil {
 				continue
@@ -310,6 +352,10 @@ func (s *Server) handleGetArtifactAnalysis(ctx context.Context, req mcp.CallTool
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
+	if !s.allowedByID(ctx, repoID, "read") {
+		return mcp.NewToolResultError("repository not found or access denied"), nil
+	}
+
 	analysis, err := s.db.GetAIAnalysis(ctx, repoID, artifactID)
 	if err != nil {
 		return mcp.NewToolResultError(fmt.Sprintf("database error: %v", err)), nil
@@ -326,6 +372,10 @@ func (s *Server) handleListAIAnalyses(ctx context.Context, req mcp.CallToolReque
 	repoID, err := req.RequireString("repository_id")
 	if err != nil {
 		return mcp.NewToolResultError(err.Error()), nil
+	}
+
+	if !s.allowedByID(ctx, repoID, "read") {
+		return mcp.NewToolResultError("repository not found or access denied"), nil
 	}
 
 	status := req.GetString("status", "")
@@ -371,6 +421,14 @@ func (s *Server) handleTriggerAIAnalysis(ctx context.Context, req mcp.CallToolRe
 	name := req.GetString("artifact_name", "")
 	version := req.GetString("artifact_version", "")
 
+	if !s.allowedByID(ctx, repoID, "write") {
+		return mcp.NewToolResultError("repository not found or access denied"), nil
+	}
+
+	if len(manifestText) > maxManifestTextBytes {
+		return mcp.NewToolResultError(fmt.Sprintf("manifest_text exceeds %d bytes", maxManifestTextBytes)), nil
+	}
+
 	if s.aiWorker == nil {
 		return mcp.NewToolResultError("AI analysis worker is not configured (AI_ENABLED=false)"), nil
 	}
@@ -398,7 +456,7 @@ func (s *Server) handleGetRepository(ctx context.Context, req mcp.CallToolReques
 		return mcp.NewToolResultError(fmt.Sprintf("database error: %v", err)), nil
 	}
 
-	if repo == nil {
+	if repo == nil || !s.allowed(ctx, repo.Name, "read") {
 		return mcp.NewToolResultText(fmt.Sprintf(`{"error":"repository %q not found"}`, name)), nil
 	}
 
@@ -406,6 +464,19 @@ func (s *Server) handleGetRepository(ctx context.Context, req mcp.CallToolReques
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
+
+// filterRepos drops repositories the caller may not read.
+func (s *Server) filterRepos(ctx context.Context, repos []*models.Repository) []*models.Repository {
+	out := make([]*models.Repository, 0, len(repos))
+
+	for _, r := range repos {
+		if r != nil && s.allowed(ctx, r.Name, "read") {
+			out = append(out, r)
+		}
+	}
+
+	return out
+}
 
 func jsonResult(v any) (*mcp.CallToolResult, error) {
 	b, err := json.MarshalIndent(v, "", "  ")

@@ -24,7 +24,9 @@ func buildServingRouter(t *testing.T) chi.Router {
 	t.Helper()
 	httpHandler := rpmformat.NewHTTPHandler(harness.Log, harness.Database, harness.BlobStore)
 	router := chi.NewRouter()
-	httpHandler.RegisterRoutes(router, "/repos/{name}")
+	router.Route("/repos/{name}", func(r chi.Router) {
+		httpHandler.RegisterRepoRoutes(r)
+	})
 	return router
 }
 

@@ -7,6 +7,7 @@ package api
 import (
 	"errors"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -24,10 +25,25 @@ type SAMLHandler struct {
 	hmacKey   []byte
 	baseURL   string
 	cfg       *config.Config
+
+	trustedProxies *middleware.TrustedProxies
 }
 
 func NewSAMLHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, hmacKey []byte, baseURL string, cfg *config.Config) *SAMLHandler {
-	return &SAMLHandler{db: db, log: log, evaluator: evaluator, hmacKey: hmacKey, baseURL: baseURL, cfg: cfg}
+	h := &SAMLHandler{db: db, log: log, evaluator: evaluator, hmacKey: hmacKey, baseURL: baseURL, cfg: cfg}
+	if cfg != nil {
+		h.trustedProxies = middleware.NewTrustedProxies(cfg.Server.TrustedProxies)
+	}
+
+	return h
+}
+
+// WithTrustedProxies overrides the reverse-proxy allowlist (default: the
+// configured server.trustedProxies) used to resolve the client IP recorded on
+// new sessions.
+func (h *SAMLHandler) WithTrustedProxies(tp *middleware.TrustedProxies) *SAMLHandler {
+	h.trustedProxies = tp
+	return h
 }
 
 func (h *SAMLHandler) RegisterPublic(public chi.Router) {
@@ -42,8 +58,7 @@ func (h *SAMLHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		if errors.Is(err, auth.ErrSSOProviderNotFound) {
-			writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		if ssoProviderUnavailable(w, err) {
 			return
 		}
 
@@ -63,7 +78,7 @@ func (h *SAMLHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		relayState = auth.SignRelayState(redirect, string(h.hmacKey))
 	}
 
-	loginURL, err := provider.LoginURL(relayState)
+	loginURL, err := provider.StartLogin(w, relayState, h.hmacKey)
 	if err != nil {
 		h.log.Errorw("saml login: build login url", "slug", slug, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to build login URL")
@@ -85,10 +100,25 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate RelayState before any side effect (assertion consumption,
+	// provisioning, session creation).
+	redirect := "/"
+
+	if rs := r.Form.Get("RelayState"); rs != "" {
+		decoded, err := auth.VerifyRelayState(rs, string(h.hmacKey))
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "invalid_relay_state", "invalid relay state")
+			return
+		}
+
+		if isOIDCRelativePath(decoded) {
+			redirect = decoded
+		}
+	}
+
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		if errors.Is(err, auth.ErrSSOProviderNotFound) {
-			writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		if ssoProviderUnavailable(w, err) {
 			return
 		}
 
@@ -103,7 +133,7 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	assertion, err := provider.ParseCallback(r)
+	assertion, err := provider.ParseCallback(w, r, h.db, h.hmacKey)
 	if err != nil {
 		if errors.Is(err, auth.ErrSAMLSignatureInvalid) {
 			writeError(w, http.StatusBadRequest, "saml_signature_invalid", "SAML signature invalid")
@@ -117,6 +147,20 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 
 		if errors.Is(err, auth.ErrSAMLAssertionExpired) {
 			writeError(w, http.StatusUnauthorized, "saml_assertion_expired", "SAML assertion expired")
+			return
+		}
+
+		if errors.Is(err, auth.ErrSAMLReplay) {
+			h.log.Warnw("saml acs: assertion replay rejected", "slug", slug)
+			writeError(w, http.StatusUnauthorized, "saml_invalid", "SAML response invalid")
+
+			return
+		}
+
+		if errors.Is(err, auth.ErrSAMLRequestUntracked) {
+			h.log.Warnw("saml acs: response does not match a pending login request", "slug", slug)
+			writeError(w, http.StatusBadRequest, "saml_invalid", "SAML response invalid")
+
 			return
 		}
 
@@ -145,6 +189,7 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	username := ""
 	email := ""
 	fullName := ""
+	emailVerifiedAttr := ""
 
 	var groups []string
 
@@ -170,6 +215,10 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 					}
 				}
 			}
+
+			if attr.Name == "email_verified" && len(attr.Values) > 0 {
+				emailVerifiedAttr = attr.Values[0].Value
+			}
 		}
 	}
 
@@ -178,12 +227,16 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		ProviderSlug: slug,
 		Username:     username,
 		Email:        email,
-		FullName:     fullName,
-		Groups:       groups,
+		// The assertion is signed by the configured IdP, which is the authority
+		// for the mail attribute. SAML has no standard verification flag, so an
+		// explicit "email_verified" attribute is honoured when the IdP sends one.
+		EmailVerified: emailVerifiedAttr == "" || strings.EqualFold(emailVerifiedAttr, "true"),
+		FullName:      fullName,
+		Groups:        groups,
 	}
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
-	if err != nil || providerRow == nil {
+	if err != nil || providerRow == nil || !providerRow.Enabled {
 		writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
 		return
 	}
@@ -210,6 +263,11 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, auth.ErrIdentityConflict) {
+			writeError(w, http.StatusConflict, "identity_conflict", "account is already linked to a different identity")
+			return
+		}
+
 		h.log.Errorw("saml acs: provision", "slug", slug, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "user provisioning failed")
 
@@ -223,7 +281,7 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, r.RemoteAddr, r.UserAgent())
+	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, middleware.ClientIP(r, h.trustedProxies), r.UserAgent())
 	if err != nil {
 		h.log.Errorw("saml acs: create session", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
@@ -242,26 +300,6 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	})
 	setCSRFCookie(w, r, csrfToken)
 
-	redirect := "/"
-
-	if rs := r.Form.Get("RelayState"); rs != "" {
-		decoded, err := auth.VerifyRelayState(rs, string(h.hmacKey))
-		if err != nil {
-			if errors.Is(err, auth.ErrInvalidRelayState) {
-				writeError(w, http.StatusBadRequest, "invalid_relay_state", "SAML RelayState HMAC verification failed")
-				return
-			}
-
-			writeError(w, http.StatusBadRequest, "invalid_relay_state", "invalid relay state")
-
-			return
-		}
-
-		if isOIDCRelativePath(decoded) {
-			redirect = decoded
-		}
-	}
-
 	//nolint:gosec // G710: redirect URL is validated against configured provider URLs
 	http.Redirect(w, r, redirect, http.StatusFound)
 }
@@ -272,8 +310,7 @@ func (h *SAMLHandler) handleMetadata(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
 	if err != nil {
-		if errors.Is(err, auth.ErrSSOProviderNotFound) {
-			writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		if ssoProviderUnavailable(w, err) {
 			return
 		}
 

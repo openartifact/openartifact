@@ -6,6 +6,7 @@ package conda
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5" //nolint:gosec // required by protocol specification
 	"crypto/sha256"
 	"encoding/hex"
@@ -21,8 +22,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -162,6 +165,10 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(filename, platform+"/"+filename, r.URL.Path)...) {
+		return
+	}
+
 	// Download blob
 	blob, err := h.BlobStore.Get(r.Context(), pkg.BlobKey)
 	if err != nil {
@@ -240,19 +247,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	version := segments[1]
 	buildString := strings.Join(segments[2:], "-")
 
-	// Store blob
-	blobKey, err := h.BlobStore.Put(r.Context(), bytes.NewReader(data), map[string]string{
-		"filename": filename,
-		"platform": platform,
-	})
-	if err != nil {
-		h.Log.Errorw("failed to store blob", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	sha256Hex := hex.EncodeToString(sha256Hash[:])
 
-		return
-	}
-
-	// Create package record
 	pkg := &models.CondaPackage{
 		RepositoryID: repoID,
 		Name:         name,
@@ -260,19 +256,46 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		BuildString:  buildString,
 		Platform:     platform,
 		Depends:      []string{},
-		BlobKey:      blobKey,
 		SizeBytes:    int64(len(data)),
-		SHA256:       hex.EncodeToString(sha256Hash[:]),
+		SHA256:       sha256Hex,
 		MD5:          hex.EncodeToString(md5Hash[:]),
 	}
 
-	err = h.DB.CreateCondaPackage(r.Context(), pkg)
-	if err != nil {
-		h.Log.Errorw("failed to create conda package", "name", name, "error", err)
+	// Store the blob and insert the referencing row under the per-blob lock so
+	// a concurrent unpublish cannot delete the blob in between.
+	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
+		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			"sha256":   sha256Hex,
+			"filename": filename,
+			"platform": platform,
+		})
+		if err != nil {
+			return fmt.Errorf("store blob: %w", err)
+		}
+
+		pkg.BlobKey = blobKey
+
+		if err := h.DB.CreateCondaPackage(ctx, pkg); err != nil {
+			return fmt.Errorf("create conda package: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		h.Log.Errorw("failed to store conda package", "name", name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "conda",
+		Name:       name,
+		Version:    version,
+		Path:       platform + "/" + filename,
+		SHA256:     sha256Hex,
+		Size:       pkg.SizeBytes,
+	}))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -333,9 +356,6 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete blob
-	_ = h.BlobStore.Delete(r.Context(), pkg.BlobKey)
-
 	// Delete package record
 	err = h.DB.DeleteCondaPackage(r.Context(), pkg.ID)
 	if err != nil {
@@ -344,6 +364,22 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// The blob is content-addressed and may be shared; remove it only once no
+	// row references it any more.
+	if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256); delErr != nil {
+		h.Log.Warnw("failed to clean up blob after conda delete", "sha256", pkg.SHA256, "error", delErr)
+	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "conda",
+		Name:       pkg.Name,
+		Version:    pkg.Version,
+		Path:       platform + "/" + filename,
+		SHA256:     pkg.SHA256,
+		Size:       pkg.SizeBytes,
+	}))
 
 	w.WriteHeader(http.StatusNoContent)
 }

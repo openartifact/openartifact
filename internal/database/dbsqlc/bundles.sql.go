@@ -293,22 +293,22 @@ type GetReleaseBundleParams struct {
 }
 
 type GetReleaseBundleRow struct {
-	ID           string    `db:"id" json:"id"`
-	Name         string    `db:"name" json:"name"`
-	Version      string    `db:"version" json:"version"`
-	Description  string    `db:"description" json:"description"`
-	State        string    `db:"state" json:"state"`
-	PipelineID   *string   `db:"pipeline_id" json:"pipeline_id"`
-	CurrentStage *string   `db:"current_stage" json:"current_stage"`
-	CreatedBy    string    `db:"created_by" json:"created_by"`
-	SealedAt     time.Time `db:"sealed_at" json:"sealed_at"`
-	SealedBy     *string   `db:"sealed_by" json:"sealed_by"`
-	ArchivedAt   time.Time `db:"archived_at" json:"archived_at"`
-	ArchivedBy   *string   `db:"archived_by" json:"archived_by"`
-	GpgKeyID     *string   `db:"gpg_key_id" json:"gpg_key_id"`
-	GpgSignature *string   `db:"gpg_signature" json:"gpg_signature"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
+	Name         string     `db:"name" json:"name"`
+	Version      string     `db:"version" json:"version"`
+	Description  string     `db:"description" json:"description"`
+	State        string     `db:"state" json:"state"`
+	PipelineID   *string    `db:"pipeline_id" json:"pipeline_id"`
+	CurrentStage *string    `db:"current_stage" json:"current_stage"`
+	CreatedBy    string     `db:"created_by" json:"created_by"`
+	SealedAt     *time.Time `db:"sealed_at" json:"sealed_at"`
+	SealedBy     *string    `db:"sealed_by" json:"sealed_by"`
+	ArchivedAt   *time.Time `db:"archived_at" json:"archived_at"`
+	ArchivedBy   *string    `db:"archived_by" json:"archived_by"`
+	GpgKeyID     *string    `db:"gpg_key_id" json:"gpg_key_id"`
+	GpgSignature *string    `db:"gpg_signature" json:"gpg_signature"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetReleaseBundle(ctx context.Context, arg GetReleaseBundleParams) (GetReleaseBundleRow, error) {
@@ -347,22 +347,22 @@ WHERE rb.id = $1
 `
 
 type GetReleaseBundleByIDRow struct {
-	ID           string    `db:"id" json:"id"`
-	Name         string    `db:"name" json:"name"`
-	Version      string    `db:"version" json:"version"`
-	Description  string    `db:"description" json:"description"`
-	State        string    `db:"state" json:"state"`
-	PipelineID   *string   `db:"pipeline_id" json:"pipeline_id"`
-	CurrentStage *string   `db:"current_stage" json:"current_stage"`
-	CreatedBy    string    `db:"created_by" json:"created_by"`
-	SealedAt     time.Time `db:"sealed_at" json:"sealed_at"`
-	SealedBy     *string   `db:"sealed_by" json:"sealed_by"`
-	ArchivedAt   time.Time `db:"archived_at" json:"archived_at"`
-	ArchivedBy   *string   `db:"archived_by" json:"archived_by"`
-	GpgKeyID     *string   `db:"gpg_key_id" json:"gpg_key_id"`
-	GpgSignature *string   `db:"gpg_signature" json:"gpg_signature"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
+	Name         string     `db:"name" json:"name"`
+	Version      string     `db:"version" json:"version"`
+	Description  string     `db:"description" json:"description"`
+	State        string     `db:"state" json:"state"`
+	PipelineID   *string    `db:"pipeline_id" json:"pipeline_id"`
+	CurrentStage *string    `db:"current_stage" json:"current_stage"`
+	CreatedBy    string     `db:"created_by" json:"created_by"`
+	SealedAt     *time.Time `db:"sealed_at" json:"sealed_at"`
+	SealedBy     *string    `db:"sealed_by" json:"sealed_by"`
+	ArchivedAt   *time.Time `db:"archived_at" json:"archived_at"`
+	ArchivedBy   *string    `db:"archived_by" json:"archived_by"`
+	GpgKeyID     *string    `db:"gpg_key_id" json:"gpg_key_id"`
+	GpgSignature *string    `db:"gpg_signature" json:"gpg_signature"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetReleaseBundleByID(ctx context.Context, id string) (GetReleaseBundleByIDRow, error) {
@@ -449,18 +449,18 @@ WHERE bp.bundle_id = $1 ORDER BY bp.started_at
 `
 
 type ListBundlePromotionsRow struct {
-	ID           string    `db:"id" json:"id"`
-	BundleID     string    `db:"bundle_id" json:"bundle_id"`
-	FromStage    *string   `db:"from_stage" json:"from_stage"`
-	ToStage      string    `db:"to_stage" json:"to_stage"`
-	TargetRepoID string    `db:"target_repo_id" json:"target_repo_id"`
-	Status       string    `db:"status" json:"status"`
-	PromotedBy   string    `db:"promoted_by" json:"promoted_by"`
-	Notes        string    `db:"notes" json:"notes"`
-	ErrorMessage *string   `db:"error_message" json:"error_message"`
-	ItemCount    int32     `db:"item_count" json:"item_count"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
+	ID           string     `db:"id" json:"id"`
+	BundleID     string     `db:"bundle_id" json:"bundle_id"`
+	FromStage    *string    `db:"from_stage" json:"from_stage"`
+	ToStage      string     `db:"to_stage" json:"to_stage"`
+	TargetRepoID string     `db:"target_repo_id" json:"target_repo_id"`
+	Status       string     `db:"status" json:"status"`
+	PromotedBy   string     `db:"promoted_by" json:"promoted_by"`
+	Notes        string     `db:"notes" json:"notes"`
+	ErrorMessage *string    `db:"error_message" json:"error_message"`
+	ItemCount    int32      `db:"item_count" json:"item_count"`
+	StartedAt    time.Time  `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
 }
 
 func (q *Queries) ListBundlePromotions(ctx context.Context, bundleID string) ([]ListBundlePromotionsRow, error) {
@@ -561,10 +561,10 @@ UPDATE bundle_promotions SET status = $1, error_message = $2, completed_at = $3 
 `
 
 type UpdateBundlePromotionParams struct {
-	Status       string    `db:"status" json:"status"`
-	ErrorMessage *string   `db:"error_message" json:"error_message"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
-	ID           string    `db:"id" json:"id"`
+	Status       string     `db:"status" json:"status"`
+	ErrorMessage *string    `db:"error_message" json:"error_message"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
+	ID           string     `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateBundlePromotion(ctx context.Context, arg UpdateBundlePromotionParams) error {
@@ -608,17 +608,17 @@ WHERE rb.id = $11
 `
 
 type UpdateReleaseBundleParams struct {
-	Description  *string   `db:"description" json:"description"`
-	State        string    `db:"state" json:"state"`
-	PipelineID   *string   `db:"pipeline_id" json:"pipeline_id"`
-	CurrentStage *string   `db:"current_stage" json:"current_stage"`
-	SealedAt     time.Time `db:"sealed_at" json:"sealed_at"`
-	Username     string    `db:"username" json:"username"`
-	ArchivedAt   time.Time `db:"archived_at" json:"archived_at"`
-	Username_2   string    `db:"username_2" json:"username_2"`
-	GpgKeyID     *string   `db:"gpg_key_id" json:"gpg_key_id"`
-	GpgSignature *string   `db:"gpg_signature" json:"gpg_signature"`
-	ID           string    `db:"id" json:"id"`
+	Description  *string    `db:"description" json:"description"`
+	State        string     `db:"state" json:"state"`
+	PipelineID   *string    `db:"pipeline_id" json:"pipeline_id"`
+	CurrentStage *string    `db:"current_stage" json:"current_stage"`
+	SealedAt     *time.Time `db:"sealed_at" json:"sealed_at"`
+	Username     string     `db:"username" json:"username"`
+	ArchivedAt   *time.Time `db:"archived_at" json:"archived_at"`
+	Username_2   string     `db:"username_2" json:"username_2"`
+	GpgKeyID     *string    `db:"gpg_key_id" json:"gpg_key_id"`
+	GpgSignature *string    `db:"gpg_signature" json:"gpg_signature"`
+	ID           string     `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateReleaseBundle(ctx context.Context, arg UpdateReleaseBundleParams) error {

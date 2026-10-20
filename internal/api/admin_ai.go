@@ -7,12 +7,15 @@ package api
 import (
 	"context"
 	"net/http"
+	"net/url"
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -122,6 +125,7 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 		"provider":      cfg.Provider,
 		"base_url":      cfg.BaseURL,
 		"api_key":       apiKeyDisplay,
+		"has_api_key":   cfg.APIKey != "",
 		"model":         cfg.Model,
 		"max_tokens":    cfg.MaxTokens,
 		"timeout_secs":  cfg.TimeoutSecs,
@@ -131,92 +135,214 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, http.StatusOK, response)
 }
 
+const (
+	aiAPIKeyMask       = "••••••••" //nolint:gosec // G101: display placeholder, not a credential
+	aiMaxTokensLimit   = 200000
+	aiMaxTimeoutSecs   = 600
+	aiMaxSystemPrompt  = 16 * 1024
+	aiMaxFieldLen      = 2048
+	aiProviderOpenAI   = "openai"
+	aiProviderAzure    = "azure"
+	aiProviderOllama   = "ollama"
+	aiTestFailedReason = "could not list models from the AI provider; check the endpoint, credentials and server logs"
+)
+
+// aiConfigPatch is a partial AI configuration. Every field is a pointer so an
+// omitted field leaves the stored value untouched, while an explicit empty
+// value clears it.
+type aiConfigPatch struct {
+	Enabled      *bool   `json:"enabled"`
+	Provider     *string `json:"provider"`
+	BaseURL      *string `json:"base_url"`
+	APIKey       *string `json:"api_key"`
+	Model        *string `json:"model"`
+	MaxTokens    *int    `json:"max_tokens"`
+	TimeoutSecs  *int    `json:"timeout_secs"`
+	SystemPrompt *string `json:"system_prompt"`
+}
+
+// validate checks the patch and returns a message for the first problem.
+func (p *aiConfigPatch) validate() string {
+	if msg := p.validateEndpoint(); msg != "" {
+		return msg
+	}
+
+	for name, v := range map[string]*string{"base_url": p.BaseURL, "model": p.Model, "api_key": p.APIKey} {
+		if v != nil && len(*v) > aiMaxFieldLen {
+			return name + " is too long"
+		}
+	}
+
+	if p.SystemPrompt != nil && len(*p.SystemPrompt) > aiMaxSystemPrompt {
+		return "system_prompt is too long"
+	}
+
+	return p.validateLimits()
+}
+
+// validateEndpoint checks the provider and base URL fields.
+func (p *aiConfigPatch) validateEndpoint() string {
+	if p.Provider != nil && *p.Provider != "" &&
+		*p.Provider != aiProviderOpenAI && *p.Provider != aiProviderAzure && *p.Provider != aiProviderOllama {
+		return "provider must be one of: openai, azure, ollama"
+	}
+
+	if p.BaseURL != nil && *p.BaseURL != "" {
+		u, err := url.Parse(*p.BaseURL)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
+			return "base_url must be an absolute http(s) URL"
+		}
+	}
+
+	return ""
+}
+
+// validateLimits checks the numeric fields.
+func (p *aiConfigPatch) validateLimits() string {
+	if p.MaxTokens != nil && (*p.MaxTokens < 0 || *p.MaxTokens > aiMaxTokensLimit) {
+		return "max_tokens must be between 0 and " + strconv.Itoa(aiMaxTokensLimit)
+	}
+
+	if p.TimeoutSecs != nil && (*p.TimeoutSecs < 0 || *p.TimeoutSecs > aiMaxTimeoutSecs) {
+		return "timeout_secs must be between 0 and " + strconv.Itoa(aiMaxTimeoutSecs)
+	}
+
+	return ""
+}
+
+// toConfig converts the patch (Provider must be non-nil) into an ai.Config.
+func (p *aiConfigPatch) toConfig() ai.Config {
+	cfg := ai.Config{Provider: *p.Provider}
+
+	if p.BaseURL != nil {
+		cfg.BaseURL = *p.BaseURL
+	}
+
+	if p.APIKey != nil {
+		cfg.APIKey = *p.APIKey
+	}
+
+	if p.Model != nil {
+		cfg.Model = *p.Model
+	}
+
+	if p.MaxTokens != nil {
+		cfg.MaxTokens = *p.MaxTokens
+	}
+
+	if p.TimeoutSecs != nil {
+		cfg.TimeoutSecs = *p.TimeoutSecs
+	}
+
+	if p.SystemPrompt != nil {
+		cfg.SystemPrompt = *p.SystemPrompt
+	}
+
+	return cfg
+}
+
+// patchedTestConfig builds the config to test from a request patch. It returns
+// a validation message when the patch is not acceptable.
+func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPatch) (ai.Config, string) {
+	if msg := body.validate(); msg != "" {
+		return ai.Config{}, msg
+	}
+
+	cfg := body.toConfig()
+
+	// A client-supplied endpoint must not let an admin session probe or
+	// send credentials to internal addresses.
+	if cfg.BaseURL != "" {
+		if err := netutil.ValidateOutboundURL(cfg.BaseURL); err != nil {
+			return ai.Config{}, "base_url is not allowed: " + err.Error()
+		}
+	}
+
+	// A masked key means "use the stored one".
+	if cfg.APIKey == aiAPIKeyMask || cfg.APIKey == "" {
+		stored, _ := h.db.GetSystemSetting(ctx, "ai.api_key")
+		cfg.APIKey = stored
+	}
+
+	return cfg, ""
+}
+
 func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAdmin(w, r) {
 		return
 	}
 
-	var body struct {
-		Enabled      bool   `json:"enabled"`
-		Provider     string `json:"provider"`
-		BaseURL      string `json:"base_url"`
-		APIKey       string `json:"api_key"`
-		Model        string `json:"model"`
-		MaxTokens    int    `json:"max_tokens"`
-		TimeoutSecs  int    `json:"timeout_secs"`
-		SystemPrompt string `json:"system_prompt"`
-	}
+	var body aiConfigPatch
 
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
 
-	ctx := r.Context()
-
-	// Save enabled
-	if err := h.db.SetSystemSetting(ctx, "ai.enabled", strconv.FormatBool(body.Enabled)); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
+	if msg := body.validate(); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
 	}
 
-	// Save provider
-	if body.Provider != "" {
-		if err := h.db.SetSystemSetting(ctx, "ai.provider", body.Provider); err != nil {
+	settings := make([][2]string, 0, 8)
+
+	if body.Enabled != nil {
+		settings = append(settings, [2]string{"ai.enabled", strconv.FormatBool(*body.Enabled)})
+	}
+
+	if body.Provider != nil {
+		settings = append(settings, [2]string{"ai.provider", *body.Provider})
+	}
+
+	if body.BaseURL != nil {
+		settings = append(settings, [2]string{"ai.base_url", *body.BaseURL})
+	}
+
+	// The API key is write-only: the masked placeholder returned by GET means
+	// "unchanged", an empty string clears it, anything else is encrypted.
+	if body.APIKey != nil && *body.APIKey != aiAPIKeyMask {
+		stored := ""
+
+		if *body.APIKey != "" {
+			enc, err := crypto.Encrypt(*body.APIKey)
+			if err != nil {
+				h.log.Errorw("admin ai: encrypt api key failed", "error", err)
+				writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
+
+				return
+			}
+
+			stored = enc
+		}
+
+		settings = append(settings, [2]string{"ai.api_key", stored})
+	}
+
+	if body.Model != nil {
+		settings = append(settings, [2]string{"ai.model", *body.Model})
+	}
+
+	if body.MaxTokens != nil {
+		settings = append(settings, [2]string{"ai.max_tokens", strconv.Itoa(*body.MaxTokens)})
+	}
+
+	if body.TimeoutSecs != nil {
+		settings = append(settings, [2]string{"ai.timeout_secs", strconv.Itoa(*body.TimeoutSecs)})
+	}
+
+	if body.SystemPrompt != nil {
+		settings = append(settings, [2]string{"ai.system_prompt", *body.SystemPrompt})
+	}
+
+	for _, kv := range settings {
+		if err := h.db.SetSystemSetting(r.Context(), kv[0], kv[1]); err != nil {
+			h.log.Errorw("admin ai: save setting failed", "key", kv[0], "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
+
 			return
 		}
 	}
 
-	// Save base_url
-	if body.BaseURL != "" {
-		if err := h.db.SetSystemSetting(ctx, "ai.base_url", body.BaseURL); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
-			return
-		}
-	}
-
-	// Save api_key (only if not masked)
-	if body.APIKey != "" && body.APIKey != "••••••••" {
-		if err := h.db.SetSystemSetting(ctx, "ai.api_key", body.APIKey); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
-			return
-		}
-	}
-
-	// Save model
-	if body.Model != "" {
-		if err := h.db.SetSystemSetting(ctx, "ai.model", body.Model); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
-			return
-		}
-	}
-
-	// Save max_tokens
-	if body.MaxTokens > 0 {
-		if err := h.db.SetSystemSetting(ctx, "ai.max_tokens", strconv.Itoa(body.MaxTokens)); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
-			return
-		}
-	}
-
-	// Save timeout_secs
-	if body.TimeoutSecs > 0 {
-		if err := h.db.SetSystemSetting(ctx, "ai.timeout_secs", strconv.Itoa(body.TimeoutSecs)); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
-			return
-		}
-	}
-
-	// Save system_prompt
-	if body.SystemPrompt != "" {
-		if err := h.db.SetSystemSetting(ctx, "ai.system_prompt", body.SystemPrompt); err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
-			return
-		}
-	}
-
-	// Return the saved config
 	h.handleGetConfig(w, r)
 }
 
@@ -225,34 +351,22 @@ func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body *struct {
-		Enabled      bool   `json:"enabled"`
-		Provider     string `json:"provider"`
-		BaseURL      string `json:"base_url"`
-		APIKey       string `json:"api_key"`
-		Model        string `json:"model"`
-		MaxTokens    int    `json:"max_tokens"`
-		TimeoutSecs  int    `json:"timeout_secs"`
-		SystemPrompt string `json:"system_prompt"`
-	}
+	var body *aiConfigPatch
 
-	// Try to decode body, but it's optional
+	// The body is optional: without one, the stored configuration is tested.
 	_ = decodeJSON(r, &body)
 
 	var cfg ai.Config
-	if body != nil && body.Provider != "" {
-		// Use provided config
-		cfg = ai.Config{
-			Provider:     body.Provider,
-			BaseURL:      body.BaseURL,
-			APIKey:       body.APIKey,
-			Model:        body.Model,
-			MaxTokens:    body.MaxTokens,
-			TimeoutSecs:  body.TimeoutSecs,
-			SystemPrompt: body.SystemPrompt,
+
+	if body != nil && body.Provider != nil && *body.Provider != "" {
+		var msg string
+
+		cfg, msg = h.patchedTestConfig(r.Context(), body)
+		if msg != "" {
+			writeError(w, http.StatusBadRequest, "validation_failed", msg)
+			return
 		}
 	} else {
-		// Load from DB
 		var err error
 
 		cfg, err = h.loadConfigFromDB(r.Context())
@@ -262,14 +376,12 @@ func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	// Create client and test
-	client := ai.NewClient(cfg)
-
-	models, err := client.ListModels(r.Context())
+	models, err := ai.NewClient(cfg).ListModels(r.Context())
 	if err != nil {
+		h.log.Warnw("admin ai: test failed", "error", err)
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":    false,
-			"error": err.Error(),
+			"error": aiTestFailedReason,
 		})
 
 		return
@@ -292,11 +404,11 @@ func (h *AdminAIHandler) handleGetModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	client := ai.NewClient(cfg)
-
-	models, err := client.ListModels(r.Context())
+	models, err := ai.NewClient(cfg).ListModels(r.Context())
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", err.Error())
+		h.log.Warnw("admin ai: list models failed", "error", err)
+		writeError(w, http.StatusBadGateway, "upstream_error", aiTestFailedReason)
+
 		return
 	}
 

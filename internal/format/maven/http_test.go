@@ -155,3 +155,47 @@ func TestHandleGet_MavenMetadataChecksums(t *testing.T) {
 		})
 	}
 }
+
+type mavenQuarantineDB struct {
+	mavenMockDB
+
+	art         *models.MavenArtifact
+	quarantined bool
+}
+
+func (m *mavenQuarantineDB) GetMavenArtifactByPath(_ context.Context, _, _ string) (*models.MavenArtifact, error) {
+	return m.art, nil
+}
+
+func (m *mavenQuarantineDB) IsArtifactQuarantined(_ context.Context, _ string, _ []string) (bool, error) {
+	return m.quarantined, nil
+}
+
+func TestHandleGet_Quarantine(t *testing.T) {
+	const sum = "deadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeefdeadbeef"
+
+	for _, quarantined := range []bool{true, false} {
+		bs := &mavenMockBlobStore{blobs: map[string][]byte{sum: []byte("jar")}}
+		db := &mavenQuarantineDB{
+			art:         &models.MavenArtifact{BlobID: "uuid", SHA256: sum, RepoPath: "com/example/a/1.0/a-1.0.jar"},
+			quarantined: quarantined,
+		}
+		db.repo = &models.Repository{ID: "repo-1", Name: "myrepo"}
+
+		log, _ := logger.New("info", "json", "stdout")
+		router := chi.NewRouter()
+		NewHTTPHandler(log, db, bs).RegisterRoutes(router, "/repos/{name}")
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/com/example/a/1.0/a-1.0.jar", nil))
+
+		want := http.StatusOK
+		if quarantined {
+			want = http.StatusForbidden
+		}
+
+		if w.Code != want {
+			t.Errorf("quarantined=%v: status = %d, want %d", quarantined, w.Code, want)
+		}
+	}
+}

@@ -20,13 +20,33 @@ import (
 const (
 	SessionCookieName           = "oa_session"
 	defaultSessionDurationHours = 24
+	// defaultSessionAbsoluteDays caps how long a session may live no matter how
+	// often it is used; the sliding idle expiry can never extend past it.
+	defaultSessionAbsoluteDays = 30
+	// sessionTouchInterval throttles the sliding-expiry write to once per
+	// interval per session instead of once per request.
+	sessionTouchInterval = time.Minute
 )
 
 //nolint:gochecknoglobals // exported session duration, configurable at startup
 var SessionDuration = defaultSessionDurationHours * time.Hour
 
+//nolint:gochecknoglobals // absolute session lifetime, configurable at startup
+var sessionAbsoluteLifetime = defaultSessionAbsoluteDays * 24 * time.Hour
+
 func ConfigureSessionDuration(d time.Duration) {
 	SessionDuration = d
+}
+
+// ConfigureSessionAbsoluteLifetime sets the hard cap on a session's total life.
+func ConfigureSessionAbsoluteLifetime(d time.Duration) {
+	sessionAbsoluteLifetime = d
+}
+
+// SessionAbsoluteLifetime is the hard cap on a session's total lifetime. It is
+// never shorter than the idle duration.
+func SessionAbsoluteLifetime() time.Duration {
+	return max(sessionAbsoluteLifetime, SessionDuration)
 }
 
 func CreateSession(ctx context.Context, db database.Database, userID, ip, userAgent string) (string, *models.Session, error) {
@@ -99,11 +119,52 @@ func ValidateSession(ctx context.Context, db database.Database, cookieValue stri
 		return nil, nil //nolint:nilnil // no valid session found is not an error
 	}
 
-	if time.Now().After(session.ExpiresAt) {
+	now := time.Now()
+	// created_at is NOT NULL in the schema; a zero value only comes from a
+	// hand-built record and carries no age information.
+	if now.After(session.ExpiresAt) ||
+		(!session.CreatedAt.IsZero() && now.After(session.CreatedAt.Add(SessionAbsoluteLifetime()))) {
 		return nil, nil //nolint:nilnil // expired session is not an error
 	}
 
 	return session, nil
+}
+
+// TouchSession slides the idle expiry of a session forward, at most once per
+// sessionTouchInterval and never beyond the absolute session lifetime.
+func TouchSession(ctx context.Context, db database.Database, session *models.Session) error {
+	now := time.Now()
+	if now.Sub(session.LastSeenAt) < sessionTouchInterval {
+		return nil
+	}
+
+	expiresAt := now.Add(SessionDuration)
+	if !session.CreatedAt.IsZero() {
+		if limit := session.CreatedAt.Add(SessionAbsoluteLifetime()); expiresAt.After(limit) {
+			expiresAt = limit
+		}
+	}
+
+	return db.UpdateSessionLastSeen(ctx, session.ID, expiresAt)
+}
+
+// RevokeAllSessions deletes every session of a user (password change/reset,
+// account disable).
+func RevokeAllSessions(ctx context.Context, db database.Database, userID string) error {
+	return db.DeleteSessionsByUser(ctx, userID)
+}
+
+// RevokeOtherSessions deletes every session of a user except the one carried
+// by keepCookie. An unusable cookie keeps nothing.
+func RevokeOtherSessions(ctx context.Context, db database.Database, userID, keepCookie string) error {
+	raw, ok := decodeSessionCookie(keepCookie)
+	if !ok {
+		return db.DeleteSessionsByUser(ctx, userID)
+	}
+
+	hashBytes := sha256.Sum256(raw)
+
+	return db.DeleteOtherSessionsByUser(ctx, userID, hex.EncodeToString(hashBytes[:]))
 }
 
 func ExtendSession(ctx context.Context, db database.Database, sessionID string) error {

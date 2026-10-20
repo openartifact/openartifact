@@ -4,13 +4,13 @@
 
 # ---- Frontend build stage ---------------------------------------------------
 # Builds the Vue 3 SPA so web/dist/ is populated before Go's //go:embed runs.
-FROM docker.io/oven/bun:1-alpine AS web-builder
+FROM --platform=$BUILDPLATFORM docker.io/oven/bun:1-alpine AS web-builder
 
 WORKDIR /web
 
 # Install JS deps with cache-friendly layering
 COPY web/package.json web/bun.lock* web/bun.lockb* ./
-RUN bun install --frozen-lockfile || bun install
+RUN bun install --frozen-lockfile
 
 # Build the SPA
 COPY web/ ./
@@ -19,7 +19,7 @@ COPY web/ ./
 # Vite build catches broken imports; run `vue-tsc --noEmit` locally or in CI.
 RUN bunx vite build
 # ---- Backend build stage ----------------------------------------------------
-FROM docker.io/golang:1.27.3-alpine AS builder
+FROM --platform=$BUILDPLATFORM docker.io/golang:1.27.3-alpine AS builder
 
 WORKDIR /app
 
@@ -41,7 +41,13 @@ COPY --from=web-builder /web/dist ./web/dist
 
 # Build the application
 ARG VERSION=dev
-RUN CGO_ENABLED=0 GOOS=linux go build -ldflags "-X main.version=${VERSION}" -o openartifact ./cmd/server
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+ARG TARGETOS=linux
+ARG TARGETARCH
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
+    -o openartifact ./cmd/server
 
 # Runtime stage
 FROM docker.io/alpine:3.24
@@ -54,13 +60,14 @@ RUN apk --no-cache add ca-certificates tzdata
 # Copy binary from builder
 COPY --from=builder /app/openartifact .
 
-# Create artifacts directory
-RUN mkdir -p /var/lib/artifacts
+# Create data directories (blobs + backups)
+RUN mkdir -p /var/lib/artifacts /var/lib/openartifact/backups
 
-# Run as non-root user
-RUN addgroup -S appgroup && adduser -S appuser -G appgroup && \
-    chown -R appuser:appgroup /var/lib/artifacts /app
-USER appuser
+# Run as non-root user with a fixed uid/gid so bind mounts are predictable
+RUN addgroup -S -g 10001 appgroup && adduser -S -u 10001 -G appgroup appuser && \
+    chown -R appuser:appgroup /var/lib/artifacts /var/lib/openartifact /app
+VOLUME ["/var/lib/artifacts", "/var/lib/openartifact/backups"]
+USER 10001:10001
 
 # Expose port
 EXPOSE 8080

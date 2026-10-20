@@ -7,32 +7,32 @@ package models
 import "time"
 
 type Webhook struct {
-	ID             string
-	RepositoryID   string // empty = global
-	Name           string
-	URL            string
-	SecretEnc      string // AES-256-GCM encrypted HMAC signing secret
-	Enabled        bool
-	Events         []string // ["artifact.uploaded", "artifact.deleted", "artifact.downloaded"]
-	ContentType    string
-	SSLVerify      bool
-	MaxRetries     int
-	TimeoutSeconds int
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             string    `json:"id"`
+	RepositoryID   string    `json:"repository_id"` // empty = global
+	Name           string    `json:"name"`
+	URL            string    `json:"url"`
+	SecretEnc      string    `json:"-"` // AES-256-GCM encrypted HMAC signing secret (internal/crypto); never serialised
+	Enabled        bool      `json:"enabled"`
+	Events         []string  `json:"events"` // ["artifact.uploaded", "artifact.deleted", "artifact.downloaded"]
+	ContentType    string    `json:"content_type"`
+	SSLVerify      bool      `json:"ssl_verify"`
+	MaxRetries     int       `json:"max_retries"`
+	TimeoutSeconds int       `json:"timeout_seconds"`
+	CreatedAt      time.Time `json:"created_at"`
+	UpdatedAt      time.Time `json:"updated_at"`
 }
 
 type WebhookDelivery struct {
-	ID             string
-	WebhookID      string
-	EventType      string
-	Payload        map[string]any
-	Status         string // "pending", "success", "failed"
-	ResponseStatus int
-	ResponseBody   string
-	AttemptCount   int
-	NextRetryAt    *time.Time
-	DeliveredAt    *time.Time
-	CreatedAt      time.Time
-	UpdatedAt      time.Time
+	ID             string         `json:"id"`
+	WebhookID      string         `json:"webhook_id"`
+	EventType      string         `json:"event_type"`
+	Payload        map[string]any `json:"payload"`
+	Status         string         `json:"status"` // "pending", "success", "failed"
+	ResponseStatus int            `json:"response_status"`
+	ResponseBody   string         `json:"response_body"`
+	AttemptCount   int            `json:"attempt_count"`
+	NextRetryAt    *time.Time     `json:"next_retry_at"`
+	DeliveredAt    *time.Time     `json:"delivered_at"`
+	CreatedAt      time.Time      `json:"created_at"`
+	UpdatedAt      time.Time      `json:"updated_at"`
 }

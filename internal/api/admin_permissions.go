@@ -5,8 +5,9 @@
 package api
 
 import (
+	"errors"
 	"net/http"
-	"regexp"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -44,6 +45,10 @@ func (h *AdminPermissionsHandler) Register(r chi.Router) {
 }
 
 func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	var body struct {
 		Name             string   `json:"name"`
 		RepositoryFilter string   `json:"repository_filter"`
@@ -55,29 +60,27 @@ func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if _, err := regexp.Compile(body.RepositoryFilter); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_failed", "invalid repository_filter regex")
-		return
-	}
-
-	if _, err := regexp.Compile(body.PathPattern); err != nil {
-		writeError(w, http.StatusBadRequest, "validation_failed", "invalid path_pattern regex")
-		return
-	}
-
-	if err := validateActions(body.Actions); err != "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", err)
-		return
-	}
-
 	now := time.Now()
 	target := &models.PermissionTarget{
-		Name:             body.Name,
+		Name:             strings.TrimSpace(body.Name),
 		RepositoryFilter: body.RepositoryFilter,
 		PathPattern:      body.PathPattern,
 		Actions:          body.Actions,
 		CreatedAt:        now,
 		UpdatedAt:        now,
+	}
+
+	if msg := validatePermissionTarget(target); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	if existing, err := h.db.GetPermissionTargetByName(r.Context(), target.Name); err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	} else if existing != nil {
+		writeError(w, http.StatusConflict, "conflict", "a permission target with this name already exists")
+		return
 	}
 
 	saved, err := h.db.CreatePermissionTarget(r.Context(), target)
@@ -90,6 +93,10 @@ func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AdminPermissionsHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	targets, err := h.db.ListPermissionTargets(r.Context())
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -105,6 +112,10 @@ func (h *AdminPermissionsHandler) handleList(w http.ResponseWriter, r *http.Requ
 }
 
 func (h *AdminPermissionsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 
 	target, err := h.db.GetPermissionTargetByID(r.Context(), id)
@@ -122,6 +133,10 @@ func (h *AdminPermissionsHandler) handleGet(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
@@ -147,47 +162,58 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if body.RepositoryFilter != nil {
-		if _, err := regexp.Compile(*body.RepositoryFilter); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", "invalid repository_filter regex")
-			return
-		}
+	// Validate the merged result, not just the supplied fields, so a PATCH can
+	// never leave behind a target that would not have passed creation.
+	merged := *target
 
-		target.RepositoryFilter = *body.RepositoryFilter
+	if body.Name != nil {
+		merged.Name = strings.TrimSpace(*body.Name)
+	}
+
+	if body.RepositoryFilter != nil {
+		merged.RepositoryFilter = *body.RepositoryFilter
 	}
 
 	if body.PathPattern != nil {
-		if _, err := regexp.Compile(*body.PathPattern); err != nil {
-			writeError(w, http.StatusBadRequest, "validation_failed", "invalid path_pattern regex")
-			return
-		}
-
-		target.PathPattern = *body.PathPattern
+		merged.PathPattern = *body.PathPattern
 	}
 
 	if body.Actions != nil {
-		if msg := validateActions(body.Actions); msg != "" {
-			writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		merged.Actions = body.Actions
+	}
+
+	if msg := validatePermissionTarget(&merged); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	if merged.Name != target.Name {
+		existing, err := h.db.GetPermissionTargetByName(ctx, merged.Name)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 			return
 		}
 
-		target.Actions = body.Actions
+		if existing != nil && existing.ID != merged.ID {
+			writeError(w, http.StatusConflict, "conflict", "a permission target with this name already exists")
+			return
+		}
 	}
 
-	if body.Name != nil {
-		target.Name = *body.Name
-	}
-
-	target.UpdatedAt = time.Now()
-	if err := h.db.UpdatePermissionTarget(ctx, target); err != nil {
+	merged.UpdatedAt = time.Now()
+	if err := h.db.UpdatePermissionTarget(ctx, &merged); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
 
-	writeJSON(w, http.StatusOK, permTargetToResponse(target))
+	writeJSON(w, http.StatusOK, permTargetToResponse(&merged))
 }
 
 func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 	if err := h.db.DeletePermissionTarget(r.Context(), id); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -198,6 +224,10 @@ func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 
 	var body struct {
@@ -219,12 +249,18 @@ func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	ctx := r.Context()
+
+	if !h.principalAndTargetExist(w, r, id, body.PrincipalType, body.PrincipalID) {
+		return
+	}
+
 	assignment := &models.PermissionAssignment{
 		PermissionTargetID: id,
 		PrincipalType:      body.PrincipalType,
 		PrincipalID:        body.PrincipalID,
 	}
-	if err := h.db.CreatePermissionAssignment(r.Context(), assignment); err != nil {
+	if err := h.db.CreatePermissionAssignment(ctx, assignment); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
@@ -233,6 +269,10 @@ func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Re
 }
 
 func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 	principalType := r.URL.Query().Get("principal_type")
 	principalID := r.URL.Query().Get("principal_id")
@@ -255,7 +295,88 @@ func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.
 	writeNoContent(w)
 }
 
+// principalAndTargetExist writes a 404 and returns false when the permission
+// target or the user/group the assignment refers to does not exist.
+func (h *AdminPermissionsHandler) principalAndTargetExist(w http.ResponseWriter, r *http.Request, targetID, principalType, principalID string) bool {
+	ctx := r.Context()
+
+	target, err := h.db.GetPermissionTargetByID(ctx, targetID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return false
+	}
+
+	if target == nil {
+		writeError(w, http.StatusNotFound, "not_found", "permission target not found")
+		return false
+	}
+
+	if principalType == "user" {
+		user, err := h.db.GetUserByID(ctx, principalID)
+		if err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+			return false
+		}
+
+		if user == nil {
+			writeError(w, http.StatusNotFound, "not_found", "user not found")
+			return false
+		}
+
+		return true
+	}
+
+	group, err := h.db.GetGroupByID(ctx, principalID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return false
+	}
+
+	if group == nil {
+		writeError(w, http.StatusNotFound, "not_found", "group not found")
+		return false
+	}
+
+	return true
+}
+
+const maxPermissionNameLength = 128
+
+// validatePermissionTarget checks a fully-populated target (create body or the
+// merged result of a PATCH) and returns a user-facing message, or "" when it is
+// acceptable. Patterns are compiled with auth.CompilePattern so what is
+// accepted here is exactly what the evaluator enforces; in particular an empty
+// pattern (which would match everything) is refused.
+func validatePermissionTarget(t *models.PermissionTarget) string {
+	if t.Name == "" {
+		return "name is required"
+	}
+
+	if len(t.Name) > maxPermissionNameLength {
+		return "name must be at most 128 characters"
+	}
+
+	for _, p := range []struct{ field, value string }{
+		{"repository_filter", t.RepositoryFilter},
+		{"path_pattern", t.PathPattern},
+	} {
+		if _, err := auth.CompilePattern(p.value); err != nil {
+			if errors.Is(err, auth.ErrEmptyPattern) {
+				return p.field + " is required (use '*' to match everything)"
+			}
+
+			return "invalid " + p.field + " regex"
+		}
+	}
+
+	return validateActions(t.Actions)
+}
+
 func validateActions(actions []string) string {
+	if len(actions) == 0 {
+		return "actions must contain at least one of read, write, delete, manage, annotate"
+	}
+
 	for _, a := range actions {
 		if !validActions[a] {
 			return "invalid action: " + a + "; must be one of read, write, delete, manage, annotate"

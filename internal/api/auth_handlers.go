@@ -5,7 +5,10 @@
 package api
 
 import (
+	"math"
 	"net/http"
+	"strconv"
+	"strings"
 	"sync"
 	"time"
 
@@ -17,28 +20,6 @@ import (
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
-
-func setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset
-		Name:     middleware.CSRFTokenCookieName,
-		Value:    token,
-		Path:     "/",
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(auth.SessionDuration.Seconds()),
-	})
-}
-
-func clearCSRFCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset
-		Name:     middleware.CSRFTokenCookieName,
-		Value:    "",
-		Path:     "/",
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   -1,
-	})
-}
 
 func formatTime(t time.Time) string {
 	return t.Format(time.RFC3339Nano)
@@ -54,43 +35,189 @@ func formatTimePtr(t *time.Time) *string {
 	return &s
 }
 
-type rateLimitEntry struct {
-	count       int
-	windowStart time.Time
+const (
+	// loginIPLimit is the number of login requests a single client IP may
+	// make per loginIPWindow. It throttles request volume only; guessing
+	// passwords for one account across many IPs is bounded separately by
+	// the per-username failure limiter.
+	loginIPLimit  = 10
+	loginIPWindow = time.Minute
+
+	// loginUserFailureLimit failures within loginUserFailureWindow lock a
+	// username out of logging in until the oldest failure ages out. A
+	// sliding window (rather than a permanent lock) keeps this from being a
+	// durable denial of service against the legitimate user.
+	loginUserFailureLimit  = 10
+	loginUserFailureWindow = 15 * time.Minute
+
+	// limiterMaxKeys bounds the memory a limiter may use. An attacker
+	// rotating source IPs or usernames cannot grow the map past this.
+	limiterMaxKeys = 10000
+
+	// maxLoginFieldBytes caps username/password sizes accepted by login so a
+	// huge value never reaches the hasher or the limiter key space.
+	maxLoginFieldBytes = auth.MaxPasswordLength
+)
+
+// slidingWindowLimiter counts events per key inside a sliding time window.
+// Stale keys are swept lazily (at most once per window) and the number of
+// tracked keys is capped, so memory stays bounded without a background
+// goroutine.
+type slidingWindowLimiter struct {
+	mu        sync.Mutex
+	limit     int
+	window    time.Duration
+	maxKeys   int
+	events    map[string][]time.Time
+	lastSweep time.Time
+	now       func() time.Time
 }
 
-type ipRateLimiter struct {
-	mu      sync.Mutex
-	entries map[string]*rateLimitEntry
+func newSlidingWindowLimiter(limit int, window time.Duration, maxKeys int) *slidingWindowLimiter {
+	return &slidingWindowLimiter{
+		limit:   limit,
+		window:  window,
+		maxKeys: maxKeys,
+		events:  make(map[string][]time.Time),
+		now:     time.Now,
+	}
 }
 
-func (rl *ipRateLimiter) allow(ip string) bool {
-	rl.mu.Lock()
-	defer rl.mu.Unlock()
+// live drops events older than the window and returns what is left.
+func (l *slidingWindowLimiter) live(key string, now time.Time) []time.Time {
+	hits := l.events[key]
+	cutoff := now.Add(-l.window)
 
-	now := time.Now()
-
-	entry, ok := rl.entries[ip]
-	if !ok || now.Sub(entry.windowStart) > time.Minute {
-		rl.entries[ip] = &rateLimitEntry{count: 1, windowStart: now}
-		return true
+	i := 0
+	for i < len(hits) && !hits[i].After(cutoff) {
+		i++
 	}
 
-	if entry.count >= 5 {
-		return false
+	if i > 0 {
+		hits = hits[i:]
+		if len(hits) == 0 {
+			delete(l.events, key)
+			return nil
+		}
+
+		l.events[key] = hits
 	}
 
-	entry.count++
+	return hits
+}
 
-	return true
+// sweep removes every key whose events have all expired. It runs at most once
+// per window.
+func (l *slidingWindowLimiter) sweep(now time.Time) {
+	if now.Sub(l.lastSweep) < l.window {
+		return
+	}
+
+	l.lastSweep = now
+
+	for key := range l.events {
+		l.live(key, now)
+	}
+}
+
+// retryAfter reports whether key has exhausted its budget and, if so, how long
+// until the oldest event leaves the window.
+func (l *slidingWindowLimiter) retryAfter(key string) (time.Duration, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := l.now()
+	l.sweep(now)
+
+	hits := l.live(key, now)
+	if len(hits) < l.limit {
+		return 0, false
+	}
+
+	return max(hits[0].Add(l.window).Sub(now), time.Second), true
+}
+
+// record adds one event for key.
+func (l *slidingWindowLimiter) record(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	l.recordLocked(key, l.now())
+}
+
+func (l *slidingWindowLimiter) recordLocked(key string, now time.Time) {
+	l.sweep(now)
+
+	hits := l.live(key, now)
+	if hits == nil && len(l.events) >= l.maxKeys {
+		// Still full after sweeping expired keys: evict an arbitrary
+		// entry (map order is random) rather than grow without bound.
+		for victim := range l.events {
+			delete(l.events, victim)
+			break
+		}
+	}
+
+	hits = append(hits, now)
+	if len(hits) > l.limit {
+		// Concurrent requests can overshoot the budget by a few events;
+		// never retain more than the limit per key.
+		hits = hits[len(hits)-l.limit:]
+	}
+
+	l.events[key] = hits
+}
+
+// take counts one event for key and reports whether it fit in the budget. On
+// refusal it returns how long the caller must wait.
+func (l *slidingWindowLimiter) take(key string) (time.Duration, bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	now := l.now()
+	l.sweep(now)
+
+	hits := l.live(key, now)
+	if len(hits) >= l.limit {
+		return max(hits[0].Add(l.window).Sub(now), time.Second), false
+	}
+
+	l.recordLocked(key, now)
+
+	return 0, true
+}
+
+// reset forgets key (used after a successful login).
+func (l *slidingWindowLimiter) reset(key string) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+
+	delete(l.events, key)
+}
+
+func retryAfterSeconds(d time.Duration) string {
+	return strconv.Itoa(int(math.Ceil(d.Seconds())))
+}
+
+// limiterKey normalises a user-supplied username for the failure limiter.
+func limiterKey(prefix, username string) string {
+	key := strings.ToLower(strings.TrimSpace(username))
+	if len(key) > 256 {
+		key = key[:256]
+	}
+
+	return prefix + key
 }
 
 type AuthHandler struct {
 	db               database.Database
 	log              *logger.Logger
 	evaluator        *auth.Evaluator
-	loginRateLimiter *ipRateLimiter
+	loginIPLimiter   *slidingWindowLimiter
+	loginUserLimiter *slidingWindowLimiter
 	trustedProxies   *middleware.TrustedProxies
+
+	proxyWarnOnce sync.Once
 }
 
 func NewAuthHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, trustedProxies *middleware.TrustedProxies) *AuthHandler {
@@ -98,9 +225,31 @@ func NewAuthHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		db:               db,
 		log:              log,
 		evaluator:        evaluator,
-		loginRateLimiter: &ipRateLimiter{entries: make(map[string]*rateLimitEntry)},
+		loginIPLimiter:   newSlidingWindowLimiter(loginIPLimit, loginIPWindow, limiterMaxKeys),
+		loginUserLimiter: newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow, limiterMaxKeys),
 		trustedProxies:   trustedProxies,
 	}
+}
+
+// warnIfBehindUnconfiguredProxy logs, once per process, that forwarding headers
+// are arriving although no trusted proxy is configured. In that state every
+// client behind the proxy shares the proxy's address, so the per-IP login
+// throttle (and the IP recorded in audit rows and sessions) is wrong.
+func (h *AuthHandler) warnIfBehindUnconfiguredProxy(r *http.Request) {
+	if h.trustedProxies.Configured() || h.log == nil {
+		return
+	}
+
+	if r.Header.Get("X-Forwarded-For") == "" && r.Header.Get("X-Real-IP") == "" {
+		return
+	}
+
+	h.proxyWarnOnce.Do(func() {
+		h.log.Warnw("forwarding headers received but server.trusted_proxies is empty: "+
+			"all clients behind the reverse proxy share one IP for login throttling, sessions and audit; "+
+			"set server.trusted_proxies to the proxy's CIDR",
+			"peer", r.RemoteAddr)
+	})
 }
 
 func (h *AuthHandler) RegisterPublic(r chi.Router) {
@@ -113,42 +262,69 @@ func (h *AuthHandler) RegisterAuthed(r chi.Router) {
 	r.Post("/api/v1/auth/change-password", h.handleChangePassword)
 }
 
+func writeRateLimited(w http.ResponseWriter, wait time.Duration, message string) {
+	w.Header().Set("Retry-After", retryAfterSeconds(wait))
+	writeError(w, http.StatusTooManyRequests, "rate_limited", message)
+}
+
+// readLoginCredentials extracts username/password from a form or JSON body.
+func readLoginCredentials(w http.ResponseWriter, r *http.Request) (string, string, bool) {
+	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
+
+	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
+		if err := r.ParseForm(); err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "failed to parse form")
+			return "", "", false
+		}
+
+		return r.PostFormValue("username"), r.PostFormValue("password"), true
+	}
+
+	var body struct {
+		Username string `json:"username"`
+		Password string `json:"password"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return "", "", false
+	}
+
+	return body.Username, body.Password, true
+}
+
 func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	// Real client IP, honoring X-Forwarded-For/X-Real-IP only from a
 	// configured trusted proxy — never trust it from the client directly.
 	ip := middleware.ClientIP(r, h.trustedProxies)
 
-	// Check rate limit
-	if !h.loginRateLimiter.allow(ip) {
-		w.Header().Set("Retry-After", "60")
-		writeError(w, http.StatusTooManyRequests, "rate_limited", "too many login attempts")
+	h.warnIfBehindUnconfiguredProxy(r)
 
+	if wait, ok := h.loginIPLimiter.take(ip); !ok {
+		writeRateLimited(w, wait, "too many login attempts")
 		return
 	}
 
-	var username, password string
+	username, password, ok := readLoginCredentials(w, r)
+	if !ok {
+		return
+	}
 
-	contentType := r.Header.Get("Content-Type")
-	if len(contentType) >= 33 && contentType[:33] == "application/x-www-form-urlencoded" {
-		if err := r.ParseForm(); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "failed to parse form")
-			return
-		}
+	// Per-username throttle. It applies to every submitted name, existing or
+	// not, so a 429 reveals nothing about which accounts exist.
+	userKey := limiterKey("login:", username)
+	if wait, blocked := h.loginUserLimiter.retryAfter(userKey); blocked {
+		writeRateLimited(w, wait, "too many failed login attempts for this account")
+		return
+	}
 
-		username = r.FormValue("username")
-		password = r.FormValue("password")
-	} else {
-		var body struct {
-			Username string `json:"username"`
-			Password string `json:"password"`
-		}
-		if err := decodeJSON(r, &body); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-			return
-		}
+	invalid := func() {
+		h.loginUserLimiter.record(userKey)
+		writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid username or password")
+	}
 
-		username = body.Username
-		password = body.Password
+	if len(username) > maxLoginFieldBytes || len(password) > maxLoginFieldBytes {
+		invalid()
+		return
 	}
 
 	ctx := r.Context()
@@ -161,27 +337,33 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Every miss path still pays for one full Argon2 verification so response
+	// time does not reveal whether the username exists, is disabled, or is
+	// SSO-only.
 	if user == nil || user.Disabled || user.PasswordHash == nil {
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid username or password")
+		auth.BurnPasswordVerification(password)
+		invalid()
+
 		return
 	}
 
-	ok, err := auth.VerifyPassword(password, *user.PasswordHash)
-	if err != nil || !ok {
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid username or password")
+	verified, err := auth.VerifyPassword(password, *user.PasswordHash)
+	if err != nil || !verified {
+		invalid()
 		return
 	}
 
-	userAgent := r.UserAgent()
+	h.loginUserLimiter.reset(userKey)
 
 	csrfToken, err := middleware.NewCSRFToken()
 	if err != nil {
 		h.log.Errorw("login: generate CSRF token", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
+
 		return
 	}
 
-	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, ip, userAgent)
+	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, ip, r.UserAgent())
 	if err != nil {
 		h.log.Errorw("login: create session", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
@@ -189,15 +371,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset //nolint:gosec // G124: session cookies are short-lived, Secure flag set by reverse proxy
-		Name:     auth.SessionCookieName,
-		Value:    cookieValue,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(auth.SessionDuration.Seconds()),
-	})
+	setSessionCookie(w, r, cookieValue)
 	setCSRFCookie(w, r, csrfToken)
 
 	now := time.Now()
@@ -208,18 +382,11 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
-	cookie, err := r.Cookie(auth.SessionCookieName)
-	if err == nil && cookie.Value != "" {
-		_ = auth.DeleteSession(r.Context(), h.db, cookie.Value)
+	if value := sessionCookieValue(r); value != "" {
+		_ = auth.DeleteSession(r.Context(), h.db, value)
 	}
 
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset //nolint:gosec // G124: session cookies are short-lived, Secure flag set by reverse proxy
-		Name:     auth.SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		MaxAge:   -1,
-	})
+	clearSessionCookie(w, r)
 	clearCSRFCookie(w, r)
 	writeNoContent(w)
 }
@@ -283,6 +450,13 @@ func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// A leaked API token must never be able to take over the account by
+	// rotating its password: only an interactive session may do that.
+	if p.IsToken() {
+		writeError(w, http.StatusForbidden, "forbidden", "API tokens cannot change passwords")
+		return
+	}
+
 	var body struct {
 		CurrentPassword string `json:"current_password"`
 		NewPassword     string `json:"new_password"`
@@ -305,14 +479,32 @@ func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	ok, err := auth.VerifyPassword(body.CurrentPassword, *user.PasswordHash)
-	if err != nil || !ok {
-		writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
+	// A stolen session must not be able to brute-force the current password
+	// without bound, so wrong guesses share the failure budget.
+	guessKey := limiterKey("change-password:", user.ID)
+	if wait, blocked := h.loginUserLimiter.retryAfter(guessKey); blocked {
+		writeRateLimited(w, wait, "too many failed attempts")
 		return
 	}
 
-	if len(body.NewPassword) < 12 {
-		writeError(w, http.StatusBadRequest, "validation_failed", "new password must be at least 12 characters")
+	if len(body.CurrentPassword) > maxLoginFieldBytes {
+		h.loginUserLimiter.record(guessKey)
+		writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
+
+		return
+	}
+
+	ok, err := auth.VerifyPassword(body.CurrentPassword, *user.PasswordHash)
+	if err != nil || !ok {
+		h.loginUserLimiter.record(guessKey)
+		writeError(w, http.StatusUnauthorized, "invalid_credentials", "current password is incorrect")
+
+		return
+	}
+
+	h.loginUserLimiter.reset(guessKey)
+
+	if !checkPasswordPolicy(w, body.NewPassword) {
 		return
 	}
 
@@ -327,6 +519,15 @@ func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Reques
 	user.MustChangePassword = false
 	if err := h.db.UpdateUser(ctx, user); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	// The old password may be known to an attacker who holds another
+	// session: drop every session except the one making this request.
+	if err := auth.RevokeOtherSessions(ctx, h.db, user.ID, sessionCookieValue(r)); err != nil {
+		h.log.Errorw("change password: revoke other sessions", "error", err, "user", user.ID)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to revoke other sessions")
+
 		return
 	}
 

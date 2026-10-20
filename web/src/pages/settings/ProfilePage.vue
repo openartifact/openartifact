@@ -24,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               v-if="session.isAdmin"
               class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-soft/60 text-danger"
             >
-              Admin
+              {{ t('settings.profile.admin') }}
             </span>
             <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-surface-hover text-foreground/70">
               {{ t('auth.username').toLowerCase() }}: {{ session.user?.username }}
@@ -48,20 +48,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <div v-if="session.user?.email" class="flex items-center justify-between px-5 py-4">
           <div>
-            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">Email</div>
+            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">{{ t('settings.profile.email') }}</div>
             <div class="text-sm text-foreground">{{ session.user.email }}</div>
           </div>
         </div>
         <div v-if="session.user?.full_name" class="flex items-center justify-between px-5 py-4">
           <div>
-            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">Full name</div>
+            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">{{ t('settings.profile.fullName') }}</div>
             <div class="text-sm text-foreground">{{ session.user.full_name }}</div>
           </div>
         </div>
         <div class="flex items-center justify-between px-5 py-4">
           <div>
-            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">Role</div>
-            <div class="text-sm text-foreground">{{ session.isAdmin ? 'Administrator' : 'User' }}</div>
+            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">{{ t('settings.profile.role') }}</div>
+            <div class="text-sm text-foreground">{{ session.isAdmin ? t('settings.profile.roleAdmin') : t('settings.profile.roleUser') }}</div>
           </div>
         </div>
       </div>

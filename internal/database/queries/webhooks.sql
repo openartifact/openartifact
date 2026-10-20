@@ -30,8 +30,11 @@ WHERE (repository_id = $1 OR repository_id IS NULL) AND enabled = true AND $2 = 
 ORDER BY created_at DESC;
 
 -- name: CreateWebhookDelivery :one
-INSERT INTO webhook_deliveries (webhook_id, event_type, payload, status, attempt_count)
-VALUES ($1, $2, $3, $4, $5)
+-- next_retry_at doubles as the claim lease: a delivery created by Dispatch is
+-- inserted already leased to the creating instance so a concurrent poller on
+-- another instance cannot pick it up.
+INSERT INTO webhook_deliveries (webhook_id, event_type, payload, status, attempt_count, next_retry_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, created_at, updated_at;
 
 -- name: UpdateWebhookDelivery :exec
@@ -43,8 +46,18 @@ WHERE id = $1;
 SELECT id, webhook_id, event_type, payload, status, response_status, response_body, attempt_count, next_retry_at, delivered_at, created_at, updated_at
 FROM webhook_deliveries WHERE webhook_id = $1 ORDER BY created_at DESC LIMIT $2;
 
--- name: ListPendingWebhookDeliveries :many
-SELECT id, webhook_id, event_type, payload, status, response_status, response_body, attempt_count, next_retry_at, delivered_at, created_at, updated_at
-FROM webhook_deliveries
-WHERE status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= now())
-ORDER BY created_at ASC LIMIT 100;
+-- name: ClaimPendingWebhookDeliveries :many
+-- Atomically claims due deliveries by pushing next_retry_at to the end of the
+-- lease. FOR UPDATE SKIP LOCKED lets several server instances poll the same
+-- table without ever receiving the same row; a crashed instance's claims become
+-- due again once the lease expires.
+UPDATE webhook_deliveries
+SET next_retry_at = now() + make_interval(secs => sqlc.arg(lease_seconds)::float8), updated_at = now()
+WHERE id IN (
+    SELECT wd.id FROM webhook_deliveries wd
+    WHERE wd.status = 'pending' AND (wd.next_retry_at IS NULL OR wd.next_retry_at <= now())
+    ORDER BY wd.created_at ASC
+    LIMIT sqlc.arg(batch_size)::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, webhook_id, event_type, payload, status, response_status, response_body, attempt_count, next_retry_at, delivered_at, created_at, updated_at;

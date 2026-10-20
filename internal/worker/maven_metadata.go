@@ -102,9 +102,7 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 	lockKey := repoID + ":" + groupID + ":" + artifactID
 
 	if w.sqlDB != nil {
-		var locked bool
-
-		err := w.sqlDB.QueryRowContext(ctx, "SELECT pg_try_advisory_lock(hashtext($1))", lockKey).Scan(&locked)
+		release, locked, err := tryAdvisoryLock(ctx, w.sqlDB, "maven:"+lockKey)
 		if err != nil {
 			return fmt.Errorf("maven worker: advisory lock query: %w", err)
 		}
@@ -114,7 +112,7 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 			return nil
 		}
 
-		defer func() { _, _ = w.sqlDB.ExecContext(ctx, "SELECT pg_advisory_unlock(hashtext($1))", lockKey) }()
+		defer release()
 	}
 
 	arts, err := w.db.GetMavenArtifactsByGA(ctx, repoID, groupID, artifactID)
@@ -136,7 +134,7 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		versions = append(versions, v)
 	}
 
-	sort.Strings(versions)
+	sort.Slice(versions, func(i, j int) bool { return pkgmaven.CompareVersions(versions[i], versions[j]) < 0 })
 
 	latestVersion := versions[len(versions)-1]
 	latestRelease := ""
@@ -200,18 +198,39 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 			}
 		}
 
-		entries := make([]fmtmaven.SnapshotEntry, 0, len(snapArts))
+		// Keep only the newest build per (extension, classifier).
+		type snapKey struct{ ext, classifier string }
+
+		newest := make(map[snapKey]*models.MavenArtifact)
+
+		for _, a := range snapArts {
+			k := snapKey{a.Extension, a.Classifier}
+			if cur, ok := newest[k]; !ok || a.SnapshotTimestamp > cur.SnapshotTimestamp ||
+				(a.SnapshotTimestamp == cur.SnapshotTimestamp && a.SnapshotBuildNumber > cur.SnapshotBuildNumber) {
+				newest[k] = a
+			}
+		}
+
+		entries := make([]fmtmaven.SnapshotEntry, 0, len(newest))
 
 		baseVersion := strings.TrimSuffix(snapVersion, "-SNAPSHOT")
-		for _, a := range snapArts {
+		for _, a := range newest {
 			value := baseVersion + "-" + a.SnapshotTimestamp + "-" + strconv.Itoa(a.SnapshotBuildNumber)
 			entries = append(entries, fmtmaven.SnapshotEntry{
 				Extension:  a.Extension,
 				Classifier: a.Classifier,
 				Value:      value,
-				Updated:    a.SnapshotTimestamp,
+				Updated:    strings.ReplaceAll(a.SnapshotTimestamp, ".", ""),
 			})
 		}
+
+		sort.Slice(entries, func(i, j int) bool {
+			if entries[i].Extension != entries[j].Extension {
+				return entries[i].Extension < entries[j].Extension
+			}
+
+			return entries[i].Classifier < entries[j].Classifier
+		})
 
 		coord := pkgmaven.Coordinate{
 			GroupID:    groupID,

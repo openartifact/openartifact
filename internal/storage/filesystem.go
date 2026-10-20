@@ -16,8 +16,6 @@ import (
 	"strconv"
 	"strings"
 	"time"
-
-	"github.com/google/uuid"
 )
 
 // FilesystemStore implements the BlobStore interface for filesystem storage.
@@ -39,9 +37,15 @@ func NewFilesystemStore(basePath string) (*FilesystemStore, error) {
 
 // Put stores a blob and returns its identifier.
 // If metadata contains a "sha256" key, that value is used as the blob ID (content-addressed).
-// Otherwise a random UUID is generated as the ID.
+// Otherwise the computed SHA-256 of the content is the ID.
 func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map[string]string) (string, error) {
 	var tmpPath string
+
+	if sha, ok := metadata["sha256"]; ok && sha != "" {
+		if err := ValidateBlobID(sha); err != nil {
+			return "", err
+		}
+	}
 
 	tmpFile, err := os.CreateTemp(fs.basePath, "blob-upload-*.tmp")
 	if err != nil {
@@ -75,7 +79,8 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 	if sha, ok := metadata["sha256"]; ok && sha != "" {
 		id = sha
 	} else {
-		id = uuid.New().String()
+		// No caller-supplied digest: the blob is content-addressed by its computed hash.
+		id = computedSHA256
 	}
 
 	blobPath := fs.getBlobPath(id)
@@ -107,6 +112,10 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 
 // Get retrieves a blob by its identifier.
 func (fs *FilesystemStore) Get(ctx context.Context, id string) (io.ReadCloser, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	blobPath := fs.getBlobPath(id)
 
 	f, err := os.Open(blobPath)
@@ -123,6 +132,10 @@ func (fs *FilesystemStore) Get(ctx context.Context, id string) (io.ReadCloser, e
 
 // Delete removes a blob by its identifier.
 func (fs *FilesystemStore) Delete(ctx context.Context, id string) error {
+	if err := ValidateBlobID(id); err != nil {
+		return err
+	}
+
 	blobPath := fs.getBlobPath(id)
 	metaPath := blobPath + ".meta"
 
@@ -142,6 +155,10 @@ func (fs *FilesystemStore) Delete(ctx context.Context, id string) error {
 
 // Exists checks if a blob exists.
 func (fs *FilesystemStore) Exists(ctx context.Context, id string) (bool, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return false, err
+	}
+
 	blobPath := fs.getBlobPath(id)
 
 	_, err := os.Stat(blobPath)
@@ -158,6 +175,10 @@ func (fs *FilesystemStore) Exists(ctx context.Context, id string) (bool, error) 
 
 // GetMetadata retrieves metadata for a blob.
 func (fs *FilesystemStore) GetMetadata(ctx context.Context, id string) (map[string]string, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	metaPath := fs.getBlobPath(id) + ".meta"
 
 	data, err := os.ReadFile(metaPath)
@@ -191,6 +212,10 @@ func (fs *FilesystemStore) List(ctx context.Context, prefix string, limit int, o
 		}
 
 		if info.IsDir() || strings.HasSuffix(path, ".meta") {
+			return nil
+		}
+
+		if strings.HasPrefix(info.Name(), "blob-upload-") && strings.HasSuffix(info.Name(), ".tmp") {
 			return nil
 		}
 
@@ -237,6 +262,10 @@ func (fs *FilesystemStore) List(ctx context.Context, prefix string, limit int, o
 
 // GetSize returns the size of a blob in bytes.
 func (fs *FilesystemStore) GetSize(ctx context.Context, id string) (int64, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return 0, err
+	}
+
 	blobPath := fs.getBlobPath(id)
 
 	info, err := os.Stat(blobPath)
@@ -256,6 +285,10 @@ func (fs *FilesystemStore) GetSize(ctx context.Context, id string) (int64, error
 // Fallback: scans metadata files for blobs stored with a non-SHA256 ID.
 // Returns the blobID and true if found, or ("", false, nil) if not found.
 func (fs *FilesystemStore) ExistsBySHA256(ctx context.Context, sha256hex string) (string, bool, error) {
+	if err := ValidateBlobID(sha256hex); err != nil {
+		return "", false, err
+	}
+
 	// Fast path: content-addressed storage uses SHA-256 as the blob ID.
 	exists, err := fs.Exists(ctx, sha256hex)
 	if err != nil {
@@ -331,11 +364,6 @@ func (fs *FilesystemStore) PresignURL(_ context.Context, _ string, _ time.Durati
 
 // getBlobPath returns the full path for a blob.
 func (fs *FilesystemStore) getBlobPath(id string) string {
-	// Use a two-level directory structure for better performance
-	// e.g., /base/ab/cdef123456...
-	if len(id) < 2 {
-		return filepath.Join(fs.basePath, id)
-	}
-
+	// Callers validate id with ValidateBlobID; two-level layout /base/ab/cdef...
 	return filepath.Join(fs.basePath, id[:2], id[2:])
 }

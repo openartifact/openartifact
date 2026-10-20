@@ -45,46 +45,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          </div>
         <div>
           <span class="text-[15px] font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></span>
-          <p class="text-[10px] uppercase tracking-[0.16em] text-muted font-mono leading-none mt-0.5">v3.4 · stable</p>
+          <p class="text-[10px] uppercase tracking-[0.16em] text-muted font-mono leading-none mt-0.5">{{ version ? `v${version}` : t('shell.versionUnknown') }}</p>
         </div>
       </div>
 
       <!-- Middle — hero text -->
       <div class="relative">
         <p class="text-[10px] uppercase tracking-[0.16em] font-mono text-primary mb-3">
-          Artifact repository · self-hosted
+          {{ t('login.tagline') }}
         </p>
         <h1 class="text-4xl font-bold tracking-tight leading-[1.1] text-foreground">
-          One registry for every<br />build artifact your team ships.
+          {{ t('login.heroTitleLine1') }}<br />{{ t('login.heroTitleLine2') }}
         </h1>
         <p class="mt-4 text-sm text-muted leading-relaxed max-w-sm">
-          Host, version, and distribute Docker images, npm packages, Maven
-          artifacts, Python wheels, Helm charts, and more — all from a single,
-          self-hosted registry your team already trusts.
+          {{ t('login.heroBody') }}
         </p>
         <div class="mt-6 flex flex-wrap gap-1.5">
-          <FormatBadge format="docker" />
-          <FormatBadge format="npm" />
-          <FormatBadge format="maven" />
-          <FormatBadge format="pypi" />
-          <FormatBadge format="helm" />
-          <FormatBadge format="cargo" />
-          <FormatBadge format="rpm" />
-          <FormatBadge format="deb" />
-          <FormatBadge format="nuget" />
-          <FormatBadge format="gomod" />
-          <FormatBadge format="rubygems" />
-          <FormatBadge format="raw" />
+          <FormatBadge v-for="fmt in ALL_FORMATS" :key="fmt" :format="fmt" />
         </div>
       </div>
 
       <!-- Bottom — footer -->
-      <div class="relative flex items-center justify-between text-[11px] text-muted font-mono">
-        <span>© 2026 OpenArtifact · MIT</span>
-        <span class="flex items-center gap-1.5">
-          <span class="w-1.5 h-1.5 rounded-full bg-success"></span>
-          All systems operational
-        </span>
+      <div class="relative text-[11px] text-muted font-mono">
+        <span>© {{ new Date().getFullYear() }} OpenArtifact · {{ t('login.license') }}</span>
       </div>
     </div>
 
@@ -104,8 +87,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Page heading -->
         <div class="mb-7">
-          <h2 class="text-2xl font-bold tracking-tight text-foreground">Sign in</h2>
-          <p class="mt-1 text-sm text-muted">Welcome back. Sign in to manage your repositories.</p>
+          <h2 class="text-2xl font-bold tracking-tight text-foreground">{{ t('login.heading') }}</h2>
+          <p class="mt-1 text-sm text-muted">{{ t('login.subheading') }}</p>
         </div>
 
         <!-- Login form -->
@@ -132,7 +115,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <label for="password" class="block text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">
                 {{ t('auth.password') }}
               </label>
-              <a href="#" class="text-[11px] text-primary hover:underline">Forgot?</a>
             </div>
             <div class="relative mt-1.5">
               <input
@@ -146,7 +128,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <button
                 type="button"
                 class="absolute right-2 top-1/2 -translate-y-1/2 p-1 rounded text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                :aria-label="showPassword ? 'Hide password' : 'Show password'"
+                :aria-label="showPassword ? t('login.hidePassword') : t('login.showPassword')"
                 @click="showPassword = !showPassword"
               >
                 <EyeSlashIcon v-if="showPassword" class="w-4 h-4" />
@@ -154,16 +136,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </button>
             </div>
           </div>
-
-          <!-- Remember checkbox -->
-          <label class="flex items-center gap-2 text-sm text-foreground/80 select-none cursor-pointer">
-            <input
-              v-model="rememberDevice"
-              type="checkbox"
-              class="rounded accent-[rgb(var(--color-primary))]"
-            />
-            Remember this device for 30 days
-          </label>
 
           <!-- Error message -->
           <div
@@ -183,7 +155,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           >
             <template v-if="loading">
               <span class="w-3.5 h-3.5 rounded-full border-2 border-primary-contrast/40 border-t-primary-contrast animate-spin"></span>
-              Signing in…
+              {{ t('login.signingIn') }}
             </template>
             <template v-else>
               {{ t('auth.signIn') }}
@@ -197,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <!-- Divider -->
           <div class="my-5 flex items-center gap-3">
             <span class="flex-1 h-px bg-border"></span>
-            <span class="text-[10px] uppercase tracking-[0.16em] font-mono text-muted">or continue with</span>
+            <span class="text-[10px] uppercase tracking-[0.16em] font-mono text-muted">{{ t('login.orContinueWith') }}</span>
             <span class="flex-1 h-px bg-border"></span>
           </div>
 
@@ -228,19 +200,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 {{ provider.display_name.charAt(0).toUpperCase() }}
               </span>
-              <span class="font-medium text-foreground">Continue with {{ provider.display_name }}</span>
+              <span class="font-medium text-foreground">{{ t('login.continueWith').replace('{name}', provider.display_name) }}</span>
               <span class="ml-auto text-[10px] font-mono text-muted">{{ provider.kind.toUpperCase() }}</span>
             </a>
           </div>
         </template>
 
-        <!-- Footer note -->
-        <p class="mt-7 text-center text-[11px] text-muted">
-          By signing in you agree to your organization's
-          <a href="#" class="underline underline-offset-2 hover:text-foreground transition-colors">
-            acceptable use policy
-          </a>.
-        </p>
 
       </div>
     </div>
@@ -263,16 +228,18 @@ import { useSessionStore } from '../stores/session'
 import FormatBadge from '../components/FormatBadge.vue'
 import { t } from '../i18n/en'
 import { ssoBrandIcon } from '../lib/brandIcons'
+import { ALL_FORMATS } from '../lib/formats'
+import { useAppVersion } from '../composables/useAppVersion'
 
 const router = useRouter()
 const route = useRoute()
 const session = useSessionStore()
+const version = useAppVersion()
 
 const form = ref({ username: '', password: '' })
 const loading = ref(false)
 const errorMsg = ref('')
 const showPassword = ref(false)
-const rememberDevice = ref(false)
 const ssoProviders = ref<SSOProvider[]>([])
 
 // Map well-known provider slugs/names to brand colours; fall back to primary
@@ -299,7 +266,11 @@ function providerColor(slug: string): string {
 }
 
 onMounted(async () => {
-  ssoProviders.value = await listSSOProviders()
+  try {
+    ssoProviders.value = await listSSOProviders()
+  } catch {
+    errorMsg.value = t('login.ssoLoadFailed')
+  }
 })
 
 async function handleSubmit(): Promise<void> {

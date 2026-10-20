@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 {{ sboms.length === 0 ? 'No SBOMs available' : t('graph.selectSbom') }}
               </option>
               <option v-for="sbom in sboms" :key="sbom.id" :value="sbom.id">
-                {{ sbom.name }} · {{ sbom.format }}
+                {{ sbomLabel(sbom) }}
               </option>
             </select>
             <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
@@ -285,6 +285,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { request } from '../api/client'
+import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 import {
   ChevronLeftIcon,
@@ -298,9 +299,10 @@ import {
 
 interface SbomItem {
   id: string
-  name: string
   format: string
-  created_at: string
+  spec_version?: string
+  component_count?: number
+  created_at?: string
 }
 
 interface SbomPackage {
@@ -310,9 +312,38 @@ interface SbomPackage {
   dependencies?: Array<{ name: string; version: string }>
 }
 
-interface SbomDetail {
-  id: string
-  packages: SbomPackage[]
+// Subset of a CycloneDX JSON document, as streamed by the /download route.
+interface CycloneDxDocument {
+  components?: Array<{ 'bom-ref'?: string; name: string; version?: string }>
+  dependencies?: Array<{ ref: string; dependsOn?: string[] }>
+  vulnerabilities?: Array<{ affects?: Array<{ ref: string }> }>
+}
+
+function packagesFromCycloneDx(doc: CycloneDxDocument): SbomPackage[] {
+  const components = doc.components ?? []
+  const byRef = new Map<string, { name: string; version: string }>()
+  for (const c of components) {
+    if (c['bom-ref']) byRef.set(c['bom-ref'], { name: c.name, version: c.version ?? '' })
+  }
+  const deps = new Map<string, string[]>()
+  for (const d of doc.dependencies ?? []) deps.set(d.ref, d.dependsOn ?? [])
+  const vulnerable = new Set<string>()
+  for (const v of doc.vulnerabilities ?? []) {
+    for (const a of v.affects ?? []) vulnerable.add(a.ref)
+  }
+  return components.map((c) => ({
+    name: c.name,
+    version: c.version ?? '',
+    vulnerable: c['bom-ref'] ? vulnerable.has(c['bom-ref']) : false,
+    dependencies: (c['bom-ref'] ? (deps.get(c['bom-ref']) ?? []) : [])
+      .map((ref) => byRef.get(ref))
+      .filter((x): x is { name: string; version: string } => x !== undefined),
+  }))
+}
+
+function sbomLabel(sbom: SbomItem): string {
+  const when = sbom.created_at ? new Date(sbom.created_at).toLocaleDateString() : sbom.id.slice(0, 8)
+  return `${sbom.format}${sbom.spec_version ? ' ' + sbom.spec_version : ''} · ${when}`
 }
 
 interface GraphNode {
@@ -343,6 +374,7 @@ const SVG_H = 540
 const route = useRoute()
 const router = useRouter()
 const repoName = computed(() => route.params.name as string)
+const toasts = useToastStore()
 
 // ─── Theme helpers ─────────────────────────────────────────────────────────────
 
@@ -367,6 +399,8 @@ const showVulnerableOnly = ref(false)
 const selectedNodeId = ref<string | null>(null)
 
 const svgEl = ref<SVGSVGElement | null>(null)
+const loadError = ref('')
+let detailGeneration = 0
 
 // ─── Derived Graph Data ─────────────────────────────────────────────────────────
 
@@ -465,13 +499,16 @@ function nodeColor(node: GraphNode): string {
 
 async function loadSboms(): Promise<void> {
   loadingSboms.value = true
+  loadError.value = ''
   try {
-    const res = await request<{ items: SbomItem[] }>(
-      `/api/v1/repositories/${repoName.value}/sbom`,
+    const res = await request<{ reports?: SbomItem[] }>(
+      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/sbom`,
     )
-    sboms.value = res?.items ?? []
-  } catch {
+    sboms.value = res?.reports ?? []
+  } catch (err) {
     sboms.value = []
+    loadError.value = err instanceof Error ? err.message : 'Failed to load SBOMs'
+    toasts.error(loadError.value)
   } finally {
     loadingSboms.value = false
   }
@@ -481,15 +518,21 @@ async function loadSbomDetail(id: string): Promise<void> {
   loadingGraph.value = true
   allPackages.value = []
   selectedNodeId.value = null
+  loadError.value = ''
+  const generation = ++detailGeneration
   try {
-    const res = await request<SbomDetail>(
-      `/api/v1/repositories/${repoName.value}/sbom/${id}`,
+    const doc = await request<CycloneDxDocument>(
+      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/sbom/${encodeURIComponent(id)}/download`,
     )
-    allPackages.value = res?.packages ?? []
-  } catch {
+    if (generation !== detailGeneration) return
+    allPackages.value = packagesFromCycloneDx(doc ?? {})
+  } catch (err) {
+    if (generation !== detailGeneration) return
     allPackages.value = []
+    loadError.value = err instanceof Error ? err.message : 'Failed to load SBOM'
+    toasts.error(loadError.value)
   } finally {
-    loadingGraph.value = false
+    if (generation === detailGeneration) loadingGraph.value = false
   }
 }
 
@@ -529,4 +572,11 @@ watch(showVulnerableOnly, () => {
 // ─── Lifecycle ─────────────────────────────────────────────────────────────────
 
 onMounted(loadSboms)
+
+watch(repoName, () => {
+  selectedSbomId.value = ''
+  allPackages.value = []
+  selectedNodeId.value = null
+  void loadSboms()
+})
 </script>

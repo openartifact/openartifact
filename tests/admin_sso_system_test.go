@@ -224,7 +224,7 @@ func TestSSO_Create(t *testing.T) {
 	router, principal := setupSSORouter(t, db)
 
 	oidcCfg := map[string]string{
-		"issuer":        "https://example.com",
+		"issuer":        "https://203.0.113.10",
 		"client_id":     "test-client",
 		"client_secret": "test-secret",
 	}
@@ -477,20 +477,15 @@ func TestSystemInfo_Get(t *testing.T) {
 		t.Errorf("expected version=v1.0.0, got %v", resp["version"])
 	}
 
-	if resp["commit"] != "abc1234" {
-		t.Errorf("expected commit=abc1234, got %v", resp["commit"])
-	}
-
-	if resp["build_time"] != "2026-01-01T00:00:00Z" {
-		t.Errorf("expected build_time=2026-01-01T00:00:00Z, got %v", resp["build_time"])
-	}
-
-	// Verify all required fields are present
-	requiredFields := []string{"version", "commit", "build_time", "go_version", "os", "arch"}
-	for _, field := range requiredFields {
-		if _, ok := resp[field]; !ok {
-			t.Errorf("missing required field: %s", field)
+	// The public endpoint is trimmed: version and status only.
+	for _, field := range []string{"commit", "build_time", "go_version", "os", "arch"} {
+		if _, ok := resp[field]; ok {
+			t.Errorf("public endpoint must not expose %s", field)
 		}
+	}
+
+	if resp["status"] == "" {
+		t.Errorf("missing status")
 	}
 }
 

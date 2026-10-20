@@ -125,19 +125,7 @@
           "version": {
             "type": "string"
           },
-          "commit": {
-            "type": "string"
-          },
-          "build_time": {
-            "type": "string"
-          },
-          "go_version": {
-            "type": "string"
-          },
-          "os": {
-            "type": "string"
-          },
-          "arch": {
+          "status": {
             "type": "string"
           }
         }
@@ -369,9 +357,6 @@
           "enabled": {
             "type": "boolean"
           },
-          "keep_last_n_versions": {
-            "type": "integer"
-          },
           "keep_since_days": {
             "type": "integer"
           },
@@ -391,6 +376,23 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "keep_last_n": {
+            "type": "integer",
+            "minimum": 1,
+            "nullable": true
+          },
+          "last_run_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "last_run_deleted": {
+            "type": "integer",
+            "nullable": true
+          },
+          "last_run_error": {
+            "type": "string"
           }
         }
       },
@@ -412,17 +414,16 @@
             "type": "string",
             "format": "uri"
           },
-          "secret": {
-            "type": "string"
-          },
           "events": {
             "type": "array",
             "items": {
               "type": "string",
               "enum": [
-                "push",
-                "delete",
-                "cleanup"
+                "artifact.uploaded",
+                "artifact.deleted",
+                "artifact.downloaded",
+                "repository.created",
+                "repository.deleted"
               ]
             }
           },
@@ -430,9 +431,6 @@
             "type": "string"
           },
           "ssl_verify": {
-            "type": "boolean"
-          },
-          "active": {
             "type": "boolean"
           },
           "max_retries": {
@@ -448,6 +446,13 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "has_secret": {
+            "type": "boolean",
+            "description": "Secret is write-only and never returned"
           }
         }
       },
@@ -1015,7 +1020,7 @@
     "/api/v1/system/info": {
       "get": {
         "summary": "System information",
-        "description": "Returns system information including version and build details",
+        "description": "Returns the public version and health status. Detailed build and runtime information is available to administrators at /api/v1/admin/system/info",
         "tags": [
           "System"
         ],
@@ -1026,7 +1031,15 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/SystemInfo"
+                  "type": "object",
+                  "properties": {
+                    "version": {
+                      "type": "string"
+                    },
+                    "status": {
+                      "type": "string"
+                    }
+                  }
                 }
               }
             }
@@ -1508,145 +1521,6 @@
         }
       }
     },
-    "/api/v1/repositories/{name}": {
-      "get": {
-        "summary": "Get repository",
-        "description": "Get details of a specific repository",
-        "tags": [
-          "Repositories"
-        ],
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "200": {
-            "description": "Repository details",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Repository"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Repository not found"
-          }
-        }
-      },
-      "patch": {
-        "summary": "Update repository",
-        "description": "Update repository configuration (admin only)",
-        "tags": [
-          "Repositories"
-        ],
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "requestBody": {
-          "required": true,
-          "content": {
-            "application/json": {
-              "schema": {
-                "type": "object",
-                "properties": {
-                  "description": {
-                    "type": "string"
-                  },
-                  "public": {
-                    "type": "boolean"
-                  },
-                  "upstream_url": {
-                    "type": "string"
-                  },
-                  "upstream_username": {
-                    "type": "string"
-                  },
-                  "upstream_password": {
-                    "type": "string"
-                  },
-                  "cache_ttl_seconds": {
-                    "type": "integer"
-                  },
-                  "negative_cache_ttl_seconds": {
-                    "type": "integer"
-                  },
-                  "blocked": {
-                    "type": "boolean"
-                  },
-                  "member_repos": {
-                    "type": "array",
-                    "items": {
-                      "type": "string"
-                    }
-                  }
-                }
-              }
-            }
-          }
-        },
-        "responses": {
-          "200": {
-            "description": "Repository updated",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/Repository"
-                }
-              }
-            }
-          },
-          "404": {
-            "description": "Repository not found"
-          },
-          "403": {
-            "description": "Admin access required"
-          }
-        }
-      },
-      "delete": {
-        "summary": "Delete repository",
-        "description": "Delete a repository (admin only)",
-        "tags": [
-          "Repositories"
-        ],
-        "parameters": [
-          {
-            "name": "name",
-            "in": "path",
-            "required": true,
-            "schema": {
-              "type": "string"
-            }
-          }
-        ],
-        "responses": {
-          "204": {
-            "description": "Repository deleted"
-          },
-          "404": {
-            "description": "Repository not found"
-          },
-          "403": {
-            "description": "Admin access required"
-          }
-        }
-      }
-    },
     "/api/v1/repositories/{name}/packages": {
       "get": {
         "summary": "List packages in repository",
@@ -1874,13 +1748,7 @@
                   "enabled": {
                     "type": "boolean"
                   },
-                  "keep_last_n_versions": {
-                    "type": "integer"
-                  },
                   "keep_since_days": {
-                    "type": "integer"
-                  },
-                  "keep_downloaded_since_days": {
                     "type": "integer"
                   },
                   "name_pattern": {
@@ -1888,6 +1756,10 @@
                   },
                   "schedule_cron": {
                     "type": "string"
+                  },
+                  "keep_last_n": {
+                    "type": "integer",
+                    "minimum": 1
                   }
                 },
                 "required": [
@@ -1992,9 +1864,11 @@
                     "items": {
                       "type": "string",
                       "enum": [
-                        "push",
-                        "delete",
-                        "cleanup"
+                        "artifact.uploaded",
+                        "artifact.deleted",
+                        "artifact.downloaded",
+                        "repository.created",
+                        "repository.deleted"
                       ]
                     }
                   },
@@ -2009,6 +1883,9 @@
                   },
                   "timeout_seconds": {
                     "type": "integer"
+                  },
+                  "enabled": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -3299,9 +3176,11 @@
                     "items": {
                       "type": "string",
                       "enum": [
-                        "push",
-                        "delete",
-                        "cleanup"
+                        "artifact.uploaded",
+                        "artifact.deleted",
+                        "artifact.downloaded",
+                        "repository.created",
+                        "repository.deleted"
                       ]
                     }
                   },
@@ -3311,14 +3190,14 @@
                   "ssl_verify": {
                     "type": "boolean"
                   },
-                  "active": {
-                    "type": "boolean"
-                  },
                   "max_retries": {
                     "type": "integer"
                   },
                   "timeout_seconds": {
                     "type": "integer"
+                  },
+                  "enabled": {
+                    "type": "boolean"
                   }
                 },
                 "required": [
@@ -3415,7 +3294,14 @@
                   "events": {
                     "type": "array",
                     "items": {
-                      "type": "string"
+                      "type": "string",
+                      "enum": [
+                        "artifact.uploaded",
+                        "artifact.deleted",
+                        "artifact.downloaded",
+                        "repository.created",
+                        "repository.deleted"
+                      ]
                     }
                   },
                   "content_type": {
@@ -3424,14 +3310,14 @@
                   "ssl_verify": {
                     "type": "boolean"
                   },
-                  "active": {
-                    "type": "boolean"
-                  },
                   "max_retries": {
                     "type": "integer"
                   },
                   "timeout_seconds": {
                     "type": "integer"
+                  },
+                  "enabled": {
+                    "type": "boolean"
                   }
                 }
               }
@@ -6078,6 +5964,1632 @@
         "responses": {
           "200": {
             "description": "Swagger UI HTML"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/system/info": {
+      "get": {
+        "summary": "Detailed system information",
+        "description": "Administrator-only runtime and build details",
+        "tags": [
+          "System"
+        ],
+        "responses": {
+          "200": {
+            "description": "System information",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SystemInfo"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Administrator access required"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/packages/{id}/download": {
+      "get": {
+        "summary": "Download a package",
+        "description": "Streams the package blob as an attachment",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package file",
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Package not found in this repository"
+          },
+          "501": {
+            "description": "No blob store configured"
+          }
+        }
+      }
+    },
+    "/api/v1/repository/{name}": {
+      "get": {
+        "summary": "Get repository",
+        "description": "Get details of a specific repository",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Repository details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update repository",
+        "description": "Update repository configuration (admin only)",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "public": {
+                    "type": "boolean"
+                  },
+                  "upstream_url": {
+                    "type": "string"
+                  },
+                  "upstream_username": {
+                    "type": "string"
+                  },
+                  "upstream_password": {
+                    "type": "string"
+                  },
+                  "cache_ttl_seconds": {
+                    "type": "integer"
+                  },
+                  "negative_cache_ttl_seconds": {
+                    "type": "integer"
+                  },
+                  "blocked": {
+                    "type": "boolean"
+                  },
+                  "member_repos": {
+                    "type": "array",
+                    "items": {
+                      "type": "string"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repository updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Repository"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete repository",
+        "description": "Delete a repository (admin only)",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Repository deleted"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines": {
+      "get": {
+        "summary": "List pipelines",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create pipeline",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "stages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/pipelines/{name}": {
+      "get": {
+        "summary": "Get pipeline",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "patch": {
+        "summary": "Update pipeline",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "description": {
+                    "type": "string"
+                  },
+                  "stages": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete pipeline",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles": {
+      "get": {
+        "summary": "List bundles",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Create bundle",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "version": {
+                    "type": "string"
+                  },
+                  "description": {
+                    "type": "string"
+                  },
+                  "pipeline_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}": {
+      "get": {
+        "summary": "Get bundle",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete bundle",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/items": {
+      "get": {
+        "summary": "List bundle items",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "post": {
+        "summary": "Add bundle items (draft bundles only, atomic)",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "items": {
+                      "type": "object"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/items/{sha256}": {
+      "delete": {
+        "summary": "Remove bundle item",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "sha256",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/seal": {
+      "post": {
+        "summary": "Seal bundle",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "gpg_key_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/promote": {
+      "post": {
+        "summary": "Promote bundle (not implemented, returns 501)",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "to_stage": {
+                    "type": "string"
+                  },
+                  "target_repo": {
+                    "type": "string"
+                  },
+                  "notes": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "501": {
+            "description": "501"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/archive": {
+      "post": {
+        "summary": "Archive bundle",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/promotions": {
+      "get": {
+        "summary": "List promotions",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/cleanup-policies/{id}": {
+      "get": {
+        "summary": "Get cleanup policy",
+        "tags": [
+          "Cleanup"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update cleanup policy",
+        "tags": [
+          "Cleanup"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "keep_last_n": {
+                    "type": "integer"
+                  },
+                  "keep_since_days": {
+                    "type": "integer"
+                  },
+                  "name_pattern": {
+                    "type": "string"
+                  },
+                  "schedule_cron": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete cleanup policy",
+        "tags": [
+          "Cleanup"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "No content"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/cleanup-policies/{id}/run": {
+      "post": {
+        "summary": "Run cleanup policy now (501 if no runner, 409 if already running)",
+        "tags": [
+          "Cleanup"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/ai-analysis": {
+      "get": {
+        "summary": "List AI analyses",
+        "tags": [
+          "AI"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "offset",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/ai-analysis/{artifactID}": {
+      "get": {
+        "summary": "Get AI analysis",
+        "tags": [
+          "AI"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/ai-analysis/{artifactID}/trigger": {
+      "post": {
+        "summary": "Trigger AI analysis",
+        "tags": [
+          "AI"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifactID",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "manifest_text": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Accepted"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai/config": {
+      "get": {
+        "summary": "Get AI config (api key masked)",
+        "tags": [
+          "AI"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Update AI config (partial)",
+        "tags": [
+          "AI"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "provider": {
+                    "type": "string"
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "api_key": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  },
+                  "max_tokens": {
+                    "type": "integer"
+                  },
+                  "timeout_secs": {
+                    "type": "integer"
+                  },
+                  "system_prompt": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai/models": {
+      "get": {
+        "summary": "List provider models",
+        "tags": [
+          "AI"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/ai/test": {
+      "post": {
+        "summary": "Test AI provider connection",
+        "tags": [
+          "AI"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "api_key": {
+                    "type": "string"
+                  },
+                  "model": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sso/oidc/{slug}/login": {
+      "get": {
+        "summary": "Begin OIDC login",
+        "tags": [
+          "SSO"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "302"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sso/oidc/{slug}/callback": {
+      "get": {
+        "summary": "OIDC callback",
+        "tags": [
+          "SSO"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "code",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "state",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "302"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sso/oidc/{slug}/logout": {
+      "post": {
+        "summary": "OIDC logout",
+        "tags": [
+          "SSO"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sso/saml/{slug}/login": {
+      "get": {
+        "summary": "Begin SAML login",
+        "tags": [
+          "SSO"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "302"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sso/saml/{slug}/metadata": {
+      "get": {
+        "summary": "SAML SP metadata",
+        "tags": [
+          "SSO"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/auth/sso/saml/{slug}/acs": {
+      "post": {
+        "summary": "SAML assertion consumer service",
+        "tags": [
+          "SSO"
+        ],
+        "parameters": [
+          {
+            "name": "slug",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "302": {
+            "description": "302"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

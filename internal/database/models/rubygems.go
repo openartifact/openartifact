@@ -23,6 +23,7 @@ type RubyGem struct {
 	ChecksumSHA256 string
 	Yanked         bool
 	DownloadCount  int
+	Size           int64 // gem file size in bytes
 	CreatedAt      time.Time
 	UpdatedAt      time.Time
 }

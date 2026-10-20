@@ -27,10 +27,31 @@ type OIDCHandler struct {
 	evaluator *auth.Evaluator
 	hmacKey   []byte
 	baseURL   string
+
+	trustedProxies *middleware.TrustedProxies
 }
 
 func NewOIDCHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, hmacKey []byte, baseURL string) *OIDCHandler {
 	return &OIDCHandler{db: db, log: log, evaluator: evaluator, hmacKey: hmacKey, baseURL: baseURL}
+}
+
+// WithTrustedProxies sets the reverse-proxy allowlist used to resolve the
+// client IP recorded on new sessions. Without it the TCP peer address is used.
+func (h *OIDCHandler) WithTrustedProxies(tp *middleware.TrustedProxies) *OIDCHandler {
+	h.trustedProxies = tp
+	return h
+}
+
+// ssoProviderUnavailable writes the 404 shared by the OIDC and SAML handlers
+// for an unknown or disabled provider (indistinguishable to the caller) and
+// reports whether it handled err.
+func ssoProviderUnavailable(w http.ResponseWriter, err error) bool {
+	if errors.Is(err, auth.ErrSSOProviderNotFound) || errors.Is(err, auth.ErrSSOProviderDisabled) {
+		writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		return true
+	}
+
+	return false
 }
 
 func (h *OIDCHandler) RegisterPublic(public chi.Router) {
@@ -45,8 +66,7 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		if errors.Is(err, auth.ErrSSOProviderNotFound) {
-			writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		if ssoProviderUnavailable(w, err) {
 			return
 		}
 
@@ -146,15 +166,14 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if !constTimeEqual(q.Get("state"), stateCookie.Value) {
+	if stateCookie.Value == "" || !constTimeEqual(q.Get("state"), stateCookie.Value) {
 		writeError(w, http.StatusBadRequest, "state_mismatch", "state parameter does not match")
 		return
 	}
 
 	idToken, claimsMap, provider, err := auth.ExchangeWithRetry(ctx, h.db, slug, h.baseURL, q.Get("code"), pkceCookie.Value)
 	if err != nil {
-		if errors.Is(err, auth.ErrSSOProviderNotFound) {
-			writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
+		if ssoProviderUnavailable(w, err) {
 			return
 		}
 
@@ -195,10 +214,14 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Email:        stringFromClaims(claimsMap, firstNonEmpty(cfg.EmailClaim, "email")),
 		FullName:     stringFromClaims(claimsMap, firstNonEmpty(cfg.NameClaim, "name")),
 		Groups:       groupsFromClaims(claimsMap, firstNonEmpty(cfg.GroupsClaim, "groups")),
+		// email_verified is only meaningful for the standard "email" claim; a
+		// custom email claim has no verification assertion.
+		EmailVerified: cfg.EmailClaim == "" || cfg.EmailClaim == "email",
 	}
+	ssoClaims.EmailVerified = ssoClaims.EmailVerified && boolClaimTrue(claimsMap, "email_verified")
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
-	if err != nil || providerRow == nil {
+	if err != nil || providerRow == nil || !providerRow.Enabled {
 		writeError(w, http.StatusNotFound, "provider_not_found", "SSO provider not found")
 		return
 	}
@@ -225,6 +248,11 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if errors.Is(err, auth.ErrIdentityConflict) {
+			writeError(w, http.StatusConflict, "identity_conflict", "account is already linked to a different identity")
+			return
+		}
+
 		h.log.Errorw("oidc callback: provision", "slug", slug, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "user provisioning failed")
 
@@ -238,7 +266,7 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, r.RemoteAddr, r.UserAgent())
+	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, middleware.ClientIP(r, h.trustedProxies), r.UserAgent())
 	if err != nil {
 		h.log.Errorw("oidc callback: create session", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
@@ -347,6 +375,19 @@ func stringFromClaims(claims map[string]any, key string) string {
 	}
 
 	return ""
+}
+
+// boolClaimTrue reports whether claims[key] is boolean true. Some IdPs
+// (e.g. Cognito) encode it as the string "true"; that is accepted too.
+func boolClaimTrue(claims map[string]any, key string) bool {
+	switch v := claims[key].(type) {
+	case bool:
+		return v
+	case string:
+		return strings.EqualFold(v, "true")
+	}
+
+	return false
 }
 
 func groupsFromClaims(claims map[string]any, key string) []string {

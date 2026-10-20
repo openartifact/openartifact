@@ -27,6 +27,19 @@ type tarballMockDB struct {
 	repo     *models.Repository
 	pkg      *models.NPMPackage
 	versions []*models.NPMVersion
+
+	// quarantined lists the artifact keys IsArtifactQuarantined reports as quarantined.
+	quarantined map[string]bool
+}
+
+func (m *tarballMockDB) IsArtifactQuarantined(_ context.Context, _ string, keys []string) (bool, error) {
+	for _, k := range keys {
+		if m.quarantined[k] {
+			return true, nil
+		}
+	}
+
+	return false, nil
 }
 
 func (m *tarballMockDB) GetRepositoryByName(_ context.Context, _ string) (*models.Repository, error) {
@@ -109,7 +122,7 @@ func TestHandleTarball_ContentLengthMatchesBody(t *testing.T) {
 		repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
 		pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "lodash"},
 		versions: []*models.NPMVersion{
-			{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobID: "sha-abc", TarballFilename: "lodash-1.0.0.tgz"},
+			{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobID: "uuid-1", BlobSHA256: "sha-abc", TarballFilename: "lodash-1.0.0.tgz"},
 		},
 	}
 
@@ -143,5 +156,58 @@ func TestHandleTarball_ContentLengthMatchesBody(t *testing.T) {
 
 	if !bytes.Equal(w.Body.Bytes(), payload) {
 		t.Error("body content does not match stored blob")
+	}
+}
+
+// TestHandleTarball_Quarantine verifies a quarantined tarball is refused with
+// 403 under every identifier it is known by, while others stay downloadable.
+func TestHandleTarball_Quarantine(t *testing.T) {
+	cases := []struct {
+		name string
+		key  string
+		path string
+		want int
+	}{
+		{"by name@version", "lodash@1.0.0", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
+		{"by package path", "lodash/-/lodash-1.0.0.tgz", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
+		{"by filename", "lodash-1.0.0.tgz", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
+		{"by request path", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusForbidden},
+		{"other version quarantined", "lodash@2.0.0", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusOK},
+		{"nothing quarantined", "", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusOK},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bs := &tarballMockBlobStore{blobs: map[string][]byte{"sha-abc": []byte("payload")}}
+			db := &tarballMockDB{
+				repo: &models.Repository{ID: "repo-1", Name: "myrepo"},
+				pkg:  &models.NPMPackage{ID: "pkg-1", FullName: "lodash"},
+				versions: []*models.NPMVersion{
+					{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobSHA256: "sha-abc", TarballFilename: "lodash-1.0.0.tgz"},
+				},
+				quarantined: map[string]bool{tc.key: tc.key != ""},
+			}
+
+			log, err := logger.New("info", "json", "stdout")
+			if err != nil {
+				t.Fatalf("logger.New: %v", err)
+			}
+
+			h := NewHTTPHandler(log, db, bs, "http://localhost:8080")
+			router := chi.NewRouter()
+			router.Route("/repos/{name}", func(r chi.Router) { h.RegisterRepoRoutes(r) })
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, tc.path, nil)
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, tc.want, w.Body.String())
+			}
+
+			if tc.want == http.StatusForbidden && w.Body.Len() > 0 && bytes.Contains(w.Body.Bytes(), []byte("payload")) {
+				t.Error("quarantined response leaked artifact bytes")
+			}
+		})
 	}
 }

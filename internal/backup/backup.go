@@ -8,6 +8,8 @@ import (
 	"archive/tar"
 	"compress/gzip"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -15,6 +17,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -36,11 +39,79 @@ const bulkListLimit = 100000
 // support offset pagination — export loops until the store is exhausted.
 const blobPageSize = 1000
 
+// maxManifestSize bounds the manifest entry read into memory from an
+// untrusted archive.
+const maxManifestSize = 16 << 20
+
+// maxTableSize bounds a single JSON table entry decoded from an archive.
+const maxTableSize = 2 << 30
+
+// ErrRestoreIncomplete is returned when a restore finished but some records
+// or blobs could not be restored.
+var ErrRestoreIncomplete = errors.New("restore completed with failures")
+
+// ErrInvalidBlobEntry reports a malformed or untrusted blob entry in an archive.
+var ErrInvalidBlobEntry = errors.New("invalid blob entry")
+
+// restoreWarn logs a restore problem and records it for the final result.
+func (e *Engine) restoreWarn(msg string, kv ...any) {
+	e.restoreFailures.Add(1)
+	e.log.Warnw(msg, kv...)
+}
+
+// redactOIDCSecret blanks client_secret inside an OIDC config JSON blob.
+func redactOIDCSecret(raw json.RawMessage) json.RawMessage {
+	if len(raw) == 0 {
+		return raw
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+
+	delete(m, "client_secret")
+
+	out, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+
+	return out
+}
+
+// redactedStorageConfig drops credential-looking keys from a storage backend
+// JSON config so backups never carry cloud secrets.
+func redactedStorageConfig(raw []byte) []byte {
+	var m map[string]any
+	if err := json.Unmarshal(raw, &m); err != nil {
+		return nil
+	}
+
+	for k := range m {
+		lk := strings.ToLower(k)
+		if strings.Contains(lk, "secret") || strings.Contains(lk, "key") || strings.Contains(lk, "password") || strings.Contains(lk, "token") {
+			delete(m, k)
+		}
+	}
+
+	out, err := json.Marshal(m)
+	if err != nil {
+		return nil
+	}
+
+	return out
+}
+
 type Engine struct {
 	db        database.Database
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	backupDir string
+
+	// restoreFailures counts records skipped or failed during the current
+	// restore so RunRestore can report partial failure instead of success.
+	restoreFailures atomic.Int64
 }
 
 func NewEngine(db database.Database, blobStore storage.BlobStore, log *logger.Logger, backupDir string) *Engine {
@@ -96,7 +167,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	// Create temp file
 	tempFile := filepath.Join(e.backupDir, fmt.Sprintf("backup_%s.tar.gz.tmp", jobID))
 
-	file, err := os.Create(tempFile)
+	file, err := os.OpenFile(tempFile, os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
 	if err != nil {
 		e.log.Errorw("failed to create backup file", "path", tempFile, "error", err)
 
@@ -323,6 +394,14 @@ func (e *Engine) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *B
 	}
 
 	pkg := e.exportPackageTables(ctx, repos)
+
+	for i, w := range pkg.webhooks {
+		if w != nil {
+			c := *w
+			c.SecretEnc = ""
+			pkg.webhooks[i] = &c
+		}
+	}
 
 	tables := []struct {
 		name  string
@@ -602,6 +681,14 @@ func writeListedTable[T any](e *Engine, tw *tar.Writer, manifest *BackupManifest
 // self-documenting edge case.
 func (e *Engine) exportGlobalTables(ctx context.Context, tw *tar.Writer, manifest *BackupManifest, users []*models.User) error {
 	sso, err := e.db.ListAllSSOProviders(ctx)
+	for i, p := range sso {
+		if p != nil {
+			c := *p
+			c.OIDCConfig = redactOIDCSecret(c.OIDCConfig)
+			sso[i] = &c
+		}
+	}
+
 	if err := writeListedTable(e, tw, manifest, "sso_providers", sso, err); err != nil {
 		return err
 	}
@@ -612,6 +699,14 @@ func (e *Engine) exportGlobalTables(ctx context.Context, tw *tar.Writer, manifes
 	}
 
 	backends, err := e.db.ListStorageBackends(ctx)
+	for i, b := range backends {
+		if b != nil {
+			c := *b
+			c.Config = redactedStorageConfig(c.Config)
+			backends[i] = &c
+		}
+	}
+
 	if err := writeListedTable(e, tw, manifest, "storage_backends", backends, err); err != nil {
 		return err
 	}
@@ -736,21 +831,19 @@ func (e *Engine) exportBlobs(ctx context.Context, tw *tar.Writer, manifest *Back
 func (e *Engine) exportOneBlob(ctx context.Context, tw *tar.Writer, blobID string) error {
 	reader, err := e.blobStore.Get(ctx, blobID)
 	if err != nil {
-		e.log.Warnw("failed to get blob", "blob_id", blobID, "error", err)
-		return nil
+		return fmt.Errorf("failed to get blob %s: %w", blobID, err)
 	}
 	defer func() { _ = reader.Close() }()
 
 	size, err := e.blobStore.GetSize(ctx, blobID)
 	if err != nil {
-		e.log.Warnw("failed to get blob size", "blob_id", blobID, "error", err)
-		return nil
+		return fmt.Errorf("failed to get size of blob %s: %w", blobID, err)
 	}
 
 	header := &tar.Header{
-		Name: filepath.Join("blobs", blobID),
+		Name: "blobs/" + blobID,
 		Size: size,
-		Mode: 0644,
+		Mode: 0o600,
 	}
 	if err := tw.WriteHeader(header); err != nil {
 		return fmt.Errorf("failed to write blob header: %w", err)
@@ -815,6 +908,7 @@ type restoreState struct {
 	bundleIDMap     map[string]string // old release_bundles id -> new
 	orgIDMap        map[string]string // old organizations id -> new
 	npmPackageIDMap map[string]string // old npm_packages id -> new
+	failures        int               // records skipped/failed outside Engine methods
 }
 
 func newRestoreState() *restoreState {
@@ -864,6 +958,10 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 		}
 
 		if header.Name == "manifest.json" {
+			if header.Size < 0 || header.Size > maxManifestSize {
+				return fmt.Errorf("manifest too large: %d bytes: %w", header.Size, ErrInvalidBlobEntry)
+			}
+
 			manifestData := make([]byte, header.Size)
 			if _, err := io.ReadFull(tarReader, manifestData); err != nil {
 				return fmt.Errorf("failed to read manifest: %w", err)
@@ -895,6 +993,7 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 	tarReader = tar.NewReader(gzipReader)
 
 	st := newRestoreState()
+	e.restoreFailures.Store(0)
 
 	// Process files. Order matters: exportMetadata always writes
 	// repositories/users/groups first, then the debian hierarchy before
@@ -914,7 +1013,7 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 
 		if strings.HasPrefix(header.Name, "blobs/") {
 			if err := e.restoreBlob(ctx, tarReader, header); err != nil {
-				e.log.Warnw("failed to restore blob", "name", header.Name, "error", err)
+				e.restoreWarn("failed to restore blob", "name", header.Name, "error", err)
 			}
 
 			continue
@@ -923,6 +1022,11 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 		if err := e.restoreEntry(ctx, tarReader, header.Name, st); err != nil {
 			return fmt.Errorf("failed to restore %s: %w", header.Name, err)
 		}
+	}
+
+	if failed := e.restoreFailures.Load() + int64(st.failures); failed > 0 {
+		e.log.Errorw("restore completed with failures", "backup_path", backupPath, "failed", failed)
+		return fmt.Errorf("%w: %d records/blobs failed or were skipped", ErrRestoreIncomplete, failed)
 	}
 
 	e.log.Infow("restore completed successfully", "backup_path", backupPath)
@@ -935,9 +1039,36 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 // that key — see exportOneBlob).
 func (e *Engine) restoreBlob(ctx context.Context, r io.Reader, header *tar.Header) error {
 	blobID := strings.TrimPrefix(header.Name, "blobs/")
+	if err := storage.ValidateBlobID(blobID); err != nil {
+		return fmt.Errorf("%w: %q: %w", ErrInvalidBlobEntry, header.Name, err)
+	}
 
-	_, err := e.blobStore.Put(ctx, r, map[string]string{"sha256": blobID})
+	// Spool to disk (never into memory) while hashing so the content can be
+	// verified against its content-addressed name before it is stored.
+	spool, err := os.CreateTemp("", "restore-blob-*.tmp")
 	if err != nil {
+		return fmt.Errorf("failed to create blob spool file: %w", err)
+	}
+
+	defer func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name())
+	}()
+
+	hasher := sha256.New()
+	if _, err := io.Copy(io.MultiWriter(spool, hasher), r); err != nil {
+		return fmt.Errorf("failed to read blob %s: %w", blobID, err)
+	}
+
+	if got := hex.EncodeToString(hasher.Sum(nil)); got != blobID {
+		return fmt.Errorf("%w: digest mismatch for %s (content hashes to %s)", ErrInvalidBlobEntry, blobID, got)
+	}
+
+	if _, err := spool.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to rewind blob spool: %w", err)
+	}
+
+	if _, err := e.blobStore.Put(ctx, spool, map[string]string{"sha256": blobID}); err != nil {
 		return fmt.Errorf("failed to store blob %s: %w", blobID, err)
 	}
 
@@ -1114,7 +1245,7 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 // decodeSlice reads a JSON array of T from r.
 func decodeSlice[T any](r io.Reader) ([]T, error) {
 	var items []T
-	if err := json.NewDecoder(r).Decode(&items); err != nil {
+	if err := json.NewDecoder(io.LimitReader(r, maxTableSize)).Decode(&items); err != nil {
 		return nil, fmt.Errorf("failed to decode: %w", err)
 	}
 
@@ -1147,6 +1278,7 @@ func restoreRepoScoped[T any](
 
 		if oldRepoID == "" && allowGlobal {
 			if err := create(ctx, item); err != nil {
+				st.failures++
 				log.Warnw("failed to restore item", "table", label, "error", err)
 			}
 
@@ -1155,6 +1287,7 @@ func restoreRepoScoped[T any](
 
 		newRepoID, ok := st.repoIDMap[oldRepoID]
 		if !ok {
+			st.failures++
 			log.Warnw("skipping item: source repository not restored", "table", label, "repo_id", oldRepoID)
 			continue
 		}
@@ -1162,6 +1295,7 @@ func restoreRepoScoped[T any](
 		setRepoID(item, newRepoID)
 
 		if err := create(ctx, item); err != nil {
+			st.failures++
 			log.Warnw("failed to restore item", "table", label, "error", err)
 		}
 	}
@@ -1181,7 +1315,7 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 	for _, repo := range repos {
 		oldID := repo.ID
 		if err := e.db.CreateRepository(ctx, repo); err != nil {
-			e.log.Warnw("failed to restore repository", "name", repo.Name, "error", err)
+			e.restoreWarn("failed to restore repository", "name", repo.Name, "error", err)
 			continue
 		}
 
@@ -1203,7 +1337,7 @@ func (e *Engine) restoreUsers(ctx context.Context, r io.Reader, st *restoreState
 	for _, user := range users {
 		oldID := user.ID
 		if _, err := e.db.CreateUser(ctx, user); err != nil {
-			e.log.Warnw("failed to restore user", "username", user.Username, "error", err)
+			e.restoreWarn("failed to restore user", "username", user.Username, "error", err)
 			continue
 		}
 
@@ -1222,7 +1356,7 @@ func (e *Engine) restoreGroups(ctx context.Context, r io.Reader) error {
 
 	for _, group := range groups {
 		if _, err := e.db.CreateGroup(ctx, group); err != nil {
-			e.log.Warnw("failed to restore group", "name", group.Name, "error", err)
+			e.restoreWarn("failed to restore group", "name", group.Name, "error", err)
 		}
 	}
 
@@ -1241,14 +1375,14 @@ func (e *Engine) restoreDebianDistributions(ctx context.Context, r io.Reader, st
 
 		newRepoID, ok := st.repoIDMap[oldRepoID]
 		if !ok {
-			e.log.Warnw("skipping debian distribution: source repository not restored", "repo_id", oldRepoID, "name", dist.Name)
+			e.restoreWarn("skipping debian distribution: source repository not restored", "repo_id", oldRepoID, "name", dist.Name)
 			continue
 		}
 
 		dist.RepositoryID = newRepoID
 
 		if err := e.db.CreateDebianDistribution(ctx, &dist); err != nil {
-			e.log.Warnw("failed to restore debian distribution", "name", dist.Name, "error", err)
+			e.restoreWarn("failed to restore debian distribution", "name", dist.Name, "error", err)
 			continue
 		}
 
@@ -1268,14 +1402,14 @@ func (e *Engine) restoreDebianComponents(ctx context.Context, r io.Reader, st *r
 	for _, comp := range comps {
 		newDistID, ok := st.distIDMap[comp.DistributionID]
 		if !ok {
-			e.log.Warnw("skipping debian component: source distribution not restored", "dist_id", comp.DistributionID, "name", comp.Name)
+			e.restoreWarn("skipping debian component: source distribution not restored", "dist_id", comp.DistributionID, "name", comp.Name)
 			continue
 		}
 
 		comp.DistributionID = newDistID
 
 		if err := e.db.CreateDebianComponent(ctx, &comp); err != nil {
-			e.log.Warnw("failed to restore debian component", "name", comp.Name, "error", err)
+			e.restoreWarn("failed to restore debian component", "name", comp.Name, "error", err)
 			continue
 		}
 
@@ -1294,14 +1428,14 @@ func (e *Engine) restoreDebianArchitectures(ctx context.Context, r io.Reader, st
 	for _, arch := range archs {
 		newDistID, ok := st.distIDMap[arch.DistributionID]
 		if !ok {
-			e.log.Warnw("skipping debian architecture: source distribution not restored", "dist_id", arch.DistributionID, "name", arch.Name)
+			e.restoreWarn("skipping debian architecture: source distribution not restored", "dist_id", arch.DistributionID, "name", arch.Name)
 			continue
 		}
 
 		arch.DistributionID = newDistID
 
 		if err := e.db.CreateDebianArchitecture(ctx, &arch); err != nil {
-			e.log.Warnw("failed to restore debian architecture", "name", arch.Name, "error", err)
+			e.restoreWarn("failed to restore debian architecture", "name", arch.Name, "error", err)
 		}
 	}
 
@@ -1322,25 +1456,25 @@ func (e *Engine) restoreDebPackages(ctx context.Context, r io.Reader, st *restor
 
 		newRepoID, ok := st.repoIDMap[comp.RepositoryID]
 		if !ok {
-			e.log.Warnw("skipping deb package: source repository not restored", "repo_id", comp.RepositoryID, "filename", comp.Filename)
+			e.restoreWarn("skipping deb package: source repository not restored", "repo_id", comp.RepositoryID, "filename", comp.Filename)
 			continue
 		}
 
 		newDistID, ok := st.distByRepoName[comp.RepositoryID+"|"+rec.Distribution]
 		if !ok {
-			e.log.Warnw("skipping deb package: source distribution not restored", "distribution", rec.Distribution, "filename", comp.Filename)
+			e.restoreWarn("skipping deb package: source distribution not restored", "distribution", rec.Distribution, "filename", comp.Filename)
 			continue
 		}
 
 		newCompID, ok := st.compByDistName[newDistID+"|"+rec.ComponentName]
 		if !ok {
-			e.log.Warnw("skipping deb package: source component not restored", "component", rec.ComponentName, "filename", comp.Filename)
+			e.restoreWarn("skipping deb package: source component not restored", "component", rec.ComponentName, "filename", comp.Filename)
 			continue
 		}
 
 		blobID, err := e.db.UpsertBlob(ctx, comp.SHA256, comp.SHA256, comp.PackageSize)
 		if err != nil {
-			e.log.Warnw("failed to upsert blob for deb package", "filename", comp.Filename, "error", err)
+			e.restoreWarn("failed to upsert blob for deb package", "filename", comp.Filename, "error", err)
 			continue
 		}
 
@@ -1348,7 +1482,7 @@ func (e *Engine) restoreDebPackages(ctx context.Context, r io.Reader, st *restor
 		comp.ArtifactID = blobID
 
 		if err := e.db.CreateDebPackage(ctx, &comp, newDistID, newCompID); err != nil {
-			e.log.Warnw("failed to restore deb package", "filename", comp.Filename, "error", err)
+			e.restoreWarn("failed to restore deb package", "filename", comp.Filename, "error", err)
 		}
 	}
 
@@ -1366,13 +1500,13 @@ func (e *Engine) restoreRpmPackages(ctx context.Context, r io.Reader, st *restor
 	for _, comp := range comps {
 		newRepoID, ok := st.repoIDMap[comp.RepositoryID]
 		if !ok {
-			e.log.Warnw("skipping rpm package: source repository not restored", "repo_id", comp.RepositoryID, "filename", comp.Filename)
+			e.restoreWarn("skipping rpm package: source repository not restored", "repo_id", comp.RepositoryID, "filename", comp.Filename)
 			continue
 		}
 
 		blobID, err := e.db.UpsertBlob(ctx, comp.SHA256, comp.SHA256, comp.PackageSize)
 		if err != nil {
-			e.log.Warnw("failed to upsert blob for rpm package", "filename", comp.Filename, "error", err)
+			e.restoreWarn("failed to upsert blob for rpm package", "filename", comp.Filename, "error", err)
 			continue
 		}
 
@@ -1380,7 +1514,7 @@ func (e *Engine) restoreRpmPackages(ctx context.Context, r io.Reader, st *restor
 		comp.ArtifactID = blobID
 
 		if err := e.db.CreateRpmPackage(ctx, &comp); err != nil {
-			e.log.Warnw("failed to restore rpm package", "filename", comp.Filename, "error", err)
+			e.restoreWarn("failed to restore rpm package", "filename", comp.Filename, "error", err)
 		}
 	}
 
@@ -1437,7 +1571,7 @@ func (e *Engine) restoreNPMPackages(ctx context.Context, r io.Reader, st *restor
 	for _, pkg := range items {
 		newRepoID, ok := st.repoIDMap[pkg.RepositoryID]
 		if !ok {
-			e.log.Warnw("skipping npm package: source repository not restored", "repo_id", pkg.RepositoryID, "name", pkg.FullName)
+			e.restoreWarn("skipping npm package: source repository not restored", "repo_id", pkg.RepositoryID, "name", pkg.FullName)
 			continue
 		}
 
@@ -1445,7 +1579,7 @@ func (e *Engine) restoreNPMPackages(ctx context.Context, r io.Reader, st *restor
 		pkg.RepositoryID = newRepoID
 
 		if _, err := e.db.CreateNPMPackage(ctx, pkg); err != nil {
-			e.log.Warnw("failed to restore npm package", "name", pkg.FullName, "error", err)
+			e.restoreWarn("failed to restore npm package", "name", pkg.FullName, "error", err)
 			continue
 		}
 
@@ -1468,18 +1602,18 @@ func (e *Engine) restoreNPMVersions(ctx context.Context, r io.Reader, st *restor
 	for _, v := range items {
 		newPackageID, ok := st.npmPackageIDMap[v.PackageID]
 		if !ok {
-			e.log.Warnw("skipping npm version: source package not restored", "package_id", v.PackageID, "version", v.Version)
+			e.restoreWarn("skipping npm version: source package not restored", "package_id", v.PackageID, "version", v.Version)
 			continue
 		}
 
 		if v.BlobSHA256 == "" {
-			e.log.Warnw("skipping npm version: missing blob sha256", "version", v.Version)
+			e.restoreWarn("skipping npm version: missing blob sha256", "version", v.Version)
 			continue
 		}
 
 		blobID, err := e.db.UpsertBlob(ctx, v.BlobSHA256, v.BlobSHA256, v.BlobSizeBytes)
 		if err != nil {
-			e.log.Warnw("failed to upsert blob for npm version", "version", v.Version, "error", err)
+			e.restoreWarn("failed to upsert blob for npm version", "version", v.Version, "error", err)
 			continue
 		}
 
@@ -1487,7 +1621,7 @@ func (e *Engine) restoreNPMVersions(ctx context.Context, r io.Reader, st *restor
 		v.BlobID = blobID
 
 		if _, err := e.db.CreateNPMVersion(ctx, v); err != nil {
-			e.log.Warnw("failed to restore npm version", "version", v.Version, "error", err)
+			e.restoreWarn("failed to restore npm version", "version", v.Version, "error", err)
 		}
 	}
 
@@ -1505,14 +1639,14 @@ func (e *Engine) restoreNPMDistTags(ctx context.Context, r io.Reader, st *restor
 	for _, t := range items {
 		newPackageID, ok := st.npmPackageIDMap[t.PackageID]
 		if !ok {
-			e.log.Warnw("skipping npm dist tag: source package not restored", "package_id", t.PackageID, "tag", t.Tag)
+			e.restoreWarn("skipping npm dist tag: source package not restored", "package_id", t.PackageID, "tag", t.Tag)
 			continue
 		}
 
 		t.PackageID = newPackageID
 
 		if _, err := e.db.UpsertNPMDistTag(ctx, t); err != nil {
-			e.log.Warnw("failed to restore npm dist tag", "tag", t.Tag, "error", err)
+			e.restoreWarn("failed to restore npm dist tag", "tag", t.Tag, "error", err)
 		}
 	}
 
@@ -1527,7 +1661,7 @@ func (e *Engine) restoreSSOProviders(ctx context.Context, r io.Reader) error {
 
 	for _, it := range items {
 		if err := e.db.CreateSSOProvider(ctx, it); err != nil {
-			e.log.Warnw("failed to restore sso provider", "slug", it.Slug, "error", err)
+			e.restoreWarn("failed to restore sso provider", "slug", it.Slug, "error", err)
 		}
 	}
 
@@ -1545,14 +1679,14 @@ func (e *Engine) restoreTokens(ctx context.Context, r io.Reader, st *restoreStat
 	for _, it := range items {
 		newUserID, ok := st.userIDMap[it.UserID]
 		if !ok {
-			e.log.Warnw("skipping token: source user not restored", "user_id", it.UserID, "name", it.Name)
+			e.restoreWarn("skipping token: source user not restored", "user_id", it.UserID, "name", it.Name)
 			continue
 		}
 
 		it.UserID = newUserID
 
 		if _, err := e.db.CreateToken(ctx, it); err != nil {
-			e.log.Warnw("failed to restore token", "name", it.Name, "error", err)
+			e.restoreWarn("failed to restore token", "name", it.Name, "error", err)
 		}
 	}
 
@@ -1567,7 +1701,7 @@ func (e *Engine) restoreStorageBackends(ctx context.Context, r io.Reader) error 
 
 	for _, it := range items {
 		if err := e.db.CreateStorageBackend(ctx, it); err != nil {
-			e.log.Warnw("failed to restore storage backend", "name", it.Name, "error", err)
+			e.restoreWarn("failed to restore storage backend", "name", it.Name, "error", err)
 		}
 	}
 
@@ -1593,7 +1727,7 @@ func (e *Engine) restorePromotionPipelines(ctx context.Context, r io.Reader, st 
 		}
 
 		if err := e.db.CreatePromotionPipeline(ctx, it); err != nil {
-			e.log.Warnw("failed to restore promotion pipeline", "name", it.Name, "error", err)
+			e.restoreWarn("failed to restore promotion pipeline", "name", it.Name, "error", err)
 			continue
 		}
 
@@ -1621,7 +1755,7 @@ func (e *Engine) restoreReleaseBundles(ctx context.Context, r io.Reader, st *res
 		}
 
 		if err := e.db.CreateReleaseBundle(ctx, it); err != nil {
-			e.log.Warnw("failed to restore release bundle", "name", it.Name, "version", it.Version, "error", err)
+			e.restoreWarn("failed to restore release bundle", "name", it.Name, "version", it.Version, "error", err)
 			continue
 		}
 
@@ -1640,13 +1774,13 @@ func (e *Engine) restoreReleaseBundleItems(ctx context.Context, r io.Reader, st 
 	for _, it := range items {
 		newBundleID, ok := st.bundleIDMap[it.BundleID]
 		if !ok {
-			e.log.Warnw("skipping release bundle item: source bundle not restored", "bundle_id", it.BundleID, "sha256", it.SHA256)
+			e.restoreWarn("skipping release bundle item: source bundle not restored", "bundle_id", it.BundleID, "sha256", it.SHA256)
 			continue
 		}
 
 		newRepoID, ok := st.repoIDMap[it.SourceRepoID]
 		if !ok {
-			e.log.Warnw("skipping release bundle item: source repository not restored", "repo_id", it.SourceRepoID, "sha256", it.SHA256)
+			e.restoreWarn("skipping release bundle item: source repository not restored", "repo_id", it.SourceRepoID, "sha256", it.SHA256)
 			continue
 		}
 
@@ -1654,7 +1788,7 @@ func (e *Engine) restoreReleaseBundleItems(ctx context.Context, r io.Reader, st 
 		it.SourceRepoID = newRepoID
 
 		if err := e.db.AddBundleItem(ctx, it); err != nil {
-			e.log.Warnw("failed to restore release bundle item", "sha256", it.SHA256, "error", err)
+			e.restoreWarn("failed to restore release bundle item", "sha256", it.SHA256, "error", err)
 		}
 	}
 
@@ -1670,13 +1804,13 @@ func (e *Engine) restoreBundlePromotions(ctx context.Context, r io.Reader, st *r
 	for _, it := range items {
 		newBundleID, ok := st.bundleIDMap[it.BundleID]
 		if !ok {
-			e.log.Warnw("skipping bundle promotion: source bundle not restored", "bundle_id", it.BundleID)
+			e.restoreWarn("skipping bundle promotion: source bundle not restored", "bundle_id", it.BundleID)
 			continue
 		}
 
 		newRepoID, ok := st.repoIDMap[it.TargetRepoID]
 		if !ok {
-			e.log.Warnw("skipping bundle promotion: target repository not restored", "repo_id", it.TargetRepoID)
+			e.restoreWarn("skipping bundle promotion: target repository not restored", "repo_id", it.TargetRepoID)
 			continue
 		}
 
@@ -1684,7 +1818,7 @@ func (e *Engine) restoreBundlePromotions(ctx context.Context, r io.Reader, st *r
 		it.TargetRepoID = newRepoID
 
 		if err := e.db.CreateBundlePromotion(ctx, it); err != nil {
-			e.log.Warnw("failed to restore bundle promotion", "error", err)
+			e.restoreWarn("failed to restore bundle promotion", "error", err)
 		}
 	}
 
@@ -1709,7 +1843,7 @@ func (e *Engine) restoreOrganizations(ctx context.Context, r io.Reader, st *rest
 		}
 
 		if err := e.db.CreateOrganization(ctx, it); err != nil {
-			e.log.Warnw("failed to restore organization", "name", it.Name, "error", err)
+			e.restoreWarn("failed to restore organization", "name", it.Name, "error", err)
 			continue
 		}
 
@@ -1728,18 +1862,18 @@ func (e *Engine) restoreOrgMembers(ctx context.Context, r io.Reader, st *restore
 	for _, it := range items {
 		newOrgID, ok := st.orgIDMap[it.OrgID]
 		if !ok {
-			e.log.Warnw("skipping org member: source organization not restored", "org_id", it.OrgID)
+			e.restoreWarn("skipping org member: source organization not restored", "org_id", it.OrgID)
 			continue
 		}
 
 		newUserID, ok := st.userIDMap[it.UserID]
 		if !ok {
-			e.log.Warnw("skipping org member: source user not restored", "user_id", it.UserID)
+			e.restoreWarn("skipping org member: source user not restored", "user_id", it.UserID)
 			continue
 		}
 
 		if err := e.db.AddOrgMember(ctx, newOrgID, newUserID, it.Role); err != nil {
-			e.log.Warnw("failed to restore org member", "org_id", newOrgID, "user_id", newUserID, "error", err)
+			e.restoreWarn("failed to restore org member", "org_id", newOrgID, "user_id", newUserID, "error", err)
 		}
 	}
 

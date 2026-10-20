@@ -10,16 +10,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- ─── Header row ──────────────────────────────────────────────────────── -->
     <div class="flex items-center justify-between gap-3">
       <div>
-        <h2 class="text-base font-semibold text-foreground">Cleanup Policies</h2>
-        <p class="text-sm text-muted mt-0.5">Automatically remove old artifacts based on retention rules.</p>
+        <h2 class="text-base font-semibold text-foreground">{{ t('cleanup.title') }}</h2>
+        <p class="text-sm text-muted mt-0.5">{{ t('cleanup.subtitle') }}</p>
       </div>
       <button
         type="button"
         class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity shrink-0"
         @click="openDrawer('create')"
       >
-        <PlusIcon class="w-4 h-4" />
-        Add policy
+        <PlusIcon class="w-4 h-4" aria-hidden="true" />
+        {{ t('cleanup.add') }}
       </button>
     </div>
 
@@ -46,15 +46,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="w-12 h-12 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
           <TrashIcon class="w-6 h-6 text-muted" />
         </div>
-        <p class="text-sm font-medium text-foreground">No cleanup policies</p>
-        <p class="text-xs text-muted mt-1 mb-4">Add a policy to automatically prune old artifact versions.</p>
+        <p class="text-sm font-medium text-foreground">{{ t('cleanup.empty') }}</p>
+        <p class="text-xs text-muted mt-1 mb-4">{{ t('cleanup.emptyHint') }}</p>
         <button
           type="button"
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
           @click="openDrawer('create')"
         >
           <PlusIcon class="w-4 h-4" />
-          Add policy
+          {{ t('cleanup.add') }}
         </button>
       </div>
 
@@ -63,22 +63,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <thead>
           <tr class="bg-surface-hover/30">
             <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
-              Name
+              {{ t('cleanup.col.name') }}
             </th>
             <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-              Type
+              {{ t('cleanup.col.type') }}
             </th>
             <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-              Rule
+              {{ t('cleanup.col.rule') }}
             </th>
             <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-              Enabled
+              {{ t('cleanup.col.enabled') }}
             </th>
             <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-              Last run
+              {{ t('cleanup.col.lastRun') }}
             </th>
             <th class="text-right text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
-              Actions
+              {{ t('cleanup.col.actions') }}
             </th>
           </tr>
         </thead>
@@ -106,12 +106,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Rule description -->
             <td class="px-3 py-3.5 text-sm text-muted">
-              <span v-if="policy.type === 'keep-last-n'">
-                Keep last <span class="font-mono font-semibold text-foreground">{{ policy.keep_count ?? '?' }}</span>
+              <span v-if="policy.keep_count != null">
+                {{ t('cleanup.keepLast') }} <span class="font-mono font-semibold text-foreground">{{ policy.keep_count }}</span>
               </span>
-              <span v-else>
-                Keep <span class="font-mono font-semibold text-foreground">{{ policy.keep_days ?? '?' }}</span> days
+              <span v-if="policy.keep_count != null && policy.keep_days != null"> · </span>
+              <span v-if="policy.keep_days != null">
+                {{ t('cleanup.keepFor') }} <span class="font-mono font-semibold text-foreground">{{ policy.keep_days }}</span> {{ t('cleanup.days') }}
               </span>
+              <span v-if="policy.keep_count == null && policy.keep_days == null">—</span>
             </td>
 
             <!-- Enabled toggle -->
@@ -120,6 +122,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 type="button"
                 role="switch"
                 :aria-checked="policy.enabled"
+                :aria-label="t('cleanup.enable')"
                 :disabled="togglingId === policy.id"
                 class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
                 :class="policy.enabled ? 'bg-primary' : 'bg-border'"
@@ -137,7 +140,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <span v-if="policy.last_run_at" class="text-sm text-muted font-mono">
                 {{ timeAgo(policy.last_run_at) }}
               </span>
-              <span v-else class="text-sm text-muted/50">Never</span>
+              <span v-else class="text-sm text-muted/50">{{ t('cleanup.never') }}</span>
             </td>
 
             <!-- Actions -->
@@ -146,7 +149,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <!-- Run now -->
                 <button
                   type="button"
-                  title="Run now"
+                  :title="t('cleanup.run')" :aria-label="t('cleanup.run')"
                   :disabled="runningId === policy.id"
                   class="p-1.5 rounded-md text-muted hover:text-success hover:bg-success/10 transition-colors disabled:opacity-40"
                   @click="runPolicy(policy)"
@@ -157,7 +160,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <!-- Edit -->
                 <button
                   type="button"
-                  title="Edit policy"
+                  :title="t('cleanup.editTitle')" :aria-label="t('cleanup.editTitle')"
                   class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
                   @click="openDrawer('edit', policy)"
                 >
@@ -166,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <!-- Delete -->
                 <button
                   type="button"
-                  title="Delete policy"
+                  :title="t('cleanup.deleteTitle')" :aria-label="t('cleanup.deleteTitle')"
                   class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
                   @click="openDeleteModal(policy)"
                 >
@@ -182,27 +185,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- ═══════════════════════════════════════════════════════════════════════
          SLIDE-RIGHT DRAWER
     ════════════════════════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <div v-if="drawerOpen" class="fixed inset-0 z-50 flex justify-end">
-        <!-- Backdrop -->
-        <div
-          class="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
-          @click="closeDrawer"
-        />
-
-        <!-- Drawer panel -->
-        <div class="relative w-full max-w-md bg-surface border-l border-border shadow-2xl flex flex-col animate-slideRight">
+    <TransitionRoot :show="drawerOpen" as="template">
+      <Dialog as="div" class="relative z-50" @close="closeDrawer">
+        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" />
+        <div class="fixed inset-0 flex justify-end">
+        <DialogPanel class="relative w-full max-w-md bg-surface border-l border-border shadow-2xl flex flex-col animate-slideRight">
           <!-- Header -->
           <div class="px-6 py-5 border-b border-border shrink-0">
             <p class="text-[10px] uppercase tracking-[0.14em] font-mono text-muted mb-0.5">
-              {{ drawerMode === 'create' ? 'New policy' : 'Edit policy' }}
+              {{ drawerMode === 'create' ? t('cleanup.newLabel') : t('cleanup.editTitle') }}
             </p>
             <div class="flex items-center justify-between gap-3">
-              <h2 class="text-lg font-bold text-foreground tracking-tight">
-                {{ drawerMode === 'create' ? 'Add Cleanup Policy' : `Edit · ${editingPolicy?.name}` }}
-              </h2>
+              <DialogTitle class="text-lg font-bold text-foreground tracking-tight">
+                {{ drawerMode === 'create' ? t('cleanup.addTitle') : `${t('cleanup.editTitle')} · ${editingPolicy?.name}` }}
+              </DialogTitle>
               <button
                 type="button"
+                :aria-label="t('common.close')"
                 class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
                 @click="closeDrawer"
               >
@@ -216,12 +215,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- Name -->
             <div>
               <label class="block text-xs font-semibold text-foreground mb-1.5">
-                Policy name <span class="text-danger ml-0.5">*</span>
+                {{ t('cleanup.name') }} <span class="text-danger ml-0.5">*</span>
               </label>
               <input
                 v-model="form.name"
                 type="text"
-                placeholder="e.g. prune-old-releases"
+                :placeholder="t('cleanup.namePlaceholder')"
                 class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
               />
             </div>
@@ -229,7 +228,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- Type selector -->
             <div>
               <label class="block text-xs font-semibold text-foreground mb-2">
-                Policy type <span class="text-danger ml-0.5">*</span>
+                {{ t('cleanup.type') }} <span class="text-danger ml-0.5">*</span>
               </label>
               <div class="grid grid-cols-2 gap-2">
                 <button
@@ -260,7 +259,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- Conditional rule input -->
             <div v-if="form.type === 'keep-last-n'">
               <label class="block text-xs font-semibold text-foreground mb-1.5">
-                Keep count <span class="text-danger ml-0.5">*</span>
+                {{ t('cleanup.keepCount') }} <span class="text-danger ml-0.5">*</span>
               </label>
               <div class="flex items-center gap-2">
                 <input
@@ -271,13 +270,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   placeholder="10"
                   class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 />
-                <span class="text-sm text-muted">versions per package</span>
+                <span class="text-sm text-muted">{{ t('cleanup.perPackage') }}</span>
               </div>
             </div>
 
             <div v-else-if="form.type === 'keep-by-age'">
               <label class="block text-xs font-semibold text-foreground mb-1.5">
-                Retention period <span class="text-danger ml-0.5">*</span>
+                {{ t('cleanup.retention') }} <span class="text-danger ml-0.5">*</span>
               </label>
               <div class="flex items-center gap-2">
                 <input
@@ -288,7 +287,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   placeholder="30"
                   class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 />
-                <span class="text-sm text-muted">days</span>
+                <span class="text-sm text-muted">{{ t('cleanup.days') }}</span>
               </div>
             </div>
 
@@ -298,6 +297,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 type="button"
                 role="switch"
                 :aria-checked="form.enabled"
+                :aria-label="t('cleanup.enable')"
                 class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 mt-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
                 :class="form.enabled ? 'bg-primary' : 'bg-border'"
                 @click="form.enabled = !form.enabled"
@@ -308,9 +308,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 />
               </button>
               <div>
-                <p class="text-xs font-semibold text-foreground">Enable policy</p>
+                <p class="text-xs font-semibold text-foreground">{{ t('cleanup.enable') }}</p>
                 <p class="text-[11px] text-muted mt-0.5 leading-relaxed">
-                  Disabled policies won't run automatically or in scheduled jobs.
+                  {{ t('cleanup.enableHint') }}
                 </p>
               </div>
             </div>
@@ -324,7 +324,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
               @click="closeDrawer"
             >
-              Cancel
+              {{ t('common.cancel') }}
             </button>
             <button
               type="button"
@@ -333,29 +333,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               @click="saveDrawer"
             >
               <ArrowPathIcon v-if="savingDrawer" class="w-4 h-4 animate-spin" />
-              {{ drawerMode === 'create' ? 'Create policy' : 'Save changes' }}
+              {{ drawerMode === 'create' ? t('cleanup.create') : t('common.save') }}
             </button>
           </div>
+        </DialogPanel>
         </div>
-      </div>
-    </Teleport>
+      </Dialog>
+    </TransitionRoot>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          DELETE CONFIRMATION MODAL
     ════════════════════════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <div
-        v-if="deleteTarget"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-      >
-        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="cancelDelete" />
-        <div class="relative bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm">
+    <TransitionRoot :show="!!deleteTarget" as="template">
+      <Dialog as="div" class="relative z-50" @close="cancelDelete">
+        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+        <div class="fixed inset-0 flex items-center justify-center p-4">
+        <DialogPanel class="relative bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm">
           <div class="px-6 pt-6 pb-4">
-            <h2 class="text-base font-bold text-foreground tracking-tight">Delete policy</h2>
+            <DialogTitle class="text-base font-bold text-foreground tracking-tight">{{ t('cleanup.deleteTitle') }}</DialogTitle>
             <p class="text-sm text-muted mt-0.5">
-              Delete
-              <span class="font-mono font-semibold text-foreground">{{ deleteTarget.name }}</span>?
-              This action cannot be undone.
+              <span class="font-mono font-semibold text-foreground">{{ deleteTarget?.name }}</span>
+              {{ t('cleanup.deleteBody') }}
             </p>
           </div>
           <div class="px-6 pb-6 flex items-center gap-2 justify-end">
@@ -364,7 +362,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
               @click="cancelDelete"
             >
-              Cancel
+              {{ t('common.cancel') }}
             </button>
             <button
               type="button"
@@ -374,18 +372,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" />
               <TrashIcon v-else class="w-4 h-4" />
-              Delete
+              {{ t('common.delete') }}
             </button>
           </div>
+        </DialogPanel>
         </div>
-      </div>
-    </Teleport>
+      </Dialog>
+    </TransitionRoot>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue'
+import { Dialog, DialogPanel, DialogTitle, TransitionRoot } from '@headlessui/vue'
 import { request } from '../api/client'
+import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import {
   PlusIcon,
@@ -417,20 +418,44 @@ interface CleanupPolicy {
   created_at: string
 }
 
+// Wire shape of the backend's CleanupPolicyResponse.
+interface ApiCleanupPolicy {
+  id: string
+  name: string
+  enabled: boolean
+  keep_last_n: number | null
+  keep_since_days: number | null
+  last_run_at: string | null
+  created_at: string
+}
+
+function fromApi(p: ApiCleanupPolicy): CleanupPolicy {
+  return {
+    id: p.id,
+    name: p.name,
+    type: p.keep_last_n != null ? 'keep-last-n' : 'keep-by-age',
+    keep_count: p.keep_last_n ?? undefined,
+    keep_days: p.keep_since_days ?? undefined,
+    enabled: p.enabled,
+    last_run_at: p.last_run_at ?? undefined,
+    created_at: p.created_at,
+  }
+}
+
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const POLICY_TYPES = [
   {
     value: 'keep-last-n',
-    label: 'Keep last N',
-    desc: 'Retain only the N most recent versions.',
+    label: t('cleanup.type.lastN'),
+    desc: t('cleanup.type.lastNDesc'),
     icon: QueueListIcon,
     color: '#6366f1',
   },
   {
     value: 'keep-by-age',
-    label: 'Keep by age',
-    desc: 'Remove versions older than N days.',
+    label: t('cleanup.type.age'),
+    desc: t('cleanup.type.ageDesc'),
     icon: CalendarIcon,
     color: '#f59e0b',
   },
@@ -483,7 +508,7 @@ const formValid = computed(() => {
 // ─── Base URL helper ───────────────────────────────────────────────────────────
 
 function baseUrl(): string {
-  return `/api/v1/repositories/${props.repoName}/cleanup-policies`
+  return `/api/v1/repositories/${encodeURIComponent(props.repoName)}/cleanup-policies`
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
@@ -503,8 +528,10 @@ function timeAgo(iso: string): string {
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const res = await request<{ items: CleanupPolicy[] }>(baseUrl())
-    items.value = res?.items ?? []
+    const res = await request<{ policies: ApiCleanupPolicy[] }>(baseUrl())
+    items.value = (res?.policies ?? []).map(fromApi)
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('cleanup.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -515,14 +542,14 @@ async function load(): Promise<void> {
 async function toggleEnabled(policy: CleanupPolicy): Promise<void> {
   togglingId.value = policy.id
   try {
-    await request(`${baseUrl()}/${policy.id}`, {
+    await request(`${baseUrl()}/${encodeURIComponent(policy.id)}`, {
       method: 'PUT',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ ...policy, enabled: !policy.enabled }),
+      body: JSON.stringify({ enabled: !policy.enabled }),
     })
     policy.enabled = !policy.enabled
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to update policy')
+    toasts.error(err instanceof Error ? err.message : t('cleanup.updateFailed'))
   } finally {
     togglingId.value = null
   }
@@ -533,11 +560,11 @@ async function toggleEnabled(policy: CleanupPolicy): Promise<void> {
 async function runPolicy(policy: CleanupPolicy): Promise<void> {
   runningId.value = policy.id
   try {
-    await request(`${baseUrl()}/${policy.id}/run`, { method: 'POST' })
-    toasts.success(`Policy "${policy.name}" ran successfully`)
+    await request(`${baseUrl()}/${encodeURIComponent(policy.id)}/run`, { method: 'POST' })
+    toasts.success(t('cleanup.runTriggered').replace('{name}', policy.name))
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to run policy')
+    toasts.error(err instanceof Error ? err.message : t('cleanup.runFailed'))
   } finally {
     runningId.value = null
   }
@@ -580,11 +607,10 @@ async function saveDrawer(): Promise<void> {
   try {
     const payload: Record<string, unknown> = {
       name: form.name,
-      type: form.type,
       enabled: form.enabled,
     }
-    if (form.type === 'keep-last-n') payload.keep_count = form.keep_count
-    else payload.keep_days = form.keep_days
+    if (form.type === 'keep-last-n') payload.keep_last_n = form.keep_count
+    else payload.keep_since_days = form.keep_days
 
     if (drawerMode.value === 'create') {
       await request(baseUrl(), {
@@ -592,20 +618,20 @@ async function saveDrawer(): Promise<void> {
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      toasts.success(`Policy "${form.name}" created`)
+      toasts.success(t('cleanup.created').replace('{name}', form.name))
     } else if (editingPolicy.value) {
-      await request(`${baseUrl()}/${editingPolicy.value.id}`, {
+      await request(`${baseUrl()}/${encodeURIComponent(editingPolicy.value.id)}`, {
         method: 'PUT',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(payload),
       })
-      toasts.success(`Policy "${form.name}" updated`)
+      toasts.success(t('cleanup.updated').replace('{name}', form.name))
     }
 
     closeDrawer()
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Save failed')
+    toasts.error(err instanceof Error ? err.message : t('cleanup.saveFailed'))
   } finally {
     savingDrawer.value = false
   }
@@ -625,12 +651,12 @@ async function confirmDelete(): Promise<void> {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await request(`${baseUrl()}/${deleteTarget.value.id}`, { method: 'DELETE' })
-    toasts.success(`Policy "${deleteTarget.value.name}" deleted`)
+    await request(`${baseUrl()}/${encodeURIComponent(deleteTarget.value.id)}`, { method: 'DELETE' })
+    toasts.success(t('cleanup.deleted').replace('{name}', deleteTarget.value.name))
     deleteTarget.value = null
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Delete failed')
+    toasts.error(err instanceof Error ? err.message : t('cleanup.deleteFailed'))
   } finally {
     deleting.value = false
   }

@@ -86,13 +86,30 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.ArtifactID == "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_id is required")
+	if msg := validateArtifactID(body.ArtifactID); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
 	}
 
-	// Detect licenses from metadata
-	licenses := h.detector.DetectFromMetadata(body.Metadata)
+	// Caller-supplied metadata would let a scan report whatever the caller
+	// wants; licenses are derived from the artifact's stored properties only.
+	if len(body.Metadata) > 0 {
+		writeError(w, http.StatusBadRequest, "validation_failed",
+			"metadata is not accepted; set the artifact's license properties instead")
+
+		return
+	}
+
+	metadata, err := storedArtifactMetadata(ctx, h.db, repo.ID, body.ArtifactID)
+	if err != nil {
+		h.log.Errorw("scan licenses: db error reading artifact properties", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	// Detect licenses from the stored metadata
+	licenses := h.detector.DetectFromMetadata(metadata)
 
 	// Create scan result
 	now := time.Now()
@@ -202,6 +219,8 @@ func (h *LicenseHandler) handleListScans(w http.ResponseWriter, r *http.Request)
 }
 
 // handleGetScan gets a specific license scan result.
+//
+//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *LicenseHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
@@ -228,22 +247,17 @@ func (h *LicenseHandler) handleGetScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all scans and find the one with matching ID
-	results, err := h.db.ListLicenseScanResults(ctx, repo.ID)
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "license scan not found")
+		return
+	}
+
+	result, err := h.db.GetLicenseScanResultByID(ctx, repo.ID, id)
 	if err != nil {
 		h.log.Errorw("get license scan: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
-	}
-
-	var result *models.LicenseScanResult
-
-	for _, r := range results {
-		if r.ID == id {
-			result = r
-			break
-		}
 	}
 
 	if result == nil {
@@ -348,8 +362,18 @@ func (h *LicenseHandler) handleCreatePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if len(body.Name) > maxNameLen {
+		writeError(w, http.StatusBadRequest, "validation_failed", "name is too long")
+		return
+	}
+
 	if body.Action == "" {
 		body.Action = "warn"
+	}
+
+	if !isValidLicensePolicyAction(body.Action) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "action must be one of: warn, block, allow")
+		return
 	}
 
 	policy := &models.LicensePolicy{
@@ -372,6 +396,55 @@ func (h *LicenseHandler) handleCreatePolicy(w http.ResponseWriter, r *http.Reque
 	}
 
 	writeJSON(w, http.StatusCreated, licensePolicyToMap(policy))
+}
+
+// licensePolicyPatch is the partial-update body of a license policy.
+type licensePolicyPatch struct {
+	Name            *string  `json:"name"`
+	Description     *string  `json:"description"`
+	Action          *string  `json:"action"`
+	AllowedLicenses []string `json:"allowed_licenses"`
+	DeniedLicenses  []string `json:"denied_licenses"`
+	Enabled         *bool    `json:"enabled"`
+}
+
+// apply validates the patch and copies the provided fields onto policy. It
+// returns a validation message, leaving policy unchanged beyond the fields
+// applied before the failing one, exactly as the inline version did.
+func (b *licensePolicyPatch) apply(policy *models.LicensePolicy) string {
+	if b.Name != nil {
+		if *b.Name == "" || len(*b.Name) > maxNameLen {
+			return "name must be 1-255 characters"
+		}
+
+		policy.Name = *b.Name
+	}
+
+	if b.Description != nil {
+		policy.Description = *b.Description
+	}
+
+	if b.Action != nil {
+		if !isValidLicensePolicyAction(*b.Action) {
+			return "action must be one of: warn, block, allow"
+		}
+
+		policy.Action = *b.Action
+	}
+
+	if b.AllowedLicenses != nil {
+		policy.AllowedLicenses = b.AllowedLicenses
+	}
+
+	if b.DeniedLicenses != nil {
+		policy.DeniedLicenses = b.DeniedLicenses
+	}
+
+	if b.Enabled != nil {
+		policy.Enabled = *b.Enabled
+	}
+
+	return ""
 }
 
 // handleUpdatePolicy updates a license policy.
@@ -401,6 +474,11 @@ func (h *LicenseHandler) handleUpdatePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
+		return
+	}
+
 	policy, err := h.db.GetLicensePolicy(ctx, id)
 	if err != nil {
 		h.log.Errorw("update license policy: db error getting policy", "error", err)
@@ -409,46 +487,22 @@ func (h *LicenseHandler) handleUpdatePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if policy == nil || (policy.RepositoryID != nil && *policy.RepositoryID != repo.ID) {
+	// Global policies (RepositoryID == nil) are only manageable through the
+	// admin endpoints, never through a repository-scoped URL.
+	if policy == nil || policy.RepositoryID == nil || *policy.RepositoryID != repo.ID {
 		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
 		return
 	}
 
-	var body struct {
-		Name            *string  `json:"name"`
-		Description     *string  `json:"description"`
-		Action          *string  `json:"action"`
-		AllowedLicenses []string `json:"allowed_licenses"`
-		DeniedLicenses  []string `json:"denied_licenses"`
-		Enabled         *bool    `json:"enabled"`
-	}
+	var body licensePolicyPatch
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
 
-	if body.Name != nil {
-		policy.Name = *body.Name
-	}
-
-	if body.Description != nil {
-		policy.Description = *body.Description
-	}
-
-	if body.Action != nil {
-		policy.Action = *body.Action
-	}
-
-	if body.AllowedLicenses != nil {
-		policy.AllowedLicenses = body.AllowedLicenses
-	}
-
-	if body.DeniedLicenses != nil {
-		policy.DeniedLicenses = body.DeniedLicenses
-	}
-
-	if body.Enabled != nil {
-		policy.Enabled = *body.Enabled
+	if msg := body.apply(policy); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
 	}
 
 	policy.UpdatedAt = time.Now()
@@ -490,6 +544,11 @@ func (h *LicenseHandler) handleDeletePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
+		return
+	}
+
 	policy, err := h.db.GetLicensePolicy(ctx, id)
 	if err != nil {
 		h.log.Errorw("delete license policy: db error getting policy", "error", err)
@@ -498,7 +557,7 @@ func (h *LicenseHandler) handleDeletePolicy(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if policy == nil || (policy.RepositoryID != nil && *policy.RepositoryID != repo.ID) {
+	if policy == nil || policy.RepositoryID == nil || *policy.RepositoryID != repo.ID {
 		writeError(w, http.StatusNotFound, "not_found", "license policy not found")
 		return
 	}
@@ -525,47 +584,12 @@ func (h *LicenseHandler) handleListGlobalPolicies(w http.ResponseWriter, r *http
 		return
 	}
 
-	// Query for global policies (repo_id IS NULL)
-	query := `
-		SELECT id, repo_id, name, description, action, allowed_licenses, denied_licenses, enabled, created_at, updated_at
-		FROM license_policies
-		WHERE repo_id IS NULL
-		ORDER BY created_at DESC
-	`
-
-	rows, err := h.db.GetDB().QueryContext(ctx, query)
+	policies, err := h.db.ListGlobalLicensePolicies(ctx)
 	if err != nil {
 		h.log.Errorw("list global license policies: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
-	}
-	defer func() { _ = rows.Close() }()
-
-	var policies []*models.LicensePolicy
-
-	for rows.Next() {
-		policy := &models.LicensePolicy{}
-
-		var repoID *string
-
-		err := rows.Scan(
-			&policy.ID,
-			&repoID,
-			&policy.Name,
-			&policy.Description,
-			&policy.Action,
-			// arrays handled by pgx stdlib natively
-		)
-		if err != nil {
-			h.log.Errorw("list global license policies: scan error", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
-
-		policy.RepositoryID = repoID
-		policies = append(policies, policy)
 	}
 
 	if policies == nil {
@@ -612,8 +636,18 @@ func (h *LicenseHandler) handleCreateGlobalPolicy(w http.ResponseWriter, r *http
 		return
 	}
 
+	if len(body.Name) > maxNameLen {
+		writeError(w, http.StatusBadRequest, "validation_failed", "name is too long")
+		return
+	}
+
 	if body.Action == "" {
 		body.Action = "warn"
+	}
+
+	if !isValidLicensePolicyAction(body.Action) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "action must be one of: warn, block, allow")
+		return
 	}
 
 	policy := &models.LicensePolicy{

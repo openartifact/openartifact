@@ -7,7 +7,11 @@ package storage
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
+	"os"
+	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -103,7 +107,7 @@ func TestFilesystem_Exists(t *testing.T) {
 	}
 
 	// Check non-existent blob
-	exists, err = store.Exists(ctx, "nonexistent-id")
+	exists, err = store.Exists(ctx, sha64)
 	if err != nil {
 		t.Fatalf("Exists failed: %v", err)
 	}
@@ -189,6 +193,8 @@ func TestFilesystem_List(t *testing.T) {
 	}
 }
 
+const sha64 = "ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12ab12"
+
 func TestFilesystem_ExistsBySHA256(t *testing.T) {
 	store := newTestFilesystemStore(t)
 	ctx := context.Background()
@@ -196,14 +202,14 @@ func TestFilesystem_ExistsBySHA256(t *testing.T) {
 	testData := []byte("test data")
 	// Put with SHA256 as ID (content-addressed)
 	id, err := store.Put(ctx, bytes.NewReader(testData), map[string]string{
-		"sha256": "abc123def456",
+		"sha256": sha64,
 	})
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
 	// Check with correct hash
-	foundID, exists, err := store.ExistsBySHA256(ctx, "abc123def456")
+	foundID, exists, err := store.ExistsBySHA256(ctx, sha64)
 	if err != nil {
 		t.Fatalf("ExistsBySHA256 failed: %v", err)
 	}
@@ -217,7 +223,7 @@ func TestFilesystem_ExistsBySHA256(t *testing.T) {
 	}
 
 	// Check with non-existent hash
-	_, exists, err = store.ExistsBySHA256(ctx, "nonexistent-hash")
+	_, exists, err = store.ExistsBySHA256(ctx, strings.Repeat("0", 64))
 	if err != nil {
 		t.Fatalf("ExistsBySHA256 failed: %v", err)
 	}
@@ -231,7 +237,7 @@ func TestFilesystem_GetNotFound(t *testing.T) {
 	store := newTestFilesystemStore(t)
 	ctx := context.Background()
 
-	_, err := store.Get(ctx, "nonexistent-id")
+	_, err := store.Get(ctx, sha64)
 	if err == nil {
 		t.Error("expected error for non-existent blob")
 	}
@@ -242,7 +248,7 @@ func TestFilesystem_DeleteNotFound(t *testing.T) {
 	ctx := context.Background()
 
 	// Delete non-existent blob should not error
-	err := store.Delete(ctx, "nonexistent-id")
+	err := store.Delete(ctx, sha64)
 	if err != nil {
 		t.Fatalf("Delete should not error for non-existent blob: %v", err)
 	}
@@ -276,5 +282,38 @@ func TestFilesystem_PutEmptyData(t *testing.T) {
 
 	if size != 0 {
 		t.Errorf("expected size 0, got %d", size)
+	}
+}
+
+func TestFilesystem_RejectsInvalidBlobID(t *testing.T) {
+	store := newTestFilesystemStore(t)
+	ctx := context.Background()
+
+	for _, id := range []string{"../../../../etc/passwd", "ab", "", "zz" + sha64[2:], sha64 + "/.."} {
+		if _, err := store.Get(ctx, id); !errors.Is(err, ErrInvalidBlobID) {
+			t.Errorf("Get(%q) err = %v, want ErrInvalidBlobID", id, err)
+		}
+
+		if err := store.Delete(ctx, id); !errors.Is(err, ErrInvalidBlobID) {
+			t.Errorf("Delete(%q) err = %v", id, err)
+		}
+	}
+
+	if _, err := store.Put(ctx, bytes.NewReader([]byte("x")), map[string]string{"sha256": "../../x"}); !errors.Is(err, ErrInvalidBlobID) {
+		t.Errorf("Put traversal err = %v", err)
+	}
+}
+
+func TestFilesystem_ListSkipsUploadTmp(t *testing.T) {
+	store := newTestFilesystemStore(t)
+	ctx := context.Background()
+
+	if err := os.WriteFile(filepath.Join(store.basePath, "blob-upload-123.tmp"), []byte("x"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	ids, err := store.List(ctx, "", 0, 0)
+	if err != nil || len(ids) != 0 {
+		t.Fatalf("List = %v, %v; want empty", ids, err)
 	}
 }

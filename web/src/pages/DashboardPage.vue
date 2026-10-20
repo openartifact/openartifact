@@ -9,9 +9,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <div class="flex items-end justify-between gap-4 flex-wrap">
       <div>
-        <h1 class="text-2xl font-bold tracking-tight">Welcome back</h1>
+        <h1 class="text-2xl font-bold tracking-tight">{{ t('dashboard.welcome') }}</h1>
         <p class="mt-1 text-sm text-muted">
-          You have {{ total }} {{ total === 1 ? 'repository' : 'repositories' }} across {{ uniqueFormats.length }} {{ uniqueFormats.length === 1 ? 'format' : 'formats' }}
+          {{ t('dashboard.summary').replace('{repos}', String(total)).replace('{formats}', String(uniqueFormats.length)) }}
         </p>
       </div>
       <div class="flex gap-3">
@@ -20,14 +20,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           :disabled="syncing"
           @click="syncNow"
         >
-          <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': syncing }" />
-          Sync now
+          <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': syncing }" aria-hidden="true" />
+          {{ t('dashboard.refresh') }}
         </button>
         <router-link
-          to="/repos"
+          v-if="session.isAdmin"
+          to="/repos/new"
           class="px-4 py-2 text-sm font-medium text-primary-contrast bg-primary rounded-lg hover:bg-primary/90 transition-colors inline-flex items-center gap-1.5"
         >
-          New repository
+          {{ t('repos.new') }}
         </router-link>
       </div>
     </div>
@@ -41,20 +42,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <div class="flex items-start justify-between">
           <span class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ kpi.label }}</span>
-          <span
-            v-if="kpi.trend && kpi.trendDir"
-            :class="[
-              'inline-flex items-center gap-0.5 text-[11px] font-mono',
-              kpi.trendDir === 'up' ? 'text-success' : 'text-danger'
-            ]"
-          >
-            <ArrowUpIcon v-if="kpi.trendDir === 'up'" class="w-3 h-3" />
-            <ArrowDownIcon v-else class="w-3 h-3" />
-            {{ kpi.trend }}
-          </span>
         </div>
-        <p class="mt-3 text-3xl font-bold tracking-tight tabular-nums">{{ kpi.value }}{{ kpi.unit }}</p>
-        <p v-if="kpi.period" class="mt-1 text-[11px] text-muted">{{ kpi.period }}</p>
+        <p class="mt-3 text-3xl font-bold tracking-tight tabular-nums">{{ kpi.value }}</p>
         <div class="absolute -bottom-1 -right-1 w-24 h-24 rounded-full bg-primary/5 group-hover:bg-primary/10 transition-colors" />
       </div>
     </div>
@@ -63,9 +52,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
       <!-- Storage by Format -->
       <div class="lg:col-span-1 rounded-xl border border-border bg-surface p-5">
-        <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted mb-4">Storage by Format</h2>
+        <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted mb-4">{{ t('dashboard.byFormat') }}</h2>
         <div class="flex items-center gap-5">
-          <svg viewBox="0 0 200 200" class="w-40 h-40 shrink-0">
+          <svg viewBox="0 0 200 200" class="w-40 h-40 shrink-0" role="img" :aria-label="t('dashboard.byFormat')">
             <!-- Donut slices -->
             <circle
               v-for="(slice, i) in donutSlices"
@@ -89,13 +78,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="flex-1 grid grid-cols-1 gap-1.5 text-xs">
             <div v-for="item in uniqueFormats" :key="item.format" class="flex items-center justify-between gap-2">
               <div class="flex items-center gap-2 min-w-0">
-                <div
-                  class="w-2 h-2 rounded-sm shrink-0"
-                  :style="{ backgroundColor: formatColor(item.format) }"
-                />
-                <span class="text-foreground/85 truncate">{{ item.format }}</span>
+                <FormatBadge :format="item.format" size="sm" />
               </div>
-              <span class="font-mono text-muted tabular-nums">{{ Math.round((item.count / (total || 1)) * 100) }}%</span>
+              <span class="font-mono text-muted tabular-nums">{{ item.count }}</span>
             </div>
           </div>
         </div>
@@ -104,36 +89,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Top Repositories -->
       <div class="lg:col-span-2 rounded-xl border border-border bg-surface p-5">
         <div class="flex items-center justify-between mb-4">
-          <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted">Top Repositories</h2>
+          <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted">{{ t('dashboard.recent') }}</h2>
           <router-link to="/repos" class="text-xs text-primary hover:underline inline-flex items-center gap-0.5">
-            View all
-            <ArrowRightIcon class="w-3 h-3" />
+            {{ t('dashboard.viewAll') }}
+            <ArrowRightIcon class="w-3 h-3" aria-hidden="true" />
           </router-link>
         </div>
-        <div v-if="loading" class="text-sm text-muted py-6">Loading repositories...</div>
+        <div v-if="loading" class="text-sm text-muted py-6">{{ t('common.loading') }}</div>
+        <div v-else-if="loadError" class="py-6 text-sm text-danger" role="alert">{{ loadError }}</div>
         <div v-else-if="repos.length === 0">
-          <EmptyState
-            title="No repositories yet"
-            description="Create your first repository to get started"
-          />
+          <EmptyState :title="t('dashboard.emptyTitle')" :description="t('repos.emptyHint')" />
         </div>
         <div v-else class="space-y-1">
-          <button
-            v-for="repo in repos.slice(0, 8)"
+          <router-link
+            v-for="repo in recentRepos"
             :key="repo.id"
-            class="w-full grid grid-cols-12 gap-3 items-center px-2 py-3 -mx-2 rounded-md hover:bg-surface-hover text-left transition-colors cursor-pointer"
-            @click="router.push(`/repos/${repo.name}`)"
+            :to="`/repos/${encodeURIComponent(repo.name)}`"
+            class="w-full flex items-center gap-3 px-2 py-3 -mx-2 rounded-md hover:bg-surface-hover transition-colors"
           >
-            <div class="col-span-4 flex items-center gap-2 min-w-0">
-              <FormatBadge :format="repo.format" />
-              <span class="font-medium text-sm truncate">{{ repo.name }}</span>
-            </div>
-            <div class="col-span-2 text-xs text-muted font-mono tabular-nums">—</div>
-            <div class="col-span-3">
-              <Sparkline :data="fakeSparkline()" />
-            </div>
-            <div class="col-span-3 text-xs text-muted text-right truncate">{{ repo.format }}</div>
-          </button>
+            <FormatBadge :format="repo.format" />
+            <span class="font-medium text-sm truncate flex-1">{{ repo.name }}</span>
+            <span class="text-xs text-muted">{{ repo.repo_type || 'hosted' }}</span>
+            <span class="text-xs text-muted">{{ repo.public ? t('repos.public') : t('repos.private') }}</span>
+          </router-link>
         </div>
       </div>
     </div>
@@ -141,10 +119,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Recent Activity (admin only) -->
     <div v-if="session.isAdmin" class="rounded-xl border border-border bg-surface p-5">
       <div class="flex items-center justify-between mb-4">
-        <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted">Recent Activity</h2>
+        <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted">{{ t('dashboard.activity') }}</h2>
         <router-link to="/admin/audit" class="text-xs text-primary hover:underline inline-flex items-center gap-0.5">
-          View all
-          <ArrowRightIcon class="w-3 h-3" />
+          {{ t('dashboard.viewAll') }}
+          <ArrowRightIcon class="w-3 h-3" aria-hidden="true" />
         </router-link>
       </div>
 
@@ -159,7 +137,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <div v-else-if="auditEntries.length === 0" class="py-6 text-center text-sm text-muted">
-        No recent activity found.
+        {{ t('dashboard.noActivity') }}
       </div>
 
       <div v-else class="relative">
@@ -205,36 +183,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { useRouter } from 'vue-router'
-import { ArrowUpIcon, ArrowDownIcon, ArrowRightIcon, ArrowPathIcon } from '@heroicons/vue/24/outline'
-import { listRepositories } from '../api/repositories'
-import { getSystemInfo } from '../api/admin'
+import { ArrowRightIcon, ArrowPathIcon } from '@heroicons/vue/24/outline'
+import { listAllRepositories } from '../api/repositories'
 import { listAudit } from '../api/audit'
 import type { Repository } from '../api/repositories'
 import type { AuditEntry } from '../api/audit'
 import { useToastStore } from '../stores/toast'
 import { useSessionStore } from '../stores/session'
 import FormatBadge from '../components/FormatBadge.vue'
-import Sparkline from '../components/Sparkline.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { formatColor } from '../lib/formats'
+import { t } from '../i18n/en'
 
-const router = useRouter()
 const toasts = useToastStore()
 const session = useSessionStore()
 
 const repos = ref<Repository[]>([])
-const total = ref(0)
+const loadError = ref('')
 const loading = ref(true)
 const syncing = ref(false)
-const systemInfo = ref<unknown>(null)
 const auditEntries = ref<AuditEntry[]>([])
 const auditLoading = ref(false)
 
-// Generate fake sparkline data for visual effect
-function fakeSparkline() {
-  return Array.from({ length: 8 }, () => Math.random() * 100)
-}
+const total = computed(() => repos.value.length)
 
 const uniqueFormats = computed(() => {
   const counts = new Map<string, number>()
@@ -245,20 +216,26 @@ const uniqueFormats = computed(() => {
 })
 
 const kpis = computed(() => [
-  { label: 'Repositories', value: total.value, unit: '', trend: '+2', trendDir: 'up' as const, period: 'vs last month' },
-  { label: 'Artifacts', value: '—', unit: '', trend: null, trendDir: null, period: 'Coming soon' },
-  { label: 'Storage', value: '—', unit: '', trend: null, trendDir: null, period: 'Coming soon' },
-  { label: 'Formats', value: uniqueFormats.value.length, unit: '', trend: '', trendDir: 'up' as const, period: 'active formats' },
+  { label: t('dashboard.kpi.repos'), value: total.value },
+  { label: t('dashboard.kpi.formats'), value: uniqueFormats.value.length },
+  { label: t('dashboard.kpi.public'), value: repos.value.filter((r) => r.public).length },
+  { label: t('dashboard.kpi.proxyGroup'), value: repos.value.filter((r) => r.repo_type === 'proxy' || r.repo_type === 'group').length },
 ])
+
+const recentRepos = computed(() =>
+  [...repos.value]
+    .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+    .slice(0, 8),
+)
 
 const donutSlices = computed(() => {
   const slices: { color: string; dashArray: string; dashOffset: number }[] = []
   const circumference = 2 * Math.PI * 70
-  const t = total.value || 1
+  const sum = total.value || 1
   let offset = 0
 
   uniqueFormats.value.forEach(({ format, count }) => {
-    const arc = (count / t) * circumference
+    const arc = (count / sum) * circumference
     slices.push({
       color: formatColor(format),
       dashArray: `${arc.toFixed(2)} ${(circumference - arc).toFixed(2)}`,
@@ -274,11 +251,11 @@ function timeAgo(iso?: string): string {
   if (!iso) return '—'
   const diff = Date.now() - new Date(iso).getTime()
   const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1) return t('dashboard.justNow')
+  if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
 }
 
 function auditDotClass(result?: string): string {
@@ -295,15 +272,21 @@ function auditActionClass(action?: string): string {
   return 'bg-surface-hover text-muted'
 }
 
+async function loadRepos(): Promise<void> {
+  loadError.value = ''
+  try {
+    repos.value = await listAllRepositories()
+  } catch (err) {
+    loadError.value = err instanceof Error ? err.message : t('repos.loadFailed')
+  }
+}
+
 async function syncNow(): Promise<void> {
   syncing.value = true
   try {
-    const repoRes = await listRepositories({ limit: 50 })
-    repos.value = repoRes.repositories || []
-    total.value = repoRes.total || repos.value.length
-    toasts.success('Refreshed')
-  } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Sync failed')
+    await loadRepos()
+    if (!loadError.value) toasts.success(t('dashboard.refreshed'))
+    void loadAudit()
   } finally {
     syncing.value = false
   }
@@ -324,13 +307,7 @@ async function loadAudit(): Promise<void> {
 
 onMounted(async () => {
   try {
-    const [repoRes, sysRes] = await Promise.all([
-      listRepositories({ limit: 50 }),
-      getSystemInfo().catch(() => null),
-    ])
-    repos.value = repoRes.repositories || []
-    total.value = repoRes.total || repos.value.length
-    systemInfo.value = sysRes
+    await loadRepos()
   } finally {
     loading.value = false
   }

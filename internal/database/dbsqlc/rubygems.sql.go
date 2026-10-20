@@ -12,8 +12,8 @@ import (
 )
 
 const createRubyGem = `-- name: CreateRubyGem :one
-INSERT INTO rubygems_gems (repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, blob_id, yanked, download_count)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+INSERT INTO rubygems_gems (repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, blob_id, yanked, download_count, size)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
 RETURNING id, created_at, updated_at
 `
 
@@ -32,6 +32,7 @@ type CreateRubyGemParams struct {
 	BlobID        string          `db:"blob_id" json:"blob_id"`
 	Yanked        bool            `db:"yanked" json:"yanked"`
 	DownloadCount int64           `db:"download_count" json:"download_count"`
+	Size          int64           `db:"size" json:"size"`
 }
 
 type CreateRubyGemRow struct {
@@ -56,6 +57,7 @@ func (q *Queries) CreateRubyGem(ctx context.Context, arg CreateRubyGemParams) (C
 		arg.BlobID,
 		arg.Yanked,
 		arg.DownloadCount,
+		arg.Size,
 	)
 	var i CreateRubyGemRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -72,7 +74,7 @@ func (q *Queries) DeleteRubyGem(ctx context.Context, id string) error {
 }
 
 const getRubyGem = `-- name: GetRubyGem :one
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.created_at, rg.updated_at
+SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
 FROM rubygems_gems rg
 JOIN blobs b ON b.id = rg.blob_id
 WHERE rg.repository_id = $1 AND rg.name = $2 AND rg.version = $3 AND rg.platform = $4
@@ -102,6 +104,7 @@ type GetRubyGemRow struct {
 	ChecksumSha256 string          `db:"checksum_sha256" json:"checksum_sha256"`
 	Yanked         bool            `db:"yanked" json:"yanked"`
 	DownloadCount  int64           `db:"download_count" json:"download_count"`
+	Size           int64           `db:"size" json:"size"`
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -131,6 +134,7 @@ func (q *Queries) GetRubyGem(ctx context.Context, arg GetRubyGemParams) (GetRuby
 		&i.ChecksumSha256,
 		&i.Yanked,
 		&i.DownloadCount,
+		&i.Size,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -138,7 +142,7 @@ func (q *Queries) GetRubyGem(ctx context.Context, arg GetRubyGemParams) (GetRuby
 }
 
 const listRubyGemVersions = `-- name: ListRubyGemVersions :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.created_at, rg.updated_at
+SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
 FROM rubygems_gems rg
 JOIN blobs b ON b.id = rg.blob_id
 WHERE rg.repository_id = $1 AND rg.name = $2 ORDER BY rg.version DESC
@@ -166,6 +170,7 @@ type ListRubyGemVersionsRow struct {
 	ChecksumSha256 string          `db:"checksum_sha256" json:"checksum_sha256"`
 	Yanked         bool            `db:"yanked" json:"yanked"`
 	DownloadCount  int64           `db:"download_count" json:"download_count"`
+	Size           int64           `db:"size" json:"size"`
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -196,6 +201,7 @@ func (q *Queries) ListRubyGemVersions(ctx context.Context, arg ListRubyGemVersio
 			&i.ChecksumSha256,
 			&i.Yanked,
 			&i.DownloadCount,
+			&i.Size,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -210,7 +216,7 @@ func (q *Queries) ListRubyGemVersions(ctx context.Context, arg ListRubyGemVersio
 }
 
 const listRubyGems = `-- name: ListRubyGems :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.created_at, rg.updated_at
+SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
 FROM rubygems_gems rg
 JOIN blobs b ON b.id = rg.blob_id
 WHERE rg.repository_id = $1 ORDER BY rg.name ASC, rg.version DESC
@@ -233,6 +239,7 @@ type ListRubyGemsRow struct {
 	ChecksumSha256 string          `db:"checksum_sha256" json:"checksum_sha256"`
 	Yanked         bool            `db:"yanked" json:"yanked"`
 	DownloadCount  int64           `db:"download_count" json:"download_count"`
+	Size           int64           `db:"size" json:"size"`
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -263,6 +270,7 @@ func (q *Queries) ListRubyGems(ctx context.Context, repositoryID string) ([]List
 			&i.ChecksumSha256,
 			&i.Yanked,
 			&i.DownloadCount,
+			&i.Size,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -277,7 +285,7 @@ func (q *Queries) ListRubyGems(ctx context.Context, repositoryID string) ([]List
 }
 
 const searchRubyGems = `-- name: SearchRubyGems :many
-SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.created_at, rg.updated_at
+SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
 FROM rubygems_gems rg
 JOIN blobs b ON b.id = rg.blob_id
 WHERE rg.repository_id = $1 AND (rg.name ILIKE $2 OR rg.description ILIKE $2 OR rg.summary ILIKE $2)
@@ -306,6 +314,7 @@ type SearchRubyGemsRow struct {
 	ChecksumSha256 string          `db:"checksum_sha256" json:"checksum_sha256"`
 	Yanked         bool            `db:"yanked" json:"yanked"`
 	DownloadCount  int64           `db:"download_count" json:"download_count"`
+	Size           int64           `db:"size" json:"size"`
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -336,6 +345,7 @@ func (q *Queries) SearchRubyGems(ctx context.Context, arg SearchRubyGemsParams) 
 			&i.ChecksumSha256,
 			&i.Yanked,
 			&i.DownloadCount,
+			&i.Size,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {

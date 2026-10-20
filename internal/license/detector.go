@@ -112,6 +112,8 @@ func (d *Detector) NormalizeLicense(license string) string {
 
 // EvaluatePolicy checks if licenses comply with a policy
 // Returns (compliant bool, violations []string).
+// License entries may be SPDX expressions ("GPL-3.0-only AND MIT"); each
+// identifier in an expression is matched case-insensitively against the lists.
 func (d *Detector) EvaluatePolicy(licenses []string, policy *models.LicensePolicy) (bool, []string) {
 	if policy == nil || !policy.Enabled {
 		return true, nil
@@ -119,21 +121,27 @@ func (d *Detector) EvaluatePolicy(licenses []string, policy *models.LicensePolic
 
 	var violations []string
 
-	// If denied_licenses is non-empty and any license matches → violation
+	// If denied_licenses is non-empty and any identifier in any license matches → violation
 	if len(policy.DeniedLicenses) > 0 {
+		denied := normalizeSet(policy.DeniedLicenses)
+
 		for _, license := range licenses {
-			if contains(policy.DeniedLicenses, license) {
-				violations = append(violations, "license "+license+" is denied")
+			for _, id := range spdxIdentifiers(license) {
+				if _, bad := denied[id]; bad {
+					violations = append(violations, "license "+license+" is denied")
+					break
+				}
 			}
 		}
 	}
 
-	// If allowed_licenses is non-empty and no license matches → violation
+	// If allowed_licenses is non-empty and no license is allowed → violation
 	if len(policy.AllowedLicenses) > 0 {
+		allowed := normalizeSet(policy.AllowedLicenses)
 		found := false
 
 		for _, license := range licenses {
-			if contains(policy.AllowedLicenses, license) {
+			if expressionAllowed(license, allowed) {
 				found = true
 				break
 			}
@@ -145,6 +153,69 @@ func (d *Detector) EvaluatePolicy(licenses []string, policy *models.LicensePolic
 	}
 
 	return len(violations) == 0, violations
+}
+
+func normalizeID(id string) string {
+	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(id)), "+")
+}
+
+func normalizeSet(list []string) map[string]struct{} {
+	m := make(map[string]struct{}, len(list))
+	for _, l := range list {
+		m[normalizeID(l)] = struct{}{}
+	}
+
+	return m
+}
+
+// spdxIdentifiers returns the normalized license identifiers of an SPDX
+// expression, dropping parentheses and the AND/OR/WITH operators.
+func spdxIdentifiers(expr string) []string {
+	fields := strings.FieldsFunc(expr, func(r rune) bool {
+		return r == ' ' || r == '\t' || r == '(' || r == ')' || r == ','
+	})
+
+	ids := make([]string, 0, len(fields)+1)
+	ids = append(ids, normalizeID(expr)) // the whole string, for plain (even odd) names
+
+	for _, f := range fields {
+		switch strings.ToUpper(f) {
+		case "AND", "OR", "WITH":
+			continue
+		}
+
+		ids = append(ids, normalizeID(f))
+	}
+
+	return ids
+}
+
+// expressionAllowed: an expression joined by AND needs every identifier
+// allowed; otherwise (single license or OR) any allowed identifier suffices.
+func expressionAllowed(expr string, allowed map[string]struct{}) bool {
+	if _, ok := allowed[normalizeID(expr)]; ok {
+		return true
+	}
+
+	ids := spdxIdentifiers(expr)[1:]
+	if len(ids) == 0 {
+		return false
+	}
+
+	requireAll := strings.Contains(" "+strings.ToUpper(expr)+" ", " AND ")
+
+	for _, id := range ids {
+		_, ok := allowed[id]
+		if requireAll && !ok {
+			return false
+		}
+
+		if !requireAll && ok {
+			return true
+		}
+	}
+
+	return requireAll
 }
 
 // contains checks if a slice contains a string.

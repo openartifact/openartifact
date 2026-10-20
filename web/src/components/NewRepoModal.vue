@@ -5,133 +5,242 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <!-- Backdrop -->
-  <Teleport to="body">
-    <div v-if="open" class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in">
-      <div class="absolute inset-0 bg-black/40 backdrop-blur-sm" @click="open = false" />
-      <div class="relative w-full max-w-xl rounded-xl bg-surface border border-border shadow-2xl overflow-hidden animate-slide-up">
-        <!-- Header -->
-        <div class="flex items-center justify-between px-5 py-4 border-b border-border">
-          <h3 class="text-base font-semibold tracking-tight">New repository</h3>
-          <button @click="open = false" class="text-muted hover:text-foreground p-1 rounded hover:bg-surface-hover">
-            <XMarkIcon class="w-4 h-4" />
-          </button>
-        </div>
-        
-        <!-- Body -->
-        <div class="p-5 space-y-4">
-          <!-- Name -->
-          <div>
-            <label class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">Name</label>
-            <input v-model="name" placeholder="e.g. docker-prod"
-              class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono outline-none transition-colors" />
-            <p class="mt-1 text-[11px] text-muted">Lowercase, hyphens, 2–64 characters.</p>
-          </div>
-          
-          <!-- Format swatch picker -->
-          <div>
-            <label class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">Format</label>
-            <div class="mt-1.5 grid grid-cols-6 gap-1.5">
-              <button v-for="f in formats" :key="f" @click="format = f"
-                :class="['flex flex-col items-center gap-1 py-2 rounded-md border text-[11px] font-mono transition-all',
-                  format === f ? 'border-primary bg-primary-soft text-primary' : 'border-border bg-surface hover:bg-surface-hover text-foreground/70']">
-                <span class="w-2 h-2 rounded-sm" :style="{ background: formatColor(f) }" />
-                {{ f }}
+  <TransitionRoot appear :show="open" as="template">
+    <Dialog as="div" class="relative z-50" @close="close">
+      <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" />
+      <div class="fixed inset-0 overflow-y-auto">
+        <div class="flex min-h-full items-center justify-center p-4">
+          <DialogPanel class="relative w-full max-w-xl rounded-xl bg-surface border border-border shadow-2xl overflow-hidden">
+            <div class="flex items-center justify-between px-5 py-4 border-b border-border">
+              <DialogTitle class="text-base font-semibold tracking-tight">{{ t('repos.new') }}</DialogTitle>
+              <button
+                class="text-muted hover:text-foreground p-1 rounded hover:bg-surface-hover"
+                :aria-label="t('common.close')"
+                @click="close"
+              >
+                <XMarkIcon class="w-4 h-4" aria-hidden="true" />
               </button>
             </div>
-          </div>
-          
-          <!-- Type selector -->
-          <div>
-            <label class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">Type</label>
-            <div class="mt-1.5 grid grid-cols-3 gap-2">
-              <button v-for="t in types" :key="t.value" @click="type = t.value"
-                :class="['p-3 rounded-md border text-left transition-all',
-                  type === t.value ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']">
-                <div :class="['text-sm font-semibold', type === t.value ? 'text-primary' : '']">{{ t.label }}</div>
-                <div class="mt-0.5 text-[11px] text-muted leading-snug">{{ t.desc }}</div>
-              </button>
-            </div>
-          </div>
-          
-          <!-- Public toggle -->
-          <label class="flex items-center gap-2 pt-1 text-sm">
-            <input type="checkbox" v-model="isPublic" class="accent-[rgb(var(--color-primary))]" />
-            <span>Make repository public (anyone can pull)</span>
-          </label>
+
+            <form class="p-5 space-y-4" @submit.prevent="handleCreate">
+              <div>
+                <label for="new-repo-name" class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.column.name') }}</label>
+                <input
+                  id="new-repo-name"
+                  v-model="name"
+                  placeholder="e.g. docker-prod"
+                  autocomplete="off"
+                  class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono outline-none transition-colors"
+                />
+                <p class="mt-1 text-[11px]" :class="name && !nameValid ? 'text-danger' : 'text-muted'">{{ t('repos.new.nameHint') }}</p>
+              </div>
+
+              <fieldset>
+                <legend class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.column.format') }}</legend>
+                <div class="mt-1.5 grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                  <button
+                    v-for="f in formats"
+                    :key="f"
+                    type="button"
+                    :aria-pressed="format === f"
+                    :class="['flex items-center justify-center py-2 rounded-md border transition-all',
+                      format === f ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']"
+                    @click="format = f"
+                  >
+                    <FormatBadge :format="f" size="sm" />
+                  </button>
+                </div>
+              </fieldset>
+
+              <fieldset>
+                <legend class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.column.type') }}</legend>
+                <div class="mt-1.5 grid grid-cols-3 gap-2">
+                  <button
+                    v-for="ty in types"
+                    :key="ty.value"
+                    type="button"
+                    :aria-pressed="type === ty.value"
+                    :class="['p-3 rounded-md border text-left transition-all',
+                      type === ty.value ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']"
+                    @click="type = ty.value"
+                  >
+                    <div :class="['text-sm font-semibold', type === ty.value ? 'text-primary' : '']">{{ ty.label }}</div>
+                    <div class="mt-0.5 text-[11px] text-muted leading-snug">{{ ty.desc }}</div>
+                  </button>
+                </div>
+              </fieldset>
+
+              <!-- Proxy: upstream -->
+              <div v-if="type === 'proxy'" class="space-y-3">
+                <div>
+                  <label for="new-repo-upstream" class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.new.upstreamUrl') }}</label>
+                  <input
+                    id="new-repo-upstream"
+                    v-model="upstreamUrl"
+                    type="url"
+                    placeholder="https://registry.example.com"
+                    class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono outline-none transition-colors"
+                  />
+                </div>
+                <div class="grid grid-cols-2 gap-2">
+                  <input
+                    v-model="upstreamUsername"
+                    :placeholder="t('repos.new.upstreamUsername')"
+                    :aria-label="t('repos.new.upstreamUsername')"
+                    autocomplete="off"
+                    class="h-9 px-3 rounded-md bg-surface-hover/40 border border-border text-sm outline-none focus:border-primary/50"
+                  />
+                  <input
+                    v-model="upstreamPassword"
+                    type="password"
+                    :placeholder="t('repos.new.upstreamPassword')"
+                    :aria-label="t('repos.new.upstreamPassword')"
+                    autocomplete="new-password"
+                    class="h-9 px-3 rounded-md bg-surface-hover/40 border border-border text-sm outline-none focus:border-primary/50"
+                  />
+                </div>
+              </div>
+
+              <!-- Group: members -->
+              <fieldset v-if="type === 'group'">
+                <legend class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.new.members') }}</legend>
+                <p v-if="!candidateMembers.length" class="mt-1.5 text-xs text-muted">{{ t('repos.new.noMembers') }}</p>
+                <div v-else class="mt-1.5 max-h-32 overflow-y-auto rounded-md border border-border divide-y divide-border">
+                  <label v-for="r in candidateMembers" :key="r.id" class="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-surface-hover">
+                    <input v-model="members" type="checkbox" :value="r.name" class="accent-[rgb(var(--color-primary))]" />
+                    <span class="truncate">{{ r.name }}</span>
+                  </label>
+                </div>
+              </fieldset>
+
+              <label class="flex items-center gap-2 pt-1 text-sm">
+                <input v-model="isPublic" type="checkbox" class="accent-[rgb(var(--color-primary))]" />
+                <span>{{ t('repos.new.public') }}</span>
+              </label>
+
+              <div class="pt-3 border-t border-border flex items-center justify-end gap-2 -mx-5 px-5 -mb-5 pb-4 bg-surface-hover/30">
+                <button type="button" class="px-3 py-1.5 rounded-md text-sm text-muted hover:text-foreground hover:bg-surface-hover transition-colors" @click="close">
+                  {{ t('common.cancel') }}
+                </button>
+                <button
+                  type="submit"
+                  :disabled="!canSubmit || creating"
+                  class="px-4 py-1.5 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary/90 active:scale-[0.97] transition-all disabled:opacity-50 flex items-center gap-1.5"
+                >
+                  <CheckIcon class="w-4 h-4" aria-hidden="true" />
+                  {{ creating ? t('repos.new.creating') : t('repos.create') }}
+                </button>
+              </div>
+            </form>
+          </DialogPanel>
         </div>
-        
-         <!-- Footer -->
-         <div class="px-5 py-3 border-t border-border bg-surface-hover/30 flex items-center justify-end gap-2">
-           <button @click="open = false" class="px-3 py-1.5 rounded-md text-sm text-muted hover:text-foreground hover:bg-surface-hover transition-colors">Cancel</button>
-           <button @click="handleCreate" :disabled="!name.trim() || creating"
-             class="px-4 py-1.5 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary/90 active:scale-[0.97] transition-all disabled:opacity-50 flex items-center gap-1.5">
-             <CheckIcon class="w-4 h-4" />
-             {{ creating ? 'Creating...' : 'Create repository' }}
-           </button>
-         </div>
       </div>
-    </div>
-  </Teleport>
+    </Dialog>
+  </TransitionRoot>
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { createRepository } from '../api/repositories'
+import { Dialog, DialogPanel, DialogTitle, TransitionRoot } from '@headlessui/vue'
+import { createRepository, listRepositories } from '../api/repositories'
+import type { Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
 import { XMarkIcon, CheckIcon } from '@heroicons/vue/24/outline'
-import { ALL_FORMATS, formatColor, type FormatId } from '../lib/formats'
+import { ALL_FORMATS, type FormatId } from '../lib/formats'
+import FormatBadge from './FormatBadge.vue'
+import { t } from '../i18n/en'
 
 const open = defineModel<boolean>({ default: false })
+const emit = defineEmits<{ created: [name: string] }>()
 
 const router = useRouter()
 const toast = useToastStore()
 
 const name = ref('')
 const format = ref<FormatId>('docker')
-const type = ref('hosted')
+const type = ref<'hosted' | 'proxy' | 'group'>('hosted')
 const isPublic = ref(false)
+const upstreamUrl = ref('')
+const upstreamUsername = ref('')
+const upstreamPassword = ref('')
+const members = ref<string[]>([])
+const existing = ref<Repository[]>([])
 const creating = ref(false)
 
 const formats = ALL_FORMATS
 
 const types = [
-  { value: 'hosted', label: 'Hosted', desc: 'Stores artifacts uploaded directly.' },
-  { value: 'proxy', label: 'Proxy', desc: 'Read-through cache of an upstream repository.' },
-  { value: 'group', label: 'Group', desc: 'Aggregates other repositories under one URL.' },
-]
+  { value: 'hosted', label: t('repos.new.type.hosted'), desc: t('repos.new.type.hostedDesc') },
+  { value: 'proxy', label: t('repos.new.type.proxy'), desc: t('repos.new.type.proxyDesc') },
+  { value: 'group', label: t('repos.new.type.group'), desc: t('repos.new.type.groupDesc') },
+] as const
 
-async function handleCreate() {
-   if (!name.value.trim()) return
-   creating.value = true
-   try {
-     await createRepository({
-       name: name.value.trim(),
-       format: format.value,
-       public: isPublic.value,
-       description: '',
-     })
-     toast.success('Repository created', `${name.value} is ready to use.`)
-     open.value = false
-     router.push(`/repos/${name.value.trim()}`)
-   } catch (err: unknown) {
-     toast.error('Failed to create repository', err instanceof Error ? err.message : 'Unknown error')
-   } finally {
-     creating.value = false
-   }
- }
+// Mirrors the backend's repository-name rule.
+const nameValid = computed(() => /^[a-zA-Z0-9_-]{1,100}$/.test(name.value.trim()))
+const canSubmit = computed(() => {
+  if (!nameValid.value) return false
+  if (type.value === 'proxy') return upstreamUrl.value.trim() !== ''
+  return true
+})
 
- // Handle Escape key
- watch(open, (newOpen) => {
-   if (newOpen) {
-     const handleKeydown = (e: KeyboardEvent) => {
-       if (e.key === 'Escape') {
-         open.value = false
-       }
-     }
-     document.addEventListener('keydown', handleKeydown)
-     return () => document.removeEventListener('keydown', handleKeydown)
-   }
- })
+// A group may only contain repositories of its own format.
+const candidateMembers = computed(() =>
+  existing.value.filter((r) => r.format === format.value && r.repo_type !== 'group'),
+)
+
+watch(format, () => {
+  members.value = []
+})
+
+watch(open, async (isOpen) => {
+  if (!isOpen) return
+  name.value = ''
+  type.value = 'hosted'
+  isPublic.value = false
+  upstreamUrl.value = ''
+  upstreamUsername.value = ''
+  upstreamPassword.value = ''
+  members.value = []
+  try {
+    existing.value = (await listRepositories({ limit: 100 })).repositories || []
+  } catch {
+    existing.value = []
+  }
+})
+
+function close(): void {
+  if (!creating.value) open.value = false
+}
+
+async function handleCreate(): Promise<void> {
+  if (!canSubmit.value || creating.value) return
+  creating.value = true
+  const repoName = name.value.trim()
+  try {
+    await createRepository({
+      name: repoName,
+      format: format.value,
+      public: isPublic.value,
+      description: '',
+      repo_type: type.value,
+      ...(type.value === 'proxy'
+        ? {
+            upstream_url: upstreamUrl.value.trim(),
+            upstream_username: upstreamUsername.value || undefined,
+            upstream_password: upstreamPassword.value || undefined,
+          }
+        : {}),
+      ...(type.value === 'group' ? { member_repos: members.value } : {}),
+    })
+    toast.success(t('repos.new.created'), repoName)
+    open.value = false
+    emit('created', repoName)
+    await router.push(`/repos/${encodeURIComponent(repoName)}`)
+  } catch (err: unknown) {
+    toast.error(t('repos.new.failed'), err instanceof Error ? err.message : undefined)
+  } finally {
+    creating.value = false
+  }
+}
 </script>

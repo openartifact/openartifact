@@ -5,9 +5,12 @@
 package nuget
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/sha512"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -19,8 +22,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -178,18 +183,8 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 	hash := sha512.Sum512(data)
 	hashB64 := base64.StdEncoding.EncodeToString(hash[:])
 
-	// Store blob
-	blobKey, err := h.BlobStore.Put(r.Context(), strings.NewReader(string(data)), map[string]string{
-		"filename": fmt.Sprintf("%s.%s.nupkg", packageID, version),
-		"package":  packageID,
-		"version":  version,
-	})
-	if err != nil {
-		h.Log.Errorw("failed to store blob", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
+	sum256 := sha256.Sum256(data)
+	blobSHA := hex.EncodeToString(sum256[:])
 
 	// Extract metadata fields with type checking
 	title, _ := metadata["title"].(string)
@@ -220,18 +215,45 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		IconURL:                  iconURL,
 		RequireLicenseAcceptance: requireLicenseAcceptance,
 		MinClientVersion:         minClientVersion,
-		BlobKey:                  blobKey,
+		BlobKey:                  blobSHA,
 		PackageHash:              hashB64,
 		PackageHashAlgorithm:     "SHA512",
 		PackageSize:              int64(len(data)),
 	}
 
-	if err := h.DB.CreateNuGetPackage(r.Context(), pkg); err != nil {
-		h.Log.Errorw("failed to create nuget package", "id", packageID, "version", version, "error", err)
+	// Store the blob and insert the referencing row under the per-blob lock so
+	// a concurrent unpublish cannot delete the blob in between.
+	if err := storage.WithBlobLock(r.Context(), h.DB, blobSHA, func(ctx context.Context) error {
+		if _, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			"sha256":   blobSHA,
+			"filename": fmt.Sprintf("%s.%s.nupkg", packageID, version),
+			"package":  packageID,
+			"version":  version,
+		}); err != nil {
+			return fmt.Errorf("store blob: %w", err)
+		}
+
+		if err := h.DB.CreateNuGetPackage(ctx, pkg); err != nil {
+			return fmt.Errorf("create nuget package: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		h.Log.Errorw("failed to store nuget package", "id", packageID, "version", version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "nuget",
+		Name:       packageID,
+		Version:    version,
+		Path:       fmt.Sprintf("%s.%s.nupkg", packageID, version),
+		SHA256:     blobSHA,
+		Size:       int64(len(data)),
+	}))
 
 	w.WriteHeader(http.StatusCreated)
 }
@@ -269,12 +291,6 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Delete blob
-	if err := h.BlobStore.Delete(r.Context(), pkg.BlobKey); err != nil {
-		h.Log.Errorw("failed to delete blob", "key", pkg.BlobKey, "error", err)
-		// Continue anyway
-	}
-
 	// Delete from database
 	if err := h.DB.DeleteNuGetPackage(r.Context(), repoID, packageID, version); err != nil {
 		h.Log.Errorw("failed to delete nuget package", "id", packageID, "version", version, "error", err)
@@ -282,6 +298,22 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 
 		return
 	}
+
+	// The blob is content-addressed and may be shared; remove it only once no
+	// row references it any more.
+	if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.BlobKey); err != nil {
+		h.Log.Warnw("failed to clean up blob after nuget delete", "key", pkg.BlobKey, "error", err)
+	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "nuget",
+		Name:       packageID,
+		Version:    version,
+		Path:       fmt.Sprintf("%s.%s.nupkg", packageID, version),
+		SHA256:     pkg.BlobKey,
+		Size:       pkg.PackageSize,
+	}))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -315,6 +347,11 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 
 	if pkg == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
+		fmt.Sprintf("%s.%s.nupkg", packageID, version), vars["filename"], r.URL.Path)...) {
 		return
 	}
 

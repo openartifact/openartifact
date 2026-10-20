@@ -18,7 +18,7 @@ import (
 func TestS3Integration_PutGetDelete(t *testing.T) {
 	endpoint := os.Getenv("TEST_S3_ENDPOINT")
 	if endpoint == "" {
-		t.Skip("TEST_S3_ENDPOINT not set; skipping S3 integration test")
+		skipOrFailMissingEnv(t, "TEST_S3_ENDPOINT")
 	}
 
 	bucket := os.Getenv("TEST_S3_BUCKET")

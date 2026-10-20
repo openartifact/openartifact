@@ -15,9 +15,31 @@ import (
 	"sort"
 	"strings"
 	"time"
+	"unicode/utf8"
+
+	"github.com/openartifact/openartifact/internal/crypto"
 )
 
-var errNoChoices = errors.New("no choices in response")
+var (
+	errNoChoices    = errors.New("no choices in response")
+	errAPIStatus    = errors.New("llm api returned non-200 status")
+	errAPIError     = errors.New("llm api returned an error")
+	errBadLLMOutput = errors.New("llm returned unparseable output")
+)
+
+// maxManifestBytes bounds the untrusted manifest text sent to the LLM.
+const maxManifestBytes = 64 * 1024
+
+func truncateUTF8(s string, limit int) string {
+	if len(s) <= limit {
+		return s
+	}
+	s = s[:limit]
+	for len(s) > 0 && !utf8.ValidString(s) {
+		s = s[:len(s)-1]
+	}
+	return s
+}
 
 const defaultSystemPrompt = `You are an expert DevOps and Software Architecture AI embedded within a corporate Artifact Manager. Your job is to analyze uploaded software packages (via their manifest and dependency files), assess them for quality, and generate searchable metadata.
 
@@ -96,6 +118,10 @@ func NewClient(cfg Config) *Client {
 		timeout = 30 * time.Second
 	}
 
+	if key, err := crypto.Decrypt(cfg.APIKey); err == nil {
+		cfg.APIKey = key
+	}
+
 	return &Client{
 		cfg: cfg,
 		httpClient: &http.Client{
@@ -137,6 +163,7 @@ type chatResponse struct {
 
 // Analyze sends manifest text to the LLM and returns structured analysis.
 func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisResult, *UsageInfo, error) {
+	manifestText = truncateUTF8(manifestText, maxManifestBytes)
 	reqBody := chatRequest{
 		Model: c.cfg.Model,
 		Messages: []chatMessage{
@@ -178,7 +205,7 @@ func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisRes
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		return nil, nil, fmt.Errorf("api error %d: %s", resp.StatusCode, string(respBytes)) //nolint:err113 // dynamic error with runtime context
+		return nil, nil, fmt.Errorf("%w: status %d", errAPIStatus, resp.StatusCode)
 	}
 
 	var chatResp chatResponse
@@ -187,7 +214,7 @@ func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisRes
 	}
 
 	if chatResp.Error != nil {
-		return nil, nil, fmt.Errorf("api error: %s", chatResp.Error.Message) //nolint:err113 // dynamic error with runtime context
+		return nil, nil, errAPIError
 	}
 
 	if len(chatResp.Choices) == 0 {
@@ -200,7 +227,17 @@ func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisRes
 
 	var result AnalysisResult
 	if err := json.Unmarshal([]byte(content), &result); err != nil {
-		return nil, nil, fmt.Errorf("parse llm json output: %w (raw: %s)", err, content)
+		return nil, nil, fmt.Errorf("%w: %w", errBadLLMOutput, err)
+	}
+
+	result.ArtifactSummary = truncateUTF8(result.ArtifactSummary, 2000)
+	result.SecurityNotes = truncateUTF8(result.SecurityNotes, 4000)
+	result.LicenseName = truncateUTF8(result.LicenseName, 200)
+	if len(result.Tags) > 10 {
+		result.Tags = result.Tags[:10]
+	}
+	for i := range result.Tags {
+		result.Tags[i] = truncateUTF8(result.Tags[i], 64)
 	}
 
 	// Normalize license_status

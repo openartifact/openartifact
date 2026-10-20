@@ -6,7 +6,6 @@ package worker
 
 import (
 	"context"
-	"fmt"
 	"sync"
 	"time"
 
@@ -40,12 +39,20 @@ type AIAnalysisWorker struct {
 	queue    chan AIAnalysisRequest
 	stopCh   chan struct{}
 	doneCh   chan struct{}
+	stopOnce sync.Once
+	started  bool
+	ctx      context.Context //nolint:containedctx // worker lifetime context, cancelled by Stop
+	cancel   context.CancelFunc
 }
 
 // NewAIAnalysisWorker creates a new worker. Pass nil aiClient to disable AI calls
 // (records will be created with status "pending" for later processing).
 func NewAIAnalysisWorker(db database.Database, aiClient *ai.Client, log *logger.Logger) *AIAnalysisWorker {
+	ctx, cancel := context.WithCancel(context.Background())
+
 	return &AIAnalysisWorker{
+		ctx:      ctx,
+		cancel:   cancel,
 		db:       db,
 		aiClient: aiClient,
 		log:      log,
@@ -65,23 +72,33 @@ func (w *AIAnalysisWorker) WithDebounce(d time.Duration) *AIAnalysisWorker {
 
 // Start launches the background processing goroutine.
 func (w *AIAnalysisWorker) Start() {
+	w.mu.Lock()
+	w.started = true
+	w.mu.Unlock()
+
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				w.log.Errorw("panic in goroutine", "panic", r)
-			}
-		}()
 		defer close(w.doneCh)
 
 		for {
 			select {
 			case req := <-w.queue:
-				w.process(req)
+				w.safeProcess(req)
 			case <-w.stopCh:
 				return
 			}
 		}
 	}()
+}
+
+// safeProcess isolates panics to a single request so the worker keeps running.
+func (w *AIAnalysisWorker) safeProcess(req AIAnalysisRequest) {
+	defer func() {
+		if r := recover(); r != nil {
+			w.log.Errorw("ai worker: panic processing request", "artifact_id", req.ArtifactID, "panic", r)
+		}
+	}()
+
+	w.process(req)
 }
 
 // Stop gracefully shuts down the worker.
@@ -91,10 +108,25 @@ func (w *AIAnalysisWorker) Stop() {
 		t.Stop()
 		delete(w.timers, key)
 	}
+
+	started := w.started
 	w.mu.Unlock()
 
-	close(w.stopCh)
-	<-w.doneCh
+	w.stopOnce.Do(func() { close(w.stopCh) })
+
+	if !started {
+		w.cancel()
+		return
+	}
+
+	select {
+	case <-w.doneCh:
+	case <-time.After(10 * time.Second):
+		w.cancel() // abort in-flight LLM call
+		<-w.doneCh
+	}
+
+	w.cancel()
 }
 
 // Notify schedules an AI analysis for the given artifact (debounced).
@@ -129,7 +161,7 @@ func (w *AIAnalysisWorker) Notify(req AIAnalysisRequest) {
 
 // process performs the actual AI analysis and persists results.
 func (w *AIAnalysisWorker) process(req AIAnalysisRequest) {
-	ctx, cancel := context.WithTimeout(context.Background(), 60*time.Second)
+	ctx, cancel := context.WithTimeout(w.ctx, 60*time.Second)
 	defer cancel()
 
 	// Mark as processing
@@ -170,7 +202,7 @@ func (w *AIAnalysisWorker) process(req AIAnalysisRequest) {
 		w.log.Errorw("ai worker: analysis failed", "artifact_id", req.ArtifactID, "error", err)
 
 		pending.Status = "failed"
-		pending.ErrorMessage = fmt.Sprintf("ai analysis error: %v", err)
+		pending.ErrorMessage = "ai analysis failed; see server logs"
 		_ = w.db.UpsertAIAnalysis(ctx, pending)
 
 		return
@@ -206,13 +238,11 @@ func (w *AIAnalysisWorker) process(req AIAnalysisRequest) {
 		"tags", result.Tags,
 	)
 
-	// Auto-quarantine if recommended
+	// LLM output is untrusted (the manifest is attacker-controlled prompt
+	// input), so a recommendation is recorded for human review but never
+	// triggers automatic quarantine.
 	if result.QuarantineRecommended {
-		if err := w.db.QuarantineArtifact(ctx, req.RepositoryID, req.ArtifactID, true); err != nil {
-			w.log.Warnw("ai worker: failed to quarantine artifact", "artifact_id", req.ArtifactID, "error", err)
-		} else {
-			w.log.Warnw("ai worker: artifact quarantined by AI recommendation",
-				"artifact_id", req.ArtifactID, "security_notes", result.SecurityNotes)
-		}
+		w.log.Warnw("ai worker: quarantine recommended; manual review required",
+			"artifact_id", req.ArtifactID, "repo_id", req.RepositoryID)
 	}
 }

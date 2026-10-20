@@ -179,7 +179,7 @@ type CreateTokenParams struct {
 	Kind      string          `db:"kind" json:"kind"`
 	TokenHash string          `db:"token_hash" json:"token_hash"`
 	Column5   json.RawMessage `db:"column_5" json:"column_5"`
-	ExpiresAt time.Time       `db:"expires_at" json:"expires_at"`
+	ExpiresAt *time.Time      `db:"expires_at" json:"expires_at"`
 }
 
 type CreateTokenRow struct {
@@ -1028,17 +1028,17 @@ WHERE id = $1
 `
 
 type UpdateUserParams struct {
-	ID                 string    `db:"id" json:"id"`
-	Username           string    `db:"username" json:"username"`
-	Email              *string   `db:"email" json:"email"`
-	PasswordHash       *string   `db:"password_hash" json:"password_hash"`
-	FullName           *string   `db:"full_name" json:"full_name"`
-	Disabled           bool      `db:"disabled" json:"disabled"`
-	MustChangePassword bool      `db:"must_change_password" json:"must_change_password"`
-	LastLoginAt        time.Time `db:"last_login_at" json:"last_login_at"`
-	ExternalID         *string   `db:"external_id" json:"external_id"`
-	ProviderSlug       *string   `db:"provider_slug" json:"provider_slug"`
-	SsoManagedGroups   bool      `db:"sso_managed_groups" json:"sso_managed_groups"`
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
 }
 
 func (q *Queries) UpdateUser(ctx context.Context, arg UpdateUserParams) error {

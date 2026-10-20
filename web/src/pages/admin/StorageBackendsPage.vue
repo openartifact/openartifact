@@ -15,7 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <span class="text-foreground/70">{{ t('nav.storage') }}</span>
         </div>
         <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.storage.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">Configure where OpenArtifact physically stores artifacts.</p>
+        <p class="mt-1 text-sm text-muted">{{ t('adm.storage.description') }}</p>
       </div>
       <div class="flex items-center gap-2 shrink-0">
         <button
@@ -25,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           @click="testAll"
         >
           <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': testingAll }" />
-          Test all
+          {{ t('adm.storage.testAll') }}
         </button>
         <button
           type="button"
@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           @click="openCreate"
         >
           <PlusIcon class="w-4 h-4" />
-          Add storage backend
+          {{ t('adm.storage.addTitle') }}
         </button>
       </div>
     </div>
@@ -84,7 +84,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-else class="bg-surface rounded-xl border border-border overflow-hidden mt-5">
       <!-- Table caption row -->
       <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
-        <h2 class="text-sm font-semibold text-foreground">Configured backends</h2>
+        <h2 class="text-sm font-semibold text-foreground">{{ t('adm.storage.stat.configured') }}</h2>
         <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-[11px] font-mono font-medium text-muted">
           {{ items.length }}
         </span>
@@ -95,15 +95,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="w-12 h-12 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
           <ServerIcon class="w-6 h-6 text-muted" />
         </div>
-        <p class="text-sm font-medium text-foreground">No storage backends configured</p>
-        <p class="text-xs text-muted mt-1 mb-4">Add your first backend to start storing artifacts.</p>
+        <p class="text-sm font-medium text-foreground">{{ t('adm.storage.empty') }}</p>
+        <p class="text-xs text-muted mt-1 mb-4">{{ t('adm.storage.emptyHint') }}</p>
         <button
           type="button"
           class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
           @click="openCreate"
         >
           <PlusIcon class="w-4 h-4" />
-          Add storage backend
+          {{ t('adm.storage.addTitle') }}
         </button>
       </div>
 
@@ -111,20 +111,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <table v-else class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
-              Name
+            <th scope="col" class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
+              {{ t('adm.storage.column.name') }}
             </th>
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-              Type
+            <th scope="col" class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+              {{ t('adm.storage.column.type') }}
             </th>
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-              Location
+            <th scope="col" class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+              {{ t('adm.storage.column.location') }}
             </th>
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-              Status
+            <th scope="col" class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+              {{ t('adm.storage.column.status') }}
             </th>
-            <th class="text-right text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
-              Actions
+            <th scope="col" class="text-right text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
+              {{ t('adm.storage.column.actions') }}
             </th>
           </tr>
         </thead>
@@ -200,7 +200,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   {{ statusLabel(backend.status) }}
                 </span>
                 <p v-if="backend.last_checked_at" class="text-[10px] text-muted font-mono mt-0.5 whitespace-nowrap">
-                  checked {{ timeAgo(backend.last_checked_at) }}
+                  {{ t('adm.storage.checked') }} {{ timeAgo(backend.last_checked_at) }}
                 </p>
               </div>
             </td>
@@ -211,7 +211,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <!-- Test -->
                 <button
                   type="button"
-                  title="Test connection"
+                  :title="t('adm.storage.testConnection')"
+                  :aria-label="`${t('adm.storage.testConnection')}: ${backend.name}`"
                   :disabled="testingOne === backend.name"
                   class="p-1.5 rounded-md text-muted hover:text-primary hover:bg-primary/10 transition-colors disabled:opacity-40"
                   @click="testOne(backend.name)"
@@ -222,7 +223,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <!-- Edit -->
                 <button
                   type="button"
-                  title="Edit"
+                  :title="t('common.edit')"
+                  :aria-label="`${t('common.edit')}: ${backend.name}`"
                   class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
                   @click="openEdit(backend)"
                 >
@@ -232,7 +234,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <button
                   v-if="!backend.is_default"
                   type="button"
-                  title="Set as default"
+                  :title="t('adm.storage.setDefault')"
+                  :aria-label="`${t('adm.storage.setDefault')}: ${backend.name}`"
                   class="p-1.5 rounded-md text-muted hover:text-warning hover:bg-warning/10 transition-colors"
                   @click="setDefault(backend)"
                 >
@@ -241,7 +244,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <!-- Delete -->
                 <button
                   type="button"
-                  title="Delete backend"
+                  :title="t('adm.storage.deleteAction')"
+                  :aria-label="`${t('adm.storage.deleteAction')}: ${backend.name}`"
                   :disabled="backend.is_default"
                   class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
                   @click="openDelete(backend)"
@@ -258,37 +262,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- ═══════════════════════════════════════════════════════════════════════
          SLIDE-RIGHT DRAWER
     ════════════════════════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <div v-if="drawerOpen" class="fixed inset-0 z-50 flex justify-end">
-        <!-- Backdrop -->
-        <div
-          class="absolute inset-0 bg-black/40 backdrop-blur-sm animate-fade-in"
-          @click="closeDrawer"
-        />
-
-        <!-- Drawer panel -->
-        <div class="relative w-full max-w-xl bg-surface border-l border-border shadow-2xl flex flex-col animate-slideRight">
-          <!-- Header -->
-          <div class="px-6 py-5 border-b border-border shrink-0">
-            <p class="text-[10px] uppercase tracking-[0.14em] font-mono text-muted mb-0.5">
-              {{ drawerMode === 'create' ? 'New backend' : 'Edit backend' }}
-            </p>
-            <div class="flex items-center justify-between gap-3">
-              <h2 class="text-lg font-bold text-foreground tracking-tight">
-                {{ drawerMode === 'create' ? 'Add Storage Backend' : `Edit · ${editingBackend?.name}` }}
-              </h2>
-              <button
-                type="button"
-                class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
-                @click="closeDrawer"
-              >
-                <XMarkIcon class="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          <!-- Scrollable body -->
-          <div class="flex-1 overflow-y-auto nice-scroll px-6 py-5 space-y-6">
+    <AdminDialog
+      :open="drawerOpen"
+      drawer
+      :eyebrow="drawerMode === 'create' ? t('adm.storage.newBackend') : t('adm.storage.editBackend')"
+      :title="drawerMode === 'create' ? t('adm.storage.addTitle') : `${t('common.edit')} · ${editingBackend?.name ?? ''}`"
+      @close="closeDrawer"
+    >
+          <div class="space-y-6">
             <!-- Name -->
             <div>
               <label class="block text-xs font-semibold text-foreground mb-1.5">
@@ -430,7 +411,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                           :type="field.type === 'secret'
                             ? (revealedSecrets[field.key] ? 'text' : 'password')
                             : 'text'"
-                          :placeholder="field.placeholder"
+                          :placeholder="field.type === 'secret' && form.config['has_' + field.key] ? t('adm.storage.secretStored') : field.placeholder"
+                          :aria-label="field.label"
                           class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                           :class="[
                             field.mono ? 'font-mono text-[12px]' : '',
@@ -440,10 +422,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         <button
                           v-if="field.type === 'secret'"
                           type="button"
+                          :aria-label="`${revealedSecrets[field.key] ? t('adm.ai.hideKey') : t('adm.ai.showKey')}: ${field.label}`"
+                          :aria-pressed="!!revealedSecrets[field.key]"
                           class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-muted hover:text-foreground transition-colors"
                           @click="revealedSecrets[field.key] = !revealedSecrets[field.key]"
                         >
-                          {{ revealedSecrets[field.key] ? 'hide' : 'show' }}
+                          {{ revealedSecrets[field.key] ? t('adm.ai.hide') : t('adm.ai.show') }}
                         </button>
                       </div>
                       <p v-if="field.hint" class="text-[11px] text-muted mt-1">{{ field.hint }}</p>
@@ -498,26 +482,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
           </div>
 
-          <!-- Footer -->
-          <div class="px-6 py-4 border-t border-border flex items-center gap-2 shrink-0 bg-surface">
+          <template #footer>
             <button
               type="button"
               :disabled="drawerMode === 'create' || !form.name || testingDrawer"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-              :title="drawerMode === 'create' ? 'Save the backend first to test it' : 'Test connection'"
+              class="mr-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+              :title="drawerMode === 'create' ? t('adm.storage.saveFirst') : t('adm.storage.testSaved')"
               @click="testDrawer"
             >
-              <ArrowPathIcon v-if="testingDrawer" class="w-4 h-4 animate-spin" />
-              <BoltIcon v-else class="w-4 h-4" />
-              Test connection
+              <ArrowPathIcon v-if="testingDrawer" class="w-4 h-4 animate-spin" aria-hidden="true" />
+              <BoltIcon v-else class="w-4 h-4" aria-hidden="true" />
+              {{ t('adm.storage.testConnection') }}
             </button>
-            <div class="flex-1" />
             <button
               type="button"
               class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
               @click="closeDrawer"
             >
-              Cancel
+              {{ t('common.cancel') }}
             </button>
             <button
               type="button"
@@ -525,44 +507,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
               @click="saveDrawer"
             >
-              <ArrowPathIcon v-if="savingDrawer" class="w-4 h-4 animate-spin" />
-              {{ drawerMode === 'create' ? 'Create backend' : 'Save changes' }}
+              <ArrowPathIcon v-if="savingDrawer" class="w-4 h-4 animate-spin" aria-hidden="true" />
+              {{ drawerMode === 'create' ? t('adm.storage.createAction') : t('adm.orgs.saveAction') }}
             </button>
-          </div>
-        </div>
-      </div>
-    </Teleport>
+          </template>
+    </AdminDialog>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          DELETE CONFIRMATION MODAL
     ════════════════════════════════════════════════════════════════════════════ -->
-    <Teleport to="body">
-      <div
-        v-if="deleteTarget"
-        class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
-      >
-        <!-- Backdrop -->
-        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="cancelDelete" />
-
-        <!-- Modal -->
-        <div class="relative bg-surface border border-border rounded-xl shadow-2xl w-full max-w-md">
-          <!-- Modal header -->
-          <div class="px-6 pt-6 pb-4">
-            <h2 class="text-base font-bold text-foreground tracking-tight">Delete storage backend</h2>
-            <p class="text-sm text-muted mt-0.5">This action is permanent and cannot be undone.</p>
-          </div>
-
-          <div class="px-6 pb-6 space-y-4">
+    <AdminDialog
+      :open="!!deleteTarget"
+      max-width="max-w-md"
+      :title="t('adm.storage.deleteTitle')"
+      :description="t('adm.orgs.deleteHint')"
+      @close="cancelDelete"
+    >
+          <div v-if="deleteTarget" class="space-y-4">
             <!-- Danger alert -->
             <div class="rounded-lg border border-danger/30 bg-danger-soft p-3">
               <div class="flex items-start gap-2.5">
-                <ExclamationCircleIcon class="w-4 h-4 text-danger mt-0.5 shrink-0" />
+                <ExclamationCircleIcon class="w-4 h-4 text-danger mt-0.5 shrink-0" aria-hidden="true" />
                 <div>
-                  <p class="text-xs font-semibold text-danger">Artifacts may become inaccessible</p>
-                  <p class="text-[11px] text-danger/80 mt-0.5 leading-relaxed">
-                    Any artifacts stored in this backend will no longer be accessible after deletion.
-                    Make sure to migrate data before proceeding.
-                  </p>
+                  <p class="text-xs font-semibold text-danger">{{ t('adm.storage.deleteWarnTitle') }}</p>
+                  <p class="text-[11px] text-danger/80 mt-0.5 leading-relaxed">{{ t('adm.storage.deleteWarnBody') }}</p>
                 </div>
               </div>
             </div>
@@ -592,46 +560,39 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Confirmation input -->
             <div>
-              <label class="block text-xs font-semibold text-foreground mb-1.5">
-                Type
+              <label for="storage-delete-confirm" class="block text-xs font-semibold text-foreground mb-1.5">
+                {{ t('adm.orgs.typeToConfirm') }}
                 <code class="font-mono text-danger bg-danger-soft px-1 py-0.5 rounded mx-1">{{ deleteTarget.name }}</code>
-                to confirm
               </label>
               <input
+                id="storage-delete-confirm"
                 v-model="deleteConfirmName"
                 type="text"
                 :placeholder="deleteTarget.name"
-                class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 transition-colors"
-                :class="deleteConfirmName && deleteConfirmName !== deleteTarget.name
-                  ? 'border-danger focus:ring-danger'
-                  : 'border-border focus:ring-danger'"
+                class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 transition-colors border-border focus:ring-danger"
               />
             </div>
-
-            <!-- Actions -->
-            <div class="flex items-center gap-2 justify-end pt-1">
-              <button
-                type="button"
-                class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                @click="cancelDelete"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                :disabled="deleteConfirmName !== deleteTarget.name || deleting"
-                class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-                @click="confirmDelete"
-              >
-                <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" />
-                <TrashIcon v-else class="w-4 h-4" />
-                Delete backend
-              </button>
-            </div>
           </div>
-        </div>
-      </div>
-    </Teleport>
+          <template #footer>
+            <button
+              type="button"
+              class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+              @click="cancelDelete"
+            >
+              {{ t('common.cancel') }}
+            </button>
+            <button
+              type="button"
+              :disabled="!deleteTarget || deleteConfirmName !== deleteTarget.name || deleting"
+              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              @click="confirmDelete"
+            >
+              <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" aria-hidden="true" />
+              <TrashIcon v-else class="w-4 h-4" aria-hidden="true" />
+              {{ t('adm.storage.deleteAction') }}
+            </button>
+          </template>
+    </AdminDialog>
   </div>
 </template>
 
@@ -647,6 +608,7 @@ import {
   type StorageBackend as StorageApi,
 } from '../../api/storage'
 import { useToastStore } from '../../stores/toast'
+import AdminDialog from '../../components/AdminDialog.vue'
 import { t } from '../../i18n/en'
 import {
   ServerIcon,
@@ -656,7 +618,6 @@ import {
   StarIcon,
   TrashIcon,
   CheckIcon,
-  XMarkIcon,
   PlusIcon,
   ArrowPathIcon,
   ExclamationCircleIcon,
@@ -669,7 +630,8 @@ import {
 type StorageBackend = StorageApi & {
   name: string
   kind: string
-  status: 'ok' | 'degraded' | 'error' | 'unknown'
+  // Vocabulary reported by the backend (`healthy` / `unreachable` / `unknown`).
+  status: 'healthy' | 'unreachable' | 'unknown'
   is_default: boolean
 }
 
@@ -1061,29 +1023,29 @@ const deleting = ref(false)
 
 const statTiles = computed(() => [
   {
-    label: 'Configured',
+    label: t('adm.storage.stat.configured'),
     value: items.value.length,
     icon: ServerIcon,
     iconBg: 'rgb(var(--color-primary) / 0.1)',
     iconColor: 'rgb(var(--color-primary))',
   },
   {
-    label: 'Healthy',
-    value: items.value.filter((i) => i.status === 'ok').length,
+    label: t('adm.storage.status.healthy'),
+    value: items.value.filter((i) => i.status === 'healthy').length,
     icon: CheckIcon,
     iconBg: 'rgb(var(--color-success-soft))',
     iconColor: 'rgb(var(--color-success))',
   },
   {
-    label: 'Degraded',
-    value: items.value.filter((i) => i.status === 'degraded').length,
+    label: t('adm.storage.status.unknown'),
+    value: items.value.filter((i) => i.status !== 'healthy' && i.status !== 'unreachable').length,
     icon: ExclamationCircleIcon,
     iconBg: 'rgb(var(--color-warning-soft))',
     iconColor: 'rgb(var(--color-warning))',
   },
   {
-    label: 'Error',
-    value: items.value.filter((i) => i.status === 'error').length,
+    label: t('adm.storage.status.unreachable'),
+    value: items.value.filter((i) => i.status === 'unreachable').length,
     icon: ExclamationCircleIcon,
     iconBg: 'rgb(var(--color-danger-soft))',
     iconColor: 'rgb(var(--color-danger))',
@@ -1129,19 +1091,17 @@ function locationSummary(b: StorageBackend): string {
 
 function statusLabel(s: string): string {
   const map: Record<string, string> = {
-    ok: 'Healthy',
-    degraded: 'Degraded',
-    error: 'Error',
-    unknown: 'Unknown',
+    healthy: t('adm.storage.status.healthy'),
+    unreachable: t('adm.storage.status.unreachable'),
+    unknown: t('adm.storage.status.unknown'),
   }
   return map[s] ?? s
 }
 
 function statusBadgeClass(s: string): string {
   const map: Record<string, string> = {
-    ok: 'bg-success-soft text-success',
-    degraded: 'bg-warning-soft text-warning',
-    error: 'bg-danger-soft text-danger',
+    healthy: 'bg-success-soft text-success',
+    unreachable: 'bg-danger-soft text-danger',
     unknown: 'bg-surface-hover text-muted',
   }
   return map[s] ?? 'bg-surface-hover text-muted'
@@ -1149,9 +1109,8 @@ function statusBadgeClass(s: string): string {
 
 function statusDotClass(s: string): string {
   const map: Record<string, string> = {
-    ok: 'bg-success',
-    degraded: 'bg-warning',
-    error: 'bg-danger',
+    healthy: 'bg-success',
+    unreachable: 'bg-danger',
     unknown: 'bg-muted',
   }
   return map[s] ?? 'bg-muted'
@@ -1160,11 +1119,11 @@ function statusDotClass(s: string): string {
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()
   const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
+  if (minutes < 1) return t('adm.backup.justNow')
+  if (minutes < 60) return `${minutes}m`
   const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
+  if (hours < 24) return `${hours}h`
+  return `${Math.floor(hours / 24)}d`
 }
 
 // ─── Data Loading ──────────────────────────────────────────────────────────────
@@ -1174,6 +1133,8 @@ async function load(): Promise<void> {
   try {
     const res = await listStorageBackends()
     items.value = (res.items ?? []) as StorageBackend[]
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('adm.storage.loadFailed'))
   } finally {
     loading.value = false
   }
@@ -1185,21 +1146,25 @@ async function testOne(name: string): Promise<void> {
   testingOne.value = name
   try {
     const res = await testStorageBackend(name)
-    if (res.ok) toasts.success(`${name}: healthy`)
-    else toasts.error(`${name}: ${res.message ?? 'test failed'}`)
+    if (res.ok) toasts.success(`${name}: ${t('adm.storage.status.healthy')}`)
+    else toasts.error(`${name}: ${res.message ?? t('adm.storage.testFailed')}`)
     await load()
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('adm.storage.testFailed'))
   } finally {
     testingOne.value = null
   }
 }
 
+// testStorageBackend resolves with {ok:false} for failed checks, so failures
+// are counted from the results rather than from rejections.
 async function testAll(): Promise<void> {
   testingAll.value = true
   try {
     const results = await Promise.allSettled(items.value.map((b) => testStorageBackend(b.name)))
-    const failed = results.filter((r) => r.status === 'rejected').length
-    if (failed === 0) toasts.success('All backends tested successfully')
-    else toasts.warning(`${failed} backend(s) failed the test`)
+    const failed = results.filter((r) => r.status === 'rejected' || !r.value.ok).length
+    if (failed === 0) toasts.success(t('adm.storage.allHealthy'))
+    else toasts.warning(`${failed} ${t('adm.storage.someFailed')}`)
     await load()
   } finally {
     testingAll.value = false
@@ -1216,7 +1181,7 @@ async function testDrawer(): Promise<void> {
     testResult.value = res
     await load()
   } catch (err) {
-    testResult.value = { ok: false, message: err instanceof Error ? err.message : 'Unknown error' }
+    testResult.value = { ok: false, message: err instanceof Error ? err.message : t('adm.storage.testFailed') }
   } finally {
     testingDrawer.value = false
   }
@@ -1227,10 +1192,10 @@ async function testDrawer(): Promise<void> {
 async function setDefault(backend: StorageBackend): Promise<void> {
   try {
     await updateStorageBackend(backend.name, { is_default: true })
-    toasts.success(`"${backend.name}" is now the default backend`)
+    toasts.success(`${t('adm.storage.nowDefault')}: ${backend.name}`)
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to set default')
+    toasts.error(err instanceof Error ? err.message : t('adm.storage.saveFailed'))
   }
 }
 
@@ -1277,8 +1242,20 @@ function selectType(kind: string): void {
   testResult.value = null
 }
 
+// The server never returns secrets; it reports `has_<field>: true` instead and
+// keeps the stored secret when the field is omitted or empty on update.
+function submittableConfig(): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(form.config)) {
+    if (k.startsWith('has_')) continue
+    if (v === '' || v === undefined || v === null) continue
+    out[k] = v
+  }
+  return out
+}
+
 async function saveDrawer(): Promise<void> {
-  if (!form.name || !form.kind) return
+  if (!form.name || !form.kind || savingDrawer.value) return
   savingDrawer.value = true
   try {
     if (drawerMode.value === 'create') {
@@ -1286,20 +1263,20 @@ async function saveDrawer(): Promise<void> {
         name: form.name,
         kind: form.kind,
         is_default: form.is_default,
-        config: form.config,
+        config: submittableConfig(),
       })
-      toasts.success(`Backend "${form.name}" created`)
+      toasts.success(`${t('adm.storage.created')}: ${form.name}`)
     } else if (editingBackend.value) {
       await updateStorageBackend(editingBackend.value.name, {
         is_default: form.is_default,
-        config: form.config,
+        config: submittableConfig(),
       })
-      toasts.success(`Backend "${form.name}" updated`)
+      toasts.success(`${t('adm.storage.updated')}: ${form.name}`)
     }
     closeDrawer()
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Save failed')
+    toasts.error(err instanceof Error ? err.message : t('adm.storage.saveFailed'))
   } finally {
     savingDrawer.value = false
   }
@@ -1322,12 +1299,12 @@ async function confirmDelete(): Promise<void> {
   deleting.value = true
   try {
     await deleteStorageBackend(deleteTarget.value.name)
-    toasts.success(`Backend "${deleteTarget.value.name}" deleted`)
+    toasts.success(`${t('adm.storage.deleted')}: ${deleteTarget.value.name}`)
     deleteTarget.value = null
     deleteConfirmName.value = ''
     await load()
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Delete failed')
+    toasts.error(err instanceof Error ? err.message : t('adm.storage.deleteFailed'))
   } finally {
     deleting.value = false
   }

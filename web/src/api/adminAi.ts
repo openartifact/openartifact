@@ -8,7 +8,10 @@ export interface AIConfig {
   enabled: boolean
   provider: string
   base_url: string
+  /** Write-only: GET returns a mask; send the mask back to keep the stored key. */
   api_key: string
+  /** Read-only: whether a key is stored. */
+  has_api_key?: boolean
   model: string
   max_tokens: number
   timeout_secs: number

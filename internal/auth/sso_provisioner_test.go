@@ -37,6 +37,10 @@ type provMockDB struct {
 		groupIDs []string
 	}
 	updateSSOCalled bool
+
+	targetsByName      map[string]*models.PermissionTarget
+	assignments        []string
+	deletedAssignments []string
 }
 
 func newProvMockDB() *provMockDB {
@@ -397,8 +401,8 @@ func (m *provMockDB) CreatePermissionTarget(_ context.Context, _ *models.Permiss
 func (m *provMockDB) GetPermissionTargetByID(_ context.Context, _ string) (*models.PermissionTarget, error) {
 	return nil, nil
 }
-func (m *provMockDB) GetPermissionTargetByName(_ context.Context, _ string) (*models.PermissionTarget, error) {
-	return nil, nil
+func (m *provMockDB) GetPermissionTargetByName(_ context.Context, name string) (*models.PermissionTarget, error) {
+	return m.targetsByName[name], nil
 }
 func (m *provMockDB) UpdatePermissionTarget(_ context.Context, _ *models.PermissionTarget) error {
 	return nil
@@ -410,13 +414,15 @@ func (m *provMockDB) ListPermissionTargets(_ context.Context) ([]*models.Permiss
 func (m *provMockDB) CreatePermissionAssignment(_ context.Context, _ *models.PermissionAssignment) error {
 	return nil
 }
-func (m *provMockDB) DeletePermissionAssignment(_ context.Context, _, _, _ string) error {
+func (m *provMockDB) DeletePermissionAssignment(_ context.Context, targetID, principalType, principalID string) error {
+	m.deletedAssignments = append(m.deletedAssignments, targetID+"|"+principalType+"|"+principalID)
 	return nil
 }
 func (m *provMockDB) GetPermissionTargetsForPrincipal(_ context.Context, _ string, _ []string) ([]*models.PermissionTarget, error) {
 	return nil, nil
 }
-func (m *provMockDB) GetOrCreatePermissionAssignment(_ context.Context, _, _, _ string) error {
+func (m *provMockDB) GetOrCreatePermissionAssignment(_ context.Context, targetID, principalType, principalID string) error {
+	m.assignments = append(m.assignments, targetID+"|"+principalType+"|"+principalID)
 	return nil
 }
 func (m *provMockDB) SyncSSOPermissionsForGroup(_ context.Context, _ string, _ []string) error {
@@ -624,9 +630,6 @@ func (m *provMockDB) UpdateWebhookDelivery(_ context.Context, _ *models.WebhookD
 	return nil
 }
 func (m *provMockDB) ListWebhookDeliveries(_ context.Context, _ string, _ int) ([]*models.WebhookDelivery, error) {
-	return nil, nil
-}
-func (m *provMockDB) ListPendingWebhookDeliveries(_ context.Context) ([]*models.WebhookDelivery, error) {
 	return nil, nil
 }
 
@@ -887,6 +890,8 @@ func testClaims(extID, email, username string, groups []string) SSOClaims {
 		Email:        email,
 		FullName:     "Test User",
 		Groups:       groups,
+		// The IdP verified the email unless a test says otherwise.
+		EmailVerified: true,
 	}
 }
 
@@ -1189,4 +1194,130 @@ func (m *provMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _, _ 
 func (m *provMockDB) DeleteAIAnalysis(_ context.Context, _, _ string) error { return nil }
 func (m *provMockDB) ListPendingAIAnalyses(_ context.Context, _ int) ([]*models.AIAnalysis, error) {
 	return nil, nil
+}
+
+func TestProvisioner_LinkByEmail_UnverifiedEmailNotLinked(t *testing.T) {
+	db := newProvMockDB()
+	email := "admin@example.com"
+	db.addUser(&models.User{ID: "user-admin", Username: "admin", Email: &email})
+
+	p := newTestProvisioner(db)
+	provider := testProvider(true, true, nil)
+	claims := testClaims("sub|attacker", "admin@example.com", "attacker", nil)
+	claims.EmailVerified = false
+
+	_, err := p.Provision(context.Background(), provider, claims)
+	if !errors.Is(err, ErrEmailAlreadyInUse) {
+		t.Fatalf("expected ErrEmailAlreadyInUse for unverified email, got %v", err)
+	}
+
+	if db.updateSSOCalled {
+		t.Error("UpdateUserSSO must not be called for an unverified email")
+	}
+
+	if len(db.createdUsers) != 0 {
+		t.Errorf("no user may be created, got %d", len(db.createdUsers))
+	}
+}
+
+func TestProvisioner_LinkByEmail_AlreadyLinkedUserConflicts(t *testing.T) {
+	cases := map[string]struct{ extID, slug *string }{
+		"other subject":  {new("sub|someone-else"), new("okta")},
+		"other provider": {new("sub|alice-sso"), new("azure")},
+		"provider only":  {nil, new("azure")},
+	}
+
+	for name, tc := range cases {
+		t.Run(name, func(t *testing.T) {
+			db := newProvMockDB()
+			email := "alice@example.com"
+			// Registered by email only so the external-id lookup misses.
+			u := &models.User{ID: "user-alice", Username: "alice", Email: &email, ExternalID: tc.extID, ProviderSlug: tc.slug}
+			db.usersByEmail[email] = u
+			db.usersByID[u.ID] = u
+
+			p := newTestProvisioner(db)
+			provider := testProvider(true, true, nil)
+			claims := testClaims("sub|alice-sso", "alice@example.com", "alice", nil)
+
+			_, err := p.Provision(context.Background(), provider, claims)
+			if !errors.Is(err, ErrIdentityConflict) {
+				t.Fatalf("expected ErrIdentityConflict, got %v", err)
+			}
+
+			if db.updateSSOCalled {
+				t.Error("UpdateUserSSO must not re-bind an already linked account")
+			}
+		})
+	}
+}
+
+func TestProvisioner_UnverifiedEmailNotWrittenOnReLogin(t *testing.T) {
+	db := newProvMockDB()
+	extID, slug, oldEmail := "sub|returning", "okta", "old@example.com"
+	db.addUser(&models.User{ID: "user-returning", Username: "returning", ExternalID: &extID, ProviderSlug: &slug, Email: &oldEmail})
+
+	p := newTestProvisioner(db)
+	claims := testClaims("sub|returning", "new@example.com", "returning", nil)
+	claims.EmailVerified = false
+
+	if _, err := p.Provision(context.Background(), testProvider(true, false, nil), claims); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	updated := db.updatedUsers[len(db.updatedUsers)-1]
+	if updated.Email == nil || *updated.Email != oldEmail {
+		t.Errorf("unverified email must not overwrite the stored one, got %v", updated.Email)
+	}
+}
+
+func permSyncFixture() (*provMockDB, *models.SSOProvider) {
+	db := newProvMockDB()
+	db.addGroup(&models.Group{ID: "grp-admins-id", Name: "admins"})
+	db.targetsByName = map[string]*models.PermissionTarget{"deploy-all": {ID: "target-deploy"}}
+
+	provider := testProvider(true, false, map[string]string{"idp-admins": "admins"})
+	provider.PermissionMapping = map[string]string{"admins": "deploy-all"}
+
+	return db, provider
+}
+
+func TestProvisioner_PermissionSync_NeverDeletesAssignments(t *testing.T) {
+	db, provider := permSyncFixture()
+	p := newTestProvisioner(db)
+
+	// User A is in the IdP group: the group gets the target.
+	if err := p.SyncSSOPermissionsFromGroups(context.Background(), provider, []string{"idp-admins"}); err != nil {
+		t.Fatalf("sync A: %v", err)
+	}
+
+	want := "target-deploy|group|grp-admins-id"
+	if len(db.assignments) != 1 || db.assignments[0] != want {
+		t.Fatalf("expected assignment %q, got %v", want, db.assignments)
+	}
+
+	// User B is not in the IdP group (or sends no group claim at all): nothing
+	// may be removed from the shared group.
+	for _, groups := range [][]string{nil, {"other-group"}} {
+		if err := p.SyncSSOPermissionsFromGroups(context.Background(), provider, groups); err != nil {
+			t.Fatalf("sync B: %v", err)
+		}
+	}
+
+	if len(db.deletedAssignments) != 0 {
+		t.Errorf("login must never delete group assignments, got %v", db.deletedAssignments)
+	}
+}
+
+func TestProvisioner_Login_WithoutGroupClaimKeepsOthersAssignments(t *testing.T) {
+	db, provider := permSyncFixture()
+	p := newTestProvisioner(db)
+
+	if _, err := p.Provision(context.Background(), provider, testClaims("sub|b", "b@example.com", "b", nil)); err != nil {
+		t.Fatalf("provision: %v", err)
+	}
+
+	if len(db.deletedAssignments) != 0 {
+		t.Errorf("login without group claim deleted assignments: %v", db.deletedAssignments)
+	}
 }

@@ -6,8 +6,12 @@ package gomod
 
 import (
 	"bytes"
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"strconv"
@@ -18,8 +22,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -33,13 +39,113 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
 }
 
-func (h *HTTPHandler) RegisterRoutes(r chi.Router) {
-	r.Get("/repos/{name}/{module:*}/@v/list", h.handleList)
-	r.Get("/repos/{name}/{module:*}/@v/{version}.info", h.handleInfo)
-	r.Get("/repos/{name}/{module:*}/@v/{version}.mod", h.handleMod)
-	r.Get("/repos/{name}/{module:*}/@v/{version}.zip", h.handleZip)
-	r.Get("/repos/{name}/{module:*}/@latest", h.handleLatest)
-	r.Put("/repos/{name}/{module:*}/@v/{version}", h.handleUpload)
+// RegisterRepoRoutes registers the GOPROXY GET endpoint relative to the shared
+// /repos/{name} subrouter. Module paths contain slashes, which chi's
+// {name:regexp} params never span, so a single catch-all is dispatched by
+// suffix; the more specific routes of the other formats still win.
+//
+// PUT is not registered here: the subrouter's PUT "/*" is shared with the npm
+// publish route, so the caller dispatches with IsUploadPath and HandlePut.
+func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
+	r.Get("/*", h.dispatchGet)
+}
+
+// IsUploadPath reports whether a /repos/{name}/ request tail is a GOPROXY
+// upload target ("<module>/@v/<file>").
+func IsUploadPath(tail string) bool {
+	t, ok := splitModuleTail(tail)
+	return ok && !t.latest
+}
+
+// HandlePut serves a GOPROXY upload. Callers route here only when
+// IsUploadPath matched the request tail.
+func (h *HTTPHandler) HandlePut(w http.ResponseWriter, r *http.Request) {
+	h.dispatchPut(w, r)
+}
+
+// moduleTail is a parsed GOPROXY request tail.
+type moduleTail struct {
+	module string
+	rest   string // part after "/@v/"
+	latest bool
+}
+
+// splitModuleTail splits a request tail ("<module>/@v/<file>" or
+// "<module>/@latest") into the module path and the part after "/@v/".
+func splitModuleTail(tail string) (moduleTail, bool) {
+	if m, found := strings.CutSuffix(tail, "/@latest"); found {
+		return moduleTail{module: m, latest: true}, m != ""
+	}
+
+	module, rest, ok := strings.Cut(tail, "/@v/")
+
+	return moduleTail{module: module, rest: rest}, ok && module != "" && rest != ""
+}
+
+// setModuleVars exposes the parsed module path (and version) to the handlers
+// through the chi route context, where they read their URL parameters.
+func setModuleVars(r *http.Request, module, version string) {
+	rctx := chi.RouteContext(r.Context())
+	if rctx == nil {
+		return
+	}
+
+	rctx.URLParams.Add("module", module)
+
+	if version != "" {
+		rctx.URLParams.Add("version", version)
+	}
+}
+
+func (h *HTTPHandler) dispatchGet(w http.ResponseWriter, r *http.Request) {
+	tail, ok := splitModuleTail(urlparams.Vars(r)["*"])
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
+
+	module, rest := tail.module, tail.rest
+
+	if tail.latest {
+		setModuleVars(r, module, "")
+		h.handleLatest(w, r)
+
+		return
+	}
+
+	if rest == "list" {
+		setModuleVars(r, module, "")
+		h.handleList(w, r)
+
+		return
+	}
+
+	handlers := [...]struct {
+		ext    string
+		handle http.HandlerFunc
+	}{{".info", h.handleInfo}, {".mod", h.handleMod}, {".zip", h.handleZip}}
+
+	for _, e := range handlers {
+		if version, found := strings.CutSuffix(rest, e.ext); found && version != "" {
+			setModuleVars(r, module, version)
+			e.handle(w, r)
+
+			return
+		}
+	}
+
+	http.NotFound(w, r)
+}
+
+func (h *HTTPHandler) dispatchPut(w http.ResponseWriter, r *http.Request) {
+	tail, ok := splitModuleTail(urlparams.Vars(r)["*"])
+	if !ok || tail.latest {
+		http.NotFound(w, r)
+		return
+	}
+
+	setModuleVars(r, tail.module, tail.rest)
+	h.handleUpload(w, r)
 }
 
 // decodePath decodes module path: "github.com/!my!org/pkg" -> "github.com/MyOrg/pkg".
@@ -101,7 +207,6 @@ func (h *HTTPHandler) handleList(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	//nolint:gosec // G705: Go module content, not HTML output
 	_, _ = w.Write([]byte(strings.Join(versionList, "\n")))
 }
 
@@ -189,9 +294,13 @@ func (h *HTTPHandler) handleMod(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
+		modulePath+"/@v/"+version+".mod", modulePath+"@"+version, r.URL.Path)...) {
+		return
+	}
+
 	w.Header().Set("Content-Type", "text/plain")
 	w.WriteHeader(http.StatusOK)
-	//nolint:gosec // G705: Go module content, not HTML output
 	_, _ = w.Write([]byte(mod.GoModContent))
 }
 
@@ -225,6 +334,11 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 
 	if mod == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
+		modulePath+"/@v/"+version+".zip", modulePath+"@"+version, r.URL.Path)...) {
 		return
 	}
 
@@ -350,49 +464,75 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store zip blob
-	zipBlobID, err := h.BlobStore.Put(r.Context(), bytes.NewReader(zipData), map[string]string{
-		"module":  modulePath,
-		"version": version,
-		"type":    "zip",
-	})
-	if err != nil {
-		h.Log.Errorw("failed to store zip blob", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
+	zipSum := sha256.Sum256(zipData)
+	zipSHA := hex.EncodeToString(zipSum[:])
+	modSum := sha256.Sum256([]byte(goModContent))
+	modSHA := hex.EncodeToString(modSum[:])
 
-		return
-	}
-
-	// Store mod blob
-	modBlobID, err := h.BlobStore.Put(r.Context(), strings.NewReader(goModContent), map[string]string{
-		"module":  modulePath,
-		"version": version,
-		"type":    "mod",
-	})
-	if err != nil {
-		h.Log.Errorw("failed to store mod blob", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	// Create database record
 	mod := &models.GoModule{
 		RepositoryID: repoID,
 		ModulePath:   modulePath,
 		Version:      version,
 		GoModContent: goModContent,
-		ZipBlobKey:   zipBlobID,
-		ModBlobKey:   modBlobID,
 		ZipSizeBytes: int64(len(zipData)),
 	}
 
-	if err := h.DB.CreateGoModule(r.Context(), mod); err != nil {
-		h.Log.Errorw("failed to create go module record", "error", err)
+	// Store both blobs and insert the referencing row under the per-blob locks
+	// so a concurrent unpublish cannot delete either blob in between. Locks
+	// are taken in a fixed (sorted) order to avoid deadlocks between uploads.
+	first, second := zipSHA, modSHA
+	if second < first {
+		first, second = second, first
+	}
+
+	store := func(ctx context.Context) error {
+		zipBlobID, err := h.BlobStore.Put(ctx, bytes.NewReader(zipData), map[string]string{
+			"sha256":  zipSHA,
+			"module":  modulePath,
+			"version": version,
+			"type":    "zip",
+		})
+		if err != nil {
+			return fmt.Errorf("store zip blob: %w", err)
+		}
+
+		modBlobID, err := h.BlobStore.Put(ctx, strings.NewReader(goModContent), map[string]string{
+			"sha256":  modSHA,
+			"module":  modulePath,
+			"version": version,
+			"type":    "mod",
+		})
+		if err != nil {
+			return fmt.Errorf("store mod blob: %w", err)
+		}
+
+		mod.ZipBlobKey = zipBlobID
+		mod.ModBlobKey = modBlobID
+
+		if err := h.DB.CreateGoModule(ctx, mod); err != nil {
+			return fmt.Errorf("create go module record: %w", err)
+		}
+
+		return nil
+	}
+
+	lockErr := storage.WithBlobLocks(r.Context(), h.DB, []string{first, second}, store)
+	if lockErr != nil {
+		h.Log.Errorw("failed to store go module", "module", modulePath, "version", version, "error", lockErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "gomod",
+		Name:       modulePath,
+		Version:    version,
+		Path:       modulePath + "/@v/" + version + ".zip",
+		SHA256:     zipSHA,
+		Size:       mod.ZipSizeBytes,
+	}))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)

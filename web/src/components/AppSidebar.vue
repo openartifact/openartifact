@@ -25,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <div v-if="!ui.sidebarCollapsed" class="leading-none min-w-0">
         <div class="text-[15px] font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></div>
-        <div class="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-muted font-mono">v1.0 · stable</div>
+        <div class="mt-0.5 text-[10px] uppercase tracking-[0.16em] text-muted font-mono">{{ version ? `v${version}` : t('shell.versionUnknown') }}</div>
       </div>
     </div>
 
@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </button>
 
     <!-- Scrollable navigation -->
-    <nav class="flex-1 overflow-y-auto nice-scroll px-2 py-3" aria-label="Primary">
+    <nav class="flex-1 overflow-y-auto nice-scroll px-2 py-3" :aria-label="t('shell.primaryNav')">
 
       <!-- BROWSE -->
       <p v-if="!ui.sidebarCollapsed" class="px-2 mt-2 mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted/80">
@@ -63,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <SidebarLink to="/admin/users" :icon="UsersIcon" :label="t('nav.users')" :collapsed="ui.sidebarCollapsed" />
         <SidebarLink to="/admin/groups" :icon="UserGroupIcon" :label="t('nav.groups')" :collapsed="ui.sidebarCollapsed" />
-        <SidebarLink to="/admin/orgs" :icon="BuildingOfficeIcon" label="Organizations" :collapsed="ui.sidebarCollapsed" />
+        <SidebarLink to="/admin/orgs" :icon="BuildingOfficeIcon" :label="t('shell.organizations')" :collapsed="ui.sidebarCollapsed" />
         <SidebarLink to="/admin/permissions" :icon="ShieldCheckIcon" :label="t('nav.permissions')" :collapsed="ui.sidebarCollapsed" />
         <SidebarLink to="/admin/sso" :icon="KeyIcon" :label="t('nav.sso')" :collapsed="ui.sidebarCollapsed" />
         <SidebarLink to="/admin/gpg" :icon="LockClosedIcon" :label="t('nav.gpg')" :collapsed="ui.sidebarCollapsed" />
@@ -73,7 +73,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <SidebarLink to="/admin/backup" :icon="ArchiveBoxIcon" :label="t('nav.backup')" :collapsed="ui.sidebarCollapsed" />
         <SidebarLink to="/admin/webhooks" :icon="BellAlertIcon" :label="t('nav.webhooks')" :collapsed="ui.sidebarCollapsed" />
         <SidebarLink to="/admin/system" :icon="Cog6ToothIcon" :label="t('nav.system')" :collapsed="ui.sidebarCollapsed" />
-        <SidebarLink to="/admin/ai" :icon="SparklesIcon" label="AI Settings" :collapsed="ui.sidebarCollapsed" />
+        <SidebarLink to="/admin/ai" :icon="SparklesIcon" :label="t('shell.aiSettings')" :collapsed="ui.sidebarCollapsed" />
       </template>
 
       <!-- SECURITY -->
@@ -85,7 +85,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <SidebarLink to="/security/vulns" :icon="ShieldExclamationIcon" :label="t('nav.vulns')" :collapsed="ui.sidebarCollapsed" />
       <SidebarLink to="/security/licenses" :icon="DocumentTextIcon" :label="t('nav.licenses')" :collapsed="ui.sidebarCollapsed" />
       <SidebarLink to="/security/secrets" :icon="EyeSlashIcon" :label="t('nav.secrets')" :collapsed="ui.sidebarCollapsed" />
-      <SidebarLink to="/security/ai-analysis" :icon="SparklesIcon" label="AI Analysis" :collapsed="ui.sidebarCollapsed" />
+      <SidebarLink to="/security/ai-analysis" :icon="SparklesIcon" :label="t('shell.aiAnalysis')" :collapsed="ui.sidebarCollapsed" />
 
       <!-- SETTINGS -->
       <p v-if="!ui.sidebarCollapsed" class="px-2 mt-5 mb-1.5 text-[10px] font-semibold uppercase tracking-[0.14em] text-muted/80">
@@ -160,10 +160,12 @@ import {
 } from '@heroicons/vue/24/outline'
 import SidebarLink from './SidebarLink.vue'
 import { t } from '../i18n/en'
+import { useAppVersion } from '../composables/useAppVersion'
 
 const session = useSessionStore()
 const ui = useUIStore()
 const router = useRouter()
+const version = useAppVersion()
 
 async function handleLogout(): Promise<void> {
   try {

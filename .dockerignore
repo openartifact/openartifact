@@ -23,3 +23,10 @@ Thumbs.db
 
 # Build artifacts
 openartifact
+
+# Secrets and non-build inputs
+**/.env
+**/.env.*
+!**/.env.example
+tests
+docs

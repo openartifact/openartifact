@@ -17,15 +17,15 @@ RETURNING id
 `
 
 type CreateBackupJobParams struct {
-	Status       string    `db:"status" json:"status"`
-	Type         string    `db:"type" json:"type"`
-	StoragePath  *string   `db:"storage_path" json:"storage_path"`
-	SizeBytes    *int64    `db:"size_bytes" json:"size_bytes"`
-	ErrorMessage *string   `db:"error_message" json:"error_message"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	Status       string     `db:"status" json:"status"`
+	Type         string     `db:"type" json:"type"`
+	StoragePath  *string    `db:"storage_path" json:"storage_path"`
+	SizeBytes    *int64     `db:"size_bytes" json:"size_bytes"`
+	ErrorMessage *string    `db:"error_message" json:"error_message"`
+	StartedAt    *time.Time `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) CreateBackupJob(ctx context.Context, arg CreateBackupJobParams) (string, error) {
@@ -55,16 +55,16 @@ FROM backup_jobs WHERE id = $1
 `
 
 type GetBackupJobRow struct {
-	ID           string    `db:"id" json:"id"`
-	Status       string    `db:"status" json:"status"`
-	Type         string    `db:"type" json:"type"`
-	StoragePath  string    `db:"storage_path" json:"storage_path"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	ErrorMessage string    `db:"error_message" json:"error_message"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
+	Status       string     `db:"status" json:"status"`
+	Type         string     `db:"type" json:"type"`
+	StoragePath  string     `db:"storage_path" json:"storage_path"`
+	SizeBytes    int64      `db:"size_bytes" json:"size_bytes"`
+	ErrorMessage string     `db:"error_message" json:"error_message"`
+	StartedAt    *time.Time `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetBackupJob(ctx context.Context, id string) (GetBackupJobRow, error) {
@@ -95,16 +95,16 @@ FROM backup_jobs ORDER BY created_at DESC LIMIT $1
 `
 
 type ListBackupJobsRow struct {
-	ID           string    `db:"id" json:"id"`
-	Status       string    `db:"status" json:"status"`
-	Type         string    `db:"type" json:"type"`
-	StoragePath  string    `db:"storage_path" json:"storage_path"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	ErrorMessage string    `db:"error_message" json:"error_message"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
+	Status       string     `db:"status" json:"status"`
+	Type         string     `db:"type" json:"type"`
+	StoragePath  string     `db:"storage_path" json:"storage_path"`
+	SizeBytes    int64      `db:"size_bytes" json:"size_bytes"`
+	ErrorMessage string     `db:"error_message" json:"error_message"`
+	StartedAt    *time.Time `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListBackupJobs(ctx context.Context, limit int32) ([]ListBackupJobsRow, error) {
@@ -145,15 +145,15 @@ WHERE id = $9
 `
 
 type UpdateBackupJobParams struct {
-	Status       string    `db:"status" json:"status"`
-	Type         string    `db:"type" json:"type"`
-	StoragePath  *string   `db:"storage_path" json:"storage_path"`
-	SizeBytes    *int64    `db:"size_bytes" json:"size_bytes"`
-	ErrorMessage *string   `db:"error_message" json:"error_message"`
-	StartedAt    time.Time `db:"started_at" json:"started_at"`
-	CompletedAt  time.Time `db:"completed_at" json:"completed_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	ID           string    `db:"id" json:"id"`
+	Status       string     `db:"status" json:"status"`
+	Type         string     `db:"type" json:"type"`
+	StoragePath  *string    `db:"storage_path" json:"storage_path"`
+	SizeBytes    *int64     `db:"size_bytes" json:"size_bytes"`
+	ErrorMessage *string    `db:"error_message" json:"error_message"`
+	StartedAt    *time.Time `db:"started_at" json:"started_at"`
+	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
 }
 
 func (q *Queries) UpdateBackupJob(ctx context.Context, arg UpdateBackupJobParams) error {

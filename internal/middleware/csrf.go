@@ -11,6 +11,8 @@ import (
 	"encoding/json"
 	"net/http"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/auth"
 )
 
 const CSRFTokenCookieName = "oa_csrf"
@@ -22,6 +24,22 @@ func NewCSRFToken() (string, error) {
 	}
 
 	return base64.RawURLEncoding.EncodeToString(token), nil
+}
+
+// usesExplicitCredential reports whether RBAC authenticated the request with a
+// header credential rather than the ambient session cookie.
+func usesExplicitCredential(r *http.Request) bool {
+	p := PrincipalFromContext(r.Context())
+	if p == nil {
+		return false
+	}
+
+	switch p.Credential {
+	case auth.CredentialBearerToken, auth.CredentialBasicToken, auth.CredentialLegacy:
+		return true
+	}
+
+	return false
 }
 
 func CSRFMiddleware(next http.Handler) http.Handler {
@@ -51,6 +69,15 @@ func CSRFMiddleware(next http.Handler) http.Handler {
 		}
 
 		if strings.HasPrefix(r.URL.Path, "/api/v1/auth/sso/saml/") && strings.HasSuffix(r.URL.Path, "/acs") {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		// CSRF abuses credentials the browser attaches on its own (the session
+		// cookie). A request authenticated by an explicit header credential
+		// (bearer/basic token, legacy key) cannot be forged cross-site, and CI
+		// clients have no CSRF cookie to echo back.
+		if usesExplicitCredential(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

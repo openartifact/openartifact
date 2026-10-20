@@ -341,7 +341,7 @@ func compareVersionPart(a, b string) int {
 // An empty string is treated as non-digit so the comparison loop still
 // consumes the implicit "end of string" ordering token on the other side.
 func isNonDigit(s string) bool {
-	return len(s) > 0 && !(s[0] >= '0' && s[0] <= '9')
+	return len(s) > 0 && (s[0] < '0' || s[0] > '9')
 }
 
 // byteAt returns s[i], or 0 if s is too short (the end-of-string token).

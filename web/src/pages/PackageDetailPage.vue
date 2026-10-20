@@ -12,14 +12,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="flex items-center gap-1 text-sm text-muted hover:text-foreground transition-colors mb-4 cursor-pointer"
     >
       <ChevronLeftIcon class="w-4 h-4" aria-hidden="true" />
-      Back to repository
+      {{ t('pkg.back') }}
     </button>
 
-    <div v-if="loading" class="text-muted text-sm">Loading...</div>
+    <div v-if="loading" class="text-muted text-sm">{{ t('common.loading') }}</div>
+    <div v-else-if="loadError" class="rounded-xl border border-danger/30 bg-surface p-8 text-center">
+      <p class="text-sm text-danger">{{ loadError }}</p>
+      <button class="mt-3 px-3 py-1.5 text-sm rounded-md border border-border hover:bg-surface-hover" @click="load">
+        {{ t('browser.retry') }}
+      </button>
+    </div>
     <EmptyState
       v-else-if="!currentPkg"
-      title="Package not found"
-      description="This package could not be found in the repository."
+      :title="t('pkg.notFound')"
+      :description="t('pkg.notFoundHint')"
     />
     <div v-else>
       <!-- Hero Card -->
@@ -53,47 +59,41 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <div class="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0 shadow-sm">
                 <button
                   class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
-                  @click="router.push(`/repos/${repoName}/artifacts`)"
-                >
-                  <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                  Upload
-                </button>
-                <div class="w-px h-6 bg-border" />
-                <button
-                  class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
                   @click="copyUrl"
                 >
                   <ClipboardDocumentIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                  Copy URL
+                  {{ t('repoDetail.copyUrl') }}
                 </button>
-                <div class="w-px h-6 bg-border" />
-                <button
-                  class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
-                  @click="router.push(`/repos/${repoName}/edit`)"
-                >
-                  <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                  Settings
-                </button>
+                <template v-if="session.isAdmin">
+                  <div class="w-px h-6 bg-border" />
+                  <button
+                    class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
+                    @click="router.push(`/repos/${repoName}/edit`)"
+                  >
+                    <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+                    {{ t('nav.settings') }}
+                  </button>
+                </template>
               </div>
             </div>
 
             <!-- Description -->
             <p class="text-sm text-muted max-w-2xl leading-relaxed mt-2">
-              {{ repo?.description || `Repository: ${repoName}` }}
+              {{ repo?.description || repoName }}
             </p>
 
             <!-- Stats row -->
             <div class="flex items-center gap-5 flex-wrap mt-3.5">
               <div class="leading-tight">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">Format</div>
-                <div class="mt-0.5 text-sm font-medium tabular-nums">{{ format }}</div>
+                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">{{ t('packages.column.format') }}</div>
+                <div class="mt-0.5"><FormatBadge :format="format" /></div>
               </div>
               <div v-if="currentPkg.size" class="leading-tight">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">Size</div>
+                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">{{ t('packages.column.size') }}</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ formatSize(currentPkg.size) }}</div>
               </div>
               <div v-if="currentPkg.created_at" class="leading-tight">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">Published</div>
+                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">{{ t('packages.column.uploaded') }}</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums">{{ new Date(currentPkg.created_at).toLocaleDateString() }}</div>
               </div>
               <div v-if="currentPkg.sha256" class="leading-tight">
@@ -122,13 +122,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 {{ packages.length }}
               </span>
-              <span
-                v-if="tab.key === 'files' && components.length > 0"
-                class="text-[10px] font-mono px-1.5 py-0.5 rounded"
-                :class="activeTab === 'files' ? 'bg-primary-soft text-primary' : 'bg-surface-hover text-muted'"
-              >
-                {{ components.length }}
-              </span>
             </span>
             <span
               v-if="activeTab === tab.key"
@@ -145,7 +138,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           @click="copyCommand"
           class="flex-shrink-0 text-muted hover:text-foreground transition-colors"
-          :title="copied ? 'Copied!' : 'Copy to clipboard'"
+          :title="copied ? t('pkg.copied') : t('pkg.copy')"
+          :aria-label="t('pkg.copy')"
         >
           <ClipboardDocumentIcon class="w-4 h-4" aria-hidden="true" />
         </button>
@@ -156,27 +150,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="bg-surface rounded-lg border border-border p-6">
           <div class="space-y-0">
             <div class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">Name</span>
+              <span class="text-sm text-muted">{{ t('packages.column.name') }}</span>
               <span class="text-sm text-foreground font-mono">{{ currentPkg.name }}</span>
             </div>
             <div class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">Version</span>
+              <span class="text-sm text-muted">{{ t('packages.column.version') }}</span>
               <span class="text-sm text-foreground font-mono">{{ currentPkg.version }}</span>
             </div>
             <div class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">Format</span>
-              <span class="text-sm text-foreground font-mono">{{ format }}</span>
+              <span class="text-sm text-muted">{{ t('packages.column.format') }}</span>
+              <FormatBadge :format="format" />
             </div>
             <div v-if="currentPkg.size" class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">Size</span>
+              <span class="text-sm text-muted">{{ t('packages.column.size') }}</span>
               <span class="text-sm text-foreground font-mono">{{ formatSize(currentPkg.size) }}</span>
             </div>
             <div v-if="currentPkg.sha256" class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">SHA256</span>
+              <span class="text-sm text-muted">{{ t('packages.column.sha') }}</span>
               <span class="text-sm text-foreground font-mono">{{ currentPkg.sha256 }}</span>
             </div>
             <div v-if="currentPkg.created_at" class="flex items-center justify-between py-2.5">
-              <span class="text-sm text-muted">Created</span>
+              <span class="text-sm text-muted">{{ t('repoDetail.created') }}</span>
               <span class="text-sm text-foreground font-mono">{{ new Date(currentPkg.created_at).toLocaleDateString() }}</span>
             </div>
           </div>
@@ -189,16 +183,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <table class="w-full text-sm">
             <thead class="border-b border-border bg-surface-hover/40">
               <tr>
-                <th class="px-4 py-3 text-left text-muted font-medium">Version</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">Size</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">Published</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">SHA256</th>
+                <th class="px-4 py-3 text-left text-muted font-medium">{{ t('packages.column.version') }}</th>
+                <th class="px-4 py-3 text-left text-muted font-medium">{{ t('packages.column.size') }}</th>
+                <th class="px-4 py-3 text-left text-muted font-medium">{{ t('packages.column.uploaded') }}</th>
+                <th class="px-4 py-3 text-left text-muted font-medium">{{ t('packages.column.sha') }}</th>
               </tr>
             </thead>
             <tbody class="divide-y divide-border">
               <tr
                 v-for="(pkg, idx) in packages"
-                :key="pkg.version"
+                :key="pkg.id"
                 class="hover:bg-surface-hover/40 transition-colors"
               >
                 <td class="px-4 py-3">
@@ -219,40 +213,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
 
-      <!-- Tab Content: Files -->
-      <div v-if="activeTab === 'files'" class="mt-6">
-        <div v-if="components.length > 0" class="bg-surface rounded-lg border border-border overflow-hidden">
-          <table class="w-full text-sm">
-            <thead class="border-b border-border bg-surface-hover/40">
-              <tr>
-                <th class="px-4 py-3 text-left text-muted font-medium">Path/Name</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">Version</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">Size</th>
-              </tr>
-            </thead>
-            <tbody class="divide-y divide-border">
-              <tr
-                v-for="comp in components"
-                :key="comp.path || comp.name"
-                class="hover:bg-surface-hover/40 transition-colors"
-              >
-                <td class="px-4 py-3 text-foreground font-mono text-xs">{{ comp.path || comp.name }}</td>
-                <td class="px-4 py-3 text-foreground font-mono text-xs">{{ comp.version || '—' }}</td>
-                <td class="px-4 py-3 text-foreground font-mono text-xs tabular-nums">{{ comp.size ? formatSize(comp.size) : '—' }}</td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-        <EmptyState v-else title="No files" description="This package has no components or files." />
-      </div>
-
       <!-- Tab Content: Properties -->
       <div v-if="activeTab === 'properties'" class="mt-6">
         <div class="bg-surface rounded-lg border border-border overflow-hidden">
           <!-- Header -->
           <div class="px-5 py-4 flex items-center justify-between border-b border-border">
             <div class="flex items-center gap-2">
-              <h3 class="text-sm font-semibold text-foreground">Custom Properties</h3>
+              <h3 class="text-sm font-semibold text-foreground">{{ t('pkg.props.title') }}</h3>
               <span
                 v-if="Object.keys(properties).length > 0"
                 class="px-1.5 py-0.5 rounded-md bg-surface-hover text-[11px] font-mono font-medium text-muted"
@@ -266,7 +233,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               @click="addingProp = true"
             >
               <PlusIcon class="w-4 h-4" />
-              Add property
+              {{ t('pkg.props.add') }}
             </button>
           </div>
 
@@ -276,7 +243,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <input
                 v-model="newPropKey"
                 type="text"
-                placeholder="Key"
+                :placeholder="t('pkg.props.key')"
                 class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 @keydown.enter="saveNewProp"
                 @keydown.escape="cancelAddProp"
@@ -284,7 +251,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <input
                 v-model="newPropValue"
                 type="text"
-                placeholder="Value"
+                :placeholder="t('pkg.props.value')"
                 class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 @keydown.enter="saveNewProp"
                 @keydown.escape="cancelAddProp"
@@ -297,11 +264,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 <ArrowPathIcon v-if="propsSaving" class="w-4 h-4 animate-spin" />
                 <CheckIcon v-else class="w-4 h-4" />
-                Add
+                {{ t('pkg.props.addShort') }}
               </button>
               <button
                 type="button"
                 class="p-2 rounded-lg text-muted hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
+                :aria-label="t('common.cancel')"
                 @click="cancelAddProp"
               >
                 <XMarkIcon class="w-4 h-4" />
@@ -311,7 +279,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
           <!-- Properties loading -->
           <div v-if="propsLoading" class="px-5 py-6 text-center text-sm text-muted">
-            Loading properties…
+            {{ t('pkg.props.loading') }}
           </div>
 
           <!-- Empty state -->
@@ -322,15 +290,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div class="w-10 h-10 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
               <TagIcon class="w-5 h-5 text-muted" />
             </div>
-            <p class="text-sm font-medium text-foreground">No custom properties</p>
-            <p class="text-xs text-muted mt-1 mb-4">Attach key-value metadata to this artifact.</p>
+            <p class="text-sm font-medium text-foreground">{{ t('pkg.props.none') }}</p>
+            <p class="text-xs text-muted mt-1 mb-4">{{ t('pkg.props.noneHint') }}</p>
             <button
               type="button"
               class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
               @click="addingProp = true"
             >
               <PlusIcon class="w-4 h-4" />
-              Add property
+              {{ t('pkg.props.add') }}
             </button>
           </div>
 
@@ -339,10 +307,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <thead>
               <tr class="bg-surface-hover/30">
                 <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5 w-1/3">
-                  Key
+                  {{ t('pkg.props.key') }}
                 </th>
                 <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
-                  Value
+                  {{ t('pkg.props.value') }}
                 </th>
                 <th class="w-10" />
               </tr>
@@ -371,6 +339,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       <button
                         type="button"
                         class="p-1 rounded text-success hover:bg-success/10 transition-colors shrink-0"
+                        :aria-label="t('common.save')"
                         @click="saveEditProp(String(key))"
                       >
                         <CheckIcon class="w-4 h-4" />
@@ -378,6 +347,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       <button
                         type="button"
                         class="p-1 rounded text-muted hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
+                        :aria-label="t('common.cancel')"
                         @click="cancelEditProp"
                       >
                         <XMarkIcon class="w-4 h-4" />
@@ -389,7 +359,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     v-else
                     type="button"
                     class="font-mono text-[12px] text-foreground/80 hover:text-primary transition-colors text-left w-full truncate"
-                    title="Click to edit"
+                    :title="t('pkg.props.clickEdit')"
                     @click="startEditProp(String(key), String(value))"
                   >
                     {{ value }}
@@ -398,7 +368,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <td class="px-3 py-3">
                   <button
                     type="button"
-                    title="Delete property"
+                    :title="t('pkg.props.delete')" :aria-label="t('pkg.props.delete')"
                     class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors opacity-0 group-hover:opacity-100"
                     @click="deleteProp(String(key))"
                   >
@@ -413,43 +383,33 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <!-- Tab Content: Security -->
       <div v-if="activeTab === 'security'" class="mt-6">
-        <div class="flex flex-col items-center justify-center py-12 text-center">
-          <ShieldCheckIcon class="w-12 h-12 text-success mb-4" />
-          <h3 class="text-lg font-semibold text-foreground">No vulnerabilities found</h3>
-          <p class="text-sm text-muted mt-1 max-w-md">
-            This package version has been scanned and no known CVEs were detected.
+        <div v-if="!session.isAdmin" class="bg-surface rounded-lg border border-border p-6">
+          <EmptyState :title="t('pkg.security.adminOnly')" :description="t('pkg.security.adminOnlyHint')" />
+        </div>
+        <div v-else-if="scanLoading" class="text-sm text-muted">{{ t('common.loading') }}</div>
+        <div v-else-if="scanError" class="bg-surface rounded-lg border border-danger/30 p-6 text-sm text-danger">
+          {{ scanError }}
+        </div>
+        <div v-else-if="!scan" class="bg-surface rounded-lg border border-border p-6">
+          <EmptyState :title="t('pkg.security.noScan')" :description="t('pkg.security.noScanHint')" />
+        </div>
+        <div v-else class="bg-surface rounded-lg border border-border p-6 space-y-4">
+          <div class="flex items-center gap-3 flex-wrap">
+            <ShieldCheckIcon class="w-6 h-6" :class="scan.vuln_count > 0 ? 'text-danger' : 'text-success'" aria-hidden="true" />
+            <h3 class="text-sm font-semibold text-foreground">
+              {{ scan.vuln_count > 0 ? `${scan.vuln_count} ${t('pkg.security.vulns')}` : t('pkg.security.clean') }}
+            </h3>
+            <span class="text-xs text-muted">{{ scan.scanner }} · {{ scan.scan_status }}</span>
+          </div>
+          <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+            <div><dt class="text-xs text-muted">{{ t('pkg.security.critical') }}</dt><dd class="font-mono">{{ scan.critical_count }}</dd></div>
+            <div><dt class="text-xs text-muted">{{ t('pkg.security.high') }}</dt><dd class="font-mono">{{ scan.high_count }}</dd></div>
+            <div><dt class="text-xs text-muted">{{ t('pkg.security.medium') }}</dt><dd class="font-mono">{{ scan.medium_count }}</dd></div>
+            <div><dt class="text-xs text-muted">{{ t('pkg.security.low') }}</dt><dd class="font-mono">{{ scan.low_count }}</dd></div>
+          </dl>
+          <p v-if="scan.scanned_at" class="text-xs text-muted">
+            {{ t('pkg.security.scannedAt') }} {{ new Date(scan.scanned_at).toLocaleString() }}
           </p>
-        </div>
-
-        <div class="bg-surface rounded-lg border border-border overflow-hidden mt-6">
-          <table class="w-full text-sm">
-            <thead class="border-b border-border bg-surface-hover/40">
-              <tr>
-                <th class="px-4 py-3 text-left text-muted font-medium">CVE ID</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">Severity</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">Description</th>
-                <th class="px-4 py-3 text-left text-muted font-medium">Fixed In</th>
-              </tr>
-            </thead>
-            <tbody>
-              <tr>
-                <td colspan="4" class="px-4 py-8">
-                  <EmptyState title="No vulnerabilities" description="No known CVEs have been reported for this package version." />
-                </td>
-              </tr>
-            </tbody>
-          </table>
-        </div>
-      </div>
-
-      <!-- Tab Content: Dependencies -->
-      <div v-if="activeTab === 'dependencies'" class="mt-6">
-        <div class="bg-surface rounded-lg border border-border p-6">
-          <h3 class="text-sm font-semibold text-foreground mb-4 flex items-center gap-2">
-            <PuzzlePieceIcon class="w-4 h-4" />
-            Dependencies
-          </h3>
-          <EmptyState title="No dependencies found" description="Dependency information is not available for this package format." />
         </div>
       </div>
     </div>
@@ -457,14 +417,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
   ChevronLeftIcon,
   ClipboardDocumentIcon,
   ShieldCheckIcon,
-  PuzzlePieceIcon,
-  ArrowUpTrayIcon,
   Cog6ToothIcon,
   PlusIcon,
   CheckIcon,
@@ -473,20 +431,21 @@ import {
   TagIcon,
   ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
-import { getRepository, listPackages, listComponents } from '../api/repositories'
-import type { Repository, PackageItem, ComponentItem } from '../api/repositories'
+import { getRepository, listComponents } from '../api/repositories'
+import type { Repository, PackageItem } from '../api/repositories'
+import { pullCommand as buildPullCommand, repoBaseUrl } from '../lib/installCommands'
+import { useSessionStore } from '../stores/session'
+import { t } from '../i18n/en'
 import { request, ApiError } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 
 const tabs = [
-  { key: 'overview', label: 'Overview' },
-  { key: 'versions', label: 'Versions' },
-  { key: 'files', label: 'Files' },
-  { key: 'properties', label: 'Properties' },
-  { key: 'security', label: 'Security' },
-  { key: 'dependencies', label: 'Dependencies' },
+  { key: 'overview', label: t('pkg.tab.overview') },
+  { key: 'versions', label: t('pkg.tab.versions') },
+  { key: 'properties', label: t('pkg.tab.properties') },
+  { key: 'security', label: t('pkg.tab.security') },
 ] as const
 
 const route = useRoute()
@@ -497,10 +456,11 @@ const format = computed(() => route.params.format as string)
 const pkgName = computed(() => route.params.pkg as string)
 
 const toasts = useToastStore()
+const session = useSessionStore()
 const repo = ref<Repository | null>(null)
 const packages = ref<PackageItem[]>([])
-const components = ref<ComponentItem[]>([])
 const loading = ref(true)
+const loadError = ref('')
 const activeTab = ref('overview')
 const copied = ref(false)
 
@@ -514,7 +474,7 @@ const newPropValue = ref('')
 const editingKey = ref<string | null>(null)
 const editingValue = ref('')
 
-const artifactId = computed(() => currentPkg.value?.sha256 || currentPkg.value?.name || '')
+const artifactId = computed(() => currentPkg.value?.id || '')
 
 async function loadProperties(): Promise<void> {
   if (!artifactId.value) return
@@ -526,7 +486,7 @@ async function loadProperties(): Promise<void> {
     properties.value = res?.properties ?? {}
   } catch (err) {
     if (!(err instanceof ApiError && (err.status === 404 || err.status === 501))) {
-      toasts.error('Failed to load properties')
+      toasts.error(t('pkg.props.loadFailed'))
     }
     properties.value = {}
   } finally {
@@ -556,9 +516,9 @@ async function saveNewProp(): Promise<void> {
     )
     properties.value = updated
     cancelAddProp()
-    toasts.success('Property added')
+    toasts.success(t('pkg.props.added'))
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to add property')
+    toasts.error(err instanceof Error ? err.message : t('pkg.props.addFailed'))
   } finally {
     propsSaving.value = false
   }
@@ -587,15 +547,15 @@ async function saveEditProp(key: string): Promise<void> {
     )
     properties.value = { ...properties.value, [key]: editingValue.value }
     cancelEditProp()
-    toasts.success('Property updated')
+    toasts.success(t('pkg.props.updated'))
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to update property')
+    toasts.error(err instanceof Error ? err.message : t('pkg.props.updateFailed'))
   }
 }
 
 async function deleteProp(key: string): Promise<void> {
   if (!artifactId.value) return
-  if (!window.confirm(`Delete property "${key}"?`)) return
+  if (!window.confirm(t('pkg.props.confirmDelete').replace('{key}', key))) return
   try {
     await request<void>(
       `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties/${encodeURIComponent(key)}`,
@@ -604,9 +564,9 @@ async function deleteProp(key: string): Promise<void> {
     const next = { ...properties.value }
     delete next[key]
     properties.value = next
-    toasts.success('Property deleted')
+    toasts.success(t('pkg.props.deleted'))
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : 'Failed to delete property')
+    toasts.error(err instanceof Error ? err.message : t('pkg.props.deleteFailed'))
   }
 }
 
@@ -616,32 +576,58 @@ watch(activeTab, (tab) => {
   }
 })
 
+// Newest version first.
 const currentPkg = computed(() => packages.value[0] || null)
 
-const pullCommand = computed(() => {
-  if (!currentPkg.value) return ''
-  const fmt = format.value
-  const repo = repoName.value
-  const pkg = pkgName.value
-  const ver = currentPkg.value.version
+// ─── Security (latest vulnerability scan for the current version) ───────────
 
-  switch (fmt) {
-    case 'docker':
-      return `docker pull ${repo}/${pkg}:${ver}`
-    case 'npm':
-      return `npm install ${pkg}@${ver} --registry=...`
-    case 'pypi':
-      return `pip install ${pkg}==${ver} --index-url=...`
-    case 'maven':
-      return `mvn dependency:get -Dartifact=${pkg}:${ver}`
-    case 'helm':
-      return `helm pull ${repo}/${pkg} --version ${ver}`
-    case 'cargo':
-      return `cargo install ${pkg}@${ver}`
-    default:
-      return `# Pull ${pkg}@${ver} from ${repo}`
+interface VulnScan {
+  package_name: string
+  package_version: string
+  scanner: string
+  scan_status: string
+  vuln_count: number
+  critical_count: number
+  high_count: number
+  medium_count: number
+  low_count: number
+  scanned_at: string | null
+}
+
+const scan = ref<VulnScan | null>(null)
+const scanLoading = ref(false)
+const scanError = ref('')
+let scanGeneration = 0
+
+async function loadScan(): Promise<void> {
+  const pkg = currentPkg.value
+  if (!pkg || !session.isAdmin) return
+  const generation = ++scanGeneration
+  scanLoading.value = true
+  scanError.value = ''
+  try {
+    const res = await request<{ scans?: VulnScan[] }>(
+      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/vuln/scans`,
+    )
+    if (generation !== scanGeneration) return
+    scan.value =
+      (res?.scans ?? []).find(
+        (sc) => sc.package_name === pkg.name && sc.package_version === pkg.version,
+      ) ?? null
+  } catch (err) {
+    if (generation !== scanGeneration) return
+    scan.value = null
+    scanError.value = err instanceof Error ? err.message : t('pkg.security.loadFailed')
+  } finally {
+    if (generation === scanGeneration) scanLoading.value = false
   }
-})
+}
+
+const pullCommand = computed(() =>
+  currentPkg.value
+    ? buildPullCommand(format.value, window.location.origin, repoName.value, pkgName.value, currentPkg.value.version)
+    : '',
+)
 
 function formatSize(bytes: number): string {
   if (bytes < 1024) return `${bytes} B`
@@ -651,9 +637,10 @@ function formatSize(bytes: number): string {
 
 async function copyUrl(): Promise<void> {
   try {
-    await navigator.clipboard.writeText(`/${repoName.value}/${pkgName.value}/`)
+    await navigator.clipboard.writeText(repoBaseUrl(format.value, window.location.origin, repoName.value))
+    toasts.success(t('repoDetail.urlCopied'))
   } catch {
-    // best-effort
+    toasts.error(t('repoDetail.urlCopyFailed'))
   }
 }
 
@@ -669,18 +656,42 @@ async function copyCommand(): Promise<void> {
   }
 }
 
-onMounted(async () => {
+let loadGeneration = 0
+
+async function load(): Promise<void> {
+  const generation = ++loadGeneration
+  loading.value = true
+  loadError.value = ''
   try {
-    const [repoRes, pkgRes, compRes] = await Promise.all([
-      getRepository(repoName.value),
-      listPackages(repoName.value, { limit: 100 }),
-      listComponents(repoName.value, { prefix: pkgName.value }).catch(() => ({ total: 0, items: [] })),
-    ])
+    const [repoRes, all] = await Promise.all([getRepository(repoName.value), listComponents(repoName.value)])
+    if (generation !== loadGeneration) return
     repo.value = repoRes
-    packages.value = (pkgRes.packages || []).filter(p => p.name === pkgName.value)
-    components.value = compRes.items || []
+    packages.value = all.items
+      .filter((p) => p.name === pkgName.value)
+      .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  } catch (err) {
+    if (generation !== loadGeneration) return
+    packages.value = []
+    loadError.value = err instanceof Error ? err.message : t('pkg.loadFailed')
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
+}
+
+// The router reuses this component across /repos/:name/packages/:format/:pkg
+// navigations, so reload (and reset per-package state) on any param change.
+watch(
+  () => [repoName.value, format.value, pkgName.value],
+  () => {
+    activeTab.value = 'overview'
+    properties.value = {}
+    scan.value = null
+    void load()
+  },
+  { immediate: true },
+)
+
+watch(activeTab, (tab) => {
+  if (tab === 'security') void loadScan()
 })
 </script>

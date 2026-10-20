@@ -6,6 +6,7 @@ package conan
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -19,8 +20,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -50,6 +53,17 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 		h.RegisterRepoRoutes(r)
 	})
 	h.Log.Infow("conan handler registered", "prefix", prefix)
+}
+
+// conanPath is the repository-relative identifier of a recipe (or one of its
+// files when filename is set).
+func conanPath(pkg, version, userChannel, filename string) string {
+	p := pkg + "/" + version + "/" + userChannel
+	if filename != "" {
+		p += "/" + filename
+	}
+
+	return p
 }
 
 func (h *HTTPHandler) handleListRevisions(w http.ResponseWriter, r *http.Request) {
@@ -173,6 +187,11 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
+		filename, conanPath(pkg, version, userChannel, filename), r.URL.Path)...) {
+		return
+	}
+
 	// Download blob
 	blob, err := h.BlobStore.Get(r.Context(), conanPkg.BlobKey)
 	if err != nil {
@@ -228,18 +247,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	sha256Hash := sha256.Sum256(data)
 
-	// Store blob
-	blobKey, err := h.BlobStore.Put(r.Context(), bytes.NewReader(data), map[string]string{
-		"filename": filename,
-		"package":  pkg,
-	})
-	if err != nil {
-		h.Log.Errorw("failed to store blob", "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	sha256Hex := hex.EncodeToString(sha256Hash[:])
 	userChannel := fmt.Sprintf("%s/%s", user, channel)
 	conanPkg := &models.ConanPackage{
 		RepositoryID:   repoID,
@@ -247,18 +255,45 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Version:        version,
 		UserChannel:    userChannel,
 		RecipeRevision: "0",
-		BlobKey:        blobKey,
 		ConanFile:      "",
 		ConanInfo:      "",
 	}
 
-	err = h.DB.CreateConanPackage(r.Context(), conanPkg)
-	if err != nil {
-		h.Log.Errorw("failed to create conan package", "pkg", pkg, "error", err)
+	// Store the blob and insert the referencing row under the per-blob lock so
+	// a concurrent unpublish cannot delete the blob in between.
+	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
+		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			"sha256":   sha256Hex,
+			"filename": filename,
+			"package":  pkg,
+		})
+		if err != nil {
+			return fmt.Errorf("store blob: %w", err)
+		}
+
+		conanPkg.BlobKey = blobKey
+
+		if err := h.DB.CreateConanPackage(ctx, conanPkg); err != nil {
+			return fmt.Errorf("create conan package: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		h.Log.Errorw("failed to store conan package", "pkg", pkg, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "conan",
+		Name:       pkg,
+		Version:    version,
+		Path:       conanPath(pkg, version, userChannel, filename),
+		SHA256:     sha256Hex,
+		Size:       int64(len(data)),
+	}))
 
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
@@ -266,7 +301,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	if encErr := json.NewEncoder(w).Encode(map[string]any{
 		"id":     conanPkg.ID,
 		"name":   conanPkg.Name,
-		"sha256": hex.EncodeToString(sha256Hash[:]),
+		"sha256": sha256Hex,
 	}); encErr != nil {
 		_ = encErr // response header already written
 	}
@@ -308,9 +343,6 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete blob
-	_ = h.BlobStore.Delete(r.Context(), conanPkg.BlobKey)
-
 	// Delete package record
 	err = h.DB.DeleteConanPackage(r.Context(), conanPkg.ID)
 	if err != nil {
@@ -319,6 +351,21 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	// The blob is content-addressed and may be shared; remove it only once no
+	// row references it any more.
+	if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, conanPkg.BlobKey); delErr != nil {
+		h.Log.Warnw("failed to clean up blob after conan delete", "sha256", conanPkg.BlobKey, "error", delErr)
+	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "conan",
+		Name:       pkg,
+		Version:    version,
+		Path:       conanPath(pkg, version, userChannel, ""),
+		SHA256:     conanPkg.BlobKey,
+	}))
 
 	w.WriteHeader(http.StatusNoContent)
 }

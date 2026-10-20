@@ -153,7 +153,7 @@ func (p *PostgresDB) ListUsers(ctx context.Context, page, perPage int) ([]*model
 
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
-		FROM auth_users ORDER BY created_at ASC LIMIT $1 OFFSET $2`,
+		FROM auth_users ORDER BY created_at ASC, id LIMIT $1 OFFSET $2`,
 		perPage, offset,
 	)
 	if err != nil {
@@ -266,9 +266,27 @@ func (p *PostgresDB) UpdateGroup(ctx context.Context, group *models.Group) error
 }
 
 func (p *PostgresDB) DeleteGroup(ctx context.Context, id string) error {
-	_, err := p.db.ExecContext(ctx, `DELETE FROM auth_groups WHERE id=$1`, id)
+	// permission_assignments.principal_id is polymorphic (no FK), so a group's
+	// assignments must be removed explicitly in the same transaction.
+	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
+		return fmt.Errorf("failed to begin delete group tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM permission_assignments WHERE principal_type = 'group' AND principal_id = $1`, id,
+	); err != nil {
+		return fmt.Errorf("failed to delete group permission assignments: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_groups WHERE id=$1`, id); err != nil {
 		return fmt.Errorf("failed to delete group: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit delete group: %w", err)
 	}
 
 	return nil

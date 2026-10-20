@@ -72,7 +72,7 @@ type CreateLicenseScanResultParams struct {
 	ArtifactPath    string      `db:"artifact_path" json:"artifact_path"`
 	Status          string      `db:"status" json:"status"`
 	Column4         interface{} `db:"column_4" json:"column_4"`
-	CompletedAt     time.Time   `db:"completed_at" json:"completed_at"`
+	CompletedAt     *time.Time  `db:"completed_at" json:"completed_at"`
 	Licenses        []string    `db:"licenses" json:"licenses"`
 	SpdxExpressions []string    `db:"spdx_expressions" json:"spdx_expressions"`
 }
@@ -115,13 +115,13 @@ SELECT ins.id, job.created_at, job.updated_at FROM ins JOIN job ON job.id = ins.
 `
 
 type CreateSBOMReportParams struct {
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	ArtifactPath   string    `db:"artifact_path" json:"artifact_path"`
-	Format         string    `db:"format" json:"format"`
-	CompletedAt    time.Time `db:"completed_at" json:"completed_at"`
-	SpecVersion    string    `db:"spec_version" json:"spec_version"`
-	ComponentCount int32     `db:"component_count" json:"component_count"`
-	BlobID         *string   `db:"blob_id" json:"blob_id"`
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	ArtifactPath   string     `db:"artifact_path" json:"artifact_path"`
+	Format         string     `db:"format" json:"format"`
+	CompletedAt    *time.Time `db:"completed_at" json:"completed_at"`
+	SpecVersion    string     `db:"spec_version" json:"spec_version"`
+	ComponentCount int32      `db:"component_count" json:"component_count"`
+	BlobID         *string    `db:"blob_id" json:"blob_id"`
 }
 
 type CreateSBOMReportRow struct {
@@ -171,7 +171,7 @@ type CreateSecretScanResultParams struct {
 	ArtifactPath string          `db:"artifact_path" json:"artifact_path"`
 	Status       string          `db:"status" json:"status"`
 	Column4      interface{}     `db:"column_4" json:"column_4"`
-	CompletedAt  time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt  *time.Time      `db:"completed_at" json:"completed_at"`
 	Findings     json.RawMessage `db:"findings" json:"findings"`
 	FindingCount int32           `db:"finding_count" json:"finding_count"`
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
@@ -224,7 +224,7 @@ type CreateVulnScanResultParams struct {
 	Scanner         *string         `db:"scanner" json:"scanner"`
 	Status          string          `db:"status" json:"status"`
 	Column5         interface{}     `db:"column_5" json:"column_5"`
-	CompletedAt     time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt     *time.Time      `db:"completed_at" json:"completed_at"`
 	Vulnerabilities json.RawMessage `db:"vulnerabilities" json:"vulnerabilities"`
 	VulnCount       int32           `db:"vuln_count" json:"vuln_count"`
 	CriticalCount   int32           `db:"critical_count" json:"critical_count"`
@@ -323,16 +323,16 @@ type GetLicenseScanResultParams struct {
 }
 
 type GetLicenseScanResultRow struct {
-	ID              string    `db:"id" json:"id"`
-	RepositoryID    string    `db:"repository_id" json:"repository_id"`
-	ArtifactPath    string    `db:"artifact_path" json:"artifact_path"`
-	Licenses        []string  `db:"licenses" json:"licenses"`
-	SpdxExpressions []string  `db:"spdx_expressions" json:"spdx_expressions"`
-	Status          string    `db:"status" json:"status"`
-	ErrorMessage    *string   `db:"error_message" json:"error_message"`
-	CompletedAt     time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt       time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+	ID              string     `db:"id" json:"id"`
+	RepositoryID    string     `db:"repository_id" json:"repository_id"`
+	ArtifactPath    string     `db:"artifact_path" json:"artifact_path"`
+	Licenses        []string   `db:"licenses" json:"licenses"`
+	SpdxExpressions []string   `db:"spdx_expressions" json:"spdx_expressions"`
+	Status          string     `db:"status" json:"status"`
+	ErrorMessage    *string    `db:"error_message" json:"error_message"`
+	CompletedAt     *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetLicenseScanResult(ctx context.Context, arg GetLicenseScanResultParams) (GetLicenseScanResultRow, error) {
@@ -372,16 +372,16 @@ type GetSBOMReportParams struct {
 }
 
 type GetSBOMReportRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	ArtifactPath   string    `db:"artifact_path" json:"artifact_path"`
-	SbomFormat     string    `db:"sbom_format" json:"sbom_format"`
-	SpecVersion    string    `db:"spec_version" json:"spec_version"`
-	ComponentCount int32     `db:"component_count" json:"component_count"`
-	BlobSha256     *string   `db:"blob_sha256" json:"blob_sha256"`
-	CompletedAt    time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	ID             string     `db:"id" json:"id"`
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	ArtifactPath   string     `db:"artifact_path" json:"artifact_path"`
+	SbomFormat     string     `db:"sbom_format" json:"sbom_format"`
+	SpecVersion    string     `db:"spec_version" json:"spec_version"`
+	ComponentCount int32      `db:"component_count" json:"component_count"`
+	BlobSha256     *string    `db:"blob_sha256" json:"blob_sha256"`
+	CompletedAt    *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetSBOMReport(ctx context.Context, arg GetSBOMReportParams) (GetSBOMReportRow, error) {
@@ -430,7 +430,7 @@ type GetSecretScanResultRow struct {
 	FindingCount int32           `db:"finding_count" json:"finding_count"`
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
 	ErrorMessage *string         `db:"error_message" json:"error_message"`
-	CompletedAt  time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt  *time.Time      `db:"completed_at" json:"completed_at"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -488,7 +488,7 @@ type GetVulnScanResultRow struct {
 	LowCount        int32           `db:"low_count" json:"low_count"`
 	Quarantined     bool            `db:"quarantined" json:"quarantined"`
 	ErrorMessage    *string         `db:"error_message" json:"error_message"`
-	CompletedAt     time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt     *time.Time      `db:"completed_at" json:"completed_at"`
 	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -538,7 +538,7 @@ type ListFlaggedSecretScanResultsRow struct {
 	FindingCount int32           `db:"finding_count" json:"finding_count"`
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
 	ErrorMessage *string         `db:"error_message" json:"error_message"`
-	CompletedAt  time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt  *time.Time      `db:"completed_at" json:"completed_at"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -621,16 +621,16 @@ WHERE sj.scan_type = 'license' AND ref.repository_id = $1 ORDER BY sj.created_at
 `
 
 type ListLicenseScanResultsRow struct {
-	ID              string    `db:"id" json:"id"`
-	RepositoryID    string    `db:"repository_id" json:"repository_id"`
-	ArtifactPath    string    `db:"artifact_path" json:"artifact_path"`
-	Licenses        []string  `db:"licenses" json:"licenses"`
-	SpdxExpressions []string  `db:"spdx_expressions" json:"spdx_expressions"`
-	Status          string    `db:"status" json:"status"`
-	ErrorMessage    *string   `db:"error_message" json:"error_message"`
-	CompletedAt     time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt       time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+	ID              string     `db:"id" json:"id"`
+	RepositoryID    string     `db:"repository_id" json:"repository_id"`
+	ArtifactPath    string     `db:"artifact_path" json:"artifact_path"`
+	Licenses        []string   `db:"licenses" json:"licenses"`
+	SpdxExpressions []string   `db:"spdx_expressions" json:"spdx_expressions"`
+	Status          string     `db:"status" json:"status"`
+	ErrorMessage    *string    `db:"error_message" json:"error_message"`
+	CompletedAt     *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListLicenseScanResults(ctx context.Context, repositoryID string) ([]ListLicenseScanResultsRow, error) {
@@ -675,16 +675,16 @@ WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1 ORDER BY sj.created_at DE
 `
 
 type ListSBOMReportsRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	ArtifactPath   string    `db:"artifact_path" json:"artifact_path"`
-	SbomFormat     string    `db:"sbom_format" json:"sbom_format"`
-	SpecVersion    string    `db:"spec_version" json:"spec_version"`
-	ComponentCount int32     `db:"component_count" json:"component_count"`
-	BlobSha256     *string   `db:"blob_sha256" json:"blob_sha256"`
-	CompletedAt    time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	ID             string     `db:"id" json:"id"`
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	ArtifactPath   string     `db:"artifact_path" json:"artifact_path"`
+	SbomFormat     string     `db:"sbom_format" json:"sbom_format"`
+	SpecVersion    string     `db:"spec_version" json:"spec_version"`
+	ComponentCount int32      `db:"component_count" json:"component_count"`
+	BlobSha256     *string    `db:"blob_sha256" json:"blob_sha256"`
+	CompletedAt    *time.Time `db:"completed_at" json:"completed_at"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListSBOMReports(ctx context.Context, repositoryID string) ([]ListSBOMReportsRow, error) {
@@ -736,7 +736,7 @@ type ListSecretScanResultsRow struct {
 	FindingCount int32           `db:"finding_count" json:"finding_count"`
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
 	ErrorMessage *string         `db:"error_message" json:"error_message"`
-	CompletedAt  time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt  *time.Time      `db:"completed_at" json:"completed_at"`
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -800,7 +800,7 @@ type ListVulnScanResultsRow struct {
 	LowCount        int32           `db:"low_count" json:"low_count"`
 	Quarantined     bool            `db:"quarantined" json:"quarantined"`
 	ErrorMessage    *string         `db:"error_message" json:"error_message"`
-	CompletedAt     time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt     *time.Time      `db:"completed_at" json:"completed_at"`
 	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -872,7 +872,7 @@ type ListVulnerableVulnScanResultsRow struct {
 	LowCount        int32           `db:"low_count" json:"low_count"`
 	Quarantined     bool            `db:"quarantined" json:"quarantined"`
 	ErrorMessage    *string         `db:"error_message" json:"error_message"`
-	CompletedAt     time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt     *time.Time      `db:"completed_at" json:"completed_at"`
 	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
 }
@@ -1027,7 +1027,7 @@ type UpdateLicenseScanResultParams struct {
 	SpdxExpressions []string    `db:"spdx_expressions" json:"spdx_expressions"`
 	Status          string      `db:"status" json:"status"`
 	Column4         interface{} `db:"column_4" json:"column_4"`
-	CompletedAt     time.Time   `db:"completed_at" json:"completed_at"`
+	CompletedAt     *time.Time  `db:"completed_at" json:"completed_at"`
 	ID              string      `db:"id" json:"id"`
 }
 
@@ -1059,7 +1059,7 @@ type UpdateSecretScanResultParams struct {
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
 	Status       string          `db:"status" json:"status"`
 	Column5      interface{}     `db:"column_5" json:"column_5"`
-	CompletedAt  time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt  *time.Time      `db:"completed_at" json:"completed_at"`
 	ID           string          `db:"id" json:"id"`
 }
 
@@ -1099,7 +1099,7 @@ type UpdateVulnScanResultParams struct {
 	Status          string          `db:"status" json:"status"`
 	Column10        interface{}     `db:"column_10" json:"column_10"`
 	ID              string          `db:"id" json:"id"`
-	CompletedAt     time.Time       `db:"completed_at" json:"completed_at"`
+	CompletedAt     *time.Time      `db:"completed_at" json:"completed_at"`
 }
 
 func (q *Queries) UpdateVulnScanResult(ctx context.Context, arg UpdateVulnScanResultParams) error {

@@ -119,7 +119,7 @@ func (h *Header) GetString(tag int32) (string, bool) {
 		return "", false
 	}
 
-	if int(entry.Offset) >= len(h.Data) {
+	if entry.Offset < 0 || int(entry.Offset) >= len(h.Data) {
 		return "", false
 	}
 
@@ -143,7 +143,7 @@ func (h *Header) GetInt32s(tag int32) ([]int32, bool) {
 		return nil, false
 	}
 
-	if int(entry.Offset)+int(entry.Count)*4 > len(h.Data) {
+	if entry.Offset < 0 || entry.Count < 0 || int64(entry.Offset)+int64(entry.Count)*4 > int64(len(h.Data)) {
 		return nil, false
 	}
 
@@ -175,7 +175,7 @@ func (h *Header) GetInt64(tag int32) (int64, bool) {
 		return 0, false
 	}
 
-	if int(entry.Offset)+8 > len(h.Data) {
+	if entry.Offset < 0 || int64(entry.Offset)+8 > int64(len(h.Data)) {
 		return 0, false
 	}
 
@@ -194,7 +194,7 @@ func (h *Header) GetStringArray(tag int32) ([]string, bool) {
 		return nil, false
 	}
 
-	if int(entry.Offset) >= len(h.Data) {
+	if entry.Offset < 0 || entry.Count < 0 || int(entry.Offset) >= len(h.Data) {
 		return nil, false
 	}
 

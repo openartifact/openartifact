@@ -40,16 +40,7 @@ func (g *Generator) GenerateCycloneDX(ctx context.Context, repoID, artifactID, f
 	serialNumber := generateUUID()
 
 	// Extract artifact name and version from artifactID (format: "name@version")
-	parts := strings.Split(artifactID, "@")
-
-	var name, version string
-	if len(parts) >= 2 {
-		name = parts[0]
-		version = parts[1]
-	} else {
-		name = artifactID
-		version = "unknown"
-	}
+	name, version := splitArtifactID(artifactID)
 
 	// Generate PURL
 	purl := generatePURL(format, name, version)
@@ -90,6 +81,7 @@ func (g *Generator) GenerateCycloneDX(ctx context.Context, repoID, artifactID, f
 				depName, _ := depMap["name"].(string)
 
 				depVersion, _ := depMap["version"].(string)
+				depName, depVersion = spdxSafe(depName), spdxSafe(depVersion)
 				if depName != "" {
 					depPURL := generatePURL(format, depName, depVersion)
 					components = append(components, map[string]any{
@@ -121,20 +113,13 @@ func (g *Generator) GenerateSPDX(ctx context.Context, repoID, artifactID, format
 	uuid := generateUUID()
 
 	// Extract artifact name and version from artifactID (format: "name@version")
-	parts := strings.Split(artifactID, "@")
+	name, version := splitArtifactID(artifactID)
 
-	var name, version string
-	if len(parts) >= 2 {
-		name = parts[0]
-		version = parts[1]
-	} else {
-		name = artifactID
-		version = "unknown"
-	}
+	name, version = spdxSafe(name), spdxSafe(version)
 
 	// Build the SPDX text format
 	var spdxText strings.Builder
-	spdxText.WriteString(fmt.Sprintf(`SPDXVersion: SPDX-2.3
+	fmt.Fprintf(&spdxText, `SPDXVersion: SPDX-2.3
 DataLicense: CC0-1.0
 SPDXID: SPDXRef-DOCUMENT
 DocumentName: %s-%s
@@ -157,7 +142,7 @@ PackageCopyrightText: NOASSERTION
 		time.Now().UTC().Format(time.RFC3339),
 		name,
 		version,
-	))
+	)
 
 	// Extract components from metadata if available
 	componentCount := 0
@@ -169,7 +154,7 @@ PackageCopyrightText: NOASSERTION
 
 				depVersion, _ := depMap["version"].(string)
 				if depName != "" {
-					spdxText.WriteString(fmt.Sprintf(`
+					fmt.Fprintf(&spdxText, `
 ExternalRef: SPDXRef-%s-%s
 ExternalRefComment: Dependency
 ExternalRefType: PACKAGE-MANAGER
@@ -180,7 +165,7 @@ ExternalRefLocator: pkg:%s/%s@%s
 						format,
 						depName,
 						depVersion,
-					))
+					)
 
 					componentCount++
 				}
@@ -255,4 +240,26 @@ func generateUUID() string {
 		b[8:10],
 		b[10:16],
 	)
+}
+
+// splitArtifactID splits "name@version" on the LAST '@' after position 0 so
+// scoped names such as "@babel/core@7.0.0" keep their scope.
+func splitArtifactID(artifactID string) (string, string) {
+	if i := strings.LastIndex(artifactID, "@"); i > 0 {
+		return artifactID[:i], artifactID[i+1:]
+	}
+
+	return artifactID, "unknown"
+}
+
+// spdxSafe removes line breaks and control characters so untrusted values
+// cannot inject additional tag lines into SPDX tag-value output.
+func spdxSafe(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f || r == '\u2028' || r == '\u2029' {
+			return -1
+		}
+
+		return r
+	}, s)
 }

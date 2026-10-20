@@ -38,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             class="p-1 rounded transition-colors"
             :class="viewMode === 'list' ? 'bg-primary-soft text-primary' : 'text-muted hover:text-foreground'"
-            aria-label="List view"
+            :aria-label="t('browser.listView')"
             @click="viewMode = 'list'"
           >
             <Bars3Icon class="w-4 h-4" aria-hidden="true" />
@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             class="p-1 rounded transition-colors"
             :class="viewMode === 'grid' ? 'bg-primary-soft text-primary' : 'text-muted hover:text-foreground'"
-            aria-label="Grid view"
+            :aria-label="t('browser.gridView')"
             @click="viewMode = 'grid'"
           >
             <Squares2X2Icon class="w-4 h-4" aria-hidden="true" />
@@ -56,9 +56,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Sort button -->
         <button
           class="flex items-center gap-1 px-2.5 h-8 text-xs rounded-md border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
+          @click="sortKey = sortKey === 'name' ? 'created' : 'name'"
         >
           <ArrowsUpDownIcon class="w-3.5 h-3.5" aria-hidden="true" />
-          {{ t('common.sort') }}
+          {{ t('browser.sort') }}: {{ sortKey === 'name' ? t('packages.column.name') : t('packages.column.uploaded') }}
         </button>
 
         <!-- Refresh -->
@@ -66,6 +67,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="flex items-center justify-center w-8 h-8 rounded-md border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50"
           :disabled="loading"
           :title="t('common.refresh')"
+          :aria-label="t('common.refresh')"
           @click="load"
         >
           <ArrowPathIcon class="w-3.5 h-3.5" :class="{ 'animate-spin': loading }" aria-hidden="true" />
@@ -155,6 +157,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               <ArchiveBoxIcon class="w-4 h-4" aria-hidden="true" />
             </div>
+            <FormatBadge :format="item.format" class="shrink-0" />
             <router-link
               :to="`/repos/${repoName}/packages/${encodeURIComponent(item.format)}/${encodeURIComponent(item.name)}`"
               class="text-sm font-medium text-foreground hover:text-primary transition-colors truncate"
@@ -185,14 +188,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span class="text-xs font-mono text-muted truncate">
               {{ item.sha256 ? `sha256:${item.sha256.slice(0, 12)}` : '—' }}
             </span>
-            <a
-              :href="`/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(item.format)}/${encodeURIComponent(item.name)}/download`"
-              class="flex items-center justify-center w-7 h-7 rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors opacity-0 group-hover:opacity-100 focus-visible:opacity-100 shrink-0"
-              :title="t('packages.download')"
-              download
-            >
-              <ArrowDownTrayIcon class="w-3.5 h-3.5" aria-hidden="true" />
-            </a>
           </div>
         </div>
       </div>
@@ -242,6 +237,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="mt-1 font-mono text-xs text-muted truncate">
           {{ item.version || '—' }}
         </div>
+        <FormatBadge :format="item.format" class="mt-2" />
         <div class="mt-3 flex items-center justify-between text-xs text-muted">
           <span class="font-mono tabular-nums">{{ formatBytes(item.size) }}</span>
           <span>{{ formatDate(item.created_at) }}</span>
@@ -256,25 +252,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       @clear="clearSelection"
       @deleted="onDeleted"
       @error="onBulkError"
-      @download="onDownload"
-      @add-properties="onAddProperties"
-      @move-to="onMoveTo"
     />
   </div>
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { listComponents, getRepository } from '../api/repositories'
 import type { Repository, ComponentItem } from '../api/repositories'
 import EmptyState from '../components/EmptyState.vue'
 import Pagination from '../components/Pagination.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
+import FormatBadge from '../components/FormatBadge.vue'
 import { useToastStore } from '../stores/toast'
 import {
   MagnifyingGlassIcon,
-  ArrowDownTrayIcon,
   ArchiveBoxIcon,
   ArrowPathIcon,
   ChevronRightIcon,
@@ -303,7 +296,7 @@ const viewMode = ref<'list' | 'grid'>('list')
 const selectedIds = ref<Set<string>>(new Set())
 
 function itemKey(item: ComponentItem): string {
-  return `${item.format}/${item.name}`
+  return item.id
 }
 
 const selectedItemKeys = computed(() => [...selectedIds.value])
@@ -374,18 +367,6 @@ function onBulkError(msg: string): void {
   toasts.error(t('bulk.deleteFailed'), msg)
 }
 
-function onDownload(ids: string[]): void {
-  toasts.success(t('bulk.downloading').replace('{n}', String(ids.length)))
-}
-
-function onAddProperties(_ids: string[]): void {
-  toasts.success(t('common.notAvailable'))
-}
-
-function onMoveTo(_ids: string[]): void {
-  toasts.success(t('common.notAvailable'))
-}
-
 // ─────────────────────────────────────────────────────────────────────────
 
 watch(searchQuery, () => {
@@ -403,9 +384,21 @@ const filteredItems = computed(() => {
   )
 })
 
+const sortKey = ref<'name' | 'created'>('name')
+
+const sortedItems = computed(() => {
+  const list = [...filteredItems.value]
+  if (sortKey.value === 'name') {
+    list.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))
+  } else {
+    list.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
+  }
+  return list
+})
+
 const paginatedItems = computed(() => {
   const start = (page.value - 1) * limit
-  return filteredItems.value.slice(start, start + limit)
+  return sortedItems.value.slice(start, start + limit)
 })
 
 function formatBytes(bytes?: number): string {
@@ -429,22 +422,29 @@ function formatDate(ts?: string): string {
   }
 }
 
+let loadGeneration = 0
+
 async function load(): Promise<void> {
+  const generation = ++loadGeneration
   loading.value = true
   error.value = null
   try {
     const [repoData, componentsData] = await Promise.all([
       getRepository(repoName.value),
-      listComponents(repoName.value, { limit: 500 }),
+      listComponents(repoName.value),
     ])
+    if (generation !== loadGeneration) return
     repo.value = repoData
     items.value = componentsData.items
+    selectedIds.value = new Set()
+    page.value = 1
   } catch (err) {
+    if (generation !== loadGeneration) return
     error.value = err instanceof Error ? err.message : t('browser.loadFailed')
   } finally {
-    loading.value = false
+    if (generation === loadGeneration) loading.value = false
   }
 }
 
-onMounted(load)
+watch(repoName, load, { immediate: true })
 </script>

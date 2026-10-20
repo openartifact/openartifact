@@ -6,6 +6,7 @@ package pypi
 
 import (
 	"bytes"
+	"context"
 	"crypto/md5" //nolint:gosec // required by protocol specification
 	"crypto/sha256"
 	"encoding/hex"
@@ -22,8 +23,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -103,8 +106,8 @@ func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) 
 	html.WriteString("<!DOCTYPE html>\n<html><body>\n")
 
 	for _, name := range uniqueNames {
-		html.WriteString(fmt.Sprintf(`<a href="/repos/%s/simple/%s/">%s</a>`+"\n",
-			htmlesc.EscapeString(repoName), url.PathEscape(name), htmlesc.EscapeString(name)))
+		fmt.Fprintf(&html, `<a href="/repos/%s/simple/%s/">%s</a>`+"\n",
+			htmlesc.EscapeString(repoName), url.PathEscape(name), htmlesc.EscapeString(name))
 	}
 
 	html.WriteString("</body></html>\n")
@@ -154,13 +157,13 @@ func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request)
 
 	for _, pkg := range versions {
 		fileURL := fmt.Sprintf("/repos/%s/files/%s", htmlesc.EscapeString(repoName), url.PathEscape(pkg.Filename))
-		html.WriteString(fmt.Sprintf(`<a href="%s#sha256=%s"`, fileURL, htmlesc.EscapeString(pkg.SHA256Digest)))
+		fmt.Fprintf(&html, `<a href="%s#sha256=%s"`, fileURL, htmlesc.EscapeString(pkg.SHA256Digest))
 
 		if pkg.RequiresPython != "" {
-			html.WriteString(fmt.Sprintf(` data-requires-python="%s"`, htmlesc.EscapeString(pkg.RequiresPython)))
+			fmt.Fprintf(&html, ` data-requires-python="%s"`, htmlesc.EscapeString(pkg.RequiresPython))
 		}
 
-		html.WriteString(fmt.Sprintf(">%s</a>\n", htmlesc.EscapeString(pkg.Filename)))
+		fmt.Fprintf(&html, ">%s</a>\n", htmlesc.EscapeString(pkg.Filename))
 	}
 
 	html.WriteString("</body></html>\n")
@@ -207,6 +210,10 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	if pkg == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(pkg.Filename, r.URL.Path)...) {
 		return
 	}
 
@@ -302,21 +309,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	// Normalize package name
 	normalizedName := normalizePyPIName(name)
 
-	// Store blob
 	blobKey := fmt.Sprintf("pypi/%s/%s", repoID, fileHeader.Filename)
 
-	_, err = h.BlobStore.Put(r.Context(), bytes.NewReader(fileData), map[string]string{
-		"sha256": sha256Digest,
-		"format": "pypi",
-	})
-	if err != nil {
-		h.Log.Errorw("failed to store blob", "error", err)
-		http.Error(w, "failed to store file", http.StatusInternalServerError)
-
-		return
-	}
-
-	// Create package record
 	pkg := &models.PyPIPackage{
 		RepositoryID:   repoID,
 		Name:           normalizedName,
@@ -337,17 +331,62 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		SizeBytes:      int64(len(fileData)),
 	}
 
-	if err := h.DB.CreatePyPIPackage(r.Context(), pkg); err != nil {
-		if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {
-			http.Error(w, "file already exists", http.StatusConflict)
-			return
+	// Store the blob and insert the referencing row under the per-blob lock
+	// so a concurrent unpublish cannot delete the blob in between.
+	var (
+		status int
+		msg    string
+	)
+
+	lockErr := storage.WithBlobLock(r.Context(), h.DB, sha256Digest, func(ctx context.Context) error {
+		if _, err := h.BlobStore.Put(ctx, bytes.NewReader(fileData), map[string]string{
+			"sha256": sha256Digest,
+			"format": "pypi",
+		}); err != nil {
+			h.Log.Errorw("failed to store blob", "error", err)
+
+			status, msg = http.StatusInternalServerError, "failed to store file"
+
+			return err
 		}
 
-		h.Log.Errorw("failed to create package record", "error", err)
-		http.Error(w, "failed to create package", http.StatusInternalServerError)
+		if err := h.DB.CreatePyPIPackage(ctx, pkg); err != nil {
+			if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {
+				status, msg = http.StatusConflict, "file already exists"
+
+				return err
+			}
+
+			h.Log.Errorw("failed to create package record", "error", err)
+
+			status, msg = http.StatusInternalServerError, "failed to create package"
+
+			return err
+		}
+
+		return nil
+	})
+	if lockErr != nil {
+		if status == 0 {
+			h.Log.Errorw("blob lock failed", "error", lockErr)
+
+			status, msg = http.StatusInternalServerError, "failed to create package"
+		}
+
+		http.Error(w, msg, status)
 
 		return
 	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "pypi",
+		Name:       normalizedName,
+		Version:    version,
+		Path:       fileHeader.Filename,
+		SHA256:     sha256Digest,
+		Size:       int64(len(fileData)),
+	}))
 
 	// Return 200 OK (twine expects 200, not 201)
 	w.WriteHeader(http.StatusOK)
@@ -407,6 +446,16 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256Digest); delErr != nil {
 		h.Log.Warnw("failed to clean up blob after package delete", "sha256", pkg.SHA256Digest, "error", delErr)
 	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "pypi",
+		Name:       pkg.Name,
+		Version:    pkg.Version,
+		Path:       pkg.Filename,
+		SHA256:     pkg.SHA256Digest,
+		Size:       pkg.SizeBytes,
+	}))
 
 	w.WriteHeader(http.StatusOK)
 }

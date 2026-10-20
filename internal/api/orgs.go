@@ -11,6 +11,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -18,6 +19,12 @@ import (
 )
 
 var orgNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
+
+const (
+	orgRoleOwner  = "owner"
+	orgRoleAdmin  = "admin"
+	orgRoleMember = "member"
+)
 
 type OrgsHandler struct {
 	db  database.Database
@@ -40,6 +47,116 @@ func (h *OrgsHandler) RegisterRoutes(r chi.Router) {
 	r.Delete("/api/v1/orgs/{org}/members/{user_id}", h.handleRemoveMember)
 }
 
+func validOrgRole(role string) bool {
+	return role == orgRoleOwner || role == orgRoleAdmin || role == orgRoleMember
+}
+
+// orgAccess describes what the calling user may do in an organization.
+type orgAccess struct {
+	org      *models.Organization
+	userID   string
+	isMember bool
+	// isOwner: the organization's owner_id, or a member with role owner.
+	isOwner bool
+	// isManager: owner or admin.
+	isManager bool
+}
+
+// loadOrgAccess authenticates the caller, loads the organization named in the
+// URL and resolves the caller's role. It writes the error response and returns
+// false on failure.
+func (h *OrgsHandler) loadOrgAccess(w http.ResponseWriter, r *http.Request) (*orgAccess, bool) {
+	p := currentPrincipal(r)
+	if p == nil || p.IsAnonymous || p.UserID == nil {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return nil, false
+	}
+
+	return h.loadOrgAccessFor(w, r, p)
+}
+
+func (h *OrgsHandler) loadOrgAccessFor(w http.ResponseWriter, r *http.Request, p *auth.Principal) (*orgAccess, bool) {
+	org, err := h.db.GetOrganizationByName(r.Context(), urlparams.Vars(r)["org"])
+	if err != nil {
+		h.log.Errorw("get organization: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return nil, false
+	}
+
+	if org == nil {
+		writeError(w, http.StatusNotFound, "not_found", "organization not found")
+		return nil, false
+	}
+
+	member, err := h.db.GetOrgMember(r.Context(), org.ID, *p.UserID)
+	if err != nil {
+		h.log.Errorw("get org member: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return nil, false
+	}
+
+	access := &orgAccess{org: org, userID: *p.UserID}
+	access.isOwner = org.OwnerID != nil && *org.OwnerID == *p.UserID
+	access.isMember = member != nil || access.isOwner
+
+	if member != nil {
+		access.isOwner = access.isOwner || member.Role == orgRoleOwner
+		access.isManager = member.Role == orgRoleOwner || member.Role == orgRoleAdmin
+	}
+
+	access.isManager = access.isManager || access.isOwner
+
+	return access, true
+}
+
+func (h *OrgsHandler) requireMember(w http.ResponseWriter, r *http.Request) (*orgAccess, bool) {
+	access, ok := h.loadOrgAccess(w, r)
+	if !ok {
+		return nil, false
+	}
+
+	if !access.isMember {
+		writeError(w, http.StatusForbidden, "forbidden", "access denied")
+		return nil, false
+	}
+
+	return access, true
+}
+
+func (h *OrgsHandler) requireManager(w http.ResponseWriter, r *http.Request) (*orgAccess, bool) {
+	access, ok := h.loadOrgAccess(w, r)
+	if !ok {
+		return nil, false
+	}
+
+	if !access.isManager {
+		writeError(w, http.StatusForbidden, "forbidden", "access denied")
+		return nil, false
+	}
+
+	return access, true
+}
+
+// countOwners returns the number of members holding the owner role.
+func (h *OrgsHandler) countOwners(r *http.Request, orgID string) (int, error) {
+	members, err := h.db.ListOrgMembers(r.Context(), orgID)
+	if err != nil {
+		return 0, err //nolint:wrapcheck // logged by caller
+	}
+
+	n := 0
+
+	for _, m := range members {
+		if m.Role == orgRoleOwner {
+			n++
+		}
+	}
+
+	return n, nil
+}
+
 func (h *OrgsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	p := currentPrincipal(r)
 	if p == nil || p.IsAnonymous || p.UserID == nil {
@@ -53,49 +170,46 @@ func (h *OrgsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Description string `json:"description"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
-	// Validate name
 	if !orgNameRe.MatchString(req.Name) {
-		writeError(w, http.StatusBadRequest, "invalid_name", "organization name must be 1-100 alphanumeric characters, hyphens, or underscores")
+		writeError(w, http.StatusBadRequest, "validation_failed", "organization name must be 1-100 alphanumeric characters, hyphens, or underscores")
 		return
 	}
 
-	// Check if org already exists
-	existing, err := h.db.GetOrganizationByName(r.Context(), req.Name)
-	if err != nil {
-		h.log.Errorw("check organization exists: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if existing != nil {
-		writeError(w, http.StatusConflict, "already_exists", "organization name already taken")
-		return
-	}
-
+	now := time.Now()
 	org := &models.Organization{
 		Name:        req.Name,
 		DisplayName: &req.DisplayName,
 		Description: &req.Description,
 		OwnerID:     p.UserID,
-		CreatedAt:   time.Now(),
-		UpdatedAt:   time.Now(),
+		CreatedAt:   now,
+		UpdatedAt:   now,
 	}
 
+	// The unique constraints are authoritative: no check-then-insert race.
 	if err := h.db.CreateOrganization(r.Context(), org); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "organization name already taken")
+			return
+		}
+
 		h.log.Errorw("create organization: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	// Add creator as owner
-	if err := h.db.AddOrgMember(r.Context(), org.ID, *p.UserID, "owner"); err != nil {
+	if err := h.db.AddOrgMember(r.Context(), org.ID, *p.UserID, orgRoleOwner); err != nil {
 		h.log.Errorw("add org owner member: db error", "error", err)
+
+		// Do not leave an organization with no owner membership behind.
+		if delErr := h.db.DeleteOrganization(r.Context(), org.ID); delErr != nil {
+			h.log.Errorw("rollback organization create failed", "org_id", org.ID, "error", delErr)
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
@@ -119,11 +233,7 @@ func (h *OrgsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if orgs == nil {
-		orgs = []*models.Organization{}
-	}
-
-	var result []responses.OrganizationResponse
+	result := make([]responses.OrganizationResponse, 0, len(orgs))
 	for _, org := range orgs {
 		result = append(result, orgToMap(org))
 	}
@@ -134,94 +244,40 @@ func (h *OrgsHandler) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrgsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+	access, ok := h.requireMember(w, r)
+	if !ok {
 		return
 	}
 
-	orgName := urlparams.Vars(r)["org"]
-
-	org, err := h.db.GetOrganizationByName(r.Context(), orgName)
-	if err != nil {
-		h.log.Errorw("get organization: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if org == nil {
-		writeError(w, http.StatusNotFound, "not_found", "organization not found")
-		return
-	}
-
-	// Check if user is member
-	member, err := h.db.GetOrgMember(r.Context(), org.ID, *p.UserID)
-	if err != nil {
-		h.log.Errorw("get org member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if member == nil && (org.OwnerID == nil || *org.OwnerID != *p.UserID) {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return
-	}
-
-	writeJSON(w, http.StatusOK, orgToMap(org))
+	writeJSON(w, http.StatusOK, orgToMap(access.org))
 }
 
 func (h *OrgsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+	access, ok := h.requireManager(w, r)
+	if !ok {
 		return
 	}
 
-	orgName := urlparams.Vars(r)["org"]
-
-	org, err := h.db.GetOrganizationByName(r.Context(), orgName)
-	if err != nil {
-		h.log.Errorw("get organization: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if org == nil {
-		writeError(w, http.StatusNotFound, "not_found", "organization not found")
-		return
-	}
-
-	// Check permissions: owner or admin
-	member, err := h.db.GetOrgMember(r.Context(), org.ID, *p.UserID)
-	if err != nil {
-		h.log.Errorw("get org member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	isOwner := org.OwnerID != nil && *org.OwnerID == *p.UserID
-	isAdmin := member != nil && (member.Role == "owner" || member.Role == "admin")
-
-	if !isOwner && !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return
-	}
-
+	// Pointer fields: omitted fields keep their current value.
 	var req struct {
-		DisplayName string `json:"display_name"`
-		Description string `json:"description"`
+		DisplayName *string `json:"display_name"`
+		Description *string `json:"description"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
-	org.DisplayName = &req.DisplayName
-	org.Description = &req.Description
+	org := access.org
+
+	if req.DisplayName != nil {
+		org.DisplayName = req.DisplayName
+	}
+
+	if req.Description != nil {
+		org.Description = req.Description
+	}
+
 	org.UpdatedAt = time.Now()
 
 	if err := h.db.UpdateOrganization(r.Context(), org); err != nil {
@@ -235,35 +291,23 @@ func (h *OrgsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrgsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+	access, ok := h.loadOrgAccess(w, r)
+	if !ok {
 		return
 	}
 
-	orgName := urlparams.Vars(r)["org"]
-
-	org, err := h.db.GetOrganizationByName(r.Context(), orgName)
-	if err != nil {
-		h.log.Errorw("get organization: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if org == nil {
-		writeError(w, http.StatusNotFound, "not_found", "organization not found")
-		return
-	}
-
-	// Check permissions: owner only
-	isOwner := org.OwnerID != nil && *org.OwnerID == *p.UserID
-	if !isOwner {
+	// Only the organization's recorded owner may delete it.
+	if access.org.OwnerID == nil || *access.org.OwnerID != access.userID {
 		writeError(w, http.StatusForbidden, "forbidden", "only organization owner can delete")
 		return
 	}
 
-	if err := h.db.DeleteOrganization(r.Context(), org.ID); err != nil {
+	if err := h.db.DeleteOrganization(r.Context(), access.org.ID); err != nil {
+		if database.IsForeignKeyViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "organization still owns repositories")
+			return
+		}
+
 		h.log.Errorw("delete organization: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
@@ -274,42 +318,12 @@ func (h *OrgsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *OrgsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+	access, ok := h.requireMember(w, r)
+	if !ok {
 		return
 	}
 
-	orgName := urlparams.Vars(r)["org"]
-
-	org, err := h.db.GetOrganizationByName(r.Context(), orgName)
-	if err != nil {
-		h.log.Errorw("get organization: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if org == nil {
-		writeError(w, http.StatusNotFound, "not_found", "organization not found")
-		return
-	}
-
-	// Check if user is member
-	member, err := h.db.GetOrgMember(r.Context(), org.ID, *p.UserID)
-	if err != nil {
-		h.log.Errorw("get org member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if member == nil && (org.OwnerID == nil || *org.OwnerID != *p.UserID) {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return
-	}
-
-	members, err := h.db.ListOrgMembers(r.Context(), org.ID)
+	members, err := h.db.ListOrgMembers(r.Context(), access.org.ID)
 	if err != nil {
 		h.log.Errorw("list organization members: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -317,11 +331,7 @@ func (h *OrgsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if members == nil {
-		members = []*models.OrgMember{}
-	}
-
-	var result []responses.OrgMemberResponse
+	result := make([]responses.OrgMemberResponse, 0, len(members))
 	for _, m := range members {
 		result = append(result, memberToMap(m))
 	}
@@ -331,43 +341,9 @@ func (h *OrgsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (h *OrgsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
-		return
-	}
-
-	orgName := urlparams.Vars(r)["org"]
-
-	org, err := h.db.GetOrganizationByName(r.Context(), orgName)
-	if err != nil {
-		h.log.Errorw("get organization: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if org == nil {
-		writeError(w, http.StatusNotFound, "not_found", "organization not found")
-		return
-	}
-
-	// Check permissions: owner or admin
-	member, err := h.db.GetOrgMember(r.Context(), org.ID, *p.UserID)
-	if err != nil {
-		h.log.Errorw("get org member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	isOwner := org.OwnerID != nil && *org.OwnerID == *p.UserID
-	isAdmin := member != nil && (member.Role == "owner" || member.Role == "admin")
-
-	if !isOwner && !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
+	access, ok := h.requireManager(w, r)
+	if !ok {
 		return
 	}
 
@@ -376,21 +352,25 @@ func (h *OrgsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
 		Role   string `json:"role"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
 	if req.Role == "" {
-		req.Role = "member"
+		req.Role = orgRoleMember
 	}
 
-	// Validate role
-	if req.Role != "owner" && req.Role != "admin" && req.Role != "member" {
-		writeError(w, http.StatusBadRequest, "invalid_role", "role must be owner, admin, or member")
+	if !validOrgRole(req.Role) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "role must be owner, admin, or member")
 		return
 	}
 
-	// Check if user exists
+	// Only owners may grant the owner role (prevents admin -> owner escalation).
+	if req.Role == orgRoleOwner && !access.isOwner {
+		writeError(w, http.StatusForbidden, "forbidden", "only an owner can grant the owner role")
+		return
+	}
+
 	user, err := h.db.GetUserByID(r.Context(), req.UserID)
 	if err != nil {
 		h.log.Errorw("get user: db error", "error", err)
@@ -400,12 +380,11 @@ func (h *OrgsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if user == nil {
-		writeError(w, http.StatusNotFound, "user_not_found", "user not found")
+		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
 
-	// Check if already member
-	existing, err := h.db.GetOrgMember(r.Context(), org.ID, req.UserID)
+	existing, err := h.db.GetOrgMember(r.Context(), access.org.ID, req.UserID)
 	if err != nil {
 		h.log.Errorw("get org member: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -414,18 +393,23 @@ func (h *OrgsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if existing != nil {
-		writeError(w, http.StatusConflict, "already_member", "user is already a member")
+		writeError(w, http.StatusConflict, "conflict", "user is already a member")
 		return
 	}
 
-	if err := h.db.AddOrgMember(r.Context(), org.ID, req.UserID, req.Role); err != nil {
+	if err := h.db.AddOrgMember(r.Context(), access.org.ID, req.UserID, req.Role); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "user is already a member")
+			return
+		}
+
 		h.log.Errorw("add org member: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	newMember, err := h.db.GetOrgMember(r.Context(), org.ID, req.UserID)
+	newMember, err := h.db.GetOrgMember(r.Context(), access.org.ID, req.UserID)
 	if err != nil {
 		h.log.Errorw("get org member: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -436,62 +420,67 @@ func (h *OrgsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusCreated, memberToMap(newMember))
 }
 
+// guardOwnerChange enforces the owner-protection rules for changing or
+// removing target (whose new role is newRole, or "" when removing). It writes
+// the error response and returns false when the change is not allowed.
+func (h *OrgsHandler) guardOwnerChange(w http.ResponseWriter, r *http.Request, access *orgAccess, target *models.OrgMember, newRole string) bool {
+	if newRole == target.Role {
+		return true
+	}
+
+	isRecordedOwner := access.org.OwnerID != nil && *access.org.OwnerID == target.UserID
+
+	if isRecordedOwner {
+		writeError(w, http.StatusConflict, "conflict", "the organization owner cannot be demoted or removed")
+		return false
+	}
+
+	// Granting or revoking the owner role requires being an owner.
+	if (newRole == orgRoleOwner || target.Role == orgRoleOwner) && !access.isOwner {
+		writeError(w, http.StatusForbidden, "forbidden", "only an owner can grant, revoke or remove the owner role")
+		return false
+	}
+
+	if target.Role == orgRoleOwner {
+		owners, err := h.countOwners(r, access.org.ID)
+		if err != nil {
+			h.log.Errorw("count org owners: db error", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return false
+		}
+
+		if owners <= 1 {
+			writeError(w, http.StatusConflict, "conflict", "cannot remove or demote the last owner")
+			return false
+		}
+	}
+
+	return true
+}
+
 func (h *OrgsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+	access, ok := h.requireManager(w, r)
+	if !ok {
 		return
 	}
 
-	orgName := urlparams.Vars(r)["org"]
 	userID := urlparams.Vars(r)["user_id"]
-
-	org, err := h.db.GetOrganizationByName(r.Context(), orgName)
-	if err != nil {
-		h.log.Errorw("get organization: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if org == nil {
-		writeError(w, http.StatusNotFound, "not_found", "organization not found")
-		return
-	}
-
-	// Check permissions: owner or admin
-	member, err := h.db.GetOrgMember(r.Context(), org.ID, *p.UserID)
-	if err != nil {
-		h.log.Errorw("get org member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	isOwner := org.OwnerID != nil && *org.OwnerID == *p.UserID
-	isAdmin := member != nil && (member.Role == "owner" || member.Role == "admin")
-
-	if !isOwner && !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return
-	}
 
 	var req struct {
 		Role string `json:"role"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "invalid request body")
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
-	// Validate role
-	if req.Role != "owner" && req.Role != "admin" && req.Role != "member" {
-		writeError(w, http.StatusBadRequest, "invalid_role", "role must be owner, admin, or member")
+	if !validOrgRole(req.Role) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "role must be owner, admin, or member")
 		return
 	}
 
-	// Check if member exists
-	targetMember, err := h.db.GetOrgMember(r.Context(), org.ID, userID)
+	targetMember, err := h.db.GetOrgMember(r.Context(), access.org.ID, userID)
 	if err != nil {
 		h.log.Errorw("get org member: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -504,14 +493,18 @@ func (h *OrgsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.db.UpdateOrgMemberRole(r.Context(), org.ID, userID, req.Role); err != nil {
+	if !h.guardOwnerChange(w, r, access, targetMember, req.Role) {
+		return
+	}
+
+	if err := h.db.UpdateOrgMemberRole(r.Context(), access.org.ID, userID, req.Role); err != nil {
 		h.log.Errorw("update org member role: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	updatedMember, err := h.db.GetOrgMember(r.Context(), org.ID, userID)
+	updatedMember, err := h.db.GetOrgMember(r.Context(), access.org.ID, userID)
 	if err != nil {
 		h.log.Errorw("get org member: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -523,47 +516,14 @@ func (h *OrgsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *OrgsHandler) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+	access, ok := h.requireManager(w, r)
+	if !ok {
 		return
 	}
 
-	orgName := urlparams.Vars(r)["org"]
 	userID := urlparams.Vars(r)["user_id"]
 
-	org, err := h.db.GetOrganizationByName(r.Context(), orgName)
-	if err != nil {
-		h.log.Errorw("get organization: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if org == nil {
-		writeError(w, http.StatusNotFound, "not_found", "organization not found")
-		return
-	}
-
-	// Check permissions: owner or admin
-	member, err := h.db.GetOrgMember(r.Context(), org.ID, *p.UserID)
-	if err != nil {
-		h.log.Errorw("get org member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	isOwner := org.OwnerID != nil && *org.OwnerID == *p.UserID
-	isAdmin := member != nil && (member.Role == "owner" || member.Role == "admin")
-
-	if !isOwner && !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return
-	}
-
-	// Check if member exists
-	targetMember, err := h.db.GetOrgMember(r.Context(), org.ID, userID)
+	targetMember, err := h.db.GetOrgMember(r.Context(), access.org.ID, userID)
 	if err != nil {
 		h.log.Errorw("get org member: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -576,7 +536,11 @@ func (h *OrgsHandler) handleRemoveMember(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if err := h.db.RemoveOrgMember(r.Context(), org.ID, userID); err != nil {
+	if !h.guardOwnerChange(w, r, access, targetMember, "") {
+		return
+	}
+
+	if err := h.db.RemoveOrgMember(r.Context(), access.org.ID, userID); err != nil {
 		h.log.Errorw("remove org member: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 

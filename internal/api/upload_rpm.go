@@ -22,14 +22,20 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
-const maxRPMUploadSize = 500 * 1024 * 1024 // 500MB
+const (
+	maxRPMUploadSize = 500 * 1024 * 1024 // 500MB
+	rpmFormMemory    = 1 << 20           // multipart bytes held in memory
+	maxCompsSize     = 10 * 1024 * 1024
+)
 
 type RPMUploadHandler struct {
 	log        *logger.Logger
@@ -39,6 +45,7 @@ type RPMUploadHandler struct {
 	reg        *metrics.Registry
 	debHandler *DebUploadHandler
 	rpmWorker  *worker.RPMetadataWorker
+	publisher  webhook.Publisher
 }
 
 func NewRPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
@@ -58,6 +65,13 @@ func (h *RPMUploadHandler) SetDebWorker(w *worker.DebMetadataWorker) {
 
 func (h *RPMUploadHandler) SetRPMWorker(w *worker.RPMetadataWorker) {
 	h.rpmWorker = w
+}
+
+// SetPublisher wires the webhook publisher used for artifact events. It also
+// covers the embedded deb handler that serves deb repositories on the same routes.
+func (h *RPMUploadHandler) SetPublisher(p webhook.Publisher) {
+	h.publisher = p
+	h.debHandler.SetPublisher(p)
 }
 
 func (h *RPMUploadHandler) Register(router chi.Router) {
@@ -89,7 +103,27 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		defer func() { h.reg.UploadsTotal.WithLabelValues("rpm", uploadResult).Inc() }()
 	}
 
-	if err := r.ParseMultipartForm(maxRPMUploadSize); err != nil { //nolint:gosec // G120: form size is bounded by maxRPMUploadSize
+	if repo.Format != "rpm" {
+		uploadResult = "error"
+
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "repository format is not rpm")
+
+		return
+	}
+
+	// Cap the whole request body (file plus multipart overhead); keep only a
+	// small part of the form in memory, the rest spills to disk.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRPMUploadSize+1<<20)
+
+	if err := r.ParseMultipartForm(rpmFormMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
+		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
+			uploadResult = "error"
+
+			writeError(w, http.StatusRequestEntityTooLarge, "INVALID_INPUT", "file exceeds maximum size limit")
+
+			return
+		}
+
 		uploadResult = "error"
 
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", fmt.Sprintf("failed to parse form: %v", err))
@@ -124,12 +158,19 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.uploadPipeline(r, file, repoName)
+	result, err := h.uploadPipeline(r, file, repo)
 	if err != nil {
 		uploadResult = "error"
 
-		h.log.Errorw("RPM upload failed", "repository", repoName, "filename", header.Filename, "error", err)
-		writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
+		switch {
+		case isInvalidRPMError(err):
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid rpm package: "+err.Error())
+		case errors.Is(err, quota.ErrExceeded):
+			quota.WriteExceeded(w)
+		default:
+			h.log.Errorw("RPM upload failed", "repository", repoName, "filename", header.Filename, "error", err)
+			writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
+		}
 
 		return
 	}
@@ -156,19 +197,6 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
-func (h *RPMUploadHandler) resolveRepoID(r *http.Request, repoName string) (string, error) {
-	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
-	if err != nil {
-		return "", fmt.Errorf("failed to look up repository: %w", err)
-	}
-
-	if repo == nil {
-		return "", fmt.Errorf("repository not found: %s", repoName) //nolint:err113 // dynamic error with runtime context
-	}
-
-	return repo.ID, nil
-}
-
 // ensureRPMRepo makes sure the rpm_repos row the metadata worker needs exists.
 func (h *RPMUploadHandler) ensureRPMRepo(ctx context.Context, repoID string) error {
 	rpmRepo, err := h.db.GetRPMRepo(ctx, repoID)
@@ -185,10 +213,44 @@ func (h *RPMUploadHandler) ensureRPMRepo(ctx context.Context, repoID string) err
 	return nil
 }
 
+// rpmSpool is an upload buffered on disk with its digest and size.
+type rpmSpool struct {
+	file   *os.File
+	sha256 string
+	size   int64
+}
+
+func (s *rpmSpool) close(log *logger.Logger) {
+	base.CloseLog(s.file, log)
+
+	_ = os.Remove(s.file.Name())
+}
+
+// spoolUpload streams the request file to a temp file while hashing it.
+func (h *RPMUploadHandler) spoolUpload(file io.Reader) (*rpmSpool, error) {
+	tmpFile, err := os.CreateTemp("", "rpm-upload-*.tmp")
+	if err != nil {
+		return nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	sp := &rpmSpool{file: tmpFile}
+	hasher := sha256.New()
+
+	sp.size, err = io.Copy(tmpFile, io.TeeReader(file, hasher))
+	if err != nil {
+		sp.close(h.log)
+		return nil, fmt.Errorf("failed to buffer upload: %w", err)
+	}
+
+	sp.sha256 = hex.EncodeToString(hasher.Sum(nil))
+
+	return sp, nil
+}
+
 // storeBlobDeduped stores the temp file in the blob store unless a blob with
 // the same sha256 already exists, and reports whether it pre-existed.
-func (h *RPMUploadHandler) storeBlobDeduped(ctx context.Context, tmpFile *os.File, repoName, sha256sum string) (string, bool, error) {
-	blobID, blobExists, err := h.blobStore.ExistsBySHA256(ctx, sha256sum)
+func (h *RPMUploadHandler) storeBlobDeduped(ctx context.Context, sp *rpmSpool, repoName string) (string, bool, error) {
+	blobID, blobExists, err := h.blobStore.ExistsBySHA256(ctx, sp.sha256)
 	if err != nil {
 		return "", false, fmt.Errorf("failed to check blob existence: %w", err)
 	}
@@ -197,14 +259,14 @@ func (h *RPMUploadHandler) storeBlobDeduped(ctx context.Context, tmpFile *os.Fil
 		return blobID, true, nil
 	}
 
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+	if _, err := sp.file.Seek(0, io.SeekStart); err != nil {
 		return "", false, fmt.Errorf("failed to seek temp file: %w", err)
 	}
 
-	blobID, err = h.blobStore.Put(ctx, tmpFile, map[string]string{
+	blobID, err = h.blobStore.Put(ctx, sp.file, map[string]string{
 		"format":    "rpm",
 		"repo_name": repoName,
-		"sha256":    sha256sum,
+		"sha256":    sp.sha256,
 	})
 	if err != nil {
 		return "", false, fmt.Errorf("failed to store blob: %w", err)
@@ -213,69 +275,30 @@ func (h *RPMUploadHandler) storeBlobDeduped(ctx context.Context, tmpFile *os.Fil
 	return blobID, false, nil
 }
 
-func (h *RPMUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoName string) (*formatrpm.UploadResult, error) {
-	repoID, err := h.resolveRepoID(r, repoName)
-	if err != nil {
-		return nil, err
-	}
+// isInvalidRPMError reports whether err means the uploaded file is not a valid rpm.
+func isInvalidRPMError(err error) bool {
+	return errors.Is(err, pkgrpm.ErrInvalidHeader) || errors.Is(err, pkgrpm.ErrInvalidHeaderMagic) ||
+		errors.Is(err, pkgrpm.ErrHeaderTooLarge) || errors.Is(err, pkgrpm.ErrInvalidLeadMagic) ||
+		errors.Is(err, pkgrpm.ErrUnsupportedVersion)
+}
 
-	if err := h.ensureRPMRepo(r.Context(), repoID); err != nil {
-		return nil, err
-	}
-
-	// Stream to temp file while computing SHA256
-	tmpFile, err := os.CreateTemp("", "rpm-upload-*.tmp")
-	if err != nil {
-		return nil, fmt.Errorf("failed to create temp file: %w", err)
-	}
-	defer func() { _ = os.Remove(tmpFile.Name()) }()
-	defer func() { base.CloseLog(tmpFile, h.log) }()
-
-	hasher := sha256.New()
-
-	written, err := io.Copy(tmpFile, io.TeeReader(file, hasher))
-	if err != nil {
-		return nil, fmt.Errorf("failed to buffer upload: %w", err)
-	}
-
-	sha256sum := hex.EncodeToString(hasher.Sum(nil))
-
-	// Per-repo duplicate check: same package already in this repo.
-	exists, err := h.db.ArtifactExists(r.Context(), sha256sum, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("failed to check artifact existence: %w", err)
-	}
-
-	if exists {
-		return &formatrpm.UploadResult{Duplicate: true}, nil
-	}
-
-	// Parse from temp file
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+// parseSpooled parses the spooled file as an rpm package.
+func parseSpooled(sp *rpmSpool) (*pkgrpm.Package, error) {
+	if _, err := sp.file.Seek(0, io.SeekStart); err != nil {
 		return nil, fmt.Errorf("failed to seek temp file: %w", err)
 	}
 
-	pkg, err := pkgrpm.ParseRPM(tmpFile)
+	pkg, err := pkgrpm.ParseRPM(sp.file)
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse rpm: %w", err)
 	}
 
-	filename := fmt.Sprintf("%s-%s-%s.%s.rpm", pkg.Name, pkg.Version, pkg.Release, pkg.Arch)
+	return pkg, nil
+}
 
-	// Cross-repo dedup: if the blob already exists in any repo, skip re-uploading it.
-	// The component record is still created for this repo, pointing to the shared blob.
-	blobID, blobExists, err := h.storeBlobDeduped(r.Context(), tmpFile, repoName, sha256sum)
-	if err != nil {
-		return nil, err
-	}
-
-	// Upsert into blobs table to get the UUID for blob_id FK reference.
-	blobUUID, err := h.db.UpsertBlob(r.Context(), sha256sum, sha256sum, written)
-	if err != nil {
-		return nil, fmt.Errorf("failed to upsert blob record: %w", err)
-	}
-
-	component := &models.Component{
+// newComponent builds the rpm_packages row for pkg referencing blob blobUUID.
+func newComponent(repoID, blobUUID, filename string, size int64, pkg *pkgrpm.Package, extra []byte) *models.Component {
+	return &models.Component{
 		RepositoryID:  repoID,
 		ArtifactID:    blobUUID,
 		Name:          pkg.Name,
@@ -293,40 +316,188 @@ func (h *RPMUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoN
 		SourceRPM:     pkg.SourceRPM,
 		BuildHost:     pkg.BuildHost,
 		BuildTime:     pkg.BuildTime,
-		PackageSize:   written,
+		PackageSize:   size,
 		InstalledSize: pkg.InstalledSize,
 		ArchiveSize:   pkg.ArchiveSize,
 		Filename:      filename,
+		HeaderStart:   pkg.HeaderStart,
+		HeaderEnd:     pkg.HeaderEnd,
+		RPMExtra:      extra,
+	}
+}
+
+// rpmFilename is the canonical file name of a package.
+func rpmFilename(pkg *pkgrpm.Package) string {
+	return fmt.Sprintf("%s-%s-%s.%s.rpm", pkg.Name, pkg.Version, pkg.Release, pkg.Arch)
+}
+
+// rpmVersionRelease renders "version-release" (just version when no release).
+func rpmVersionRelease(version, release string) string {
+	if release == "" {
+		return version
 	}
 
-	if err := h.db.CreateRpmPackage(r.Context(), component); err != nil {
-		// Lost the check-then-insert race: another concurrent upload of the
-		// same content won. The shared blob is referenced by the winner, so
-		// do not delete it — just report the duplicate (HTTP 409).
+	return version + "-" + release
+}
+
+// isDuplicateUpload reports whether the same NEVRA is already stored in the repository.
+func (h *RPMUploadHandler) isDuplicateUpload(ctx context.Context, repoID string, pkg *pkgrpm.Package) (bool, error) {
+	nevraExists, err := h.db.RpmPackageExists(ctx, repoID, pkg.Name, pkg.Version, pkg.Release, int(pkg.Epoch), pkg.Arch)
+	if err != nil {
+		return false, fmt.Errorf("failed to check package existence: %w", err)
+	}
+
+	return nevraExists, nil
+}
+
+// releaseQuota returns a reservation made by quota.Enforce.
+func (h *RPMUploadHandler) releaseQuota(ctx context.Context, repoName, repoID string, size int64) {
+	if err := quota.Release(ctx, h.db, repoID, size); err != nil {
+		h.log.Warnw("failed to release quota", "repository", repoName, "error", err)
+	}
+}
+
+// dropOrphanBlob removes a blob this upload stored when no row references it.
+func (h *RPMUploadHandler) dropOrphanBlob(ctx context.Context, sha256sum, reason string) {
+	if err := storage.SafeDeleteBlob(context.WithoutCancel(ctx), h.db, h.blobStore, sha256sum); err != nil {
+		h.log.Warnw("failed to clean up blob after "+reason, "sha256", sha256sum, "error", err)
+	}
+}
+
+// persistPackage stores the blob and inserts the package row under the
+// per-blob lock so a concurrent unpublish/cleanup cannot delete the blob in
+// between. The caller holds the quota reservation and releases it unless the
+// package was created.
+func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repository, sp *rpmSpool, pkg *pkgrpm.Package, extra []byte) (*formatrpm.UploadResult, error) {
+	var (
+		blobID   string
+		storedBy bool // this upload put the blob (it did not pre-exist)
+		created  bool
+	)
+
+	filename := rpmFilename(pkg)
+
+	err := storage.WithBlobLock(ctx, h.db, sp.sha256, func(ctx context.Context) error {
+		id, existed, err := h.storeBlobDeduped(ctx, sp, repo.Name)
+		if err != nil {
+			return err
+		}
+
+		blobID, storedBy = id, !existed
+
+		// Upsert into blobs table to get the UUID for blob_id FK reference.
+		blobUUID, err := h.db.UpsertBlob(ctx, sp.sha256, sp.sha256, sp.size)
+		if err != nil {
+			return fmt.Errorf("failed to upsert blob record: %w", err)
+		}
+
+		if err := h.db.CreateRpmPackage(ctx, newComponent(repo.ID, blobUUID, filename, sp.size, pkg, extra)); err != nil {
+			return fmt.Errorf("failed to create component record: %w", err)
+		}
+
+		created = true
+
+		return nil
+	})
+	if created {
+		if err != nil {
+			// Only the (empty) lock transaction failed to commit; the row exists.
+			h.log.Warnw("blob lock commit failed after package was stored", "sha256", sp.sha256, "error", err)
+		}
+
+		return &formatrpm.UploadResult{
+			Name: pkg.Name, Version: pkg.Version, Release: pkg.Release, Arch: pkg.Arch,
+			SHA256: sp.sha256, BlobID: blobID, Size: sp.size,
+		}, nil
+	}
+
+	if storedBy {
+		reason := "DB error"
 		if errors.Is(err, database.ErrDuplicate) {
-			return &formatrpm.UploadResult{Duplicate: true}, nil
+			reason = "duplicate"
 		}
 
-		if !blobExists {
-			if delErr := h.blobStore.Delete(r.Context(), blobID); delErr != nil {
-				h.log.Warnw("failed to clean up blob after DB error", "blob_id", blobID, "error", delErr)
-			}
-		}
-		return nil, fmt.Errorf("failed to create component record: %w", err)
+		h.dropOrphanBlob(ctx, sp.sha256, reason)
 	}
+
+	// Lost the check-then-insert race: another concurrent upload of the same
+	// package won (HTTP 409).
+	if errors.Is(err, database.ErrDuplicate) {
+		return &formatrpm.UploadResult{Duplicate: true}, nil
+	}
+
+	return nil, err
+}
+
+func (h *RPMUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repo *models.Repository) (*formatrpm.UploadResult, error) {
+	ctx := r.Context()
+
+	if err := h.ensureRPMRepo(ctx, repo.ID); err != nil {
+		return nil, err
+	}
+
+	sp, err := h.spoolUpload(file)
+	if err != nil {
+		return nil, err
+	}
+	defer sp.close(h.log)
+
+	// Per-repo duplicate check: same package already in this repo.
+	exists, err := h.db.ArtifactExists(ctx, sp.sha256, repo.ID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to check artifact existence: %w", err)
+	}
+
+	if exists {
+		return &formatrpm.UploadResult{Duplicate: true}, nil
+	}
+
+	pkg, err := parseSpooled(sp)
+	if err != nil {
+		return nil, err
+	}
+
+	// Same NEVRA already present (possibly with different content): immutable, 409.
+	dup, err := h.isDuplicateUpload(ctx, repo.ID, pkg)
+	if err != nil {
+		return nil, err
+	}
+
+	if dup {
+		return &formatrpm.UploadResult{Duplicate: true}, nil
+	}
+
+	extra, err := pkg.MarshalExtra()
+	if err != nil {
+		return nil, fmt.Errorf("failed to encode package metadata: %w", err)
+	}
+
+	// Reserve quota before persisting anything; give it back unless a package row exists.
+	if err := quota.Enforce(ctx, h.db, repo.ID, sp.size); err != nil {
+		return nil, fmt.Errorf("rpm upload: %w", err)
+	}
+
+	result, err := h.persistPackage(ctx, repo, sp, pkg, extra)
+	if err != nil || result.Duplicate {
+		h.releaseQuota(ctx, repo.Name, repo.ID, sp.size)
+		return result, err
+	}
+
 	if h.rpmWorker != nil {
-		h.rpmWorker.NotifyStale(repoID)
+		h.rpmWorker.NotifyStale(repo.ID)
 	}
 
-	return &formatrpm.UploadResult{
-		Name:    pkg.Name,
-		Version: pkg.Version,
-		Release: pkg.Release,
-		Arch:    pkg.Arch,
-		SHA256:  sha256sum,
-		BlobID:  blobID,
-		Size:    written,
-	}, nil
+	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repo.Name,
+		Format:     "rpm",
+		Name:       pkg.Name,
+		Version:    rpmVersionRelease(pkg.Version, pkg.Release),
+		Path:       rpmFilename(pkg),
+		SHA256:     sp.sha256,
+		Size:       sp.size,
+	}))
+
+	return result, nil
 }
 
 func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -346,11 +517,7 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	repoID, err := h.resolveRepoID(r, repoName)
-	if err != nil {
-		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
-		return
-	}
+	repoID := repo.ID
 
 	// Look up component to get artifact ID for blob cleanup
 	comp, err := h.db.GetRpmPackageByID(r.Context(), packageID)
@@ -361,9 +528,18 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if comp == nil {
+	if comp == nil || comp.RepositoryID != repoID {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
 		return
+	}
+
+	// Resolve the sha256 blob key and size before the row disappears.
+	blobSHA, size := "", comp.PackageSize
+	if full, getErr := h.db.GetComponentByID(r.Context(), packageID); getErr == nil && full != nil {
+		blobSHA = full.SHA256
+		if full.PackageSize > 0 {
+			size = full.PackageSize
+		}
 	}
 
 	if err := h.db.DeleteComponent(r.Context(), packageID); err != nil {
@@ -373,10 +549,12 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Delete blob from storage (best-effort); blob is keyed by BlobID
-	if comp.BlobID != "" {
-		if err := h.blobStore.Delete(r.Context(), comp.BlobID); err != nil {
-			h.log.Warnw("failed to delete blob", "blob_id", comp.BlobID, "error", err)
+	h.releaseQuota(r.Context(), repoName, repoID, size)
+
+	// Blobs are keyed by sha256; remove only when no other row references it.
+	if blobSHA != "" {
+		if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, blobSHA); err != nil {
+			h.log.Warnw("failed to delete blob", "sha256", blobSHA, "error", err)
 		}
 	}
 
@@ -387,6 +565,16 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	if h.rpmWorker != nil {
 		h.rpmWorker.NotifyStale(repoID)
 	}
+
+	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "rpm",
+		Name:       comp.Name,
+		Version:    rpmVersionRelease(comp.Version, comp.Release),
+		Path:       comp.Filename,
+		SHA256:     blobSHA,
+		Size:       size,
+	}))
 
 	h.log.Infow("RPM package deleted", "repository", repoName, "package_id", packageID)
 
@@ -403,15 +591,29 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.resolveRepoID(r, repoName)
-	if err != nil {
+	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
+	if err != nil || repo == nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
 		return
 	}
 
-	body, err := io.ReadAll(io.LimitReader(r.Body, 10*1024*1024))
+	if repo.Format != "rpm" {
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "repository format is not rpm")
+		return
+	}
+
+	repoID := repo.ID
+
+	if err := h.ensureRPMRepo(r.Context(), repoID); err != nil {
+		h.log.Errorw("failed to ensure rpm repo", "repo_id", repoID, "error", err)
+		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to prepare repository")
+
+		return
+	}
+
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxCompsSize))
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "failed to read request body")
+		writeError(w, http.StatusRequestEntityTooLarge, "INVALID_INPUT", "failed to read request body or body too large")
 		return
 	}
 
@@ -426,6 +628,7 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 		"format":    "rpm",
 		"type":      "comps",
 		"repo_name": repoName,
+		"sha256":    compsSHA,
 	})
 	if err != nil {
 		writeError(w, http.StatusInternalServerError, "STORAGE_ERROR", "failed to store comps XML")

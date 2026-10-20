@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -31,6 +32,7 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/-/package/{pkg}/dist-tags", h.handleGetDistTags)
 	r.Get("/{pkg}/-/{tarball}", h.handleTarball)
+	r.Get("/{scope}/{pkg}/-/{tarball}", h.handleTarball)
 	r.Get("/{pkg}/{version}", h.handleVersionManifest)
 	r.Get("/{pkg}", h.handlePackument)
 }
@@ -102,7 +104,9 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body []byte
-	if strings.Contains(r.Header.Get("Accept"), "application/vnd.npm.install-v1+json") {
+
+	abbreviated := strings.Contains(r.Header.Get("Accept"), "application/vnd.npm.install-v1+json")
+	if abbreviated {
 		body, err = BuildAbbreviatedPackument(repoName, pkgName, versions, distTags, h.BaseURL)
 	} else {
 		body, err = BuildPackument(repoName, pkgName, versions, distTags, h.BaseURL)
@@ -116,10 +120,20 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 	}
 
 	etag := fmt.Sprintf(`"%x"`, pkg.UpdatedAt.UnixNano())
+	if abbreviated {
+		etag = `"abbr-` + etag[1:]
+	}
 
-	w.Header().Set("Content-Type", "application/json")
+	w.Header().Set("Vary", "Accept")
 	w.Header().Set("ETag", etag)
 	w.Header().Set("Cache-Control", "public, max-age=60")
+
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		w.WriteHeader(http.StatusNotModified)
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
 }
@@ -192,6 +206,10 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	pkgName := resolvePackageName(vars["pkg"])
+	if scope := vars["scope"]; scope != "" {
+		pkgName = resolvePackageName(scope) + "/" + pkgName
+	}
+
 	tarball := vars["tarball"]
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
@@ -228,17 +246,26 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var blobSHA256 string
+	var (
+		blobSHA256 string
+		version    string
+	)
 
 	for _, v := range versions {
 		if v.TarballFilename == tarball {
-			blobSHA256 = v.BlobID
+			blobSHA256 = v.BlobSHA256
+			version = v.Version
+
 			break
 		}
 	}
 
 	if blobSHA256 == "" {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(pkgName+"@"+version, pkgName+"/-/"+tarball, tarball, r.URL.Path)...) {
 		return
 	}
 
@@ -312,4 +339,16 @@ func (h *HTTPHandler) handleGetDistTags(w http.ResponseWriter, r *http.Request) 
 	if encErr := json.NewEncoder(w).Encode(distTags); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// etagMatches reports whether an If-None-Match header value matches etag.
+func etagMatches(header, etag string) bool {
+	for c := range strings.SplitSeq(header, ",") {
+		c = strings.TrimPrefix(strings.TrimSpace(c), "W/")
+		if c == "*" || c == etag {
+			return true
+		}
+	}
+
+	return false
 }

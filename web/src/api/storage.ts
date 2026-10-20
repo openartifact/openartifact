@@ -2,24 +2,38 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, ApiError } from './client'
-import { pagedResponse, emptyPaged, type PagedResult } from './transform'
-import type { StorageBackend } from './generated/types.gen'
+import { request } from './client'
+import { pagedResponse, type PagedResult } from './transform'
 
-export type { StorageBackend }
-
-export async function listStorageBackends(): Promise<PagedResult<StorageBackend>> {
-  try {
-    const raw = await request<Record<string, unknown>>('/api/v1/admin/storage')
-    return pagedResponse<StorageBackend>(raw)
-  } catch (err) {
-    if (err instanceof ApiError && (err.status === 404 || err.status === 501)) return emptyPaged<StorageBackend>()
-    throw err
-  }
+/**
+ * Mirrors the server's StorageBackendResponse. The generated type is stale
+ * (no `config`/status fields, narrower `kind`), so it is declared locally.
+ * Secret config fields are never returned; the server reports a
+ * `has_<field>: true` flag in `config` instead.
+ */
+export interface StorageBackend {
+  id?: string
+  name?: string
+  kind?: string
+  is_default?: boolean
+  config?: Record<string, unknown>
+  /** `healthy` | `unreachable` | `unknown` */
+  status?: string
+  status_message?: string | null
+  last_checked_at?: string | null
+  created_at?: string
+  updated_at?: string
 }
 
-export async function getStorageBackend(name: string): Promise<StorageBackend> {
-  return request<StorageBackend>(`/api/v1/admin/storage/${encodeURIComponent(name)}`)
+export interface StorageTestResult {
+  ok: boolean
+  error?: string
+  message?: string
+}
+
+export async function listStorageBackends(): Promise<PagedResult<StorageBackend>> {
+  const raw = await request<Record<string, unknown>>('/api/v1/admin/storage')
+  return pagedResponse<StorageBackend>(raw)
 }
 
 export async function createStorageBackend(body: {
@@ -52,14 +66,9 @@ export async function deleteStorageBackend(name: string): Promise<void> {
   })
 }
 
-export async function testStorageBackend(name: string): Promise<{ ok: boolean; message?: string }> {
-  try {
-    return await request<{ ok: boolean; message?: string }>(
-      `/api/v1/admin/storage/${encodeURIComponent(name)}/test`,
-      { method: 'POST' },
-    )
-  } catch (err) {
-    if (err instanceof ApiError) return { ok: false, message: err.message }
-    throw err
-  }
+/** Tests the *stored* backend; a failed check resolves with `ok: false`. */
+export async function testStorageBackend(name: string): Promise<StorageTestResult> {
+  return request<StorageTestResult>(`/api/v1/admin/storage/${encodeURIComponent(name)}/test`, {
+    method: 'POST',
+  })
 }

@@ -5,7 +5,7 @@
 import { describe, it, expect } from 'bun:test'
 import { mount } from '@vue/test-utils'
 import FormatBadge from '../FormatBadge.vue'
-import { formatIcon } from '../../lib/formats'
+import { formatIcon, ALL_FORMATS } from '../../lib/formats'
 
 describe('FormatBadge', () => {
   it('renders format label', () => {
@@ -92,11 +92,18 @@ describe('FormatBadge', () => {
     expect(path.attributes('d')).toBe(formatIcon('docker'))
   })
 
-  it('renders raw format with color bar and no brand icon', () => {
+  it('renders raw format with the generic archive icon', () => {
     const wrapper = mount(FormatBadge, { props: { format: 'raw' } })
-    const fallback = wrapper.find('span.self-stretch')
-    expect(fallback.exists()).toBe(true)
-    expect(fallback.attributes('style')).toContain('background')
+    expect(wrapper.find('svg path').attributes('d')).toBe(formatIcon('raw'))
+  })
+
+  it('every known format has an icon', () => {
+    for (const id of ALL_FORMATS) expect(formatIcon(id)).toBeTruthy()
+  })
+
+  it('renders fallback color bar for unknown formats', () => {
+    const wrapper = mount(FormatBadge, { props: { format: 'mystery' } })
+    expect(wrapper.find('span.self-stretch').exists()).toBe(true)
     expect(wrapper.find('svg path').exists()).toBe(false)
   })
 

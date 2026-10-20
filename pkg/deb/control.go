@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strconv"
 	"strings"
 )
 
@@ -31,6 +32,8 @@ func ParseControlFile(r io.Reader) (*ControlFile, error) {
 	}
 
 	scanner := bufio.NewScanner(r)
+	// Depends/Description lines can exceed bufio's 64 KiB default token size.
+	scanner.Buffer(make([]byte, 0, 64<<10), 1<<20)
 
 	var (
 		currentField string
@@ -172,6 +175,7 @@ func (cf *ControlFile) ParsePackage() (*Package, error) {
 	pkg.Section = cf.Get("Section")
 	pkg.Priority = cf.Get("Priority")
 	pkg.Homepage = cf.Get("Homepage")
+	pkg.InstalledSize, _ = strconv.ParseInt(cf.Get("Installed-Size"), 10, 64)
 	pkg.MD5sum = cf.Get("MD5sum")
 	pkg.SHA1 = cf.Get("SHA1")
 	pkg.SHA256 = cf.Get("SHA256")
@@ -192,7 +196,7 @@ func (cf *ControlFile) ParsePackage() (*Package, error) {
 		"Homepage": true, "MD5sum": true, "SHA1": true,
 		"SHA256": true, "Filename": true, "Source": true,
 		"Source-Version": true, "Essential": true, "Multi-Arch": true,
-		"Built-Using": true,
+		"Built-Using": true, "Installed-Size": true,
 	}
 
 	for field, value := range cf.Fields {

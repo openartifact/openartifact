@@ -300,6 +300,7 @@ func GenerateFilelistsXML(packages []rpm.Package) ([]byte, error) {
 		}
 
 		pkgEntries[i] = filelistsPackageXML{
+			PkgID:   pkg.SHA256,
 			Name:    pkg.Name,
 			Arch:    pkg.Arch,
 			Version: versionRefXML{Epoch: epochStr, Ver: pkg.Version, Rel: pkg.Release},
@@ -330,6 +331,7 @@ type otherChangelogXML struct {
 
 type otherPackageXML struct {
 	XMLName    xml.Name `xml:"package"`
+	PkgID      string   `xml:"pkgid,attr"`
 	Name       string   `xml:"name,attr"`
 	Arch       string   `xml:"arch,attr"`
 	Version    versionRefXML
@@ -361,6 +363,7 @@ func GenerateOtherXML(packages []rpm.Package) ([]byte, error) {
 		}
 
 		pkgEntries[i] = otherPackageXML{
+			PkgID:      pkg.SHA256,
 			Name:       pkg.Name,
 			Arch:       pkg.Arch,
 			Version:    versionRefXML{Epoch: epochStr, Ver: pkg.Version, Rel: pkg.Release},

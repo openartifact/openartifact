@@ -5,7 +5,6 @@
 package storage
 
 import (
-	"bytes"
 	"context"
 	"crypto/hmac"
 	"crypto/sha256"
@@ -14,6 +13,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -120,13 +120,31 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 		return "", ErrAzurePutMetadataSHA256Required
 	}
 
+	if err := ValidateBlobID(sha); err != nil {
+		return "", err
+	}
+
 	blobPath := azureBlobKey(sha)
 	url := fmt.Sprintf("%s/%s", a.baseURL, blobPath)
 
-	// Read all data to get content length
-	dataBytes, err := io.ReadAll(data)
+	// Spool to a temp file to learn the content length without buffering in memory.
+	spool, err := os.CreateTemp("", "azure-put-*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("azure: create spool file: %w", err)
+	}
+
+	defer func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name())
+	}()
+
+	size, err := io.Copy(spool, data)
 	if err != nil {
 		return "", fmt.Errorf("azure: read data: %w", err)
+	}
+
+	if _, err := spool.Seek(0, io.SeekStart); err != nil {
+		return "", fmt.Errorf("azure: rewind spool: %w", err)
 	}
 
 	// Prepare headers
@@ -139,16 +157,18 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	}
 
 	// Sign the request
-	authHeader, err := a.signRequest("PUT", blobPath, headers, int64(len(dataBytes)))
+	authHeader, err := a.signRequest("PUT", blobPath, headers, size)
 	if err != nil {
 		return "", err
 	}
 
 	// Create request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, bytes.NewReader(dataBytes))
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, spool)
 	if err != nil {
 		return "", fmt.Errorf("azure: create request: %w", err)
 	}
+
+	req.ContentLength = size
 
 	// Set headers
 	req.Header.Set("Authorization", authHeader)
@@ -162,7 +182,7 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	//nolint:canonicalheader // Azure REST API requires lowercase headers
 	req.Header.Set("x-ms-blob-type", "BlockBlob")
 	req.Header.Set("Content-Type", "application/octet-stream")
-	req.Header.Set("Content-Length", strconv.Itoa(len(dataBytes)))
+	req.Header.Set("Content-Length", strconv.FormatInt(size, 10))
 
 	// Add custom metadata headers
 	for key, value := range metadata {
@@ -188,6 +208,10 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 
 // Get retrieves a blob by its SHA-256 identifier.
 func (a *AzureBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	blobPath := azureBlobKey(id)
 	url := fmt.Sprintf("%s/%s", a.baseURL, blobPath)
 
@@ -240,6 +264,10 @@ func (a *AzureBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, err
 
 // Delete removes a blob by its SHA-256 identifier.
 func (a *AzureBlobStore) Delete(ctx context.Context, id string) error {
+	if err := ValidateBlobID(id); err != nil {
+		return err
+	}
+
 	blobPath := azureBlobKey(id)
 	url := fmt.Sprintf("%s/%s", a.baseURL, blobPath)
 
@@ -291,6 +319,10 @@ func (a *AzureBlobStore) Delete(ctx context.Context, id string) error {
 
 // Exists checks whether a blob exists using HEAD.
 func (a *AzureBlobStore) Exists(ctx context.Context, id string) (bool, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return false, err
+	}
+
 	blobPath := azureBlobKey(id)
 	url := fmt.Sprintf("%s/%s", a.baseURL, blobPath)
 
@@ -340,6 +372,10 @@ func (a *AzureBlobStore) Exists(ctx context.Context, id string) (bool, error) {
 
 // GetSize returns the size of a blob in bytes using HEAD.
 func (a *AzureBlobStore) GetSize(ctx context.Context, id string) (int64, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return 0, err
+	}
+
 	blobPath := azureBlobKey(id)
 	url := fmt.Sprintf("%s/%s", a.baseURL, blobPath)
 
@@ -401,6 +437,10 @@ func (a *AzureBlobStore) GetSize(ctx context.Context, id string) (int64, error) 
 
 // GetMetadata retrieves metadata for a blob using HEAD.
 func (a *AzureBlobStore) GetMetadata(ctx context.Context, id string) (map[string]string, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
 	blobPath := azureBlobKey(id)
 	url := fmt.Sprintf("%s/%s", a.baseURL, blobPath)
 
@@ -470,6 +510,10 @@ func (a *AzureBlobStore) List(ctx context.Context, prefix string, limit int, off
 
 // ExistsBySHA256 checks if a blob with the given SHA-256 hash exists.
 func (a *AzureBlobStore) ExistsBySHA256(ctx context.Context, sha256 string) (string, bool, error) {
+	if err := ValidateBlobID(sha256); err != nil {
+		return "", false, err
+	}
+
 	exists, err := a.Exists(ctx, sha256)
 	if err != nil {
 		return "", false, err
@@ -486,6 +530,10 @@ func (a *AzureBlobStore) ExistsBySHA256(ctx context.Context, sha256 string) (str
 // Azure Blob Storage doesn't support presigned URLs in the same way as S3,
 // so this returns an error.
 func (a *AzureBlobStore) PresignURL(ctx context.Context, sha256 string, ttl time.Duration) (string, error) {
+	if err := ValidateBlobID(sha256); err != nil {
+		return "", err
+	}
+
 	return "", ErrPresignNotSupported
 }
 

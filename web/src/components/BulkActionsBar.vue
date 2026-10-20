@@ -49,36 +49,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <TrashIcon class="w-3.5 h-3.5" aria-hidden="true" />
               {{ t('bulk.deleteSelected') }}
             </button>
-
-            <!-- Download -->
-            <button
-              class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-foreground border border-border hover:bg-surface-hover transition-colors disabled:opacity-50"
-              :disabled="busy"
-              @click="emit('download', selectedItems)"
-            >
-              <ArrowDownTrayIcon class="w-3.5 h-3.5" aria-hidden="true" />
-              {{ t('bulk.downloadSelected') }}
-            </button>
-
-            <!-- Add properties -->
-            <button
-              class="items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-foreground border border-border hover:bg-surface-hover transition-colors disabled:opacity-50 hidden sm:flex"
-              :disabled="busy"
-              @click="emit('addProperties', selectedItems)"
-            >
-              <TagIcon class="w-3.5 h-3.5" aria-hidden="true" />
-              {{ t('bulk.addProperties') }}
-            </button>
-
-            <!-- Move to repo -->
-            <button
-              class="items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-foreground border border-border hover:bg-surface-hover transition-colors disabled:opacity-50 hidden md:flex"
-              :disabled="busy"
-              @click="emit('moveTo', selectedItems)"
-            >
-              <ArrowsRightLeftIcon class="w-3.5 h-3.5" aria-hidden="true" />
-              {{ t('bulk.moveTo') }}
-            </button>
           </div>
 
           <!-- Progress bar -->
@@ -96,6 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <button
             class="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors ml-auto"
             :title="t('bulk.clearSelection')"
+            :aria-label="t('bulk.clearSelection')"
             @click="emit('clear')"
           >
             <XMarkIcon class="w-4 h-4" aria-hidden="true" />
@@ -126,6 +97,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="relative w-full max-w-sm rounded-xl border border-border bg-surface shadow-2xl p-6"
           role="dialog"
           aria-modal="true"
+          :aria-label="t('bulk.confirmDelete').replace('{n}', String(selectedItems.length))"
+          @keydown.esc="confirmDelete = false"
         >
           <div class="flex items-start gap-4">
             <div class="w-10 h-10 rounded-full bg-danger-soft flex items-center justify-center shrink-0">
@@ -166,14 +139,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ref } from 'vue'
 import {
   TrashIcon,
-  ArrowDownTrayIcon,
-  TagIcon,
-  ArrowsRightLeftIcon,
   XMarkIcon,
   ExclamationTriangleIcon,
   ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
 import { t } from '../i18n/en'
+import { deletePackage } from '../api/repositories'
+import { ApiError } from '../api/client'
 
 const props = defineProps<{
   selectedItems: string[]
@@ -183,9 +155,6 @@ const props = defineProps<{
 const emit = defineEmits<{
   clear: []
   deleted: [ids: string[]]
-  download: [ids: string[]]
-  addProperties: [ids: string[]]
-  moveTo: [ids: string[]]
   error: [message: string]
 }>()
 
@@ -203,16 +172,13 @@ async function doDelete(): Promise<void> {
     for (let i = 0; i < toDelete.length; i++) {
       const id = toDelete[i]
       try {
-        // id format: "format/name"
-        const [format, ...rest] = id.split('/')
-        const name = rest.join('/')
-        await fetch(
-          `/api/v1/repositories/${encodeURIComponent(props.repoName)}/packages/${encodeURIComponent(format)}/${encodeURIComponent(name)}`,
-          { method: 'DELETE', headers: { 'X-Requested-With': 'XMLHttpRequest' }, credentials: 'include' },
-        )
+        // ids are package (component) ids as returned by the packages list
+        await deletePackage(props.repoName, id)
         succeeded.push(id)
-      } catch {
-        // Continue deleting remaining items even if one fails
+      } catch (err) {
+        // Session expired: the rest would fail the same way.
+        if (err instanceof ApiError && err.status === 401) break
+        // Otherwise continue deleting remaining items even if one fails
       }
       progress.value = Math.round(((i + 1) / toDelete.length) * 100)
     }

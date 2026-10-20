@@ -5,11 +5,17 @@
 package api
 
 import (
-	"bytes"
 	"context"
+	"crypto/md5"  //nolint:gosec // required by Maven protocol
+	"crypto/sha1" //nolint:gosec // required by Maven protocol
+	"crypto/sha256"
+	"crypto/sha512"
+	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
+	"os"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -19,8 +25,10 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
@@ -34,6 +42,12 @@ type MavenUploadHandler struct {
 	blobStore   storage.BlobStore
 	reg         *metrics.Registry
 	mavenWorker *worker.MavenMetadataWorker
+	publisher   webhook.Publisher
+}
+
+// SetPublisher wires the webhook publisher for artifact.* events.
+func (h *MavenUploadHandler) SetPublisher(p webhook.Publisher) {
+	h.publisher = p
 }
 
 func NewMavenUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *MavenUploadHandler {
@@ -101,6 +115,15 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	artPath := chi.URLParam(r, "*")
 	filename := filepath.Base(artPath)
 
+	groupPath, artifactIDCoord, version, _, parseErr := pkgmaven.ParseRepositoryPath(artPath)
+	if parseErr != nil || groupPath == "" || version == "" {
+		uploadResult = "error"
+
+		http.Error(w, "invalid maven repository path", http.StatusBadRequest)
+
+		return
+	}
+
 	checksumSuffixes := []string{".md5", ".sha1", ".sha256", ".sha512"}
 	for _, suffix := range checksumSuffixes {
 		if strings.HasSuffix(filename, suffix) {
@@ -111,10 +134,49 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	body := http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes)
+	// maven-metadata.xml (and its checksums) is generated server-side from
+	// the stored artifacts; a client-supplied copy is acknowledged and dropped.
+	if filename == "maven-metadata.xml" {
+		_, _ = io.Copy(io.Discard, http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
+		w.WriteHeader(http.StatusOK)
 
-	var buf bytes.Buffer
-	if _, err := io.Copy(&buf, body); err != nil {
+		return
+	}
+
+	groupID := strings.ReplaceAll(groupPath, "/", ".")
+	isSnapshot := pkgmaven.IsSnapshot(version)
+
+	parts, ok := parseMavenFilename(filename, artifactIDCoord, version, isSnapshot)
+	if !ok {
+		uploadResult = "error"
+
+		http.Error(w, "filename does not match artifactId-version in path", http.StatusBadRequest)
+
+		return
+	}
+
+	tmp, err := os.CreateTemp("", "maven-upload-*")
+	if err != nil {
+		uploadResult = "error"
+
+		h.log.Errorw("failed to create temp file", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	defer func() {
+		_ = tmp.Close()
+		_ = os.Remove(tmp.Name())
+	}()
+
+	hMD5 := md5.New()   //nolint:gosec // required by Maven protocol
+	hSHA1 := sha1.New() //nolint:gosec // required by Maven protocol
+	hSHA256 := sha256.New()
+	hSHA512 := sha512.New()
+
+	size, err := io.Copy(io.MultiWriter(tmp, hMD5, hSHA1, hSHA256, hSHA512), http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
+	if err != nil {
 		uploadResult = "error"
 
 		h.log.Errorw("failed to read request body", "path", artPath, "error", err)
@@ -123,88 +185,10 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data := buf.Bytes()
-
-	md5Hex, sha1Hex, sha256Hex, sha512Hex, err := pkgmaven.ComputeChecksums(bytes.NewReader(data))
-	if err != nil {
-		uploadResult = "error"
-
-		h.log.Errorw("failed to compute checksums", "path", artPath, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	blobID, err := h.blobStore.Put(r.Context(), bytes.NewReader(data), map[string]string{
-		"sha256":    sha256Hex,
-		"format":    "maven",
-		"repo_name": repoName,
-	})
-	if err != nil {
-		uploadResult = "error"
-
-		h.log.Errorw("failed to store blob", "path", artPath, "error", err)
-		http.Error(w, "failed to store blob", http.StatusInternalServerError)
-
-		return
-	}
-
-	groupPath, artifactIDCoord, version, _, parseErr := pkgmaven.ParseRepositoryPath(artPath)
-	groupID := strings.ReplaceAll(groupPath, "/", ".")
-
-	ext := strings.TrimPrefix(filepath.Ext(filename), ".")
-	if strings.HasSuffix(filename, ".asc") {
-		ext = "asc"
-	}
-
-	var (
-		classifier          string
-		snapshotTimestamp   string
-		snapshotBuildNumber int
-	)
-
-	isSnapshot := parseErr == nil && pkgmaven.IsSnapshot(version)
-
-	if parseErr == nil && isSnapshot {
-		ts, bn, _, tsErr := pkgmaven.ParseSnapshotTimestamp(filename)
-		if tsErr == nil {
-			snapshotTimestamp = ts
-			snapshotBuildNumber = bn
-			baseWithoutExt := strings.TrimSuffix(filename, "."+ext)
-
-			prefix := artifactIDCoord + "-" + ts + "-" + strconv.Itoa(bn)
-			if len(baseWithoutExt) > len(prefix) {
-				classifier = strings.TrimPrefix(baseWithoutExt[len(prefix):], "-")
-			}
-		}
-	} else if parseErr == nil {
-		baseWithoutExt := strings.TrimSuffix(filename, "."+ext)
-
-		versionPrefix := artifactIDCoord + "-" + version
-		if len(baseWithoutExt) > len(versionPrefix) {
-			classifier = strings.TrimPrefix(baseWithoutExt[len(versionPrefix):], "-")
-		}
-	}
-
-	art := models.MavenArtifact{
-		RepositoryID:        repoID,
-		BlobID:              blobID,
-		GroupID:             groupID,
-		ArtifactCoord:       artifactIDCoord,
-		Version:             version,
-		Classifier:          classifier,
-		Extension:           ext,
-		SnapshotTimestamp:   snapshotTimestamp,
-		SnapshotBuildNumber: snapshotBuildNumber,
-		IsSnapshot:          isSnapshot,
-		RepoPath:            artPath,
-		SHA256:              sha256Hex,
-		MD5:                 md5Hex,
-		SHA1:                sha1Hex,
-		SHA512:              sha512Hex,
-		CreatedAt:           time.Now(),
-		UpdatedAt:           time.Now(),
-	}
+	md5Hex := hex.EncodeToString(hMD5.Sum(nil))
+	sha1Hex := hex.EncodeToString(hSHA1.Sum(nil))
+	sha256Hex := hex.EncodeToString(hSHA256.Sum(nil))
+	sha512Hex := hex.EncodeToString(hSHA512.Sum(nil))
 
 	existing, err := h.db.GetMavenArtifactByPath(r.Context(), repoID, artPath)
 	if err != nil {
@@ -216,60 +200,175 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if existing != nil && !isSnapshot {
-		if existing.SHA256 != sha256Hex {
-			uploadResult = "error"
-
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
-
-			if encErr := json.NewEncoder(w).Encode(map[string]string{
-				"error": "release artifact already exists with different content",
-			}); encErr != nil {
-				_ = encErr // response header already written
-			}
-
-			return
-		}
-
+	if existing != nil && existing.SHA256 == sha256Hex {
+		// Identical content already stored (idempotent re-publish).
 		w.WriteHeader(http.StatusOK)
 
 		return
 	}
 
-	if err := h.db.CreateMavenArtifact(r.Context(), &art); err != nil {
+	if existing != nil && !isSnapshot {
 		uploadResult = "error"
 
-		if isUniqueViolation(err) {
-			w.Header().Set("Content-Type", "application/json")
-			w.WriteHeader(http.StatusConflict)
+		writeMavenConflict(w, "release artifact already exists with different content")
 
-			if encErr := json.NewEncoder(w).Encode(map[string]string{
-				"error": "artifact already exists",
-			}); encErr != nil {
-				_ = encErr // response header already written
-			}
+		return
+	}
+
+	// Reserve quota before persisting; released on every failure path below.
+	if err := quota.Enforce(r.Context(), h.db, repoID, size); err != nil {
+		uploadResult = "error"
+
+		if errors.Is(err, quota.ErrExceeded) {
+			quota.WriteExceeded(w)
 
 			return
 		}
 
-		h.log.Errorw("failed to create maven artifact", "path", artPath, "error", err)
-
-		// The blob is content-addressed and may be referenced by other
-		// artifacts; only remove it from storage once no row references
-		// the same sha256 (SafeDeleteBlob checks BlobReferenceCount first).
-		if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, sha256Hex); delErr != nil {
-			h.log.Warnw("failed to clean up blob after DB error", "sha256", sha256Hex, "error", delErr)
-		}
-
+		h.log.Errorw("failed to reserve quota", "repository", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
+	committed := false
+
+	defer func() {
+		if committed {
+			return
+		}
+
+		if relErr := quota.Release(context.WithoutCancel(r.Context()), h.db, repoID, size); relErr != nil {
+			h.log.Warnw("failed to release quota", "repository", repoName, "error", relErr)
+		}
+	}()
+
+	art := models.MavenArtifact{
+		RepositoryID:        repoID,
+		GroupID:             groupID,
+		ArtifactCoord:       artifactIDCoord,
+		Version:             version,
+		Classifier:          parts.classifier,
+		Extension:           parts.ext,
+		SnapshotTimestamp:   parts.timestamp,
+		SnapshotBuildNumber: parts.build,
+		IsSnapshot:          isSnapshot,
+		RepoPath:            artPath,
+		SHA256:              sha256Hex,
+		MD5:                 md5Hex,
+		SHA1:                sha1Hex,
+		SHA512:              sha512Hex,
+		CreatedAt:           time.Now(),
+		UpdatedAt:           time.Now(),
+	}
+
+	// Snapshot overwrite size must be resolved before the row is replaced.
+	var oldSize int64
+
+	if existing != nil {
+		oldSize = h.blobSize(r.Context(), existing.BlobID, existing.SHA256)
+	}
+
+	var (
+		stage     string
+		insertErr error
+	)
+
+	lockErr := storage.WithBlobLock(r.Context(), h.db, sha256Hex, func(ctx context.Context) error {
+		blobKey, exists, existsErr := h.blobStore.ExistsBySHA256(ctx, sha256Hex)
+		if existsErr != nil {
+			stage = "check blob"
+
+			return existsErr
+		}
+
+		if !exists {
+			if _, seekErr := tmp.Seek(0, io.SeekStart); seekErr != nil {
+				stage = "rewind"
+
+				return seekErr
+			}
+
+			blobKey, existsErr = h.blobStore.Put(ctx, tmp, map[string]string{
+				"sha256":    sha256Hex,
+				"format":    "maven",
+				"repo_name": repoName,
+			})
+			if existsErr != nil {
+				stage = "store blob"
+
+				return existsErr
+			}
+		}
+
+		// maven_artifacts.blob_id references blobs(id); register the blob row.
+		blobID, upsertErr := h.db.UpsertBlob(ctx, sha256Hex, blobKey, size)
+		if upsertErr != nil {
+			stage = "upsert blob"
+
+			return upsertErr
+		}
+
+		art.BlobID = blobID
+
+		insertErr = h.db.CreateMavenArtifact(ctx, &art)
+		if insertErr != nil {
+			stage = "create artifact"
+
+			return insertErr
+		}
+
+		return nil
+	})
+	if lockErr != nil {
+		uploadResult = "error"
+
+		// The blob is content-addressed and may be referenced by other
+		// artifacts; SafeDeleteBlob only removes it once nothing references it.
+		if delErr := storage.SafeDeleteBlob(context.WithoutCancel(r.Context()), h.db, h.blobStore, sha256Hex); delErr != nil {
+			h.log.Warnw("failed to clean up blob after error", "sha256", sha256Hex, "error", delErr)
+		}
+
+		if insertErr != nil && isUniqueViolation(insertErr) {
+			writeMavenConflict(w, "artifact already exists")
+
+			return
+		}
+
+		h.log.Errorw("maven upload failed", "stage", stage, "path", artPath, "error", lockErr)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	committed = true
+
+	if existing != nil {
+		// Snapshot overwrite: the old content no longer counts, and its blob
+		// may now be unreferenced.
+		if relErr := quota.Release(r.Context(), h.db, repoID, oldSize); relErr != nil {
+			h.log.Warnw("failed to release quota for replaced artifact", "repository", repoName, "error", relErr)
+		}
+
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, existing.SHA256); delErr != nil {
+			h.log.Warnw("failed to clean up replaced blob", "sha256", existing.SHA256, "error", delErr)
+		}
+	}
+
 	if h.mavenWorker != nil {
 		h.mavenWorker.NotifyStale(repoID, groupID, artifactIDCoord)
 	}
+
+	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactUploaded,
+		webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+			Repository: repoName,
+			Format:     "maven",
+			Name:       groupID + ":" + artifactIDCoord,
+			Version:    version,
+			Path:       artPath,
+			SHA256:     sha256Hex,
+			Size:       size,
+		}))
 
 	statusCode := http.StatusCreated
 	if existing != nil {
@@ -277,6 +376,40 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.WriteHeader(statusCode)
+}
+
+func writeMavenConflict(w http.ResponseWriter, msg string) {
+	body, err := json.Marshal(map[string]string{"error": msg})
+	if err != nil {
+		http.Error(w, msg, http.StatusConflict)
+
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusConflict)
+	_, _ = w.Write(body)
+}
+
+// blobSize returns the stored size of the blob (row id + content digest of a
+// stored artifact), or 0 when it cannot be determined.
+func (h *MavenUploadHandler) blobSize(ctx context.Context, blobID, sha256Hex string) int64 {
+	if blobID != "" {
+		if _, n, err := h.db.GetDebBlobInfo(ctx, blobID); err == nil && n > 0 {
+			return n
+		}
+	}
+
+	key, ok, err := h.blobStore.ExistsBySHA256(ctx, sha256Hex)
+	if err == nil && ok {
+		if n, sizeErr := h.blobStore.GetSize(ctx, key); sizeErr == nil {
+			return n
+		}
+	}
+
+	h.log.Warnw("failed to determine blob size", "sha256", sha256Hex)
+
+	return 0
 }
 
 func (h *MavenUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -322,12 +455,37 @@ func (h *MavenUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	size := h.blobSize(r.Context(), art.BlobID, art.SHA256)
+
 	if err := h.db.DeleteMavenArtifact(r.Context(), art.ID); err != nil {
 		h.log.Errorw("failed to delete artifact", "id", art.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
+
+	if err := quota.Release(r.Context(), h.db, repoID, size); err != nil {
+		h.log.Warnw("failed to release quota", "repository", repoName, "error", err)
+	}
+
+	if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, art.SHA256); err != nil {
+		h.log.Warnw("failed to clean up blob after delete", "sha256", art.SHA256, "error", err)
+	}
+
+	if h.mavenWorker != nil {
+		h.mavenWorker.NotifyStale(repoID, art.GroupID, art.ArtifactCoord)
+	}
+
+	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactDeleted,
+		webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+			Repository: repoName,
+			Format:     "maven",
+			Name:       art.GroupID + ":" + art.ArtifactCoord,
+			Version:    art.Version,
+			Path:       artPath,
+			SHA256:     art.SHA256,
+			Size:       size,
+		}))
 
 	w.WriteHeader(http.StatusNoContent)
 }
@@ -340,4 +498,53 @@ func parseRepositoryPathVersion(path string) (string, error) {
 	_ = filename
 
 	return version, err
+}
+
+// mavenFileParts is the result of splitting a Maven filename.
+type mavenFileParts struct {
+	classifier string
+	ext        string
+	timestamp  string // timestamped snapshots only
+	build      int    // timestamped snapshots only
+}
+
+// parseMavenFilename splits filename into classifier, extension and (for
+// timestamped snapshots) timestamp/build number, given the path's artifactId
+// and version. Extensions may contain dots (tar.gz, jar.asc).
+func parseMavenFilename(filename, artifactID, version string, isSnapshot bool) (mavenFileParts, bool) {
+	var parts mavenFileParts
+
+	prefix := artifactID + "-" + version
+
+	if isSnapshot {
+		if t, bn, _, err := pkgmaven.ParseSnapshotTimestamp(filename); err == nil {
+			base := strings.TrimSuffix(version, "-SNAPSHOT")
+			prefix = artifactID + "-" + base + "-" + t + "-" + strconv.Itoa(bn)
+			parts.timestamp, parts.build = t, bn
+		}
+	}
+
+	rest, found := strings.CutPrefix(filename, prefix)
+	if !found {
+		return mavenFileParts{}, false
+	}
+
+	if after, ok := strings.CutPrefix(rest, "-"); ok {
+		cls, e, hasExt := strings.Cut(after, ".")
+		if !hasExt || e == "" || cls == "" {
+			return mavenFileParts{}, false
+		}
+
+		parts.classifier, parts.ext = cls, e
+
+		return parts, true
+	}
+
+	if after, ok := strings.CutPrefix(rest, "."); ok && after != "" {
+		parts.ext = after
+
+		return parts, true
+	}
+
+	return mavenFileParts{}, false
 }

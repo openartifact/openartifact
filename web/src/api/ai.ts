@@ -31,6 +31,7 @@ export interface ListAIAnalysesResult {
   total: number
 }
 
+/** The server clamps `limit` to 100 (default 20). */
 export function listAIAnalyses(
   repoName: string,
   params?: { status?: string; limit?: number; offset?: number },
@@ -51,17 +52,25 @@ export function getAIAnalysis(repoName: string, artifactID: string): Promise<AIA
   )
 }
 
+export interface TriggerAIAnalysisOptions {
+  manifest_text?: string
+  artifact_format?: string
+  artifact_name?: string
+  artifact_version?: string
+}
+
+/** Queues an analysis (202); the result appears in the list once the worker finishes. */
 export function triggerAIAnalysis(
   repoName: string,
   artifactID: string,
-  manifestText?: string,
-): Promise<void> {
-  return request<void>(
+  options: TriggerAIAnalysisOptions = {},
+): Promise<{ status: string; message: string }> {
+  return request<{ status: string; message: string }>(
     `/api/v1/repositories/${encodeURIComponent(repoName)}/ai-analysis/${encodeURIComponent(artifactID)}/trigger`,
     {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ manifest_text: manifestText ?? '' }),
+      body: JSON.stringify(options),
     },
   )
 }

@@ -9,7 +9,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header card -->
     <div class="bg-surface rounded-xl border border-border p-6">
       <div class="text-lg font-bold tracking-tight">{{ t('settings.password') }}</div>
-      <div class="text-sm text-muted mt-0.5">{{ t('settings.passwordDesc') }}</div>    </div>
+      <div class="text-sm text-muted mt-0.5">{{ t('settings.passwordDesc') }}</div>
+    </div>
 
     <!-- Form card -->
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
@@ -107,8 +108,16 @@ const toasts = useToastStore()
 
 async function handleChangePassword(): Promise<void> {
   errors.value = {}
+  if (form.value.new_password.length < 12) {
+    errors.value.new_password = t('auth.passwordMinError')
+    return
+  }
   if (form.value.new_password !== form.value.confirm_password) {
     errors.value.confirm_password = t('auth.passwordMismatch')
+    return
+  }
+  if (form.value.new_password === form.value.current_password) {
+    errors.value.new_password = t('auth.passwordSame')
     return
   }
   loading.value = true

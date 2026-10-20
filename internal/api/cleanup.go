@@ -5,7 +5,10 @@
 package api
 
 import (
+	"context"
+	"errors"
 	"net/http"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -14,17 +17,25 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// CleanupRunner starts an immediate run of a cleanup policy. It is satisfied by
+// *worker.CleanupWorker.
+type CleanupRunner interface {
+	TriggerPolicy(ctx context.Context, policyID string) error
+}
 
 type CleanupHandler struct {
 	db        database.Database
 	log       *logger.Logger
 	evaluator *auth.Evaluator
+	runner    CleanupRunner
 }
 
-func NewCleanupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *CleanupHandler {
-	return &CleanupHandler{db: db, log: log, evaluator: evaluator}
+func NewCleanupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, runner CleanupRunner) *CleanupHandler {
+	return &CleanupHandler{db: db, log: log, evaluator: evaluator, runner: runner}
 }
 
 func (h *CleanupHandler) RegisterAuthed(r chi.Router) {
@@ -123,14 +134,9 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", "name is required")
-		return
-	}
-
-	scheduleCron := body.ScheduleCron
+	scheduleCron := strings.TrimSpace(body.ScheduleCron)
 	if scheduleCron == "" {
-		scheduleCron = "0 2 * * *" // default: daily at 2am
+		scheduleCron = models.DefaultCleanupCron
 	}
 
 	policy := &models.CleanupPolicy{
@@ -144,6 +150,11 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		ScheduleCron:            scheduleCron,
 		CreatedAt:               time.Now(),
 		UpdatedAt:               time.Now(),
+	}
+
+	if err := policy.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
 	}
 
 	if err := h.db.CreateCleanupPolicy(ctx, policy); err != nil {
@@ -198,6 +209,58 @@ func (h *CleanupHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, policyToMap(policy))
 }
 
+// cleanupPolicyPatch is the partial-update body of a cleanup policy.
+type cleanupPolicyPatch struct {
+	Name                    *string `json:"name"`
+	Enabled                 *bool   `json:"enabled"`
+	KeepLastN               *int    `json:"keep_last_n"`
+	KeepSinceDays           *int    `json:"keep_since_days"`
+	KeepDownloadedSinceDays *int    `json:"keep_downloaded_since_days"`
+	NamePattern             *string `json:"name_pattern"`
+	ScheduleCron            *string `json:"schedule_cron"`
+}
+
+// apply copies the provided fields onto policy.
+func (b *cleanupPolicyPatch) apply(policy *models.CleanupPolicy) {
+	if b.Name != nil {
+		policy.Name = *b.Name
+	}
+
+	if b.Enabled != nil {
+		policy.Enabled = *b.Enabled
+	}
+
+	if b.KeepLastN != nil {
+		policy.KeepLastN = b.KeepLastN
+	}
+
+	if b.KeepSinceDays != nil {
+		policy.KeepSinceDays = b.KeepSinceDays
+	}
+
+	if b.KeepDownloadedSinceDays != nil {
+		policy.KeepDownloadedSinceDays = b.KeepDownloadedSinceDays
+	}
+
+	if b.NamePattern != nil {
+		policy.NamePattern = *b.NamePattern
+	}
+
+	if b.ScheduleCron != nil {
+		policy.ScheduleCron = strings.TrimSpace(*b.ScheduleCron)
+		if policy.ScheduleCron == "" {
+			policy.ScheduleCron = models.DefaultCleanupCron
+		}
+	}
+}
+
+// onlyDisables reports whether the patch (already applied to policy) merely
+// disabled the policy.
+func (b *cleanupPolicyPatch) onlyDisables(policy *models.CleanupPolicy) bool {
+	return !policy.Enabled && b.Name == nil && b.KeepLastN == nil && b.KeepSinceDays == nil &&
+		b.KeepDownloadedSinceDays == nil && b.NamePattern == nil && b.ScheduleCron == nil
+}
+
 func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
@@ -237,46 +300,21 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	var body struct {
-		Name                    *string `json:"name"`
-		Enabled                 *bool   `json:"enabled"`
-		KeepLastN               *int    `json:"keep_last_n"`
-		KeepSinceDays           *int    `json:"keep_since_days"`
-		KeepDownloadedSinceDays *int    `json:"keep_downloaded_since_days"`
-		NamePattern             *string `json:"name_pattern"`
-		ScheduleCron            *string `json:"schedule_cron"`
-	}
+	var body cleanupPolicyPatch
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
 
-	if body.Name != nil {
-		policy.Name = *body.Name
-	}
+	body.apply(policy)
 
-	if body.Enabled != nil {
-		policy.Enabled = *body.Enabled
-	}
-
-	if body.KeepLastN != nil {
-		policy.KeepLastN = body.KeepLastN
-	}
-
-	if body.KeepSinceDays != nil {
-		policy.KeepSinceDays = body.KeepSinceDays
-	}
-
-	if body.KeepDownloadedSinceDays != nil {
-		policy.KeepDownloadedSinceDays = body.KeepDownloadedSinceDays
-	}
-
-	if body.NamePattern != nil {
-		policy.NamePattern = *body.NamePattern
-	}
-
-	if body.ScheduleCron != nil {
-		policy.ScheduleCron = *body.ScheduleCron
+	// Disabling a policy must always be possible, even one stored before
+	// validation existed; any other change has to leave a valid policy.
+	if !body.onlyDisables(policy) {
+		if err := policy.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
 	}
 
 	if err := h.db.UpdateCleanupPolicy(ctx, policy); err != nil {
@@ -377,9 +415,34 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Acknowledge the request; the cleanup worker applies policies on its own schedule.
-	writeJSON(w, http.StatusOK, map[string]any{
-		"message":   "cleanup policy run triggered",
+	if h.runner == nil {
+		writeError(w, http.StatusNotImplemented, "not_implemented", "cleanup worker is not available")
+		return
+	}
+
+	// Refuse to run a policy that is invalid (e.g. created before validation existed).
+	if err := policy.Validate(); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	if err := h.runner.TriggerPolicy(ctx, id); err != nil {
+		switch {
+		case errors.Is(err, worker.ErrPolicyNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+		case errors.Is(err, worker.ErrPolicyBusy):
+			writeError(w, http.StatusConflict, "conflict", "cleanup policy is already running")
+		default:
+			h.log.Errorw("run cleanup policy: trigger failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to start cleanup policy")
+		}
+
+		return
+	}
+
+	// The run executes asynchronously; its outcome is recorded in last_run_*.
+	writeJSON(w, http.StatusAccepted, map[string]any{
+		"message":   "cleanup policy run started",
 		"policy_id": id,
 	})
 }

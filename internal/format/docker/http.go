@@ -23,8 +23,10 @@ import (
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -33,11 +35,16 @@ type HTTPHandler struct {
 	db        database.Database
 	blobStore storage.BlobStore
 	baseURL   string
+	publisher webhook.Publisher
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
 	return &HTTPHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL}
 }
+
+// SetPublisher sets the webhook publisher used for artifact events. It must be
+// called before the handler serves requests.
+func (h *HTTPHandler) SetPublisher(p webhook.Publisher) { h.publisher = p }
 
 func (h *HTTPHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/v2/", h.handleVersionCheck)
@@ -168,6 +175,11 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(
+		manifest.ID, manifest.Digest, reference, name+"/manifests/"+reference, name+"/manifests/"+manifest.Digest, r.URL.Path)...) {
+		return
+	}
+
 	// Manifest content is content-addressed in the blob store, keyed by the
 	// hex portion of its digest; the DB row only tracks metadata + blob_id.
 	content, err := h.blobStore.Get(r.Context(), manifestBlobKey(manifest.Digest))
@@ -238,28 +250,6 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		contentType = "application/vnd.docker.distribution.manifest.v2+json"
 	}
 
-	// Persist the manifest content in the blob store (content-addressed by
-	// sha256) and ensure a row exists for it in the global blobs table
-	// before inserting docker_manifests, which has a NOT NULL blob_id FK.
-	blobKey, err := h.blobStore.Put(r.Context(), bytes.NewReader(body), map[string]string{
-		"sha256":       digestHex,
-		"content-type": contentType,
-	})
-	if err != nil {
-		h.log.Errorw("failed to store manifest blob", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	blobID, err := h.db.EnsureBlob(r.Context(), blobKey, contentType, int64(len(body)))
-	if err != nil {
-		h.log.Errorw("failed to ensure manifest blob row", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
 	meta := parseOCIManifestMeta(body)
 
 	subjectDigest := ""
@@ -267,21 +257,45 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		subjectDigest = meta.Subject.Digest
 	}
 
-	// Create manifest record
 	manifest := &models.DockerManifest{
 		ID:            uuid.New().String(),
 		RepositoryID:  repo.ID,
 		Digest:        digest,
 		MediaType:     contentType,
-		BlobID:        blobID,
 		Size:          int64(len(body)),
 		SubjectDigest: subjectDigest,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
 
-	if err := h.db.CreateDockerManifest(r.Context(), manifest); err != nil {
-		h.log.Errorw("failed to create manifest", "error", err)
+	// Persist the manifest content in the blob store (content-addressed by
+	// sha256), ensure a row exists for it in the global blobs table (the
+	// docker_manifests row has a NOT NULL blob_id FK) and insert the manifest
+	// — all under the per-blob lock so a concurrent unpublish cannot delete
+	// the blob in between.
+	if err := storage.WithBlobLock(r.Context(), h.db, digestHex, func(ctx context.Context) error {
+		blobKey, err := h.blobStore.Put(ctx, bytes.NewReader(body), map[string]string{
+			"sha256":       digestHex,
+			"content-type": contentType,
+		})
+		if err != nil {
+			return fmt.Errorf("store manifest blob: %w", err)
+		}
+
+		blobID, err := h.db.EnsureBlob(ctx, blobKey, contentType, int64(len(body)))
+		if err != nil {
+			return fmt.Errorf("ensure manifest blob row: %w", err)
+		}
+
+		manifest.BlobID = blobID
+
+		if err := h.db.CreateDockerManifest(ctx, manifest); err != nil {
+			return fmt.Errorf("create manifest: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		h.log.Errorw("failed to store manifest", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return
@@ -310,6 +324,16 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		// the OCI distribution spec's "Pushing Manifests with Subject".
 		w.Header().Set("Oci-Subject", subjectDigest)
 	}
+
+	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: name,
+		Format:     "docker",
+		Name:       name,
+		Version:    reference,
+		Path:       name + "/manifests/" + reference,
+		SHA256:     digestHex,
+		Size:       int64(len(body)),
+	}))
 
 	w.Header().Set("Docker-Content-Digest", digest)
 	w.Header().Set("Content-Length", "0")
@@ -366,6 +390,14 @@ func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
+	deleted, err := h.db.GetDockerManifest(r.Context(), repo.ID, digest)
+	if err != nil {
+		h.log.Errorw("failed to get manifest before delete", "digest", digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return
+	}
+
 	// Delete the manifest row first so BlobReferenceCount no longer sees it.
 	if err := h.db.DeleteDockerManifest(r.Context(), repo.ID, digest); err != nil {
 		h.log.Errorw("failed to delete manifest", "digest", digest, "error", err)
@@ -382,6 +414,21 @@ func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Reques
 
 		return
 	}
+
+	var deletedSize int64
+	if deleted != nil {
+		deletedSize = deleted.Size
+	}
+
+	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: name,
+		Format:     "docker",
+		Name:       name,
+		Version:    reference,
+		Path:       name + "/manifests/" + reference,
+		SHA256:     manifestBlobKey(digest),
+		Size:       deletedSize,
+	}))
 
 	w.WriteHeader(http.StatusAccepted)
 }
@@ -480,6 +527,11 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 
 	if blob == nil {
 		h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
+		return
+	}
+
+	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(
+		blob.ID, digest, name+"/blobs/"+digest, r.URL.Path)...) {
 		return
 	}
 
@@ -916,33 +968,38 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	// Content-addressed by sha256: every BlobStore backend keys (and some,
-	// like S3/Azure/OCI, require) storage on the "sha256" metadata entry —
-	// not the OCI-prefixed "digest" string.
-	blobSHA256, err := h.blobStore.Put(r.Context(), f, map[string]string{
-		"sha256": computedDigestHex,
-		"digest": digest,
-	})
-	if err != nil {
-		h.log.Errorw("failed to store blob", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	// Create blob record
 	blob := &models.DockerBlob{
 		ID:           uuid.New().String(),
 		RepositoryID: repo.ID,
 		Digest:       digest,
 		MediaType:    "application/octet-stream",
 		Size:         size,
-		BlobSHA256:   blobSHA256,
 		CreatedAt:    time.Now(),
 	}
 
-	if err := h.db.CreateDockerBlob(r.Context(), blob); err != nil {
-		h.log.Errorw("failed to create blob record", "error", err)
+	// The request body is already spooled and verified, so the per-blob lock is
+	// only held for the store + insert: a concurrent unpublish cannot delete the
+	// blob in between. Content-addressed by sha256: every BlobStore backend keys
+	// (and some, like S3/Azure/OCI, require) storage on the "sha256" metadata
+	// entry — not the OCI-prefixed "digest" string.
+	if err := storage.WithBlobLock(r.Context(), h.db, computedDigestHex, func(ctx context.Context) error {
+		blobSHA256, err := h.blobStore.Put(ctx, f, map[string]string{
+			"sha256": computedDigestHex,
+			"digest": digest,
+		})
+		if err != nil {
+			return fmt.Errorf("store blob: %w", err)
+		}
+
+		blob.BlobSHA256 = blobSHA256
+
+		if err := h.db.CreateDockerBlob(ctx, blob); err != nil {
+			return fmt.Errorf("create blob record: %w", err)
+		}
+
+		return nil
+	}); err != nil {
+		h.log.Errorw("failed to store blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return

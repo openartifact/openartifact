@@ -60,7 +60,7 @@ describe('API client', () => {
       text: async () => '',
     } as unknown as Response)
 
-    await request('/api/v1/protected')
+    await expect(request('/api/v1/protected')).rejects.toBeInstanceOf(ApiError)
     expect(actions).toContain('clearSession')
     expect(session.user).toBeNull()
     expect(pushSpy).toHaveBeenCalledWith(
@@ -89,6 +89,23 @@ describe('API client', () => {
       expect(apiErr.status).toBe(401)
       expect(apiErr.message).toBe('invalid username or password')
     }
+    expect(actions).not.toContain('clearSession')
+    expect(pushSpy).not.toHaveBeenCalled()
+  })
+
+  it('does not log out on 401 from change-password — throws ApiError', async () => {
+    const actions = trackActions(useSessionStore())
+    const pushSpy = spyOn(router, 'push').mockResolvedValue(undefined)
+
+    spyOn(globalThis, 'fetch').mockResolvedValue({
+      status: 401,
+      ok: false,
+      headers: new Headers(),
+      json: async () => ({ error: 'invalid current password', code: 'invalid_credentials' }),
+      text: async () => '',
+    } as unknown as Response)
+
+    await expect(request('/api/v1/auth/change-password', { method: 'POST' })).rejects.toBeInstanceOf(ApiError)
     expect(actions).not.toContain('clearSession')
     expect(pushSpy).not.toHaveBeenCalled()
   })

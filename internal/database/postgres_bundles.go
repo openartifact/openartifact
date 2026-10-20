@@ -231,7 +231,7 @@ func (p *PostgresDB) ListReleaseBundles(ctx context.Context, nameFilter, stateFi
 	if nameFilter != "" {
 		where += fmt.Sprintf(" AND name ILIKE $%d", i)
 
-		args = append(args, "%"+nameFilter+"%")
+		args = append(args, "%"+escapeLike(nameFilter)+"%")
 		i++
 	}
 

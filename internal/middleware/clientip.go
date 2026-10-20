@@ -38,6 +38,12 @@ func NewTrustedProxies(cidrs []string) *TrustedProxies {
 	return t
 }
 
+// Configured reports whether at least one trusted proxy network is set. When it
+// is false ClientIP always returns the TCP peer address.
+func (t *TrustedProxies) Configured() bool {
+	return t != nil && len(t.networks) > 0
+}
+
 func (t *TrustedProxies) trusts(ip net.IP) bool {
 	if t == nil || ip == nil {
 		return false

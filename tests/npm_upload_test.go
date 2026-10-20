@@ -17,7 +17,9 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
@@ -59,15 +61,8 @@ func buildPublishBody(t *testing.T, packageName, version string) []byte {
 		t.Fatalf("ComputeIntegrity: %v", err)
 	}
 
+	// Same keying as the npm CLI: the full (possibly scoped) package name.
 	tarballName := packageName + "-" + version + ".tgz"
-	if len(packageName) > 0 && packageName[0] == '@' {
-		for i, c := range packageName {
-			if c == '/' {
-				tarballName = packageName[i+1:] + "-" + version + ".tgz"
-				break
-			}
-		}
-	}
 
 	manifest := map[string]any{
 		"name":    packageName,
@@ -103,9 +98,81 @@ func setupUploadRouter(db *MockDatabase, bs *MockBlobStore) chi.Router {
 	log, _ := logger.New("info", "json", "stdout")
 	h := api.NewNPMUploadHandler(log, db, bs, "http://localhost:8080", nil)
 	router := chi.NewRouter()
+	router.Use(authenticateTestBearer)
 	h.Register(router)
 
 	return router
+}
+
+// authenticateTestBearer stands in for the RBAC middleware: it is the only
+// thing that may authenticate a request. A request carrying the test bearer
+// credential becomes an authenticated principal; anything else stays
+// anonymous, so the handler's own requireAuth is what rejects it.
+func authenticateTestBearer(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		p := &auth.Principal{IsAnonymous: true, Credential: auth.CredentialNone}
+		if r.Header.Get("Authorization") == "Bearer token" {
+			uid := "npm-test-user"
+			p = &auth.Principal{UserID: &uid, Username: "npm-test", Credential: auth.CredentialBearerToken}
+		}
+
+		next.ServeHTTP(w, r.WithContext(middleware.WithPrincipal(r.Context(), p)))
+	})
+}
+
+// P0 (#1): "Authorization: Bearer <anything>" is not authentication; only a
+// principal established by the RBAC middleware is.
+func TestNPMPublish_BogusBearerWithoutPrincipalIsRejected(t *testing.T) {
+	db := newMockDatabase()
+	bs := newMockBlobStore()
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+
+	log, _ := logger.New("info", "json", "stdout")
+	h := api.NewNPMUploadHandler(log, db, bs, "http://localhost:8080", nil)
+	router := chi.NewRouter() // deliberately no authenticating middleware
+	h.Register(router)
+
+	body := buildPublishBody(t, "lodash", "1.0.0")
+
+	for _, authz := range []string{"Bearer totally-bogus", "Bearer oa_pat_" + "0000", ""} {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/repos/myrepo/lodash", bytes.NewReader(body))
+		if authz != "" {
+			req.Header.Set("Authorization", authz)
+		}
+
+		w := httptest.NewRecorder()
+		router.ServeHTTP(w, req)
+
+		if w.Code != http.StatusUnauthorized {
+			t.Errorf("publish with Authorization %q and no principal = %d, want 401", authz, w.Code)
+		}
+	}
+
+	if len(db.repositories) != 1 {
+		t.Errorf("unexpected repository mutation")
+	}
+}
+
+// The npm CLI publishes scoped packages to /@scope%2fname and keys the
+// attachment "@scope/name-<version>.tgz".
+func TestNPMPublish_ScopedCLIShape_201(t *testing.T) {
+	db := newMockDatabase()
+	bs := newMockBlobStore()
+	db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+
+	router := setupUploadRouter(db, bs)
+
+	body := buildPublishBody(t, "@smoke/hello", "1.0.0")
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/repos/myrepo/@smoke%2fhello", bytes.NewReader(body))
+	req.Header.Set("Authorization", "Bearer token")
+	req.Header.Set("Content-Type", "application/json")
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusCreated {
+		t.Fatalf("scoped publish = %d: %s", w.Code, w.Body.String())
+	}
 }
 
 func TestNPMPublish_FirstPublish_201(t *testing.T) {

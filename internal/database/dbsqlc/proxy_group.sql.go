@@ -68,18 +68,18 @@ type GetProxyCacheEntryParams struct {
 }
 
 type GetProxyCacheEntryRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	CacheKey     string    `db:"cache_key" json:"cache_key"`
-	BlobKey      string    `db:"blob_key" json:"blob_key"`
-	ContentType  string    `db:"content_type" json:"content_type"`
-	StatusCode   int32     `db:"status_code" json:"status_code"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	HitCount     int64     `db:"hit_count" json:"hit_count"`
-	LastHitAt    time.Time `db:"last_hit_at" json:"last_hit_at"`
-	ExpiresAt    time.Time `db:"expires_at" json:"expires_at"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+	ID           string     `db:"id" json:"id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	CacheKey     string     `db:"cache_key" json:"cache_key"`
+	BlobKey      string     `db:"blob_key" json:"blob_key"`
+	ContentType  string     `db:"content_type" json:"content_type"`
+	StatusCode   int32      `db:"status_code" json:"status_code"`
+	SizeBytes    int64      `db:"size_bytes" json:"size_bytes"`
+	HitCount     int64      `db:"hit_count" json:"hit_count"`
+	LastHitAt    *time.Time `db:"last_hit_at" json:"last_hit_at"`
+	ExpiresAt    time.Time  `db:"expires_at" json:"expires_at"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetProxyCacheEntry(ctx context.Context, arg GetProxyCacheEntryParams) (GetProxyCacheEntryRow, error) {
@@ -171,7 +171,7 @@ type UpsertProxyCacheEntryParams struct {
 	StatusCode   int32       `db:"status_code" json:"status_code"`
 	SizeBytes    int64       `db:"size_bytes" json:"size_bytes"`
 	HitCount     int64       `db:"hit_count" json:"hit_count"`
-	LastHitAt    time.Time   `db:"last_hit_at" json:"last_hit_at"`
+	LastHitAt    *time.Time  `db:"last_hit_at" json:"last_hit_at"`
 	ExpiresAt    time.Time   `db:"expires_at" json:"expires_at"`
 }
 

@@ -8,6 +8,7 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
+	"errors"
 	"io"
 	"strings"
 	"testing"
@@ -113,17 +114,12 @@ func TestParseChart_Full(t *testing.T) {
 	}
 }
 
-func TestParseChart_NestedPath(t *testing.T) {
-	// filepath.Base should find Chart.yaml regardless of directory depth
+func TestParseChart_NestedPathIgnored(t *testing.T) {
+	// Only <chart>/Chart.yaml counts; deeper (subchart) manifests are ignored.
 	r := createChartTarball(t, "deep/nested/dir/Chart.yaml", minimalChart)
 
-	result, err := ParseChart(r)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result["name"] != "mychart" {
-		t.Errorf("name = %v, want mychart", result["name"])
+	if _, err := ParseChart(r); !errors.Is(err, ErrChartYAMLNotFound) {
+		t.Fatalf("err = %v, want ErrChartYAMLNotFound", err)
 	}
 }
 

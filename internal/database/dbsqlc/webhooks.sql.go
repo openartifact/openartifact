@@ -11,6 +11,61 @@ import (
 	"time"
 )
 
+const claimPendingWebhookDeliveries = `-- name: ClaimPendingWebhookDeliveries :many
+UPDATE webhook_deliveries
+SET next_retry_at = now() + make_interval(secs => $1::float8), updated_at = now()
+WHERE id IN (
+    SELECT wd.id FROM webhook_deliveries wd
+    WHERE wd.status = 'pending' AND (wd.next_retry_at IS NULL OR wd.next_retry_at <= now())
+    ORDER BY wd.created_at ASC
+    LIMIT $2::int
+    FOR UPDATE SKIP LOCKED
+)
+RETURNING id, webhook_id, event_type, payload, status, response_status, response_body, attempt_count, next_retry_at, delivered_at, created_at, updated_at
+`
+
+type ClaimPendingWebhookDeliveriesParams struct {
+	LeaseSeconds float64 `db:"lease_seconds" json:"lease_seconds"`
+	BatchSize    int32   `db:"batch_size" json:"batch_size"`
+}
+
+// Atomically claims due deliveries by pushing next_retry_at to the end of the
+// lease. FOR UPDATE SKIP LOCKED lets several server instances poll the same
+// table without ever receiving the same row; a crashed instance's claims become
+// due again once the lease expires.
+func (q *Queries) ClaimPendingWebhookDeliveries(ctx context.Context, arg ClaimPendingWebhookDeliveriesParams) ([]WebhookDelivery, error) {
+	rows, err := q.db.Query(ctx, claimPendingWebhookDeliveries, arg.LeaseSeconds, arg.BatchSize)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []WebhookDelivery{}
+	for rows.Next() {
+		var i WebhookDelivery
+		if err := rows.Scan(
+			&i.ID,
+			&i.WebhookID,
+			&i.EventType,
+			&i.Payload,
+			&i.Status,
+			&i.ResponseStatus,
+			&i.ResponseBody,
+			&i.AttemptCount,
+			&i.NextRetryAt,
+			&i.DeliveredAt,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createWebhook = `-- name: CreateWebhook :one
 INSERT INTO webhooks (repository_id, name, url, secret_enc, enabled, events, content_type, ssl_verify, max_retries, timeout_seconds)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
@@ -55,8 +110,8 @@ func (q *Queries) CreateWebhook(ctx context.Context, arg CreateWebhookParams) (C
 }
 
 const createWebhookDelivery = `-- name: CreateWebhookDelivery :one
-INSERT INTO webhook_deliveries (webhook_id, event_type, payload, status, attempt_count)
-VALUES ($1, $2, $3, $4, $5)
+INSERT INTO webhook_deliveries (webhook_id, event_type, payload, status, attempt_count, next_retry_at)
+VALUES ($1, $2, $3, $4, $5, $6)
 RETURNING id, created_at, updated_at
 `
 
@@ -66,6 +121,7 @@ type CreateWebhookDeliveryParams struct {
 	Payload      json.RawMessage `db:"payload" json:"payload"`
 	Status       string          `db:"status" json:"status"`
 	AttemptCount int32           `db:"attempt_count" json:"attempt_count"`
+	NextRetryAt  *time.Time      `db:"next_retry_at" json:"next_retry_at"`
 }
 
 type CreateWebhookDeliveryRow struct {
@@ -74,6 +130,9 @@ type CreateWebhookDeliveryRow struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// next_retry_at doubles as the claim lease: a delivery created by Dispatch is
+// inserted already leased to the creating instance so a concurrent poller on
+// another instance cannot pick it up.
 func (q *Queries) CreateWebhookDelivery(ctx context.Context, arg CreateWebhookDeliveryParams) (CreateWebhookDeliveryRow, error) {
 	row := q.db.QueryRow(ctx, createWebhookDelivery,
 		arg.WebhookID,
@@ -81,6 +140,7 @@ func (q *Queries) CreateWebhookDelivery(ctx context.Context, arg CreateWebhookDe
 		arg.Payload,
 		arg.Status,
 		arg.AttemptCount,
+		arg.NextRetryAt,
 	)
 	var i CreateWebhookDeliveryRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -180,46 +240,6 @@ func (q *Queries) ListGlobalWebhooks(ctx context.Context) ([]ListGlobalWebhooksR
 			&i.SslVerify,
 			&i.MaxRetries,
 			&i.TimeoutSeconds,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listPendingWebhookDeliveries = `-- name: ListPendingWebhookDeliveries :many
-SELECT id, webhook_id, event_type, payload, status, response_status, response_body, attempt_count, next_retry_at, delivered_at, created_at, updated_at
-FROM webhook_deliveries
-WHERE status = 'pending' AND (next_retry_at IS NULL OR next_retry_at <= now())
-ORDER BY created_at ASC LIMIT 100
-`
-
-func (q *Queries) ListPendingWebhookDeliveries(ctx context.Context) ([]WebhookDelivery, error) {
-	rows, err := q.db.Query(ctx, listPendingWebhookDeliveries)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []WebhookDelivery{}
-	for rows.Next() {
-		var i WebhookDelivery
-		if err := rows.Scan(
-			&i.ID,
-			&i.WebhookID,
-			&i.EventType,
-			&i.Payload,
-			&i.Status,
-			&i.ResponseStatus,
-			&i.ResponseBody,
-			&i.AttemptCount,
-			&i.NextRetryAt,
-			&i.DeliveredAt,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -440,8 +460,8 @@ type UpdateWebhookDeliveryParams struct {
 	ResponseStatus *int32          `db:"response_status" json:"response_status"`
 	ResponseBody   *string         `db:"response_body" json:"response_body"`
 	AttemptCount   int32           `db:"attempt_count" json:"attempt_count"`
-	NextRetryAt    time.Time       `db:"next_retry_at" json:"next_retry_at"`
-	DeliveredAt    time.Time       `db:"delivered_at" json:"delivered_at"`
+	NextRetryAt    *time.Time      `db:"next_retry_at" json:"next_retry_at"`
+	DeliveredAt    *time.Time      `db:"delivered_at" json:"delivered_at"`
 	Payload        json.RawMessage `db:"payload" json:"payload"`
 }
 

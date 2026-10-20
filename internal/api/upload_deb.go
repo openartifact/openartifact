@@ -5,27 +5,49 @@
 package api
 
 import (
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
+	"regexp"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
 	pkgdeb "github.com/openartifact/openartifact/pkg/deb"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-const maxDebUploadSize = 500 * 1024 * 1024
+const (
+	maxDebUploadSize = 500 * 1024 * 1024
+	// multipartOverhead leaves room for form fields and boundaries on top of the file.
+	multipartOverhead = 1 << 20
+	// multipartMemory is the in-memory threshold; larger parts spill to disk.
+	multipartMemory = 32 << 20
+)
+
+var (
+	errDebInvalid      = errors.New("invalid deb package")
+	errDebWrongFormat  = errors.New("repository is not a deb repository")
+	errDebRepoNotFound = errors.New("repository not found")
+	debNameRe          = regexp.MustCompile(`^[a-z0-9][a-z0-9+.\-]+$`)
+	debVersionRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+~:\-]*$`)
+	debArchRe          = regexp.MustCompile(`^[a-z0-9][a-z0-9\-]*$`)
+	debSegmentRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._\-]*$`)
+)
 
 type DebUploadHandler struct {
 	log       *logger.Logger
@@ -33,6 +55,12 @@ type DebUploadHandler struct {
 	blobStore storage.BlobStore
 	reg       *metrics.Registry
 	debWorker *worker.DebMetadataWorker
+	publisher webhook.Publisher
+}
+
+// SetPublisher wires the webhook publisher used for artifact events.
+func (h *DebUploadHandler) SetPublisher(p webhook.Publisher) {
+	h.publisher = p
 }
 
 func NewDebUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *DebUploadHandler {
@@ -64,7 +92,10 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		defer func() { h.reg.UploadsTotal.WithLabelValues("deb", uploadResult).Inc() }()
 	}
 
-	if err := r.ParseMultipartForm(maxDebUploadSize); err != nil { //nolint:gosec // G120: form size is bounded by maxDebUploadSize
+	r.Body = http.MaxBytesReader(w, r.Body, maxDebUploadSize+multipartOverhead)
+
+	err := r.ParseMultipartForm(multipartMemory) //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
+	if err != nil {
 		uploadResult = "error"
 
 		writeError(w, http.StatusBadRequest, "INVALID_INPUT", fmt.Sprintf("failed to parse form: %v", err))
@@ -100,12 +131,31 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		component = "main"
 	}
 
+	if !debSegmentRe.MatchString(distribution) || !debSegmentRe.MatchString(component) {
+		uploadResult = "error"
+
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid distribution or component name")
+
+		return
+	}
+
 	result, err := h.uploadPipeline(r, file, repoName, distribution, component)
 	if err != nil {
 		uploadResult = "error"
 
-		h.log.Errorw("Deb upload failed", "repository", repoName, "filename", header.Filename, "error", err)
-		writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
+		switch {
+		case errors.Is(err, errDebRepoNotFound):
+			writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found")
+		case errors.Is(err, errDebWrongFormat):
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "repository is not a deb repository")
+		case errors.Is(err, errDebInvalid):
+			writeError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
+		case errors.Is(err, quota.ErrExceeded):
+			quota.WriteExceeded(w)
+		default:
+			h.log.Errorw("Deb upload failed", "repository", repoName, "filename", header.Filename, "error", err)
+			writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
+		}
 
 		return
 	}
@@ -139,13 +189,17 @@ func (h *DebUploadHandler) resolveRepoID(r *http.Request, repoName string) (stri
 	}
 
 	if repo == nil {
-		return "", fmt.Errorf("repository not found: %s", repoName) //nolint:err113 // dynamic error with runtime context
+		return "", fmt.Errorf("%w: %s", errDebRepoNotFound, repoName)
+	}
+
+	if repo.Format != "deb" {
+		return "", errDebWrongFormat
 	}
 
 	return repo.ID, nil
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
+//nolint:gocyclo,cyclop // upload pipeline: sequential validation and cleanup branches
 func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoName string, distribution string, component string) (map[string]any, error) {
 	repoID, err := h.resolveRepoID(r, repoName)
 	if err != nil {
@@ -179,124 +233,61 @@ func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoN
 		return map[string]any{"duplicate": true}, nil
 	}
 
-	// Parse from temp file
-	if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-		return nil, fmt.Errorf("failed to seek temp file: %w", err)
-	}
-
-	debFile, err := pkgdeb.ParseDebFile(tmpFile)
+	// Parse from the temp file via ReadAt: only the control archive is loaded.
+	debFile, err := pkgdeb.ParseDebFileAt(tmpFile, written)
 	if err != nil {
-		return nil, fmt.Errorf("failed to parse deb: %w", err)
+		return nil, fmt.Errorf("%w: %v", errDebInvalid, err) //nolint:errorlint // keep parser detail for the client message
 	}
 
 	pkg := debFile.Package
-	filename := fmt.Sprintf("%s_%s_%s.deb", pkg.Package, pkg.Version, pkg.Architecture)
 
-	// Cross-repo dedup: if the blob already exists in any repo, skip re-uploading it.
-	// The component record is still created for this repo, pointing to the shared blob.
-	blobID, blobExists, err := h.blobStore.ExistsBySHA256(r.Context(), sha256sum)
+	if !debNameRe.MatchString(pkg.Package) || !debVersionRe.MatchString(pkg.Version) || !debArchRe.MatchString(pkg.Architecture) {
+		return nil, fmt.Errorf("%w: package name, version or architecture contains invalid characters", errDebInvalid)
+	}
+
+	// Debian file names never contain the epoch.
+	fileVersion := pkg.Version
+	if i := strings.Index(fileVersion, ":"); i >= 0 {
+		fileVersion = fileVersion[i+1:]
+	}
+
+	filename := fmt.Sprintf("%s_%s_%s.deb", pkg.Package, fileVersion, pkg.Architecture)
+
+	// Same name/version/arch in this repo with different content is a conflict (immutability).
+	if prev, err := h.db.GetDebianPackageByFilename(r.Context(), repoID, filename); err != nil {
+		return nil, fmt.Errorf("failed to check existing package: %w", err)
+	} else if prev != nil {
+		return map[string]any{"duplicate": true}, nil
+	}
+
+	if err := quota.Enforce(r.Context(), h.db, repoID, written); err != nil {
+		return nil, err
+	}
+
+	quotaReserved := true
+	releaseQuota := func() {
+		if quotaReserved {
+			if err := quota.Release(r.Context(), h.db, repoID, written); err != nil {
+				h.log.Warnw("failed to release quota", "repository", repoName, "error", err)
+			}
+		}
+	}
+
+	dist, err := h.db.GetOrCreateDebianDistribution(r.Context(), repoID, distribution)
 	if err != nil {
-		return nil, fmt.Errorf("failed to check blob existence: %w", err)
-	}
-
-	if !blobExists {
-		// Store blob from temp file
-		if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-			return nil, fmt.Errorf("failed to seek temp file: %w", err)
-		}
-
-		blobID, err = h.blobStore.Put(r.Context(), tmpFile, map[string]string{
-			"sha256":    sha256sum,
-			"format":    "deb",
-			"repo_name": repoName,
-		})
-		if err != nil {
-			return nil, fmt.Errorf("failed to store blob: %w", err)
-		}
-	}
-
-	// DB operations — clean up blob on failure only if we uploaded it (not a cross-repo shared blob).
-	cleanupBlob := func() {
-		if blobExists {
-			return // blob was already present; don't delete a shared blob
-		}
-
-		if delErr := h.blobStore.Delete(r.Context(), blobID); delErr != nil {
-			h.log.Warnw("failed to clean up blob after DB error", "blob_id", blobID, "error", delErr)
-		}
-	}
-
-	dist, err := h.db.GetDebianDistribution(r.Context(), repoID, distribution)
-	if err != nil {
-		cleanupBlob()
+		releaseQuota()
 		return nil, fmt.Errorf("failed to get distribution: %w", err)
 	}
 
-	if dist == nil {
-		dist = &models.DebianDistribution{
-			RepositoryID: repoID,
-			Name:         distribution,
-		}
-		if err := h.db.CreateDebianDistribution(r.Context(), dist); err != nil {
-			cleanupBlob()
-			return nil, fmt.Errorf("failed to create distribution: %w", err)
-		}
-	}
-
-	comps, err := h.db.GetDebianComponentsByDist(r.Context(), dist.ID)
+	comp, err := h.db.GetOrCreateDebianComponent(r.Context(), dist.ID, component)
 	if err != nil {
-		cleanupBlob()
-		return nil, fmt.Errorf("failed to get components: %w", err)
+		releaseQuota()
+		return nil, fmt.Errorf("failed to get component: %w", err)
 	}
 
-	var componentID string
-	found := false
-
-	for _, c := range comps {
-		if c.Name == component {
-			found = true
-			componentID = c.ID
-			break
-		}
-	}
-
-	if !found {
-		debComp := &models.DebianComponent{
-			DistributionID: dist.ID,
-			Name:           component,
-		}
-		if err := h.db.CreateDebianComponent(r.Context(), debComp); err != nil {
-			cleanupBlob()
-			return nil, fmt.Errorf("failed to create component: %w", err)
-		}
-		componentID = debComp.ID
-	}
-
-	// Ensure architecture entry exists for this distribution
-	archs, err := h.db.GetDebianArchitecturesByDist(r.Context(), dist.ID)
-	if err != nil {
-		cleanupBlob()
-		return nil, fmt.Errorf("failed to get architectures: %w", err)
-	}
-
-	archFound := false
-
-	for _, a := range archs {
-		if a.Name == pkg.Architecture {
-			archFound = true
-			break
-		}
-	}
-
-	if !archFound {
-		debArch := &models.DebianArchitecture{
-			DistributionID: dist.ID,
-			Name:           pkg.Architecture,
-		}
-		if err := h.db.CreateDebianArchitecture(r.Context(), debArch); err != nil {
-			cleanupBlob()
-			return nil, fmt.Errorf("failed to create architecture: %w", err)
-		}
+	if _, err := h.db.GetOrCreateDebianArchitecture(r.Context(), dist.ID, pkg.Architecture); err != nil {
+		releaseQuota()
+		return nil, fmt.Errorf("failed to get architecture: %w", err)
 	}
 
 	description := pkg.Description
@@ -304,33 +295,105 @@ func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoN
 		description = description[:idx]
 	}
 
-	// Upsert into blobs table to get the UUID for blob_id FK reference.
-	blobUUID, err := h.db.UpsertBlob(r.Context(), sha256sum, sha256sum, written)
-	if err != nil {
-		cleanupBlob()
-		return nil, fmt.Errorf("failed to upsert blob record: %w", err)
+	var (
+		blobID     string
+		blobExists bool
+		duplicate  bool
+		record     *models.Component
+	)
+
+	// Dedup check, blob store, blob record and referencing row happen under the
+	// blob lock so a concurrent unpublish cannot delete the blob in between.
+	lockErr := storage.WithBlobLock(r.Context(), h.db, sha256sum, func(ctx context.Context) error {
+		var err error
+
+		blobID, blobExists, err = h.blobStore.ExistsBySHA256(ctx, sha256sum)
+		if err != nil {
+			return fmt.Errorf("failed to check blob existence: %w", err)
+		}
+
+		if !blobExists {
+			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
+				return fmt.Errorf("failed to seek temp file: %w", err)
+			}
+
+			blobID, err = h.blobStore.Put(ctx, tmpFile, map[string]string{
+				"sha256":    sha256sum,
+				"format":    "deb",
+				"repo_name": repoName,
+			})
+			if err != nil {
+				return fmt.Errorf("failed to store blob: %w", err)
+			}
+		}
+
+		// Upsert into blobs table to get the UUID for blob_id FK reference.
+		blobUUID, err := h.db.UpsertBlob(ctx, sha256sum, sha256sum, written)
+		if err != nil {
+			return fmt.Errorf("failed to upsert blob record: %w", err)
+		}
+
+		record = &models.Component{
+			RepositoryID:  repoID,
+			ArtifactID:    blobUUID,
+			Name:          pkg.Package,
+			Version:       pkg.Version,
+			Arch:          pkg.Architecture,
+			Summary:       description,
+			Description:   pkg.Description,
+			InstalledSize: pkg.InstalledSize,
+			Filename:      filename,
+		}
+
+		if err := h.db.CreateDebPackage(ctx, record, dist.ID, comp.ID); err != nil {
+			if errors.Is(err, database.ErrDuplicate) {
+				duplicate = true
+				return nil
+			}
+
+			return fmt.Errorf("failed to create component record: %w", err)
+		}
+
+		// Persist the control stanza so Packages entries carry Depends, Maintainer, etc.
+		if err := h.db.SetDebControlFields(ctx, record.ID, pkg.Maintainer, pkg.Homepage,
+			formatdeb.ControlFieldsToStore(debFile.ControlFile.Fields)); err != nil {
+			if delErr := h.db.DeleteComponent(ctx, record.ID); delErr != nil {
+				h.log.Warnw("failed to roll back deb package after control persist error", "id", record.ID, "error", delErr)
+			}
+
+			return fmt.Errorf("failed to store control fields: %w", err)
+		}
+
+		return nil
+	})
+
+	// Failure/duplicate cleanup runs outside the lock (SafeDeleteBlob takes it).
+	if lockErr != nil || duplicate {
+		releaseQuota()
+
+		if !blobExists {
+			if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, sha256sum); delErr != nil {
+				h.log.Warnw("failed to clean up blob after failed upload", "sha256", sha256sum, "error", delErr)
+			}
+		}
+
+		if lockErr != nil {
+			return nil, lockErr
+		}
+
+		return map[string]any{"duplicate": true}, nil
 	}
 
-	comp := &models.Component{
-		RepositoryID:  repoID,
-		ArtifactID:    blobUUID,
-		Name:          pkg.Package,
-		Version:       pkg.Version,
-		Arch:          pkg.Architecture,
-		Summary:       description,
-		Description:   pkg.Description,
-		InstalledSize: pkg.InstalledSize,
-		Filename:      filename,
-	}
-
-	if err := h.db.CreateDebPackage(r.Context(), comp, dist.ID, componentID); err != nil {
-		cleanupBlob()
-		return nil, fmt.Errorf("failed to create component record: %w", err)
-	}
+	quotaReserved = false
 
 	if h.debWorker != nil {
 		h.debWorker.NotifyStale(repoID)
 	}
+
+	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName, Format: "deb", Name: pkg.Package, Version: pkg.Version,
+		Path: filename, SHA256: sha256sum, Size: written,
+	}))
 
 	return map[string]any{
 		"name":         pkg.Package,
@@ -355,7 +418,6 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Look up component to get artifact ID for blob cleanup
 	comp, err := h.db.GetDebPackageByID(r.Context(), packageID)
 	if err != nil {
 		h.log.Errorw("failed to look up component", "package_id", packageID, "error", err)
@@ -364,9 +426,25 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if comp == nil {
+	// A package in another repository is reported as not found (no IDOR).
+	if comp == nil || comp.RepositoryID != repoID {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
 		return
+	}
+
+	var (
+		sha  string
+		size int64
+	)
+
+	if comp.BlobID != "" {
+		sha, size, err = h.db.GetDebBlobInfo(r.Context(), comp.BlobID)
+		if err != nil {
+			h.log.Errorw("failed to resolve blob sha256", "blob_id", comp.BlobID, "error", err)
+			writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
+
+			return
+		}
 	}
 
 	if err := h.db.DeleteComponent(r.Context(), packageID); err != nil {
@@ -376,16 +454,25 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Delete blob from storage (best-effort)
-	if comp.BlobID != "" {
-		if err := h.blobStore.Delete(r.Context(), comp.BlobID); err != nil {
-			h.log.Warnw("failed to delete blob", "blob_id", comp.BlobID, "error", err)
+	if sha != "" {
+		if err := quota.Release(r.Context(), h.db, repoID, size); err != nil {
+			h.log.Warnw("failed to release quota", "repository", repoName, "error", err)
+		}
+
+		// Remove from storage only when no other row references the sha256.
+		if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, sha); err != nil {
+			h.log.Warnw("failed to delete blob", "sha256", sha, "error", err)
 		}
 	}
 
 	if h.debWorker != nil {
 		h.debWorker.NotifyStale(repoID)
 	}
+
+	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName, Format: "deb", Name: comp.Name, Version: comp.Version,
+		Path: comp.Filename, SHA256: sha, Size: size,
+	}))
 
 	h.log.Infow("Deb package deleted", "repository", repoName, "package_id", packageID)
 

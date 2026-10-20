@@ -13,7 +13,7 @@ import (
 
 var ErrInvalidPackageName = errors.New("invalid npm package name")
 
-var urlSafeRe = regexp.MustCompile(`^[a-z0-9\-_.~/]+$`)
+var urlSafeRe = regexp.MustCompile(`^[a-z0-9\-_.~]+$`)
 
 //nolint:gochecknoglobals // immutable Node.js core module list
 var coreModules = map[string]bool{

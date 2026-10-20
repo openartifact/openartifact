@@ -6,14 +6,22 @@ package api
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"runtime"
+	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/storage"
+)
+
+const (
+	// healthCacheTTL bounds how often the DB and storage are probed, so
+	// unauthenticated callers cannot amplify load.
+	healthCacheTTL = 10 * time.Second
+	// healthProbeTimeout bounds a single probe round.
+	healthProbeTimeout = 3 * time.Second
 )
 
 type SystemInfoHandler struct {
@@ -24,6 +32,11 @@ type SystemInfoHandler struct {
 	db          database.Database
 	blobStore   storage.BlobStore
 	storageType string
+
+	mu            sync.Mutex
+	checkedAt     time.Time
+	dbStatus      string
+	storageStatus string
 }
 
 func NewSystemInfoHandler(version, commit, buildTime string, db database.Database, blobStore storage.BlobStore, storageType string) *SystemInfoHandler {
@@ -38,38 +51,75 @@ func NewSystemInfoHandler(version, commit, buildTime string, db database.Databas
 	}
 }
 
+// RegisterPublic registers the unauthenticated, trimmed endpoint: version and
+// an overall status only.
 func (h *SystemInfoHandler) RegisterPublic(r chi.Router) {
 	r.Get("/api/v1/system/info", h.ServeHTTP)
 }
 
-func (h *SystemInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	w.Header().Set("Content-Type", "application/json")
+// RegisterAuthed registers the detailed endpoint (behind the admin RBAC check).
+func (h *SystemInfoHandler) RegisterAuthed(r chi.Router) {
+	r.Get("/api/v1/admin/system/info", h.handleDetails)
+}
 
-	// Check database status
-	dbStatus := "ok"
+// health returns the DB and storage status, probing at most once per
+// healthCacheTTL.
+func (h *SystemInfoHandler) health() (string, string) {
+	h.mu.Lock()
+	defer h.mu.Unlock()
+
+	if !h.checkedAt.IsZero() && time.Since(h.checkedAt) < healthCacheTTL {
+		return h.dbStatus, h.storageStatus
+	}
+
+	ctx, cancel := context.WithTimeout(context.Background(), healthProbeTimeout)
+	defer cancel()
+
+	h.dbStatus = "ok"
 
 	if h.db != nil {
-		if err := h.db.Ping(r.Context()); err != nil {
-			dbStatus = "error"
+		if err := h.db.Ping(ctx); err != nil {
+			h.dbStatus = "error"
 		}
 	}
 
-	// Check storage status
-	storageStatus := "ok"
-	// Try to call HealthCheck if the underlying store supports it
+	h.storageStatus = "ok"
+
 	type healthChecker interface {
 		HealthCheck(context.Context) error
 	}
 
 	if h.blobStore != nil {
 		if hc, ok := h.blobStore.(healthChecker); ok {
-			if err := hc.HealthCheck(r.Context()); err != nil {
-				storageStatus = "error"
+			if err := hc.HealthCheck(ctx); err != nil {
+				h.storageStatus = "error"
 			}
 		}
 	}
 
-	response := map[string]any{
+	h.checkedAt = time.Now()
+
+	return h.dbStatus, h.storageStatus
+}
+
+func (h *SystemInfoHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
+	dbStatus, storageStatus := h.health()
+
+	status := "ok"
+	if dbStatus != "ok" || storageStatus != "ok" {
+		status = "degraded"
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{
+		"version": h.version,
+		"status":  status,
+	})
+}
+
+func (h *SystemInfoHandler) handleDetails(w http.ResponseWriter, _ *http.Request) {
+	dbStatus, storageStatus := h.health()
+
+	writeJSON(w, http.StatusOK, map[string]any{
 		"version":        h.version,
 		"commit":         h.commit,
 		"build_time":     h.buildTime,
@@ -80,9 +130,5 @@ func (h *SystemInfoHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		"db_status":      dbStatus,
 		"storage_kind":   h.storageType,
 		"storage_status": storageStatus,
-	}
-
-	if encErr := json.NewEncoder(w).Encode(response); encErr != nil {
-		_ = encErr // response header already written
-	}
+	})
 }

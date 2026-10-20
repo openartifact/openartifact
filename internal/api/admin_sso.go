@@ -5,19 +5,25 @@
 package api
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"net/http"
 	"regexp"
+	"strings"
 	"time"
 
+	"github.com/crewjam/saml/samlsp"
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/config"
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -66,6 +72,130 @@ func (h *AdminSSOHandler) requireAdmin(w http.ResponseWriter, r *http.Request) b
 	return true
 }
 
+const (
+	maxSSOMappingEntries = 256
+	maxSSOFieldLen       = 512
+)
+
+// validateOIDCConfig applies the create-time rules to a (plaintext-secret)
+// OIDC config: required fields, outbound-URL safety, and sane claim names.
+func validateOIDCConfig(cfg *models.OIDCConfig) error {
+	if cfg.Issuer == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
+		return errors.New("oidc_config requires issuer, client_id, and client_secret") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	if err := netutil.ValidateOutboundURL(cfg.Issuer); err != nil {
+		return fmt.Errorf("oidc_config.issuer: %w", err)
+	}
+
+	if crypto.IsEncrypted(cfg.ClientSecret) {
+		return errors.New("oidc_config.client_secret must be the plaintext secret") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	for name, v := range map[string]string{
+		"username_claim": cfg.UsernameClaim, "email_claim": cfg.EmailClaim,
+		"name_claim": cfg.NameClaim, "groups_claim": cfg.GroupsClaim,
+	} {
+		if err := validateMappingName("oidc_config."+name, v); err != nil {
+			return err
+		}
+	}
+
+	for _, s := range cfg.Scopes {
+		if s == "" || strings.ContainsAny(s, " \t\r\n") {
+			return errors.New("oidc_config.scopes entries must be non-empty and contain no whitespace") //nolint:err113 // validation message surfaced to the admin
+		}
+	}
+
+	return nil
+}
+
+// validateSAMLConfig applies the create-time rules to a SAML config.
+func validateSAMLConfig(cfg *models.SAMLConfig) error {
+	if cfg.IDPMetadataURL == "" && cfg.IDPMetadataXML == "" {
+		return errors.New("saml_config requires idp_metadata_url or idp_metadata_xml") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	if cfg.IDPMetadataURL != "" {
+		if err := netutil.ValidateOutboundURL(cfg.IDPMetadataURL); err != nil {
+			return fmt.Errorf("saml_config.idp_metadata_url: %w", err)
+		}
+	}
+
+	if cfg.IDPMetadataXML != "" {
+		if _, err := samlsp.ParseMetadata([]byte(cfg.IDPMetadataXML)); err != nil {
+			return fmt.Errorf("saml_config.idp_metadata_xml is not valid IdP metadata: %w", err)
+		}
+	}
+
+	for name, v := range map[string]string{
+		"username_attribute": cfg.UsernameAttribute, "email_attribute": cfg.EmailAttribute,
+		"name_attribute": cfg.NameAttribute, "groups_attribute": cfg.GroupsAttribute,
+	} {
+		if err := validateMappingName("saml_config."+name, v); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+func validateMappingName(field, v string) error {
+	if len(v) > maxSSOFieldLen || strings.ContainsAny(v, "\r\n\x00") {
+		return fmt.Errorf("%s is invalid", field) //nolint:err113 // validation message surfaced to the admin
+	}
+
+	return nil
+}
+
+// validateStringMap checks a group/permission mapping: bounded size, no empty
+// keys or values.
+func validateStringMap(field string, m map[string]string) error {
+	if len(m) > maxSSOMappingEntries {
+		return fmt.Errorf("%s has too many entries", field) //nolint:err113 // validation message surfaced to the admin
+	}
+
+	for k, v := range m {
+		if k == "" || v == "" || len(k) > maxSSOFieldLen || len(v) > maxSSOFieldLen {
+			return fmt.Errorf("%s entries must have non-empty keys and values", field) //nolint:err113 // validation message surfaced to the admin
+		}
+	}
+
+	return nil
+}
+
+// validateJSONObjectOrNull accepts only a JSON object or null (claim_mapping).
+func validateJSONObjectOrNull(field string, raw json.RawMessage) error {
+	t := bytes.TrimSpace(raw)
+	if len(t) == 0 || bytes.Equal(t, []byte("null")) {
+		return nil
+	}
+
+	var m map[string]any
+	if err := json.Unmarshal(t, &m); err != nil {
+		return fmt.Errorf("%s must be a JSON object", field) //nolint:err113 // validation message surfaced to the admin
+	}
+
+	return nil
+}
+
+// sealOIDCConfig returns cfg marshalled with the client secret encrypted.
+func sealOIDCConfig(cfg models.OIDCConfig) (json.RawMessage, error) {
+	enc, err := crypto.Encrypt(cfg.ClientSecret)
+	if err != nil {
+		return nil, fmt.Errorf("encrypt client_secret: %w", err)
+	}
+
+	cfg.ClientSecret = enc
+
+	b, err := json.Marshal(cfg) //nolint:gosec // G117: the secret is encrypted (or key-less passthrough) for storage
+	if err != nil {
+		return nil, fmt.Errorf("marshal oidc_config: %w", err)
+	}
+
+	return b, nil
+}
+
 func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAdmin(w, r) {
 		return
@@ -92,20 +222,57 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.Kind == "oidc" {
+	if err := validateStringMap("group_mapping", body.GroupMapping); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	if err := validateStringMap("permission_mapping", body.PermissionMapping); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	if err := validateJSONObjectOrNull("claim_mapping", body.ClaimMapping); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	switch body.Kind {
+	case "oidc":
 		var cfg models.OIDCConfig
-		if err := json.Unmarshal(body.OIDCConfig, &cfg); err != nil || cfg.Issuer == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
+		if err := json.Unmarshal(body.OIDCConfig, &cfg); err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", "oidc_config requires issuer, client_id, and client_secret")
 			return
 		}
-	}
 
-	if body.Kind == "saml" {
+		if err := validateOIDCConfig(&cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		sealed, err := sealOIDCConfig(cfg)
+		if err != nil {
+			h.log.Errorw("admin sso create: seal oidc config", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect client secret")
+
+			return
+		}
+
+		body.OIDCConfig = sealed
+		body.SAMLConfig = nil
+	case "saml":
 		var cfg models.SAMLConfig
-		if err := json.Unmarshal(body.SAMLConfig, &cfg); err != nil || (cfg.IDPMetadataURL == "" && cfg.IDPMetadataXML == "") {
+		if err := json.Unmarshal(body.SAMLConfig, &cfg); err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", "saml_config requires idp_metadata_url or idp_metadata_xml")
 			return
 		}
+
+		if err := validateSAMLConfig(&cfg); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		body.OIDCConfig = nil
 	}
 
 	now := time.Now()
@@ -187,7 +354,103 @@ func (h *AdminSSOHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, ssoProviderToResponse(provider))
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
+// patchString decodes a JSON string patch field; ok is false on a type error.
+func patchString(raw json.RawMessage) (string, bool) {
+	var s string
+	return s, json.Unmarshal(raw, &s) == nil
+}
+
+func patchBool(raw json.RawMessage) (bool, bool) {
+	var b bool
+	return b, json.Unmarshal(raw, &b) == nil
+}
+
+// isJSONObject reports whether raw is a JSON object (not null/array/scalar).
+func isJSONObject(raw json.RawMessage) bool {
+	t := bytes.TrimSpace(raw)
+	return len(t) > 0 && t[0] == '{'
+}
+
+// mergeOIDCPatch overlays the patch onto the stored config: fields absent from
+// the patch keep their stored values, and an absent or empty client_secret
+// keeps the stored (encrypted) secret. A newly supplied secret is encrypted.
+func mergeOIDCPatch(stored json.RawMessage, patch json.RawMessage) (json.RawMessage, error) {
+	if !isJSONObject(patch) {
+		return nil, errors.New("oidc_config must be a JSON object") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	var merged models.OIDCConfig
+	if len(stored) > 0 {
+		if err := json.Unmarshal(stored, &merged); err != nil {
+			return nil, fmt.Errorf("stored oidc_config is unreadable: %w", err)
+		}
+	}
+
+	storedSecret := merged.ClientSecret
+
+	// Unmarshalling into the populated struct only touches fields present in the patch.
+	if err := json.Unmarshal(patch, &merged); err != nil {
+		return nil, errors.New("oidc_config has invalid field types") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	if merged.ClientSecret == "" {
+		merged.ClientSecret = storedSecret
+	}
+
+	// Untouched encrypted secret: keep the ciphertext verbatim (it cannot be
+	// validated as plaintext, so validate everything else with a placeholder).
+	if merged.ClientSecret == storedSecret && crypto.IsEncrypted(storedSecret) {
+		probe := merged
+		probe.ClientSecret = "placeholder"
+
+		if err := validateOIDCConfig(&probe); err != nil {
+			return nil, err
+		}
+
+		b, err := json.Marshal(merged) //nolint:gosec // G117: stored secret is carried through unchanged (encrypted at rest)
+		if err != nil {
+			return nil, fmt.Errorf("marshal oidc_config: %w", err)
+		}
+
+		return b, nil
+	}
+
+	// New secret, or a legacy plaintext one that is sealed on this write.
+	if err := validateOIDCConfig(&merged); err != nil {
+		return nil, err
+	}
+
+	return sealOIDCConfig(merged)
+}
+
+func mergeSAMLPatch(stored json.RawMessage, patch json.RawMessage) (json.RawMessage, error) {
+	if !isJSONObject(patch) {
+		return nil, errors.New("saml_config must be a JSON object") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	var merged models.SAMLConfig
+	if len(stored) > 0 {
+		if err := json.Unmarshal(stored, &merged); err != nil {
+			return nil, fmt.Errorf("stored saml_config is unreadable: %w", err)
+		}
+	}
+
+	if err := json.Unmarshal(patch, &merged); err != nil {
+		return nil, errors.New("saml_config has invalid field types") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	if err := validateSAMLConfig(&merged); err != nil {
+		return nil, err
+	}
+
+	b, err := json.Marshal(merged)
+	if err != nil {
+		return nil, fmt.Errorf("marshal saml_config: %w", err)
+	}
+
+	return b, nil
+}
+
 func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	if !h.requireAdmin(w, r) {
 		return
@@ -215,58 +478,9 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if v, ok := patch["display_name"]; ok {
-		var s string
-		if err := json.Unmarshal(v, &s); err == nil {
-			existing.DisplayName = s
-		}
-	}
-
-	if v, ok := patch["enabled"]; ok {
-		var b bool
-		if err := json.Unmarshal(v, &b); err == nil {
-			existing.Enabled = b
-		}
-	}
-
-	if v, ok := patch["oidc_config"]; ok {
-		existing.OIDCConfig = v
-	}
-
-	if v, ok := patch["saml_config"]; ok {
-		existing.SAMLConfig = v
-	}
-
-	if v, ok := patch["claim_mapping"]; ok {
-		existing.ClaimMapping = v
-	}
-
-	if v, ok := patch["group_mapping"]; ok {
-		var gm map[string]string
-		if err := json.Unmarshal(v, &gm); err == nil {
-			existing.GroupMapping = gm
-		}
-	}
-
-	if v, ok := patch["permission_mapping"]; ok {
-		var pm map[string]string
-		if err := json.Unmarshal(v, &pm); err == nil {
-			existing.PermissionMapping = pm
-		}
-	}
-
-	if v, ok := patch["auto_provision_users"]; ok {
-		var b bool
-		if err := json.Unmarshal(v, &b); err == nil {
-			existing.AutoProvisionUsers = b
-		}
-	}
-
-	if v, ok := patch["link_by_email"]; ok {
-		var b bool
-		if err := json.Unmarshal(v, &b); err == nil {
-			existing.LinkByEmail = b
-		}
+	if status, code, msg := applySSOPatch(existing, patch); status != 0 {
+		writeError(w, status, code, msg)
+		return
 	}
 
 	existing.UpdatedAt = time.Now()
@@ -279,6 +493,93 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	writeJSON(w, http.StatusOK, ssoProviderToResponse(existing))
+}
+
+// applySSOPatch merges patch into existing, validating exactly what create
+// validates. On failure it returns the HTTP status, error code and message
+// (status 0 means success).
+func applySSOPatch(existing *models.SSOProvider, patch map[string]json.RawMessage) (int, string, string) {
+	invalid := func(msg string) (int, string, string) {
+		return http.StatusBadRequest, "validation_failed", msg
+	}
+
+	if v, ok := patch["display_name"]; ok {
+		s, ok := patchString(v)
+		if !ok || s == "" {
+			return invalid("display_name must be a non-empty string")
+		}
+
+		existing.DisplayName = s
+	}
+
+	for field, dst := range map[string]*bool{
+		"enabled":              &existing.Enabled,
+		"auto_provision_users": &existing.AutoProvisionUsers,
+		"link_by_email":        &existing.LinkByEmail,
+	} {
+		if v, ok := patch[field]; ok {
+			b, ok := patchBool(v)
+			if !ok {
+				return invalid(field + " must be a boolean")
+			}
+
+			*dst = b
+		}
+	}
+
+	if v, ok := patch["oidc_config"]; ok {
+		if existing.Kind != "oidc" {
+			return invalid("oidc_config is only valid for oidc providers")
+		}
+
+		merged, err := mergeOIDCPatch(existing.OIDCConfig, v)
+		if err != nil {
+			return invalid(err.Error())
+		}
+
+		existing.OIDCConfig = merged
+	}
+
+	if v, ok := patch["saml_config"]; ok {
+		if existing.Kind != "saml" {
+			return invalid("saml_config is only valid for saml providers")
+		}
+
+		merged, err := mergeSAMLPatch(existing.SAMLConfig, v)
+		if err != nil {
+			return invalid(err.Error())
+		}
+
+		existing.SAMLConfig = merged
+	}
+
+	if v, ok := patch["claim_mapping"]; ok {
+		if err := validateJSONObjectOrNull("claim_mapping", v); err != nil {
+			return invalid(err.Error())
+		}
+
+		existing.ClaimMapping = v
+	}
+
+	for field, dst := range map[string]*map[string]string{
+		"group_mapping":      &existing.GroupMapping,
+		"permission_mapping": &existing.PermissionMapping,
+	} {
+		if v, ok := patch[field]; ok {
+			var m map[string]string
+			if err := json.Unmarshal(v, &m); err != nil {
+				return invalid(field + " must be an object of strings")
+			}
+
+			if err := validateStringMap(field, m); err != nil {
+				return invalid(err.Error())
+			}
+
+			*dst = m
+		}
+	}
+
+	return 0, "", ""
 }
 
 func (h *AdminSSOHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -337,7 +638,7 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 
 	switch existing.Kind {
 	case "oidc":
-		_, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
+		_, err := auth.LoadOIDCProviderRow(ctx, existing, h.baseURL)
 		if err != nil {
 			if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
 				writeJSON(w, http.StatusOK, map[string]any{
@@ -361,7 +662,7 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": "oidc"})
 
 	case "saml":
-		_, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
+		_, err := auth.LoadSAMLProviderRow(ctx, existing, h.baseURL, h.cfg, h.log)
 		if err != nil {
 			if errors.Is(err, auth.ErrIDPMetadataUnavailable) {
 				writeJSON(w, http.StatusOK, map[string]any{
@@ -395,9 +696,18 @@ func ssoProviderToResponse(p *models.SSOProvider) responses.SSOProviderResponse 
 	if len(p.OIDCConfig) > 0 {
 		var cfg models.OIDCConfig
 		if err := json.Unmarshal(p.OIDCConfig, &cfg); err == nil {
+			hasSecret := cfg.ClientSecret != ""
 			cfg.ClientSecret = ""
-			if b, err := json.Marshal(cfg); err == nil { //nolint:gosec // G117: client_secret is intentionally marshaled for storage
+
+			if b, err := json.Marshal(cfg); err == nil { //nolint:gosec // G117: ClientSecret is cleared above; the value is never serialized
 				_ = json.Unmarshal(b, &oidcCfg)
+			}
+
+			// Secrets are write-only: report presence, never the value.
+			delete(oidcCfg, "client_secret")
+
+			if oidcCfg != nil {
+				oidcCfg["has_secret"] = hasSecret
 			}
 		}
 	}

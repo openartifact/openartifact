@@ -10,7 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"path/filepath"
+	"path"
+	"strings"
 
 	"gopkg.in/yaml.v3"
 )
@@ -20,7 +21,7 @@ const maxChartYAMLSize = 1 << 20 // 1 MiB
 // Sentinel errors for Helm chart parsing.
 var (
 	ErrChartYAMLNotFound = errors.New("chart.yaml not found in archive")
-	ErrChartYAMLTooLarge = errors.New("Chart.yaml exceeds max size")
+	ErrChartYAMLTooLarge = errors.New("chart.yaml exceeds max size")
 )
 
 // readAllLimited reads at most max+1 bytes from r and errors if the
@@ -77,8 +78,9 @@ func ParseChart(r io.Reader) (map[string]any, error) {
 			return nil, fmt.Errorf("failed to read tar: %w", err)
 		}
 
-		// Look for Chart.yaml in the root of the chart
-		if filepath.Base(header.Name) == "Chart.yaml" {
+		// Only the chart root's Chart.yaml (<chart>/Chart.yaml) counts; nested
+		// subchart manifests (<chart>/charts/<sub>/Chart.yaml) must not win.
+		if header.Typeflag == tar.TypeReg && isRootChartYAML(header.Name) {
 			data, err := readAllLimited(tr, maxChartYAMLSize, ErrChartYAMLTooLarge)
 			if err != nil {
 				return nil, fmt.Errorf("failed to read Chart.yaml: %w", err)
@@ -113,4 +115,11 @@ func ParseChart(r io.Reader) (map[string]any, error) {
 	}
 
 	return result, nil
+}
+
+func isRootChartYAML(name string) bool {
+	name = path.Clean(strings.TrimPrefix(name, "./"))
+	parts := strings.Split(name, "/")
+
+	return len(parts) == 2 && parts[0] != "." && parts[0] != ".." && parts[1] == "Chart.yaml"
 }

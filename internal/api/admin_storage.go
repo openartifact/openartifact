@@ -7,19 +7,31 @@ package api
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"os"
+	"path/filepath"
+	"regexp"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+const storageTestTimeout = 10 * time.Second
+
+var storageBackendNameRe = regexp.MustCompile(`^[a-zA-Z0-9][a-zA-Z0-9_.-]{0,127}$`)
 
 type AdminStorageHandler struct {
 	db        database.Database
@@ -42,6 +54,20 @@ var validStorageKinds = map[string]bool{
 	"oci":        true,
 }
 
+// storageSecretFields are the config keys that hold credentials. They are
+// encrypted at rest, never returned by the API (a has_<key> flag is returned
+// instead) and preserved across updates that omit them.
+//
+//nolint:gochecknoglobals // immutable lookup table
+var storageSecretFields = []string{
+	"access_key", "accessKey", "secret_key", "secretKey", "password", "account_key", "accountKey",
+	"connStr", "conn_str", "creds", "credentials_json", "sas_token", "hmac_key", "hmac_secret",
+}
+
+func storageKindList() string {
+	return "filesystem, s3, gcs, azure, garage, seaweedfs, oci"
+}
+
 func (h *AdminStorageHandler) Register(r chi.Router) {
 	r.Get("/api/v1/admin/storage", h.handleList)
 	r.Post("/api/v1/admin/storage", h.handleCreate)
@@ -61,11 +87,178 @@ func (h *AdminStorageHandler) requireAdmin(w http.ResponseWriter, r *http.Reques
 	}
 
 	if !isAdmin {
-		writeError(w, http.StatusForbidden, "admin_required", "admin access required")
+		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
 		return false
 	}
 
 	return true
+}
+
+// writeStorageWriteError maps persistence errors to 409 on unique violations.
+func (h *AdminStorageHandler) writeStorageWriteError(w http.ResponseWriter, err error, action string) {
+	if constraint := database.UniqueViolationConstraint(err); constraint != "" {
+		msg := "a storage backend with this name already exists"
+		if constraint == "idx_storage_backends_default" {
+			msg = "another storage backend is already the default"
+		}
+
+		writeError(w, http.StatusConflict, "conflict", msg)
+
+		return
+	}
+
+	h.log.Errorw("storage backend "+action+" failed", "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to "+action+" storage backend")
+}
+
+// prepareStorageConfig validates raw for kind, encrypts secret fields and
+// carries over secrets from existing (the stored config) that raw omits. It
+// returns the JSON to store, or a validation error message.
+func prepareStorageConfig(kind string, raw, existing []byte) ([]byte, error) {
+	cfg := map[string]any{}
+
+	if len(raw) > 0 && string(raw) != "null" {
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, validationError("config must be a JSON object")
+		}
+	}
+
+	old := map[string]any{}
+	if len(existing) > 0 {
+		_ = json.Unmarshal(existing, &old)
+	}
+
+	for _, field := range storageSecretFields {
+		v, present := cfg[field]
+		if present && v != nil {
+			s, ok := v.(string)
+			if !ok {
+				return nil, validationError("config." + field + " must be a string")
+			}
+
+			if s != "" {
+				enc, err := crypto.Encrypt(s)
+				if err != nil {
+					return nil, validationError("failed to protect config." + field)
+				}
+
+				cfg[field] = enc
+
+				continue
+			}
+		}
+
+		// Omitted or empty: keep the stored secret, if any.
+		if prev, ok := old[field].(string); ok && prev != "" {
+			cfg[field] = prev
+		} else {
+			delete(cfg, field)
+		}
+	}
+
+	if err := validateStorageConfig(kind, cfg); err != nil {
+		return nil, err
+	}
+
+	out, err := json.Marshal(cfg)
+	if err != nil {
+		return nil, validationError("config could not be encoded")
+	}
+
+	return out, nil
+}
+
+// cfgString returns the first non-empty string value among keys. Several keys
+// are accepted because the admin UI uses camelCase names while API clients
+// use snake_case.
+func cfgString(cfg map[string]any, keys ...string) string {
+	for _, key := range keys {
+		if s, _ := cfg[key].(string); strings.TrimSpace(s) != "" {
+			return strings.TrimSpace(s)
+		}
+	}
+
+	return ""
+}
+
+func cfgBool(cfg map[string]any, keys ...string) bool {
+	for _, key := range keys {
+		if b, ok := cfg[key].(bool); ok && b {
+			return true
+		}
+	}
+
+	return false
+}
+
+// ociEndpoint returns an absolute URL for an OCI endpoint; the UI stores a
+// bare host[:port], which is completed with https (http when insecure is set).
+func ociEndpoint(cfg map[string]any) string {
+	endpoint := strings.TrimRight(cfgString(cfg, "endpoint"), "/")
+	if endpoint == "" || strings.Contains(endpoint, "://") {
+		return endpoint
+	}
+
+	if cfgBool(cfg, "insecure", "oci_insecure") {
+		return "http://" + endpoint
+	}
+
+	return "https://" + endpoint
+}
+
+func validateStorageConfig(kind string, cfg map[string]any) error {
+	switch kind {
+	case "filesystem":
+		path := cfgString(cfg, "path")
+		if path == "" {
+			return validationError("config.path is required for filesystem backends")
+		}
+
+		if slices.Contains(strings.Split(filepath.ToSlash(path), "/"), "..") {
+			return validationError("config.path must not contain '..'")
+		}
+	case "s3", "garage", "seaweedfs":
+		if cfgString(cfg, "bucket") == "" {
+			return validationError("config.bucket is required")
+		}
+
+		endpoint := cfgString(cfg, "endpoint")
+		if endpoint == "" && kind != "s3" {
+			return validationError("config.endpoint is required for " + kind + " backends")
+		}
+
+		if endpoint != "" {
+			if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+				return fmt.Errorf("config.endpoint is not allowed: %w", err)
+			}
+		}
+
+		hasAccess := cfgString(cfg, "access_key", "accessKey") != ""
+		hasSecret := cfgString(cfg, "secret_key", "secretKey") != ""
+
+		if hasAccess != hasSecret {
+			return validationError("config.access_key and config.secret_key must be set together")
+		}
+	case "oci":
+		endpoint := ociEndpoint(cfg)
+		if endpoint == "" {
+			return validationError("config.endpoint is required for oci backends")
+		}
+
+		if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+			return fmt.Errorf("config.endpoint is not allowed: %w", err)
+		}
+	case "gcs":
+		if cfgString(cfg, "bucket") == "" {
+			return validationError("config.bucket is required for gcs backends")
+		}
+	case "azure":
+		if cfgString(cfg, "account", "account_name") == "" || cfgString(cfg, "container") == "" {
+			return validationError("config.account and config.container are required for azure backends")
+		}
+	}
+
+	return nil
 }
 
 func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -75,7 +268,7 @@ func (h *AdminStorageHandler) handleList(w http.ResponseWriter, r *http.Request)
 
 	backends, err := h.db.ListStorageBackends(r.Context())
 	if err != nil {
-		h.log.Error("failed to list storage backends", "error", err)
+		h.log.Errorw("failed to list storage backends", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to list storage backends")
 
 		return
@@ -104,25 +297,24 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		Config    json.RawMessage `json:"config"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "failed to decode request body")
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
 
-	// Validate required fields
-	if body.Name == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "name is required")
+	if !storageBackendNameRe.MatchString(body.Name) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
 		return
 	}
 
-	if body.Kind == "" {
-		writeError(w, http.StatusBadRequest, "validation_error", "kind is required")
-		return
-	}
-
-	// Validate kind
 	if !validStorageKinds[body.Kind] {
-		writeError(w, http.StatusBadRequest, "validation_error", "kind must be one of: filesystem, s3, gcs, azure, garage, seaweedfs, oci")
+		writeError(w, http.StatusBadRequest, "validation_failed", "kind must be one of: "+storageKindList())
+		return
+	}
+
+	config, err := prepareStorageConfig(body.Kind, body.Config, nil)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
 
@@ -132,16 +324,14 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		Name:      body.Name,
 		Kind:      body.Kind,
 		IsDefault: body.IsDefault,
-		Config:    body.Config,
+		Config:    config,
 		Status:    "unknown",
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 
 	if err := h.db.CreateStorageBackend(r.Context(), backend); err != nil {
-		h.log.Error("failed to create storage backend", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to create storage backend")
-
+		h.writeStorageWriteError(w, err, "create")
 		return
 	}
 
@@ -157,7 +347,7 @@ func (h *AdminStorageHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 
 	backend, err := h.db.GetStorageBackend(r.Context(), name)
 	if err != nil {
-		h.log.Error("failed to get storage backend", "error", err)
+		h.log.Errorw("failed to get storage backend", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
 
 		return
@@ -180,7 +370,7 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 
 	backend, err := h.db.GetStorageBackend(r.Context(), name)
 	if err != nil {
-		h.log.Error("failed to get storage backend", "error", err)
+		h.log.Errorw("failed to get storage backend", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
 
 		return
@@ -198,20 +388,23 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		Config    *json.RawMessage `json:"config"`
 	}
 
-	if err := json.NewDecoder(r.Body).Decode(&patch); err != nil {
-		writeError(w, http.StatusBadRequest, "invalid_request", "failed to decode request body")
+	if err := decodeJSON(r, &patch); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
 
-	// Apply non-nil fields
 	if patch.Name != nil {
+		if !storageBackendNameRe.MatchString(*patch.Name) {
+			writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
+			return
+		}
+
 		backend.Name = *patch.Name
 	}
 
 	if patch.Kind != nil {
-		// Validate kind if changed
 		if !validStorageKinds[*patch.Kind] {
-			writeError(w, http.StatusBadRequest, "validation_error", "kind must be one of: filesystem, s3, gcs, azure, garage, seaweedfs, oci")
+			writeError(w, http.StatusBadRequest, "validation_failed", "kind must be one of: "+storageKindList())
 			return
 		}
 
@@ -222,16 +415,26 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		backend.IsDefault = *patch.IsDefault
 	}
 
+	// Always re-validate the effective config: the kind may have changed even
+	// when no config was sent. Omitted secrets are preserved.
+	var raw []byte
 	if patch.Config != nil {
-		backend.Config = *patch.Config
+		raw = *patch.Config
+	} else {
+		raw = backend.Config
 	}
 
+	config, err := prepareStorageConfig(backend.Kind, raw, backend.Config)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
+	backend.Config = config
 	backend.UpdatedAt = time.Now()
 
 	if err := h.db.UpdateStorageBackend(r.Context(), backend); err != nil {
-		h.log.Error("failed to update storage backend", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to update storage backend")
-
+		h.writeStorageWriteError(w, err, "update")
 		return
 	}
 
@@ -247,7 +450,7 @@ func (h *AdminStorageHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 
 	backend, err := h.db.GetStorageBackend(r.Context(), name)
 	if err != nil {
-		h.log.Error("failed to get storage backend", "error", err)
+		h.log.Errorw("failed to get storage backend", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
 
 		return
@@ -263,14 +466,35 @@ func (h *AdminStorageHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	inUse, err := h.db.CountBlobsOnStorageBackend(r.Context(), backend.ID)
+	if err != nil {
+		h.log.Errorw("failed to count blobs on storage backend", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to delete storage backend")
+
+		return
+	}
+
+	if inUse > 0 {
+		writeError(w, http.StatusConflict, "conflict", "storage backend still holds blobs")
+		return
+	}
+
 	if err := h.db.DeleteStorageBackend(r.Context(), backend.ID); err != nil {
-		h.log.Error("failed to delete storage backend", "error", err)
+		h.log.Errorw("failed to delete storage backend", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to delete storage backend")
 
 		return
 	}
 
 	writeNoContent(w)
+}
+
+// storageTestResult is the outcome of a backend connectivity test. message is
+// always a fixed, non-sensitive string; raw errors are logged only.
+type storageTestResult struct {
+	ok      bool
+	code    string
+	message string
 }
 
 func (h *AdminStorageHandler) handleTest(w http.ResponseWriter, r *http.Request) {
@@ -282,7 +506,7 @@ func (h *AdminStorageHandler) handleTest(w http.ResponseWriter, r *http.Request)
 
 	backend, err := h.db.GetStorageBackend(r.Context(), name)
 	if err != nil {
-		h.log.Error("failed to get storage backend", "error", err)
+		h.log.Errorw("failed to get storage backend", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to get storage backend")
 
 		return
@@ -293,20 +517,25 @@ func (h *AdminStorageHandler) handleTest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Test based on kind
-	var (
-		testOk  bool
-		testErr string
-		testMsg string
-	)
+	cfg := map[string]any{}
+	if len(backend.Config) > 0 {
+		if err := json.Unmarshal(backend.Config, &cfg); err != nil {
+			cfg = map[string]any{}
+		}
+	}
+
+	ctx, cancel := context.WithTimeout(r.Context(), storageTestTimeout)
+	defer cancel()
+
+	var result storageTestResult
 
 	switch backend.Kind {
 	case "filesystem":
-		testOk, testErr, testMsg = h.testFilesystemBackend(backend)
+		result = h.testFilesystemBackend(cfg)
 	case "s3", "garage", "seaweedfs":
-		testOk, testErr, testMsg = h.testS3Backend(backend)
+		result = h.testS3Backend(ctx, backend.Name, cfg)
 	case "oci":
-		testOk, testErr, testMsg = h.testOCIBackend(backend)
+		result = h.testOCIBackend(ctx, backend.Name, cfg)
 	default:
 		writeJSON(w, http.StatusOK, map[string]any{
 			"ok":      false,
@@ -317,143 +546,175 @@ func (h *AdminStorageHandler) handleTest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	// Update status based on test result
-	if testOk {
+	if result.ok {
 		if err := h.db.UpdateStorageBackendStatus(r.Context(), backend.ID, "healthy", nil); err != nil {
-			h.log.Error("failed to update storage backend status", "error", err)
+			h.log.Errorw("failed to update storage backend status", "error", err)
 		}
 	} else {
-		if err := h.db.UpdateStorageBackendStatus(r.Context(), backend.ID, "unreachable", &testMsg); err != nil {
-			h.log.Error("failed to update storage backend status", "error", err)
+		msg := result.message
+		if err := h.db.UpdateStorageBackendStatus(r.Context(), backend.ID, "unreachable", &msg); err != nil {
+			h.log.Errorw("failed to update storage backend status", "error", err)
 		}
 	}
 
-	response := map[string]any{
-		"ok": testOk,
-	}
-	if !testOk {
-		response["error"] = testErr
-		response["message"] = testMsg
+	response := map[string]any{"ok": result.ok}
+	if !result.ok {
+		response["error"] = result.code
+		response["message"] = result.message
 	}
 
 	writeJSON(w, http.StatusOK, response)
 }
 
-func (h *AdminStorageHandler) testFilesystemBackend(backend *models.StorageBackend) (bool, string, string) {
-	var config struct {
-		Path string `json:"path"`
+func (h *AdminStorageHandler) testFilesystemBackend(cfg map[string]any) storageTestResult {
+	path := cfgString(cfg, "path")
+	if path == "" {
+		return storageTestResult{false, "invalid_config", "path is required in config"}
 	}
 
-	if err := json.Unmarshal(backend.Config, &config); err != nil {
-		return false, "invalid_config", "failed to parse config: " + err.Error()
+	info, err := os.Stat(path)
+	if err != nil || !info.IsDir() {
+		return storageTestResult{false, "path_not_found", "storage path does not exist or is not a directory"}
 	}
 
-	if config.Path == "" {
-		return false, "invalid_config", "path is required in config"
-	}
-
-	// Check if path exists
-	if _, err := os.Stat(config.Path); err != nil {
-		return false, "path_not_found", "storage path does not exist: " + err.Error()
-	}
-
-	// Test writability by creating a temp file
-	tmpFile, err := os.CreateTemp(config.Path, ".test-*")
+	tmpFile, err := os.CreateTemp(path, ".test-*")
 	if err != nil {
-		return false, "not_writable", "storage path is not writable: " + err.Error()
+		return storageTestResult{false, "not_writable", "storage path is not writable"}
 	}
 
-	// Clean up temp file
 	_ = tmpFile.Close()
 	_ = os.Remove(tmpFile.Name())
 
-	return true, "", ""
+	return storageTestResult{ok: true}
 }
 
-func (h *AdminStorageHandler) testS3Backend(backend *models.StorageBackend) (bool, string, string) {
-	var config struct {
-		Endpoint  string `json:"endpoint"`
-		AccessKey string `json:"access_key"`
-		SecretKey string `json:"secret_key"`
-		Bucket    string `json:"bucket"`
-		Region    string `json:"region"`
+// decryptedSecret returns the plaintext of a stored (possibly encrypted) secret.
+func decryptedSecret(cfg map[string]any, keys ...string) (string, error) {
+	stored := cfgString(cfg, keys...)
+	if stored == "" {
+		return "", nil
 	}
 
-	if err := json.Unmarshal(backend.Config, &config); err != nil {
-		return false, "invalid_config", "failed to parse config: " + err.Error()
-	}
-
-	if config.Endpoint == "" {
-		return false, "invalid_config", "endpoint is required in config"
-	}
-
-	if config.AccessKey == "" || config.SecretKey == "" {
-		return false, "invalid_config", "access_key and secret_key are required in config"
-	}
-
-	if config.Bucket == "" {
-		return false, "invalid_config", "bucket is required in config"
-	}
-
-	// Test connectivity by making a simple HEAD request to the endpoint
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodHead, config.Endpoint, nil)
+	plain, err := crypto.Decrypt(stored)
 	if err != nil {
-		return false, "connection_failed", "failed to create request: " + err.Error()
+		return "", fmt.Errorf("decrypt %s: %w", keys[0], err)
 	}
 
-	resp, err := client.Do(req)
+	return plain, nil
+}
+
+// testS3Backend performs a real HeadBucket against the configured bucket using
+// the configured credentials.
+func (h *AdminStorageHandler) testS3Backend(ctx context.Context, name string, cfg map[string]any) storageTestResult {
+	endpoint := cfgString(cfg, "endpoint")
+	bucket := cfgString(cfg, "bucket")
+
+	if bucket == "" {
+		return storageTestResult{false, "invalid_config", "bucket is required in config"}
+	}
+
+	if endpoint != "" {
+		if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+			return storageTestResult{false, "invalid_config", "endpoint is not allowed"}
+		}
+	}
+
+	accessKey, err := decryptedSecret(cfg, "access_key", "accessKey")
 	if err != nil {
-		return false, "connection_failed", "failed to connect to endpoint: " + err.Error()
+		h.log.Errorw("storage test: decrypt failed", "backend", name, "error", err)
+		return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
+	}
+
+	secretKey, err := decryptedSecret(cfg, "secret_key", "secretKey")
+	if err != nil {
+		h.log.Errorw("storage test: decrypt failed", "backend", name, "error", err)
+		return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
+	}
+
+	store, err := storage.NewS3BlobStore(storage.StorageConfig{
+		Endpoint:       endpoint,
+		Bucket:         bucket,
+		Region:         cfgString(cfg, "region"),
+		AccessKey:      accessKey,
+		SecretKey:      secretKey,
+		ForcePathStyle: endpoint != "" || cfgBool(cfg, "pathStyle", "force_path_style"),
+	})
+	if err != nil {
+		h.log.Errorw("storage test: s3 client init failed", "backend", name, "error", err)
+		return storageTestResult{false, "invalid_config", "could not initialise the S3 client"}
+	}
+
+	if err := store.HealthCheck(ctx); err != nil {
+		h.log.Warnw("storage test: s3 bucket check failed", "backend", name, "error", err)
+		return storageTestResult{false, "connection_failed", "could not access the bucket with the configured endpoint and credentials"}
+	}
+
+	return storageTestResult{ok: true}
+}
+
+func (h *AdminStorageHandler) testOCIBackend(ctx context.Context, name string, cfg map[string]any) storageTestResult {
+	endpoint := ociEndpoint(cfg)
+	if endpoint == "" {
+		return storageTestResult{false, "invalid_config", "endpoint is required in config"}
+	}
+
+	if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+		return storageTestResult{false, "invalid_config", "endpoint is not allowed"}
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint+"/v2/", nil)
+	if err != nil {
+		return storageTestResult{false, "invalid_config", "endpoint is not a valid URL"}
+	}
+
+	if username := cfgString(cfg, "username"); username != "" {
+		password, err := decryptedSecret(cfg, "password")
+		if err != nil {
+			h.log.Errorw("storage test: decrypt failed", "backend", name, "error", err)
+			return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
+		}
+
+		req.SetBasicAuth(username, password)
+	}
+
+	resp, err := netutil.SafeHTTPClient(storageTestTimeout).Do(req)
+	if err != nil {
+		h.log.Warnw("storage test: oci request failed", "backend", name, "error", err)
+		return storageTestResult{false, "connection_failed", "could not connect to the OCI endpoint"}
 	}
 
 	defer func() { _ = resp.Body.Close() }()
 
-	// Accept any response status (endpoint may require auth for actual operations)
-	return true, "", ""
+	// A registry answers /v2/ with 200, or 401 when it requires authentication.
+	// With credentials supplied, 401 means they were rejected.
+	switch {
+	case resp.StatusCode == http.StatusOK:
+		return storageTestResult{ok: true}
+	case resp.StatusCode == http.StatusUnauthorized && req.Header.Get("Authorization") == "":
+		return storageTestResult{ok: true}
+	case resp.StatusCode == http.StatusUnauthorized:
+		return storageTestResult{false, "auth_failed", "the registry rejected the configured credentials"}
+	default:
+		return storageTestResult{false, "invalid_endpoint", "endpoint does not appear to be a valid OCI registry"}
+	}
 }
 
-func (h *AdminStorageHandler) testOCIBackend(backend *models.StorageBackend) (bool, string, string) {
-	var config struct {
-		Endpoint string `json:"endpoint"`
-	}
-
-	if err := json.Unmarshal(backend.Config, &config); err != nil {
-		return false, "invalid_config", "failed to parse config: " + err.Error()
-	}
-
-	if config.Endpoint == "" {
-		return false, "invalid_config", "endpoint is required in config"
-	}
-
-	// Test OCI registry connectivity with GET /v2/ request
-	client := &http.Client{Timeout: 10 * time.Second}
-
-	req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, config.Endpoint+"/v2/", nil)
-	if err != nil {
-		return false, "connection_failed", "failed to create request: " + err.Error()
-	}
-
-	resp, err := client.Do(req)
-	if err != nil {
-		return false, "connection_failed", "failed to connect to OCI endpoint: " + err.Error()
-	}
-
-	defer func() { _ = resp.Body.Close() }()
-
-	// OCI registries should respond with 200 or 401 (if auth required) to /v2/
-	if resp.StatusCode != http.StatusOK && resp.StatusCode != http.StatusUnauthorized {
-		return false, "invalid_endpoint", "endpoint does not appear to be a valid OCI registry"
-	}
-
-	return true, "", ""
-}
-
+// storageBackendToResponse converts a backend to its API form. Secret config
+// fields are never returned; a has_<field> flag reports whether one is stored.
 func storageBackendToResponse(b *models.StorageBackend) responses.StorageBackendResponse {
-	var config map[string]any
+	config := map[string]any{}
 	if len(b.Config) > 0 {
 		_ = json.Unmarshal(b.Config, &config)
+	}
+
+	for _, field := range storageSecretFields {
+		if v, ok := config[field]; ok {
+			delete(config, field)
+
+			if s, isStr := v.(string); isStr && s != "" {
+				config["has_"+field] = true
+			}
+		}
 	}
 
 	return responses.StorageBackendResponse{

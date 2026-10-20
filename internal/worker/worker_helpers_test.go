@@ -129,31 +129,58 @@ func TestComputeLatestVersion_AllDeprecated(t *testing.T) {
 
 // ---- shouldRunPolicy (white-box, unexported) ----
 
-func TestShouldRunPolicy_NilLastRun(t *testing.T) {
+func TestShouldRunPolicy_NilLastRunUsesCreatedAt(t *testing.T) {
 	w := &CleanupWorker{}
+	created := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+	policy := &models.CleanupPolicy{CreatedAt: created, ScheduleCron: "0 2 * * *"}
 
-	policy := &models.CleanupPolicy{LastRunAt: nil}
-	if !w.shouldRunPolicy(policy) {
-		t.Error("should run when LastRunAt is nil")
+	if w.shouldRunPolicyAt(policy, created.Add(time.Hour)) {
+		t.Error("should NOT run before the first cron slot after creation")
+	}
+
+	if !w.shouldRunPolicyAt(policy, time.Date(2026, 3, 11, 2, 0, 0, 0, time.UTC)) {
+		t.Error("should run once the first cron slot has passed")
 	}
 }
 
-func TestShouldRunPolicy_RecentRun(t *testing.T) {
+func TestShouldRunPolicy_HonoursCron(t *testing.T) {
+	w := &CleanupWorker{}
+	last := time.Date(2026, 3, 10, 14, 0, 0, 0, time.UTC)
+	policy := &models.CleanupPolicy{CreatedAt: last, LastRunAt: &last, ScheduleCron: "*/30 * * * *"}
+
+	if w.shouldRunPolicyAt(policy, last.Add(20*time.Minute)) {
+		t.Error("should NOT run before the next 30-minute slot")
+	}
+
+	if !w.shouldRunPolicyAt(policy, last.Add(31*time.Minute)) {
+		t.Error("should run after the next 30-minute slot")
+	}
+}
+
+func TestShouldRunPolicy_EmptyCronDefaultsDaily(t *testing.T) {
+	w := &CleanupWorker{}
+	last := time.Date(2026, 3, 10, 3, 0, 0, 0, time.UTC)
+	policy := &models.CleanupPolicy{LastRunAt: &last}
+
+	if w.shouldRunPolicyAt(policy, last.Add(10*time.Hour)) {
+		t.Error("should NOT run again the same day")
+	}
+
+	if !w.shouldRunPolicyAt(policy, time.Date(2026, 3, 11, 2, 1, 0, 0, time.UTC)) {
+		t.Error("should run after the next 02:00 slot")
+	}
+}
+
+func TestShouldRunPolicy_InvalidCronFallsBackTo24h(t *testing.T) {
 	w := &CleanupWorker{}
 	recent := time.Now().Add(-1 * time.Hour)
-
-	policy := &models.CleanupPolicy{LastRunAt: &recent}
-	if w.shouldRunPolicy(policy) {
-		t.Error("should NOT run when last run was only 1 hour ago")
-	}
-}
-
-func TestShouldRunPolicy_StaleRun(t *testing.T) {
-	w := &CleanupWorker{}
 	old := time.Now().Add(-25 * time.Hour)
 
-	policy := &models.CleanupPolicy{LastRunAt: &old}
-	if !w.shouldRunPolicy(policy) {
+	if w.shouldRunPolicy(&models.CleanupPolicy{LastRunAt: &recent, ScheduleCron: "bogus"}) {
+		t.Error("should NOT run when last run was only 1 hour ago")
+	}
+
+	if !w.shouldRunPolicy(&models.CleanupPolicy{LastRunAt: &old, ScheduleCron: "bogus"}) {
 		t.Error("should run when last run was 25 hours ago")
 	}
 }

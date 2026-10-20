@@ -12,7 +12,7 @@
 // registry for every test file that runs afterwards (it replaced the real
 // session store for session.spec.ts depending on file order). Page components
 // are instead stubbed on the router's route records, and put back in afterAll.
-import { describe, it, expect, beforeAll, afterAll, beforeEach } from 'bun:test'
+import { describe, it, expect, beforeAll, afterAll, beforeEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
 import type { RouteRecordNormalized } from 'vue-router'
 import router from '../index'
@@ -48,6 +48,10 @@ async function push(path: string) {
 
 describe('router beforeEach guards', () => {
   beforeEach(async () => {
+    // The first navigation resolves the session through /auth/me: answer 401 instead of hitting the network.
+    spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'unauthorized' }), { status: 401, headers: { 'Content-Type': 'application/json' } }),
+    )
     setActivePinia(createPinia())
     session = useSessionStore()
     // Reset router to a neutral state
@@ -58,6 +62,14 @@ describe('router beforeEach guards', () => {
     it('/login is accessible without authentication', async () => {
       await push('/login')
       expect(router.currentRoute.value.path).toBe('/login')
+    })
+  })
+
+  describe('unknown routes', () => {
+    it('resolve to the catch-all not-found page instead of a blank view', async () => {
+      signIn()
+      await push('/repos/some-repo/artifacts')
+      expect(router.currentRoute.value.name).toBe('not-found')
     })
   })
 

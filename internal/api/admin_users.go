@@ -40,6 +40,10 @@ func (h *AdminUsersHandler) Register(r chi.Router) {
 }
 
 func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	var body struct {
 		Username           string  `json:"username"`
 		Email              *string `json:"email"`
@@ -75,6 +79,10 @@ func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 		UpdatedAt:          now,
 	}
 	if body.Password != nil {
+		if !checkPasswordPolicy(w, *body.Password) {
+			return
+		}
+
 		hashed, hashErr := auth.HashPassword(*body.Password)
 		if hashErr != nil {
 			writeError(w, http.StatusInternalServerError, "internal_error", "password hashing failed")
@@ -94,6 +102,10 @@ func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *AdminUsersHandler) handleList(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	page := queryIntParam(r, "page", 1, 1, 0)
 	perPage := queryIntParam(r, "per_page", 50, 1, 200)
 
@@ -117,6 +129,10 @@ func (h *AdminUsersHandler) handleList(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AdminUsersHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 
 	user, err := h.db.GetUserByID(r.Context(), id)
@@ -146,7 +162,9 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	isSelf := p != nil && p.UserID != nil && *p.UserID == id
+	// Self-service is for interactive sessions only: an API token (even one
+	// owned by this user) must not be able to edit the account profile.
+	isSelf := p != nil && p.UserID != nil && *p.UserID == id && !p.IsToken()
 
 	if !isAdmin && !isSelf {
 		writeError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
@@ -176,12 +194,28 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// A non-admin editing their own record may only change profile fields.
+	// Privileged fields (disabled, must_change_password) are admin-only, and
+	// the password is deliberately NOT self-editable here: changing it
+	// requires proving knowledge of the current password, which is what
+	// POST /api/v1/auth/change-password does.
 	if !isAdmin && isSelf {
 		if body.Disabled != nil || body.MustChangePassword != nil || body.Password != nil {
 			writeError(w, http.StatusForbidden, "forbidden", "self-edit may only update email and full_name")
 			return
 		}
 	}
+
+	if isAdmin && body.Disabled != nil && *body.Disabled && p != nil && p.UserID != nil && *p.UserID == id {
+		writeError(w, http.StatusBadRequest, "bad_request", "cannot disable your own account")
+		return
+	}
+
+	if isAdmin && body.Password != nil && !checkPasswordPolicy(w, *body.Password) {
+		return
+	}
+
+	revokeSessions := false
 
 	if body.Email != nil {
 		if *body.Email != "" && !strings.Contains(*body.Email, "@") {
@@ -199,6 +233,7 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 	if isAdmin {
 		if body.Disabled != nil {
 			user.Disabled = *body.Disabled
+			revokeSessions = revokeSessions || *body.Disabled
 		}
 
 		if body.MustChangePassword != nil {
@@ -213,6 +248,7 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 			}
 
 			user.PasswordHash = &newHash
+			revokeSessions = true
 		}
 	}
 
@@ -222,10 +258,27 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// A password reset or a disable must cut off whoever still holds a
+	// session. Failing to do so fails the request: the caller must know the
+	// old sessions may still be alive (the update itself is idempotent, so
+	// retrying is safe).
+	if revokeSessions {
+		if err := auth.RevokeAllSessions(ctx, h.db, user.ID); err != nil {
+			h.log.Errorw("admin patch user: revoke sessions", "error", err, "user", user.ID)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to revoke sessions")
+
+			return
+		}
+	}
+
 	writeJSON(w, http.StatusOK, userToResponse(user))
 }
 
 func (h *AdminUsersHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
 	id := urlparams.Vars(r)["id"]
 	ctx := r.Context()
 
@@ -251,6 +304,13 @@ func (h *AdminUsersHandler) handleDelete(w http.ResponseWriter, r *http.Request)
 	user.UpdatedAt = time.Now()
 	if err := h.db.UpdateUser(ctx, user); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	if err := auth.RevokeAllSessions(ctx, h.db, user.ID); err != nil {
+		h.log.Errorw("admin delete user: revoke sessions", "error", err, "user", user.ID)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to revoke sessions")
+
 		return
 	}
 

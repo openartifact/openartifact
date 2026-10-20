@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
 // ErrDuplicate is returned by Create*Package when an insert hits the unique
@@ -74,8 +75,19 @@ type Database interface {
 	GetDebianPackagesByDistComp(ctx context.Context, repoID string, dist string, comp string, arch string) ([]models.Component, error)
 	GetDebPackageByID(ctx context.Context, id string) (*models.DebPackage, error)
 	ListDebPackagesByRepo(ctx context.Context, repoID string) ([]*models.DebPackage, error)
+	GetOrCreateDebianDistribution(ctx context.Context, repoID, name string) (*models.DebianDistribution, error)
+	GetOrCreateDebianComponent(ctx context.Context, distID, name string) (*models.DebianComponent, error)
+	GetOrCreateDebianArchitecture(ctx context.Context, distID, name string) (*models.DebianArchitecture, error)
+	SetDebControlFields(ctx context.Context, packageID, maintainer, homepage string, fields map[string]string) error
+	GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error)
+	ListDebPackageEntries(ctx context.Context, repoID, dist, comp, arch string) ([]models.DebPackageEntry, error)
 	GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error)
 	ListRpmPackagesByRepo(ctx context.Context, repoID string) ([]*models.RpmPackage, error)
+	// RpmPackageExists reports whether the repo already has a package with the given NEVRA.
+	RpmPackageExists(ctx context.Context, repoID, name, version, release string, epoch int, arch string) (bool, error)
+	// ListRpmPackagesForMetadata returns every rpm package of a repo with
+	// dependencies, files, changelogs and header range loaded.
+	ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
 
 	CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error
 	GetMavenArtifactByPath(ctx context.Context, repoID, path string) (*models.MavenArtifact, error)
@@ -144,6 +156,10 @@ type Database interface {
 	AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error
 	RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error
 	ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error)
+	// ReplaceGroupMembers atomically replaces a group's ordered member list (empty clears it).
+	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
+	// CreateRepositoryWithMembers creates a repository and its group members in one transaction.
+	CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
 	GetProxyCacheEntry(ctx context.Context, repoID, cacheKey string) (*models.ProxyCacheEntry, error)
 	UpsertProxyCacheEntry(ctx context.Context, entry *models.ProxyCacheEntry) error
 	DeleteProxyCacheEntry(ctx context.Context, repoID, cacheKey string) error
@@ -178,6 +194,13 @@ type Database interface {
 	UpdateUser(ctx context.Context, user *models.User) error
 	ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error)
 	CountUsers(ctx context.Context) (int, error)
+	// CreateBootstrapAdmin atomically (advisory-locked transaction) creates the first
+	// admin user and binds it to the admin-all permission target. It reports false
+	// without creating anything when another replica already created a user.
+	CreateBootstrapAdmin(ctx context.Context, username, passwordHash string) (bool, error)
+	// RepairBootstrapAdmin re-binds the bootstrap admin to admin-all when no principal
+	// holds that target (a previously interrupted bootstrap). Reports whether it repaired.
+	RepairBootstrapAdmin(ctx context.Context, username string) (bool, error)
 
 	CreateGroup(ctx context.Context, group *models.Group) (*models.Group, error)
 	GetGroupByID(ctx context.Context, id string) (*models.Group, error)
@@ -193,6 +216,14 @@ type Database interface {
 	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
 	UpdateSessionLastSeen(ctx context.Context, sessionID string, expiresAt time.Time) error
+	// ConsumeSAMLAssertion records a SAML assertion ID as used; false means it was
+	// already consumed (replay).
+	ConsumeSAMLAssertion(ctx context.Context, providerSlug, assertionID string, expiresAt time.Time) (bool, error)
+	// DeleteSessionsByUser revokes every session of a user (password change/reset, disable).
+	DeleteSessionsByUser(ctx context.Context, userID string) error
+	// DeleteOtherSessionsByUser revokes every session of a user except the one whose
+	// token hash is keepTokenHash (used on self-service password change).
+	DeleteOtherSessionsByUser(ctx context.Context, userID, keepTokenHash string) error
 
 	CreateToken(ctx context.Context, token *models.Token) (*models.Token, error)
 	GetTokenByHash(ctx context.Context, hash string) (*models.Token, error)
@@ -276,7 +307,9 @@ type Database interface {
 	CreateWebhookDelivery(ctx context.Context, delivery *models.WebhookDelivery) error
 	UpdateWebhookDelivery(ctx context.Context, delivery *models.WebhookDelivery) error
 	ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*models.WebhookDelivery, error)
-	ListPendingWebhookDeliveries(ctx context.Context) ([]*models.WebhookDelivery, error)
+	// ClaimPendingWebhookDeliveries atomically leases up to limit due deliveries
+	// (FOR UPDATE SKIP LOCKED) so several server instances never share a row.
+	ClaimPendingWebhookDeliveries(ctx context.Context, limit int, lease time.Duration) ([]*models.WebhookDelivery, error)
 
 	// Backup methods
 	CreateBackupJob(ctx context.Context, job *models.BackupJob) error
@@ -344,6 +377,8 @@ type Database interface {
 	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
 	IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
+	// ReserveStorageUsage atomically adds usage if it fits the quota; false,nil when exceeded.
+	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
 
 	// Storage backends
 	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
@@ -351,6 +386,7 @@ type Database interface {
 	GetStorageBackend(ctx context.Context, name string) (*models.StorageBackend, error)
 	UpdateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
 	DeleteStorageBackend(ctx context.Context, id string) error
+	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
 	UpdateStorageBackendStatus(ctx context.Context, id, status string, message *string) error
 
 	// Artifact properties methods
@@ -434,6 +470,23 @@ type Database interface {
 	CreateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error
 	UpdateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error
 	ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error)
+	// AddBundleItems atomically adds items to a draft bundle (ErrBundleNotDraft otherwise).
+	AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error
+	// SealReleaseBundle conditionally moves a non-empty draft bundle to sealed; false when it was not a draft.
+	SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time) (bool, error)
+
+	// Scan lookups/deletes by ID scoped to a repository (nil / not-found errors when absent).
+	GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error)
+	DeleteVulnScanResult(ctx context.Context, repoID, id string) error
+	SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error
+	GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error)
+	ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error)
+	GetSBOMReportByID(ctx context.Context, repoID, id string) (*models.SBOMReport, error)
+	// DeleteSBOMReportInRepo deletes the report and returns the sha256 of its blob ("" if none).
+	DeleteSBOMReportInRepo(ctx context.Context, repoID, id string) (string, error)
+
+	// SetArtifactProperties upserts props in one transaction; replace=true clears existing ones first.
+	SetArtifactProperties(ctx context.Context, repoID, artifactID string, props map[string]string, replace bool) error
 
 	// AI analysis methods
 	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error

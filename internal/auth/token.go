@@ -10,7 +10,6 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
-	"log"
 	"strings"
 	"time"
 
@@ -115,17 +114,27 @@ func ValidateToken(ctx context.Context, db database.Database, tokenString string
 	return token, user, nil
 }
 
+// tokenTouchInterval throttles last_used_at writes to once per interval per token.
+const tokenTouchInterval = time.Minute
+
+// UpdateLastUsed records token usage synchronously with a short bounded
+// timeout (no per-request goroutines). Failures are ignored: usage bookkeeping
+// must never fail a request.
 func UpdateLastUsed(ctx context.Context, db database.Database, tokenID string) {
-	//nolint:gosec // G118: token cleanup runs in background goroutine by design
-	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				log.Printf("panic in goroutine: %v", r)
-			}
-		}()
-		bgCtx := context.Background()
-		_ = db.UpdateTokenLastUsed(bgCtx, tokenID)
-	}()
+	bgCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 2*time.Second)
+	defer cancel()
+
+	_ = db.UpdateTokenLastUsed(bgCtx, tokenID)
+}
+
+// TouchToken records usage of an authenticated token, at most once per
+// tokenTouchInterval so a busy CI client does not hammer one hot row.
+func TouchToken(ctx context.Context, db database.Database, token *models.Token) {
+	if token.LastUsedAt != nil && time.Since(*token.LastUsedAt) < tokenTouchInterval {
+		return
+	}
+
+	UpdateLastUsed(ctx, db, token.ID)
 }
 
 func RevokeToken(ctx context.Context, db database.Database, tokenID string) error {

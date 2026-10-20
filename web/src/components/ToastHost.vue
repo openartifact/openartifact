@@ -5,7 +5,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2 pointer-events-none">
+  <div class="fixed bottom-4 right-4 z-50 flex flex-col-reverse gap-2 pointer-events-none" role="region" aria-live="polite" :aria-label="t('shell.notifications')">
     <TransitionGroup
       enter-active-class="transition-all duration-300 ease-out"
       enter-from-class="opacity-0 translate-y-3"
@@ -26,6 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             :is="iconFor(toast.level)"
             class="w-5 h-5 shrink-0 mt-0.5"
             :class="iconClass(toast.level)"
+            aria-hidden="true"
           />
           <!-- Content -->
           <div class="flex-1 min-w-0">
@@ -34,10 +35,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
           <!-- Close -->
           <button
+            type="button"
+            :aria-label="t('shell.dismissToast')"
             @click="toastStore.dismiss(toast.id)"
             class="p-0.5 rounded text-muted hover:text-foreground transition-colors shrink-0"
           >
-            <XMarkIcon class="w-4 h-4" />
+            <XMarkIcon class="w-4 h-4" aria-hidden="true" />
           </button>
         </div>
         <!-- Progress bar -->
@@ -64,6 +67,7 @@ import {
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { useToastStore } from '../stores/toast'
+import { t } from '../i18n/en'
 
 const toastStore = useToastStore()
 const toasts = computed(() => toastStore.visible)

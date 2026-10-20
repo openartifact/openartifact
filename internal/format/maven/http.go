@@ -10,6 +10,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"io"
 	"net/http"
@@ -65,9 +66,9 @@ func (h *HTTPHandler) handlePath(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, art *models.MavenArtifact, contentType string) {
-	rc, err := h.BlobStore.Get(r.Context(), art.BlobID)
+	rc, err := h.BlobStore.Get(r.Context(), art.SHA256)
 	if err != nil {
-		h.Log.Errorw("blob fetch failed", "blob_id", art.BlobID, "error", err)
+		h.Log.Errorw("blob fetch failed", "sha256", art.SHA256, "error", err)
 		http.Error(w, "blob fetch failed", http.StatusInternalServerError)
 		return
 	}
@@ -259,6 +260,10 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.RepoPath, artPath, r.URL.Path)...) {
+			return
+		}
+
 		h.serveArtifactBlob(w, r, art, ContentTypeForFile(art.RepoPath))
 
 		return
@@ -274,6 +279,10 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 
 	if art == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(artPath, r.URL.Path)...) {
 		return
 	}
 

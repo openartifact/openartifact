@@ -18,11 +18,30 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/middleware"
 )
 
 // ============================================================================
 // Admin Users Handler Tests
 // ============================================================================
+
+// defaultPrincipalMiddleware authenticates every request as the given user
+// (a session-style principal) unless the test already attached a principal.
+// The handlers authorize on their own, so tests exercising the happy path run
+// as the seeded admin and tests exercising denial attach a different principal.
+func defaultPrincipalMiddleware(userID, username string) func(http.Handler) http.Handler {
+	return func(next http.Handler) http.Handler {
+		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			if middleware.PrincipalFromContext(r.Context()) == nil {
+				uid := userID
+				p := &auth.Principal{UserID: &uid, Username: username, Credential: auth.CredentialSession}
+				r = r.WithContext(middleware.WithPrincipal(r.Context(), p))
+			}
+
+			next.ServeHTTP(w, r)
+		})
+	}
+}
 
 func setupUsersRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Principal) {
 	t.Helper()
@@ -31,6 +50,7 @@ func setupUsersRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Princip
 	h := api.NewAdminUsersHandler(db, log, eval)
 
 	router := chi.NewRouter()
+	router.Use(defaultPrincipalMiddleware("admin-users-1", "adminusers"))
 	h.Register(router)
 
 	ctx := context.Background()
@@ -68,7 +88,7 @@ func TestAdminUsers_Create(t *testing.T) {
 	db := newMockDatabase()
 	router, _ := setupUsersRouter(t, db)
 
-	body := `{"username":"newuser","password":"pass123456"}`
+	body := `{"username":"newuser","password":"pass123456-valid"}`
 	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/users", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -97,7 +117,7 @@ func TestAdminUsers_CreateInvalidUsername(t *testing.T) {
 	db := newMockDatabase()
 	router, _ := setupUsersRouter(t, db)
 
-	body := `{"username":"ab","password":"pass123456"}`
+	body := `{"username":"ab","password":"pass123456-valid"}`
 	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/users", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -115,7 +135,7 @@ func TestAdminUsers_List(t *testing.T) {
 
 	// Create 3 users
 	for i := 1; i <= 3; i++ {
-		body := `{"username":"user` + string(rune(48+i)) + `","password":"pass123456"}`
+		body := `{"username":"user` + string(rune(48+i)) + `","password":"pass123456-valid"}`
 		req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/users", bytes.NewReader([]byte(body)))
 		req.Header.Set("Content-Type", "application/json")
 
@@ -165,7 +185,7 @@ func TestAdminUsers_Get(t *testing.T) {
 	router, _ := setupUsersRouter(t, db)
 
 	// Create a user
-	body := `{"username":"getuser","password":"pass123456","email":"test@example.com"}`
+	body := `{"username":"getuser","password":"pass123456-valid","email":"test@example.com"}`
 	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/users", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -212,7 +232,7 @@ func TestAdminUsers_Patch(t *testing.T) {
 	router, principal := setupUsersRouter(t, db)
 
 	// Create a user
-	body := `{"username":"patchuser","password":"pass123456"}`
+	body := `{"username":"patchuser","password":"pass123456-valid"}`
 	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/users", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -258,7 +278,7 @@ func TestAdminUsers_PatchDisable(t *testing.T) {
 	router, principal := setupUsersRouter(t, db)
 
 	// Create a user
-	body := `{"username":"disableuser","password":"pass123456"}`
+	body := `{"username":"disableuser","password":"pass123456-valid"}`
 	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/users", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -304,7 +324,7 @@ func TestAdminUsers_Delete(t *testing.T) {
 	router, principal := setupUsersRouter(t, db)
 
 	// Create a user
-	body := `{"username":"deleteuser","password":"pass123456"}`
+	body := `{"username":"deleteuser","password":"pass123456-valid"}`
 	req := httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/users", bytes.NewReader([]byte(body)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -358,6 +378,7 @@ func setupGroupsRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Princi
 	h := api.NewAdminGroupsHandler(db, log, eval)
 
 	router := chi.NewRouter()
+	router.Use(defaultPrincipalMiddleware("admin-groups-1", "admingroups"))
 	h.Register(router)
 
 	ctx := context.Background()
@@ -869,6 +890,7 @@ func setupPermissionsRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.P
 	h := api.NewAdminPermissionsHandler(db, log, eval)
 
 	router := chi.NewRouter()
+	router.Use(defaultPrincipalMiddleware("admin-perms-1", "adminperms"))
 	h.Register(router)
 
 	ctx := context.Background()

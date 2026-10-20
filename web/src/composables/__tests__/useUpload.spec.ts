@@ -82,10 +82,10 @@ describe('useUpload', () => {
     const file = new File(['x'], 'b.bin')
     const entry = add(file)
     const promise = start(entry, { url: '/upload' })
-    lastXhr!.fireLoad(500, 'oops')
+    lastXhr!.fireLoad(500, JSON.stringify({ error: 'oops', code: 'internal' }))
     await expect(promise).rejects.toBeDefined()
     expect(entry.status).toBe('failed')
-    expect(entry.error).toContain('oops')
+    expect(entry.error).toBe('oops')
   })
 
   it('cancel triggers abort and marks entry cancelled', async () => {
@@ -96,5 +96,31 @@ describe('useUpload', () => {
     cancel(entry)
     await expect(promise).rejects.toBeDefined()
     expect(entry.status).toBe('cancelled')
+  })
+
+  it('does not overwrite completed or failed entries on cancel', async () => {
+    const { add, start, cancel } = useUpload()
+    const done = add(new File(['x'], 'd.bin'))
+    const p1 = start(done, { url: '/upload' })
+    lastXhr!.fireLoad(200)
+    await p1
+    cancel(done)
+    expect(done.status).toBe('complete')
+
+    const bad = add(new File(['x'], 'e.bin'))
+    const p2 = start(bad, { url: '/upload' })
+    lastXhr!.fireLoad(500, JSON.stringify({ error: 'nope' }))
+    await expect(p2).rejects.toBeDefined()
+    cancel(bad)
+    expect(bad.status).toBe('failed')
+  })
+
+  it('falls back to the HTTP status for non-JSON error bodies', async () => {
+    const { add, start } = useUpload()
+    const entry = add(new File(['x'], 'f.bin'))
+    const promise = start(entry, { url: '/upload' })
+    lastXhr!.fireLoad(502, '<html>bad gateway</html>')
+    await expect(promise).rejects.toBeDefined()
+    expect(entry.error).toBe('HTTP 502')
   })
 })

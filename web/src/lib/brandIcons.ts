@@ -10,7 +10,7 @@ import {
   siKeycloak,
   siOkta,
   siOllama,
-} from 'simple-icons/icons'
+} from 'simple-icons'
 
 export interface BrandIcon {
   path: string

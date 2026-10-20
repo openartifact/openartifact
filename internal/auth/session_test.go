@@ -408,9 +408,6 @@ func (m *sessionMockDB) UpdateWebhookDelivery(_ context.Context, _ *models.Webho
 func (m *sessionMockDB) ListWebhookDeliveries(_ context.Context, _ string, _ int) ([]*models.WebhookDelivery, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) ListPendingWebhookDeliveries(_ context.Context) ([]*models.WebhookDelivery, error) {
-	return nil, nil
-}
 
 // Backup methods
 func (m *sessionMockDB) CreateBackupJob(_ context.Context, _ *models.BackupJob) error { return nil }

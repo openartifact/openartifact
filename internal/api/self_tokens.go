@@ -6,7 +6,6 @@ package api
 
 import (
 	"net/http"
-	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -61,72 +60,18 @@ func (h *SelfTokensHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	ctx := r.Context()
-
-	var body struct {
-		Name      string     `json:"name"`
-		Kind      string     `json:"kind"`
-		Scopes    []string   `json:"scopes"`
-		ExpiresAt *time.Time `json:"expires_at"`
-	}
-	if err := decodeJSON(r, &body); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
-		return
-	}
-
-	if body.Kind != auth.TokenKindAccess && body.Kind != auth.TokenKindDeploy {
-		writeError(w, http.StatusBadRequest, "validation_failed", "kind must be 'access' or 'deploy'")
-		return
-	}
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return
-	}
-
-	if len(body.Scopes) > 0 && !isAdmin {
-		callerTargets, err := h.db.GetPermissionTargetsForPrincipal(ctx, *p.UserID, p.GroupIDs)
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-			return
-		}
-
-		allowed := make(map[string]bool, len(callerTargets))
-		for _, t := range callerTargets {
-			allowed[t.ID] = true
-		}
-
-		for _, scopeID := range body.Scopes {
-			if !allowed[scopeID] {
-				writeError(w, http.StatusForbidden, "forbidden", "requested scope not in caller's permissions")
-				return
-			}
-		}
-	}
-
-	tokenString, record, err := auth.CreateToken(ctx, h.db, body.Kind, body.Name, *p.UserID, body.Scopes, body.ExpiresAt)
-	if err != nil {
-		h.log.Errorw("create token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "token creation failed")
-
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, map[string]any{
-		"token":      tokenString,
-		"id":         record.ID,
-		"name":       record.Name,
-		"kind":       record.Kind,
-		"expires_at": record.ExpiresAt,
-		"created_at": record.CreatedAt,
-	})
+	issueToken(w, r, h.db, h.log, h.evaluator, *p.UserID)
 }
 
 func (h *SelfTokensHandler) handleRevoke(w http.ResponseWriter, r *http.Request) {
 	p := currentPrincipal(r)
 	if p == nil || p.IsAnonymous || p.UserID == nil {
 		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return
+	}
+
+	if p.IsToken() {
+		writeError(w, http.StatusForbidden, "forbidden", "API tokens cannot revoke tokens")
 		return
 	}
 

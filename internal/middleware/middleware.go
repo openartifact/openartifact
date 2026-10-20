@@ -39,7 +39,9 @@ func LoggingMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 			log.Infow("HTTP request",
 				"request_id", requestID,
 				"method", r.Method,
-				"path", r.RequestURI,
+				// Path only: the query string can carry credentials and OAuth
+				// codes/state (SSO callbacks, ?token= style clients).
+				"path", r.URL.Path,
 				"status", wrapped.statusCode,
 				"duration_ms", duration.Milliseconds(),
 				"remote_addr", r.RemoteAddr,
@@ -58,7 +60,7 @@ func RecoveryMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 					log.Errorw("panic recovered",
 						"request_id", requestID,
 						"error", err,
-						"path", r.RequestURI,
+						"path", r.URL.Path,
 					)
 					w.WriteHeader(http.StatusInternalServerError)
 					_, _ = w.Write([]byte("Internal Server Error"))
@@ -75,14 +77,22 @@ func RecoveryMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 // The browser refuses to deliver a credentialed response when the server
 // returns Access-Control-Allow-Origin: * — credentials require an exact
 // origin echo plus Access-Control-Allow-Credentials: true. The SPA always
-// uses fetch with credentials: 'include' (for the session cookie), so we
-// echo the request Origin when it is allowed and advertise credentials.
+// uses fetch with credentials: 'include' (for the session cookie), so for an
+// explicitly listed origin we echo it and advertise credentials.
+//
+// A "*" entry must never be combined with credentials: reflecting an
+// arbitrary Origin together with Allow-Credentials would let any website read
+// authenticated responses with the visitor's session cookie. With a wildcard
+// the middleware answers a literal "*" without credentials (token-header
+// clients still work; cookie-session browsers cross-origin do not), unless the
+// origin is also listed explicitly.
 func CORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 	const (
 		allowedMethods = "GET, POST, PUT, PATCH, DELETE, OPTIONS"
-		// X-Requested-With is sent by the SPA's api client. Without it the
-		// preflight rejects every real request.
-		allowedHeaders = "Content-Type, Authorization, X-Requested-With, X-API-Key"
+		// X-Requested-With and X-Csrf-Token are sent by the SPA's api client
+		// (CSRF double-submit). Without them the preflight rejects every real
+		// state-changing request.
+		allowedHeaders = "Content-Type, Authorization, X-Requested-With, X-API-Key, X-Csrf-Token"
 	)
 
 	wildcard := slices.Contains(allowedOrigins, "*")
@@ -94,20 +104,17 @@ func CORSMiddleware(allowedOrigins []string) func(http.Handler) http.Handler {
 			// Vary tells caches the response depends on the Origin header.
 			w.Header().Add("Vary", "Origin")
 
-			allowed := false
-
-			if origin != "" {
-				if wildcard {
-					allowed = true
-				} else {
-					allowed = slices.Contains(allowedOrigins, origin)
-				}
-			}
-
-			if allowed {
-				// Echo the origin so credentialed responses are accepted.
+			switch {
+			case origin != "" && slices.Contains(allowedOrigins, origin):
+				// Echo the exact, explicitly allowed origin so credentialed
+				// responses are accepted.
 				w.Header().Set("Access-Control-Allow-Origin", origin)
 				w.Header().Set("Access-Control-Allow-Credentials", "true")
+				w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
+				w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
+			case origin != "" && wildcard:
+				// Public, credential-less access only.
+				w.Header().Set("Access-Control-Allow-Origin", "*")
 				w.Header().Set("Access-Control-Allow-Methods", allowedMethods)
 				w.Header().Set("Access-Control-Allow-Headers", allowedHeaders)
 			}

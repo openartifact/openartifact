@@ -71,7 +71,7 @@ func TestAdminSSO_Create_OIDC_Success(t *testing.T) {
 	router, principal := setupAdminSSORouter(t, db)
 
 	oidcCfgBytes, _ := json.Marshal(models.OIDCConfig{
-		Issuer:       "https://idp.example.com",
+		Issuer:       "https://203.0.113.10",
 		ClientID:     "my-client",
 		ClientSecret: "my-secret",
 	})
@@ -347,8 +347,12 @@ func TestAdminSSO_Test_OIDC_DiscoveryFails(t *testing.T) {
 	router, principal := setupAdminSSORouter(t, db)
 	ctx := context.Background()
 
+	closed := httptest.NewServer(http.NotFoundHandler())
+	closedURL := closed.URL
+	closed.Close() // nothing listens here anymore
+
 	cfg, _ := json.Marshal(models.OIDCConfig{
-		Issuer: "http://127.0.0.1:19999/nonexistent-issuer", ClientID: "cid", ClientSecret: "s",
+		Issuer: closedURL + "/nonexistent-issuer", ClientID: "cid", ClientSecret: "s",
 	})
 	now := time.Now()
 	_ = db.CreateSSOProvider(ctx, &models.SSOProvider{

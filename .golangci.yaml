@@ -43,9 +43,6 @@ linters:
     - promlinter # prometheus naming — we follow our own conventions
     - protogetter # proto getters — no protobuf
     - recvcheck # receiver naming — too strict
-    - rowserrcheck # sql rows — covered by sqlclosecheck
-    - sqlclosecheck # sql close — handled by defer patterns
-    - staticcheck # superseded by individual linters
     - usetesting # testing.T usage — too strict
     - maintidx # maintainability index — too noisy
     - contextcheck # context propagation — too many false positives

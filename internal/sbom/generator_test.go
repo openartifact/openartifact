@@ -211,3 +211,19 @@ func TestGenerateSPDX(t *testing.T) {
 		}
 	})
 }
+
+func TestSplitArtifactID_ScopedNpm(t *testing.T) {
+	n, v := splitArtifactID("@babel/core@7.0.0")
+	if n != "@babel/core" || v != "7.0.0" {
+		t.Fatalf("got %q %q", n, v)
+	}
+	if n, v := splitArtifactID("plain"); n != "plain" || v != "unknown" {
+		t.Fatalf("got %q %q", n, v)
+	}
+}
+
+func TestSpdxSafeStripsNewlines(t *testing.T) {
+	if got := spdxSafe("a\nPackageName: evil\r"); got != "aPackageName: evil" {
+		t.Fatalf("got %q", got)
+	}
+}

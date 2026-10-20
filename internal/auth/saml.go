@@ -6,11 +6,15 @@ package auth
 
 import (
 	"context"
+	"crypto/hmac"
 	"crypto/rand"
 	"crypto/rsa"
+	"crypto/sha256"
 	"crypto/tls"
 	"crypto/x509"
 	"crypto/x509/pkix"
+	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"encoding/pem"
 	"encoding/xml"
@@ -20,6 +24,7 @@ import (
 	"math/big"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync"
 	"time"
@@ -40,11 +45,18 @@ var (
 	ErrSAMLAssertionExpired   = errors.New("saml assertion expired")
 )
 
-//nolint:gochecknoglobals // process-lifetime SAML provider cache
+//nolint:gochecknoglobals // process-lifetime SAML provider cache, keyed by slug
 var samlCache sync.Map
 
 //nolint:gochecknoglobals // process-lifetime SAML provider cache
 var samlMetadataCache sync.Map
+
+//nolint:gochecknoglobals // process-lifetime ephemeral SP keypair (used only when none is configured)
+var (
+	ephemeralSAMLMu   sync.Mutex
+	ephemeralSAMLKey  *rsa.PrivateKey
+	ephemeralSAMLCert *x509.Certificate
+)
 
 type cachedMetadata struct {
 	descriptor *saml.EntityDescriptor
@@ -57,8 +69,14 @@ type SAMLProvider struct {
 	SP       *samlsp.Middleware
 	EntityID string
 	AcsURL   string
+
+	// fingerprint identifies the row version, IdP metadata and SP identity this
+	// provider was built from; a mismatch means the cached entry is stale.
+	fingerprint string
 }
 
+// LoadSAMLProvider loads an enabled SAML provider. Disabled providers are
+// rejected with ErrSSOProviderDisabled.
 func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL string, appCfg *config.Config, log *logger.Logger) (*SAMLProvider, error) {
 	row, err := db.GetSSOProviderBySlug(ctx, slug)
 	if err != nil {
@@ -68,6 +86,19 @@ func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL s
 	if row == nil {
 		return nil, ErrSSOProviderNotFound
 	}
+
+	if !row.Enabled {
+		return nil, ErrSSOProviderDisabled
+	}
+
+	return LoadSAMLProviderRow(ctx, row, baseURL, appCfg, log)
+}
+
+// LoadSAMLProviderRow builds the provider for an already-fetched row without
+// checking Enabled; it exists so admins can test-connect a disabled provider.
+// Public login paths MUST use LoadSAMLProvider.
+func LoadSAMLProviderRow(ctx context.Context, row *models.SSOProvider, baseURL string, appCfg *config.Config, log *logger.Logger) (*SAMLProvider, error) {
+	slug := row.Slug
 
 	if row.Kind != "saml" {
 		return nil, fmt.Errorf("provider %q is not a saml provider (kind=%s)", slug, row.Kind) //nolint:err113 // dynamic error with runtime context
@@ -86,9 +117,13 @@ func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL s
 		return nil, err
 	}
 
-	cacheKey := slug + "|" + idpMeta.EntityID
-	if cached, ok := samlCache.Load(cacheKey); ok {
-		if p, ok := cached.(*SAMLProvider); ok {
+	fingerprint, err := samlFingerprint(row, idpMeta, entityID)
+	if err != nil {
+		return nil, err
+	}
+
+	if cached, ok := samlCache.Load(slug); ok {
+		if p, ok := cached.(*SAMLProvider); ok && p.fingerprint == fingerprint {
 			return p, nil
 		}
 	}
@@ -101,6 +136,11 @@ func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL s
 	acsURLParsed, err := url.Parse(acsURL)
 	if err != nil {
 		return nil, fmt.Errorf("parse acs url: %w", err)
+	}
+
+	metadataURL, err := url.Parse(entityID)
+	if err != nil {
+		return nil, fmt.Errorf("parse metadata url: %w", err)
 	}
 
 	opts := samlsp.Options{
@@ -118,28 +158,42 @@ func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL s
 	}
 
 	sp.ServiceProvider.AcsURL = *acsURLParsed
-	sp.ServiceProvider.MetadataURL = *mustParseURL(entityID)
+	sp.ServiceProvider.MetadataURL = *metadataURL
 
 	p := &SAMLProvider{
-		Slug:     slug,
-		Cfg:      samlCfg,
-		SP:       sp,
-		EntityID: entityID,
-		AcsURL:   acsURL,
+		Slug:        slug,
+		Cfg:         samlCfg,
+		SP:          sp,
+		EntityID:    entityID,
+		AcsURL:      acsURL,
+		fingerprint: fingerprint,
 	}
 
-	samlCache.Store(cacheKey, p)
+	samlCache.Store(slug, p)
 
 	return p, nil
 }
 
-func mustParseURL(raw string) *url.URL {
-	u, err := url.Parse(raw)
+// samlFingerprint hashes everything a cached provider is derived from: the row
+// version, the (freshly fetched) IdP metadata, the attribute mapping and the SP
+// entity ID. Any change yields a different fingerprint, so a rotated or revoked
+// IdP certificate or an edited configuration is never served stale.
+func samlFingerprint(row *models.SSOProvider, idpMeta *saml.EntityDescriptor, entityID string) (string, error) {
+	metaXML, err := xml.Marshal(idpMeta)
 	if err != nil {
-		panic(fmt.Sprintf("invalid url %q: %v", raw, err))
+		return "", fmt.Errorf("marshal idp metadata: %w", err)
 	}
 
-	return u
+	h := sha256.New()
+	h.Write([]byte(row.UpdatedAt.UTC().Format(time.RFC3339Nano)))
+	h.Write([]byte{0})
+	h.Write([]byte(entityID))
+	h.Write([]byte{0})
+	h.Write(row.SAMLConfig)
+	h.Write([]byte{0})
+	h.Write(metaXML)
+
+	return hex.EncodeToString(h.Sum(nil)), nil
 }
 
 func generateSelfSignedCert() (*rsa.PrivateKey, *x509.Certificate, error) {
@@ -216,14 +270,29 @@ func loadOrGenerateSAMLKeypair(cfg *config.Config, log *logger.Logger) (*rsa.Pri
 		return privKey, cert, nil
 	}
 
-	// Generate ephemeral keypair and log warning
+	// One ephemeral keypair per process, so rebuilding a provider (config or
+	// IdP metadata change) does not change the SP certificate mid-flight.
+	ephemeralSAMLMu.Lock()
+	defer ephemeralSAMLMu.Unlock()
+
+	if ephemeralSAMLKey != nil {
+		return ephemeralSAMLKey, ephemeralSAMLCert, nil
+	}
+
 	if log != nil {
 		log.Warnw("SAML SP keypair not configured via environment variables; using ephemeral keypair. " +
 			"Set OPENARTIFACT_SAML_SP_CERT and OPENARTIFACT_SAML_SP_KEY for persistence across restarts. " +
 			"Generate with: openssl req -x509 -newkey rsa:2048 -keyout sp.key -out sp.crt -days 3650 -nodes -subj \"/CN=openartifact-sp\"")
 	}
 
-	return generateSelfSignedCert()
+	key, cert, err := generateSelfSignedCert()
+	if err != nil {
+		return nil, nil, err
+	}
+
+	ephemeralSAMLKey, ephemeralSAMLCert = key, cert
+
+	return key, cert, nil
 }
 
 func fetchIDPMetadata(ctx context.Context, cfg models.SAMLConfig, log *logger.Logger) (*saml.EntityDescriptor, error) {
@@ -306,36 +375,216 @@ func fallbackCachedMetadata(metadataURL string, fetchErr error, log *logger.Logg
 	return nil, fmt.Errorf("%w: %w", ErrIDPMetadataUnavailable, fetchErr)
 }
 
-func (p *SAMLProvider) LoginURL(relayState string) (string, error) {
-	redirectURL, err := p.SP.ServiceProvider.MakeRedirectAuthenticationRequest(relayState)
+const (
+	samlRequestCookiePrefix = "oa_saml_req_"
+	samlRequestTTL          = 10 * time.Minute
+	// samlReplayRetention is added to an assertion's own validity window when
+	// recording it, so the replay cache outlives every moment the assertion
+	// could still pass time-validation (including clock skew).
+	samlReplayRetention = time.Minute
+)
+
+var (
+	ErrSAMLRequestUntracked = errors.New("saml response does not match a pending login request")
+	ErrSAMLReplay           = errors.New("saml assertion already used")
+	ErrSAMLTrackerKey       = errors.New("saml request tracker key not configured")
+)
+
+func samlRequestCookieName(slug string) string { return samlRequestCookiePrefix + slug }
+
+// signSAMLRequestID returns "<payload>.<mac>" binding the AuthnRequest ID to the
+// provider slug and an expiry under key.
+func signSAMLRequestID(key []byte, slug, requestID string, expires time.Time) string {
+	payload := base64.RawURLEncoding.EncodeToString([]byte(requestID + "|" + strconv.FormatInt(expires.Unix(), 10)))
+
+	return payload + "." + samlRequestMAC(key, slug, payload)
+}
+
+func samlRequestMAC(key []byte, slug, payload string) string {
+	mac := hmac.New(sha256.New, key)
+	mac.Write([]byte("oa-saml-req|" + slug + "|" + payload))
+
+	return hex.EncodeToString(mac.Sum(nil))
+}
+
+// verifySAMLRequestID validates a tracker cookie value and returns the request ID.
+func verifySAMLRequestID(key []byte, slug, value string, now time.Time) (string, error) {
+	payload, gotMAC, ok := strings.Cut(value, ".")
+	if !ok || !hmac.Equal([]byte(gotMAC), []byte(samlRequestMAC(key, slug, payload))) {
+		return "", ErrSAMLRequestUntracked
+	}
+
+	raw, err := base64.RawURLEncoding.DecodeString(payload)
+	if err != nil {
+		return "", ErrSAMLRequestUntracked
+	}
+
+	id, expStr, ok := strings.Cut(string(raw), "|")
+	if !ok || id == "" {
+		return "", ErrSAMLRequestUntracked
+	}
+
+	exp, err := strconv.ParseInt(expStr, 10, 64)
+	if err != nil || now.Unix() > exp {
+		return "", ErrSAMLRequestUntracked
+	}
+
+	return id, nil
+}
+
+func (p *SAMLProvider) trackerCookie(value string, maxAge int) *http.Cookie {
+	secure := p.SP.ServiceProvider.AcsURL.Scheme == "https"
+
+	c := &http.Cookie{ //nolint:gosec // G124: Secure and HttpOnly are set; SameSite=None is applied below only when Secure (cross-site ACS POST)
+		Name:     samlRequestCookieName(p.Slug),
+		Value:    value,
+		Path:     p.SP.ServiceProvider.AcsURL.Path,
+		MaxAge:   maxAge,
+		HttpOnly: true,
+		Secure:   secure,
+	}
+
+	// The ACS request is a cross-site POST from the IdP, so a Lax cookie would
+	// not be sent. SameSite=None requires Secure; over plain HTTP the attribute
+	// is left unset.
+	if secure {
+		c.SameSite = http.SameSiteNoneMode
+	}
+
+	return c
+}
+
+// StartLogin builds the AuthnRequest, records its ID in a signed, short-lived
+// cookie scoped to the ACS path, and returns the IdP redirect URL. The ACS
+// refuses any response that is not an answer to a request tracked this way.
+func (p *SAMLProvider) StartLogin(w http.ResponseWriter, relayState string, trackerKey []byte) (string, error) {
+	if len(trackerKey) == 0 {
+		return "", ErrSAMLTrackerKey
+	}
+
+	sp := &p.SP.ServiceProvider
+
+	authnReq, err := sp.MakeAuthenticationRequest(sp.GetSSOBindingLocation(saml.HTTPRedirectBinding), saml.HTTPRedirectBinding, saml.HTTPPostBinding)
+	if err != nil {
+		return "", fmt.Errorf("make authn request: %w", err)
+	}
+
+	redirectURL, err := authnReq.Redirect(relayState, sp)
 	if err != nil {
 		return "", fmt.Errorf("make redirect authn request: %w", err)
 	}
 
+	value := signSAMLRequestID(trackerKey, p.Slug, authnReq.ID, time.Now().Add(samlRequestTTL))
+	http.SetCookie(w, p.trackerCookie(value, int(samlRequestTTL.Seconds())))
+
 	return redirectURL.String(), nil
 }
 
-func (p *SAMLProvider) ParseCallback(r *http.Request) (*saml.Assertion, error) {
+// ParseCallback validates a SAML response at the ACS: it must answer the
+// AuthnRequest tracked by StartLogin (InResponseTo), carry a valid signature,
+// audience and time window, and its assertion ID must not have been seen
+// before. The tracker cookie is cleared whatever the outcome (single use).
+// Unsolicited (IdP-initiated) responses are rejected.
+func (p *SAMLProvider) ParseCallback(w http.ResponseWriter, r *http.Request, db database.Database, trackerKey []byte) (*saml.Assertion, error) {
+	if len(trackerKey) == 0 {
+		return nil, ErrSAMLTrackerKey
+	}
+
 	if err := r.ParseForm(); err != nil {
 		return nil, fmt.Errorf("parse form: %w", err)
 	}
 
-	assertion, err := p.SP.ServiceProvider.ParseResponse(r, nil)
+	cookie, err := r.Cookie(samlRequestCookieName(p.Slug))
 	if err != nil {
-		msg := strings.ToLower(err.Error())
-		switch {
-		case strings.Contains(msg, "signature"):
-			return nil, fmt.Errorf("%w: %w", ErrSAMLSignatureInvalid, err)
-		case strings.Contains(msg, "audience"):
-			return nil, fmt.Errorf("%w: %w", ErrSAMLAudienceMismatch, err)
-		case strings.Contains(msg, "expired") || strings.Contains(msg, "notonorafter"):
-			return nil, fmt.Errorf("%w: %w", ErrSAMLAssertionExpired, err)
-		}
+		return nil, ErrSAMLRequestUntracked
+	}
 
+	http.SetCookie(w, p.trackerCookie("", -1))
+
+	requestID, err := verifySAMLRequestID(trackerKey, p.Slug, cookie.Value, time.Now())
+	if err != nil {
+		return nil, err
+	}
+
+	assertion, err := p.SP.ServiceProvider.ParseResponse(r, []string{requestID})
+	if err != nil {
+		return nil, classifySAMLParseError(err)
+	}
+
+	if err := p.consumeAssertion(r.Context(), db, assertion); err != nil {
 		return nil, err
 	}
 
 	return assertion, nil
+}
+
+// classifySAMLParseError maps crewjam's opaque InvalidResponseError (whose
+// public message is deliberately generic) onto this package's sentinels using
+// the private cause.
+func classifySAMLParseError(err error) error {
+	detail := err
+	if ire := (*saml.InvalidResponseError)(nil); errors.As(err, &ire) && ire.PrivateErr != nil {
+		detail = ire.PrivateErr
+	}
+
+	msg := strings.ToLower(detail.Error())
+
+	switch {
+	case strings.Contains(msg, "signature"):
+		return fmt.Errorf("%w: %w", ErrSAMLSignatureInvalid, err)
+	case strings.Contains(msg, "audience"):
+		return fmt.Errorf("%w: %w", ErrSAMLAudienceMismatch, err)
+	case strings.Contains(msg, "expired") || strings.Contains(msg, "notonorafter"):
+		return fmt.Errorf("%w: %w", ErrSAMLAssertionExpired, err)
+	}
+
+	return err
+}
+
+// consumeAssertion records the assertion ID in the shared replay cache for the
+// assertion's remaining validity; a second presentation is rejected.
+func (p *SAMLProvider) consumeAssertion(ctx context.Context, db database.Database, a *saml.Assertion) error {
+	if a.ID == "" {
+		return fmt.Errorf("%w: assertion has no ID", ErrSAMLReplay)
+	}
+
+	expiresAt := samlAssertionExpiry(a, time.Now())
+
+	first, err := db.ConsumeSAMLAssertion(ctx, p.Slug, a.ID, expiresAt)
+	if err != nil {
+		return fmt.Errorf("record saml assertion: %w", err)
+	}
+
+	if !first {
+		return ErrSAMLReplay
+	}
+
+	return nil
+}
+
+// samlAssertionExpiry returns how long an assertion ID must stay in the replay
+// cache: the latest NotOnOrAfter the assertion carries plus clock skew and a
+// safety margin, or a default window when it carries none.
+func samlAssertionExpiry(a *saml.Assertion, now time.Time) time.Time {
+	var latest time.Time
+
+	if a.Conditions != nil && a.Conditions.NotOnOrAfter.After(latest) {
+		latest = a.Conditions.NotOnOrAfter
+	}
+
+	if a.Subject != nil {
+		for _, sc := range a.Subject.SubjectConfirmations {
+			if sc.SubjectConfirmationData != nil && sc.SubjectConfirmationData.NotOnOrAfter.After(latest) {
+				latest = sc.SubjectConfirmationData.NotOnOrAfter
+			}
+		}
+	}
+
+	if latest.IsZero() {
+		latest = now.Add(samlRequestTTL)
+	}
+
+	return latest.Add(saml.MaxClockSkew + samlReplayRetention)
 }
 
 func (p *SAMLProvider) MetadataXML() ([]byte, error) {

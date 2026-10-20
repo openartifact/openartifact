@@ -6,8 +6,10 @@ package api
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
+	"mime/multipart"
 	"net/http"
 	"os"
 	"strconv"
@@ -223,6 +225,9 @@ func (h *BackupHandler) handleDownloadBackup(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+// maxRestoreUploadBytes caps the restore archive upload size (10 GiB).
+const maxRestoreUploadBytes = 10 << 30
+
 func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 	p := currentPrincipal(r)
 
@@ -232,20 +237,33 @@ func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form
-	if err := r.ParseMultipartForm(1024 * 1024 * 1024); err != nil { //nolint:gosec // G120: form size is bounded by the 1GB limit passed to ParseMultipartForm
-		writeError(w, http.StatusBadRequest, "bad_request", "failed to parse form")
-		return
-	}
+	// Stream the multipart body straight to disk with a hard size cap
+	// instead of buffering/parsing the whole form.
+	r.Body = http.MaxBytesReader(w, r.Body, maxRestoreUploadBytes)
 
-	file, header, err := r.FormFile("file")
+	mr, err := r.MultipartReader()
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "file field is required")
+		writeError(w, http.StatusBadRequest, "bad_request", "multipart body required")
 		return
 	}
-	defer func() { _ = file.Close() }()
 
-	// Save uploaded file to temp location
+	var part *multipart.Part
+
+	for {
+		p, perr := mr.NextPart()
+		if perr != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "file field is required")
+			return
+		}
+
+		if p.FormName() == "file" {
+			part = p
+			break
+		}
+	}
+
+	filename := part.FileName()
+
 	tempFile, err := os.CreateTemp("", "restore_*.tar.gz")
 	if err != nil {
 		h.log.Errorw("failed to create temp file", "error", err)
@@ -253,9 +271,18 @@ func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
-	defer func() { _ = os.Remove(tempFile.Name()) }()
 
-	if _, err := io.Copy(tempFile, file); err != nil {
+	tempPath := tempFile.Name()
+
+	if _, err := io.Copy(tempFile, part); err != nil {
+		_ = tempFile.Close()
+		_ = os.Remove(tempPath)
+
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			writeError(w, http.StatusRequestEntityTooLarge, "too_large", "backup archive too large")
+			return
+		}
+
 		h.log.Errorw("failed to write temp file", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to write temp file")
 
@@ -264,9 +291,11 @@ func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 
 	_ = tempFile.Close()
 
-	// Start restore asynchronously
+	// Start restore asynchronously; the goroutine owns (and removes) the
+	// temp file once the restore finishes.
 	//nolint:gosec // G118: goroutine outlives request by design for async backup operations
 	go func() {
+		defer func() { _ = os.Remove(tempPath) }()
 		defer func() {
 			if r := recover(); r != nil {
 				h.log.Errorw("panic in goroutine", "panic", r)
@@ -274,23 +303,18 @@ func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 		}()
 		ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
 		defer cancel()
-		if err := h.backupEngine.RunRestore(ctx, tempFile.Name()); err != nil {
-			h.log.Errorw("restore failed", "filename", header.Filename, "error", err)
+		if err := h.backupEngine.RunRestore(ctx, tempPath); err != nil {
+			h.log.Errorw("restore failed", "filename", filename, "error", err)
 		}
 	}()
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"message":  "restore started",
-		"filename": header.Filename,
+		"filename": filename,
 	})
 }
 
 func backupJobToMap(job *models.BackupJob) responses.BackupJobResponse {
-	var storagePath *string
-	if job.StoragePath != "" {
-		storagePath = &job.StoragePath
-	}
-
 	var errorMessage *string
 	if job.ErrorMessage != "" {
 		errorMessage = &job.ErrorMessage
@@ -303,7 +327,6 @@ func backupJobToMap(job *models.BackupJob) responses.BackupJobResponse {
 		SizeBytes:    job.SizeBytes,
 		CreatedAt:    formatTime(job.CreatedAt),
 		UpdatedAt:    formatTime(job.UpdatedAt),
-		StoragePath:  storagePath,
 		ErrorMessage: errorMessage,
 		StartedAt:    formatTimePtr(job.StartedAt),
 		CompletedAt:  formatTimePtr(job.CompletedAt),

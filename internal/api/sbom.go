@@ -6,9 +6,11 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"io"
 	"net/http"
 	"time"
@@ -53,9 +55,11 @@ func (h *SBOMHandler) RegisterAuthed(r chi.Router) {
 // validateSBOMRequest returns a validation message for an invalid SBOM
 // generation request, or "" when the request is valid.
 func validateSBOMRequest(artifactID, format, specVersion string) string {
+	if msg := validateArtifactID(artifactID); msg != "" {
+		return msg
+	}
+
 	switch {
-	case artifactID == "":
-		return "artifact_id is required"
 	case format == "":
 		return "format is required"
 	case specVersion == "":
@@ -112,6 +116,23 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Caller-supplied metadata would let a report claim arbitrary components;
+	// the SBOM is built from the artifact's stored properties only.
+	if len(body.Metadata) > 0 {
+		writeError(w, http.StatusBadRequest, "validation_failed",
+			"metadata is not accepted; set the artifact's dependencies property instead")
+
+		return
+	}
+
+	metadata, err := storedArtifactMetadata(ctx, h.db, repo.ID, body.ArtifactID)
+	if err != nil {
+		h.log.Errorw("generate SBOM: db error reading artifact properties", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
 	// Generate SBOM
 	var (
 		result *sbom.SBOMResult
@@ -119,9 +140,9 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	)
 
 	if body.Format == "cyclonedx" {
-		result, genErr = h.generator.GenerateCycloneDX(ctx, repo.ID, body.ArtifactID, repo.Format, body.Metadata)
+		result, genErr = h.generator.GenerateCycloneDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
 	} else {
-		result, genErr = h.generator.GenerateSPDX(ctx, repo.ID, body.ArtifactID, repo.Format, body.Metadata)
+		result, genErr = h.generator.GenerateSPDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
 	}
 
 	if genErr != nil {
@@ -151,18 +172,6 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 	sum := sha256.Sum256(data)
 	sha256Hex := hex.EncodeToString(sum[:])
 
-	if _, err := h.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
-		"sha256":       sha256Hex,
-		"content-type": result.ContentType,
-		"format":       "sbom",
-	}); err != nil {
-		h.log.Errorw("generate SBOM: failed to store blob", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to store SBOM content")
-
-		return
-	}
-
-	// Create SBOM report
 	report := &models.SBOMReport{
 		RepositoryID:   repo.ID,
 		ArtifactID:     body.ArtifactID,
@@ -179,7 +188,31 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:      time.Now(),
 	}
 
-	if err := h.db.CreateSBOMReport(ctx, report); err != nil {
+	// Store the blob and insert the referencing row under the per-blob lock so
+	// a concurrent SafeDeleteBlob (e.g. deleting an identical report) cannot
+	// remove the blob between the two steps.
+	var putFailed bool
+
+	err = storage.WithBlobLock(ctx, h.db, sha256Hex, func(ctx context.Context) error {
+		if _, err := h.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			"sha256":       sha256Hex,
+			"content-type": result.ContentType,
+			"format":       "sbom",
+		}); err != nil {
+			putFailed = true
+			return err //nolint:wrapcheck // logged by the caller below
+		}
+
+		return h.db.CreateSBOMReport(ctx, report)
+	})
+	if err != nil {
+		if putFailed {
+			h.log.Errorw("generate SBOM: failed to store blob", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to store SBOM content")
+
+			return
+		}
+
 		h.log.Errorw("generate SBOM: db error creating report", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
@@ -237,6 +270,7 @@ func (h *SBOMHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	})
 }
 
+//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *SBOMHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
@@ -263,22 +297,17 @@ func (h *SBOMHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all reports for the repo and find the one with matching ID
-	reports, err := h.db.ListSBOMReports(ctx, repo.ID)
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
+		return
+	}
+
+	report, err := h.db.GetSBOMReportByID(ctx, repo.ID, id)
 	if err != nil {
 		h.log.Errorw("get SBOM: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
-	}
-
-	var report *models.SBOMReport
-
-	for _, r := range reports {
-		if r.ID == id {
-			report = r
-			break
-		}
 	}
 
 	if report == nil {
@@ -315,22 +344,17 @@ func (h *SBOMHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Get all reports for the repo and find the one with matching ID
-	reports, err := h.db.ListSBOMReports(ctx, repo.ID)
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
+		return
+	}
+
+	report, err := h.db.GetSBOMReportByID(ctx, repo.ID, id)
 	if err != nil {
 		h.log.Errorw("download SBOM: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
-	}
-
-	var report *models.SBOMReport
-
-	for _, r := range reports {
-		if r.ID == id {
-			report = r
-			break
-		}
 	}
 
 	if report == nil {
@@ -390,34 +414,32 @@ func (h *SBOMHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Verify the report belongs to this repo
-	reports, err := h.db.ListSBOMReports(ctx, repo.ID)
-	if err != nil {
-		h.log.Errorw("delete SBOM: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	found := false
-
-	for _, r := range reports {
-		if r.ID == id {
-			found = true
-			break
-		}
-	}
-
-	if !found {
+	if !isUUIDString(id) {
 		writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
 		return
 	}
 
-	if err := h.db.DeleteSBOMReport(ctx, id); err != nil {
+	// Delete scoped to this repository; returns the blob the report referenced.
+	blobSHA, err := h.db.DeleteSBOMReportInRepo(ctx, repo.ID, id)
+	if err != nil {
+		if errors.Is(err, database.ErrSBOMReportNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "SBOM report not found")
+			return
+		}
+
 		h.log.Errorw("delete SBOM: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
+	}
+
+	// Remove the blob unless another report, bundle item, or artifact still
+	// references it. The report is already gone, so a failure here only leaks
+	// storage; log it but still report success.
+	if blobSHA != "" {
+		if err := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, blobSHA); err != nil {
+			h.log.Warnw("delete SBOM: failed to remove unreferenced blob", "sha256", blobSHA, "error", err)
+		}
 	}
 
 	writeNoContent(w)

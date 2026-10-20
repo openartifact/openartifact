@@ -8,11 +8,11 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -136,7 +136,7 @@ func (s *OSVScanner) Scan(ctx context.Context, packageName, version, ecosystem s
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read response
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read OSV response: %w", err)
 	}
@@ -225,21 +225,19 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 		return []models.Vulnerability{}, nil
 	}
 
-	cmd := exec.CommandContext(ctx, "trivy", "fs", "--scanners", "vuln", "--format", "json", "--quiet", tmpDir)
+	stdout, stderr, err := runScanner(ctx, "trivy", "fs", "--scanners", "vuln", "--format", "json", "--quiet", tmpDir)
+	if err != nil {
+		if errors.Is(err, ErrScannerOutputTooLarge) {
+			return nil, fmt.Errorf("trivy scan: %w", err)
+		}
 
-	var stdout, stderr bytes.Buffer
-
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("trivy scan cancelled: %w", ctx.Err())
 		}
 
 		s.log.Warnw("trivy scan failed",
 			"error", err,
-			"stderr", stderr.String(),
+			"stderr", stderr,
 			"package", packageName,
 			"version", version,
 			"ecosystem", ecosystem,
@@ -248,7 +246,7 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 		return []models.Vulnerability{}, nil
 	}
 
-	return s.parseTrivyOutput(stdout.Bytes())
+	return s.parseTrivyOutput(stdout)
 }
 
 func (s *TrivyScanner) writeManifest(dir, packageName, version, ecosystem string) error {
@@ -484,21 +482,20 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 
 	// grype <ecosystem>:<name>@<version> -o json --quiet
 	pkgRef := fmt.Sprintf("%s:%s@%s", grypeEcosystem, packageName, version)
-	cmd := exec.CommandContext(ctx, "grype", pkgRef, "-o", "json", "--quiet")
 
-	var stdout, stderr bytes.Buffer
+	stdout, stderr, err := runScanner(ctx, "grype", pkgRef, "-o", "json", "--quiet")
+	if err != nil {
+		if errors.Is(err, ErrScannerOutputTooLarge) {
+			return nil, fmt.Errorf("grype scan: %w", err)
+		}
 
-	cmd.Stdout = &stdout
-	cmd.Stderr = &stderr
-
-	if err := cmd.Run(); err != nil {
 		if ctx.Err() != nil {
 			return nil, fmt.Errorf("grype scan cancelled: %w", ctx.Err())
 		}
 
 		s.log.Warnw("grype scan failed",
 			"error", err,
-			"stderr", stderr.String(),
+			"stderr", stderr,
 			"package", packageName,
 			"version", version,
 			"ecosystem", ecosystem,
@@ -507,7 +504,7 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 		return []models.Vulnerability{}, nil
 	}
 
-	return s.parseGrypeOutput(stdout.Bytes())
+	return s.parseGrypeOutput(stdout)
 }
 
 func (s *GrypeScanner) parseGrypeOutput(data []byte) ([]models.Vulnerability, error) {

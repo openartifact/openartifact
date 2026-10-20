@@ -57,41 +57,84 @@ func readAllLimited(r io.Reader, limit int64, tooLarge error) ([]byte, error) {
 type DebFile struct {
 	Package      *Package
 	ControlFile  *ControlFile
-	Archive      *ARArchive
-	DataTarGz    []byte
 	ControlTarGz []byte
 }
 
-// ParseDebFile parses a .deb file and extracts metadata.
+// ParseDebFile parses a .deb file from a sequential reader. The input is
+// buffered (bounded by maxDebFileSize); callers that already hold the data
+// in a file should use ParseDebFileAt to avoid the copy.
 func ParseDebFile(r io.Reader) (*DebFile, error) {
-	// Read the entire file into memory for AR parsing
 	data, err := readAllLimited(r, maxDebFileSize, ErrDebFileTooLarge)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read deb file: %w", err)
 	}
 
-	// Parse AR archive
-	archive, err := ReadARArchive(bytes.NewReader(data), int64(len(data)))
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse AR archive: %w", err)
+	return ParseDebFileAt(bytes.NewReader(data), int64(len(data)))
+}
+
+// ParseDebFileAt parses a .deb file by walking the AR headers with ReadAt and
+// reading only the control archive, so memory use is independent of the
+// package size.
+func ParseDebFileAt(r io.ReaderAt, size int64) (*DebFile, error) {
+	if size > maxDebFileSize {
+		return nil, fmt.Errorf("failed to read deb file: %w: max %d bytes", ErrDebFileTooLarge, int64(maxDebFileSize))
 	}
 
-	debFile := &DebFile{
-		Archive: archive,
+	magic := make([]byte, len(arMagic))
+	if _, err := r.ReadAt(magic, 0); err != nil {
+		return nil, fmt.Errorf("failed to parse AR archive: failed to read AR magic: %w", err)
 	}
 
-	// Extract control archive — try gz, xz, zst in order
+	if string(magic) != arMagic {
+		return nil, fmt.Errorf("failed to parse AR archive: %w: %s", ErrInvalidARMagic, string(magic))
+	}
+
 	var (
 		controlRaw []byte
 		controlExt string
 	)
 
-	for _, ext := range []string{"control.tar.gz", "control.tar.xz", "control.tar.zst"} {
-		if b := archive.GetMemberData(ext); b != nil {
-			controlRaw = b
-			controlExt = ext
+	off := int64(len(arMagic))
 
-			break
+	for off+arHeaderSize <= size && controlRaw == nil {
+		headerBuf := make([]byte, arHeaderSize)
+		if _, err := r.ReadAt(headerBuf, off); err != nil {
+			return nil, fmt.Errorf("failed to parse AR archive: failed to read AR member header: %w", err)
+		}
+
+		header, err := parseARHeader(headerBuf)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse AR archive: failed to parse AR header: %w", err)
+		}
+
+		if header.Size < 0 {
+			return nil, fmt.Errorf("failed to parse AR archive: %w: %d", ErrInvalidSize, header.Size)
+		}
+
+		dataOff := off + arHeaderSize
+		if header.Size > size-dataOff {
+			return nil, fmt.Errorf("failed to parse AR archive: %w: member %q declares size %d beyond end of file",
+				ErrARMemberTooLarge, header.Name, header.Size)
+		}
+
+		switch header.Name {
+		case "control.tar.gz", "control.tar.xz", "control.tar.zst":
+			if header.Size > maxControlArchiveSize {
+				return nil, fmt.Errorf("failed to parse AR archive: %w: member %q declares size %d, max %d",
+					ErrARMemberTooLarge, header.Name, header.Size, int64(maxControlArchiveSize))
+			}
+
+			controlRaw = make([]byte, header.Size)
+			if _, err := r.ReadAt(controlRaw, dataOff); err != nil {
+				return nil, fmt.Errorf("failed to parse AR archive: failed to read AR member data: %w", err)
+			}
+
+			controlExt = header.Name
+		}
+
+		off = dataOff + header.Size
+		if header.Size%arMemberAlign != 0 {
+			off += arMemberAlign - (header.Size % arMemberAlign)
 		}
 	}
 
@@ -99,17 +142,8 @@ func ParseDebFile(r io.Reader) (*DebFile, error) {
 		return nil, ErrControlArchiveNotFound
 	}
 
-	debFile.ControlTarGz = controlRaw
+	debFile := &DebFile{ControlTarGz: controlRaw}
 
-	// Extract data archive (best-effort, store raw bytes)
-	for _, ext := range []string{"data.tar.gz", "data.tar.xz", "data.tar.zst", "data.tar.bz2"} {
-		if b := archive.GetMemberData(ext); b != nil {
-			debFile.DataTarGz = b
-			break
-		}
-	}
-
-	// Parse control file
 	controlFile, err := extractControlFile(controlRaw, controlExt)
 	if err != nil {
 		return nil, fmt.Errorf("failed to extract control file: %w", err)
@@ -117,7 +151,6 @@ func ParseDebFile(r io.Reader) (*DebFile, error) {
 
 	debFile.ControlFile = controlFile
 
-	// Parse package metadata
 	pkg, err := controlFile.ParsePackage()
 	if err != nil {
 		return nil, fmt.Errorf("failed to parse package metadata: %w", err)

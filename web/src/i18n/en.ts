@@ -2,12 +2,16 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Flat English string catalog. The function `t(key)` returns the English text
-// or the key itself when missing, which makes missing translations obvious in
-// the UI without throwing. The intent is to decouple components from literal
+// Flat English string catalog. `t(key)` is typed against the catalog so a
+// missing key is a compile error; use `tDynamic` for runtime-built keys.
+// Per-area keys live in en.repos.ts / en.admin.ts / en.auth.ts. The intent is to decouple components from literal
 // strings so that adding a second locale later is mechanical.
 
-const catalog: Record<string, string> = {
+import { enRepos } from './en.repos'
+import { enAdmin } from './en.admin'
+import { enAuth } from './en.auth'
+
+const base = {
   // App / shell
   'app.name': 'OpenArtifact',
   'app.tagline': 'Sign in to your account',
@@ -425,11 +429,20 @@ const catalog: Record<string, string> = {
   'settings.tokens.create': 'Create token',
   'settings.tokens.label': 'Label',
   'settings.tokens.expires': 'Expires',
-}
+} as const
 
-export function t(key: string): string {
-  return catalog[key] ?? key
-}
+const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth } satisfies Record<string, string>
 
 export type TranslationKey = keyof typeof catalog
+
+/** Typed lookup: unknown keys are a compile error. */
+export function t(key: TranslationKey): string {
+  return catalog[key]
+}
+
+/** Lookup for keys assembled at runtime (e.g. `status.${state}`); falls back to the key itself. */
+export function tDynamic(key: string): string {
+  return (catalog as Record<string, string>)[key] ?? key
+}
+
 export default catalog
