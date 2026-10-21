@@ -1,0 +1,135 @@
+<!--
+SPDX-FileCopyrightText: The OpenArtifact Authors
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+# REST API
+
+The management API lives under `/api/v1`; the web UI, the [CLI](cli.md) and the [MCP server](mcp.md) all use it. Package-manager protocols (npm, Maven, Docker, ...) are separate native routes, see [formats](../formats/README.md).
+
+## Spec and explorer
+
+| URL | Content |
+|---|---|
+| `/api/v1/openapi.json` | OpenAPI 3 spec (embedded from [`internal/api/openapi.json`](../../internal/api/openapi.json)) |
+| `/api/v1/openapi.yaml` | same spec rendered as YAML |
+| `/swagger/` | Swagger UI (`/swagger` redirects here); it loads its JS/CSS from `unpkg.com`, so the browser needs internet access |
+
+These routes need no authentication. The spec is the reference for request and response schemas; a test (`TestOpenAPISpecMatchesRoutes`) fails when a registered route is missing from it or the spec documents a route nobody serves. `GET /health`, `GET /ready` and `GET /metrics` are also unauthenticated and are covered in [monitoring](../operations/monitoring.md).
+
+## Authentication
+
+Details, token kinds and SSO are in [authentication](../security/authentication.md); permissions in [RBAC](../security/rbac.md). In short:
+
+- **API token:** `Authorization: Bearer <TOKEN>`. No CSRF header needed. Tokens are `access` (management API, per the owner's permissions) or `deploy` (repository credentials; never granted `manage`, so no `/api/v1` management calls).
+- **Session cookie:** `POST /api/v1/auth/login` (`{"username","password"}`) sets `oa_session` (HttpOnly, SameSite=Lax) and a readable `oa_csrf` cookie. State-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) on a session must echo it in `X-CSRF-Token`, otherwise `403 {"error":"csrf_protection",...}`. Login is rate limited (`429 rate_limited` with `Retry-After`).
+- **Self-service limits:** an API token cannot create or revoke tokens, change a password, or edit its own user profile; those need a login session. An account flagged `must_change_password` gets `403 password_change_required` everywhere except `change-password` and `logout`.
+- **Gate:** every `/api/v1/*` route requires the global `manage` permission, except `GET /repositories` and `GET /search` (any authenticated user; results are filtered per repository), `GET /repository/{name}` (`read` on that repository) and `/repositories/{name}/{packages,debs,comps}` (`read`/`write`/`delete` on that repository). Anonymous callers can only read public repositories (or what `allowAnonymousRead` exposes).
+
+### Example: token and repository
+
+Tokens are minted from a login session, then used for everything else:
+
+```sh
+HOST=http://localhost:8080
+
+# 1. log in (cookie jar), read the CSRF cookie
+curl -sS -c jar.txt -X POST "$HOST/api/v1/auth/login" \
+  -H 'Content-Type: application/json' \
+  -d '{"username":"admin","password":"<PASSWORD>"}'
+CSRF=$(awk '$6=="oa_csrf"{print $7}' jar.txt)
+
+# 2. create an access token; the secret is only returned here ("token")
+curl -sS -b jar.txt -X POST "$HOST/api/v1/auth/tokens" \
+  -H "X-CSRF-Token: $CSRF" -H 'Content-Type: application/json' \
+  -d '{"name":"ci","kind":"access"}'
+# -> {"id":"...","name":"ci","kind":"access","scopes":[],"created_at":"...","token":"<TOKEN>"}
+
+# 3. use it
+curl -sS -X POST "$HOST/api/v1/repositories" \
+  -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
+  -d '{"name":"npm-hosted","format":"npm","description":"internal packages","public":false}'
+
+curl -sS -H "Authorization: Bearer <TOKEN>" "$HOST/api/v1/repositories?limit=10"
+```
+
+Token body fields: `name` (required, max 100 characters), `kind` (`access` or `deploy`), optional `scopes` (permission target IDs; a scope can only narrow the owner's access) and `expires_at` (RFC 3339, in the future, at most 2 years out). Creating repositories requires an administrator. Valid `format` values: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`. The proxy/group options (`repo_type`, ...) are in the spec; see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
+
+## Conventions
+
+- **JSON, snake_case.** Request and response bodies use snake_case keys. Timestamps are RFC 3339 strings (`created_at`, `expires_at`, ...); optional ones are `null`.
+- **Unknown request fields are ignored**, not rejected: a misspelled key silently does nothing, so check the spec.
+- **Secrets are never returned** (webhook secrets, upstream passwords, SSO client secrets, AI keys, storage credentials); write-only fields come back masked or as `has_*` flags.
+
+### Errors
+
+Handler errors share one shape; `details` is only present when a handler adds it:
+
+```json
+{"error": "name must be 1-100 alphanumeric/hyphen/underscore characters", "code": "validation_failed"}
+```
+
+| `code` | Status | Meaning |
+|---|---|---|
+| `bad_request` | 400 | malformed JSON or parameters |
+| `validation_failed` | 400 | well-formed request with invalid values |
+| `unauthorized` | 401 | authentication required or invalid |
+| `invalid_credentials` | 401 | wrong username/password |
+| `forbidden` | 403 | authenticated but not permitted |
+| `admin_required` | 403 | administrator permission needed |
+| `not_found` | 404 | missing resource, or a repository the caller may not see |
+| `conflict` | 409 | duplicate or state conflict |
+| `payload_too_large` | 413 | body over the endpoint limit |
+| `rate_limited`, `too_many_scans` | 429 | throttled |
+| `not_implemented` | 501 | endpoint exists but the feature is not available (currently the `/admin/gpg/keys` import, generate and delete endpoints) |
+| `internal_error` | 500 | server error; the cause is logged, never returned |
+| `upstream_error` | 502 | an upstream (LLM, IdP, proxy) failed |
+
+SSO endpoints add their own codes (`oidc_*`, `saml_*`, `state_mismatch`, ...). Errors raised before a handler runs use simpler bodies: `401 {"error":"unauthorized"}`, `403 {"error":"forbidden","action":"...","path":"..."}`, `403 {"error":"csrf_protection","message":"..."}`, `400 {"error":"invalid_path"}`. Clients should key on the HTTP status first and on `code` when present.
+
+### Pagination
+
+List endpoints do not share one scheme. Always check the spec for the endpoint:
+
+| Style | Endpoints | Request | Response keys |
+|---|---|---|---|
+| `page` + `limit` | repositories, repository packages, bundles | `page` from 1, `limit` default 25, max 100 | `total`, `page`, `limit`, plus the list (`repositories`, `packages`, ...) |
+| `page` + `per_page` | users, admin tokens, admin audit | `per_page` default 25 (users 50), max 100 (users 200) | `data`, `page`, `per_page`, `total` |
+| `limit` + `offset` | AI analyses | `limit` default 20, max 100; `offset` from 0 | `analyses`, `total`, `limit`, `offset` |
+
+Out-of-range values are clamped rather than rejected.
+
+## Route groups
+
+Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for methods, parameters and schemas.
+
+| Prefix | Purpose |
+|---|---|
+| `/auth` | login, logout, `me`, `change-password`, own API tokens (`/auth/tokens`), SSO login and callbacks (OIDC, SAML) |
+| `/repositories`, `/repository/{name}` | list and create; get, update and delete use the **singular** `/repository/{name}` path |
+| `/repositories/{name}/packages`, `/debs`, `/comps` | list, download and delete packages; upload (`debs` for Debian, `packages` for RPM) |
+| `/repositories/{name}/members` | member repositories of a group repository |
+| `/repositories/{name}/{cleanup-policies,quota,webhooks}` | [cleanup and quotas](../repositories/cleanup-and-quotas.md), per-repository [webhooks](../operations/webhooks.md) |
+| `/repositories/{name}/{sbom,vuln,license,secrets}` | SBOMs and [scanning](../security/scanning.md) (scans, quarantine, license policies) |
+| `/repositories/{name}/artifacts/...` | [properties](../repositories/properties.md) and property search |
+| `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas |
+| `/repositories/{name}/ai-analysis` | [AI analysis](ai-analysis.md) |
+| `/search` | search packages and repositories |
+| `/users`, `/groups`, `/orgs`, `/permission-targets` | identity and [RBAC](../security/rbac.md) objects |
+| `/webhooks` | global webhooks, test, deliveries |
+| `/bundles`, `/pipelines` | [release bundles](../repositories/release-bundles.md) and promotion pipelines |
+| `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log, GPG keys (`/admin/gpg/keys` is a stub: empty list, 501 on write; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |
+| `/system/info` | version and build information |
+
+`/admin/pprof/` is also registered when `server.pprofEnabled` is set (admin only; for diagnostics, see [performance](../operations/performance.md)).
+
+## Regenerating the web client types
+
+The SPA's types are generated from the spec. After changing routes or schemas, keep `internal/api/openapi.json` in sync with the handlers, then:
+
+```sh
+cd web && bun run generate-api    # writes web/src/api/generated
+```
+
+Calls from the SPA go through `web/src/api/client.ts`, which adds the CSRF header and handles 401.

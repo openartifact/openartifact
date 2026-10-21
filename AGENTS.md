@@ -16,19 +16,28 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `cmd/oa` | CLI client |
 | `cmd/resetpw` | Admin password reset tool |
 | `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,rpm,npm,maven}.go`), `openapi.json` |
-| `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{repo}/...`, `/v2/...`) |
+| `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{repo}/...`, `/v2/...`); the Go module format lives in `gomod` |
+| `internal/repodispatch` | chi middleware in front of the per-format routes: hosted repos pass through, proxy and group repos are served by `internal/proxy` / `internal/group` |
+| `internal/{group,repotype}` | Group member resolution + Maven metadata merge; `repotype` is the single policy of which formats may be proxy (maven, deb, rpm, raw) or group (maven, raw) |
+| `internal/ocipath` | Parses `/v2/<name>/...` into OpenArtifact repo + image; shared by RBAC and the docker handler |
+| `internal/clientsetup` | Go port of `web/src/lib/installCommands.ts` (client snippets, used by MCP `client_setup`); keep both in sync |
+| `internal/importmeta` | `X-OA-Import-Created-At` handling for `oa import` (honored only for `manage` principals) |
+| `internal/netutil` | SSRF-safe outbound HTTP helpers (webhooks, proxy upstreams) |
 | `internal/middleware` | RBAC, CSRF, audit, CORS, logging |
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
 | `internal/database` | `Database` interface (`interfaces.go`), Postgres impl (`postgres*.go`), sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
 | `internal/storage` | Blob stores: filesystem, S3, GCS, Azure, OCI; `SafeDeleteBlob` refcounting |
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, proxy cache, AI analysis |
-| `internal/{backup,webhook,proxy,search,vuln,sbom,license,secrets,ai,mcp,audit,metrics,config}` | Feature subsystems |
+| `internal/{backup,webhook,proxy,search,vuln,sbom,license,secrets,quarantine,quota,cron,ai,mcp,audit,metrics,config}` | Feature subsystems |
 | `internal/crypto` | AES-256-GCM secret encryption at rest (`OPENARTIFACT_SECRET_KEY`) |
-| `pkg/*` | Format parsers/libraries (deb, rpm, npm, maven, helm, rubymarshal, gpg, delta) |
+| `pkg/*` | Format parsers/libraries (deb, rpm, npm, maven, helm, rubymarshal, gpg, delta) plus shared `errors`/`logger` |
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TS + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go integration/handler tests; `tests/integration/` uses testcontainers |
-| `docker/` | Dockerfile, compose, `.env.example` |
+| `docker/` | Dockerfile, compose, `.env.example` (compose credentials; the full env reference is the root `.env.example`) |
+| `bench/` | Benchmark harness: `bench/run.sh` + `oabench` load generator (`make bench-load`) |
+| `tools/` | Separate Go module (`tools/go.mod`) pinning sqlc, govulncheck, actionlint |
+| `docs/` | User and developer documentation (index: `docs/README.md`); assets in `docs/assets/` |
 
 ## Commands
 
@@ -36,19 +45,22 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 make build            # web + server binary → bin/
 make build-cli        # bin/oa
 make test             # go test -short -race ./...
+make test-integration # -tags=integration tests (Postgres/S3 env or a container runtime)
 make lint             # golangci-lint v2
 make vet
-make generate         # sqlc generate (after editing internal/database/queries/*.sql)
+make generate         # go tool -modfile=tools/go.mod sqlc generate (after editing internal/database/queries/*.sql)
+make bench            # Go micro-benchmarks (-benchmem)
+make bench-load       # bench/run.sh: seed a running instance and run HTTP load scenarios (OA_URL, OA_USER, OA_PASS, OA_PID)
 cd web && bun install && bun run typecheck && bun test && bun run build
 cd web && bun run generate-api   # regenerate src/api/generated from internal/api/openapi.json
 docker compose -f docker/docker-compose.yml up -d --build   # needs docker/.env (copy from .env.example)
 ```
 
-DB/S3-backed tests skip unless `TEST_DATABASE_URL` / `TEST_S3_ENDPOINT` (+ `TEST_S3_BUCKET`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY`, `TEST_S3_REGION`) are set; with `CI=true` a missing variable fails instead of skipping. The S3 test backend is Garage (`dxflrs/garage`, region `garage`; MinIO no longer ships images) — see the `integration` job in `.github/workflows/ci.yml` for the bootstrap. Integration tests use `-tags=integration`; testcontainers under podman needs `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock TESTCONTAINERS_RYUK_DISABLED=true`.
+DB/S3-backed tests (behind `-tags=integration`) skip unless `TEST_DATABASE_URL` / `TEST_S3_ENDPOINT` (+ `TEST_S3_BUCKET`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY`, `TEST_S3_REGION`) are set; with any non-empty `CI` a missing variable fails instead of skipping. The S3 test backend is Garage (`dxflrs/garage`, region `garage`; MinIO no longer ships images) — see the `integration` job in `.github/workflows/ci.yml` for the bootstrap. `make test-integration` runs them; testcontainers under podman needs `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock TESTCONTAINERS_RYUK_DISABLED=true`.
 
 Routing: every repo-scoped format handler registers relative routes on the single `/repos/{name}` subrouter in `cmd/server/main.go`. Never register an absolute `/repos/{name}/...` route on `authedAPI` — the mount shadows it (404) or it hijacks the subrouter. Shared catch-alls (`PUT /*`: npm publish + GOPROXY upload) are dispatched explicitly there.
 
-Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint are `tool` directives in `tools/go.mod` (separate module so Dependabot bumps them without bloating the main module): run `go tool -modfile=tools/go.mod sqlc generate` (`make generate`). CI actions are pinned by commit SHA and container images by `@sha256` digest; Dependabot updates both.
+Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint are `tool` directives in `tools/go.mod` (separate module so Dependabot bumps them without bloating the main module): run them as `go tool -modfile=tools/go.mod <sqlc|govulncheck|actionlint> …` (`make generate` runs sqlc). CI actions are pinned by commit SHA and container images by `@sha256` digest; Dependabot updates both.
 
 ## Conventions and invariants
 
@@ -65,6 +77,9 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint ar
   - Format colours: `formatColor`/`formatColorLowOnDark` for badges, `chartColor` (`CHART_PALETTE`) for charts; never hardcode hex per format.
   - Repo URLs and client snippets: `repoBaseUrl` / `clientSetup` in `web/src/lib/installCommands.ts`. Snippets must match real server routes (check `cmd/server/main.go` and the format handler), not another product's conventions.
   - Style: no gradients, glows, `backdrop-blur`, or letter-spaced uppercase labels; dashboards show only data the API actually returns.
+- **Proxy/group repos:** only maven, deb, rpm and raw can be proxies; only maven and raw can be groups (`internal/repotype` is the single policy, enforced at creation). `internal/repodispatch` middleware serves them in front of the format handlers; hosted repos pass straight through. A new proxy/group format must be added to `repotype` and to the dispatch map in `cmd/server/main.go`.
+- **Auth cache:** per-request auth lookups (token, user, groups, permission targets, repo by name) are cached for `DB_AUTH_CACHE_TTL_MS` (default 2000; 0 disables). Every write to those tables must live in a `PostgresDB` method that calls `defer p.authCache.invalidate()`; writes that bypass it (other replicas, `cmd/resetpw`) are seen only after the TTL.
+- **pprof:** `OPENARTIFACT_PPROF_ENABLED` (off by default) mounts admin-only `/api/v1/admin/pprof/*`; never enable it by default or outside admin auth.
 - **Workers** taking Postgres advisory locks must hold them on a pinned connection (or use xact locks), not the `*sql.DB` pool.
 - **Config:** every key settable by YAML must have an env override in `internal/config`, and be documented in `.env.example` and `openartifact.example.yaml`. Server read/write timeouts default to 0 (large uploads).
 - Errors: use `writeError` with the shared codes; never leak `err.Error()` from DB/upstream to clients.
@@ -78,7 +93,17 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint ar
 
 - Web: `bun run typecheck && bun test`, then look at the page in the running app (dark and light theme).
 - Go: `make lint` (gocyclo limit 20 applies to tests too; prefer table-driven subtests) and `make test`.
-- End to end: rebuild with `docker compose -f docker/docker-compose.yml up -d --build openartifact`, create a token via `POST /api/v1/auth/tokens` (`{"name":…,"kind":"access"}`), and publish with the real client (`npm publish`, `curl -T` for raw, …) before claiming a format works.
+- End to end: rebuild with `docker compose -f docker/docker-compose.yml up -d --build openartifact`, log in (`POST /api/v1/auth/login`) and create a token via `POST /api/v1/auth/tokens` (`{"name":…,"kind":"access"}`) with the session cookie and `X-CSRF-Token` (tokens cannot mint tokens; see `docs/integrations/api.md`), and publish with the real client (`npm publish`, `curl -T` for raw, …) before claiming a format works.
+
+## CI and releases
+
+`.github/workflows/ci.yml` runs on PRs, `main` and tags; treat every job as a required check: `go` (build, vet, `go mod tidy -diff`, govulncheck, race tests), `integration` (Postgres + Garage + testcontainers), `lint` (golangci-lint), `reuse`, `sqlc` (generate drift), `web` (typecheck, generated API client drift, tests, build, bundle size), `security` (Trivy image/fs/config gates on HIGH/CRITICAL, SARIF uploaded), `workflow-lint` (actionlint + zizmor, config in `.github/zizmor.yml`), `dependency-review` (PRs). `codeql.yml` (push, PRs, weekly), `scheduled-scan.yml` (weekly Trivy on the `latest` and newest stable image tags) and `scorecard.yml` run separately.
+
+`release.yml` runs on `v*.*.*` tags: checks `VERSION` matches the tag, tests, then GoReleaser binaries (provenance attested) and a multi-arch image to `ghcr.io/openartifact/openartifact`. The image is Trivy-gated before push, carries `org.opencontainers.image.{title,description,vendor,authors,licenses,documentation}` labels/annotations, has SBOM and `provenance: mode=max` attached, is signed with cosign (keyless) and gets a build-provenance attestation. Verification commands: `docs/security/signing.md`.
+
+## Documentation
+
+Docs live in `docs/` (index `docs/README.md`); the README stays a short overview. A new feature, format, config key, CLI command or API area gets or updates a docs page in the same change; keep links relative and new `.md` files need the SPDX HTML comment header.
 
 ## Bootstrap
 

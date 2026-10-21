@@ -1,0 +1,142 @@
+<!--
+SPDX-FileCopyrightText: The OpenArtifact Authors
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
+# Webhooks
+
+HTTP callbacks for repository and artifact events, signed with HMAC-SHA256, retried with backoff and logged per delivery.
+
+A webhook is either global (fires for events in every repository) or scoped to one repository. All management routes are admin only; they are also in the UI under Admin, Webhooks.
+
+## Events
+
+| Event | Fired when |
+|---|---|
+| `artifact.uploaded` | an artifact is published to a repository, in every format. Proxy cache fills do not fire it |
+| `artifact.deleted` | an artifact is deleted, in every format except Go modules and Cargo, which do not emit it |
+| `repository.created` | a repository is created |
+| `repository.deleted` | a repository is deleted |
+| `artifact.downloaded` | accepted as a subscription, but nothing emits it today |
+| `webhook.test` | only by the test route; cannot be subscribed to |
+
+Events are published after the operation succeeds. A failure to record an event never fails the upload or delete that caused it.
+
+### Payloads
+
+Artifact events:
+
+```json
+{
+  "event": "artifact.uploaded",
+  "timestamp": "2026-01-02T15:04:05Z",
+  "repository": "REPO",
+  "format": "npm",
+  "artifact": {
+    "name": "left-pad",
+    "path": "left-pad/-/left-pad-1.3.0.tgz",
+    "version": "1.3.0",
+    "sha256": "<hex>",
+    "size": 4096
+  }
+}
+```
+
+`version`, `sha256` and `size` are omitted when the format or the operation does not provide them. Repository events carry `event`, `timestamp`, `repository`, `format` and `type` (`hosted`, `proxy` or `group`). The test event is `{"event":"webhook.test","message":"This is a test webhook delivery","timestamp":<unix seconds>}`.
+
+## Request
+
+Each delivery is an HTTP `POST` of the JSON payload:
+
+| Header | Value |
+|---|---|
+| `Content-Type` | `application/json` (the only accepted type) |
+| `User-Agent` | `OpenArtifact-Webhook/1.0` |
+| `X-Hub-Signature-256` | `sha256=<hex>`, only when the webhook has a secret |
+
+The signature is the HMAC-SHA256 of the raw request body keyed with the secret (the header name and format GitHub webhooks use). Verify it before parsing, with a constant-time compare:
+
+```python
+import hashlib, hmac
+
+def valid(body: bytes, header: str, secret: bytes) -> bool:
+    expected = "sha256=" + hmac.new(secret, body, hashlib.sha256).hexdigest()
+    return hmac.compare_digest(expected, header)
+```
+
+A response with a `2xx` status is a success. Everything else (other status, connection error, timeout, a secret that cannot be decrypted) is a failed attempt. The response status and up to 64 KiB of the body are stored in the delivery log. Redirects are followed at most twice and are checked like the original URL.
+
+## Retries
+
+- `max_retries` is the total number of attempts: 3 by default, 0 to 10. Values 0 and 1 both mean a single attempt.
+- After failed attempt `n`, the next one is scheduled `30 * 2^(n-1)` seconds later, capped at 1 hour: 30 s, 1 min, 2 min, 4 min and so on.
+- Pending retries are picked up by a poller that runs every 30 s, so a retry can start up to 30 s after its scheduled time.
+- A delivery ends as `success`, or `failed` once attempts are used up.
+- Deliveries are written to the database before they are sent, handled by 8 workers from a queue of 1000, and leased for 2 minutes. If the queue is full or the server stops, the row stays `pending` and the poller sends it. With several replicas each pending delivery is claimed by exactly one of them.
+- `timeout_seconds` is the per-attempt limit: default 30, clamped to 1 to 30.
+- Delivery is at least once: a delivery claimed by an instance that crashes is sent again when its 2-minute lease expires, so receivers should be idempotent.
+
+## Address validation (SSRF)
+
+The URL must be `http` or `https` and its host must resolve (names are resolved when the webhook is saved). It is rejected if any resolved address is:
+
+- unspecified, multicast or link-local, which includes the cloud metadata address `169.254.169.254` and `fd00:ec2::/32`: always blocked;
+- loopback, private (RFC 1918, `fc00::/7`) or carrier-grade NAT (`100.64.0.0/10`): blocked unless the server runs with `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. Set it when the receiver is an internal CI or chat bridge. The same switch relaxes proxy repository upstreams, see [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+
+The check runs again at delivery time on the address actually dialed, so a name that later resolves to a blocked address (DNS rebinding) cannot be reached. Environment proxy settings are ignored. `ssl_verify=false` only disables TLS certificate verification; the address checks still apply.
+
+## Manage
+
+| Route | Purpose |
+|---|---|
+| `GET /api/v1/webhooks` | list global webhooks, as `{"webhooks":[...]}` |
+| `POST /api/v1/webhooks` | create a global webhook |
+| `GET /api/v1/repositories/{name}/webhooks` | list a repository's webhooks |
+| `POST /api/v1/repositories/{name}/webhooks` | create a repository webhook |
+| `GET /api/v1/webhooks/{id}` | show one |
+| `PUT /api/v1/webhooks/{id}` | update; omitted fields stay unchanged |
+| `DELETE /api/v1/webhooks/{id}` | delete (`204`), including its delivery log |
+| `POST /api/v1/webhooks/{id}/test` | queue a `webhook.test` delivery (`202`), regardless of subscriptions and the `enabled` flag |
+| `GET /api/v1/webhooks/{id}/deliveries` | delivery log; `limit` 1 to 500, default 50 |
+
+A repository webhook fires only for events in its repository; a global one fires for all repositories. Bodies are limited to 64 KiB.
+
+Fields:
+
+| Field | Create | Notes |
+|---|---|---|
+| `name` | required | up to 255 characters |
+| `url` | required | up to 2048 characters, validated as above |
+| `events` | required | 1 to 32 names from the table above; duplicates are dropped |
+| `secret` | optional | write-only, up to 512 characters |
+| `enabled` | default `true` | |
+| `content_type` | default `application/json` | no other value is accepted |
+| `ssl_verify` | default `true` | |
+| `max_retries` | default `3` | clamped to 0 to 10 |
+| `timeout_seconds` | default `30` | clamped to 1 to 30 |
+
+Responses carry `id`, `repository_id` (null for global), `name`, `url`, `enabled`, `events`, `content_type`, `ssl_verify`, `max_retries`, `timeout_seconds`, `has_secret`, `created_at` and `updated_at`. The secret is never returned.
+
+```sh
+curl -X POST HOST/api/v1/repositories/REPO/webhooks \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"name":"ci","url":"https://ci.example.com/hook","secret":"<SECRET>","events":["artifact.uploaded","artifact.deleted"]}'
+
+curl -X POST -H "Authorization: Bearer <TOKEN>" HOST/api/v1/webhooks/<ID>/test
+curl -H "Authorization: Bearer <TOKEN>" "HOST/api/v1/webhooks/<ID>/deliveries?limit=20"
+```
+
+An empty `"secret": ""` in an update removes the signing secret.
+
+## Delivery log
+
+Each entry has `id`, `webhook_id`, `event_type`, `payload`, `status` (`pending`, `success` or `failed`), `response_status`, `response_body`, `attempt_count`, `next_retry_at`, `delivered_at`, `created_at` and `updated_at`. For a `pending` entry `next_retry_at` is the next scheduled attempt (or the lease end for a delivery just created). The log is kept until the webhook is deleted; there is no automatic purge.
+
+## Secret storage
+
+The secret is encrypted with AES-256-GCM before it is stored, using `OPENARTIFACT_SECRET_KEY`, and decrypted only to sign a delivery. Without that key it is stored as plaintext and the server warns at startup. If the key changes, signing fails and deliveries of secret-protected webhooks fail until the secret is set again. Details in [storage](storage.md#stored-secrets). [Backups](backup.md) drop webhook secrets, so set them again after a restore.
+
+## Limits
+
+- `oa webhook create` and `oa webhook update` send `active` and no `name` or `events`, and the server requires `name` and `events`, so create fails with 400. Use the routes above or the UI. `oa webhook list` reads an `active` field the server does not return (it is `enabled`).

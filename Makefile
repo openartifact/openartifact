@@ -124,7 +124,7 @@ bench:
 	$(GO) test -bench=. -benchmem -run=^$$ ./...
 
 bench-load:
-	@echo "Running HTTP load scenarios (see README, Development > Benchmarks)..."
+	@echo "Running HTTP load scenarios (see docs/operations/performance.md)..."
 	bench/run.sh
 
 deps:

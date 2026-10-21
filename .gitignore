@@ -37,6 +37,8 @@ coverage.txt
 *.log
 tmp/
 .tmp/
+# bench/run.sh output (contains an access token)
+/bench-out/
 
 # Environment
 .env

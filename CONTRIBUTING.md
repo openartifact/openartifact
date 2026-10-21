@@ -38,6 +38,11 @@ make test-integration
 5. If you change the HTTP API, update `internal/api/openapi.json`, and
    regenerate the web client types with `cd web && bun run generate-api`.
 
+6. Document user-visible changes (feature, format, config key, CLI command,
+   API area) in `docs/`; the README is only an overview. See
+   [docs/development](docs/development/README.md) for the toolchain, CI and
+   architecture.
+
 ## Commit messages
 
 Use [Conventional Commits](https://www.conventionalcommits.org/), e.g.
