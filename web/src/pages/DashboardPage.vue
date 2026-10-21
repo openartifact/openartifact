@@ -296,8 +296,10 @@ async function loadAudit(): Promise<void> {
   if (!session.isAdmin) return
   auditLoading.value = true
   try {
-    const res = await listAudit({ limit: 10 })
-    auditEntries.value = res.items
+    // Unmapped requests are audited as `http.request`; they belong in the
+    // audit log, not in the dashboard's activity summary.
+    const res = await listAudit({ limit: 50 })
+    auditEntries.value = res.items.filter((e) => e.action !== 'http.request').slice(0, 10)
   } catch {
     auditEntries.value = []
   } finally {

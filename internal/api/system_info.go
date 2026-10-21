@@ -126,7 +126,7 @@ func (h *SystemInfoHandler) handleDetails(w http.ResponseWriter, _ *http.Request
 		"go_version":     runtime.Version(),
 		"os":             runtime.GOOS,
 		"arch":           runtime.GOARCH,
-		"uptime":         time.Since(h.startTime).String(),
+		"uptime":         time.Since(h.startTime).Round(time.Second).String(),
 		"db_status":      dbStatus,
 		"storage_kind":   h.storageType,
 		"storage_status": storageStatus,

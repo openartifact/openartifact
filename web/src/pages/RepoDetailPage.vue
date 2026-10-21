@@ -60,7 +60,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <div class="mt-0.5"><FormatBadge :format="repo.format" /></div>
               </div>
               <HeroStat v-if="repo.created_at" :label="t('repoDetail.created')" :value="formatDate(repo.created_at)" />
-              <HeroStat :label="t('repoDetail.url')" :value="`/${repo.name}/`" mono />
+              <HeroStat :label="t('repoDetail.url')" :value="repoUrl" mono />
             </div>
 
             <!-- Action button group -->
@@ -277,6 +277,7 @@ import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import { formatColor } from '../lib/formats'
+import { repoBaseUrl } from '../lib/installCommands'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
@@ -396,9 +397,13 @@ function formatDate(dateStr?: string): string {
   }
 }
 
+const repoUrl = computed(() =>
+  repo.value ? `${repoBaseUrl(repo.value.format, window.location.origin, repo.value.name)}/` : '',
+)
+
 function copyUrl(): void {
   if (!repo.value) return
-  const url = `${window.location.origin}/${repo.value.name}/`
+  const url = repoUrl.value
   navigator.clipboard.writeText(url).then(() => {
     toasts.success(t('repoDetail.urlCopied'))
   }).catch(() => {

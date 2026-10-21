@@ -78,7 +78,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 {{ testResults[provider.slug].ok ? t('adm.sso.testOkAt') : t('adm.sso.testFailedAt') }}
                 {{ testResults[provider.slug].at }}
               </template>
-              <template v-else>{{ t('adm.sso.updated') }} {{ formatDate(provider.updated_at) }}</template>
+              <template v-else>{{ t('adm.sso.updated') }} {{ formatRelativeDate(provider.updated_at) }}</template>
             </p>
           </div>
 
@@ -323,6 +323,7 @@ import { saveSSOProvider, testSSOProvider, type SSOConfigInput } from '../../api
 import AdminDialog from '../../components/AdminDialog.vue'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
+import { formatDate } from '../../lib/datetime'
 
 // Response shape of the admin SSO API: the client secret is never returned,
 // so `oidc_config.client_secret` is always absent.
@@ -532,7 +533,7 @@ async function deleteProvider(provider: SSOProvider): Promise<void> {
   }
 }
 
-function formatDate(dateString: string): string {
+function formatRelativeDate(dateString: string): string {
   if (!dateString) return '—'
   const date = new Date(dateString)
   const diffMs = Date.now() - date.getTime()
@@ -545,7 +546,7 @@ function formatDate(dateString: string): string {
   if (diffHours < 24) return `${diffHours}h`
   if (diffDays < 7) return `${diffDays}d`
 
-  return date.toLocaleDateString()
+  return formatDate(date)
 }
 
 onMounted(loadProviders)

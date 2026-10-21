@@ -108,6 +108,36 @@ export function formatColor(id: string): string {
   return isFormatId(key) ? FORMAT_META[key].color : FALLBACK_COLOR
 }
 
+function relativeLuminance(hex: string): number {
+  const n = Number.parseInt(hex.slice(1), 16)
+  const lin = (c: number) => {
+    const s = c / 255
+    return s <= 0.03928 ? s / 12.92 : ((s + 0.055) / 1.055) ** 2.4
+  }
+  return 0.2126 * lin((n >> 16) & 255) + 0.7152 * lin((n >> 8) & 255) + 0.0722 * lin(n & 255)
+}
+
+// Dark surface (--color-surface-hover 26 31 48) has luminance ~0.014; a brand
+// color below this threshold falls under 3:1 non-text contrast against it.
+const DARK_SURFACE_MIN_LUMINANCE = 0.143
+
+/** True when the brand color is too dark to read on the dark-theme surface. */
+export function formatColorLowOnDark(id: string): boolean {
+  return relativeLuminance(formatColor(id)) < DARK_SURFACE_MIN_LUMINANCE
+}
+
+// Categorical palette for charts: brand colors collide (deb, maven, npm and
+// rpm are all red) and some vanish on dark. These stay distinct and readable
+// on both themes.
+export const CHART_PALETTE = [
+  '#60A5FA', '#F59E0B', '#34D399', '#F472B6', '#A78BFA', '#F87171',
+  '#2DD4BF', '#FBBF24', '#818CF8', '#FB923C', '#4ADE80', '#E879F9',
+]
+
+export function chartColor(index: number): string {
+  return CHART_PALETTE[index % CHART_PALETTE.length]
+}
+
 export function formatIcon(id: string): string | undefined {
   const key = id?.toLowerCase() ?? ''
   return isFormatId(key) ? FORMAT_META[key].icon : undefined
