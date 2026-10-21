@@ -535,4 +535,9 @@ type DatabaseConfig struct {
 	MaxOpenConns           int               `yaml:"maxOpenConns"`           // Maximum number of open connections (default: 25)
 	MaxIdleConns           int               `yaml:"maxIdleConns"`           // Maximum number of idle connections (default: 5)
 	ConnMaxLifetimeMinutes int               `yaml:"connMaxLifetimeMinutes"` // Maximum lifetime of a connection in minutes (default: 30)
+	// AuthCacheTTLMillis is how long per-request authentication lookups (token,
+	// user, groups, permission targets, repository by name) are served from
+	// memory. Writes through this process invalidate immediately; other
+	// replicas observe a change after at most this long. 0 disables the cache.
+	AuthCacheTTLMillis int `yaml:"authCacheTtlMs"`
 }

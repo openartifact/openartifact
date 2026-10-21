@@ -32,7 +32,7 @@ func (p *PostgresDB) CreateUser(ctx context.Context, user *models.User) (*models
 }
 
 //nolint:dupl // handler boilerplate: identical structure, different entities
-func (p *PostgresDB) GetUserByID(ctx context.Context, id string) (*models.User, error) {
+func (p *PostgresDB) GetUserByIDUncached(ctx context.Context, id string) (*models.User, error) {
 	u := &models.User{}
 
 	var (
@@ -130,6 +130,9 @@ func (p *PostgresDB) GetUserByUsername(ctx context.Context, username string) (*m
 }
 
 func (p *PostgresDB) UpdateUser(ctx context.Context, user *models.User) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE auth_users SET username=$2, email=$3, password_hash=$4, full_name=$5, disabled=$6, must_change_password=$7, last_login_at=$8, external_id=$9, provider_slug=$10, sso_managed_groups=$11
 		WHERE id=$1`,
@@ -254,6 +257,9 @@ func (p *PostgresDB) GetGroupByID(ctx context.Context, id string) (*models.Group
 }
 
 func (p *PostgresDB) UpdateGroup(ctx context.Context, group *models.Group) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE auth_groups SET name=$2, description=$3 WHERE id=$1`,
 		group.ID, group.Name, group.Description,
@@ -266,6 +272,9 @@ func (p *PostgresDB) UpdateGroup(ctx context.Context, group *models.Group) error
 }
 
 func (p *PostgresDB) DeleteGroup(ctx context.Context, id string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	// permission_assignments.principal_id is polymorphic (no FK), so a group's
 	// assignments must be removed explicitly in the same transaction.
 	tx, err := p.db.BeginTx(ctx, nil)
@@ -326,6 +335,9 @@ func (p *PostgresDB) ListGroups(ctx context.Context) ([]*models.Group, error) {
 }
 
 func (p *PostgresDB) AddUserToGroup(ctx context.Context, userID, groupID string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`INSERT INTO auth_user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING`,
 		userID, groupID,
@@ -338,6 +350,9 @@ func (p *PostgresDB) AddUserToGroup(ctx context.Context, userID, groupID string)
 }
 
 func (p *PostgresDB) RemoveUserFromGroup(ctx context.Context, userID, groupID string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`DELETE FROM auth_user_groups WHERE user_id=$1 AND group_id=$2`,
 		userID, groupID,
@@ -349,7 +364,7 @@ func (p *PostgresDB) RemoveUserFromGroup(ctx context.Context, userID, groupID st
 	return nil
 }
 
-func (p *PostgresDB) ListGroupsByUser(ctx context.Context, userID string) ([]*models.Group, error) {
+func (p *PostgresDB) ListGroupsByUserUncached(ctx context.Context, userID string) ([]*models.Group, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT g.id, g.name, g.description, g.created_at, g.updated_at
 		FROM auth_groups g
@@ -531,7 +546,7 @@ func (p *PostgresDB) CreateToken(ctx context.Context, token *models.Token) (*mod
 	return token, nil
 }
 
-func (p *PostgresDB) GetTokenByHash(ctx context.Context, hash string) (*models.Token, error) {
+func (p *PostgresDB) GetTokenByHashUncached(ctx context.Context, hash string) (*models.Token, error) {
 	t := &models.Token{}
 
 	var (
@@ -612,6 +627,9 @@ func (p *PostgresDB) GetTokenByID(ctx context.Context, tokenID string) (*models.
 }
 
 func (p *PostgresDB) RevokeToken(ctx context.Context, tokenID string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE auth_tokens SET revoked_at=now() WHERE id=$1`,
 		tokenID,
@@ -746,6 +764,9 @@ func (p *PostgresDB) GetPermissionTargetByName(ctx context.Context, name string)
 }
 
 func (p *PostgresDB) UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE permission_targets SET name=$2, repository_filter=$3, path_pattern=$4, actions=$5 WHERE id=$1`,
 		target.ID, target.Name, target.RepositoryFilter, target.PathPattern, target.Actions,
@@ -758,6 +779,9 @@ func (p *PostgresDB) UpdatePermissionTarget(ctx context.Context, target *models.
 }
 
 func (p *PostgresDB) DeletePermissionTarget(ctx context.Context, id string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	err := p.q.DeletePermissionTarget(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete permission target: %w", err)
@@ -789,6 +813,9 @@ func (p *PostgresDB) ListPermissionTargets(ctx context.Context) ([]*models.Permi
 }
 
 func (p *PostgresDB) CreatePermissionAssignment(ctx context.Context, assignment *models.PermissionAssignment) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	err := p.q.CreatePermissionAssignment(ctx, dbsqlc.CreatePermissionAssignmentParams{
 		PermissionTargetID: assignment.PermissionTargetID,
 		PrincipalType:      assignment.PrincipalType,
@@ -802,6 +829,9 @@ func (p *PostgresDB) CreatePermissionAssignment(ctx context.Context, assignment 
 }
 
 func (p *PostgresDB) DeletePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	err := p.q.DeletePermissionAssignment(ctx, dbsqlc.DeletePermissionAssignmentParams{
 		PermissionTargetID: targetID,
 		PrincipalType:      principalType,
@@ -814,7 +844,7 @@ func (p *PostgresDB) DeletePermissionAssignment(ctx context.Context, targetID, p
 	return nil
 }
 
-func (p *PostgresDB) GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error) {
+func (p *PostgresDB) GetPermissionTargetsForPrincipalUncached(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error) {
 	rows, err := p.q.GetPermissionTargetsForPrincipal(ctx, dbsqlc.GetPermissionTargetsForPrincipalParams{
 		PrincipalID: userID,
 		GroupIds:    groupIDs,

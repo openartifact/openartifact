@@ -24,6 +24,7 @@ server:
   #   - "10.0.0.0/8"
   #   - "192.168.0.0/16"
   # rateLimitRps: 100
+  # pprofEnabled: false     # Go profiler at /api/v1/admin/pprof/ (admin only); env OPENARTIFACT_PPROF_ENABLED
   # readHeaderTimeout: 10   # seconds
   # trustedProxies:         # CIDRs whose X-Forwarded-For is trusted
   #   - "10.0.0.0/8"
@@ -44,6 +45,11 @@ database:
   maxOpenConns: 25
   maxIdleConns: 5
   connMaxLifetimeMinutes: 30
+  # In-memory cache for per-request auth lookups (token, user, groups,
+  # permission targets, repository by name). Changes made through this
+  # instance take effect immediately; other replicas see them after at most
+  # this many milliseconds. 0 disables the cache.
+  authCacheTtlMs: 2000
 
 storage:
   # type: filesystem | s3 | gcs | azure | garage | seaweedfs | oci

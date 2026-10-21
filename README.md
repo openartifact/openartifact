@@ -471,6 +471,29 @@ make generate          # sqlc v1.31.1 (DB code generation)
 cd web && bun install && bun run dev
 ```
 
+### Benchmarks
+
+```sh
+make bench        # Go micro-benchmarks with -benchmem (parsers, metadata builders, auth, JSON, search)
+OA_URL=http://127.0.0.1:8080 OA_USER=admin OA_PASS=... OA_PID=<server pid> make bench-load
+```
+
+`make bench-load` runs `bench/run.sh`, which builds `bench/oabench`, seeds the
+instance (thousands of Maven/npm/deb/rpm/Docker artifacts; idempotent) and
+drives about 20 read and upload scenarios, reporting p50/p95/p99 latency, RPS,
+error rate, server RSS/CPU (`OA_PID`) and allocations per request (from
+`/metrics`, so start the server with `METRICS_ALLOW_ANONYMOUS=true`). Set
+`PSQL="psql -h ... -U ... db"` to also capture `pg_stat_statements` (load the
+extension with `shared_preload_libraries`). Do not benchmark against a Postgres
+behind a rootless-container port forwarder: it inflates large responses by
+orders of magnitude; use host networking or a native install.
+
+For profiles, start the server with `OPENARTIFACT_PPROF_ENABLED=true`
+(admin-only `/api/v1/admin/pprof/*`, off by default) and pass
+`oabench load -pprof <base-url>/api/v1/admin/pprof -pprof-token <PAT>
+-profile-dir DIR` to capture CPU/heap/alloc/mutex/block/goroutine profiles per
+scenario. `DB_AUTH_CACHE_TTL_MS` controls the short auth-lookup cache (0 disables).
+
 See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) (conventions
 for humans and coding agents alike).
 

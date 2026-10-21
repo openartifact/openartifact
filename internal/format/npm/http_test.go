@@ -7,6 +7,7 @@ package npm
 import (
 	"bytes"
 	"context"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -27,6 +28,11 @@ type tarballMockDB struct {
 	repo     *models.Repository
 	pkg      *models.NPMPackage
 	versions []*models.NPMVersion
+
+	// versionLookups counts single-version lookups (the cheap tarball path).
+	versionLookups int
+	// listCalls counts full version-list loads.
+	listCalls int
 
 	// quarantined lists the artifact keys IsArtifactQuarantined reports as quarantined.
 	quarantined map[string]bool
@@ -51,7 +57,21 @@ func (m *tarballMockDB) GetNPMPackageByName(_ context.Context, _, _ string) (*mo
 }
 
 func (m *tarballMockDB) GetNPMVersionsByPackage(_ context.Context, _ string) ([]*models.NPMVersion, error) {
+	m.listCalls++
+
 	return m.versions, nil
+}
+
+func (m *tarballMockDB) GetNPMVersion(_ context.Context, _, version string) (*models.NPMVersion, error) {
+	m.versionLookups++
+
+	for _, v := range m.versions {
+		if v.Version == version {
+			return v, nil
+		}
+	}
+
+	return nil, nil
 }
 
 // tarballMockBlobStore is a minimal content-addressed in-memory blob store.
@@ -209,5 +229,96 @@ func TestHandleTarball_Quarantine(t *testing.T) {
 				t.Error("quarantined response leaked artifact bytes")
 			}
 		})
+	}
+}
+
+// TestHandleTarball_Resolution covers how a tarball filename is mapped to its
+// version: the conventional name uses one version lookup, an unconventional
+// name still resolves through the full version list, and an unknown one is a 404.
+func TestHandleTarball_Resolution(t *testing.T) {
+	cases := []struct {
+		name        string
+		filename    string
+		stored      string
+		pkg         string
+		path        string
+		want        int
+		wantLookups int
+	}{
+		{"conventional", "lodash-1.0.0.tgz", "lodash-1.0.0.tgz", "lodash", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusOK, 1},
+		{"scoped", "core-1.0.0.tgz", "core-1.0.0.tgz", "@acme/core", "/repos/myrepo/@acme/core/-/core-1.0.0.tgz", http.StatusOK, 1},
+		{"unconventional stored name", "lodash-1.0.0.tgz", "custom-name.tgz", "lodash", "/repos/myrepo/lodash/-/custom-name.tgz", http.StatusOK, 0},
+		{"unknown version", "lodash-1.0.0.tgz", "lodash-1.0.0.tgz", "lodash", "/repos/myrepo/lodash/-/lodash-9.9.9.tgz", http.StatusNotFound, 1},
+		{"stored filename differs from the derived one", "lodash-1.0.0.tgz", "other.tgz", "lodash", "/repos/myrepo/lodash/-/lodash-1.0.0.tgz", http.StatusNotFound, 1},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bs := &tarballMockBlobStore{blobs: map[string][]byte{"sha-abc": []byte("data")}}
+			db := &tarballMockDB{
+				repo:     &models.Repository{ID: "repo-1", Name: "myrepo"},
+				pkg:      &models.NPMPackage{ID: "pkg-1", FullName: tc.pkg},
+				versions: []*models.NPMVersion{{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", BlobSHA256: "sha-abc", TarballFilename: tc.stored}},
+			}
+
+			log, err := logger.New("info", "json", "stdout")
+			if err != nil {
+				t.Fatalf("logger.New: %v", err)
+			}
+
+			h := NewHTTPHandler(log, db, bs, "http://localhost:8080")
+			router := chi.NewRouter()
+			router.Route("/repos/{name}", func(r chi.Router) { h.RegisterRepoRoutes(r) })
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, tc.path, nil))
+
+			if w.Code != tc.want {
+				t.Fatalf("status = %d, want %d; body: %s", w.Code, tc.want, w.Body.String())
+			}
+
+			if tc.wantLookups == 1 && db.versionLookups != 1 {
+				t.Errorf("versionLookups = %d, want 1", db.versionLookups)
+			}
+		})
+	}
+}
+
+// TestHandlePackument_ConditionalSkipsVersionLoad verifies a matching
+// If-None-Match is answered with 304 before any version is loaded.
+func TestHandlePackument_ConditionalSkipsVersionLoad(t *testing.T) {
+	updated := time.Unix(1700000000, 0)
+	db := &tarballMockDB{
+		repo:     &models.Repository{ID: "repo-1", Name: "myrepo"},
+		pkg:      &models.NPMPackage{ID: "pkg-1", FullName: "lodash", UpdatedAt: updated},
+		versions: []*models.NPMVersion{{ID: "v1", PackageID: "pkg-1", Version: "1.0.0", TarballFilename: "lodash-1.0.0.tgz"}},
+	}
+
+	log, err := logger.New("info", "json", "stdout")
+	if err != nil {
+		t.Fatalf("logger.New: %v", err)
+	}
+
+	h := NewHTTPHandler(log, db, &tarballMockBlobStore{}, "http://localhost:8080")
+	router := chi.NewRouter()
+	router.Route("/repos/{name}", func(r chi.Router) { h.RegisterRepoRoutes(r) })
+
+	etag := fmt.Sprintf(`"%x"`, updated.UnixNano())
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/repos/myrepo/lodash", nil)
+	req.Header.Set("If-None-Match", etag)
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	if w.Code != http.StatusNotModified {
+		t.Fatalf("status = %d, want 304", w.Code)
+	}
+
+	if db.listCalls != 0 {
+		t.Errorf("versions loaded %d times for a 304, want 0", db.listCalls)
+	}
+
+	if got := w.Header().Get("ETag"); got != etag {
+		t.Errorf("ETag = %q, want %q", got, etag)
 	}
 }

@@ -200,6 +200,9 @@ func scanSSOProviderRows(rows *sql.Rows) ([]*models.SSOProvider, error) {
 }
 
 func (p *PostgresDB) UpdateUserSSO(ctx context.Context, userID string, externalID, providerSlug string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE auth_users SET external_id=$2, provider_slug=$3 WHERE id=$1`,
 		userID, externalID, providerSlug,
@@ -212,6 +215,9 @@ func (p *PostgresDB) UpdateUserSSO(ctx context.Context, userID string, externalI
 }
 
 func (p *PostgresDB) SyncSSOGroups(ctx context.Context, userID string, groupIDs []string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
@@ -387,6 +393,9 @@ func (p *PostgresDB) GetOrCreateGroup(ctx context.Context, name string) (*models
 }
 
 func (p *PostgresDB) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`INSERT INTO permission_assignments (permission_target_id, principal_type, principal_id)
 		VALUES ($1, $2, $3)
@@ -401,6 +410,9 @@ func (p *PostgresDB) GetOrCreatePermissionAssignment(ctx context.Context, target
 }
 
 func (p *PostgresDB) SyncSSOPermissionsForGroup(ctx context.Context, groupID string, targetIDs []string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	// Delete all existing group assignments not in targetIDs
 	err := p.q.DeleteGroupPermissionAssignmentsNotIn(ctx, dbsqlc.DeleteGroupPermissionAssignmentsNotInParams{
 		PrincipalID:      groupID,

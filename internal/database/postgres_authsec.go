@@ -40,6 +40,9 @@ func (p *PostgresDB) DeleteOtherSessionsByUser(ctx context.Context, userID, keep
 // It returns false (and creates nothing) when a user already exists, which is
 // what a replica that lost the first-boot race observes.
 func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, username, passwordHash string) (bool, error) {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin bootstrap tx: %w", err)
@@ -95,6 +98,9 @@ func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, username, passwor
 // bootstrap leaves behind. It never touches an instance where some principal
 // already holds admin-all.
 func (p *PostgresDB) RepairBootstrapAdmin(ctx context.Context, username string) (bool, error) {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return false, fmt.Errorf("begin bootstrap repair tx: %w", err)

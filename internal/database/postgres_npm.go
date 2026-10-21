@@ -18,9 +18,14 @@ func (p *PostgresDB) fillNPMBlobSHA256(ctx context.Context, packageID string, ve
 		return nil
 	}
 
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT v.id, b.sha256 FROM npm_versions v JOIN blobs b ON b.id = v.blob_id WHERE v.package_id = $1`,
-		packageID)
+	// A single version needs only its own blob; the package-wide join is for
+	// callers that resolve every version at once.
+	query, arg := `SELECT v.id, b.sha256 FROM npm_versions v JOIN blobs b ON b.id = v.blob_id WHERE v.package_id = $1`, packageID
+	if len(versions) == 1 {
+		query, arg = `SELECT v.id, b.sha256 FROM npm_versions v JOIN blobs b ON b.id = v.blob_id WHERE v.id = $1`, versions[0].ID
+	}
+
+	rows, err := p.db.QueryContext(ctx, query, arg)
 	if err != nil {
 		return fmt.Errorf("failed to resolve npm blob sha256: %w", err)
 	}

@@ -125,6 +125,18 @@ linters:
       - legacy
       - std-error-handling
     rules:
+      # bench/oabench is a developer load tool, not shipped code
+      - path: "^bench/"
+        linters:
+          - bodyclose
+          - errchkjson
+          - gochecknoglobals
+          - gocyclo
+          - modernize
+          - noctx
+          - nolintlint
+          - perfsprint
+          - usestdlibvars
       # Test files get more relaxed rules
       - path: "_test\\.go"
         linters:

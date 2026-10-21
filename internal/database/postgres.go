@@ -60,6 +60,9 @@ type PostgresDB struct {
 	q    *dbsqlc.Queries
 	log  *logger.Logger
 
+	// authCache serves the per-request auth lookups (see auth_cache.go).
+	authCache authCache
+
 	// lockSlots bounds how many blob-lock transactions (WithBlobLocks,
 	// DeleteBlobIfUnreferenced) may hold a pooled connection at once. The
 	// callback of a blob lock needs further connections of the same pool; if
@@ -79,9 +82,7 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 	// built from the parsed pgx config, so no DSN string is ever re-parsed.
 	db := stdlib.OpenDB(*poolCfg.ConnConfig.Copy())
 
-	db.SetMaxOpenConns(cfg.MaxOpenConns)
-	db.SetMaxIdleConns(cfg.MaxIdleConns)
-	db.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute)
+	configureSQLPool(db, cfg)
 
 	if err := db.PingContext(context.Background()); err != nil {
 		_ = db.Close()
@@ -109,7 +110,29 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 		q:         dbsqlc.New(pool),
 		log:       log,
 		lockSlots: lockSlots,
+		authCache: authCache{ttl: time.Duration(cfg.AuthCacheTTLMillis) * time.Millisecond},
 	}, nil
+}
+
+// sqlIdleTimeout is how long a surplus database/sql connection may sit idle
+// before it is closed.
+const sqlIdleTimeout = 5 * time.Minute
+
+// configureSQLPool applies the connection limits to the database/sql handle.
+//
+// database/sql closes a connection the moment it is returned to a full idle
+// list. The per-request authentication queries (token, user, groups) run on
+// this handle with as many concurrent callers as there are in-flight
+// requests, so an idle cap far below MaxOpenConns turns every burst into a
+// stream of connect + SCRAM handshake + close cycles (measured: ~170 new
+// backends in 6 s at 32 concurrent clients). Idle connections are therefore
+// kept up to MaxOpenConns and shrink back only after sqlIdleTimeout;
+// MaxIdleConns keeps its meaning for the pgx pool's warm minimum.
+func configureSQLPool(db *sql.DB, cfg DatabaseConfig) {
+	db.SetMaxOpenConns(cfg.MaxOpenConns)
+	db.SetMaxIdleConns(max(cfg.MaxIdleConns, cfg.MaxOpenConns))
+	db.SetConnMaxIdleTime(sqlIdleTimeout)
+	db.SetConnMaxLifetime(time.Duration(cfg.ConnMaxLifetimeMinutes) * time.Minute)
 }
 
 // GetDB returns the underlying sql.DB connection.
@@ -148,7 +171,7 @@ func (p *PostgresDB) Migrate(ctx context.Context) error {
 	return NewMigrator(p.db).Apply(ctx)
 }
 
-func (p *PostgresDB) GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error) {
+func (p *PostgresDB) GetRepositoryByNameUncached(ctx context.Context, name string) (*models.Repository, error) {
 	r := &models.Repository{}
 
 	err := p.db.QueryRowContext(ctx,
@@ -276,6 +299,9 @@ func (p *PostgresDB) CountRepositories(ctx context.Context, formatFilter string)
 }
 
 func (p *PostgresDB) UpdateRepository(ctx context.Context, repo *models.Repository) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx,
 		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, org_id = $11, updated_at = now() WHERE id = $12`,
 		repo.Description, repo.Public, repo.RepoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.ID,
@@ -288,6 +314,9 @@ func (p *PostgresDB) UpdateRepository(ctx context.Context, repo *models.Reposito
 }
 
 func (p *PostgresDB) DeleteRepository(ctx context.Context, id string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
 	_, err := p.db.ExecContext(ctx, `DELETE FROM repositories WHERE id = $1`, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete repository: %w", err)

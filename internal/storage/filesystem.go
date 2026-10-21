@@ -21,6 +21,7 @@ import (
 // FilesystemStore implements the BlobStore interface for filesystem storage.
 type FilesystemStore struct {
 	basePath string
+	aliases  aliasIndex
 }
 
 // NewFilesystemStore creates a new filesystem blob store.
@@ -105,6 +106,10 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		if err == nil {
 			_ = os.WriteFile(metaPath, metaData, 0600)
 		}
+
+		if computedSHA256 != id {
+			fs.aliases.add(computedSHA256, id)
+		}
 	}
 
 	return id, nil
@@ -141,6 +146,8 @@ func (fs *FilesystemStore) Delete(ctx context.Context, id string) error {
 
 	// Remove metadata file (ignore error if not exists)
 	_ = os.Remove(metaPath)
+
+	fs.aliases.remove(id)
 
 	if err := os.Remove(blobPath); err != nil {
 		if os.IsNotExist(err) {
@@ -299,62 +306,10 @@ func (fs *FilesystemStore) ExistsBySHA256(ctx context.Context, sha256hex string)
 		return sha256hex, true, nil
 	}
 
-	// Fallback: scan metadata files for blobs stored with a non-SHA256 ID.
-	var found string
-
-	walkErr := filepath.Walk(fs.basePath, func(path string, info os.FileInfo, err error) error {
-		if err != nil {
-			//nolint:nilerr // intentionally skip walk errors
-			return nil
-		}
-
-		if info.IsDir() || !strings.HasSuffix(path, ".meta") {
-			return nil
-		}
-
-		//nolint:gosec // G122: path is within the storage root directory
-		data, readErr := os.ReadFile(path)
-		if readErr != nil {
-			//nolint:nilerr // intentionally skip walk errors
-			return nil
-		}
-
-		var meta map[string]string
-		if jsonErr := json.Unmarshal(data, &meta); jsonErr != nil {
-			//nolint:nilerr // intentionally skip walk errors
-			return nil
-		}
-
-		if meta["_sha256"] == sha256hex {
-			blobPath := strings.TrimSuffix(path, ".meta")
-
-			rel, relErr := filepath.Rel(fs.basePath, blobPath)
-			if relErr != nil {
-				//nolint:nilerr // intentionally skip walk errors
-				return nil
-			}
-
-			parts := strings.SplitN(rel, string(os.PathSeparator), 2)
-			if len(parts) == 2 {
-				found = parts[0] + parts[1]
-			} else {
-				found = rel
-			}
-
-			return filepath.SkipAll
-		}
-
-		return nil
-	})
-	if walkErr != nil {
-		return "", false, fmt.Errorf("failed to search blobs by sha256: %w", walkErr)
-	}
-
-	if found != "" {
-		return found, true, nil
-	}
-
-	return "", false, nil
+	// Fallback: blobs stored under a non-SHA256 ID, resolved through an index
+	// that is built by one directory walk on first use and kept current by
+	// Put and Delete (see aliasIndex).
+	return fs.aliases.lookup(fs, sha256hex)
 }
 
 // PresignURL returns ErrPresignNotSupported; filesystem storage does not support presigned URLs.

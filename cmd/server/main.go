@@ -579,6 +579,12 @@ func main() {
 	api.NewAdminStorageHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminGPGHandler(db, log, evaluator).Register(authedAPI)
 	sysInfoHandler.RegisterAuthed(authedAPI)
+
+	if cfg.Server.PprofEnabled {
+		registerPprof(authedAPI)
+		log.Warnw("pprof enabled at /api/v1/admin/pprof/ (admin only); disable outside diagnostics")
+	}
+
 	api.NewAdminAIHandler(db, log, evaluator).Register(authedAPI)
 
 	orgsHandler := api.NewOrgsHandler(db, log)

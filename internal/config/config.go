@@ -80,6 +80,11 @@ type ServerConfig struct {
 	// the immediate TCP peer (RemoteAddr) is always used as the client IP,
 	// so a client can never spoof its own IP via those headers.
 	TrustedProxies []string `yaml:"trustedProxies"`
+	// PprofEnabled mounts Go's runtime profiler under /api/v1/admin/pprof/
+	// (admin "manage" permission required). Off by default: profiles expose
+	// internals and CPU profiling costs cycles. Sets non-zero mutex and block
+	// profile rates while enabled.
+	PprofEnabled bool `yaml:"pprofEnabled"`
 }
 
 // LoggerConfig contains logging configuration.
@@ -176,6 +181,7 @@ func defaultConfig() *Config {
 			MaxOpenConns:           25,
 			MaxIdleConns:           5,
 			ConnMaxLifetimeMinutes: 30,
+			AuthCacheTTLMillis:     2000,
 		},
 		Storage: storage.StorageConfig{
 			Type:               "filesystem",
@@ -268,6 +274,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideSlice(&cfg.Server.IPAllowlist, "OPENARTIFACT_IP_ALLOWLIST")
 	overrideInt(&cfg.Server.RateLimitRPS, "OPENARTIFACT_RATE_LIMIT_RPS")
 	overrideSlice(&cfg.Server.TrustedProxies, "OPENARTIFACT_TRUSTED_PROXIES")
+	overrideBool(&cfg.Server.PprofEnabled, "OPENARTIFACT_PPROF_ENABLED")
 
 	// Database config
 	overrideString(&cfg.Database.Driver, "DB_DRIVER")
@@ -280,6 +287,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Database.MaxOpenConns, "DB_MAX_OPEN_CONNS")
 	overrideInt(&cfg.Database.MaxIdleConns, "DB_MAX_IDLE_CONNS")
 	overrideInt(&cfg.Database.ConnMaxLifetimeMinutes, "DB_CONN_MAX_LIFETIME_MINUTES")
+	overrideInt(&cfg.Database.AuthCacheTTLMillis, "DB_AUTH_CACHE_TTL_MS")
 
 	// Storage config
 	if v, ok := os.LookupEnv("STORAGE_BACKEND"); ok {

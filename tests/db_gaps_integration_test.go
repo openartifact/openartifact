@@ -27,6 +27,13 @@ import (
 func freshPostgres(t *testing.T, maxOpen int) *database.PostgresDB {
 	t.Helper()
 
+	return freshPostgresCfg(t, maxOpen, nil)
+}
+
+// freshPostgresCfg is freshPostgres with a hook to adjust the connection config.
+func freshPostgresCfg(t *testing.T, maxOpen int, mutate func(*database.DatabaseConfig)) *database.PostgresDB {
+	t.Helper()
+
 	admin := setupTestDB(t)
 	ctx := context.Background()
 
@@ -53,7 +60,7 @@ func freshPostgres(t *testing.T, maxOpen int) *database.PostgresDB {
 		sslmode = "disable"
 	}
 
-	pg, err := database.NewPostgresDB(database.DatabaseConfig{
+	cfg := database.DatabaseConfig{
 		Host:                   u.Hostname(),
 		Port:                   port,
 		User:                   u.User.Username(),
@@ -63,7 +70,13 @@ func freshPostgres(t *testing.T, maxOpen int) *database.PostgresDB {
 		MaxOpenConns:           maxOpen,
 		MaxIdleConns:           1,
 		ConnMaxLifetimeMinutes: 5,
-	}, newTestLogger(t))
+	}
+
+	if mutate != nil {
+		mutate(&cfg)
+	}
+
+	pg, err := database.NewPostgresDB(cfg, newTestLogger(t))
 	if err != nil {
 		t.Fatalf("NewPostgresDB: %v", err)
 	}

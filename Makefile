@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 .PHONY: help build run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
-        docker-build docker-run docker-stop migrate web-build web-dev build-cli generate bench
+        docker-build docker-run docker-stop migrate web-build web-dev build-cli generate bench bench-load
 
 # Variables
 BINARY_NAME=openartifact
@@ -30,7 +30,8 @@ help:
 	@echo "  test-integration- Run integration tests"
 	@echo "  test-coverage   - Run tests with HTML coverage report"
 	@echo "  test-race       - Run tests with race detector only"
-	@echo "  bench           - Run benchmarks"
+	@echo "  bench           - Run Go micro-benchmarks (-benchmem)"
+	@echo "  bench-load      - Seed a running instance and run the HTTP load scenarios (bench/run.sh)"
 	@echo "  clean           - Remove build artifacts"
 	@echo "  lint            - Run golangci-lint"
 	@echo "  fmt             - Format code (gofmt + goimports)"
@@ -121,6 +122,10 @@ generate:
 bench:
 	@echo "Running benchmarks..."
 	$(GO) test -bench=. -benchmem -run=^$$ ./...
+
+bench-load:
+	@echo "Running HTTP load scenarios (see README, Development > Benchmarks)..."
+	bench/run.sh
 
 deps:
 	@echo "Downloading dependencies..."

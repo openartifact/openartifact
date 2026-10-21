@@ -5,6 +5,7 @@
 package npm
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -14,6 +15,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -87,6 +89,28 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	abbreviated := strings.Contains(r.Header.Get("Accept"), "application/vnd.npm.install-v1+json")
+
+	etag := fmt.Sprintf(`"%x"`, pkg.UpdatedAt.UnixNano())
+	if abbreviated {
+		etag = `"abbr-` + etag[1:]
+	}
+
+	setCacheHeaders := func() {
+		w.Header().Set("Vary", "Accept")
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Cache-Control", "public, max-age=60")
+	}
+
+	// The ETag derives from the package row alone, so a revalidation is
+	// answered before loading and rendering every version.
+	if etagMatches(r.Header.Get("If-None-Match"), etag) {
+		setCacheHeaders()
+		w.WriteHeader(http.StatusNotModified)
+
+		return
+	}
+
 	versions, err := h.DB.GetNPMVersionsByPackage(r.Context(), pkg.ID)
 	if err != nil {
 		h.Log.Errorw("failed to get npm versions", "pkg", pkgName, "error", err)
@@ -105,7 +129,6 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 
 	var body []byte
 
-	abbreviated := strings.Contains(r.Header.Get("Accept"), "application/vnd.npm.install-v1+json")
 	if abbreviated {
 		body, err = BuildAbbreviatedPackument(repoName, pkgName, versions, distTags, h.BaseURL)
 	} else {
@@ -119,20 +142,7 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	etag := fmt.Sprintf(`"%x"`, pkg.UpdatedAt.UnixNano())
-	if abbreviated {
-		etag = `"abbr-` + etag[1:]
-	}
-
-	w.Header().Set("Vary", "Accept")
-	w.Header().Set("ETag", etag)
-	w.Header().Set("Cache-Control", "public, max-age=60")
-
-	if etagMatches(r.Header.Get("If-None-Match"), etag) {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-
+	setCacheHeaders()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(body)
@@ -238,26 +248,12 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	versions, err := h.DB.GetNPMVersionsByPackage(r.Context(), pkg.ID)
+	blobSHA256, version, err := h.resolveTarball(r.Context(), pkg, pkgName, tarball)
 	if err != nil {
 		h.Log.Errorw("failed to get npm versions", "pkg", pkgName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
-	}
-
-	var (
-		blobSHA256 string
-		version    string
-	)
-
-	for _, v := range versions {
-		if v.TarballFilename == tarball {
-			blobSHA256 = v.BlobSHA256
-			version = v.Version
-
-			break
-		}
 	}
 
 	if blobSHA256 == "" {
@@ -293,6 +289,42 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write tarball response", "filename", tarball, "error", err)
 	}
+}
+
+// resolveTarball maps a tarball filename to its version and blob digest.
+// Tarballs are named "<unscoped-name>-<version>.tgz", so the common case is one
+// indexed lookup of that version; only an unconventional filename falls back to
+// scanning every version of the package. It returns empty strings when no
+// version owns the tarball.
+func (h *HTTPHandler) resolveTarball(ctx context.Context, pkg *models.NPMPackage, pkgName, tarball string) (string, string, error) {
+	base := pkgName
+	if i := strings.LastIndexByte(base, '/'); i >= 0 {
+		base = base[i+1:]
+	}
+
+	if cand, ok := strings.CutPrefix(strings.TrimSuffix(tarball, ".tgz"), base+"-"); ok && strings.HasSuffix(tarball, ".tgz") {
+		v, err := h.DB.GetNPMVersion(ctx, pkg.ID, cand)
+		if err != nil {
+			return "", "", fmt.Errorf("get npm version: %w", err)
+		}
+
+		if v != nil && v.TarballFilename == tarball {
+			return v.BlobSHA256, v.Version, nil
+		}
+	}
+
+	versions, err := h.DB.GetNPMVersionsByPackage(ctx, pkg.ID)
+	if err != nil {
+		return "", "", fmt.Errorf("list npm versions: %w", err)
+	}
+
+	for _, v := range versions {
+		if v.TarballFilename == tarball {
+			return v.BlobSHA256, v.Version, nil
+		}
+	}
+
+	return "", "", nil
 }
 
 func (h *HTTPHandler) handleGetDistTags(w http.ResponseWriter, r *http.Request) {

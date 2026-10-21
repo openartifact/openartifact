@@ -8,6 +8,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -48,7 +49,26 @@ func NewExecutor(db *sql.DB) *Executor {
 // group_id, artifact_id_coord, scope. group_id/artifact_id_coord are populated
 // only for maven (used to enrich SearchResult.Metadata); scope only for npm.
 func unifiedSearchView() string {
-	return `(` + strings.Join([]string{
+	return `(` + strings.Join(unifiedSearchBranches(), "\n\tUNION ALL\n\t") + `)`
+}
+
+// blobJoinRe matches the "LEFT JOIN blobs b" every branch of the view uses to
+// resolve sha256 and size.
+var blobJoinRe = regexp.MustCompile(`\s+LEFT JOIN blobs b ON b\.id = \w+\.\w+`)
+
+// countSearchView is unifiedSearchView without the blobs join, for queries that
+// never read sha256 or size (a count without a sha256 filter): the join forces
+// a hash join over the whole blobs table per format, and removing it cuts the
+// count roughly in half.
+func countSearchView() string {
+	v := blobJoinRe.ReplaceAllString(unifiedSearchView(), "")
+	v = strings.ReplaceAll(v, "COALESCE(b.sha256, '')", "''::text")
+
+	return strings.ReplaceAll(v, "COALESCE(b.size_bytes, 0)", "0::bigint")
+}
+
+func unifiedSearchBranches() []string {
+	return []string{
 		`SELECT cc.repository_id, 'cargo'::text AS format, cc.name, cc.version, cc.created_at,
 			cc.name || '-' || cc.version || '.crate' AS path,
 			COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0) AS size,
@@ -134,7 +154,7 @@ func unifiedSearchView() string {
 			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
 			NULL::text, CAST(NULL AS text), NULL::text
 		FROM deb_packages dp LEFT JOIN blobs b ON b.id = dp.blob_id`,
-	}, "\n\tUNION ALL\n\t") + `)`
+	}
 }
 
 // CountResults returns how many rows the filter matches, scoped to the
@@ -147,7 +167,12 @@ func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readab
 
 	where, args := buildWhereClause(filter, readableRepos)
 
-	q := `SELECT COUNT(*) FROM ` + unifiedSearchView() + ` AS s
+	view := countSearchView()
+	if filter.SHA256Prefix != "" {
+		view = unifiedSearchView()
+	}
+
+	q := `SELECT COUNT(*) FROM ` + view + ` AS s
 		JOIN repositories r ON r.id = s.repository_id`
 	if where != "" {
 		q += " WHERE " + where

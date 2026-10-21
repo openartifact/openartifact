@@ -7,6 +7,8 @@ package storage
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"io"
 	"os"
@@ -315,5 +317,63 @@ func TestFilesystem_ListSkipsUploadTmp(t *testing.T) {
 	ids, err := store.List(ctx, "", 0, 0)
 	if err != nil || len(ids) != 0 {
 		t.Fatalf("List = %v, %v; want empty", ids, err)
+	}
+}
+
+func sha256Hex(b []byte) string {
+	sum := sha256.Sum256(b)
+	return hex.EncodeToString(sum[:])
+}
+
+func TestFilesystem_ExistsBySHA256_AliasIndex(t *testing.T) {
+	store := newTestFilesystemStore(t)
+	ctx := context.Background()
+
+	// The blob ID is caller-supplied and differs from the content digest.
+	dataA := []byte("alias blob A")
+	if _, err := store.Put(ctx, bytes.NewReader(dataA), map[string]string{"sha256": sha64}); err != nil {
+		t.Fatalf("Put A: %v", err)
+	}
+
+	// First lookup builds the index from the sidecars.
+	id, ok, err := store.ExistsBySHA256(ctx, sha256Hex(dataA))
+	if err != nil || !ok || id != sha64 {
+		t.Fatalf("lookup A = (%q, %v, %v), want (%q, true, nil)", id, ok, err, sha64)
+	}
+
+	// A blob stored after the index was built is added incrementally.
+	dataB := []byte("alias blob B")
+	idB := strings.Repeat("cd", 32)
+
+	if _, err := store.Put(ctx, bytes.NewReader(dataB), map[string]string{"sha256": idB}); err != nil {
+		t.Fatalf("Put B: %v", err)
+	}
+
+	if id, ok, err = store.ExistsBySHA256(ctx, sha256Hex(dataB)); err != nil || !ok || id != idB {
+		t.Fatalf("lookup B = (%q, %v, %v), want (%q, true, nil)", id, ok, err, idB)
+	}
+
+	// A fresh store over the same directory rebuilds the index from disk.
+	fresh, err := NewFilesystemStore(store.basePath)
+	if err != nil {
+		t.Fatalf("NewFilesystemStore: %v", err)
+	}
+
+	if id, ok, err = fresh.ExistsBySHA256(ctx, sha256Hex(dataA)); err != nil || !ok || id != sha64 {
+		t.Fatalf("fresh lookup A = (%q, %v, %v)", id, ok, err)
+	}
+
+	// Deleting the blob drops it from the index.
+	if err := store.Delete(ctx, sha64); err != nil {
+		t.Fatalf("Delete: %v", err)
+	}
+
+	if _, ok, err = store.ExistsBySHA256(ctx, sha256Hex(dataA)); err != nil || ok {
+		t.Fatalf("lookup after delete = (%v, %v), want (false, nil)", ok, err)
+	}
+
+	// Unknown digests stay a miss.
+	if _, ok, err = store.ExistsBySHA256(ctx, strings.Repeat("0", 64)); err != nil || ok {
+		t.Fatalf("unknown digest = (%v, %v), want (false, nil)", ok, err)
 	}
 }
