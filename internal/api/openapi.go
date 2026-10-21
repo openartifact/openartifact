@@ -11,7 +11,7 @@ import (
 	"sync"
 
 	"github.com/go-chi/chi/v5"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 //go:embed openapi.json

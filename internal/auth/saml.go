@@ -35,6 +35,7 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -321,6 +322,10 @@ func fetchIDPMetadata(ctx context.Context, cfg models.SAMLConfig, log *logger.Lo
 	return nil, errors.New("no idp metadata source configured") //nolint:err113 // static error
 }
 
+const maxIDPMetadataBytes = 1 << 20
+
+var errIDPMetadataTooLarge = errors.New("idp metadata exceeds size limit")
+
 func fetchIDPMetadataFromURL(ctx context.Context, metadataURL string, log *logger.Logger) (*saml.EntityDescriptor, error) {
 	const cacheTTL = time.Hour
 
@@ -335,20 +340,30 @@ func fetchIDPMetadataFromURL(ctx context.Context, metadataURL string, log *logge
 	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
+	// The URL is admin-supplied: reject private/loopback targets (unless
+	// OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true) and re-check at dial time.
+	if err := netutil.ValidateOutboundURLContext(fetchCtx, metadataURL); err != nil {
+		return fallbackCachedMetadata(metadataURL, fmt.Errorf("idp metadata url rejected: %w", err), log)
+	}
+
 	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, metadataURL, nil)
 	if err != nil {
 		return fallbackCachedMetadata(metadataURL, fmt.Errorf("build metadata request: %w", err), log)
 	}
 
-	resp, err := http.DefaultClient.Do(req)
+	resp, err := netutil.SafeHTTPClient(10 * time.Second).Do(req)
 	if err != nil {
 		return fallbackCachedMetadata(metadataURL, err, log)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
-	body, err := io.ReadAll(resp.Body)
+	body, err := io.ReadAll(io.LimitReader(resp.Body, maxIDPMetadataBytes+1))
 	if err != nil {
 		return fallbackCachedMetadata(metadataURL, err, log)
+	}
+
+	if len(body) > maxIDPMetadataBytes {
+		return fallbackCachedMetadata(metadataURL, errIDPMetadataTooLarge, log)
 	}
 
 	meta, err := samlsp.ParseMetadata(body)

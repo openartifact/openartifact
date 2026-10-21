@@ -85,6 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### 0.5.0 (Unreleased)
+
+| Area | Change |
+|---|---|
+| SSO (SAML) | The IdP metadata URL is fetched through the outbound SSRF guard (1 MiB cap, 10 s timeout). Metadata URLs on private or loopback addresses need `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. |
+
 ### 0.4.1
 
 Security fixes; no migrations. Behavior changes:

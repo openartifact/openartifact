@@ -30,7 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/webhook"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 	"github.com/openartifact/openartifact/pkg/logger"
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 const maxHelmUploadBytes = 100 << 20

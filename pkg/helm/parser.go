@@ -13,7 +13,7 @@ import (
 	"path"
 	"strings"
 
-	"gopkg.in/yaml.v3"
+	"go.yaml.in/yaml/v3"
 )
 
 const maxChartYAMLSize = 1 << 20 // 1 MiB

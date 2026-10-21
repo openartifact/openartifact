@@ -64,7 +64,7 @@ Register the redirect URI `BASE_URL/api/v1/auth/sso/oidc/{slug}/callback` with t
 
 | Field | Default |
 |---|---|
-| `idp_metadata_url` or `idp_metadata_xml` (one required; URL is SSRF-checked, XML is validated) | |
+| `idp_metadata_url` or `idp_metadata_xml` (one required; URL is SSRF-checked, capped at 1 MiB, and on a private or loopback network needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`; XML is validated) | |
 | `username_attribute` | `uid` |
 | `email_attribute` | `mail` |
 | `name_attribute` | `displayName` |
