@@ -7,6 +7,7 @@ package audit
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"testing"
 	"time"
 )
