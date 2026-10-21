@@ -78,7 +78,7 @@ test-race:
 
 test-integration:
 	@echo "Running integration tests..."
-	$(GO) test -tags=integration -race -count=1 ./tests/... -timeout 10m
+	$(GO) test -tags=integration -race -count=1 ./tests/... ./internal/database/... ./internal/worker/... -timeout 10m
 
 test-coverage:
 	@echo "Running tests with coverage..."
