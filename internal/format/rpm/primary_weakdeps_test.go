@@ -64,3 +64,37 @@ func TestGeneratePrimaryXML_WeakDepsAndOrder(t *testing.T) {
 		t.Error("rpmlib requirement must be omitted")
 	}
 }
+
+func TestFilterRequiresMatchesCreaterepoC(t *testing.T) {
+	const autoFlag = 1 << 26 // rpm's auto-generated marker bit; must not count as versioned
+
+	pkg := &pkgrpm.Package{
+		Provides: []pkgrpm.Dependency{
+			{Name: "bash", Flags: pkgrpm.SENSE_EQUAL, Version: "5-1"},
+			{Name: "config(bash)", Flags: pkgrpm.SENSE_EQUAL, Version: "5-1"},
+			{Name: "/bin/sh"},
+		},
+		Files: []pkgrpm.FileEntry{{Path: "/usr/bin/sh"}},
+		Requires: []pkgrpm.Dependency{
+			{Name: "/usr/bin/sh"}, // packaged file: dropped
+			{Name: "config(bash)", Flags: pkgrpm.SENSE_EQUAL, Version: "5-1"}, // self-provided: dropped
+			{Name: "/bin/sh", Flags: pkgrpm.SENSE_PREREQ},                     // pre: kept
+			{Name: "/bin/sh", Flags: pkgrpm.SENSE_PREREQ},                     // duplicate: dropped
+			{Name: "libc.so.6()(64bit)", Flags: autoFlag},
+			{Name: "libc.so.6(GLIBC_2.9)(64bit)", Flags: autoFlag},
+			{Name: "libc.so.6(GLIBC_2.34)(64bit)", Flags: autoFlag},
+			{Name: "libc.so.6(GLIBC_2.4)(64bit)", Flags: autoFlag},
+			{Name: "libtinfo.so.6()(64bit)", Flags: autoFlag},
+		},
+	}
+
+	var got []string
+	for _, d := range filterRequires(pkg) {
+		got = append(got, d.Name)
+	}
+
+	want := []string{"/bin/sh", "libtinfo.so.6()(64bit)", "libc.so.6(GLIBC_2.34)(64bit)"}
+	if strings.Join(got, ",") != strings.Join(want, ",") {
+		t.Errorf("filterRequires = %v, want %v", got, want)
+	}
+}

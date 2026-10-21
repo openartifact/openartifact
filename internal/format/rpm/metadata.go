@@ -7,7 +7,9 @@ package rpm
 import (
 	"encoding/xml"
 	"fmt"
+	"regexp"
 	"strconv"
+	"strings"
 	"time"
 
 	rpm "github.com/openartifact/openartifact/pkg/rpm"
@@ -199,7 +201,7 @@ func GeneratePrimaryXML(packages []rpm.Package, baseURL string) ([]byte, error) 
 				SourceRPM:   pkg.SourceRPM,
 				HeaderRange: primaryHeaderRangeXML{Start: pkg.HeaderStart, End: pkg.HeaderEnd},
 				Provides:    depsToPrimaryEntries(pkg.Provides, false),
-				Requires:    depsToPrimaryEntries(pkg.Requires, true),
+				Requires:    depsToPrimaryEntries(filterRequires(&pkg), true),
 				Conflicts:   depsToPrimaryEntries(pkg.Conflicts, false),
 				Obsoletes:   depsToPrimaryEntries(pkg.Obsoletes, false),
 				Suggests:    depsToPrimaryEntries(pkg.Suggests, false),
@@ -223,6 +225,152 @@ func GeneratePrimaryXML(packages []rpm.Package, baseURL string) ([]byte, error) 
 	}
 
 	return append([]byte(xml.Header), output...), nil
+}
+
+var glibcSymbolRe = regexp.MustCompile(`^(.*)\(GLIBC_(\d+(?:\.\d+)*)\)((?:\(64bit\))?)$`)
+
+// compareDotted compares dotted numeric versions ("2.9" < "2.34").
+func compareDotted(a, b string) int {
+	as, bs := strings.Split(a, "."), strings.Split(b, ".")
+	for i := 0; i < len(as) || i < len(bs); i++ {
+		var x, y int
+		if i < len(as) {
+			x, _ = strconv.Atoi(as[i])
+		}
+
+		if i < len(bs) {
+			y, _ = strconv.Atoi(bs[i])
+		}
+
+		if x != y {
+			return x - y
+		}
+	}
+
+	return 0
+}
+
+type depKey struct {
+	name, flags, ver string
+	epoch            uint32
+	pre              bool
+}
+
+func keyOf(d rpm.Dependency) depKey {
+	return depKey{d.Name, rpm.SenseFlagsString(d.Flags), d.Version, d.Epoch, d.IsPre()}
+}
+
+type glibcBest struct {
+	idx int
+	ver string
+}
+
+// bestGlibcRequires finds, per library+arch, the requirement with the highest GLIBC_x symbol version.
+func bestGlibcRequires(reqs []rpm.Dependency) map[string]glibcBest {
+	best := map[string]glibcBest{}
+
+	for i, d := range reqs {
+		if m := glibcSymbolRe.FindStringSubmatch(d.Name); m != nil && !d.Versioned() {
+			key := m[1] + "|" + m[3]
+			if b, ok := best[key]; !ok || compareDotted(m[2], b.ver) > 0 {
+				best[key] = glibcBest{i, m[2]}
+			}
+		}
+	}
+
+	return best
+}
+
+type glibcAction int
+
+const (
+	glibcKeep glibcAction = iota
+	glibcDrop
+	glibcLast
+)
+
+// dropGlibc decides how a requirement is treated by the GLIBC collapsing.
+func dropGlibc(d rpm.Dependency, idx int, best map[string]glibcBest) glibcAction {
+	if d.Versioned() {
+		return glibcKeep
+	}
+
+	if m := glibcSymbolRe.FindStringSubmatch(d.Name); m != nil {
+		if best[m[1]+"|"+m[3]].idx != idx {
+			return glibcDrop
+		}
+
+		// createrepo_c emits the surviving GLIBC requirement last.
+		return glibcLast
+	}
+
+	if base, ok := strings.CutSuffix(d.Name, "()(64bit)"); ok {
+		if _, has := best[base+"|(64bit)"]; has {
+			return glibcDrop
+		}
+	} else if base, ok := strings.CutSuffix(d.Name, "()"); ok {
+		if _, has := best[base+"|"]; has {
+			return glibcDrop
+		}
+	}
+
+	return glibcKeep
+}
+
+// filterRequires mirrors createrepo_c: duplicates are dropped, requirements the
+// package satisfies itself (own provides or packaged files) are dropped unless
+// they are script-time requirements, and versioned GLIBC symbol requirements
+// collapse to the highest version per library.
+func filterRequires(pkg *rpm.Package) []rpm.Dependency {
+	provides := make(map[depKey]bool, len(pkg.Provides))
+	provided := make(map[string]bool, len(pkg.Provides)+len(pkg.Files))
+
+	for _, d := range pkg.Provides {
+		k := keyOf(d)
+		k.pre = false
+		provides[k] = true
+		provided[d.Name] = true
+	}
+
+	for _, f := range pkg.Files {
+		provided[f.Path] = true
+	}
+
+	best := bestGlibcRequires(pkg.Requires)
+
+	var glibc []rpm.Dependency
+
+	seen := make(map[depKey]bool, len(pkg.Requires))
+	out := make([]rpm.Dependency, 0, len(pkg.Requires))
+
+	for i, d := range pkg.Requires {
+		k := keyOf(d)
+		if seen[k] {
+			continue
+		}
+
+		seen[k] = true
+
+		if !d.IsPre() && !d.IsRPMLib() {
+			versioned := k.flags != ""
+			if (versioned && provides[k]) || (!versioned && provided[d.Name]) {
+				continue
+			}
+		}
+
+		switch dropGlibc(d, i, best) {
+		case glibcDrop:
+			continue
+		case glibcLast:
+			glibc = append(glibc, d)
+			continue
+		case glibcKeep:
+		}
+
+		out = append(out, d)
+	}
+
+	return append(out, glibc...)
 }
 
 // depsToPrimaryEntries renders dependencies the way createrepo_c does. When

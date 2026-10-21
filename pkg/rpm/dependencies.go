@@ -130,3 +130,8 @@ func formatEVR(epoch uint32, version, release string) string {
 
 	return fmt.Sprintf("%s-%s", version, release)
 }
+
+// Versioned reports whether the dependency carries a version comparison.
+func (d Dependency) Versioned() bool {
+	return d.Flags&senseCompareMask != 0
+}
