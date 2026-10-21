@@ -55,6 +55,11 @@ updates:
       web-minor-patch:
         patterns: ["*"]
         update-types: [minor, patch]
+    ignore:
+      # TypeScript 7 (native) drops typescript/lib/tsc, which vue-tsc 3.x
+      # loads; remove once vue-tsc supports it.
+      - dependency-name: typescript
+        versions: [">=7.0.0"]
 
   # Dockerfile base images (FROM tag@sha256).
   - package-ecosystem: docker

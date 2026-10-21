@@ -195,7 +195,15 @@ func (f *fakeOA) putFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, _ := io.ReadAll(r.Body)
+	// An upload the client aborted (source cut off mid-stream) must not be
+	// stored, as the real server rejects it; otherwise this late handler can
+	// overwrite the retry's complete copy.
+	data, err := io.ReadAll(r.Body)
+	if err != nil {
+		f.reply(w, http.StatusBadRequest, map[string]string{"error": "incomplete body"})
+		return
+	}
+
 	it := f.store(name, r.PathValue("path"), data, r.Header.Get(headerImportCreatedAt))
 
 	if r.PathValue("format") == "maven" {
