@@ -83,6 +83,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <SidebarLink to="/admin/gpg" :icon="LockClosedIcon" :label="t('nav.gpg')" :collapsed="ui.sidebarCollapsed" />
           <SidebarLink to="/admin/tokens" :icon="TicketIcon" :label="t('nav.tokens')" :collapsed="ui.sidebarCollapsed" />
           <SidebarLink to="/admin/audit" :icon="ClipboardDocumentListIcon" :label="t('nav.audit')" :collapsed="ui.sidebarCollapsed" />
+          <SidebarLink to="/admin/trash" :icon="TrashIcon" :label="t('nav.trash')" :collapsed="ui.sidebarCollapsed" />
           <SidebarLink to="/admin/storage" :icon="ServerStackIcon" :label="t('nav.storage')" :collapsed="ui.sidebarCollapsed" />
           <SidebarLink to="/admin/backup" :icon="ArchiveBoxIcon" :label="t('nav.backup')" :collapsed="ui.sidebarCollapsed" />
           <SidebarLink to="/admin/webhooks" :icon="BellAlertIcon" :label="t('nav.webhooks')" :collapsed="ui.sidebarCollapsed" />
@@ -162,6 +163,7 @@ import {
   DocumentTextIcon,
   EyeSlashIcon,
   SparklesIcon,
+  TrashIcon,
 } from '@heroicons/vue/24/outline'
 import SidebarLink from './SidebarLink.vue'
 import { t } from '../i18n/en'

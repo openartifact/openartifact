@@ -114,7 +114,8 @@ The filesystem store writes to a `blob-upload-*.tmp` file inside `STORAGE_PATH`,
 
 Identical content is stored once, across all repositories and formats. Rows in the database reference blobs by digest, and a blob is removed only when nothing references it:
 
-- Deleting an artifact deletes its database row first, then calls `storage.SafeDeleteBlob`, which removes the blob only if its reference count is zero. The check and the delete run under an advisory lock that uploaders also take, so a concurrent upload of the same content cannot lose its blob.
+- With the default [trash](trash.md) retention, deleting an artifact only marks its row as deleted: the row still references its blob, so nothing is freed until the item is purged (or the repository's retention is `0`). Purging then follows the path below.
+- Permanently deleting an artifact deletes its database row first, then calls `storage.SafeDeleteBlob`, which removes the blob only if its reference count is zero. The check and the delete run under an advisory lock that uploaders also take, so a concurrent upload of the same content cannot lose its blob.
 - Docker manifests and layers that lose their tag are reclaimed by [registry garbage collection](../formats/docker.md#garbage-collection), which releases blobs through the same path.
 - The cleanup worker also collects orphans: unreferenced blobs older than 1 hour, in batches of 500. Policies that decide which artifacts to delete are in [cleanup and quotas](../repositories/cleanup-and-quotas.md).
 

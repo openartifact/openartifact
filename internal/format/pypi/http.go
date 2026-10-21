@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	htmlesc "html"
 	"io"
@@ -27,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -458,18 +460,41 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete from database
-	if err := h.DB.DeletePyPIPackage(r.Context(), repoID, pkg.Name, pkg.Version, pkg.Filename); err != nil {
-		h.Log.Errorw("failed to delete package", "error", err)
+	if err := trash.GuardReleaseByName(r, h.DB, repoName, "pypi", pkg.Version); err != nil {
+		if errors.Is(err, trash.ErrImmutableRelease) {
+			http.Error(w, "release versions of this repository are immutable", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to check release immutability", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// Blob is content-addressed and may be shared by other artifacts; only
-	// remove it from storage once no other row references the same sha256.
-	if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256Digest); delErr != nil {
-		h.Log.Warnw("failed to clean up blob after package delete", "sha256", pkg.SHA256Digest, "error", delErr)
+	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindPyPI, IDs: []string{pkg.ID}, Resource: pkg.Filename}, func() error {
+		if err := h.DB.DeletePyPIPackage(r.Context(), repoID, pkg.Name, pkg.Version, pkg.Filename); err != nil {
+			return fmt.Errorf("delete pypi package: %w", err)
+		}
+
+		// Blob is content-addressed and may be shared by other artifacts; only
+		// remove it from storage once no other row references the same sha256.
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256Digest); delErr != nil {
+			h.Log.Warnw("failed to clean up blob after package delete", "sha256", pkg.SHA256Digest, "error", delErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
+		h.Log.Errorw("failed to delete package", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
 	}
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{

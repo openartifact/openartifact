@@ -25,8 +25,18 @@ type Repository struct {
 	// PresignDownloads overrides storage.presignDownloads for this repository:
 	// nil inherits the global setting, true/false force redirect/streaming.
 	PresignDownloads *bool
-	CreatedAt        time.Time
-	UpdatedAt        time.Time
+	// TrashRetentionDays is how long deleted items stay restorable; nil uses
+	// the server default, 0 deletes immediately (no trash).
+	TrashRetentionDays *int
+	// ImmutableReleases forbids deleting or overwriting released versions
+	// without an admin's force.
+	ImmutableReleases bool
+	// DeletedAt/DeletedBy are set while the repository is in the trash. Every
+	// lookup except the trash API hides such a repository.
+	DeletedAt *time.Time
+	DeletedBy string
+	CreatedAt time.Time
+	UpdatedAt time.Time
 }
 
 type RPMRepo struct {

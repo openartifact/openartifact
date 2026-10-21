@@ -11,7 +11,7 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
-WHERE name = $1;
+WHERE name = $1 AND deleted_at IS NULL;
 
 -- name: GetRepositoryByID :one
 SELECT id, name, format, description,
@@ -26,7 +26,7 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
-WHERE id = $1;
+WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: ListRepositories :many
 SELECT id, name, format, description,
@@ -41,6 +41,7 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2;
 
@@ -57,15 +58,15 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
-WHERE format = $1
+WHERE format = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3;
 
 -- name: CountRepositories :one
-SELECT COUNT(*) FROM repositories;
+SELECT COUNT(*) FROM repositories WHERE deleted_at IS NULL;
 
 -- name: CountRepositoriesByFormat :one
-SELECT COUNT(*) FROM repositories WHERE format = $1;
+SELECT COUNT(*) FROM repositories WHERE format = $1 AND deleted_at IS NULL;
 
 -- name: CreateRepository :one
 INSERT INTO repositories (id, name, format, description, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, blocked, org_id)
@@ -85,7 +86,7 @@ SET description = $1,
     blocked = $9,
     org_id = $10,
     updated_at = now()
-WHERE id = $11;
+WHERE id = $11 AND deleted_at IS NULL;
 
 -- name: DeleteRepository :exec
 DELETE FROM repositories WHERE id = $1;

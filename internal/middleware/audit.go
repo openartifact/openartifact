@@ -48,8 +48,10 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 
 			action := routeToAction(r.Method, routeTemplate)
 			// An auth.* action asserts the thing happened (token created,
-			// password changed); a rejected request did not.
-			if action == "" || (strings.HasPrefix(action, "auth.") && wrapped.statusCode >= http.StatusBadRequest) {
+			// password changed) and so does repository.deleted (a delete
+			// refused for a missing confirmation did not); a rejected request
+			// did not.
+			if action == "" || ((strings.HasPrefix(action, "auth.") || action == "repository.deleted") && wrapped.statusCode >= http.StatusBadRequest) {
 				action = "http.request"
 			}
 			clientIP := ClientIP(r, proxies)
@@ -73,7 +75,7 @@ func routeToAction(method, routeTemplate string) string {
 	switch {
 	case method == "POST" && routeTemplate == "/api/v1/repositories":
 		return "repository.created"
-	case method == "DELETE" && routeTemplate == "/api/v1/repositories/{name}":
+	case method == "DELETE" && routeTemplate == "/api/v1/repository/{name}":
 		return "repository.deleted"
 	case method == "POST" && routeTemplate == "/api/v1/repositories/{name}/debs":
 		return "artifact.uploaded"

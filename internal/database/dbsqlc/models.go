@@ -216,10 +216,12 @@ type CargoCrate struct {
 	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	Yanked        bool            `db:"yanked" json:"yanked"`
 	// Total downloads; BIGINT to avoid overflow on popular crates
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
-	BlobID        string    `db:"blob_id" json:"blob_id"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID        string     `db:"blob_id" json:"blob_id"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Cleanup/retention policies for automatic artifact deletion
@@ -241,30 +243,34 @@ type CleanupPolicy struct {
 }
 
 type ConanPackage struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	UserChannel    string    `db:"user_channel" json:"user_channel"`
-	RecipeRevision string    `db:"recipe_revision" json:"recipe_revision"`
-	Conanfile      *string   `db:"conanfile" json:"conanfile"`
-	Conaninfo      *string   `db:"conaninfo" json:"conaninfo"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
-	BlobID         *string   `db:"blob_id" json:"blob_id"`
+	ID             string     `db:"id" json:"id"`
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	Name           string     `db:"name" json:"name"`
+	Version        string     `db:"version" json:"version"`
+	UserChannel    string     `db:"user_channel" json:"user_channel"`
+	RecipeRevision string     `db:"recipe_revision" json:"recipe_revision"`
+	Conanfile      *string    `db:"conanfile" json:"conanfile"`
+	Conaninfo      *string    `db:"conaninfo" json:"conaninfo"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID         *string    `db:"blob_id" json:"blob_id"`
+	DeletedAt      *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy      *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 type CondaPackage struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Name         string    `db:"name" json:"name"`
-	Version      string    `db:"version" json:"version"`
-	BuildString  string    `db:"build_string" json:"build_string"`
-	Platform     string    `db:"platform" json:"platform"`
-	Depends      []string  `db:"depends" json:"depends"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	BlobID       string    `db:"blob_id" json:"blob_id"`
+	ID           string     `db:"id" json:"id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	Name         string     `db:"name" json:"name"`
+	Version      string     `db:"version" json:"version"`
+	BuildString  string     `db:"build_string" json:"build_string"`
+	Platform     string     `db:"platform" json:"platform"`
+	Depends      []string   `db:"depends" json:"depends"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID       string     `db:"blob_id" json:"blob_id"`
+	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Debian packages. Canonical table for Debian format. Scoped to distribution+component for proper Debian model. blob_id FK to global blobs table.
@@ -288,6 +294,8 @@ type DebPackage struct {
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 	ControlFields  json.RawMessage `db:"control_fields" json:"control_fields"`
+	DeletedAt      *time.Time      `db:"deleted_at" json:"deleted_at"`
+	DeletedBy      *string         `db:"deleted_by" json:"deleted_by"`
 }
 
 type DebianArchitecture struct {
@@ -341,7 +349,9 @@ type DockerManifest struct {
 	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 	BlobID        string    `db:"blob_id" json:"blob_id"`
 	// Image name inside the repository (distribution name minus its first segment); empty for the default image.
-	Image string `db:"image" json:"image"`
+	Image     string     `db:"image" json:"image"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // References held by a manifest body: kind=blob (config, layers), kind=manifest (index children); kind=indexed marks the manifest as fully indexed.
@@ -364,7 +374,9 @@ type DockerTag struct {
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 	// Image name inside the repository (distribution name minus its first segment); empty for the default image.
-	Image string `db:"image" json:"image"`
+	Image     string     `db:"image" json:"image"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // In-progress chunked blob upload sessions
@@ -379,49 +391,55 @@ type DockerUpload struct {
 
 // Go module proxy packages
 type GomodModule struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	ModulePath   string    `db:"module_path" json:"module_path"`
-	Version      string    `db:"version" json:"version"`
-	GoModContent string    `db:"go_mod_content" json:"go_mod_content"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	ZipBlobID    *string   `db:"zip_blob_id" json:"zip_blob_id"`
-	ModBlobID    *string   `db:"mod_blob_id" json:"mod_blob_id"`
+	ID           string     `db:"id" json:"id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	ModulePath   string     `db:"module_path" json:"module_path"`
+	Version      string     `db:"version" json:"version"`
+	GoModContent string     `db:"go_mod_content" json:"go_mod_content"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	ZipBlobID    *string    `db:"zip_blob_id" json:"zip_blob_id"`
+	ModBlobID    *string    `db:"mod_blob_id" json:"mod_blob_id"`
+	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Helm chart packages
 type HelmChart struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Name         string    `db:"name" json:"name"`
-	Version      string    `db:"version" json:"version"`
-	AppVersion   *string   `db:"app_version" json:"app_version"`
-	Description  *string   `db:"description" json:"description"`
-	Keywords     []string  `db:"keywords" json:"keywords"`
-	Home         *string   `db:"home" json:"home"`
-	Sources      []string  `db:"sources" json:"sources"`
-	Maintainers  []byte    `db:"maintainers" json:"maintainers"`
-	Icon         *string   `db:"icon" json:"icon"`
-	ApiVersion   string    `db:"api_version" json:"api_version"`
-	Type         string    `db:"type" json:"type"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	BlobID       string    `db:"blob_id" json:"blob_id"`
+	ID           string     `db:"id" json:"id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	Name         string     `db:"name" json:"name"`
+	Version      string     `db:"version" json:"version"`
+	AppVersion   *string    `db:"app_version" json:"app_version"`
+	Description  *string    `db:"description" json:"description"`
+	Keywords     []string   `db:"keywords" json:"keywords"`
+	Home         *string    `db:"home" json:"home"`
+	Sources      []string   `db:"sources" json:"sources"`
+	Maintainers  []byte     `db:"maintainers" json:"maintainers"`
+	Icon         *string    `db:"icon" json:"icon"`
+	ApiVersion   string     `db:"api_version" json:"api_version"`
+	Type         string     `db:"type" json:"type"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID       string     `db:"blob_id" json:"blob_id"`
+	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 type IvyArtifact struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Organisation string    `db:"organisation" json:"organisation"`
-	Module       string    `db:"module" json:"module"`
-	Revision     string    `db:"revision" json:"revision"`
-	ArtifactName string    `db:"artifact_name" json:"artifact_name"`
-	ArtifactType string    `db:"artifact_type" json:"artifact_type"`
-	ArtifactExt  string    `db:"artifact_ext" json:"artifact_ext"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	BlobID       string    `db:"blob_id" json:"blob_id"`
+	ID           string     `db:"id" json:"id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	Organisation string     `db:"organisation" json:"organisation"`
+	Module       string     `db:"module" json:"module"`
+	Revision     string     `db:"revision" json:"revision"`
+	ArtifactName string     `db:"artifact_name" json:"artifact_name"`
+	ArtifactType string     `db:"artifact_type" json:"artifact_type"`
+	ArtifactExt  string     `db:"artifact_ext" json:"artifact_ext"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID       string     `db:"blob_id" json:"blob_id"`
+	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // License compliance policies (repo-specific and global)
@@ -471,6 +489,8 @@ type MavenArtifact struct {
 	Md5                 string      `db:"md5" json:"md5"`
 	Sha1                string      `db:"sha1" json:"sha1"`
 	Sha512              string      `db:"sha512" json:"sha512"`
+	DeletedAt           *time.Time  `db:"deleted_at" json:"deleted_at"`
+	DeletedBy           *string     `db:"deleted_by" json:"deleted_by"`
 }
 
 // Distribution tags for npm packages, e.g. latest, next, beta
@@ -515,7 +535,9 @@ type NpmVersion struct {
 	SearchTsv       interface{} `db:"search_tsv" json:"search_tsv"`
 	BlobID          string      `db:"blob_id" json:"blob_id"`
 	// Auto-updated by trigger on every UPDATE.
-	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // NuGet .NET packages
@@ -537,10 +559,12 @@ type NugetPackage struct {
 	IsPrerelease             bool    `db:"is_prerelease" json:"is_prerelease"`
 	MinClientVersion         *string `db:"min_client_version" json:"min_client_version"`
 	// Total downloads; BIGINT to avoid overflow on popular packages
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
-	BlobID        string    `db:"blob_id" json:"blob_id"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID        string     `db:"blob_id" json:"blob_id"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Organizations for multi-tenancy isolation
@@ -651,23 +675,25 @@ type ProxyCacheEntry struct {
 
 // PyPI Python packages
 type PypiPackage struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	Filename       string    `db:"filename" json:"filename"`
-	PackageType    string    `db:"package_type" json:"package_type"`
-	PythonVersion  *string   `db:"python_version" json:"python_version"`
-	RequiresPython *string   `db:"requires_python" json:"requires_python"`
-	Summary        *string   `db:"summary" json:"summary"`
-	Author         *string   `db:"author" json:"author"`
-	AuthorEmail    *string   `db:"author_email" json:"author_email"`
-	License        *string   `db:"license" json:"license"`
-	Keywords       *string   `db:"keywords" json:"keywords"`
-	Classifiers    []string  `db:"classifiers" json:"classifiers"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
-	BlobID         string    `db:"blob_id" json:"blob_id"`
+	ID             string     `db:"id" json:"id"`
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	Name           string     `db:"name" json:"name"`
+	Version        string     `db:"version" json:"version"`
+	Filename       string     `db:"filename" json:"filename"`
+	PackageType    string     `db:"package_type" json:"package_type"`
+	PythonVersion  *string    `db:"python_version" json:"python_version"`
+	RequiresPython *string    `db:"requires_python" json:"requires_python"`
+	Summary        *string    `db:"summary" json:"summary"`
+	Author         *string    `db:"author" json:"author"`
+	AuthorEmail    *string    `db:"author_email" json:"author_email"`
+	License        *string    `db:"license" json:"license"`
+	Keywords       *string    `db:"keywords" json:"keywords"`
+	Classifiers    []string   `db:"classifiers" json:"classifiers"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID         string     `db:"blob_id" json:"blob_id"`
+	DeletedAt      *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy      *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 type RawArtifact struct {
@@ -679,6 +705,8 @@ type RawArtifact struct {
 	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
 	BlobID       string          `db:"blob_id" json:"blob_id"`
+	DeletedAt    *time.Time      `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string         `db:"deleted_by" json:"deleted_by"`
 }
 
 // Versioned, named collections of artifacts moving through a promotion pipeline
@@ -748,6 +776,14 @@ type Repository struct {
 	MaxStaleSeconds int32  `db:"max_stale_seconds" json:"max_stale_seconds"`
 	// Per-repository override of storage.presignDownloads: NULL inherits the global setting, true/false force redirect/streaming.
 	PresignDownloads *bool `db:"presign_downloads" json:"presign_downloads"`
+	// Set when the repository was moved to the trash; the name stays reserved (globally unique) until it is purged.
+	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
+	// Username of the principal that deleted the repository.
+	DeletedBy *string `db:"deleted_by" json:"deleted_by"`
+	// Days a deleted item stays restorable. NULL = server default (OPENARTIFACT_TRASH_RETENTION); 0 = delete immediately, no trash.
+	TrashRetentionDays *int32 `db:"trash_retention_days" json:"trash_retention_days"`
+	// When true, released (non-snapshot, non-prerelease) versions cannot be deleted or overwritten without admin force.
+	ImmutableReleases bool `db:"immutable_releases" json:"immutable_releases"`
 }
 
 type RepositoryGroupMember struct {
@@ -796,6 +832,8 @@ type RpmPackage struct {
 	HeaderStart   int64           `db:"header_start" json:"header_start"`
 	HeaderEnd     int64           `db:"header_end" json:"header_end"`
 	RpmExtra      json.RawMessage `db:"rpm_extra" json:"rpm_extra"`
+	DeletedAt     *time.Time      `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string         `db:"deleted_by" json:"deleted_by"`
 }
 
 type RpmRepo struct {
@@ -824,11 +862,13 @@ type RubygemsGem struct {
 	MetadataJson json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	Yanked       bool            `db:"yanked" json:"yanked"`
 	// Total downloads; BIGINT to avoid overflow on popular gems
-	DownloadCount int64     `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
-	BlobID        string    `db:"blob_id" json:"blob_id"`
-	Size          int64     `db:"size" json:"size"`
+	DownloadCount int64      `db:"download_count" json:"download_count"`
+	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID        string     `db:"blob_id" json:"blob_id"`
+	Size          int64      `db:"size" json:"size"`
+	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // SBOM report payloads. FK to scan_jobs. Content in blobs (not inline).
@@ -842,16 +882,18 @@ type SbomResult struct {
 }
 
 type SbtArtifact struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	GroupID      string    `db:"group_id" json:"group_id"`
-	ArtifactID   string    `db:"artifact_id" json:"artifact_id"`
-	Version      string    `db:"version" json:"version"`
-	ScalaVersion string    `db:"scala_version" json:"scala_version"`
-	Filename     string    `db:"filename" json:"filename"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-	BlobID       string    `db:"blob_id" json:"blob_id"`
+	ID           string     `db:"id" json:"id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	GroupID      string     `db:"group_id" json:"group_id"`
+	ArtifactID   string     `db:"artifact_id" json:"artifact_id"`
+	Version      string     `db:"version" json:"version"`
+	ScalaVersion string     `db:"scala_version" json:"scala_version"`
+	Filename     string     `db:"filename" json:"filename"`
+	CreatedAt    time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID       string     `db:"blob_id" json:"blob_id"`
+	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
 }
 
 // Parent table for all scan work (vuln, license, secret, sbom, ai). Result payloads are in: vuln_results, license_results, secret_results, sbom_results, ai_results.

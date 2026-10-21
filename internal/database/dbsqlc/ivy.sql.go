@@ -50,7 +50,7 @@ func (q *Queries) CreateIvyArtifact(ctx context.Context, arg CreateIvyArtifactPa
 }
 
 const deleteIvyArtifact = `-- name: DeleteIvyArtifact :exec
-DELETE FROM ivy_artifacts WHERE id = $1
+DELETE FROM ivy_artifacts WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) DeleteIvyArtifact(ctx context.Context, id string) error {
@@ -62,7 +62,7 @@ const getIvyArtifact = `-- name: GetIvyArtifact :one
 SELECT ia.id, ia.repository_id, ia.organisation, ia.module, ia.revision, ia.artifact_name, ia.artifact_type, ia.artifact_ext, b.blob_key, b.size_bytes, b.sha256, ia.created_at, ia.updated_at
 FROM ivy_artifacts ia
 JOIN blobs b ON b.id = ia.blob_id
-WHERE ia.repository_id = $1 AND ia.organisation = $2 AND ia.module = $3 AND ia.revision = $4 AND ia.artifact_name = $5 AND ia.artifact_ext = $6
+WHERE ia.repository_id = $1 AND ia.organisation = $2 AND ia.module = $3 AND ia.revision = $4 AND ia.artifact_name = $5 AND ia.artifact_ext = $6 AND ia.deleted_at IS NULL
 `
 
 type GetIvyArtifactParams struct {
@@ -122,7 +122,7 @@ const listIvyArtifacts = `-- name: ListIvyArtifacts :many
 SELECT ia.id, ia.repository_id, ia.organisation, ia.module, ia.revision, ia.artifact_name, ia.artifact_type, ia.artifact_ext, b.blob_key, b.size_bytes, b.sha256, ia.created_at, ia.updated_at
 FROM ivy_artifacts ia
 JOIN blobs b ON b.id = ia.blob_id
-WHERE ia.repository_id = $1 ORDER BY ia.organisation, ia.module, ia.revision
+WHERE ia.repository_id = $1 AND ia.deleted_at IS NULL ORDER BY ia.organisation, ia.module, ia.revision
 `
 
 type ListIvyArtifactsRow struct {

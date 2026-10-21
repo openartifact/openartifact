@@ -365,6 +365,13 @@ type packageExport struct {
 // list-by-repo (or composable) method round-trips. Organizations with no
 // members whose owner was since deleted are the one documented gap — see
 // exportGlobalTables.
+//
+// Soft-deleted data (the trash: repositories and package rows with deleted_at
+// set) is not part of a backup. The export goes through the Database list
+// methods, which treat trashed rows as nonexistent, so a trashed repository
+// is skipped with its contents and a restore brings back live data only.
+// Repository settings trash_retention_days and immutable_releases round-trip
+// through models.Repository.
 func (e *Engine) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	repos, err := e.db.ListRepositories(ctx, 1, bulkListLimit, "")
 	if err != nil {

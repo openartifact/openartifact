@@ -32,6 +32,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 |---|---|
 | [Hosted, proxy and group](repositories/hosted-proxy-group.md) | Repository types, proxy cache and serve-stale, groups, the public flag |
 | [Cleanup and quotas](repositories/cleanup-and-quotas.md) | Cleanup policies and per-repository storage quotas |
+| [Trash](operations/trash.md) | Deleted artifacts and repositories stay restorable for a retention period; immutable releases |
 | [Properties](repositories/properties.md) | Artifact key/value properties: API, limits, search |
 | [Release bundles](repositories/release-bundles.md) | Release bundles and promotion pipelines |
 | [Migrating from Nexus / Artifactory](migration/nexus-artifactory.md) | `oa import`: flags, retries, what is preserved |
@@ -51,6 +52,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | Page | Contents |
 |---|---|
 | [Storage](operations/storage.md) | Blob backends and their settings, content addressing, deduplication |
+| [Trash](operations/trash.md) | Soft delete: retention, restore, purge, immutable releases, repository delete confirmation |
 | [Backup](operations/backup.md) | Backup and restore of records and blobs |
 | [Monitoring](operations/monitoring.md) | Health, Prometheus metrics, audit log, logging |
 | [Webhooks](operations/webhooks.md) | Events, HMAC signatures, retries, delivery log |
@@ -60,7 +62,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 
 | Page | Contents |
 |---|---|
-| [CLI](integrations/cli.md) | `oa` commands, login and configuration |
+| [CLI](integrations/cli.md) | `oa` commands (including `trash` and repository delete confirmation), login and configuration |
 | [MCP server](integrations/mcp.md) | Tools, permissions and client configuration (Claude, Cursor, VS Code, Codex, omp) |
 | [REST API](integrations/api.md) | OpenAPI spec, Swagger UI, authentication, conventions |
 | [AI analysis](integrations/ai-analysis.md) | Optional LLM analysis of package manifests |

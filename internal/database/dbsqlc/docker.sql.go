@@ -50,7 +50,7 @@ func (q *Queries) CreateDockerBlob(ctx context.Context, arg CreateDockerBlobPara
 const createDockerManifest = `-- name: CreateDockerManifest :one
 INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest)
 VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
-ON CONFLICT (repository_id, image, digest) DO UPDATE
+ON CONFLICT (repository_id, image, digest) WHERE deleted_at IS NULL DO UPDATE
     SET media_type = EXCLUDED.media_type, blob_id = EXCLUDED.blob_id, size = EXCLUDED.size,
         subject_digest = EXCLUDED.subject_digest, updated_at = now()
 RETURNING id, created_at, updated_at
@@ -73,7 +73,8 @@ type CreateDockerManifestRow struct {
 }
 
 // Re-pushing a manifest already stored for the image is a no-op refresh, not
-// an error (OCI distribution: manifest PUT is idempotent).
+// an error (OCI distribution: manifest PUT is idempotent). A copy of the same
+// digest sitting in the trash does not conflict: the push creates a new live row.
 func (q *Queries) CreateDockerManifest(ctx context.Context, arg CreateDockerManifestParams) (CreateDockerManifestRow, error) {
 	row := q.db.QueryRow(ctx, createDockerManifest,
 		arg.RepositoryID,
@@ -186,7 +187,7 @@ func (q *Queries) DeleteDockerBlobsForGC(ctx context.Context, arg DeleteDockerBl
 }
 
 const deleteDockerManifest = `-- name: DeleteDockerManifest :exec
-DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3
+DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL
 `
 
 type DeleteDockerManifestParams struct {
@@ -195,6 +196,7 @@ type DeleteDockerManifestParams struct {
 	Digest       string `db:"digest" json:"digest"`
 }
 
+// Permanent delete of a live manifest (retention 0 path); trashed rows are left to purge.
 func (q *Queries) DeleteDockerManifest(ctx context.Context, arg DeleteDockerManifestParams) error {
 	_, err := q.db.Exec(ctx, deleteDockerManifest, arg.RepositoryID, arg.Image, arg.Digest)
 	return err
@@ -205,6 +207,7 @@ WITH deleted AS (
 DELETE FROM docker_manifests dm
 WHERE dm.repository_id = $1::uuid
   AND dm.id = ANY($2::uuid[])
+  AND dm.deleted_at IS NULL
   AND dm.updated_at <= now() - make_interval(secs => $3::float8)
   AND NOT EXISTS (
       SELECT 1 FROM docker_tags t
@@ -247,7 +250,7 @@ type DeleteDockerManifestsForGCRow struct {
 	BlobSha256 string `db:"blob_sha256" json:"blob_sha256"`
 }
 
-// Deletes the given untagged manifests, re-checking every condition against the
+// Deletes the given untagged live manifests (never a trashed one), re-checking every condition against the
 // current state: still older than the grace period, still untagged, and not
 // adjacent (index child, index parent, subject or referrer) to a manifest that
 // is not being deleted. Must run in a transaction holding the repository's
@@ -280,7 +283,7 @@ func (q *Queries) DeleteDockerManifestsForGC(ctx context.Context, arg DeleteDock
 }
 
 const deleteDockerTag = `-- name: DeleteDockerTag :exec
-DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND name = $3
+DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND name = $3 AND deleted_at IS NULL
 `
 
 type DeleteDockerTagParams struct {
@@ -295,7 +298,7 @@ func (q *Queries) DeleteDockerTag(ctx context.Context, arg DeleteDockerTagParams
 }
 
 const deleteDockerTagsByDigest = `-- name: DeleteDockerTagsByDigest :exec
-DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND manifest_digest = $3
+DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND manifest_digest = $3 AND deleted_at IS NULL
 `
 
 type DeleteDockerTagsByDigestParams struct {
@@ -365,7 +368,7 @@ SELECT id, repository_id, image, digest, media_type, blob_id, size,
        COALESCE(subject_digest, '') AS subject_digest,
        created_at, updated_at
 FROM docker_manifests
-WHERE repository_id = $1 AND image = $2 AND digest = $3
+WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL
 `
 
 type GetDockerManifestParams struct {
@@ -406,9 +409,15 @@ func (q *Queries) GetDockerManifest(ctx context.Context, arg GetDockerManifestPa
 }
 
 const getDockerTag = `-- name: GetDockerTag :one
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1 AND image = $2 AND name = $3
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2 AND t.name = $3
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  )
 `
 
 type GetDockerTagParams struct {
@@ -428,6 +437,8 @@ func (q *Queries) GetDockerTag(ctx context.Context, arg GetDockerTagParams) (Doc
 		&i.CreatedAt,
 		&i.UpdatedAt,
 		&i.Image,
+		&i.DeletedAt,
+		&i.DeletedBy,
 	)
 	return i, err
 }
@@ -611,6 +622,7 @@ SELECT dm.id, dm.image, dm.digest,
 FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
 WHERE dm.repository_id = $2::uuid
+  AND dm.deleted_at IS NULL
 ORDER BY dm.created_at
 `
 
@@ -631,8 +643,10 @@ type ListDockerGCManifestsRow struct {
 	Children      string `db:"children" json:"children"`
 }
 
-// Every manifest of the repository with what GC needs to decide its fate:
-// tagged (some tag of the same image points at it), young (pushed or re-pushed
+// Every live manifest of the repository (trashed ones are never GC candidates;
+// purge owns them) with what GC needs to decide its fate:
+// tagged (some tag of the same image points at it, a trashed tag included: the
+// manifest must survive until the tag is purged so a restore never dangles), young (pushed or re-pushed
 // within the grace period) and the child manifests it references (an index).
 func (q *Queries) ListDockerGCManifests(ctx context.Context, arg ListDockerGCManifestsParams) ([]ListDockerGCManifestsRow, error) {
 	rows, err := q.db.Query(ctx, listDockerGCManifests, arg.GraceSeconds, arg.RepositoryID)
@@ -670,7 +684,7 @@ SELECT dm.id, dm.repository_id, dm.image, dm.digest, dm.media_type, b.sha256 AS 
        dm.created_at, dm.updated_at
 FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
-WHERE dm.repository_id = $1
+WHERE dm.repository_id = $1 AND dm.deleted_at IS NULL
 ORDER BY dm.created_at
 `
 
@@ -719,10 +733,16 @@ func (q *Queries) ListDockerManifestsByRepo(ctx context.Context, repositoryID st
 }
 
 const listDockerTags = `-- name: ListDockerTags :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1 AND image = $2
-ORDER BY name ASC
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  )
+ORDER BY t.name ASC
 LIMIT $3
 `
 
@@ -749,6 +769,8 @@ func (q *Queries) ListDockerTags(ctx context.Context, arg ListDockerTagsParams) 
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Image,
+			&i.DeletedAt,
+			&i.DeletedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -761,10 +783,16 @@ func (q *Queries) ListDockerTags(ctx context.Context, arg ListDockerTagsParams) 
 }
 
 const listDockerTagsAfter = `-- name: ListDockerTagsAfter :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1 AND image = $2 AND name > $3
-ORDER BY name ASC
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2 AND t.name > $3
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  )
+ORDER BY t.name ASC
 LIMIT $4
 `
 
@@ -797,6 +825,8 @@ func (q *Queries) ListDockerTagsAfter(ctx context.Context, arg ListDockerTagsAft
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Image,
+			&i.DeletedAt,
+			&i.DeletedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -809,10 +839,16 @@ func (q *Queries) ListDockerTagsAfter(ctx context.Context, arg ListDockerTagsAft
 }
 
 const listDockerTagsByRepo = `-- name: ListDockerTagsByRepo :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1
-ORDER BY image ASC, name ASC
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  )
+ORDER BY t.image ASC, t.name ASC
 LIMIT $2
 `
 
@@ -838,6 +874,8 @@ func (q *Queries) ListDockerTagsByRepo(ctx context.Context, arg ListDockerTagsBy
 			&i.CreatedAt,
 			&i.UpdatedAt,
 			&i.Image,
+			&i.DeletedAt,
+			&i.DeletedBy,
 		); err != nil {
 			return nil, err
 		}
@@ -872,7 +910,8 @@ type ListUnindexedDockerManifestsRow struct {
 }
 
 // Manifests whose references have not been recorded yet (pushed before
-// docker_manifest_refs existed, or restored from a backup).
+// docker_manifest_refs existed, or restored from a backup). Trashed manifests are
+// included on purpose: their refs must be recorded so they keep their layers alive.
 func (q *Queries) ListUnindexedDockerManifests(ctx context.Context, arg ListUnindexedDockerManifestsParams) ([]ListUnindexedDockerManifestsRow, error) {
 	rows, err := q.db.Query(ctx, listUnindexedDockerManifests, arg.RepositoryID, arg.Limit)
 	if err != nil {
@@ -937,7 +976,7 @@ func (q *Queries) UpdateDockerUploadOffset(ctx context.Context, arg UpdateDocker
 const upsertDockerTag = `-- name: UpsertDockerTag :one
 INSERT INTO docker_tags (repository_id, image, name, manifest_digest)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT (repository_id, image, name) DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
+ON CONFLICT (repository_id, image, name) WHERE deleted_at IS NULL DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
 RETURNING id, created_at, updated_at
 `
 

@@ -65,11 +65,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
                 {{ t('common.edit') }}
               </router-link>
+              <router-link
+                v-if="canDelete"
+                :to="`/repos/${encodeURIComponent(repo.name)}/trash`"
+                class="inline-flex items-center px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
+              >
+                {{ t('trash.title') }}
+              </router-link>
               <button
                 v-if="canDelete"
                 :disabled="deleting"
                 class="px-3 py-1.5 text-sm rounded-md border border-danger/40 text-danger hover:bg-danger/10 disabled:opacity-50"
-                @click="deleteRepo"
+                @click="showDeleteDialog = true"
               >
                 {{ deleting ? t('repoDetail.deleting') : t('common.delete') }}
               </button>
@@ -309,6 +316,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
     </template>
+
+    <RepoDeleteDialog
+      v-if="repo"
+      :open="showDeleteDialog"
+      :name="repo.name"
+      :busy="deleting"
+      @close="showDeleteDialog = false"
+      @confirm="deleteRepo"
+    />
   </div>
 </template>
 
@@ -330,6 +346,7 @@ import BulkActionsBar from '../components/BulkActionsBar.vue'
 import ConnectClientPanel from '../components/ConnectClientPanel.vue'
 import PackageUploadZone from '../components/PackageUploadZone.vue'
 import Pagination from '../components/Pagination.vue'
+import RepoDeleteDialog from '../components/RepoDeleteDialog.vue'
 import RepoCleanupTab from './RepoCleanupTab.vue'
 import RepoSettingsTab from './RepoSettingsTab.vue'
 import { useSessionStore } from '../stores/session'
@@ -476,16 +493,18 @@ function copyUrl(): void {
   })
 }
 
+const showDeleteDialog = ref(false)
+
 async function deleteRepo() {
   if (!repo.value) return
-  if (!confirm(t('repoDetail.confirmDeleteRepo').replace('{name}', repo.value.name))) return
 
   deleting.value = true
   try {
     await deleteRepository(repo.value.name)
+    showDeleteDialog.value = false
     router.push('/repos')
-  } catch {
-    toasts.error(t('repoDetail.deleteRepoFailed'))
+  } catch (err) {
+    toasts.error(t('repoDetail.deleteRepoFailed'), err instanceof Error ? err.message : undefined)
   } finally {
     deleting.value = false
   }

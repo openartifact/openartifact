@@ -49,6 +49,7 @@ const labelMap: Record<string, string> = {
   'admin-gpg': t('nav.gpg'),
   'admin-tokens': t('nav.tokens'),
   'admin-audit': t('nav.audit'),
+  'admin-trash': t('nav.trash'),
   'admin-storage': t('nav.storage'),
   'admin-webhooks': t('nav.webhooks'),
   'security-vulns': t('nav.vulns'),
@@ -77,6 +78,8 @@ const segments = computed<Segment[]>(() => {
       label = String(route.params.pkg ?? '')
     } else if (name === 'repo-edit') {
       label = `${String(route.params.name ?? '')} · ${t('common.edit')}`
+    } else if (name === 'repo-trash') {
+      label = t('trash.title')
     } else if (name === 'repo-new') {
       label = t('repos.create')
     } else if (name.startsWith('admin-') && !labelMap[name]) {

@@ -218,6 +218,35 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 {{ t('wizard.makePublic') }}
               </label>
             </div>
+
+            <!-- Trash retention -->
+            <div>
+              <label for="repo-trash-retention" class="block text-sm font-medium text-foreground mb-2">
+                {{ t('repos.settings.trashRetention') }}
+              </label>
+              <input
+                id="repo-trash-retention"
+                v-model="form.trashRetention"
+                type="number"
+                min="0"
+                step="1"
+                :placeholder="t('repos.settings.trashRetentionPlaceholder')"
+                class="w-full px-3 py-2 border border-border rounded-md text-sm bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+              />
+              <p v-if="retentionInvalid" role="alert" class="mt-1 text-xs text-danger">{{ t('repos.settings.trashRetentionInvalid') }}</p>
+              <p v-else class="mt-1 text-xs text-muted">{{ t('repos.settings.trashRetentionHint') }}</p>
+            </div>
+
+            <!-- Immutable releases -->
+            <div>
+              <div class="flex items-center gap-3">
+                <input id="repo-immutable" v-model="form.immutableReleases" type="checkbox" class="rounded" />
+                <label for="repo-immutable" class="text-sm font-medium text-foreground">
+                  {{ t('repos.settings.immutableReleases') }}
+                </label>
+              </div>
+              <p class="mt-1 text-xs text-muted">{{ t('repos.settings.immutableReleasesHint') }}</p>
+            </div>
           </div>
         </template>
 
@@ -306,6 +335,7 @@ import {
   CheckIcon,
 } from '@heroicons/vue/24/outline'
 import { createRepository, getRepository, updateRepository, listRepositories } from '../api/repositories'
+import { parseRetentionInput } from '../lib/trash'
 import type { Repository } from '../api/repositories'
 import FormatBadge from '../components/FormatBadge.vue'
 import RepoOrgSelect from '../components/RepoOrgSelect.vue'
@@ -356,6 +386,8 @@ const form = ref({
   upstreamUsername: '',
   upstreamPassword: '',
   members: [] as string[],
+  trashRetention: '',
+  immutableReleases: false,
 })
 // Organization the repository had when loaded (edit mode); '' is the system organization.
 const loadedOrg = ref('')
@@ -368,13 +400,15 @@ const nameValid = computed(() => /^[a-zA-Z0-9_-]{1,100}$/.test(form.value.name.t
 const candidateMembers = computed(() =>
   existing.value.filter((r) => r.format === form.value.format && r.repo_type !== 'group' && r.name !== form.value.name),
 )
+const retentionInvalid = computed(() => parseRetentionInput(form.value.trashRetention) === undefined)
 const stepValid = computed(() => {
+  if (step.value === 3 && retentionInvalid.value) return false
   if (step.value === 0) return nameValid.value
   if (step.value === 2 && form.value.type === 'proxy') return form.value.upstreamUrl.trim() !== ''
   return true
 })
 const allValid = computed(
-  () => nameValid.value && (form.value.type !== 'proxy' || form.value.upstreamUrl.trim() !== ''),
+  () => nameValid.value && !retentionInvalid.value && (form.value.type !== 'proxy' || form.value.upstreamUrl.trim() !== ''),
 )
 
 const steps = [
@@ -406,6 +440,8 @@ onMounted(async () => {
         public: repo.public || false,
         org: repo.org && repo.org !== SYSTEM_ORG_NAME ? repo.org : '',
         upstreamUrl: repo.upstream_url || '',
+        trashRetention: repo.trash_retention_days == null ? '' : String(repo.trash_retention_days),
+        immutableReleases: repo.immutable_releases ?? false,
       }
       loadedOrg.value = form.value.org
     } catch (err) {
@@ -445,6 +481,8 @@ async function submit(): Promise<void> {
       await updateRepository(name, {
         description: form.value.description,
         public: form.value.public,
+        trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
+        immutable_releases: form.value.immutableReleases,
         ...(form.value.org !== loadedOrg.value ? { org: form.value.org || SYSTEM_ORG_NAME } : {}),
         ...(form.value.type === 'proxy' ? { upstream_url: form.value.upstreamUrl.trim() } : {}),
       })
@@ -454,6 +492,8 @@ async function submit(): Promise<void> {
         format: form.value.format,
         public: form.value.public,
         description: form.value.description,
+        trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
+        immutable_releases: form.value.immutableReleases,
         repo_type: form.value.type,
         ...(form.value.org ? { org: form.value.org } : {}),
         ...(form.value.type === 'proxy'

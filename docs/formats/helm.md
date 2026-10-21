@@ -53,7 +53,7 @@ Relative to `HOST/repos/REPO`:
 - An existing name and version is `409 chart version already exists`: chart versions are immutable, bump `version`.
 - Storage quota is enforced on upload and released on delete ([quotas](../repositories/cleanup-and-quotas.md)).
 - A chart download resolves `<name>-<version>.tgz` by trying each `-` followed by a digit (or `v` and a digit) as the name/version split, so names with hyphens work.
-- Delete removes the record, releases the quota and frees the blob when nothing else references it. Downloads of quarantined charts are refused.
+- Delete moves the chart to the [trash](../operations/trash.md) by default (it disappears from `index.yaml` and downloads; quota is released at purge). With retention `0` it removes the record, releases the quota and frees the blob when nothing else references it. In a repository with `immutable_releases`, deleting a release chart (no semver prerelease) is `409` unless an admin passes `?force=true`. Downloads of quarantined charts are refused.
 
 ## Signing
 

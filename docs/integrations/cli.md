@@ -66,8 +66,9 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | Command | Subcommands and key flags |
 |---|---|
 | `auth` | `login [--server URL] [--username U] [--password-stdin]`, `logout`, `whoami`, `passwd [--password-stdin]` (stdin: current password, then new, one per line), `token list`, `token create --name N [--kind access\|deploy] [--username U] [--password-stdin]`, `token revoke <id> [--username U] [--password-stdin]` |
-| `repo` | `list`, `create <name> [--format FMT] [--description D] [--public]` (default format `npm`), `show <name>`, `update <name> [--description D] [--public[=false]]` (only the flags you pass are sent), `delete <name>`, `packages <name>`, `members <name>` (the member repositories of a group repository) |
-| `artifact` | `list <repo>`, `upload <repo> <file>`, `delete <repo> <id>` |
+| `repo` | `list`, `create <name> [--format FMT] [--description D] [--public] [--trash-retention-days N] [--immutable-releases]` (default format `npm`), `show <name>`, `update <name> [--description D] [--public[=false]] [--trash-retention-days N\|default] [--immutable-releases[=false]]` (only the flags you pass are sent), `delete <name> --confirm <name>` (see [Deleting a repository](#deleting-a-repository)), `packages <name>`, `members <name>` (the member repositories of a group repository) |
+| `trash` | `list [--repo NAME] [--kind K]`, `restore <kind> <id> [--repo NAME]`, `purge <kind> <id> [--yes]` (see [Trash](#trash)) |
+| `artifact` | `list <repo>`, `upload <repo> <file>`, `delete <repo> <id>` (moved to the [trash](../operations/trash.md) unless the repository retention is 0) |
 | `search` | `[--repo R] [--fmt F] [--limit N] <query>` (default limit 50; put flags before the query) |
 | `user` *admin* | `list`, `create --username U --email E [--password-stdin] [--full-name N]`, `show <id>`, `update <id> [--email E] [--full-name N] [--disabled[=false]]`, `delete <id>` |
 | `group` *admin* | `list`, `create <name> [--description D]`, `show <id>`, `delete <id>`, `members <id>`, `add-member <id> <user-id>`, `rm-member <id> <user-id>` |
@@ -95,6 +96,32 @@ Boolean flags use Go syntax: `--public`, `--disabled`, and `--active=false` / `-
 `auth passwd`, `auth token create` and `auth token revoke` sign in with your account password on a temporary cookie session (the server refuses these for API-token callers). The password is prompted without echo, or read from stdin with `--password-stdin`; `--username` defaults to the saved token's owner.
 
 `storage create|update --config` is for non-secret settings only: the CLI rejects an inline config containing a key that looks like a credential (`secret`, `password`, `key`, `token`, `cred`, `connstr`, `sas`), because argv is visible in the process list. Put credentials in a file and pass `--config-file FILE`, or `--config-file -` to read the JSON from stdin.
+
+### Deleting a repository
+
+`oa repo delete <name>` needs the repository name as confirmation, and the server rejects the request with `400 confirmation_required` without it:
+
+```sh
+oa repo delete old-repo --confirm old-repo     # scripts and CI
+oa repo delete old-repo                        # on a terminal: prompts "Type the repository name to confirm:"
+```
+
+`--confirm` must equal the name; a mismatch fails locally without a request. With no `--confirm` and stdin not a terminal, the command exits 1 and tells you to pass `--confirm <name>`. The CLI sends the value as `?confirm=`. The repository is moved to the [trash](../operations/trash.md) for its retention period (default 7 days) instead of being destroyed, unless its retention is 0.
+
+### Trash
+
+```sh
+oa trash list                                  # every trashed item, repositories included (admin)
+oa trash list --repo my-repo --kind maven_artifact
+oa trash restore raw_artifact <id> --repo my-repo
+oa trash restore repository <id>               # admin
+oa trash purge docker_tag <id>                 # asks "Type 'yes' to confirm"; --yes skips the prompt (admin)
+```
+
+- `list` prints `ID`, `KIND`, `REPOSITORY`, `NAME`, `VERSION`, `SIZE`, `DELETED_AT`, `DELETED_BY` and `PURGE_AT` (all fields with `--format json`). Without `--repo` it uses the admin endpoint; with `--repo` it uses the repository endpoint, which needs only the delete permission on that repository. `--kind` filters by kind (`repository`, `maven_artifact`, `npm_version`, `docker_manifest`, ...; the full list is in [Trash](../operations/trash.md#kinds)).
+- `restore <kind> <id>` restores one item and prints it with `--format json`. A conflict (the path or version was re-published meanwhile, or the repository is itself in the trash) exits 1 with the server's `409` message. Restoring a repository needs the admin endpoint (no `--repo`).
+- `purge <kind> <id>` deletes the item permanently now. Without `--yes` it asks for confirmation on a terminal and refuses to run when stdin is not one.
+- `oa repo create|update --trash-retention-days N` sets the per-repository retention (`0` deletes immediately, `default` on `update` goes back to the server-wide setting); `--immutable-releases[=false]` blocks deleting or overwriting released versions. See [immutable releases](../operations/trash.md#immutable-releases).
 
 ### Transfers
 

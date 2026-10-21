@@ -70,7 +70,7 @@ func (p *PostgresDB) SetDebControlFields(ctx context.Context, packageID, maintai
 	}
 
 	_, err = p.db.ExecContext(ctx,
-		`UPDATE deb_packages SET control_fields = $2::jsonb, maintainer = $3, homepage = $4 WHERE id = $1`,
+		`UPDATE deb_packages SET control_fields = $2::jsonb, maintainer = $3, homepage = $4 WHERE id = $1 AND deleted_at IS NULL`,
 		packageID, string(raw), maintainer, homepage)
 	if err != nil {
 		return fmt.Errorf("set deb control fields: %w", err)
@@ -110,7 +110,7 @@ func (p *PostgresDB) ListDebPackageEntries(ctx context.Context, repoID, dist, co
 		 LEFT JOIN blobs b ON b.id = dp.blob_id
 		 JOIN debian_distributions dd ON dd.id = dp.distribution_id
 		 JOIN debian_components dc ON dc.id = dp.component_id
-		 WHERE dp.repository_id = $1
+		 WHERE dp.repository_id = $1 AND dp.deleted_at IS NULL
 		   AND ($2 = '' OR dd.name = $2)
 		   AND ($3 = '' OR dc.name = $3)
 		   AND ($4 = '' OR dp.arch = $4)

@@ -53,7 +53,7 @@ func NewExecutor(db *sql.DB) *Executor {
 // blob_id (every format but docker) or a manifest_digest (docker), so the
 // COALESCEs pick whichever join matched; rows with neither report ” and 0.
 const searchBlobJoins = `LEFT JOIN blobs b ON b.id = %[1]s.blob_id
-		LEFT JOIN docker_manifests dm ON dm.repository_id = %[1]s.repository_id AND dm.image = %[1]s.manifest_image AND dm.digest = %[1]s.manifest_digest`
+		LEFT JOIN docker_manifests dm ON dm.repository_id = %[1]s.repository_id AND dm.image = %[1]s.manifest_image AND dm.digest = %[1]s.manifest_digest AND dm.deleted_at IS NULL`
 
 const (
 	searchSHA256Expr = `COALESCE(b.sha256, regexp_replace(dm.digest, '^sha256:', ''), '')`
@@ -106,43 +106,44 @@ func unifiedSearchBranches() []string {
 
 	return []string{
 		searchBranch("cargo", "cc.name", "cc.version", "cc.name || '-' || cc.version || '.crate'", null, null, "cc.blob_id", null, "cc") +
-			"\n\t\tFROM cargo_crates cc",
+			"\n\t\tFROM cargo_crates cc WHERE cc.deleted_at IS NULL",
 		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
-			"\n\t\tFROM conda_packages cp",
+			"\n\t\tFROM conda_packages cp WHERE cp.deleted_at IS NULL",
 		searchBranch("conan", "co.name", "co.version", "''", null, null, "co.blob_id", null, "co") +
-			"\n\t\tFROM conan_packages co",
+			"\n\t\tFROM conan_packages co WHERE co.deleted_at IS NULL",
 		searchBranch("docker", "dt.name", "''", "''", null, null, null, "dt.manifest_digest", "dt") +
-			"\n\t\tFROM docker_tags dt",
+			"\n\t\tFROM docker_tags dt WHERE dt.deleted_at IS NULL",
 		// gomod: only the zip blob is reported (a module with just a .mod has none).
 		searchBranch("gomod", "gm.module_path", "gm.version", "''", null, null, "gm.zip_blob_id", null, "gm") +
-			"\n\t\tFROM gomod_modules gm",
+			"\n\t\tFROM gomod_modules gm WHERE gm.deleted_at IS NULL",
 		searchBranch("helm", "hc.name", "hc.version", "hc.name || '-' || hc.version || '.tgz'", null, null, "hc.blob_id", null, "hc") +
-			"\n\t\tFROM helm_charts hc",
+			"\n\t\tFROM helm_charts hc WHERE hc.deleted_at IS NULL",
 		searchBranch("ivy", "iv.organisation || '/' || iv.module", "iv.revision", "iv.artifact_name || '.' || iv.artifact_ext", null, null, "iv.blob_id", null, "iv") +
-			"\n\t\tFROM ivy_artifacts iv",
+			"\n\t\tFROM ivy_artifacts iv WHERE iv.deleted_at IS NULL",
 		searchBranch("maven", "ma.group_id || ':' || ma.artifact_id_coord", "ma.version", "ma.repo_path", "ma.group_id", "ma.artifact_id_coord", "ma.blob_id", null, "ma") +
-			"\n\t\tFROM maven_artifacts ma",
+			"\n\t\tFROM maven_artifacts ma WHERE ma.deleted_at IS NULL",
 		// npm: id and created_at are the version's, repository and name the package's.
 		`SELECT np.repository_id, 'npm'::text AS format, np.full_name::text AS name, nv.version::text AS version,
 			nv.created_at, nv.id, nv.tarball_filename::text AS path,
 			NULL::text AS group_id, NULL::text AS artifact_id_coord, NULLIF(np.scope, '')::text AS scope,
 			nv.blob_id::uuid AS blob_id, NULL::text AS manifest_image, NULL::text AS manifest_digest
 		FROM npm_packages np
-		JOIN npm_versions nv ON nv.package_id = np.id`,
+		JOIN npm_versions nv ON nv.package_id = np.id
+		WHERE nv.deleted_at IS NULL`,
 		searchBranch("nuget", "ng.package_id", "ng.version", "ng.package_id || '.' || ng.version || '.nupkg'", null, null, "ng.blob_id", null, "ng") +
-			"\n\t\tFROM nuget_packages ng",
+			"\n\t\tFROM nuget_packages ng WHERE ng.deleted_at IS NULL",
 		searchBranch("pypi", "pp.name", "pp.version", "pp.filename", null, null, "pp.blob_id", null, "pp") +
-			"\n\t\tFROM pypi_packages pp",
+			"\n\t\tFROM pypi_packages pp WHERE pp.deleted_at IS NULL",
 		searchBranch("raw", "ra.path", "''", "ra.path", null, null, "ra.blob_id", null, "ra") +
-			"\n\t\tFROM raw_artifacts ra",
+			"\n\t\tFROM raw_artifacts ra WHERE ra.deleted_at IS NULL",
 		searchBranch("rubygems", "rg.name", "rg.version", "rg.name || '-' || rg.version || '.gem'", null, null, "rg.blob_id", null, "rg") +
-			"\n\t\tFROM rubygems_gems rg",
+			"\n\t\tFROM rubygems_gems rg WHERE rg.deleted_at IS NULL",
 		searchBranch("sbt", "sa.group_id || '/' || sa.artifact_id", "sa.version", "sa.filename", null, null, "sa.blob_id", null, "sa") +
-			"\n\t\tFROM sbt_artifacts sa",
+			"\n\t\tFROM sbt_artifacts sa WHERE sa.deleted_at IS NULL",
 		searchBranch("rpm", "rp.name", "rp.version", "COALESCE(rp.filename, '')", null, null, "rp.blob_id", null, "rp") +
-			"\n\t\tFROM rpm_packages rp",
+			"\n\t\tFROM rpm_packages rp WHERE rp.deleted_at IS NULL",
 		searchBranch("deb", "dp.name", "dp.version", "COALESCE(dp.filename, '')", null, null, "dp.blob_id", null, "dp") +
-			"\n\t\tFROM deb_packages dp",
+			"\n\t\tFROM deb_packages dp WHERE dp.deleted_at IS NULL",
 	}
 }
 
@@ -176,7 +177,7 @@ func repoJoin(join bool) string {
 		return ""
 	}
 
-	return " JOIN repositories r ON r.id = s.repository_id"
+	return " JOIN repositories r ON r.id = s.repository_id AND r.deleted_at IS NULL"
 }
 
 // Search runs the filter scoped to readableRepos. Repo scoping is enforced
@@ -228,7 +229,7 @@ func (e *Executor) Search(
 		p.artifact_id_coord,
 		p.scope
 	FROM page AS p
-	JOIN repositories r ON r.id = p.repository_id
+	JOIN repositories r ON r.id = p.repository_id AND r.deleted_at IS NULL
 	%s
 	ORDER BY p.created_at DESC, p.id`,
 		source,
@@ -329,7 +330,7 @@ func (e *Executor) SearchRepositories(
 	//nolint:gosec // G201: the predicate is built from constant fragments and $n placeholders only; every user value is a bound argument
 	q := fmt.Sprintf(`SELECT r.id, r.name, r.format, COALESCE(r.description, '')
 	FROM repositories r
-	WHERE %s
+	WHERE r.deleted_at IS NULL AND %s
 	ORDER BY r.name, r.id
 	LIMIT $%d OFFSET $%d`, b.String(), limitN, limitN+1)
 

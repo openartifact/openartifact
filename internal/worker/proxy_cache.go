@@ -28,6 +28,7 @@ const evictExpiredSQL = `
 	DELETE FROM proxy_cache_entries e
 	USING repositories r
 	WHERE r.id = e.repository_id
+	  AND r.deleted_at IS NULL
 	  AND e.expires_at < now() - interval '` + proxyCacheGrace + `' - CASE
 	      WHEN e.blob_key IS NOT NULL THEN COALESCE(r.max_stale_seconds, 0) * interval '1 second'
 	      ELSE interval '0'

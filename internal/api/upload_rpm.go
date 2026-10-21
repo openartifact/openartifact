@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -579,20 +580,32 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if err := h.db.DeleteComponent(r.Context(), packageID); err != nil {
-		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
-		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
-
+	if err := trash.GuardRelease(r, repo, "rpm", rpmVersionRelease(comp.Version, comp.Release)); err != nil {
+		h.writeDeleteError(w, err, packageID)
 		return
 	}
 
-	h.releaseQuota(r.Context(), repoName, repoID, size)
-
-	// Blobs are keyed by sha256; remove only when no other row references it.
-	if blobSHA != "" {
-		if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, blobSHA); err != nil {
-			h.log.Warnw("failed to delete blob", "sha256", blobSHA, "error", err)
+	err = trash.Delete(r.Context(), h.db, trash.Request{
+		RepoID: repoID, Kind: models.TrashKindRPM, IDs: []string{packageID}, Resource: comp.Filename,
+	}, func() error {
+		if err := h.db.DeleteComponent(r.Context(), packageID); err != nil {
+			return err
 		}
+
+		h.releaseQuota(r.Context(), repoName, repoID, size)
+
+		// Blobs are keyed by sha256; remove only when no other row references it.
+		if blobSHA != "" {
+			if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, blobSHA); err != nil {
+				h.log.Warnw("failed to delete blob", "sha256", blobSHA, "error", err)
+			}
+		}
+
+		return nil
+	})
+	if err != nil {
+		h.writeDeleteError(w, err, packageID)
+		return
 	}
 
 	if err := h.db.MarkRepoStale(r.Context(), repoID); err != nil {
@@ -622,6 +635,19 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 			"package_id": packageID,
 		},
 	})
+}
+
+// writeDeleteError maps a delete failure to its HTTP answer.
+func (h *RPMUploadHandler) writeDeleteError(w http.ResponseWriter, err error, packageID string) {
+	switch {
+	case errors.Is(err, database.ErrTrashNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
+	case errors.Is(err, trash.ErrImmutableRelease):
+		writeError(w, http.StatusConflict, "IMMUTABLE_RELEASE", "release versions are immutable in this repository")
+	default:
+		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
+		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
+	}
 }
 
 func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Request) {

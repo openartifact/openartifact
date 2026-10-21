@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
@@ -445,20 +446,49 @@ func (h *HTTPHandler) handleDeleteChart(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	// Delete the record first, then the blob only if nothing else references it.
-	if err := h.DB.DeleteHelmChart(r.Context(), repoID, chart.Name, chart.Version); err != nil {
-		h.Log.Errorw("failed to delete helm chart record", "chart", chart.Name, "error", err)
+	if gErr := trash.GuardReleaseByName(r, h.DB, repoName, "helm", chart.Version); gErr != nil {
+		if errors.Is(gErr, trash.ErrImmutableRelease) {
+			http.Error(w, "repository has immutable releases", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to check release immutability", "chart", chart.Name, "error", gErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
-		h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
-	}
+	err = trash.Delete(r.Context(), h.DB, trash.Request{
+		RepoID:   repoID,
+		Kind:     models.TrashKindHelm,
+		IDs:      []string{chart.ID},
+		Resource: "charts/" + filename,
+	}, func() error {
+		// Delete the record first, then the blob only if nothing else references it.
+		if delErr := h.DB.DeleteHelmChart(r.Context(), repoID, chart.Name, chart.Version); delErr != nil {
+			return fmt.Errorf("delete helm chart record: %w", delErr)
+		}
 
-	if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, chart.Digest); err != nil {
-		h.Log.Warnw("failed to delete chart blob", "sha256", chart.Digest, "error", err)
+		if relErr := quota.Release(r.Context(), h.DB, repoID, size); relErr != nil {
+			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
+		}
+
+		if blobErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, chart.Digest); blobErr != nil {
+			h.Log.Warnw("failed to delete chart blob", "sha256", chart.Digest, "error", blobErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
+		h.Log.Errorw("failed to delete helm chart record", "chart", chart.Name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
 	}
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{

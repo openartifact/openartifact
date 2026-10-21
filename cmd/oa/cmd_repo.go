@@ -5,10 +5,15 @@
 package main
 
 import (
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
+	"net/url"
+	"strconv"
 )
+
+var errRetention = errors.New("--trash-retention-days must be a non-negative integer or \"default\"")
 
 // listPageSize is the largest page the repository and package endpoints serve.
 const listPageSize = 100
@@ -23,7 +28,7 @@ func handleRepo(args []string, client *Client, outFmt string) {
 		repoList(client, outFmt)
 	case "create":
 		if len(args) < 2 {
-			dief("Usage: oa repo create <name> [--format fmt] [--description D] [--public]")
+			dief("Usage: oa repo create <name> [--format fmt] [--description D] [--public] [--trash-retention-days N] [--immutable-releases]")
 		}
 
 		repoCreate(client, args[1], args[2:], outFmt)
@@ -35,16 +40,16 @@ func handleRepo(args []string, client *Client, outFmt string) {
 		repoShow(client, args[1], outFmt)
 	case "update":
 		if len(args) < 2 {
-			dief("Usage: oa repo update <name> [--description D] [--public[=false]]")
+			dief("Usage: oa repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]]")
 		}
 
 		repoUpdate(client, args[1], args[2:])
 	case "delete":
 		if len(args) < 2 {
-			dief("Usage: oa repo delete <name>")
+			dief("Usage: oa repo delete <name> [--confirm <name>]")
 		}
 
-		repoDelete(client, args[1])
+		repoDelete(client, args[1], args[2:])
 	case "packages":
 		if len(args) < 2 {
 			dief("Usage: oa repo packages <name>")
@@ -74,14 +79,34 @@ func repoCreate(client *Client, name string, args []string, outFmt string) {
 	repoFmt := fs.String("format", "npm", "Repository format")
 	desc := fs.String("description", "", "Description")
 	public := fs.Bool("public", false, "Public repository")
+	retention := fs.String("trash-retention-days", "", "Days deleted items stay in the trash (0 = delete immediately, default = server setting)")
+	immutable := fs.Bool("immutable-releases", false, "Block deleting or overwriting released versions")
 	_ = fs.Parse(args)
 
-	result := sendJSON(client, "POST", "/api/v1/repositories", map[string]any{
+	set := setFlags(fs)
+	body := map[string]any{
 		"name":        name,
 		"format":      *repoFmt,
 		"description": *desc,
 		"public":      *public,
-	}, http.StatusCreated)
+	}
+
+	if set["trash-retention-days"] {
+		days, err := parseRetention(*retention)
+		if err != nil {
+			dief("%v", err)
+		}
+
+		if days != nil {
+			body["trash_retention_days"] = days
+		}
+	}
+
+	if set["immutable-releases"] {
+		body["immutable_releases"] = *immutable
+	}
+
+	result := sendJSON(client, "POST", "/api/v1/repositories", body, http.StatusCreated)
 
 	if outFmt == "json" {
 		printJSON(result)
@@ -102,7 +127,7 @@ func repoShow(client *Client, name, outFmt string) {
 
 	w := newTabWriter()
 
-	for _, k := range []string{"name", "format", "repo_type", "description", "public", "upstream_url", "created_at", "updated_at"} {
+	for _, k := range []string{"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days", "immutable_releases", "created_at", "updated_at"} {
 		if v, ok := result[k]; ok {
 			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, cell(v))
 		}
@@ -117,6 +142,8 @@ func repoUpdate(client *Client, name string, args []string) {
 	fs := flag.NewFlagSet("repo update", flag.ExitOnError)
 	desc := fs.String("description", "", "Description")
 	public := fs.Bool("public", false, "Public (--public=false to make private)")
+	retention := fs.String("trash-retention-days", "", "Days deleted items stay in the trash (0 = delete immediately, default = server setting)")
+	immutable := fs.Bool("immutable-releases", false, "Block deleting or overwriting released versions (--immutable-releases=false to allow)")
 	_ = fs.Parse(args)
 
 	set := setFlags(fs)
@@ -130,23 +157,63 @@ func repoUpdate(client *Client, name string, args []string) {
 		body["public"] = *public
 	}
 
+	if set["trash-retention-days"] {
+		days, err := parseRetention(*retention)
+		if err != nil {
+			dief("%v", err)
+		}
+
+		body["trash_retention_days"] = days
+	}
+
+	if set["immutable-releases"] {
+		body["immutable_releases"] = *immutable
+	}
+
 	if len(body) == 0 {
-		dief("nothing to update: pass --description and/or --public[=false]")
+		dief("nothing to update: pass --description, --public[=false], --trash-retention-days or --immutable-releases[=false]")
 	}
 
 	sendJSON(client, "PATCH", "/api/v1/repository/"+escape(name), body, http.StatusOK)
 	fmt.Printf("Repository '%s' updated.\n", name)
 }
 
-func repoDelete(client *Client, name string) {
-	resp, err := client.do("DELETE", "/api/v1/repository/"+escape(name), nil, "")
+// parseRetention maps --trash-retention-days to the API value: a non-negative
+// integer, or nil (JSON null) for "default" (use the server-wide retention).
+func parseRetention(v string) (any, error) {
+	if v == "default" {
+		return nil, nil //nolint:nilnil // nil is the JSON null that selects the server default
+	}
+
+	n, err := strconv.Atoi(v)
+	if err != nil || n < 0 {
+		return nil, errRetention
+	}
+
+	return n, nil
+}
+
+// repoDelete deletes a repository. The server requires the repository name as
+// confirmation, so --confirm (or an interactive prompt) is mandatory; the
+// repository then waits in the trash for its retention period.
+func repoDelete(client *Client, name string, args []string) {
+	fs := flag.NewFlagSet("repo delete", flag.ExitOnError)
+	confirm := fs.String("confirm", "", "Repository name, as confirmation")
+	_ = fs.Parse(args)
+
+	confirmed, err := resolveRepoConfirm(name, *confirm, setFlags(fs)["confirm"], stdinIsTerminal(), stdinReader, stderrPrompt)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	resp, err := client.do("DELETE", "/api/v1/repository/"+escape(name)+"?confirm="+url.QueryEscape(confirmed), nil, "")
 	if err != nil {
 		dief("%v", err)
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	checkOK(resp, http.StatusOK, http.StatusNoContent)
-	fmt.Printf("Repository '%s' deleted.\n", name)
+	fmt.Printf("Repository '%s' deleted (kept in the trash until its retention expires, unless retention is 0).\n", name)
 }
 
 func repoPackages(client *Client, name, outFmt string) {

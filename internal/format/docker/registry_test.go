@@ -530,6 +530,53 @@ func TestRegistry_DeleteManifestSemantics(t *testing.T) {
 	}
 }
 
+func TestRegistry_ImmutableReleasesGuardTags(t *testing.T) {
+	db := newRegFakeDB("reg")
+	db.repos["reg"].ImmutableReleases = true
+	g := newRegistry(t, db)
+
+	v1 := `{"schemaVersion":2,"mediaType":"` + ociManifestType + `","annotations":{"v":"1"}}`
+	v2 := `{"schemaVersion":2,"mediaType":"` + ociManifestType + `","annotations":{"v":"2"}}`
+
+	const name = "reg/app"
+
+	if rec := g.putManifest(name, "1", v1); rec.Code != http.StatusCreated {
+		t.Fatalf("first push = %d", rec.Code)
+	}
+
+	// Re-pushing the same digest under the same tag is idempotent.
+	if rec := g.putManifest(name, "1", v1); rec.Code != http.StatusCreated {
+		t.Fatalf("idempotent re-push = %d, want 201", rec.Code)
+	}
+
+	// Re-pointing the tag to another digest is refused.
+	if rec := g.putManifest(name, "1", v2); rec.Code != http.StatusConflict {
+		t.Fatalf("retag = %d, want 409; body=%s", rec.Code, rec.Body.String())
+	}
+
+	if tag := db.tags[scoped("id-reg", scoped("app", "1"))]; tag == nil || tag.ManifestDigest != digestOf([]byte(v1)) {
+		t.Fatalf("tag moved despite 409: %+v", tag)
+	}
+
+	// A new tag is not an overwrite.
+	if rec := g.putManifest(name, "2", v2); rec.Code != http.StatusCreated {
+		t.Fatalf("new tag = %d, want 201", rec.Code)
+	}
+
+	// Deleting a tag or a manifest is refused too.
+	if rec := g.do(http.MethodDelete, "/v2/"+name+"/manifests/1", ""); rec.Code != http.StatusConflict {
+		t.Fatalf("delete tag = %d, want 409", rec.Code)
+	}
+
+	if rec := g.do(http.MethodDelete, "/v2/"+name+"/manifests/"+digestOf([]byte(v1)), ""); rec.Code != http.StatusConflict {
+		t.Fatalf("delete manifest = %d, want 409", rec.Code)
+	}
+
+	if rec := g.do(http.MethodGet, "/v2/"+name+"/manifests/1", ""); rec.Code != http.StatusOK {
+		t.Fatalf("GET after refused delete = %d, want 200", rec.Code)
+	}
+}
+
 func TestRegistry_MountBlob(t *testing.T) {
 	layer := []byte("mountable layer")
 	digest := digestOf(layer)

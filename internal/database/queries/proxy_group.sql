@@ -7,10 +7,11 @@ ON CONFLICT (group_repo_id, member_repo_id) DO UPDATE SET priority = $3;
 DELETE FROM repository_group_members WHERE group_repo_id = $1 AND member_repo_id = $2;
 
 -- name: ListGroupMembers :many
-SELECT group_repo_id, member_repo_id, priority, created_at
-FROM repository_group_members
-WHERE group_repo_id = $1
-ORDER BY priority ASC;
+SELECT m.group_repo_id, m.member_repo_id, m.priority, m.created_at
+FROM repository_group_members m
+JOIN repositories r ON r.id = m.member_repo_id AND r.deleted_at IS NULL
+WHERE m.group_repo_id = $1
+ORDER BY m.priority ASC;
 
 -- name: GetProxyCacheEntry :one
 SELECT id, repository_id, cache_key,
@@ -43,6 +44,7 @@ DELETE FROM proxy_cache_entries WHERE repository_id = $1 AND cache_key = $2;
 DELETE FROM proxy_cache_entries e
 USING repositories r
 WHERE r.id = e.repository_id
+  AND r.deleted_at IS NULL
   AND e.expires_at < now() - CASE
       WHEN e.blob_key IS NOT NULL THEN COALESCE(r.max_stale_seconds, 0) * interval '1 second'
       ELSE interval '0'

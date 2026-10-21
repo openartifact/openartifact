@@ -15,7 +15,7 @@ import (
 // (sha256 lives on the joined blob row).
 func (p *PostgresDB) storeMavenChecksums(ctx context.Context, a *models.MavenArtifact) error {
 	_, err := p.pool.Exec(ctx,
-		`UPDATE maven_artifacts SET md5 = $2, sha1 = $3, sha512 = $4 WHERE id = $1`,
+		`UPDATE maven_artifacts SET md5 = $2, sha1 = $3, sha512 = $4 WHERE id = $1 AND deleted_at IS NULL`,
 		a.ID, a.MD5, a.SHA1, a.SHA512)
 	if err != nil {
 		return fmt.Errorf("failed to store maven checksums: %w", err)
@@ -43,7 +43,7 @@ func (p *PostgresDB) fillMavenChecksums(ctx context.Context, arts ...*models.Mav
 	rows, err := p.pool.Query(ctx,
 		`SELECT ma.id::text, b.sha256, ma.md5, ma.sha1, ma.sha512
 		   FROM maven_artifacts ma JOIN blobs b ON b.id = ma.blob_id
-		  WHERE ma.id = ANY($1::uuid[])`, ids)
+		  WHERE ma.id = ANY($1::uuid[]) AND ma.deleted_at IS NULL`, ids)
 	if err != nil {
 		return fmt.Errorf("failed to load maven checksums: %w", err)
 	}

@@ -22,8 +22,10 @@ SELECT id, repository_id, name, enabled, keep_last_n, keep_since_days, keep_down
 FROM cleanup_policies WHERE repository_id = $1 ORDER BY created_at DESC;
 
 -- name: ListEnabledCleanupPolicies :many
-SELECT id, repository_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron, last_run_at, last_run_deleted, last_run_error, created_at, updated_at
-FROM cleanup_policies WHERE enabled = true ORDER BY created_at DESC;
+SELECT cp.id, cp.repository_id, cp.name, cp.enabled, cp.keep_last_n, cp.keep_since_days, cp.keep_downloaded_since_days, cp.name_pattern, cp.schedule_cron, cp.last_run_at, cp.last_run_deleted, cp.last_run_error, cp.created_at, cp.updated_at
+FROM cleanup_policies cp
+JOIN repositories r ON r.id = cp.repository_id AND r.deleted_at IS NULL
+WHERE cp.enabled = true ORDER BY cp.created_at DESC;
 
 -- name: UpdateCleanupPolicyRunResult :exec
 UPDATE cleanup_policies SET last_run_at = now(), last_run_deleted = $2, last_run_error = $3 WHERE id = $1;

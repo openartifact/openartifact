@@ -9,6 +9,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -25,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -142,6 +144,18 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		// Zero unless an administrator supplied an origin timestamp; the
 		// database then stamps "now".
 		CreatedAt: importmeta.CreatedAt(r.Context()),
+	}
+
+	existing, err := h.DB.GetRawArtifact(r.Context(), repoID, path)
+	if err != nil {
+		h.Log.Errorw("failed to look up existing artifact", "path", path, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if h.guardOverwrite(w, r, repoName, path, existing) {
+		return
 	}
 
 	previous, err := Commit(r.Context(), h.Handler, repoName, artifact, func(ctx context.Context) error {
@@ -364,30 +378,82 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete from database
-	if err := h.DB.DeleteRawArtifact(r.Context(), repoID, path); err != nil {
-		h.Log.Errorw("failed to delete artifact", "path", path, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if artifact == nil {
+		w.WriteHeader(http.StatusNoContent)
 		return
 	}
 
-	if artifact != nil {
+	if gErr := trash.GuardReleaseByName(r, h.DB, repoName, "raw", ""); gErr != nil {
+		h.writeGuardError(w, gErr, "delete", path)
+		return
+	}
+
+	err = trash.Delete(r.Context(), h.DB, trash.Request{
+		RepoID:   repoID,
+		Kind:     models.TrashKindRaw,
+		IDs:      []string{artifact.ID},
+		Resource: path,
+	}, func() error {
+		if delErr := h.DB.DeleteRawArtifact(r.Context(), repoID, path); delErr != nil {
+			return fmt.Errorf("delete raw artifact: %w", delErr)
+		}
+
 		// The blob is content-addressed and may be shared; remove it only once
 		// no row references it any more.
 		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, artifact.SHA256); delErr != nil {
 			h.Log.Warnw("failed to clean up blob after raw delete", "sha256", artifact.SHA256, "error", delErr)
 		}
 
-		h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-			Repository: repoName,
-			Format:     "raw",
-			Name:       path,
-			Path:       path,
-			SHA256:     artifact.SHA256,
-			Size:       artifact.SizeBytes,
-		}))
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
+		h.Log.Errorw("failed to delete artifact", "path", path, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
 	}
 
+	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "raw",
+		Name:       path,
+		Path:       path,
+		SHA256:     artifact.SHA256,
+		Size:       artifact.SizeBytes,
+	}))
+
 	w.WriteHeader(http.StatusNoContent)
+}
+
+// guardOverwrite refuses to replace an existing file of a repository with
+// immutable releases (every raw file is a release). It reports whether it
+// answered the request.
+func (h *HTTPHandler) guardOverwrite(w http.ResponseWriter, r *http.Request, repoName, path string, previous *models.RawArtifact) bool {
+	if previous == nil {
+		return false
+	}
+
+	if err := trash.GuardReleaseByName(r, h.DB, repoName, "raw", ""); err != nil {
+		h.writeGuardError(w, err, "overwrite", path)
+
+		return true
+	}
+
+	return false
+}
+
+// writeGuardError answers a failed immutable-release guard.
+func (h *HTTPHandler) writeGuardError(w http.ResponseWriter, err error, action, path string) {
+	if errors.Is(err, trash.ErrImmutableRelease) {
+		http.Error(w, "repository has immutable releases: cannot "+action+" "+path, http.StatusConflict)
+		return
+	}
+
+	h.Log.Errorw("failed to check release immutability", "path", path, "error", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }

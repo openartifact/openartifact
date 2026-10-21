@@ -91,7 +91,8 @@ export function updateRepository(name: string, body: Partial<Repository>): Promi
 }
 
 export function deleteRepository(name: string): Promise<void> {
-  return request<void>(`/api/v1/repository/${encodeURIComponent(name)}`, {
+  // The server requires the repository name as explicit confirmation.
+  return request<void>(`/api/v1/repository/${encodeURIComponent(name)}?confirm=${encodeURIComponent(name)}`, {
     method: 'DELETE',
   })
 }

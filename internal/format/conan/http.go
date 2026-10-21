@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -348,19 +349,46 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete package record
-	err = h.DB.DeleteConanPackage(r.Context(), conanPkg.ID)
-	if err != nil {
-		h.Log.Errorw("failed to delete conan package", "id", conanPkg.ID, "error", err)
+	if gErr := trash.GuardReleaseByName(r, h.DB, repoName, "conan", version); gErr != nil {
+		if errors.Is(gErr, trash.ErrImmutableRelease) {
+			http.Error(w, "repository has immutable releases", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to check release immutability", "pkg", pkg, "error", gErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// The blob is content-addressed and may be shared; remove it only once no
-	// row references it any more.
-	if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, conanPkg.BlobKey); delErr != nil {
-		h.Log.Warnw("failed to clean up blob after conan delete", "sha256", conanPkg.BlobKey, "error", delErr)
+	err = trash.Delete(r.Context(), h.DB, trash.Request{
+		RepoID:   repoID,
+		Kind:     models.TrashKindConan,
+		IDs:      []string{conanPkg.ID},
+		Resource: conanPath(pkg, version, userChannel, ""),
+	}, func() error {
+		if delErr := h.DB.DeleteConanPackage(r.Context(), conanPkg.ID); delErr != nil {
+			return fmt.Errorf("delete conan package: %w", delErr)
+		}
+
+		// The blob is content-addressed and may be shared; remove it only once
+		// no row references it any more.
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, conanPkg.BlobKey); delErr != nil {
+			h.Log.Warnw("failed to clean up blob after conan delete", "sha256", conanPkg.BlobKey, "error", delErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
+		h.Log.Errorw("failed to delete conan package", "id", conanPkg.ID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
 	}
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{

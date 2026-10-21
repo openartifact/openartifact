@@ -103,6 +103,13 @@ PostgreSQL is the only supported database.
 | `OPENARTIFACT_DOCKER_GC_INTERVAL` | `workers.dockerGcInterval` | `1h` | Pause between Docker registry garbage-collection passes over all docker repositories; `0` disables the schedule (an admin can still run it through the API). See [Docker registry GC](../formats/docker.md#garbage-collection) |
 | `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `workers.dockerGcGracePeriod` | `24h` | How long an untagged manifest or an unreferenced blob must sit idle before GC may delete it; keep it longer than your slowest push and any digest-pinned reference to an untagged image. Must not be negative |
 
+### Trash (`trash`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_TRASH_RETENTION` | `trash.retentionDays` | `7` | Days a deleted artifact, version or repository stays restorable before the purge worker removes it; repositories can override it (`trash_retention_days`); `0` disables the trash (deletes are immediate and permanent). Must not be negative. See [Trash](../operations/trash.md) |
+| `OPENARTIFACT_TRASH_PURGE_INTERVAL` | `trash.purgeInterval` | `15m` | Pause between purge passes; `0` disables the schedule (admins can still purge by hand) |
+
 ### Storage (`storage`)
 
 Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `garage` and `seaweedfs` reuse the S3 client with path-style addressing forced on. Details: [storage](../operations/storage.md).

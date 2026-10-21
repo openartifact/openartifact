@@ -28,7 +28,8 @@ var (
 	errMissingLogLevel    = errors.New("logger level is required")
 	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
 
-	errNegativeDockerGCGrace = errors.New("workers.dockerGcGracePeriod must not be negative")
+	errNegativeDockerGCGrace  = errors.New("workers.dockerGcGracePeriod must not be negative")
+	errNegativeTrashRetention = errors.New("trash.retentionDays must not be negative")
 
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
 	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
@@ -46,6 +47,7 @@ type Config struct {
 	AI       AIConfig                `yaml:"ai"`
 	MCP      MCPConfig               `yaml:"mcp"`
 	Workers  WorkersConfig           `yaml:"workers"`
+	Trash    TrashConfig             `yaml:"trash"`
 	BaseURL  string                  `yaml:"baseUrl"`
 }
 
@@ -64,6 +66,18 @@ type WorkersConfig struct {
 	// outlast the slowest push: layers are uploaded before the manifest that
 	// references them.
 	DockerGCGracePeriod time.Duration `yaml:"dockerGcGracePeriod"`
+}
+
+// TrashConfig tunes soft delete (see docs/operations/trash.md).
+type TrashConfig struct {
+	// RetentionDays is how many days a deleted artifact, version or
+	// repository stays restorable before the purge worker removes it for good.
+	// It applies to repositories without their own trash_retention_days;
+	// 0 disables the trash (deletes are immediate and permanent).
+	RetentionDays int `yaml:"retentionDays"`
+	// PurgeInterval is the pause between purge passes. Zero or negative
+	// disables the schedule: nothing expires until an admin purges by hand.
+	PurgeInterval time.Duration `yaml:"purgeInterval"`
 }
 
 type AuthConfig struct {
@@ -271,6 +285,10 @@ func defaultConfig() *Config {
 			DockerGCInterval:         time.Hour,
 			DockerGCGracePeriod:      24 * time.Hour,
 		},
+		Trash: TrashConfig{
+			RetentionDays: 7,
+			PurgeInterval: 15 * time.Minute,
+		},
 		BaseURL: "http://localhost:8080",
 	}
 }
@@ -394,6 +412,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Workers.MetadataRegenConcurrency, "OPENARTIFACT_METADATA_REGEN_CONCURRENCY")
 	overrideDuration(&cfg.Workers.DockerGCInterval, "OPENARTIFACT_DOCKER_GC_INTERVAL")
 	overrideDuration(&cfg.Workers.DockerGCGracePeriod, "OPENARTIFACT_DOCKER_GC_GRACE_PERIOD")
+	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
+	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
 
 	// Base URL
 	overrideString(&cfg.BaseURL, "BASE_URL")
@@ -461,6 +481,10 @@ func (c *Config) Validate() error {
 
 	if c.Workers.DockerGCGracePeriod < 0 {
 		return errNegativeDockerGCGrace
+	}
+
+	if c.Trash.RetentionDays < 0 {
+		return errNegativeTrashRetention
 	}
 
 	return c.validatePresign()

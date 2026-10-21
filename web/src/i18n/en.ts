@@ -55,6 +55,7 @@ const base = {
   'nav.gpg': 'GPG Keys',
   'nav.tokens': 'Tokens',
   'nav.audit': 'Audit Log',
+  'nav.trash': 'Trash',
   'nav.storage': 'Storage Backends',
   'nav.backup': 'Backup & Restore',
   'nav.webhooks': 'Webhooks',

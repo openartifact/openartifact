@@ -15,9 +15,13 @@ A webhook is either global (fires for events in every repository) or scoped to o
 | Event | Fired when |
 |---|---|
 | `artifact.uploaded` | an artifact is published to a repository, in every format. Proxy cache fills do not fire it |
-| `artifact.deleted` | an artifact is deleted, in every format except Go modules and Cargo, which do not emit it |
+| `artifact.deleted` | an artifact is deleted, in every format except Go modules and Cargo, which do not emit it. It fires for both soft deletes (moved to the [trash](trash.md)) and permanent deletes |
+| `artifact.restored` | an artifact is restored from the trash |
+| `artifact.purged` | a trashed artifact is removed for good, by an admin or by the retention purge worker |
 | `repository.created` | a repository is created |
-| `repository.deleted` | a repository is deleted |
+| `repository.deleted` | a repository is deleted (moved to the trash, or permanently when its retention is 0) |
+| `repository.restored` | a repository is restored from the trash |
+| `repository.purged` | a trashed repository is removed for good |
 | `artifact.downloaded` | accepted as a subscription, but nothing emits it today |
 | `webhook.test` | only by the test route; cannot be subscribed to |
 
@@ -43,7 +47,7 @@ Artifact events:
 }
 ```
 
-`version`, `sha256` and `size` are omitted when the format or the operation does not provide them. Repository events carry `event`, `timestamp`, `repository`, `format` and `type` (`hosted`, `proxy` or `group`). The test event is `{"event":"webhook.test","message":"This is a test webhook delivery","timestamp":<unix seconds>}`.
+`version`, `sha256` and `size` are omitted when the format or the operation does not provide them. Repository events carry `event`, `timestamp`, `repository`, `format` and `type` (`hosted`, `proxy` or `group`). `artifact.restored` and `artifact.purged` use the artifact payload and `repository.restored` and `repository.purged` the repository payload; only the `event` value differs. See [Trash](trash.md#audit-and-webhook-events). The test event is `{"event":"webhook.test","message":"This is a test webhook delivery","timestamp":<unix seconds>}`.
 
 ## Request
 

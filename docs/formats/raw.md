@@ -34,13 +34,13 @@ Relative to `HOST/repos/raw/REPO`:
 | `GET /<path>` | file, with `Content-Type`, `Content-Length` and `X-Checksum-Sha256` |
 | `HEAD /<path>` | headers only |
 | `GET /` or `GET /<prefix>/` | JSON list of files under the prefix: `path`, `size`, `content_type`, `sha256`, `created_at`, `updated_at` |
-| `DELETE /<path>` | delete |
+| `DELETE /<path>` | delete; the file goes to the [trash](../operations/trash.md) (`404` afterwards) unless the repository retention is 0 |
 
 ## Upload
 
 - Limit 5 GiB (`413` above it); the body is spooled to a temporary file while hashing.
 - Content type is the request `Content-Type`, else detected from the first 512 bytes.
-- An empty path is `400`. `PUT` to an existing path replaces it (same record, new content) and the replaced blob is removed when unreferenced: raw files are always mutable.
+- An empty path is `400`. `PUT` to an existing path replaces it (same record, new content) and the replaced blob is removed when unreferenced: raw files are mutable by default. In a repository with `immutable_releases` every raw file is a release, so replacing an existing path (and deleting one) is `409` unless an admin passes `?force=true` ([immutable releases](../operations/trash.md#immutable-releases)).
 
 ## Presigned uploads
 

@@ -1,0 +1,38 @@
+// SPDX-FileCopyrightText: The OpenArtifact Authors
+//
+// SPDX-License-Identifier: AGPL-3.0-or-later
+
+import { t } from '../i18n/en'
+
+const DAY_MS = 86_400_000
+
+/** True when the typed text equals the repository name exactly (no trimming). */
+export function confirmNameMatches(typed: string, name: string): boolean {
+  return name !== '' && typed === name
+}
+
+/** Whole days (rounded up) until `purgeAt`; 0 when due or in the past; null when unscheduled/invalid. */
+export function daysUntilPurge(purgeAt: string | null | undefined, now: number = Date.now()): number | null {
+  if (!purgeAt) return null
+  const at = new Date(purgeAt).getTime()
+  if (Number.isNaN(at)) return null
+  return Math.max(0, Math.ceil((at - now) / DAY_MS))
+}
+
+/** Human text for the purge column: "purges in 3 days", "purges today", or a dash. */
+export function purgeInText(purgeAt: string | null | undefined, now: number = Date.now()): string {
+  const days = daysUntilPurge(purgeAt, now)
+  if (days === null) return '—'
+  if (days === 0) return t('trash.purgesToday')
+  if (days === 1) return t('trash.purgesInOneDay')
+  return t('trash.purgesInDays').replace('{n}', String(days))
+}
+
+/** Parses the retention input: '' -> null (server default), integer >= 0 -> number, otherwise undefined (invalid). */
+export function parseRetentionInput(raw: string | number | null | undefined): number | null | undefined {
+  if (raw === null || raw === undefined) return null
+  const s = String(raw).trim()
+  if (s === '') return null
+  if (!/^\d+$/.test(s)) return undefined
+  return Number(s)
+}

@@ -41,9 +41,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </select>
         <p class="text-[11px] text-muted mt-1">{{ t('repos.settings.presign.hint') }}</p>
       </FormField>
+      <FormField :label="t('repos.settings.trashRetention')" id="repo-trash-retention" :hint="t('repos.settings.trashRetentionHint')" :error="retentionError">
+        <input
+          id="repo-trash-retention"
+          v-model="form.trashRetention"
+          type="number"
+          min="0"
+          step="1"
+          :placeholder="t('repos.settings.trashRetentionPlaceholder')"
+          class="w-full px-3 py-2 border border-border rounded-md text-sm bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+        />
+      </FormField>
+      <div class="space-y-1">
+        <div class="flex items-center gap-3">
+          <input id="repo-immutable" v-model="form.immutableReleases" type="checkbox" class="rounded" />
+          <label for="repo-immutable" class="text-sm font-medium text-foreground">{{ t('repos.settings.immutableReleases') }}</label>
+        </div>
+        <p class="text-xs text-muted">{{ t('repos.settings.immutableReleasesHint') }}</p>
+      </div>
       <button
         type="submit"
-        :disabled="loading"
+        :disabled="loading || !!retentionError"
         class="py-2 px-4 bg-primary text-primary-contrast text-sm font-medium rounded-md hover:opacity-90 disabled:opacity-50"
       >
         {{ loading ? t('common.saving') : t('common.save') }}
@@ -59,13 +77,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import type { Repository } from '../api/repositories'
 import { presignModeOf, presignValueOf, updateRepository } from '../api/repositories'
 import type { PresignMode } from '../api/repositories'
 import FormField from '../components/FormField.vue'
 import RepoQuotaTab from './RepoQuotaTab.vue'
 import { useToastStore } from '../stores/toast'
+import { parseRetentionInput } from '../lib/trash'
 import { t } from '../i18n/en'
 
 const props = defineProps<{ repo: Repository }>()
@@ -75,20 +94,31 @@ interface SettingsForm {
   description: string
   public: boolean
   presign: PresignMode
+  trashRetention: string
+  immutableReleases: boolean
 }
 
-function formOf(r: Repository): SettingsForm {
-  return { description: r.description ?? '', public: r.public ?? false, presign: presignModeOf(r) }
+function formFrom(r: Repository): SettingsForm {
+  return {
+    description: r.description ?? '',
+    public: r.public ?? false,
+    presign: presignModeOf(r),
+    trashRetention: r.trash_retention_days == null ? '' : String(r.trash_retention_days),
+    immutableReleases: r.immutable_releases ?? false,
+  }
 }
 
-const form = ref<SettingsForm>(formOf(props.repo))
+const form = ref<SettingsForm>(formFrom(props.repo))
+const retentionError = computed(() =>
+  parseRetentionInput(form.value.trashRetention) === undefined ? t('repos.settings.trashRetentionInvalid') : '',
+)
 const loading = ref(false)
 const toasts = useToastStore()
 
 watch(
   () => props.repo,
   (r) => {
-    form.value = formOf(r)
+    form.value = formFrom(r)
   },
 )
 
@@ -99,6 +129,9 @@ async function handleSave(): Promise<void> {
       description: form.value.description,
       public: form.value.public,
       presign_downloads: presignValueOf(form.value.presign),
+      // Explicit null resets to the server default.
+      trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
+      immutable_releases: form.value.immutableReleases,
     })
     toasts.success(t('common.save'))
     emit('saved', updated)

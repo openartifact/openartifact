@@ -65,15 +65,16 @@ func (w *NPMMetadataWorker) regenerate(ctx context.Context, packageID string) er
 		defer release()
 	}
 
+	// GetNPMVersionsByPackage returns live versions only: trashed versions
+	// never count towards latest, and a restored one counts again on the next
+	// run (the trash API notifies after a restore).
 	versions, err := w.db.GetNPMVersionsByPackage(ctx, packageID)
 	if err != nil {
 		return fmt.Errorf("npm worker: getting versions of %s: %w", packageID, err)
 	}
 
-	if len(versions) == 0 {
-		return nil
-	}
-
+	// With no live version left (everything unpublished or trashed) latest is
+	// cleared rather than left pointing at a hidden version.
 	latest := computeLatestVersion(versions)
 
 	if err := w.db.UpdateNPMPackageLatestVersion(ctx, packageID, latest); err != nil {

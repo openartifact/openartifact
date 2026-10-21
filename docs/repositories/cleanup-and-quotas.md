@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Cleanup policies and storage quotas
 
-Cleanup policies delete old package versions on a schedule; storage quotas cap the size and artifact count of a repository. Both are per repository and managed by admins through `/api/v1/repositories/{repo}/...`.
+Cleanup policies remove old package versions on a schedule (into the [trash](../operations/trash.md) by default); storage quotas cap the size and artifact count of a repository. Both are per repository and managed by admins through `/api/v1/repositories/{repo}/...`.
 
 ## Cleanup policies
 
@@ -14,7 +14,7 @@ A background worker checks every minute which enabled policies are due (their cr
 
 ### Supported formats
 
-Policies delete rows from the format's package table. Supported formats: **deb, rpm, helm, pypi, nuget, go**. For any other format (maven, npm, docker, cargo, rubygems, conda, conan, raw, ivy, sbt) the API accepts a policy, but every run fails with `unsupported format for cleanup: <format>` recorded in `last_run_error`. Docker has its own [registry garbage collection](#docker-registry-garbage-collection).
+Policies select rows from the format's package table. Supported formats: **deb, rpm, helm, pypi, nuget, go**. For any other format (maven, npm, docker, cargo, rubygems, conda, conan, raw, ivy, sbt) the API accepts a policy, but every run fails with `unsupported format for cleanup: <format>` recorded in `last_run_error`. Docker has its own [registry garbage collection](#docker-registry-garbage-collection).
 
 ### Policy fields
 
@@ -35,9 +35,10 @@ At least one of `keep_last_n` or `keep_since_days` is required; zero or negative
 
 - A version is deleted when it is outside the newest `keep_last_n` versions of its package **and** older than `keep_since_days` (a criterion that is not set does not protect anything). It is kept when either criterion protects it; `name_pattern` then restricts the selection.
 - Versions are ranked per package: by name and architecture for rpm, by name, architecture and distribution for deb, by name (module path for go, package id for nuget) otherwise. A newer `arm64` build therefore never evicts the only `amd64` one. Files sharing a version (for example a PyPI sdist and wheel) count as one version.
-- The database row is deleted first; each blob is then removed from storage only if no other row still references it (blobs are deduplicated across repositories).
+- Selected versions go through the same path as an API delete. With the default [trash](../operations/trash.md) retention they are **moved to the trash** (`deleted_at` is stamped; the audit entry says `moved to trash`): they disappear from the repository like any deleted item, can be restored, and keep their blob until the purge worker removes them. When the repository's `trash_retention_days` is `0` the row is deleted at once and each blob is removed from storage only if no other row still references it (blobs are deduplicated across repositories).
+- A repository with `immutable_releases` enabled never loses a released version to a policy: release versions are skipped (see [immutable releases](../operations/trash.md#immutable-releases)); only pre-releases and snapshots are eligible.
 - A package whose blob is referenced by a [release bundle](release-bundles.md) item is skipped and kept.
-- For deb, rpm and helm repositories, whose uploads count against the [storage quota](#storage-quotas), every deleted row also gives its usage (its blob's size and one artifact) back to the repository's counters, in one update at the end of the run. A row that an API delete removed between selection and deletion is skipped, so nothing is released twice. pypi, nuget and go uploads are not counted, so their runs release nothing.
+- For deb, rpm and helm repositories, whose uploads count against the [storage quota](#storage-quotas), every row deleted permanently also gives its usage (its blob's size and one artifact) back to the repository's counters, in one update at the end of the run. Rows moved to the trash keep counting until they are purged (see [trash and quotas](#trash-and-quotas)). A row that an API delete removed between selection and deletion is skipped, so nothing is released twice. pypi, nuget and go uploads are not counted, so their runs release nothing.
 - There is no dry-run mode.
 
 ### API
@@ -65,7 +66,7 @@ curl -X POST HOST/api/v1/repositories/REPO/cleanup-policies/<ID>/run \
 
 ## Docker registry garbage collection
 
-Deleting a Docker tag leaves its manifest, and the layers only that manifest used, in storage. A separate worker reclaims them: it deletes untagged manifests older than a grace period (keeping children of tagged indexes and subject/referrer pairs), then the blob records no manifest references any more, freeing the storage when no other repository uses it.
+Deleting a Docker tag (a tag moved to the [trash](../operations/trash.md) included) leaves its manifest, and the layers only that manifest used, in storage. A separate worker reclaims them: it deletes untagged manifests older than a grace period (keeping children of tagged indexes and subject/referrer pairs), then the blob records no manifest references any more, freeing the storage when no other repository uses it.
 
 | Setting | Environment variable | Default |
 |---|---|---|
@@ -90,13 +91,17 @@ The refusal is `507 Insufficient Storage`:
 {"error":"repository storage quota exceeded","code":"quota_exceeded"}
 ```
 
-Usage is the sum, over the repository's packages, of each package's blob size, plus one artifact per package. It is given back when a package is deleted through the format or upload API, when an upload is replaced (Maven snapshot overwrite) and when a [cleanup policy](#cleanup-policies) deletes it. A blob that is shared by several packages (blobs are deduplicated) counts once per package, the same way the upload reserved it. Deleting a repository removes its counters with it.
+Usage is the sum, over the repository's packages, of each package's blob size, plus one artifact per package. It is given back when a package is **permanently** deleted through the format or upload API (retention `0`, or when the [trash](#trash-and-quotas) purge worker removes it), when an upload is replaced (Maven snapshot overwrite) and when a [cleanup policy](#cleanup-policies) permanently deletes it. A blob that is shared by several packages (blobs are deduplicated) counts once per package, the same way the upload reserved it. A repository in the trash keeps its counters until it is purged, which removes them with it.
 
 Quotas are enforced on upload paths of these formats only: **Maven** (`/repos/maven/REPO`), **npm**, **Debian**, **RPM**, **Helm** and **RubyGems**. Uploads to the other formats (including Ivy and sbt, Docker, PyPI, Go, Cargo, NuGet, Conda, Conan and raw) neither check nor count against the quota, and their counters stay at 0. A yanked RubyGems version keeps counting: yanking hides it but the file is stored until the repository is deleted.
 
+### Trash and quotas
+
+Soft-deleted bytes keep counting against the quota until purge: moving a package to the trash does not release its reservation, so deleting to make room does not work while the retention is greater than 0. Reconciliation counts trashed rows too. The purge worker (or an admin's manual purge) releases the usage when the row is finally deleted; restoring a package needs no new reservation. To free quota immediately, purge the item from the trash (`DELETE /api/v1/trash/{kind}/{id}`, admin) or set `trash_retention_days` to `0` on the repository. Details: [Trash](../operations/trash.md#quota).
+
 ### Keeping the counters correct
 
-The counters are updated incrementally with `synchronous_commit=off` (see [performance](../operations/performance.md#storage-quota)), so a PostgreSQL crash can lose the last few hundred milliseconds of changes, and backups do not include quota rows. Usage is therefore **reconciled**: recomputed from the package rows themselves and written over the counters, limits untouched.
+The counters are updated incrementally with `synchronous_commit=off` (see [performance](../operations/performance.md#storage-quota)), so a PostgreSQL crash can lose the last few hundred milliseconds of changes, and backups do not include quota rows. Usage is therefore **reconciled**: recomputed from the package rows themselves (trashed rows included) and written over the counters, limits untouched.
 
 - The cleanup worker reconciles every repository on its first tick after the server starts and then every 6 hours. A pass that finds drift logs `corrected drifted quota usage counters` with the number of repositories. Replicas take a database advisory lock, so only one recounts at a time.
 - A restore from a [backup](../operations/backup.md) reconciles when it finishes, because restored packages were not reserved against any quota.

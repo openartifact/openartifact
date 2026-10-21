@@ -76,6 +76,7 @@ scrape_configs:
 | `openartifact_metadata_regenerations_total` | counter | `format` | `rpm`, `maven`, `npm` |
 | `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` | same buckets as the request histogram |
 | `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown |
+| `openartifact_trash_purged_total` | counter | `kind` | trashed items (and repositories, `kind="repository"`) permanently removed by the retention purge; `kind` is the trash kind, e.g. `maven_artifact`, `docker_manifest` |
 
 Useful queries:
 
@@ -100,7 +101,7 @@ The server records who changed what. Events are stored in the `audit_logs` table
 Recorded:
 
 - Every authenticated `POST`, `PUT` and `DELETE` request (reads are not recorded), with actor (username, or `anonymous`), client IP and a `details` object with `method`, `path` (the route pattern such as `/api/v1/repositories/{name}`, not the concrete URL), `status`, and `error: true` for status 400 and above.
-- Named actions: `repository.created`, `repository.deleted`, `artifact.uploaded` (deb upload through `POST /api/v1/repositories/{name}/debs` only), `auth.password_changed`, `auth.token_created`, `auth.token_revoked`. A rejected `auth.*` request is recorded as `http.request` instead. Every other write, including format uploads such as `PUT /repos/...`, is `http.request`.
+- Named actions: `repository.created`, `repository.deleted`, `repository.restored`, `repository.purged`, `artifact.uploaded` (deb upload through `POST /api/v1/repositories/{name}/debs` only), `artifact.deleted` (details `moved to trash` or `deleted`), `artifact.restored`, `artifact.purged` (see [trash](trash.md#audit-and-webhook-events)), `auth.password_changed`, `auth.token_created`, `auth.token_revoked`. A rejected `auth.*` request is recorded as `http.request` instead. Every other write, including format uploads such as `PUT /repos/...`, is `http.request`.
 - Login traffic: `auth.login`, `auth.login_failed` (with the attempted username, never the password), `auth.logout` and `auth.sso_login`. Requests answered with `429` are not recorded.
 
 Query it (admin only):

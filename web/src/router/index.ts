@@ -55,6 +55,12 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true },
   },
   {
+    path: '/repos/:name/trash',
+    name: 'repo-trash',
+    component: () => import('../pages/TrashPage.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: '/repos/:name',
     name: 'repo-detail',
     component: () => import('../pages/RepoDetailPage.vue'),
@@ -118,6 +124,12 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/tokens',
     name: 'admin-tokens',
     component: () => import('../pages/admin/TokensPage.vue'),
+    meta: { requiresAuth: true, requiresAdmin: true },
+  },
+  {
+    path: '/admin/trash',
+    name: 'admin-trash',
+    component: () => import('../pages/TrashPage.vue'),
     meta: { requiresAuth: true, requiresAdmin: true },
   },
   {

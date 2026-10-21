@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -366,19 +367,46 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Delete package record
-	err = h.DB.DeleteCondaPackage(r.Context(), pkg.ID)
-	if err != nil {
-		h.Log.Errorw("failed to delete conda package", "id", pkg.ID, "error", err)
+	if gErr := trash.GuardReleaseByName(r, h.DB, repoName, "conda", pkg.Version); gErr != nil {
+		if errors.Is(gErr, trash.ErrImmutableRelease) {
+			http.Error(w, "repository has immutable releases", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to check release immutability", "name", name, "error", gErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// The blob is content-addressed and may be shared; remove it only once no
-	// row references it any more.
-	if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256); delErr != nil {
-		h.Log.Warnw("failed to clean up blob after conda delete", "sha256", pkg.SHA256, "error", delErr)
+	err = trash.Delete(r.Context(), h.DB, trash.Request{
+		RepoID:   repoID,
+		Kind:     models.TrashKindConda,
+		IDs:      []string{pkg.ID},
+		Resource: platform + "/" + filename,
+	}, func() error {
+		if delErr := h.DB.DeleteCondaPackage(r.Context(), pkg.ID); delErr != nil {
+			return fmt.Errorf("delete conda package: %w", delErr)
+		}
+
+		// The blob is content-addressed and may be shared; remove it only once
+		// no row references it any more.
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.SHA256); delErr != nil {
+			h.Log.Warnw("failed to clean up blob after conda delete", "sha256", pkg.SHA256, "error", delErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
+		h.Log.Errorw("failed to delete conda package", "id", pkg.ID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
 	}
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{

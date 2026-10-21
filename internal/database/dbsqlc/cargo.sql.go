@@ -67,7 +67,7 @@ func (q *Queries) CreateCargoCrate(ctx context.Context, arg CreateCargoCratePara
 }
 
 const deleteCargoCrate = `-- name: DeleteCargoCrate :exec
-DELETE FROM cargo_crates WHERE id = $1
+DELETE FROM cargo_crates WHERE id = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) DeleteCargoCrate(ctx context.Context, id string) error {
@@ -79,7 +79,7 @@ const getCargoCrate = `-- name: GetCargoCrate :one
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc
 JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.name = $2 AND cc.version = $3
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND cc.name = $2 AND cc.version = $3
 `
 
 type GetCargoCrateParams struct {
@@ -141,7 +141,7 @@ func (q *Queries) GetCargoCrate(ctx context.Context, arg GetCargoCrateParams) (G
 
 const incrementCargoDownloadCount = `-- name: IncrementCargoDownloadCount :exec
 UPDATE cargo_crates SET download_count = download_count + 1, updated_at = NOW()
-WHERE repository_id = $1 AND name = $2 AND version = $3
+WHERE repository_id = $1 AND name = $2 AND version = $3 AND deleted_at IS NULL
 `
 
 type IncrementCargoDownloadCountParams struct {
@@ -159,7 +159,7 @@ const listCargoCrateVersions = `-- name: ListCargoCrateVersions :many
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc
 JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.name = $2 ORDER BY cc.version DESC
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND cc.name = $2 ORDER BY cc.version DESC
 `
 
 type ListCargoCrateVersionsParams struct {
@@ -235,7 +235,7 @@ const searchCargoCrates = `-- name: SearchCargoCrates :many
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc
 JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND (cc.name ILIKE $2 OR cc.description ILIKE $2)
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND (cc.name ILIKE $2 OR cc.description ILIKE $2)
 ORDER BY cc.name ASC LIMIT $3
 `
 
@@ -310,7 +310,7 @@ func (q *Queries) SearchCargoCrates(ctx context.Context, arg SearchCargoCratesPa
 }
 
 const yankCargoCrate = `-- name: YankCargoCrate :exec
-UPDATE cargo_crates SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4
+UPDATE cargo_crates SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND deleted_at IS NULL
 `
 
 type YankCargoCrateParams struct {

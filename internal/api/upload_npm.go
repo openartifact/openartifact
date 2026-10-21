@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -709,15 +710,110 @@ func (h *NPMUploadHandler) npmVersionSize(ctx context.Context, v *models.NPMVers
 	return size
 }
 
-// removeNPMVersions deletes the given versions (rows, orphaned dist-tags, and
-// unreferenced blobs), releases each version's quota and emits artifact.deleted
-// once its row is gone. Callers must have checked canUnpublish.
+// errNPMImmutableRelease is the client-facing 409 text for a release version of
+// an immutable repository (trash.ErrImmutableRelease).
+const errNPMImmutableRelease = "released versions are immutable in this repository; an admin may override with force"
+
+// guardNPMReleases rejects the unpublish of any release version of an
+// immutable repository (trash.ErrImmutableRelease) unless an admin forced it.
+func guardNPMReleases(r *http.Request, repo *models.Repository, versions []*models.NPMVersion) error {
+	for _, v := range versions {
+		if err := trash.GuardRelease(r, repo, "npm", v.Version); err != nil {
+			return err
+		}
+	}
+
+	return nil
+}
+
+// writeNPMRemoveError maps a removeNPMVersions / guardNPMReleases failure to
+// npm's JSON error style: 409 for an immutable release, 404 for versions that
+// are no longer live, 500 otherwise.
+func (h *NPMUploadHandler) writeNPMRemoveError(w http.ResponseWriter, pkgName string, err error) {
+	switch {
+	case errors.Is(err, trash.ErrImmutableRelease):
+		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": errNPMImmutableRelease})
+	case errors.Is(err, database.ErrTrashNotFound):
+		writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "version not found"})
+	default:
+		h.log.Errorw("failed to delete npm versions", "pkg", pkgName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+	}
+}
+
+func (h *NPMUploadHandler) emitNPMDeleted(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, v *models.NPMVersion, size int64) {
+	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repo.Name,
+		Format:     "npm",
+		Name:       pkg.FullName,
+		Version:    v.Version,
+		Path:       v.TarballFilename,
+		SHA256:     v.BlobSHA256,
+		Size:       size,
+	}))
+}
+
+// removeNPMVersions unpublishes the given live versions through trash.Delete
+// and emits artifact.deleted for each. When the repository keeps a trash the
+// version rows are only stamped deleted: tarballs, quota and dist-tags stay
+// untouched (dist-tags are merely hidden and reappear on restore) and the
+// packument is marked stale so its ETag changes. Otherwise the rows, their
+// orphaned dist-tags and unreferenced blobs are removed and each version's
+// quota released. Callers must have checked canUnpublish and guardNPMReleases.
 func (h *NPMUploadHandler) removeNPMVersions(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, versions []*models.NPMVersion) error {
+	if len(versions) == 0 {
+		return nil
+	}
+
+	ids := make([]string, len(versions))
+	sizes := make([]int64, len(versions))
+	labels := make([]string, len(versions))
+
+	for i, v := range versions {
+		ids[i] = v.ID
+		// Resolve the size while the blob is still referenced by this row.
+		sizes[i] = h.npmVersionSize(ctx, v)
+		labels[i] = pkg.FullName + "@" + v.Version
+	}
+
+	hardRan := false
+
+	err := trash.Delete(ctx, h.db, trash.Request{
+		RepoID:   repo.ID,
+		Kind:     models.TrashKindNPM,
+		IDs:      ids,
+		Resource: strings.Join(labels, ", "),
+	}, func() error {
+		hardRan = true
+		return h.hardDeleteNPMVersions(ctx, repo, pkg, versions, sizes)
+	})
+	if err != nil {
+		return err
+	}
+
+	if !hardRan {
+		for i, v := range versions {
+			h.emitNPMDeleted(ctx, repo, pkg, v, sizes[i])
+		}
+	}
+
+	// Bumps the packument ETag now; the regeneration the callers schedule
+	// follows after its debounce.
+	if err := h.db.MarkPackumentStale(ctx, pkg.ID); err != nil {
+		h.log.Warnw("failed to mark packument stale after unpublish", "pkg", pkg.FullName, "error", err)
+	}
+
+	return nil
+}
+
+// hardDeleteNPMVersions is the permanent unpublish: version rows, quota, the
+// artifact.deleted event, unreferenced blobs and the dist-tags of the removed
+// versions.
+func (h *NPMUploadHandler) hardDeleteNPMVersions(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, versions []*models.NPMVersion, sizes []int64) error {
 	removed := make(map[string]bool, len(versions))
 
-	for _, v := range versions {
-		// Resolve the size while the blob is still referenced by this row.
-		size := h.npmVersionSize(ctx, v)
+	for i, v := range versions {
+		size := sizes[i]
 
 		if err := h.db.DeleteNPMVersion(ctx, pkg.ID, v.Version); err != nil {
 			return err
@@ -727,15 +823,7 @@ func (h *NPMUploadHandler) removeNPMVersions(ctx context.Context, repo *models.R
 
 		h.releaseQuota(ctx, repo.ID, size)
 
-		webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-			Repository: repo.Name,
-			Format:     "npm",
-			Name:       pkg.FullName,
-			Version:    v.Version,
-			Path:       v.TarballFilename,
-			SHA256:     v.BlobSHA256,
-			Size:       size,
-		}))
+		h.emitNPMDeleted(ctx, repo, pkg, v, size)
 
 		if v.BlobSHA256 == "" {
 			continue
@@ -805,14 +893,18 @@ func (h *NPMUploadHandler) handleRevPut(w http.ResponseWriter, r *http.Request, 
 		}
 	}
 
+	if err := guardNPMReleases(r, repo, toRemove); err != nil {
+		h.writeNPMRemoveError(w, pub.Name, err)
+		return
+	}
+
 	if len(toRemove) == len(existing) && len(existing) > 0 {
 		if err := h.removeNPMVersions(r.Context(), repo, pkg, toRemove); err != nil {
-			h.log.Errorw("failed to delete npm versions", "pkg", pub.Name, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-
+			h.writeNPMRemoveError(w, pub.Name, err)
 			return
 		}
 
+		// A no-op while trashed versions of the package remain.
 		if err := h.db.DeleteNPMPackage(r.Context(), pkg.ID); err != nil {
 			h.log.Errorw("failed to delete npm package", "pkg", pub.Name, "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -821,9 +913,7 @@ func (h *NPMUploadHandler) handleRevPut(w http.ResponseWriter, r *http.Request, 
 		}
 	} else {
 		if err := h.removeNPMVersions(r.Context(), repo, pkg, toRemove); err != nil {
-			h.log.Errorw("failed to delete npm versions", "pkg", pub.Name, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-
+			h.writeNPMRemoveError(w, pub.Name, err)
 			return
 		}
 
@@ -915,10 +1005,15 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 				return
 			}
 
-			if err := h.removeNPMVersions(r.Context(), repo, pkg, []*models.NPMVersion{v}); err != nil {
-				h.log.Errorw("failed to delete npm version", "pkg", pkgName, "version", v.Version, "error", err)
-				http.Error(w, "internal error", http.StatusInternalServerError)
+			single := []*models.NPMVersion{v}
 
+			if err := guardNPMReleases(r, repo, single); err != nil {
+				h.writeNPMRemoveError(w, pkgName, err)
+				return
+			}
+
+			if err := h.removeNPMVersions(r.Context(), repo, pkg, single); err != nil {
+				h.writeNPMRemoveError(w, pkgName, err)
 				return
 			}
 
@@ -932,13 +1027,17 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 			}
 		}
 
-		if err := h.removeNPMVersions(r.Context(), repo, pkg, versions); err != nil {
-			h.log.Errorw("failed to delete npm versions", "pkg", pkgName, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-
+		if err := guardNPMReleases(r, repo, versions); err != nil {
+			h.writeNPMRemoveError(w, pkgName, err)
 			return
 		}
 
+		if err := h.removeNPMVersions(r.Context(), repo, pkg, versions); err != nil {
+			h.writeNPMRemoveError(w, pkgName, err)
+			return
+		}
+
+		// A no-op while trashed versions of the package remain.
 		if err := h.db.DeleteNPMPackage(r.Context(), pkg.ID); err != nil {
 			h.log.Errorw("failed to delete npm package", "pkg", pkgName, "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)

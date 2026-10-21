@@ -57,6 +57,7 @@ import (
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/secrets"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/gpg"
@@ -180,6 +181,8 @@ func run(args []string) error {
 	}
 	defer func() { _ = db.Close() }()
 
+	db.SetTrashRetentionDays(cfg.Trash.RetentionDays)
+
 	log.Infow("Database connected",
 		"host", cfg.Database.Host,
 		"database", cfg.Database.Database,
@@ -282,6 +285,12 @@ func run(args []string) error {
 
 	webhookDispatcher.Start()
 
+	// Retention purge: hard-deletes trash items past their window (see
+	// docs/operations/trash.md).
+	trashPurgeWorker := worker.NewTrashPurgeWorker(db, blobStore, log, cfg.Trash.PurgeInterval).WithMetrics(reg)
+	trashPurgeWorker.SetPublisher(webhookDispatcher)
+	trashPurgeWorker.Start()
+
 	// stopWorkers stops every background worker exactly once. It runs in the
 	// shutdown sequence (after HTTP stops, before the audit logger flushes) and
 	// also via defer so early-return paths never leak goroutines.
@@ -293,7 +302,7 @@ func run(args []string) error {
 	stopWorkers := func() {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
-				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
+				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, trashPurgeWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
 			} {
 				stop()
 			}
@@ -468,6 +477,7 @@ func run(args []string) error {
 	spaHandler := webhandler.Handler()
 
 	evaluator := auth.NewEvaluator(db, log, cfg.Auth.AllowAnonymousRead)
+	trash.SetEvaluator(evaluator)
 	rbacCfg := middleware.RBACConfig{
 		LegacyAPIKey:        cfg.Server.APIKey,
 		LegacyAPIKeyEnabled: cfg.Auth.LegacyAPIKeyEnabled,
@@ -760,6 +770,14 @@ func run(args []string) error {
 	cleanupHandler.RegisterAuthed(authedAPI)
 
 	api.NewDockerGCHandler(db, log, evaluator, dockerGCWorker).RegisterAuthed(authedAPI)
+
+	api.NewTrashHandler(db, log, evaluator).
+		WithBlobStore(blobStore).
+		WithPublisher(webhookDispatcher).
+		WithRegenerator(api.NewWorkerRegenerator(debWorker, rpmWorker, mavenWorker, npmWorker)).
+		RegisterAuthed(authedAPI)
+	// The retention purge worker is started above; the manual purge lives in
+	// TrashHandler.
 
 	api.NewBundlesHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 

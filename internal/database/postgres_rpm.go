@@ -26,7 +26,7 @@ func (p *PostgresDB) RpmPackageExists(ctx context.Context, repoID, name, version
 
 	err := p.db.QueryRowContext(ctx,
 		`SELECT EXISTS (SELECT 1 FROM rpm_packages
-		  WHERE repository_id = $1 AND name = $2 AND version = $3 AND release = $4 AND epoch = $5 AND arch = $6)`,
+		  WHERE repository_id = $1 AND name = $2 AND version = $3 AND release = $4 AND epoch = $5 AND arch = $6 AND deleted_at IS NULL)`,
 		repoID, name, version, release, epoch, arch).Scan(&exists)
 	if err != nil {
 		return false, fmt.Errorf("check rpm package exists: %w", err)
@@ -48,7 +48,7 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 		       b.sha256, rp.header_start, rp.header_end, rp.rpm_extra
 		FROM rpm_packages rp
 		JOIN blobs b ON b.id = rp.blob_id
-		WHERE rp.repository_id = $1
+		WHERE rp.repository_id = $1 AND rp.deleted_at IS NULL
 		ORDER BY rp.name, rp.version, rp.release, rp.arch`, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("query rpm packages for metadata: %w", err)
@@ -87,7 +87,7 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 func (p *PostgresDB) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
 	if _, err := p.db.ExecContext(ctx, `
 		UPDATE rpm_packages SET rpm_extra = $3::jsonb
-		WHERE repository_id = $1 AND blob_id IN (SELECT id FROM blobs WHERE sha256 = $2)`,
+		WHERE repository_id = $1 AND deleted_at IS NULL AND blob_id IN (SELECT id FROM blobs WHERE sha256 = $2)`,
 		repoID, sha256, extra); err != nil {
 		return fmt.Errorf("update rpm package extra: %w", err)
 	}

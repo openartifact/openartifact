@@ -13,6 +13,7 @@ import (
 	"math"
 	"net/netip"
 	"strings"
+	"sync/atomic"
 	"time"
 
 	"github.com/google/uuid"
@@ -62,6 +63,10 @@ type PostgresDB struct {
 
 	// authCache serves the per-request auth lookups (see auth_cache.go).
 	authCache authCache
+
+	// trashDefaultDays is the retention, in days, of repositories without their
+	// own trash_retention_days (see SetTrashRetentionDays).
+	trashDefaultDays atomic.Int32
 
 	// lockSlots bounds how many blob-lock transactions (WithBlobLocks,
 	// DeleteBlobIfUnreferenced) may hold a pooled connection at once. The
@@ -171,12 +176,20 @@ func (p *PostgresDB) Migrate(ctx context.Context) error {
 	return NewMigrator(p.db).Apply(ctx)
 }
 
+// repoColumns is the column list every repository read selects; repoScanDest
+// returns the matching Scan destinations.
+const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), org_id, presign_downloads, trash_retention_days, immutable_releases, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
+
+func repoScanDest(r *models.Repository) []any {
+	return []any{&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.OrgID, &r.PresignDownloads, &r.TrashRetentionDays, &r.ImmutableReleases, &r.DeletedAt, &r.DeletedBy, &r.CreatedAt, &r.UpdatedAt}
+}
+
 func (p *PostgresDB) GetRepositoryByNameUncached(ctx context.Context, name string) (*models.Repository, error) {
 	r := &models.Repository{}
 
 	err := p.db.QueryRowContext(ctx,
-		`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), org_id, created_at, updated_at, presign_downloads FROM repositories WHERE name = $1`, name,
-	).Scan(&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.OrgID, &r.CreatedAt, &r.UpdatedAt, &r.PresignDownloads)
+		`SELECT `+repoColumns+` FROM repositories WHERE name = $1 AND deleted_at IS NULL`, name,
+	).Scan(repoScanDest(r)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -190,7 +203,7 @@ func (p *PostgresDB) GetRepositoryByNameUncached(ctx context.Context, name strin
 
 // ListPublicRepositoryNames returns the names of all repositories flagged public.
 func (p *PostgresDB) ListPublicRepositoryNames(ctx context.Context) ([]string, error) {
-	rows, err := p.db.QueryContext(ctx, `SELECT name FROM repositories WHERE COALESCE(public, false)`)
+	rows, err := p.db.QueryContext(ctx, `SELECT name FROM repositories WHERE COALESCE(public, false) AND deleted_at IS NULL`)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list public repositories: %w", err)
 	}
@@ -220,8 +233,8 @@ func (p *PostgresDB) GetRepositoryByID(ctx context.Context, id string) (*models.
 	r := &models.Repository{}
 
 	err := p.db.QueryRowContext(ctx,
-		`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), org_id, created_at, updated_at, presign_downloads FROM repositories WHERE id = $1`, id,
-	).Scan(&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.OrgID, &r.CreatedAt, &r.UpdatedAt, &r.PresignDownloads)
+		`SELECT `+repoColumns+` FROM repositories WHERE id = $1 AND deleted_at IS NULL`, id,
+	).Scan(repoScanDest(r)...)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -242,12 +255,12 @@ func (p *PostgresDB) ListRepositories(ctx context.Context, page, limit int, form
 	)
 	if formatFilter != "" {
 		rows, err = p.db.QueryContext(ctx,
-			`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), org_id, created_at, updated_at, presign_downloads FROM repositories WHERE format = $1 ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
+			`SELECT `+repoColumns+` FROM repositories WHERE format = $1 AND deleted_at IS NULL ORDER BY created_at DESC, id LIMIT $2 OFFSET $3`,
 			formatFilter, limit, offset,
 		)
 	} else {
 		rows, err = p.db.QueryContext(ctx,
-			`SELECT id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), org_id, created_at, updated_at, presign_downloads FROM repositories ORDER BY created_at DESC, id LIMIT $1 OFFSET $2`,
+			`SELECT `+repoColumns+` FROM repositories WHERE deleted_at IS NULL ORDER BY created_at DESC, id LIMIT $1 OFFSET $2`,
 			limit, offset,
 		)
 	}
@@ -262,7 +275,7 @@ func (p *PostgresDB) ListRepositories(ctx context.Context, page, limit int, form
 
 	for rows.Next() {
 		r := &models.Repository{}
-		if err := rows.Scan(&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.OrgID, &r.CreatedAt, &r.UpdatedAt, &r.PresignDownloads); err != nil {
+		if err := rows.Scan(repoScanDest(r)...); err != nil {
 			return nil, fmt.Errorf("failed to scan repository: %w", err)
 		}
 
@@ -283,11 +296,11 @@ func (p *PostgresDB) CountRepositories(ctx context.Context, formatFilter string)
 	)
 	if formatFilter != "" {
 		err = p.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM repositories WHERE format = $1`, formatFilter,
+			`SELECT COUNT(*) FROM repositories WHERE format = $1 AND deleted_at IS NULL`, formatFilter,
 		).Scan(&count)
 	} else {
 		err = p.db.QueryRowContext(ctx,
-			`SELECT COUNT(*) FROM repositories`,
+			`SELECT COUNT(*) FROM repositories WHERE deleted_at IS NULL`,
 		).Scan(&count)
 	}
 
@@ -303,8 +316,8 @@ func (p *PostgresDB) UpdateRepository(ctx context.Context, repo *models.Reposito
 	defer p.authCache.invalidate()
 
 	_, err := p.db.ExecContext(ctx,
-		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, org_id = $11, presign_downloads = $13, updated_at = now() WHERE id = $12`,
-		repo.Description, repo.Public, repo.RepoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.ID, repo.PresignDownloads,
+		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, org_id = $11, trash_retention_days = $12, immutable_releases = $13, presign_downloads = $15, updated_at = now() WHERE id = $14 AND deleted_at IS NULL`,
+		repo.Description, repo.Public, repo.RepoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.ID, repo.PresignDownloads,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update repository: %w", err)
@@ -409,8 +422,8 @@ func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Reposito
 	}
 
 	return p.db.QueryRowContext(ctx,
-		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, org_id, presign_downloads) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14) RETURNING id, created_at, updated_at`,
-		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.PresignDownloads,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, org_id, trash_retention_days, immutable_releases, presign_downloads) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`,
+		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.PresignDownloads,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 }
 
@@ -569,7 +582,7 @@ const debComponentColumns = `dp.id, dp.repository_id, COALESCE(b.sha256,''), dp.
 // then deb_packages (row IDs are shared across the rpm_packages and
 // deb_packages tables).
 func (p *PostgresDB) GetComponentByID(ctx context.Context, id string) (*models.Component, error) {
-	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.id = $1", id)
+	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.id = $1 AND rp.deleted_at IS NULL", id)
 	if err == nil {
 		return c, nil
 	}
@@ -578,7 +591,7 @@ func (p *PostgresDB) GetComponentByID(ctx context.Context, id string) (*models.C
 		return nil, fmt.Errorf("failed to get component by id: %w", err)
 	}
 
-	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.id = $1", id)
+	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.id = $1 AND dp.deleted_at IS NULL", id)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -591,7 +604,7 @@ func (p *PostgresDB) GetComponentByID(ctx context.Context, id string) (*models.C
 }
 
 func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
-	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.filename = $2", repoID, filename)
+	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.filename = $2 AND rp.deleted_at IS NULL", repoID, filename)
 	if err == nil {
 		return c, nil
 	}
@@ -600,7 +613,7 @@ func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, 
 		return nil, fmt.Errorf("failed to get component by filename: %w", err)
 	}
 
-	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND dp.filename = $2", repoID, filename)
+	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND dp.filename = $2 AND dp.deleted_at IS NULL", repoID, filename)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
 	}
@@ -614,7 +627,7 @@ func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, 
 
 // GetComponentsByRepo lists RPM packages for a repository.
 func (p *PostgresDB) GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error) {
-	rows, err := p.db.QueryContext(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1", repoID)
+	rows, err := p.db.QueryContext(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.deleted_at IS NULL", repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to query components: %w", err)
 	}
@@ -643,7 +656,7 @@ func (p *PostgresDB) GetComponentsByRepo(ctx context.Context, repoID string) ([]
 
 func (p *PostgresDB) DeleteComponent(ctx context.Context, componentID string) error {
 	// Try deb_packages first, then rpm_packages. Only one will match.
-	res, err := p.db.ExecContext(ctx, `DELETE FROM deb_packages WHERE id = $1`, componentID)
+	res, err := p.db.ExecContext(ctx, `DELETE FROM deb_packages WHERE id = $1 AND deleted_at IS NULL`, componentID)
 	if err != nil {
 		return err
 	}
@@ -651,7 +664,7 @@ func (p *PostgresDB) DeleteComponent(ctx context.Context, componentID string) er
 	if rows > 0 {
 		return nil
 	}
-	_, err = p.db.ExecContext(ctx, `DELETE FROM rpm_packages WHERE id = $1`, componentID)
+	_, err = p.db.ExecContext(ctx, `DELETE FROM rpm_packages WHERE id = $1 AND deleted_at IS NULL`, componentID)
 	return err
 }
 
@@ -665,7 +678,7 @@ func (p *PostgresDB) GetDebPackageByID(ctx context.Context, id string) (*models.
 		        COALESCE(maintainer,''), COALESCE(homepage,''),
 		        COALESCE(filename,''), COALESCE(installed_size,0),
 		        created_at, updated_at
-		 FROM deb_packages WHERE id = $1`, id).
+		 FROM deb_packages WHERE id = $1 AND deleted_at IS NULL`, id).
 		Scan(&pkg.ID, &pkg.RepositoryID, &pkg.DistributionID, &pkg.ComponentID, &pkg.BlobID,
 			&pkg.Name, &pkg.Version, &pkg.Arch,
 			&pkg.Summary, &pkg.Description, &pkg.License,
@@ -690,7 +703,7 @@ func (p *PostgresDB) ListDebPackagesByRepo(ctx context.Context, repoID string) (
 		        COALESCE(maintainer,''), COALESCE(homepage,''),
 		        COALESCE(filename,''), COALESCE(installed_size,0),
 		        created_at, updated_at
-		 FROM deb_packages WHERE repository_id = $1`, repoID)
+		 FROM deb_packages WHERE repository_id = $1 AND deleted_at IS NULL`, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("list deb packages: %w", err)
 	}
@@ -723,7 +736,7 @@ func (p *PostgresDB) GetRpmPackageByID(ctx context.Context, id string) (*models.
 		        build_time,
 		        COALESCE(filename,''), COALESCE(package_size,0), COALESCE(installed_size,0), COALESCE(archive_size,0),
 		        created_at, updated_at
-		 FROM rpm_packages WHERE id = $1`, id).
+		 FROM rpm_packages WHERE id = $1 AND deleted_at IS NULL`, id).
 		Scan(&pkg.ID, &pkg.RepositoryID, &pkg.BlobID,
 			&pkg.Name, &pkg.Version, &pkg.Release, &pkg.Epoch, &pkg.Arch,
 			&pkg.Summary, &pkg.Description, &pkg.License,
@@ -752,7 +765,7 @@ func (p *PostgresDB) ListRpmPackagesByRepo(ctx context.Context, repoID string) (
 		        build_time,
 		        COALESCE(filename,''), COALESCE(package_size,0), COALESCE(installed_size,0), COALESCE(archive_size,0),
 		        created_at, updated_at
-		 FROM rpm_packages WHERE repository_id = $1`, repoID)
+		 FROM rpm_packages WHERE repository_id = $1 AND deleted_at IS NULL`, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("list rpm packages: %w", err)
 	}
@@ -826,6 +839,31 @@ func (p *PostgresDB) UpsertRepoMetadata(ctx context.Context, meta *models.RepoMe
 		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, $2, $3, $4) ON CONFLICT (repository_id, path) DO UPDATE SET blob_sha256 = $3, blob_size = $4, last_generated = now() RETURNING id, last_generated`,
 		meta.RepositoryID, meta.Path, meta.BlobSHA256, meta.BlobSize,
 	).Scan(&meta.ID, &meta.LastGenerated)
+}
+
+// PruneMavenMetadata deletes the generated maven-metadata.xml rows below the
+// directory dir (e.g. "com/example/app/"): the artifact's own maven-metadata.xml
+// and the one of each snapshot version directory, except the paths in keep. The
+// regeneration calls it with the paths it just wrote, so metadata of an
+// artifact (or snapshot version) that has no live file left disappears
+// instead of advertising versions that were deleted or trashed.
+func (p *PostgresDB) PruneMavenMetadata(ctx context.Context, repositoryID, dir string, keep []string) error {
+	if keep == nil {
+		keep = []string{}
+	}
+
+	if _, err := p.db.ExecContext(ctx,
+		`DELETE FROM repository_metadata
+		  WHERE repository_id = $1 AND starts_with(path, $2) AND NOT (path = ANY($3::text[]))
+		    AND (substr(path, length($2) + 1) = 'maven-metadata.xml'
+		         OR (substr(path, length($2) + 1) LIKE '%-SNAPSHOT/maven-metadata.xml'
+		             AND position('/' IN substr(path, length($2) + 1)) = length(substr(path, length($2) + 1)) - length('maven-metadata.xml')))`,
+		repositoryID, dir, keep,
+	); err != nil {
+		return fmt.Errorf("failed to prune maven metadata: %w", err)
+	}
+
+	return nil
 }
 
 func (p *PostgresDB) CreateDebianDistribution(ctx context.Context, dist *models.DebianDistribution) error {
@@ -1538,7 +1576,7 @@ func (p *PostgresDB) UpsertBlob(ctx context.Context, sha256, blobKey string, siz
 func (p *PostgresDB) ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error) {
 	var exists bool
 	err := p.db.QueryRowContext(ctx,
-		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id = $2 UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1 AND rp.repository_id = $2)`,
+		`SELECT EXISTS(SELECT 1 FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.repository_id = $2 AND dp.deleted_at IS NULL UNION ALL SELECT 1 FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1 AND rp.repository_id = $2 AND rp.deleted_at IS NULL)`,
 		sha256, repositoryID,
 	).Scan(&exists)
 	if err != nil {
@@ -1554,7 +1592,7 @@ func (p *PostgresDB) ArtifactExistsBySHA256(ctx context.Context, sha256 string) 
 	var repoID string
 
 	err := p.db.QueryRowContext(ctx,
-		`SELECT dp.repository_id FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 UNION ALL SELECT rp.repository_id FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1 LIMIT 1`,
+		`SELECT dp.repository_id FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.deleted_at IS NULL UNION ALL SELECT rp.repository_id FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1 AND rp.deleted_at IS NULL LIMIT 1`,
 		sha256,
 	).Scan(&repoID)
 	if err != nil {

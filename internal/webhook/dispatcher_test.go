@@ -51,6 +51,10 @@ func TestEventTypes(t *testing.T) {
 		EventArtifactDownloaded,
 		EventRepoCreated,
 		EventRepoDeleted,
+		EventArtifactRestored,
+		EventArtifactPurged,
+		EventRepoRestored,
+		EventRepoPurged,
 	}
 	for _, e := range events {
 		if e == "" {
@@ -139,6 +143,10 @@ func TestEventTypeValues(t *testing.T) {
 		{"artifact downloaded", EventArtifactDownloaded, "artifact.downloaded"},
 		{"repo created", EventRepoCreated, "repository.created"},
 		{"repo deleted", EventRepoDeleted, "repository.deleted"},
+		{"artifact restored", EventArtifactRestored, "artifact.restored"},
+		{"artifact purged", EventArtifactPurged, "artifact.purged"},
+		{"repo restored", EventRepoRestored, "repository.restored"},
+		{"repo purged", EventRepoPurged, "repository.purged"},
 	}
 
 	for _, tt := range tests {

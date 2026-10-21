@@ -142,7 +142,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) resolveReadableRepos(ctx context.Context, principal *auth.Principal) (map[uuid.UUID]struct{}, error) {
-	rows, err := h.db.QueryContext(ctx, `SELECT id, name FROM repositories`)
+	rows, err := h.db.QueryContext(ctx, `SELECT id, name FROM repositories WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
 	}

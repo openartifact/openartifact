@@ -12,6 +12,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -26,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -299,18 +301,41 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	// Delete from database
-	if err := h.DB.DeleteNuGetPackage(r.Context(), repoID, packageID, version); err != nil {
-		h.Log.Errorw("failed to delete nuget package", "id", packageID, "version", version, "error", err)
+	if err := trash.GuardReleaseByName(r, h.DB, repoName, "nuget", version); err != nil {
+		if errors.Is(err, trash.ErrImmutableRelease) {
+			http.Error(w, "release versions of this repository are immutable", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to check release immutability", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// The blob is content-addressed and may be shared; remove it only once no
-	// row references it any more.
-	if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.BlobKey); err != nil {
-		h.Log.Warnw("failed to clean up blob after nuget delete", "key", pkg.BlobKey, "error", err)
+	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindNuGet, IDs: []string{pkg.ID}, Resource: fmt.Sprintf("%s.%s.nupkg", packageID, version)}, func() error {
+		if err := h.DB.DeleteNuGetPackage(r.Context(), repoID, packageID, version); err != nil {
+			return fmt.Errorf("delete nuget package: %w", err)
+		}
+
+		// The blob is content-addressed and may be shared; remove it only once no
+		// row references it any more.
+		if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, pkg.BlobKey); err != nil {
+			h.Log.Warnw("failed to clean up blob after nuget delete", "key", pkg.BlobKey, "error", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
+		h.Log.Errorw("failed to delete nuget package", "id", packageID, "version", version, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
 	}
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{

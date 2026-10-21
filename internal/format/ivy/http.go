@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -263,18 +264,36 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request, repoI
 		return
 	}
 
-	err = h.DB.DeleteIvyArtifact(r.Context(), artifact.ID)
+	if guardErr := trash.GuardReleaseByName(r, h.DB, repoNameOf(r), "ivy", revision); guardErr != nil {
+		http.Error(w, "released versions are immutable in this repository", http.StatusConflict)
+		return
+	}
+
+	err = trash.Delete(r.Context(), h.DB, trash.Request{
+		RepoID: repoID, Kind: models.TrashKindIvy, IDs: []string{artifact.ID}, Resource: filePath,
+	}, func() error {
+		if delErr := h.DB.DeleteIvyArtifact(r.Context(), artifact.ID); delErr != nil {
+			return delErr
+		}
+
+		// The blob is content-addressed and may be shared; remove it only once no
+		// row references it any more.
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, artifact.SHA256); delErr != nil {
+			h.Log.Warnw("failed to clean up blob after ivy delete", "sha256", artifact.SHA256, "error", delErr)
+		}
+
+		return nil
+	})
 	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
 		h.Log.Errorw("failed to delete ivy artifact", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
-	}
-
-	// The blob is content-addressed and may be shared; remove it only once no
-	// row references it any more.
-	if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, artifact.SHA256); delErr != nil {
-		h.Log.Warnw("failed to clean up blob after ivy delete", "sha256", artifact.SHA256, "error", delErr)
 	}
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{

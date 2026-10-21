@@ -20,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -340,6 +341,8 @@ type formatTable struct {
 	// artifact per row, the row's blob size). Deleting such a row must give that
 	// usage back; the other formats are not metered, so there is nothing to give.
 	quotaTracked bool
+	// kind is the trash kind of the table's rows, for the soft-delete path.
+	kind models.TrashKind
 }
 
 // cleanupFormatTable covers formats whose packages live in one table with
@@ -349,17 +352,17 @@ type formatTable struct {
 func cleanupFormatTable(format string) (formatTable, bool) {
 	switch format {
 	case "rpm":
-		return formatTable{"rpm_packages", "name", []string{"name", "arch"}, "version || '-' || release || ':' || epoch::text", []string{"blob_id"}, true}, true
+		return formatTable{"rpm_packages", "name", []string{"name", "arch"}, "version || '-' || release || ':' || epoch::text", []string{"blob_id"}, true, models.TrashKindRPM}, true
 	case "deb":
-		return formatTable{"deb_packages", "name", []string{"name", "arch", "distribution_id::text"}, "version", []string{"blob_id"}, true}, true
+		return formatTable{"deb_packages", "name", []string{"name", "arch", "distribution_id::text"}, "version", []string{"blob_id"}, true, models.TrashKindDeb}, true
 	case "helm":
-		return formatTable{"helm_charts", "name", []string{"name"}, "version", []string{"blob_id"}, true}, true
+		return formatTable{"helm_charts", "name", []string{"name"}, "version", []string{"blob_id"}, true, models.TrashKindHelm}, true
 	case "pypi":
-		return formatTable{"pypi_packages", "name", []string{"name"}, "version", []string{"blob_id"}, false}, true
+		return formatTable{"pypi_packages", "name", []string{"name"}, "version", []string{"blob_id"}, false, models.TrashKindPyPI}, true
 	case "nuget":
-		return formatTable{"nuget_packages", "package_id", []string{"package_id"}, "version", []string{"blob_id"}, false}, true
+		return formatTable{"nuget_packages", "package_id", []string{"package_id"}, "version", []string{"blob_id"}, false, models.TrashKindNuGet}, true
 	case "go": // repositories.format value is "go", not "gomod" (chk_repo_format)
-		return formatTable{"gomod_modules", "module_path", []string{"module_path"}, "version", []string{"zip_blob_id", "mod_blob_id"}, false}, true
+		return formatTable{"gomod_modules", "module_path", []string{"module_path"}, "version", []string{"zip_blob_id", "mod_blob_id"}, false, models.TrashKindGoMod}, true
 	default:
 		return formatTable{}, false
 	}
@@ -386,16 +389,22 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 		return 0, fmt.Errorf("unsupported format for cleanup: %s", repo.Format) //nolint:err113 // dynamic error with runtime context
 	}
 
-	return w.deleteArtifacts(ctx, policy, tableInfo)
+	return w.deleteArtifacts(ctx, policy, repo, tableInfo)
 }
 
 // cleanupCandidate is a row selected for deletion: its primary key (for the
-// DELETE) and the blob IDs it references (to resolve sha256 for SafeDeleteBlob).
+// DELETE), its version (for the immutable-release guard) and the blob IDs it
+// references (to resolve sha256 for SafeDeleteBlob).
 type cleanupCandidate struct {
 	id      string
 	name    string
+	version string
 	blobIDs []string
 }
+
+// cleanupActor is the deleted_by recorded on rows a cleanup policy moves to the
+// trash; there is no HTTP principal in a worker.
+const cleanupActor = "cleanup-policy"
 
 // selectCandidates returns the rows the policy would delete. A row is selected
 // when it is outside the newest keep_last_n versions of its package (if set)
@@ -439,16 +448,16 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 	// Inner: the newest created_at per (package, version) so that multi-file
 	// versions rank as one. Outer: dense rank of versions within a package.
 	query := fmt.Sprintf(`
-		SELECT id, cname, %s FROM (
-			SELECT id, cname, %s, created_at,
+		SELECT id, cname, cver, %s FROM (
+			SELECT id, cname, cver, %s, created_at,
 			       DENSE_RANK() OVER (PARTITION BY %s ORDER BY vts DESC, ver DESC) AS rk
 			FROM (
-				SELECT id, %s AS cname, %s, created_at,
+				SELECT id, %s AS cname, version AS cver, %s, created_at,
 				       %s,
 				       (%s) AS ver,
 				       MAX(created_at) OVER (PARTITION BY %s, (%s)) AS vts
 				FROM %s
-				WHERE repository_id = $1
+				WHERE repository_id = $1 AND deleted_at IS NULL
 			) base
 		) ranked
 		WHERE %s`,
@@ -473,7 +482,7 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 
 	for rows.Next() {
 		c := cleanupCandidate{blobIDs: make([]string, len(t.blobCols))}
-		dest := []any{&c.id, &c.name}
+		dest := []any{&c.id, &c.name, &c.version}
 
 		for i := range c.blobIDs {
 			dest = append(dest, &c.blobIDs[i])
@@ -515,7 +524,46 @@ func partitionSelect(cols []string) string {
 	return strings.Join(parts, ", ")
 }
 
-func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.CleanupPolicy, tableInfo formatTable) (int, error) {
+// trashOutcome is what trashCandidate did with a selected row.
+type trashOutcome int
+
+const (
+	// trashHard: the repository keeps no trash (or the database cannot), the
+	// row must be deleted permanently.
+	trashHard trashOutcome = iota
+	// trashMoved: the row sits in the trash now; nothing else to release.
+	trashMoved
+	// trashSkipped: leave the row alone (already gone, or the move failed).
+	trashSkipped
+)
+
+// trashCandidate moves c to the trash when the repository's retention allows
+// it. A failed move skips the row: deleting permanently because the soft path
+// broke would defeat the point of the trash.
+func (w *CleanupWorker) trashCandidate(ctx context.Context, repoID string, t formatTable, c cleanupCandidate) trashOutcome {
+	store, ok := w.db.(database.TrashStore)
+	if !ok {
+		return trashHard
+	}
+
+	soft, err := store.TrashRows(ctx, repoID, t.kind, []string{c.id}, cleanupActor)
+
+	switch {
+	case errors.Is(err, database.ErrTrashNotFound):
+		// A concurrent delete removed the row since it was selected.
+		return trashSkipped
+	case err != nil:
+		w.log.Warnw("failed to move artifact to trash", "id", c.id, "error", err)
+
+		return trashSkipped
+	case soft:
+		return trashMoved
+	default:
+		return trashHard
+	}
+}
+
+func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.CleanupPolicy, repo *models.Repository, tableInfo formatTable) (int, error) {
 	toDelete, err := w.selectCandidates(ctx, policy, tableInfo)
 	if err != nil {
 		return 0, err
@@ -542,6 +590,27 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 			continue
 		}
 
+		// A worker has no admin to force, so an immutable repository's released
+		// versions are never cleaned up.
+		if repo.ImmutableReleases && trash.IsRelease(repo.Format, c.version) {
+			w.log.Debugw("skipping cleanup: released version is immutable",
+				"repository_id", repo.ID, "id", c.id, "name", c.name, "version", c.version)
+
+			continue
+		}
+
+		// Soft delete keeps the row, its blobs and its quota usage until the
+		// purge; only the permanent path below releases them.
+		switch w.trashCandidate(ctx, policy.RepositoryID, tableInfo, c) {
+		case trashMoved:
+			totalDeleted++
+
+			continue
+		case trashSkipped:
+			continue
+		case trashHard:
+		}
+
 		// Read the row's usage while its blob rows are certainly still there (the
 		// row references them); once the row is gone a concurrent delete could
 		// drop the blob and the size with it.
@@ -551,7 +620,7 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 		}
 
 		//nolint:gosec // G201: query uses validated table/column names from internal constants
-		deleteQuery := fmt.Sprintf("DELETE FROM %s WHERE id = $1", tableInfo.table)
+		deleteQuery := fmt.Sprintf("DELETE FROM %s WHERE id = $1 AND deleted_at IS NULL", tableInfo.table)
 
 		res, err := conn.ExecContext(ctx, deleteQuery, c.id)
 		if err != nil {

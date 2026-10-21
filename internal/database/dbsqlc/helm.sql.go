@@ -60,7 +60,7 @@ func (q *Queries) CreateHelmChart(ctx context.Context, arg CreateHelmChartParams
 }
 
 const deleteHelmChart = `-- name: DeleteHelmChart :exec
-DELETE FROM helm_charts WHERE repository_id = $1 AND name = $2 AND version = $3
+DELETE FROM helm_charts WHERE repository_id = $1 AND name = $2 AND version = $3 AND deleted_at IS NULL
 `
 
 type DeleteHelmChartParams struct {
@@ -78,7 +78,7 @@ const getHelmChart = `-- name: GetHelmChart :one
 SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
 FROM helm_charts hc
 JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1 AND hc.name = $2 AND hc.version = $3
+WHERE hc.repository_id = $1 AND hc.name = $2 AND hc.version = $3 AND hc.deleted_at IS NULL
 `
 
 type GetHelmChartParams struct {
@@ -138,7 +138,7 @@ const listHelmChartVersions = `-- name: ListHelmChartVersions :many
 SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
 FROM helm_charts hc
 JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1 AND hc.name = $2
+WHERE hc.repository_id = $1 AND hc.name = $2 AND hc.deleted_at IS NULL
 ORDER BY hc.version DESC
 `
 
@@ -211,7 +211,7 @@ const listHelmCharts = `-- name: ListHelmCharts :many
 SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
 FROM helm_charts hc
 JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1
+WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL
 ORDER BY hc.name, hc.version DESC
 `
 

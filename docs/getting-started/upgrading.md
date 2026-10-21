@@ -89,6 +89,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 Migration `016` runs automatically at first start (adds `repositories.presign_downloads` and the `presigned_uploads` table). Default behavior is unchanged: downloads still stream through the server until you opt in to presigned URLs ([storage](../operations/storage.md#presigned-urls)).
 
+Migration `017` runs at first start: it adds the soft-delete columns (`deleted_at`, `deleted_by`) to the repository and per-format package tables, the per-repository `trash_retention_days` and `immutable_releases` settings, and turns the uniqueness constraints of those tables into partial unique indexes over live rows. It rewrites no data. Behavior changes:
+
 | Area | Change |
 |---|---|
 | Config | New opt-in keys `storage.presignDownloads`, `presignMinSize`, `presignEndpoint`, `presignUploadTtl`, `presignMaxPendingUploads` (default 20 outstanding uploads per user, `0` = unlimited; env `STORAGE_PRESIGN_*`). `presignTtl` (`STORAGE_S3_PRESIGN_TTL`) now takes effect: it is the lifetime of presigned download URLs, clamped to 1 m - 1 h. A negative `presignMinSize` stops startup. |
@@ -99,6 +101,18 @@ Migration `016` runs automatically at first start (adds `repositories.presign_do
 | Caveats | Set `presignEndpoint` when `endpoint` is a cluster-internal address clients cannot reach. Clients must reach the object store host directly. The object store answers with `Content-Disposition: attachment; filename="..."`. ivy and sbt clients do not follow redirects across schemes: set `presign_downloads` to `false` on those repositories unless the store uses the same scheme. A worker removes abandoned presigned-upload staging objects; a bucket lifecycle rule expiring the `staging/` prefix after 1-2 days is recommended as defence in depth. |
 | SSO (SAML) | The IdP metadata URL is fetched through the outbound SSRF guard (1 MiB cap, 10 s timeout). Metadata URLs on private or loopback addresses need `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. |
 | SSO (SAML) | Signed responses or assertions with more than 1000 XML elements (large group lists) are accepted again; SAML now uses the `openartifact/saml` fork of crewjam/saml. |
+| Deletes | Soft by default. Deleting an artifact, version, tag or repository moves it to the [trash](../operations/trash.md) for 7 days (`OPENARTIFACT_TRASH_RETENTION` / `trash.retentionDays`) instead of destroying it; a background purge removes it afterwards (`OPENARTIFACT_TRASH_PURGE_INTERVAL`, default `15m`). Set `OPENARTIFACT_TRASH_RETENTION=0` for the previous immediate behavior, or `trash_retention_days` per repository. |
+| Repository delete | `DELETE /api/v1/repository/{name}` needs a confirmation: `?confirm=<name>` or a JSON body `{"confirm":"<name>"}`, otherwise `400 confirmation_required`. The CLI takes `oa repo delete <name> --confirm <name>` (prompts on a terminal, fails without `--confirm` otherwise). Update scripts that delete repositories. |
+| API | New endpoints `GET /api/v1/trash`, `GET /api/v1/repositories/{name}/trash`, restore (`POST .../restore`) and purge (`DELETE /api/v1/trash/{kind}/{id}`); repository create/update/read gain `trash_retention_days` and `immutable_releases`. |
+| Immutable releases | New per-repository `immutable_releases` option (default off): deleting or overwriting a released version is `409` unless an admin passes `?force=true`. Cleanup policies never remove released versions of such repositories. |
+| Webhooks and audit | New events `artifact.restored`, `artifact.purged`, `repository.restored`, `repository.purged`. `artifact.deleted` and `repository.deleted` also fire for soft deletes. Review webhook subscriptions that treat `*.deleted` as "bytes are gone". |
+| Quotas | Soft-deleted bytes keep counting against a repository's quota (and the quota reconcile counts them) until the item is purged. |
+| Repository names | The name of a repository in the trash stays reserved: creating a repository with it is `409` until the old one is purged or restored. |
+| Storage | Blobs of trashed items are kept; disk usage drops only when the purge worker runs. [Docker GC](../formats/docker.md#garbage-collection) does not collect trashed manifests. |
+| Backups | Items in the trash are not included in backups (a backup holds live data only). |
+| CLI | New `oa trash list|restore|purge`; `oa repo create|update` accept `--trash-retention-days` and `--immutable-releases`. |
+
+There is deliberately no `OPENARTIFACT_REPO_DELETE_DELAY`: the trash window is the deletion delay.
 
 ### 0.4.1
 

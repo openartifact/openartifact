@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -444,6 +445,40 @@ func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 	}, nil
 }
 
+// hardDelete permanently removes a deb package row, releases its quota and
+// drops the blob when nothing else references it.
+func (h *DebUploadHandler) hardDelete(ctx context.Context, repoID, repoName, packageID, sha string, size int64) error {
+	if err := h.db.DeleteComponent(ctx, packageID); err != nil {
+		return err
+	}
+
+	if sha != "" {
+		if err := quota.Release(ctx, h.db, repoID, size); err != nil {
+			h.log.Warnw("failed to release quota", "repository", repoName, "error", err)
+		}
+
+		// Remove from storage only when no other row references the sha256.
+		if err := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, sha); err != nil {
+			h.log.Warnw("failed to delete blob", "sha256", sha, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// writeDeleteError maps a delete failure to its HTTP answer.
+func (h *DebUploadHandler) writeDeleteError(w http.ResponseWriter, err error, packageID string) {
+	switch {
+	case errors.Is(err, database.ErrTrashNotFound):
+		writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")
+	case errors.Is(err, trash.ErrImmutableRelease):
+		writeError(w, http.StatusConflict, "IMMUTABLE_RELEASE", "release versions are immutable in this repository")
+	default:
+		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
+		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
+	}
+}
+
 func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
@@ -484,22 +519,19 @@ func (h *DebUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	if err := h.db.DeleteComponent(r.Context(), packageID); err != nil {
-		h.log.Errorw("failed to delete component", "package_id", packageID, "error", err)
-		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to delete package")
-
+	if err := trash.GuardReleaseByName(r, h.db, repoName, "deb", comp.Version); err != nil {
+		h.writeDeleteError(w, err, packageID)
 		return
 	}
 
-	if sha != "" {
-		if err := quota.Release(r.Context(), h.db, repoID, size); err != nil {
-			h.log.Warnw("failed to release quota", "repository", repoName, "error", err)
-		}
-
-		// Remove from storage only when no other row references the sha256.
-		if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, sha); err != nil {
-			h.log.Warnw("failed to delete blob", "sha256", sha, "error", err)
-		}
+	err = trash.Delete(r.Context(), h.db, trash.Request{
+		RepoID: repoID, Kind: models.TrashKindDeb, IDs: []string{packageID}, Resource: comp.Filename,
+	}, func() error {
+		return h.hardDelete(r.Context(), repoID, repoName, packageID, sha, size)
+	})
+	if err != nil {
+		h.writeDeleteError(w, err, packageID)
+		return
 	}
 
 	if h.debWorker != nil {

@@ -43,10 +43,15 @@ func TestNewRegistry(t *testing.T) {
 		t.Error("AuditDroppedTotal is nil")
 	}
 
+	if r.TrashPurgedTotal == nil {
+		t.Error("TrashPurgedTotal is nil")
+	}
+
 	// Verify counters can be used without panic
 	r.HTTPRequestsTotal.WithLabelValues("GET", "/api/test", "200").Inc()
 	r.UploadsTotal.WithLabelValues("npm", "success").Inc()
 	r.BlobBytesTotal.WithLabelValues("write").Add(1024)
 	r.MetadataRegenerationsTotal.WithLabelValues("deb").Inc()
 	r.AuditDroppedTotal.Inc()
+	r.TrashPurgedTotal.WithLabelValues("maven_artifact").Inc()
 }

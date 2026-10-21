@@ -56,8 +56,8 @@ func (p *PostgresDB) CreateRepositoryWithMembers(ctx context.Context, repo *mode
 	}
 
 	err = tx.QueryRowContext(ctx,
-		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, org_id, presign_downloads) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14) RETURNING id, created_at, updated_at`,
-		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.PresignDownloads,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, org_id, presign_downloads, trash_retention_days, immutable_releases) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`,
+		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.PresignDownloads, repo.TrashRetentionDays, repo.ImmutableReleases,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 	if err != nil {
 		return fmt.Errorf("failed to create repository: %w", err)
@@ -84,7 +84,12 @@ func (p *PostgresDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string
 
 	defer func() { _ = tx.Rollback() }()
 
-	if _, err := tx.ExecContext(ctx, `DELETE FROM repository_group_members WHERE group_repo_id = $1`, groupRepoID); err != nil {
+	// Members sitting in the trash are invisible to the caller (ListGroupMembers
+	// skips them), so they are kept and rejoin the group on restore.
+	if _, err := tx.ExecContext(ctx,
+		`DELETE FROM repository_group_members m WHERE m.group_repo_id = $1
+		   AND NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = m.member_repo_id AND r.deleted_at IS NOT NULL)`,
+		groupRepoID); err != nil {
 		return fmt.Errorf("failed to clear group members: %w", err)
 	}
 

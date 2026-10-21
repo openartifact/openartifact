@@ -77,6 +77,8 @@ func realRouter() chi.Router {
 	api.NewDeltaHandler(log, nil, nil).Register(r)
 	api.NewPresignedUploadHandler(log, nil, nil, nil, 0, 0, nil).Register(r)
 
+	registerTrashRoutes(r)
+
 	// registered by internal/search
 	r.Get("/api/v1/search", func(http.ResponseWriter, *http.Request) {})
 
@@ -322,10 +324,39 @@ func TestContractRepo(t *testing.T) {
 			name: "update with nothing fails", args: []string{"repo", "update", "r"}, fail: "nothing to update",
 		},
 		{
-			name:    "delete",
-			args:    []string{"repo", "delete", "r"},
+			name:    "delete sends confirm",
+			args:    []string{"repo", "delete", "r", "--confirm", "r"},
 			replies: map[string]reply{"DELETE /api/v1/repository/{name}": {status: 204}},
-			calls:   []call{{method: "DELETE", pattern: "/api/v1/repository/{name}"}},
+			calls:   []call{{method: "DELETE", pattern: "/api/v1/repository/{name}", query: map[string]string{"confirm": "r"}}},
+		},
+		{
+			name: "delete without confirm fails non-interactively", args: []string{"repo", "delete", "r"}, fail: "--confirm r",
+		},
+		{
+			name: "delete with wrong confirm fails locally", args: []string{"repo", "delete", "r", "--confirm", "x"}, fail: "does not match",
+		},
+		{
+			name:    "create with trash settings",
+			args:    []string{"repo", "create", "r", "--format", "npm", "--trash-retention-days", "0", "--immutable-releases"},
+			replies: map[string]reply{"POST /api/v1/repositories": {status: 201, body: one}},
+			calls: []call{{method: "POST", pattern: "/api/v1/repositories", body: m{
+				"name": "r", "format": "npm", "description": "", "public": false, "trash_retention_days": float64(0), "immutable_releases": true,
+			}}},
+		},
+		{
+			name:    "update trash settings",
+			args:    []string{"repo", "update", "r", "--trash-retention-days", "14", "--immutable-releases=false"},
+			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"trash_retention_days": float64(14), "immutable_releases": false}}},
+		},
+		{
+			name:    "update retention back to default sends null",
+			args:    []string{"repo", "update", "r", "--trash-retention-days", "default"},
+			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"trash_retention_days": nil}}},
+		},
+		{
+			name: "update with bad retention fails", args: []string{"repo", "update", "r", "--trash-retention-days", "-1"}, fail: "non-negative",
 		},
 		{
 			name:    "packages",

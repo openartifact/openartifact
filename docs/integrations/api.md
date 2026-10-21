@@ -25,7 +25,7 @@ Details, token kinds and SSO are in [authentication](../security/authentication.
 - **API token:** `Authorization: Bearer <TOKEN>`. No CSRF header needed. Tokens are `access` (management API, per the owner's permissions) or `deploy` (repository credentials; never granted `manage`, so no `/api/v1` management calls).
 - **Session cookie:** `POST /api/v1/auth/login` (`{"username","password"}`) sets `oa_session` (HttpOnly, SameSite=Lax) and a readable `oa_csrf` cookie. State-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) on a session must echo it in `X-CSRF-Token`, otherwise `403 {"error":"csrf_protection",...}`. Login is rate limited (`429 rate_limited` with `Retry-After`).
 - **Self-service limits:** an API token cannot create or revoke tokens, change a password, or edit its own user profile; those need a login session. An account flagged `must_change_password` gets `403 password_change_required` everywhere except `change-password` and `logout`.
-- **Gate:** every `/api/v1/*` route requires the global `manage` permission, except `GET /repositories` and `GET /search` (any authenticated user; results are filtered per repository), `GET /repository/{name}` (`read` on that repository) and `/repositories/{name}/{packages,debs,comps}` (`read`/`write`/`delete` on that repository). Anonymous callers can only read public repositories (or what `allowAnonymousRead` exposes).
+- **Gate:** every `/api/v1/*` route requires the global `manage` permission, except `GET /repositories` and `GET /search` (any authenticated user; results are filtered per repository), `GET /repository/{name}` (`read` on that repository), `/repositories/{name}/{packages,debs,comps}` and `/repositories/{name}/trash...` (`read`/`write`/`delete`, or `delete`, on that repository). Anonymous callers can only read public repositories (or what `allowAnonymousRead` exposes).
 
 ### Example: token and repository
 
@@ -100,7 +100,38 @@ List endpoints do not share one scheme. Always check the spec for the endpoint:
 | `page` + `per_page` | users, admin tokens, admin audit | `per_page` default 25 (users 50), max 100 (users 200) | `data`, `page`, `per_page`, `total` |
 | `limit` + `offset` | AI analyses | `limit` default 20, max 100; `offset` from 0 | `analyses`, `total`, `limit`, `offset` |
 
-Out-of-range values are clamped rather than rejected.
+Out-of-range values are clamped rather than rejected. The trash lists (`/trash`, `/repositories/{name}/trash`) use the `page` + `limit` style with the list under `items`.
+
+## Repository settings and deletion
+
+`POST /api/v1/repositories` and `PATCH /api/v1/repository/{name}` accept two per-repository settings for the [trash](../operations/trash.md) and are returned in repository responses:
+
+| Field | Type | Meaning |
+|---|---|---|
+| `trash_retention_days` | integer >= 0, or `null` | Days deleted items of this repository stay restorable. `null` uses the server default (`OPENARTIFACT_TRASH_RETENTION`, 7); `0` deletes permanently and immediately. Negative values are `400` |
+| `immutable_releases` | bool | When `true`, deleting or overwriting a released version answers `409` unless an admin passes `?force=true` ([per-format definition](../operations/trash.md#immutable-releases)) |
+
+`DELETE /api/v1/repository/{name}` requires the repository name as confirmation, either as a query parameter or a JSON body; without it the answer is `400 confirmation_required`:
+
+```sh
+curl -X DELETE "$HOST/api/v1/repository/old-repo?confirm=old-repo" -H "Authorization: Bearer <TOKEN>"
+curl -X DELETE "$HOST/api/v1/repository/old-repo" -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' -d '{"confirm":"old-repo"}'
+```
+
+The repository then moves to the trash for its retention period (unless that is `0`); its name stays reserved until it is purged or restored.
+
+## Trash API
+
+| Method and path | Auth | Purpose |
+|---|---|---|
+| `GET /api/v1/trash` | admin | List trashed items of all repositories, trashed repositories included. Query: `page`, `limit`, `kind`, `repository` |
+| `GET /api/v1/repositories/{name}/trash` | `delete` on the repository | List that repository's trashed items. Query: `page`, `limit`, `kind` |
+| `POST /api/v1/trash/{kind}/{id}/restore` | admin | Restore an item or a repository; `200` with the item |
+| `POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore` | `delete` on the repository | Restore an item of that repository (not for kind `repository`) |
+| `DELETE /api/v1/trash/{kind}/{id}` | admin | Purge now (permanent); `204` |
+
+An item is `{"id","kind","repository_id","repository","format","name","version","size_bytes","deleted_at","deleted_by","purge_at"}`; a list is `{"items":[...],"total":N,"page":P,"limit":L}`. Restore conflicts are `409` (`trash_conflict`, `repository_in_trash`). Kinds, examples and semantics: [Trash](../operations/trash.md#api).
 
 ## Route groups
 
@@ -113,6 +144,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/repositories/{name}/packages`, `/debs`, `/comps` | list, download and delete packages; upload (`debs` for Debian, `packages` for RPM) |
 | `/repositories/{name}/uploads`, `/repositories/{name}/uploads/{id}/complete` | `POST` (write): presigned direct-to-bucket upload for hosted raw repositories on S3/GCS storage. The first call returns a presigned `PUT` URL (`Cache-Control: no-store`; `501` on unsupported backends, `429` with `Retry-After` past `presignMaxPendingUploads`). The second, callable by the creator or an admin and idempotent (`201` first, `200` on retry), reads the object back, verifies size and sha256 and records the artifact. `complete` errors: `403` not creator/admin; `404` unknown; `409` with code `upload_missing` (nothing uploaded yet), `upload_in_progress` (retry after `Retry-After`) or `upload_changed` (staging object re-uploaded during verification); `410` expired; `422` size or sha256 mismatch. See [Presigned uploads](../operations/storage.md#presigned-uploads) |
 | `/repositories/{name}/members` | member repositories of a group repository |
+| `/trash`, `/repositories/{name}/trash` | [trash](../operations/trash.md): list, restore and purge deleted items and repositories |
 | `/repositories/{name}/{cleanup-policies,quota,webhooks}` | [cleanup and quotas](../repositories/cleanup-and-quotas.md), per-repository [webhooks](../operations/webhooks.md) |
 | `/repositories/{name}/registry-gc` | `POST` (admin): run [Docker registry garbage collection](../formats/docker.md#garbage-collection), optionally as a dry run |
 | `/repositories/{name}/{sbom,vuln,license,secrets}` | SBOMs and [scanning](../security/scanning.md) (scans, quarantine, license policies) |

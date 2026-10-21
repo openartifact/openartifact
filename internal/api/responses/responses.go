@@ -87,6 +87,12 @@ type RepositoryResponse struct {
 	// always streams through the server.
 	PresignDownloads *bool `json:"presign_downloads"`
 
+	// TrashRetentionDays is how long deleted items stay restorable; null means
+	// the server default, 0 deletes immediately. ImmutableReleases forbids
+	// deleting or overwriting released versions (an admin can force).
+	TrashRetentionDays *int `json:"trash_retention_days"`
+	ImmutableReleases  bool `json:"immutable_releases"`
+
 	// Proxy repositories only. The upstream password is never returned.
 	UpstreamURL             string `json:"upstream_url,omitempty"`
 	UpstreamUsername        string `json:"upstream_username,omitempty"`

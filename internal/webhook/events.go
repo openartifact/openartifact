@@ -36,6 +36,10 @@ func SubscribableEvents() []string {
 		EventArtifactDownloaded,
 		EventRepoCreated,
 		EventRepoDeleted,
+		EventArtifactRestored,
+		EventArtifactPurged,
+		EventRepoRestored,
+		EventRepoPurged,
 	}
 }
 

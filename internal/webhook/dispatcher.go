@@ -32,6 +32,14 @@ const (
 	EventArtifactDownloaded = "artifact.downloaded"
 	EventRepoCreated        = "repository.created"
 	EventRepoDeleted        = "repository.deleted"
+	// EventArtifactRestored and EventRepoRestored fire when an item leaves the
+	// trash; EventArtifactPurged and EventRepoPurged when it is removed for
+	// good (by an admin or the retention purge). The deleted events fire for
+	// every delete, soft or hard.
+	EventArtifactRestored = "artifact.restored"
+	EventArtifactPurged   = "artifact.purged"
+	EventRepoRestored     = "repository.restored"
+	EventRepoPurged       = "repository.purged"
 )
 
 const (

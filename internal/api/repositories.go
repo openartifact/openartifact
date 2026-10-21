@@ -5,6 +5,7 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -31,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -460,9 +462,17 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		// Org is the owning organization's name; empty means the built-in
 		// system organization.
 		Org string `json:"org"`
+		// TrashRetentionDays: null/absent = server default, 0 = no trash.
+		TrashRetentionDays *int `json:"trash_retention_days"`
+		ImmutableReleases  bool `json:"immutable_releases"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+
+	if err := validateTrashRetention(body.TrashRetentionDays); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
 	}
 
@@ -497,6 +507,9 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		Description: body.Description,
 		Public:      body.Public,
 		RepoType:    repoType,
+
+		TrashRetentionDays: body.TrashRetentionDays,
+		ImmutableReleases:  body.ImmutableReleases,
 	}
 
 	hasUpstream := body.UpstreamURL != "" || body.UpstreamUsername != "" || body.UpstreamPassword != ""
@@ -591,7 +604,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 	if err := h.db.CreateRepositoryWithMembers(r.Context(), repo, memberIDs); err != nil {
 		if database.IsUniqueViolation(err) {
-			writeError(w, http.StatusConflict, "conflict", "a repository with this name already exists")
+			h.writeNameConflict(r.Context(), w, repo.Name)
 			return
 		}
 
@@ -651,10 +664,27 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		PresignDownloads json.RawMessage `json:"presign_downloads"`
 		// Org moves the repository to the named organization.
 		Org *string `json:"org"`
+		// TrashRetentionDays: absent leaves it unchanged, null resets it to
+		// the server default, a number sets it (0 = no trash).
+		TrashRetentionDays nullableInt `json:"trash_retention_days"`
+		ImmutableReleases  *bool       `json:"immutable_releases"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
+	}
+
+	if body.TrashRetentionDays.Set {
+		if err := validateTrashRetention(body.TrashRetentionDays.Value); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		repo.TrashRetentionDays = body.TrashRetentionDays.Value
+	}
+
+	if body.ImmutableReleases != nil {
+		repo.ImmutableReleases = *body.ImmutableReleases
 	}
 
 	touchesUpstream := body.UpstreamURL != nil || body.UpstreamUsername != nil || body.UpstreamPassword != nil ||
@@ -808,6 +838,15 @@ func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
+	// Deleting a repository is the one irreversible-looking click: the caller
+	// must type the name back (query parameter or JSON body).
+	if deleteConfirmation(r) != name {
+		writeError(w, http.StatusBadRequest, "confirmation_required",
+			"repository deletion must be confirmed: pass confirm="+name+" (query parameter or JSON body)")
+
+		return
+	}
+
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
 		h.log.Errorw("delete repository: db error getting repo", "error", err)
@@ -821,26 +860,116 @@ func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.db.DeleteRepository(ctx, repo.ID); err != nil {
-		if database.IsForeignKeyViolation(err) {
-			writeError(w, http.StatusConflict, "conflict", "repository is still referenced (for example by a release bundle or promotion)")
+	soft, err := h.softDeleteRepository(ctx, repo)
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "repository not found")
 			return
 		}
 
-		h.log.Errorw("delete repository: db error", "error", err)
+		h.log.Errorw("delete repository: move to trash", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
+		return
+	}
+
+	if !soft && !h.hardDeleteRepository(ctx, w, repo) {
 		return
 	}
 
 	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventRepoDeleted,
 		webhook.RepositoryPayload(webhook.EventRepoDeleted, repo.Name, repo.Format, repo.RepoType))
 
-	// The delete cascaded the repository's package rows away; reclaim the blobs
-	// only it referenced.
-	h.collectOrphansAsync()
+	if !soft {
+		// The delete cascaded the repository's package rows away; reclaim the
+		// blobs only it referenced. A trashed repository keeps its contents
+		// (and blobs) until it is purged.
+		h.collectOrphansAsync()
+	}
 
 	writeNoContent(w)
+}
+
+// deleteConfirmation returns the confirmation of a repository delete: the
+// `confirm` query parameter, else the `confirm` field of a JSON body.
+func deleteConfirmation(r *http.Request) string {
+	if c := r.URL.Query().Get("confirm"); c != "" {
+		return c
+	}
+
+	if r.Body == nil || r.Body == http.NoBody {
+		return ""
+	}
+
+	var body struct {
+		Confirm string `json:"confirm"`
+	}
+
+	if err := decodeJSON(r, &body); err != nil {
+		return ""
+	}
+
+	return body.Confirm
+}
+
+// softDeleteRepository moves the repository to the trash when its retention
+// allows it. false means the caller must hard-delete: retention 0, or a
+// database without trash support.
+func (h *RepositoriesHandler) softDeleteRepository(ctx context.Context, repo *models.Repository) (bool, error) {
+	store, ok := h.db.(database.TrashStore)
+	if !ok {
+		return false, nil
+	}
+
+	soft, err := store.TrashRepository(ctx, repo.ID, trash.Actor(ctx))
+	if err != nil {
+		return false, fmt.Errorf("trash repository: %w", err)
+	}
+
+	return soft, nil
+}
+
+// hardDeleteRepository permanently deletes the repository (cascading its
+// contents). It writes the error response and returns false on failure.
+func (h *RepositoriesHandler) hardDeleteRepository(ctx context.Context, w http.ResponseWriter, repo *models.Repository) bool {
+	if err := h.db.DeleteRepository(ctx, repo.ID); err != nil {
+		if database.IsForeignKeyViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "repository is still referenced (for example by a release bundle or promotion)")
+			return false
+		}
+
+		h.log.Errorw("delete repository: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return false
+	}
+
+	return true
+}
+
+// trashedNameLookup is implemented by *database.PostgresDB; fakes need not.
+type trashedNameLookup interface {
+	TrashedRepositoryByName(ctx context.Context, name string) (*models.TrashItem, error)
+}
+
+// writeNameConflict answers a unique violation on a repository name: 409, with
+// a clearer message when the name is held by a repository in the trash.
+func (h *RepositoriesHandler) writeNameConflict(ctx context.Context, w http.ResponseWriter, name string) {
+	if lookup, ok := h.db.(trashedNameLookup); ok {
+		item, err := lookup.TrashedRepositoryByName(ctx, name)
+
+		switch {
+		case err == nil && item != nil:
+			writeError(w, http.StatusConflict, "name_reserved",
+				"the name is reserved by a repository in the trash until it is purged or restored")
+
+			return
+		case err != nil && !errors.Is(err, database.ErrTrashNotFound):
+			h.log.Warnw("create repository: look up trashed repository", "error", err)
+		}
+	}
+
+	writeError(w, http.StatusConflict, "conflict", "a repository with this name already exists")
 }
 
 // maxOrphanPasses bounds how many batches one repository delete reclaims; the
@@ -852,17 +981,23 @@ const maxOrphanPasses = 100
 // deletes) and is best-effort: failures are logged and retried by the cleanup
 // worker's periodic pass.
 func (h *RepositoriesHandler) collectOrphansAsync() {
-	if h.blobStore == nil {
+	collectOrphansAsync(&h.gc, h.db, h.blobStore, h.log)
+}
+
+// collectOrphansAsync starts the detached orphan-blob sweep on wg (shared by
+// repository delete and the trash purge). A nil store is a no-op.
+func collectOrphansAsync(wg *sync.WaitGroup, db database.Database, store storage.BlobStore, log *logger.Logger) {
+	if store == nil {
 		return
 	}
 
 	ctx := context.WithoutCancel(context.Background())
 
-	h.gc.Go(func() {
+	wg.Go(func() {
 		for range maxOrphanPasses {
-			removed, err := storage.CollectOrphanBlobs(ctx, h.db, h.blobStore, storage.OrphanMinAge, storage.OrphanBatch)
+			removed, err := storage.CollectOrphanBlobs(ctx, db, store, storage.OrphanMinAge, storage.OrphanBatch)
 			if err != nil {
-				h.log.Warnw("orphan blob collection after repository delete failed", "removed", removed, "error", err)
+				log.Warnw("orphan blob collection after repository delete failed", "removed", removed, "error", err)
 				return
 			}
 
@@ -1200,7 +1335,9 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		CreatedAt:   formatTime(r.CreatedAt),
 		UpdatedAt:   formatTime(r.UpdatedAt),
 
-		PresignDownloads: r.PresignDownloads,
+		PresignDownloads:   r.PresignDownloads,
+		TrashRetentionDays: r.TrashRetentionDays,
+		ImmutableReleases:  r.ImmutableReleases,
 	}
 
 	if r.RepoType == repotype.Proxy {
@@ -1215,7 +1352,48 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 	return resp
 }
 
-func parseIntMin(s string, defaultVal, minVal int) int {
+var errTrashRetentionRange = errors.New("trash_retention_days must be between 0 and 36500 (or null for the server default)")
+
+// maxTrashRetentionDays bounds trash_retention_days (100 years).
+const maxTrashRetentionDays = 36500
+
+// validateTrashRetention accepts nil (server default) or 0..maxTrashRetentionDays.
+func validateTrashRetention(days *int) error {
+	if days != nil && (*days < 0 || *days > maxTrashRetentionDays) {
+		return errTrashRetentionRange
+	}
+
+	return nil
+}
+
+// nullableInt tells an absent JSON field (Set false) from an explicit null
+// (Set true, Value nil) and a number.
+type nullableInt struct {
+	Set   bool
+	Value *int
+}
+
+// UnmarshalJSON implements json.Unmarshaler. encoding/json calls it for an
+// explicit null too, which is what makes the tri-state work.
+func (n *nullableInt) UnmarshalJSON(b []byte) error {
+	n.Set = true
+
+	if string(bytes.TrimSpace(b)) == "null" {
+		n.Value = nil
+		return nil
+	}
+
+	var v int
+	if err := json.Unmarshal(b, &v); err != nil {
+		return fmt.Errorf("decode integer: %w", err)
+	}
+
+	n.Value = &v
+
+	return nil
+}
+
+func parseIntMin(s string, defaultVal, minVal int) int { //nolint:unparam // every list endpoint defaults to page 1, kept general
 	v, err := strconv.Atoi(s)
 	if err != nil || v < minVal {
 		if s == "" {

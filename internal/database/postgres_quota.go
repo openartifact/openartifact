@@ -106,6 +106,11 @@ func (p *PostgresDB) DecrementStorageUsage(ctx context.Context, repoID string, s
 // those rows' blob sizes and their number. Blobs are deduplicated across rows
 // and repositories, but a reservation is made per row at the row's full size,
 // so the sum deliberately counts a shared blob once per row.
+//
+// Soft-deleted rows (deleted_at set) are intentionally NOT filtered out: a
+// trashed package keeps its blob and its quota usage until it is purged, and
+// only the purge releases the quota. Filtering them here would make the
+// periodic reconcile hand back the usage of every item sitting in the trash.
 const quotaUsageRowsSQL = `
 SELECT repository_id, blob_id FROM deb_packages
 UNION ALL SELECT repository_id, blob_id FROM rpm_packages

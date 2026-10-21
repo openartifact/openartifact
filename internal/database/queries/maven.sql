@@ -1,7 +1,7 @@
 -- name: CreateMavenArtifact :one
 INSERT INTO maven_artifacts (repository_id, blob_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, created_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(sqlc.narg(created_at)::timestamptz, now()))
-ON CONFLICT (repository_id, repo_path) DO UPDATE SET
+ON CONFLICT (repository_id, repo_path) WHERE deleted_at IS NULL DO UPDATE SET
     blob_id = EXCLUDED.blob_id,
     updated_at = now()
 RETURNING id;
@@ -13,7 +13,7 @@ SELECT id, repository_id,
        snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
        created_at, updated_at
 FROM maven_artifacts
-WHERE repository_id = $1 AND repo_path = $2;
+WHERE repository_id = $1 AND repo_path = $2 AND deleted_at IS NULL;
 
 -- name: GetMavenArtifactsByGAV :many
 SELECT id, repository_id,
@@ -22,7 +22,7 @@ SELECT id, repository_id,
        snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
        created_at, updated_at
 FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4;
+WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4 AND deleted_at IS NULL;
 
 -- name: GetMavenArtifactsByGA :many
 SELECT id, repository_id,
@@ -31,7 +31,7 @@ SELECT id, repository_id,
        snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
        created_at, updated_at
 FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3;
+WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND deleted_at IS NULL;
 
 -- name: GetLatestSnapshot :one
 SELECT id, repository_id,
@@ -40,12 +40,12 @@ SELECT id, repository_id,
        snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
        created_at, updated_at
 FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4 AND is_snapshot = true
+WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4 AND is_snapshot = true AND deleted_at IS NULL
 ORDER BY snapshot_timestamp DESC, snapshot_build_number DESC
 LIMIT 1;
 
 -- name: DeleteMavenArtifact :exec
-DELETE FROM maven_artifacts WHERE id = $1;
+DELETE FROM maven_artifacts WHERE id = $1 AND deleted_at IS NULL;
 
 -- name: ListMavenArtifactsByRepo :many
 SELECT ma.id, ma.repository_id, b.sha256 AS blob_sha256, b.size_bytes AS blob_size_bytes,
@@ -54,4 +54,4 @@ SELECT ma.id, ma.repository_id, b.sha256 AS blob_sha256, b.size_bytes AS blob_si
        ma.created_at, ma.updated_at
 FROM maven_artifacts ma
 JOIN blobs b ON b.id = ma.blob_id
-WHERE ma.repository_id = $1;
+WHERE ma.repository_id = $1 AND ma.deleted_at IS NULL;

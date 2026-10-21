@@ -20,9 +20,9 @@ func (p *PostgresDB) fillNPMBlobSHA256(ctx context.Context, packageID string, ve
 
 	// A single version needs only its own blob; the package-wide join is for
 	// callers that resolve every version at once.
-	query, arg := `SELECT v.id, b.sha256 FROM npm_versions v JOIN blobs b ON b.id = v.blob_id WHERE v.package_id = $1`, packageID
+	query, arg := `SELECT v.id, b.sha256 FROM npm_versions v JOIN blobs b ON b.id = v.blob_id WHERE v.package_id = $1 AND v.deleted_at IS NULL`, packageID
 	if len(versions) == 1 {
-		query, arg = `SELECT v.id, b.sha256 FROM npm_versions v JOIN blobs b ON b.id = v.blob_id WHERE v.id = $1`, versions[0].ID
+		query, arg = `SELECT v.id, b.sha256 FROM npm_versions v JOIN blobs b ON b.id = v.blob_id WHERE v.id = $1 AND v.deleted_at IS NULL`, versions[0].ID
 	}
 
 	rows, err := p.db.QueryContext(ctx, query, arg)

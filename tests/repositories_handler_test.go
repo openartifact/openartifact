@@ -312,7 +312,7 @@ func TestRepositoriesHandler_HandleDelete(t *testing.T) {
 
 	seedRepo(t, db, "delete-me", "deb")
 
-	req := httptest.NewRequestWithContext(context.Background(), "DELETE", "/api/v1/repository/delete-me", nil)
+	req := httptest.NewRequestWithContext(context.Background(), "DELETE", "/api/v1/repository/delete-me?confirm=delete-me", nil)
 	req = withPrincipal(req, principal)
 	rw := httptest.NewRecorder()
 	router.ServeHTTP(rw, req)

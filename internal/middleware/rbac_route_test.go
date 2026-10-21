@@ -81,6 +81,7 @@ func TestIsSPARepoPathAndBypass(t *testing.T) {
 		{"repo edit", "/repos/myrepo/edit", true},
 		{"repo browse", "/repos/myrepo/browse", true},
 		{"repo graph", "/repos/myrepo/graph", true},
+		{"repo trash", "/repos/myrepo/trash", true},
 		{"package detail", "/repos/myrepo/packages/npm/lodash", true},
 
 		// Real format-handler endpoints that must NOT be treated as pages.

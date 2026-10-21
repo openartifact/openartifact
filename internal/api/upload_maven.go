@@ -30,6 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -547,21 +548,40 @@ func (h *MavenUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	if err := trash.GuardReleaseByName(r, h.db, repoName, "maven", art.Version); err != nil {
+		writeMavenConflict(w, err.Error())
+		return
+	}
+
 	size := h.blobSize(r.Context(), art.BlobID, art.SHA256)
 
-	if err := h.db.DeleteMavenArtifact(r.Context(), art.ID); err != nil {
+	err = trash.Delete(r.Context(), h.db, trash.Request{
+		RepoID: repoID, Kind: models.TrashKindMaven, IDs: []string{art.ID}, Resource: artPath,
+	}, func() error {
+		if delErr := h.db.DeleteMavenArtifact(r.Context(), art.ID); delErr != nil {
+			return delErr
+		}
+
+		if relErr := quota.Release(r.Context(), h.db, repoID, size); relErr != nil {
+			h.log.Warnw("failed to release quota", "repository", repoName, "error", relErr)
+		}
+
+		if blobErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, art.SHA256); blobErr != nil {
+			h.log.Warnw("failed to clean up blob after delete", "sha256", art.SHA256, "error", blobErr)
+		}
+
+		return nil
+	})
+	if err != nil {
+		if errors.Is(err, database.ErrTrashNotFound) {
+			http.NotFound(w, r)
+			return
+		}
+
 		h.log.Errorw("failed to delete artifact", "id", art.ID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
-	}
-
-	if err := quota.Release(r.Context(), h.db, repoID, size); err != nil {
-		h.log.Warnw("failed to release quota", "repository", repoName, "error", err)
-	}
-
-	if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, art.SHA256); err != nil {
-		h.log.Warnw("failed to clean up blob after delete", "sha256", art.SHA256, "error", err)
 	}
 
 	if h.mavenWorker != nil {

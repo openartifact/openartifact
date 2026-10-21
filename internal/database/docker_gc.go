@@ -27,6 +27,12 @@ const (
 // (internal/worker.DockerGCWorker). PostgresDB implements it; the worker
 // reports GC as unsupported for databases that do not.
 //
+// Soft-deleted (trashed) manifests are not GC candidates (purge removes them),
+// but their recorded references keep counting: layers and child manifests that a
+// trashed manifest references are never collected, and a live manifest that a
+// trashed tag points at stays "tagged" until that tag is purged, so restoring
+// from the trash never yields a dangling reference.
+//
 // Mutations take the repository's exclusive docker lock for the length of one
 // transaction. CreateDockerManifest takes the same lock shared, so a push
 // either completes before a GC transaction starts (and its references are then
@@ -40,7 +46,7 @@ type DockerGCStore interface {
 	// the manifest indexed. A manifest deleted meanwhile is skipped silently.
 	SetDockerManifestRefs(ctx context.Context, repoID string, m *models.DockerGCManifest, refs models.DockerManifestRefs) error
 
-	// ListDockerGCManifests returns every manifest of the repository with its
+	// ListDockerGCManifests returns every live manifest of the repository with its
 	// tagged/young flags (young: pushed within grace) and index children.
 	ListDockerGCManifests(ctx context.Context, repoID string, grace time.Duration) ([]*models.DockerGCManifest, error)
 

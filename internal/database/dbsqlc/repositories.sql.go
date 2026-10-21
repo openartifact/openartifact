@@ -11,7 +11,7 @@ import (
 )
 
 const countRepositories = `-- name: CountRepositories :one
-SELECT COUNT(*) FROM repositories
+SELECT COUNT(*) FROM repositories WHERE deleted_at IS NULL
 `
 
 func (q *Queries) CountRepositories(ctx context.Context) (int64, error) {
@@ -22,7 +22,7 @@ func (q *Queries) CountRepositories(ctx context.Context) (int64, error) {
 }
 
 const countRepositoriesByFormat = `-- name: CountRepositoriesByFormat :one
-SELECT COUNT(*) FROM repositories WHERE format = $1
+SELECT COUNT(*) FROM repositories WHERE format = $1 AND deleted_at IS NULL
 `
 
 func (q *Queries) CountRepositoriesByFormat(ctx context.Context, format string) (int64, error) {
@@ -99,7 +99,7 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
-WHERE id = $1
+WHERE id = $1 AND deleted_at IS NULL
 `
 
 type GetRepositoryByIDRow struct {
@@ -158,7 +158,7 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
-WHERE name = $1
+WHERE name = $1 AND deleted_at IS NULL
 `
 
 type GetRepositoryByNameRow struct {
@@ -217,6 +217,7 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
+WHERE deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $1 OFFSET $2
 `
@@ -295,7 +296,7 @@ SELECT id, name, format, description,
        COALESCE(blocked, false) AS blocked,
        org_id, created_at, updated_at
 FROM repositories
-WHERE format = $1
+WHERE format = $1 AND deleted_at IS NULL
 ORDER BY created_at DESC
 LIMIT $2 OFFSET $3
 `
@@ -375,7 +376,7 @@ SET description = $1,
     blocked = $9,
     org_id = $10,
     updated_at = now()
-WHERE id = $11
+WHERE id = $11 AND deleted_at IS NULL
 `
 
 type UpdateRepositoryParams struct {

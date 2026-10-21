@@ -64,6 +64,7 @@ Rules checked on `PUT`:
 - The file name must start with `<artifactId>-<version>` (for timestamped snapshots `<artifactId>-<base>-<yyyyMMdd.HHmmss>-<build>`), followed by an optional `-<classifier>` and the extension. Otherwise `400`. Extensions may contain dots (`tar.gz`, `jar.asc`); signatures such as `.asc` are stored as ordinary files.
 - Release versions are immutable: re-publishing identical content is `200`; different content is `409` with `{"error": "release artifact already exists with different content"}`.
 - `-SNAPSHOT` versions can be overwritten.
+- With `immutable_releases` on the repository, an overwrite of an existing release file is refused with `409` even when the content would otherwise be replaced, and deleting a release is `409` unless an admin passes `?force=true` ([immutable releases](../operations/trash.md#immutable-releases)). Deletes of other files go to the [trash](../operations/trash.md) by default.
 - Maximum body 1 GiB per file; quota is enforced ([quotas](../repositories/cleanup-and-quotas.md)).
 - Proxy and group repositories answer `405` (`Allow: GET, HEAD`).
 

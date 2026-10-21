@@ -167,7 +167,7 @@ func TestRepositoryCreateAndDeleteEmitEventsAndCollectOrphans(t *testing.T) {
 	router.Delete("/api/v1/repositories/{name}", h.handleDelete)
 
 	rw = httptest.NewRecorder()
-	router.ServeHTTP(rw, adminRequest(nil, http.MethodDelete, "/api/v1/repositories/evrepo", ""))
+	router.ServeHTTP(rw, adminRequest(nil, http.MethodDelete, "/api/v1/repositories/evrepo?confirm=evrepo", ""))
 
 	if rw.Code != http.StatusNoContent {
 		t.Fatalf("delete status = %d; body = %s", rw.Code, rw.Body.String())

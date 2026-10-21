@@ -137,3 +137,14 @@ workers:
   # period longer than your slowest push and the longest-lived digest pin.
   dockerGcInterval: 1h
   dockerGcGracePeriod: 24h
+
+# Trash (soft delete). Deleted artifacts, versions and repositories stay
+# restorable for retentionDays before the purge worker removes them for good.
+# A repository can override this with its own trash_retention_days; 0 (here or
+# per repository) means deletes are immediate and permanent. Soft-deleted bytes
+# keep counting against quotas until purged. purgeInterval is the pause between
+# purge passes (0 disables the schedule; admins can still purge by hand).
+# See docs/operations/trash.md.
+trash:
+  retentionDays: 7
+  purgeInterval: 15m

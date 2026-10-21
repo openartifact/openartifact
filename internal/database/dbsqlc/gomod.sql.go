@@ -46,7 +46,7 @@ func (q *Queries) CreateGoModule(ctx context.Context, arg CreateGoModuleParams) 
 }
 
 const deleteGoModule = `-- name: DeleteGoModule :exec
-DELETE FROM gomod_modules WHERE repository_id = $1 AND module_path = $2 AND version = $3
+DELETE FROM gomod_modules WHERE repository_id = $1 AND module_path = $2 AND version = $3 AND deleted_at IS NULL
 `
 
 type DeleteGoModuleParams struct {
@@ -67,7 +67,7 @@ SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
 FROM gomod_modules gm
 LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
 LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1 AND gm.module_path = $2 AND gm.version = $3
+WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL AND gm.module_path = $2 AND gm.version = $3
 `
 
 type GetGoModuleParams struct {
@@ -116,7 +116,7 @@ SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
 FROM gomod_modules gm
 LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
 LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1 AND gm.module_path = $2
+WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL AND gm.module_path = $2
 ORDER BY gm.version DESC
 LIMIT 1
 `
@@ -166,7 +166,7 @@ SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
 FROM gomod_modules gm
 LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
 LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1 AND gm.module_path = $2
+WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL AND gm.module_path = $2
 ORDER BY gm.version DESC
 `
 
@@ -228,7 +228,7 @@ SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
 FROM gomod_modules gm
 LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
 LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1
+WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL
 ORDER BY gm.module_path, gm.version DESC
 `
 

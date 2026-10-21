@@ -39,10 +39,11 @@ DELETE FROM docker_uploads WHERE repository_id = $1 AND upload_uuid = $2;
 
 -- name: CreateDockerManifest :one
 -- Re-pushing a manifest already stored for the image is a no-op refresh, not
--- an error (OCI distribution: manifest PUT is idempotent).
+-- an error (OCI distribution: manifest PUT is idempotent). A copy of the same
+-- digest sitting in the trash does not conflict: the push creates a new live row.
 INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest)
 VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
-ON CONFLICT (repository_id, image, digest) DO UPDATE
+ON CONFLICT (repository_id, image, digest) WHERE deleted_at IS NULL DO UPDATE
     SET media_type = EXCLUDED.media_type, blob_id = EXCLUDED.blob_id, size = EXCLUDED.size,
         subject_digest = EXCLUDED.subject_digest, updated_at = now()
 RETURNING id, created_at, updated_at;
@@ -52,47 +53,72 @@ SELECT id, repository_id, image, digest, media_type, blob_id, size,
        COALESCE(subject_digest, '') AS subject_digest,
        created_at, updated_at
 FROM docker_manifests
-WHERE repository_id = $1 AND image = $2 AND digest = $3;
+WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL;
 
 -- name: DeleteDockerManifest :exec
-DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3;
+-- Permanent delete of a live manifest (retention 0 path); trashed rows are left to purge.
+DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL;
 
 -- name: UpsertDockerTag :one
 INSERT INTO docker_tags (repository_id, image, name, manifest_digest)
 VALUES ($1, $2, $3, $4)
-ON CONFLICT (repository_id, image, name) DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
+ON CONFLICT (repository_id, image, name) WHERE deleted_at IS NULL DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
 RETURNING id, created_at, updated_at;
 
 -- name: GetDockerTag :one
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1 AND image = $2 AND name = $3;
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2 AND t.name = $3
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  );
 
 -- name: DeleteDockerTag :exec
-DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND name = $3;
+DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND name = $3 AND deleted_at IS NULL;
 
 -- name: DeleteDockerTagsByDigest :exec
-DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND manifest_digest = $3;
+DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND manifest_digest = $3 AND deleted_at IS NULL;
 
 -- name: ListDockerTags :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1 AND image = $2
-ORDER BY name ASC
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  )
+ORDER BY t.name ASC
 LIMIT $3;
 
 -- name: ListDockerTagsAfter :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1 AND image = $2 AND name > $3
-ORDER BY name ASC
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1 AND t.image = $2 AND t.name > $3
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  )
+ORDER BY t.name ASC
 LIMIT $4;
 
 -- name: ListDockerTagsByRepo :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
-FROM docker_tags
-WHERE repository_id = $1
-ORDER BY image ASC, name ASC
+SELECT t.id, t.repository_id, t.name, t.manifest_digest, t.created_at, t.updated_at, t.image, t.deleted_at, t.deleted_by
+FROM docker_tags t
+WHERE t.repository_id = $1
+  AND t.deleted_at IS NULL
+  AND EXISTS (
+      SELECT 1 FROM docker_manifests m
+      WHERE m.repository_id = t.repository_id AND m.image = t.image
+        AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  )
+ORDER BY t.image ASC, t.name ASC
 LIMIT $2;
 
 -- name: ListDockerManifestsByRepo :many
@@ -101,7 +127,7 @@ SELECT dm.id, dm.repository_id, dm.image, dm.digest, dm.media_type, b.sha256 AS 
        dm.created_at, dm.updated_at
 FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
-WHERE dm.repository_id = $1
+WHERE dm.repository_id = $1 AND dm.deleted_at IS NULL
 ORDER BY dm.created_at;
 
 -- name: TouchDockerBlob :one
@@ -122,7 +148,8 @@ ON CONFLICT (manifest_id, kind, digest) DO NOTHING;
 
 -- name: ListUnindexedDockerManifests :many
 -- Manifests whose references have not been recorded yet (pushed before
--- docker_manifest_refs existed, or restored from a backup).
+-- docker_manifest_refs existed, or restored from a backup). Trashed manifests are
+-- included on purpose: their refs must be recorded so they keep their layers alive.
 SELECT dm.id, dm.image, dm.digest, b.sha256 AS blob_sha256
 FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
@@ -132,8 +159,10 @@ ORDER BY dm.created_at
 LIMIT $2;
 
 -- name: ListDockerGCManifests :many
--- Every manifest of the repository with what GC needs to decide its fate:
--- tagged (some tag of the same image points at it), young (pushed or re-pushed
+-- Every live manifest of the repository (trashed ones are never GC candidates;
+-- purge owns them) with what GC needs to decide its fate:
+-- tagged (some tag of the same image points at it, a trashed tag included: the
+-- manifest must survive until the tag is purged so a restore never dangles), young (pushed or re-pushed
 -- within the grace period) and the child manifests it references (an index).
 SELECT dm.id, dm.image, dm.digest,
        COALESCE(dm.subject_digest, '')::text AS subject_digest,
@@ -151,10 +180,11 @@ SELECT dm.id, dm.image, dm.digest,
 FROM docker_manifests dm
 JOIN blobs b ON b.id = dm.blob_id
 WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
+  AND dm.deleted_at IS NULL
 ORDER BY dm.created_at;
 
 -- name: DeleteDockerManifestsForGC :many
--- Deletes the given untagged manifests, re-checking every condition against the
+-- Deletes the given untagged live manifests (never a trashed one), re-checking every condition against the
 -- current state: still older than the grace period, still untagged, and not
 -- adjacent (index child, index parent, subject or referrer) to a manifest that
 -- is not being deleted. Must run in a transaction holding the repository's
@@ -164,6 +194,7 @@ WITH deleted AS (
 DELETE FROM docker_manifests dm
 WHERE dm.repository_id = sqlc.arg(repository_id)::uuid
   AND dm.id = ANY(sqlc.arg(ids)::uuid[])
+  AND dm.deleted_at IS NULL
   AND dm.updated_at <= now() - make_interval(secs => sqlc.arg(grace_seconds)::float8)
   AND NOT EXISTS (
       SELECT 1 FROM docker_tags t

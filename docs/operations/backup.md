@@ -33,6 +33,8 @@ Backup types, passed as `type`:
 
 There is no incremental backup: every archive is complete for its type, and any other `type` (including `incremental`) is refused with 400.
 
+Soft-deleted data ([trash](trash.md): trashed repositories and package rows) is not part of a backup. The export reads through the same queries clients use, which treat trashed rows as nonexistent, so a trashed repository is skipped together with its contents and a restore brings back live data only. Restore anything you still need from the trash before taking the backup. The blob store is exported as it is, so the bytes of trashed packages are still in the archive until they are purged. Repositories carry `trash_retention_days` and `immutable_releases` through the backup.
+
 Tables exported:
 
 - Global: repositories, users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, organizations (with their `member_role`) and members, webhooks. Repositories keep their organization on restore.

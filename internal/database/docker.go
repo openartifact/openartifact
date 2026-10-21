@@ -342,7 +342,7 @@ func (p *PostgresDB) ListDockerManifestsBySubject(ctx context.Context, repoID, i
 		`SELECT id, repository_id, image, digest, media_type, blob_id, size,
 		        COALESCE(subject_digest, ''), created_at, updated_at
 		 FROM docker_manifests
-		 WHERE repository_id = $1 AND image = $2 AND subject_digest = $3
+		 WHERE repository_id = $1 AND image = $2 AND subject_digest = $3 AND deleted_at IS NULL
 		 ORDER BY created_at`,
 		repoID, image, subjectDigest,
 	)

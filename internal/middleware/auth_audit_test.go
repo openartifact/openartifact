@@ -251,6 +251,10 @@ func TestRouteToActionAuthEvents(t *testing.T) {
 		{"DELETE", "/api/v1/auth/tokens/{id}", "auth.token_revoked"},
 		{"DELETE", "/api/v1/users/{id}/tokens/{tokenId}", "auth.token_revoked"},
 		{"POST", "/api/v1/repositories", "repository.created"},
+		{"DELETE", "/api/v1/repository/{name}", "repository.deleted"},
+		// The trash handlers audit restore/purge themselves (internal/trash).
+		{"POST", "/api/v1/trash/{kind}/{id}/restore", ""},
+		{"DELETE", "/api/v1/trash/{kind}/{id}", ""},
 		{"GET", "/api/v1/auth/tokens", ""},
 	} {
 		if got := routeToAction(tc.method, tc.route); got != tc.want {

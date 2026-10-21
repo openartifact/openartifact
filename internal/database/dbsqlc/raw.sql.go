@@ -12,7 +12,7 @@ import (
 )
 
 const deleteRawArtifact = `-- name: DeleteRawArtifact :exec
-DELETE FROM raw_artifacts WHERE repository_id = $1 AND path = $2
+DELETE FROM raw_artifacts WHERE repository_id = $1 AND path = $2 AND deleted_at IS NULL
 `
 
 type DeleteRawArtifactParams struct {
@@ -30,7 +30,7 @@ SELECT ra.id, ra.repository_id, ra.path, ra.content_type, ra.blob_id,
        b.size_bytes, b.sha256, b.blob_key, ra.metadata, ra.created_at, ra.updated_at
 FROM raw_artifacts ra
 JOIN blobs b ON b.id = ra.blob_id
-WHERE ra.repository_id = $1 AND ra.path = $2
+WHERE ra.repository_id = $1 AND ra.path = $2 AND ra.deleted_at IS NULL
 `
 
 type GetRawArtifactParams struct {
@@ -76,7 +76,7 @@ SELECT ra.id, ra.repository_id, ra.path, ra.content_type, ra.blob_id,
        b.size_bytes, b.sha256, b.blob_key, ra.metadata, ra.created_at, ra.updated_at
 FROM raw_artifacts ra
 JOIN blobs b ON b.id = ra.blob_id
-WHERE ra.repository_id = $1 ORDER BY ra.path ASC
+WHERE ra.repository_id = $1 AND ra.deleted_at IS NULL ORDER BY ra.path ASC
 `
 
 type ListRawArtifactsRow struct {
@@ -130,7 +130,7 @@ SELECT ra.id, ra.repository_id, ra.path, ra.content_type, ra.blob_id,
        b.size_bytes, b.sha256, b.blob_key, ra.metadata, ra.created_at, ra.updated_at
 FROM raw_artifacts ra
 JOIN blobs b ON b.id = ra.blob_id
-WHERE ra.repository_id = $1 AND ra.path LIKE $2 ORDER BY ra.path ASC
+WHERE ra.repository_id = $1 AND ra.path LIKE $2 AND ra.deleted_at IS NULL ORDER BY ra.path ASC
 `
 
 type ListRawArtifactsByPrefixParams struct {
@@ -187,7 +187,7 @@ func (q *Queries) ListRawArtifactsByPrefix(ctx context.Context, arg ListRawArtif
 const upsertRawArtifact = `-- name: UpsertRawArtifact :exec
 INSERT INTO raw_artifacts (id, repository_id, path, content_type, blob_id, metadata, created_at, updated_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
-ON CONFLICT (repository_id, path) DO UPDATE SET
+ON CONFLICT (repository_id, path) WHERE deleted_at IS NULL DO UPDATE SET
     content_type = EXCLUDED.content_type,
     blob_id = EXCLUDED.blob_id,
     metadata = EXCLUDED.metadata,

@@ -325,6 +325,17 @@
             "type": "boolean",
             "nullable": true,
             "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected."
+          },
+          "trash_retention_days": {
+            "type": "integer",
+            "nullable": true,
+            "minimum": 0,
+            "maximum": 36500,
+            "description": "Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent."
+          },
+          "immutable_releases": {
+            "type": "boolean",
+            "description": "When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true."
           }
         },
         "required": [
@@ -453,7 +464,11 @@
                 "artifact.deleted",
                 "artifact.downloaded",
                 "repository.created",
-                "repository.deleted"
+                "repository.deleted",
+                "artifact.restored",
+                "artifact.purged",
+                "repository.restored",
+                "repository.purged"
               ]
             }
           },
@@ -1640,6 +1655,113 @@
             "format": "int64"
           }
         }
+      },
+      "TrashItem": {
+        "type": "object",
+        "description": "A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at purge_at.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "repository",
+              "maven_artifact",
+              "ivy_artifact",
+              "sbt_artifact",
+              "npm_version",
+              "pypi_package",
+              "nuget_package",
+              "go_module",
+              "cargo_crate",
+              "rubygems_gem",
+              "conda_package",
+              "conan_package",
+              "helm_chart",
+              "raw_artifact",
+              "docker_manifest",
+              "docker_tag",
+              "rpm_package",
+              "deb_package"
+            ]
+          },
+          "repository_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repository": {
+            "type": "string",
+            "description": "Name of the owning repository (the trashed repository itself for kind repository)."
+          },
+          "format": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string",
+            "description": "Package name, file path, image:tag or (kind repository) the repository name."
+          },
+          "version": {
+            "type": "string",
+            "description": "Omitted when the kind has no version."
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "deleted_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "deleted_by": {
+            "type": "string"
+          },
+          "purge_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "deleted_at plus the repository's effective retention."
+          }
+        },
+        "required": [
+          "id",
+          "kind",
+          "repository_id",
+          "repository",
+          "format",
+          "name",
+          "size_bytes",
+          "deleted_at",
+          "deleted_by",
+          "purge_at"
+        ]
+      },
+      "TrashList": {
+        "type": "object",
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/TrashItem"
+            }
+          },
+          "total": {
+            "type": "integer"
+          },
+          "page": {
+            "type": "integer"
+          },
+          "limit": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "items",
+          "total",
+          "page",
+          "limit"
+        ]
       }
     }
   },
@@ -2211,6 +2333,17 @@
                     "type": "boolean",
                     "nullable": true,
                     "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected."
+                  },
+                  "trash_retention_days": {
+                    "type": "integer",
+                    "nullable": true,
+                    "minimum": 0,
+                    "maximum": 36500,
+                    "description": "Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null/absent = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent."
+                  },
+                  "immutable_releases": {
+                    "type": "boolean",
+                    "description": "When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true."
                   }
                 },
                 "required": [
@@ -2237,6 +2370,16 @@
           },
           "403": {
             "description": "Admin access required"
+          },
+          "409": {
+            "description": "A repository with this name already exists, or the name is reserved by a repository in the trash until it is purged or restored (error codes conflict, name_reserved)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -2603,7 +2746,11 @@
                         "artifact.deleted",
                         "artifact.downloaded",
                         "repository.created",
-                        "repository.deleted"
+                        "repository.deleted",
+                        "artifact.restored",
+                        "artifact.purged",
+                        "repository.restored",
+                        "repository.purged"
                       ]
                     }
                   },
@@ -4128,7 +4275,11 @@
                         "artifact.deleted",
                         "artifact.downloaded",
                         "repository.created",
-                        "repository.deleted"
+                        "repository.deleted",
+                        "artifact.restored",
+                        "artifact.purged",
+                        "repository.restored",
+                        "repository.purged"
                       ]
                     }
                   },
@@ -4248,7 +4399,11 @@
                         "artifact.deleted",
                         "artifact.downloaded",
                         "repository.created",
-                        "repository.deleted"
+                        "repository.deleted",
+                        "artifact.restored",
+                        "artifact.purged",
+                        "repository.restored",
+                        "repository.purged"
                       ]
                     }
                   },
@@ -7151,6 +7306,17 @@
                     "type": "boolean",
                     "nullable": true,
                     "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Omit to leave unchanged; send null to inherit."
+                  },
+                  "trash_retention_days": {
+                    "type": "integer",
+                    "nullable": true,
+                    "minimum": 0,
+                    "maximum": 36500,
+                    "description": "Absent leaves it unchanged; an explicit null resets it to the server default; 0..36500 sets it (0 = no trash)."
+                  },
+                  "immutable_releases": {
+                    "type": "boolean",
+                    "description": "When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true."
                   }
                 }
               }
@@ -7173,12 +7339,15 @@
           },
           "403": {
             "description": "Admin access required"
+          },
+          "400": {
+            "description": "Invalid request (for example trash_retention_days out of range)"
           }
         }
       },
       "delete": {
-        "summary": "Delete repository",
-        "description": "Delete a repository (admin only)",
+        "summary": "Delete repository (to the trash)",
+        "description": "Delete a repository (admin only). The request must confirm the repository name, as the `confirm` query parameter or a JSON body {\"confirm\": \"<name>\"}; otherwise 400 confirmation_required. When the repository's trash retention is above 0 the repository is moved to the trash (hidden everywhere, its name stays reserved, restorable and purged after the retention window); with retention 0 it is deleted permanently, contents included.",
         "tags": [
           "Repositories"
         ],
@@ -7190,17 +7359,55 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "confirm",
+            "in": "query",
+            "required": false,
+            "description": "Must equal the repository name (alternatively send it in the JSON body).",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {
           "204": {
-            "description": "Repository deleted"
+            "description": "Repository deleted (moved to the trash, or permanently deleted when retention is 0)"
+          },
+          "400": {
+            "description": "Missing or mismatched confirmation (error code confirmation_required)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
           },
           "404": {
             "description": "Repository not found"
           },
-          "403": {
-            "description": "Admin access required"
+          "409": {
+            "description": "The repository is still referenced (for example by a release bundle or promotion); only possible when it is deleted permanently"
+          }
+        },
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "confirm": {
+                    "type": "string",
+                    "description": "Must equal the repository name."
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -8859,6 +9066,427 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/trash": {
+      "get": {
+        "summary": "List the trash (admin)",
+        "description": "Every soft-deleted package and repository, newest first.",
+        "tags": [
+          "Trash"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Only items of this kind.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "maven_artifact",
+                "ivy_artifact",
+                "sbt_artifact",
+                "npm_version",
+                "pypi_package",
+                "nuget_package",
+                "go_module",
+                "cargo_crate",
+                "rubygems_gem",
+                "conda_package",
+                "conan_package",
+                "helm_chart",
+                "raw_artifact",
+                "docker_manifest",
+                "docker_tag",
+                "rpm_package",
+                "deb_package"
+              ]
+            }
+          },
+          {
+            "name": "repository",
+            "in": "query",
+            "description": "Only items of the repository with this name (a repository that is itself in the trash is not matched by name; its items are hidden).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (default 1).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page (default 50, max 200).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of trashed items, newest deletion first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/trash/{kind}/{id}/restore": {
+      "post": {
+        "summary": "Restore a trashed item or repository (admin)",
+        "description": "Brings the item back, refreshes the repository's generated metadata and emits artifact.restored / repository.restored. Restoring into a name or version that was published meanwhile fails with 409 trash_conflict.",
+        "tags": [
+          "Trash"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "maven_artifact",
+                "ivy_artifact",
+                "sbt_artifact",
+                "npm_version",
+                "pypi_package",
+                "nuget_package",
+                "go_module",
+                "cargo_crate",
+                "rubygems_gem",
+                "conda_package",
+                "conan_package",
+                "helm_chart",
+                "raw_artifact",
+                "docker_manifest",
+                "docker_tag",
+                "rpm_package",
+                "deb_package"
+              ]
+            },
+            "description": "One of the TrashItem kind values."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Trash item id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The restored item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashItem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trash item not found (never deleted, already restored or purged, or not in this repository)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/trash/{kind}/{id}": {
+      "delete": {
+        "summary": "Purge a trashed item now (admin)",
+        "description": "Permanently removes the item before its retention window ends: frees its blobs (a repository's are swept as orphans afterwards), releases quota and emits artifact.purged / repository.purged. Cannot be undone.",
+        "tags": [
+          "Trash"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "maven_artifact",
+                "ivy_artifact",
+                "sbt_artifact",
+                "npm_version",
+                "pypi_package",
+                "nuget_package",
+                "go_module",
+                "cargo_crate",
+                "rubygems_gem",
+                "conda_package",
+                "conan_package",
+                "helm_chart",
+                "raw_artifact",
+                "docker_manifest",
+                "docker_tag",
+                "rpm_package",
+                "deb_package"
+              ]
+            },
+            "description": "One of the TrashItem kind values."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Trash item id."
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Purged"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Trash item not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "The repository is still referenced (for example by a release bundle or promotion)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/trash": {
+      "get": {
+        "summary": "List a repository's trash",
+        "description": "Soft-deleted items of one repository. Requires the repository-scoped delete permission; unknown or trashed repository: 404.",
+        "tags": [
+          "Trash"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "query",
+            "description": "Only items of this kind.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "maven_artifact",
+                "ivy_artifact",
+                "sbt_artifact",
+                "npm_version",
+                "pypi_package",
+                "nuget_package",
+                "go_module",
+                "cargo_crate",
+                "rubygems_gem",
+                "conda_package",
+                "conan_package",
+                "helm_chart",
+                "raw_artifact",
+                "docker_manifest",
+                "docker_tag",
+                "rpm_package",
+                "deb_package"
+              ]
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "description": "Page number (default 1).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Items per page (default 50, max 200).",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of trashed items, newest deletion first",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Delete permission on the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/trash/{kind}/{id}/restore": {
+      "post": {
+        "summary": "Restore an item of a repository",
+        "description": "Like the admin restore, for callers with the repository-scoped delete permission. The item must belong to the repository; kind repository is admin only.",
+        "tags": [
+          "Trash"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "kind",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "repository",
+                "maven_artifact",
+                "ivy_artifact",
+                "sbt_artifact",
+                "npm_version",
+                "pypi_package",
+                "nuget_package",
+                "go_module",
+                "cargo_crate",
+                "rubygems_gem",
+                "conda_package",
+                "conan_package",
+                "helm_chart",
+                "raw_artifact",
+                "docker_manifest",
+                "docker_tag",
+                "rpm_package",
+                "deb_package"
+              ]
+            },
+            "description": "One of the TrashItem kind values."
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "description": "Trash item id."
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The restored item",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashItem"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Trash item not found (never deleted, already restored or purged, or not in this repository)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Delete permission on the repository required (restoring a repository needs an admin)"
           }
         }
       }

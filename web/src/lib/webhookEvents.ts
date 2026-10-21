@@ -9,6 +9,10 @@ export const WEBHOOK_EVENTS = [
   'artifact.downloaded',
   'repository.created',
   'repository.deleted',
+  'artifact.restored',
+  'artifact.purged',
+  'repository.restored',
+  'repository.purged',
 ] as const
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number]

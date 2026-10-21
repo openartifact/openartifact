@@ -539,9 +539,33 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete:
 			return routeScope{action: actionForMethod(method), repoName: segs[1]}
 		}
+	case isRepoTrashRoute(method, segs):
+		// Viewing and restoring a repository's trash is part of managing its
+		// deletions: the repo-scoped `delete` permission, whatever the method.
+		// (Purging and the global /api/v1/trash routes stay administrative.)
+		return routeScope{action: "delete", repoName: segs[1]}
 	}
 
 	return manage
+}
+
+// isRepoTrashRoute reports whether segs (of an /api/v1/ path) is one of the
+// repository-scoped trash routes: GET repositories/{name}/trash and POST
+// repositories/{name}/trash/{kind}/{id}/restore. Anything else under
+// .../trash (a purge, odd shapes) falls back to the administrative default.
+func isRepoTrashRoute(method string, segs []string) bool {
+	if len(segs) < 3 || segs[0] != "repositories" || !isPlainName(segs[1]) || segs[2] != "trash" {
+		return false
+	}
+
+	switch len(segs) {
+	case 3:
+		return isSafeMethod(method)
+	case 6:
+		return method == http.MethodPost && isSingleSegment(segs[3]) && isSingleSegment(segs[4]) && segs[5] == "restore"
+	}
+
+	return false
 }
 
 // isPlainName reports whether an escaped path segment is a repository name
@@ -571,9 +595,9 @@ func isSPARepoPath(segments []string) bool {
 	switch len(segments) {
 	case 2: // /repos/{name}, /repos/new
 		return true
-	case 3: // /repos/{name}/edit|browse|graph
+	case 3: // /repos/{name}/edit|browse|graph|trash
 		switch segments[2] {
-		case "edit", "browse", "graph":
+		case "edit", "browse", "graph", "trash":
 			return true
 		}
 

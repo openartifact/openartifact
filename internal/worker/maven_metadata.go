@@ -86,8 +86,15 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		return fmt.Errorf("maven worker: querying artifacts: %w", err)
 	}
 
+	groupPath := strings.ReplaceAll(groupID, ".", "/")
+	dir := groupPath + "/" + artifactID + "/"
+
+	// Paths of the metadata files this run writes; everything else below dir
+	// is pruned so it never advertises versions that no longer have a live file.
+	keep := make([]string, 0, 4)
+
 	if len(arts) == 0 {
-		return nil
+		return w.pruneMetadata(ctx, repoID, dir, keep)
 	}
 
 	versionSet := make(map[string]struct{})
@@ -112,8 +119,6 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		}
 	}
 
-	groupPath := strings.ReplaceAll(groupID, ".", "/")
-
 	xmlData, err := fmtmaven.GenerateGroupMetadataXML(groupID, artifactID, versions, latestRelease, latestVersion, time.Now().UTC())
 	if err != nil {
 		return fmt.Errorf("maven worker: generating group metadata xml: %w", err)
@@ -134,7 +139,8 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		return fmt.Errorf("maven worker: storing group metadata blob: %w", err)
 	}
 
-	groupMetaPath := groupPath + "/" + artifactID + "/maven-metadata.xml"
+	groupMetaPath := dir + "maven-metadata.xml"
+	keep = append(keep, groupMetaPath)
 	if err := w.db.UpsertRepoMetadata(ctx, &models.RepoMetadata{
 		RepositoryID:  repoID,
 		Path:          groupMetaPath,
@@ -224,7 +230,8 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 			return fmt.Errorf("maven worker: storing snapshot metadata blob: %w", err)
 		}
 
-		snapMetaPath := groupPath + "/" + artifactID + "/" + snapVersion + "/maven-metadata.xml"
+		snapMetaPath := dir + snapVersion + "/maven-metadata.xml"
+		keep = append(keep, snapMetaPath)
 		if err := w.db.UpsertRepoMetadata(ctx, &models.RepoMetadata{
 			RepositoryID:  repoID,
 			Path:          snapMetaPath,
@@ -234,6 +241,23 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		}); err != nil {
 			return fmt.Errorf("maven worker: upserting snapshot metadata for %s: %w", snapVersion, err)
 		}
+	}
+
+	return w.pruneMetadata(ctx, repoID, dir, keep)
+}
+
+// pruneMetadata removes generated metadata rows under dir except keep, when
+// the database can (the PostgreSQL implementation does).
+func (w *MavenMetadataWorker) pruneMetadata(ctx context.Context, repoID, dir string, keep []string) error {
+	pruner, ok := w.db.(interface {
+		PruneMavenMetadata(ctx context.Context, repositoryID, dir string, keep []string) error
+	})
+	if !ok {
+		return nil
+	}
+
+	if err := pruner.PruneMavenMetadata(ctx, repoID, dir, keep); err != nil {
+		return fmt.Errorf("maven worker: %w", err)
 	}
 
 	return nil

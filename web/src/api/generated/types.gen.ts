@@ -151,6 +151,14 @@ export type Repository = {
      * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected.
      */
     presign_downloads?: boolean | null;
+    /**
+     * Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent.
+     */
+    trash_retention_days?: number | null;
+    /**
+     * When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true.
+     */
+    immutable_releases?: boolean;
 };
 
 export type RepositoryMember = {
@@ -198,7 +206,7 @@ export type Webhook = {
     repository_id?: string;
     name?: string;
     url?: string;
-    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
+    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
     content_type?: string;
     ssl_verify?: boolean;
     max_retries?: number;
@@ -644,6 +652,45 @@ export type PresignedUploadResult = {
     size: number;
 };
 
+/**
+ * A soft-deleted package row or repository. It is hidden everywhere else until restored; the retention purge removes it at purge_at.
+ */
+export type TrashItem = {
+    /**
+     * Primary key of the trashed row (the repository id for kind repository). Together with kind it addresses the item.
+     */
+    id: string;
+    kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+    repository_id: string;
+    /**
+     * Name of the owning repository (the trashed repository itself for kind repository).
+     */
+    repository: string;
+    format: string;
+    /**
+     * Package name, file path, image:tag or (kind repository) the repository name.
+     */
+    name: string;
+    /**
+     * Omitted when the kind has no version.
+     */
+    version?: string;
+    size_bytes: number;
+    deleted_at: string;
+    deleted_by: string;
+    /**
+     * deleted_at plus the repository's effective retention.
+     */
+    purge_at: string;
+};
+
+export type TrashList = {
+    items: Array<TrashItem>;
+    total: number;
+    page: number;
+    limit: number;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -978,6 +1025,14 @@ export type PostApiV1RepositoriesData = {
          * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected.
          */
         presign_downloads?: boolean | null;
+        /**
+         * Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null/absent = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent.
+         */
+        trash_retention_days?: number | null;
+        /**
+         * When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true.
+         */
+        immutable_releases?: boolean;
     };
     path?: never;
     query?: never;
@@ -993,7 +1048,13 @@ export type PostApiV1RepositoriesErrors = {
      * Admin access required
      */
     403: unknown;
+    /**
+     * A repository with this name already exists, or the name is reserved by a repository in the trash until it is purged or restored (error codes conflict, name_reserved)
+     */
+    409: Error;
 };
+
+export type PostApiV1RepositoriesError = PostApiV1RepositoriesErrors[keyof PostApiV1RepositoriesErrors];
 
 export type PostApiV1RepositoriesResponses = {
     /**
@@ -1177,7 +1238,7 @@ export type PostApiV1RepositoriesByNameWebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
         content_type?: string;
         ssl_verify?: boolean;
         max_retries?: number;
@@ -2031,7 +2092,7 @@ export type PostApiV1WebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
         content_type?: string;
         ssl_verify?: boolean;
         max_retries?: number;
@@ -2107,7 +2168,7 @@ export type PutApiV1WebhooksByIdData = {
         name?: string;
         url?: string;
         secret?: string;
-        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted'>;
+        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
         content_type?: string;
         ssl_verify?: boolean;
         max_retries?: number;
@@ -3845,15 +3906,29 @@ export type GetApiV1RepositoriesByNamePackagesByIdDownloadResponses = {
 export type GetApiV1RepositoriesByNamePackagesByIdDownloadResponse = GetApiV1RepositoriesByNamePackagesByIdDownloadResponses[keyof GetApiV1RepositoriesByNamePackagesByIdDownloadResponses];
 
 export type DeleteApiV1RepositoryByNameData = {
-    body?: never;
+    body?: {
+        /**
+         * Must equal the repository name.
+         */
+        confirm?: string;
+    };
     path: {
         name: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Must equal the repository name (alternatively send it in the JSON body).
+         */
+        confirm?: string;
+    };
     url: '/api/v1/repository/{name}';
 };
 
 export type DeleteApiV1RepositoryByNameErrors = {
+    /**
+     * Missing or mismatched confirmation (error code confirmation_required)
+     */
+    400: Error;
     /**
      * Admin access required
      */
@@ -3862,11 +3937,17 @@ export type DeleteApiV1RepositoryByNameErrors = {
      * Repository not found
      */
     404: unknown;
+    /**
+     * The repository is still referenced (for example by a release bundle or promotion); only possible when it is deleted permanently
+     */
+    409: unknown;
 };
+
+export type DeleteApiV1RepositoryByNameError = DeleteApiV1RepositoryByNameErrors[keyof DeleteApiV1RepositoryByNameErrors];
 
 export type DeleteApiV1RepositoryByNameResponses = {
     /**
-     * Repository deleted
+     * Repository deleted (moved to the trash, or permanently deleted when retention is 0)
      */
     204: void;
 };
@@ -3921,6 +4002,14 @@ export type PatchApiV1RepositoryByNameData = {
          * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Omit to leave unchanged; send null to inherit.
          */
         presign_downloads?: boolean | null;
+        /**
+         * Absent leaves it unchanged; an explicit null resets it to the server default; 0..36500 sets it (0 = no trash).
+         */
+        trash_retention_days?: number | null;
+        /**
+         * When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true.
+         */
+        immutable_releases?: boolean;
     };
     path: {
         name: string;
@@ -3930,6 +4019,10 @@ export type PatchApiV1RepositoryByNameData = {
 };
 
 export type PatchApiV1RepositoryByNameErrors = {
+    /**
+     * Invalid request (for example trash_retention_days out of range)
+     */
+    400: unknown;
     /**
      * Admin access required
      */
@@ -4989,3 +5082,212 @@ export type PostApiV1RepositoriesByNameUploadsByIdCompleteResponses = {
 };
 
 export type PostApiV1RepositoriesByNameUploadsByIdCompleteResponse = PostApiV1RepositoriesByNameUploadsByIdCompleteResponses[keyof PostApiV1RepositoriesByNameUploadsByIdCompleteResponses];
+
+export type GetApiV1TrashData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only items of this kind.
+         */
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        /**
+         * Only items of the repository with this name (a repository that is itself in the trash is not matched by name; its items are hidden).
+         */
+        repository?: string;
+        /**
+         * Page number (default 1).
+         */
+        page?: number;
+        /**
+         * Items per page (default 50, max 200).
+         */
+        limit?: number;
+    };
+    url: '/api/v1/trash';
+};
+
+export type GetApiV1TrashErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1TrashResponses = {
+    /**
+     * A page of trashed items, newest deletion first
+     */
+    200: TrashList;
+};
+
+export type GetApiV1TrashResponse = GetApiV1TrashResponses[keyof GetApiV1TrashResponses];
+
+export type PostApiV1TrashByKindByIdRestoreData = {
+    body?: never;
+    path: {
+        /**
+         * One of the TrashItem kind values.
+         */
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        /**
+         * Trash item id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/trash/{kind}/{id}/restore';
+};
+
+export type PostApiV1TrashByKindByIdRestoreErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Trash item not found (never deleted, already restored or purged, or not in this repository)
+     */
+    404: Error;
+    /**
+     * trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.
+     */
+    409: Error;
+};
+
+export type PostApiV1TrashByKindByIdRestoreError = PostApiV1TrashByKindByIdRestoreErrors[keyof PostApiV1TrashByKindByIdRestoreErrors];
+
+export type PostApiV1TrashByKindByIdRestoreResponses = {
+    /**
+     * The restored item
+     */
+    200: TrashItem;
+};
+
+export type PostApiV1TrashByKindByIdRestoreResponse = PostApiV1TrashByKindByIdRestoreResponses[keyof PostApiV1TrashByKindByIdRestoreResponses];
+
+export type DeleteApiV1TrashByKindByIdData = {
+    body?: never;
+    path: {
+        /**
+         * One of the TrashItem kind values.
+         */
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        /**
+         * Trash item id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/trash/{kind}/{id}';
+};
+
+export type DeleteApiV1TrashByKindByIdErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Trash item not found
+     */
+    404: Error;
+    /**
+     * The repository is still referenced (for example by a release bundle or promotion)
+     */
+    409: Error;
+};
+
+export type DeleteApiV1TrashByKindByIdError = DeleteApiV1TrashByKindByIdErrors[keyof DeleteApiV1TrashByKindByIdErrors];
+
+export type DeleteApiV1TrashByKindByIdResponses = {
+    /**
+     * Purged
+     */
+    204: void;
+};
+
+export type DeleteApiV1TrashByKindByIdResponse = DeleteApiV1TrashByKindByIdResponses[keyof DeleteApiV1TrashByKindByIdResponses];
+
+export type GetApiV1RepositoriesByNameTrashData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        /**
+         * Only items of this kind.
+         */
+        kind?: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        /**
+         * Page number (default 1).
+         */
+        page?: number;
+        /**
+         * Items per page (default 50, max 200).
+         */
+        limit?: number;
+    };
+    url: '/api/v1/repositories/{name}/trash';
+};
+
+export type GetApiV1RepositoriesByNameTrashErrors = {
+    /**
+     * Delete permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameTrashResponses = {
+    /**
+     * A page of trashed items, newest deletion first
+     */
+    200: TrashList;
+};
+
+export type GetApiV1RepositoriesByNameTrashResponse = GetApiV1RepositoriesByNameTrashResponses[keyof GetApiV1RepositoriesByNameTrashResponses];
+
+export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * One of the TrashItem kind values.
+         */
+        kind: 'repository' | 'maven_artifact' | 'ivy_artifact' | 'sbt_artifact' | 'npm_version' | 'pypi_package' | 'nuget_package' | 'go_module' | 'cargo_crate' | 'rubygems_gem' | 'conda_package' | 'conan_package' | 'helm_chart' | 'raw_artifact' | 'docker_manifest' | 'docker_tag' | 'rpm_package' | 'deb_package';
+        /**
+         * Trash item id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/trash/{kind}/{id}/restore';
+};
+
+export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreErrors = {
+    /**
+     * Delete permission on the repository required (restoring a repository needs an admin)
+     */
+    403: unknown;
+    /**
+     * Trash item not found (never deleted, already restored or purged, or not in this repository)
+     */
+    404: Error;
+    /**
+     * trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.
+     */
+    409: Error;
+};
+
+export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreError = PostApiV1RepositoriesByNameTrashByKindByIdRestoreErrors[keyof PostApiV1RepositoriesByNameTrashByKindByIdRestoreErrors];
+
+export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses = {
+    /**
+     * The restored item
+     */
+    200: TrashItem;
+};
+
+export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponse = PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses[keyof PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses];

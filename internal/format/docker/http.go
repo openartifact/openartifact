@@ -33,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -364,6 +365,10 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if !strings.HasPrefix(reference, "sha256:") && !h.tagMoveAllowed(w, r, repo, image, reference, digest) {
+		return
+	}
+
 	// The blobs and child manifests this body references are stored with the
 	// manifest so registry GC can tell what is still in use.
 	refs := ocimanifest.ParseRefs(body)
@@ -458,6 +463,36 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusCreated)
 }
 
+// tagMoveAllowed reports whether pushing digest under tagName may proceed. On
+// an immutable-releases repository an existing tag cannot be re-pointed to a
+// different digest (every docker tag is a release) unless an admin forces it;
+// re-pushing the same digest is idempotent and always allowed. When it returns
+// false the error response has been written.
+func (h *HTTPHandler) tagMoveAllowed(w http.ResponseWriter, r *http.Request, repo *models.Repository, image, tagName, digest string) bool {
+	if !repo.ImmutableReleases {
+		return true
+	}
+
+	existing, err := h.db.GetDockerTag(r.Context(), repo.ID, image, tagName)
+	if err != nil {
+		h.log.Errorw("failed to get tag before push", "tag", tagName, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return false
+	}
+
+	if existing == nil || existing.ManifestDigest == digest {
+		return true
+	}
+
+	if err := trash.GuardRelease(r, repo, "docker", tagName); err != nil {
+		h.deleteError(w, "tag", tagName, err)
+		return false
+	}
+
+	return true
+}
+
 // handleDeleteManifest deletes a tag or a manifest. Deleting by tag removes
 // only that tag; the manifest stays reachable by digest, as other tags may
 // still point at it. Deleting by digest removes the manifest and every tag of
@@ -492,27 +527,23 @@ func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	if err := h.db.DeleteDockerTagsByDigest(r.Context(), repo.ID, image, reference); err != nil {
-		h.log.Errorw("failed to delete tags of manifest", "digest", reference, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
+	if err := trash.GuardRelease(r, repo, "docker", reference); err != nil {
+		h.deleteError(w, "manifest", reference, err)
 		return
 	}
 
-	// Delete the manifest row first so BlobReferenceCount no longer sees it.
-	if err := h.db.DeleteDockerManifest(r.Context(), repo.ID, image, reference); err != nil {
-		h.log.Errorw("failed to delete manifest", "digest", reference, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	// Reclaim the manifest's content blob from storage only if no other
-	// docker_manifests row (or any other format table) still references it.
-	if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, manifestBlobKey(reference)); err != nil {
-		h.log.Errorw("failed to delete manifest blob from store", "digest", reference, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
+	// Soft delete trashes the manifest together with every tag of the image
+	// that pointed at it (one transaction in TrashRows); the manifest row keeps
+	// its blob and layer references until purge. The permanent path below runs
+	// for repositories with immediate deletion.
+	err = trash.Delete(r.Context(), h.db, trash.Request{
+		RepoID:   repo.ID,
+		Kind:     models.TrashKindDockerManifest,
+		IDs:      []string{deleted.ID},
+		Resource: name + "@" + reference,
+	}, func() error { return h.hardDeleteManifest(r.Context(), repo.ID, image, reference) })
+	if err != nil {
+		h.deleteError(w, "manifest", reference, err)
 		return
 	}
 
@@ -527,6 +558,43 @@ func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Reques
 	}))
 
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// hardDeleteManifest permanently removes a manifest and the tags pointing at
+// it, then its content blob when nothing else references it. Layer blobs are
+// never touched here; registry GC reclaims them.
+func (h *HTTPHandler) hardDeleteManifest(ctx context.Context, repoID, image, digest string) error {
+	if err := h.db.DeleteDockerTagsByDigest(ctx, repoID, image, digest); err != nil {
+		return fmt.Errorf("delete tags of manifest: %w", err)
+	}
+
+	// Delete the manifest row first so BlobReferenceCount no longer sees it.
+	if err := h.db.DeleteDockerManifest(ctx, repoID, image, digest); err != nil {
+		return fmt.Errorf("delete manifest: %w", err)
+	}
+
+	// Reclaim the manifest's content blob from storage only if no other
+	// docker_manifests row (a trashed copy included) or any other format table
+	// still references it.
+	if err := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, manifestBlobKey(digest)); err != nil {
+		return fmt.Errorf("delete manifest blob from store: %w", err)
+	}
+
+	return nil
+}
+
+// deleteError answers a failed tag/manifest delete: 404 when the row is no
+// longer live, 409 when the repository's immutable_releases forbids it.
+func (h *HTTPHandler) deleteError(w http.ResponseWriter, what, reference string, err error) {
+	switch {
+	case errors.Is(err, database.ErrTrashNotFound):
+		h.errorResponse(w, http.StatusNotFound, "MANIFEST_UNKNOWN", what+" not found")
+	case errors.Is(err, trash.ErrImmutableRelease):
+		h.errorResponse(w, http.StatusConflict, "DENIED", "released versions are immutable in this repository")
+	default:
+		h.log.Errorw("failed to delete "+what, what, reference, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+	}
 }
 
 // deleteTag removes one tag of an image, leaving its manifest in place.
@@ -544,10 +612,25 @@ func (h *HTTPHandler) deleteTag(w http.ResponseWriter, r *http.Request, repo *mo
 		return
 	}
 
-	if err := h.db.DeleteDockerTag(r.Context(), repo.ID, image, tagName); err != nil {
-		h.log.Errorw("failed to delete tag", "tag", tagName, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+	if err := trash.GuardRelease(r, repo, "docker", tagName); err != nil {
+		h.deleteError(w, "tag", tagName, err)
+		return
+	}
 
+	err = trash.Delete(r.Context(), h.db, trash.Request{
+		RepoID:   repo.ID,
+		Kind:     models.TrashKindDockerTag,
+		IDs:      []string{tag.ID},
+		Resource: name + ":" + tagName,
+	}, func() error {
+		if err := h.db.DeleteDockerTag(r.Context(), repo.ID, image, tagName); err != nil {
+			return fmt.Errorf("delete tag: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		h.deleteError(w, "tag", tagName, err)
 		return
 	}
 

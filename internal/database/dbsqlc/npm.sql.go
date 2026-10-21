@@ -98,16 +98,20 @@ func (q *Queries) DeleteNPMDistTag(ctx context.Context, arg DeleteNPMDistTagPara
 }
 
 const deleteNPMPackage = `-- name: DeleteNPMPackage :exec
-DELETE FROM npm_packages WHERE id = $1
+DELETE FROM npm_packages
+WHERE npm_packages.id = $1
+  AND NOT EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = npm_packages.id)
 `
 
+// Only removes a package with no version row left at all, so the FK cascade
+// never takes trashed versions with it.
 func (q *Queries) DeleteNPMPackage(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deleteNPMPackage, id)
 	return err
 }
 
 const deleteNPMVersion = `-- name: DeleteNPMVersion :exec
-DELETE FROM npm_versions WHERE package_id = $1 AND version = $2
+DELETE FROM npm_versions WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
 `
 
 type DeleteNPMVersionParams struct {
@@ -121,7 +125,10 @@ func (q *Queries) DeleteNPMVersion(ctx context.Context, arg DeleteNPMVersionPara
 }
 
 const getNPMDistTags = `-- name: GetNPMDistTags :many
-SELECT tag, version FROM npm_dist_tags WHERE package_id = $1
+SELECT d.tag, d.version FROM npm_dist_tags d
+WHERE d.package_id = $1
+  AND EXISTS (SELECT 1 FROM npm_versions v
+              WHERE v.package_id = d.package_id AND v.version = d.version AND v.deleted_at IS NULL)
 `
 
 type GetNPMDistTagsRow struct {
@@ -129,6 +136,8 @@ type GetNPMDistTagsRow struct {
 	Version string `db:"version" json:"version"`
 }
 
+// Tags pointing at a trashed version are hidden but kept, so a restore brings
+// them back.
 func (q *Queries) GetNPMDistTags(ctx context.Context, packageID string) ([]GetNPMDistTagsRow, error) {
 	rows, err := q.db.Query(ctx, getNPMDistTags, packageID)
 	if err != nil {
@@ -157,6 +166,7 @@ SELECT id, repository_id,
        packument_stale, created_at, updated_at
 FROM npm_packages
 WHERE repository_id = $1 AND full_name = $2
+  AND EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = npm_packages.id AND v.deleted_at IS NULL)
 `
 
 type GetNPMPackageByNameParams struct {
@@ -164,6 +174,7 @@ type GetNPMPackageByNameParams struct {
 	FullName     string `db:"full_name" json:"full_name"`
 }
 
+// A package with no live version (all trashed) does not exist.
 func (q *Queries) GetNPMPackageByName(ctx context.Context, arg GetNPMPackageByNameParams) (NpmPackage, error) {
 	row := q.db.QueryRow(ctx, getNPMPackageByName, arg.RepositoryID, arg.FullName)
 	var i NpmPackage
@@ -184,7 +195,7 @@ func (q *Queries) GetNPMPackageByName(ctx context.Context, arg GetNPMPackageByNa
 const getNPMVersion = `-- name: GetNPMVersion :one
 SELECT id, package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at
 FROM npm_versions
-WHERE package_id = $1 AND version = $2
+WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
 `
 
 type GetNPMVersionParams struct {
@@ -224,7 +235,7 @@ func (q *Queries) GetNPMVersion(ctx context.Context, arg GetNPMVersionParams) (G
 const getNPMVersionsByPackage = `-- name: GetNPMVersionsByPackage :many
 SELECT id, package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at
 FROM npm_versions
-WHERE package_id = $1
+WHERE package_id = $1 AND deleted_at IS NULL
 `
 
 type GetNPMVersionsByPackageRow struct {
@@ -277,6 +288,7 @@ SELECT id, repository_id,
        packument_stale, created_at, updated_at
 FROM npm_packages
 WHERE repository_id = $1
+  AND EXISTS (SELECT 1 FROM npm_versions v WHERE v.package_id = npm_packages.id AND v.deleted_at IS NULL)
 `
 
 func (q *Queries) ListAllNPMPackages(ctx context.Context, repositoryID string) ([]NpmPackage, error) {
@@ -316,7 +328,7 @@ SELECT nv.id, nv.package_id, nv.version, nv.manifest_json, nv.integrity, nv.shas
 FROM npm_versions nv
 JOIN npm_packages np ON np.id = nv.package_id
 JOIN blobs b ON b.id = nv.blob_id
-WHERE np.repository_id = $1
+WHERE np.repository_id = $1 AND nv.deleted_at IS NULL
 `
 
 type ListNPMVersionsByRepoRow struct {

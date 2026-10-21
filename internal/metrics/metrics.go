@@ -21,6 +21,7 @@ type Registry struct {
 	MetadataRegenerationsTotal          *prometheus.CounterVec
 	MetadataRegenerationDurationSeconds *prometheus.HistogramVec
 	AuditDroppedTotal                   prometheus.Counter
+	TrashPurgedTotal                    *prometheus.CounterVec
 }
 
 // NewRegistry creates all metrics, registers them on the default Prometheus
@@ -68,6 +69,11 @@ func NewRegistry() *Registry {
 			Name: "openartifact_audit_dropped_total",
 			Help: "Total number of audit events dropped due to backpressure.",
 		}),
+
+		TrashPurgedTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_trash_purged_total",
+			Help: "Total number of trashed items permanently removed by the retention purge, by kind.",
+		}, []string{"kind"}),
 	}
 
 	prometheus.MustRegister(
@@ -79,6 +85,7 @@ func NewRegistry() *Registry {
 		r.MetadataRegenerationsTotal,
 		r.MetadataRegenerationDurationSeconds,
 		r.AuditDroppedTotal,
+		r.TrashPurgedTotal,
 	)
 
 	return r
