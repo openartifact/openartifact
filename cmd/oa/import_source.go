@@ -90,6 +90,10 @@ type sourceHTTP struct {
 	user   string
 	token  string
 	client *http.Client
+	// retry re-runs metadata reads after transient failures. Downloads are
+	// not retried here: a failure can strike mid-stream, so the importer
+	// re-opens the asset as part of retrying the whole transfer.
+	retry *retrier
 }
 
 func newSourceHTTP(base *url.URL, user, token string, client *http.Client) *sourceHTTP {
@@ -132,12 +136,16 @@ func (s *sourceHTTP) do(ctx context.Context, method, rawURL string, body io.Read
 func statusError(resp *http.Response, what string) error {
 	snippet, _ := io.ReadAll(io.LimitReader(resp.Body, maxErrBody))
 
-	return fmt.Errorf("%w: %s: HTTP %d: %s", errHTTP, what, resp.StatusCode, strings.TrimSpace(string(snippet)))
+	return newStatusError(resp, what, strings.TrimSpace(string(snippet)))
 }
 
 // getJSON GETs rawURL and decodes a 200 response into v. A 404 yields
 // errNotFound so callers can treat absence as data.
 func (s *sourceHTTP) getJSON(ctx context.Context, rawURL string, v any) error {
+	return s.retry.do(ctx, "GET "+redactURL(rawURL), func(int) error { return s.getJSONOnce(ctx, rawURL, v) })
+}
+
+func (s *sourceHTTP) getJSONOnce(ctx context.Context, rawURL string, v any) error {
 	resp, err := s.do(ctx, http.MethodGet, rawURL, nil, "")
 	if err != nil {
 		return err
@@ -468,6 +476,21 @@ type aqlResponse struct {
 }
 
 func (a *artifactorySource) aqlPage(ctx context.Context, repo string, offset int) (aqlResponse, error) {
+	var page aqlResponse
+
+	// The AQL POST only reads, so it is safe to repeat like a GET.
+	err := a.http.retry.do(ctx, "AQL listing of "+strconv.Quote(repo), func(int) error {
+		var err error
+
+		page, err = a.aqlPageOnce(ctx, repo, offset)
+
+		return err
+	})
+
+	return page, err
+}
+
+func (a *artifactorySource) aqlPageOnce(ctx context.Context, repo string, offset int) (aqlResponse, error) {
 	what := "AQL listing of " + strconv.Quote(repo)
 
 	resp, err := a.http.do(ctx, http.MethodPost, a.http.resolve("/api/search/aql"),

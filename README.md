@@ -248,12 +248,35 @@ Flags:
 | `--deb-distribution`, `--deb-component` | Fallback Debian placement, see below. |
 | `--artifactory-listing aql\|storage` | How Artifactory is enumerated. `aql` (default) needs one query per 1000 files and carries creation time and properties; `storage` uses the storage API with extra calls per file. |
 | `--path-prefix P` | Only import assets whose repository path starts with `P` (for example `com/acme/`), e.g. to migrate or test in slices. |
+| `--retries N` | Retries after a transient failure of a source request or an upload (default 3; `0` disables). See "Retries" below. |
+| `--retry-max-wait D` | Longest wait between retries, a Go duration (default `30s`). Backoff never exceeds it; a `Retry-After` above it is not waited out. |
 | `--quiet` | Only print the summary. `--format json` prints the summary as JSON. |
 
 The command exits non-zero when any asset failed (or the run was interrupted);
 re-run the same command to retry only what is missing. It is idempotent: an
 asset whose SHA-256 is already in the destination is not uploaded again, with or
 without a state file.
+
+**Retries.** Transient failures are retried up to `--retries` times with
+exponential backoff (0.5 s, 1 s, 2 s, … capped at `--retry-max-wait`) and
+jitter. Retried: connection errors and timeouts, a response body that ends
+early, and HTTP 408, 429 and 5xx. Never retried: any other 4xx (400, 401, 403,
+404, 409, …), checksum/verification failures, and cancellation. `Retry-After`
+(seconds or an HTTP date) on a 429 or 503 is used as the wait instead of the
+backoff; when it exceeds `--retry-max-wait` the asset fails right away so the
+run can be resumed later.
+
+- Source reads (repository and asset listings, per-file details, downloads) are
+  always safe to repeat. Every attempt re-opens the source stream, so files are
+  never buffered and a download that dies mid-stream restarts from byte 0.
+- Uploads are repeated only when that cannot create a duplicate. Maven and raw
+  are `PUT`s that overwrite in place. For deb and rpm the destination is first
+  looked up by SHA-256: if the earlier attempt actually landed (only its
+  response was lost) the package is accepted as uploaded, otherwise the upload
+  is sent again. A deb/rpm asset whose source reports no SHA-256 cannot be
+  checked, so its failed upload is not retried.
+- The summary shows the number of retries performed (`retries`, also in the
+  JSON output). A failure that exhausted its retries says so in its message.
 
 **Requirements.** Use an OpenArtifact **admin** access token (`oa auth login`
 or `OA_TOKEN`): the importer calls the repository management and property APIs

@@ -98,7 +98,7 @@ func serverError(resp *http.Response, what string) error {
 		}
 	}
 
-	return fmt.Errorf("%w: %s: HTTP %d: %s", errHTTP, what, resp.StatusCode, msg)
+	return newStatusError(resp, what, msg)
 }
 
 // ensureRepo checks that the destination repository exists with the right
@@ -192,10 +192,9 @@ func (ix *targetIndex) lookup(p, sha string) (indexEntry, bool) {
 	return indexEntry{}, false
 }
 
-// loadIndex pages through the repository's package listing.
-func (t *importTarget) loadIndex(ctx context.Context, name string, f importFormat) (*targetIndex, error) {
-	ix := &targetIndex{format: f, byPath: map[string]indexEntry{}, bySHA: map[string]indexEntry{}}
-
+// eachPackage pages through the repository's package listing until fn returns
+// false or the listing ends.
+func (t *importTarget) eachPackage(ctx context.Context, name string, f importFormat, fn func(id, sha, filename string) bool) error {
 	for page, seen := 1, 0; ; page++ {
 		var resp struct {
 			Total    int `json:"total"`
@@ -208,20 +207,57 @@ func (t *importTarget) loadIndex(ctx context.Context, name string, f importForma
 
 		q := "?format=" + url.QueryEscape(string(f)) + "&page=" + strconv.Itoa(page) + "&limit=" + strconv.Itoa(indexPageSize)
 		if _, err := t.getJSON(ctx, "/api/v1/repositories/"+url.PathEscape(name)+"/packages"+q, &resp); err != nil {
-			return nil, fmt.Errorf("listing existing packages of %q: %w", name, err)
+			return fmt.Errorf("listing existing packages of %q: %w", name, err)
 		}
 
 		for _, p := range resp.Packages {
-			e := indexEntry{ID: p.ID, SHA256: p.SHA256}
-			ix.byPath[p.Filename] = e
-			ix.bySHA[p.SHA256] = e
+			if !fn(p.ID, p.SHA256, p.Filename) {
+				return nil
+			}
 		}
 
 		seen += len(resp.Packages)
 		if len(resp.Packages) == 0 || seen >= resp.Total {
-			return ix, nil
+			return nil
 		}
 	}
+}
+
+// loadIndex pages through the repository's package listing.
+func (t *importTarget) loadIndex(ctx context.Context, name string, f importFormat) (*targetIndex, error) {
+	ix := &targetIndex{format: f, byPath: map[string]indexEntry{}, bySHA: map[string]indexEntry{}}
+
+	err := t.eachPackage(ctx, name, f, func(id, sha, filename string) bool {
+		e := indexEntry{ID: id, SHA256: sha}
+		ix.byPath[filename] = e
+		ix.bySHA[sha] = e
+
+		return true
+	})
+	if err != nil {
+		return nil, err
+	}
+
+	return ix, nil
+}
+
+// findBySHA looks for a package with the given content digest in the
+// repository, as a fresh read of the server's state.
+func (t *importTarget) findBySHA(ctx context.Context, name string, f importFormat, sha string) (indexEntry, bool, error) {
+	var (
+		found indexEntry
+		ok    bool
+	)
+
+	err := t.eachPackage(ctx, name, f, func(id, s, _ string) bool {
+		if s == sha {
+			found, ok = indexEntry{ID: id, SHA256: s}, true
+		}
+
+		return !ok
+	})
+
+	return found, ok, err
 }
 
 // uploadMeta is what travels with an asset besides its bytes.

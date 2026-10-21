@@ -367,7 +367,9 @@ func TestImportRawKeepsExistingContentOnFailure(t *testing.T) {
 }
 
 func TestParseImportFlags(t *testing.T) {
-	env := func(k string) string { return map[string]string{envSourceToken: " tok-from-env \n", envSourceUser: "envuser"}[k] }
+	env := func(k string) string {
+		return map[string]string{envSourceToken: " tok-from-env \n", envSourceUser: "envuser"}[k]
+	}
 	tokenFile := filepath.Join(t.TempDir(), "tok")
 
 	if err := os.WriteFile(tokenFile, []byte("tok-from-file\n"), 0o600); err != nil {

@@ -66,6 +66,11 @@ type importConfig struct {
 	Listing     string
 	Quiet       bool
 	PathPrefix  string
+
+	Retries      int
+	RetryMaxWait time.Duration
+	// retrier is shared by the source and the importer; nil disables retries.
+	retrier *retrier
 }
 
 type repoFlag []repoMapping
@@ -120,6 +125,8 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 	fs.StringVar(&cfg.Listing, "artifactory-listing", listingAQL, "Artifactory listing mode: aql or storage")
 	fs.StringVar(&cfg.PathPrefix, "path-prefix", "", "only import assets whose repository path starts with this prefix (e.g. com/acme/)")
 	fs.BoolVar(&cfg.Quiet, "quiet", false, "only print the summary")
+	fs.IntVar(&cfg.Retries, "retries", defaultImportRetries, "retries after a transient failure of a source request or an upload (0 disables)")
+	fs.DurationVar(&cfg.RetryMaxWait, "retry-max-wait", defaultImportRetryMaxWait, "longest wait between retries; a Retry-After above it is not waited out")
 
 	if err := fs.Parse(args[1:]); err != nil {
 		return importConfig{}, err
@@ -137,7 +144,13 @@ func parseImportFlags(args []string, getenv func(string) string, stdin io.Reader
 		return importConfig{}, err
 	}
 
-	return cfg, cfg.validate()
+	if err := cfg.validate(); err != nil {
+		return importConfig{}, err
+	}
+
+	cfg.retrier = newRetrier(cfg.Retries, cfg.RetryMaxWait)
+
+	return cfg, nil
 }
 
 func (c *importConfig) validate() error {
@@ -146,6 +159,10 @@ func (c *importConfig) validate() error {
 		return fmt.Errorf("%w: at least one --repo is required", errImportUsage)
 	case c.Concurrency < 1:
 		return fmt.Errorf("%w: --concurrency must be at least 1", errImportUsage)
+	case c.Retries < 0:
+		return fmt.Errorf("%w: --retries must not be negative", errImportUsage)
+	case c.RetryMaxWait <= 0:
+		return fmt.Errorf("%w: --retry-max-wait must be positive", errImportUsage)
 	case c.Listing != listingAQL && c.Listing != listingStorage:
 		return fmt.Errorf("%w: --artifactory-listing must be aql or storage", errImportUsage)
 	}
@@ -216,6 +233,7 @@ func readSourceToken(file string, getenv func(string) string, stdin io.Reader) (
 
 func newImportSource(cfg importConfig, hc *http.Client) importSource {
 	h := newSourceHTTP(cfg.SourceURL, cfg.SourceUser, cfg.SourceToken, hc)
+	h.retry = cfg.retrier
 	if cfg.Kind == "artifactory" {
 		return &artifactorySource{http: h, listing: cfg.Listing}
 	}
@@ -291,6 +309,7 @@ type importReport struct {
 	Resumed     int             `json:"skipped_state"`
 	Ignored     int             `json:"ignored"`
 	Failed      int             `json:"failed"`
+	Retries     int             `json:"retries"`
 	Interrupted bool            `json:"interrupted"`
 	Failures    []importFailure `json:"failures"`
 }
@@ -330,7 +349,7 @@ func (r *importReport) snapshot() *importReport {
 
 	cp := &importReport{
 		DryRun: r.DryRun, Uploaded: r.Uploaded, Bytes: r.Bytes, Present: r.Present,
-		Resumed: r.Resumed, Ignored: r.Ignored, Failed: r.Failed, Interrupted: r.Interrupted,
+		Resumed: r.Resumed, Ignored: r.Ignored, Failed: r.Failed, Retries: r.Retries, Interrupted: r.Interrupted,
 		Failures: append([]importFailure{}, r.Failures...),
 	}
 
@@ -350,6 +369,7 @@ func (r *importReport) print(w io.Writer) {
 	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "already present:", s.Present)
 	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "resumed from state:", s.Resumed)
 	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "not importable:", s.Ignored)
+	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "retries:", s.Retries)
 	_, _ = fmt.Fprintf(w, "  %-22s %d\n", "failed:", s.Failed)
 
 	if s.Interrupted {
@@ -386,6 +406,7 @@ type importer struct {
 	state *importState
 	rep   *importReport
 	now   func() time.Time
+	retry *retrier
 }
 
 func newImporter(cfg importConfig, src importSource, tgt *importTarget, progress io.Writer) (*importer, error) {
@@ -394,10 +415,22 @@ func newImporter(cfg importConfig, src importSource, tgt *importTarget, progress
 		return nil, err
 	}
 
-	return &importer{
-		cfg: cfg, src: src, tgt: tgt, state: st, now: time.Now,
+	im := &importer{
+		cfg: cfg, src: src, tgt: tgt, state: st, now: time.Now, retry: cfg.retrier,
 		rep: &importReport{progress: progress, DryRun: cfg.DryRun},
-	}, nil
+	}
+
+	if im.retry != nil {
+		im.retry.observe = im.noteRetry
+	}
+
+	return im, nil
+}
+
+// noteRetry counts and logs one retry; it may run from any worker.
+func (im *importer) noteRetry(what string, retry int, wait time.Duration, err error) {
+	im.rep.add(func(r *importReport) { r.Retries++ })
+	im.rep.logf("retry %d/%d in %s: %s: %v", retry, im.retry.max, wait.Round(time.Millisecond), what, err)
 }
 
 // importJob is one asset on its way to a destination repository.
@@ -686,20 +719,10 @@ func (im *importer) transfer(ctx context.Context, j importJob, key string) error
 		return err
 	}
 
-	body, err := im.src.Open(ctx, a)
+	res, got, err := im.uploadWithRetry(ctx, j, a, meta)
 	if err != nil {
 		return err
 	}
-
-	hr := newHashingReader(body)
-	res, upErr := im.tgt.upload(ctx, j.repo.Format, j.dst, a, hr, meta)
-	_ = body.Close()
-
-	if upErr != nil {
-		return upErr
-	}
-
-	got := hr.sums()
 
 	if err := im.verify(ctx, j, a, res, got); err != nil {
 		return im.discard(ctx, j, res, err)
@@ -719,6 +742,68 @@ func (im *importer) transfer(ctx context.Context, j importJob, key string) error
 	im.rep.logf("uploaded %s/%s -> %s, %s", j.repo.Name, a.Path, j.dst, humanBytes(got.n))
 
 	return nil
+}
+
+// uploadWithRetry opens the source and uploads it, repeating both after a
+// transient failure. Every attempt re-opens the source stream, so nothing is
+// buffered. A repeated upload is only safe when it overwrites (maven, raw) or
+// when the destination can be shown not to hold the content already (deb, rpm,
+// looked up by SHA-256 before each repeat); otherwise the failure is final.
+func (im *importer) uploadWithRetry(ctx context.Context, j importJob, a sourceAsset, meta uploadMeta) (uploadResult, digests, error) {
+	var (
+		res       uploadResult
+		got       digests
+		attempted bool // an upload was started, so the server may hold the content
+	)
+
+	what := "upload " + j.repo.Name + "/" + a.Path
+	repeatable := repeatableUpload(j.repo.Format, a)
+
+	err := im.retry.do(ctx, what, func(int) error {
+		if attempted && !overwritesInPlace(j.repo.Format) {
+			e, present, err := im.tgt.findBySHA(ctx, j.dst, j.repo.Format, a.SHA256)
+			if err != nil {
+				return err
+			}
+
+			if present {
+				// The earlier attempt did land (only its response was lost).
+				res, got = uploadResult(e), digests{sha256: a.SHA256, n: a.Size}
+				return nil
+			}
+		}
+
+		body, err := im.src.Open(ctx, a)
+		if err != nil {
+			return err
+		}
+
+		attempted = true
+		hr := newHashingReader(body)
+		r, upErr := im.tgt.upload(ctx, j.repo.Format, j.dst, a, hr, meta)
+		_ = body.Close()
+
+		if upErr != nil {
+			if !repeatable {
+				return permanent(upErr)
+			}
+
+			return upErr
+		}
+
+		res, got = r, hr.sums()
+
+		return nil
+	})
+
+	return res, got, err
+}
+
+func overwritesInPlace(f importFormat) bool { return f == formatMaven || f == formatRaw }
+
+// repeatableUpload reports whether a failed upload may be attempted again.
+func repeatableUpload(f importFormat, a sourceAsset) bool {
+	return overwritesInPlace(f) || a.SHA256 != ""
 }
 
 // verify compares what was read from the source with the source's own
