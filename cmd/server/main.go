@@ -47,6 +47,7 @@ import (
 	"github.com/openartifact/openartifact/internal/license"
 	aimcp "github.com/openartifact/openartifact/internal/mcp"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repodispatch"
@@ -559,6 +560,8 @@ func main() {
 
 	authedAPI := chi.NewRouter()
 	authedAPI.Use(rbacMiddleware)
+	// Admin-only origin timestamps for migrations (X-OA-Import-Created-At).
+	authedAPI.Use(importmeta.Middleware(evaluator))
 	authedAPI.Use(middleware.CSRFMiddleware)
 	authedAPI.Use(middleware.AuditMiddleware(auditLogger, trustedProxies))
 

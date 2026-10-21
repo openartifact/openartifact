@@ -1,6 +1,6 @@
 -- name: CreateMavenArtifact :one
-INSERT INTO maven_artifacts (repository_id, blob_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO maven_artifacts (repository_id, blob_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(sqlc.narg(created_at)::timestamptz, now()))
 ON CONFLICT (repository_id, repo_path) DO UPDATE SET
     blob_id = EXCLUDED.blob_id,
     updated_at = now()

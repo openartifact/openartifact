@@ -206,6 +206,97 @@ without echo; for scripts pipe the password and pass `--password-stdin`
 (with `--username`): `echo "$PW" | oa auth login --username alice --password-stdin`.
 The token file (`config.json` in the config directory) is written with mode 0600.
 
+## Migrating from Nexus / Artifactory
+
+`oa import` copies the hosted repositories of a Sonatype Nexus 3 or JFrog
+Artifactory server into OpenArtifact. Maven, Debian (apt), RPM (yum) and raw
+(Artifactory "generic") repositories are supported. Files are streamed from the
+source straight into the normal upload endpoints, their SHA-256 is verified
+against the source checksum and against what the server stored, and the
+original creation time is preserved.
+
+```sh
+# 1. Plan only: lists what would be uploaded, writes nothing.
+oa import nexus --source-url https://nexus.example.com \
+  --repo maven-releases:maven-releases --repo ubuntu-hosted:ubuntu --dry-run
+
+# 2. Import. The source password/token is read from a file (or stdin with "-",
+#    or $OA_IMPORT_SOURCE_TOKEN), never from the command line.
+oa import nexus --source-url https://nexus.example.com \
+  --source-user migrator --source-token-file ~/.nexus-token \
+  --repo maven-releases:maven-releases --repo ubuntu-hosted:ubuntu \
+  --create-repos --concurrency 8 --state-file nexus-import.state
+
+# Artifactory: same flags; repository keys are the source names.
+oa import artifactory --source-url https://acme.jfrog.io/artifactory \
+  --source-user migrator --source-token-file ~/.jfrog-token \
+  --repo libs-release-local:libs-release --repo rpm-local --state-file jfrog.state
+```
+
+Flags:
+
+| Flag | Meaning |
+| --- | --- |
+| `--source-url` | Base URL of the source (`$OA_IMPORT_SOURCE_URL`). Credentials in the URL are refused, and so are credentials over plain HTTP (except loopback). |
+| `--source-user`, `--source-token-file` | Source credentials (`$OA_IMPORT_SOURCE_USER`, `$OA_IMPORT_SOURCE_TOKEN`). With a user: HTTP Basic; with only a token: Bearer. Anonymous access works when the source allows it. |
+| `--repo SRC[:DST]` | Repository to import, repeatable. `DST` defaults to `SRC`. |
+| `--dry-run` | Print the plan; no repository is created and nothing is uploaded. |
+| `--create-repos` | Create missing destination repositories as **hosted** repositories of the matching format. Without it they must already exist. |
+| `--concurrency N` | Parallel transfers (default 4). |
+| `--state-file F` | Append-only resume file. Completed assets are skipped on the next run. |
+| `--properties` | Properties to copy: comma-separated keys or `prefix*` patterns (default `deb.*,rpm.*,build.name,build.number,vcs.*`; `none` disables). |
+| `--deb-distribution`, `--deb-component` | Fallback Debian placement, see below. |
+| `--artifactory-listing aql\|storage` | How Artifactory is enumerated. `aql` (default) needs one query per 1000 files and carries creation time and properties; `storage` uses the storage API with extra calls per file. |
+| `--path-prefix P` | Only import assets whose repository path starts with `P` (for example `com/acme/`), e.g. to migrate or test in slices. |
+| `--quiet` | Only print the summary. `--format json` prints the summary as JSON. |
+
+The command exits non-zero when any asset failed (or the run was interrupted);
+re-run the same command to retry only what is missing. It is idempotent: an
+asset whose SHA-256 is already in the destination is not uploaded again, with or
+without a state file.
+
+**Requirements.** Use an OpenArtifact **admin** access token (`oa auth login`
+or `OA_TOKEN`): the importer calls the repository management and property APIs
+and sends `X-OA-Import-Created-At`, which the server honors only for principals
+with the `manage` action. For every other caller the header is silently ignored,
+so it cannot be used to backdate artifacts. Deploy tokens cannot import.
+
+**What is preserved.**
+
+- `created_at`: from Nexus `blobCreated` (falling back to `lastModified`) or
+  Artifactory `created`. It feeds age-based cleanup policies. `updated_at` is the
+  import time. Dates in the future are not sent.
+- Properties: the allow-listed Artifactory properties (`deb.*`, `rpm.*`,
+  `build.name`, `build.number`, `vcs.*`) become OpenArtifact artifact properties;
+  multi-valued properties are comma-joined. Nexus has no per-asset properties.
+- Debian distribution and component, in this order: the asset's
+  `deb.distribution` / `deb.component` property, the Nexus apt repository
+  configuration, the `dists/<dist>/<component>/binary-*` layout when it is
+  unambiguous, then `--deb-distribution` / `--deb-component`. Assets with no
+  answer are reported as failures.
+
+**Caveats.**
+
+- Only hosted (Nexus) / local (Artifactory) repositories are imported. Proxy,
+  group and virtual repositories are refused; recreate them in OpenArtifact.
+- Repository metadata is regenerated, not copied: Maven checksum files
+  (`.md5/.sha1/.sha256/.sha512`) and `maven-metadata.xml` are skipped and rebuilt
+  by the server; apt `dists/` and yum `repodata/` indexes are rebuilt, and are
+  signed with OpenArtifact's single global GPG key. Clients must trust that key
+  instead of the old repository key.
+- Release bundles, Artifactory build-info, Nexus tags, users, permissions,
+  cleanup policies and other server configuration are not imported.
+- Checksums: the source's SHA-256 is preferred, SHA-1 is the fallback. A file that
+  does not verify is removed from the destination and reported as a failure
+  (unless it replaced pre-existing raw content, which is left in place).
+- The importer streams every file, so its memory use does not grow with file size.
+
+The server contract used by the importer (also usable by your own tooling):
+`X-OA-Import-Created-At: <RFC 3339>` on Maven/raw `PUT` and Debian/RPM upload
+requests, and an `X-OA-Artifact-Id` response header on Maven `PUT` (Debian, RPM
+and raw return the id in the JSON body) so properties can be attached afterwards
+through `PATCH /api/v1/repositories/{repo}/artifacts/{id}/properties`.
+
 ## MCP
 
 OpenArtifact can expose a [Model Context Protocol](https://modelcontextprotocol.io)

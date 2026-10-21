@@ -9,15 +9,18 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"encoding/json"
 	"fmt"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -194,5 +197,62 @@ func TestDebUploadDeleteEmitEventsAndQuota(t *testing.T) {
 	evs = pub.Events()
 	if len(evs) != 2 || evs[1].Type != webhook.EventArtifactDeleted {
 		t.Fatalf("events after delete = %+v", evs)
+	}
+}
+
+// TestDebUploadImportCreatedAt checks that an authorized origin timestamp is
+// stored on the package row and that the response names the new package id,
+// while an upload without one leaves the stamp to the database.
+func TestDebUploadImportCreatedAt(t *testing.T) {
+	origin := time.Date(2019, 5, 6, 7, 8, 9, 0, time.UTC)
+
+	tests := []struct {
+		name string
+		ctx  context.Context //nolint:containedctx // test table carries the request context
+		want time.Time
+	}{
+		{"imported", importmeta.WithCreatedAt(context.Background(), origin), origin},
+		{"normal upload", context.Background(), time.Time{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
+			db.Repo.Format = "deb"
+
+			h := NewDebUploadHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), nil)
+			router := chi.NewRouter()
+			h.Register(router)
+
+			var body bytes.Buffer
+
+			mw := multipart.NewWriter(&body)
+			fw, _ := mw.CreateFormFile("file", "hello.deb")
+			_, _ = fw.Write(buildTestDeb(t))
+			_ = mw.Close()
+
+			req := httptest.NewRequestWithContext(tc.ctx, http.MethodPost, "/api/v1/repositories/myrepo/debs", &body)
+			req.Header.Set("Content-Type", mw.FormDataContentType())
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("upload status = %d: %s", w.Code, w.Body.String())
+			}
+
+			if got := db.pkgs["pkg-1"].CreatedAt; !got.Equal(tc.want) {
+				t.Errorf("created_at = %v, want %v", got, tc.want)
+			}
+
+			var resp struct {
+				Data struct {
+					ID string `json:"id"`
+				} `json:"data"`
+			}
+			if err := json.Unmarshal(w.Body.Bytes(), &resp); err != nil || resp.Data.ID != "pkg-1" {
+				t.Errorf("response id = %q (err %v), body %s", resp.Data.ID, err, w.Body.String())
+			}
+		})
 	}
 }

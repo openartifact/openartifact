@@ -434,16 +434,27 @@ func (p *PostgresDB) CreateComponent(ctx context.Context, component *models.Comp
 	return ErrCreateComponentDeprecated
 }
 
+// createdAtOrNil maps an unset (zero) timestamp to SQL NULL so the INSERT's
+// COALESCE(..., now()) applies; callers that carry an origin timestamp (the
+// admin-only import path) keep it.
+func createdAtOrNil(t time.Time) *time.Time {
+	if t.IsZero() {
+		return nil
+	}
+
+	return &t
+}
+
 // CreateDebPackage inserts a DEB package with distribution and component references.
 func (p *PostgresDB) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string) error {
 	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, description, summary, license, maintainer, homepage, filename, installed_size)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
+		`INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch, description, summary, license, maintainer, homepage, filename, installed_size, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,COALESCE($15::timestamptz, now()))
 		 ON CONFLICT DO NOTHING
 		 RETURNING id, created_at, updated_at`,
 		pkg.RepositoryID, distID, compID, pkg.ArtifactID, pkg.Name, pkg.Version,
 		pkg.Arch, pkg.Description, pkg.Summary, pkg.License, "", "",
-		pkg.Filename, pkg.InstalledSize,
+		pkg.Filename, pkg.InstalledSize, createdAtOrNil(pkg.CreatedAt),
 	).Scan(&pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrDuplicate
@@ -455,8 +466,8 @@ func (p *PostgresDB) CreateDebPackage(ctx context.Context, pkg *models.Component
 // CreateRpmPackage inserts an RPM package.
 func (p *PostgresDB) CreateRpmPackage(ctx context.Context, pkg *models.Component) error {
 	err := p.db.QueryRowContext(ctx,
-		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename, header_start, header_end, rpm_extra)
-		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21,$22,$23,COALESCE($24::jsonb,'{}'::jsonb))
+		`INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch, description, summary, license, url, vendor, group_name, packager, source_rpm, build_host, build_time, package_size, archive_size, installed_size, filename, header_start, header_end, rpm_extra, created_at)
+		 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,to_timestamp(NULLIF($17::bigint,0)),$18,$19,$20,$21,$22,$23,COALESCE($24::jsonb,'{}'::jsonb),COALESCE($25::timestamptz, now()))
 		 ON CONFLICT DO NOTHING
 		 RETURNING id, created_at, updated_at`,
 		pkg.RepositoryID, pkg.ArtifactID, pkg.Name, pkg.Version,
@@ -465,6 +476,7 @@ func (p *PostgresDB) CreateRpmPackage(ctx context.Context, pkg *models.Component
 		pkg.Vendor, pkg.Group, pkg.Packager, pkg.SourceRPM,
 		pkg.BuildHost, pkg.BuildTime, pkg.PackageSize, pkg.ArchiveSize,
 		pkg.InstalledSize, pkg.Filename, pkg.HeaderStart, pkg.HeaderEnd, nullableJSON(pkg.RPMExtra),
+		createdAtOrNil(pkg.CreatedAt),
 	).Scan(&pkg.ID, &pkg.CreatedAt, &pkg.UpdatedAt)
 	if errors.Is(err, sql.ErrNoRows) {
 		return ErrDuplicate
@@ -1005,6 +1017,7 @@ func (p *PostgresDB) CreateMavenArtifact(ctx context.Context, a *models.MavenArt
 		SnapshotBuildNumber: toInt32(a.SnapshotBuildNumber),
 		IsSnapshot:          a.IsSnapshot,
 		RepoPath:            a.RepoPath,
+		CreatedAt:           createdAtOrNil(a.CreatedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create maven artifact: %w", err)

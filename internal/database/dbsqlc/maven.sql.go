@@ -11,8 +11,8 @@ import (
 )
 
 const createMavenArtifact = `-- name: CreateMavenArtifact :one
-INSERT INTO maven_artifacts (repository_id, blob_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO maven_artifacts (repository_id, blob_id, group_id, artifact_id_coord, version, classifier, extension, snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::timestamptz, now()))
 ON CONFLICT (repository_id, repo_path) DO UPDATE SET
     blob_id = EXCLUDED.blob_id,
     updated_at = now()
@@ -20,17 +20,18 @@ RETURNING id
 `
 
 type CreateMavenArtifactParams struct {
-	RepositoryID        string  `db:"repository_id" json:"repository_id"`
-	BlobID              string  `db:"blob_id" json:"blob_id"`
-	GroupID             string  `db:"group_id" json:"group_id"`
-	ArtifactIDCoord     string  `db:"artifact_id_coord" json:"artifact_id_coord"`
-	Version             string  `db:"version" json:"version"`
-	Classifier          string  `db:"classifier" json:"classifier"`
-	Extension           string  `db:"extension" json:"extension"`
-	SnapshotTimestamp   *string `db:"snapshot_timestamp" json:"snapshot_timestamp"`
-	SnapshotBuildNumber int32   `db:"snapshot_build_number" json:"snapshot_build_number"`
-	IsSnapshot          bool    `db:"is_snapshot" json:"is_snapshot"`
-	RepoPath            string  `db:"repo_path" json:"repo_path"`
+	RepositoryID        string     `db:"repository_id" json:"repository_id"`
+	BlobID              string     `db:"blob_id" json:"blob_id"`
+	GroupID             string     `db:"group_id" json:"group_id"`
+	ArtifactIDCoord     string     `db:"artifact_id_coord" json:"artifact_id_coord"`
+	Version             string     `db:"version" json:"version"`
+	Classifier          string     `db:"classifier" json:"classifier"`
+	Extension           string     `db:"extension" json:"extension"`
+	SnapshotTimestamp   *string    `db:"snapshot_timestamp" json:"snapshot_timestamp"`
+	SnapshotBuildNumber int32      `db:"snapshot_build_number" json:"snapshot_build_number"`
+	IsSnapshot          bool       `db:"is_snapshot" json:"is_snapshot"`
+	RepoPath            string     `db:"repo_path" json:"repo_path"`
+	CreatedAt           *time.Time `db:"created_at" json:"created_at"`
 }
 
 func (q *Queries) CreateMavenArtifact(ctx context.Context, arg CreateMavenArtifactParams) (string, error) {
@@ -46,6 +47,7 @@ func (q *Queries) CreateMavenArtifact(ctx context.Context, arg CreateMavenArtifa
 		arg.SnapshotBuildNumber,
 		arg.IsSnapshot,
 		arg.RepoPath,
+		arg.CreatedAt,
 	)
 	var id string
 	err := row.Scan(&id)

@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -351,6 +352,8 @@ func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoN
 			Description:   pkg.Description,
 			InstalledSize: pkg.InstalledSize,
 			Filename:      filename,
+			// Zero unless an administrator supplied an origin timestamp.
+			CreatedAt: importmeta.CreatedAt(ctx),
 		}
 
 		if err := h.db.CreateDebPackage(ctx, record, dist.ID, comp.ID); err != nil {
@@ -404,6 +407,7 @@ func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoN
 	}))
 
 	return map[string]any{
+		"id":           record.ID,
 		"name":         pkg.Package,
 		"version":      pkg.Version,
 		"architecture": pkg.Architecture,

@@ -59,14 +59,15 @@ func (h *RPMHandler) GetFileExtension() string {
 }
 
 type UploadResult struct {
-	Name      string
-	Version   string
-	Release   string
-	Arch      string
-	SHA256    string
-	BlobID    string
-	Size      int64
-	Duplicate bool
+	ID        string `json:"id"`
+	Name      string `json:"name"`
+	Version   string `json:"version"`
+	Release   string `json:"release"`
+	Arch      string `json:"arch"`
+	SHA256    string `json:"sha256"`
+	BlobID    string `json:"blob_id"`
+	Size      int64  `json:"size"`
+	Duplicate bool   `json:"duplicate"`
 }
 
 var _ format.FormatHandler = (*RPMHandler)(nil)

@@ -164,6 +164,10 @@ linters:
       - path: "internal/vuln/scanner\\.go"
         linters:
           - tagliatelle
+      # Nexus / Artifactory REST payloads are camelCase by contract
+      - path: "cmd/oa/import_source\\.go"
+        linters:
+          - tagliatelle
       - path: "internal/format/gomod/http\\.go"
         linters:
           - tagliatelle

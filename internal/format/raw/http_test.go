@@ -7,9 +7,15 @@ package raw
 import (
 	"context"
 	"net/http"
+	"net/http/httptest"
 	"strings"
 	"testing"
+	"time"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -103,5 +109,57 @@ func TestGetQuarantine(t *testing.T) {
 
 	if c := get(); c != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", c)
+	}
+}
+
+// manageOnly grants "manage" to the user named "admin" and nothing else.
+type manageOnly struct{}
+
+func (manageOnly) Evaluate(_ context.Context, p auth.Principal, _, _, action string) (bool, error) {
+	return action == "manage" && p.Username == "admin", nil
+}
+
+// TestPutImportCreatedAt drives the real middleware in front of the raw PUT
+// handler: only an administrator's X-OA-Import-Created-At reaches the stored
+// artifact; a normal client's header is ignored.
+func TestPutImportCreatedAt(t *testing.T) {
+	origin := time.Date(2020, 1, 2, 3, 4, 5, 0, time.UTC)
+
+	tests := []struct {
+		name string
+		user string
+		want time.Time
+	}{
+		{"admin keeps origin timestamp", "admin", origin},
+		{"regular client is stamped by the server", "alice", time.Time{}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			h, db, _, _ := newTestHandler(t)
+
+			router := chi.NewRouter()
+			router.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					next.ServeHTTP(w, r.WithContext(middleware.WithPrincipal(r.Context(), &auth.Principal{Username: tc.user})))
+				})
+			})
+			router.Use(importmeta.Middleware(manageOnly{}))
+			router.Route("/repos/{name}", h.RegisterRepoRoutes)
+
+			req := formattest.Request(http.MethodPut, "/repos/myrepo/a/b.txt", strings.NewReader("hello"))
+			req.Header.Set(importmeta.HeaderCreatedAt, origin.Format(time.RFC3339))
+
+			w := httptest.NewRecorder()
+			router.ServeHTTP(w, req)
+
+			if w.Code != http.StatusCreated {
+				t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+			}
+
+			if !db.art.CreatedAt.Equal(tc.want) {
+				t.Errorf("created_at = %v, want %v", db.art.CreatedAt, tc.want)
+			}
+		})
 	}
 }

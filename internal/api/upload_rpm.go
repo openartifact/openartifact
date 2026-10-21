@@ -15,12 +15,14 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -301,8 +303,9 @@ func parseSpooled(sp *rpmSpool) (*pkgrpm.Package, error) {
 }
 
 // newComponent builds the rpm_packages row for pkg referencing blob blobUUID.
-func newComponent(repoID, blobUUID, filename string, size int64, pkg *pkgrpm.Package, extra []byte) *models.Component {
+func newComponent(repoID, blobUUID, filename string, size int64, pkg *pkgrpm.Package, extra []byte, createdAt time.Time) *models.Component {
 	return &models.Component{
+		CreatedAt:     createdAt,
 		RepositoryID:  repoID,
 		ArtifactID:    blobUUID,
 		Name:          pkg.Name,
@@ -380,6 +383,9 @@ func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repo
 	)
 
 	filename := rpmFilename(pkg)
+	// Zero unless an administrator supplied an origin timestamp (importmeta).
+	createdAt := importmeta.CreatedAt(ctx)
+	comp := newComponent(repo.ID, "", filename, sp.size, pkg, extra, createdAt)
 
 	err := storage.WithBlobLock(ctx, h.db, sp.sha256, func(ctx context.Context) error {
 		id, existed, err := h.storeBlobDeduped(ctx, sp, repo.Name)
@@ -395,7 +401,9 @@ func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repo
 			return fmt.Errorf("failed to upsert blob record: %w", err)
 		}
 
-		if err := h.db.CreateRpmPackage(ctx, newComponent(repo.ID, blobUUID, filename, sp.size, pkg, extra)); err != nil {
+		comp.ArtifactID = blobUUID
+
+		if err := h.db.CreateRpmPackage(ctx, comp); err != nil {
 			return fmt.Errorf("failed to create component record: %w", err)
 		}
 
@@ -410,6 +418,7 @@ func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repo
 		}
 
 		return &formatrpm.UploadResult{
+			ID:   comp.ID,
 			Name: pkg.Name, Version: pkg.Version, Release: pkg.Release, Arch: pkg.Arch,
 			SHA256: sp.sha256, BlobID: blobID, Size: sp.size,
 		}, nil

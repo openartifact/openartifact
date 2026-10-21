@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -145,6 +146,9 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		SizeBytes:    size,
 		SHA256:       sha256Hex,
 		Metadata:     make(map[string]any),
+		// Zero unless an administrator supplied an origin timestamp; the
+		// database then stamps "now".
+		CreatedAt: importmeta.CreatedAt(r.Context()),
 	}
 
 	// Store the blob and upsert the referencing row under the per-blob lock so
@@ -192,7 +196,14 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 
+	// An overwrite keeps the existing row (and its id).
+	id := artifact.ID
+	if previous != nil {
+		id = previous.ID
+	}
+
 	if encErr := json.NewEncoder(w).Encode(map[string]any{
+		"id":     id,
 		"path":   path,
 		"sha256": sha256Hex,
 		"size":   size,

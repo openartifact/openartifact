@@ -24,6 +24,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -261,6 +262,13 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		}
 	}()
 
+	// An administrator importing from another manager may preserve the origin
+	// timestamp (see importmeta); everyone else is stamped "now".
+	createdAt := importmeta.CreatedAt(r.Context())
+	if createdAt.IsZero() {
+		createdAt = time.Now()
+	}
+
 	art := models.MavenArtifact{
 		RepositoryID:        repoID,
 		GroupID:             groupID,
@@ -276,7 +284,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		MD5:                 md5Hex,
 		SHA1:                sha1Hex,
 		SHA512:              sha512Hex,
-		CreatedAt:           time.Now(),
+		CreatedAt:           createdAt,
 		UpdatedAt:           time.Now(),
 	}
 
@@ -393,6 +401,8 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		statusCode = http.StatusOK
 	}
 
+	// The package id is what the properties API addresses artifacts by.
+	w.Header().Set("X-Oa-Artifact-Id", art.ID)
 	w.WriteHeader(statusCode)
 }
 
