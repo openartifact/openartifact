@@ -78,6 +78,66 @@ SP entity ID / metadata: `BASE_URL/api/v1/auth/sso/saml/{slug}/metadata`; ACS UR
 | `POST /api/v1/auth/sso/saml/{slug}/acs` | assertion consumer (CSRF-exempt) |
 | `GET /api/v1/auth/sso/saml/{slug}/metadata` | SP metadata XML |
 
+SAML is implemented with [crewjam/saml](https://github.com/crewjam/saml) through the fork [openartifact/saml](https://github.com/openartifact/saml) (a `replace` in `go.mod`). The fork adds one fix on top of upstream: with goxmldsig 1.6, signed responses or assertions with more than 1000 XML elements (for example a large groups attribute) were rejected. Prefer OIDC when the IdP supports both.
+
+## LDAP and Active Directory (via Dex)
+
+OpenArtifact has no built-in LDAP. Put [Dex](https://dexidp.io) in front of the directory and add Dex as an OIDC provider. Dex's [LDAP connector](https://dexidp.io/docs/connectors/ldap/) does the bind and the group search; OpenArtifact sees a normal OIDC login with a `groups` claim. Do not use Dex's SAML connector: Dex documents it as unmaintained.
+
+Dex config (excerpt):
+
+```yaml
+issuer: https://dex.example.com
+connectors:
+  - type: ldap
+    id: ldap
+    name: Corporate directory
+    config:
+      host: ldap.example.com:636
+      bindDN: cn=dex,ou=services,dc=example,dc=com
+      bindPW: $LDAP_BIND_PASSWORD
+      userSearch:
+        baseDN: ou=people,dc=example,dc=com
+        filter: "(objectClass=person)"
+        username: uid            # sAMAccountName for Active Directory
+        idAttr: uid
+        emailAttr: mail
+        nameAttr: cn
+        preferredUsernameAttr: uid
+      groupSearch:
+        baseDN: ou=groups,dc=example,dc=com
+        filter: "(objectClass=groupOfNames)"
+        userMatchers:
+          - userAttr: DN
+            groupAttr: member
+        nameAttr: cn
+staticClients:
+  - id: openartifact
+    name: OpenArtifact
+    secretEnv: OPENARTIFACT_DEX_CLIENT_SECRET
+    redirectURIs:
+      - https://artifacts.example.com/api/v1/auth/sso/oidc/ldap/callback
+```
+
+OpenArtifact provider (`POST /api/v1/admin/sso-providers`):
+
+```json
+{
+  "slug": "ldap",
+  "kind": "oidc",
+  "display_name": "Corporate directory",
+  "oidc_config": {
+    "issuer": "https://dex.example.com",
+    "client_id": "openartifact",
+    "client_secret": "<same as OPENARTIFACT_DEX_CLIENT_SECRET>"
+  },
+  "group_mapping": { "artifact-admins": "admins", "developers": "developers" },
+  "auto_provision_users": true
+}
+```
+
+The default scopes already include `groups`, and the default claims (`preferred_username`, `email`, `name`, `groups`) match what Dex issues; Dex marks LDAP emails as verified, so `link_by_email` works. The issuer is SSRF-checked: if Dex is only reachable on a private network (for example an in-cluster Service), set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`.
+
 ## Provisioning rules
 
 1. The user is looked up by (external ID, provider slug).

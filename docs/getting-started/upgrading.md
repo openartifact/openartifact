@@ -90,6 +90,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 | Area | Change |
 |---|---|
 | SSO (SAML) | The IdP metadata URL is fetched through the outbound SSRF guard (1 MiB cap, 10 s timeout). Metadata URLs on private or loopback addresses need `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. |
+| SSO (SAML) | Signed responses or assertions with more than 1000 XML elements (large group lists) are accepted again; SAML now uses the `openartifact/saml` fork of crewjam/saml. |
 
 ### 0.4.1
 
