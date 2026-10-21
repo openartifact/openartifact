@@ -532,7 +532,7 @@ func (e *Engine) exportFormatTables(ctx context.Context, repo *models.Repository
 		manifests, err := e.db.ListDockerManifestsByRepo(ctx, id)
 		collectRepoList(l, &pkg.dockerManifests, "docker manifests", id, manifests, err)
 
-		tags, err := e.db.ListDockerTags(ctx, id, "", bulkListLimit)
+		tags, err := e.db.ListDockerTagsByRepo(ctx, id, bulkListLimit)
 		collectRepoList(l, &pkg.dockerTags, "docker tags", id, tags, err)
 	case "npm":
 		e.exportNPMPackages(ctx, repo, pkg)

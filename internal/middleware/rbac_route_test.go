@@ -39,13 +39,19 @@ func TestExtractRepoAndPath(t *testing.T) {
 
 		// Docker/OCI /v2/... routes: name may itself contain "/".
 		{"docker manifest simple", "/v2/myimage/manifests/latest", "myimage", "manifests/latest"},
-		{"docker manifest namespaced", "/v2/org/team/myimage/manifests/sha256:abcd", "org/team/myimage", "manifests/sha256:abcd"},
+		// The first name segment is the OpenArtifact repository; the rest is the image and leads the artifact path.
+		{"docker manifest namespaced", "/v2/org/team/myimage/manifests/sha256:abcd", "org", "team/myimage/manifests/sha256:abcd"},
+		{"docker blob namespaced", "/v2/reg/org/team/app/blobs/sha256:deadbeef", "reg", "org/team/app/blobs/sha256:deadbeef"},
+		{"docker upload init namespaced", "/v2/reg/org/team/app/blobs/uploads/", "reg", "org/team/app/blobs/uploads/"},
+		{"docker upload chunk namespaced", "/v2/reg/org/team/app/blobs/uploads/abc-123", "reg", "org/team/app/blobs/uploads/abc-123"},
+		{"docker tags list namespaced", "/v2/reg/org/team/app/tags/list", "reg", "org/team/app/tags/list"},
+		{"docker referrers namespaced", "/v2/reg/org/app/referrers/sha256:deadbeef", "reg", "org/app/referrers/sha256:deadbeef"},
 		{"docker blob", "/v2/myimage/blobs/sha256:deadbeef", "myimage", "blobs/sha256:deadbeef"},
 		{"docker blob upload init", "/v2/myimage/blobs/uploads/", "myimage", "blobs/uploads/"},
 		{"docker blob upload chunk", "/v2/myimage/blobs/uploads/abc-123", "myimage", "blobs/uploads/abc-123"},
 		{"docker tags list", "/v2/myimage/tags/list", "myimage", "tags/list"},
 		{"docker referrers", "/v2/myimage/referrers/sha256:deadbeef", "myimage", "referrers/sha256:deadbeef"},
-		{"docker manifest name contains literal marker segment", "/v2/myrepo/manifests/latest/manifests/sha256:abcd", "myrepo/manifests/latest", "manifests/sha256:abcd"},
+		{"docker manifest name contains literal marker segment", "/v2/myrepo/manifests/latest/manifests/sha256:abcd", "myrepo", "manifests/latest/manifests/sha256:abcd"},
 		{"docker version check", "/v2/", "", ""},
 
 		// Non-repo API paths.

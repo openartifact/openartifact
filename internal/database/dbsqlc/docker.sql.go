@@ -13,6 +13,7 @@ import (
 const createDockerBlob = `-- name: CreateDockerBlob :one
 INSERT INTO docker_blobs (repository_id, digest, blob_id)
 VALUES ($1, $2, $3)
+ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id
 RETURNING id, created_at
 `
 
@@ -27,6 +28,7 @@ type CreateDockerBlobRow struct {
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
+// Re-pushing a blob the repository already holds is a no-op, not an error.
 func (q *Queries) CreateDockerBlob(ctx context.Context, arg CreateDockerBlobParams) (CreateDockerBlobRow, error) {
 	row := q.db.QueryRow(ctx, createDockerBlob, arg.RepositoryID, arg.Digest, arg.BlobID)
 	var i CreateDockerBlobRow
@@ -35,18 +37,22 @@ func (q *Queries) CreateDockerBlob(ctx context.Context, arg CreateDockerBlobPara
 }
 
 const createDockerManifest = `-- name: CreateDockerManifest :one
-INSERT INTO docker_manifests (repository_id, digest, media_type, blob_id, size, subject_digest)
-VALUES ($1, $2, $3, $4, $5, NULLIF($6, ''))
+INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
+ON CONFLICT (repository_id, image, digest) DO UPDATE
+    SET media_type = EXCLUDED.media_type, blob_id = EXCLUDED.blob_id, size = EXCLUDED.size,
+        subject_digest = EXCLUDED.subject_digest, updated_at = now()
 RETURNING id, created_at, updated_at
 `
 
 type CreateDockerManifestParams struct {
 	RepositoryID string      `db:"repository_id" json:"repository_id"`
+	Image        string      `db:"image" json:"image"`
 	Digest       string      `db:"digest" json:"digest"`
 	MediaType    string      `db:"media_type" json:"media_type"`
 	BlobID       string      `db:"blob_id" json:"blob_id"`
 	Size         int64       `db:"size" json:"size"`
-	Column6      interface{} `db:"column_6" json:"column_6"`
+	Column7      interface{} `db:"column_7" json:"column_7"`
 }
 
 type CreateDockerManifestRow struct {
@@ -55,14 +61,17 @@ type CreateDockerManifestRow struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Re-pushing a manifest already stored for the image is a no-op refresh, not
+// an error (OCI distribution: manifest PUT is idempotent).
 func (q *Queries) CreateDockerManifest(ctx context.Context, arg CreateDockerManifestParams) (CreateDockerManifestRow, error) {
 	row := q.db.QueryRow(ctx, createDockerManifest,
 		arg.RepositoryID,
+		arg.Image,
 		arg.Digest,
 		arg.MediaType,
 		arg.BlobID,
 		arg.Size,
-		arg.Column6,
+		arg.Column7,
 	)
 	var i CreateDockerManifestRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -109,30 +118,47 @@ func (q *Queries) DeleteDockerBlob(ctx context.Context, arg DeleteDockerBlobPara
 }
 
 const deleteDockerManifest = `-- name: DeleteDockerManifest :exec
-DELETE FROM docker_manifests WHERE repository_id = $1 AND digest = $2
+DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3
 `
 
 type DeleteDockerManifestParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
 	Digest       string `db:"digest" json:"digest"`
 }
 
 func (q *Queries) DeleteDockerManifest(ctx context.Context, arg DeleteDockerManifestParams) error {
-	_, err := q.db.Exec(ctx, deleteDockerManifest, arg.RepositoryID, arg.Digest)
+	_, err := q.db.Exec(ctx, deleteDockerManifest, arg.RepositoryID, arg.Image, arg.Digest)
 	return err
 }
 
 const deleteDockerTag = `-- name: DeleteDockerTag :exec
-DELETE FROM docker_tags WHERE repository_id = $1 AND name = $2
+DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND name = $3
 `
 
 type DeleteDockerTagParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
 	Name         string `db:"name" json:"name"`
 }
 
 func (q *Queries) DeleteDockerTag(ctx context.Context, arg DeleteDockerTagParams) error {
-	_, err := q.db.Exec(ctx, deleteDockerTag, arg.RepositoryID, arg.Name)
+	_, err := q.db.Exec(ctx, deleteDockerTag, arg.RepositoryID, arg.Image, arg.Name)
+	return err
+}
+
+const deleteDockerTagsByDigest = `-- name: DeleteDockerTagsByDigest :exec
+DELETE FROM docker_tags WHERE repository_id = $1 AND image = $2 AND manifest_digest = $3
+`
+
+type DeleteDockerTagsByDigestParams struct {
+	RepositoryID   string `db:"repository_id" json:"repository_id"`
+	Image          string `db:"image" json:"image"`
+	ManifestDigest string `db:"manifest_digest" json:"manifest_digest"`
+}
+
+func (q *Queries) DeleteDockerTagsByDigest(ctx context.Context, arg DeleteDockerTagsByDigestParams) error {
+	_, err := q.db.Exec(ctx, deleteDockerTagsByDigest, arg.RepositoryID, arg.Image, arg.ManifestDigest)
 	return err
 }
 
@@ -188,21 +214,23 @@ func (q *Queries) GetDockerBlob(ctx context.Context, arg GetDockerBlobParams) (G
 }
 
 const getDockerManifest = `-- name: GetDockerManifest :one
-SELECT id, repository_id, digest, media_type, blob_id, size,
+SELECT id, repository_id, image, digest, media_type, blob_id, size,
        COALESCE(subject_digest, '') AS subject_digest,
        created_at, updated_at
 FROM docker_manifests
-WHERE repository_id = $1 AND digest = $2
+WHERE repository_id = $1 AND image = $2 AND digest = $3
 `
 
 type GetDockerManifestParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
 	Digest       string `db:"digest" json:"digest"`
 }
 
 type GetDockerManifestRow struct {
 	ID            string    `db:"id" json:"id"`
 	RepositoryID  string    `db:"repository_id" json:"repository_id"`
+	Image         string    `db:"image" json:"image"`
 	Digest        string    `db:"digest" json:"digest"`
 	MediaType     string    `db:"media_type" json:"media_type"`
 	BlobID        string    `db:"blob_id" json:"blob_id"`
@@ -213,11 +241,12 @@ type GetDockerManifestRow struct {
 }
 
 func (q *Queries) GetDockerManifest(ctx context.Context, arg GetDockerManifestParams) (GetDockerManifestRow, error) {
-	row := q.db.QueryRow(ctx, getDockerManifest, arg.RepositoryID, arg.Digest)
+	row := q.db.QueryRow(ctx, getDockerManifest, arg.RepositoryID, arg.Image, arg.Digest)
 	var i GetDockerManifestRow
 	err := row.Scan(
 		&i.ID,
 		&i.RepositoryID,
+		&i.Image,
 		&i.Digest,
 		&i.MediaType,
 		&i.BlobID,
@@ -230,18 +259,19 @@ func (q *Queries) GetDockerManifest(ctx context.Context, arg GetDockerManifestPa
 }
 
 const getDockerTag = `-- name: GetDockerTag :one
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at
+SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
 FROM docker_tags
-WHERE repository_id = $1 AND name = $2
+WHERE repository_id = $1 AND image = $2 AND name = $3
 `
 
 type GetDockerTagParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
 	Name         string `db:"name" json:"name"`
 }
 
 func (q *Queries) GetDockerTag(ctx context.Context, arg GetDockerTagParams) (DockerTag, error) {
-	row := q.db.QueryRow(ctx, getDockerTag, arg.RepositoryID, arg.Name)
+	row := q.db.QueryRow(ctx, getDockerTag, arg.RepositoryID, arg.Image, arg.Name)
 	var i DockerTag
 	err := row.Scan(
 		&i.ID,
@@ -250,6 +280,7 @@ func (q *Queries) GetDockerTag(ctx context.Context, arg GetDockerTagParams) (Doc
 		&i.ManifestDigest,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.Image,
 	)
 	return i, err
 }
@@ -326,7 +357,7 @@ func (q *Queries) ListDockerBlobs(ctx context.Context, repositoryID string) ([]L
 }
 
 const listDockerManifestsByRepo = `-- name: ListDockerManifestsByRepo :many
-SELECT dm.id, dm.repository_id, dm.digest, dm.media_type, b.sha256 AS blob_sha256, dm.size,
+SELECT dm.id, dm.repository_id, dm.image, dm.digest, dm.media_type, b.sha256 AS blob_sha256, dm.size,
        COALESCE(dm.subject_digest, '') AS subject_digest,
        dm.created_at, dm.updated_at
 FROM docker_manifests dm
@@ -338,6 +369,7 @@ ORDER BY dm.created_at
 type ListDockerManifestsByRepoRow struct {
 	ID            string    `db:"id" json:"id"`
 	RepositoryID  string    `db:"repository_id" json:"repository_id"`
+	Image         string    `db:"image" json:"image"`
 	Digest        string    `db:"digest" json:"digest"`
 	MediaType     string    `db:"media_type" json:"media_type"`
 	BlobSha256    string    `db:"blob_sha256" json:"blob_sha256"`
@@ -359,6 +391,7 @@ func (q *Queries) ListDockerManifestsByRepo(ctx context.Context, repositoryID st
 		if err := rows.Scan(
 			&i.ID,
 			&i.RepositoryID,
+			&i.Image,
 			&i.Digest,
 			&i.MediaType,
 			&i.BlobSha256,
@@ -378,20 +411,21 @@ func (q *Queries) ListDockerManifestsByRepo(ctx context.Context, repositoryID st
 }
 
 const listDockerTags = `-- name: ListDockerTags :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at
+SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
 FROM docker_tags
-WHERE repository_id = $1
+WHERE repository_id = $1 AND image = $2
 ORDER BY name ASC
-LIMIT $2
+LIMIT $3
 `
 
 type ListDockerTagsParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
 	Limit        int32  `db:"limit" json:"limit"`
 }
 
 func (q *Queries) ListDockerTags(ctx context.Context, arg ListDockerTagsParams) ([]DockerTag, error) {
-	rows, err := q.db.Query(ctx, listDockerTags, arg.RepositoryID, arg.Limit)
+	rows, err := q.db.Query(ctx, listDockerTags, arg.RepositoryID, arg.Image, arg.Limit)
 	if err != nil {
 		return nil, err
 	}
@@ -406,6 +440,7 @@ func (q *Queries) ListDockerTags(ctx context.Context, arg ListDockerTagsParams) 
 			&i.ManifestDigest,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Image,
 		); err != nil {
 			return nil, err
 		}
@@ -418,21 +453,27 @@ func (q *Queries) ListDockerTags(ctx context.Context, arg ListDockerTagsParams) 
 }
 
 const listDockerTagsAfter = `-- name: ListDockerTagsAfter :many
-SELECT id, repository_id, name, manifest_digest, created_at, updated_at
+SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
 FROM docker_tags
-WHERE repository_id = $1 AND name > $2
+WHERE repository_id = $1 AND image = $2 AND name > $3
 ORDER BY name ASC
-LIMIT $3
+LIMIT $4
 `
 
 type ListDockerTagsAfterParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
 	Name         string `db:"name" json:"name"`
 	Limit        int32  `db:"limit" json:"limit"`
 }
 
 func (q *Queries) ListDockerTagsAfter(ctx context.Context, arg ListDockerTagsAfterParams) ([]DockerTag, error) {
-	rows, err := q.db.Query(ctx, listDockerTagsAfter, arg.RepositoryID, arg.Name, arg.Limit)
+	rows, err := q.db.Query(ctx, listDockerTagsAfter,
+		arg.RepositoryID,
+		arg.Image,
+		arg.Name,
+		arg.Limit,
+	)
 	if err != nil {
 		return nil, err
 	}
@@ -447,6 +488,48 @@ func (q *Queries) ListDockerTagsAfter(ctx context.Context, arg ListDockerTagsAft
 			&i.ManifestDigest,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.Image,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDockerTagsByRepo = `-- name: ListDockerTagsByRepo :many
+SELECT id, repository_id, name, manifest_digest, created_at, updated_at, image
+FROM docker_tags
+WHERE repository_id = $1
+ORDER BY image ASC, name ASC
+LIMIT $2
+`
+
+type ListDockerTagsByRepoParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Limit        int32  `db:"limit" json:"limit"`
+}
+
+func (q *Queries) ListDockerTagsByRepo(ctx context.Context, arg ListDockerTagsByRepoParams) ([]DockerTag, error) {
+	rows, err := q.db.Query(ctx, listDockerTagsByRepo, arg.RepositoryID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DockerTag{}
+	for rows.Next() {
+		var i DockerTag
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.Name,
+			&i.ManifestDigest,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.Image,
 		); err != nil {
 			return nil, err
 		}
@@ -474,14 +557,15 @@ func (q *Queries) UpdateDockerUploadOffset(ctx context.Context, arg UpdateDocker
 }
 
 const upsertDockerTag = `-- name: UpsertDockerTag :one
-INSERT INTO docker_tags (repository_id, name, manifest_digest)
-VALUES ($1, $2, $3)
-ON CONFLICT (repository_id, name) DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
+INSERT INTO docker_tags (repository_id, image, name, manifest_digest)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (repository_id, image, name) DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
 RETURNING id, created_at, updated_at
 `
 
 type UpsertDockerTagParams struct {
 	RepositoryID   string `db:"repository_id" json:"repository_id"`
+	Image          string `db:"image" json:"image"`
 	Name           string `db:"name" json:"name"`
 	ManifestDigest string `db:"manifest_digest" json:"manifest_digest"`
 }
@@ -493,7 +577,12 @@ type UpsertDockerTagRow struct {
 }
 
 func (q *Queries) UpsertDockerTag(ctx context.Context, arg UpsertDockerTagParams) (UpsertDockerTagRow, error) {
-	row := q.db.QueryRow(ctx, upsertDockerTag, arg.RepositoryID, arg.Name, arg.ManifestDigest)
+	row := q.db.QueryRow(ctx, upsertDockerTag,
+		arg.RepositoryID,
+		arg.Image,
+		arg.Name,
+		arg.ManifestDigest,
+	)
 	var i UpsertDockerTagRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
 	return i, err

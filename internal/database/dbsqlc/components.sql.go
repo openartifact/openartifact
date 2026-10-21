@@ -357,7 +357,7 @@ FROM (
     -- docker: the manifest blob; media type is the manifest's own.
     SELECT t.id::uuid, 'docker'::text, t.manifest_digest::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(dm.media_type, '')::text
-    FROM docker_tags t LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.digest = t.manifest_digest LEFT JOIN blobs b ON b.id = dm.blob_id
+    FROM docker_tags t LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest LEFT JOIN blobs b ON b.id = dm.blob_id
     WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
 ) AS p
 LIMIT 1
@@ -547,13 +547,13 @@ FROM (
     WHERE t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
       AND ($2::text = '' OR $2::text = r.format)
     UNION ALL
-    -- docker: one row per tag (the registry image name is the repository name); size = manifest size, filename = manifest digest.
-    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, r.name::text AS name, t.name::text AS version,
+    -- docker: one row per tag (the registry image name is the repository name, plus the image path inside it); size = manifest size, filename = manifest digest.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text AS name, t.name::text AS version,
            'docker'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
            ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
            0::bigint AS archive_size, COALESCE(dm.size, 0)::bigint AS package_size, 0::bigint AS installed_size,
            t.manifest_digest::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM docker_tags t JOIN repositories r ON r.id = t.repository_id LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.digest = t.manifest_digest LEFT JOIN blobs b ON b.id = dm.blob_id
+    FROM docker_tags t JOIN repositories r ON r.id = t.repository_id LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest LEFT JOIN blobs b ON b.id = dm.blob_id
     WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker')
 ) AS p
 ORDER BY created_at DESC, id

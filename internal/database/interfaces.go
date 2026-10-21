@@ -138,17 +138,21 @@ type Database interface {
 	DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error
 
 	CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error
-	GetDockerManifest(ctx context.Context, repoID, digest string) (*models.DockerManifest, error)
-	DeleteDockerManifest(ctx context.Context, repoID, digest string) error
+	GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error)
+	DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error
 
 	// ListDockerManifestsByRepo is a bulk-list-by-repo method used only by
 	// backup export (no digest/subject filter required).
 	ListDockerManifestsByRepo(ctx context.Context, repoID string) ([]*models.DockerManifest, error)
 
 	UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error
-	GetDockerTag(ctx context.Context, repoID, name string) (*models.DockerTag, error)
-	DeleteDockerTag(ctx context.Context, repoID, name string) error
-	ListDockerTags(ctx context.Context, repoID string, last string, n int) ([]*models.DockerTag, error)
+	GetDockerTag(ctx context.Context, repoID, image, name string) (*models.DockerTag, error)
+	DeleteDockerTag(ctx context.Context, repoID, image, name string) error
+	// DeleteDockerTagsByDigest removes every tag of the image that points at digest.
+	DeleteDockerTagsByDigest(ctx context.Context, repoID, image, digest string) error
+	ListDockerTags(ctx context.Context, repoID, image, last string, n int) ([]*models.DockerTag, error)
+	// ListDockerTagsByRepo lists up to limit tags across every image of the repository (backup export).
+	ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error)
 
 	// EnsureBlob ensures the global blobs table has a row for sha256
 	// (creating it, or updating its media type, if needed) and returns its
@@ -158,7 +162,7 @@ type Database interface {
 
 	// ListDockerManifestsBySubject returns manifests in repoID whose OCI
 	// `subject` field points at subjectDigest, for the Referrers API.
-	ListDockerManifestsBySubject(ctx context.Context, repoID, subjectDigest string) ([]*models.DockerManifest, error)
+	ListDockerManifestsBySubject(ctx context.Context, repoID, image, subjectDigest string) ([]*models.DockerManifest, error)
 
 	// Proxy/Group repository methods
 	AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error

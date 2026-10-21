@@ -671,6 +671,7 @@ func main() {
 	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) { ivyHTTP.RegisterRepoRoutes(r) })
 	log.Infow("Maven/SBT/Ivy handlers registered (isolated prefixes)")
 	dockerHTTP := formatdocker.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
+	dockerHTTP.SetAuthorizer(evaluator)
 	dockerHTTP.RegisterRoutes(authedAPI)
 
 	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(blobStore).WithPublisher(webhookDispatcher)

@@ -264,28 +264,34 @@ func (m *BaseMockDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploa
 func (m *BaseMockDB) CreateDockerManifest(ctx context.Context, mf *models.DockerManifest) error {
 	return errNotImpl("CreateDockerManifest")
 }
-func (m *BaseMockDB) GetDockerManifest(ctx context.Context, repoID, digest string) (*models.DockerManifest, error) {
+func (m *BaseMockDB) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {
 	return nil, errNotImpl("GetDockerManifest")
 }
-func (m *BaseMockDB) DeleteDockerManifest(ctx context.Context, repoID, digest string) error {
+func (m *BaseMockDB) DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error {
 	return errNotImpl("DeleteDockerManifest")
 }
 func (m *BaseMockDB) UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error {
 	return errNotImpl("UpsertDockerTag")
 }
-func (m *BaseMockDB) GetDockerTag(ctx context.Context, repoID, name string) (*models.DockerTag, error) {
+func (m *BaseMockDB) GetDockerTag(ctx context.Context, repoID, image, name string) (*models.DockerTag, error) {
 	return nil, errNotImpl("GetDockerTag")
 }
-func (m *BaseMockDB) DeleteDockerTag(ctx context.Context, repoID, name string) error {
+func (m *BaseMockDB) DeleteDockerTag(ctx context.Context, repoID, image, name string) error {
 	return errNotImpl("DeleteDockerTag")
 }
-func (m *BaseMockDB) ListDockerTags(ctx context.Context, repoID string, last string, n int) ([]*models.DockerTag, error) {
+func (m *BaseMockDB) DeleteDockerTagsByDigest(ctx context.Context, repoID, image, digest string) error {
+	return errNotImpl("DeleteDockerTagsByDigest")
+}
+func (m *BaseMockDB) ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error) {
+	return nil, errNotImpl("ListDockerTagsByRepo")
+}
+func (m *BaseMockDB) ListDockerTags(ctx context.Context, repoID, image, last string, n int) ([]*models.DockerTag, error) {
 	return nil, errNotImpl("ListDockerTags")
 }
 func (m *BaseMockDB) EnsureBlob(ctx context.Context, sha256, mediaType string, size int64) (string, error) {
 	return "", errNotImpl("EnsureBlob")
 }
-func (m *BaseMockDB) ListDockerManifestsBySubject(ctx context.Context, repoID, subjectDigest string) ([]*models.DockerManifest, error) {
+func (m *BaseMockDB) ListDockerManifestsBySubject(ctx context.Context, repoID, image, subjectDigest string) ([]*models.DockerManifest, error) {
 	return nil, errNotImpl("ListDockerManifestsBySubject")
 }
 func (m *BaseMockDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error {

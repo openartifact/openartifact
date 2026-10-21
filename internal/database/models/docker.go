@@ -38,6 +38,7 @@ type DockerUpload struct {
 type DockerManifest struct {
 	ID            string `db:"id"`
 	RepositoryID  string `db:"repository_id"`
+	Image         string `db:"image"`  // image name inside the repository; "" is the default image
 	Digest        string `db:"digest"` // sha256:<hex>
 	MediaType     string `db:"media_type"`
 	BlobID        string `db:"blob_id"`
@@ -55,6 +56,7 @@ type DockerManifest struct {
 type DockerTag struct {
 	ID             string    `db:"id"`
 	RepositoryID   string    `db:"repository_id"`
+	Image          string    `db:"image"` // image name inside the repository; "" is the default image
 	Name           string    `db:"name"`
 	ManifestDigest string    `db:"manifest_digest"`
 	CreatedAt      time.Time `db:"created_at"`

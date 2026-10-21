@@ -202,11 +202,12 @@ func (p *PostgresDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploa
 func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error {
 	row, err := p.q.CreateDockerManifest(ctx, dbsqlc.CreateDockerManifestParams{
 		RepositoryID: m.RepositoryID,
+		Image:        m.Image,
 		Digest:       m.Digest,
 		MediaType:    m.MediaType,
 		BlobID:       m.BlobID,
 		Size:         m.Size,
-		Column6:      m.SubjectDigest,
+		Column7:      m.SubjectDigest,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create docker manifest: %w", err)
@@ -219,9 +220,10 @@ func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerM
 	return nil
 }
 
-func (p *PostgresDB) GetDockerManifest(ctx context.Context, repoID, digest string) (*models.DockerManifest, error) {
+func (p *PostgresDB) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {
 	row, err := p.q.GetDockerManifest(ctx, dbsqlc.GetDockerManifestParams{
 		RepositoryID: repoID,
+		Image:        image,
 		Digest:       digest,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -235,6 +237,7 @@ func (p *PostgresDB) GetDockerManifest(ctx context.Context, repoID, digest strin
 	return &models.DockerManifest{
 		ID:            row.ID,
 		RepositoryID:  row.RepositoryID,
+		Image:         row.Image,
 		Digest:        row.Digest,
 		MediaType:     row.MediaType,
 		BlobID:        row.BlobID,
@@ -259,6 +262,7 @@ func (p *PostgresDB) ListDockerManifestsByRepo(ctx context.Context, repoID strin
 		manifests[i] = &models.DockerManifest{
 			ID:            row.ID,
 			RepositoryID:  row.RepositoryID,
+			Image:         row.Image,
 			Digest:        row.Digest,
 			MediaType:     row.MediaType,
 			Size:          row.Size,
@@ -276,14 +280,14 @@ func (p *PostgresDB) ListDockerManifestsByRepo(ctx context.Context, repoID strin
 // `subject` field points at subjectDigest, for the Referrers API
 // (GET /v2/<name>/referrers/<digest>). No sqlc query exists for this
 // lookup, so it runs directly against p.db.
-func (p *PostgresDB) ListDockerManifestsBySubject(ctx context.Context, repoID, subjectDigest string) ([]*models.DockerManifest, error) {
+func (p *PostgresDB) ListDockerManifestsBySubject(ctx context.Context, repoID, image, subjectDigest string) ([]*models.DockerManifest, error) {
 	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, repository_id, digest, media_type, blob_id, size,
+		`SELECT id, repository_id, image, digest, media_type, blob_id, size,
 		        COALESCE(subject_digest, ''), created_at, updated_at
 		 FROM docker_manifests
-		 WHERE repository_id = $1 AND subject_digest = $2
+		 WHERE repository_id = $1 AND image = $2 AND subject_digest = $3
 		 ORDER BY created_at`,
-		repoID, subjectDigest,
+		repoID, image, subjectDigest,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list docker manifests by subject: %w", err)
@@ -294,7 +298,7 @@ func (p *PostgresDB) ListDockerManifestsBySubject(ctx context.Context, repoID, s
 
 	for rows.Next() {
 		m := &models.DockerManifest{}
-		if err := rows.Scan(&m.ID, &m.RepositoryID, &m.Digest, &m.MediaType, &m.BlobID, &m.Size,
+		if err := rows.Scan(&m.ID, &m.RepositoryID, &m.Image, &m.Digest, &m.MediaType, &m.BlobID, &m.Size,
 			&m.SubjectDigest, &m.CreatedAt, &m.UpdatedAt); err != nil {
 			return nil, fmt.Errorf("failed to scan docker manifest: %w", err)
 		}
@@ -309,9 +313,10 @@ func (p *PostgresDB) ListDockerManifestsBySubject(ctx context.Context, repoID, s
 	return manifests, nil
 }
 
-func (p *PostgresDB) DeleteDockerManifest(ctx context.Context, repoID, digest string) error {
+func (p *PostgresDB) DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error {
 	if err := p.q.DeleteDockerManifest(ctx, dbsqlc.DeleteDockerManifestParams{
 		RepositoryID: repoID,
+		Image:        image,
 		Digest:       digest,
 	}); err != nil {
 		return fmt.Errorf("failed to delete docker manifest: %w", err)
@@ -325,6 +330,7 @@ func (p *PostgresDB) DeleteDockerManifest(ctx context.Context, repoID, digest st
 func (p *PostgresDB) UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error {
 	row, err := p.q.UpsertDockerTag(ctx, dbsqlc.UpsertDockerTagParams{
 		RepositoryID:   tag.RepositoryID,
+		Image:          tag.Image,
 		Name:           tag.Name,
 		ManifestDigest: tag.ManifestDigest,
 	})
@@ -339,9 +345,10 @@ func (p *PostgresDB) UpsertDockerTag(ctx context.Context, tag *models.DockerTag)
 	return nil
 }
 
-func (p *PostgresDB) GetDockerTag(ctx context.Context, repoID, name string) (*models.DockerTag, error) {
+func (p *PostgresDB) GetDockerTag(ctx context.Context, repoID, image, name string) (*models.DockerTag, error) {
 	row, err := p.q.GetDockerTag(ctx, dbsqlc.GetDockerTagParams{
 		RepositoryID: repoID,
+		Image:        image,
 		Name:         name,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
@@ -355,6 +362,7 @@ func (p *PostgresDB) GetDockerTag(ctx context.Context, repoID, name string) (*mo
 	return &models.DockerTag{
 		ID:             row.ID,
 		RepositoryID:   row.RepositoryID,
+		Image:          row.Image,
 		Name:           row.Name,
 		ManifestDigest: row.ManifestDigest,
 		CreatedAt:      row.CreatedAt,
@@ -362,9 +370,10 @@ func (p *PostgresDB) GetDockerTag(ctx context.Context, repoID, name string) (*mo
 	}, nil
 }
 
-func (p *PostgresDB) DeleteDockerTag(ctx context.Context, repoID, name string) error {
+func (p *PostgresDB) DeleteDockerTag(ctx context.Context, repoID, image, name string) error {
 	if err := p.q.DeleteDockerTag(ctx, dbsqlc.DeleteDockerTagParams{
 		RepositoryID: repoID,
+		Image:        image,
 		Name:         name,
 	}); err != nil {
 		return fmt.Errorf("failed to delete docker tag: %w", err)
@@ -373,7 +382,19 @@ func (p *PostgresDB) DeleteDockerTag(ctx context.Context, repoID, name string) e
 	return nil
 }
 
-func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID string, last string, n int) ([]*models.DockerTag, error) {
+func (p *PostgresDB) DeleteDockerTagsByDigest(ctx context.Context, repoID, image, digest string) error {
+	if err := p.q.DeleteDockerTagsByDigest(ctx, dbsqlc.DeleteDockerTagsByDigestParams{
+		RepositoryID:   repoID,
+		Image:          image,
+		ManifestDigest: digest,
+	}); err != nil {
+		return fmt.Errorf("failed to delete docker tags by digest: %w", err)
+	}
+
+	return nil
+}
+
+func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID, image, last string, n int) ([]*models.DockerTag, error) {
 	if n <= 0 {
 		n = 100
 	}
@@ -383,6 +404,7 @@ func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID string, last str
 	if last != "" {
 		rows, err := p.q.ListDockerTagsAfter(ctx, dbsqlc.ListDockerTagsAfterParams{
 			RepositoryID: repoID,
+			Image:        image,
 			Name:         last,
 			Limit:        int32(n),
 		})
@@ -394,6 +416,7 @@ func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID string, last str
 	} else {
 		rows, err := p.q.ListDockerTags(ctx, dbsqlc.ListDockerTagsParams{
 			RepositoryID: repoID,
+			Image:        image,
 			Limit:        int32(n),
 		})
 		if err != nil {
@@ -403,11 +426,30 @@ func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID string, last str
 		dbTags = rows
 	}
 
-	tags := make([]*models.DockerTag, len(dbTags))
-	for i, row := range dbTags {
+	return dockerTagsFromRows(dbTags), nil
+}
+
+// ListDockerTagsByRepo lists tags across every image of a repository, for
+// backup export.
+func (p *PostgresDB) ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error) {
+	rows, err := p.q.ListDockerTagsByRepo(ctx, dbsqlc.ListDockerTagsByRepoParams{
+		RepositoryID: repoID,
+		Limit:        toInt32(limit),
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to list docker tags by repo: %w", err)
+	}
+
+	return dockerTagsFromRows(rows), nil
+}
+
+func dockerTagsFromRows(rows []dbsqlc.DockerTag) []*models.DockerTag {
+	tags := make([]*models.DockerTag, len(rows))
+	for i, row := range rows {
 		tags[i] = &models.DockerTag{
 			ID:             row.ID,
 			RepositoryID:   row.RepositoryID,
+			Image:          row.Image,
 			Name:           row.Name,
 			ManifestDigest: row.ManifestDigest,
 			CreatedAt:      row.CreatedAt,
@@ -415,5 +457,5 @@ func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID string, last str
 		}
 	}
 
-	return tags, nil
+	return tags
 }

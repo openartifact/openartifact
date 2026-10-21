@@ -15,6 +15,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -558,12 +559,6 @@ func isolatedRepoNamespaces() []string {
 	return []string{"raw", "maven", "sbt", "ivy"}
 }
 
-// dockerPathMarkers are the literal sub-resource markers the OCI distribution
-// spec defines after the repository name in /v2/<name>/<marker>/….
-func dockerPathMarkers() []string {
-	return []string{"/manifests/", "/blobs/", "/tags/list", "/referrers/"}
-}
-
 // isSPARepoPath reports whether segments (from a "/repos/…" path, split on
 // "/") is one of the exact Vue-router page shapes rather than a
 // format-handler API call. Everything not explicitly listed here requires
@@ -590,33 +585,21 @@ func isSPARepoPath(segments []string) bool {
 	}
 }
 
-// splitDockerPath splits the portion of a /v2/… URL after the "/v2/" prefix
-// into the repository name and the OCI sub-resource path. Docker/OCI
-// repository names may themselves contain "/" (namespaced images) and may
-// even contain a literal marker segment (e.g. "manifests"), so the split
-// point must match what chi's greedy `/v2/{name:*}/manifests/{reference}`
-// wildcard actually binds: the LAST occurrence of a known sub-resource
-// marker, not the first. Using the first occurrence would truncate such a
-// repository's name and desync RBAC's resolved repo from the one the
-// handler serves.
+// splitDockerPath maps the portion of a /v2/… URL after the "/v2/" prefix to
+// the (repository, artifact path) pair RBAC scopes against. The distribution
+// name's first segment is the OpenArtifact repository; the remaining segments
+// are the image inside it and lead the artifact path
+// ("org/team/app/manifests/1"). The parse is shared with the registry handler
+// (ocipath), so RBAC authorizes the repository the handler serves.
 func splitDockerPath(rest string) (string, string) {
 	if rest == "" {
 		return "", ""
 	}
 
-	bestIdx := -1
+	req := ocipath.Parse(rest)
+	repo, _ := ocipath.SplitName(req.Name)
 
-	for _, marker := range dockerPathMarkers() {
-		if idx := strings.LastIndex(rest, marker); idx > bestIdx {
-			bestIdx = idx
-		}
-	}
-
-	if bestIdx == -1 {
-		return rest, ""
-	}
-
-	return rest[:bestIdx], rest[bestIdx+1:]
+	return repo, ocipath.Resource(rest, req.Name)
 }
 
 // RepoAndPath maps a request path to the (repository, artifact path) pair the

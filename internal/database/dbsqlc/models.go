@@ -338,6 +338,8 @@ type DockerManifest struct {
 	CreatedAt     time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
 	BlobID        string    `db:"blob_id" json:"blob_id"`
+	// Image name inside the repository (distribution name minus its first segment); empty for the default image.
+	Image string `db:"image" json:"image"`
 }
 
 // Named tags pointing to manifests in a repository
@@ -348,6 +350,8 @@ type DockerTag struct {
 	ManifestDigest string    `db:"manifest_digest" json:"manifest_digest"`
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	// Image name inside the repository (distribution name minus its first segment); empty for the default image.
+	Image string `db:"image" json:"image"`
 }
 
 // In-progress chunked blob upload sessions

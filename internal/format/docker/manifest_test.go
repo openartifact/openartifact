@@ -11,6 +11,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sort"
 	"strings"
 	"testing"
 
@@ -21,13 +22,15 @@ import (
 // manifestFakeDB is a minimal in-memory Database for manifest-path tests
 // (push, get, referrers, delete). Embeds BaseMockDB so any method these
 // tests don't exercise returns a descriptive error instead of panicking.
+// Manifests and tags are scoped per (image, digest|name) like the real tables,
+// and the create/upsert methods are idempotent like the real queries.
 type manifestFakeDB struct {
 	database.BaseMockDB
 
 	repo *models.Repository
 
-	manifests map[string]*models.DockerManifest // digest -> manifest
-	tags      map[string]*models.DockerTag      // name -> tag
+	manifests map[string]*models.DockerManifest // image|digest -> manifest
+	tags      map[string]*models.DockerTag      // image|name -> tag
 }
 
 func newManifestFakeDB(repoID string) *manifestFakeDB {
@@ -38,7 +41,18 @@ func newManifestFakeDB(repoID string) *manifestFakeDB {
 	}
 }
 
-func (f *manifestFakeDB) GetRepositoryByName(_ context.Context, _ string) (*models.Repository, error) {
+func scoped(image, key string) string { return image + "|" + key }
+
+// manifest returns the manifest stored for the default image.
+func (f *manifestFakeDB) manifest(digest string) *models.DockerManifest {
+	return f.manifests[scoped("", digest)]
+}
+
+func (f *manifestFakeDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
+	if f.repo != nil && f.repo.Name != "" && f.repo.Name != name {
+		return nil, nil
+	}
+
 	return f.repo, nil
 }
 
@@ -47,38 +61,66 @@ func (f *manifestFakeDB) EnsureBlob(_ context.Context, sha256, _ string, _ int64
 }
 
 func (f *manifestFakeDB) CreateDockerManifest(_ context.Context, m *models.DockerManifest) error {
-	f.manifests[m.Digest] = m
+	f.manifests[scoped(m.Image, m.Digest)] = m
 	return nil
 }
 
-func (f *manifestFakeDB) GetDockerManifest(_ context.Context, _, digest string) (*models.DockerManifest, error) {
-	return f.manifests[digest], nil
+func (f *manifestFakeDB) GetDockerManifest(_ context.Context, _, image, digest string) (*models.DockerManifest, error) {
+	return f.manifests[scoped(image, digest)], nil
 }
 
-func (f *manifestFakeDB) DeleteDockerManifest(_ context.Context, _, digest string) error {
-	delete(f.manifests, digest)
+func (f *manifestFakeDB) DeleteDockerManifest(_ context.Context, _, image, digest string) error {
+	delete(f.manifests, scoped(image, digest))
 	return nil
 }
 
 func (f *manifestFakeDB) UpsertDockerTag(_ context.Context, tag *models.DockerTag) error {
-	f.tags[tag.Name] = tag
+	f.tags[scoped(tag.Image, tag.Name)] = tag
 	return nil
 }
 
-func (f *manifestFakeDB) GetDockerTag(_ context.Context, _, name string) (*models.DockerTag, error) {
-	return f.tags[name], nil
+func (f *manifestFakeDB) GetDockerTag(_ context.Context, _, image, name string) (*models.DockerTag, error) {
+	return f.tags[scoped(image, name)], nil
 }
 
-func (f *manifestFakeDB) DeleteDockerTag(_ context.Context, _, name string) error {
-	delete(f.tags, name)
+func (f *manifestFakeDB) DeleteDockerTag(_ context.Context, _, image, name string) error {
+	delete(f.tags, scoped(image, name))
 	return nil
 }
 
-func (f *manifestFakeDB) ListDockerManifestsBySubject(_ context.Context, _, subjectDigest string) ([]*models.DockerManifest, error) {
+func (f *manifestFakeDB) DeleteDockerTagsByDigest(_ context.Context, _, image, digest string) error {
+	for k, t := range f.tags {
+		if t.Image == image && t.ManifestDigest == digest {
+			delete(f.tags, k)
+		}
+	}
+
+	return nil
+}
+
+func (f *manifestFakeDB) ListDockerTags(_ context.Context, _, image, last string, n int) ([]*models.DockerTag, error) {
+	var out []*models.DockerTag
+
+	for _, t := range f.tags {
+		if t.Image == image && t.Name > last {
+			out = append(out, t)
+		}
+	}
+
+	sort.Slice(out, func(i, j int) bool { return out[i].Name < out[j].Name })
+
+	if len(out) > n {
+		out = out[:n]
+	}
+
+	return out, nil
+}
+
+func (f *manifestFakeDB) ListDockerManifestsBySubject(_ context.Context, _, image, subjectDigest string) ([]*models.DockerManifest, error) {
 	var out []*models.DockerManifest
 
 	for _, m := range f.manifests {
-		if m.SubjectDigest == subjectDigest {
+		if m.Image == image && m.SubjectDigest == subjectDigest {
 			out = append(out, m)
 		}
 	}
@@ -129,8 +171,8 @@ func TestHandlePutManifest_PersistsBlobAndRoundTrips(t *testing.T) {
 		t.Fatal("expected Docker-Content-Digest header")
 	}
 
-	stored, ok := db.manifests[digest]
-	if !ok {
+	stored := db.manifest(digest)
+	if stored == nil {
 		t.Fatal("expected manifest to be persisted")
 	}
 
@@ -266,7 +308,7 @@ func TestHandleDeleteManifest_ReclaimsUnreferencedBlob(t *testing.T) {
 		t.Fatalf("status = %d, want 202; body=%s", delRec.Code, delRec.Body.String())
 	}
 
-	if _, ok := db.manifests[digest]; ok {
+	if db.manifest(digest) != nil {
 		t.Fatal("expected manifest row to be deleted")
 	}
 

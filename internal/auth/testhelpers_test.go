@@ -440,17 +440,21 @@ func (m *tokenMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error {
 func (m *tokenMockDB) CreateDockerManifest(_ context.Context, _ *models.DockerManifest) error {
 	return nil
 }
-func (m *tokenMockDB) GetDockerManifest(_ context.Context, _, _ string) (*models.DockerManifest, error) {
+func (m *tokenMockDB) GetDockerManifest(_ context.Context, _, _, _ string) (*models.DockerManifest, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteDockerManifest(_ context.Context, _, _ string) error { return nil }
+func (m *tokenMockDB) DeleteDockerManifest(_ context.Context, _, _, _ string) error { return nil }
 
 func (m *tokenMockDB) UpsertDockerTag(_ context.Context, _ *models.DockerTag) error { return nil }
-func (m *tokenMockDB) GetDockerTag(_ context.Context, _, _ string) (*models.DockerTag, error) {
+func (m *tokenMockDB) GetDockerTag(_ context.Context, _, _, _ string) (*models.DockerTag, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteDockerTag(_ context.Context, _, _ string) error { return nil }
-func (m *tokenMockDB) ListDockerTags(_ context.Context, _, _ string, _ int) ([]*models.DockerTag, error) {
+func (m *tokenMockDB) DeleteDockerTag(_ context.Context, _, _, _ string) error          { return nil }
+func (m *tokenMockDB) DeleteDockerTagsByDigest(_ context.Context, _, _, _ string) error { return nil }
+func (m *tokenMockDB) ListDockerTagsByRepo(_ context.Context, _ string, _ int) ([]*models.DockerTag, error) {
+	return nil, nil
+}
+func (m *tokenMockDB) ListDockerTags(_ context.Context, _, _, _ string, _ int) ([]*models.DockerTag, error) {
 	return nil, nil
 }
 

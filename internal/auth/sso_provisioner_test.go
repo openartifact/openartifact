@@ -502,17 +502,21 @@ func (m *provMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error { 
 func (m *provMockDB) CreateDockerManifest(_ context.Context, _ *models.DockerManifest) error {
 	return nil
 }
-func (m *provMockDB) GetDockerManifest(_ context.Context, _, _ string) (*models.DockerManifest, error) {
+func (m *provMockDB) GetDockerManifest(_ context.Context, _, _, _ string) (*models.DockerManifest, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteDockerManifest(_ context.Context, _, _ string) error { return nil }
+func (m *provMockDB) DeleteDockerManifest(_ context.Context, _, _, _ string) error { return nil }
 
 func (m *provMockDB) UpsertDockerTag(_ context.Context, _ *models.DockerTag) error { return nil }
-func (m *provMockDB) GetDockerTag(_ context.Context, _, _ string) (*models.DockerTag, error) {
+func (m *provMockDB) GetDockerTag(_ context.Context, _, _, _ string) (*models.DockerTag, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteDockerTag(_ context.Context, _, _ string) error { return nil }
-func (m *provMockDB) ListDockerTags(_ context.Context, _, _ string, _ int) ([]*models.DockerTag, error) {
+func (m *provMockDB) DeleteDockerTag(_ context.Context, _, _, _ string) error          { return nil }
+func (m *provMockDB) DeleteDockerTagsByDigest(_ context.Context, _, _, _ string) error { return nil }
+func (m *provMockDB) ListDockerTagsByRepo(_ context.Context, _ string, _ int) ([]*models.DockerTag, error) {
+	return nil, nil
+}
+func (m *provMockDB) ListDockerTags(_ context.Context, _, _, _ string, _ int) ([]*models.DockerTag, error) {
 	return nil, nil
 }
 

@@ -1297,19 +1297,27 @@ func (m *MockDatabase) DeleteDockerUpload(ctx context.Context, repositoryID, upl
 func (m *MockDatabase) CreateDockerManifest(ctx context.Context, manifest *models.DockerManifest) error {
 	return nil
 }
-func (m *MockDatabase) GetDockerManifest(ctx context.Context, repoID, digest string) (*models.DockerManifest, error) {
+func (m *MockDatabase) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {
 	return nil, nil
 }
-func (m *MockDatabase) DeleteDockerManifest(ctx context.Context, repoID, digest string) error {
+func (m *MockDatabase) DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error {
 	return nil
 }
 
 func (m *MockDatabase) UpsertDockerTag(ctx context.Context, tag *models.DockerTag) error { return nil }
-func (m *MockDatabase) GetDockerTag(ctx context.Context, repoID, name string) (*models.DockerTag, error) {
+func (m *MockDatabase) GetDockerTag(ctx context.Context, repoID, image, name string) (*models.DockerTag, error) {
 	return nil, nil
 }
-func (m *MockDatabase) DeleteDockerTag(ctx context.Context, repoID, name string) error { return nil }
-func (m *MockDatabase) ListDockerTags(ctx context.Context, repoID string, last string, n int) ([]*models.DockerTag, error) {
+func (m *MockDatabase) DeleteDockerTag(ctx context.Context, repoID, image, name string) error {
+	return nil
+}
+func (m *MockDatabase) DeleteDockerTagsByDigest(ctx context.Context, repoID, image, digest string) error {
+	return nil
+}
+func (m *MockDatabase) ListDockerTagsByRepo(ctx context.Context, repoID string, limit int) ([]*models.DockerTag, error) {
+	return nil, nil
+}
+func (m *MockDatabase) ListDockerTags(ctx context.Context, repoID, image, last string, n int) ([]*models.DockerTag, error) {
 	return nil, nil
 }
 

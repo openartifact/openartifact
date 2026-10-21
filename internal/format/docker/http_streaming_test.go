@@ -35,6 +35,8 @@ type fakeDB struct {
 
 	offset        int64
 	createdBlob   *models.DockerBlob
+	blobCreates   int
+	blobs         map[string]*models.DockerBlob // digest -> blob held by repo
 	deletedUpload bool
 }
 
@@ -81,8 +83,20 @@ func (f *fakeDB) UpdateDockerUploadOffset(_ context.Context, repositoryID, uploa
 	return nil
 }
 
+func (f *fakeDB) GetDockerBlob(_ context.Context, _, digest string) (*models.DockerBlob, error) {
+	return f.blobs[digest], nil
+}
+
 func (f *fakeDB) CreateDockerBlob(_ context.Context, blob *models.DockerBlob) error {
 	f.createdBlob = blob
+	f.blobCreates++
+
+	if f.blobs == nil {
+		f.blobs = map[string]*models.DockerBlob{}
+	}
+
+	f.blobs[blob.Digest] = blob
+
 	return nil
 }
 

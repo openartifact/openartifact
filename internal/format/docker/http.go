@@ -15,14 +15,18 @@ import (
 	"net/http"
 	"os"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -36,6 +40,7 @@ type HTTPHandler struct {
 	blobStore storage.BlobStore
 	baseURL   string
 	publisher webhook.Publisher
+	authz     Authorizer
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
@@ -46,32 +51,108 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 // called before the handler serves requests.
 func (h *HTTPHandler) SetPublisher(p webhook.Publisher) { h.publisher = p }
 
+// Authorizer decides whether a principal may perform an action on a
+// repository. The handler needs it for the one operation that reads a second
+// repository: a cross-repository blob mount.
+type Authorizer interface {
+	Evaluate(ctx context.Context, principal auth.Principal, repoName, artifactPath, action string) (bool, error)
+}
+
+// SetAuthorizer sets the authorizer used to check read access to a mount
+// source repository. Without one, cross-repository mounts are declined and the
+// client falls back to a regular upload. It must be called before the handler
+// serves requests.
+func (h *HTTPHandler) SetAuthorizer(a Authorizer) { h.authz = a }
+
+// RegisterRoutes mounts the registry. Distribution names contain "/", which
+// chi's single-segment params cannot capture, so one wildcard route hands the
+// path to ocipath — the same parser RBAC uses to pick the repository.
 func (h *HTTPHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/v2/", h.handleVersionCheck)
+	r.HandleFunc("/v2/*", h.serveV2)
+}
 
-	// Manifest operations
-	r.Get("/v2/{name:*}/manifests/{reference}", h.handleGetManifest)
-	r.Put("/v2/{name:*}/manifests/{reference}", h.handlePutManifest)
-	r.Delete("/v2/{name:*}/manifests/{reference}", h.handleDeleteManifest)
-	r.Head("/v2/{name:*}/manifests/{reference}", h.handleHeadManifest)
+// route is one registry endpoint: the methods it serves, and the URL
+// parameter its trailing reference binds to.
+type route struct {
+	refParam string
+	methods  map[string]http.HandlerFunc
+}
 
-	// Blob operations
-	r.Get("/v2/{name:*}/blobs/{digest}", h.handleGetBlob)
-	r.Head("/v2/{name:*}/blobs/{digest}", h.handleHeadBlob)
-	r.Delete("/v2/{name:*}/blobs/{digest}", h.handleDeleteBlob)
+func (h *HTTPHandler) routes(kind ocipath.Kind) (route, bool) {
+	switch kind {
+	case ocipath.KindManifest:
+		return route{"reference", map[string]http.HandlerFunc{
+			http.MethodGet:    h.handleGetManifest,
+			http.MethodHead:   h.handleHeadManifest,
+			http.MethodPut:    h.handlePutManifest,
+			http.MethodDelete: h.handleDeleteManifest,
+		}}, true
+	case ocipath.KindBlob:
+		return route{"digest", map[string]http.HandlerFunc{
+			http.MethodGet:    h.handleGetBlob,
+			http.MethodHead:   h.handleHeadBlob,
+			http.MethodDelete: h.handleDeleteBlob,
+		}}, true
+	case ocipath.KindUploadStart:
+		return route{"", map[string]http.HandlerFunc{
+			http.MethodPost: h.handleInitiateBlobUpload,
+		}}, true
+	case ocipath.KindUpload:
+		return route{"uuid", map[string]http.HandlerFunc{
+			http.MethodGet:    h.handleGetUploadStatus,
+			http.MethodPatch:  h.handleUploadChunk,
+			http.MethodPut:    h.handleCompleteBlobUpload,
+			http.MethodDelete: h.handleCancelBlobUpload,
+		}}, true
+	case ocipath.KindTags:
+		return route{"", map[string]http.HandlerFunc{
+			http.MethodGet: h.handleListTags,
+		}}, true
+	case ocipath.KindReferrers:
+		return route{"digest", map[string]http.HandlerFunc{
+			http.MethodGet: h.handleGetReferrers,
+		}}, true
+	case ocipath.KindUnknown:
+	}
 
-	// Blob upload flow
-	r.Post("/v2/{name:*}/blobs/uploads/", h.handleInitiateBlobUpload)
-	r.Get("/v2/{name:*}/blobs/uploads/{uuid}", h.handleGetUploadStatus)
-	r.Patch("/v2/{name:*}/blobs/uploads/{uuid}", h.handleUploadChunk)
-	r.Put("/v2/{name:*}/blobs/uploads/{uuid}", h.handleCompleteBlobUpload)
-	r.Delete("/v2/{name:*}/blobs/uploads/{uuid}", h.handleCancelBlobUpload)
+	return route{}, false
+}
 
-	// Tags list
-	r.Get("/v2/{name:*}/tags/list", h.handleListTags)
+// serveV2 dispatches /v2/<name>/<resource> requests, binding the parsed
+// distribution name and reference as URL params for the handlers.
+func (h *HTTPHandler) serveV2(w http.ResponseWriter, r *http.Request) {
+	req := ocipath.Parse(strings.TrimPrefix(r.URL.Path, "/v2/"))
 
-	// OCI Referrers
-	r.Get("/v2/{name:*}/referrers/{digest}", h.handleGetReferrers)
+	rt, ok := h.routes(req.Kind)
+	if !ok {
+		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "unknown registry endpoint")
+		return
+	}
+
+	handler, ok := rt.methods[r.Method]
+	if !ok {
+		allowed := make([]string, 0, len(rt.methods))
+		for m := range rt.methods {
+			allowed = append(allowed, m)
+		}
+
+		slices.Sort(allowed)
+		w.Header().Set("Allow", strings.Join(allowed, ", "))
+		h.errorResponse(w, http.StatusMethodNotAllowed, "UNSUPPORTED", "method not allowed")
+
+		return
+	}
+
+	if rctx := chi.RouteContext(r.Context()); rctx != nil {
+		rctx.URLParams.Add("name", req.Name)
+
+		if rt.refParam != "" {
+			rctx.URLParams.Add(rt.refParam, req.Ref)
+		}
+	}
+
+	handler(w, r)
 }
 
 // resolveRepo looks up a repository by name.
@@ -82,6 +163,34 @@ func (h *HTTPHandler) resolveRepo(ctx context.Context, name string) (*models.Rep
 	}
 
 	return repo, nil
+}
+
+// target resolves a distribution name ("repo/org/team/app") to the
+// OpenArtifact repository (first segment) and the image inside it (the rest;
+// empty for the repository's default image). On failure it has already written
+// the registry error response and returns ok=false.
+func (h *HTTPHandler) target(w http.ResponseWriter, r *http.Request, name string) (*models.Repository, string, bool) {
+	repoName, image := ocipath.SplitName(name)
+
+	if !ocipath.ValidImage(image) {
+		h.errorResponse(w, http.StatusBadRequest, "NAME_INVALID", "invalid repository name")
+		return nil, "", false
+	}
+
+	repo, err := h.resolveRepo(r.Context(), repoName)
+	if err != nil {
+		h.log.Errorw("failed to resolve repo", "name", repoName, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return nil, "", false
+	}
+
+	if repo == nil {
+		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+		return nil, "", false
+	}
+
+	return repo, image, true
 }
 
 // errorResponse writes a Docker Registry error response.
@@ -115,29 +224,22 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 	name := vars["name"]
 	reference := vars["reference"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, image, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
 	var (
 		manifest *models.DockerManifest
 		digest   string
+		err      error
 	)
 
 	// If reference is a digest (sha256:...), look up directly
 	if strings.HasPrefix(reference, "sha256:") {
 		digest = reference
 
-		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, digest)
+		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, image, digest)
 		if err != nil {
 			h.log.Errorw("failed to get manifest by digest", "digest", digest, "error", err)
 			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -146,7 +248,7 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 		}
 	} else {
 		// Otherwise, treat as a tag name
-		tag, err := h.db.GetDockerTag(r.Context(), repo.ID, reference)
+		tag, err := h.db.GetDockerTag(r.Context(), repo.ID, image, reference)
 		if err != nil {
 			h.log.Errorw("failed to get tag", "tag", reference, "error", err)
 			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -161,7 +263,7 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 
 		digest = tag.ManifestDigest
 
-		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, digest)
+		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, image, digest)
 		if err != nil {
 			h.log.Errorw("failed to get manifest by tag", "tag", reference, "error", err)
 			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -201,22 +303,15 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
-// handlePutManifest pushes a manifest.
+// handlePutManifest pushes a manifest. Pushing a manifest the image already
+// holds succeeds, and pushing it under a tag moves that tag to it.
 func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	name := vars["name"]
 	reference := vars["reference"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, image, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -260,6 +355,7 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	manifest := &models.DockerManifest{
 		ID:            uuid.New().String(),
 		RepositoryID:  repo.ID,
+		Image:         image,
 		Digest:        digest,
 		MediaType:     contentType,
 		Size:          int64(len(body)),
@@ -272,7 +368,8 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	// sha256), ensure a row exists for it in the global blobs table (the
 	// docker_manifests row has a NOT NULL blob_id FK) and insert the manifest
 	// — all under the per-blob lock so a concurrent unpublish cannot delete
-	// the blob in between.
+	// the blob in between. Both the store and the insert are idempotent, so a
+	// re-push of the same manifest is a refresh.
 	if err := storage.WithBlobLock(r.Context(), h.db, digestHex, func(ctx context.Context) error {
 		blobKey, err := h.blobStore.Put(ctx, bytes.NewReader(body), map[string]string{
 			"sha256":       digestHex,
@@ -306,6 +403,7 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		tag := &models.DockerTag{
 			ID:             uuid.New().String(),
 			RepositoryID:   repo.ID,
+			Image:          image,
 			Name:           reference,
 			ManifestDigest: digest,
 			CreatedAt:      time.Now(),
@@ -325,8 +423,10 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		w.Header().Set("Oci-Subject", subjectDigest)
 	}
 
+	repoName, _ := ocipath.SplitName(name)
+
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: name,
+		Repository: repoName,
 		Format:     "docker",
 		Name:       name,
 		Version:    reference,
@@ -335,72 +435,56 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		Size:       int64(len(body)),
 	}))
 
+	w.Header().Set("Location", "/v2/"+name+"/manifests/"+digest)
 	w.Header().Set("Docker-Content-Digest", digest)
 	w.Header().Set("Content-Length", "0")
 	w.WriteHeader(http.StatusCreated)
 }
 
-// handleDeleteManifest deletes a manifest.
+// handleDeleteManifest deletes a tag or a manifest. Deleting by tag removes
+// only that tag; the manifest stays reachable by digest, as other tags may
+// still point at it. Deleting by digest removes the manifest and every tag of
+// the image that pointed at it, so no tag is left dangling.
 func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	name := vars["name"]
 	reference := vars["reference"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
+	repo, image, ok := h.target(w, r, name)
+	if !ok {
+		return
+	}
+
+	repoName, _ := ocipath.SplitName(name)
+
+	if !strings.HasPrefix(reference, "sha256:") {
+		h.deleteTag(w, r, repo, image, name, reference)
+		return
+	}
+
+	deleted, err := h.db.GetDockerManifest(r.Context(), repo.ID, image, reference)
 	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
+		h.log.Errorw("failed to get manifest before delete", "digest", reference, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return
 	}
 
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	if deleted == nil {
+		h.errorResponse(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "manifest not found")
 		return
 	}
 
-	var digest string
-
-	// If reference is a digest, use it directly
-	if strings.HasPrefix(reference, "sha256:") {
-		digest = reference
-	} else {
-		// Otherwise, resolve tag to digest
-		tag, err := h.db.GetDockerTag(r.Context(), repo.ID, reference)
-		if err != nil {
-			h.log.Errorw("failed to get tag", "tag", reference, "error", err)
-			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-			return
-		}
-
-		if tag == nil {
-			h.errorResponse(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "tag not found")
-			return
-		}
-
-		digest = tag.ManifestDigest
-
-		// Delete the tag
-		if err := h.db.DeleteDockerTag(r.Context(), repo.ID, reference); err != nil {
-			h.log.Errorw("failed to delete tag", "tag", reference, "error", err)
-			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-			return
-		}
-	}
-
-	deleted, err := h.db.GetDockerManifest(r.Context(), repo.ID, digest)
-	if err != nil {
-		h.log.Errorw("failed to get manifest before delete", "digest", digest, "error", err)
+	if err := h.db.DeleteDockerTagsByDigest(r.Context(), repo.ID, image, reference); err != nil {
+		h.log.Errorw("failed to delete tags of manifest", "digest", reference, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return
 	}
 
 	// Delete the manifest row first so BlobReferenceCount no longer sees it.
-	if err := h.db.DeleteDockerManifest(r.Context(), repo.ID, digest); err != nil {
-		h.log.Errorw("failed to delete manifest", "digest", digest, "error", err)
+	if err := h.db.DeleteDockerManifest(r.Context(), repo.ID, image, reference); err != nil {
+		h.log.Errorw("failed to delete manifest", "digest", reference, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return
@@ -408,26 +492,57 @@ func (h *HTTPHandler) handleDeleteManifest(w http.ResponseWriter, r *http.Reques
 
 	// Reclaim the manifest's content blob from storage only if no other
 	// docker_manifests row (or any other format table) still references it.
-	if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, manifestBlobKey(digest)); err != nil {
-		h.log.Errorw("failed to delete manifest blob from store", "digest", digest, "error", err)
+	if err := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, manifestBlobKey(reference)); err != nil {
+		h.log.Errorw("failed to delete manifest blob from store", "digest", reference, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
 		return
 	}
 
-	var deletedSize int64
-	if deleted != nil {
-		deletedSize = deleted.Size
-	}
-
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: name,
+		Repository: repoName,
 		Format:     "docker",
 		Name:       name,
 		Version:    reference,
 		Path:       name + "/manifests/" + reference,
-		SHA256:     manifestBlobKey(digest),
-		Size:       deletedSize,
+		SHA256:     manifestBlobKey(reference),
+		Size:       deleted.Size,
+	}))
+
+	w.WriteHeader(http.StatusAccepted)
+}
+
+// deleteTag removes one tag of an image, leaving its manifest in place.
+func (h *HTTPHandler) deleteTag(w http.ResponseWriter, r *http.Request, repo *models.Repository, image, name, tagName string) {
+	tag, err := h.db.GetDockerTag(r.Context(), repo.ID, image, tagName)
+	if err != nil {
+		h.log.Errorw("failed to get tag", "tag", tagName, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return
+	}
+
+	if tag == nil {
+		h.errorResponse(w, http.StatusNotFound, "MANIFEST_UNKNOWN", "tag not found")
+		return
+	}
+
+	if err := h.db.DeleteDockerTag(r.Context(), repo.ID, image, tagName); err != nil {
+		h.log.Errorw("failed to delete tag", "tag", tagName, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return
+	}
+
+	repoName, _ := ocipath.SplitName(name)
+
+	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
+		Repository: repoName,
+		Format:     "docker",
+		Name:       name,
+		Version:    tagName,
+		Path:       name + "/manifests/" + tagName,
+		SHA256:     manifestBlobKey(tag.ManifestDigest),
 	}))
 
 	w.WriteHeader(http.StatusAccepted)
@@ -439,24 +554,19 @@ func (h *HTTPHandler) handleHeadManifest(w http.ResponseWriter, r *http.Request)
 	name := vars["name"]
 	reference := vars["reference"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
+	repo, image, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
-		return
-	}
-
-	var manifest *models.DockerManifest
+	var (
+		manifest *models.DockerManifest
+		err      error
+	)
 
 	// If reference is a digest, look up directly
 	if strings.HasPrefix(reference, "sha256:") {
-		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, reference)
+		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, image, reference)
 		if err != nil {
 			h.log.Errorw("failed to get manifest by digest", "digest", reference, "error", err)
 			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -465,7 +575,7 @@ func (h *HTTPHandler) handleHeadManifest(w http.ResponseWriter, r *http.Request)
 		}
 	} else {
 		// Otherwise, resolve tag to digest
-		tag, err := h.db.GetDockerTag(r.Context(), repo.ID, reference)
+		tag, err := h.db.GetDockerTag(r.Context(), repo.ID, image, reference)
 		if err != nil {
 			h.log.Errorw("failed to get tag", "tag", reference, "error", err)
 			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -478,7 +588,7 @@ func (h *HTTPHandler) handleHeadManifest(w http.ResponseWriter, r *http.Request)
 			return
 		}
 
-		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, tag.ManifestDigest)
+		manifest, err = h.db.GetDockerManifest(r.Context(), repo.ID, image, tag.ManifestDigest)
 		if err != nil {
 			h.log.Errorw("failed to get manifest by tag", "tag", reference, "error", err)
 			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -504,16 +614,8 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	name := vars["name"]
 	digest := vars["digest"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -561,16 +663,8 @@ func (h *HTTPHandler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 	name := vars["name"]
 	digest := vars["digest"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -599,16 +693,8 @@ func (h *HTTPHandler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 	name := vars["name"]
 	digest := vars["digest"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -651,16 +737,12 @@ func (h *HTTPHandler) handleInitiateBlobUpload(w http.ResponseWriter, r *http.Re
 	vars := urlparams.Vars(r)
 	name := vars["name"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	if h.tryMountBlob(w, r, repo, name) {
 		return
 	}
 
@@ -697,22 +779,124 @@ func (h *HTTPHandler) handleInitiateBlobUpload(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusAccepted)
 }
 
+// tryMountBlob serves `POST …/blobs/uploads/?mount=<digest>&from=<name>`. When
+// the blob is already in the target repository, or can be linked from a source
+// repository the caller may read, it answers 201 and returns true. Otherwise it
+// returns false without writing anything and the caller opens a regular upload
+// session — the spec's fallback, which also avoids revealing whether a blob the
+// caller cannot read exists elsewhere.
+func (h *HTTPHandler) tryMountBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, name string) bool {
+	q := r.URL.Query()
+	digest, from := q.Get("mount"), q.Get("from")
+
+	if digest == "" {
+		return false
+	}
+
+	ctx := r.Context()
+
+	existing, err := h.db.GetDockerBlob(ctx, repo.ID, digest)
+	if err != nil {
+		h.log.Errorw("failed to look up mount target blob", "digest", digest, "error", err)
+		return false
+	}
+
+	if existing == nil {
+		src := h.mountSource(r, repo, from, digest)
+		if src == nil {
+			return false
+		}
+
+		if !h.linkBlob(ctx, repo.ID, digest, src) {
+			return false
+		}
+	}
+
+	w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/%s", name, digest))
+	w.Header().Set("Docker-Content-Digest", digest)
+	w.Header().Set("Content-Length", "0")
+	w.WriteHeader(http.StatusCreated)
+
+	return true
+}
+
+// mountSource returns the blob digest in the `from` repository when the caller
+// may read it and it is not quarantined, or nil.
+func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, from, digest string) *models.DockerBlob {
+	if from == "" || h.authz == nil {
+		return nil
+	}
+
+	ctx := r.Context()
+
+	srcRepoName, srcImage := ocipath.SplitName(from)
+	if !ocipath.ValidImage(srcImage) {
+		return nil
+	}
+
+	srcRepo, err := h.resolveRepo(ctx, srcRepoName)
+	if err != nil || srcRepo == nil || srcRepo.ID == target.ID {
+		return nil
+	}
+
+	principal := middleware.PrincipalFromContext(ctx)
+	if principal == nil {
+		return nil
+	}
+
+	path := "blobs/" + digest
+	if srcImage != "" {
+		path = srcImage + "/" + path
+	}
+
+	if allowed, authErr := h.authz.Evaluate(ctx, *principal, srcRepo.Name, path, "read"); authErr != nil || !allowed {
+		return nil
+	}
+
+	blob, err := h.db.GetDockerBlob(ctx, srcRepo.ID, digest)
+	if err != nil || blob == nil {
+		return nil
+	}
+
+	quarantined, err := quarantine.IsQuarantined(ctx, h.db, srcRepo.ID, quarantine.PathKeys(blob.ID, digest, from+"/blobs/"+digest)...)
+	if err != nil || quarantined {
+		return nil
+	}
+
+	return blob
+}
+
+// linkBlob adds a docker_blobs row for the target repository pointing at the
+// same content-addressed storage blob as src. It reports whether the link
+// exists afterwards.
+func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, digest string, src *models.DockerBlob) bool {
+	err := storage.WithBlobLock(ctx, h.db, src.BlobSHA256, func(ctx context.Context) error {
+		return h.db.CreateDockerBlob(ctx, &models.DockerBlob{
+			ID:           uuid.New().String(),
+			RepositoryID: repoID,
+			Digest:       digest,
+			MediaType:    src.MediaType,
+			Size:         src.Size,
+			BlobSHA256:   src.BlobSHA256,
+			CreatedAt:    time.Now(),
+		})
+	})
+	if err != nil {
+		h.log.Errorw("failed to mount blob", "digest", digest, "error", err)
+		return false
+	}
+
+	return true
+}
+
 // handleGetUploadStatus gets the status of an in-progress upload.
 func (h *HTTPHandler) handleGetUploadStatus(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	name := vars["name"]
 	uploadUUID := vars["uuid"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -741,16 +925,8 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 	name := vars["name"]
 	uploadUUID := vars["uuid"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -793,7 +969,6 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 	uploadDir := "/tmp/openartifact/docker-uploads"
 	tempFile := filepath.Join(uploadDir, uploadUUID)
 
-	//nolint:gosec // G703: path is constructed from validated upload UUID, not user input
 	f, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		h.log.Errorw("failed to open temp file", "error", err)
@@ -846,16 +1021,8 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -898,7 +1065,6 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	// Stream any final bytes from the request body directly to the temp file.
 	// For monolithic uploads (single PUT carrying the whole blob) this avoids
 	// buffering the entire layer in memory.
-	//nolint:gosec // G703: path is constructed from validated upload UUID, not user input
 	f, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
 	if err != nil {
 		h.log.Errorw("failed to open temp file for final chunk", "error", err)
@@ -924,7 +1090,6 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	}
 
 	// Compute the SHA256 (and size) of the temp file in a single pass.
-	//nolint:gosec // G703: path is constructed from validated upload UUID, not user input
 	f, err = os.Open(tempFile)
 	if err != nil {
 		h.log.Errorw("failed to open temp file for hashing", "error", err)
@@ -952,7 +1117,6 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		h.log.Warnw("digest mismatch", "expected", digest, "computed", computedDigest)
 		h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "computed digest does not match")
 		// Clean up temp file
-		//nolint:gosec // G703: path is constructed from validated upload UUID, not user input
 		_ = os.Remove(tempFile)
 		_ = h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID)
 
@@ -978,11 +1142,22 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	}
 
 	// The request body is already spooled and verified, so the per-blob lock is
-	// only held for the store + insert: a concurrent unpublish cannot delete the
+	// only held for the existence check + store + insert: a concurrent unpublish cannot delete the
 	// blob in between. Content-addressed by sha256: every BlobStore backend keys
 	// (and some, like S3/Azure/OCI, require) storage on the "sha256" metadata
 	// entry — not the OCI-prefixed "digest" string.
 	if err := storage.WithBlobLock(r.Context(), h.db, computedDigestHex, func(ctx context.Context) error {
+		// A blob the repository already holds is not stored again: pushing an
+		// existing digest completes with 201, as the distribution spec requires.
+		existing, err := h.db.GetDockerBlob(ctx, repo.ID, digest)
+		if err != nil {
+			return fmt.Errorf("look up existing blob: %w", err)
+		}
+
+		if existing != nil {
+			return nil
+		}
+
 		blobSHA256, err := h.blobStore.Put(ctx, f, map[string]string{
 			"sha256": computedDigestHex,
 			"digest": digest,
@@ -1006,7 +1181,6 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	}
 
 	// Clean up temp file and upload record
-	//nolint:gosec // G703: path is constructed from validated upload UUID, not user input
 	_ = os.Remove(tempFile)
 	_ = h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID)
 
@@ -1022,16 +1196,8 @@ func (h *HTTPHandler) handleCancelBlobUpload(w http.ResponseWriter, r *http.Requ
 	name := vars["name"]
 	uploadUUID := vars["uuid"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, _, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -1051,7 +1217,6 @@ func (h *HTTPHandler) handleCancelBlobUpload(w http.ResponseWriter, r *http.Requ
 	// Delete temp file
 	uploadDir := "/tmp/openartifact/docker-uploads"
 	tempFile := filepath.Join(uploadDir, uploadUUID)
-	//nolint:gosec // G703: path is constructed from validated upload UUID, not user input
 	_ = os.Remove(tempFile)
 
 	// Delete upload record
@@ -1070,16 +1235,8 @@ func (h *HTTPHandler) handleListTags(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	name := vars["name"]
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
+	repo, image, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
@@ -1095,7 +1252,7 @@ func (h *HTTPHandler) handleListTags(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	tags, err := h.db.ListDockerTags(r.Context(), repo.ID, lastStr, n)
+	tags, err := h.db.ListDockerTags(r.Context(), repo.ID, image, lastStr, n)
 	if err != nil {
 		h.log.Errorw("failed to list tags", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -1134,20 +1291,12 @@ func (h *HTTPHandler) handleGetReferrers(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Errorw("failed to resolve repo", "name", name, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
+	repo, image, ok := h.target(w, r, name)
+	if !ok {
 		return
 	}
 
-	if repo == nil {
-		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
-		return
-	}
-
-	referrers, err := h.db.ListDockerManifestsBySubject(r.Context(), repo.ID, digest)
+	referrers, err := h.db.ListDockerManifestsBySubject(r.Context(), repo.ID, image, digest)
 	if err != nil {
 		h.log.Errorw("failed to list referrers", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
