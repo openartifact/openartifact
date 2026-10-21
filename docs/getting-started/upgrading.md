@@ -83,6 +83,26 @@ Keep these identical across upgrades, restores and replicas:
 
 Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installation.md#docker-compose) for adding the others. The `docker/.env` file and any compose override belong in your backup.
 
+## Version notes
+
+### 0.4.0
+
+Migrations `008`–`015` run at first start (RPM repositories regenerate their metadata once; the first Docker GC run backfills manifest references). Behavior changes:
+
+| Area | Change |
+|---|---|
+| Webhooks | Deliveries actually happen now (they silently failed before). Review configured webhooks before upgrading. |
+| Search API | `repositories` is now `{name, format, description}` matched on repository names; version-less packages stay in `packages`. |
+| RPM upload API | Response fields are snake_case and include `id`. |
+| Group repositories | Writes return 405 (they used to go to the first hosted member). Proxy/group repos for formats other than maven, deb, rpm and raw are rejected at creation. |
+| Docker | Image names may contain `/`; the first path segment is the repository, the rest the image. Untagged manifests are garbage-collected after 24 h (`OPENARTIFACT_DOCKER_GC_GRACE_PERIOD`). |
+| Licenses | `block` policies are enforced: uploads with a denied license get 403 and late-detected licenses quarantine the artifact. |
+| Scans | A scanner failure is reported as `failed`/`partial`, no longer as a clean `completed`. |
+| Organizations | Org membership grants access to the org's repositories (`member_role`). |
+| Audit API | Keyset paging (`cursor`, `has_more`); `total` may be an estimate (`total_exact`). |
+| CLI | `oa search --format json` prints `{repositories, results}`; `storage create/update` take `--config-file`; `user create --admin` and `license delete` are removed. |
+| Startup | Failures exit with status 1 (was 0). |
+
 ## Rollback
 
 Because migrations are forward-only, going back to an older version after a migration has run means restoring the database backup taken before the upgrade, then starting the older version. An older binary does not refuse a database with newer migrations (it only checks the migrations it knows), but a newer schema is not guaranteed to work with it. Restore the blob store snapshot that matches the database backup if artifacts were uploaded or deleted in between.
