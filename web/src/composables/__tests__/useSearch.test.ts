@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, spyOn, beforeEach, type Mock } from 'bun:test'
+import { describe, it, expect, spyOn, beforeEach, jest, type Mock } from 'bun:test'
 import { useSearch } from '../useSearch'
 import * as searchApi from '../../api/search'
 
@@ -74,16 +74,23 @@ describe('useSearch', () => {
     s.clear()
   })
 
-  it('calling scheduleSearch again resets the debounce', async () => {
-    const s = useSearch()
-    mockSearch.mockResolvedValue({ repositories: [], packages: [] })
-    s.query.value = 'rea'
-    s.scheduleSearch(50)
-    s.query.value = 'react'
-    s.scheduleSearch(50)
-    await new Promise(r => setTimeout(r, 70))
-    expect(mockSearch).toHaveBeenCalledTimes(1)
-    expect(mockSearch).toHaveBeenCalledWith({ q: 'react', limit: 20 })
+  it('calling scheduleSearch again resets the debounce', () => {
+    jest.useFakeTimers()
+    try {
+      const s = useSearch()
+      s.query.value = 'rea'
+      s.scheduleSearch(50)
+      jest.advanceTimersByTime(40)
+      s.query.value = 'react'
+      s.scheduleSearch(50)
+      jest.advanceTimersByTime(40)
+      expect(mockSearch).not.toHaveBeenCalled()
+      jest.advanceTimersByTime(10)
+      expect(mockSearch).toHaveBeenCalledTimes(1)
+      expect(mockSearch).toHaveBeenCalledWith({ q: 'react', limit: 20 })
+    } finally {
+      jest.useRealTimers()
+    }
   })
 
   it('execute() with non-empty query calls API and populates results', async () => {
