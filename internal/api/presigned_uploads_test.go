@@ -29,14 +29,26 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// stagingBlobStore is a BlobStore with an in-memory staging area.
+// stagingBlobStore is a BlobStore with an in-memory staging area that, like
+// S3, versions objects (the version is the content hash, as an ETag is) and
+// honours the If-Match preconditions of OpenStaging and PromoteStaging.
 type stagingBlobStore struct {
 	storage.BlobStore
 
 	staged   map[string][]byte
 	promoted map[string]string // sha256 -> staging id it was copied from
+	copied   map[string][]byte // sha256 -> the bytes that were copied
 	deleted  []string
+
+	// afterStat and afterOpen run at the points where a client holding the
+	// still-valid presigned URL can overwrite the staging object.
+	afterStat func()
+	afterOpen func()
 }
+
+func versionOf(b []byte) string { return `"` + digestOf(b) + `"` }
+
+func (s *stagingBlobStore) StagingSupported() bool { return true }
 
 func (s *stagingBlobStore) PresignStagingPut(_ context.Context, id string, size int64, ttl time.Duration) (storage.PresignedPut, error) {
 	return storage.PresignedPut{
@@ -46,30 +58,52 @@ func (s *stagingBlobStore) PresignStagingPut(_ context.Context, id string, size 
 	}, nil
 }
 
-func (s *stagingBlobStore) StatStaging(_ context.Context, id string) (int64, error) {
+func (s *stagingBlobStore) StatStaging(_ context.Context, id string) (storage.StagedObject, error) {
 	b, ok := s.staged[id]
 	if !ok {
-		return 0, storage.ErrStagingNotFound
+		return storage.StagedObject{}, storage.ErrStagingNotFound
 	}
 
-	return int64(len(b)), nil
+	obj := storage.StagedObject{Size: int64(len(b)), Version: versionOf(b)}
+
+	if s.afterStat != nil {
+		s.afterStat()
+	}
+
+	return obj, nil
 }
 
-func (s *stagingBlobStore) OpenStaging(_ context.Context, id string) (io.ReadCloser, error) {
+func (s *stagingBlobStore) OpenStaging(_ context.Context, id, version string) (io.ReadCloser, error) {
 	b, ok := s.staged[id]
 	if !ok {
 		return nil, storage.ErrStagingNotFound
 	}
 
-	return io.NopCloser(bytes.NewReader(b)), nil
+	if versionOf(b) != version {
+		return nil, storage.ErrStagingChanged
+	}
+
+	snapshot := bytes.Clone(b)
+
+	if s.afterOpen != nil {
+		s.afterOpen()
+	}
+
+	return io.NopCloser(bytes.NewReader(snapshot)), nil
 }
 
-func (s *stagingBlobStore) PromoteStaging(_ context.Context, id, sha string, _ map[string]string) error {
-	if _, ok := s.staged[id]; !ok {
+func (s *stagingBlobStore) PromoteStaging(_ context.Context, id, sha, version string, _ map[string]string) error {
+	b, ok := s.staged[id]
+	if !ok {
 		return storage.ErrStagingNotFound
 	}
 
+	if versionOf(b) != version {
+		return storage.ErrStagingChanged
+	}
+
 	s.promoted[sha] = id
+	s.copied[sha] = bytes.Clone(b)
 
 	return nil
 }
@@ -81,12 +115,68 @@ func (s *stagingBlobStore) DeleteStaging(_ context.Context, id string) error {
 	return nil
 }
 
+func (s *stagingBlobStore) WalkStaging(context.Context, time.Time, func([]string) error) error {
+	return nil
+}
+
 type presignUploadDB struct {
 	database.BaseMockDB
 
 	repo      *models.Repository
 	uploads   map[string]*models.PresignedUpload
 	artifacts map[string]*models.RawArtifact
+	targets   map[string][]*models.PermissionTarget // by user id
+	claims    int
+}
+
+func (d *presignUploadDB) GetPermissionTargetsForPrincipal(_ context.Context, userID string, _ []string) ([]*models.PermissionTarget, error) {
+	return d.targets[userID], nil
+}
+
+func (d *presignUploadDB) ClaimPresignedUpload(_ context.Context, repoID, id string, lease time.Duration) (bool, error) {
+	u := d.uploads[id]
+	if u == nil || u.RepositoryID != repoID || u.CompletedAt != nil {
+		return false, nil
+	}
+
+	if u.CompletingSince != nil && time.Since(*u.CompletingSince) < lease {
+		return false, nil
+	}
+
+	now := time.Now()
+	u.CompletingSince = &now
+	d.claims++
+
+	return true, nil
+}
+
+func (d *presignUploadDB) ReleasePresignedUpload(_ context.Context, id string) error {
+	if u := d.uploads[id]; u != nil {
+		u.CompletingSince = nil
+	}
+
+	return nil
+}
+
+func (d *presignUploadDB) MarkPresignedUploadCompleted(_ context.Context, id, artifactID string) error {
+	if u := d.uploads[id]; u != nil {
+		now := time.Now()
+		u.CompletedAt, u.CompletingSince, u.ArtifactID = &now, nil, artifactID
+	}
+
+	return nil
+}
+
+func (d *presignUploadDB) CountPendingPresignedUploads(_ context.Context, createdBy string) (int, error) {
+	n := 0
+
+	for _, u := range d.uploads {
+		if u.CreatedBy == createdBy && u.CompletedAt == nil && u.ExpiresAt.After(time.Now()) {
+			n++
+		}
+	}
+
+	return n, nil
 }
 
 func (d *presignUploadDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
@@ -128,9 +218,10 @@ func (d *presignUploadDB) UpsertRawArtifact(_ context.Context, a *models.RawArti
 }
 
 type presignUploadFixture struct {
-	router chi.Router
-	db     *presignUploadDB
-	store  *stagingBlobStore
+	router  chi.Router
+	handler *PresignedUploadHandler
+	db      *presignUploadDB
+	store   *stagingBlobStore
 }
 
 func newPresignUploadFixture(t *testing.T, format, repoType string) *presignUploadFixture {
@@ -151,17 +242,38 @@ func newPresignUploadFixture(t *testing.T, format, repoType string) *presignUplo
 			repo:      &models.Repository{ID: "repo-1", Name: "files", Format: format, RepoType: repoType},
 			uploads:   map[string]*models.PresignedUpload{},
 			artifacts: map[string]*models.RawArtifact{},
+			targets: map[string][]*models.PermissionTarget{
+				"writer-1": {{RepositoryFilter: `.*`, PathPattern: `.*`, Actions: []string{"read", "write"}}},
+				"other-1":  {{RepositoryFilter: `.*`, PathPattern: `.*`, Actions: []string{"read", "write"}}},
+				"admin-1":  {{RepositoryFilter: `.*`, PathPattern: `.*`, Actions: []string{"manage", "read", "write"}}},
+			},
 		},
-		store:  &stagingBlobStore{BlobStore: local, staged: map[string][]byte{}, promoted: map[string]string{}},
+		store:  &stagingBlobStore{BlobStore: local, staged: map[string][]byte{}, promoted: map[string]string{}, copied: map[string][]byte{}},
 		router: chi.NewRouter(),
 	}
 
-	NewPresignedUploadHandler(log, f.db, f.store, auth.NewEvaluator(f.db, log, false), 30*time.Minute, nil).Register(f.router)
+	f.handler = NewPresignedUploadHandler(log, f.db, f.store, auth.NewEvaluator(f.db, log, false), 30*time.Minute, 2, nil)
+	f.handler.Register(f.router)
 
 	return f
 }
 
 func (f *presignUploadFixture) call(t *testing.T, anonymous bool, path string, body any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	p := &auth.Principal{Username: "admin", IsLegacy: true}
+	if anonymous {
+		p = &auth.Principal{IsAnonymous: true}
+	}
+
+	return f.callAs(t, p, path, body)
+}
+
+func userPrincipal(name, id string) *auth.Principal {
+	return &auth.Principal{Username: name, UserID: &id}
+}
+
+func (f *presignUploadFixture) callAs(t *testing.T, p *auth.Principal, path string, body any) *httptest.ResponseRecorder {
 	t.Helper()
 
 	var rd io.Reader
@@ -171,11 +283,6 @@ func (f *presignUploadFixture) call(t *testing.T, anonymous bool, path string, b
 	}
 
 	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, path, rd)
-
-	p := &auth.Principal{Username: "admin", IsLegacy: true}
-	if anonymous {
-		p = &auth.Principal{IsAnonymous: true}
-	}
 
 	req = req.WithContext(middleware.WithPrincipal(req.Context(), p))
 
@@ -281,12 +388,16 @@ func TestPresignedUpload_UnsupportedBackend(t *testing.T) {
 	}
 
 	r := chi.NewRouter()
-	NewPresignedUploadHandler(log, f.db, local, auth.NewEvaluator(f.db, log, false), time.Minute, nil).Register(r)
+	NewPresignedUploadHandler(log, f.db, local, auth.NewEvaluator(f.db, log, false), time.Minute, 0, nil).Register(r)
 	f.router = r
 
 	rw := f.call(t, false, "/api/v1/repositories/files/uploads", CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))})
 	if rw.Code != http.StatusNotImplemented {
 		t.Fatalf("status = %d, want 501", rw.Code)
+	}
+
+	if len(f.db.uploads) != 0 {
+		t.Errorf("an unsupported backend left %d upload rows", len(f.db.uploads))
 	}
 }
 
@@ -324,13 +435,19 @@ func TestPresignedUpload_CompleteRecordsArtifact(t *testing.T) {
 		t.Error("staging object not deleted after completion")
 	}
 
-	if len(f.db.uploads) != 0 {
-		t.Error("upload row not deleted after completion")
+	if row := f.db.uploads[resp.ID]; row == nil || row.CompletedAt == nil || row.ArtifactID != out.ID {
+		t.Errorf("upload row = %+v, want it kept and marked completed for retries", row)
 	}
 
-	// A second complete finds nothing: the upload is spent.
-	if again := f.call(t, false, completePath(resp.ID), nil); again.Code != http.StatusNotFound {
-		t.Errorf("repeated complete status = %d, want 404", again.Code)
+	// A retried complete (lost response) returns the original result and
+	// does not record the artifact a second time.
+	again := f.call(t, false, completePath(resp.ID), nil)
+	if again.Code != http.StatusOK || again.Body.String() != rw.Body.String() {
+		t.Errorf("repeated complete = %d %s, want 200 with the original body %s", again.Code, again.Body.String(), rw.Body.String())
+	}
+
+	if f.db.claims != 1 {
+		t.Errorf("complete claimed the upload %d times, want 1", f.db.claims)
 	}
 }
 
@@ -447,5 +564,182 @@ func TestPresignedUpload_CompleteOverwriteKeepsID(t *testing.T) {
 
 	if out.ID != "existing-id" {
 		t.Errorf("id = %q, want the overwritten row's id like a raw PUT", out.ID)
+	}
+}
+
+func TestPresignedUpload_CreateIsNotCacheable(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted")
+
+	rw := f.call(t, false, "/api/v1/repositories/files/uploads", CreatePresignedUploadRequest{Path: "a", Size: 1, SHA256: digestOf([]byte("x"))})
+	if rw.Code != http.StatusCreated || rw.Header().Get("Cache-Control") != "no-store" {
+		t.Fatalf("status %d, Cache-Control %q; the response carries a bearer URL", rw.Code, rw.Header().Get("Cache-Control"))
+	}
+}
+
+// A client keeps a working PUT URL after complete starts. Whatever it writes
+// after the bytes were verified must never be promoted to the content-addressed
+// blob of the declared hash.
+func TestPresignedUpload_ObjectSwappedAfterVerificationIsNotPromoted(t *testing.T) {
+	declared := []byte("the declared content")
+	evil := []byte("EVIL BYTES, same hash? no")
+
+	for name, hook := range map[string]func(f *presignUploadFixture, id string){
+		"between stat and read": func(f *presignUploadFixture, id string) {
+			f.store.afterStat = func() { f.store.staged[id] = evil }
+		},
+		"between verification and promotion": func(f *presignUploadFixture, id string) {
+			f.store.afterOpen = func() { f.store.staged[id] = evil }
+		},
+	} {
+		t.Run(name, func(t *testing.T) {
+			f := newPresignUploadFixture(t, "raw", "hosted")
+			resp := f.start(t, declared)
+			f.store.staged[resp.ID] = declared
+
+			hook(f, resp.ID)
+
+			rw := f.call(t, false, completePath(resp.ID), nil)
+			if rw.Code != http.StatusConflict || !strings.Contains(rw.Body.String(), "upload_changed") {
+				t.Fatalf("status = %d, body %s; want 409 upload_changed", rw.Code, rw.Body.String())
+			}
+
+			if len(f.store.promoted) != 0 || len(f.store.copied) != 0 {
+				t.Fatalf("swapped bytes were promoted: %v", f.store.promoted)
+			}
+
+			if len(f.db.artifacts) != 0 {
+				t.Errorf("artifact recorded for a swapped upload: %v", f.db.artifacts)
+			}
+
+			if _, still := f.store.staged[resp.ID]; still || f.db.uploads[resp.ID] != nil {
+				t.Error("a swapped upload must be cleaned up")
+			}
+		})
+	}
+}
+
+func TestPresignedUpload_ConcurrentCompleteIsInProgress(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted")
+	content := []byte("data")
+	resp := f.start(t, content)
+	f.store.staged[resp.ID] = content
+
+	// While the first complete verifies (inside OpenStaging), a second one arrives.
+	var second *httptest.ResponseRecorder
+
+	f.store.afterOpen = func() { second = f.call(t, false, completePath(resp.ID), nil) }
+
+	first := f.call(t, false, completePath(resp.ID), nil)
+	if first.Code != http.StatusCreated {
+		t.Fatalf("first complete = %d %s", first.Code, first.Body.String())
+	}
+
+	if second.Code != http.StatusConflict || !strings.Contains(second.Body.String(), "upload_in_progress") || second.Header().Get("Retry-After") == "" {
+		t.Errorf("concurrent complete = %d %s (Retry-After %q), want 409 upload_in_progress", second.Code, second.Body.String(), second.Header().Get("Retry-After"))
+	}
+
+	if len(f.store.promoted) != 1 || len(f.db.artifacts) != 1 {
+		t.Errorf("promoted %d times, recorded %d artifacts; want exactly one of each", len(f.store.promoted), len(f.db.artifacts))
+	}
+}
+
+func TestPresignedUpload_CompleteSurvivesClientDisconnect(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted")
+	content := []byte("data")
+	resp := f.start(t, content)
+	f.store.staged[resp.ID] = content
+
+	// The client gives up (cancelled request context) before the server finishes.
+	ctx, cancel := context.WithCancel(context.Background())
+	f.store.afterOpen = cancel
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodPost, completePath(resp.ID), nil)
+	req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
+	f.router.ServeHTTP(httptest.NewRecorder(), req)
+
+	if len(f.db.artifacts) != 1 || f.db.uploads[resp.ID].CompletedAt == nil {
+		t.Fatalf("a cancelled request aborted the commit: artifacts %d", len(f.db.artifacts))
+	}
+
+	// The retry gets the result.
+	if rw := f.call(t, false, completePath(resp.ID), nil); rw.Code != http.StatusOK {
+		t.Errorf("retry = %d %s, want 200", rw.Code, rw.Body.String())
+	}
+}
+
+func TestPresignedUpload_CompleteBoundToCreator(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted")
+	content := []byte("data")
+
+	rw := f.callAs(t, userPrincipal("writer", "writer-1"), "/api/v1/repositories/files/uploads",
+		CreatePresignedUploadRequest{Path: "a.bin", Size: int64(len(content)), SHA256: digestOf(content)})
+	if rw.Code != http.StatusCreated {
+		t.Fatalf("create = %d %s", rw.Code, rw.Body.String())
+	}
+
+	var resp CreatePresignedUploadResponse
+	_ = json.Unmarshal(rw.Body.Bytes(), &resp)
+	f.store.staged[resp.ID] = content
+
+	if rw := f.callAs(t, userPrincipal("other", "other-1"), completePath(resp.ID), nil); rw.Code != http.StatusForbidden {
+		t.Fatalf("another writer completed the upload: %d %s", rw.Code, rw.Body.String())
+	}
+
+	if len(f.db.artifacts) != 0 || f.db.claims != 0 {
+		t.Error("a forbidden complete must not claim or record anything")
+	}
+
+	if rw := f.callAs(t, userPrincipal("admin2", "admin-1"), completePath(resp.ID), nil); rw.Code != http.StatusCreated {
+		t.Fatalf("an administrator could not complete: %d %s", rw.Code, rw.Body.String())
+	}
+
+	// The creator gets the replay.
+	if rw := f.callAs(t, userPrincipal("writer", "writer-1"), completePath(resp.ID), nil); rw.Code != http.StatusOK {
+		t.Errorf("creator replay = %d", rw.Code)
+	}
+}
+
+func TestPresignedUpload_PendingCap(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted") // cap: 2
+
+	body := func(p string) CreatePresignedUploadRequest {
+		return CreatePresignedUploadRequest{Path: p, Size: 1, SHA256: digestOf([]byte("x"))}
+	}
+
+	var ids []string
+
+	for _, p := range []string{"a", "b"} {
+		rw := f.call(t, false, "/api/v1/repositories/files/uploads", body(p))
+		if rw.Code != http.StatusCreated {
+			t.Fatalf("create %s = %d %s", p, rw.Code, rw.Body.String())
+		}
+
+		var resp CreatePresignedUploadResponse
+		_ = json.Unmarshal(rw.Body.Bytes(), &resp)
+		ids = append(ids, resp.ID)
+	}
+
+	rw := f.call(t, false, "/api/v1/repositories/files/uploads", body("c"))
+	if rw.Code != http.StatusTooManyRequests || rw.Header().Get("Retry-After") == "" {
+		t.Fatalf("over the cap = %d (Retry-After %q), want 429", rw.Code, rw.Header().Get("Retry-After"))
+	}
+
+	if len(f.db.uploads) != 2 {
+		t.Errorf("a refused create left %d rows", len(f.db.uploads))
+	}
+
+	// Another user is unaffected, and completing frees a slot.
+	if rw := f.callAs(t, userPrincipal("writer", "writer-1"), "/api/v1/repositories/files/uploads", body("d")); rw.Code != http.StatusCreated {
+		t.Errorf("another user = %d", rw.Code)
+	}
+
+	f.store.staged[ids[0]] = []byte("x")
+
+	if rw := f.call(t, false, completePath(ids[0]), nil); rw.Code != http.StatusCreated {
+		t.Fatalf("complete = %d %s", rw.Code, rw.Body.String())
+	}
+
+	if rw := f.call(t, false, "/api/v1/repositories/files/uploads", body("e")); rw.Code != http.StatusCreated {
+		t.Errorf("create after a completed upload = %d, want a free slot", rw.Code)
 	}
 }

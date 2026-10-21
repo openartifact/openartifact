@@ -359,6 +359,19 @@ type Database interface {
 	CreatePresignedUpload(ctx context.Context, u *models.PresignedUpload) error
 	GetPresignedUpload(ctx context.Context, repoID, id string) (*models.PresignedUpload, error)
 	DeletePresignedUpload(ctx context.Context, id string) error
+	// ClaimPresignedUpload takes the complete lease of an upload for up to
+	// lease. It reports false when the upload is already completed or another
+	// complete holds an unexpired lease.
+	ClaimPresignedUpload(ctx context.Context, repoID, id string, lease time.Duration) (bool, error)
+	// ReleasePresignedUpload gives up the lease of an upload that was not completed.
+	ReleasePresignedUpload(ctx context.Context, id string) error
+	// MarkPresignedUploadCompleted records that the upload produced artifactID.
+	MarkPresignedUploadCompleted(ctx context.Context, id, artifactID string) error
+	// CountPendingPresignedUploads counts createdBy's uploads that are neither
+	// completed nor expired.
+	CountPendingPresignedUploads(ctx context.Context, createdBy string) (int, error)
+	// ExistingPresignedUploadIDs returns the subset of ids that have a row.
+	ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error)
 	ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error)
 
 	// SBOM methods

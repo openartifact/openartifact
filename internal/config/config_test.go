@@ -649,6 +649,10 @@ func TestLoad_PresignDefaults(t *testing.T) {
 	if s.PresignEndpoint != "" {
 		t.Errorf("presignEndpoint = %q, want empty", s.PresignEndpoint)
 	}
+
+	if s.PresignMaxPendingUploads != 20 {
+		t.Errorf("presignMaxPendingUploads = %d, want 20", s.PresignMaxPendingUploads)
+	}
 }
 
 func TestLoad_PresignEnvOverrides(t *testing.T) {
@@ -657,6 +661,7 @@ func TestLoad_PresignEnvOverrides(t *testing.T) {
 	t.Setenv("STORAGE_S3_PRESIGN_TTL", "90s")
 	t.Setenv("STORAGE_PRESIGN_UPLOAD_TTL", "2h")
 	t.Setenv("STORAGE_PRESIGN_ENDPOINT", "https://s3.example.com")
+	t.Setenv("STORAGE_PRESIGN_MAX_PENDING_UPLOADS", "0")
 
 	cfg, err := Load("")
 	if err != nil {
@@ -665,7 +670,7 @@ func TestLoad_PresignEnvOverrides(t *testing.T) {
 
 	s := cfg.Storage
 	if !s.PresignDownloads || s.PresignMinSize != 0 || s.PresignTTL != 90*time.Second ||
-		s.PresignUploadTTL != 2*time.Hour || s.PresignEndpoint != "https://s3.example.com" {
+		s.PresignUploadTTL != 2*time.Hour || s.PresignEndpoint != "https://s3.example.com" || s.PresignMaxPendingUploads != 0 {
 		t.Errorf("env overrides not applied: %+v", s)
 	}
 
@@ -704,5 +709,18 @@ func TestValidate_Presign(t *testing.T) {
 				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
 			}
 		})
+	}
+}
+
+func TestValidate_PresignMaxPendingUploadsNegative(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	cfg.Storage.PresignMaxPendingUploads = -1
+
+	if err := cfg.Validate(); err == nil {
+		t.Error("Validate() accepted a negative presignMaxPendingUploads")
 	}
 }

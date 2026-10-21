@@ -679,6 +679,21 @@ func (m *BaseMockDB) GetPresignedUpload(ctx context.Context, repoID, id string) 
 func (m *BaseMockDB) DeletePresignedUpload(ctx context.Context, id string) error {
 	return errNotImpl("DeletePresignedUpload")
 }
+func (m *BaseMockDB) ClaimPresignedUpload(ctx context.Context, repoID, id string, lease time.Duration) (bool, error) {
+	return false, errNotImpl("ClaimPresignedUpload")
+}
+func (m *BaseMockDB) ReleasePresignedUpload(ctx context.Context, id string) error {
+	return errNotImpl("ReleasePresignedUpload")
+}
+func (m *BaseMockDB) MarkPresignedUploadCompleted(ctx context.Context, id, artifactID string) error {
+	return errNotImpl("MarkPresignedUploadCompleted")
+}
+func (m *BaseMockDB) CountPendingPresignedUploads(ctx context.Context, createdBy string) (int, error) {
+	return 0, errNotImpl("CountPendingPresignedUploads")
+}
+func (m *BaseMockDB) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
+	return nil, errNotImpl("ExistingPresignedUploadIDs")
+}
 func (m *BaseMockDB) ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error) {
 	return nil, errNotImpl("ListExpiredPresignedUploads")
 }

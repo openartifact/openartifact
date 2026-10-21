@@ -111,11 +111,18 @@ func readPasswordStdin() string {
 // newHTTPClient builds a client without a whole-request timeout (so long
 // transfers work) but with connect/handshake/response-header timeouts.
 func newHTTPClient() *http.Client {
+	return newHTTPClientWithHeaderTimeout(60 * time.Second)
+}
+
+// newHTTPClientWithHeaderTimeout is newHTTPClient with a custom response-header
+// timeout; 0 waits indefinitely for the response (the server is doing work,
+// such as verifying a large upload, before it answers).
+func newHTTPClientWithHeaderTimeout(headerTimeout time.Duration) *http.Client {
 	transport := &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
 		DialContext:           (&net.Dialer{Timeout: 10 * time.Second, KeepAlive: 30 * time.Second}).DialContext,
 		TLSHandshakeTimeout:   10 * time.Second,
-		ResponseHeaderTimeout: 60 * time.Second,
+		ResponseHeaderTimeout: headerTimeout,
 		ExpectContinueTimeout: time.Second,
 		IdleConnTimeout:       90 * time.Second,
 	}

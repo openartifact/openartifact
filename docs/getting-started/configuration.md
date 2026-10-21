@@ -122,6 +122,7 @@ Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `gar
 | `STORAGE_PRESIGN_MIN_SIZE` | `presignMinSize` | `1048576` | Blobs smaller than this many bytes are streamed; `0` redirects everything; negative is rejected at startup |
 | `STORAGE_PRESIGN_ENDPOINT` | `presignEndpoint` | empty | Public base URL (absolute `http(s)`, no query or fragment) used only for signing; set it when `endpoint` is not reachable by clients |
 | `STORAGE_PRESIGN_UPLOAD_TTL` | `presignUploadTtl` | `30m` | Lifetime of presigned PUT upload URLs, clamped to 1 m - 12 h |
+| `STORAGE_PRESIGN_MAX_PENDING_UPLOADS` | `presignMaxPendingUploads` | `20` | Max outstanding (not completed, not expired) presigned uploads per user; `0` = unlimited; beyond it creating an upload answers `429` |
 | `OPENARTIFACT_GCS_BUCKET` | `gcsBucket` | empty | GCS bucket (via the S3-compatible XML API) |
 | `OPENARTIFACT_GCS_HMAC_KEY` | `gcsHmacKey` | empty | GCS HMAC access key (required for `gcs`) |
 | `OPENARTIFACT_GCS_HMAC_SECRET` | `gcsHmacSecret` | empty | GCS HMAC secret (**secret**) |

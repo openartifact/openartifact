@@ -75,7 +75,7 @@ func realRouter() chi.Router {
 	api.NewDebUploadHandler(log, nil, nil, nil).Register(r)
 	api.NewRPMUploadHandler(log, nil, nil, nil).Register(r)
 	api.NewDeltaHandler(log, nil, nil).Register(r)
-	api.NewPresignedUploadHandler(log, nil, nil, nil, 0, nil).Register(r)
+	api.NewPresignedUploadHandler(log, nil, nil, nil, 0, 0, nil).Register(r)
 
 	// registered by internal/search
 	r.Get("/api/v1/search", func(http.ResponseWriter, *http.Request) {})

@@ -42,6 +42,7 @@ Defaults: type `filesystem`, bucket `artifacts`, region `us-east-1`, path `/var/
 | `STORAGE_PRESIGN_MIN_SIZE` | `presignMinSize` | s3, gcs | bytes, default `1048576`; smaller blobs are streamed |
 | `STORAGE_PRESIGN_ENDPOINT` | `presignEndpoint` | s3, gcs | public base URL used only for signing |
 | `STORAGE_PRESIGN_UPLOAD_TTL` | `presignUploadTtl` | s3, gcs | Go duration, default `30m`, clamped to `1m`..`12h`: lifetime of presigned upload URLs |
+| `STORAGE_PRESIGN_MAX_PENDING_UPLOADS` | `presignMaxPendingUploads` | s3, gcs | default `20`, `0` = unlimited: outstanding presigned uploads allowed per user |
 | `OPENARTIFACT_GCS_BUCKET` | `gcsBucket` | gcs | required |
 | `OPENARTIFACT_GCS_HMAC_KEY` | `gcsHmacKey` | gcs | required |
 | `OPENARTIFACT_GCS_HMAC_SECRET` | `gcsHmacSecret` | gcs | required |
@@ -150,6 +151,7 @@ Authorisation always happens before the redirect. The redirect response has `Cac
 | `STORAGE_S3_PRESIGN_TTL` | `presignTtl` | `5m` | Lifetime of presigned GET URLs, clamped to `1m`..`1h` |
 | `STORAGE_PRESIGN_ENDPOINT` | `presignEndpoint` | empty | Absolute `http(s)` URL without query or fragment, used only for signing; see [below](#presign-endpoint) |
 | `STORAGE_PRESIGN_UPLOAD_TTL` | `presignUploadTtl` | `30m` | Lifetime of presigned PUT upload URLs, clamped to `1m`..`12h` |
+| `STORAGE_PRESIGN_MAX_PENDING_UPLOADS` | `presignMaxPendingUploads` | `20` | Maximum outstanding (not completed, not expired) presigned uploads per user; `0` = unlimited. Exceeding it answers `429` with `Retry-After` |
 
 ### Per-repository override
 
@@ -252,7 +254,7 @@ Verified here in a smoke test against Garage S3 (server binary, `presignEndpoint
 
 ### Presigned uploads
 
-Raw hosted repositories on S3 or GCS storage can take uploads that bypass the server: the client uploads the bytes straight to the bucket and the server only verifies and records them. Other formats and backends are not covered; on filesystem, Azure and OCI backends the endpoints answer `501`.
+Raw hosted repositories on S3 or GCS storage can take uploads that bypass the server: the client uploads the bytes straight to the bucket, then the server reads the object back from the bucket (internal traffic) to verify it and records it. Other formats and backends are not covered; on filesystem, Azure and OCI backends the create call answers `501` and records nothing.
 
 1. `POST /api/v1/repositories/{name}/uploads` with `{"path": "...", "size": N, "sha256": "...", "content_type": "..."}` (`content_type` optional). Needs write permission on the repository and on the path. Answers `201`:
 
@@ -260,17 +262,22 @@ Raw hosted repositories on S3 or GCS storage can take uploads that bypass the se
    {"id": "...", "upload_url": "https://...", "method": "PUT", "headers": {"Content-Length": "..."}, "expires_at": "..."}
    ```
 
-   `size` is at most 5 GiB, a single `PUT` (multipart upload is not implemented). `Content-Length` is signed into the URL, so the object store rejects any other size.
+   `size` is at most 5 GiB, a single `PUT` (multipart upload is not implemented). `Content-Length` is signed into the URL, so the object store rejects any other size. The response carries `Cache-Control: no-store` because `upload_url` is a bearer credential. Each user may have at most `presignMaxPendingUploads` (default 20, `0` = unlimited) outstanding uploads, meaning not yet completed and not expired; beyond that the call answers `429` with a `Retry-After` header.
 2. The client `PUT`s the bytes to `upload_url` with the returned `headers`, without the OpenArtifact `Authorization` header. The URL lives for `presignUploadTtl`.
 3. `POST /api/v1/repositories/{name}/uploads/{id}/complete`. The server checks the staging object's size, re-hashes it (internal traffic between the server and the object store) against the declared sha256, copies it server-side to its content-addressed key, records the artifact exactly like a raw `PUT` (the path is overwritten, the `artifact.uploaded` webhook fires, a replaced blob is cleaned up) and deletes the staging object. Answers `201 {"id", "path", "sha256", "size"}`.
+
+Only the user who created the upload, or an admin, can complete it (`403` otherwise). Verification and commit run detached from the HTTP request with their own 30 minute timeout, so a client disconnect or timeout does not abort them. `complete` is idempotent: while a verification is running, another `complete` answers `409` with code `upload_in_progress` and a `Retry-After` header; after a success, a retry answers `200` with the same `{"id", "path", "sha256", "size"}` body (the first success is `201`). The upload row is kept, marked completed, until the cleanup worker removes it after `expires_at`.
+
+If the staging object is overwritten (a second `PUT`) during or after verification, this is detected through an ETag precondition on the read and on the server-side copy: `complete` answers `409` `upload_changed`, the staging object is deleted and nothing is recorded.
 
 Errors from `complete`:
 
 | Status | Cause |
 |---|---|
 | `400` | repository is not raw/hosted, or bad input |
-| `404` | unknown or already completed upload |
-| `409` | nothing uploaded yet |
+| `403` | caller is neither the creator of the upload nor an admin |
+| `404` | unknown upload |
+| `409` | code `upload_missing`: nothing uploaded to the staging key yet; `upload_in_progress`: a verification is already running (retry after `Retry-After`); `upload_changed`: "staging object changed during verification" |
 | `410` | the upload expired |
 | `422` | size or sha256 mismatch; the staging object and the upload are discarded and nothing is recorded |
 | `501` | the backend cannot do it |
@@ -303,7 +310,7 @@ oa artifact upload --presigned [--path P] [--content-type T] <repo> <file>
 
 #### Staging and cleanup
 
-Uploads land under the key prefix `staging/<uuid>` in the bucket. A worker runs every 5 minutes and deletes uploads (database rows and staging objects) that were never completed once expiry plus the grace period has passed. As a safety net, also add a bucket lifecycle rule that expires the `staging/` prefix after 2 days.
+Uploads land under the key prefix `staging/<uuid>` in the bucket. A worker runs every 5 minutes. It deletes uploads (database rows and staging objects) that were never completed once expiry plus the grace period has passed, removes the rows of completed uploads after `expires_at`, and also sweeps the `staging/` prefix: objects older than `presignUploadTtl` plus the 1 hour grace period that have no upload row (for example a re-`PUT` after cleanup, a mismatch, or a repository delete cascade) are deleted. A bucket lifecycle rule expiring the `staging/` prefix after 1 to 2 days is still recommended as defence in depth, but it is no longer the only mechanism.
 
 #### Quota, license and secret scanning
 

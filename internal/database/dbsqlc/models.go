@@ -606,15 +606,18 @@ type PermissionTarget struct {
 
 // Presigned uploads awaiting their complete call; the object lives at the staging key staging/<id> in the blob store.
 type PresignedUpload struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Path         string    `db:"path" json:"path"`
-	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
-	Sha256       string    `db:"sha256" json:"sha256"`
-	ContentType  string    `db:"content_type" json:"content_type"`
-	CreatedBy    string    `db:"created_by" json:"created_by"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	ExpiresAt    time.Time `db:"expires_at" json:"expires_at"`
+	ID              string     `db:"id" json:"id"`
+	RepositoryID    string     `db:"repository_id" json:"repository_id"`
+	Path            string     `db:"path" json:"path"`
+	SizeBytes       int64      `db:"size_bytes" json:"size_bytes"`
+	Sha256          string     `db:"sha256" json:"sha256"`
+	ContentType     string     `db:"content_type" json:"content_type"`
+	CreatedBy       string     `db:"created_by" json:"created_by"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	ExpiresAt       time.Time  `db:"expires_at" json:"expires_at"`
+	CompletingSince *time.Time `db:"completing_since" json:"completing_since"`
+	CompletedAt     *time.Time `db:"completed_at" json:"completed_at"`
+	ArtifactID      string     `db:"artifact_id" json:"artifact_id"`
 }
 
 // Named, ordered promotion stage sequences reusable across bundles

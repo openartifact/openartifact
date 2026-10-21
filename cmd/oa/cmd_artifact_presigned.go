@@ -5,8 +5,10 @@
 package main
 
 import (
+	"bytes"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"flag"
 	"fmt"
 	"io"
@@ -14,6 +16,8 @@ import (
 	"net/url"
 	"os"
 	"path/filepath"
+	"strconv"
+	"time"
 )
 
 const uploadUsage = "Usage: oa artifact upload [--presigned [--path P] [--content-type T]] <repo> <file>"
@@ -58,7 +62,9 @@ func artifactUploadCommand(client *Client, args []string) {
 // artifactUploadPresigned uploads a file in three steps: ask the server for a
 // presigned PUT target (declaring size and sha256), PUT the bytes straight to
 // the object store, and ask the server to verify and record the artifact. The
-// artifact bytes never pass through the OpenArtifact server.
+// upload itself bypasses the OpenArtifact server; verification does not: the
+// server reads the object back from the store to check size and sha256, which
+// can take a while for a large file.
 func artifactUploadPresigned(client *Client, repo, filePath, remotePath, contentType string) {
 	file, err := os.Open(filePath)
 	if err != nil {
@@ -101,9 +107,65 @@ func artifactUploadPresigned(client *Client, repo, filePath, remotePath, content
 
 	putPresigned(client, uploadURL, headers, file, size)
 
-	done := sendJSON(client, "POST", base+"/"+escape(id)+"/complete", nil, http.StatusCreated, http.StatusOK)
+	done := completePresigned(client, base+"/"+escape(id)+"/complete")
 
 	fmt.Printf("Uploaded '%s' to '%s' as '%s' (%d bytes, sha256 %v).\n", filepath.Base(filePath), repo, remotePath, size, done["sha256"])
+}
+
+// maxCompleteWait bounds how long the CLI keeps retrying a complete call that
+// answers "in progress" (the server gives a verification 30 minutes).
+const maxCompleteWait = 35 * time.Minute
+
+// completePresigned asks the server to verify and record the upload and returns
+// the artifact. The server hashes the whole object before answering, so there
+// is no response-header timeout here, and a 409 upload_in_progress (an earlier
+// attempt is still verifying) is retried until it yields the result.
+func completePresigned(client *Client, path string) map[string]any {
+	slow := *client
+	slow.httpClient = newHTTPClientWithHeaderTimeout(0)
+
+	deadline := time.Now().Add(maxCompleteWait)
+
+	for {
+		resp, err := slow.doJSON("POST", path, nil)
+		if err != nil {
+			dief("completing upload: %v", err)
+		}
+
+		if resp.StatusCode == http.StatusConflict && time.Now().Before(deadline) {
+			body, _ := io.ReadAll(resp.Body)
+			_ = resp.Body.Close()
+
+			var e struct {
+				Code string `json:"code"`
+			}
+
+			if json.Unmarshal(body, &e) == nil && e.Code == "upload_in_progress" {
+				time.Sleep(retryAfter(resp))
+				continue
+			}
+
+			resp.Body = io.NopCloser(bytes.NewReader(body))
+		}
+
+		checkOK(resp, http.StatusCreated, http.StatusOK)
+
+		var out map[string]any
+
+		decodeJSON(resp, &out)
+		_ = resp.Body.Close()
+
+		return out
+	}
+}
+
+// retryAfter reads a Retry-After header in seconds (default 2s).
+func retryAfter(resp *http.Response) time.Duration {
+	if n, err := strconv.Atoi(resp.Header.Get("Retry-After")); err == nil && n >= 0 {
+		return time.Duration(n) * time.Second
+	}
+
+	return 2 * time.Second
 }
 
 // putPresigned sends the object to the presigned URL. The OpenArtifact token is

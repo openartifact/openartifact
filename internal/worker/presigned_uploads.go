@@ -23,28 +23,39 @@ const (
 // PresignedUploadWorker expires presigned uploads that were never completed:
 // it deletes their staging object and their database row once the complete
 // deadline (URL expiry plus grace) has passed, so abandoned uploads do not
-// accumulate in the bucket.
+// accumulate in the bucket. It also sweeps the staging prefix for objects that
+// have no row at all (a client re-PUT to a still-valid URL after its upload
+// was cleaned up or rejected, a repository deleted with uploads in flight) once
+// they are older than any URL could still be valid.
 type PresignedUploadWorker struct {
 	db      database.Database
 	staging storage.StagingStore
 	log     *logger.Logger
+	// orphanAge is how old a staging object without a row must be to be deleted.
+	orphanAge time.Duration
 
 	stopOnce sync.Once
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 }
 
-// NewPresignedUploadWorker builds the worker. blobStore that cannot stage
-// uploads yields a worker that only removes the rows.
-func NewPresignedUploadWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger) *PresignedUploadWorker {
-	staging, _ := blobStore.(storage.StagingStore)
+// NewPresignedUploadWorker builds the worker. urlTTL is the upload URL
+// lifetime the server signs with; staging objects without a row are only
+// deleted once they are older than that plus the complete grace. A blobStore
+// that cannot stage uploads yields a worker that only removes the rows.
+func NewPresignedUploadWorker(db database.Database, blobStore storage.BlobStore, urlTTL time.Duration, log *logger.Logger) *PresignedUploadWorker {
+	var staging storage.StagingStore
+	if s, ok := blobStore.(storage.StagingStore); ok && s.StagingSupported() {
+		staging = s
+	}
 
 	return &PresignedUploadWorker{
-		db:      db,
-		staging: staging,
-		log:     log,
-		stopCh:  make(chan struct{}),
-		doneCh:  make(chan struct{}),
+		db:        db,
+		staging:   staging,
+		log:       log,
+		orphanAge: storage.ClampStagingTTL(urlTTL) + time.Hour,
+		stopCh:    make(chan struct{}),
+		doneCh:    make(chan struct{}),
 	}
 }
 
@@ -80,9 +91,14 @@ func (w *PresignedUploadWorker) Stop() {
 	<-w.doneCh
 }
 
-// Sweep removes every expired upload (in batches) and returns how many it
-// removed. A failure on one upload leaves it for the next sweep.
+// Sweep removes every expired upload (in batches) and every orphaned staging
+// object, and returns how many it removed. A failure on one leaves it for the
+// next sweep.
 func (w *PresignedUploadWorker) Sweep(ctx context.Context) int {
+	return w.sweepExpired(ctx) + w.sweepOrphans(ctx)
+}
+
+func (w *PresignedUploadWorker) sweepExpired(ctx context.Context) int {
 	removed := 0
 
 	for ctx.Err() == nil {
@@ -124,4 +140,46 @@ func (w *PresignedUploadWorker) expire(ctx context.Context, id string) bool {
 	}
 
 	return true
+}
+
+// sweepOrphans deletes staging objects that no upload row refers to and that
+// are older than orphanAge. It returns how many it deleted.
+func (w *PresignedUploadWorker) sweepOrphans(ctx context.Context) int {
+	if w.staging == nil {
+		return 0
+	}
+
+	removed := 0
+
+	err := w.staging.WalkStaging(ctx, time.Now().Add(-w.orphanAge), func(ids []string) error {
+		known, err := w.db.ExistingPresignedUploadIDs(ctx, ids)
+		if err != nil {
+			return err //nolint:wrapcheck // logged by the caller
+		}
+
+		withRow := make(map[string]struct{}, len(known))
+		for _, id := range known {
+			withRow[id] = struct{}{}
+		}
+
+		for _, id := range ids {
+			if _, ok := withRow[id]; ok {
+				continue
+			}
+
+			if err := w.staging.DeleteStaging(ctx, id); err != nil {
+				w.log.Warnw("failed to delete orphaned staging object", "upload_id", id, "error", err)
+				continue
+			}
+
+			removed++
+		}
+
+		return ctx.Err()
+	})
+	if err != nil {
+		w.log.Warnw("failed to sweep orphaned staging objects", "error", err)
+	}
+
+	return removed
 }

@@ -42,6 +42,8 @@ Two targets are seeded by the first migration:
 | `/api/v1/repositories/{name}/debs…`, `…/packages…`, `…/comps…` (Debian/RPM upload), `…/uploads…` (presigned raw upload: create and complete) | GET/HEAD `read`, POST/PUT `write`, DELETE `delete` | `{name}`, empty path |
 | everything else (package data) | GET/HEAD/OPTIONS `read`, DELETE `delete`, other methods `write` | see below |
 
+Beyond `write`, completing a presigned upload additionally requires being the user who created it or an admin (`403` otherwise); see [Presigned uploads](../operations/storage.md#presigned-uploads).
+
 Repository and path extraction for data requests:
 
 - `/repos/{name}/<path>`: repository `name`, path after it. For `raw`, `maven`, `sbt` and `ivy` the marker form `/repos/{raw|maven|sbt|ivy}/{name}/<path>` is also accepted.

@@ -15,6 +15,7 @@ import (
 	"io"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -66,6 +67,22 @@ func do(t *testing.T, req *http.Request) (int, http.Header, []byte) {
 // TestS3Integration_PresignedUploadPromotesToBlob drives the staging flow
 // against a real S3 API: signed PUT, size check, promotion to the
 // content-addressed key, signed GET with response header overrides.
+func assertStagedContent(t *testing.T, store *storage.S3BlobStore, id, version string, want []byte) {
+	t.Helper()
+
+	rc, err := store.OpenStaging(context.Background(), id, version)
+	if err != nil {
+		t.Fatalf("OpenStaging: %v", err)
+	}
+
+	read, _ := io.ReadAll(rc)
+	_ = rc.Close()
+
+	if !bytes.Equal(read, want) {
+		t.Fatal("staging object differs from the uploaded bytes")
+	}
+}
+
 func TestS3Integration_PresignedUploadPromotesToBlob(t *testing.T) {
 	store := newPresignS3Store(t)
 	ctx := context.Background()
@@ -107,24 +124,14 @@ func TestS3Integration_PresignedUploadPromotesToBlob(t *testing.T) {
 		t.Fatalf("PUT failed: HTTP %d %s", status, body)
 	}
 
-	size, err := store.StatStaging(ctx, id)
-	if err != nil || size != int64(len(content)) {
-		t.Fatalf("StatStaging = %d, %v", size, err)
+	staged, err := store.StatStaging(ctx, id)
+	if err != nil || staged.Size != int64(len(content)) || staged.Version == "" {
+		t.Fatalf("StatStaging = %+v, %v", staged, err)
 	}
 
-	rc, err := store.OpenStaging(ctx, id)
-	if err != nil {
-		t.Fatalf("OpenStaging: %v", err)
-	}
+	assertStagedContent(t, store, id, staged.Version, content)
 
-	read, _ := io.ReadAll(rc)
-	_ = rc.Close()
-
-	if !bytes.Equal(read, content) {
-		t.Fatal("staging object differs from the uploaded bytes")
-	}
-
-	if err := store.PromoteStaging(ctx, id, sha, map[string]string{"filename": "app.bin"}); err != nil {
+	if err := store.PromoteStaging(ctx, id, sha, staged.Version, map[string]string{"filename": "app.bin"}); err != nil {
 		t.Fatalf("PromoteStaging: %v", err)
 	}
 
@@ -172,5 +179,85 @@ func TestS3Integration_PresignedGetOfMissingBlobIsRejectedByStore(t *testing.T) 
 	req, _ := http.NewRequestWithContext(context.Background(), http.MethodGet, url, nil)
 	if status, _, _ := do(t, req); status != http.StatusNotFound {
 		t.Errorf("HTTP %d, want 404 for an object that does not exist", status)
+	}
+}
+
+// TestS3Integration_StagingObjectOverwrittenAfterVerification is the
+// poisoning scenario: the client's presigned PUT URL stays valid, so it can
+// overwrite the staging object after the server verified it. The conditional
+// read and copy must refuse the new bytes and leave no blob behind.
+func TestS3Integration_StagingObjectOverwrittenAfterVerification(t *testing.T) {
+	store := newPresignS3Store(t)
+	ctx := context.Background()
+
+	good := bytes.Repeat([]byte("verified "), 1024)
+	evil := bytes.Repeat([]byte("EVIL!!!!! "), 900)
+	sum := sha256.Sum256(good)
+	sha := hex.EncodeToString(sum[:])
+	id := uuid.NewString()
+
+	t.Cleanup(func() {
+		_ = store.DeleteStaging(ctx, id)
+		_ = store.Delete(ctx, sha)
+	})
+
+	put := func(body []byte) {
+		t.Helper()
+
+		p, err := store.PresignStagingPut(ctx, id, int64(len(body)), time.Minute)
+		if err != nil {
+			t.Fatalf("PresignStagingPut: %v", err)
+		}
+
+		req, _ := http.NewRequestWithContext(ctx, http.MethodPut, p.URL, bytes.NewReader(body))
+		for k, v := range p.Headers {
+			req.Header.Set(k, v)
+		}
+
+		if status, _, b := do(t, req); status/100 != 2 {
+			t.Fatalf("PUT failed: HTTP %d %s", status, b)
+		}
+	}
+
+	put(good)
+
+	verified, err := store.StatStaging(ctx, id)
+	if err != nil {
+		t.Fatalf("StatStaging: %v", err)
+	}
+
+	put(evil) // after verification, before promotion
+
+	if _, err := store.OpenStaging(ctx, id, verified.Version); !errors.Is(err, storage.ErrStagingChanged) {
+		t.Errorf("OpenStaging of an overwritten object: %v, want ErrStagingChanged", err)
+	}
+
+	if err := store.PromoteStaging(ctx, id, sha, verified.Version, nil); !errors.Is(err, storage.ErrStagingChanged) {
+		t.Fatalf("PromoteStaging of an overwritten object: %v, want ErrStagingChanged", err)
+	}
+
+	if ok, err := store.Exists(ctx, sha); err != nil || ok {
+		t.Fatalf("a blob exists under the declared hash after a rejected promotion: %v, %v", ok, err)
+	}
+
+	// The staging prefix walk reports the object once it is old enough.
+	var seen []string
+
+	err = store.WalkStaging(ctx, time.Now().Add(time.Hour), func(ids []string) error {
+		seen = append(seen, ids...)
+		return nil
+	})
+	if err != nil || !slices.Contains(seen, id) {
+		t.Errorf("WalkStaging = %v, %v; want it to list %s", seen, err, id)
+	}
+
+	seen = nil
+	_ = store.WalkStaging(ctx, time.Now().Add(-time.Hour), func(ids []string) error {
+		seen = append(seen, ids...)
+		return nil
+	})
+
+	if slices.Contains(seen, id) {
+		t.Error("WalkStaging listed an object younger than the cutoff")
 	}
 }

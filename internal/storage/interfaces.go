@@ -50,26 +50,27 @@ type BlobStore interface {
 type StorageConfig struct {
 	// Type selects the storage backend.
 	// Supported values: "filesystem", "s3", "gcs", "azure", "garage", "seaweedfs", "oci".
-	Type               string            `yaml:"type"`               // "s3", "filesystem", "gcs", "azure", "garage", "seaweedfs", "oci"
-	Endpoint           string            `yaml:"endpoint"`           // For S3-compatible services (s3, garage, seaweedfs) or OCI registry URL
-	Bucket             string            `yaml:"bucket"`             // Bucket/container name (s3, garage, seaweedfs) or OCI repository prefix
-	Region             string            `yaml:"region"`             // AWS region or equivalent
-	AccessKey          string            `yaml:"accessKey"`          // Access credentials
-	SecretKey          string            `yaml:"secretKey"`          // Secret credentials
-	Path               string            `yaml:"path"`               // Local filesystem path
-	Options            map[string]string `yaml:"options"`            // Additional options
-	ForcePathStyle     bool              `yaml:"forcePathStyle"`     // Use path-style S3 addressing (required for MinIO, Garage, SeaweedFS)
-	PresignTTL         time.Duration     `yaml:"presignTtl"`         // Lifetime of presigned download URLs (clamped to 1m-1h)
-	PresignUploadTTL   time.Duration     `yaml:"presignUploadTtl"`   // Lifetime of presigned upload URLs (clamped to 1m-12h)
-	PresignDownloads   bool              `yaml:"presignDownloads"`   // Redirect blob downloads (307) to presigned URLs
-	PresignMinSize     int64             `yaml:"presignMinSize"`     // Blobs smaller than this many bytes are always streamed
-	PresignEndpoint    string            `yaml:"presignEndpoint"`    // Public base URL presigned URLs are signed against (S3 family); empty = Endpoint
-	GCSBucket          string            `yaml:"gcsBucket"`          // GCS bucket name
-	GCSHMACKey         string            `yaml:"gcsHmacKey"`         // GCS HMAC access key
-	GCSHMACSecret      string            `yaml:"gcsHmacSecret"`      // GCS HMAC secret key
-	AzureAccountName   string            `yaml:"azureAccountName"`   // Azure storage account name
-	AzureAccountKey    string            `yaml:"azureAccountKey"`    // Azure storage account key
-	AzureContainerName string            `yaml:"azureContainerName"` // Azure container name
+	Type                     string            `yaml:"type"`                     // "s3", "filesystem", "gcs", "azure", "garage", "seaweedfs", "oci"
+	Endpoint                 string            `yaml:"endpoint"`                 // For S3-compatible services (s3, garage, seaweedfs) or OCI registry URL
+	Bucket                   string            `yaml:"bucket"`                   // Bucket/container name (s3, garage, seaweedfs) or OCI repository prefix
+	Region                   string            `yaml:"region"`                   // AWS region or equivalent
+	AccessKey                string            `yaml:"accessKey"`                // Access credentials
+	SecretKey                string            `yaml:"secretKey"`                // Secret credentials
+	Path                     string            `yaml:"path"`                     // Local filesystem path
+	Options                  map[string]string `yaml:"options"`                  // Additional options
+	ForcePathStyle           bool              `yaml:"forcePathStyle"`           // Use path-style S3 addressing (required for MinIO, Garage, SeaweedFS)
+	PresignTTL               time.Duration     `yaml:"presignTtl"`               // Lifetime of presigned download URLs (clamped to 1m-1h)
+	PresignUploadTTL         time.Duration     `yaml:"presignUploadTtl"`         // Lifetime of presigned upload URLs (clamped to 1m-12h)
+	PresignMaxPendingUploads int               `yaml:"presignMaxPendingUploads"` // Outstanding presigned uploads allowed per user; 0 = unlimited
+	PresignDownloads         bool              `yaml:"presignDownloads"`         // Redirect blob downloads (307) to presigned URLs
+	PresignMinSize           int64             `yaml:"presignMinSize"`           // Blobs smaller than this many bytes are always streamed
+	PresignEndpoint          string            `yaml:"presignEndpoint"`          // Public base URL presigned URLs are signed against (S3 family); empty = Endpoint
+	GCSBucket                string            `yaml:"gcsBucket"`                // GCS bucket name
+	GCSHMACKey               string            `yaml:"gcsHmacKey"`               // GCS HMAC access key
+	GCSHMACSecret            string            `yaml:"gcsHmacSecret"`            // GCS HMAC secret key
+	AzureAccountName         string            `yaml:"azureAccountName"`         // Azure storage account name
+	AzureAccountKey          string            `yaml:"azureAccountKey"`          // Azure storage account key
+	AzureContainerName       string            `yaml:"azureContainerName"`       // Azure container name
 	// OCI-specific fields
 	OCIInsecure bool   `yaml:"ociInsecure"` // Allow plain HTTP for OCI registry (dev/testing only)
 	OCIUsername string `yaml:"ociUsername"` // OCI registry username

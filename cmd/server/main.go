@@ -268,7 +268,7 @@ func run(args []string) error {
 
 	cleanupWorker.Start()
 
-	presignedUploadWorker := worker.NewPresignedUploadWorker(db, blobStore, log)
+	presignedUploadWorker := worker.NewPresignedUploadWorker(db, blobStore, cfg.Storage.PresignUploadTTL, log)
 	presignedUploadWorker.Start()
 
 	// Docker registry GC: untagged manifests past the grace period and the
@@ -672,7 +672,7 @@ func run(args []string) error {
 	debUpload.SetDebWorker(debWorker)
 	debUpload.Register(authedAPI)
 
-	presignedUploads := api.NewPresignedUploadHandler(log, db, blobStore, evaluator, cfg.Storage.PresignUploadTTL, reg)
+	presignedUploads := api.NewPresignedUploadHandler(log, db, blobStore, evaluator, cfg.Storage.PresignUploadTTL, cfg.Storage.PresignMaxPendingUploads, reg)
 	presignedUploads.Register(authedAPI)
 
 	rpmHTTP := formatrpm.NewHTTPHandler(log, db, servedStore)

@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
@@ -52,15 +53,18 @@ func (p *PostgresDB) GetPresignedUpload(ctx context.Context, repoID, id string) 
 	}
 
 	return &models.PresignedUpload{
-		ID:           row.ID,
-		RepositoryID: row.RepositoryID,
-		Path:         row.Path,
-		SizeBytes:    row.SizeBytes,
-		SHA256:       row.Sha256,
-		ContentType:  row.ContentType,
-		CreatedBy:    row.CreatedBy,
-		CreatedAt:    row.CreatedAt,
-		ExpiresAt:    row.ExpiresAt,
+		CompletingSince: row.CompletingSince,
+		CompletedAt:     row.CompletedAt,
+		ArtifactID:      row.ArtifactID,
+		ID:              row.ID,
+		RepositoryID:    row.RepositoryID,
+		Path:            row.Path,
+		SizeBytes:       row.SizeBytes,
+		SHA256:          row.Sha256,
+		ContentType:     row.ContentType,
+		CreatedBy:       row.CreatedBy,
+		CreatedAt:       row.CreatedAt,
+		ExpiresAt:       row.ExpiresAt,
 	}, nil
 }
 
@@ -86,4 +90,80 @@ func (p *PostgresDB) ListExpiredPresignedUploads(ctx context.Context, limit int)
 	}
 
 	return ids, nil
+}
+
+// ClaimPresignedUpload takes the complete lease of an upload for up to lease.
+// It reports false when the upload is already completed, does not exist, or
+// another complete holds an unexpired lease.
+func (p *PostgresDB) ClaimPresignedUpload(ctx context.Context, repoID, id string, lease time.Duration) (bool, error) {
+	if !isUUID(id) {
+		return false, nil
+	}
+
+	n, err := p.q.ClaimPresignedUpload(ctx, dbsqlc.ClaimPresignedUploadParams{ID: id, RepositoryID: repoID, LeaseSeconds: lease.Seconds()})
+	if err != nil {
+		return false, fmt.Errorf("failed to claim presigned upload: %w", err)
+	}
+
+	return n == 1, nil
+}
+
+// ReleasePresignedUpload gives up the lease of an upload that was not completed.
+func (p *PostgresDB) ReleasePresignedUpload(ctx context.Context, id string) error {
+	if !isUUID(id) {
+		return nil
+	}
+
+	if err := p.q.ReleasePresignedUpload(ctx, id); err != nil {
+		return fmt.Errorf("failed to release presigned upload: %w", err)
+	}
+
+	return nil
+}
+
+// MarkPresignedUploadCompleted records that the upload produced artifactID.
+func (p *PostgresDB) MarkPresignedUploadCompleted(ctx context.Context, id, artifactID string) error {
+	if !isUUID(id) {
+		return nil
+	}
+
+	if err := p.q.MarkPresignedUploadCompleted(ctx, dbsqlc.MarkPresignedUploadCompletedParams{ID: id, ArtifactID: artifactID}); err != nil {
+		return fmt.Errorf("failed to mark presigned upload completed: %w", err)
+	}
+
+	return nil
+}
+
+// CountPendingPresignedUploads counts createdBy's uploads that are neither
+// completed nor expired.
+func (p *PostgresDB) CountPendingPresignedUploads(ctx context.Context, createdBy string) (int, error) {
+	n, err := p.q.CountPendingPresignedUploads(ctx, createdBy)
+	if err != nil {
+		return 0, fmt.Errorf("failed to count pending presigned uploads: %w", err)
+	}
+
+	return int(n), nil
+}
+
+// ExistingPresignedUploadIDs returns the subset of ids that have a row. Ids
+// that are not UUIDs cannot have one and are dropped.
+func (p *PostgresDB) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
+	valid := make([]string, 0, len(ids))
+
+	for _, id := range ids {
+		if isUUID(id) {
+			valid = append(valid, id)
+		}
+	}
+
+	if len(valid) == 0 {
+		return nil, nil
+	}
+
+	found, err := p.q.ExistingPresignedUploadIDs(ctx, valid)
+	if err != nil {
+		return nil, fmt.Errorf("failed to look up presigned uploads: %w", err)
+	}
+
+	return found, nil
 }

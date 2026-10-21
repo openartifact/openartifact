@@ -6,15 +6,20 @@ package storage
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"maps"
+	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 	"github.com/google/uuid"
 )
 
@@ -40,8 +45,8 @@ func stagingKey(id string) (string, error) {
 	return stagingPrefix + id, nil
 }
 
-// clampStagingTTL clamps an upload URL TTL to [1 minute, 12 hours].
-func clampStagingTTL(ttl time.Duration) time.Duration {
+// ClampStagingTTL clamps an upload URL TTL to [1 minute, 12 hours].
+func ClampStagingTTL(ttl time.Duration) time.Duration {
 	return min(max(ttl, time.Minute), maxStagingTTL)
 }
 
@@ -54,7 +59,7 @@ func (s *S3BlobStore) PresignStagingPut(ctx context.Context, id string, size int
 		return PresignedPut{}, err
 	}
 
-	ttl = clampStagingTTL(ttl)
+	ttl = ClampStagingTTL(ttl)
 
 	req, err := s.presigner.PresignPutObject(ctx, &s3.PutObjectInput{
 		Bucket:        aws.String(s.bucket),
@@ -79,40 +84,50 @@ func (s *S3BlobStore) PresignStagingPut(ctx context.Context, id string, size int
 	return PresignedPut{URL: req.URL, Headers: headers, Expires: time.Now().Add(ttl)}, nil
 }
 
-// StatStaging returns the size of a staging object.
-func (s *S3BlobStore) StatStaging(ctx context.Context, id string) (int64, error) {
+// StagingSupported reports that the S3 backend has a staging area.
+func (s *S3BlobStore) StagingSupported() bool { return true }
+
+// StatStaging describes a staging object.
+func (s *S3BlobStore) StatStaging(ctx context.Context, id string) (StagedObject, error) {
 	key, err := stagingKey(id)
 	if err != nil {
-		return 0, err
+		return StagedObject{}, err
 	}
 
 	out, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
 	if err != nil {
 		if isNotFound(err) {
-			return 0, ErrStagingNotFound
+			return StagedObject{}, ErrStagingNotFound
 		}
 
-		return 0, fmt.Errorf("s3: head %s: %w", key, err)
+		return StagedObject{}, fmt.Errorf("s3: head %s: %w", key, err)
 	}
 
-	if out.ContentLength == nil {
-		return 0, fmt.Errorf("s3: nil ContentLength for %s", key) //nolint:err113 // dynamic error with runtime context
+	if out.ContentLength == nil || out.ETag == nil || *out.ETag == "" {
+		return StagedObject{}, fmt.Errorf("s3: head %s: missing ContentLength or ETag", key) //nolint:err113 // dynamic error with runtime context
 	}
 
-	return *out.ContentLength, nil
+	return StagedObject{Size: *out.ContentLength, Version: *out.ETag}, nil
 }
 
-// OpenStaging reads a staging object.
-func (s *S3BlobStore) OpenStaging(ctx context.Context, id string) (io.ReadCloser, error) {
+// OpenStaging reads a staging object, conditional on its ETag.
+func (s *S3BlobStore) OpenStaging(ctx context.Context, id, version string) (io.ReadCloser, error) {
 	key, err := stagingKey(id)
 	if err != nil {
 		return nil, err
 	}
 
-	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(key)})
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket:  aws.String(s.bucket),
+		Key:     aws.String(key),
+		IfMatch: aws.String(version),
+	})
 	if err != nil {
-		if isNotFound(err) {
+		switch {
+		case isNotFound(err):
 			return nil, ErrStagingNotFound
+		case isPreconditionFailed(err):
+			return nil, ErrStagingChanged
 		}
 
 		return nil, fmt.Errorf("s3: get %s: %w", key, err)
@@ -122,10 +137,13 @@ func (s *S3BlobStore) OpenStaging(ctx context.Context, id string) (io.ReadCloser
 }
 
 // PromoteStaging copies a staging object to the content-addressed key with a
-// server-side CopyObject (the bytes never pass through OpenArtifact). When the
-// blob already exists the copy is skipped: content-addressed objects with the
-// same hash are identical.
-func (s *S3BlobStore) PromoteStaging(ctx context.Context, id, sha256 string, metadata map[string]string) error {
+// server-side CopyObject (the bytes never pass through OpenArtifact). The copy
+// is conditional on the staging object still having the ETag that was
+// verified, so an overwrite through the still-valid upload URL after
+// verification cannot put unverified bytes under a content-addressed key. When
+// the blob already exists the copy is skipped: content-addressed objects with
+// the same hash are identical.
+func (s *S3BlobStore) PromoteStaging(ctx context.Context, id, sha256, version string, metadata map[string]string) error {
 	src, err := stagingKey(id)
 	if err != nil {
 		return err
@@ -151,15 +169,70 @@ func (s *S3BlobStore) PromoteStaging(ctx context.Context, id, sha256 string, met
 		Bucket:            aws.String(s.bucket),
 		Key:               aws.String(dst),
 		CopySource:        aws.String(s.bucket + "/" + url.PathEscape(src)),
+		CopySourceIfMatch: aws.String(version),
 		Metadata:          md,
 		MetadataDirective: types.MetadataDirectiveReplace,
 	})
 	if err != nil {
-		if isNotFound(err) {
+		switch {
+		case isNotFound(err):
 			return ErrStagingNotFound
+		case isPreconditionFailed(err):
+			return ErrStagingChanged
 		}
 
 		return fmt.Errorf("s3: copy %s to %s: %w", src, dst, err)
+	}
+
+	return nil
+}
+
+// isPreconditionFailed reports an S3 412 (a failed If-Match / x-amz-copy-source-if-match).
+func isPreconditionFailed(err error) bool {
+	if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "PreconditionFailed" {
+		return true
+	}
+
+	respErr, ok := errors.AsType[*awshttp.ResponseError](err)
+
+	return ok && respErr.HTTPStatusCode() == http.StatusPreconditionFailed
+}
+
+// WalkStaging lists staging objects last modified before olderThan.
+func (s *S3BlobStore) WalkStaging(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
+	pages := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
+		Bucket: aws.String(s.bucket),
+		Prefix: aws.String(stagingPrefix),
+	})
+
+	for pages.HasMorePages() {
+		page, err := pages.NextPage(ctx)
+		if err != nil {
+			return fmt.Errorf("s3: list %s: %w", stagingPrefix, err)
+		}
+
+		var ids []string
+
+		for _, obj := range page.Contents {
+			if obj.Key == nil || obj.LastModified == nil || !obj.LastModified.Before(olderThan) {
+				continue
+			}
+
+			id := strings.TrimPrefix(*obj.Key, stagingPrefix)
+			if _, err := uuid.Parse(id); err != nil {
+				continue
+			}
+
+			ids = append(ids, id)
+		}
+
+		if len(ids) == 0 {
+			continue
+		}
+
+		if err := fn(ids); err != nil {
+			return err
+		}
 	}
 
 	return nil

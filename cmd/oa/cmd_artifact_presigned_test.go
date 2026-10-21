@@ -155,3 +155,90 @@ func TestArtifactUploadFlagsRequirePresigned(t *testing.T) {
 		t.Errorf("missing file: exit %d, stderr %q", res.code, res.stderr)
 	}
 }
+
+// A complete call that answers "in progress" (an earlier attempt is still
+// verifying) is retried until it returns the artifact.
+func TestArtifactUploadPresignedRetriesInProgress(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "app.bin")
+	if err := os.WriteFile(file, []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, storeSrv := newObjectStore(t)
+
+	var (
+		mu        sync.Mutex
+		completes int
+	)
+
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		switch {
+		case strings.HasSuffix(r.URL.Path, "/uploads"):
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"id":"u-1","upload_url":"`+storeSrv.URL+`/staging/u-1?X-Amz-Signature=s"}`)
+		case strings.HasSuffix(r.URL.Path, "/complete"):
+			mu.Lock()
+			completes++
+			n := completes
+			mu.Unlock()
+
+			if n < 3 {
+				w.Header().Set("Retry-After", "0")
+				w.WriteHeader(http.StatusConflict)
+				_, _ = io.WriteString(w, `{"error":"busy","code":"upload_in_progress"}`)
+
+				return
+			}
+
+			w.WriteHeader(http.StatusOK)
+			_, _ = io.WriteString(w, `{"id":"a-1","path":"app.bin","size":7,"sha256":"abc"}`)
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+
+	res := runOA(t, api, "", "artifact", "upload", "--presigned", "files", file)
+	if res.code != 0 || !strings.Contains(res.stdout, "Uploaded") {
+		t.Fatalf("exit %d, stdout %q, stderr %q", res.code, res.stdout, res.stderr)
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if completes != 3 {
+		t.Errorf("complete calls = %d, want 3 (two in progress, then the result)", completes)
+	}
+}
+
+// Any other 409 (for example upload_changed) is a failure, not a retry.
+func TestArtifactUploadPresignedFailsOnOtherConflicts(t *testing.T) {
+	file := filepath.Join(t.TempDir(), "app.bin")
+	if err := os.WriteFile(file, []byte("payload"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	_, storeSrv := newObjectStore(t)
+
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+
+		if strings.HasSuffix(r.URL.Path, "/uploads") {
+			w.WriteHeader(http.StatusCreated)
+			_, _ = io.WriteString(w, `{"id":"u-1","upload_url":"`+storeSrv.URL+`/staging/u-1?X-Amz-Signature=s"}`)
+
+			return
+		}
+
+		w.WriteHeader(http.StatusConflict)
+		_, _ = io.WriteString(w, `{"error":"changed","code":"upload_changed","message":"the uploaded object changed"}`)
+	}))
+	t.Cleanup(api.Close)
+
+	res := runOA(t, api, "", "artifact", "upload", "--presigned", "files", file)
+	if res.code == 0 || !strings.Contains(res.stderr, "changed") {
+		t.Fatalf("exit %d, stderr %q; want a failure naming the conflict", res.code, res.stderr)
+	}
+}

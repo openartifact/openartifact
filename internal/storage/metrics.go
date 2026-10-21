@@ -109,6 +109,12 @@ func (m *MetricsBlobStore) PresignGet(ctx context.Context, sha256 string, ttl ti
 	return p.PresignGet(ctx, sha256, ttl, opts)
 }
 
+// StagingSupported reports whether the wrapped store has a staging area.
+func (m *MetricsBlobStore) StagingSupported() bool {
+	s, ok := m.inner.(StagingStore)
+	return ok && s.StagingSupported()
+}
+
 // PresignStagingPut forwards to the wrapped store when it has a staging area.
 func (m *MetricsBlobStore) PresignStagingPut(ctx context.Context, id string, size int64, ttl time.Duration) (PresignedPut, error) {
 	s, ok := m.inner.(StagingStore)
@@ -120,23 +126,23 @@ func (m *MetricsBlobStore) PresignStagingPut(ctx context.Context, id string, siz
 }
 
 // StatStaging forwards to the wrapped store.
-func (m *MetricsBlobStore) StatStaging(ctx context.Context, id string) (int64, error) {
+func (m *MetricsBlobStore) StatStaging(ctx context.Context, id string) (StagedObject, error) {
 	s, ok := m.inner.(StagingStore)
 	if !ok {
-		return 0, ErrPresignNotSupported
+		return StagedObject{}, ErrPresignNotSupported
 	}
 
 	return s.StatStaging(ctx, id)
 }
 
 // OpenStaging forwards to the wrapped store and counts the bytes read.
-func (m *MetricsBlobStore) OpenStaging(ctx context.Context, id string) (io.ReadCloser, error) {
+func (m *MetricsBlobStore) OpenStaging(ctx context.Context, id, version string) (io.ReadCloser, error) {
 	s, ok := m.inner.(StagingStore)
 	if !ok {
 		return nil, ErrPresignNotSupported
 	}
 
-	rc, err := s.OpenStaging(ctx, id)
+	rc, err := s.OpenStaging(ctx, id, version)
 	if err != nil {
 		return nil, err
 	}
@@ -145,13 +151,13 @@ func (m *MetricsBlobStore) OpenStaging(ctx context.Context, id string) (io.ReadC
 }
 
 // PromoteStaging forwards to the wrapped store.
-func (m *MetricsBlobStore) PromoteStaging(ctx context.Context, id, sha256 string, metadata map[string]string) error {
+func (m *MetricsBlobStore) PromoteStaging(ctx context.Context, id, sha256, version string, metadata map[string]string) error {
 	s, ok := m.inner.(StagingStore)
 	if !ok {
 		return ErrPresignNotSupported
 	}
 
-	return s.PromoteStaging(ctx, id, sha256, metadata)
+	return s.PromoteStaging(ctx, id, sha256, version, metadata)
 }
 
 // DeleteStaging forwards to the wrapped store.
@@ -162,4 +168,14 @@ func (m *MetricsBlobStore) DeleteStaging(ctx context.Context, id string) error {
 	}
 
 	return s.DeleteStaging(ctx, id)
+}
+
+// WalkStaging forwards to the wrapped store.
+func (m *MetricsBlobStore) WalkStaging(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
+	s, ok := m.inner.(StagingStore)
+	if !ok {
+		return ErrPresignNotSupported
+	}
+
+	return s.WalkStaging(ctx, olderThan, fn)
 }

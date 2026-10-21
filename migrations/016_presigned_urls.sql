@@ -17,6 +17,12 @@ COMMENT ON COLUMN repositories.presign_downloads IS 'Per-repository override of 
 -- the artifact. Rows (and their staging objects) that are never completed are
 -- removed by the cleanup worker once expires_at has passed; expires_at is the
 -- complete deadline, i.e. the upload URL expiry plus a grace period.
+--
+-- completing_since is the lease of the complete call that is verifying and
+-- committing the upload right now (a second complete answers "in progress"
+-- until the lease runs out). completed_at and artifact_id are set once the
+-- artifact is recorded, so a retried complete returns the same result; the row
+-- stays until the cleanup worker removes it after expires_at.
 CREATE TABLE presigned_uploads (
     id uuid DEFAULT gen_random_uuid() NOT NULL,
     repository_id uuid NOT NULL,
@@ -27,6 +33,9 @@ CREATE TABLE presigned_uploads (
     created_by text DEFAULT '' NOT NULL,
     created_at timestamp with time zone DEFAULT now() NOT NULL,
     expires_at timestamp with time zone NOT NULL,
+    completing_since timestamp with time zone,
+    completed_at timestamp with time zone,
+    artifact_id text DEFAULT '' NOT NULL,
     CONSTRAINT presigned_uploads_pkey PRIMARY KEY (id),
     CONSTRAINT presigned_uploads_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE,
     CONSTRAINT presigned_uploads_size_check CHECK (size_bytes >= 0),
@@ -34,5 +43,7 @@ CREATE TABLE presigned_uploads (
 );
 
 CREATE INDEX idx_presigned_uploads_expires ON presigned_uploads (expires_at);
+CREATE INDEX idx_presigned_uploads_repository ON presigned_uploads (repository_id);
+CREATE INDEX idx_presigned_uploads_created_by ON presigned_uploads (created_by) WHERE completed_at IS NULL;
 
 COMMENT ON TABLE presigned_uploads IS 'Presigned uploads awaiting their complete call; the object lives at the staging key staging/<id> in the blob store.';

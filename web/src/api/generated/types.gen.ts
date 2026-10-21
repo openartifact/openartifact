@@ -4910,6 +4910,10 @@ export type PostApiV1RepositoriesByNameUploadsErrors = {
      */
     404: unknown;
     /**
+     * Too many outstanding uploads for this user (retry after the Retry-After header)
+     */
+    429: Error;
+    /**
      * The storage backend does not support presigned uploads
      */
     501: Error;
@@ -4946,15 +4950,15 @@ export type PostApiV1RepositoriesByNameUploadsByIdCompleteErrors = {
      */
     401: unknown;
     /**
-     * Write permission denied
+     * Write permission denied, or the caller is neither the creator of the upload nor an administrator
      */
     403: unknown;
     /**
-     * Repository or upload not found (or already completed)
+     * Repository or upload not found (or expired and swept)
      */
     404: unknown;
     /**
-     * Nothing has been uploaded to the upload URL yet
+     * Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_changed: the staged object was overwritten during verification; the upload was discarded
      */
     409: Error;
     /**
@@ -4974,6 +4978,10 @@ export type PostApiV1RepositoriesByNameUploadsByIdCompleteErrors = {
 export type PostApiV1RepositoriesByNameUploadsByIdCompleteError = PostApiV1RepositoriesByNameUploadsByIdCompleteErrors[keyof PostApiV1RepositoriesByNameUploadsByIdCompleteErrors];
 
 export type PostApiV1RepositoriesByNameUploadsByIdCompleteResponses = {
+    /**
+     * The upload was already completed; the original result
+     */
+    200: PresignedUploadResult;
     /**
      * Artifact recorded
      */

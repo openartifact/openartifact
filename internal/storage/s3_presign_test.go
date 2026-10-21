@@ -173,8 +173,8 @@ func TestClampStagingTTL(t *testing.T) {
 		30 * time.Minute: 30 * time.Minute,
 		48 * time.Hour:   12 * time.Hour,
 	} {
-		if got := clampStagingTTL(in); got != want {
-			t.Errorf("clampStagingTTL(%v) = %v, want %v", in, got, want)
+		if got := ClampStagingTTL(in); got != want {
+			t.Errorf("ClampStagingTTL(%v) = %v, want %v", in, got, want)
 		}
 	}
 }

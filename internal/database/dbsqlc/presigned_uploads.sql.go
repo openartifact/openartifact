@@ -10,6 +10,44 @@ import (
 	"time"
 )
 
+const claimPresignedUpload = `-- name: ClaimPresignedUpload :execrows
+UPDATE presigned_uploads
+SET completing_since = now()
+WHERE id = $1
+  AND repository_id = $2
+  AND completed_at IS NULL
+  AND (completing_since IS NULL OR completing_since < now() - make_interval(secs => $3::float8))
+`
+
+type ClaimPresignedUploadParams struct {
+	ID           string  `db:"id" json:"id"`
+	RepositoryID string  `db:"repository_id" json:"repository_id"`
+	LeaseSeconds float64 `db:"lease_seconds" json:"lease_seconds"`
+}
+
+// Takes the complete lease. It fails when the upload is already completed or
+// another complete holds an unexpired lease.
+func (q *Queries) ClaimPresignedUpload(ctx context.Context, arg ClaimPresignedUploadParams) (int64, error) {
+	result, err := q.db.Exec(ctx, claimPresignedUpload, arg.ID, arg.RepositoryID, arg.LeaseSeconds)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
+const countPendingPresignedUploads = `-- name: CountPendingPresignedUploads :one
+SELECT count(*)::bigint
+FROM presigned_uploads
+WHERE created_by = $1 AND completed_at IS NULL AND expires_at > now()
+`
+
+func (q *Queries) CountPendingPresignedUploads(ctx context.Context, createdBy string) (int64, error) {
+	row := q.db.QueryRow(ctx, countPendingPresignedUploads, createdBy)
+	var column_1 int64
+	err := row.Scan(&column_1)
+	return column_1, err
+}
+
 const createPresignedUpload = `-- name: CreatePresignedUpload :one
 INSERT INTO presigned_uploads (repository_id, path, size_bytes, sha256, content_type, created_by, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)
@@ -55,8 +93,33 @@ func (q *Queries) DeletePresignedUpload(ctx context.Context, id string) error {
 	return err
 }
 
+const existingPresignedUploadIDs = `-- name: ExistingPresignedUploadIDs :many
+SELECT id FROM presigned_uploads WHERE id = ANY($1::uuid[])
+`
+
+func (q *Queries) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
+	rows, err := q.db.Query(ctx, existingPresignedUploadIDs, ids)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getPresignedUpload = `-- name: GetPresignedUpload :one
-SELECT id, repository_id, path, size_bytes, sha256, content_type, created_by, created_at, expires_at
+SELECT id, repository_id, path, size_bytes, sha256, content_type, created_by, created_at, expires_at,
+       completing_since, completed_at, artifact_id
 FROM presigned_uploads
 WHERE id = $1 AND repository_id = $2
 `
@@ -79,6 +142,9 @@ func (q *Queries) GetPresignedUpload(ctx context.Context, arg GetPresignedUpload
 		&i.CreatedBy,
 		&i.CreatedAt,
 		&i.ExpiresAt,
+		&i.CompletingSince,
+		&i.CompletedAt,
+		&i.ArtifactID,
 	)
 	return i, err
 }
@@ -87,6 +153,8 @@ const listExpiredPresignedUploads = `-- name: ListExpiredPresignedUploads :many
 SELECT id
 FROM presigned_uploads
 WHERE expires_at < now()
+  -- never pull the staging object from under a complete that is verifying it
+  AND (completing_since IS NULL OR completing_since < now() - interval '1 hour')
 ORDER BY expires_at
 LIMIT $1
 `
@@ -109,4 +177,29 @@ func (q *Queries) ListExpiredPresignedUploads(ctx context.Context, limit int32) 
 		return nil, err
 	}
 	return items, nil
+}
+
+const markPresignedUploadCompleted = `-- name: MarkPresignedUploadCompleted :exec
+UPDATE presigned_uploads
+SET completed_at = now(), completing_since = NULL, artifact_id = $2
+WHERE id = $1
+`
+
+type MarkPresignedUploadCompletedParams struct {
+	ID         string `db:"id" json:"id"`
+	ArtifactID string `db:"artifact_id" json:"artifact_id"`
+}
+
+func (q *Queries) MarkPresignedUploadCompleted(ctx context.Context, arg MarkPresignedUploadCompletedParams) error {
+	_, err := q.db.Exec(ctx, markPresignedUploadCompleted, arg.ID, arg.ArtifactID)
+	return err
+}
+
+const releasePresignedUpload = `-- name: ReleasePresignedUpload :exec
+UPDATE presigned_uploads SET completing_since = NULL WHERE id = $1 AND completed_at IS NULL
+`
+
+func (q *Queries) ReleasePresignedUpload(ctx context.Context, id string) error {
+	_, err := q.db.Exec(ctx, releasePresignedUpload, id)
+	return err
 }

@@ -30,8 +30,9 @@ var (
 
 	errNegativeDockerGCGrace = errors.New("workers.dockerGcGracePeriod must not be negative")
 
-	errPresignEndpoint = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
-	errPresignMinSize  = errors.New("storage.presignMinSize must not be negative")
+	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
+	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
+	errPresignMaxPending = errors.New("storage.presignMaxPendingUploads must not be negative")
 )
 
 type Config struct {
@@ -208,24 +209,25 @@ func defaultConfig() *Config {
 			AuthCacheTTLMillis:     2000,
 		},
 		Storage: storage.StorageConfig{
-			Type:               "filesystem",
-			Endpoint:           "",
-			Bucket:             "artifacts",
-			Region:             "us-east-1",
-			AccessKey:          "",
-			SecretKey:          "",
-			Path:               "/var/lib/artifacts",
-			Options:            make(map[string]string),
-			ForcePathStyle:     false,
-			PresignTTL:         5 * time.Minute,
-			PresignUploadTTL:   30 * time.Minute,
-			PresignMinSize:     1 << 20,
-			GCSBucket:          "",
-			GCSHMACKey:         "",
-			GCSHMACSecret:      "",
-			AzureAccountName:   "",
-			AzureAccountKey:    "",
-			AzureContainerName: "",
+			Type:                     "filesystem",
+			Endpoint:                 "",
+			Bucket:                   "artifacts",
+			Region:                   "us-east-1",
+			AccessKey:                "",
+			SecretKey:                "",
+			Path:                     "/var/lib/artifacts",
+			Options:                  make(map[string]string),
+			ForcePathStyle:           false,
+			PresignTTL:               5 * time.Minute,
+			PresignUploadTTL:         30 * time.Minute,
+			PresignMaxPendingUploads: 20,
+			PresignMinSize:           1 << 20,
+			GCSBucket:                "",
+			GCSHMACKey:               "",
+			GCSHMACSecret:            "",
+			AzureAccountName:         "",
+			AzureAccountKey:          "",
+			AzureContainerName:       "",
 		},
 		Logger: LoggerConfig{
 			Level:      "info",
@@ -337,6 +339,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideBool(&cfg.Storage.ForcePathStyle, "STORAGE_S3_FORCE_PATH_STYLE")
 	overrideDuration(&cfg.Storage.PresignTTL, "STORAGE_S3_PRESIGN_TTL")
 	overrideDuration(&cfg.Storage.PresignUploadTTL, "STORAGE_PRESIGN_UPLOAD_TTL")
+	overrideInt(&cfg.Storage.PresignMaxPendingUploads, "STORAGE_PRESIGN_MAX_PENDING_UPLOADS")
 	overrideBool(&cfg.Storage.PresignDownloads, "STORAGE_PRESIGN_DOWNLOADS")
 	overrideInt64(&cfg.Storage.PresignMinSize, "STORAGE_PRESIGN_MIN_SIZE")
 	overrideString(&cfg.Storage.PresignEndpoint, "STORAGE_PRESIGN_ENDPOINT")
@@ -467,6 +470,10 @@ func (c *Config) Validate() error {
 func (c *Config) validatePresign() error {
 	if c.Storage.PresignMinSize < 0 {
 		return errPresignMinSize
+	}
+
+	if c.Storage.PresignMaxPendingUploads < 0 {
+		return errPresignMaxPending
 	}
 
 	if ep := c.Storage.PresignEndpoint; ep != "" {

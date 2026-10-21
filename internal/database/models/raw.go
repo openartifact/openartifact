@@ -36,4 +36,11 @@ type PresignedUpload struct {
 	// ExpiresAt is the complete deadline: after it the cleanup worker removes
 	// the row and the staging object.
 	ExpiresAt time.Time
+	// CompletingSince is the start of the complete call that currently holds
+	// the upload's lease; nil when none does.
+	CompletingSince *time.Time
+	// CompletedAt is set once the artifact is recorded. ArtifactID is then the
+	// id the complete call returned.
+	CompletedAt *time.Time
+	ArtifactID  string
 }
