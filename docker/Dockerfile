@@ -52,6 +52,22 @@ RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
 # Runtime stage
 FROM docker.io/alpine:3.24
 
+ARG VERSION=dev
+ARG COMMIT=unknown
+ARG BUILD_TIME=unknown
+LABEL org.opencontainers.image.title="OpenArtifact" \
+      org.opencontainers.image.description="Self-hosted artifact repository for 16 package formats: Maven, npm, PyPI, Docker/OCI, Helm, Debian, RPM, Go, Cargo, NuGet, RubyGems, Conda, Conan, Ivy, sbt and raw." \
+      org.opencontainers.image.vendor="OpenArtifact" \
+      org.opencontainers.image.authors="The OpenArtifact Authors" \
+      org.opencontainers.image.licenses="AGPL-3.0-or-later" \
+      org.opencontainers.image.url="https://github.com/openartifact/openartifact" \
+      org.opencontainers.image.source="https://github.com/openartifact/openartifact" \
+      org.opencontainers.image.documentation="https://github.com/openartifact/openartifact#readme" \
+      org.opencontainers.image.base.name="docker.io/library/alpine:3.24" \
+      org.opencontainers.image.version="${VERSION}" \
+      org.opencontainers.image.revision="${COMMIT}" \
+      org.opencontainers.image.created="${BUILD_TIME}"
+
 WORKDIR /app
 
 # Install runtime dependencies

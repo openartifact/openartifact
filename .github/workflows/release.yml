@@ -115,15 +115,23 @@ jobs:
 
       - id: meta
         uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302 # v6
+        env:
+          # Index-level annotations are what ghcr.io shows for multi-arch images.
+          DOCKER_METADATA_ANNOTATIONS_LEVELS: manifest,index
         with:
           images: ${{ env.IMAGE }}
           tags: |
             type=semver,pattern={{version}},value=${{ env.REF }}
             type=semver,pattern={{major}}.{{minor}},value=${{ env.REF }}
             type=raw,value=latest,enable=${{ needs.verify.outputs.prerelease == 'false' }}
-          labels: |
+          labels: &oci |
             org.opencontainers.image.title=OpenArtifact
+            org.opencontainers.image.description=Self-hosted artifact repository for 16 package formats: Maven, npm, PyPI, Docker/OCI, Helm, Debian, RPM, Go, Cargo, NuGet, RubyGems, Conda, Conan, Ivy, sbt and raw.
+            org.opencontainers.image.vendor=OpenArtifact
+            org.opencontainers.image.authors=The OpenArtifact Authors
             org.opencontainers.image.licenses=AGPL-3.0-or-later
+            org.opencontainers.image.documentation=https://github.com/openartifact/openartifact#readme
+          annotations: *oci
 
       - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
         with:
@@ -134,6 +142,7 @@ jobs:
           build-args: |
             VERSION=${{ steps.version.outputs.version }}
             COMMIT=${{ github.sha }}
+            BUILD_TIME=${{ fromJSON(steps.meta.outputs.json).labels['org.opencontainers.image.created'] }}
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           annotations: ${{ steps.meta.outputs.annotations }}
