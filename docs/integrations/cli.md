@@ -65,32 +65,36 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 
 | Command | Subcommands and key flags |
 |---|---|
-| `auth` | `login [--server URL] [--username U] [--password-stdin]`, `logout`, `whoami`, `passwd [--password-stdin]` (stdin: current password, then new, one per line), `token list`, `token create --name N [--kind access\|deploy]`, `token revoke <id>` |
-| `repo` | `list`, `create <name> [--format FMT] [--description D] [--public]` (default format `npm`), `show <name>`, `update <name> [--description D] [--public]`, `delete <name>`, `packages <name>`, `members <name>` |
+| `auth` | `login [--server URL] [--username U] [--password-stdin]`, `logout`, `whoami`, `passwd [--password-stdin]` (stdin: current password, then new, one per line), `token list`, `token create --name N [--kind access\|deploy] [--username U] [--password-stdin]`, `token revoke <id> [--username U] [--password-stdin]` |
+| `repo` | `list`, `create <name> [--format FMT] [--description D] [--public]` (default format `npm`), `show <name>`, `update <name> [--description D] [--public[=false]]` (only the flags you pass are sent), `delete <name>`, `packages <name>`, `members <name>` (the member repositories of a group repository) |
 | `artifact` | `list <repo>`, `upload <repo> <file>`, `delete <repo> <id>` |
 | `search` | `[--repo R] [--fmt F] [--limit N] <query>` (default limit 50; put flags before the query) |
-| `user` *admin* | `list`, `create --username U --email E [--password-stdin] [--full-name N] [--admin]`, `show <id>`, `update <id> [--email E] [--full-name N] [--disabled]`, `delete <id>` |
-| `group` *admin* | `list`, `create <name>`, `show <id>`, `delete <id>`, `members <id>`, `add-member <id> <user-id>`, `rm-member <id> <user-id>` |
+| `user` *admin* | `list`, `create --username U --email E [--password-stdin] [--full-name N]`, `show <id>`, `update <id> [--email E] [--full-name N] [--disabled[=false]]`, `delete <id>` |
+| `group` *admin* | `list`, `create <name> [--description D]`, `show <id>`, `delete <id>`, `members <id>`, `add-member <id> <user-id>`, `rm-member <id> <user-id>` |
 | `org` | `list`, `create <name> [--display-name N] [--description D]`, `show <name>`, `delete <name>`, `members <name>`, `add-member <name> <user-id> [--role member\|owner]`, `rm-member <name> <user-id>` |
 | `token` *admin* | `list` (all tokens), `revoke <id>` |
 | `gpg` *admin* | `list`, `import --key <armored-file>`, `generate --name N --email E [--bits 4096]`, `delete <fingerprint>` |
-| `storage` *admin* | `list`, `create --name N [--type filesystem\|s3\|gcs\|azure\|garage\|seaweedfs\|oci] [--config JSON] [--default]`, `show <name>`, `update <name> [--config JSON] [--default]`, `delete <name>`, `test <name>` |
-| `backup` *admin* | `list`, `create [--type full\|metadata-only]`, `show <id>`, `download <id> <dest>`, `restore <id>` |
-| `audit` *admin* | `list [--limit N] [--action A] [--user U]` (default limit 50) |
-| `webhook` | `list`, `create --url U [--secret S] [--active=false]`, `show <id>`, `update <id> [--url U] [--active=false]`, `delete <id>`, `test <id>`, `deliveries <id>`, `repo list <repo>`, `repo create <repo> --url U [--secret S]` |
-| `sbom` | `list <repo>`, `generate <repo>`, `show <repo> <id>`, `download <repo> <id> <dest>`, `delete <repo> <id>` |
-| `vuln` | `scan <repo>`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
-| `license` | `scan <repo>`, `list <repo>`, `show <repo> <id>`, `delete <repo> <id>` |
-| `secret` | `scan <repo>`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
-| `cleanup` | `list <repo>`, `create <repo> --name N [--type keep-last-n\|keep-by-age] [--keep-count N] [--keep-days N] [--enabled=false]`, `show <repo> <id>`, `update <repo> <id> [--enabled=false] [--keep-count N] [--keep-days N]`, `delete <repo> <id>`, `run <repo> <id>` |
-| `quota` | `show <repo>`, `set <repo> --limit N [--unit MB\|GB\|TB]` (default `GB`), `delete <repo>` |
+| `storage` *admin* | `list`, `create --name N [--type filesystem\|s3\|gcs\|azure\|garage\|seaweedfs\|oci] [--config JSON \| --config-file FILE\|-] [--default]`, `show <name>`, `update <name> [--config JSON \| --config-file FILE\|-] [--default[=false]]`, `delete <name>`, `test <name>` (exits 1 when the backend check fails) |
+| `backup` *admin* | `list`, `create [--type full\|metadata-only]`, `show <id>`, `download <id> <dest>`, `restore <archive-file>` (uploads an archive written by `backup download`) |
+| `audit` *admin* | `list [--limit N] [--action A] [--actor A]` (default limit 50; pages through the server's 100-row pages) |
+| `webhook` | `list`, `create --name N --url U --events E,E [--secret S] [--active=false]`, `show <id>`, `update <id> [--name N] [--url U] [--events E,E] [--active[=false]]`, `delete <id>`, `test <id>`, `deliveries <id>`, `repo list <repo>`, `repo create <repo> --name N --url U --events E,E [--secret S]` |
+| `sbom` | `list <repo>`, `generate <repo> --artifact-id ID [--format cyclonedx\|spdx]`, `show <repo> <id>`, `download <repo> <id> <dest>`, `delete <repo> <id>` |
+| `vuln` | `scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv\|trivy\|grype]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
+| `license` | `scan <repo> --artifact-id ID`, `list <repo>`, `show <repo> <id>` |
+| `secret` | `scan <repo> --artifact-id ID [--content-file FILE\|-]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
+| `cleanup` | `list <repo>`, `create <repo> --name N (--keep-count N \| --keep-days N) [--name-pattern REGEX] [--schedule CRON] [--enabled=false]`, `show <repo> <id>`, `update <repo> <id> [same flags]` (only the flags you pass are sent), `delete <repo> <id>`, `run <repo> <id>` |
+| `quota` | `show <repo>`, `set <repo> [--limit N [--unit MB\|GB\|TB]] [--max-artifacts N] [--warn-percent P]` (default unit `GB`; at least one flag), `delete <repo>` |
 | `props` | `list <repo> <artifact-id>`, `set <repo> <artifact-id> <key> <value>`, `delete <repo> <artifact-id> <key>`, `search <repo> <key> <value>` |
 | `delta` | `list <repo> <pkg-id>`, `get <repo> <pkg-id> --from <sha256> <dest>` |
 | `import` | `nexus\|artifactory ...`, see [Importing](#importing-from-nexus-or-artifactory) |
-| `system` | `info` (version, commit, build time, Go version, OS, arch) |
+| `system` | `info` (version, status, commit, build time, Go version, OS, arch, uptime, database and storage status; admins get the detailed endpoint, other users only version and status) |
 | `version`, `help` | local only, no server call |
 
-Boolean flags use Go syntax: `--public`, `--admin`, `--disabled`, and `--active=false` / `--enabled=false` to turn off a default-true flag.
+Boolean flags use Go syntax: `--public`, `--disabled`, and `--active=false` / `--enabled=false` to turn off a default-true flag. Update commands send only the flags you pass, so `--public=false` or `--disabled=false` change just that field.
+
+`auth passwd`, `auth token create` and `auth token revoke` sign in with your account password on a temporary cookie session (the server refuses these for API-token callers). The password is prompted without echo, or read from stdin with `--password-stdin`; `--username` defaults to the saved token's owner.
+
+`storage create|update --config` is for non-secret settings only: the CLI rejects an inline config containing a key that looks like a credential (`secret`, `password`, `key`, `token`, `cred`, `connstr`, `sas`), because argv is visible in the process list. Put credentials in a file and pass `--config-file FILE`, or `--config-file -` to read the JSON from stdin.
 
 ### Transfers
 
@@ -111,16 +115,7 @@ There are no top-level `oa upload` / `oa download` commands.
 
 ## Known limitations
 
-These come from comparing `cmd/oa/main.go` with the server handlers; use the UI, the [REST API](api.md) or a native client for these cases until the CLI is fixed.
-
 | Command | Problem |
 |---|---|
-| `repo show`, `repo update`, `repo delete` | call `/api/v1/repositories/{name}`; the server serves these under `/api/v1/repository/{name}`, so they fail. `repo update` also resets `public` to `false` when `--public` is omitted |
-| `auth passwd`, `auth token create`, `auth token revoke` | the server refuses these for API-token callers (403), and the CLI always authenticates with a token. Use the UI |
-| `auth token list` | reads a `tokens` key; the server returns `data`, so the list is empty |
-| `license delete` | no `DELETE .../license/scans/{id}` route exists |
 | `gpg list`, `import`, `generate`, `delete` | the server endpoints are stubs: `list` always returns an empty list, the other three return `501 not_implemented` |
-| `cleanup create`, `cleanup update` | send `type`, `keep_count`, `keep_days`; the server reads `keep_last_n`, `keep_since_days` and ignores the rest |
-| `quota set` | sends `limit_bytes`; the server reads `max_size_bytes`, so the request changes nothing |
-| `webhook create`, `webhook update` | send `active`; the server reads `enabled` |
-| `storage create --config` | the JSON (including credentials) is a command-line argument and is visible in the process list |
+| `webhook create --secret` | the secret is a command-line argument and is visible in the process list |

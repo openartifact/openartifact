@@ -209,7 +209,7 @@ func TestMultipartStreamUpload(t *testing.T) {
 	}))
 	defer srv.Close()
 
-	body, ct := multipartStream(bytes.NewReader(payload), "file", "pkg.bin")
+	body, ct := multipartStream(bytes.NewReader(payload), "pkg.bin")
 	defer func() { _ = body.Close() }()
 
 	c := newClient(srv.URL, "tok")
@@ -237,7 +237,7 @@ func TestMultipartStreamUpload(t *testing.T) {
 func TestMultipartStreamPropagatesReadError(t *testing.T) {
 	t.Parallel()
 
-	body, _ := multipartStream(&failingReader{data: []byte("abc")}, "file", "x")
+	body, _ := multipartStream(&failingReader{data: []byte("abc")}, "x")
 	defer func() { _ = body.Close() }()
 
 	if _, err := io.ReadAll(body); !errors.Is(err, errBoom) {

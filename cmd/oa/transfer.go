@@ -192,14 +192,14 @@ func writeFileAtomic(path string, data []byte, dirMode, fileMode os.FileMode) er
 }
 
 // multipartStream returns a reader producing a multipart/form-data body with
-// one file part streamed from file, plus the matching Content-Type. Errors
+// one file part (field "file") streamed from file, plus the matching Content-Type. Errors
 // while reading the file propagate to the reader side via CloseWithError.
-func multipartStream(file io.Reader, fieldName, fileName string) (io.ReadCloser, string) {
+func multipartStream(file io.Reader, fileName string) (io.ReadCloser, string) {
 	pr, pw := io.Pipe()
 	mw := multipart.NewWriter(pw)
 
 	go func() {
-		part, err := mw.CreateFormFile(fieldName, fileName)
+		part, err := mw.CreateFormFile("file", fileName)
 		if err == nil {
 			_, err = io.Copy(part, file)
 		}
