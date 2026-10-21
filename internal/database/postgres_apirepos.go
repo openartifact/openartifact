@@ -18,6 +18,9 @@ import (
 const (
 	pgUniqueViolation     = "23505"
 	pgForeignKeyViolation = "23503"
+	// ON DELETE RESTRICT reports restrict_violation instead of
+	// foreign_key_violation.
+	pgRestrictViolation = "23001"
 )
 
 // IsUniqueViolation reports whether err is a PostgreSQL unique_violation.
@@ -27,11 +30,13 @@ func IsUniqueViolation(err error) bool {
 	return errors.As(err, &pgErr) && pgErr.Code == pgUniqueViolation
 }
 
-// IsForeignKeyViolation reports whether err is a PostgreSQL foreign_key_violation.
+// IsForeignKeyViolation reports whether err is a PostgreSQL foreign_key_violation
+// or restrict_violation: a referenced row cannot be removed or a referencing
+// row points nowhere.
 func IsForeignKeyViolation(err error) bool {
 	var pgErr *pgconn.PgError
 
-	return errors.As(err, &pgErr) && pgErr.Code == pgForeignKeyViolation
+	return errors.As(err, &pgErr) && (pgErr.Code == pgForeignKeyViolation || pgErr.Code == pgRestrictViolation)
 }
 
 // CreateRepositoryWithMembers inserts a repository and (for group repos) its
