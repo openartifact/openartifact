@@ -61,6 +61,11 @@ linters:
     cyclop:
       max-complexity: 20
 
+    gomoddirectives:
+      # Only the reviewed crewjam/saml fork (see go.mod).
+      replace-allow-list:
+        - github.com/crewjam/saml
+
     dupl:
       threshold: 200
 
