@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/http/cookiejar"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -392,29 +393,7 @@ func authLogin(args []string, cfg *Config) {
 		} else {
 			password = readPassword("Password: ")
 		}
-		c := newClient(*serverURL, "")
-
-		resp, err := c.doJSON("POST", "/api/v1/auth/login", map[string]string{
-			"username": username,
-			"password": password,
-		})
-		if err != nil {
-			dief("%v", err)
-		}
-
-		defer func() { _ = resp.Body.Close() }()
-
-		checkOK(resp, http.StatusOK)
-
-		var result struct {
-			Token string `json:"token"`
-		}
-		decodeJSON(resp, &result)
-
-		savedToken = result.Token
-		if savedToken == "" {
-			dief("server did not return a token")
-		}
+		savedToken = sessionLoginToken(newClient(*serverURL, ""), username, password, *passwordStdin)
 	}
 
 	newCfg := &Config{Server: *serverURL, Token: savedToken}
@@ -423,6 +402,130 @@ func authLogin(args []string, cfg *Config) {
 	}
 
 	fmt.Println("Credentials saved.")
+}
+
+// sessionLoginToken signs in with username/password and exchanges the browser
+// session (cookie + CSRF token) for an API access token, which is what the CLI
+// authenticates with afterwards. A bootstrap/reset account must change its
+// password first; the server refuses to mint tokens until then, so the new
+// password is collected here (second stdin line with --password-stdin).
+func sessionLoginToken(c *Client, username, password string, fromStdin bool) string {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	c.httpClient.Jar = jar
+
+	resp, err := c.doJSON("POST", "/api/v1/auth/login", map[string]string{
+		"username": username,
+		"password": password,
+	})
+	if err != nil {
+		dief("%v", err)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	checkOK(resp, http.StatusOK)
+
+	var user struct {
+		MustChangePassword bool `json:"must_change_password"`
+	}
+	decodeJSON(resp, &user)
+
+	if user.MustChangePassword {
+		fmt.Fprintln(os.Stderr, "This account must change its password before it can be used.")
+
+		newPw := readNewPassword(fromStdin)
+		changeResp := sessionPost(c, "/api/v1/auth/change-password", map[string]string{
+			"current_password": password,
+			"new_password":     newPw,
+		}, http.StatusOK, http.StatusNoContent)
+		_ = changeResp.Body.Close()
+
+		// Changing the password invalidates the session; sign in again.
+		again, err := c.doJSON("POST", "/api/v1/auth/login", map[string]string{
+			"username": username,
+			"password": newPw,
+		})
+		if err != nil {
+			dief("%v", err)
+		}
+
+		defer func() { _ = again.Body.Close() }()
+
+		checkOK(again, http.StatusOK)
+	}
+
+	tokResp := sessionPost(c, "/api/v1/auth/tokens", map[string]string{
+		"name": "oa-cli",
+		"kind": "access",
+	}, http.StatusCreated, http.StatusOK)
+
+	defer func() { _ = tokResp.Body.Close() }()
+
+	var result struct {
+		Token string `json:"token"`
+	}
+	decodeJSON(tokResp, &result)
+
+	if result.Token == "" {
+		dief("server did not return a token")
+	}
+
+	return result.Token
+}
+
+func readNewPassword(fromStdin bool) string {
+	if fromStdin {
+		return readPasswordStdin()
+	}
+
+	newPw := readPassword("New password: ")
+	if newPw != readPassword("Confirm new password: ") {
+		dief("passwords do not match")
+	}
+
+	return newPw
+}
+
+// sessionPost issues a state-changing request on a cookie session, echoing the
+// CSRF cookie in the X-CSRF-Token header as the server requires.
+func sessionPost(c *Client, path string, body any, ok ...int) *http.Response {
+	data, err := json.Marshal(body)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	base, err := url.Parse(c.baseURL)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	//nolint:noctx // CLI tool, no context available
+	req, err := http.NewRequest(http.MethodPost, c.baseURL+path, bytes.NewReader(data))
+	if err != nil {
+		dief("%v", err)
+	}
+
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("X-Requested-With", "XMLHttpRequest")
+
+	for _, ck := range c.httpClient.Jar.Cookies(base) {
+		if ck.Name == "oa_csrf" {
+			req.Header.Set("X-Csrf-Token", ck.Value)
+		}
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	checkOK(resp, ok...)
+
+	return resp
 }
 
 func authLogout(cfg *Config) {
@@ -539,13 +642,14 @@ func authToken(args []string, client *Client, outFmt string) {
 	case "create":
 		fs := flag.NewFlagSet("auth token create", flag.ExitOnError)
 		name := fs.String("name", "", "Token name")
+		kind := fs.String("kind", "access", "Token kind: access|deploy")
 		_ = fs.Parse(args[1:])
 
 		if *name == "" {
 			dief("--name is required")
 		}
 
-		resp, err := client.doJSON("POST", "/api/v1/auth/tokens", map[string]string{"name": *name})
+		resp, err := client.doJSON("POST", "/api/v1/auth/tokens", map[string]string{"name": *name, "kind": *kind})
 		if err != nil {
 			dief("%v", err)
 		}
@@ -935,16 +1039,40 @@ func handleSearch(args []string, client *Client, outFmt string) {
 	checkOK(resp)
 
 	var result struct {
-		Results []map[string]any `json:"results"`
+		Repositories []map[string]any `json:"repositories"`
+		Results      []map[string]any `json:"results"`
 	}
 	decodeJSON(resp, &result)
 
+	repos := result.Repositories[:0:0]
+
+	for _, r := range result.Repositories {
+		if *fmtFilter != "" && r["format"] != *fmtFilter {
+			continue
+		}
+
+		if len(repos) >= *limit {
+			break
+		}
+
+		repos = append(repos, r)
+	}
+
 	if outFmt == "json" {
-		printJSON(result.Results)
+		printJSON(map[string]any{"repositories": repos, "results": result.Results})
 		return
 	}
 
 	w := newTabWriter()
+
+	if len(repos) > 0 {
+		_, _ = fmt.Fprintln(w, "REPOSITORY\tFORMAT\tDESCRIPTION")
+		for _, r := range repos {
+			_, _ = fmt.Fprintf(w, "%v\t%v\t%v\n", r["name"], r["format"], r["description"])
+		}
+
+		_, _ = fmt.Fprintln(w)
+	}
 
 	_, _ = fmt.Fprintln(w, "NAME\tREPO\tVERSION\tFORMAT")
 	for _, r := range result.Results {
