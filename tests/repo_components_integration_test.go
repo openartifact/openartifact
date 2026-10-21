@@ -7,11 +7,23 @@
 package integration_test
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
+	"mime"
+	"net/http"
+	"net/http/httptest"
+	"strconv"
 	"testing"
 
+	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/api"
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/storage"
 )
 
 const componentsBlobSHA = "00112233445566778899aabbccddeeff00112233445566778899aabbccddeeff"
@@ -259,6 +271,34 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 	for _, s := range seeds {
 		got := listOK(t, pg, repo, s.format, 1, 100, 1, 1)
 		checkSeededComponent(t, got[0], s.format, s.name, s.version, s.arch, s.filename)
+		checkDownloadLookupMatchesListing(t, pg, repo, got[0])
+	}
+}
+
+// checkDownloadLookupMatchesListing guards GetRepoComponentBlob against
+// drifting from ListRepoComponents: every listed id must resolve, in its own
+// repository only, to the listed format, filename and blob.
+func checkDownloadLookupMatchesListing(t *testing.T, pg *database.PostgresDB, repoID string, c *models.Component) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	blob, err := pg.GetRepoComponentBlob(ctx, repoID, c.ID)
+	if err != nil || blob == nil {
+		t.Fatalf("%s: GetRepoComponentBlob(%s) = %v, %v; want a row", c.Format, c.ID, blob, err)
+	}
+
+	if blob.ID != c.ID || blob.Format != c.Format || blob.Filename != c.Filename || blob.SHA256 != c.SHA256 {
+		t.Errorf("%s: download lookup %+v differs from listing id=%s filename=%q sha256=%q", c.Format, blob, c.ID, c.Filename, c.SHA256)
+	}
+
+	if c.SHA256 != "" && blob.Size != c.PackageSize {
+		t.Errorf("%s: download size %d, listing size %d", c.Format, blob.Size, c.PackageSize)
+	}
+
+	other := newRepo(t, pg, "other-"+c.Format, "raw")
+	if foreign, err := pg.GetRepoComponentBlob(ctx, other, c.ID); err != nil || foreign != nil {
+		t.Errorf("%s: id resolved in another repository: %+v, %v", c.Format, foreign, err)
 	}
 }
 
@@ -279,5 +319,99 @@ func checkSeededComponent(t *testing.T, c *models.Component, format, name, versi
 
 	if c.SHA256 != wantSHA || c.PackageSize != wantSize {
 		t.Errorf("%s: sha256=%q size=%d, want %q %d", format, c.SHA256, c.PackageSize, wantSHA, wantSize)
+	}
+}
+
+// downloadAdminDB grants the test principal full access without seeding users.
+type downloadAdminDB struct {
+	*database.PostgresDB
+}
+
+func (downloadAdminDB) GetPermissionTargetsForPrincipal(context.Context, string, []string) ([]*models.PermissionTarget, error) {
+	return []*models.PermissionTarget{{RepositoryFilter: `.*`, PathPattern: `.*`, Actions: []string{"manage", "read", "write"}}}, nil
+}
+
+// TestDownloadPackage_NpmAndRaw covers the download half of the listing bug:
+// ids listed for non-deb/rpm formats must download their blob, and an id from
+// another repository must 404.
+func TestDownloadPackage_NpmAndRaw(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	ctx := context.Background()
+
+	content := []byte("the exact bytes of the stored artifact")
+	sum := sha256.Sum256(content)
+	sha := hex.EncodeToString(sum[:])
+
+	store, err := storage.NewFilesystemStore(t.TempDir())
+	if err != nil {
+		t.Fatalf("NewFilesystemStore: %v", err)
+	}
+
+	if _, err := store.Put(ctx, bytes.NewReader(content), map[string]string{"sha256": sha}); err != nil {
+		t.Fatalf("blob Put: %v", err)
+	}
+
+	blobID, err := pg.UpsertBlob(ctx, sha, sha, int64(len(content)))
+	if err != nil {
+		t.Fatalf("UpsertBlob: %v", err)
+	}
+
+	npmRepo, rawRepo, otherNpm := newRepo(t, pg, "npm-main", "npm"), newRepo(t, pg, "raw-main", "raw"), newRepo(t, pg, "npm-other", "npm")
+	insertNpmVersion(t, pg, insertNpmPackage(t, pg, npmRepo, "@acme/widget"), "1.0.0", "widget-1.0.0.tgz", blobID)
+	insertNpmVersion(t, pg, insertNpmPackage(t, pg, otherNpm, "leak"), "9.9.9", "leak-9.9.9.tgz", blobID)
+	execSQL(t, pg, `INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, 'dir/a.txt', $2)`, rawRepo, blobID)
+
+	log := newTestLogger(t)
+	db := downloadAdminDB{pg}
+	router := chi.NewRouter()
+	api.NewRepositoriesHandler(db, log, auth.NewEvaluator(db, log, false)).WithBlobStore(store).RegisterAuthed(router)
+
+	userID := "download-admin"
+	download := func(repoName, id string) *httptest.ResponseRecorder {
+		req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/repositories/"+repoName+"/packages/"+id+"/download", http.NoBody)
+		req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{UserID: &userID, Username: "admin"}))
+
+		rw := httptest.NewRecorder()
+		router.ServeHTTP(rw, req)
+
+		return rw
+	}
+
+	npmID := listOK(t, pg, npmRepo, "", 1, 25, 1, 1)[0].ID
+	rawID := listOK(t, pg, rawRepo, "", 1, 25, 1, 1)[0].ID
+	otherID := listOK(t, pg, otherNpm, "", 1, 25, 1, 1)[0].ID
+
+	for _, tc := range []struct{ name, repo, id, filename string }{
+		{"npm tarball", "npm-main", npmID, "widget-1.0.0.tgz"},
+		{"raw path basename", "raw-main", rawID, "a.txt"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rw := download(tc.repo, tc.id)
+			if rw.Code != http.StatusOK || !bytes.Equal(rw.Body.Bytes(), content) {
+				t.Fatalf("status %d body %q, want 200 and the blob bytes", rw.Code, rw.Body.String())
+			}
+
+			if got := rw.Header().Get("Content-Length"); got != strconv.Itoa(len(content)) {
+				t.Errorf("Content-Length = %q, want %d", got, len(content))
+			}
+
+			if _, params, err := mime.ParseMediaType(rw.Header().Get("Content-Disposition")); err != nil || params["filename"] != tc.filename {
+				t.Errorf("Content-Disposition = %q, want attachment filename %q", rw.Header().Get("Content-Disposition"), tc.filename)
+			}
+		})
+	}
+
+	for _, tc := range []struct{ name, repo, id string }{
+		{"npm id under the raw repository", "raw-main", npmID},
+		{"raw id under the npm repository", "npm-main", rawID},
+		{"id of another npm repository", "npm-main", otherID},
+		{"unknown uuid", "npm-main", "00000000-0000-0000-0000-00000000dead"},
+		{"malformed id", "npm-main", "not-a-uuid"},
+	} {
+		t.Run("404 "+tc.name, func(t *testing.T) {
+			if rw := download(tc.repo, tc.id); rw.Code != http.StatusNotFound {
+				t.Fatalf("status %d body %q, want 404", rw.Code, rw.Body.String())
+			}
+		})
 	}
 }

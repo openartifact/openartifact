@@ -15,6 +15,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"github.com/jackc/pgx/v5/stdlib"
 
@@ -340,6 +341,36 @@ func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFil
 	}
 
 	return components, int(total), nil
+}
+
+func isUUID(s string) bool { return uuid.Validate(s) == nil }
+
+// GetRepoComponentBlob resolves a row id of the package listing
+// (ListComponentsByRepo) to its blob, scoped to repoID. It returns nil, nil
+// when no row of any format has that id in the repository, or when id is not
+// a UUID.
+func (p *PostgresDB) GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error) {
+	if !isUUID(id) {
+		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
+	}
+
+	row, err := p.q.GetRepoComponentBlob(ctx, dbsqlc.GetRepoComponentBlobParams{RepoID: repoID, ID: id})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get component blob: %w", err)
+	}
+
+	return &models.ComponentBlob{
+		ID:        row.ID,
+		Format:    row.Format,
+		Filename:  row.Filename,
+		SHA256:    row.Sha256,
+		Size:      row.SizeBytes,
+		MediaType: row.MediaType,
+	}, nil
 }
 
 func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Repository) error {

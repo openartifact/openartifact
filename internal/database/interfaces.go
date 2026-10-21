@@ -58,6 +58,9 @@ type Database interface {
 	CreateRpmPackage(ctx context.Context, pkg *models.Component) error
 	UpsertBlob(ctx context.Context, sha256, blobKey string, sizeBytes int64) (string, error)
 	GetComponentByID(ctx context.Context, id string) (*models.Component, error)
+	// GetRepoComponentBlob resolves a package-listing row id (any format) to its
+	// blob, scoped to repoID. Returns nil, nil when the id is not in that repository.
+	GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error)
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
 	GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error)
 	DeleteComponent(ctx context.Context, componentID string) error

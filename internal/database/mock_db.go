@@ -84,6 +84,9 @@ func (m *BaseMockDB) UpsertBlob(ctx context.Context, sha256, blobKey string, siz
 func (m *BaseMockDB) GetComponentByID(ctx context.Context, id string) (*models.Component, error) {
 	return nil, errNotImpl("GetComponentByID")
 }
+func (m *BaseMockDB) GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error) {
+	return nil, errNotImpl("GetRepoComponentBlob")
+}
 func (m *BaseMockDB) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
 	return nil, errNotImpl("GetComponentByFilename")
 }

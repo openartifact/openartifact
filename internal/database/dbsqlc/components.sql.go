@@ -264,6 +264,128 @@ func (q *Queries) GetDebianPackagesByDistComp(ctx context.Context, arg GetDebian
 	return items, nil
 }
 
+const getRepoComponentBlob = `-- name: GetRepoComponentBlob :one
+
+SELECT id, format, filename, sha256, size_bytes, media_type
+FROM (
+    SELECT t.id::uuid AS id, 'deb'::text AS format, COALESCE(t.filename, '')::text AS filename,
+           COALESCE(b.sha256, '')::text AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes, COALESCE(b.media_type, '')::text AS media_type
+    FROM deb_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'rpm'::text, COALESCE(t.filename, '')::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM rpm_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'npm'::text, t.tarball_filename::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE np.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'pypi'::text, t.filename::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM pypi_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'maven'::text, t.repo_path::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM maven_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'ivy'::text, t.artifact_name || '.' || t.artifact_ext::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM ivy_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'sbt'::text, t.filename::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM sbt_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'nuget'::text, t.package_id || '.' || t.version || '.nupkg'::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM nuget_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'gomod'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM gomod_modules t LEFT JOIN blobs b ON b.id = COALESCE(t.zip_blob_id, t.mod_blob_id)
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'cargo'::text, t.name || '-' || t.version || '.crate'::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM cargo_crates t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'rubygems'::text, t.name || '-' || t.version || CASE WHEN t.platform = 'ruby' THEN '' ELSE '-' || t.platform END || '.gem'::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM rubygems_gems t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'conda'::text, t.name || '-' || t.version || '-' || t.build_string || '.tar.bz2'::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'conan'::text, t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'helm'::text, t.name || '-' || t.version || '.tgz'::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM helm_charts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    SELECT t.id::uuid, 'raw'::text, t.path::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
+    FROM raw_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+    UNION ALL
+    -- docker: the manifest blob; media type is the manifest's own.
+    SELECT t.id::uuid, 'docker'::text, t.manifest_digest::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(dm.media_type, '')::text
+    FROM docker_tags t LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.digest = t.manifest_digest LEFT JOIN blobs b ON b.id = dm.blob_id
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
+) AS p
+LIMIT 1
+`
+
+type GetRepoComponentBlobParams struct {
+	RepoID string `db:"repo_id" json:"repo_id"`
+	ID     string `db:"id" json:"id"`
+}
+
+type GetRepoComponentBlobRow struct {
+	ID        string `db:"id" json:"id"`
+	Format    string `db:"format" json:"format"`
+	Filename  string `db:"filename" json:"filename"`
+	Sha256    string `db:"sha256" json:"sha256"`
+	SizeBytes int64  `db:"size_bytes" json:"size_bytes"`
+	MediaType string `db:"media_type" json:"media_type"`
+}
+
+// Download lookup for one listed package (backs
+// GET /api/v1/repositories/{name}/packages/{id}/download). Every branch
+// mirrors the same-named ListRepoComponents branch (same id, repository scope,
+// blob join and filename expression), so an id the listing returns resolves
+// here to the blob it shows. Rows without a blob (conan recipes without one)
+// come back with an empty sha256. Keep in sync with ListRepoComponents.
+func (q *Queries) GetRepoComponentBlob(ctx context.Context, arg GetRepoComponentBlobParams) (GetRepoComponentBlobRow, error) {
+	row := q.db.QueryRow(ctx, getRepoComponentBlob, arg.RepoID, arg.ID)
+	var i GetRepoComponentBlobRow
+	err := row.Scan(
+		&i.ID,
+		&i.Format,
+		&i.Filename,
+		&i.Sha256,
+		&i.SizeBytes,
+		&i.MediaType,
+	)
+	return i, err
+}
+
 const listRepoComponents = `-- name: ListRepoComponents :many
 
 SELECT id, repository_id, name, version, format, arch, sha256, release, epoch, build_time,

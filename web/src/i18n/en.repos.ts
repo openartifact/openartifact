@@ -17,6 +17,7 @@ export const enRepos = {
   'repoDetail.copyUrl': 'Copy URL',
   'repoDetail.deleting': 'Deleting...',
   'repoDetail.download': 'Download',
+  'repoDetail.downloadFailed': 'Failed to download package',
   'repoDetail.deleteRepo': 'Delete repository',
   'repoDetail.selectAll': 'Select all packages',
   'repoDetail.select': 'Select',

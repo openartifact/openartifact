@@ -3323,7 +3323,7 @@ export type GetApiV1RepositoriesByNamePackagesByIdDownloadData = {
 
 export type GetApiV1RepositoriesByNamePackagesByIdDownloadErrors = {
     /**
-     * Package not found in this repository
+     * Package not found in this repository, or the row has no stored file
      */
     404: unknown;
     /**

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, requestBlob } from './client'
 import type { Repository } from './generated/types.gen'
 
 export type { Repository }
@@ -81,6 +81,25 @@ export function listPackages(name: string, params?: { page?: number; limit?: num
   if (params?.format) qs.set('format', params.format)
   const query = qs.toString() ? `?${qs}` : ''
   return request<ListPackagesResult>(`/api/v1/repositories/${encodeURIComponent(name)}/packages${query}`)
+}
+
+/**
+ * Downloads a listed package (any format) through the authenticated API and
+ * hands it to the browser as a file. Rejects with ApiError on 4xx/5xx.
+ */
+export async function downloadPackage(repoName: string, pkg: Pick<PackageItem, 'id' | 'name' | 'version'>): Promise<void> {
+  const { blob, filename } = await requestBlob(
+    `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(pkg.id)}/download`,
+  )
+
+  const url = URL.createObjectURL(blob)
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename ?? (pkg.version ? `${pkg.name}-${pkg.version}` : pkg.name)
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+  URL.revokeObjectURL(url)
 }
 
 export interface ComponentItem {

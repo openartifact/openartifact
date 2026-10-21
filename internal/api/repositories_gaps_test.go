@@ -7,8 +7,10 @@ package api
 import (
 	"context"
 	"io"
+	"mime"
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"strings"
 	"sync"
 	"testing"
@@ -50,8 +52,8 @@ type repoLifecycleDB struct {
 	database.BaseMockDB
 
 	repo        *models.Repository
-	comp        *models.Component
-	quarantined map[string]bool // keys reported quarantined
+	blobs       map[string]*models.ComponentBlob // listing row id -> blob, all in repo
+	quarantined map[string]bool                  // keys reported quarantined
 	deleted     bool
 	orphans     []string
 	minAge      time.Duration
@@ -83,12 +85,12 @@ func (db *repoLifecycleDB) DeleteRepository(context.Context, string) error {
 	return nil
 }
 
-func (db *repoLifecycleDB) GetComponentByID(_ context.Context, id string) (*models.Component, error) {
-	if db.comp != nil && db.comp.ID == id {
-		return db.comp, nil
+func (db *repoLifecycleDB) GetRepoComponentBlob(_ context.Context, repoID, id string) (*models.ComponentBlob, error) {
+	if db.repo == nil || db.repo.ID != repoID {
+		return nil, nil
 	}
 
-	return nil, nil
+	return db.blobs[id], nil
 }
 
 func (db *repoLifecycleDB) IsArtifactQuarantined(_ context.Context, repoID string, keys []string) (bool, error) {
@@ -202,7 +204,7 @@ func TestRepositoryDownloadHonoursQuarantine(t *testing.T) {
 	db := &repoLifecycleDB{
 		targets:     adminTargets(),
 		repo:        &models.Repository{ID: "repo-1", Name: "pkgs", Format: "deb"},
-		comp:        &models.Component{ID: "pkg-1", RepositoryID: "repo-1", Filename: "hello_1.0_amd64.deb", SHA256: sha},
+		blobs:       map[string]*models.ComponentBlob{"pkg-1": {ID: "pkg-1", Format: "deb", Filename: "hello_1.0_amd64.deb", SHA256: sha}},
 		quarantined: map[string]bool{},
 	}
 	blobs := &memBlobs{content: map[string]string{sha: "DEB-BYTES"}}
@@ -234,5 +236,141 @@ func TestRepositoryDownloadHonoursQuarantine(t *testing.T) {
 
 	if strings.Contains(rw.Body.String(), "DEB-BYTES") {
 		t.Error("quarantined artifact bytes leaked")
+	}
+}
+
+func TestRepositoryDownloadByFormat(t *testing.T) {
+	sha := strings.Repeat("b", 64)
+	body := "BLOB-BYTES"
+
+	cases := []struct {
+		name         string
+		blob         models.ComponentBlob
+		wantStatus   int
+		wantFilename string
+		wantType     string
+		wantCode     string
+	}{
+		{
+			name:         "npm tarball keeps its name and media type",
+			blob:         models.ComponentBlob{Format: "npm", Filename: "widget-1.0.0.tgz", SHA256: sha, Size: int64(len(body)), MediaType: "application/gzip"},
+			wantStatus:   http.StatusOK,
+			wantFilename: "widget-1.0.0.tgz",
+			wantType:     "application/gzip",
+		},
+		{
+			name:         "maven repo path is reduced to its basename",
+			blob:         models.ComponentBlob{Format: "maven", Filename: "com/acme/x/1.0/x-1.0.jar", SHA256: sha, Size: int64(len(body))},
+			wantStatus:   http.StatusOK,
+			wantFilename: "x-1.0.jar",
+			wantType:     "application/octet-stream",
+		},
+		{
+			name:         "raw path traversal cannot escape the basename",
+			blob:         models.ComponentBlob{Format: "raw", Filename: "../../etc/passwd", SHA256: sha, Size: int64(len(body))},
+			wantStatus:   http.StatusOK,
+			wantFilename: "passwd",
+			wantType:     "application/octet-stream",
+		},
+		{
+			name:         "docker tag downloads the manifest named after its digest",
+			blob:         models.ComponentBlob{Format: "docker", Filename: "sha256:" + strings.Repeat("c", 64), SHA256: sha, Size: int64(len(body)), MediaType: "application/vnd.oci.image.manifest.v1+json"},
+			wantStatus:   http.StatusOK,
+			wantFilename: "sha256_" + strings.Repeat("c", 64) + ".json",
+			wantType:     "application/vnd.oci.image.manifest.v1+json",
+		},
+		{
+			name:         "conan reference keeps every part",
+			blob:         models.ComponentBlob{Format: "conan", Filename: "zlib/1.3@_/_#abc", SHA256: sha, Size: int64(len(body))},
+			wantStatus:   http.StatusOK,
+			wantFilename: "zlib_1.3@___#abc",
+			wantType:     "application/octet-stream",
+		},
+		{
+			name:         "invalid stored media type falls back to octet-stream",
+			blob:         models.ComponentBlob{Format: "pypi", Filename: "a-1.whl", SHA256: sha, Size: int64(len(body)), MediaType: "not a media type"},
+			wantStatus:   http.StatusOK,
+			wantFilename: "a-1.whl",
+			wantType:     "application/octet-stream",
+		},
+		{
+			name:       "row without a blob is not found",
+			blob:       models.ComponentBlob{Format: "conan", Filename: "zlib/1.3@_/_#abc"},
+			wantStatus: http.StatusNotFound,
+			wantCode:   "not_found",
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			blob := tc.blob
+			blob.ID = "row-1"
+
+			db := &repoLifecycleDB{
+				targets: adminTargets(),
+				repo:    &models.Repository{ID: "repo-1", Name: "pkgs", Format: blob.Format},
+				blobs:   map[string]*models.ComponentBlob{"row-1": &blob},
+			}
+
+			log := newFixTestLogger(t)
+			h := NewRepositoriesHandler(db, log, auth.NewEvaluator(db, log, false)).WithBlobStore(&memBlobs{content: map[string]string{sha: body}})
+
+			router := chi.NewRouter()
+			router.Get("/api/v1/repositories/{name}/packages/{id}/download", h.handleDownloadPackage)
+
+			rw := httptest.NewRecorder()
+			router.ServeHTTP(rw, adminRequest(nil, http.MethodGet, "/api/v1/repositories/pkgs/packages/row-1/download", ""))
+
+			if rw.Code != tc.wantStatus {
+				t.Fatalf("status = %d, want %d; body = %s", rw.Code, tc.wantStatus, rw.Body.String())
+			}
+
+			if tc.wantStatus != http.StatusOK {
+				if !strings.Contains(rw.Body.String(), tc.wantCode) {
+					t.Fatalf("body = %s, want code %q", rw.Body.String(), tc.wantCode)
+				}
+
+				return
+			}
+
+			if rw.Body.String() != body {
+				t.Errorf("body = %q, want %q", rw.Body.String(), body)
+			}
+
+			if got := rw.Header().Get("Content-Type"); got != tc.wantType {
+				t.Errorf("Content-Type = %q, want %q", got, tc.wantType)
+			}
+
+			if got := rw.Header().Get("Content-Length"); got != strconv.Itoa(len(body)) {
+				t.Errorf("Content-Length = %q, want %d", got, len(body))
+			}
+
+			_, params, err := mime.ParseMediaType(rw.Header().Get("Content-Disposition"))
+			if err != nil || params["filename"] != tc.wantFilename {
+				t.Errorf("Content-Disposition = %q (filename %q, err %v), want attachment filename %q",
+					rw.Header().Get("Content-Disposition"), params["filename"], err, tc.wantFilename)
+			}
+		})
+	}
+}
+
+func TestRepositoryDownloadUnknownOrForeignIDIsNotFound(t *testing.T) {
+	db := &repoLifecycleDB{
+		targets: adminTargets(),
+		repo:    &models.Repository{ID: "repo-1", Name: "pkgs", Format: "raw"},
+		blobs:   map[string]*models.ComponentBlob{},
+	}
+
+	log := newFixTestLogger(t)
+	h := NewRepositoriesHandler(db, log, auth.NewEvaluator(db, log, false)).WithBlobStore(&memBlobs{})
+
+	router := chi.NewRouter()
+	router.Get("/api/v1/repositories/{name}/packages/{id}/download", h.handleDownloadPackage)
+
+	rw := httptest.NewRecorder()
+	router.ServeHTTP(rw, adminRequest(nil, http.MethodGet, "/api/v1/repositories/pkgs/packages/other-repo-row/download", ""))
+
+	if rw.Code != http.StatusNotFound || !strings.Contains(rw.Body.String(), "not_found") {
+		t.Fatalf("status %d body %q, want 404 not_found", rw.Code, rw.Body.String())
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"path"
 	"regexp"
 	"sort"
 	"strconv"
@@ -776,7 +777,7 @@ func (h *RepositoriesHandler) handleDownloadPackage(w http.ResponseWriter, r *ht
 		return
 	}
 
-	comp, err := h.db.GetComponentByID(ctx, vars["id"])
+	blob, err := h.db.GetRepoComponentBlob(ctx, repo.ID, vars["id"])
 	if err != nil {
 		h.log.Errorw("download package: db error getting component", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -784,8 +785,13 @@ func (h *RepositoriesHandler) handleDownloadPackage(w http.ResponseWriter, r *ht
 		return
 	}
 
-	if comp == nil || comp.RepositoryID != repo.ID {
+	if blob == nil {
 		writeError(w, http.StatusNotFound, "not_found", "package not found")
+		return
+	}
+
+	if blob.SHA256 == "" {
+		writeError(w, http.StatusNotFound, "not_found", "package has no downloadable file")
 		return
 	}
 
@@ -795,25 +801,20 @@ func (h *RepositoriesHandler) handleDownloadPackage(w http.ResponseWriter, r *ht
 		return
 	}
 
-	filename := comp.Filename
-	if filename == "" {
-		filename = comp.Name + "-" + comp.Version
-	}
-
-	ok, err := h.evaluator.Evaluate(ctx, *p, repo.Name, filename, "read")
+	ok, err := h.evaluator.Evaluate(ctx, *p, repo.Name, blob.Filename, "read")
 	if err != nil || !ok {
 		writeError(w, http.StatusForbidden, "forbidden", "access denied")
 		return
 	}
 
 	// The UI scans and quarantines packages by their row id.
-	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(comp.ID, filename, r.URL.Path)...) {
+	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(blob.ID, blob.Filename, r.URL.Path)...) {
 		return
 	}
 
-	reader, err := h.blobStore.Get(ctx, comp.SHA256)
+	reader, err := h.blobStore.Get(ctx, blob.SHA256)
 	if err != nil {
-		h.log.Errorw("download package: blob read failed", "package_id", comp.ID, "error", err)
+		h.log.Errorw("download package: blob read failed", "package_id", blob.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to read package")
 
 		return
@@ -821,17 +822,58 @@ func (h *RepositoriesHandler) handleDownloadPackage(w http.ResponseWriter, r *ht
 
 	defer func() { _ = reader.Close() }()
 
-	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Type", downloadContentType(blob.MediaType))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
-	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": downloadFilename(blob)}))
 
-	if comp.PackageSize > 0 {
-		w.Header().Set("Content-Length", strconv.FormatInt(comp.PackageSize, 10))
+	if blob.Size > 0 {
+		w.Header().Set("Content-Length", strconv.FormatInt(blob.Size, 10))
 	}
 
 	if _, err := io.Copy(w, reader); err != nil && !errors.Is(err, context.Canceled) {
-		h.log.Errorw("download package: write failed", "package_id", comp.ID, "error", err)
+		h.log.Errorw("download package: write failed", "package_id", blob.ID, "error", err)
 	}
+}
+
+// downloadContentType returns the blob's stored media type, or
+// application/octet-stream when it is empty or not a valid media type.
+func downloadContentType(mediaType string) string {
+	if _, _, err := mime.ParseMediaType(mediaType); err != nil {
+		return "application/octet-stream"
+	}
+
+	return mediaType
+}
+
+// downloadFilename derives the attachment name of a listed package: the
+// listing's filename reduced to a safe basename. Docker tags download their
+// manifest, named after its digest; conan references (name/version@user#rev)
+// keep every part with the separators flattened.
+func downloadFilename(blob *models.ComponentBlob) string {
+	name := blob.Filename
+
+	switch blob.Format {
+	case "docker":
+		name = strings.ReplaceAll(name, ":", "_") + ".json"
+	case "conan":
+		name = strings.NewReplacer("/", "_", "\\", "_").Replace(name)
+	default:
+		name = path.Base(strings.ReplaceAll(name, "\\", "/"))
+	}
+
+	name = strings.Map(func(r rune) rune {
+		if r < 0x20 || r == 0x7f {
+			return -1
+		}
+
+		return r
+	}, name)
+
+	if name == "" || name == "." || name == ".." || name == "/" {
+		return blob.ID
+	}
+
+	return name
 }
 
 func (h *RepositoriesHandler) memberListResponse(members []*models.RepositoryGroupMember) map[string]any {

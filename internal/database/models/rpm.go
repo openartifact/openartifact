@@ -36,6 +36,18 @@ type RPMRepo struct {
 	UpdatedAt             time.Time
 }
 
+// ComponentBlob locates the downloadable blob behind one row of the
+// repository package listing (any format). SHA256 is empty when the row has
+// no blob.
+type ComponentBlob struct {
+	ID        string
+	Format    string
+	Filename  string // the listing's filename for the row
+	SHA256    string
+	Size      int64
+	MediaType string
+}
+
 type Component struct {
 	ID            string
 	RepositoryID  string

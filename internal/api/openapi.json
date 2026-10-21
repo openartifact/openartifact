@@ -5995,7 +5995,7 @@
     "/api/v1/repositories/{name}/packages/{id}/download": {
       "get": {
         "summary": "Download a package",
-        "description": "Streams the package blob as an attachment",
+        "description": "Streams the blob of a row returned by the package listing (any format) as an attachment named after the listing filename. Docker tags download their manifest as sha256_<hex>.json.",
         "tags": [
           "Repositories"
         ],
@@ -6031,7 +6031,7 @@
             }
           },
           "404": {
-            "description": "Package not found in this repository"
+            "description": "Package not found in this repository, or the row has no stored file"
           },
           "501": {
             "description": "No blob store configured"

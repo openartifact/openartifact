@@ -190,14 +190,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <td class="px-4 py-3 text-sm text-muted">{{ formatDate(pkg.created_at) }}</td>
                 <td class="px-4 py-3 text-right" @click.stop>
                   <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                    <a
-                      :href="downloadHref(pkg)"
+                    <button
                       class="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
                       :title="`${t('repoDetail.download')} ${pkg.name}`"
                       :aria-label="`${t('repoDetail.download')} ${pkg.name}`"
+                      @click="download(pkg)"
                     >
                       <ArrowDownTrayIcon class="w-3.5 h-3.5" aria-hidden="true" />
-                    </a>
+                    </button>
                     <button
                       v-if="session.isAdmin"
                       class="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors text-danger"
@@ -240,7 +240,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getRepository, listPackages, deleteRepository, deletePackage } from '../api/repositories'
+import { getRepository, listPackages, deleteRepository, deletePackage, downloadPackage } from '../api/repositories'
 import type { Repository, PackageItem } from '../api/repositories'
 import FormatBadge from '../components/FormatBadge.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
@@ -393,8 +393,12 @@ async function deleteRepo() {
   }
 }
 
-function downloadHref(pkg: PackageItem): string {
-  return `/api/v1/repositories/${encodeURIComponent(repoName.value)}/packages/${encodeURIComponent(pkg.id)}/download`
+async function download(pkg: PackageItem): Promise<void> {
+  try {
+    await downloadPackage(repoName.value, pkg)
+  } catch (err) {
+    toasts.error(t('repoDetail.downloadFailed'), err instanceof Error ? err.message : undefined)
+  }
 }
 
 async function deletePkg(pkg: PackageItem): Promise<void> {
