@@ -43,7 +43,9 @@ describe('clientSetup', () => {
   it('uses the host root for docker', () => {
     const [d] = clientSetup('docker', origin, 'r1')
     expect(d!.configure).toBe('docker login oa.example:8080 -u <USERNAME> -p <TOKEN>')
-    expect(d!.publish).toContain('oa.example:8080/r1/my-image:latest')
+    // The image name is the repository name: a nested path would address another repo.
+    expect(d!.publish).toContain('docker push oa.example:8080/r1:latest')
+    expect(d!.publish).not.toContain('/r1/')
     expect(d!.configure).not.toContain('/repos/')
   })
 

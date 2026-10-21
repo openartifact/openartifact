@@ -36,7 +36,8 @@ export function pullCommand(
   const base = repoBaseUrl(format, origin, repo)
   switch (format) {
     case 'docker':
-      return `docker pull ${hostOf(origin)}/${repo}/${pkg}:${version}`
+      // The registry resolves the whole image name to a repository.
+      return `docker pull ${hostOf(origin)}/${repo}:${version}`
     case 'npm':
       return `npm install ${pkg}@${version} --registry=${base}/`
     case 'pypi':
@@ -109,7 +110,7 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
         {
           client: 'docker',
           configure: `docker login ${host} -u <USERNAME> -p <TOKEN>`,
-          publish: `docker tag my-image:latest ${host}/${repo}/my-image:latest\ndocker push ${host}/${repo}/my-image:latest`,
+          publish: `docker tag my-image:latest ${host}/${repo}:latest\ndocker push ${host}/${repo}:latest`,
         },
       ]
     case 'pypi':
