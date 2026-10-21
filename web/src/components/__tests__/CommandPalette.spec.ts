@@ -2,10 +2,13 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { describe, it, expect, beforeEach, afterEach, mock } from 'bun:test'
+import { describe, it, expect, beforeEach, afterEach, mock, spyOn } from 'bun:test'
+import { mount, flushPromises } from '@vue/test-utils'
+import { createRouter, createMemoryHistory } from 'vue-router'
+import CommandPalette from '../CommandPalette.vue'
 import { setActivePinia, createPinia } from 'pinia'
 import { useUIStore } from '../../stores/ui'
-import { registerCommand, unregisterCommand, listCommands } from '../../composables/useCommands'
+import { registerCommand, unregisterCommand, listCommands, type CommandEntry } from '../../composables/useCommands'
 
 // We test the small surface this skill controls: store toggles and the
 // command registry. The full Headless UI Dialog mounted via @vue/test-utils
@@ -52,5 +55,59 @@ describe('CommandPalette wiring', () => {
     const cmd = listCommands().find((c) => c.id === 'test.run')!
     await cmd.run()
     expect(run).toHaveBeenCalled()
+  })
+})
+
+describe('CommandPalette typing', () => {
+  const RENDER_LIMIT = 200
+
+  afterEach(() => {
+    unregisterCommand('test.render-guard')
+    mock.restore()
+  })
+
+  it('stays render-stable when the query changes', async () => {
+    setActivePinia(createPinia())
+    const searchApi = await import('../../api/search')
+    spyOn(searchApi, 'search').mockResolvedValue({ packages: [], repositories: [] })
+
+    // `hint` is read once per option render; a render loop trips the guard
+    // instead of hanging the test runner.
+    let renders = 0
+    registerCommand({
+      id: 'test.render-guard',
+      title: 'Ui render guard',
+      group: 'commands',
+      get hint() {
+        renders++
+        if (renders > RENDER_LIMIT) throw new Error('render loop detected')
+        return 'guard'
+      },
+      run: () => {},
+    } as CommandEntry)
+
+    const router = createRouter({
+      history: createMemoryHistory(),
+      routes: [{ path: '/', component: { template: '<div/>' } }],
+    })
+    const ui = useUIStore()
+    ui.openCommandPalette()
+    const wrapper = mount(CommandPalette, {
+      global: { plugins: [router] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+
+    const input = document.body.querySelector('input') as HTMLInputElement
+    expect(input).not.toBeNull()
+    input.value = 'u'
+    input.dispatchEvent(new Event('input', { bubbles: true }))
+    input.dispatchEvent(new Event('change', { bubbles: true }))
+    await flushPromises()
+    await flushPromises()
+
+    expect(renders).toBeLessThan(RENDER_LIMIT)
+    expect(document.body.textContent).toContain('Ui render guard')
+    wrapper.unmount()
   })
 })

@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         leave-from="opacity-100"
         leave-to="opacity-0"
       >
-        <div class="fixed inset-0 bg-foreground/30 backdrop-blur-sm" />
+        <div class="fixed inset-0 bg-foreground/40" />
       </TransitionChild>
 
       <div class="fixed inset-0 overflow-y-auto">
@@ -61,14 +61,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </p>
 
                   <template v-if="commandResults.length">
-                    <p class="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted">
+                    <p class="px-3 pt-2 pb-1 text-xs text-muted">
                       {{ t('palette.group.commands') }}
                     </p>
                     <ComboboxOption
                       v-for="cmd in commandResults"
                       :key="`cmd:${cmd.id}`"
                       v-slot="{ active }"
-                      :value="{ kind: 'command', command: cmd }"
+                      :value="`cmd:${cmd.id}`"
                     >
                       <div
                         class="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between"
@@ -81,14 +81,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </template>
 
                   <template v-if="searchResults.packages.length">
-                    <p class="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted">
+                    <p class="px-3 pt-2 pb-1 text-xs text-muted">
                       {{ t('palette.group.packages') }}
                     </p>
                     <ComboboxOption
                       v-for="pkg in searchResults.packages"
-                      :key="`pkg:${pkg.repository}:${pkg.format}:${pkg.name}`"
+                      :key="packageKey(pkg)"
                       v-slot="{ active }"
-                      :value="{ kind: 'package', pkg }"
+                      :value="packageKey(pkg)"
                     >
                       <div
                         class="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between"
@@ -104,14 +104,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </template>
 
                   <template v-if="searchResults.repositories.length">
-                    <p class="px-3 pt-2 pb-1 text-[10px] uppercase tracking-wider text-muted">
+                    <p class="px-3 pt-2 pb-1 text-xs text-muted">
                       {{ t('palette.group.repositories') }}
                     </p>
                     <ComboboxOption
                       v-for="repo in searchResults.repositories"
                       :key="`repo:${repo.name}`"
                       v-slot="{ active }"
-                      :value="{ kind: 'repository', repo }"
+                      :value="`repo:${repo.name}`"
                     >
                       <div
                         class="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between"
@@ -215,24 +215,29 @@ function close(): void {
   ui.closeCommandPalette()
 }
 
-type Selection =
-  | { kind: 'command'; command: CommandEntry }
-  | { kind: 'package'; pkg: SearchResult['packages'][number] }
-  | { kind: 'repository'; repo: SearchResult['repositories'][number] }
+function packageKey(pkg: SearchResult['packages'][number]): string {
+  return `pkg:${pkg.repository}:${pkg.format}:${pkg.name}`
+}
 
-async function onSelect(selection: Selection | null): Promise<void> {
-  if (!selection) return
+// Option values are primitive keys: Headless UI compares values by reference,
+// so object literals built in the template would change identity on every
+// render and make each option re-register, re-rendering without end.
+async function onSelect(key: string | null): Promise<void> {
+  if (!key) return
+  const command = commandResults.value.find((c) => `cmd:${c.id}` === key)
+  const pkg = searchResults.value.packages.find((p) => packageKey(p) === key)
+  const repo = searchResults.value.repositories.find((r) => `repo:${r.name}` === key)
   close()
-  if (selection.kind === 'command') {
-    await selection.command.run()
-  } else if (selection.kind === 'package') {
+  if (command) {
+    await command.run()
+  } else if (pkg) {
     await router.push(
-      `/repos/${encodeURIComponent(selection.pkg.repository)}/packages/${encodeURIComponent(
-        selection.pkg.format,
-      )}/${encodeURIComponent(selection.pkg.name)}`,
+      `/repos/${encodeURIComponent(pkg.repository)}/packages/${encodeURIComponent(
+        pkg.format,
+      )}/${encodeURIComponent(pkg.name)}`,
     )
-  } else if (selection.kind === 'repository') {
-    await router.push(`/repos/${encodeURIComponent(selection.repo.name)}`)
+  } else if (repo) {
+    await router.push(`/repos/${encodeURIComponent(repo.name)}`)
   }
 }
 </script>
