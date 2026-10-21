@@ -11,104 +11,241 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
-	"os"
+	"net/url"
+	"slices"
 	"testing"
 
-	_ "github.com/jackc/pgx/v5/stdlib"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
-	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-func TestSearchIntegration(t *testing.T) {
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		skipOrFailMissingEnv(t, "TEST_DATABASE_URL")
+type searchResponse struct {
+	Total        int64                     `json:"total"`
+	Packages     []search.SearchResult     `json:"packages"`
+	Repositories []search.RepositoryResult `json:"repositories"`
+}
+
+func (r searchResponse) repoNames() []string {
+	names := make([]string, 0, len(r.Repositories))
+	for _, repo := range r.Repositories {
+		names = append(names, repo.Name)
 	}
 
-	cfg := database.DatabaseConfig{
-		Driver:   "postgres",
-		Host:     "localhost",
-		Port:     5432,
-		User:     "postgres",
-		Password: "postgres",
-		Database: "artifact_repo",
-		SSLMode:  "disable",
+	return names
+}
+
+func (r searchResponse) packageNames() []string {
+	names := make([]string, 0, len(r.Packages))
+	for _, pkg := range r.Packages {
+		names = append(names, pkg.Repository+":"+pkg.Name)
 	}
 
-	pgdb, err := database.NewPostgresDB(cfg, nil)
-	if err != nil {
-		t.Skipf("cannot connect to database: %v", err)
+	return names
+}
+
+func newSearchRepo(t *testing.T, pg *database.PostgresDB, name, format, description string, public bool) {
+	t.Helper()
+
+	systemOrg := "00000000-0000-0000-0000-000000000001"
+	repo := &models.Repository{
+		Name: name, Format: format, Description: description, Public: public,
+		RepoType: "hosted", OrgID: &systemOrg,
 	}
-	defer pgdb.Close()
+
+	if err := pg.CreateRepository(context.Background(), repo); err != nil {
+		t.Fatalf("CreateRepository(%s): %v", name, err)
+	}
+}
+
+// searchUser creates a user holding one read target over repoFilter (none when
+// repoFilter is empty) and returns its principal.
+func searchUser(t *testing.T, pg *database.PostgresDB, username, repoFilter string) *auth.Principal {
+	t.Helper()
 
 	ctx := context.Background()
-	if err := pgdb.Migrate(ctx); err != nil {
-		t.Fatalf("migrate: %v", err)
-	}
 
-	sqldb := pgdb.GetDB()
-
-	var repoID string
-	err = sqldb.QueryRowContext(ctx,
-		`INSERT INTO repositories (name, format) VALUES ('search-test-repo', 'rpm')
-		 ON CONFLICT (name) DO UPDATE SET format='rpm' RETURNING id`,
-	).Scan(&repoID)
+	user, err := pg.CreateUser(ctx, &models.User{Username: username})
 	if err != nil {
-		t.Fatalf("insert repo: %v", err)
+		t.Fatalf("CreateUser(%s): %v", username, err)
 	}
-	t.Cleanup(func() {
-		sqldb.ExecContext(context.Background(), `DELETE FROM components WHERE repository_id=$1`, repoID)
-		sqldb.ExecContext(context.Background(), `DELETE FROM repositories WHERE id=$1`, repoID)
+
+	if repoFilter != "" {
+		target, err := pg.CreatePermissionTarget(ctx, &models.PermissionTarget{
+			Name: username + "-read", RepositoryFilter: repoFilter, PathPattern: ".*", Actions: []string{"read"},
+		})
+		if err != nil {
+			t.Fatalf("CreatePermissionTarget(%s): %v", username, err)
+		}
+
+		if err := pg.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
+			PermissionTargetID: target.ID, PrincipalType: "user", PrincipalID: user.ID,
+		}); err != nil {
+			t.Fatalf("CreatePermissionAssignment(%s): %v", username, err)
+		}
+	}
+
+	return &auth.Principal{UserID: &user.ID, Username: username}
+}
+
+// TestSearchFindsRepositoriesByName reproduces "q=ui-kit finds packages named
+// @acme/ui-kit but not the repository named ui-kit": repository names must be
+// matched by substring (hyphens included), literally, case-insensitively, and
+// only for repositories the caller may read.
+func TestSearchFindsRepositoriesByName(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	ctx := context.Background()
+
+	newSearchRepo(t, pg, "ui-kit", "npm", "shared components", false)
+	newSearchRepo(t, pg, "ui-kit-docs", "raw", "", false)
+	newSearchRepo(t, pg, "my-ui-kit-lib", "helm", "", false)
+	newSearchRepo(t, pg, "ui_kit", "pypi", "", false)
+	newSearchRepo(t, pg, "secret-ui-kit", "npm", "", false)
+	newSearchRepo(t, pg, "public-ui-kit", "raw", "", true)
+	newSearchRepo(t, pg, "webapp", "raw", "", false)
+	newSearchRepo(t, pg, "empty-repo", "raw", "", false)
+
+	// A package whose name contains the term, living in a repository whose own
+	// name does not: it is a package hit, never a repository hit.
+	blobID, err := pg.UpsertBlob(ctx, componentsBlobSHA, componentsBlobSHA, 5)
+	if err != nil {
+		t.Fatalf("UpsertBlob: %v", err)
+	}
+
+	var webappID string
+	if err := pg.GetDB().QueryRowContext(ctx, `SELECT id FROM repositories WHERE name = 'webapp'`).Scan(&webappID); err != nil {
+		t.Fatalf("lookup webapp: %v", err)
+	}
+
+	execSQL(t, pg, `INSERT INTO raw_artifacts (repository_id, path, blob_id) VALUES ($1, 'acme/ui-kit-1.0.txt', $2)`, webappID, blobID)
+
+	log := newTestLogger(t)
+	h := search.NewHandler(pg.GetDB(), auth.NewEvaluator(pg, log, false), log)
+
+	admin := &auth.Principal{Username: "admin", IsLegacy: true}
+	alice := searchUser(t, pg, "alice", `ui-kit.*|webapp`)
+	bob := searchUser(t, pg, "bob", "")
+	anonymous := &auth.Principal{Username: "anonymous", IsAnonymous: true}
+
+	run := func(t *testing.T, who *auth.Principal, rawQuery string) searchResponse {
+		t.Helper()
+
+		r := httptest.NewRequestWithContext(ctx, http.MethodGet, "/api/v1/search?"+rawQuery, nil)
+		r = r.WithContext(middleware.WithPrincipal(r.Context(), who))
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		if w.Code != http.StatusOK {
+			t.Fatalf("GET search?%s: want 200, got %d body=%s", rawQuery, w.Code, w.Body.String())
+		}
+
+		var resp searchResponse
+		if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+			t.Fatalf("decode: %v", err)
+		}
+
+		return resp
+	}
+
+	q := func(term string) string { return "q=" + url.QueryEscape(term) }
+
+	tests := []struct {
+		name     string
+		who      *auth.Principal
+		query    string
+		wantRepo []string
+		wantPkgs []string
+	}{
+		{
+			name: "hyphenated substring finds every repository containing it", who: admin, query: q("ui-kit"),
+			wantRepo: []string{"my-ui-kit-lib", "public-ui-kit", "secret-ui-kit", "ui-kit", "ui-kit-docs"},
+			wantPkgs: []string{"webapp:acme/ui-kit-1.0.txt"},
+		},
+		{
+			name: "prefix", who: admin, query: q("ui-kit-d"),
+			wantRepo: []string{"ui-kit-docs"},
+		},
+		{
+			name: "case-insensitive", who: admin, query: q("UI-KIT-DOCS"),
+			wantRepo: []string{"ui-kit-docs"},
+		},
+		{
+			name: "underscore is literal, not a one-character wildcard", who: admin, query: q("ui_kit"),
+			wantRepo: []string{"ui_kit"},
+		},
+		{
+			name: "repository without any artifacts is still found", who: admin, query: q("empty"),
+			wantRepo: []string{"empty-repo"},
+		},
+		{
+			name: "name qualifier", who: admin, query: q("name:docs"),
+			wantRepo: []string{"ui-kit-docs"},
+		},
+		{
+			name: "format qualifier", who: admin, query: q("ui-kit format:npm"),
+			wantRepo: []string{"secret-ui-kit", "ui-kit"},
+		},
+		{
+			name: "repo qualifier", who: admin, query: q("ui-kit repo:ui-kit"),
+			wantRepo: []string{"ui-kit"},
+		},
+		{
+			name: "sha256 identifies artifacts, never repositories", who: admin, query: q("sha256:" + componentsBlobSHA[:8]),
+			wantPkgs: []string{"webapp:acme/ui-kit-1.0.txt"},
+		},
+		{
+			name: "limit and offset page the repositories", who: admin, query: q("ui-kit") + "&limit=2&offset=1",
+			wantRepo: []string{"public-ui-kit", "secret-ui-kit"},
+			wantPkgs: nil,
+		},
+		{
+			name: "user only sees repositories their permissions allow", who: alice, query: q("ui-kit"),
+			wantRepo: []string{"ui-kit", "ui-kit-docs"},
+			wantPkgs: []string{"webapp:acme/ui-kit-1.0.txt"},
+		},
+		{
+			name: "user without permissions sees nothing", who: bob, query: q("ui-kit"),
+		},
+		{
+			name: "anonymous only sees public repositories", who: anonymous, query: q("ui-kit"),
+			wantRepo: []string{"public-ui-kit"},
+		},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			resp := run(t, tc.who, tc.query)
+
+			if got := resp.repoNames(); !slices.Equal(got, nonNil(tc.wantRepo)) {
+				t.Errorf("repositories = %v, want %v", got, tc.wantRepo)
+			}
+
+			if got := resp.packageNames(); !slices.Equal(got, nonNil(tc.wantPkgs)) {
+				t.Errorf("packages = %v, want %v", got, tc.wantPkgs)
+			}
+		})
+	}
+
+	t.Run("repository hit carries format and description", func(t *testing.T) {
+		resp := run(t, admin, q("ui-kit")+"&limit=100")
+
+		i := slices.IndexFunc(resp.Repositories, func(r search.RepositoryResult) bool { return r.Name == "ui-kit" })
+		if i < 0 {
+			t.Fatalf("ui-kit missing from %v", resp.repoNames())
+		}
+
+		if got := resp.Repositories[i]; got.Format != "npm" || got.Description != "shared components" {
+			t.Errorf("ui-kit hit = %+v, want format npm and description %q", got, "shared components")
+		}
 	})
+}
 
-	_, err = sqldb.ExecContext(ctx,
-		`INSERT INTO components (repository_id, format, name, version, description, summary, license)
-		 VALUES ($1, 'rpm', 'search-test-package', '1.0.0', 'A searchable test package', 'Test summary', 'MIT')
-		 ON CONFLICT DO NOTHING`,
-		repoID,
-	)
-	if err != nil {
-		t.Fatalf("insert component: %v", err)
+func nonNil(s []string) []string {
+	if s == nil {
+		return []string{}
 	}
 
-	log, _ := logger.New("error", "json", "stderr")
-	ev := auth.NewEvaluator(pgdb, log, true)
-	h := search.NewHandler(sqldb, ev, log)
-
-	adminID := "integration-test-admin"
-	principal := &auth.Principal{UserID: &adminID, Username: "admin", IsLegacy: true}
-
-	r := httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/search?q=search-test-package", nil)
-	r = r.WithContext(middleware.WithPrincipal(r.Context(), principal))
-	w := httptest.NewRecorder()
-	h.ServeHTTP(w, r)
-
-	if w.Code != http.StatusOK {
-		t.Fatalf("want 200, got %d body=%s", w.Code, w.Body.String())
-	}
-
-	var resp struct {
-		Total   int64                 `json:"total"`
-		Results []search.SearchResult `json:"results"`
-	}
-	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
-		t.Fatalf("decode: %v", err)
-	}
-	if resp.Total == 0 {
-		t.Error("expected at least 1 result")
-	}
-
-	rMissing := httptest.NewRequestWithContext(context.Background(), "GET", "/api/v1/search", nil)
-	rMissing = rMissing.WithContext(middleware.WithPrincipal(rMissing.Context(), principal))
-	wMissing := httptest.NewRecorder()
-	h.ServeHTTP(wMissing, rMissing)
-	if wMissing.Code != http.StatusBadRequest {
-		t.Errorf("missing q: want 400, got %d", wMissing.Code)
-	}
+	return s
 }

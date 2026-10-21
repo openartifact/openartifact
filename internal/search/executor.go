@@ -26,6 +26,14 @@ type SearchResult struct {
 	Metadata   map[string]string `json:"metadata,omitempty"`
 }
 
+// RepositoryResult is a repository whose own name matched the query (as
+// opposed to SearchResult, which is a package/artifact inside a repository).
+type RepositoryResult struct {
+	Name        string `json:"name"`
+	Format      string `json:"format"`
+	Description string `json:"description"`
+}
+
 type Executor struct {
 	db *sql.DB
 }
@@ -249,6 +257,81 @@ func (e *Executor) Search(
 	return results, rows.Err()
 }
 
+// SearchRepositories returns the repositories themselves whose name matches the
+// filter (case-insensitive substring, so "ui-kit" finds "ui-kit", "my-ui-kit-lib"
+// and "ui-kit-docs"), ordered by name. The package-oriented terms of the filter
+// apply to repositories as follows: name:/free text match the repository name,
+// format: matches the repository format, repo: the repository name exactly.
+// sha256: identifies artifacts, never a repository, so it yields no repositories.
+// Like Search, the result is scoped to readableRepos in SQL and again in Go.
+func (e *Executor) SearchRepositories(
+	ctx context.Context,
+	filter SearchFilter,
+	limit, offset int,
+	readableRepos map[uuid.UUID]struct{},
+) ([]RepositoryResult, error) {
+	if len(readableRepos) == 0 || filter.SHA256Prefix != "" {
+		return nil, nil
+	}
+
+	var b whereBuilder
+
+	b.addNameMatch("r.name", filter)
+
+	if len(filter.Formats) > 0 {
+		b.addIn("r.format", filter.Formats)
+	}
+
+	if len(filter.Repos) > 0 {
+		b.addIn("r.name", filter.Repos)
+	}
+
+	b.addReadable("r.id", readableRepos)
+
+	limitN := len(b.args) + 1
+	b.args = append(b.args, limit, offset)
+
+	//nolint:gosec // G201: the predicate is built from constant fragments and $n placeholders only; every user value is a bound argument
+	q := fmt.Sprintf(`SELECT r.id, r.name, r.format, COALESCE(r.description, '')
+	FROM repositories r
+	WHERE %s
+	ORDER BY r.name, r.id
+	LIMIT $%d OFFSET $%d`, b.String(), limitN, limitN+1)
+
+	//nolint:gosec // G701: see G201 above, q contains placeholders only
+	rows, err := e.db.QueryContext(ctx, q, b.args...)
+	if err != nil {
+		return nil, fmt.Errorf("repository search query: %w", err)
+	}
+	defer func() { _ = rows.Close() }()
+
+	var results []RepositoryResult
+
+	for rows.Next() {
+		var (
+			repoIDRaw string
+			rr        RepositoryResult
+		)
+
+		if err := rows.Scan(&repoIDRaw, &rr.Name, &rr.Format, &rr.Description); err != nil {
+			return nil, fmt.Errorf("scan repository result: %w", err)
+		}
+
+		repoID, err := uuid.Parse(repoIDRaw)
+		if err != nil {
+			continue
+		}
+
+		if _, ok := readableRepos[repoID]; !ok {
+			continue
+		}
+
+		results = append(results, rr)
+	}
+
+	return results, rows.Err()
+}
+
 func whereClause(where string) string {
 	if where == "" {
 		return ""
@@ -257,66 +340,85 @@ func whereClause(where string) string {
 	return "WHERE " + where
 }
 
-// buildWhereClause builds the filter predicate for both CountResults and
-// Search. readableRepos must be non-empty (callers short-circuit before
-// calling this) — its keys are always ANDed in as an explicit repository_id
-// scope so a caller can never see rows from a repository they can't read.
-func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (string, []any) {
-	var (
-		clauses []string
-		args    []any
-	)
+// whereBuilder accumulates AND-ed predicates and their positional arguments,
+// so the package and repository queries share the same filter semantics.
+type whereBuilder struct {
+	clauses []string
+	args    []any
+}
 
-	if filter.Name != "" {
-		n := len(args) + 1
-		clauses = append(clauses, fmt.Sprintf("s.name ILIKE $%d", n))
-		args = append(args, "%"+filter.Name+"%")
+// add appends a predicate whose single %d is replaced by the placeholder
+// number of arg.
+func (b *whereBuilder) add(clause string, arg any) {
+	b.clauses = append(b.clauses, fmt.Sprintf(clause, len(b.args)+1))
+	b.args = append(b.args, arg)
+}
+
+// addIn appends "expr IN ($n, ...)" over vals.
+func (b *whereBuilder) addIn(expr string, vals []string) {
+	placeholders := make([]string, len(vals))
+
+	for i, v := range vals {
+		placeholders[i] = fmt.Sprintf("$%d", len(b.args)+1)
+		b.args = append(b.args, v)
 	}
 
-	if filter.FreeText != "" {
-		n := len(args) + 1
-		clauses = append(clauses, fmt.Sprintf("s.name ILIKE $%d", n))
-		args = append(args, "%"+filter.FreeText+"%")
-	}
+	b.clauses = append(b.clauses, fmt.Sprintf("%s IN (%s)", expr, strings.Join(placeholders, ",")))
+}
 
-	if filter.SHA256Prefix != "" {
-		n := len(args) + 1
-		clauses = append(clauses, fmt.Sprintf("s.sha256 LIKE $%d", n))
-		args = append(args, filter.SHA256Prefix+"%")
-	}
-
-	if len(filter.Formats) > 0 {
-		placeholders := make([]string, len(filter.Formats))
-		for i, f := range filter.Formats {
-			n := len(args) + 1
-			placeholders[i] = fmt.Sprintf("$%d", n)
-			args = append(args, f)
+// addNameMatch appends the substring predicates for the name: filter and the
+// free-text terms against nameExpr. Matching is case-insensitive and literal:
+// LIKE metacharacters in the query ('_', '%') never act as wildcards, so
+// "ui_kit" does not match "ui-kit".
+func (b *whereBuilder) addNameMatch(nameExpr string, filter SearchFilter) {
+	for _, term := range []string{filter.Name, filter.FreeText} {
+		if term != "" {
+			b.add(nameExpr+" ILIKE $%d", "%"+escapeLike(term)+"%")
 		}
-
-		clauses = append(clauses, fmt.Sprintf("s.format IN (%s)", strings.Join(placeholders, ",")))
 	}
+}
 
-	if len(filter.Repos) > 0 {
-		placeholders := make([]string, len(filter.Repos))
-		for i, rn := range filter.Repos {
-			n := len(args) + 1
-			placeholders[i] = fmt.Sprintf("$%d", n)
-			args = append(args, rn)
-		}
-
-		clauses = append(clauses, fmt.Sprintf("r.name IN (%s)", strings.Join(placeholders, ",")))
-	}
-
+// addReadable restricts repoIDExpr to the caller's readable repositories.
+func (b *whereBuilder) addReadable(repoIDExpr string, readableRepos map[uuid.UUID]struct{}) {
 	idStrs := make([]string, 0, len(readableRepos))
 	for id := range readableRepos {
 		idStrs = append(idStrs, id.String())
 	}
 
-	n := len(args) + 1
-	clauses = append(clauses, fmt.Sprintf("s.repository_id = ANY($%d::uuid[])", n))
-	args = append(args, "{"+strings.Join(idStrs, ",")+"}")
+	b.add(repoIDExpr+" = ANY($%d::uuid[])", "{"+strings.Join(idStrs, ",")+"}")
+}
 
-	where := strings.Join(clauses, " AND ")
+func (b *whereBuilder) String() string {
+	return strings.Join(b.clauses, " AND ")
+}
 
-	return where, args
+// escapeLike escapes LIKE/ILIKE metacharacters so user input matches literally.
+func escapeLike(s string) string {
+	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+}
+
+// buildWhereClause builds the filter predicate for both CountResults and
+// Search. readableRepos must be non-empty (callers short-circuit before
+// calling this) — its keys are always ANDed in as an explicit repository_id
+// scope so a caller can never see rows from a repository they can't read.
+func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (string, []any) {
+	var b whereBuilder
+
+	b.addNameMatch("s.name", filter)
+
+	if filter.SHA256Prefix != "" {
+		b.add("s.sha256 LIKE $%d", escapeLike(filter.SHA256Prefix)+"%")
+	}
+
+	if len(filter.Formats) > 0 {
+		b.addIn("s.format", filter.Formats)
+	}
+
+	if len(filter.Repos) > 0 {
+		b.addIn("r.name", filter.Repos)
+	}
+
+	b.addReadable("s.repository_id", readableRepos)
+
+	return b.String(), b.args
 }

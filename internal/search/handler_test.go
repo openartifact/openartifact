@@ -22,7 +22,13 @@ import (
 type mockSearcher struct {
 	count   int64
 	results []SearchResult
+	repos   []RepositoryResult
 	err     error
+	repoErr error
+}
+
+func (m *mockSearcher) SearchRepositories(_ context.Context, _ SearchFilter, _, _ int, _ map[uuid.UUID]struct{}) ([]RepositoryResult, error) {
+	return m.repos, m.repoErr
 }
 
 func (m *mockSearcher) CountResults(_ context.Context, _ SearchFilter, _ map[uuid.UUID]struct{}) (int64, error) {
@@ -190,5 +196,59 @@ func TestHandlerEmptyResult(t *testing.T) {
 
 	if len(results) != 0 {
 		t.Errorf("want empty results, got %v", results)
+	}
+}
+
+// Repository hits are real repositories (name/format/description), not
+// version-less package rows: a raw artifact or docker tag stays under
+// "packages" and must never be offered as a repository to navigate to.
+func TestHandlerSeparatesRepositoriesFromPackages(t *testing.T) {
+	ms := &mockSearcher{
+		count: 1,
+		results: []SearchResult{
+			{Repository: "webapp", Format: "raw", Name: "acme/ui-kit-1.0.txt", CreatedAt: time.Now()},
+		},
+		repos: []RepositoryResult{
+			{Name: "ui-kit", Format: "npm", Description: "shared components"},
+		},
+	}
+
+	h, cleanup := newTestHandler(t, ms)
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, requestWithPrincipal("GET", "/api/v1/search?q=ui-kit", adminPrincipal()))
+
+	if w.Code != http.StatusOK {
+		t.Fatalf("want 200, got %d body=%s", w.Code, w.Body.String())
+	}
+
+	var resp struct {
+		Packages     []SearchResult     `json:"packages"`
+		Repositories []RepositoryResult `json:"repositories"`
+	}
+
+	if err := json.NewDecoder(w.Body).Decode(&resp); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+
+	if len(resp.Packages) != 1 || resp.Packages[0].Name != "acme/ui-kit-1.0.txt" {
+		t.Errorf("version-less package row must stay in packages, got %+v", resp.Packages)
+	}
+
+	if len(resp.Repositories) != 1 || resp.Repositories[0] != (RepositoryResult{Name: "ui-kit", Format: "npm", Description: "shared components"}) {
+		t.Errorf("want the ui-kit repository hit, got %+v", resp.Repositories)
+	}
+}
+
+func TestHandlerRepositorySearchErrorIs500(t *testing.T) {
+	h, cleanup := newTestHandler(t, &mockSearcher{repoErr: context.DeadlineExceeded})
+	defer cleanup()
+
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, requestWithPrincipal("GET", "/api/v1/search?q=ui-kit", adminPrincipal()))
+
+	if w.Code != http.StatusInternalServerError {
+		t.Errorf("want 500, got %d", w.Code)
 	}
 }

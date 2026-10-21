@@ -627,27 +627,80 @@
         "type": "object",
         "properties": {
           "total": {
-            "type": "integer"
+            "type": "integer",
+            "description": "Number of matching packages (repositories are not counted)"
           },
           "results": {
             "type": "array",
+            "description": "Matching packages/artifacts, newest first",
             "items": {
-              "type": "object",
-              "properties": {
-                "repository": {
-                  "type": "string"
-                },
-                "name": {
-                  "type": "string"
-                },
-                "version": {
-                  "type": "string"
-                },
-                "format": {
-                  "type": "string"
-                }
-              }
+              "$ref": "#/components/schemas/SearchPackageHit"
             }
+          },
+          "packages": {
+            "type": "array",
+            "description": "Same entries as results",
+            "items": {
+              "$ref": "#/components/schemas/SearchPackageHit"
+            }
+          },
+          "repositories": {
+            "type": "array",
+            "description": "Repositories whose own name matches the query, ordered by name",
+            "items": {
+              "$ref": "#/components/schemas/SearchRepositoryHit"
+            }
+          }
+        }
+      },
+      "SearchPackageHit": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "metadata": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "SearchRepositoryHit": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
           }
         }
       },
@@ -3088,8 +3141,8 @@
     },
     "/api/v1/search": {
       "get": {
-        "summary": "Search packages",
-        "description": "Search for packages across repositories",
+        "summary": "Search packages and repositories",
+        "description": "Search the packages of the repositories the caller can read, and the names of those repositories. Matching is a case-insensitive literal substring match; limit and offset apply to the packages and repositories lists independently.",
         "tags": [
           "Search"
         ],
@@ -3098,7 +3151,7 @@
             "name": "q",
             "in": "query",
             "required": true,
-            "description": "Search query",
+            "description": "Search query: free text plus optional name:, format:, repo: and sha256: qualifiers",
             "schema": {
               "type": "string"
             }

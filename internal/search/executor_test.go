@@ -237,3 +237,75 @@ func TestSearchMavenMetadata(t *testing.T) {
 		t.Errorf("want groupId=com.example, got %q", results[0].Metadata["groupId"])
 	}
 }
+
+func TestSearchRepositoriesIssuesNoQueryWithoutScope(t *testing.T) {
+	tests := []struct {
+		name     string
+		filter   SearchFilter
+		readable map[uuid.UUID]struct{}
+	}{
+		{"no readable repositories", SearchFilter{FreeText: "ui-kit"}, nil},
+		{"sha256 identifies artifacts, not repositories", SearchFilter{SHA256Prefix: "deadbeef"}, map[uuid.UUID]struct{}{uuid.New(): {}}},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db, mock, err := sqlmock.New()
+			if err != nil {
+				t.Fatalf("open sqlmock: %v", err)
+			}
+			defer func() { _ = db.Close() }()
+
+			results, err := NewExecutor(db).SearchRepositories(context.Background(), tc.filter, 25, 0, tc.readable)
+			if err != nil {
+				t.Fatalf("SearchRepositories: %v", err)
+			}
+
+			if len(results) != 0 {
+				t.Errorf("want no repositories, got %v", results)
+			}
+
+			if err := mock.ExpectationsWereMet(); err != nil {
+				t.Errorf("a query was issued: %v", err)
+			}
+		})
+	}
+}
+
+func TestSearchRepositoriesPostFilterRemovesUnreadableRepo(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("open sqlmock: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	readableID, unreadableID := uuid.New(), uuid.New()
+	rows := sqlmock.NewRows([]string{"id", "name", "format", "description"}).
+		AddRow(readableID, "ui-kit", "npm", "shared components").
+		AddRow(unreadableID, "ui-kit-secret", "npm", "")
+	mock.ExpectQuery(`FROM repositories r`).WillReturnRows(rows)
+
+	results, err := NewExecutor(db).SearchRepositories(context.Background(),
+		SearchFilter{FreeText: "ui-kit"}, 25, 0, map[uuid.UUID]struct{}{readableID: {}})
+	if err != nil {
+		t.Fatalf("SearchRepositories: %v", err)
+	}
+
+	if len(results) != 1 || results[0].Name != "ui-kit" || results[0].Description != "shared components" {
+		t.Errorf("want only the readable ui-kit repository, got %+v", results)
+	}
+}
+
+func TestBuildWhereClauseTreatsLikeMetacharactersLiterally(t *testing.T) {
+	repoID := uuid.New()
+
+	where, args := buildWhereClause(SearchFilter{FreeText: `ui_kit%`, SHA256Prefix: `ab_`}, map[uuid.UUID]struct{}{repoID: {}})
+
+	if want := `s.name ILIKE $1 AND s.sha256 LIKE $2 AND s.repository_id = ANY($3::uuid[])`; where != want {
+		t.Errorf("where = %q, want %q", where, want)
+	}
+
+	if args[0] != `%ui\_kit\%%` || args[1] != `ab\_%` {
+		t.Errorf("args = %q, %q; LIKE metacharacters must be escaped", args[0], args[1])
+	}
+}

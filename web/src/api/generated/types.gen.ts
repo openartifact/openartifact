@@ -246,13 +246,42 @@ export type Backup = {
 };
 
 export type SearchResult = {
+    /**
+     * Number of matching packages (repositories are not counted)
+     */
     total?: number;
-    results?: Array<{
-        repository?: string;
-        name?: string;
-        version?: string;
-        format?: string;
-    }>;
+    /**
+     * Matching packages/artifacts, newest first
+     */
+    results?: Array<SearchPackageHit>;
+    /**
+     * Same entries as results
+     */
+    packages?: Array<SearchPackageHit>;
+    /**
+     * Repositories whose own name matches the query, ordered by name
+     */
+    repositories?: Array<SearchRepositoryHit>;
+};
+
+export type SearchPackageHit = {
+    repository?: string;
+    name?: string;
+    version?: string;
+    format?: string;
+    path?: string;
+    sha256?: string;
+    size?: number;
+    created_at?: string;
+    metadata?: {
+        [key: string]: string;
+    };
+};
+
+export type SearchRepositoryHit = {
+    name?: string;
+    format?: string;
+    description?: string;
 };
 
 export type PermissionTarget = {
@@ -1553,7 +1582,7 @@ export type GetApiV1SearchData = {
     path?: never;
     query: {
         /**
-         * Search query
+         * Search query: free text plus optional name:, format:, repo: and sha256: qualifiers
          */
         q: string;
         /**

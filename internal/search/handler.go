@@ -20,6 +20,7 @@ import (
 type Searcher interface {
 	CountResults(ctx context.Context, filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (int64, error)
 	Search(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]SearchResult, error)
+	SearchRepositories(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]RepositoryResult, error)
 }
 
 type Handler struct {
@@ -111,20 +112,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	repositories, err := h.searcher.SearchRepositories(ctx, filter, limit, offset, readableRepos)
+	if err != nil {
+		h.log.Errorw("repository search failed", "error", err)
+		writeJSONError(w, http.StatusInternalServerError, "internal_error", "search failed")
+
+		return
+	}
+
 	if results == nil {
 		results = []SearchResult{}
 	}
 
-	// Split results into packages (with version) and repositories (without version)
-	packages := []SearchResult{}
-	repositories := []SearchResult{}
-
-	for _, result := range results {
-		if result.Version != "" {
-			packages = append(packages, result)
-		} else {
-			repositories = append(repositories, result)
-		}
+	if repositories == nil {
+		repositories = []RepositoryResult{}
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -133,7 +134,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if encErr := json.NewEncoder(w).Encode(map[string]any{
 		"total":        count,
 		"results":      results,
-		"packages":     packages,
+		"packages":     results,
 		"repositories": repositories,
 	}); encErr != nil {
 		_ = encErr // response header already written
