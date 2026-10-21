@@ -61,4 +61,4 @@ License detection and SBOM generation for an artifact id read these keys from it
 | `licenses`, `Licenses` | Comma-separated list of licenses. |
 | `dependencies` | JSON array of `{"name","version"}` objects: SBOM components. |
 
-See [scanning](../security/scanning.md) for the scan endpoints. [`oa import`](../migration/nexus-artifactory.md) copies Artifactory properties (`deb.*`, `rpm.*`, `build.name`, `build.number`, `vcs.*` by default) into properties of the imported packages.
+Setting or changing one of the license keys through `PUT` or `PATCH` also checks the artifact against the repository's [license policies](../security/scanning.md#quarantine-after-upload): a `block` policy that the license violates quarantines the artifact, and only an admin approval releases it. See [scanning](../security/scanning.md) for the scan endpoints. [`oa import`](../migration/nexus-artifactory.md) copies Artifactory properties (`deb.*`, `rpm.*`, `build.name`, `build.number`, `vcs.*` by default) into properties of the imported packages.

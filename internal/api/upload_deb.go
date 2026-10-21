@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -142,11 +143,13 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.uploadPipeline(r, file, repoName, distribution, component)
+	result, err := h.uploadPipeline(w, r, file, repoName, distribution, component)
 	if err != nil {
 		uploadResult = "error"
 
 		switch {
+		case errors.Is(err, errResponseWritten):
+			// licensepolicy.Enforce already answered.
 		case errors.Is(err, errDebRepoNotFound):
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found")
 		case errors.Is(err, errDebWrongFormat):
@@ -187,6 +190,22 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 	})
 }
 
+// debControlLicense returns the control stanza's `License:` field, matched
+// case-insensitively like all control field names. It is usually absent.
+func debControlLicense(cf *pkgdeb.ControlFile) string {
+	if cf == nil {
+		return ""
+	}
+
+	for name, value := range cf.Fields {
+		if strings.EqualFold(name, "License") {
+			return strings.TrimSpace(value)
+		}
+	}
+
+	return ""
+}
+
 func (h *DebUploadHandler) resolveRepoID(r *http.Request, repoName string) (string, error) {
 	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
 	if err != nil {
@@ -209,7 +228,7 @@ func (h *DebUploadHandler) resolveRepoID(r *http.Request, repoName string) (stri
 }
 
 //nolint:gocyclo,cyclop // upload pipeline: sequential validation and cleanup branches
-func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoName string, distribution string, component string) (map[string]any, error) {
+func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request, file io.Reader, repoName string, distribution string, component string) (map[string]any, error) {
 	repoID, err := h.resolveRepoID(r, repoName)
 	if err != nil {
 		return nil, err
@@ -267,6 +286,11 @@ func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoN
 		return nil, fmt.Errorf("failed to check existing package: %w", err)
 	} else if prev != nil {
 		return map[string]any{"duplicate": true}, nil
+	}
+
+	debLicense := debControlLicense(debFile.ControlFile)
+	if licensepolicy.Enforce(w, r, h.db, h.log, repoID, debLicense) {
+		return nil, errResponseWritten
 	}
 
 	if err := quota.Enforce(r.Context(), h.db, repoID, written); err != nil {
@@ -350,6 +374,7 @@ func (h *DebUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repoN
 			Arch:          pkg.Architecture,
 			Summary:       description,
 			Description:   pkg.Description,
+			License:       debLicense,
 			InstalledSize: pkg.InstalledSize,
 			Filename:      filename,
 			// Zero unless an administrator supplied an origin timestamp.

@@ -715,8 +715,12 @@ func (m *BaseMockDB) UpdateLicensePolicy(ctx context.Context, policy *models.Lic
 func (m *BaseMockDB) DeleteLicensePolicy(ctx context.Context, id string) error {
 	return errNotImpl("DeleteLicensePolicy")
 }
+
+// ListLicensePolicies reports no policies: every upload that declares a license
+// reads them (licensepolicy.Enforce), so an unconfigured mock must not fail
+// those uploads. Tests of policy behavior override it.
 func (m *BaseMockDB) ListLicensePolicies(ctx context.Context, repoID string) ([]*models.LicensePolicy, error) {
-	return nil, errNotImpl("ListLicensePolicies")
+	return nil, nil
 }
 func (m *BaseMockDB) CreateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error {
 	return errNotImpl("CreateSecretScanResult")
@@ -993,6 +997,9 @@ func (m *BaseMockDB) SetVulnScanQuarantine(ctx context.Context, repoID, id strin
 }
 func (m *BaseMockDB) GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error) {
 	return nil, errNotImpl("GetLicenseScanResultByID")
+}
+func (m *BaseMockDB) SetLicenseScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error {
+	return errNotImpl("SetLicenseScanQuarantine")
 }
 func (m *BaseMockDB) ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error) {
 	return nil, errNotImpl("ListGlobalLicensePolicies")

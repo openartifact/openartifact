@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"net/http"
+	"slices"
 	"strings"
 	"time"
 
@@ -29,6 +30,9 @@ type VulnHandler struct {
 
 	// scanSem bounds the number of concurrently running background scans.
 	scanSem chan struct{}
+
+	// newBackend builds the scanner backend for a scanner name; tests replace it.
+	newBackend func(name string) vuln.ScannerBackend
 }
 
 const (
@@ -51,6 +55,33 @@ func isValidVulnScanner(scanner string) bool {
 	return false
 }
 
+// normalizeVulnScanners merges the request's scanner and scanners into a
+// sorted, duplicate-free list (default: osv). ok is false when any name is not
+// a known scanner.
+func normalizeVulnScanners(single string, list []string) ([]string, bool) {
+	names := make([]string, 0, len(list)+1)
+	if single != "" {
+		names = append(names, single)
+	}
+
+	names = append(names, list...)
+
+	if len(names) == 0 {
+		return []string{"osv"}, true
+	}
+
+	for i, n := range names {
+		names[i] = strings.ToLower(strings.TrimSpace(n))
+		if !isValidVulnScanner(names[i]) {
+			return nil, false
+		}
+	}
+
+	slices.Sort(names)
+
+	return slices.Compact(names), true
+}
+
 // NewVulnHandler creates a new vulnerability handler.
 func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *VulnHandler {
 	return &VulnHandler{
@@ -58,6 +89,9 @@ func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		log:       log,
 		evaluator: evaluator,
 		scanSem:   make(chan struct{}, maxConcurrentVulnScans),
+		newBackend: func(name string) vuln.ScannerBackend {
+			return vuln.NewScannerForBackend(name, log)
+		},
 	}
 }
 
@@ -97,11 +131,12 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	var body struct {
-		ArtifactID     string `json:"artifact_id"`
-		PackageName    string `json:"package_name"`
-		PackageVersion string `json:"package_version"`
-		Ecosystem      string `json:"ecosystem"`
-		Scanner        string `json:"scanner"`
+		ArtifactID     string   `json:"artifact_id"`
+		PackageName    string   `json:"package_name"`
+		PackageVersion string   `json:"package_version"`
+		Ecosystem      string   `json:"ecosystem"`
+		Scanner        string   `json:"scanner"`
+		Scanners       []string `json:"scanners"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
@@ -123,13 +158,9 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body.Scanner = strings.ToLower(body.Scanner)
-	if body.Scanner == "" {
-		body.Scanner = "osv"
-	}
-
-	if !isValidVulnScanner(body.Scanner) {
-		writeError(w, http.StatusBadRequest, "validation_failed", "scanner must be one of: osv, trivy, grype")
+	scanners, ok := normalizeVulnScanners(body.Scanner, body.Scanners)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "validation_failed", "scanner and scanners must be among: osv, trivy, grype")
 		return
 	}
 
@@ -152,9 +183,10 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		PackageName:     body.PackageName,
 		PackageVersion:  body.PackageVersion,
 		Ecosystem:       body.Ecosystem,
-		Scanner:         body.Scanner,
+		Scanner:         strings.Join(scanners, ","),
 		ScanStatus:      "scanning",
 		Vulnerabilities: []models.Vulnerability{},
+		FailedScanners:  []string{},
 		CreatedAt:       now,
 		UpdatedAt:       now,
 	}
@@ -188,32 +220,34 @@ func (h *VulnHandler) performScan(scanResult *models.VulnScanResult) {
 	ctx, cancel := context.WithTimeout(context.Background(), vulnScanTimeout)
 	defer cancel()
 
-	// Create scanner backend based on scanner field
-	backend := vuln.NewScannerForBackend(scanResult.Scanner, h.log)
+	// The scanner field holds one name or several joined by ",".
+	names := strings.Split(scanResult.Scanner, ",")
+	backends := make([]vuln.ScannerBackend, 0, len(names))
 
-	// Query the vulnerability scanner
-	vulns, err := backend.Scan(ctx, scanResult.PackageName, scanResult.PackageVersion, scanResult.Ecosystem)
-	if err != nil {
-		h.log.Errorw("vuln scan failed", "error", err, "package", scanResult.PackageName)
-		scanResult.ScanStatus = "failed"
-		scanResult.ScanError = err.Error()
-	} else {
-		scanResult.ScanStatus = "completed"
-		scanResult.Vulnerabilities = vulns
-		scanResult.VulnCount = len(vulns)
+	for _, name := range names {
+		backends = append(backends, h.newBackend(name))
+	}
 
-		// Count by severity
-		for _, v := range vulns {
-			switch strings.ToUpper(v.Severity) {
-			case "CRITICAL":
-				scanResult.CriticalCount++
-			case "HIGH":
-				scanResult.HighCount++
-			case "MEDIUM":
-				scanResult.MediumCount++
-			case "LOW":
-				scanResult.LowCount++
-			}
+	// A scanner that cannot run is a failed scan, never "no vulnerabilities".
+	// Run logs the failure details; only the sanitized text is stored.
+	outcome := vuln.Run(ctx, h.log, backends, scanResult.PackageName, scanResult.PackageVersion, scanResult.Ecosystem)
+
+	scanResult.ScanStatus = outcome.Status
+	scanResult.ScanError = outcome.PublicError()
+	scanResult.FailedScanners = outcome.FailedScanners()
+	scanResult.Vulnerabilities = outcome.Vulnerabilities
+	scanResult.VulnCount = len(outcome.Vulnerabilities)
+
+	for _, v := range outcome.Vulnerabilities {
+		switch strings.ToUpper(v.Severity) {
+		case "CRITICAL":
+			scanResult.CriticalCount++
+		case "HIGH":
+			scanResult.HighCount++
+		case "MEDIUM":
+			scanResult.MediumCount++
+		case "LOW":
+			scanResult.LowCount++
 		}
 	}
 
@@ -456,6 +490,11 @@ func vulnScanResultToMap(result *models.VulnScanResult) responses.VulnScanResult
 		scanError = &result.ScanError
 	}
 
+	failedScanners := result.FailedScanners
+	if failedScanners == nil {
+		failedScanners = []string{}
+	}
+
 	return responses.VulnScanResultResponse{
 		ID:              result.ID,
 		RepositoryID:    result.RepositoryID,
@@ -476,5 +515,6 @@ func vulnScanResultToMap(result *models.VulnScanResult) responses.VulnScanResult
 		UpdatedAt:       formatTime(result.UpdatedAt),
 		ScannedAt:       formatTimePtr(result.ScannedAt),
 		ScanError:       scanError,
+		FailedScanners:  failedScanners,
 	}
 }

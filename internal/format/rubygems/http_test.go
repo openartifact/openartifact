@@ -19,7 +19,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
+	"github.com/openartifact/openartifact/pkg/rubymarshal"
 )
 
 var errCreateFailed = errors.New("create failed")
@@ -337,4 +339,68 @@ func TestIsPrerelease(t *testing.T) {
 			t.Errorf("isPrerelease(%q) = %v, want %v", v, got, want)
 		}
 	}
+}
+
+func pushWithLicenses(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, licenses []string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
+	h.SetPublisher(pub)
+
+	gem := createGemFileWithMarshal(t, rubymarshal.Specification{
+		Name:     "demo",
+		Version:  "1.0.0",
+		Platform: "ruby",
+		Licenses: licenses,
+	})
+
+	return formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodPost, "/repos/myrepo/api/v1/gems", bytes.NewReader(gem)))
+}
+
+func assertGemStored(t *testing.T, c policytest.Case, status int, db *gemsDB, bs *formattest.BlobStore, pub *formattest.Publisher) {
+	t.Helper()
+
+	if c.Stopped() {
+		if len(db.gems) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 || db.used != 0 {
+			t.Fatalf("rejected upload stored something: gems=%d blobs=%d events=%d used=%d", len(db.gems), len(bs.Blobs), len(pub.Events()), db.used)
+		}
+
+		return
+	}
+
+	if status != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", status)
+	}
+
+	if len(db.gems) != 1 || len(bs.Blobs) != 1 || len(pub.Events()) != 1 {
+		t.Fatalf("admitted upload not stored: gems=%d blobs=%d events=%d", len(db.gems), len(bs.Blobs), len(pub.Events()))
+	}
+}
+
+func TestPushLicensePolicy(t *testing.T) {
+	for _, c := range policytest.Cases("GPL-3.0") {
+		t.Run(c.Name, func(t *testing.T) {
+			inner := &gemsDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := pushWithLicenses(t, c.DB(inner), bs, pub, []string{"GPL-3.0"})
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+			assertGemStored(t, c, w.Code, inner, bs, pub)
+		})
+	}
+}
+
+func TestPushLicensePolicyNoLicenseAdmitted(t *testing.T) {
+	c := policytest.Case{
+		Want:     policytest.Admitted,
+		Policies: []*models.LicensePolicy{policytest.Policy("block", []string{"MIT"}, nil)},
+	}
+	inner := &gemsDB{DB: formattest.NewDB()}
+	bs := formattest.NewBlobStore()
+	pub := &formattest.Publisher{}
+
+	w := pushWithLicenses(t, c.DB(inner), bs, pub, nil)
+	c.AssertResponse(t, w.Code, w.Body.Bytes())
+	assertGemStored(t, c, w.Code, inner, bs, pub)
 }

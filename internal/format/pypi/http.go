@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -321,6 +322,10 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		classifiers = strings.Split(classifiersStr, "\n")
 	}
 
+	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, declaredLicenses(r)...) {
+		return
+	}
+
 	// Normalize package name
 	normalizedName := normalizePyPIName(name)
 
@@ -565,4 +570,35 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 	if encErr := json.NewEncoder(w).Encode(response); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// maxLicenseTextLen bounds a free-text "license" field that is treated as a
+// license identifier; longer values are usually a whole license text and
+// cannot be matched against a policy.
+const maxLicenseTextLen = 100
+
+// declaredLicenses returns the licenses an upload form declares: the PEP 639
+// license_expression if present, else a short single-line license field, plus
+// every "License ::" trove classifier.
+func declaredLicenses(r *http.Request) []string {
+	var out []string
+
+	if expr := strings.TrimSpace(r.FormValue("license_expression")); expr != "" {
+		out = append(out, expr)
+	} else if lic := strings.TrimSpace(r.FormValue("license")); lic != "" &&
+		len(lic) <= maxLicenseTextLen && !strings.ContainsAny(lic, "\r\n") {
+		out = append(out, lic)
+	}
+
+	// twine sends one "classifiers" value per classifier; tolerate
+	// newline-joined values as well.
+	for _, v := range r.Form["classifiers"] {
+		for c := range strings.SplitSeq(v, "\n") {
+			if c = strings.TrimSpace(c); strings.HasPrefix(c, "License ::") {
+				out = append(out, c)
+			}
+		}
+	}
+
+	return out
 }

@@ -236,7 +236,12 @@ type VulnScanResultResponse struct {
 	CreatedAt       string  `json:"created_at"`
 	UpdatedAt       string  `json:"updated_at"`
 	ScannedAt       *string `json:"scanned_at"`
-	ScanError       *string `json:"scan_error"`
+	// ScanError is a sanitized summary of the failing scanners; it never holds
+	// raw scanner output or error text.
+	ScanError *string `json:"scan_error"`
+	// FailedScanners lists the scanners that produced no result (scan_status
+	// "failed" or "partial").
+	FailedScanners []string `json:"failed_scanners"`
 }
 
 // SecretScanResultResponse represents a secret scan result.
@@ -281,6 +286,11 @@ type LicenseScanResultResponse struct {
 	ScannedAt       *string  `json:"scanned_at"`
 	ScanError       *string  `json:"scan_error"`
 	SPDXExpressions []string `json:"spdx_expressions"`
+	// Quarantined: downloads of the artifact answer 403 until it is approved
+	// (a blocking license policy matched its licenses).
+	Quarantined bool `json:"quarantined"`
+	// QuarantineApproved: an admin approved the artifact for these licenses.
+	QuarantineApproved bool `json:"quarantine_approved"`
 }
 
 // LicensePolicyResponse represents a license policy.

@@ -10,10 +10,13 @@ import (
 	"encoding/binary"
 	"encoding/json"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -187,5 +190,104 @@ func TestDownloadQuarantine(t *testing.T) {
 
 	if c := get(); c != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", c)
+	}
+}
+
+func publishCrate(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, meta string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
+	h.SetPublisher(pub)
+
+	var body bytes.Buffer
+
+	_ = binary.Write(&body, binary.LittleEndian, uint32(len(meta)))
+	body.WriteString(meta)
+
+	crateData := []byte("crate-bytes")
+	_ = binary.Write(&body, binary.LittleEndian, uint32(len(crateData)))
+	body.Write(crateData)
+
+	return formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodPut, "/repos/myrepo/api/v1/crates/new", &body))
+}
+
+func TestPublishLicensePolicy(t *testing.T) {
+	scenarios := []struct {
+		name    string
+		license string
+		cases   []policytest.Case
+	}{
+		{"GPL-3.0", "GPL-3.0", policytest.Cases("GPL-3.0")},
+	}
+
+	for _, s := range scenarios {
+		for _, c := range s.cases {
+			t.Run(s.name+"/"+c.Name, func(t *testing.T) {
+				inner := &cargoDB{DB: formattest.NewDB()}
+				bs := formattest.NewBlobStore()
+				pub := &formattest.Publisher{}
+
+				w := publishCrate(t, c.DB(inner), bs, pub, `{"name":"demo","vers":"0.1.0","license":"`+s.license+`"}`)
+				c.AssertResponse(t, w.Code, w.Body.Bytes())
+
+				assertStored(t, c, w.Code, inner, bs, pub)
+			})
+		}
+	}
+}
+
+func assertStored(t *testing.T, c policytest.Case, status int, db *cargoDB, bs *formattest.BlobStore, pub *formattest.Publisher) {
+	t.Helper()
+
+	if c.Stopped() {
+		if db.crate != nil || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+			t.Fatalf("rejected upload stored something: crate=%v blobs=%d events=%d", db.crate, len(bs.Blobs), len(pub.Events()))
+		}
+
+		return
+	}
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+
+	if db.crate == nil || len(bs.Blobs) != 1 || len(pub.Events()) != 1 {
+		t.Fatalf("admitted upload not stored: crate=%v blobs=%d events=%d", db.crate, len(bs.Blobs), len(pub.Events()))
+	}
+}
+
+func TestPublishLicensePolicyExpressionWithDeniedIdentifier(t *testing.T) {
+	c := policytest.Case{
+		Name:     "deny GPL-3.0",
+		Want:     policytest.Blocked,
+		Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0"})},
+	}
+
+	inner := &cargoDB{DB: formattest.NewDB()}
+	bs := formattest.NewBlobStore()
+	pub := &formattest.Publisher{}
+
+	w := publishCrate(t, c.DB(inner), bs, pub, `{"name":"demo","vers":"0.1.0","license":"MIT OR GPL-3.0"}`)
+	c.AssertResponse(t, w.Code, w.Body.Bytes())
+	assertStored(t, policytest.Case{Want: policytest.Blocked}, w.Code, inner, bs, pub)
+}
+
+func TestPublishLicensePolicyNoLicenseAdmitted(t *testing.T) {
+	policies := []*models.LicensePolicy{policytest.Policy("block", []string{"MIT"}, nil)}
+
+	for name, meta := range map[string]string{
+		"no license":   `{"name":"demo","vers":"0.1.0"}`,
+		"license file": `{"name":"demo","vers":"0.1.0","license_file":"LICENSE"}`,
+	} {
+		t.Run(name, func(t *testing.T) {
+			c := policytest.Case{Want: policytest.Admitted, Policies: policies}
+			inner := &cargoDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := publishCrate(t, c.DB(inner), bs, pub, meta)
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+			assertStored(t, c, w.Code, inner, bs, pub)
+		})
 	}
 }

@@ -44,15 +44,53 @@ var licenseAliases = map[string]string{
 	"unlicense":               "Unlicense",
 	"agpl-3.0":                "AGPL-3.0-only",
 	"eupl-1.2":                "EUPL-1.2",
+
+	// Spellings common in RPM, Debian and PyPI metadata.
+	"gplv2":               "GPL-2.0-only",
+	"gplv3":               "GPL-3.0-only",
+	"gpl v2":              "GPL-2.0-only",
+	"gpl v3":              "GPL-3.0-only",
+	"lgplv2":              "LGPL-2.0-only",
+	"lgplv2.1":            "LGPL-2.1-only",
+	"lgplv3":              "LGPL-3.0-only",
+	"agplv3":              "AGPL-3.0-only",
+	"asl 2.0":             "Apache-2.0",
+	"asl 1.1":             "Apache-1.1",
+	"apache license, 2.0": "Apache-2.0",
+	"apache-2":            "Apache-2.0",
+	"mpl 2.0":             "MPL-2.0",
+
+	// PyPI trove classifier names (after the "License :: ... ::" prefix).
+	"gnu general public license v2 (gplv2)":                   "GPL-2.0-only",
+	"gnu general public license v2 or later (gplv2+)":         "GPL-2.0-or-later",
+	"gnu general public license v3 (gplv3)":                   "GPL-3.0-only",
+	"gnu general public license v3 or later (gplv3+)":         "GPL-3.0-or-later",
+	"gnu lesser general public license v2 (lgplv2)":           "LGPL-2.0-only",
+	"gnu lesser general public license v2 or later (lgplv2+)": "LGPL-2.0-or-later",
+	"gnu lesser general public license v3 (lgplv3)":           "LGPL-3.0-only",
+	"gnu lesser general public license v3 or later (lgplv3+)": "LGPL-3.0-or-later",
+	"gnu affero general public license v3":                    "AGPL-3.0-only",
+	"gnu affero general public license v3 or later (agplv3+)": "AGPL-3.0-or-later",
+	"apache software license 2.0":                             "Apache-2.0",
+	"mozilla public license 2.0 (mpl 2.0)":                    "MPL-2.0",
+}
+
+// licenseKeys are the metadata (and artifact property) keys DetectFromMetadata
+// reads licenses from.
+//
+//nolint:gochecknoglobals // immutable lookup table
+var licenseKeys = []string{"license", "licenses", "License", "Licenses", "spdx_id", "spdxId"}
+
+// IsLicenseKey reports whether key is a metadata / property key that carries
+// license information.
+func IsLicenseKey(key string) bool {
+	return slices.Contains(licenseKeys, key)
 }
 
 // DetectFromMetadata extracts license info from artifact metadata map
 // Looks for common keys: "license", "licenses", "License", "spdx_id".
 func (d *Detector) DetectFromMetadata(metadata map[string]any) []string {
 	var licenses []string
-
-	// Check for common license keys
-	licenseKeys := []string{"license", "licenses", "License", "Licenses", "spdx_id", "spdxId"}
 
 	for _, key := range licenseKeys {
 		if val, ok := metadata[key]; ok {
@@ -98,6 +136,14 @@ func (d *Detector) NormalizeLicense(license string) string {
 
 	// Trim whitespace and convert to lowercase for lookup
 	normalized := strings.TrimSpace(license)
+
+	// PyPI trove classifier: "License :: OSI Approved :: MIT License".
+	if strings.HasPrefix(strings.ToLower(normalized), "license ::") {
+		if i := strings.LastIndex(normalized, "::"); i >= 0 {
+			normalized = strings.TrimSpace(normalized[i+2:])
+		}
+	}
+
 	lowerNorm := strings.ToLower(normalized)
 
 	// Check if it's in the aliases map
@@ -155,8 +201,22 @@ func (d *Detector) EvaluatePolicy(licenses []string, policy *models.LicensePolic
 	return len(violations) == 0, violations
 }
 
+// normalizeID returns the canonical form policy lists and detected licenses are
+// compared in: lowercase, a trailing "+" dropped, aliases resolved and the SPDX
+// "-only" / "-or-later" qualifiers removed. "GPL-3.0", "GPL-3.0-only",
+// "GPL-3.0+", "GPL-3.0-or-later" and "GPLv3" therefore all match one another, so
+// a policy written with any spelling covers every spelling an artifact uses.
+// The version family is the unit of policy: "GPL-3.0" in a deny list also denies
+// "GPL-3.0-or-later", and in an allow list also allows it.
 func normalizeID(id string) string {
-	return strings.TrimSuffix(strings.ToLower(strings.TrimSpace(id)), "+")
+	id = strings.TrimSuffix(strings.ToLower(strings.TrimSpace(id)), "+")
+	if spdx, ok := licenseAliases[id]; ok {
+		id = strings.ToLower(spdx)
+	}
+
+	id = strings.TrimSuffix(id, "-or-later")
+
+	return strings.TrimSuffix(id, "-only")
 }
 
 func normalizeSet(list []string) map[string]struct{} {

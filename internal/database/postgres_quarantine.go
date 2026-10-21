@@ -10,8 +10,8 @@ import (
 )
 
 // IsArtifactQuarantined reports whether any of keys (artifact_refs.artifact_path
-// values) identifies an artifact of the repository whose vulnerability or secret
-// scan result is flagged quarantined.
+// values) identifies an artifact of the repository whose vulnerability, secret
+// or license scan result is flagged quarantined.
 func (p *PostgresDB) IsArtifactQuarantined(ctx context.Context, repoID string, keys []string) (bool, error) {
 	if len(keys) == 0 {
 		return false, nil
@@ -29,6 +29,7 @@ func (p *PostgresDB) IsArtifactQuarantined(ctx context.Context, repoID string, k
 			  AND (
 				EXISTS (SELECT 1 FROM vuln_results vr WHERE vr.scan_job_id = sj.id AND vr.quarantined)
 				OR EXISTS (SELECT 1 FROM secret_results sr WHERE sr.scan_job_id = sj.id AND sr.quarantined)
+				OR EXISTS (SELECT 1 FROM license_results lr WHERE lr.scan_job_id = sj.id AND lr.quarantined)
 			  )
 		)`, repoID, keys).Scan(&quarantined)
 	if err != nil {

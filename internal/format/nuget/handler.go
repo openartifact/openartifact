@@ -12,6 +12,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/format"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -67,6 +68,7 @@ func (h *NuGetHandler) Parse(ctx context.Context, r io.Reader) (map[string]any, 
 		"tags":                     metadata.Tags,
 		"projectUrl":               metadata.ProjectURL,
 		"licenseUrl":               metadata.LicenseURL,
+		"licenseExpression":        metadata.License.Expression(),
 		"iconUrl":                  metadata.IconURL,
 		"requireLicenseAcceptance": metadata.RequireLicenseAcceptance,
 		"minClientVersion":         metadata.MinClientVersion,
@@ -93,10 +95,29 @@ type NuspecMetadata struct {
 	Tags                     string             `xml:"tags"`
 	ProjectURL               string             `xml:"projectUrl"`
 	LicenseURL               string             `xml:"licenseUrl"`
+	License                  NuspecLicense      `xml:"license"`
 	IconURL                  string             `xml:"iconUrl"`
 	RequireLicenseAcceptance string             `xml:"requireLicenseAcceptance"`
 	MinClientVersion         string             `xml:"minClientVersion"`
 	Dependencies             NuspecDependencies `xml:"dependencies"`
+}
+
+// NuspecLicense is the <license type="expression|file"> element. Only the
+// "expression" type carries an SPDX expression; "file" names a file in the
+// package.
+type NuspecLicense struct {
+	Type string `xml:"type,attr"`
+	Text string `xml:",chardata"`
+}
+
+// Expression returns the SPDX license expression, or "" when the nuspec
+// declares no expression-type license.
+func (l NuspecLicense) Expression() string {
+	if !strings.EqualFold(strings.TrimSpace(l.Type), "expression") {
+		return ""
+	}
+
+	return strings.TrimSpace(l.Text)
 }
 
 // NuspecDependency is a single <dependency id="..." version="..."/> entry.

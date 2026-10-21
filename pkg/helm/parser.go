@@ -41,17 +41,18 @@ func readAllLimited(r io.Reader, limit int64, tooLarge error) ([]byte, error) {
 
 // ChartMetadata represents the metadata from Chart.yaml.
 type ChartMetadata struct {
-	APIVersion  string           `yaml:"apiVersion"`
-	Name        string           `yaml:"name"`
-	Version     string           `yaml:"version"`
-	AppVersion  string           `yaml:"appVersion"`
-	Description string           `yaml:"description"`
-	Type        string           `yaml:"type"`
-	Keywords    []string         `yaml:"keywords"`
-	Home        string           `yaml:"home"`
-	Sources     []string         `yaml:"sources"`
-	Maintainers []map[string]any `yaml:"maintainers"`
-	Icon        string           `yaml:"icon"`
+	APIVersion  string            `yaml:"apiVersion"`
+	Name        string            `yaml:"name"`
+	Version     string            `yaml:"version"`
+	AppVersion  string            `yaml:"appVersion"`
+	Description string            `yaml:"description"`
+	Type        string            `yaml:"type"`
+	Keywords    []string          `yaml:"keywords"`
+	Home        string            `yaml:"home"`
+	Sources     []string          `yaml:"sources"`
+	Maintainers []map[string]any  `yaml:"maintainers"`
+	Icon        string            `yaml:"icon"`
+	Annotations map[string]string `yaml:"annotations"`
 }
 
 // ParseChart extracts metadata from a Helm chart tarball.
@@ -112,6 +113,7 @@ func ParseChart(r io.Reader) (map[string]any, error) {
 		"sources":     metadata.Sources,
 		"maintainers": metadata.Maintainers,
 		"icon":        metadata.Icon,
+		"annotations": metadata.Annotations,
 	}
 
 	return result, nil

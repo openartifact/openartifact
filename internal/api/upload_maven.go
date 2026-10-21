@@ -25,6 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -234,6 +235,13 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if parts.ext == "pom" && parts.classifier == "" {
+		if h.enforcePomLicenses(w, r, tmp, repoID, groupID, artifactIDCoord, version, artPath) {
+			uploadResult = "error"
+			return
+		}
+	}
+
 	// Reserve quota before persisting; released on every failure path below.
 	if err := quota.Enforce(r.Context(), h.db, repoID, size); err != nil {
 		uploadResult = "error"
@@ -404,6 +412,55 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	// The package id is what the properties API addresses artifacts by.
 	w.Header().Set("X-Oa-Artifact-Id", art.ID)
 	w.WriteHeader(statusCode)
+}
+
+// enforcePomLicenses applies the license policy to the licenses declared in
+// the uploaded .pom (the jar is stored before the pom, so its siblings are
+// already in the repository). It returns true when it wrote the rejection. On a
+// rejection the sibling files already stored for the same group, artifact and
+// version are quarantined best-effort, so the blocked version cannot be
+// downloaded through them. A pom that does not parse declares no license.
+func (h *MavenUploadHandler) enforcePomLicenses(w http.ResponseWriter, r *http.Request, pomFile *os.File, repoID, groupID, artifactID, version, artPath string) bool {
+	if _, err := pomFile.Seek(0, io.SeekStart); err != nil {
+		return false
+	}
+
+	pom, err := pkgmaven.ParsePOM(pomFile)
+	if err != nil || pom == nil {
+		return false
+	}
+
+	licenses := make([]string, 0, len(pom.Licenses))
+
+	for _, l := range pom.Licenses {
+		if name := strings.TrimSpace(l.Name); name != "" {
+			licenses = append(licenses, name)
+		}
+	}
+
+	if !licensepolicy.Enforce(w, r, h.db, h.log, repoID, licenses...) {
+		return false
+	}
+
+	ctx := context.WithoutCancel(r.Context())
+
+	siblings, err := h.db.GetMavenArtifactsByGAV(ctx, repoID, groupID, artifactID, version)
+	if err != nil {
+		h.log.Warnw("maven license block: failed to list sibling files", "path", artPath, "error", err)
+		return true
+	}
+
+	for _, s := range siblings {
+		if s.RepoPath == artPath {
+			continue
+		}
+
+		if _, _, recErr := licensepolicy.Record(ctx, h.db, h.log, repoID, s.RepoPath, licenses); recErr != nil {
+			h.log.Warnw("maven license block: failed to quarantine sibling", "path", s.RepoPath, "error", recErr)
+		}
+	}
+
+	return true
 }
 
 func writeMavenConflict(w http.ResponseWriter, msg string) {

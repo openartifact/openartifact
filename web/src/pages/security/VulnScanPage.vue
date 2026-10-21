@@ -18,22 +18,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p class="mt-1 text-sm text-muted">{{ t('sec.vuln.description') }}</p>
       </div>
       <div class="flex items-center gap-3 flex-wrap">
-        <div
-          role="radiogroup"
-          :aria-label="t('sec.vuln.scannerLabel')"
-          class="flex items-center gap-1 bg-surface-hover/60 rounded-lg p-0.5 border border-border"
-        >
-          <button
-            v-for="s in scanners"
-            :key="s.value"
-            type="button"
-            role="radio"
-            :aria-checked="activeScanner === s.value"
-            class="px-3 py-1.5 rounded-md text-xs font-medium transition-colors"
-            :class="activeScanner === s.value ? 'bg-surface text-foreground shadow-sm' : 'text-muted hover:text-foreground'"
-            @click="activeScanner = s.value"
-          >{{ s.label }}</button>
-        </div>
         <button
           type="button"
           class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
@@ -203,20 +187,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border border-border text-muted">{{ scan.scanner || 'osv' }}</span>
               </td>
               <td class="px-4 py-3">
-                <div class="flex items-center gap-1.5 text-xs font-mono">
-                  <span v-if="scan.critical_count > 0" class="px-1.5 py-0.5 rounded bg-danger-soft text-danger font-semibold">{{ scan.critical_count }}C</span>
-                  <span v-if="scan.high_count > 0" class="px-1.5 py-0.5 rounded bg-warning-soft text-warning font-semibold">{{ scan.high_count }}H</span>
-                  <span v-if="scan.medium_count > 0" class="px-1.5 py-0.5 rounded bg-[#f59e0b]/10 text-[#f59e0b] font-semibold">{{ scan.medium_count }}M</span>
-                  <span v-if="scan.low_count > 0" class="px-1.5 py-0.5 rounded bg-surface-hover text-muted font-semibold">{{ scan.low_count }}L</span>
-                  <span v-if="scan.vuln_count === 0 && scan.scan_status === 'completed'" class="text-success text-xs">{{ t('sec.vuln.clean') }}</span>
-                  <span v-if="scan.scan_status === 'scanning'" class="text-muted text-xs">—</span>
+                <div class="flex items-center gap-1.5 text-xs font-mono" :data-counts="vulnCountsState(scan)">
+                  <template v-if="vulnCountsState(scan) === 'counts'">
+                    <span v-if="scan.critical_count > 0" class="px-1.5 py-0.5 rounded bg-danger-soft text-danger font-semibold">{{ scan.critical_count }}C</span>
+                    <span v-if="scan.high_count > 0" class="px-1.5 py-0.5 rounded bg-warning-soft text-warning font-semibold">{{ scan.high_count }}H</span>
+                    <span v-if="scan.medium_count > 0" class="px-1.5 py-0.5 rounded bg-[#f59e0b]/10 text-[#f59e0b] font-semibold">{{ scan.medium_count }}M</span>
+                    <span v-if="scan.low_count > 0" class="px-1.5 py-0.5 rounded bg-surface-hover text-muted font-semibold">{{ scan.low_count }}L</span>
+                  </template>
+                  <span v-else-if="vulnCountsState(scan) === 'clean'" class="text-success text-xs">{{ t('sec.vuln.clean') }}</span>
+                  <span v-else-if="vulnCountsState(scan) === 'partialEmpty'" class="text-warning text-xs">{{ t('sec.vuln.partialEmpty') }}</span>
+                  <span v-else-if="vulnCountsState(scan) === 'notScanned'" class="text-danger text-xs">{{ t('sec.vuln.notScanned') }}</span>
+                  <span v-else class="text-muted text-xs">—</span>
                 </div>
               </td>
               <td class="px-4 py-3">
-                <span :class="scanStatusClass(scan.scan_status)" :title="scan.scan_error ?? undefined">
-                  <ArrowPathIcon v-if="scan.scan_status === 'scanning'" class="w-3 h-3 animate-spin" aria-hidden="true" />
-                  {{ statusLabel(scan.scan_status) }}
-                </span>
+                <div class="flex items-start gap-1.5">
+                  <ArrowPathIcon v-if="scan.scan_status === 'scanning'" class="w-3 h-3 mt-1 animate-spin text-warning" aria-hidden="true" />
+                  <VulnScanStatus :status="scan.scan_status" :scan-error="scan.scan_error" :failed-scanners="scan.failed_scanners" />
+                </div>
               </td>
               <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(scan.scanned_at || scan.created_at) }}</td>
               <td class="px-4 py-3">
@@ -243,10 +231,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       drawer
       max-width="max-w-md"
       :title="t('sec.vuln.drawerTitle')"
-      :description="`${t('sec.vuln.poweredBy')} ${activeScannerLabel}`"
+      :description="`${t('sec.vuln.poweredBy')} ${selectedScannerLabels}`"
       @close="showDrawer = false"
     >
       <div class="space-y-4">
+        <fieldset>
+          <legend class="block text-xs font-medium text-muted mb-1.5">{{ t('sec.vuln.scannersLabel') }}</legend>
+          <div class="flex items-center gap-4 flex-wrap">
+            <label v-for="s in scanners" :key="s.value" class="inline-flex items-center gap-2 text-sm text-foreground">
+              <input
+                v-model="selectedScanners"
+                type="checkbox"
+                :value="s.value"
+                :data-testid="`scanner-${s.value}`"
+                class="h-4 w-4 rounded border-border accent-primary"
+              />
+              {{ s.label }}
+            </label>
+          </div>
+          <p class="text-xs text-muted mt-1">
+            {{ selectedScanners.length ? t('sec.vuln.scannersHint') : t('sec.vuln.scannersRequired') }}
+          </p>
+        </fieldset>
         <div>
           <label for="vuln-pkg" class="block text-xs font-medium text-muted mb-1.5">{{ t('sec.common.package') }}</label>
           <select
@@ -280,7 +286,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="scanning || !form.artifactId || !form.ecosystem"
+          :disabled="scanning || !form.artifactId || !form.ecosystem || !selectedScanners.length"
           @click="startScan"
         >
           <ArrowPathIcon v-if="scanning" class="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
@@ -299,6 +305,7 @@ import { ChevronRightIcon, ArrowPathIcon, MagnifyingGlassIcon, ShieldCheckIcon }
 import EmptyState from '../../components/EmptyState.vue'
 import FormatBadge from '../../components/FormatBadge.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
+import VulnScanStatus from '../../components/VulnScanStatus.vue'
 import { useToastStore } from '../../stores/toast'
 import { useRepoPackages } from '../../composables/useRepoPackages'
 import {
@@ -310,7 +317,8 @@ import {
   type VulnScanner,
 } from '../../api/security'
 import { formatLabel } from '../../lib/formats'
-import { t, tDynamic } from '../../i18n/en'
+import { normalizeScannerSelection, vulnCountsState } from '../../lib/scanStatus'
+import { t } from '../../i18n/en'
 
 const POLL_MS = 3000
 
@@ -326,14 +334,19 @@ const quarantining = ref<string | null>(null)
 const searchQuery = ref('')
 const severityFilter = ref('all')
 const statusFilter = ref('all')
-const activeScanner = ref<VulnScanner>('osv')
+const selectedScanners = ref<VulnScanner[]>(['osv'])
 
 const scanners: { value: VulnScanner; label: string }[] = [
   { value: 'osv', label: 'OSV-Scanner' },
   { value: 'trivy', label: 'Trivy' },
   { value: 'grype', label: 'Grype' },
 ]
-const activeScannerLabel = computed(() => scanners.find((s) => s.value === activeScanner.value)?.label ?? '')
+const selectedScannerLabels = computed(() =>
+  scanners
+    .filter((s) => selectedScanners.value.includes(s.value))
+    .map((s) => s.label)
+    .join(', '),
+)
 
 const form = ref({ artifactId: '', ecosystem: '' })
 
@@ -349,6 +362,7 @@ const statusOptions = computed(() => [
   { label: t('sec.common.all'), value: 'all' },
   { label: t('sec.vuln.status.scanning'), value: 'scanning' },
   { label: t('sec.vuln.status.completed'), value: 'completed' },
+  { label: t('sec.vuln.status.partial'), value: 'partial' },
   { label: t('sec.vuln.status.failed'), value: 'failed' },
 ])
 
@@ -369,17 +383,6 @@ const filteredScans = computed(() => {
   }
   return result
 })
-
-function scanStatusClass(status: string): string {
-  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold '
-  if (status === 'scanning') return base + 'text-warning bg-warning-soft/60'
-  if (status === 'failed') return base + 'text-danger bg-danger-soft/60'
-  return base + 'text-success bg-success-soft/60'
-}
-
-function statusLabel(status: string): string {
-  return ['scanning', 'completed', 'failed'].includes(status) ? tDynamic(`sec.vuln.status.${status}`) : status
-}
 
 function formatDate(ts?: string | null): string {
   if (!ts) return '—'
@@ -429,6 +432,7 @@ async function loadScans(silent = false): Promise<void> {
 
 function openDrawer(): void {
   form.value = { artifactId: '', ecosystem: '' }
+  selectedScanners.value = ['osv']
   showDrawer.value = true
 }
 
@@ -447,7 +451,7 @@ async function startScan(): Promise<void> {
       package_name: pkg.name,
       package_version: pkg.version,
       ecosystem: form.value.ecosystem,
-      scanner: activeScanner.value,
+      scanners: normalizeScannerSelection(selectedScanners.value),
     })
     toasts.success(t('sec.vuln.started'))
     showDrawer.value = false

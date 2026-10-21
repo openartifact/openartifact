@@ -389,13 +389,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <div v-else class="bg-surface rounded-lg border border-border p-6 space-y-4">
           <div class="flex items-center gap-3 flex-wrap">
-            <ShieldCheckIcon class="w-6 h-6" :class="scan.vuln_count > 0 ? 'text-danger' : 'text-success'" aria-hidden="true" />
-            <h3 class="text-sm font-semibold text-foreground">
-              {{ scan.vuln_count > 0 ? `${scan.vuln_count} ${t('pkg.security.vulns')}` : t('pkg.security.clean') }}
-            </h3>
-            <span class="text-xs text-muted">{{ scan.scanner }} · {{ scan.scan_status }}</span>
+            <ShieldCheckIcon class="w-6 h-6" :class="scanIconClass" aria-hidden="true" />
+            <h3 class="text-sm font-semibold text-foreground" data-testid="scan-headline">{{ scanHeadline }}</h3>
+            <span class="text-xs text-muted">{{ scan.scanner }}</span>
+            <VulnScanStatus :status="scan.scan_status" :scan-error="scan.scan_error" :failed-scanners="scan.failed_scanners" />
           </div>
-          <dl class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
+          <dl v-if="scanCountsState === 'counts' || scanCountsState === 'clean' || scanCountsState === 'partialEmpty'" class="grid grid-cols-2 sm:grid-cols-4 gap-3 text-sm">
             <div><dt class="text-xs text-muted">{{ t('pkg.security.critical') }}</dt><dd class="font-mono">{{ scan.critical_count }}</dd></div>
             <div><dt class="text-xs text-muted">{{ t('pkg.security.high') }}</dt><dd class="font-mono">{{ scan.high_count }}</dd></div>
             <div><dt class="text-xs text-muted">{{ t('pkg.security.medium') }}</dt><dd class="font-mono">{{ scan.medium_count }}</dd></div>
@@ -433,8 +432,11 @@ import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 import { request, ApiError } from '../api/client'
 import { useToastStore } from '../stores/toast'
+import { listVulnScans, type VulnScan } from '../api/security'
+import { vulnCountsState } from '../lib/scanStatus'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
+import VulnScanStatus from '../components/VulnScanStatus.vue'
 
 const tabs = [
   { key: 'overview', label: t('pkg.tab.overview') },
@@ -576,20 +578,40 @@ const currentPkg = computed(() => packages.value[0] || null)
 
 // ─── Security (latest vulnerability scan for the current version) ───────────
 
-interface VulnScan {
-  package_name: string
-  package_version: string
-  scanner: string
-  scan_status: string
-  vuln_count: number
-  critical_count: number
-  high_count: number
-  medium_count: number
-  low_count: number
-  scanned_at: string | null
-}
-
 const scan = ref<VulnScan | null>(null)
+const scanCountsState = computed(() => (scan.value ? vulnCountsState(scan.value) : 'pending'))
+
+// A failed scan never reads as "clean": it says the version was not scanned.
+const scanHeadline = computed(() => {
+  const s = scan.value
+  if (!s) return ''
+  switch (scanCountsState.value) {
+    case 'counts':
+      return `${s.vuln_count} ${t('pkg.security.vulns')}`
+    case 'notScanned':
+      return t('pkg.security.failed')
+    case 'partialEmpty':
+      return t('pkg.security.partial')
+    case 'clean':
+      return t('pkg.security.clean')
+    default:
+      return t('pkg.security.scanPending')
+  }
+})
+
+const scanIconClass = computed(() => {
+  switch (scanCountsState.value) {
+    case 'counts':
+    case 'notScanned':
+      return 'text-danger'
+    case 'partialEmpty':
+      return 'text-warning'
+    case 'clean':
+      return 'text-success'
+    default:
+      return 'text-muted'
+  }
+})
 const scanLoading = ref(false)
 const scanError = ref('')
 let scanGeneration = 0
@@ -601,12 +623,10 @@ async function loadScan(): Promise<void> {
   scanLoading.value = true
   scanError.value = ''
   try {
-    const res = await request<{ scans?: VulnScan[] }>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/vuln/scans`,
-    )
+    const scans = await listVulnScans(repoName.value)
     if (generation !== scanGeneration) return
     scan.value =
-      (res?.scans ?? []).find(
+      scans.find(
         (sc) => sc.package_name === pkg.name && sc.package_version === pkg.version,
       ) ?? null
   } catch (err) {

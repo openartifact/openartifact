@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -214,6 +215,49 @@ func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublish
 	return prepared, nil
 }
 
+// npmManifestLicenses reads the licenses a version manifest declares: the
+// `license` field (SPDX string or legacy {type,url} object) and the legacy
+// `licenses` array of strings or objects.
+func npmManifestLicenses(manifest json.RawMessage) []string {
+	var m struct {
+		License  json.RawMessage   `json:"license"`
+		Licenses []json.RawMessage `json:"licenses"`
+	}
+
+	if err := json.Unmarshal(manifest, &m); err != nil {
+		return nil
+	}
+
+	var out []string
+
+	for _, raw := range append([]json.RawMessage{m.License}, m.Licenses...) {
+		if len(raw) == 0 {
+			continue
+		}
+
+		var s string
+		if json.Unmarshal(raw, &s) == nil {
+			if s = strings.TrimSpace(s); s != "" {
+				out = append(out, s)
+			}
+
+			continue
+		}
+
+		var obj struct {
+			Type string `json:"type"`
+		}
+
+		if json.Unmarshal(raw, &obj) == nil {
+			if t := strings.TrimSpace(obj.Type); t != "" {
+				out = append(out, t)
+			}
+		}
+	}
+
+	return out
+}
+
 func writeJSONStatus(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(status)
@@ -396,6 +440,16 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 				return
 			}
 		}
+	}
+
+	var declared []string
+	for _, pv := range prepared {
+		declared = append(declared, npmManifestLicenses(pv.manifest)...)
+	}
+
+	if licensepolicy.Enforce(w, r, h.db, h.log, repo.ID, declared...) {
+		uploadResult = "error"
+		return
 	}
 
 	createdPkg := false

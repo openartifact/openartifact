@@ -991,7 +991,8 @@
             "format": "uuid"
           },
           "status": {
-            "type": "string"
+            "type": "string",
+            "description": "Scan status. Vulnerability scans use pending|scanning|completed|partial|failed (see VulnScanResult.scan_status)."
           },
           "created_at": {
             "type": "string",
@@ -1028,6 +1029,403 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          }
+        }
+      },
+      "VulnScanResult": {
+        "type": "object",
+        "description": "Result of one vulnerability scan of an artifact.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "package_version": {
+            "type": "string"
+          },
+          "ecosystem": {
+            "type": "string"
+          },
+          "scanner": {
+            "type": "string",
+            "description": "One scanner name (osv, trivy or grype) or a sorted comma-joined list such as `osv,trivy` when several scanners were requested."
+          },
+          "scan_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "scanning",
+              "completed",
+              "partial",
+              "failed"
+            ],
+            "description": "`completed`: every requested scanner ran. `partial`: several scanners were requested and some failed (findings of the others are kept; see `failed_scanners`). `failed`: every scanner failed - the zero counts then mean `not scanned`, not `no vulnerabilities`."
+          },
+          "vulnerabilities": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            }
+          },
+          "vuln_count": {
+            "type": "integer"
+          },
+          "critical_count": {
+            "type": "integer"
+          },
+          "high_count": {
+            "type": "integer"
+          },
+          "medium_count": {
+            "type": "integer"
+          },
+          "low_count": {
+            "type": "integer"
+          },
+          "quarantined": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scan_error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server; osv: scan timed out`. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`."
+          },
+          "failed_scanners": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "osv",
+                "trivy",
+                "grype"
+              ]
+            },
+            "description": "Scanners that produced no result. Empty unless `scan_status` is `partial` or `failed`."
+          }
+        },
+        "required": [
+          "id",
+          "repo_id",
+          "artifact_id",
+          "package_name",
+          "package_version",
+          "ecosystem",
+          "scanner",
+          "scan_status",
+          "vuln_count",
+          "critical_count",
+          "high_count",
+          "medium_count",
+          "low_count",
+          "quarantined",
+          "created_at",
+          "updated_at",
+          "scanned_at",
+          "scan_error",
+          "failed_scanners"
+        ]
+      },
+      "VulnScanRequest": {
+        "type": "object",
+        "required": [
+          "artifact_id",
+          "package_name",
+          "package_version",
+          "ecosystem"
+        ],
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "package_version": {
+            "type": "string"
+          },
+          "ecosystem": {
+            "type": "string"
+          },
+          "scanner": {
+            "type": "string",
+            "enum": [
+              "osv",
+              "trivy",
+              "grype"
+            ],
+            "description": "Single scanner. Still accepted; merged with `scanners`."
+          },
+          "scanners": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "osv",
+                "trivy",
+                "grype"
+              ]
+            },
+            "uniqueItems": true,
+            "description": "Scanners to run. Merged with `scanner`; de-duplicated and sorted. Defaults to `osv` when neither is given."
+          }
+        }
+      },
+      "LicensePolicyViolation": {
+        "type": "object",
+        "properties": {
+          "policy_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "policy_name": {
+            "type": "string"
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "allow",
+              "warn",
+              "block"
+            ]
+          },
+          "violation": {
+            "type": "string",
+            "description": "The violated rule, naming the offending license."
+          }
+        }
+      },
+      "LicenseScanResult": {
+        "type": "object",
+        "description": "Result of one license scan of an artifact.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "licenses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "spdx_expressions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scan_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed"
+            ]
+          },
+          "scan_error": {
+            "type": "string",
+            "nullable": true
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quarantined": {
+            "type": "boolean",
+            "description": "Downloads of the artifact answer 403 ARTIFACT_QUARANTINED until an admin approves it."
+          },
+          "quarantine_approved": {
+            "type": "boolean",
+            "description": "An admin approved the artifact for its current licenses; cleared when a re-scan finds different licenses."
+          }
+        },
+        "required": [
+          "id",
+          "repo_id",
+          "artifact_id",
+          "scan_status",
+          "quarantined",
+          "quarantine_approved",
+          "created_at",
+          "updated_at",
+          "scanned_at",
+          "scan_error"
+        ]
+      },
+      "LicenseBlockedError": {
+        "type": "object",
+        "description": "Upload rejected by a license policy with action `block`.",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "LICENSE_BLOCKED"
+            ]
+          },
+          "licenses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The package's detected licenses."
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LicensePolicyViolation"
+            }
+          }
+        },
+        "required": [
+          "error",
+          "code",
+          "licenses",
+          "policies"
+        ]
+      },
+      "LicensePolicyUnavailableError": {
+        "type": "object",
+        "description": "The license policies could not be read; the upload failed closed.",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "LICENSE_POLICY_UNAVAILABLE"
+            ]
+          },
+          "licenses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "policies": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LicensePolicyViolation"
+            }
+          }
+        },
+        "required": [
+          "error",
+          "code",
+          "licenses",
+          "policies"
+        ]
+      },
+      "LicenseScanRunResult": {
+        "type": "object",
+        "description": "Result of POST .../license/scan: the recorded license scan plus the policy violations it triggered.",
+        "required": [
+          "id",
+          "repo_id",
+          "artifact_id",
+          "scan_status",
+          "quarantined",
+          "quarantine_approved",
+          "created_at",
+          "updated_at",
+          "scanned_at",
+          "policy_violations"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "licenses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scan_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "failed"
+            ]
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "quarantined": {
+            "type": "boolean",
+            "description": "Downloads of the artifact answer 403 ARTIFACT_QUARANTINED until an admin approves it."
+          },
+          "quarantine_approved": {
+            "type": "boolean",
+            "description": "An admin approved the artifact for its current licenses; cleared when a re-scan finds different licenses."
+          },
+          "policy_violations": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/LicensePolicyViolation"
+            },
+            "description": "Always an array (empty when no policy is violated)."
           }
         }
       }
@@ -2252,7 +2650,7 @@
     "/api/v1/repositories/{name}/license/scan": {
       "post": {
         "summary": "Scan licenses",
-        "description": "Trigger a license scan for a repository",
+        "description": "Detect the licenses of an artifact from its stored license properties, evaluate the license policies and record the result. A violated policy with action `block` quarantines the artifact: downloads answer 403 `ARTIFACT_QUARANTINED` until an admin approves it.",
         "tags": [
           "Repositories",
           "Scanning"
@@ -2268,8 +2666,42 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "License scan started"
+          "200": {
+            "description": "License scan result with the policy violations",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseScanRunResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "artifact_id"
+                ],
+                "properties": {
+                  "artifact_id": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
           }
         }
       }
@@ -2303,7 +2735,7 @@
                     "scans": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/ScanResult"
+                        "$ref": "#/components/schemas/LicenseScanResult"
                       }
                     }
                   }
@@ -2343,10 +2775,85 @@
         ],
         "responses": {
           "200": {
-            "description": "License scan details"
+            "description": "License scan details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseScanResult"
+                }
+              }
+            }
           },
           "404": {
             "description": "Scan not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/license/scans/{id}/quarantine": {
+      "post": {
+        "summary": "Quarantine or approve license scan artifact",
+        "description": "Quarantine (`quarantined: true`) or approve (`quarantined: false`) the artifact of a license scan (admin only). An artifact quarantined by a blocking license policy stays quarantined, also across re-scans of the same licenses, until it is approved here.",
+        "tags": [
+          "Repositories",
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "quarantined"
+                ],
+                "properties": {
+                  "quarantined": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated license scan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/LicenseScanResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository or scan not found"
           }
         }
       }
@@ -2697,7 +3204,7 @@
     "/api/v1/repositories/{name}/vuln/scan": {
       "post": {
         "summary": "Scan vulnerabilities",
-        "description": "Trigger a vulnerability scan for a repository",
+        "description": "Start a vulnerability scan for an artifact. The scan runs in the background: poll the scan until `scan_status` is `completed`, `partial` or `failed`. A scanner that cannot run (not installed, timeout, non-zero exit, unreadable output, upstream error, unsupported ecosystem) is recorded as failed instead of `completed` with zero findings.",
         "tags": [
           "Repositories",
           "Scanning"
@@ -2713,8 +3220,34 @@
           }
         ],
         "responses": {
-          "201": {
-            "description": "Vulnerability scan started"
+          "200": {
+            "description": "Vulnerability scan started (`scan_status` is `scanning`)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnScanResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body or unknown scanner"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/VulnScanRequest"
+              }
+            }
           }
         }
       }
@@ -2748,7 +3281,7 @@
                     "scans": {
                       "type": "array",
                       "items": {
-                        "$ref": "#/components/schemas/ScanResult"
+                        "$ref": "#/components/schemas/VulnScanResult"
                       }
                     }
                   }
@@ -2788,7 +3321,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Vulnerability scan details"
+            "description": "Vulnerability scan details",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnScanResult"
+                }
+              }
+            }
           },
           "404": {
             "description": "Scan not found"
@@ -2834,7 +3374,7 @@
     "/api/v1/repositories/{name}/vuln/scans/{id}/quarantine": {
       "post": {
         "summary": "Quarantine vulnerability scan artifact",
-        "description": "Quarantine an artifact found in a vulnerability scan",
+        "description": "Quarantine (`quarantined: true`) or release (`quarantined: false`) the artifact of a vulnerability scan (admin only).",
         "tags": [
           "Repositories",
           "Scanning"
@@ -2860,7 +3400,41 @@
         ],
         "responses": {
           "200": {
-            "description": "Artifact quarantined"
+            "description": "Updated vulnerability scan",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnScanResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid body"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository or scan not found"
+          }
+        },
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "quarantined"
+                ],
+                "properties": {
+                  "quarantined": {
+                    "type": "boolean"
+                  }
+                }
+              }
+            }
           }
         }
       }

@@ -4215,13 +4215,14 @@ func (p *PostgresDB) CreateLicenseScanResult(ctx context.Context, result *models
 				completed_at = EXCLUDED.completed_at, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions)
-		SELECT job.id, $6, $7 FROM job
+		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions, quarantined, quarantine_approved)
+		SELECT job.id, $6, $7, $8, $9 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
-			licenses = EXCLUDED.licenses, spdx_expressions = EXCLUDED.spdx_expressions
+			licenses = EXCLUDED.licenses, spdx_expressions = EXCLUDED.spdx_expressions,
+			quarantined = EXCLUDED.quarantined, quarantine_approved = EXCLUDED.quarantine_approved
 		RETURNING id`,
 		result.RepositoryID, result.ArtifactID, result.ScanStatus, result.ScanError, scannedAt,
-		result.Licenses, result.SPDXExpressions,
+		nonNilStrings(result.Licenses), nonNilStrings(result.SPDXExpressions), result.Quarantined, result.QuarantineApproved,
 	).Scan(&result.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create license scan result: %w", err)
@@ -4232,33 +4233,20 @@ func (p *PostgresDB) CreateLicenseScanResult(ctx context.Context, result *models
 
 // GetLicenseScanResult gets a license scan result by repo and artifact ID.
 func (p *PostgresDB) GetLicenseScanResult(ctx context.Context, repoID, artifactID string) (*models.LicenseScanResult, error) {
-	result := &models.LicenseScanResult{}
-
-	var scannedAt sql.NullTime
-
-	var errMsg sql.NullString
-
-	err := p.db.QueryRowContext(ctx, `
-		SELECT lr.id, ref.repository_id, ref.artifact_path, lr.licenses, lr.spdx_expressions,
-		       sj.status, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
+	result, err := scanLicenseResult(p.db.QueryRowContext(ctx, `
+		SELECT `+licenseResultColumns+`
 		FROM license_results lr
 		JOIN scan_jobs sj ON sj.id = lr.scan_job_id
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 		WHERE sj.scan_type = 'license' AND ref.repository_id = $1 AND ref.artifact_path = $2`,
 		repoID, artifactID,
-	).Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &result.Licenses, &result.SPDXExpressions,
-		&result.ScanStatus, &errMsg, &scannedAt, &result.CreatedAt, &result.UpdatedAt)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get license scan result: %w", err)
-	}
-
-	result.ScanError = errMsg.String
-	if scannedAt.Valid {
-		result.ScannedAt = &scannedAt.Time
 	}
 
 	return result, nil
@@ -4273,13 +4261,14 @@ func (p *PostgresDB) UpdateLicenseScanResult(ctx context.Context, result *models
 
 	_, err := p.db.ExecContext(ctx, `
 		WITH res AS (
-			UPDATE license_results SET licenses = $1, spdx_expressions = $2
+			UPDATE license_results SET licenses = $1, spdx_expressions = $2, quarantined = $7, quarantine_approved = $8
 			WHERE id = $6
 			RETURNING scan_job_id
 		)
 		UPDATE scan_jobs sj SET status = $3, error_message = NULLIF($4, ''), completed_at = $5, updated_at = now()
 		FROM res WHERE sj.id = res.scan_job_id`,
 		result.Licenses, result.SPDXExpressions, result.ScanStatus, result.ScanError, scannedAt, result.ID,
+		result.Quarantined, result.QuarantineApproved,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update license scan result: %w", err)
@@ -4291,8 +4280,7 @@ func (p *PostgresDB) UpdateLicenseScanResult(ctx context.Context, result *models
 // ListLicenseScanResults lists all license scan results for a repository.
 func (p *PostgresDB) ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error) {
 	rows, err := p.db.QueryContext(ctx, `
-		SELECT lr.id, ref.repository_id, ref.artifact_path, lr.licenses, lr.spdx_expressions,
-		       sj.status, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
+		SELECT `+licenseResultColumns+`
 		FROM license_results lr
 		JOIN scan_jobs sj ON sj.id = lr.scan_job_id
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
@@ -4306,20 +4294,9 @@ func (p *PostgresDB) ListLicenseScanResults(ctx context.Context, repoID string) 
 	var results []*models.LicenseScanResult
 
 	for rows.Next() {
-		result := &models.LicenseScanResult{}
-
-		var scannedAt sql.NullTime
-
-		var errMsg sql.NullString
-
-		if err := rows.Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &result.Licenses, &result.SPDXExpressions,
-			&result.ScanStatus, &errMsg, &scannedAt, &result.CreatedAt, &result.UpdatedAt); err != nil {
+		result, err := scanLicenseResult(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan license scan result: %w", err)
-		}
-
-		result.ScanError = errMsg.String
-		if scannedAt.Valid {
-			result.ScannedAt = &scannedAt.Time
 		}
 
 		results = append(results, result)
@@ -4335,8 +4312,8 @@ func (p *PostgresDB) CreateLicensePolicy(ctx context.Context, policy *models.Lic
 		Name:            policy.Name,
 		Description:     strPtr(policy.Description),
 		Action:          policy.Action,
-		AllowedLicenses: policy.AllowedLicenses,
-		DeniedLicenses:  policy.DeniedLicenses,
+		AllowedLicenses: nonNilStrings(policy.AllowedLicenses),
+		DeniedLicenses:  nonNilStrings(policy.DeniedLicenses),
 		Enabled:         policy.Enabled,
 		CreatedAt:       policy.CreatedAt,
 		UpdatedAt:       policy.UpdatedAt,
@@ -4382,8 +4359,8 @@ func (p *PostgresDB) UpdateLicensePolicy(ctx context.Context, policy *models.Lic
 		Name:            policy.Name,
 		Description:     strPtr(policy.Description),
 		Action:          policy.Action,
-		AllowedLicenses: policy.AllowedLicenses,
-		DeniedLicenses:  policy.DeniedLicenses,
+		AllowedLicenses: nonNilStrings(policy.AllowedLicenses),
+		DeniedLicenses:  nonNilStrings(policy.DeniedLicenses),
 		Enabled:         policy.Enabled,
 		UpdatedAt:       policy.UpdatedAt,
 	})
@@ -4659,18 +4636,19 @@ func (p *PostgresDB) CreateVulnScanResult(ctx context.Context, result *models.Vu
 				completed_at = EXCLUDED.completed_at, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count, quarantined, package_name, package_version, ecosystem)
-		SELECT job.id, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 FROM job
+		INSERT INTO vuln_results (scan_job_id, vulnerabilities, vuln_count, critical_count, high_count, medium_count, low_count, quarantined, package_name, package_version, ecosystem, failed_scanners)
+		SELECT job.id, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			vulnerabilities = EXCLUDED.vulnerabilities, vuln_count = EXCLUDED.vuln_count,
 			critical_count = EXCLUDED.critical_count, high_count = EXCLUDED.high_count,
 			medium_count = EXCLUDED.medium_count, low_count = EXCLUDED.low_count,
 			quarantined = EXCLUDED.quarantined, package_name = EXCLUDED.package_name,
-			package_version = EXCLUDED.package_version, ecosystem = EXCLUDED.ecosystem
+			package_version = EXCLUDED.package_version, ecosystem = EXCLUDED.ecosystem,
+			failed_scanners = EXCLUDED.failed_scanners
 		RETURNING id`,
 		result.RepositoryID, result.ArtifactID, result.Scanner, vulnScanStatusToJob(result.ScanStatus), result.ScanError, scannedAt,
 		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount,
-		result.Quarantined, result.PackageName, result.PackageVersion, result.Ecosystem,
+		result.Quarantined, result.PackageName, result.PackageVersion, result.Ecosystem, nonNilStrings(result.FailedScanners),
 	).Scan(&result.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create vuln scan result: %w", err)
@@ -4685,19 +4663,8 @@ func (p *PostgresDB) CreateVulnScanResult(ctx context.Context, result *models.Vu
 // so this orders by most-recently-created and takes the first row instead
 // of letting QueryRowContext pick an arbitrary one nondeterministically.
 func (p *PostgresDB) GetVulnScanResult(ctx context.Context, repoID, artifactID string) (*models.VulnScanResult, error) {
-	result := &models.VulnScanResult{}
-
-	var (
-		scannedAt sql.NullTime
-		errMsg    sql.NullString
-		vulnsRaw  []byte
-		jobStatus string
-	)
-
-	err := p.db.QueryRowContext(ctx, `
-		SELECT vr.id, ref.repository_id, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
-		       sj.scanner, sj.status, vr.vulnerabilities, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
-		       vr.quarantined, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
+	result, err := scanVulnResult(p.db.QueryRowContext(ctx, `
+		SELECT `+vulnResultColumns+`
 		FROM vuln_results vr
 		JOIN scan_jobs sj ON sj.id = vr.scan_job_id
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
@@ -4705,28 +4672,13 @@ func (p *PostgresDB) GetVulnScanResult(ctx context.Context, repoID, artifactID s
 		ORDER BY sj.created_at DESC
 		LIMIT 1`,
 		repoID, artifactID,
-	).Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &result.PackageName, &result.PackageVersion, &result.Ecosystem,
-		&result.Scanner, &jobStatus, &vulnsRaw, &result.VulnCount, &result.CriticalCount, &result.HighCount, &result.MediumCount, &result.LowCount,
-		&result.Quarantined, &errMsg, &scannedAt, &result.CreatedAt, &result.UpdatedAt)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vuln scan result: %w", err)
-	}
-
-	result.ScanStatus = vulnScanStatusFromJob(jobStatus)
-	result.ScanError = errMsg.String
-
-	if scannedAt.Valid {
-		result.ScannedAt = &scannedAt.Time
-	}
-
-	if len(vulnsRaw) > 0 {
-		if err := json.Unmarshal(vulnsRaw, &result.Vulnerabilities); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal vulnerabilities: %w", err)
-		}
 	}
 
 	return result, nil
@@ -4747,7 +4699,8 @@ func (p *PostgresDB) UpdateVulnScanResult(ctx context.Context, result *models.Vu
 	_, err = p.db.ExecContext(ctx, `
 		WITH res AS (
 			UPDATE vuln_results SET vulnerabilities = $1, vuln_count = $2, critical_count = $3,
-			       high_count = $4, medium_count = $5, low_count = $6, quarantined = $7
+			       high_count = $4, medium_count = $5, low_count = $6, quarantined = $7,
+			       failed_scanners = $13
 			WHERE id = $11
 			RETURNING scan_job_id
 		)
@@ -4755,6 +4708,7 @@ func (p *PostgresDB) UpdateVulnScanResult(ctx context.Context, result *models.Vu
 		FROM res WHERE sj.id = res.scan_job_id`,
 		vulnsJSON, result.VulnCount, result.CriticalCount, result.HighCount, result.MediumCount, result.LowCount, result.Quarantined,
 		result.Scanner, vulnScanStatusToJob(result.ScanStatus), result.ScanError, result.ID, scannedAt,
+		nonNilStrings(result.FailedScanners),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update vuln scan result: %w", err)
@@ -4766,9 +4720,7 @@ func (p *PostgresDB) UpdateVulnScanResult(ctx context.Context, result *models.Vu
 // ListVulnScanResults lists all vulnerability scan results for a repository.
 func (p *PostgresDB) ListVulnScanResults(ctx context.Context, repoID string, vulnerableOnly bool) ([]*models.VulnScanResult, error) {
 	query := `
-		SELECT vr.id, ref.repository_id, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
-		       sj.scanner, sj.status, vr.vulnerabilities, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
-		       vr.quarantined, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
+		SELECT ` + vulnResultColumns + `
 		FROM vuln_results vr
 		JOIN scan_jobs sj ON sj.id = vr.scan_job_id
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
@@ -4788,32 +4740,9 @@ func (p *PostgresDB) ListVulnScanResults(ctx context.Context, repoID string, vul
 	results := make([]*models.VulnScanResult, 0)
 
 	for rows.Next() {
-		result := &models.VulnScanResult{}
-
-		var (
-			scannedAt sql.NullTime
-			errMsg    sql.NullString
-			vulnsRaw  []byte
-			jobStatus string
-		)
-
-		if err := rows.Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &result.PackageName, &result.PackageVersion, &result.Ecosystem,
-			&result.Scanner, &jobStatus, &vulnsRaw, &result.VulnCount, &result.CriticalCount, &result.HighCount, &result.MediumCount, &result.LowCount,
-			&result.Quarantined, &errMsg, &scannedAt, &result.CreatedAt, &result.UpdatedAt); err != nil {
+		result, err := scanVulnResult(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan vuln scan result: %w", err)
-		}
-
-		result.ScanStatus = vulnScanStatusFromJob(jobStatus)
-		result.ScanError = errMsg.String
-
-		if scannedAt.Valid {
-			result.ScannedAt = &scannedAt.Time
-		}
-
-		if len(vulnsRaw) > 0 {
-			if err := json.Unmarshal(vulnsRaw, &result.Vulnerabilities); err != nil {
-				return nil, fmt.Errorf("failed to unmarshal vulnerabilities: %w", err)
-			}
 		}
 
 		results = append(results, result)

@@ -25,6 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -350,6 +351,10 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	subjectDigest := ""
 	if meta.Subject != nil {
 		subjectDigest = meta.Subject.Digest
+	}
+
+	if licensepolicy.Enforce(w, r, h.db, h.log, repo.ID, h.declaredLicenses(r.Context(), repo.ID, meta)...) {
+		return
 	}
 
 	manifest := &models.DockerManifest{

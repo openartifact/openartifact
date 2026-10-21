@@ -382,6 +382,12 @@ func TestFullPipelineFromBinary(t *testing.T) {
 }
 
 func buildMinimalRPM() []byte {
+	return buildMinimalRPMWithLicense("")
+}
+
+// buildMinimalRPMWithLicense is buildMinimalRPM with the License tag (1014)
+// set to license; an empty license leaves the tag out.
+func buildMinimalRPMWithLicense(license string) []byte {
 	var buf bytes.Buffer
 
 	lead := make([]byte, 96)
@@ -445,6 +451,7 @@ func buildMinimalRPM() []byte {
 	offs[1005] = off
 
 	pkgDataBuf.Write(pkgDesc)
+	off += int32(len(pkgDesc))
 
 	pkgEntries := []pkgrpm.TagEntry{
 		{Tag: 1000, Type: 6, Offset: offs[1000], Count: 1},
@@ -453,6 +460,12 @@ func buildMinimalRPM() []byte {
 		{Tag: 1022, Type: 6, Offset: offs[1022], Count: 1},
 		{Tag: 1004, Type: 6, Offset: offs[1004], Count: 1},
 		{Tag: 1005, Type: 6, Offset: offs[1005], Count: 1},
+	}
+
+	if license != "" {
+		pkgDataBuf.WriteString(license + "\x00")
+
+		pkgEntries = append(pkgEntries, pkgrpm.TagEntry{Tag: 1014, Type: 6, Offset: off, Count: 1})
 	}
 
 	pkgHeader := buildTestHeaderBytes(pkgEntries, pkgDataBuf.Bytes())

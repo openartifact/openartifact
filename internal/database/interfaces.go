@@ -503,6 +503,8 @@ type Database interface {
 	DeleteVulnScanResult(ctx context.Context, repoID, id string) error
 	SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error
 	GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error)
+	// SetLicenseScanQuarantine quarantines (true) or approves (false) the artifact of one license scan result.
+	SetLicenseScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error
 	ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error)
 	GetSBOMReportByID(ctx context.Context, repoID, id string) (*models.SBOMReport, error)
 	// DeleteSBOMReportInRepo deletes the report and returns the sha256 of its blob ("" if none).

@@ -25,8 +25,8 @@ type VulnScanResult struct {
 	PackageName     string
 	PackageVersion  string
 	Ecosystem       string
-	Scanner         string // "osv", "trivy", "grype"
-	ScanStatus      string // "pending", "scanning", "completed", "failed"
+	Scanner         string // "osv", "trivy", "grype", or several joined by "," (sorted)
+	ScanStatus      string // "pending", "scanning", "completed", "partial", "failed"
 	Vulnerabilities []Vulnerability
 	VulnCount       int
 	CriticalCount   int
@@ -34,7 +34,8 @@ type VulnScanResult struct {
 	MediumCount     int
 	LowCount        int
 	Quarantined     bool
-	ScanError       string
+	ScanError       string // sanitized: never contains raw scanner or upstream error text
+	FailedScanners  []string
 	ScannedAt       *time.Time
 	CreatedAt       time.Time
 	UpdatedAt       time.Time

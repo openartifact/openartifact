@@ -18,9 +18,12 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -107,7 +110,20 @@ func (d *debAPIDB) DeleteComponent(_ context.Context, id string) error {
 func buildTestDeb(t *testing.T) []byte {
 	t.Helper()
 
-	ctrl := "Package: hello\nVersion: 1.0\nArchitecture: amd64\nMaintainer: A <a@b.c>\nInstalled-Size: 10\nDescription: hi\n"
+	return buildTestDebWithLicense(t, "")
+}
+
+// buildTestDebWithLicense builds a deb whose control stanza carries a
+// `License:` field (left out when license is empty).
+func buildTestDebWithLicense(t *testing.T, license string) []byte {
+	t.Helper()
+
+	ctrl := "Package: hello\nVersion: 1.0\nArchitecture: amd64\nMaintainer: A <a@b.c>\nInstalled-Size: 10\n"
+	if license != "" {
+		ctrl += "License: " + license + "\n"
+	}
+
+	ctrl += "Description: hi\n"
 
 	var tarBuf bytes.Buffer
 
@@ -254,5 +270,77 @@ func TestDebUploadImportCreatedAt(t *testing.T) {
 				t.Errorf("response id = %q (err %v), body %s", resp.Data.ID, err, w.Body.String())
 			}
 		})
+	}
+}
+
+func uploadDebWithLicense(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, license string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	h := NewDebUploadHandler(formattest.NewLogger(t), db, bs, nil)
+	h.SetPublisher(pub)
+
+	router := chi.NewRouter()
+	h.Register(router)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("file", "hello.deb")
+	_, _ = fw.Write(buildTestDebWithLicense(t, license))
+	_ = mw.Close()
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/repositories/myrepo/debs", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	w := httptest.NewRecorder()
+	router.ServeHTTP(w, req)
+
+	return w
+}
+
+func TestDebUploadLicensePolicy(t *testing.T) {
+	for _, c := range policytest.Cases("GPL-3.0") {
+		t.Run(c.Name, func(t *testing.T) {
+			db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
+			db.Repo.Format = "deb"
+
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := uploadDebWithLicense(t, c.DB(db), bs, pub, "GPL-3.0")
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+
+			if c.Stopped() {
+				if len(db.pkgs) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 || db.reserved != 0 {
+					t.Errorf("rejected upload stored data: pkgs=%d blobs=%d events=%d reserved=%d", len(db.pkgs), len(bs.Blobs), len(pub.Events()), db.reserved)
+				}
+
+				return
+			}
+
+			if w.Code != http.StatusOK {
+				t.Fatalf("admitted upload status = %d: %s", w.Code, w.Body.String())
+			}
+
+			if len(db.pkgs) != 1 || len(bs.Blobs) != 1 || len(pub.Events()) != 1 {
+				t.Errorf("admitted upload not stored: pkgs=%d blobs=%d events=%d", len(db.pkgs), len(bs.Blobs), len(pub.Events()))
+			}
+		})
+	}
+}
+
+func TestDebUploadNoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
+	db := &debAPIDB{DB: formattest.NewDB(), pkgs: map[string]*models.Component{}}
+	db.Repo.Format = "deb"
+
+	c := policytest.Case{Policies: []*models.LicensePolicy{policytest.Policy(licensepolicy.ActionBlock, []string{"MIT"}, nil)}}
+
+	w := uploadDebWithLicense(t, c.DB(db), formattest.NewBlobStore(), &formattest.Publisher{}, "")
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d: %s", w.Code, w.Body.String())
+	}
+
+	if len(db.pkgs) != 1 {
+		t.Errorf("unlicensed package not stored")
 	}
 }

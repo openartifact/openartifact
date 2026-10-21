@@ -431,6 +431,10 @@ type LicenseResult struct {
 	ScanJobID       string   `db:"scan_job_id" json:"scan_job_id"`
 	Licenses        []string `db:"licenses" json:"licenses"`
 	SpdxExpressions []string `db:"spdx_expressions" json:"spdx_expressions"`
+	// Downloads of the artifact are refused (ARTIFACT_QUARANTINED) while true.
+	Quarantined bool `db:"quarantined" json:"quarantined"`
+	// An admin approved the artifact for the recorded licenses; cleared when they change.
+	QuarantineApproved bool `db:"quarantine_approved" json:"quarantine_approved"`
 }
 
 type MavenArtifact struct {
@@ -891,6 +895,8 @@ type VulnResult struct {
 	PackageName     *string         `db:"package_name" json:"package_name"`
 	PackageVersion  *string         `db:"package_version" json:"package_version"`
 	Ecosystem       *string         `db:"ecosystem" json:"ecosystem"`
+	// Scanners that did not produce a result (status failed or partial).
+	FailedScanners []string `db:"failed_scanners" json:"failed_scanners"`
 }
 
 // Webhook subscriptions for artifact lifecycle events

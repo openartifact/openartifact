@@ -3,7 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, spyOn, afterEach } from 'bun:test'
-import { startVulnScan, triggerLicenseScan, triggerSecretScan, setVulnQuarantine, VULN_ECOSYSTEMS } from '../security'
+import {
+  startVulnScan,
+  triggerLicenseScan,
+  triggerSecretScan,
+  setVulnQuarantine,
+  setLicenseQuarantine,
+  VULN_ECOSYSTEMS,
+} from '../security'
 import { triggerAIAnalysis } from '../ai'
 
 const json = (body: unknown): Response =>
@@ -40,11 +47,45 @@ describe('security api', () => {
       package_name: 'left-pad',
       package_version: '1.0.0',
       ecosystem: 'npm',
-      scanner: 'osv',
+      scanners: ['osv'],
     })
-    expect(lastBody()).toMatchObject({ artifact_id: 'art-1', ecosystem: 'npm', scanner: 'osv' })
+    expect(lastBody()).toEqual({
+      artifact_id: 'art-1',
+      package_name: 'left-pad',
+      package_version: '1.0.0',
+      ecosystem: 'npm',
+      scanners: ['osv'],
+    })
+    expect(lastUrl()).toBe('/api/v1/repositories/r/vuln/scan')
     expect(VULN_ECOSYSTEMS).toContain('npm')
     expect(VULN_ECOSYSTEMS).not.toContain('Go')
+  })
+
+  it('vuln scans send every selected scanner in the scanners array', async () => {
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ id: 's' }))
+    await startVulnScan('r', {
+      artifact_id: 'art-1',
+      package_name: 'left-pad',
+      package_version: '1.0.0',
+      ecosystem: 'npm',
+      scanners: ['osv', 'trivy', 'grype'],
+    })
+    expect(lastBody()).toMatchObject({ scanners: ['osv', 'trivy', 'grype'] })
+    expect(lastBody()).not.toHaveProperty('scanner')
+  })
+
+  it('license quarantine approves with quarantined:false and quarantines with true', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () =>
+      json({ id: 's1', quarantined: false, quarantine_approved: true }),
+    )
+    const approved = await setLicenseQuarantine('my repo', 's/1', false)
+    expect(lastUrl()).toBe('/api/v1/repositories/my%20repo/license/scans/s%2F1/quarantine')
+    expect((spy.mock.calls.at(-1)![1] as RequestInit).method).toBe('POST')
+    expect(lastBody()).toEqual({ quarantined: false })
+    expect(approved.quarantine_approved).toBe(true)
+
+    await setLicenseQuarantine('my repo', 's1', true)
+    expect(lastBody()).toEqual({ quarantined: true })
   })
 
   it('quarantine toggles post the new state', async () => {

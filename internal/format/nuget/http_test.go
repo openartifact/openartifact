@@ -9,11 +9,14 @@ import (
 	"context"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -110,5 +113,97 @@ func TestDownloadQuarantine(t *testing.T) {
 
 	if c := get(); c != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", c)
+	}
+}
+
+func nuspecWithLicense(licenseXML string) string {
+	return `<?xml version="1.0" encoding="utf-8"?>
+<package>
+  <metadata>
+    <id>Newtonsoft.Json</id>
+    <version>13.0.3</version>
+    <authors>James Newton-King</authors>
+    <description>Json.NET</description>
+    ` + licenseXML + `
+  </metadata>
+</package>`
+}
+
+func pushNuspec(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, nuspec string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
+	h.SetPublisher(pub)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	fw, _ := mw.CreateFormFile("package", "x.nupkg")
+	_, _ = fw.Write(createNupkg(t, "Newtonsoft.Json.nuspec", nuspec))
+	_ = mw.Close()
+
+	req := formattest.Request(http.MethodPut, "/repos/myrepo/v3/package", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	return formattest.Do(register(h), req)
+}
+
+func assertNupkgStored(t *testing.T, c policytest.Case, status int, db *nugetDB, bs *formattest.BlobStore, pub *formattest.Publisher) {
+	t.Helper()
+
+	if c.Stopped() {
+		if db.pkg != nil || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+			t.Fatalf("rejected upload stored something: pkg=%v blobs=%d events=%d", db.pkg, len(bs.Blobs), len(pub.Events()))
+		}
+
+		return
+	}
+
+	if status != http.StatusCreated {
+		t.Fatalf("status = %d, want 201", status)
+	}
+
+	if db.pkg == nil || len(bs.Blobs) != 1 || len(pub.Events()) != 1 {
+		t.Fatalf("admitted upload not stored: pkg=%v blobs=%d events=%d", db.pkg, len(bs.Blobs), len(pub.Events()))
+	}
+}
+
+func TestPushLicensePolicy(t *testing.T) {
+	nuspec := nuspecWithLicense(`<license type="expression">GPL-3.0</license>`)
+
+	for _, c := range policytest.Cases("GPL-3.0") {
+		t.Run(c.Name, func(t *testing.T) {
+			inner := &nugetDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := pushNuspec(t, c.DB(inner), bs, pub, nuspec)
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+			assertNupkgStored(t, c, w.Code, inner, bs, pub)
+		})
+	}
+}
+
+func TestPushLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
+	nuspecs := map[string]string{
+		"no license":      nuspecWithLicense(""),
+		"licenseUrl only": nuspecWithLicense(`<licenseUrl>https://www.gnu.org/licenses/gpl-3.0.html</licenseUrl>`),
+		"license file":    nuspecWithLicense(`<license type="file">LICENSE.txt</license>`),
+	}
+
+	for name, nuspec := range nuspecs {
+		t.Run(name, func(t *testing.T) {
+			c := policytest.Case{
+				Want:     policytest.Admitted,
+				Policies: []*models.LicensePolicy{policytest.Policy("block", []string{"MIT"}, nil)},
+			}
+			inner := &nugetDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := pushNuspec(t, c.DB(inner), bs, pub, nuspec)
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+			assertNupkgStored(t, c, w.Code, inner, bs, pub)
+		})
 	}
 }

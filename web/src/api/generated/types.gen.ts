@@ -390,6 +390,9 @@ export type Quota = {
 
 export type ScanResult = {
     id?: string;
+    /**
+     * Scan status. Vulnerability scans use pending|scanning|completed|partial|failed (see VulnScanResult.scan_status).
+     */
     status?: string;
     created_at?: string;
 };
@@ -401,6 +404,144 @@ export type LicensePolicy = {
     denied?: Array<string>;
     created_at?: string;
     updated_at?: string;
+};
+
+/**
+ * Result of one vulnerability scan of an artifact.
+ */
+export type VulnScanResult = {
+    id: string;
+    repo_id: string;
+    artifact_id: string;
+    package_name: string;
+    package_version: string;
+    ecosystem: string;
+    /**
+     * One scanner name (osv, trivy or grype) or a sorted comma-joined list such as `osv,trivy` when several scanners were requested.
+     */
+    scanner: string;
+    /**
+     * `completed`: every requested scanner ran. `partial`: several scanners were requested and some failed (findings of the others are kept; see `failed_scanners`). `failed`: every scanner failed - the zero counts then mean `not scanned`, not `no vulnerabilities`.
+     */
+    scan_status: 'pending' | 'scanning' | 'completed' | 'partial' | 'failed';
+    vulnerabilities?: Array<{
+        [key: string]: unknown;
+    }>;
+    vuln_count: number;
+    critical_count: number;
+    high_count: number;
+    medium_count: number;
+    low_count: number;
+    quarantined: boolean;
+    created_at: string;
+    updated_at: string;
+    scanned_at: string | null;
+    /**
+     * Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server; osv: scan timed out`. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`.
+     */
+    scan_error: string | null;
+    /**
+     * Scanners that produced no result. Empty unless `scan_status` is `partial` or `failed`.
+     */
+    failed_scanners: Array<'osv' | 'trivy' | 'grype'>;
+};
+
+export type VulnScanRequest = {
+    artifact_id: string;
+    package_name: string;
+    package_version: string;
+    ecosystem: string;
+    /**
+     * Single scanner. Still accepted; merged with `scanners`.
+     */
+    scanner?: 'osv' | 'trivy' | 'grype';
+    /**
+     * Scanners to run. Merged with `scanner`; de-duplicated and sorted. Defaults to `osv` when neither is given.
+     */
+    scanners?: Array<'osv' | 'trivy' | 'grype'>;
+};
+
+export type LicensePolicyViolation = {
+    policy_id?: string;
+    policy_name?: string;
+    action?: 'allow' | 'warn' | 'block';
+    /**
+     * The violated rule, naming the offending license.
+     */
+    violation?: string;
+};
+
+/**
+ * Result of one license scan of an artifact.
+ */
+export type LicenseScanResult = {
+    id: string;
+    repo_id: string;
+    artifact_id: string;
+    licenses?: Array<string>;
+    spdx_expressions?: Array<string>;
+    scan_status: 'pending' | 'completed' | 'failed';
+    scan_error: string | null;
+    scanned_at: string | null;
+    created_at: string;
+    updated_at: string;
+    /**
+     * Downloads of the artifact answer 403 ARTIFACT_QUARANTINED until an admin approves it.
+     */
+    quarantined: boolean;
+    /**
+     * An admin approved the artifact for its current licenses; cleared when a re-scan finds different licenses.
+     */
+    quarantine_approved: boolean;
+};
+
+/**
+ * Upload rejected by a license policy with action `block`.
+ */
+export type LicenseBlockedError = {
+    error: string;
+    code: 'LICENSE_BLOCKED';
+    /**
+     * The package's detected licenses.
+     */
+    licenses: Array<string>;
+    policies: Array<LicensePolicyViolation>;
+};
+
+/**
+ * The license policies could not be read; the upload failed closed.
+ */
+export type LicensePolicyUnavailableError = {
+    error: string;
+    code: 'LICENSE_POLICY_UNAVAILABLE';
+    licenses: Array<string>;
+    policies: Array<LicensePolicyViolation>;
+};
+
+/**
+ * Result of POST .../license/scan: the recorded license scan plus the policy violations it triggered.
+ */
+export type LicenseScanRunResult = {
+    id: string;
+    repo_id: string;
+    artifact_id: string;
+    licenses?: Array<string>;
+    scan_status: 'pending' | 'completed' | 'failed';
+    scanned_at: string | null;
+    created_at: string;
+    updated_at: string;
+    /**
+     * Downloads of the artifact answer 403 ARTIFACT_QUARANTINED until an admin approves it.
+     */
+    quarantined: boolean;
+    /**
+     * An admin approved the artifact for its current licenses; cleared when a re-scan finds different licenses.
+     */
+    quarantine_approved: boolean;
+    /**
+     * Always an array (empty when no policy is violated).
+     */
+    policy_violations: Array<LicensePolicyViolation>;
 };
 
 export type GetHealthData = {
@@ -1077,7 +1218,9 @@ export type GetApiV1RepositoriesByNameSbomByIdDownloadResponses = {
 export type GetApiV1RepositoriesByNameSbomByIdDownloadResponse = GetApiV1RepositoriesByNameSbomByIdDownloadResponses[keyof GetApiV1RepositoriesByNameSbomByIdDownloadResponses];
 
 export type PostApiV1RepositoriesByNameLicenseScanData = {
-    body?: never;
+    body: {
+        artifact_id: string;
+    };
     path: {
         name: string;
     };
@@ -1085,12 +1228,29 @@ export type PostApiV1RepositoriesByNameLicenseScanData = {
     url: '/api/v1/repositories/{name}/license/scan';
 };
 
+export type PostApiV1RepositoriesByNameLicenseScanErrors = {
+    /**
+     * Invalid body
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
 export type PostApiV1RepositoriesByNameLicenseScanResponses = {
     /**
-     * License scan started
+     * License scan result with the policy violations
      */
-    201: unknown;
+    200: LicenseScanRunResult;
 };
+
+export type PostApiV1RepositoriesByNameLicenseScanResponse = PostApiV1RepositoriesByNameLicenseScanResponses[keyof PostApiV1RepositoriesByNameLicenseScanResponses];
 
 export type GetApiV1RepositoriesByNameLicenseScansData = {
     body?: never;
@@ -1106,7 +1266,7 @@ export type GetApiV1RepositoriesByNameLicenseScansResponses = {
      * List of license scans
      */
     200: {
-        scans?: Array<ScanResult>;
+        scans?: Array<LicenseScanResult>;
     };
 };
 
@@ -1133,8 +1293,46 @@ export type GetApiV1RepositoriesByNameLicenseScansByIdResponses = {
     /**
      * License scan details
      */
-    200: unknown;
+    200: LicenseScanResult;
 };
+
+export type GetApiV1RepositoriesByNameLicenseScansByIdResponse = GetApiV1RepositoriesByNameLicenseScansByIdResponses[keyof GetApiV1RepositoriesByNameLicenseScansByIdResponses];
+
+export type PostApiV1RepositoriesByNameLicenseScansByIdQuarantineData = {
+    body: {
+        quarantined: boolean;
+    };
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/license/scans/{id}/quarantine';
+};
+
+export type PostApiV1RepositoriesByNameLicenseScansByIdQuarantineErrors = {
+    /**
+     * Invalid body
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository or scan not found
+     */
+    404: unknown;
+};
+
+export type PostApiV1RepositoriesByNameLicenseScansByIdQuarantineResponses = {
+    /**
+     * Updated license scan
+     */
+    200: LicenseScanResult;
+};
+
+export type PostApiV1RepositoriesByNameLicenseScansByIdQuarantineResponse = PostApiV1RepositoriesByNameLicenseScansByIdQuarantineResponses[keyof PostApiV1RepositoriesByNameLicenseScansByIdQuarantineResponses];
 
 export type GetApiV1RepositoriesByNameLicensePoliciesData = {
     body?: never;
@@ -1336,7 +1534,7 @@ export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineResponses = {
 };
 
 export type PostApiV1RepositoriesByNameVulnScanData = {
-    body?: never;
+    body: VulnScanRequest;
     path: {
         name: string;
     };
@@ -1344,12 +1542,29 @@ export type PostApiV1RepositoriesByNameVulnScanData = {
     url: '/api/v1/repositories/{name}/vuln/scan';
 };
 
+export type PostApiV1RepositoriesByNameVulnScanErrors = {
+    /**
+     * Invalid body or unknown scanner
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
 export type PostApiV1RepositoriesByNameVulnScanResponses = {
     /**
-     * Vulnerability scan started
+     * Vulnerability scan started (`scan_status` is `scanning`)
      */
-    201: unknown;
+    200: VulnScanResult;
 };
+
+export type PostApiV1RepositoriesByNameVulnScanResponse = PostApiV1RepositoriesByNameVulnScanResponses[keyof PostApiV1RepositoriesByNameVulnScanResponses];
 
 export type GetApiV1RepositoriesByNameVulnScansData = {
     body?: never;
@@ -1365,7 +1580,7 @@ export type GetApiV1RepositoriesByNameVulnScansResponses = {
      * List of vulnerability scans
      */
     200: {
-        scans?: Array<ScanResult>;
+        scans?: Array<VulnScanResult>;
     };
 };
 
@@ -1418,11 +1633,15 @@ export type GetApiV1RepositoriesByNameVulnScansByIdResponses = {
     /**
      * Vulnerability scan details
      */
-    200: unknown;
+    200: VulnScanResult;
 };
 
+export type GetApiV1RepositoriesByNameVulnScansByIdResponse = GetApiV1RepositoriesByNameVulnScansByIdResponses[keyof GetApiV1RepositoriesByNameVulnScansByIdResponses];
+
 export type PostApiV1RepositoriesByNameVulnScansByIdQuarantineData = {
-    body?: never;
+    body: {
+        quarantined: boolean;
+    };
     path: {
         name: string;
         id: string;
@@ -1431,12 +1650,29 @@ export type PostApiV1RepositoriesByNameVulnScansByIdQuarantineData = {
     url: '/api/v1/repositories/{name}/vuln/scans/{id}/quarantine';
 };
 
+export type PostApiV1RepositoriesByNameVulnScansByIdQuarantineErrors = {
+    /**
+     * Invalid body
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository or scan not found
+     */
+    404: unknown;
+};
+
 export type PostApiV1RepositoriesByNameVulnScansByIdQuarantineResponses = {
     /**
-     * Artifact quarantined
+     * Updated vulnerability scan
      */
-    200: unknown;
+    200: VulnScanResult;
 };
+
+export type PostApiV1RepositoriesByNameVulnScansByIdQuarantineResponse = PostApiV1RepositoriesByNameVulnScansByIdQuarantineResponses[keyof PostApiV1RepositoriesByNameVulnScansByIdQuarantineResponses];
 
 export type DeleteApiV1RepositoriesByNameQuotaData = {
     body?: never;

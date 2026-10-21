@@ -84,6 +84,8 @@ Handler errors share one shape; `details` is only present when a handler adds it
 | `rate_limited`, `too_many_scans` | 429 | throttled |
 | `not_implemented` | 501 | endpoint exists but the feature is not available (currently the `/admin/gpg/keys` import, generate and delete endpoints) |
 | `internal_error` | 500 | server error; the cause is logged, never returned |
+| `LICENSE_BLOCKED` | 403 | a package upload was rejected by a [license policy](../security/scanning.md#blocking-licenses) with action `block`; the body adds `licenses` and `policies` |
+| `LICENSE_POLICY_UNAVAILABLE` | 500 | the license policies could not be read, so the upload was refused |
 | `upstream_error` | 502 | an upstream (LLM, IdP, proxy) failed |
 
 SSO endpoints add their own codes (`oidc_*`, `saml_*`, `state_mismatch`, ...). Errors raised before a handler runs use simpler bodies: `401 {"error":"unauthorized"}`, `403 {"error":"forbidden","action":"...","path":"..."}`, `403 {"error":"csrf_protection","message":"..."}`, `400 {"error":"invalid_path"}`. Clients should key on the HTTP status first and on `code` when present.

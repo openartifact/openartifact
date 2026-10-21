@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -164,11 +165,13 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	result, err := h.uploadPipeline(r, file, repo)
+	result, err := h.uploadPipeline(w, r, file, repo)
 	if err != nil {
 		uploadResult = "error"
 
 		switch {
+		case errors.Is(err, errResponseWritten):
+			// licensepolicy.Enforce already answered.
 		case isInvalidRPMError(err):
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid rpm package: "+err.Error())
 		case errors.Is(err, quota.ErrExceeded):
@@ -442,7 +445,10 @@ func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repo
 	return nil, err
 }
 
-func (h *RPMUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repo *models.Repository) (*formatrpm.UploadResult, error) {
+// errResponseWritten means a policy check already wrote the HTTP response.
+var errResponseWritten = errors.New("response already written")
+
+func (h *RPMUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request, file io.Reader, repo *models.Repository) (*formatrpm.UploadResult, error) {
 	ctx := r.Context()
 
 	if err := h.ensureRPMRepo(ctx, repo.ID); err != nil {
@@ -478,6 +484,10 @@ func (h *RPMUploadHandler) uploadPipeline(r *http.Request, file io.Reader, repo 
 
 	if dup {
 		return &formatrpm.UploadResult{Duplicate: true}, nil
+	}
+
+	if licensepolicy.Enforce(w, r, h.db, h.log, repo.ID, pkg.License) {
+		return nil, errResponseWritten
 	}
 
 	extra, err := pkg.MarshalExtra()

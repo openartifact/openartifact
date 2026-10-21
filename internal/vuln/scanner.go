@@ -105,8 +105,7 @@ func (s *OSVScanner) Scan(ctx context.Context, packageName, version, ecosystem s
 	// Map ecosystem to OSV format
 	osvEcosystem := mapEcosystem(ecosystem)
 	if osvEcosystem == "" {
-		s.log.Warnw("unknown ecosystem, skipping scan", "ecosystem", ecosystem)
-		return []models.Vulnerability{}, nil
+		return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, ecosystem))
 	}
 
 	// Build request
@@ -118,44 +117,38 @@ func (s *OSVScanner) Scan(ctx context.Context, packageName, version, ecosystem s
 
 	reqBody, err := json.Marshal(req)
 	if err != nil {
-		return nil, fmt.Errorf("failed to marshal OSV request: %w", err)
+		return nil, newScanError(s.Name(), FailureInternal, fmt.Errorf("failed to marshal OSV request: %w", err))
 	}
 
 	// Make HTTP request
 	httpReq, err := http.NewRequestWithContext(ctx, http.MethodPost, s.osvBaseURL+"/query", bytes.NewReader(reqBody))
 	if err != nil {
-		return nil, fmt.Errorf("failed to create OSV request: %w", err)
+		return nil, newScanError(s.Name(), FailureInternal, fmt.Errorf("failed to create OSV request: %w", err))
 	}
 
 	httpReq.Header.Set("Content-Type", "application/json")
 
 	resp, err := s.httpClient.Do(httpReq)
 	if err != nil {
-		return nil, fmt.Errorf("OSV API request failed: %w", err)
+		return nil, s.requestFailure(ctx, fmt.Errorf("OSV API request failed: %w", err))
 	}
 	defer func() { _ = resp.Body.Close() }()
 
 	// Read response
 	body, err := io.ReadAll(io.LimitReader(resp.Body, 8<<20))
 	if err != nil {
-		return nil, fmt.Errorf("failed to read OSV response: %w", err)
+		return nil, s.requestFailure(ctx, fmt.Errorf("failed to read OSV response: %w", err))
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		s.log.Warnw("OSV API returned non-200 status",
-			"status", resp.StatusCode,
-			"package", packageName,
-			"version", version,
-			"ecosystem", osvEcosystem,
-		)
-
-		return []models.Vulnerability{}, nil
+		return nil, newScanError(s.Name(), FailureUpstream, fmt.Errorf( //nolint:err113 // dynamic error with runtime context
+			"OSV API returned status %d for %s %s@%s", resp.StatusCode, osvEcosystem, packageName, version))
 	}
 
 	// Parse response
 	var osvResp osvQueryResponse
 	if err := json.Unmarshal(body, &osvResp); err != nil {
-		return nil, fmt.Errorf("failed to parse OSV response: %w", err)
+		return nil, newScanError(s.Name(), FailureInvalidOutput, fmt.Errorf("failed to parse OSV response: %w", err))
 	}
 
 	// Convert OSV vulnerabilities to our format
@@ -179,6 +172,16 @@ func (s *OSVScanner) Scan(ctx context.Context, packageName, version, ecosystem s
 	}
 
 	return vulns, nil
+}
+
+// requestFailure classifies a transport error: an expired scan context is a
+// timeout or cancellation, any other failure means OSV was unreachable.
+func (s *OSVScanner) requestFailure(ctx context.Context, err error) *ScanError {
+	if ctx.Err() != nil {
+		return ctxFailure(s.Name(), ctx.Err())
+	}
+
+	return newScanError(s.Name(), FailureUpstream, err)
 }
 
 // TrivyScanner scans vulnerabilities using the Trivy CLI.
@@ -216,25 +219,21 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 	// Create temp directory with a manifest file
 	tmpDir, err := os.MkdirTemp("", "trivy-scan-*")
 	if err != nil {
-		return nil, fmt.Errorf("failed to create temp dir: %w", err)
+		return nil, newScanError(s.Name(), FailureInternal, fmt.Errorf("failed to create temp dir: %w", err))
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
 	if err := s.writeManifest(tmpDir, packageName, version, ecosystem); err != nil {
-		s.log.Warnw("unsupported ecosystem for trivy, skipping", "ecosystem", ecosystem)
-		return []models.Vulnerability{}, nil
+		if errors.Is(err, errUnsupportedEcosystem) {
+			return nil, newScanError(s.Name(), FailureUnsupported, err)
+		}
+
+		return nil, newScanError(s.Name(), FailureInternal, err)
 	}
 
 	stdout, stderr, err := runScanner(ctx, "trivy", "fs", "--scanners", "vuln", "--format", "json", "--quiet", tmpDir)
 	if err != nil {
-		if errors.Is(err, ErrScannerOutputTooLarge) {
-			return nil, fmt.Errorf("trivy scan: %w", err)
-		}
-
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("trivy scan cancelled: %w", ctx.Err())
-		}
-
+		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("trivy scan failed",
 			"error", err,
 			"stderr", stderr,
@@ -243,7 +242,7 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 			"ecosystem", ecosystem,
 		)
 
-		return []models.Vulnerability{}, nil
+		return nil, runFailure(ctx, s.Name(), err)
 	}
 
 	return s.parseTrivyOutput(stdout)
@@ -336,14 +335,14 @@ gem "%s", "%s"
 		return os.WriteFile(filepath.Join(dir, "test.csproj"), []byte(content), 0600)
 
 	default:
-		return fmt.Errorf("unsupported ecosystem: %s", ecosystem) //nolint:err113 // dynamic error with runtime context
+		return fmt.Errorf("%w: %s", errUnsupportedEcosystem, ecosystem)
 	}
 }
 
 func (s *TrivyScanner) parseTrivyOutput(data []byte) ([]models.Vulnerability, error) {
 	var output trivyOutput
 	if err := json.Unmarshal(data, &output); err != nil {
-		return nil, fmt.Errorf("failed to parse trivy output: %w", err)
+		return nil, newScanError(s.Name(), FailureInvalidOutput, fmt.Errorf("failed to parse trivy output: %w", err))
 	}
 
 	var vulns []models.Vulnerability
@@ -476,8 +475,7 @@ var grypeEcosystemMap = map[string]string{
 func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem string) ([]models.Vulnerability, error) {
 	grypeEcosystem, ok := grypeEcosystemMap[strings.ToLower(ecosystem)]
 	if !ok {
-		s.log.Warnw("unsupported ecosystem for grype, skipping", "ecosystem", ecosystem)
-		return []models.Vulnerability{}, nil
+		return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, ecosystem))
 	}
 
 	// grype <ecosystem>:<name>@<version> -o json --quiet
@@ -485,14 +483,7 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 
 	stdout, stderr, err := runScanner(ctx, "grype", pkgRef, "-o", "json", "--quiet")
 	if err != nil {
-		if errors.Is(err, ErrScannerOutputTooLarge) {
-			return nil, fmt.Errorf("grype scan: %w", err)
-		}
-
-		if ctx.Err() != nil {
-			return nil, fmt.Errorf("grype scan cancelled: %w", ctx.Err())
-		}
-
+		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("grype scan failed",
 			"error", err,
 			"stderr", stderr,
@@ -501,7 +492,7 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 			"ecosystem", ecosystem,
 		)
 
-		return []models.Vulnerability{}, nil
+		return nil, runFailure(ctx, s.Name(), err)
 	}
 
 	return s.parseGrypeOutput(stdout)
@@ -510,7 +501,7 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 func (s *GrypeScanner) parseGrypeOutput(data []byte) ([]models.Vulnerability, error) {
 	var output grypeOutput
 	if err := json.Unmarshal(data, &output); err != nil {
-		return nil, fmt.Errorf("failed to parse grype output: %w", err)
+		return nil, newScanError(s.Name(), FailureInvalidOutput, fmt.Errorf("failed to parse grype output: %w", err))
 	}
 
 	var vulns []models.Vulnerability

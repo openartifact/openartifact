@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -247,6 +248,13 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 
 	if existing != nil {
 		http.Error(w, "chart version already exists", http.StatusConflict)
+		return
+	}
+
+	// Chart.yaml has no license field; the only standard declaration is the
+	// artifacthub.io/license annotation.
+	annotations, _ := metadata["annotations"].(map[string]string)
+	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, annotations["artifacthub.io/license"]) {
 		return
 	}
 

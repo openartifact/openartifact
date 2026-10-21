@@ -3,6 +3,13 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request } from './client'
+import type {
+  LicensePolicyViolation,
+  LicenseScanResult,
+  LicenseScanRunResult,
+  VulnScanRequest,
+  VulnScanResult,
+} from './generated/types.gen'
 
 // Scan endpoints are admin-only and keyed by repository name. Every scan is
 // recorded against an `artifact_id`, which for packages listed by
@@ -23,24 +30,15 @@ export const VULN_ECOSYSTEMS = [
 
 export type VulnScanner = 'osv' | 'trivy' | 'grype'
 
-export interface VulnScan {
-  id: string
-  artifact_id: string
-  package_name: string
-  package_version: string
-  ecosystem: string
-  scanner: string
-  scan_status: string
-  vuln_count: number
-  critical_count: number
-  high_count: number
-  medium_count: number
-  low_count: number
-  quarantined: boolean
-  created_at: string
-  scanned_at?: string | null
-  scan_error?: string | null
-}
+/** The scanners a vulnerability scan can run, in the order they are offered. */
+export const VULN_SCANNERS: readonly VulnScanner[] = ['osv', 'trivy', 'grype']
+
+/**
+ * A vulnerability scan row. `scan_status` is pending | scanning | completed |
+ * partial | failed; `scan_error` is a sanitized summary and `failed_scanners`
+ * names the scanners that produced no result (failed and partial scans).
+ */
+export type VulnScan = VulnScanResult
 
 export async function listVulnScans(repo: string): Promise<VulnScan[]> {
   const res = await request<{ scans?: VulnScan[] }>(`${repoBase(repo)}/vuln/scans`)
@@ -49,13 +47,7 @@ export async function listVulnScans(repo: string): Promise<VulnScan[]> {
 
 export function startVulnScan(
   repo: string,
-  body: {
-    artifact_id: string
-    package_name: string
-    package_version: string
-    ecosystem: string
-    scanner: VulnScanner
-  },
+  body: Omit<VulnScanRequest, 'scanner' | 'scanners'> & { scanners: VulnScanner[] },
 ): Promise<VulnScan> {
   return request<VulnScan>(`${repoBase(repo)}/vuln/scan`, jsonPost(body))
 }
@@ -67,16 +59,9 @@ export function setVulnQuarantine(repo: string, scanId: string, quarantined: boo
   )
 }
 
-export interface LicenseScan {
-  id: string
-  artifact_id: string
-  licenses?: string[] | null
-  spdx_expressions?: string[] | null
-  scan_status: string
-  created_at: string
-  scanned_at?: string | null
-  scan_error?: string | null
-}
+/** `quarantined` blocks downloads (403 ARTIFACT_QUARANTINED) until an admin approves the artifact. */
+export type LicenseScan = LicenseScanResult
+export type { LicensePolicyViolation, LicenseScanRunResult }
 
 export async function listLicenseScans(repo: string): Promise<LicenseScan[]> {
   const res = await request<{ scans?: LicenseScan[] }>(`${repoBase(repo)}/license/scans`)
@@ -84,8 +69,16 @@ export async function listLicenseScans(repo: string): Promise<LicenseScan[]> {
 }
 
 /** Licenses are derived server-side from the artifact's stored properties. */
-export function triggerLicenseScan(repo: string, artifactId: string): Promise<LicenseScan> {
-  return request<LicenseScan>(`${repoBase(repo)}/license/scan`, jsonPost({ artifact_id: artifactId }))
+export function triggerLicenseScan(repo: string, artifactId: string): Promise<LicenseScanRunResult> {
+  return request<LicenseScanRunResult>(`${repoBase(repo)}/license/scan`, jsonPost({ artifact_id: artifactId }))
+}
+
+/** Admin only: `false` approves a quarantined artifact, `true` quarantines it. */
+export function setLicenseQuarantine(repo: string, scanId: string, quarantined: boolean): Promise<LicenseScan> {
+  return request<LicenseScan>(
+    `${repoBase(repo)}/license/scans/${encodeURIComponent(scanId)}/quarantine`,
+    jsonPost({ quarantined }),
+  )
 }
 
 export interface SecretFinding {

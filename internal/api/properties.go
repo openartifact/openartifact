@@ -14,6 +14,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/license"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -191,7 +193,48 @@ func (h *PropertiesHandler) handleSetProperties(w http.ResponseWriter, r *http.R
 		return
 	}
 
+	if !h.applyLicensePolicy(w, r, repo.ID, artifactID, body) {
+		return
+	}
+
 	writeJSON(w, http.StatusOK, body)
+}
+
+// applyLicensePolicy re-evaluates the license policies of an artifact whose
+// license properties were just written, quarantining it when a blocking policy
+// is violated (this is how a license that is only known after upload, e.g. for
+// raw or imported artifacts, takes effect). It does nothing when props carry no
+// license key. It returns false after answering 500 when the evaluation failed:
+// the properties are stored, and repeating the request repeats the evaluation.
+func (h *PropertiesHandler) applyLicensePolicy(w http.ResponseWriter, r *http.Request, repoID, artifactID string, props map[string]string) bool {
+	touched := false
+
+	for key := range props {
+		if license.IsLicenseKey(key) {
+			touched = true
+			break
+		}
+	}
+
+	if !touched {
+		return true
+	}
+
+	ctx := r.Context()
+
+	metadata, err := storedArtifactMetadata(ctx, h.db, repoID, artifactID)
+	if err == nil {
+		_, _, err = licensepolicy.Record(ctx, h.db, h.log, repoID, artifactID, license.NewDetector(h.log).DetectFromMetadata(metadata))
+	}
+
+	if err != nil {
+		h.log.Errorw("properties: license policy evaluation failed", "repository_id", repoID, "artifact_id", artifactID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "properties saved, but the license policy could not be evaluated")
+
+		return false
+	}
+
+	return true
 }
 
 func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http.Request) {
@@ -235,6 +278,10 @@ func (h *PropertiesHandler) handlePatchProperties(w http.ResponseWriter, r *http
 		h.log.Errorw("patch properties: db error setting properties", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
+		return
+	}
+
+	if !h.applyLicensePolicy(w, r, repo.ID, artifactID, body) {
 		return
 	}
 

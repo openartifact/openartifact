@@ -129,6 +129,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('sec.license.licenses') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('sec.common.status') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('sec.common.scanned') }}</th>
+              <th scope="col" class="text-left px-4 py-2.5 text-muted font-medium">{{ t('sec.license.col.actions') }}</th>
             </tr>
           </thead>
           <tbody>
@@ -152,11 +153,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   >{{ lic }}</span>
                 </div>
                 <span v-else class="text-xs text-muted">{{ t('sec.license.none') }}</span>
+                <div v-if="violationsFor(scan.id).length" class="mt-2">
+                  <LicensePolicyViolations :violations="violationsFor(scan.id)" />
+                </div>
               </td>
               <td class="px-4 py-3">
-                <span :class="scanStatusClass(scan.scan_status)" :title="scan.scan_error ?? undefined">{{ statusLabel(scan.scan_status) }}</span>
+                <div class="flex flex-col items-start gap-1">
+                  <span :class="scanStatusClass(scan.scan_status)" :title="scan.scan_error ?? undefined">{{ statusLabel(scan.scan_status) }}</span>
+                  <StatusBadge
+                    v-if="licenseQuarantineState(scan) === 'quarantined'"
+                    :label="t('sec.license.quarantined')"
+                    variant="danger"
+                    :title="t('sec.license.quarantinedHint')"
+                    data-testid="license-quarantined"
+                  />
+                  <StatusBadge
+                    v-else-if="licenseQuarantineState(scan) === 'approved'"
+                    :label="t('sec.license.approved')"
+                    variant="success"
+                    :title="t('sec.license.approvedHint')"
+                    data-testid="license-approved"
+                  />
+                </div>
               </td>
               <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(scan.scanned_at || scan.created_at) }}</td>
+              <td class="px-4 py-3">
+                <button
+                  type="button"
+                  class="px-2 py-1 rounded-md text-[11px] font-medium border border-border text-muted hover:bg-surface-hover hover:text-foreground transition-colors disabled:opacity-50"
+                  :class="{ 'border-danger/30 text-danger bg-danger-soft/40': scan.quarantined }"
+                  :disabled="quarantining === scan.id"
+                  :aria-label="`${scan.quarantined ? t('sec.license.approve') : t('sec.license.quarantine')}: ${packageLabel(scan.artifact_id)}`"
+                  @click="toggleQuarantine(scan)"
+                >
+                  {{ scan.quarantined ? t('sec.license.approve') : t('sec.license.quarantine') }}
+                </button>
+              </td>
             </tr>
           </tbody>
         </table>
@@ -209,9 +241,18 @@ import { ChevronRightIcon, ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons
 import EmptyState from '../../components/EmptyState.vue'
 import FormatBadge from '../../components/FormatBadge.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
+import LicensePolicyViolations from '../../components/LicensePolicyViolations.vue'
+import StatusBadge from '../../components/StatusBadge.vue'
 import { useToastStore } from '../../stores/toast'
 import { useRepoPackages } from '../../composables/useRepoPackages'
-import { listLicenseScans, triggerLicenseScan, type LicenseScan } from '../../api/security'
+import {
+  listLicenseScans,
+  triggerLicenseScan,
+  setLicenseQuarantine,
+  type LicensePolicyViolation,
+  type LicenseScan,
+} from '../../api/security'
+import { licenseQuarantineState } from '../../lib/scanStatus'
 import { t, tDynamic } from '../../i18n/en'
 
 const toasts = useToastStore()
@@ -225,7 +266,15 @@ const showDrawer = ref(false)
 const artifactId = ref('')
 const searchQuery = ref('')
 const statusFilter = ref('all')
+const quarantining = ref<string | null>(null)
+// Policy violations are only reported by the scan run itself (the list endpoint
+// does not carry them), so they are kept per scan id for this session.
+const violations = ref<Record<string, LicensePolicyViolation[]>>({})
 let loadSeq = 0
+
+function violationsFor(scanId: string): LicensePolicyViolation[] {
+  return violations.value[scanId] ?? []
+}
 
 const statusOptions = computed(() => [
   { label: t('sec.common.all'), value: 'all' },
@@ -306,14 +355,31 @@ async function triggerScan(): Promise<void> {
   if (!selectedRepo.value || !artifactId.value || triggering.value) return
   triggering.value = true
   try {
-    await triggerLicenseScan(selectedRepo.value, artifactId.value)
-    toasts.success(t('sec.license.started'))
+    const run = await triggerLicenseScan(selectedRepo.value, artifactId.value)
+    violations.value = { ...violations.value, [run.id]: run.policy_violations ?? [] }
+    if (run.quarantined) toasts.warning(t('sec.license.startedQuarantined'))
+    else toasts.success(t('sec.license.started'))
     showDrawer.value = false
     await loadScans()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('sec.license.startFailed'))
   } finally {
     triggering.value = false
+  }
+}
+
+async function toggleQuarantine(scan: LicenseScan): Promise<void> {
+  if (!selectedRepo.value || quarantining.value) return
+  quarantining.value = scan.id
+  try {
+    // Approving releases the artifact (quarantined: false); quarantining blocks downloads again.
+    const updated = await setLicenseQuarantine(selectedRepo.value, scan.id, !scan.quarantined)
+    scans.value = scans.value.map((s) => (s.id === scan.id ? { ...s, ...updated } : s))
+    toasts.success(updated.quarantined ? t('sec.license.quarantineDone') : t('sec.license.approveDone'))
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('sec.license.quarantineFailed'))
+  } finally {
+    quarantining.value = null
   }
 }
 

@@ -186,3 +186,58 @@ func TestEvaluatePolicy_CompoundExpressionDenied(t *testing.T) {
 		t.Fatalf("compound expression must be denied, ok=%v v=%v", ok, v)
 	}
 }
+
+// A policy written with one SPDX spelling must cover the others: the deny list
+// says "GPL-3.0" while the detector normalizes artifacts to "GPL-3.0-only".
+func TestEvaluatePolicy_SpellingsOfOneLicenseMatch(t *testing.T) {
+	d := NewDetector(nil)
+
+	spellings := []string{
+		"GPL-3.0", "GPL-3.0-only", "GPL-3.0+", "GPL-3.0-or-later", "gpl-3.0", "GPLv3", "GPLv3+",
+	}
+	if got := d.NormalizeLicense("GPLv3"); got != "GPL-3.0-only" {
+		t.Fatalf("NormalizeLicense(GPLv3) = %q, want GPL-3.0-only", got)
+	}
+
+	for _, inPolicy := range spellings {
+		for _, onArtifact := range spellings {
+			t.Run(inPolicy+" vs "+onArtifact, func(t *testing.T) {
+				deny := &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{inPolicy}}
+				if ok, _ := d.EvaluatePolicy([]string{d.NormalizeLicense(onArtifact)}, deny); ok {
+					t.Errorf("deny %q must match artifact %q", inPolicy, onArtifact)
+				}
+
+				allow := &models.LicensePolicy{Enabled: true, AllowedLicenses: []string{inPolicy}}
+				if ok, v := d.EvaluatePolicy([]string{d.NormalizeLicense(onArtifact)}, allow); !ok {
+					t.Errorf("allow %q must admit artifact %q: %v", inPolicy, onArtifact, v)
+				}
+			})
+		}
+	}
+
+	t.Run("different license of another family is untouched", func(t *testing.T) {
+		deny := &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{"GPL-3.0"}}
+		for _, other := range []string{"GPL-2.0-only", "LGPL-3.0-only", "AGPL-3.0-only", "MIT"} {
+			if ok, v := d.EvaluatePolicy([]string{other}, deny); !ok {
+				t.Errorf("%s must not match deny GPL-3.0: %v", other, v)
+			}
+		}
+	})
+}
+
+func TestNormalizeLicense_PyPIClassifier(t *testing.T) {
+	d := NewDetector(nil)
+
+	cases := map[string]string{
+		"License :: OSI Approved :: MIT License":                                             "MIT",
+		"License :: OSI Approved :: GNU General Public License v3 (GPLv3)":                   "GPL-3.0-only",
+		"License :: OSI Approved :: GNU General Public License v3 or later (GPLv3+)":         "GPL-3.0-or-later",
+		"License :: OSI Approved :: Apache Software License":                                 "Apache-2.0",
+		"License :: OSI Approved :: GNU Affero General Public License v3 or later (AGPLv3+)": "AGPL-3.0-or-later",
+	}
+	for in, want := range cases {
+		if got := d.NormalizeLicense(in); got != want {
+			t.Errorf("NormalizeLicense(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

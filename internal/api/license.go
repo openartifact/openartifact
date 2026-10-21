@@ -5,6 +5,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"time"
 
@@ -14,6 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/license"
+	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -39,6 +41,7 @@ func (h *LicenseHandler) RegisterRoutes(authedRouter chi.Router) {
 	authedRouter.Post("/api/v1/repositories/{name}/license/scan", h.handleScan)
 	authedRouter.Get("/api/v1/repositories/{name}/license/scans", h.handleListScans)
 	authedRouter.Get("/api/v1/repositories/{name}/license/scans/{id}", h.handleGetScan)
+	authedRouter.Post("/api/v1/repositories/{name}/license/scans/{id}/quarantine", h.handleQuarantine)
 
 	// License policies
 	authedRouter.Get("/api/v1/repositories/{name}/license/policies", h.handleListPolicies)
@@ -108,64 +111,101 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Detect licenses from the stored metadata
-	licenses := h.detector.DetectFromMetadata(metadata)
-
-	// Create scan result
-	now := time.Now()
-	scanResult := &models.LicenseScanResult{
-		RepositoryID: repo.ID,
-		ArtifactID:   body.ArtifactID,
-		Licenses:     licenses,
-		ScanStatus:   "completed",
-		ScannedAt:    &now,
-		CreatedAt:    now,
-		UpdatedAt:    now,
-	}
-
-	if err := h.db.CreateLicenseScanResult(ctx, scanResult); err != nil {
-		h.log.Errorw("scan licenses: db error creating scan result", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	// Evaluate policies
-	policies, err := h.db.ListLicensePolicies(ctx, repo.ID)
+	// Detect licenses from the stored metadata, evaluate the policies and
+	// record the result; a violated blocking policy quarantines the artifact.
+	scanResult, violations, err := licensepolicy.Record(ctx, h.db, h.log, repo.ID, body.ArtifactID, h.detector.DetectFromMetadata(metadata))
 	if err != nil {
-		h.log.Errorw("scan licenses: db error listing policies", "error", err)
+		h.log.Errorw("scan licenses: db error recording scan result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	var policyViolations []map[string]any
-
-	for _, policy := range policies {
-		compliant, violations := h.detector.EvaluatePolicy(licenses, policy)
-		if !compliant {
-			for _, violation := range violations {
-				policyViolations = append(policyViolations, map[string]any{
-					"policy_id":   policy.ID,
-					"policy_name": policy.Name,
-					"action":      policy.Action,
-					"violation":   violation,
-				})
-			}
-		}
-	}
+	policyViolations := make([]licensepolicy.Violation, 0, len(violations))
+	policyViolations = append(policyViolations, violations...)
 
 	writeJSON(w, http.StatusOK, map[string]any{
-		"id":                scanResult.ID,
-		"repo_id":           scanResult.RepositoryID,
-		"artifact_id":       scanResult.ArtifactID,
-		"licenses":          scanResult.Licenses,
-		"scan_status":       scanResult.ScanStatus,
-		"scanned_at":        scanResult.ScannedAt,
-		"created_at":        scanResult.CreatedAt,
-		"updated_at":        scanResult.UpdatedAt,
-		"policy_violations": policyViolations,
+		"id":                  scanResult.ID,
+		"repo_id":             scanResult.RepositoryID,
+		"artifact_id":         scanResult.ArtifactID,
+		"licenses":            scanResult.Licenses,
+		"scan_status":         scanResult.ScanStatus,
+		"scanned_at":          scanResult.ScannedAt,
+		"created_at":          scanResult.CreatedAt,
+		"updated_at":          scanResult.UpdatedAt,
+		"quarantined":         scanResult.Quarantined,
+		"quarantine_approved": scanResult.QuarantineApproved,
+		"policy_violations":   policyViolations,
 	})
+}
+
+// handleQuarantine quarantines or approves the artifact of one license scan
+// result. An artifact quarantined by a blocking policy stays quarantined, also
+// across re-scans of the same licenses, until it is approved here
+// ({"quarantined": false}).
+func (h *LicenseHandler) handleQuarantine(w http.ResponseWriter, r *http.Request) {
+	name := urlparams.Vars(r)["name"]
+	id := urlparams.Vars(r)["id"]
+	ctx := r.Context()
+
+	repo, err := h.db.GetRepositoryByName(ctx, name)
+	if err != nil {
+		h.log.Errorw("quarantine license scan: db error getting repo", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return
+	}
+
+	isAdmin, err := principalIsAdmin(ctx, currentPrincipal(r), h.evaluator)
+	if err != nil || !isAdmin {
+		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+		return
+	}
+
+	var body struct {
+		Quarantined bool `json:"quarantined"`
+	}
+	if err := decodeJSON(r, &body); err != nil {
+		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
+		return
+	}
+
+	if !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "license scan not found")
+		return
+	}
+
+	if err := h.db.SetLicenseScanQuarantine(ctx, repo.ID, id, body.Quarantined); err != nil {
+		if errors.Is(err, database.ErrLicenseScanNotFound) {
+			writeError(w, http.StatusNotFound, "not_found", "license scan not found")
+			return
+		}
+
+		h.log.Errorw("quarantine license scan: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	updated, err := h.db.GetLicenseScanResultByID(ctx, repo.ID, id)
+	if err != nil {
+		h.log.Errorw("quarantine license scan: db error fetching updated result", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if updated == nil {
+		writeError(w, http.StatusNotFound, "not_found", "license scan not found")
+		return
+	}
+
+	writeJSON(w, http.StatusOK, scanResultToMap(updated))
 }
 
 // handleListScans lists all license scan results for a repository.
@@ -691,6 +731,9 @@ func scanResultToMap(result *models.LicenseScanResult) responses.LicenseScanResu
 		ScannedAt:       formatTimePtr(result.ScannedAt),
 		ScanError:       scanError,
 		SPDXExpressions: result.SPDXExpressions,
+
+		Quarantined:        result.Quarantined,
+		QuarantineApproved: result.QuarantineApproved,
 	}
 }
 

@@ -53,4 +53,5 @@ Read requests map to the `read` action and writes (`PUT`, `POST`, `PATCH`, `DELE
 - Blobs are content-addressed by SHA-256 and deduplicated across repositories; a blob is removed from storage only when no package references it.
 - Uploads emit `artifact.uploaded` and deletes `artifact.deleted` webhook events ([webhooks](../operations/webhooks.md)).
 - Storage quotas are enforced on upload for Maven, npm, Helm, Debian, RPM and RubyGems only ([quotas](../repositories/cleanup-and-quotas.md)).
+- A repository with a [license policy](../security/scanning.md#blocking-licenses) whose action is `block` rejects an upload whose declared license is denied (`403`, code `LICENSE_BLOCKED`). The license is read from the package metadata; Conan, Go and raw uploads carry none and are not checked.
 - Client snippets in the web UI and in the MCP `repository` tool come from [`internal/clientsetup`](../../internal/clientsetup/clientsetup.go) (UI counterpart: `web/src/lib/installCommands.ts`). Where this documentation differs from those snippets (PyPI `twine`, Go format id), the page says so.

@@ -15,9 +15,14 @@ type LicenseScanResult struct {
 	SPDXExpressions []string
 	ScanStatus      string // "pending", "completed", "failed"
 	ScanError       string
-	ScannedAt       *time.Time
-	CreatedAt       time.Time
-	UpdatedAt       time.Time
+	// Quarantined makes downloads of the artifact answer 403 until approved.
+	Quarantined bool
+	// QuarantineApproved records that an admin approved the artifact for
+	// Licenses; it is cleared when a re-scan finds different licenses.
+	QuarantineApproved bool
+	ScannedAt          *time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
 }
 
 // LicensePolicy represents a license compliance policy.

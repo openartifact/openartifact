@@ -9,11 +9,15 @@ import (
 	"context"
 	"mime/multipart"
 	"net/http"
+	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -129,5 +133,108 @@ func TestDownloadQuarantine(t *testing.T) {
 
 	if c := get(); c != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", c)
+	}
+}
+
+type pypiField struct{ key, value string }
+
+func uploadWithFields(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, fields ...pypiField) *httptest.ResponseRecorder {
+	t.Helper()
+
+	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
+	h.SetPublisher(pub)
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("name", "Demo_Pkg")
+	_ = mw.WriteField("version", "1.0")
+
+	for _, f := range fields {
+		_ = mw.WriteField(f.key, f.value)
+	}
+
+	fw, err := mw.CreateFormFile("content", "demo-1.0.tar.gz")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	_, _ = fw.Write([]byte("payload"))
+	_ = mw.Close()
+
+	req := formattest.Request(http.MethodPost, "/repos/myrepo/legacy/", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	return formattest.Do(register(h), req)
+}
+
+func assertPkgStored(t *testing.T, c policytest.Case, status int, db *pypiDB, bs *formattest.BlobStore, pub *formattest.Publisher) {
+	t.Helper()
+
+	if c.Stopped() {
+		if len(db.pkgs) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+			t.Fatalf("rejected upload stored something: pkgs=%d blobs=%d events=%d", len(db.pkgs), len(bs.Blobs), len(pub.Events()))
+		}
+
+		return
+	}
+
+	if status != http.StatusOK {
+		t.Fatalf("status = %d, want 200", status)
+	}
+
+	if len(db.pkgs) != 1 || len(bs.Blobs) != 1 || len(pub.Events()) != 1 {
+		t.Fatalf("admitted upload not stored: pkgs=%d blobs=%d events=%d", len(db.pkgs), len(bs.Blobs), len(pub.Events()))
+	}
+}
+
+func TestUploadLicensePolicy(t *testing.T) {
+	forms := map[string][]pypiField{
+		"license field":      {{"license", "GPL-3.0"}},
+		"license expression": {{"license_expression", "GPL-3.0"}},
+		"classifier only": {
+			{"classifiers", "Programming Language :: Python :: 3"},
+			{"classifiers", "License :: OSI Approved :: GNU General Public License v3 (GPLv3)"},
+		},
+	}
+
+	for formName, fields := range forms {
+		for _, c := range policytest.Cases("GPL-3.0") {
+			t.Run(formName+"/"+c.Name, func(t *testing.T) {
+				inner := &pypiDB{DB: formattest.NewDB()}
+				bs := formattest.NewBlobStore()
+				pub := &formattest.Publisher{}
+
+				w := uploadWithFields(t, c.DB(inner), bs, pub, fields...)
+				c.AssertResponse(t, w.Code, w.Body.Bytes())
+				assertPkgStored(t, c, w.Code, inner, bs, pub)
+			})
+		}
+	}
+}
+
+func TestUploadLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
+	longText := "GNU GENERAL PUBLIC LICENSE Version 3 " + strings.Repeat("blah ", 40)
+
+	forms := map[string][]pypiField{
+		"no license":         nil,
+		"license text field": {{"license", longText}},
+		"multiline license":  {{"license", "GPL-3.0\nsecond line"}},
+	}
+
+	for name, fields := range forms {
+		t.Run(name, func(t *testing.T) {
+			c := policytest.Case{
+				Want:     policytest.Admitted,
+				Policies: []*models.LicensePolicy{policytest.Policy("block", []string{"MIT"}, nil)},
+			}
+			inner := &pypiDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := uploadWithFields(t, c.DB(inner), bs, pub, fields...)
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+			assertPkgStored(t, c, w.Code, inner, bs, pub)
+		})
 	}
 }

@@ -233,7 +233,10 @@ func summarizeVulns(repoName, pkg, version string, scans []*models.VulnScanResul
 			res.ScannedPackages++
 		case "pending", "scanning":
 			res.PendingScans++
-		case "failed":
+		case "failed", "partial":
+			// A partial scan lacks the findings of the scanners that failed, so
+			// it is not a clean "no vulnerabilities" result; its own findings
+			// are still counted below.
 			res.FailedScans++
 		}
 

@@ -7,7 +7,6 @@ package database
 import (
 	"context"
 	"database/sql"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"time"
@@ -31,9 +30,7 @@ var (
 // ---------------------------------------------------------------------------
 
 const vulnScanByIDSelect = `
-	SELECT vr.id, ref.repository_id, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
-	       sj.scanner, sj.status, vr.vulnerabilities, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
-	       vr.quarantined, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
+	SELECT ` + vulnResultColumns + `
 	FROM vuln_results vr
 	JOIN scan_jobs sj ON sj.id = vr.scan_job_id
 	JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
@@ -41,38 +38,13 @@ const vulnScanByIDSelect = `
 
 // GetVulnScanResultByID returns the vuln scan result with the given ID scoped to repoID, or nil.
 func (p *PostgresDB) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
-	result := &models.VulnScanResult{}
-
-	var (
-		scannedAt sql.NullTime
-		errMsg    sql.NullString
-		vulnsRaw  []byte
-		jobStatus string
-	)
-
-	err := p.db.QueryRowContext(ctx, vulnScanByIDSelect, repoID, id).Scan(
-		&result.ID, &result.RepositoryID, &result.ArtifactID, &result.PackageName, &result.PackageVersion, &result.Ecosystem,
-		&result.Scanner, &jobStatus, &vulnsRaw, &result.VulnCount, &result.CriticalCount, &result.HighCount, &result.MediumCount, &result.LowCount,
-		&result.Quarantined, &errMsg, &scannedAt, &result.CreatedAt, &result.UpdatedAt)
+	result, err := scanVulnResult(p.db.QueryRowContext(ctx, vulnScanByIDSelect, repoID, id))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get vuln scan result by id: %w", err)
-	}
-
-	result.ScanStatus = vulnScanStatusFromJob(jobStatus)
-	result.ScanError = errMsg.String
-
-	if scannedAt.Valid {
-		result.ScannedAt = &scannedAt.Time
-	}
-
-	if len(vulnsRaw) > 0 {
-		if err := json.Unmarshal(vulnsRaw, &result.Vulnerabilities); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal vulnerabilities: %w", err)
-		}
 	}
 
 	return result, nil
@@ -132,33 +104,19 @@ func (p *PostgresDB) SetVulnScanQuarantine(ctx context.Context, repoID, id strin
 
 // GetLicenseScanResultByID returns the license scan result with the given ID scoped to repoID, or nil.
 func (p *PostgresDB) GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error) {
-	result := &models.LicenseScanResult{}
-
-	var (
-		scannedAt sql.NullTime
-		errMsg    sql.NullString
-	)
-
-	err := p.db.QueryRowContext(ctx, `
-		SELECT lr.id, ref.repository_id, ref.artifact_path, lr.licenses, lr.spdx_expressions,
-		       sj.status, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
+	result, err := scanLicenseResult(p.db.QueryRowContext(ctx, `
+		SELECT `+licenseResultColumns+`
 		FROM license_results lr
 		JOIN scan_jobs sj ON sj.id = lr.scan_job_id
 		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 		WHERE sj.scan_type = 'license' AND ref.repository_id = $1 AND lr.id = $2`, repoID, id,
-	).Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &result.Licenses, &result.SPDXExpressions,
-		&result.ScanStatus, &errMsg, &scannedAt, &result.CreatedAt, &result.UpdatedAt)
+	))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get license scan result by id: %w", err)
-	}
-
-	result.ScanError = errMsg.String
-	if scannedAt.Valid {
-		result.ScannedAt = &scannedAt.Time
 	}
 
 	return result, nil
