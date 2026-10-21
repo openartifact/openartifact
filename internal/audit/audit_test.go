@@ -121,18 +121,19 @@ func TestLogger_Shutdown(t *testing.T) {
 	})
 
 	t.Run("shutdown timeout", func(t *testing.T) {
-		l := NewLogger(nil, nil, nil, 100)
+		// No writer goroutine: done never closes, so Shutdown can only return
+		// through the expired context. (With a live writer an empty buffer
+		// drains instantly and select picks either case at random.)
+		l := &Logger{
+			ch:   make(chan AuditEvent, 1),
+			done: make(chan struct{}),
+		}
 
-		// Create a context that times out immediately
-		ctx, cancel := context.WithTimeout(context.Background(), 0)
-		defer cancel()
+		ctx, cancel := context.WithCancel(context.Background())
+		cancel()
 
-		// Give it a moment to timeout
-		time.Sleep(10 * time.Millisecond)
-
-		err := l.Shutdown(ctx)
-		if err == nil {
-			t.Error("Shutdown() should fail with timeout context")
+		if err := l.Shutdown(ctx); !errors.Is(err, context.Canceled) {
+			t.Errorf("Shutdown() = %v, want context.Canceled", err)
 		}
 	})
 }
