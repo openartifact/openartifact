@@ -6,6 +6,7 @@ package api
 
 import (
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/auth"
@@ -133,5 +134,11 @@ func safeRedirectPath(p string) string {
 		}
 	}
 
-	return p
+	u, err := url.Parse(p)
+	if err != nil || u.IsAbs() || u.Hostname() != "" {
+		return "/"
+	}
+
+	// Rebuild from path components only, so nothing host-bearing survives.
+	return (&url.URL{Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery, Fragment: u.Fragment}).String()
 }
