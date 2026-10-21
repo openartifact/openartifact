@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -350,6 +351,10 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(gem.ID, "gems/"+filename, filename, r.URL.Path)...) {
+		return
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: gem.BlobKey, Size: gem.Size, Filename: nameVersion + ".gem", ContentType: "application/octet-stream"}) {
 		return
 	}
 

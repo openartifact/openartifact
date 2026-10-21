@@ -29,6 +29,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <input id="repo-public" v-model="form.public" type="checkbox" class="rounded" />
         <label for="repo-public" class="text-sm font-medium text-foreground">{{ t('wizard.public') }}</label>
       </div>
+      <FormField :label="t('repos.settings.presign')" id="repo-presign">
+        <select
+          id="repo-presign"
+          v-model="form.presign"
+          class="w-full px-3 py-2 border border-border rounded-md text-sm bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+        >
+          <option value="inherit">{{ t('repos.settings.presign.inherit') }}</option>
+          <option value="always">{{ t('repos.settings.presign.always') }}</option>
+          <option value="never">{{ t('repos.settings.presign.never') }}</option>
+        </select>
+        <p class="text-[11px] text-muted mt-1">{{ t('repos.settings.presign.hint') }}</p>
+      </FormField>
       <button
         type="submit"
         :disabled="loading"
@@ -49,7 +61,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import type { Repository } from '../api/repositories'
-import { updateRepository } from '../api/repositories'
+import { presignModeOf, presignValueOf, updateRepository } from '../api/repositories'
+import type { PresignMode } from '../api/repositories'
 import FormField from '../components/FormField.vue'
 import RepoQuotaTab from './RepoQuotaTab.vue'
 import { useToastStore } from '../stores/toast'
@@ -58,21 +71,35 @@ import { t } from '../i18n/en'
 const props = defineProps<{ repo: Repository }>()
 const emit = defineEmits<{ saved: [repo: Repository] }>()
 
-const form = ref({ description: props.repo.description ?? '', public: props.repo.public ?? false })
+interface SettingsForm {
+  description: string
+  public: boolean
+  presign: PresignMode
+}
+
+function formOf(r: Repository): SettingsForm {
+  return { description: r.description ?? '', public: r.public ?? false, presign: presignModeOf(r) }
+}
+
+const form = ref<SettingsForm>(formOf(props.repo))
 const loading = ref(false)
 const toasts = useToastStore()
 
 watch(
   () => props.repo,
   (r) => {
-    form.value = { description: r.description ?? '', public: r.public ?? false }
+    form.value = formOf(r)
   },
 )
 
 async function handleSave(): Promise<void> {
   loading.value = true
   try {
-    const updated = await updateRepository(props.repo.name, form.value)
+    const updated = await updateRepository(props.repo.name, {
+      description: form.value.description,
+      public: form.value.public,
+      presign_downloads: presignValueOf(form.value.presign),
+    })
     toasts.success(t('common.save'))
     emit('saved', updated)
   } catch (err: unknown) {

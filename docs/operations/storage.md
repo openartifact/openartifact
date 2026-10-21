@@ -37,7 +37,11 @@ Defaults: type `filesystem`, bucket `artifacts`, region `us-east-1`, path `/var/
 | `STORAGE_ACCESS_KEY` | `accessKey` | s3, garage, seaweedfs | |
 | `STORAGE_SECRET_KEY` | `secretKey` | s3, garage, seaweedfs | |
 | `STORAGE_S3_FORCE_PATH_STYLE` | `forcePathStyle` | s3 | default `false`; always on for garage and seaweedfs |
-| `STORAGE_S3_PRESIGN_TTL` | `presignTtl` | s3 | Go duration, default `5m`; see [Presigned URLs](#presigned-urls) |
+| `STORAGE_S3_PRESIGN_TTL` | `presignTtl` | s3, gcs | Go duration, default `5m`, clamped to `1m`..`1h`: lifetime of presigned download URLs; see [Presigned URLs](#presigned-urls) |
+| `STORAGE_PRESIGN_DOWNLOADS` | `presignDownloads` | s3, gcs | default `false`; answer blob downloads with a `307` redirect to a presigned URL |
+| `STORAGE_PRESIGN_MIN_SIZE` | `presignMinSize` | s3, gcs | bytes, default `1048576`; smaller blobs are streamed |
+| `STORAGE_PRESIGN_ENDPOINT` | `presignEndpoint` | s3, gcs | public base URL used only for signing |
+| `STORAGE_PRESIGN_UPLOAD_TTL` | `presignUploadTtl` | s3, gcs | Go duration, default `30m`, clamped to `1m`..`12h`: lifetime of presigned upload URLs |
 | `OPENARTIFACT_GCS_BUCKET` | `gcsBucket` | gcs | required |
 | `OPENARTIFACT_GCS_HMAC_KEY` | `gcsHmacKey` | gcs | required |
 | `OPENARTIFACT_GCS_HMAC_SECRET` | `gcsHmacSecret` | gcs | required |
@@ -117,7 +121,199 @@ Because blobs are shared, deleting a repository frees disk only for content no o
 
 ## Presigned URLs
 
-`STORAGE_S3_PRESIGN_TTL` / `presignTtl` sets the lifetime of presigned GET URLs from the S3 store, clamped to 1 minute to 1 hour (a value of zero or less becomes 5 minutes). Filesystem, Azure and OCI stores do not support presigning. No request handler calls it today: downloads are always streamed through the server, so the setting has no effect on clients.
+With an object-store backend, OpenArtifact can hand the byte transfer to the object store: instead of streaming a blob, it answers `307 Temporary Redirect` with a presigned GET URL and the client downloads directly from the bucket. Large artifacts then no longer flow through the server. It is opt-in and off by default.
+
+Supported backends: `s3` (including `garage` and `seaweedfs`) and `gcs` (through its S3-compatible HMAC API, same code path). `filesystem`, `azure` and `oci` do not support presigning: downloads keep streaming and the upload API answers `501`.
+
+### How it works
+
+```
+client                OpenArtifact                      object store
+  | GET /.../file.jar     |                                  |
+  |---------------------->| authenticate + RBAC check        |
+  |                       | blob >= presignMinSize?          |
+  |                       | sign GET URL (presignTtl)        |
+  |<-- 307 Location: URL -|                                  |
+  | GET URL (no OpenArtifact credentials)                    |
+  |--------------------------------------------------------->|
+  |<----------------------------------------- bytes ---------|
+```
+
+Authorisation always happens before the redirect. The redirect response has `Cache-Control: private, no-store`, `Referrer-Policy: no-referrer` and an empty body. The signed URL asks the object store to answer with `response-content-disposition` (`attachment; filename="..."`) and `response-content-type`, so the client gets the right file name and type. The URL is never logged, because its query string is a credential.
+
+### Settings
+
+| Environment variable | YAML key (`storage:`) | Default | Meaning |
+|---|---|---|---|
+| `STORAGE_PRESIGN_DOWNLOADS` | `presignDownloads` | `false` | Redirect blob downloads to presigned URLs |
+| `STORAGE_PRESIGN_MIN_SIZE` | `presignMinSize` | `1048576` (1 MiB) | Blobs smaller than this many bytes are streamed. `0` redirects everything. A negative value stops startup |
+| `STORAGE_S3_PRESIGN_TTL` | `presignTtl` | `5m` | Lifetime of presigned GET URLs, clamped to `1m`..`1h` |
+| `STORAGE_PRESIGN_ENDPOINT` | `presignEndpoint` | empty | Absolute `http(s)` URL without query or fragment, used only for signing; see [below](#presign-endpoint) |
+| `STORAGE_PRESIGN_UPLOAD_TTL` | `presignUploadTtl` | `30m` | Lifetime of presigned PUT upload URLs, clamped to `1m`..`12h` |
+
+### Per-repository override
+
+Each repository has a `presign_downloads` field (`POST /api/v1/repositories`, `PATCH /api/v1/repository/{name}`, returned by `GET`): `true` always redirects, `false` always streams, `null` inherits `presignDownloads`. In a PATCH, omitting the field leaves it unchanged and `null` resets it to inherit. The web UI has it on the repository Settings tab as "Direct downloads (presigned URLs)" (server default, always redirect, always stream). The `oa` CLI has no flag for it.
+
+### What is redirected
+
+One shared hook covers the binary download of every format. Only blobs are redirected, never metadata:
+
+| Redirected | Always streamed |
+|---|---|
+| Maven jars, poms and other artifacts; npm tarballs; PyPI files; raw files; Helm charts; OCI/Docker layers and configs; deb `pool/*.deb` and rpm `*.rpm` files; cargo crates; NuGet nupkg; Go module zips; RubyGems gems; conda, conan, ivy and sbt artifacts | `maven-metadata.xml`, checksum and `.asc` files; Docker manifests; deb `Packages`, `Release`, `InRelease`; rpm `repodata`; any other index or metadata response |
+
+Further rules:
+
+- `HEAD` requests are always answered locally.
+- Group repositories delegate to the member that serves the file.
+- Proxy repositories redirect on cache hits for blob paths only, after checking that the cached object exists. A stale copy served while the upstream is down (it carries a `Warning` header) is streamed.
+- Download counters (cargo, NuGet) are incremented before the redirect.
+
+### Fallbacks to streaming
+
+The server streams the blob as before when any of these hold: the feature is off (globally or by the repository override); the backend does not support presigning; the blob is smaller than `presignMinSize`; the request is not a `GET`; signing fails; the repository lookup fails; the object is missing. A failed presign never fails the download.
+
+### Metrics
+
+`openartifact_blob_downloads_total{mode, reason}` counts blob downloads:
+
+| `mode` | `reason` | Meaning |
+|---|---|---|
+| `redirect` | `presigned` | answered with a `307` |
+| `stream` | `disabled` | feature off globally or for the repository |
+| `stream` | `unsupported` | backend cannot presign |
+| `stream` | `below_min_size` | blob smaller than `presignMinSize` |
+| `stream` | `sign_failed` | the signer returned an error |
+| `stream` | `repo_lookup_failed` | the repository override could not be read |
+| `stream` | `missing_object` | the object was not found or its size could not be read |
+
+`HEAD` and other non-`GET` requests are not counted. See [monitoring](monitoring.md).
+
+### Security model
+
+- The authorisation check (authentication and [RBAC](../security/rbac.md)) runs before the redirect. Clients without read permission never receive a URL.
+- The presigned URL is a bearer credential: anyone holding it can read that single blob until it expires. Keep `presignTtl` short (the default is 5 minutes) and keep the bucket private; presigned URLs work with private buckets.
+- Redirect responses are marked `no-store` and `no-referrer`, and the URL is never written to logs.
+
+### Presign endpoint
+
+The server uses `endpoint` for its own reads and writes. When that address is cluster-internal and clients cannot reach it, for example `http://otel-minio.observability.svc:9000`, signed URLs would point at an unreachable host. Set `presignEndpoint` to the public address used only for signing:
+
+```yaml
+storage:
+  type: s3
+  endpoint: http://otel-minio.observability.svc:9000
+  presignEndpoint: https://s3.example.com
+  presignDownloads: true
+```
+
+The signature covers the `Host` header, so the public URL must reach the same bucket with the same `Host` and path-style addressing (same region, same credentials). A reverse proxy in front of the object store must not rewrite `Host`. When empty, URLs are signed against `endpoint`.
+
+Addressing follows `forcePathStyle` for the public endpoint too. The AWS SDK falls back to virtual-hosted addressing (`<bucket>.<host>`) for a hostname endpoint and only uses a path for an IP address, so with a hostname such as `https://s3.example.com` on Garage, MinIO or SeaweedFS keep `forcePathStyle: true` (it is implied for `garage` and `seaweedfs`), or the signed URL points at a host that does not exist.
+
+### Client compatibility
+
+Verified here in a smoke test against Garage S3 (server binary, `presignEndpoint` on a different host name than `endpoint`): `curl -L` on a raw file, a Maven jar and a pom, an OCI layer and config blob, and `podman pull` of an image from a Docker repository, which followed the `307` for both the config and the layer blob. Everything else below is expected behaviour from the clients' documented redirect handling and has not been individually verified.
+
+| Client | Status | Notes |
+|---|---|---|
+| curl `-L` | tested | |
+| Maven, Gradle | expected to work | Apache HttpClient follows `307` on `GET`; credentials are scoped to the original host |
+| npm | expected to work | follows redirects and drops `Authorization` across hosts; npm verifies integrity against the packument |
+| pip | expected to work | `requests` follows the redirect and drops `Authorization` on a host change |
+| podman | tested | `podman pull` completed and both blobs came from the object store |
+| docker, containerd, skopeo | expected to work | the registry spec allows blob redirects and distribution's S3 `redirect` feature does the same; registry credentials are not forwarded to the other host |
+| Helm | expected to work | Go `net/http` strips `Authorization` on cross-domain redirects |
+| apt | expected to work | follows redirects unless `Acquire::http::AllowRedirect=false`; an https endpoint needs `apt-transport-https`, and apt may refuse an https to http redirect |
+| dnf, yum | expected to work | librepo/libcurl follows redirects |
+| cargo, NuGet, `go` (GOPROXY), gem, conda, conan | expected to work | standard HTTP stacks that follow redirects |
+| ivy, sbt | caveat | the Java `HttpURLConnection` handler does not follow redirects across protocols; the redirect works only when the scheme stays the same. Set `presign_downloads` to `false` on ivy and sbt repositories unless the object store uses the same scheme as OpenArtifact |
+
+### Network and CORS requirements
+
+- Clients must reach the presign endpoint host directly, not only the OpenArtifact server.
+- Use TLS on the endpoint when OpenArtifact is served over https: clients and browsers may block an https to http downgrade, and browsers block mixed content.
+- Bucket CORS is needed only when browsers fetch artifacts with XHR or `fetch` from the web UI. CLI and package-manager clients do not need it. Example (S3 JSON form) allowing the UI origin:
+
+```json
+[
+  {
+    "AllowedOrigins": ["https://artifacts.example.com"],
+    "AllowedMethods": ["GET", "HEAD"],
+    "AllowedHeaders": ["*"],
+    "ExposeHeaders": ["ETag", "Content-Length", "Content-Disposition"],
+    "MaxAgeSeconds": 3000
+  }
+]
+```
+
+  Add `"PUT"` to `AllowedMethods` only for browser-based uploads; the CLI does not need it.
+
+### Presigned uploads
+
+Raw hosted repositories on S3 or GCS storage can take uploads that bypass the server: the client uploads the bytes straight to the bucket and the server only verifies and records them. Other formats and backends are not covered; on filesystem, Azure and OCI backends the endpoints answer `501`.
+
+1. `POST /api/v1/repositories/{name}/uploads` with `{"path": "...", "size": N, "sha256": "...", "content_type": "..."}` (`content_type` optional). Needs write permission on the repository and on the path. Answers `201`:
+
+   ```json
+   {"id": "...", "upload_url": "https://...", "method": "PUT", "headers": {"Content-Length": "..."}, "expires_at": "..."}
+   ```
+
+   `size` is at most 5 GiB, a single `PUT` (multipart upload is not implemented). `Content-Length` is signed into the URL, so the object store rejects any other size.
+2. The client `PUT`s the bytes to `upload_url` with the returned `headers`, without the OpenArtifact `Authorization` header. The URL lives for `presignUploadTtl`.
+3. `POST /api/v1/repositories/{name}/uploads/{id}/complete`. The server checks the staging object's size, re-hashes it (internal traffic between the server and the object store) against the declared sha256, copies it server-side to its content-addressed key, records the artifact exactly like a raw `PUT` (the path is overwritten, the `artifact.uploaded` webhook fires, a replaced blob is cleaned up) and deletes the staging object. Answers `201 {"id", "path", "sha256", "size"}`.
+
+Errors from `complete`:
+
+| Status | Cause |
+|---|---|
+| `400` | repository is not raw/hosted, or bad input |
+| `404` | unknown or already completed upload |
+| `409` | nothing uploaded yet |
+| `410` | the upload expired |
+| `422` | size or sha256 mismatch; the staging object and the upload are discarded and nothing is recorded |
+| `501` | the backend cannot do it |
+
+After `presignUploadTtl` expires an upload can still be completed during a 1 hour grace period.
+
+```sh
+FILE=app.tar.gz
+SHA=$(sha256sum "$FILE" | cut -d' ' -f1)
+SIZE=$(stat -c %s "$FILE")
+
+# 1. ask for an upload URL
+curl -sS -X POST https://artifacts.example.com/api/v1/repositories/files/uploads \
+  -H "Authorization: Bearer $OA_TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"path\":\"$FILE\",\"size\":$SIZE,\"sha256\":\"$SHA\"}" > upload.json
+
+# 2. PUT the bytes to the object store (no OpenArtifact credentials)
+curl -sS -X PUT "$(jq -r .upload_url upload.json)" -H "Content-Length: $SIZE" --data-binary @"$FILE"
+
+# 3. complete
+curl -sS -X POST "https://artifacts.example.com/api/v1/repositories/files/uploads/$(jq -r .id upload.json)/complete" \
+  -H "Authorization: Bearer $OA_TOKEN"
+```
+
+Add any other keys from the returned `headers` object as `-H` options in step 2. With the CLI the three steps are one command:
+
+```sh
+oa artifact upload --presigned [--path P] [--content-type T] <repo> <file>
+```
+
+#### Staging and cleanup
+
+Uploads land under the key prefix `staging/<uuid>` in the bucket. A worker runs every 5 minutes and deletes uploads (database rows and staging objects) that were never completed once expiry plus the grace period has passed. As a safety net, also add a bucket lifecycle rule that expires the `staging/` prefix after 2 days.
+
+#### Quota, license and secret scanning
+
+The raw `PUT` does not run quota, license policy or secret scanning inline today (quota is enforced only on deb, rpm, npm, maven, helm and rubygems uploads; license and secret scans are on-demand scan endpoints), and the presigned raw upload behaves the same. Because the bytes go straight to the bucket, the server could not enforce a quota before they land anyway: only the declared `size` is bounded.
+
+#### Why OCI blob uploads are not presigned
+
+Docker and OCI pushes stay on the registry. In the distribution flow (`POST /v2/<name>/blobs/uploads/`, `PATCH` chunks, `PUT ?digest=`) the registry holds the upload session and verifies or computes the digest itself. Clients such as docker, containerd and skopeo send the `PATCH` and `PUT` to the `Location` the registry returns, with registry credentials, and cannot be pointed at an object-store presigned URL: a chunked `PATCH` of arbitrary chunks has no object-store equivalent, the final `PUT` must carry a digest the registry verifies, and cross-repository mounts need registry state. Blob downloads (pulls) are redirected, as with distribution's S3 `redirect` option.
+
+The database side is migration `016`, which adds `repositories.presign_downloads` and the `presigned_uploads` table.
 
 ## Stored secrets
 

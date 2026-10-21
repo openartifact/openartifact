@@ -50,6 +50,7 @@ import (
 	aimcp "github.com/openartifact/openartifact/internal/mcp"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repodispatch"
 	"github.com/openartifact/openartifact/internal/sbom"
@@ -223,6 +224,15 @@ func run(args []string) error {
 
 	log.Infow("Storage initialized", "type", cfg.Storage.Type, "path", cfg.Storage.Path)
 
+	// servedStore is what the download paths (format handlers, proxy cache)
+	// read from: the same store, plus 307 redirects to presigned URLs for
+	// repositories that have them enabled (storage.presignDownloads or the
+	// per-repository override).
+	servedStore := presign.Wrap(blobStore, db, presign.SettingsFromConfig(cfg.Storage), reg, log)
+	if cfg.Storage.PresignDownloads && !servedStore.Supported() {
+		log.Warnw("storage.presignDownloads is on but the storage backend cannot presign URLs; downloads are streamed", "type", cfg.Storage.Type)
+	}
+
 	// Initialize GPG signer (optional)
 	var signer gpg.Signer
 
@@ -258,6 +268,9 @@ func run(args []string) error {
 
 	cleanupWorker.Start()
 
+	presignedUploadWorker := worker.NewPresignedUploadWorker(db, blobStore, log)
+	presignedUploadWorker.Start()
+
 	// Docker registry GC: untagged manifests past the grace period and the
 	// blobs only they referenced. Also runs on demand from the admin API.
 	dockerGCWorker := worker.NewDockerGCWorker(db, blobStore, log, cfg.Workers.DockerGCInterval, cfg.Workers.DockerGCGracePeriod)
@@ -280,7 +293,7 @@ func run(args []string) error {
 	stopWorkers := func() {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
-				webhookDispatcher.Stop, cleanupWorker.Stop, dockerGCWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
+				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
 			} {
 				stop()
 			}
@@ -659,27 +672,30 @@ func run(args []string) error {
 	debUpload.SetDebWorker(debWorker)
 	debUpload.Register(authedAPI)
 
-	rpmHTTP := formatrpm.NewHTTPHandler(log, db, blobStore)
-	debHTTP := formatdeb.NewHTTPHandler(log, db, blobStore)
-	helmHTTP := formathelm.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	pypiHTTP := formatpypi.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	nugetHTTP := formatnuget.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	npmHTTP := formatnpm.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	cargoHTTP := formatcargo.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	rubygemsHTTP := formatrubygems.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	rawHTTP := formatraw.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	condaHTTP := formatconda.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	conanHTTP := formatconan.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	ivyHTTP := formativy.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	sbtHTTP := formatsbt.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
-	mavenHTTP := formatmaven.NewHTTPHandler(log, db, blobStore)
+	presignedUploads := api.NewPresignedUploadHandler(log, db, blobStore, evaluator, cfg.Storage.PresignUploadTTL, reg)
+	presignedUploads.Register(authedAPI)
+
+	rpmHTTP := formatrpm.NewHTTPHandler(log, db, servedStore)
+	debHTTP := formatdeb.NewHTTPHandler(log, db, servedStore)
+	helmHTTP := formathelm.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	pypiHTTP := formatpypi.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	nugetHTTP := formatnuget.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	npmHTTP := formatnpm.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	cargoHTTP := formatcargo.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	rubygemsHTTP := formatrubygems.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	rawHTTP := formatraw.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	condaHTTP := formatconda.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	conanHTTP := formatconan.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	ivyHTTP := formativy.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	sbtHTTP := formatsbt.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	mavenHTTP := formatmaven.NewHTTPHandler(log, db, servedStore)
 
 	// All repo-scoped format handlers, including the npm publish/unpublish
 	// catch-all, share the /repos/{name} subrouter. A sibling /repos/{x}/*
 	// route outside it is shadowed by the mount and 404s.
 	npmUpload := api.NewNPMUploadHandler(log, db, blobStore, cfg.BaseURL, reg)
 	npmUpload.SetNPMWorker(npmWorker)
-	gomodHTTP := formatgomod.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
+	gomodHTTP := formatgomod.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
 
 	// Proxy and group repositories are served by the dispatcher in front of the
 	// per-format routes; hosted repositories fall through to them. Groups read
@@ -688,7 +704,7 @@ func run(args []string) error {
 	mavenHTTP.RegisterRepoRoutes(mavenHosted)
 	rawHTTP.RegisterRepoRoutes(rawHosted)
 
-	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, blobStore), evaluator, map[string]http.Handler{
+	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore), evaluator, map[string]http.Handler{
 		"maven": mavenHosted,
 		"raw":   rawHosted,
 	})
@@ -733,7 +749,7 @@ func run(args []string) error {
 	authedAPI.Route("/repos/sbt/{name}", func(r chi.Router) { sbtHTTP.RegisterRepoRoutes(r) })
 	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) { ivyHTTP.RegisterRepoRoutes(r) })
 	log.Infow("Maven/SBT/Ivy handlers registered (isolated prefixes)")
-	dockerHTTP := formatdocker.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
+	dockerHTTP := formatdocker.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
 	dockerHTTP.SetAuthorizer(evaluator)
 	dockerHTTP.RegisterRoutes(authedAPI)
 
@@ -788,7 +804,7 @@ func run(args []string) error {
 	// artifact.deleted through the webhook dispatcher. The download-only rpm and
 	// deb HTTP handlers do not publish events.
 	for _, h := range []interface{ SetPublisher(webhook.Publisher) }{
-		rpmUpload, debUpload, npmUpload, mavenUpload,
+		rpmUpload, debUpload, presignedUploads, npmUpload, mavenUpload,
 		helmHTTP, pypiHTTP, nugetHTTP, npmHTTP, cargoHTTP, rubygemsHTTP, rawHTTP,
 		condaHTTP, conanHTTP, ivyHTTP, sbtHTTP, mavenHTTP, dockerHTTP, gomodHTTP,
 	} {

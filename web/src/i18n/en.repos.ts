@@ -6,6 +6,12 @@ export const enRepos = {
   'repos.settings.description': 'Description',
   'repos.settings.quota': 'Storage quota',
   'repos.settings.saveFailed': 'Save failed',
+  'repos.settings.presign': 'Direct downloads (presigned URLs)',
+  'repos.settings.presign.inherit': 'Use the server default',
+  'repos.settings.presign.always': 'Always redirect to object storage',
+  'repos.settings.presign.never': 'Always stream through the server',
+  'repos.settings.presign.hint':
+    'Blob downloads (never metadata) are answered with a short-lived redirect to the S3/GCS object store after the permission check. Needs an S3 or GCS storage backend; otherwise downloads stream.',
   'browser.sort': 'Sort',
   'browser.listView': 'List view',
   'browser.gridView': 'Grid view',

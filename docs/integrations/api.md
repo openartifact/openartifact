@@ -109,8 +109,9 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | Prefix | Purpose |
 |---|---|
 | `/auth` | login, logout, `me`, `change-password`, own API tokens (`/auth/tokens`), SSO login and callbacks (OIDC, SAML) |
-| `/repositories`, `/repository/{name}` | list and create; get, update and delete use the **singular** `/repository/{name}` path |
+| `/repositories`, `/repository/{name}` | list and create; get, update and delete use the **singular** `/repository/{name}` path. The optional `presign_downloads` field (`true`, `false`, `null` to inherit) controls [presigned downloads](../operations/storage.md#presigned-urls) per repository |
 | `/repositories/{name}/packages`, `/debs`, `/comps` | list, download and delete packages; upload (`debs` for Debian, `packages` for RPM) |
+| `/repositories/{name}/uploads`, `/repositories/{name}/uploads/{id}/complete` | `POST` (write): presigned direct-to-bucket upload for hosted raw repositories on S3/GCS storage. The first call returns a presigned `PUT` URL, the second verifies size and sha256 and records the artifact. See [Presigned uploads](../operations/storage.md#presigned-uploads) |
 | `/repositories/{name}/members` | member repositories of a group repository |
 | `/repositories/{name}/{cleanup-policies,quota,webhooks}` | [cleanup and quotas](../repositories/cleanup-and-quotas.md), per-repository [webhooks](../operations/webhooks.md) |
 | `/repositories/{name}/registry-gc` | `POST` (admin): run [Docker registry garbage collection](../formats/docker.md#garbage-collection), optionally as a dry run |

@@ -87,8 +87,16 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### 0.5.0 (Unreleased)
 
+Migration `016` runs automatically at first start (adds `repositories.presign_downloads` and the `presigned_uploads` table). Default behavior is unchanged: downloads still stream through the server until you opt in to presigned URLs ([storage](../operations/storage.md#presigned-urls)).
+
 | Area | Change |
 |---|---|
+| Config | New opt-in keys `storage.presignDownloads`, `presignMinSize`, `presignEndpoint`, `presignUploadTtl` (env `STORAGE_PRESIGN_*`). `presignTtl` (`STORAGE_S3_PRESIGN_TTL`) now takes effect: it is the lifetime of presigned download URLs, clamped to 1 m - 1 h. A negative `presignMinSize` stops startup. |
+| Downloads | With `presignDownloads` on (s3 and gcs backends), blob downloads of every format answer `307` with a presigned URL; metadata is still streamed. Per-repository override `presign_downloads` (`true`, `false`, `null` to inherit) on the repository API and in the repository Settings tab. |
+| API | New `POST /api/v1/repositories/{name}/uploads` and `POST /api/v1/repositories/{name}/uploads/{id}/complete` for presigned raw uploads (s3 and gcs backends; `501` elsewhere). RBAC treats them as repository write. |
+| CLI | `oa artifact upload --presigned` uploads a raw file straight to the object store. |
+| Metrics | New counter `openartifact_blob_downloads_total{mode,reason}`. |
+| Caveats | Set `presignEndpoint` when `endpoint` is a cluster-internal address clients cannot reach. Clients must reach the object store host directly. The object store answers with `Content-Disposition: attachment; filename="..."`. ivy and sbt clients do not follow redirects across schemes: set `presign_downloads` to `false` on those repositories unless the store uses the same scheme. Add a bucket lifecycle rule expiring the `staging/` prefix after 2 days. |
 | SSO (SAML) | The IdP metadata URL is fetched through the outbound SSRF guard (1 MiB cap, 10 s timeout). Metadata URLs on private or loopback addresses need `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. |
 | SSO (SAML) | Signed responses or assertions with more than 1000 XML elements (large group lists) are accepted again; SAML now uses the `openartifact/saml` fork of crewjam/saml. |
 

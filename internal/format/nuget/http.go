@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -362,6 +363,17 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Count the download before the blob is opened or redirected to: a
+	// presigned response never reaches the streaming code below.
+	if err := h.DB.IncrementNuGetDownloadCount(r.Context(), repoID, packageID, version); err != nil {
+		h.Log.Errorw("failed to increment download count", "id", packageID, "version", version, "error", err)
+		// Continue anyway
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: pkg.BlobKey, Size: pkg.PackageSize, Filename: fmt.Sprintf("%s.%s.nupkg", packageID, version), ContentType: "application/zip"}) {
+		return
+	}
+
 	// Get blob
 	rc, err := h.BlobStore.Get(r.Context(), pkg.BlobKey)
 	if err != nil {
@@ -371,12 +383,6 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 		return
 	}
 	defer func() { _ = rc.Close() }()
-
-	// Increment download count
-	if err := h.DB.IncrementNuGetDownloadCount(r.Context(), repoID, packageID, version); err != nil {
-		h.Log.Errorw("failed to increment download count", "id", packageID, "version", version, "error", err)
-		// Continue anyway
-	}
 
 	w.Header().Set("Content-Type", "application/zip")
 	w.Header().Set("Content-Length", strconv.FormatInt(pkg.PackageSize, 10))

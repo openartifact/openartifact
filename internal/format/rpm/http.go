@@ -15,6 +15,7 @@ import (
 	db "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -219,6 +220,10 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 	// Package files are content-addressed: the blob digest is a complete
 	// validator, and a public repository's packages may be reused for an hour.
 	if base.Revalidate(w, r, repo.Public, `"`+comp.SHA256+`"`, packageMaxAge) {
+		return
+	}
+
+	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Filename: filename, ContentType: "application/x-rpm", Repository: repo}) {
 		return
 	}
 

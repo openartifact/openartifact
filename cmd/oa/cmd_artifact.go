@@ -25,11 +25,7 @@ func handleArtifact(args []string, client *Client, outFmt string) {
 
 		repoPackages(client, args[1], outFmt)
 	case "upload":
-		if len(args) < 3 {
-			dief("Usage: oa artifact upload <repo> <file>")
-		}
-
-		artifactUpload(client, args[1], args[2])
+		artifactUploadCommand(client, args[1:])
 	case "delete":
 		if len(args) < 3 {
 			dief("Usage: oa artifact delete <repo> <id>")

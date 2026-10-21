@@ -353,6 +353,14 @@ type Database interface {
 	DeleteRawArtifact(ctx context.Context, repoID, path string) error
 	ListRawArtifacts(ctx context.Context, repoID, prefix string) ([]*models.RawArtifact, error)
 
+	// Presigned uploads (staging rows awaiting their complete call).
+	// CreatePresignedUpload fills ID and CreatedAt. GetPresignedUpload returns
+	// nil, nil when the id is unknown or belongs to another repository.
+	CreatePresignedUpload(ctx context.Context, u *models.PresignedUpload) error
+	GetPresignedUpload(ctx context.Context, repoID, id string) (*models.PresignedUpload, error)
+	DeletePresignedUpload(ctx context.Context, id string) error
+	ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error)
+
 	// SBOM methods
 	CreateSBOMReport(ctx context.Context, report *models.SBOMReport) error
 	GetSBOMReport(ctx context.Context, repoID, artifactID, format, specVersion string) (*models.SBOMReport, error)

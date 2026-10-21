@@ -15,6 +15,7 @@ import (
 	db "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -303,6 +304,10 @@ func (h *HTTPHandler) handlePoolFile(w http.ResponseWriter, r *http.Request) {
 
 	poolPath := "pool/" + vars["comp"] + "/" + vars["prefix"] + "/" + vars["pkg"] + "/" + filename
 	if quarantine.Enforce(w, r, h.db, repoID, quarantine.PathKeys(comp.ID, poolPath, filename, r.URL.Path)...) {
+		return
+	}
+
+	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Filename: filename, ContentType: "application/vnd.debian.binary-package", Repo: name}) {
 		return
 	}
 

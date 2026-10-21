@@ -147,6 +147,10 @@ export type Repository = {
      * Name of the organization that owns the repository (the built-in 'system' organization unless set at creation or moved). Members of any other organization get access to the repository according to their role; see docs/security/rbac.md.
      */
     org?: string;
+    /**
+     * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected.
+     */
+    presign_downloads?: boolean | null;
 };
 
 export type RepositoryMember = {
@@ -595,6 +599,51 @@ export type DockerGcReport = {
     truncated: boolean;
 };
 
+export type PresignedUploadRequest = {
+    /**
+     * Artifact path inside the repository (no empty, '.' or '..' segments)
+     */
+    path: string;
+    /**
+     * Exact size in bytes; signed into the upload URL
+     */
+    size: number;
+    /**
+     * SHA-256 of the content; verified at completion
+     */
+    sha256: string;
+    /**
+     * Content type to record; detected from the content when omitted
+     */
+    content_type?: string;
+};
+
+export type PresignedUpload = {
+    id: string;
+    /**
+     * Presigned URL accepting one PUT of exactly `size` bytes. The query string is a credential: do not log it.
+     */
+    upload_url: string;
+    method: 'PUT';
+    /**
+     * Headers that must be sent with the PUT
+     */
+    headers: {
+        [key: string]: string;
+    };
+    /**
+     * When the URL stops working
+     */
+    expires_at: string;
+};
+
+export type PresignedUploadResult = {
+    id: string;
+    path: string;
+    sha256: string;
+    size: number;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -925,6 +974,10 @@ export type PostApiV1RepositoriesData = {
          * Name of the owning organization. Defaults to the built-in system organization, whose membership grants nothing. Unknown organization: 404.
          */
         org?: string;
+        /**
+         * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected.
+         */
+        presign_downloads?: boolean | null;
     };
     path?: never;
     query?: never;
@@ -3864,6 +3917,10 @@ export type PatchApiV1RepositoryByNameData = {
          * Move the repository to the named organization (global admin only; unknown organization: 404). Access of the old and new organization's members changes immediately.
          */
         org?: string;
+        /**
+         * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Omit to leave unchanged; send null to inherit.
+         */
+        presign_downloads?: boolean | null;
     };
     path: {
         name: string;
@@ -4825,3 +4882,102 @@ export type PostApiV1AuthSsoSamlBySlugAcsResponses = {
 };
 
 export type PostApiV1AuthSsoSamlBySlugAcsResponse = PostApiV1AuthSsoSamlBySlugAcsResponses[keyof PostApiV1AuthSsoSamlBySlugAcsResponses];
+
+export type PostApiV1RepositoriesByNameUploadsData = {
+    body: PresignedUploadRequest;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/uploads';
+};
+
+export type PostApiV1RepositoriesByNameUploadsErrors = {
+    /**
+     * Invalid path, size or sha256, or the repository is not a hosted raw repository
+     */
+    400: Error;
+    /**
+     * Authentication required
+     */
+    401: unknown;
+    /**
+     * Write permission denied
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * The storage backend does not support presigned uploads
+     */
+    501: Error;
+};
+
+export type PostApiV1RepositoriesByNameUploadsError = PostApiV1RepositoriesByNameUploadsErrors[keyof PostApiV1RepositoriesByNameUploadsErrors];
+
+export type PostApiV1RepositoriesByNameUploadsResponses = {
+    /**
+     * Upload target
+     */
+    201: PresignedUpload;
+};
+
+export type PostApiV1RepositoriesByNameUploadsResponse = PostApiV1RepositoriesByNameUploadsResponses[keyof PostApiV1RepositoriesByNameUploadsResponses];
+
+export type PostApiV1RepositoriesByNameUploadsByIdCompleteData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/uploads/{id}/complete';
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdCompleteErrors = {
+    /**
+     * The repository is not a hosted raw repository
+     */
+    400: Error;
+    /**
+     * Authentication required
+     */
+    401: unknown;
+    /**
+     * Write permission denied
+     */
+    403: unknown;
+    /**
+     * Repository or upload not found (or already completed)
+     */
+    404: unknown;
+    /**
+     * Nothing has been uploaded to the upload URL yet
+     */
+    409: Error;
+    /**
+     * The upload expired
+     */
+    410: Error;
+    /**
+     * Size or sha256 does not match the declaration; the upload was discarded
+     */
+    422: Error;
+    /**
+     * The storage backend does not support presigned uploads
+     */
+    501: Error;
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdCompleteError = PostApiV1RepositoriesByNameUploadsByIdCompleteErrors[keyof PostApiV1RepositoriesByNameUploadsByIdCompleteErrors];
+
+export type PostApiV1RepositoriesByNameUploadsByIdCompleteResponses = {
+    /**
+     * Artifact recorded
+     */
+    201: PresignedUploadResult;
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdCompleteResponse = PostApiV1RepositoriesByNameUploadsByIdCompleteResponses[keyof PostApiV1RepositoriesByNameUploadsByIdCompleteResponses];

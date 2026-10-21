@@ -21,3 +21,19 @@ type RawArtifact struct {
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
 }
+
+// PresignedUpload is a presigned upload awaiting its complete call. The object
+// lives at the staging key staging/<ID> in the blob store.
+type PresignedUpload struct {
+	ID           string
+	RepositoryID string
+	Path         string
+	SizeBytes    int64
+	SHA256       string
+	ContentType  string
+	CreatedBy    string
+	CreatedAt    time.Time
+	// ExpiresAt is the complete deadline: after it the cleanup worker removes
+	// the row and the staging object.
+	ExpiresAt time.Time
+}

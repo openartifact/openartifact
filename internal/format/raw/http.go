@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -130,14 +131,6 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	previous, err := h.DB.GetRawArtifact(r.Context(), repoID, path)
-	if err != nil {
-		h.Log.Errorw("failed to look up existing artifact", "path", path, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
 	artifact := &models.RawArtifact{
 		ID:           uuid.New().String(),
 		RepositoryID: repoID,
@@ -151,9 +144,7 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: importmeta.CreatedAt(r.Context()),
 	}
 
-	// Store the blob and upsert the referencing row under the per-blob lock so
-	// a concurrent unpublish cannot delete the blob in between.
-	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
+	previous, err := Commit(r.Context(), h.Handler, repoName, artifact, func(ctx context.Context) error {
 		blobID, err := h.BlobStore.Put(ctx, io.NewSectionReader(tmp, 0, size), map[string]string{
 			"sha256": sha256Hex,
 			"format": "raw",
@@ -165,45 +156,20 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 		artifact.BlobKey = blobID
 
-		if err := h.DB.UpsertRawArtifact(ctx, artifact); err != nil {
-			return fmt.Errorf("upsert artifact: %w", err)
-		}
-
 		return nil
-	}); err != nil {
+	})
+	if err != nil {
 		h.Log.Errorw("failed to store raw artifact", "path", path, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// An overwrite leaves the previous content unreferenced.
-	if previous != nil && previous.SHA256 != "" && previous.SHA256 != sha256Hex {
-		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, previous.SHA256); delErr != nil {
-			h.Log.Warnw("failed to clean up replaced blob", "sha256", previous.SHA256, "error", delErr)
-		}
-	}
-
-	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: repoName,
-		Format:     "raw",
-		Name:       path,
-		Path:       path,
-		SHA256:     sha256Hex,
-		Size:       size,
-	}))
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 
-	// An overwrite keeps the existing row (and its id).
-	id := artifact.ID
-	if previous != nil {
-		id = previous.ID
-	}
-
 	if encErr := json.NewEncoder(w).Encode(map[string]any{
-		"id":     id,
+		"id":     StoredID(artifact, previous),
 		"path":   path,
 		"sha256": sha256Hex,
 		"size":   size,
@@ -254,6 +220,10 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(path, r.URL.Path)...) {
+		return
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: artifact.BlobKey, Size: artifact.SizeBytes, Filename: path[strings.LastIndexByte(path, '/')+1:], ContentType: artifact.ContentType}) {
 		return
 	}
 

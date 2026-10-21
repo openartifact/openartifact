@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -110,6 +111,10 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request, rep
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(filePath, filename, r.URL.Path)...) {
+		return
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: artifact.BlobKey, Size: artifact.SizeBytes, Filename: filename, ContentType: "application/octet-stream"}) {
 		return
 	}
 

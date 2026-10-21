@@ -670,6 +670,18 @@ func (m *BaseMockDB) YankRubyGem(ctx context.Context, repoID, name, version stri
 func (m *BaseMockDB) UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error {
 	return errNotImpl("UpsertRawArtifact")
 }
+func (m *BaseMockDB) CreatePresignedUpload(ctx context.Context, u *models.PresignedUpload) error {
+	return errNotImpl("CreatePresignedUpload")
+}
+func (m *BaseMockDB) GetPresignedUpload(ctx context.Context, repoID, id string) (*models.PresignedUpload, error) {
+	return nil, errNotImpl("GetPresignedUpload")
+}
+func (m *BaseMockDB) DeletePresignedUpload(ctx context.Context, id string) error {
+	return errNotImpl("DeletePresignedUpload")
+}
+func (m *BaseMockDB) ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error) {
+	return nil, errNotImpl("ListExpiredPresignedUploads")
+}
 func (m *BaseMockDB) GetRawArtifact(ctx context.Context, repoID, path string) (*models.RawArtifact, error) {
 	return nil, errNotImpl("GetRawArtifact")
 }

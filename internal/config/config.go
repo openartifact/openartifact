@@ -9,6 +9,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"net/url"
 	"os"
 	"strconv"
 	"strings"
@@ -28,6 +29,9 @@ var (
 	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
 
 	errNegativeDockerGCGrace = errors.New("workers.dockerGcGracePeriod must not be negative")
+
+	errPresignEndpoint = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
+	errPresignMinSize  = errors.New("storage.presignMinSize must not be negative")
 )
 
 type Config struct {
@@ -214,6 +218,8 @@ func defaultConfig() *Config {
 			Options:            make(map[string]string),
 			ForcePathStyle:     false,
 			PresignTTL:         5 * time.Minute,
+			PresignUploadTTL:   30 * time.Minute,
+			PresignMinSize:     1 << 20,
 			GCSBucket:          "",
 			GCSHMACKey:         "",
 			GCSHMACSecret:      "",
@@ -330,6 +336,10 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Storage.Path, "STORAGE_PATH")
 	overrideBool(&cfg.Storage.ForcePathStyle, "STORAGE_S3_FORCE_PATH_STYLE")
 	overrideDuration(&cfg.Storage.PresignTTL, "STORAGE_S3_PRESIGN_TTL")
+	overrideDuration(&cfg.Storage.PresignUploadTTL, "STORAGE_PRESIGN_UPLOAD_TTL")
+	overrideBool(&cfg.Storage.PresignDownloads, "STORAGE_PRESIGN_DOWNLOADS")
+	overrideInt64(&cfg.Storage.PresignMinSize, "STORAGE_PRESIGN_MIN_SIZE")
+	overrideString(&cfg.Storage.PresignEndpoint, "STORAGE_PRESIGN_ENDPOINT")
 	overrideString(&cfg.Storage.GCSBucket, "OPENARTIFACT_GCS_BUCKET")
 	overrideString(&cfg.Storage.GCSHMACKey, "OPENARTIFACT_GCS_HMAC_KEY")
 	overrideString(&cfg.Storage.GCSHMACSecret, "OPENARTIFACT_GCS_HMAC_SECRET")
@@ -450,6 +460,22 @@ func (c *Config) Validate() error {
 		return errNegativeDockerGCGrace
 	}
 
+	return c.validatePresign()
+}
+
+// validatePresign checks the presigned-URL settings.
+func (c *Config) validatePresign() error {
+	if c.Storage.PresignMinSize < 0 {
+		return errPresignMinSize
+	}
+
+	if ep := c.Storage.PresignEndpoint; ep != "" {
+		u, err := url.Parse(ep)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
+			return errPresignEndpoint
+		}
+	}
+
 	return nil
 }
 
@@ -470,6 +496,17 @@ func overrideString(cfg *string, key string) {
 func overrideInt(cfg *int, key string) {
 	if v, ok := os.LookupEnv(key); ok {
 		n, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil {
+			warnBadEnv(key, v, err)
+			return
+		}
+		*cfg = n
+	}
+}
+
+func overrideInt64(cfg *int64, key string) {
+	if v, ok := os.LookupEnv(key); ok {
+		n, err := strconv.ParseInt(strings.TrimSpace(v), 10, 64)
 		if err != nil {
 			warnBadEnv(key, v, err)
 			return

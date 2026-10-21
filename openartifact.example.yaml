@@ -64,6 +64,11 @@ storage:
   # endpoint: http://garage:3900
   # forcePathStyle: true
   # presignTtl: 5m
+  # Direct downloads via presigned URLs (s3 / gcs only; off by default):
+  # presignDownloads: true
+  # presignMinSize: 1048576      # bytes; smaller blobs are streamed, 0 = redirect all
+  # presignEndpoint: https://s3.example.com   # public URL for signing only, when endpoint is internal
+  # presignUploadTtl: 30m        # clamped to 1m..12h
   # GCS (S3-compatible XML API):
   # gcsBucket: my-bucket
   # gcsHmacKey: CHANGE_ME

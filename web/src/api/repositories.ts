@@ -66,6 +66,22 @@ export function createRepository(body: Partial<Repository> & { upstream_password
   })
 }
 
+export type PresignMode = 'inherit' | 'always' | 'never'
+
+/** Maps the tri-state presign_downloads field (null/absent = inherit) to a form value. */
+export function presignModeOf(repo: Pick<Repository, 'presign_downloads'>): PresignMode {
+  if (repo.presign_downloads === true) return 'always'
+  if (repo.presign_downloads === false) return 'never'
+  return 'inherit'
+}
+
+/** The presign_downloads value to PATCH for a form value (null clears the override). */
+export function presignValueOf(mode: PresignMode): boolean | null {
+  if (mode === 'always') return true
+  if (mode === 'never') return false
+  return null
+}
+
 export function updateRepository(name: string, body: Partial<Repository>): Promise<Repository> {
   return request<Repository>(`/api/v1/repository/${encodeURIComponent(name)}`, {
     method: 'PATCH',

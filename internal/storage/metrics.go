@@ -98,3 +98,68 @@ func (c *countingReadCloser) Read(p []byte) (int, error) {
 
 	return n, err
 }
+
+// PresignGet forwards to the wrapped store when it can sign download URLs.
+func (m *MetricsBlobStore) PresignGet(ctx context.Context, sha256 string, ttl time.Duration, opts PresignGetOptions) (string, error) {
+	p, ok := m.inner.(Presigner)
+	if !ok {
+		return "", ErrPresignNotSupported
+	}
+
+	return p.PresignGet(ctx, sha256, ttl, opts)
+}
+
+// PresignStagingPut forwards to the wrapped store when it has a staging area.
+func (m *MetricsBlobStore) PresignStagingPut(ctx context.Context, id string, size int64, ttl time.Duration) (PresignedPut, error) {
+	s, ok := m.inner.(StagingStore)
+	if !ok {
+		return PresignedPut{}, ErrPresignNotSupported
+	}
+
+	return s.PresignStagingPut(ctx, id, size, ttl)
+}
+
+// StatStaging forwards to the wrapped store.
+func (m *MetricsBlobStore) StatStaging(ctx context.Context, id string) (int64, error) {
+	s, ok := m.inner.(StagingStore)
+	if !ok {
+		return 0, ErrPresignNotSupported
+	}
+
+	return s.StatStaging(ctx, id)
+}
+
+// OpenStaging forwards to the wrapped store and counts the bytes read.
+func (m *MetricsBlobStore) OpenStaging(ctx context.Context, id string) (io.ReadCloser, error) {
+	s, ok := m.inner.(StagingStore)
+	if !ok {
+		return nil, ErrPresignNotSupported
+	}
+
+	rc, err := s.OpenStaging(ctx, id)
+	if err != nil {
+		return nil, err
+	}
+
+	return &countingReadCloser{ReadCloser: rc, reg: m.reg}, nil
+}
+
+// PromoteStaging forwards to the wrapped store.
+func (m *MetricsBlobStore) PromoteStaging(ctx context.Context, id, sha256 string, metadata map[string]string) error {
+	s, ok := m.inner.(StagingStore)
+	if !ok {
+		return ErrPresignNotSupported
+	}
+
+	return s.PromoteStaging(ctx, id, sha256, metadata)
+}
+
+// DeleteStaging forwards to the wrapped store.
+func (m *MetricsBlobStore) DeleteStaging(ctx context.Context, id string) error {
+	s, ok := m.inner.(StagingStore)
+	if !ok {
+		return ErrPresignNotSupported
+	}
+
+	return s.DeleteStaging(ctx, id)
+}

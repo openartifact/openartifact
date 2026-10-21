@@ -320,6 +320,11 @@
           "org": {
             "type": "string",
             "description": "Name of the organization that owns the repository (the built-in 'system' organization unless set at creation or moved). Members of any other organization get access to the repository according to their role; see docs/security/rbac.md."
+          },
+          "presign_downloads": {
+            "type": "boolean",
+            "nullable": true,
+            "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected."
           }
         },
         "required": [
@@ -1543,6 +1548,98 @@
           "blobs",
           "truncated"
         ]
+      },
+      "PresignedUploadRequest": {
+        "type": "object",
+        "required": [
+          "path",
+          "size",
+          "sha256"
+        ],
+        "properties": {
+          "path": {
+            "type": "string",
+            "description": "Artifact path inside the repository (no empty, '.' or '..' segments)"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "maximum": 5368709120,
+            "description": "Exact size in bytes; signed into the upload URL"
+          },
+          "sha256": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{64}$",
+            "description": "SHA-256 of the content; verified at completion"
+          },
+          "content_type": {
+            "type": "string",
+            "description": "Content type to record; detected from the content when omitted"
+          }
+        }
+      },
+      "PresignedUpload": {
+        "type": "object",
+        "required": [
+          "id",
+          "upload_url",
+          "method",
+          "headers",
+          "expires_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "upload_url": {
+            "type": "string",
+            "description": "Presigned URL accepting one PUT of exactly `size` bytes. The query string is a credential: do not log it."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "PUT"
+            ]
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Headers that must be sent with the PUT"
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the URL stops working"
+          }
+        }
+      },
+      "PresignedUploadResult": {
+        "type": "object",
+        "required": [
+          "id",
+          "path",
+          "sha256",
+          "size"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "path": {
+            "type": "string"
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        }
       }
     }
   },
@@ -2109,6 +2206,11 @@
                   "org": {
                     "type": "string",
                     "description": "Name of the owning organization. Defaults to the built-in system organization, whose membership grants nothing. Unknown organization: 404."
+                  },
+                  "presign_downloads": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected."
                   }
                 },
                 "required": [
@@ -7044,6 +7146,11 @@
                   "org": {
                     "type": "string",
                     "description": "Move the repository to the named organization (global admin only; unknown organization: 404). Access of the old and new organization's members changes immediately."
+                  },
+                  "presign_downloads": {
+                    "type": "boolean",
+                    "nullable": true,
+                    "description": "Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected. Omit to leave unchanged; send null to inherit."
                   }
                 }
               }
@@ -8554,6 +8661,177 @@
           },
           "default": {
             "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/uploads": {
+      "post": {
+        "summary": "Start a presigned upload",
+        "description": "Hosted raw repositories on S3/GCS storage only. Returns a short-lived presigned PUT URL to a staging object; upload the bytes directly to it, then call the complete endpoint. Requires write permission on the repository and on the path.",
+        "tags": [
+          "Repositories",
+          "Packages"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignedUploadRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Upload target",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignedUpload"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid path, size or sha256, or the repository is not a hosted raw repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Write permission denied"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "501": {
+            "description": "The storage backend does not support presigned uploads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/uploads/{id}/complete": {
+      "post": {
+        "summary": "Complete a presigned upload",
+        "description": "Verifies that the staged object has the declared size and sha256, moves it to its content-addressed key, records the artifact (overwriting an existing path, like a raw PUT) and deletes the staging object. On a size or sha256 mismatch the staging object and the upload are discarded and nothing is recorded. Quota, license and secret scanning are not applied, as for a raw PUT.",
+        "tags": [
+          "Repositories",
+          "Packages"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "201": {
+            "description": "Artifact recorded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignedUploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "The repository is not a hosted raw repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Write permission denied"
+          },
+          "404": {
+            "description": "Repository or upload not found (or already completed)"
+          },
+          "409": {
+            "description": "Nothing has been uploaded to the upload URL yet",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The upload expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "Size or sha256 does not match the declaration; the upload was discarded",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The storage backend does not support presigned uploads",
             "content": {
               "application/json": {
                 "schema": {

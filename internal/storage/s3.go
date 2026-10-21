@@ -65,7 +65,18 @@ func NewS3BlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 		o.Concurrency = 4
 	})
 
-	presigner := s3.NewPresignClient(client)
+	// Presigned URLs embed the host they were signed for, so they are signed
+	// by a client pointed at the public endpoint when one is configured; all
+	// server-side I/O keeps using the (possibly in-cluster) endpoint above.
+	presignClient := client
+	if cfg.PresignEndpoint != "" {
+		presignClient = s3.NewFromConfig(awsCfg, func(o *s3.Options) {
+			s3Opts(o)
+			o.BaseEndpoint = aws.String(cfg.PresignEndpoint)
+		})
+	}
+
+	presigner := s3.NewPresignClient(presignClient)
 
 	ttl := cfg.PresignTTL
 	if ttl <= 0 {
@@ -324,17 +335,37 @@ func (s *S3BlobStore) ExistsBySHA256(ctx context.Context, sha256 string) (string
 
 // PresignURL returns a presigned GetObject URL with a clamped TTL.
 func (s *S3BlobStore) PresignURL(ctx context.Context, sha256 string, ttl time.Duration) (string, error) {
+	return s.PresignGet(ctx, sha256, ttl, PresignGetOptions{})
+}
+
+// PresignGet returns a presigned GetObject URL with a clamped TTL. A TTL <= 0
+// selects the store's configured presign TTL. The response overrides in opts
+// are part of the signature.
+func (s *S3BlobStore) PresignGet(ctx context.Context, sha256 string, ttl time.Duration, opts PresignGetOptions) (string, error) {
 	if err := ValidateBlobID(sha256); err != nil {
 		return "", err
+	}
+
+	if ttl <= 0 {
+		ttl = s.presignTTL
 	}
 
 	ttl = clampTTL(ttl)
 	key := objectKey(sha256)
 
-	req, err := s.presigner.PresignGetObject(ctx, &s3.GetObjectInput{
+	in := &s3.GetObjectInput{
 		Bucket: aws.String(s.bucket),
 		Key:    aws.String(key),
-	}, s3.WithPresignExpires(ttl))
+	}
+	if opts.ContentDisposition != "" {
+		in.ResponseContentDisposition = aws.String(opts.ContentDisposition)
+	}
+
+	if opts.ContentType != "" {
+		in.ResponseContentType = aws.String(opts.ContentType)
+	}
+
+	req, err := s.presigner.PresignGetObject(ctx, in, s3.WithPresignExpires(ttl))
 	if err != nil {
 		return "", fmt.Errorf("s3: presign %s: %w", key, err)
 	}

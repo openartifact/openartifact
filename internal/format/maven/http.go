@@ -15,6 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 
@@ -72,6 +73,10 @@ func (h *HTTPHandler) handlePath(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, repoPublic bool, art *models.MavenArtifact, contentType string) {
 	if base.Revalidate(w, r, repoPublic, `"`+art.SHA256+`"`, metadataMaxAge) {
+		return
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: art.SHA256, Filename: filepath.Base(art.RepoPath), ContentType: contentType}) {
 		return
 	}
 

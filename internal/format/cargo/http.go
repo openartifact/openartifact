@@ -20,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -190,6 +191,16 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Count the download before the blob is opened or redirected to: a
+	// presigned response never reaches the streaming code below.
+	if err := h.DB.IncrementCargoDownloadCount(r.Context(), repoID, crateName, version); err != nil {
+		h.Log.Errorw("failed to increment download count", "name", crateName, "version", version, "error", err)
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: crate.BlobKey, Filename: crateName + "-" + version + ".crate", ContentType: "application/octet-stream"}) {
+		return
+	}
+
 	// Get blob from storage
 	rc, err := h.BlobStore.Get(r.Context(), crate.BlobKey)
 	if err != nil {
@@ -199,11 +210,6 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = rc.Close() }()
-
-	// Increment download count
-	if err := h.DB.IncrementCargoDownloadCount(r.Context(), repoID, crateName, version); err != nil {
-		h.Log.Errorw("failed to increment download count", "name", crateName, "version", version, "error", err)
-	}
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("ETag", `"`+crate.Checksum+`"`)

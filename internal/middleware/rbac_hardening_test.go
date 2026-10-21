@@ -61,6 +61,8 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{http.MethodPost, "/api/v1/repositories/app/packages", routeScope{action: "write", repoName: "app"}, "rpm upload"},
 		{http.MethodPost, "/api/v1/repositories/app/debs", routeScope{action: "write", repoName: "app"}, "deb upload"},
 		{http.MethodPut, "/api/v1/repositories/app/comps", routeScope{action: "write", repoName: "app"}, "comps upload"},
+		{http.MethodPost, "/api/v1/repositories/app/uploads", routeScope{action: "write", repoName: "app"}, "presigned upload init"},
+		{http.MethodPost, "/api/v1/repositories/app/uploads/0b9c1a52-0000-4000-8000-000000000000/complete", routeScope{action: "write", repoName: "app"}, "presigned upload complete"},
 		{http.MethodDelete, "/api/v1/repositories/app/debs/9", routeScope{action: "delete", repoName: "app"}, "deb delete"},
 		{http.MethodDelete, "/api/v1/repositories/app/packages/9", routeScope{action: "delete", repoName: "app"}, "rpm delete"},
 		{http.MethodPatch, "/api/v1/repositories/app/packages/9", routeScope{action: "manage"}, "unknown method on data route"},

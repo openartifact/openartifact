@@ -13,8 +13,10 @@ import (
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -68,6 +70,25 @@ func (h *Handler) ResolveRepoID(ctx context.Context, name string) (string, error
 		return "", nil
 	}
 	return repo.ID, nil
+}
+
+// TryPresign answers a blob download with a 307 to a presigned object-store URL
+// when presigned downloads are enabled for the repository and the blob
+// qualifies (see package presign), and returns true; the caller MUST then
+// return immediately. It returns false, having written nothing, when the
+// caller should stream the blob itself.
+//
+// This is the single hook of the download path: call it from the binary
+// download branch of a handler only after authorisation (the RBAC middleware
+// runs before every format handler), quarantine checks and download counters,
+// and right before opening the blob. Never call it for metadata. blob.Repo
+// defaults to the {name} URL parameter.
+func (h *Handler) TryPresign(w http.ResponseWriter, r *http.Request, blob presign.Blob) bool {
+	if blob.Repo == "" && blob.Repository == nil {
+		blob.Repo = urlparams.Vars(r)["name"]
+	}
+
+	return presign.Try(h.BlobStore, w, r, blob)
 }
 
 // StreamBlob streams a blob from the store to the response writer.

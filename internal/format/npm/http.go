@@ -17,6 +17,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -266,6 +267,10 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 		h.Log.Errorw("failed to stat tarball blob", "sha256", blobSHA256, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
+		return
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: blobSHA256, Size: size, Filename: tarball, ContentType: "application/octet-stream"}) {
 		return
 	}
 

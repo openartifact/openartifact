@@ -117,7 +117,11 @@ Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `gar
 | `STORAGE_ACCESS_KEY` | `accessKey` | empty | S3 access key; used only when both keys are set, otherwise the AWS credential chain applies |
 | `STORAGE_SECRET_KEY` | `secretKey` | empty | S3 secret key (**secret**) |
 | `STORAGE_S3_FORCE_PATH_STYLE` | `forcePathStyle` | `false` | Path-style S3 addressing |
-| `STORAGE_S3_PRESIGN_TTL` | `presignTtl` | `5m` | Presigned URL lifetime, clamped to 1 m - 1 h |
+| `STORAGE_S3_PRESIGN_TTL` | `presignTtl` | `5m` | Lifetime of presigned download URLs (s3, gcs), clamped to 1 m - 1 h. Only used when `presignDownloads` is on |
+| `STORAGE_PRESIGN_DOWNLOADS` | `presignDownloads` | `false` | Answer blob downloads with a `307` redirect to a presigned URL (s3, gcs only); per-repository override `presign_downloads`. See [Presigned URLs](../operations/storage.md#presigned-urls) |
+| `STORAGE_PRESIGN_MIN_SIZE` | `presignMinSize` | `1048576` | Blobs smaller than this many bytes are streamed; `0` redirects everything; negative is rejected at startup |
+| `STORAGE_PRESIGN_ENDPOINT` | `presignEndpoint` | empty | Public base URL (absolute `http(s)`, no query or fragment) used only for signing; set it when `endpoint` is not reachable by clients |
+| `STORAGE_PRESIGN_UPLOAD_TTL` | `presignUploadTtl` | `30m` | Lifetime of presigned PUT upload URLs, clamped to 1 m - 12 h |
 | `OPENARTIFACT_GCS_BUCKET` | `gcsBucket` | empty | GCS bucket (via the S3-compatible XML API) |
 | `OPENARTIFACT_GCS_HMAC_KEY` | `gcsHmacKey` | empty | GCS HMAC access key (required for `gcs`) |
 | `OPENARTIFACT_GCS_HMAC_SECRET` | `gcsHmacSecret` | empty | GCS HMAC secret (**secret**) |

@@ -39,7 +39,7 @@ Two targets are seeded by the first migration:
 | `/api/v1/*` (management, scans, users, settings…) | `manage` | global |
 | `GET/HEAD /api/v1/repositories`, `/api/v1/search` | any authenticated principal | results are filtered per repository by `read` |
 | `GET/HEAD /api/v1/repository/{name}` | `read` | `{name}` |
-| `/api/v1/repositories/{name}/debs…`, `…/packages…`, `…/comps…` (Debian/RPM upload) | GET/HEAD `read`, POST/PUT `write`, DELETE `delete` | `{name}`, empty path |
+| `/api/v1/repositories/{name}/debs…`, `…/packages…`, `…/comps…` (Debian/RPM upload), `…/uploads…` (presigned raw upload: create and complete) | GET/HEAD `read`, POST/PUT `write`, DELETE `delete` | `{name}`, empty path |
 | everything else (package data) | GET/HEAD/OPTIONS `read`, DELETE `delete`, other methods `write` | see below |
 
 Repository and path extraction for data requests:

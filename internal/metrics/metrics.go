@@ -17,6 +17,7 @@ type Registry struct {
 	HTTPRequestDurationSeconds          *prometheus.HistogramVec
 	UploadsTotal                        *prometheus.CounterVec
 	BlobBytesTotal                      *prometheus.CounterVec
+	BlobDownloadsTotal                  *prometheus.CounterVec
 	MetadataRegenerationsTotal          *prometheus.CounterVec
 	MetadataRegenerationDurationSeconds *prometheus.HistogramVec
 	AuditDroppedTotal                   prometheus.Counter
@@ -47,6 +48,11 @@ func NewRegistry() *Registry {
 			Help: "Total bytes transferred to/from the blob store.",
 		}, []string{"operation"}),
 
+		BlobDownloadsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_blob_downloads_total",
+			Help: "Blob download GET requests by delivery mode: mode=redirect (307 to a presigned URL) or mode=stream (served by this server); reason says why a download was streamed.",
+		}, []string{"mode", "reason"}),
+
 		MetadataRegenerationsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_metadata_regenerations_total",
 			Help: "Total number of metadata regeneration cycles completed.",
@@ -69,6 +75,7 @@ func NewRegistry() *Registry {
 		r.HTTPRequestDurationSeconds,
 		r.UploadsTotal,
 		r.BlobBytesTotal,
+		r.BlobDownloadsTotal,
 		r.MetadataRegenerationsTotal,
 		r.MetadataRegenerationDurationSeconds,
 		r.AuditDroppedTotal,

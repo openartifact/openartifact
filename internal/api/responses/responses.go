@@ -82,6 +82,11 @@ type RepositoryResponse struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 
+	// PresignDownloads overrides the global storage.presignDownloads setting:
+	// null inherits it, true redirects blob downloads to presigned URLs, false
+	// always streams through the server.
+	PresignDownloads *bool `json:"presign_downloads"`
+
 	// Proxy repositories only. The upstream password is never returned.
 	UpstreamURL             string `json:"upstream_url,omitempty"`
 	UpstreamUsername        string `json:"upstream_username,omitempty"`

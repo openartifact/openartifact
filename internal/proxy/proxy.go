@@ -20,6 +20,7 @@ import (
 	"net/http"
 	"net/url"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,6 +31,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -128,6 +130,25 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	entry, fromCache := res.entry, res.fromCache
 
+	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
+		return
+	}
+
+	// A binary download of a cached (or just fetched) file is answered with a
+	// redirect to the object store when presigned downloads are enabled.
+	// Metadata files and stale copies (which carry a Warning header) stream.
+	if !res.stale && presign.IsProxyBlobPath(repo.Format, key) &&
+		presign.Try(s.blobStore, w, r, presign.Blob{
+			SHA256:      entry.BlobKey,
+			Size:        entry.SizeBytes,
+			Filename:    path.Base(key),
+			ContentType: entry.ContentType,
+			Repository:  repo,
+			CheckExists: true,
+		}) {
+		return
+	}
+
 	rc, err := s.blobStore.Get(r.Context(), entry.BlobKey)
 	if err != nil && fromCache {
 		// The cache row outlived its blob (storage wiped or restored from an
@@ -146,6 +167,10 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 		entry = res.entry
 
+		if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
+			return
+		}
+
 		rc, err = s.blobStore.Get(r.Context(), entry.BlobKey)
 	}
 
@@ -156,10 +181,6 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 	defer func() { base.CloseLog(rc, s.log) }()
-
-	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
-		return
-	}
 
 	if res.stale {
 		w.Header().Set("Warning", staleWarning)

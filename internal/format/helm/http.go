@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -156,6 +157,10 @@ func (h *HTTPHandler) handleDownloadChart(w http.ResponseWriter, r *http.Request
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(chart.ID, "charts/"+filename, filename, r.URL.Path)...) {
+		return
+	}
+
+	if h.TryPresign(w, r, presign.Blob{SHA256: chart.BlobKey, Size: chart.SizeBytes, Filename: filename, ContentType: "application/gzip"}) {
 		return
 	}
 

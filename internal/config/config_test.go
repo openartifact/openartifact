@@ -626,3 +626,83 @@ func TestDockerGCConfig(t *testing.T) {
 		}
 	})
 }
+
+func TestLoad_PresignDefaults(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	s := cfg.Storage
+	if s.PresignDownloads {
+		t.Error("presignDownloads must default to false")
+	}
+
+	if s.PresignMinSize != 1<<20 {
+		t.Errorf("presignMinSize = %d, want 1 MiB", s.PresignMinSize)
+	}
+
+	if s.PresignTTL != 5*time.Minute || s.PresignUploadTTL != 30*time.Minute {
+		t.Errorf("TTLs = %v / %v, want 5m / 30m", s.PresignTTL, s.PresignUploadTTL)
+	}
+
+	if s.PresignEndpoint != "" {
+		t.Errorf("presignEndpoint = %q, want empty", s.PresignEndpoint)
+	}
+}
+
+func TestLoad_PresignEnvOverrides(t *testing.T) {
+	t.Setenv("STORAGE_PRESIGN_DOWNLOADS", "true")
+	t.Setenv("STORAGE_PRESIGN_MIN_SIZE", "0")
+	t.Setenv("STORAGE_S3_PRESIGN_TTL", "90s")
+	t.Setenv("STORAGE_PRESIGN_UPLOAD_TTL", "2h")
+	t.Setenv("STORAGE_PRESIGN_ENDPOINT", "https://s3.example.com")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	s := cfg.Storage
+	if !s.PresignDownloads || s.PresignMinSize != 0 || s.PresignTTL != 90*time.Second ||
+		s.PresignUploadTTL != 2*time.Hour || s.PresignEndpoint != "https://s3.example.com" {
+		t.Errorf("env overrides not applied: %+v", s)
+	}
+
+	if err := cfg.Validate(); err != nil {
+		t.Errorf("Validate() rejected a valid presign configuration: %v", err)
+	}
+}
+
+func TestValidate_Presign(t *testing.T) {
+	tests := []struct {
+		name     string
+		endpoint string
+		minSize  int64
+		wantErr  bool
+	}{
+		{"empty endpoint", "", 1, false},
+		{"https endpoint", "https://s3.example.com", 1, false},
+		{"http endpoint with port and path", "http://minio.svc:9000/prefix", 1, false},
+		{"relative endpoint", "s3.example.com", 1, true},
+		{"unsupported scheme", "ftp://s3.example.com", 1, true},
+		{"endpoint with query", "https://s3.example.com?x=1", 1, true},
+		{"endpoint with fragment", "https://s3.example.com#x", 1, true},
+		{"negative min size", "", -1, true},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			cfg.Storage.PresignEndpoint, cfg.Storage.PresignMinSize = tt.endpoint, tt.minSize
+
+			if err := cfg.Validate(); (err != nil) != tt.wantErr {
+				t.Errorf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

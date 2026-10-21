@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
-import { deletePackage, downloadPackage, listComponents, listRepoMembers } from '../repositories'
+import { deletePackage, downloadPackage, listComponents, listRepoMembers, presignModeOf, presignValueOf, updateRepository } from '../repositories'
 import { ApiError, attachmentFilename } from '../client'
 
 function stubFetch(responses: unknown[]): { urls: string[]; methods: string[] } {
@@ -104,5 +104,25 @@ describe('repositories api', () => {
     expect(attachmentFilename("attachment; filename*=UTF-8''caf%C3%A9.json")).toBe('café.json')
     expect(attachmentFilename('inline')).toBeUndefined()
     expect(attachmentFilename(null)).toBeUndefined()
+  })
+
+  it('maps the tri-state presign override both ways', () => {
+    expect(presignModeOf({})).toBe('inherit')
+    expect(presignModeOf({ presign_downloads: null })).toBe('inherit')
+    expect(presignModeOf({ presign_downloads: true })).toBe('always')
+    expect(presignModeOf({ presign_downloads: false })).toBe('never')
+    expect(presignValueOf('inherit')).toBeNull()
+    expect(presignValueOf('always')).toBe(true)
+    expect(presignValueOf('never')).toBe(false)
+  })
+
+  it('updateRepository sends presign_downloads: null so the server clears the override', async () => {
+    let sent = ''
+    spyOn(globalThis, 'fetch').mockImplementation((async (_url: string, init?: RequestInit) => {
+      sent = String(init?.body)
+      return new Response('{}', { status: 200, headers: { 'Content-Type': 'application/json' } })
+    }) as never)
+    await updateRepository('r', { presign_downloads: presignValueOf('inherit') })
+    expect(JSON.parse(sent)).toEqual({ presign_downloads: null })
   })
 })

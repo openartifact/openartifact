@@ -604,6 +604,19 @@ type PermissionTarget struct {
 	OrgID string `db:"org_id" json:"org_id"`
 }
 
+// Presigned uploads awaiting their complete call; the object lives at the staging key staging/<id> in the blob store.
+type PresignedUpload struct {
+	ID           string    `db:"id" json:"id"`
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	Path         string    `db:"path" json:"path"`
+	SizeBytes    int64     `db:"size_bytes" json:"size_bytes"`
+	Sha256       string    `db:"sha256" json:"sha256"`
+	ContentType  string    `db:"content_type" json:"content_type"`
+	CreatedBy    string    `db:"created_by" json:"created_by"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+	ExpiresAt    time.Time `db:"expires_at" json:"expires_at"`
+}
+
 // Named, ordered promotion stage sequences reusable across bundles
 type PromotionPipeline struct {
 	ID          string          `db:"id" json:"id"`
@@ -730,6 +743,8 @@ type Repository struct {
 	// Organization this repository belongs to. NOT NULL — all repos must be org-scoped.
 	OrgID           string `db:"org_id" json:"org_id"`
 	MaxStaleSeconds int32  `db:"max_stale_seconds" json:"max_stale_seconds"`
+	// Per-repository override of storage.presignDownloads: NULL inherits the global setting, true/false force redirect/streaming.
+	PresignDownloads *bool `db:"presign_downloads" json:"presign_downloads"`
 }
 
 type RepositoryGroupMember struct {

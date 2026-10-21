@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -454,6 +455,8 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		NegativeCacheTTLSeconds int      `json:"negative_cache_ttl_seconds"`
 		MaxStaleSeconds         *int     `json:"max_stale_seconds"`
 		MemberRepos             []string `json:"member_repos"`
+		// PresignDownloads overrides storage.presignDownloads (null/absent inherits).
+		PresignDownloads *bool `json:"presign_downloads"`
 		// Org is the owning organization's name; empty means the built-in
 		// system organization.
 		Org string `json:"org"`
@@ -582,6 +585,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 	now := time.Now()
 	repo.OrgID = &orgID
+	repo.PresignDownloads = body.PresignDownloads
 	repo.CreatedAt = now
 	repo.UpdatedAt = now
 
@@ -642,6 +646,9 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		MaxStaleSeconds         *int      `json:"max_stale_seconds"`
 		Blocked                 *bool     `json:"blocked"`
 		MemberRepos             *[]string `json:"member_repos"`
+		// PresignDownloads is tri-state: absent leaves the override unchanged,
+		// null clears it (inherit storage.presignDownloads), true/false set it.
+		PresignDownloads json.RawMessage `json:"presign_downloads"`
 		// Org moves the repository to the named organization.
 		Org *string `json:"org"`
 	}
@@ -732,6 +739,16 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 
 	if body.Blocked != nil {
 		repo.Blocked = *body.Blocked
+	}
+
+	if body.PresignDownloads != nil {
+		var override *bool
+		if err := json.Unmarshal(body.PresignDownloads, &override); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", "presign_downloads must be true, false or null")
+			return
+		}
+
+		repo.PresignDownloads = override
 	}
 
 	if body.Org != nil {
@@ -1182,6 +1199,8 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		RepoType:    r.RepoType,
 		CreatedAt:   formatTime(r.CreatedAt),
 		UpdatedAt:   formatTime(r.UpdatedAt),
+
+		PresignDownloads: r.PresignDownloads,
 	}
 
 	if r.RepoType == repotype.Proxy {

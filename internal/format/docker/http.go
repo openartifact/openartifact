@@ -30,6 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/ocimanifest"
 	"github.com/openartifact/openartifact/internal/ocipath"
+	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -650,6 +651,13 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 
 	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(
 		blob.ID, digest, name+"/blobs/"+digest, r.URL.Path)...) {
+		return
+	}
+
+	// Layers and configs are the bulk of a pull; the registry spec lets a
+	// server answer a blob GET with a redirect, which every client follows.
+	// Manifests (above) are never presigned.
+	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: blob.BlobSHA256, Size: blob.Size, Repository: repo}) {
 		return
 	}
 

@@ -72,6 +72,7 @@ scrape_configs:
 | `openartifact_http_request_duration_seconds` | histogram | `method`, `path` | buckets 0.005 to 10 s |
 | `openartifact_uploads_total` | counter | `format`, `result` | `result` is `success` or `error`; only the API upload handlers for `deb`, `npm`, `rpm` and `maven` count here |
 | `openartifact_blob_bytes_total` | counter | `operation` | bytes written (`put`) and read (`get`) through the blob store |
+| `openartifact_blob_downloads_total` | counter | `mode`, `reason` | blob `GET`s by delivery: `mode=redirect` (`reason=presigned`) or `mode=stream` (`disabled`, `unsupported`, `below_min_size`, `sign_failed`, `repo_lookup_failed`, `missing_object`); see [presigned URLs](storage.md#presigned-urls) |
 | `openartifact_metadata_regenerations_total` | counter | `format` | `rpm`, `maven`, `npm` |
 | `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` | same buckets as the request histogram |
 | `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown |
