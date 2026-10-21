@@ -253,6 +253,7 @@ import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import { repoBaseUrl } from '../lib/installCommands'
+import { formatDate } from '../lib/datetime'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
@@ -360,17 +361,7 @@ function formatSize(bytes?: number): string {
     size /= 1024
     unitIndex++
   }
-  return `${size.toFixed(2)} ${units[unitIndex]}`
-}
-
-function formatDate(dateStr?: string): string {
-  if (!dateStr) return '-'
-  try {
-    const date = new Date(dateStr)
-    return date.toLocaleDateString()
-  } catch {
-    return dateStr
-  }
+  return unitIndex === 0 ? `${size} B` : `${size.toFixed(1)} ${units[unitIndex]}`
 }
 
 const repoUrl = computed(() =>
