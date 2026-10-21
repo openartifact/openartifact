@@ -12,6 +12,7 @@ import (
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync"
 	"testing"
 
@@ -569,6 +570,34 @@ func TestRPMDelete_ReleasesQuotaAndEmitsDeleted(t *testing.T) {
 
 	if got := blobStore.deletedIDs(); len(got) != 1 || len(got[0]) != 64 {
 		t.Errorf("unreferenced blob must be deleted by sha256 once, got %v", got)
+	}
+}
+
+// Listing now returns rows for every format, but the id-based package delete
+// only knows deb and rpm: other formats must get a clear 400, not a 404 or a
+// wrong delete.
+func TestPackageDelete_UnsupportedFormatRejected(t *testing.T) {
+	mock := newMockDatabase()
+	db := rpmLookupDB{mock}
+	mock.repositories["repo-npm"] = &models.Repository{ID: "repo-npm", Name: "npm-repo", Format: "npm"}
+	mock.components["npm-1"] = &models.Component{ID: "npm-1", RepositoryID: "repo-npm", Format: "npm", Name: "left-pad", Version: "1.0.0"}
+
+	router := newRPMUploadRouter(t, db, newMockBlobStore(), &recordingPublisher{})
+
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodDelete,
+		"/api/v1/repositories/npm-repo/packages/npm-1", nil))
+
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("delete on npm repo: got %d %s, want 400", rec.Code, rec.Body.String())
+	}
+
+	if !strings.Contains(rec.Body.String(), "UNSUPPORTED_FORMAT") {
+		t.Errorf("expected UNSUPPORTED_FORMAT code, got %s", rec.Body.String())
+	}
+
+	if _, ok := mock.components["npm-1"]; !ok {
+		t.Error("component must not be deleted")
 	}
 }
 

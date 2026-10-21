@@ -4,7 +4,11 @@
 
 package auth
 
-import "context"
+import (
+	"context"
+
+	"github.com/openartifact/openartifact/internal/database/models"
+)
 
 // RepoReadFilter returns a predicate reporting whether the principal may read a
 // repository by name. The principal's permission targets are loaded once, so
@@ -15,16 +19,30 @@ func (e *Evaluator) RepoReadFilter(ctx context.Context, principal Principal) (fu
 	}
 
 	if principal.IsAnonymous {
-		if !e.allowAnonymousRead {
-			return func(string) (bool, error) { return false, nil }, nil
-		}
-
-		target, err := e.db.GetPermissionTargetByName(ctx, "anonymous-read")
+		publicNames, err := e.db.ListPublicRepositoryNames(ctx)
 		if err != nil {
 			return nil, err
 		}
 
+		public := make(map[string]struct{}, len(publicNames))
+		for _, n := range publicNames {
+			public[n] = struct{}{}
+		}
+
+		var target *models.PermissionTarget
+
+		if e.allowAnonymousRead {
+			target, err = e.db.GetPermissionTargetByName(ctx, "anonymous-read")
+			if err != nil {
+				return nil, err
+			}
+		}
+
 		return func(repoName string) (bool, error) {
+			if _, ok := public[repoName]; ok {
+				return true, nil
+			}
+
 			if target == nil {
 				return false, nil
 			}

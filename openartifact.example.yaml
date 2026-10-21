@@ -77,6 +77,9 @@ log:
   output: "stdout"
 
 auth:
+  # Anonymous read of private repos (via the "anonymous-read" permission target).
+  # Repositories flagged public are always anonymously readable (read-only),
+  # regardless of this setting.
   allowAnonymousRead: false
   legacyApiKeyEnabled: true  # default true; set false to disable the legacy API key
   sessionDurationHours: 24

@@ -41,6 +41,8 @@ type Database interface {
 	GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error)
 	GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error)
 	CreateRepository(ctx context.Context, repo *models.Repository) error
+	// ListPublicRepositoryNames returns the names of all repositories flagged public.
+	ListPublicRepositoryNames(ctx context.Context) ([]string, error)
 	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)
 	CountRepositories(ctx context.Context, formatFilter string) (int, error)
 	UpdateRepository(ctx context.Context, repo *models.Repository) error

@@ -36,6 +36,9 @@ func errNotImpl(name string) error { return fmt.Errorf("%w: %s", ErrMockNotImple
 func (m *BaseMockDB) GetRepositoryByName(ctx context.Context, name string) (*models.Repository, error) {
 	return nil, errNotImpl("GetRepositoryByName")
 }
+func (m *BaseMockDB) ListPublicRepositoryNames(ctx context.Context) ([]string, error) {
+	return nil, errNotImpl("ListPublicRepositoryNames")
+}
 func (m *BaseMockDB) GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error) {
 	return nil, errNotImpl("GetRepositoryByID")
 }

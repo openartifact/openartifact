@@ -517,6 +517,16 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Package rows of every other format (npm, pypi, ...) are listed by
+	// GET /packages but have no deletion path here; refuse instead of
+	// reporting a misleading "package not found".
+	if repo.Format != "rpm" {
+		writeError(w, http.StatusBadRequest, "UNSUPPORTED_FORMAT",
+			"deleting packages by id is only supported for deb and rpm repositories")
+
+		return
+	}
+
 	repoID := repo.ID
 
 	// Look up component to get artifact ID for blob cleanup

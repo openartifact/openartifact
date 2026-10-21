@@ -98,7 +98,24 @@ func (e *Evaluator) Evaluate(ctx context.Context, principal Principal, repoName,
 	}
 
 	if principal.IsAnonymous {
-		if action != "read" || !e.allowAnonymousRead {
+		if action != "read" {
+			return false, nil
+		}
+
+		// Public repositories are readable anonymously regardless of the
+		// global flag. "blocked" is enforced at serve time (proxy), not here.
+		if repoName != "" {
+			repo, err := e.db.GetRepositoryByName(ctx, repoName)
+			if err != nil {
+				return false, err
+			}
+
+			if repo != nil && repo.Public {
+				return true, nil
+			}
+		}
+
+		if !e.allowAnonymousRead {
 			return false, nil
 		}
 

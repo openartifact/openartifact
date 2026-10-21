@@ -164,6 +164,33 @@ func (p *PostgresDB) GetRepositoryByName(ctx context.Context, name string) (*mod
 	return r, nil
 }
 
+// ListPublicRepositoryNames returns the names of all repositories flagged public.
+func (p *PostgresDB) ListPublicRepositoryNames(ctx context.Context) ([]string, error) {
+	rows, err := p.db.QueryContext(ctx, `SELECT name FROM repositories WHERE COALESCE(public, false)`)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list public repositories: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var names []string
+
+	for rows.Next() {
+		var n string
+		if err := rows.Scan(&n); err != nil {
+			return nil, fmt.Errorf("failed to scan public repository: %w", err)
+		}
+
+		names = append(names, n)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to iterate public repositories: %w", err)
+	}
+
+	return names, nil
+}
+
 // GetRepositoryByID retrieves a repository by its primary key.
 func (p *PostgresDB) GetRepositoryByID(ctx context.Context, id string) (*models.Repository, error) {
 	r := &models.Repository{}
@@ -268,44 +295,51 @@ func (p *PostgresDB) DeleteRepository(ctx context.Context, id string) error {
 	return nil
 }
 
+// ListComponentsByRepo lists the packages of one repository across every
+// format (see ListRepoComponents in queries/components.sql for the per-format
+// mapping). formatFilter, when non-empty, restricts the result to one format.
 func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFilter string, page, limit int) ([]*models.Component, int, error) {
-	offset := (page - 1) * limit
-
-	fromClause := `(SELECT id, repository_id, name, version, 'deb' AS format, arch, '' AS sha256, '' AS release, 0 AS epoch, 0 AS build_time, 0 AS archive_size, installed_size AS package_size, installed_size, filename, created_at, updated_at FROM deb_packages UNION ALL SELECT id, repository_id, name, version, 'rpm' AS format, arch, '' AS sha256, release, epoch, COALESCE(EXTRACT(EPOCH FROM build_time)::bigint, 0) AS build_time, archive_size, package_size, installed_size, filename, created_at, updated_at FROM rpm_packages) AS p`
-
-	var total int
-	whereClause := " WHERE repository_id = $1"
-	countArgs := []any{repoID}
-
-	if formatFilter != "" {
-		whereClause += " AND format = $2"
-		countArgs = append(countArgs, formatFilter)
-	}
-
-	if err := p.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM "+fromClause+whereClause, countArgs...).Scan(&total); err != nil {
+	total, err := p.q.CountRepoComponents(ctx, dbsqlc.CountRepoComponentsParams{
+		RepoID:       repoID,
+		FormatFilter: formatFilter,
+	})
+	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count packages: %w", err)
 	}
 
-	//nolint:gosec // G201: fromClause/whereClause are built from internal constants; user input is bound via placeholders
-	query := fmt.Sprintf("SELECT id, repository_id, name, version, format, arch, sha256, release, epoch, build_time, archive_size, package_size, installed_size, filename, created_at, updated_at FROM %s%s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d", fromClause, whereClause, len(countArgs)+1, len(countArgs)+2)
-	args := append(countArgs, limit, offset)
-
-	rows, err := p.db.QueryContext(ctx, query, args...)
+	rows, err := p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
+		RepoID:       repoID,
+		FormatFilter: formatFilter,
+		PageLimit:    toInt32(limit),
+		PageOffset:   toInt32((page - 1) * limit),
+	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list packages: %w", err)
 	}
-	defer func() { _ = rows.Close() }()
 
-	var components []*models.Component
-	for rows.Next() {
-		c := &models.Component{}
-		if err := rows.Scan(&c.ID, &c.RepositoryID, &c.Name, &c.Version, &c.Format, &c.Arch, &c.SHA256, &c.Release, &c.Epoch, &c.BuildTime, &c.ArchiveSize, &c.PackageSize, &c.InstalledSize, &c.Filename, &c.CreatedAt, &c.UpdatedAt); err != nil {
-			return nil, 0, fmt.Errorf("failed to scan package: %w", err)
-		}
-		components = append(components, c)
+	components := make([]*models.Component, 0, len(rows))
+	for _, r := range rows {
+		components = append(components, &models.Component{
+			ID:            r.ID,
+			RepositoryID:  r.RepositoryID,
+			Name:          r.Name,
+			Version:       r.Version,
+			Format:        r.Format,
+			Arch:          r.Arch,
+			SHA256:        r.Sha256,
+			Release:       r.Release,
+			Epoch:         int(r.Epoch),
+			BuildTime:     r.BuildTime,
+			ArchiveSize:   r.ArchiveSize,
+			PackageSize:   r.PackageSize,
+			InstalledSize: r.InstalledSize,
+			Filename:      r.Filename,
+			CreatedAt:     r.CreatedAt,
+			UpdatedAt:     r.UpdatedAt,
+		})
 	}
 
-	return components, total, rows.Err()
+	return components, int(total), nil
 }
 
 func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Repository) error {
