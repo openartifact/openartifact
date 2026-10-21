@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -295,6 +296,27 @@ func TestMiddleware_AnonymousRead_Denied(t *testing.T) {
 
 	if rw.Header().Get("WWW-Authenticate") == "" {
 		t.Error("expected WWW-Authenticate header on 401")
+	}
+}
+
+// docker/podman follow the first Bearer challenge to a token service; the
+// registry has none, so /v2/ must challenge with Basic only.
+func TestMiddleware_RegistryChallengeIsBasicOnly(t *testing.T) {
+	db := newMockDatabase()
+	mw := newRBACMiddleware(db, middleware.RBACConfig{AllowAnonymousRead: false}, newMWLogger(t))
+	handler := mw(noopHandler(http.StatusOK))
+
+	req := httptest.NewRequestWithContext(context.Background(), "GET", "/v2/", nil)
+	rw := httptest.NewRecorder()
+	handler.ServeHTTP(rw, req)
+
+	if rw.Code != http.StatusUnauthorized {
+		t.Fatalf("expected 401, got %d", rw.Code)
+	}
+
+	got := rw.Header().Values("WWW-Authenticate")
+	if len(got) != 1 || !strings.HasPrefix(got[0], "Basic ") {
+		t.Fatalf("expected a single Basic challenge on /v2/, got %q", got)
 	}
 }
 

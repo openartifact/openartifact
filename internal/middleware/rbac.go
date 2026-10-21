@@ -235,7 +235,12 @@ func writeAccessDenied(w http.ResponseWriter, r *http.Request, log *logger.Logge
 	)
 
 	if principal.IsAnonymous {
-		w.Header().Add("WWW-Authenticate", `Bearer realm="openartifact"`)
+		// The OCI registry has no token service: a Bearer challenge there makes
+		// docker/podman fetch a token from the realm, which is not a URL, and
+		// fail. Offer only Basic on /v2/ so clients send their credentials.
+		if !strings.HasPrefix(r.URL.Path, "/v2/") && r.URL.Path != "/v2" {
+			w.Header().Add("WWW-Authenticate", `Bearer realm="openartifact"`)
+		}
 
 		// Package managers (maven, pip, helm, docker) only send credentials
 		// after a Basic challenge. Never challenge /api/ with Basic: browsers
