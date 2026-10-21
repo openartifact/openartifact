@@ -51,7 +51,8 @@ model, on your own infrastructure. Free software under the AGPL.
 
 ## Features
 
-- 16 package formats (table below), hosted, proxy and group repositories
+- 16 package formats (table below) as hosted repositories; proxy repositories for
+  Maven, Debian, RPM and raw, and group repositories for Maven and raw
 - RBAC with users, groups, permission targets, API tokens; SSO via OIDC and SAML
 - SBOM generation (CycloneDX/SPDX), vulnerability scanning (OSV, Trivy, Grype),
   license compliance and secret detection
@@ -91,6 +92,43 @@ Authentication is required unless `allowAnonymousRead` is enabled or the
 repository is marked public (anonymous read only; writes always need a token).
 Package clients authenticate with an API token (Bearer, or Basic with the token
 as password); account passwords are only accepted by the web UI login.
+
+## Proxy and group repositories
+
+A repository's `repo_type` is `hosted` (default), `proxy` or `group`. Proxy and
+group repositories are served on the same client URLs as hosted ones and are
+read-only: writes answer `405`. Creating a proxy or group repository for a
+format that cannot be served is rejected with `400 validation_failed`.
+
+**Proxy** (Maven, Debian, RPM, raw): requests are mirrored by path from
+`upstream_url`. A file is fetched on first request, stored content-addressed in
+the blob store, recorded under the repository (it appears in the package list
+and can be downloaded there) and served from the cache afterwards.
+
+- `cache_ttl_seconds` (default 1 hour) bounds how long mutable files are served
+  without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian
+  `dists/` and RPM `repodata/` metadata, and everything in raw repositories.
+  Released Maven artifacts and `.deb`/`.rpm` files are immutable once cached.
+- An upstream 404 is cached for `negative_cache_ttl_seconds`. Any other upstream
+  failure (5xx, 401/403, timeout, redirect to a disallowed address, a file over
+  4 GiB) answers `502` with a generic message and caches nothing; there is no
+  serve-stale fallback.
+- Concurrent requests for the same uncached path share one upstream fetch.
+  Clients get the first byte once the whole file is cached.
+- `upstream_url` must be a plain `http(s)` base URL (no credentials, query or
+  fragment) and passes the same SSRF validation as webhooks, at configuration
+  time and on every fetch and redirect; set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`
+  only for internal upstreams. Upstream credentials (`upstream_username`,
+  `upstream_password`) are stored encrypted and never returned.
+
+**Group** (Maven, raw): an ordered list of hosted and proxy members of the same
+format; groups cannot be nested. The first member that has the requested file
+answers. Each member is authorized for the caller as if requested directly, so
+a public group never exposes a private member's files. Maven `maven-metadata.xml`
+(and its checksums) is merged across all readable members: versions are united
+and ordered, `latest`/`release`/`lastUpdated` recomputed. **Debian and RPM
+groups are not supported** (their `Packages`/`Release`/`repodata` metadata is
+generated per repository and cannot be merged) and are rejected at creation.
 
 ## Quickstart (Docker Compose)
 

@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request, requestBlob } from './client'
-import type { Repository } from './generated/types.gen'
+import type { Repository, RepositoryMember } from './generated/types.gen'
 
-export type { Repository }
+export type { Repository, RepositoryMember }
 
 export interface PackageItem {
   id: string
@@ -50,6 +50,12 @@ export async function listAllRepositories(): Promise<Repository[]> {
 
 export function getRepository(name: string): Promise<Repository> {
   return request<Repository>(`/api/v1/repository/${encodeURIComponent(name)}`)
+}
+
+/** Members of a group repository, ordered by resolution priority (first wins). */
+export async function listRepoMembers(name: string): Promise<RepositoryMember[]> {
+  const res = await request<{ members?: RepositoryMember[] }>(`/api/v1/repositories/${encodeURIComponent(name)}/members`)
+  return res.members ?? []
 }
 
 export function createRepository(body: Partial<Repository> & { upstream_password?: string }): Promise<Repository> {

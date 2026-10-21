@@ -23,6 +23,7 @@ import (
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -42,6 +43,7 @@ const (
 var (
 	errDebInvalid      = errors.New("invalid deb package")
 	errDebWrongFormat  = errors.New("repository is not a deb repository")
+	errDebNotHosted    = errors.New("repository is not hosted")
 	errDebRepoNotFound = errors.New("repository not found")
 	debNameRe          = regexp.MustCompile(`^[a-z0-9][a-z0-9+.\-]+$`)
 	debVersionRe       = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9.+~:\-]*$`)
@@ -148,6 +150,8 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found")
 		case errors.Is(err, errDebWrongFormat):
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "repository is not a deb repository")
+		case errors.Is(err, errDebNotHosted):
+			writeError(w, http.StatusMethodNotAllowed, "INVALID_INPUT", "proxy and group repositories are read-only")
 		case errors.Is(err, errDebInvalid):
 			writeError(w, http.StatusBadRequest, "INVALID_INPUT", err.Error())
 		case errors.Is(err, quota.ErrExceeded):
@@ -194,6 +198,10 @@ func (h *DebUploadHandler) resolveRepoID(r *http.Request, repoName string) (stri
 
 	if repo.Format != "deb" {
 		return "", errDebWrongFormat
+	}
+
+	if repo.RepoType != "" && repo.RepoType != repotype.Hosted {
+		return "", errDebNotHosted
 	}
 
 	return repo.ID, nil

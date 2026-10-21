@@ -92,6 +92,10 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if rejectNonHosted(w, repo) {
+		return
+	}
+
 	if repo.Format == "deb" {
 		h.debHandler.handleUpload(w, r)
 		return
@@ -512,6 +516,10 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	if rejectNonHosted(w, repo) {
+		return
+	}
+
 	if repo.Format == "deb" {
 		h.debHandler.handleDelete(w, r)
 		return
@@ -604,6 +612,10 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 	repo, err := h.db.GetRepositoryByName(r.Context(), repoName)
 	if err != nil || repo == nil {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "repository not found: "+repoName)
+		return
+	}
+
+	if rejectNonHosted(w, repo) {
 		return
 	}
 

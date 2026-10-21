@@ -105,6 +105,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Step 1: Format -->
         <template v-else-if="step === 1">
           <p v-if="isEdit" class="mb-3 text-xs text-muted">{{ t('wizard.immutable') }}</p>
+          <p v-if="form.type === 'proxy'" class="mb-3 text-xs text-muted">{{ t('repos.new.proxyFormatsHint') }}</p>
+          <p v-else-if="form.type === 'group'" class="mb-3 text-xs text-muted">{{ t('repos.new.groupFormatsHint') }}</p>
           <div class="grid grid-cols-3 gap-3">
             <button
               v-for="fmt in formats"
@@ -152,6 +154,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </div>
             </button>
           </div>
+
+          <p v-if="!isEdit && form.type === 'proxy'" class="mt-3 text-xs text-muted">{{ t('repos.new.proxyFormatsHint') }}</p>
+          <p v-else-if="!isEdit && form.type === 'group'" class="mt-3 text-xs text-muted">{{ t('repos.new.groupFormatsHint') }}</p>
 
           <div v-if="form.type === 'proxy'" class="mt-4 space-y-3">
             <div>
@@ -299,13 +304,12 @@ import type { Repository } from '../api/repositories'
 import FormatBadge from '../components/FormatBadge.vue'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
-import { ALL_FORMATS, type FormatId } from '../lib/formats'
+import type { FormatId } from '../lib/formats'
+import { allowedFormats, coerceFormat } from '../lib/repoTypes'
 
 const route = useRoute()
 const router = useRouter()
 const toasts = useToastStore()
-
-const formats = ALL_FORMATS
 
 const types: { value: 'hosted' | 'proxy' | 'group'; icon: unknown; title: string; description: string }[] = [
   {
@@ -346,6 +350,8 @@ const form = ref({
 })
 const loadError = ref('')
 const existing = ref<Repository[]>([])
+
+const formats = computed(() => allowedFormats(form.value.type))
 
 const nameValid = computed(() => /^[a-zA-Z0-9_-]{1,100}$/.test(form.value.name.trim()))
 const candidateMembers = computed(() =>
@@ -405,6 +411,15 @@ watch(
   () => form.value.format,
   () => {
     form.value.members = []
+  },
+)
+
+// Proxy and group repositories only exist for some formats; drop a selection
+// the new type cannot serve. Existing repositories keep their stored format.
+watch(
+  () => form.value.type,
+  (next) => {
+    if (!isEdit.value) form.value.format = coerceFormat(next, form.value.format)
   },
 )
 

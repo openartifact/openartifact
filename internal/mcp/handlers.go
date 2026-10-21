@@ -11,7 +11,6 @@ import (
 	"strings"
 
 	"github.com/mark3labs/mcp-go/mcp"
-	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -35,7 +34,7 @@ func (s *Server) handleListRepositories(ctx context.Context, req mcp.CallToolReq
 
 	items := make([]responses.RepositoryResponse, 0, end-start)
 	for _, r := range repos[start:end] {
-		items = append(items, api.RepositoryToResponse(r))
+		items = append(items, toRepositoryDTO(r))
 	}
 
 	return jsonResult(repositoryListResult{Total: total, Page: page, Limit: limit, Repositories: items})
@@ -207,7 +206,7 @@ func (s *Server) handleGetRepository(ctx context.Context, req mcp.CallToolReques
 		return denied, nil
 	}
 
-	return jsonResult(api.RepositoryToResponse(repo))
+	return jsonResult(toRepositoryDTO(repo))
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────

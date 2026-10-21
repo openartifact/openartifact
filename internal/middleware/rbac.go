@@ -619,6 +619,13 @@ func splitDockerPath(rest string) (string, string) {
 	return rest[:bestIdx], rest[bestIdx+1:]
 }
 
+// RepoAndPath maps a request path to the (repository, artifact path) pair the
+// permission evaluator scopes against, so code serving a repository on behalf
+// of the router sees exactly what RBAC authorized.
+func RepoAndPath(urlPath string) (string, string) {
+	return extractRepoAndPath(urlPath)
+}
+
 // extractRepoAndPath maps a request path to the (repository, artifact path)
 // pair the permission evaluator scopes against. It understands the three
 // URL shapes the server actually registers: OCI /v2/… routes, the isolated

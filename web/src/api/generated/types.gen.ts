@@ -142,9 +142,26 @@ export type Repository = {
 };
 
 export type RepositoryMember = {
-    user_id?: string;
-    username?: string;
-    role?: 'reader' | 'writer' | 'admin';
+    /**
+     * Member repository ID
+     */
+    id: string;
+    /**
+     * Member repository name
+     */
+    name: string;
+    /**
+     * Member repository format
+     */
+    format: string;
+    /**
+     * Member repository type
+     */
+    repo_type: 'hosted' | 'proxy';
+    /**
+     * Resolution order within the group (lowest first)
+     */
+    priority: number;
 };
 
 export type CleanupPolicy = {
@@ -645,9 +662,12 @@ export type PostApiV1RepositoriesData = {
         format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'gomod' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
         description?: string;
         public?: boolean;
+        /**
+         * hosted (default), proxy or group. Proxy repositories are supported for maven, deb, rpm and raw; group repositories for maven and raw (deb/rpm groups cannot merge repository metadata). Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
+         */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**
-         * Required for proxy repos
+         * Required for proxy repos. Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
          */
         upstream_url?: string;
         upstream_username?: string;
@@ -656,7 +676,7 @@ export type PostApiV1RepositoriesData = {
         negative_cache_ttl_seconds?: number;
         blocked?: boolean;
         /**
-         * For group repos
+         * For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested.
          */
         member_repos?: Array<string>;
     };
@@ -774,8 +794,12 @@ export type PutApiV1RepositoriesByNameMembersResponses = {
     /**
      * Members updated
      */
-    200: unknown;
+    200: {
+        members?: Array<RepositoryMember>;
+    };
 };
+
+export type PutApiV1RepositoriesByNameMembersResponse = PutApiV1RepositoriesByNameMembersResponses[keyof PutApiV1RepositoriesByNameMembersResponses];
 
 export type GetApiV1RepositoriesByNameCleanupPoliciesData = {
     body?: never;

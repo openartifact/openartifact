@@ -11,6 +11,7 @@ import (
 	"io"
 	"mime"
 	"net/http"
+	"net/url"
 	"path"
 	"regexp"
 	"sort"
@@ -27,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/quarantine"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -249,8 +251,46 @@ func validateUpstreamURL(raw string) error {
 		return fmt.Errorf("upstream_url is not allowed: %w", err)
 	}
 
+	// The proxy appends request paths to the URL, so it must be a plain base;
+	// credentials belong in upstream_username/upstream_password where they are
+	// encrypted and never returned.
+	u, err := url.Parse(raw)
+	if err != nil || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return errUpstreamURLShape
+	}
+
 	return nil
 }
+
+// rejectNonHosted answers 405 and returns true when repo is a proxy or group:
+// those are read-only views and take no uploads or package deletions.
+func rejectNonHosted(w http.ResponseWriter, repo *models.Repository) bool {
+	if repo.RepoType == "" || repo.RepoType == repotype.Hosted {
+		return false
+	}
+
+	w.Header().Set("Allow", "GET, HEAD")
+	writeError(w, http.StatusMethodNotAllowed, "METHOD_NOT_ALLOWED", "proxy and group repositories are read-only")
+
+	return true
+}
+
+// unsupportedRepoTypeMessage explains why a proxy/group repository of format
+// cannot be created, or returns "" when it can be served.
+func unsupportedRepoTypeMessage(repoType, format string) string {
+	switch {
+	case repoType == repotype.Proxy && !repotype.ProxySupported(format):
+		return fmt.Sprintf("proxy repositories are not supported for format %q (supported: %s)", format, repotype.ProxyFormats())
+	case repoType == repotype.Group && (format == "deb" || format == "rpm"):
+		return fmt.Sprintf("group repositories are not supported for format %q: repository metadata cannot be merged across members (supported: %s)", format, repotype.GroupFormats())
+	case repoType == repotype.Group && !repotype.GroupSupported(format):
+		return fmt.Sprintf("group repositories are not supported for format %q (supported: %s)", format, repotype.GroupFormats())
+	}
+
+	return ""
+}
+
+var errUpstreamURLShape = errors.New("upstream_url must be a plain base URL without credentials, query or fragment")
 
 // normalizeTTL validates a cache TTL: negative values are rejected, values
 // above max are clamped.
@@ -295,6 +335,11 @@ func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, groupName
 
 		if member == nil {
 			return nil, http.StatusBadRequest, "validation_failed", "member repository not found: " + memberName
+		}
+
+		if member.RepoType == repotype.Group {
+			return nil, http.StatusBadRequest, "validation_failed",
+				fmt.Sprintf("member repository %q is a group; groups cannot be nested", memberName)
 		}
 
 		if member.Format != groupFormat {
@@ -363,6 +408,11 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 	if repoType != "hosted" && repoType != "proxy" && repoType != "group" {
 		writeError(w, http.StatusBadRequest, "validation_failed", "repo_type must be one of: hosted, proxy, group")
+		return
+	}
+
+	if msg := unsupportedRepoTypeMessage(repoType, body.Format); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
 	}
 
@@ -876,17 +926,34 @@ func downloadFilename(blob *models.ComponentBlob) string {
 	return name
 }
 
-func (h *RepositoriesHandler) memberListResponse(members []*models.RepositoryGroupMember) map[string]any {
+// writeMemberList writes a group's members in resolution order with the
+// member repository's name, format and type.
+func (h *RepositoriesHandler) writeMemberList(w http.ResponseWriter, r *http.Request, members []*models.RepositoryGroupMember) {
 	memberList := make([]map[string]any, 0, len(members))
 
 	for _, member := range members {
+		repo, err := h.db.GetRepositoryByID(r.Context(), member.MemberRepoID)
+		if err != nil {
+			h.log.Errorw("list members: db error getting member repo", "member_id", member.MemberRepoID, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return
+		}
+
+		if repo == nil {
+			continue
+		}
+
 		memberList = append(memberList, map[string]any{
-			"id":       member.MemberRepoID,
-			"priority": member.Priority,
+			"id":        member.MemberRepoID,
+			"name":      repo.Name,
+			"format":    repo.Format,
+			"repo_type": repo.RepoType,
+			"priority":  member.Priority,
 		})
 	}
 
-	return map[string]any{"members": memberList}
+	writeJSON(w, http.StatusOK, map[string]any{"members": memberList})
 }
 
 func (h *RepositoriesHandler) handleGetMembers(w http.ResponseWriter, r *http.Request) {
@@ -919,7 +986,7 @@ func (h *RepositoriesHandler) handleGetMembers(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.memberListResponse(members))
+	h.writeMemberList(w, r, members)
 }
 
 func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http.Request) {
@@ -981,7 +1048,7 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 		return
 	}
 
-	writeJSON(w, http.StatusOK, h.memberListResponse(members))
+	h.writeMemberList(w, r, members)
 }
 
 // RepositoryToResponse converts a repository to its public API shape. It never
@@ -989,7 +1056,7 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 	desc := r.Description // copy to allow taking address
 
-	return responses.RepositoryResponse{
+	resp := responses.RepositoryResponse{
 		ID:          r.ID,
 		Name:        r.Name,
 		Format:      r.Format,
@@ -999,6 +1066,16 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		CreatedAt:   formatTime(r.CreatedAt),
 		UpdatedAt:   formatTime(r.UpdatedAt),
 	}
+
+	if r.RepoType == repotype.Proxy {
+		ttl, negTTL := r.CacheTTLSeconds, r.NegativeCacheTTLSeconds
+		resp.UpstreamURL = r.UpstreamURL
+		resp.UpstreamUsername = r.UpstreamUsername
+		resp.CacheTTLSeconds = &ttl
+		resp.NegativeCacheTTLSeconds = &negTTL
+	}
+
+	return resp
 }
 
 func parseIntMin(s string, defaultVal, minVal int) int {

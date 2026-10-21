@@ -323,22 +323,39 @@
       "RepositoryMember": {
         "type": "object",
         "properties": {
-          "user_id": {
+          "id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Member repository ID"
           },
-          "username": {
-            "type": "string"
+          "name": {
+            "type": "string",
+            "description": "Member repository name"
           },
-          "role": {
+          "format": {
+            "type": "string",
+            "description": "Member repository format"
+          },
+          "repo_type": {
             "type": "string",
             "enum": [
-              "reader",
-              "writer",
-              "admin"
-            ]
+              "hosted",
+              "proxy"
+            ],
+            "description": "Member repository type"
+          },
+          "priority": {
+            "type": "integer",
+            "description": "Resolution order within the group (lowest first)"
           }
-        }
+        },
+        "required": [
+          "id",
+          "name",
+          "format",
+          "repo_type",
+          "priority"
+        ]
       },
       "CleanupPolicy": {
         "type": "object",
@@ -1460,6 +1477,7 @@
                   },
                   "repo_type": {
                     "type": "string",
+                    "description": "hosted (default), proxy or group. Proxy repositories are supported for maven, deb, rpm and raw; group repositories for maven and raw (deb/rpm groups cannot merge repository metadata). Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.",
                     "enum": [
                       "hosted",
                       "proxy",
@@ -1468,7 +1486,7 @@
                   },
                   "upstream_url": {
                     "type": "string",
-                    "description": "Required for proxy repos"
+                    "description": "Required for proxy repos. Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy."
                   },
                   "upstream_username": {
                     "type": "string"
@@ -1490,7 +1508,7 @@
                     "items": {
                       "type": "string"
                     },
-                    "description": "For group repos"
+                    "description": "For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested."
                   }
                 },
                 "required": [
@@ -1594,8 +1612,8 @@
     },
     "/api/v1/repositories/{name}/members": {
       "get": {
-        "summary": "Get repository members",
-        "description": "List members with access to a repository",
+        "summary": "Get group repository members",
+        "description": "List the member repositories of a group repository in resolution order",
         "tags": [
           "Repositories"
         ],
@@ -1634,8 +1652,8 @@
         }
       },
       "put": {
-        "summary": "Update repository members",
-        "description": "Update member access to a repository",
+        "summary": "Update group repository members",
+        "description": "Replace the ordered member repositories of a group repository. Members must be hosted or proxy repositories of the group's format; groups cannot be nested.",
         "tags": [
           "Repositories"
         ],
@@ -1673,7 +1691,22 @@
         },
         "responses": {
           "200": {
-            "description": "Members updated"
+            "description": "Members updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/RepositoryMember"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "404": {
             "description": "Repository not found"

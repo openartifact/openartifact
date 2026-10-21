@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -70,6 +71,10 @@ func (h *MavenUploadHandler) Register(router chi.Router) {
 	router.Delete("/repos/maven/{name}/*", h.handleDelete)
 }
 
+// errMavenNotHosted is returned for writes to proxy and group repositories,
+// which are read-only views.
+var errMavenNotHosted = errors.New("maven repository is not hosted")
+
 func (h *MavenUploadHandler) resolveRepoID(ctx context.Context, name string) (string, error) {
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
@@ -78,6 +83,10 @@ func (h *MavenUploadHandler) resolveRepoID(ctx context.Context, name string) (st
 
 	if repo == nil {
 		return "", nil
+	}
+
+	if repo.RepoType != "" && repo.RepoType != repotype.Hosted {
+		return "", errMavenNotHosted
 	}
 
 	return repo.ID, nil
@@ -96,6 +105,15 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	repoID, err := h.resolveRepoID(r.Context(), repoName)
 	if err != nil {
+		if errors.Is(err, errMavenNotHosted) {
+			uploadResult = "error"
+
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "proxy and group repositories are read-only", http.StatusMethodNotAllowed)
+
+			return
+		}
+
 		uploadResult = "error"
 
 		h.log.Errorw("failed to resolve repo", "name", repoName, "error", err)
@@ -418,6 +436,13 @@ func (h *MavenUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request
 
 	repoID, err := h.resolveRepoID(r.Context(), repoName)
 	if err != nil {
+		if errors.Is(err, errMavenNotHosted) {
+			w.Header().Set("Allow", "GET, HEAD")
+			http.Error(w, "proxy and group repositories are read-only", http.StatusMethodNotAllowed)
+
+			return
+		}
+
 		h.log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 

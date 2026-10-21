@@ -7,6 +7,7 @@ package mcp
 import (
 	"time"
 
+	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -190,3 +191,13 @@ type queuedResult struct {
 }
 
 func formatTime(t time.Time) string { return t.Format(time.RFC3339Nano) }
+
+// toRepositoryDTO is the REST repository shape minus the upstream location and
+// account: an MCP client has no need for them and they can name internal hosts.
+func toRepositoryDTO(r *models.Repository) responses.RepositoryResponse {
+	resp := api.RepositoryToResponse(r)
+	resp.UpstreamURL = ""
+	resp.UpstreamUsername = ""
+
+	return resp
+}

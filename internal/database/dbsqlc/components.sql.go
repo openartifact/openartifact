@@ -72,6 +72,11 @@ SELECT COUNT(*)::bigint FROM (
     SELECT 1 FROM raw_artifacts t
     WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'raw')
     UNION ALL
+    -- proxy cache
+    SELECT 1 FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id
+    WHERE t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
+      AND ($2::text = '' OR $2::text = r.format)
+    UNION ALL
     -- docker
     SELECT 1 FROM docker_tags t
     WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker')
@@ -343,6 +348,12 @@ FROM (
     FROM raw_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
+    -- proxy cache: a cached upstream file; the filename is its upstream-relative path.
+    SELECT t.id::uuid, r.format::text, t.cache_key::text,
+           COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, t.size_bytes, 0)::bigint, COALESCE(NULLIF(t.content_type, ''), b.media_type, '')::text
+    FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id LEFT JOIN blobs b ON b.sha256 = t.blob_key
+    WHERE t.repository_id = $1::uuid AND t.id = $2::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
+    UNION ALL
     -- docker: the manifest blob; media type is the manifest's own.
     SELECT t.id::uuid, 'docker'::text, t.manifest_digest::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(dm.media_type, '')::text
@@ -525,6 +536,16 @@ FROM (
            t.path::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
     FROM raw_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'raw')
+    UNION ALL
+    -- proxy cache: one row per cached upstream file of a proxy repository (any format); name = filename = upstream-relative path.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.cache_key::text AS name, ''::text AS version,
+           r.format::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, t.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.cache_key::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id LEFT JOIN blobs b ON b.sha256 = t.blob_key
+    WHERE t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
+      AND ($2::text = '' OR $2::text = r.format)
     UNION ALL
     -- docker: one row per tag (the registry image name is the repository name); size = manifest size, filename = manifest digest.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, r.name::text AS name, t.name::text AS version,

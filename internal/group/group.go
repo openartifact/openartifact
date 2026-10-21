@@ -2,107 +2,146 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Package group serves group repositories: a read-only view over an ordered
+// list of hosted and proxy member repositories of the same format. A request
+// is answered by the first member that has the file; Maven metadata is merged
+// across all members.
 package group
 
 import (
-	"context"
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// Backend is what a group needs from the rest of the server to resolve a
+// request against one member.
+type Backend struct {
+	// Authorize reports whether the caller may read relPath of member. A
+	// member the caller cannot read behaves exactly like a member without the
+	// file, so a public group never exposes a private member.
+	Authorize func(r *http.Request, member *models.Repository, relPath string) bool
+
+	// ServeMember serves a GET/HEAD for relPath from member into w, the way a
+	// direct request to that member would (404 when it has no such file).
+	ServeMember func(w http.ResponseWriter, r *http.Request, member *models.Repository, relPath string)
+}
+
+// Handler resolves requests for group repositories.
 type Handler struct {
-	log       *logger.Logger
-	db        database.Database
-	blobStore storage.BlobStore
+	log *logger.Logger
+	db  database.Database
 }
 
-func NewHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *Handler {
-	return &Handler{
-		log:       log,
-		db:        db,
-		blobStore: blobStore,
-	}
+// NewHandler creates the group handler.
+func NewHandler(log *logger.Logger, db database.Database) *Handler {
+	return &Handler{log: log, db: db}
 }
 
-// groupDepthKey is the context key used to detect group-in-group recursion:
-// a "group" repo can itself list another "group" repo as a member, and
-// serveRepo re-entering ServeGroup for that nested group would otherwise
-// recurse without bound. The counter travels on the *http.Request context
-// through however many layers of indirection the caller's serveRepo uses.
-type groupDepthKey struct{}
-
-// maxGroupDepth bounds group-of-groups nesting.
-const maxGroupDepth = 8
-
-// ServeGroup handles a request for a group repository.
-// members is the ordered list of member repos (by priority asc).
-// serveRepo is a callback that serves a request for a specific repo.
-func (h *Handler) ServeGroup(w http.ResponseWriter, r *http.Request, members []*models.Repository, serveRepo func(w http.ResponseWriter, r *http.Request, repo *models.Repository)) {
-	depth, _ := r.Context().Value(groupDepthKey{}).(int)
-	if depth >= maxGroupDepth {
-		h.log.Errorw("group repository nesting exceeded max depth, aborting", "depth", depth)
-		http.Error(w, "group repository nesting too deep", http.StatusLoopDetected)
+// Serve answers a request for relPath (below the repository root) of group
+// grp. Groups are read-only: anything but GET/HEAD is refused.
+func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, be Backend) {
+	if r.Method != http.MethodGet && r.Method != http.MethodHead {
+		w.Header().Set("Allow", "GET, HEAD")
+		http.Error(w, "group repositories are read-only", http.StatusMethodNotAllowed)
 
 		return
 	}
 
-	r = r.WithContext(context.WithValue(r.Context(), groupDepthKey{}, depth+1))
-
-	// For GET and HEAD requests: try each member in priority order, return the first
-	// successful response. Each attempt runs behind a probeWriter that withholds the
-	// status/headers from the real ResponseWriter until WriteHeader is observed: a 404
-	// is swallowed (its body is discarded, not buffered) so the next member can still
-	// win, while any other status commits immediately and streams the body straight
-	// through to the real writer — nothing is ever fully materialized in memory.
-	if r.Method == http.MethodGet || r.Method == http.MethodHead {
-		for _, member := range members {
-			pw := newProbeWriter(w)
-			serveRepo(pw, r, member)
-
-			// 404: this attempt never reached the real writer. Try the next member.
-			if pw.skipped {
-				continue
-			}
-
-			// 2xx, or any other terminal (non-404) status: already streamed. Done.
-			return
-		}
-
-		// No member had the artifact.
-		http.NotFound(w, r)
+	members, err := h.members(r, grp)
+	if err != nil {
+		h.log.Errorw("failed to load group members", "group", grp.Name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// For PUT/POST/DELETE: route to the first writable (hosted) member repo
-	for _, member := range members {
-		if member.RepoType == "hosted" {
-			serveRepo(w, r, member)
+	readable := make([]*models.Repository, 0, len(members))
+
+	for _, m := range members {
+		if be.Authorize(r, m, relPath) {
+			readable = append(readable, m)
+		}
+	}
+
+	if grp.Format == "maven" {
+		if base, suffix, ok := mavenMetadataPath(relPath); ok {
+			h.serveMavenMetadata(w, r, readable, base, suffix, be)
 			return
 		}
 	}
 
-	// No writable member found
-	http.Error(w, "no writable repository member found", http.StatusBadRequest)
+	h.serveFirstHit(w, r, readable, relPath, be)
 }
 
-// probeWriter wraps the real http.ResponseWriter for one group-member attempt.
-// It withholds status/headers until WriteHeader is called: a 404 marks the
-// attempt "skipped" and every subsequent Write is discarded (never buffered,
-// never reaches the real writer) so the caller can try the next member. Any
-// other status commits immediately — headers and status flush to the real
-// writer right away, and every subsequent Write streams straight through —
-// so a multi-GB artifact body is never held in memory.
+// members returns grp's members in priority order. Members that cannot be
+// served from a group (nested groups, a different format) are skipped.
+func (h *Handler) members(r *http.Request, grp *models.Repository) ([]*models.Repository, error) {
+	links, err := h.db.ListGroupMembers(r.Context(), grp.ID)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // caller logs
+	}
+
+	out := make([]*models.Repository, 0, len(links))
+
+	for _, l := range links {
+		m, err := h.db.GetRepositoryByID(r.Context(), l.MemberRepoID)
+		if err != nil {
+			return nil, err //nolint:wrapcheck // caller logs
+		}
+
+		if m == nil || m.RepoType == repotype.Group || m.Format != grp.Format || m.Blocked {
+			continue
+		}
+
+		out = append(out, m)
+	}
+
+	return out, nil
+}
+
+// serveFirstHit tries each member in order behind a probeWriter. A member that
+// answers 404 — or fails with a 5xx — is passed over; the first other answer
+// is streamed straight to the client. When nobody has the file the group
+// answers 404, or 502 if a member failed (so a client does not cache "does not
+// exist" for a file a broken member might have).
+func (h *Handler) serveFirstHit(w http.ResponseWriter, r *http.Request, members []*models.Repository, relPath string, be Backend) {
+	memberFailed := false
+
+	for _, m := range members {
+		pw := newProbeWriter(w)
+		be.ServeMember(pw, r, m, relPath)
+
+		switch {
+		case pw.committed:
+			return
+		case pw.failed:
+			memberFailed = true
+		}
+	}
+
+	if memberFailed {
+		http.Error(w, "member repository error", http.StatusBadGateway)
+		return
+	}
+
+	http.NotFound(w, r)
+}
+
+// probeWriter wraps the real ResponseWriter for one member attempt. It
+// withholds the status and headers until WriteHeader: a 404 or 5xx marks the
+// attempt as passed over and discards everything written after, so the caller
+// can try the next member; any other status commits at once and streams the
+// body straight through, never buffering it.
 type probeWriter struct {
 	real        http.ResponseWriter
 	header      http.Header
 	wroteHeader bool
 	committed   bool
-	skipped     bool
+	failed      bool
 }
 
 func newProbeWriter(w http.ResponseWriter) *probeWriter {
@@ -124,8 +163,9 @@ func (p *probeWriter) WriteHeader(code int) {
 
 	p.wroteHeader = true
 
-	if code == http.StatusNotFound {
-		p.skipped = true
+	if code == http.StatusNotFound || code >= http.StatusInternalServerError {
+		p.failed = code != http.StatusNotFound
+
 		return
 	}
 
@@ -145,9 +185,16 @@ func (p *probeWriter) Write(b []byte) (int, error) {
 		p.WriteHeader(http.StatusOK)
 	}
 
-	if p.skipped {
+	if !p.committed {
 		return len(b), nil
 	}
 
 	return p.real.Write(b)
+}
+
+// Flush forwards to the real writer once the attempt has committed.
+func (p *probeWriter) Flush() {
+	if f, ok := p.real.(http.Flusher); ok && p.committed {
+		f.Flush()
+	}
 }

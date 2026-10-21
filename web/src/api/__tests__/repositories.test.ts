@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
-import { deletePackage, downloadPackage, listComponents } from '../repositories'
+import { deletePackage, downloadPackage, listComponents, listRepoMembers } from '../repositories'
 import { ApiError, attachmentFilename } from '../client'
 
 function stubFetch(responses: unknown[]): { urls: string[]; methods: string[] } {
@@ -84,6 +84,18 @@ describe('repositories api', () => {
     expect((err as ApiError).status).toBe(404)
     expect((err as ApiError).message).toBe('package not found')
     expect(createUrl).not.toHaveBeenCalled()
+  })
+
+  it('listRepoMembers unwraps the ordered members envelope', async () => {
+    const members = [
+      { id: '1', name: 'a', format: 'maven', repo_type: 'hosted', priority: 0 },
+      { id: '2', name: 'b', format: 'maven', repo_type: 'proxy', priority: 1 },
+    ]
+    const seen = stubFetch([{ members }])
+    expect(await listRepoMembers('my group')).toEqual(members as never)
+    expect(seen.urls[0]).toBe('/api/v1/repositories/my%20group/members')
+    stubFetch([{}])
+    expect(await listRepoMembers('g')).toEqual([])
   })
 
   it('attachmentFilename reads quoted, bare and RFC 5987 names', () => {

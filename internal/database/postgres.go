@@ -1555,6 +1555,7 @@ const blobRefSumExpr = `
 			(SELECT COUNT(*) FROM helm_charts     WHERE blob_id = b.id) +
 			(SELECT COUNT(*) FROM raw_artifacts   WHERE blob_id = b.id) +
 			(SELECT COUNT(*) FROM release_bundle_items WHERE sha256 = b.sha256) +
+			(SELECT COUNT(*) FROM proxy_cache_entries WHERE blob_key = b.sha256) +
 			(SELECT COUNT(*) FROM sbom_results   WHERE blob_id = b.id)
 `
 

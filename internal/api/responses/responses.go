@@ -78,6 +78,12 @@ type RepositoryResponse struct {
 	RepoType    string  `json:"repo_type"`
 	CreatedAt   string  `json:"created_at"`
 	UpdatedAt   string  `json:"updated_at"`
+
+	// Proxy repositories only. The upstream password is never returned.
+	UpstreamURL             string `json:"upstream_url,omitempty"`
+	UpstreamUsername        string `json:"upstream_username,omitempty"`
+	CacheTTLSeconds         *int   `json:"cache_ttl_seconds,omitempty"`
+	NegativeCacheTTLSeconds *int   `json:"negative_cache_ttl_seconds,omitempty"`
 }
 
 // PackageItem represents a package in list responses.

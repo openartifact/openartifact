@@ -48,6 +48,8 @@ import (
 	aimcp "github.com/openartifact/openartifact/internal/mcp"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/proxy"
+	"github.com/openartifact/openartifact/internal/repodispatch"
 	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/secrets"
@@ -613,7 +615,20 @@ func main() {
 	npmUpload.SetNPMWorker(npmWorker)
 	gomodHTTP := formatgomod.NewHTTPHandler(log, db, blobStore, cfg.BaseURL)
 
+	// Proxy and group repositories are served by the dispatcher in front of the
+	// per-format routes; hosted repositories fall through to them. Groups read
+	// their hosted members through in-memory routers of the same handlers.
+	mavenHosted, rawHosted := chi.NewRouter(), chi.NewRouter()
+	mavenHTTP.RegisterRepoRoutes(mavenHosted)
+	rawHTTP.RegisterRepoRoutes(rawHosted)
+
+	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, blobStore), evaluator, map[string]http.Handler{
+		"maven": mavenHosted,
+		"raw":   rawHosted,
+	})
+
 	authedAPI.Route("/repos/{name}", func(r chi.Router) {
+		r.Use(repoDispatch.Middleware)
 		rpmHTTP.RegisterRepoRoutes(r)
 		debHTTP.RegisterRepoRoutes(r)
 		helmHTTP.RegisterRepoRoutes(r)
@@ -638,11 +653,17 @@ func main() {
 	log.Infow("Repository HTTP handlers registered", "prefix", "/repos/{name}")
 
 	// Wildcard handlers isolated to avoid shadowing specific routes.
-	authedAPI.Route("/repos/raw/{name}", func(r chi.Router) { rawHTTP.RegisterRepoRoutes(r) })
+	authedAPI.Route("/repos/raw/{name}", func(r chi.Router) {
+		r.Use(repoDispatch.Middleware)
+		rawHTTP.RegisterRepoRoutes(r)
+	})
 	log.Infow("Raw handler registered", "prefix", "/repos/raw/{name}")
 
 	// Maven, SBT, Ivy use wildcard paths that shadow other handlers — isolate them.
-	authedAPI.Route("/repos/maven/{name}", func(r chi.Router) { mavenHTTP.RegisterRepoRoutes(r) })
+	authedAPI.Route("/repos/maven/{name}", func(r chi.Router) {
+		r.Use(repoDispatch.Middleware)
+		mavenHTTP.RegisterRepoRoutes(r)
+	})
 	authedAPI.Route("/repos/sbt/{name}", func(r chi.Router) { sbtHTTP.RegisterRepoRoutes(r) })
 	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) { ivyHTTP.RegisterRepoRoutes(r) })
 	log.Infow("Maven/SBT/Ivy handlers registered (isolated prefixes)")

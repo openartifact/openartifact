@@ -88,6 +88,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ t('repoDetail.copy') }}
             </button>
           </div>
+
+          <!-- Proxy: upstream info (credentials are never shown) -->
+          <dl
+            v-if="repo.repo_type === 'proxy'"
+            class="mt-4 grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-xs"
+            :aria-label="t('repoDetail.proxy.title')"
+          >
+            <dt class="text-muted">{{ t('repoDetail.proxy.url') }}</dt>
+            <dd class="min-w-0 font-mono text-foreground break-all">
+              {{ repo.upstream_url || '-' }}
+              <span v-if="repo.upstream_username" class="font-sans text-muted">
+                · {{ t('repoDetail.proxy.authenticatedAs').replace('{user}', repo.upstream_username) }}
+              </span>
+            </dd>
+            <dt class="text-muted">{{ t('repoDetail.proxy.cacheTtl') }}</dt>
+            <dd class="text-foreground">{{ formatTtl(repo.cache_ttl_seconds) }}</dd>
+            <dt class="text-muted">{{ t('repoDetail.proxy.negativeCacheTtl') }}</dt>
+            <dd class="text-foreground">{{ formatTtl(repo.negative_cache_ttl_seconds) }}</dd>
+          </dl>
         </div>
 
         <!-- Tabs -->
@@ -131,8 +150,60 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else-if="activeTab === 'configuration' && session.isAdmin" class="mt-6">
         <RepoSettingsTab :repo="repo" @saved="(r) => (repo = r)" />
       </div>
+      <div v-else-if="activeTab === 'members'" class="mt-6">
+        <p v-if="membersError" class="text-sm text-danger">{{ membersError }}</p>
+        <EmptyState
+          v-else-if="members.length === 0"
+          :title="t('repoDetail.group.emptyTitle')"
+          :description="t('repoDetail.group.emptyHint')"
+        />
+        <section v-else class="rounded-lg border border-border bg-surface">
+          <div class="px-4 py-3 border-b border-border">
+            <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.group.title') }}</h2>
+            <p class="text-xs text-muted mt-0.5">{{ t('repoDetail.group.hint') }}</p>
+          </div>
+          <div class="overflow-x-auto">
+            <table class="w-full">
+              <thead>
+                <tr class="border-b border-border">
+                  <th class="w-24 text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repoDetail.group.position') }}</th>
+                  <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repos.column.name') }}</th>
+                  <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repos.column.format') }}</th>
+                  <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repos.column.type') }}</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr v-for="(m, i) in members" :key="m.id" class="border-t border-border hover:bg-surface-hover transition-colors">
+                  <td class="px-4 py-3 text-xs font-mono text-muted">{{ i + 1 }}</td>
+                  <td class="px-4 py-3 text-sm font-medium">
+                    <router-link
+                      :to="`/repos/${encodeURIComponent(m.name)}`"
+                      class="font-mono text-foreground hover:text-primary transition-colors"
+                    >{{ m.name }}</router-link>
+                  </td>
+                  <td class="px-4 py-3 text-sm"><FormatBadge :format="m.format" /></td>
+                  <td class="px-4 py-3">
+                    <span class="inline-flex items-center rounded border border-border px-1.5 py-0.5 text-xs text-muted">
+                      {{ m.repo_type === 'proxy' ? t('repos.new.type.proxy') : t('repos.new.type.hosted') }}
+                    </span>
+                  </td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
       <div v-else-if="activeTab === 'packages'" class="mt-6">
-        <div v-if="packages.length === 0" class="space-y-6">
+        <p v-if="repo.repo_type === 'proxy' && packages.length > 0" class="mb-3 text-xs text-muted">
+          {{ t('repoDetail.proxy.cachedHint') }}
+        </p>
+        <div v-if="packages.length === 0 && repo.repo_type === 'proxy'">
+          <EmptyState
+            :title="t('repoDetail.proxy.emptyTitle')"
+            :description="t('repoDetail.proxy.emptyHint')"
+          />
+        </div>
+        <div v-else-if="packages.length === 0" class="space-y-6">
           <ConnectClientPanel :format="repo.format" :repo="repo.name" />
           <PackageUploadZone v-if="canUpload" :repo="repo.name" :format="repo.format" @uploaded="load(true)" />
         </div>
@@ -140,7 +211,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <table class="w-full">
             <thead>
               <tr class="border-b border-border">
-                <th class="w-7 px-4 py-3 text-sm font-medium text-muted">
+                <th v-if="!isProxy" class="w-7 px-4 py-3 text-sm font-medium text-muted">
                   <input
                     type="checkbox"
                     :checked="allPkgsSelected"
@@ -165,7 +236,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 class="border-t border-border hover:bg-surface-hover transition-colors cursor-pointer group"
                 :class="{ 'bg-primary-soft/40': selectedIds.has(itemKey(pkg)) }"
               >
-                <td class="w-7 px-4 py-3" @click.stop>
+                <td v-if="!isProxy" class="w-7 px-4 py-3" @click.stop>
                   <input
                     type="checkbox"
                     :checked="selectedIds.has(itemKey(pkg))"
@@ -199,7 +270,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       <ArrowDownTrayIcon class="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <button
-                      v-if="session.isAdmin"
+                      v-if="session.isAdmin && !isProxy"
                       class="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors text-danger"
                       :title="`${t('common.delete')} ${pkg.name}`"
                       :aria-label="`${t('common.delete')} ${pkg.name}`"
@@ -224,7 +295,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Bulk actions bar -->
         <BulkActionsBar
-          v-if="session.isAdmin"
+          v-if="session.isAdmin && !isProxy"
           :selected-items="selectedItemKeys"
           :repo-name="repoName"
           @clear="clearSelection"
@@ -240,8 +311,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
-import { getRepository, listPackages, deleteRepository, deletePackage, downloadPackage } from '../api/repositories'
-import type { Repository, PackageItem } from '../api/repositories'
+import {
+  getRepository,
+  listPackages,
+  listRepoMembers,
+  deleteRepository,
+  deletePackage,
+  downloadPackage,
+} from '../api/repositories'
+import type { Repository, RepositoryMember, PackageItem } from '../api/repositories'
+import EmptyState from '../components/EmptyState.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
 import ConnectClientPanel from '../components/ConnectClientPanel.vue'
@@ -254,6 +333,7 @@ import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import { repoBaseUrl } from '../lib/installCommands'
 import { formatDate } from '../lib/datetime'
+import { formatTtl } from '../lib/repoTypes'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
@@ -278,13 +358,20 @@ const loadError = ref('')
 const showUpload = ref(false)
 const deleting = ref(false)
 const activeTab = ref('packages')
+const members = ref<RepositoryMember[]>([])
+const membersError = ref('')
 
 const repoName = computed(() => route.params.name as string)
+const isProxy = computed(() => repo.value?.repo_type === 'proxy')
 const canDelete = computed(() => session.isAdmin)
 // Web upload is implemented by the deb and rpm handlers only; other formats
-// are published with their native client tooling.
+// are published with their native client tooling. Proxy and group
+// repositories are read-only.
 const canUpload = computed(
-  () => session.isAdmin && (repo.value?.format === 'deb' || repo.value?.format === 'rpm'),
+  () =>
+    session.isAdmin &&
+    (repo.value?.repo_type ?? 'hosted') === 'hosted' &&
+    (repo.value?.format === 'deb' || repo.value?.format === 'rpm'),
 )
 
 // ── Selection state ────────────────────────────────────────────────────────
@@ -340,9 +427,16 @@ function onDeleted(ids: string[]): void {
 }
 
 const tabs = computed(() => {
-  const list: Array<{ id: string; label: string; count?: number }> = [
-    { id: 'packages', label: t('repoDetail.tab.packages'), count: totalPackages.value },
-  ]
+  const list: Array<{ id: string; label: string; count?: number }> = []
+  if (repo.value?.repo_type === 'group') {
+    list.push({ id: 'members', label: t('repoDetail.tab.members'), count: members.value.length })
+  } else {
+    list.push({
+      id: 'packages',
+      label: repo.value?.repo_type === 'proxy' ? t('repoDetail.tab.cached') : t('repoDetail.tab.packages'),
+      count: totalPackages.value,
+    })
+  }
   if (session.isAdmin) {
     list.push(
       { id: 'configuration', label: t('repoDetail.tab.configuration') },
@@ -421,14 +515,29 @@ async function load(silent = false): Promise<void> {
   if (!silent) loading.value = true
   loadError.value = ''
   try {
-    const [repoRes, pkgRes] = await Promise.all([
-      getRepository(repoName.value),
-      listPackages(repoName.value, { page: page.value, limit: PAGE_SIZE }),
-    ])
+    const repoRes = await getRepository(repoName.value)
     if (generation !== loadGeneration) return
+    if (repoRes.repo_type === 'group') {
+      // Groups own no packages; the page shows their ordered members instead.
+      membersError.value = ''
+      try {
+        members.value = await listRepoMembers(repoName.value)
+      } catch (err) {
+        members.value = []
+        membersError.value = err instanceof Error ? err.message : t('repoDetail.group.loadFailed')
+      }
+      if (generation !== loadGeneration) return
+      packages.value = []
+      totalPackages.value = 0
+    } else {
+      const pkgRes = await listPackages(repoName.value, { page: page.value, limit: PAGE_SIZE })
+      if (generation !== loadGeneration) return
+      members.value = []
+      packages.value = pkgRes.packages || []
+      totalPackages.value = pkgRes.total || 0
+    }
     repo.value = repoRes
-    packages.value = pkgRes.packages || []
-    totalPackages.value = pkgRes.total || 0
+    if (!silent) activeTab.value = repoRes.repo_type === 'group' ? 'members' : 'packages'
   } catch (err) {
     if (generation !== loadGeneration) return
     if (!silent) repo.value = null

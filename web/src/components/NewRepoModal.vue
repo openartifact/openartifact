@@ -50,6 +50,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     <FormatBadge :format="f" size="sm" />
                   </button>
                 </div>
+                <p v-if="type === 'proxy'" class="mt-1.5 text-xs text-muted">{{ t('repos.new.proxyFormatsHint') }}</p>
+                <p v-else-if="type === 'group'" class="mt-1.5 text-xs text-muted">{{ t('repos.new.groupFormatsHint') }}</p>
               </fieldset>
 
               <fieldset>
@@ -147,7 +149,8 @@ import { createRepository, listRepositories } from '../api/repositories'
 import type { Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
 import { XMarkIcon, CheckIcon } from '@heroicons/vue/24/outline'
-import { ALL_FORMATS, type FormatId } from '../lib/formats'
+import type { FormatId } from '../lib/formats'
+import { allowedFormats, coerceFormat } from '../lib/repoTypes'
 import FormatBadge from './FormatBadge.vue'
 import { t } from '../i18n/en'
 
@@ -168,7 +171,7 @@ const members = ref<string[]>([])
 const existing = ref<Repository[]>([])
 const creating = ref(false)
 
-const formats = ALL_FORMATS
+const formats = computed(() => allowedFormats(type.value))
 
 const types = [
   { value: 'hosted', label: t('repos.new.type.hosted'), desc: t('repos.new.type.hostedDesc') },
@@ -191,6 +194,12 @@ const candidateMembers = computed(() =>
 
 watch(format, () => {
   members.value = []
+})
+
+// Proxy and group repositories only exist for some formats; drop a selection
+// the new type cannot serve.
+watch(type, (next) => {
+  format.value = coerceFormat(next, format.value)
 })
 
 watch(open, async (isOpen) => {
