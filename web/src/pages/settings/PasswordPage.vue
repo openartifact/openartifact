@@ -21,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Current password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">
+            <div class="text-[11px] font-semibold text-muted mb-0.5">
               {{ t('auth.currentPassword') }}
             </div>
           </div>
@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- New password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">
+            <div class="text-[11px] font-semibold text-muted mb-0.5">
               {{ t('auth.newPassword') }}
             </div>
             <div class="text-xs text-muted/70">{{ t('auth.passwordMin') }}</div>
@@ -63,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Confirm password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted mb-0.5">
+            <div class="text-[11px] font-semibold text-muted mb-0.5">
               {{ t('auth.confirmPassword') }}
             </div>
           </div>

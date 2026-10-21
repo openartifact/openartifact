@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="bg-surface rounded-xl border border-border p-5">
         <div class="flex items-start justify-between gap-3 mb-4">
           <div>
-            <p class="text-[10px] uppercase tracking-[0.14em] font-mono font-semibold text-muted">{{ t('quota.usage') }}</p>
+            <p class="text-[10px] font-mono font-semibold text-muted">{{ t('quota.usage') }}</p>
             <p class="mt-1 text-xl font-bold tabular-nums text-foreground">
               {{ formatBytes(quota.current_size_bytes) }}
               <span class="text-sm font-normal text-muted">/ {{ formatBytes(quota.max_size_bytes) }}</span>
@@ -214,7 +214,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         v-if="removeModal"
         class="fixed inset-0 z-50 flex items-center justify-center p-4 animate-fade-in"
       >
-        <div class="absolute inset-0 bg-black/50 backdrop-blur-sm" @click="removeModal = false" />
+        <div class="absolute inset-0 bg-black/50" @click="removeModal = false" />
         <div class="relative bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
           <h2 class="text-base font-bold text-foreground tracking-tight">Remove quota limit?</h2>
           <p class="text-sm text-muted mt-1 mb-5">

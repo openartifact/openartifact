@@ -84,26 +84,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <!-- No Results -->
-      <EmptyState
-        v-if="!repoResults.length && !packageResults.length"
-        :title="t('search.empty')"
-        :description="t('search.emptyHint')"
-      />
+      <p v-if="!repoResults.length && !packageResults.length" class="text-sm text-muted">
+        {{ t('search.empty') }} {{ t('search.emptyHint') }}
+      </p>
     </div>
 
     <!-- Initial State -->
-    <EmptyState
-      v-else
-      :title="t('search.initialTitle')"
-      :description="t('search.initialHint')"
-    />
+    <p v-else class="mt-6 text-sm text-muted">{{ t('search.initialHint') }}</p>
   </div>
 </template>
 
 <script setup lang="ts">
 import { useSearch } from '../composables/useSearch'
 import FormatBadge from '../components/FormatBadge.vue'
-import EmptyState from '../components/EmptyState.vue'
 import { t } from '../i18n/en'
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 

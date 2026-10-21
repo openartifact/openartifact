@@ -11,47 +11,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          LEFT — Brand panel (desktop only)
     ════════════════════════════════════════════════ -->
     <div
-      class="relative hidden lg:flex flex-col justify-between p-10 overflow-hidden bg-gradient-to-br from-primary/10 via-bg to-bg border-r border-border"
+      class="relative hidden lg:flex flex-col justify-between p-10 overflow-hidden bg-surface border-r border-border"
     >
-      <!-- SVG grid pattern -->
-      <svg
-        class="absolute inset-0 h-full w-full opacity-[0.06] pointer-events-none"
-        xmlns="http://www.w3.org/2000/svg"
-      >
-        <defs>
-          <pattern id="grid" width="32" height="32" patternUnits="userSpaceOnUse">
-            <path d="M 32 0 L 0 0 0 32" fill="none" stroke="currentColor" stroke-width="0.5" />
-          </pattern>
-        </defs>
-        <rect width="100%" height="100%" fill="url(#grid)" />
-      </svg>
-
-      <!-- Radial glow — top-left -->
-      <div
-        class="absolute -top-20 -left-20 w-[480px] h-[480px] pointer-events-none"
-        style="background: radial-gradient(closest-side, rgb(var(--color-primary) / 0.20), transparent)"
-      ></div>
-
-      <!-- Radial glow — bottom-right -->
-      <div
-        class="absolute -bottom-32 -right-10 w-[380px] h-[380px] pointer-events-none"
-        style="background: radial-gradient(closest-side, rgb(var(--color-primary) / 0.10), transparent)"
-      ></div>
 
        <!-- Top — brand mark -->
        <div class="relative flex items-center gap-3">
-         <div class="w-8 h-8 bg-gradient-to-br from-primary to-primary/60 rounded-lg flex items-center justify-center shrink-0">
+         <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
            <svg viewBox="0 0 24 24" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12v8a1 1 0 001 1h16a1 1 0 001-1v-8"/><rect x="2" y="9" width="20" height="3" rx="0.5"/><path d="M7 9V5h10v4"/><path d="M7 5l5-2.5L17 5"/></svg>
          </div>
         <div>
           <span class="text-[15px] font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></span>
-          <p class="text-[10px] uppercase tracking-[0.16em] text-muted font-mono leading-none mt-0.5">{{ version ? `v${version}` : t('shell.versionUnknown') }}</p>
+          <p class="text-[10px] text-muted font-mono leading-none mt-0.5">{{ version ? formatVersion(version) : t('shell.versionUnknown') }}</p>
         </div>
       </div>
 
       <!-- Middle — hero text -->
       <div class="relative">
-        <p class="text-[10px] uppercase tracking-[0.16em] font-mono text-primary mb-3">
+        <p class="text-[10px] font-mono text-primary mb-3">
           {{ t('login.tagline') }}
         </p>
         <h1 class="text-4xl font-bold tracking-tight leading-[1.1] text-foreground">
@@ -79,7 +55,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
          <!-- Mobile brand mark (hidden on lg+) -->
          <div class="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
-           <div class="w-8 h-8 bg-gradient-to-br from-primary to-primary/60 rounded-lg flex items-center justify-center">
+           <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
              <svg viewBox="0 0 24 24" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12v8a1 1 0 001 1h16a1 1 0 001-1v-8"/><rect x="2" y="9" width="20" height="3" rx="0.5"/><path d="M7 9V5h10v4"/><path d="M7 5l5-2.5L17 5"/></svg>
            </div>
           <span class="text-[15px] font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></span>
@@ -96,7 +72,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
           <!-- Username -->
           <div>
-            <label for="username" class="block text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">
+            <label for="username" class="block text-[11px] font-semibold text-muted">
               {{ t('auth.username') }}
             </label>
             <input
@@ -112,7 +88,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <!-- Password -->
           <div>
             <div class="flex items-center justify-between">
-              <label for="password" class="block text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">
+              <label for="password" class="block text-[11px] font-semibold text-muted">
                 {{ t('auth.password') }}
               </label>
             </div>
@@ -169,7 +145,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <!-- Divider -->
           <div class="my-5 flex items-center gap-3">
             <span class="flex-1 h-px bg-border"></span>
-            <span class="text-[10px] uppercase tracking-[0.16em] font-mono text-muted">{{ t('login.orContinueWith') }}</span>
+            <span class="text-[10px] font-mono text-muted">{{ t('login.orContinueWith') }}</span>
             <span class="flex-1 h-px bg-border"></span>
           </div>
 
@@ -229,7 +205,7 @@ import FormatBadge from '../components/FormatBadge.vue'
 import { t } from '../i18n/en'
 import { ssoBrandIcon } from '../lib/brandIcons'
 import { ALL_FORMATS } from '../lib/formats'
-import { useAppVersion } from '../composables/useAppVersion'
+import { useAppVersion, formatVersion } from '../composables/useAppVersion'
 
 const router = useRouter()
 const route = useRoute()

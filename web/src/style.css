@@ -59,16 +59,9 @@ body {
   border-radius: 4px;
 }
 
-/* Sidebar frosted glass */
+/* Sidebar surface */
 .sidebar-glass {
-  backdrop-filter: blur(14px);
-  -webkit-backdrop-filter: blur(14px);
-  background: rgb(var(--color-surface) / 0.72);
-  background-image: radial-gradient(
-    ellipse at 20% 0%,
-    rgb(var(--color-primary) / 0.06) 0%,
-    transparent 60%
-  );
+  background: rgb(var(--color-surface));
 }
 
 /* Nice scrollbar */

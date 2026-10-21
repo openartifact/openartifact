@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- PageHead -->
     <div class="flex items-start justify-between flex-wrap gap-3">
       <div>
-        <div class="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
+        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
           <span>{{ t('nav.admin') }}</span>
           <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ t('nav.sso') }}</span>

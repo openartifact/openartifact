@@ -83,9 +83,9 @@ describe('AppSidebar', () => {
     const { wrapper } = mountSidebar()
     const text = wrapper.text()
     expect(text).toContain('Dashboard')
-    expect(text).toContain('Browse')
+    expect(text).toContain('Repositories')
     expect(text).toContain('Search')
-    expect(text).toContain('Statistics')
+    expect(text).not.toContain('Statistics')
   })
 
   it('renders Security section links', () => {

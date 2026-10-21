@@ -8,10 +8,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <Menu as="div" class="relative">
     <MenuButton
       class="inline-flex items-center justify-center w-9 h-9 rounded-md text-foreground hover:bg-surface-hover focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-      :aria-label="t('theme.toggle')"
+      :aria-label="switchLabel"
+      :title="switchLabel"
     >
-      <SunIcon v-if="theme.resolved === 'light'" class="w-5 h-5" aria-hidden="true" />
-      <MoonIcon v-else class="w-5 h-5" aria-hidden="true" />
+      <MoonIcon v-if="theme.resolved === 'light'" class="w-5 h-5" aria-hidden="true" />
+      <SunIcon v-else class="w-5 h-5" aria-hidden="true" />
     </MenuButton>
     <transition
       enter-active-class="motion-safe:transition motion-safe:duration-100 motion-safe:ease-out"
@@ -74,10 +75,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { computed } from 'vue'
 import { Menu, MenuButton, MenuItems, MenuItem } from '@headlessui/vue'
 import { SunIcon, MoonIcon, ComputerDesktopIcon } from '@heroicons/vue/24/outline'
 import { useThemeStore } from '../stores/theme'
 import { t } from '../i18n/en'
 
 const theme = useThemeStore()
+const switchLabel = computed(() =>
+  theme.resolved === 'light' ? t('palette.command.theme.dark') : t('palette.command.theme.light'),
+)
 </script>

@@ -26,3 +26,8 @@ export function useAppVersion(): Ref<string | null> {
   void load()
   return version
 }
+
+/** Display form of a server version: `v1.2.3`, or `dev` for development builds. */
+export function formatVersion(version: string): string {
+  return version === 'dev' ? 'dev' : `v${version}`
+}

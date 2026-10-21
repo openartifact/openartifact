@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Table -->
         <table class="w-full">
           <thead>
-            <tr class="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted bg-surface-hover/30 border-b border-border">
+            <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30 border-b border-border">
               <th class="px-6 py-3 text-left">{{ t('settings.tokens.column.label') }}</th>
               <th class="px-6 py-3 text-left">{{ t('settings.tokens.column.created') }}</th>
               <th class="px-6 py-3 text-left">{{ t('settings.tokens.column.lastUsed') }}</th>
@@ -102,7 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
           <form id="create-token-form" class="flex-1 overflow-y-auto px-6 py-6 space-y-6" @submit.prevent="submitCreate">
             <div>
-              <label for="token-label" class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted block mb-2">
+              <label for="token-label" class="text-[11px] font-semibold text-muted block mb-2">
                 {{ t('settings.tokens.label') }}
               </label>
               <input
@@ -116,7 +116,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
 
             <div>
-              <span class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted block mb-2">
+              <span class="text-[11px] font-semibold text-muted block mb-2">
                 {{ t('settings.tokens.kind') }}
               </span>
               <div class="p-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground">

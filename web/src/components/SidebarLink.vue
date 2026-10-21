@@ -7,25 +7,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <router-link
     :to="to"
-    class="group relative flex items-center gap-3 w-full h-9 rounded-md text-[13px] font-medium tracking-tight transition-[background,color] duration-150"
+    class="group relative flex items-center gap-3 w-full h-8 rounded-md text-[13px] font-medium tracking-tight transition-[background,color] duration-150"
     :class="[
       collapsed ? 'justify-center px-0' : 'px-2.5',
       isActive
-        ? 'bg-primary-soft text-primary'
+        ? 'bg-surface-hover text-foreground'
         : 'text-foreground/75 hover:text-foreground hover:bg-surface-hover',
     ]"
   >
-    <!-- Left accent rail -->
-    <span
-      aria-hidden="true"
-      class="absolute left-0 top-1.5 bottom-1.5 w-[2px] rounded-full transition-colors"
-      :class="isActive ? 'bg-primary' : 'bg-transparent'"
-    />
-
     <component
       :is="icon"
       class="w-[18px] h-[18px] shrink-0"
-      :class="isActive ? 'text-primary' : 'text-muted group-hover:text-foreground'"
+      :class="isActive ? 'text-foreground' : 'text-muted group-hover:text-foreground'"
       aria-hidden="true"
     />
 

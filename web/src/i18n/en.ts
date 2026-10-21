@@ -44,7 +44,6 @@ const base = {
   'nav.repositories': 'Repositories',
   'nav.browse': 'Browse Repositories',
   'nav.search': 'Search',
-  'nav.stats': 'Statistics',
   'nav.profile': 'Profile',
   'nav.settings': 'Settings',
   'nav.admin': 'Admin',
@@ -66,7 +65,7 @@ const base = {
 
   // Sidebar groups
   'sidebar.browse': 'Browse',
-  'sidebar.admin': 'Admin',
+  'sidebar.admin': 'Administration',
   'sidebar.settings': 'Settings',
   'sidebar.collapse': 'Collapse sidebar',
   'sidebar.expand': 'Expand sidebar',
@@ -174,8 +173,6 @@ const base = {
   'wizard.formatLocked': 'The format cannot be changed once a repository is created.',
 
   // Packages
-  'packages.empty': 'No packages',
-  'packages.emptyHint': 'No packages have been uploaded to this repository yet.',
   'packages.versions': 'Versions',
   'packages.column.name': 'Name',
   'packages.column.version': 'Version',
@@ -399,19 +396,6 @@ const base = {
   'bulk.deleteFailed': 'Failed to delete some artifacts',
   'bulk.downloading': 'Preparing {n} downloads…',
 
-  // Statistics
-  'stats.title': 'Statistics',
-  'stats.totalRepos': 'Repositories',
-  'stats.publicRepos': 'Public',
-  'stats.formats': 'Formats',
-  'stats.topFormat': 'Top Format',
-  'stats.byFormat': 'Repositories by Format',
-  'stats.recentActivity': 'Recent Activity',
-  'stats.allRepos': 'All Repositories',
-  'stats.manageRepos': 'Manage →',
-  'stats.viewAll': 'View all →',
-  'stats.noData': 'No data available.',
-  'stats.noActivity': 'No recent activity.',
 
   // Settings
   'settings.title': 'Settings',

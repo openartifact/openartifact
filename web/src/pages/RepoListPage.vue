@@ -122,11 +122,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="group relative text-left rounded-xl border bg-surface p-5 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-lg hover:shadow-black/5 dark:hover:shadow-black/40"
           :class="selectedIds.has(repo.name) ? 'border-primary bg-primary-soft/20' : 'border-border hover:border-primary/30'"
         >
-          <div
-            class="absolute left-0 top-4 bottom-4 w-[2px] rounded-r"
-            :style="{ background: `linear-gradient(180deg, ${formatColor(repo.format)}, transparent 80%)` }"
-          />
-
           <div class="flex items-start justify-between gap-3 mb-3">
             <div class="flex items-center gap-2 flex-1 min-w-0">
               <input
@@ -134,13 +129,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 type="checkbox"
                 :checked="selectedIds.has(repo.name)"
                 :aria-label="`${t('repoDetail.select')} ${repo.name}`"
-                class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity shrink-0"
-                :class="{ 'opacity-100': selectedIds.has(repo.name) }"
+                class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer shrink-0"
+                :class="selectedIds.has(repo.name) ? '' : 'sr-only group-hover:not-sr-only focus:not-sr-only'"
                 @change="toggleRepo(repo.name)"
               />
               <router-link
                 :to="repoLink(repo.name)"
-                class="font-semibold tracking-tight flex-1 truncate hover:text-primary transition-colors"
+                class="font-mono text-sm font-semibold flex-1 truncate hover:text-primary transition-colors"
               >{{ repo.name }}</router-link>
             </div>
             <FormatBadge :format="repo.format" />
@@ -168,7 +163,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- List View -->
     <template v-else>
       <div class="bg-surface rounded-xl border border-border overflow-hidden mt-4">
-        <div class="grid grid-cols-[28px_2fr_1fr_1fr_1fr] gap-4 bg-surface-hover/50 px-5 py-3 text-xs text-muted uppercase tracking-wider border-b border-border">
+        <div class="grid grid-cols-[28px_2fr_1fr_1fr_1fr] gap-4 bg-surface-hover/50 px-5 py-3 text-xs font-medium text-muted border-b border-border">
           <div>
             <input
               v-if="session.isAdmin"
@@ -326,7 +321,6 @@ import EmptyState from '../components/EmptyState.vue'
 import NewRepoModal from '../components/NewRepoModal.vue'
 import { useToastStore } from '../stores/toast'
 import { useSessionStore } from '../stores/session'
-import { formatColor } from '../lib/formats'
 import { t } from '../i18n/en'
 
 const toasts = useToastStore()

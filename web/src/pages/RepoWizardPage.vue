@@ -264,7 +264,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           v-if="step < steps.length - 1"
           type="button"
           :disabled="!stepValid"
-          class="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-contrast hover:opacity-90 disabled:opacity-50"
+          class="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-contrast hover:opacity-90 disabled:bg-surface-hover disabled:text-muted disabled:border disabled:border-border disabled:cursor-not-allowed disabled:hover:opacity-100"
           @click="step++"
         >
           {{ t('wizard.next') }}

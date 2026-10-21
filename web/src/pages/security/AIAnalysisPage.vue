@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div>
-        <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
+        <div class="flex items-center gap-1.5 text-[11px] text-muted font-mono">
           <span>{{ t('sec.common.breadcrumb') }}</span>
           <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ t('sec.ai.breadcrumb') }}</span>
@@ -52,19 +52,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Stats tiles -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.ai.total') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.total') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums">{{ analyses.length }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.ai.license.SAFE') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.license.SAFE') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-success">{{ countSafe }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.ai.license.REVIEW_REQUIRED') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.license.REVIEW_REQUIRED') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-warning">{{ countReview }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.ai.quarantineRecommended') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.quarantineRecommended') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-danger">{{ countQuarantine }}</div>
       </div>
     </div>
@@ -241,12 +241,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
 
         <div v-if="selectedAnalysis.summary">
-          <h4 class="text-xs font-semibold text-muted uppercase tracking-[0.12em] mb-2">{{ t('sec.ai.col.summary') }}</h4>
+          <h4 class="text-xs font-semibold text-muted mb-2">{{ t('sec.ai.col.summary') }}</h4>
           <p class="text-sm text-foreground leading-relaxed">{{ selectedAnalysis.summary }}</p>
         </div>
 
         <div v-if="selectedAnalysis.tags?.length">
-          <h4 class="text-xs font-semibold text-muted uppercase tracking-[0.12em] mb-2">{{ t('sec.ai.tags') }}</h4>
+          <h4 class="text-xs font-semibold text-muted mb-2">{{ t('sec.ai.tags') }}</h4>
           <div class="flex flex-wrap gap-1.5">
             <span
               v-for="tag in selectedAnalysis.tags"
@@ -257,7 +257,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
 
         <div>
-          <h4 class="text-xs font-semibold text-muted uppercase tracking-[0.12em] mb-2">{{ t('sec.ai.col.license') }}</h4>
+          <h4 class="text-xs font-semibold text-muted mb-2">{{ t('sec.ai.col.license') }}</h4>
           <div class="flex items-center gap-2 flex-wrap">
             <span :class="licenseStatusClass(selectedAnalysis.license_status)">{{ licenseStatusLabel(selectedAnalysis.license_status) }}</span>
             <span v-if="selectedAnalysis.license_name" class="text-sm text-foreground font-mono">{{ selectedAnalysis.license_name }}</span>
@@ -266,12 +266,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
 
         <div v-if="selectedAnalysis.security_notes">
-          <h4 class="text-xs font-semibold text-muted uppercase tracking-[0.12em] mb-2">{{ t('sec.ai.securityNotes') }}</h4>
+          <h4 class="text-xs font-semibold text-muted mb-2">{{ t('sec.ai.securityNotes') }}</h4>
           <p class="text-sm text-foreground leading-relaxed whitespace-pre-wrap">{{ selectedAnalysis.security_notes }}</p>
         </div>
 
         <div class="rounded-lg bg-surface-hover/60 border border-border px-4 py-3 space-y-2">
-          <h4 class="text-xs font-semibold text-muted uppercase tracking-[0.12em]">{{ t('sec.ai.modelInfo') }}</h4>
+          <h4 class="text-xs font-semibold text-muted">{{ t('sec.ai.modelInfo') }}</h4>
           <dl class="grid grid-cols-2 gap-2 text-xs">
             <div>
               <dt class="text-muted">{{ t('sec.ai.model') }}</dt>

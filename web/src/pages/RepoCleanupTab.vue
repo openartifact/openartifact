@@ -62,22 +62,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <table v-else class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
+            <th class="text-left text-[11px] font-semibold text-muted px-5 py-2.5">
               {{ t('cleanup.col.name') }}
             </th>
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.type') }}
             </th>
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.rule') }}
             </th>
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.enabled') }}
             </th>
-            <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.lastRun') }}
             </th>
-            <th class="text-right text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5">
+            <th class="text-right text-[11px] font-semibold text-muted px-5 py-2.5">
               {{ t('cleanup.col.actions') }}
             </th>
           </tr>
@@ -187,12 +187,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ════════════════════════════════════════════════════════════════════════════ -->
     <TransitionRoot :show="drawerOpen" as="template">
       <Dialog as="div" class="relative z-50" @close="closeDrawer">
-        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" />
+        <div class="fixed inset-0 bg-black/40" aria-hidden="true" />
         <div class="fixed inset-0 flex justify-end">
         <DialogPanel class="relative w-full max-w-md bg-surface border-l border-border shadow-2xl flex flex-col animate-slideRight">
           <!-- Header -->
           <div class="px-6 py-5 border-b border-border shrink-0">
-            <p class="text-[10px] uppercase tracking-[0.14em] font-mono text-muted mb-0.5">
+            <p class="text-[10px] font-mono text-muted mb-0.5">
               {{ drawerMode === 'create' ? t('cleanup.newLabel') : t('cleanup.editTitle') }}
             </p>
             <div class="flex items-center justify-between gap-3">
@@ -346,7 +346,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     ════════════════════════════════════════════════════════════════════════════ -->
     <TransitionRoot :show="!!deleteTarget" as="template">
       <Dialog as="div" class="relative z-50" @close="cancelDelete">
-        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
+        <div class="fixed inset-0 bg-black/50" aria-hidden="true" />
         <div class="fixed inset-0 flex items-center justify-center p-4">
         <DialogPanel class="relative bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm">
           <div class="px-6 pt-6 pb-4">

@@ -208,7 +208,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Stats -->
         <div>
-          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-muted mb-3">Graph Stats</h3>
+          <h3 class="text-xs font-semibold text-muted mb-3">Graph Stats</h3>
           <div class="space-y-2">
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted">{{ t('graph.nodes') }}</span>
@@ -227,7 +227,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Selected node info -->
         <div v-if="selectedNodeId" class="rounded-lg border border-primary/30 bg-primary/5 p-3">
-          <p class="text-[10px] uppercase tracking-[0.12em] font-mono font-semibold text-primary mb-1">Selected</p>
+          <p class="text-[10px] font-mono font-semibold text-primary mb-1">Selected</p>
           <p class="text-xs font-mono font-medium text-foreground break-all">{{ selectedNodeId }}</p>
           <div class="mt-2 space-y-1">
             <p class="text-[11px] text-muted">
@@ -243,7 +243,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Legend -->
         <div>
-          <h3 class="text-xs font-semibold uppercase tracking-[0.12em] text-muted mb-3">{{ t('graph.legend') }}</h3>
+          <h3 class="text-xs font-semibold text-muted mb-3">{{ t('graph.legend') }}</h3>
           <div class="space-y-2">
             <div class="flex items-center gap-2 text-sm">
               <span class="w-3 h-3 rounded-full bg-[#6366f1]" />

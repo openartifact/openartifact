@@ -23,95 +23,70 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Main Content -->
     <template v-else-if="repo">
       <div class="rounded-xl border border-border bg-surface overflow-hidden">
-        <!-- Hero Section -->
-        <div class="relative px-6 py-5 border-b border-border">
-          <!-- Radial gradient overlay -->
-          <div
-            class="absolute inset-0 opacity-[0.06] pointer-events-none"
-            :style="{ background: `radial-gradient(60% 40% at 0% 0%, ${repoFormatColor}, transparent 70%)` }"
-          />
+        <!-- Header -->
+        <div class="px-6 pt-5 pb-4 border-b border-border">
+          <div class="flex items-start justify-between gap-4 flex-wrap">
+            <div class="min-w-0">
+              <div class="flex items-center gap-2.5 flex-wrap">
+                <h1 class="text-xl font-semibold font-mono text-foreground break-all">{{ repo.name }}</h1>
+                <FormatBadge :format="repo.format" />
+                <span class="text-xs text-muted">{{ repo.repo_type || 'hosted' }}</span>
+                <span class="text-xs text-muted">·</span>
+                <span class="inline-flex items-center gap-1 text-xs text-muted">
+                  <EyeIcon v-if="repo.public" class="w-3.5 h-3.5" aria-hidden="true" />
+                  <EyeSlashIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
+                  {{ repo.public ? t('repos.public') : t('repos.private') }}
+                </span>
+              </div>
+              <p v-if="repo.description" class="text-sm text-muted max-w-2xl mt-1.5">{{ repo.description }}</p>
+            </div>
 
-          <div class="relative">
-            <!-- Title row -->
-            <div class="flex items-center gap-2.5 flex-wrap">
-              <h1 class="text-2xl font-bold tracking-tight text-foreground">{{ repo.name }}</h1>
-              <FormatBadge :format="repo.format" />
-              <span
-                class="text-[10px] font-medium px-2 py-0.5 rounded-full border"
-                :class="repo.public
-                  ? 'border-green-500/30 text-green-600 dark:text-green-400 bg-green-500/10'
-                  : 'border-border text-muted bg-surface-hover'
-                "
+            <div class="flex items-center gap-2 shrink-0">
+              <button
+                v-if="canUpload"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
+                :aria-expanded="showUpload"
+                @click="showUpload = !showUpload"
               >
-                {{ repo.public ? t('repos.public') : t('repos.private') }}
-              </span>
-            </div>
-
-            <!-- Description -->
-            <p v-if="repo.description" class="text-sm text-muted max-w-2xl leading-relaxed mt-2">
-              {{ repo.description }}
-            </p>
-
-            <!-- Stats row -->
-            <div class="flex items-center gap-5 flex-wrap mt-3.5">
-              <HeroStat :label="t('repoDetail.artifacts')" :value="String(totalPackages)" />
-              <div>
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">{{ t('repos.column.format') }}</div>
-                <div class="mt-0.5"><FormatBadge :format="repo.format" /></div>
-              </div>
-              <HeroStat v-if="repo.created_at" :label="t('repoDetail.created')" :value="formatDate(repo.created_at)" />
-              <HeroStat :label="t('repoDetail.url')" :value="repoUrl" mono />
-            </div>
-
-            <!-- Action button group -->
-            <div class="flex items-center justify-between gap-3 mt-4 flex-wrap">
-              <div class="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0 shadow-sm">
-                <template v-if="canUpload">
-                  <button
-                    class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-hover transition-colors"
-                    :aria-expanded="showUpload"
-                    @click="showUpload = !showUpload"
-                  >
-                    <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                    {{ t('repoDetail.upload') }}
-                  </button>
-                  <div class="w-px h-6 bg-border" />
-                </template>
-                <router-link
-                  :to="`/repos/${repo.name}/browse`"
-                  class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-hover transition-colors"
-                >
-                  {{ t('browser.title') }}
-                </router-link>
-                <div class="w-px h-6 bg-border" />
-                <button
-                  class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-hover transition-colors"
-                  @click="copyUrl"
-                >
-                  <ClipboardIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                  {{ t('repoDetail.copyUrl') }}
-                </button>
-                <template v-if="session.isAdmin">
-                  <div class="w-px h-6 bg-border" />
-                  <router-link
-                    :to="`/repos/${repo.name}/edit`"
-                    class="inline-flex items-center gap-1.5 px-3 py-2 text-sm font-medium text-foreground hover:bg-surface-hover transition-colors"
-                  >
-                    <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                    {{ t('nav.settings') }}
-                  </router-link>
-                </template>
-              </div>
-
+                <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+                {{ t('repoDetail.upload') }}
+              </button>
+              <router-link
+                :to="`/repos/${repo.name}/browse`"
+                class="inline-flex items-center px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
+              >
+                {{ t('browser.title') }}
+              </router-link>
+              <router-link
+                v-if="session.isAdmin"
+                :to="`/repos/${repo.name}/edit`"
+                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
+              >
+                <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+                {{ t('common.edit') }}
+              </router-link>
               <button
                 v-if="canDelete"
-                @click="deleteRepo"
                 :disabled="deleting"
-                class="px-3 py-2 text-sm font-medium rounded-lg text-red-600 hover:bg-red-50 dark:hover:bg-red-950 transition-colors disabled:opacity-50 border border-transparent hover:border-red-200 dark:hover:border-red-900"
+                class="px-3 py-1.5 text-sm rounded-md border border-danger/40 text-danger hover:bg-danger/10 disabled:opacity-50"
+                @click="deleteRepo"
               >
-                {{ deleting ? t('repoDetail.deleting') : t('repoDetail.deleteRepo') }}
+                {{ deleting ? t('repoDetail.deleting') : t('common.delete') }}
               </button>
             </div>
+          </div>
+
+          <!-- Registry URL -->
+          <div class="mt-4 flex items-center gap-2 flex-wrap">
+            <span class="text-xs text-muted shrink-0">{{ t('repoDetail.registryUrl') }}</span>
+            <code class="flex-1 min-w-0 rounded-md border border-border bg-surface-hover px-2.5 py-1 text-xs font-mono text-foreground break-all">{{ repoUrl }}</code>
+            <button
+              class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-foreground hover:bg-surface-hover shrink-0"
+              @click="copyUrl"
+            >
+              <ClipboardIcon class="w-3.5 h-3.5 text-muted" aria-hidden="true" />
+              {{ t('repoDetail.copy') }}
+            </button>
           </div>
         </div>
 
@@ -145,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
 
-      <div v-if="canUpload && showUpload" class="mt-6">
+      <div v-if="canUpload && showUpload && !(activeTab === 'packages' && packages.length === 0)" class="mt-6">
         <PackageUploadZone :repo="repo.name" :format="repo.format" @uploaded="load(true)" />
       </div>
 
@@ -157,8 +132,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <RepoSettingsTab :repo="repo" @saved="(r) => (repo = r)" />
       </div>
       <div v-else-if="activeTab === 'packages'" class="mt-6">
-        <div v-if="packages.length === 0" class="py-12">
-          <EmptyState :title="t('packages.empty')" :description="t('packages.emptyHint')" />
+        <div v-if="packages.length === 0" class="space-y-6">
+          <ConnectClientPanel :format="repo.format" :repo="repo.name" />
+          <PackageUploadZone v-if="canUpload" :repo="repo.name" :format="repo.format" @uploaded="load(true)" />
         </div>
         <div v-else class="overflow-x-auto">
           <table class="w-full">
@@ -262,13 +238,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, h } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { getRepository, listPackages, deleteRepository, deletePackage } from '../api/repositories'
 import type { Repository, PackageItem } from '../api/repositories'
 import FormatBadge from '../components/FormatBadge.vue'
-import EmptyState from '../components/EmptyState.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
+import ConnectClientPanel from '../components/ConnectClientPanel.vue'
 import PackageUploadZone from '../components/PackageUploadZone.vue'
 import Pagination from '../components/Pagination.vue'
 import RepoCleanupTab from './RepoCleanupTab.vue'
@@ -276,13 +252,14 @@ import RepoSettingsTab from './RepoSettingsTab.vue'
 import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
-import { formatColor } from '../lib/formats'
 import { repoBaseUrl } from '../lib/installCommands'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
   ClipboardIcon,
   Cog6ToothIcon,
+  EyeIcon,
+  EyeSlashIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
 
@@ -302,7 +279,6 @@ const deleting = ref(false)
 const activeTab = ref('packages')
 
 const repoName = computed(() => route.params.name as string)
-const repoFormatColor = computed(() => formatColor(repo.value?.format || ''))
 const canDelete = computed(() => session.isAdmin)
 // Web upload is implemented by the deb and rpm handlers only; other formats
 // are published with their native client tooling.
@@ -486,24 +462,4 @@ watch(
   },
   { immediate: true },
 )
-
-// ── HeroStat inline component ──────────────────────────────────────────────
-const HeroStat = {
-  props: {
-    label: { type: String, required: true },
-    value: { type: String, required: true },
-    mono: { type: Boolean, default: false },
-  },
-  setup(props: { label: string; value: string; mono: boolean }) {
-    return () =>
-      h('div', [
-        h('div', { class: 'text-[10px] uppercase tracking-[0.14em] text-muted font-semibold' }, props.label),
-        h(
-          'div',
-          { class: `mt-0.5 text-sm font-medium tabular-nums ${props.mono ? 'font-mono' : ''}` },
-          props.value,
-        ),
-      ])
-  },
-}
 </script>

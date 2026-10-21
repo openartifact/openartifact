@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- PageHead -->
     <div class="flex items-start justify-between flex-wrap gap-3">
       <div>
-        <div class="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
+        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
           <span>{{ t('nav.admin') }}</span>
           <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ t('nav.webhooks') }}</span>
@@ -36,7 +36,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <BellAlertIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('adm.webhooks.stat.active') }}</div>
+          <div class="text-[10px] font-semibold text-muted">{{ t('adm.webhooks.stat.active') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ activeCount }}</div>
         </div>
       </div>
@@ -45,7 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <PaperAirplaneIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('adm.webhooks.stat.disabled') }}</div>
+          <div class="text-[10px] font-semibold text-muted">{{ t('adm.webhooks.stat.disabled') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ webhooks.length - activeCount }}</div>
         </div>
       </div>
@@ -69,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-[11px] uppercase tracking-[0.12em] font-semibold text-muted bg-surface-hover/30">
+            <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30">
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.name') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.url') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.events') }}</th>

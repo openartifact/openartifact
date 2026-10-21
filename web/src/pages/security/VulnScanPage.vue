@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div>
-        <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
+        <div class="flex items-center gap-1.5 text-[11px] text-muted font-mono">
           <span>{{ t('sec.common.breadcrumb') }}</span>
           <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ t('sec.vuln.breadcrumb') }}</span>
@@ -70,19 +70,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Stats tiles -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.vuln.totalScans') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.totalScans') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums">{{ scans.length }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.vuln.critical') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.critical') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-danger">{{ totalCritical }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.vuln.high') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.high') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-warning">{{ totalHigh }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.vuln.medium') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.medium') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-[#f59e0b]">{{ totalMedium }}</div>
       </div>
     </div>
@@ -200,7 +200,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td class="px-4 py-3 font-mono text-[13px] text-muted">{{ scan.package_version }}</td>
               <td class="px-4 py-3"><FormatBadge :format="scan.ecosystem" size="sm" /></td>
               <td class="px-4 py-3">
-                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border border-border text-muted uppercase tracking-wide">{{ scan.scanner || 'osv' }}</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border border-border text-muted">{{ scan.scanner || 'osv' }}</span>
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center gap-1.5 text-xs font-mono">

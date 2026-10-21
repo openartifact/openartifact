@@ -74,9 +74,7 @@ const routes: RouteRecordRaw[] = [
   },
   {
     path: '/stats',
-    name: 'stats',
-    component: () => import('../pages/StatisticsPage.vue'),
-    meta: { requiresAuth: true },
+    redirect: '/',
   },
 
   // Admin

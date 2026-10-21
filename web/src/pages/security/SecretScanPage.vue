@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <div class="flex items-start justify-between gap-4 flex-wrap">
       <div>
-        <div class="flex items-center gap-1.5 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
+        <div class="flex items-center gap-1.5 text-[11px] text-muted font-mono">
           <span>{{ t('sec.common.breadcrumb') }}</span>
           <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ t('sec.secret.breadcrumb') }}</span>
@@ -52,19 +52,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Stats tiles -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.secret.total') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.total') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums">{{ scans.length }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.secret.flagged') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.flagged') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-danger">{{ flaggedCount }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.secret.clean') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.clean') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-success">{{ cleanCount }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('sec.secret.quarantined') }}</div>
+        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.quarantined') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-warning">{{ quarantinedCount }}</div>
       </div>
     </div>

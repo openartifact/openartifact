@@ -32,12 +32,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="bg-surface rounded-xl border border-border overflow-hidden">
         <!-- Top section -->
         <div class="relative px-6 py-5 border-b border-border">
-          <!-- Radial gradient overlay -->
-          <div
-            class="absolute inset-0 opacity-[0.08] pointer-events-none"
-            style="background: radial-gradient(60% 40% at 0% 0%, rgb(var(--color-primary) / 0.08), transparent 70%)"
-          />
-
           <div class="relative">
             <!-- Title row + actions -->
             <div class="flex items-start justify-between gap-4 flex-wrap">
@@ -85,19 +79,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- Stats row -->
             <div class="flex items-center gap-5 flex-wrap mt-3.5">
               <div class="leading-tight">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">{{ t('packages.column.format') }}</div>
+                <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.format') }}</div>
                 <div class="mt-0.5"><FormatBadge :format="format" /></div>
               </div>
               <div v-if="currentPkg.size" class="leading-tight">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">{{ t('packages.column.size') }}</div>
+                <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.size') }}</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ formatSize(currentPkg.size) }}</div>
               </div>
               <div v-if="currentPkg.created_at" class="leading-tight">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">{{ t('packages.column.uploaded') }}</div>
+                <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.uploaded') }}</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums">{{ new Date(currentPkg.created_at).toLocaleDateString() }}</div>
               </div>
               <div v-if="currentPkg.sha256" class="leading-tight">
-                <div class="text-[10px] uppercase tracking-[0.14em] text-muted font-semibold">SHA256</div>
+                <div class="text-[10px] text-muted font-semibold">SHA256</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ currentPkg.sha256.slice(0, 12) }}</div>
               </div>
             </div>
@@ -306,10 +300,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <table v-else-if="Object.keys(properties).length > 0" class="w-full">
             <thead>
               <tr class="bg-surface-hover/30">
-                <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-5 py-2.5 w-1/3">
+                <th class="text-left text-[11px] font-semibold text-muted px-5 py-2.5 w-1/3">
                   {{ t('pkg.props.key') }}
                 </th>
-                <th class="text-left text-[11px] uppercase tracking-[0.12em] font-semibold text-muted px-3 py-2.5">
+                <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
                   {{ t('pkg.props.value') }}
                 </th>
                 <th class="w-10" />

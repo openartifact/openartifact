@@ -5,18 +5,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="space-y-6">
+  <div class="space-y-4">
     <!-- Header -->
-    <div class="flex items-end justify-between gap-4 flex-wrap">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">{{ t('dashboard.welcome') }}</h1>
-        <p class="mt-1 text-sm text-muted">
-          {{ t('dashboard.summary').replace('{repos}', String(total)).replace('{formats}', String(uniqueFormats.length)) }}
-        </p>
-      </div>
-      <div class="flex gap-3">
+    <div class="flex items-center justify-between gap-4 flex-wrap">
+      <h1 class="text-lg font-semibold">{{ t('dashboard.title') }}</h1>
+      <div class="flex items-center gap-2">
         <button
-          class="inline-flex items-center gap-1.5 px-4 py-2 text-sm font-medium text-foreground bg-surface border border-border rounded-lg hover:bg-surface-hover transition-colors disabled:opacity-50"
+          class="inline-flex items-center gap-1.5 h-8 px-3 text-sm font-medium text-foreground bg-surface border border-border rounded-md hover:bg-surface-hover transition-colors disabled:opacity-50"
           :disabled="syncing"
           @click="syncNow"
         >
@@ -26,164 +21,123 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <router-link
           v-if="session.isAdmin"
           to="/repos/new"
-          class="px-4 py-2 text-sm font-medium text-primary-contrast bg-primary rounded-lg hover:bg-primary/90 transition-colors inline-flex items-center gap-1.5"
+          class="inline-flex items-center h-8 px-3 text-sm font-medium text-primary-contrast bg-primary rounded-md hover:bg-primary/90 transition-colors"
         >
           {{ t('repos.new') }}
         </router-link>
       </div>
     </div>
 
-    <!-- KPI Cards -->
-    <div class="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
-      <div
-        v-for="(kpi, i) in kpis"
-        :key="i"
-        class="group relative overflow-hidden rounded-xl border border-border bg-surface p-4 transition-all duration-200 hover:-translate-y-0.5 hover:shadow-md hover:border-primary/30"
-      >
-        <div class="flex items-start justify-between">
-          <span class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ kpi.label }}</span>
-        </div>
-        <p class="mt-3 text-3xl font-bold tracking-tight tabular-nums">{{ kpi.value }}</p>
-        <div class="absolute -bottom-1 -right-1 w-24 h-24 rounded-full bg-primary/5 group-hover:bg-primary/10 transition-colors" />
+    <!-- KPI strip -->
+    <section
+      class="rounded-lg border border-border bg-surface grid grid-cols-2 lg:grid-cols-5 divide-x divide-border"
+      :aria-label="t('dashboard.title')"
+    >
+      <div v-for="kpi in kpis" :key="kpi.label" class="px-5 py-3.5">
+        <div class="text-xs text-muted">{{ kpi.label }}</div>
+        <div class="mt-1 text-2xl leading-none font-semibold tabular-nums">{{ kpi.value }}</div>
       </div>
-    </div>
+    </section>
 
-    <!-- Main Grid: Storage + Top Repositories -->
-    <div class="grid grid-cols-1 lg:grid-cols-3 gap-4">
-      <!-- Storage by Format -->
-      <div class="lg:col-span-1 rounded-xl border border-border bg-surface p-5">
-        <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted mb-4">{{ t('dashboard.byFormat') }}</h2>
-        <div class="flex items-center gap-5">
-          <svg viewBox="0 0 200 200" class="w-40 h-40 shrink-0" role="img" :aria-label="t('dashboard.byFormat')">
-            <!-- Donut slices -->
-            <circle
-              v-for="(slice, i) in donutSlices"
-              :key="i"
-              cx="100"
-              cy="100"
-              r="70"
-              fill="none"
-              :stroke="slice.color"
-              stroke-width="20"
-              :stroke-dasharray="slice.dashArray"
-              :stroke-dashoffset="slice.dashOffset"
-              transform="rotate(-90 100 100)"
-            />
-            <!-- Center text -->
-            <text x="100" y="100" text-anchor="middle" dy="0.3em" class="text-lg font-bold fill-foreground">
-              {{ total }}
-            </text>
-          </svg>
-          <!-- Legend -->
-          <div class="flex-1 grid grid-cols-1 gap-1.5 text-xs">
-            <div v-for="item in uniqueFormats" :key="item.format" class="flex items-center justify-between gap-2">
-              <div class="flex items-center gap-2 min-w-0">
-                <FormatBadge :format="item.format" size="sm" />
-              </div>
-              <span class="font-mono text-muted tabular-nums">{{ item.count }}</span>
-            </div>
+    <div class="grid grid-cols-1 xl:grid-cols-[1fr_400px] gap-4">
+      <div class="space-y-4 min-w-0">
+        <!-- Repositories by format -->
+        <section class="rounded-lg border border-border bg-surface">
+          <div class="px-5 h-11 flex items-center border-b border-border">
+            <h2 class="text-[13px] font-semibold">{{ t('dashboard.byFormat') }}</h2>
           </div>
-        </div>
-      </div>
-
-      <!-- Top Repositories -->
-      <div class="lg:col-span-2 rounded-xl border border-border bg-surface p-5">
-        <div class="flex items-center justify-between mb-4">
-          <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted">{{ t('dashboard.recent') }}</h2>
-          <router-link to="/repos" class="text-xs text-primary hover:underline inline-flex items-center gap-0.5">
-            {{ t('dashboard.viewAll') }}
-            <ArrowRightIcon class="w-3 h-3" aria-hidden="true" />
-          </router-link>
-        </div>
-        <div v-if="loading" class="text-sm text-muted py-6">{{ t('common.loading') }}</div>
-        <div v-else-if="loadError" class="py-6 text-sm text-danger" role="alert">{{ loadError }}</div>
-        <div v-else-if="repos.length === 0">
-          <EmptyState :title="t('dashboard.emptyTitle')" :description="t('repos.emptyHint')" />
-        </div>
-        <div v-else class="space-y-1">
-          <router-link
-            v-for="repo in recentRepos"
-            :key="repo.id"
-            :to="`/repos/${encodeURIComponent(repo.name)}`"
-            class="w-full flex items-center gap-3 px-2 py-3 -mx-2 rounded-md hover:bg-surface-hover transition-colors"
-          >
-            <FormatBadge :format="repo.format" />
-            <span class="font-medium text-sm truncate flex-1">{{ repo.name }}</span>
-            <span class="text-xs text-muted">{{ repo.repo_type || 'hosted' }}</span>
-            <span class="text-xs text-muted">{{ repo.public ? t('repos.public') : t('repos.private') }}</span>
-          </router-link>
-        </div>
-      </div>
-    </div>
-
-    <!-- Recent Activity (admin only) -->
-    <div v-if="session.isAdmin" class="rounded-xl border border-border bg-surface p-5">
-      <div class="flex items-center justify-between mb-4">
-        <h2 class="text-[13px] font-semibold uppercase tracking-[0.14em] text-muted">{{ t('dashboard.activity') }}</h2>
-        <router-link to="/admin/audit" class="text-xs text-primary hover:underline inline-flex items-center gap-0.5">
-          {{ t('dashboard.viewAll') }}
-          <ArrowRightIcon class="w-3 h-3" aria-hidden="true" />
-        </router-link>
-      </div>
-
-      <div v-if="auditLoading" class="space-y-3">
-        <div v-for="i in 5" :key="i" class="flex items-start gap-3">
-          <div class="w-7 h-7 rounded-full skel shrink-0" />
-          <div class="flex-1 space-y-1.5">
-            <div class="h-3 w-3/4 rounded skel" />
-            <div class="h-2.5 w-1/2 rounded skel" />
+          <div v-if="loading" class="px-5 py-4 text-sm text-muted">{{ t('common.loading') }}</div>
+          <div v-else-if="formatCounts.length === 0" class="px-5 py-4 text-sm text-muted">
+            {{ t('dashboard.emptyTitle') }}
           </div>
-        </div>
-      </div>
-
-      <div v-else-if="auditEntries.length === 0" class="py-6 text-center text-sm text-muted">
-        {{ t('dashboard.noActivity') }}
-      </div>
-
-      <div v-else class="relative">
-        <!-- Timeline line -->
-        <div class="absolute left-3.5 top-3 bottom-3 w-px bg-border" />
-
-        <div class="space-y-4">
-          <div
-            v-for="entry in auditEntries"
-            :key="entry.id"
-            class="relative flex items-start gap-4 pl-10"
-          >
-            <!-- Dot -->
+          <div v-else class="px-5 py-3.5 space-y-2.5">
             <div
-              class="absolute left-2 top-1.5 w-3 h-3 rounded-full border-2 border-surface shrink-0"
-              :class="auditDotClass(entry.result)"
-            />
-
-            <div class="flex-1 min-w-0">
-              <div class="flex items-center gap-2 flex-wrap">
-                <span class="text-[12px] font-semibold text-foreground font-mono">{{ entry.actor }}</span>
-                <span
-                  class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-mono font-medium"
-                  :class="auditActionClass(entry.action)"
-                >
-                  {{ entry.action }}
-                </span>
-                <span v-if="entry.target" class="text-[12px] text-foreground/70 font-mono truncate max-w-[200px]">
-                  {{ entry.target }}
-                </span>
+              v-for="(item, i) in formatCounts"
+              :key="item.format"
+              class="grid grid-cols-[110px_1fr_32px] items-center gap-3"
+            >
+              <FormatBadge :format="item.format" size="sm" />
+              <div class="h-2 rounded-full bg-surface-hover overflow-hidden">
+                <div
+                  class="h-full rounded-full"
+                  :style="{ width: `${(item.count / maxCount) * 100}%`, backgroundColor: chartColor(i) }"
+                />
               </div>
-              <p class="mt-0.5 text-[11px] text-muted font-mono">
-                {{ timeAgo(entry.timestamp) }}
-                <span v-if="entry.result && entry.result !== 'ok'" class="text-danger ml-1">· {{ entry.result }}</span>
-              </p>
+              <span class="text-xs font-mono text-muted text-right tabular-nums">{{ item.count }}</span>
             </div>
           </div>
-        </div>
+        </section>
+
+        <!-- Recent repositories -->
+        <section class="rounded-lg border border-border bg-surface overflow-hidden">
+          <div class="px-5 h-11 flex items-center justify-between border-b border-border">
+            <h2 class="text-[13px] font-semibold">{{ t('dashboard.recent') }}</h2>
+            <router-link to="/repos" class="text-xs text-primary hover:underline">{{ t('dashboard.viewAll') }}</router-link>
+          </div>
+          <div v-if="loading" class="px-5 py-4 text-sm text-muted">{{ t('common.loading') }}</div>
+          <div v-else-if="loadError" class="px-5 py-4 text-sm text-danger" role="alert">{{ loadError }}</div>
+          <EmptyState v-else-if="repos.length === 0" :title="t('dashboard.emptyTitle')" :description="t('repos.emptyHint')" />
+          <table v-else class="w-full text-sm">
+            <thead>
+              <tr class="text-xs text-muted border-b border-border">
+                <th scope="col" class="text-left font-medium px-5 py-2">{{ t('repos.column.name') }}</th>
+                <th scope="col" class="text-left font-medium px-5 py-2">{{ t('repos.column.format') }}</th>
+                <th scope="col" class="text-left font-medium px-5 py-2">{{ t('repos.column.type') }}</th>
+                <th scope="col" class="text-left font-medium px-5 py-2">{{ t('repos.column.visibility') }}</th>
+                <th scope="col" class="text-right font-medium px-5 py-2">{{ t('dashboard.column.created') }}</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr
+                v-for="repo in recentRepos"
+                :key="repo.id"
+                class="h-10 border-b border-border last:border-0 hover:bg-surface-hover transition-colors"
+              >
+                <td class="px-5 font-mono">
+                  <router-link :to="`/repos/${encodeURIComponent(repo.name)}`" class="hover:underline">{{ repo.name }}</router-link>
+                </td>
+                <td class="px-5"><FormatBadge :format="repo.format" size="sm" /></td>
+                <td class="px-5 text-muted">{{ repo.repo_type || 'hosted' }}</td>
+                <td class="px-5 text-muted">{{ repo.public ? t('repos.public') : t('repos.private') }}</td>
+                <td class="px-5 text-right text-muted tabular-nums">{{ formatDate(repo.created_at) }}</td>
+              </tr>
+            </tbody>
+          </table>
+        </section>
       </div>
+
+      <!-- Recent activity (admin only) -->
+      <section v-if="session.isAdmin" class="rounded-lg border border-border bg-surface self-start">
+        <div class="px-5 h-11 flex items-center justify-between border-b border-border">
+          <h2 class="text-[13px] font-semibold">{{ t('dashboard.activity') }}</h2>
+          <router-link to="/admin/audit" class="text-xs text-primary hover:underline">{{ t('dashboard.viewAll') }}</router-link>
+        </div>
+        <div v-if="auditLoading" class="px-5 py-3 space-y-3">
+          <div v-for="i in 5" :key="i" class="h-8 rounded skel" />
+        </div>
+        <div v-else-if="auditEntries.length === 0" class="px-5 py-6 text-center text-sm text-muted">
+          {{ t('dashboard.noActivity') }}
+        </div>
+        <ul v-else class="divide-y divide-border">
+          <li v-for="entry in auditEntries" :key="entry.id" class="px-5 py-3 hover:bg-surface-hover transition-colors">
+            <div class="flex justify-between gap-3 text-sm">
+              <span class="min-w-0 truncate">
+                <span class="text-foreground">{{ entry.actor }}</span>
+                <span class="ml-1 text-muted">{{ actionLabel(entry.action) }}</span>
+              </span>
+              <span class="shrink-0 text-xs text-muted tabular-nums">{{ timeAgo(entry.timestamp) }}</span>
+            </div>
+            <div v-if="entryTarget(entry)" class="mt-0.5 text-xs font-mono text-muted truncate">{{ entryTarget(entry) }}</div>
+          </li>
+        </ul>
+      </section>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { ArrowRightIcon, ArrowPathIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { listAllRepositories } from '../api/repositories'
 import { listAudit } from '../api/audit'
 import type { Repository } from '../api/repositories'
@@ -192,7 +146,8 @@ import { useToastStore } from '../stores/toast'
 import { useSessionStore } from '../stores/session'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
-import { formatColor } from '../lib/formats'
+import { chartColor } from '../lib/formats'
+import { formatDate } from '../lib/datetime'
 import { t } from '../i18n/en'
 
 const toasts = useToastStore()
@@ -205,21 +160,23 @@ const syncing = ref(false)
 const auditEntries = ref<AuditEntry[]>([])
 const auditLoading = ref(false)
 
-const total = computed(() => repos.value.length)
-
-const uniqueFormats = computed(() => {
+const formatCounts = computed(() => {
   const counts = new Map<string, number>()
-  repos.value.forEach(r => {
-    counts.set(r.format, (counts.get(r.format) || 0) + 1)
-  })
-  return Array.from(counts.entries()).map(([format, count]) => ({ format, count }))
+  repos.value.forEach((r) => counts.set(r.format, (counts.get(r.format) || 0) + 1))
+  return Array.from(counts, ([format, count]) => ({ format, count })).sort((a, b) => b.count - a.count)
 })
 
+const maxCount = computed(() => formatCounts.value[0]?.count || 1)
+
 const kpis = computed(() => [
-  { label: t('dashboard.kpi.repos'), value: total.value },
-  { label: t('dashboard.kpi.formats'), value: uniqueFormats.value.length },
+  { label: t('dashboard.kpi.repos'), value: repos.value.length },
+  { label: t('dashboard.kpi.formats'), value: formatCounts.value.length },
   { label: t('dashboard.kpi.public'), value: repos.value.filter((r) => r.public).length },
-  { label: t('dashboard.kpi.proxyGroup'), value: repos.value.filter((r) => r.repo_type === 'proxy' || r.repo_type === 'group').length },
+  { label: t('dashboard.kpi.private'), value: repos.value.filter((r) => !r.public).length },
+  {
+    label: t('dashboard.kpi.proxyGroup'),
+    value: repos.value.filter((r) => r.repo_type === 'proxy' || r.repo_type === 'group').length,
+  },
 ])
 
 const recentRepos = computed(() =>
@@ -227,25 +184,6 @@ const recentRepos = computed(() =>
     .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
     .slice(0, 8),
 )
-
-const donutSlices = computed(() => {
-  const slices: { color: string; dashArray: string; dashOffset: number }[] = []
-  const circumference = 2 * Math.PI * 70
-  const sum = total.value || 1
-  let offset = 0
-
-  uniqueFormats.value.forEach(({ format, count }) => {
-    const arc = (count / sum) * circumference
-    slices.push({
-      color: formatColor(format),
-      dashArray: `${arc.toFixed(2)} ${(circumference - arc).toFixed(2)}`,
-      dashOffset: -offset,
-    })
-    offset += arc
-  })
-
-  return slices
-})
 
 function timeAgo(iso?: string): string {
   if (!iso) return '—'
@@ -258,18 +196,14 @@ function timeAgo(iso?: string): string {
   return `${Math.floor(hours / 24)}d`
 }
 
-function auditDotClass(result?: string): string {
-  if (!result || result === 'ok' || result === 'success') return 'bg-success'
-  if (result === 'error' || result === 'failed') return 'bg-danger'
-  return 'bg-muted'
+function actionLabel(action?: string): string {
+  return (action ?? '').replace(/[._]/g, ' ')
 }
 
-function auditActionClass(action?: string): string {
-  if (!action) return 'bg-surface-hover text-muted'
-  if (action.includes('delete') || action.includes('remove')) return 'bg-danger-soft text-danger'
-  if (action.includes('create') || action.includes('add')) return 'bg-success-soft text-success'
-  if (action.includes('update') || action.includes('edit')) return 'bg-primary-soft text-primary'
-  return 'bg-surface-hover text-muted'
+function entryTarget(entry: AuditEntry): string {
+  if (entry.target) return entry.target
+  const path = entry.details?.path
+  return typeof path === 'string' ? path : ''
 }
 
 async function loadRepos(): Promise<void> {

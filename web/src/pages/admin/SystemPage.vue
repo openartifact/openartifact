@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- PageHead -->
     <div class="flex items-start justify-between flex-wrap gap-3">
       <div>
-        <div class="flex items-center gap-2 text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
+        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
           <span>{{ t('nav.admin') }}</span>
           <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
           <span class="text-foreground/70">{{ t('nav.system') }}</span>
@@ -28,19 +28,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
     <UnavailableStub v-else-if="!sysInfo" />
     <div v-else class="space-y-5">
-      <!-- Stat Row: Version · Go Version · OS/Arch · Uptime -->
-      <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-        <div v-for="stat in statTiles" :key="stat.label" class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
-          <span class="w-9 h-9 rounded-lg flex items-center justify-center text-primary bg-primary-soft shrink-0">
-            <component :is="stat.icon" class="w-4 h-4" aria-hidden="true" />
-          </span>
-          <div class="min-w-0">
-            <div class="text-[10px] uppercase tracking-[0.14em] font-semibold text-muted">{{ stat.label }}</div>
-            <div class="text-lg font-bold font-mono truncate">{{ stat.value }}</div>
-          </div>
-        </div>
-      </div>
-
       <!-- Info Cards -->
       <div class="grid grid-cols-1 md:grid-cols-3 gap-4">
         <!-- Build Card -->
@@ -99,27 +86,15 @@ import { ref, computed, onMounted } from 'vue'
 import { getAdminSystemInfo, type AdminSystemInfo } from '../../api/admin'
 import UnavailableStub from '../../components/UnavailableStub.vue'
 import { t } from '../../i18n/en'
-import { ChevronRightIcon, CodeBracketIcon, ClockIcon, ServerIcon } from '@heroicons/vue/24/outline'
+import { ChevronRightIcon } from '@heroicons/vue/24/outline'
 
 const sysInfo = ref<AdminSystemInfo | null>(null)
 const loading = ref(false)
 const loadError = ref('')
 
-const osArch = computed(() => {
-  const { os, arch } = sysInfo.value ?? {}
-  if (os && arch) return `${os}/${arch}`
-  return os || arch || '—'
-})
-
-const statTiles = computed(() => [
-  { label: t('admin.system.version'), value: sysInfo.value?.version || '—', icon: CodeBracketIcon },
-  { label: t('admin.system.go'), value: sysInfo.value?.go_version || '—', icon: CodeBracketIcon },
-  { label: t('adm.system.osArch'), value: osArch.value, icon: ServerIcon },
-  { label: t('admin.system.uptime'), value: sysInfo.value?.uptime || '—', icon: ClockIcon },
-])
-
 const buildRows = computed(() => [
   { label: t('admin.system.version'), value: sysInfo.value?.version || '—' },
+  { label: t('admin.system.uptime'), value: sysInfo.value?.uptime || '—' },
   { label: t('adm.system.commit'), value: sysInfo.value?.commit || '—' },
   { label: t('adm.system.buildTime'), value: sysInfo.value?.build_time || '—' },
   { label: t('admin.system.go'), value: sysInfo.value?.go_version || '—' },
