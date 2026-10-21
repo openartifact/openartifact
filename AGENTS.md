@@ -61,10 +61,24 @@ Toolchain: Go 1.27.x, sqlc v1.31.1, golangci-lint v2, bun.
 - **Outbound URLs** (webhooks, proxy upstreams) must pass SSRF validation (no loopback/private/link-local, no unchecked redirects).
 - **API JSON is snake_case.** Response models need explicit `json` tags; the frontend relies on them. Keep `internal/api/openapi.json` in sync with registered routes, then regenerate web types.
 - **Frontend:** all API calls go through `web/src/api/client.ts` `request()` (handles CSRF header `X-CSRF-Token` from `oa_csrf` cookie and 401). No raw `fetch` for mutations. Strings go through `t()` / `web/src/i18n/en.ts`. Format icons come from `simple-icons` via `web/src/lib/formats.ts`; display formats with `FormatBadge`.
+  - Dates: `formatDate`/`formatDateTime` from `web/src/lib/datetime.ts`; no per-page `toLocaleDateString` helpers.
+  - Format colours: `formatColor`/`formatColorLowOnDark` for badges, `chartColor` (`CHART_PALETTE`) for charts; never hardcode hex per format.
+  - Repo URLs and client snippets: `repoBaseUrl` / `clientSetup` in `web/src/lib/installCommands.ts`. Snippets must match real server routes (check `cmd/server/main.go` and the format handler), not another product's conventions.
+  - Style: no gradients, glows, `backdrop-blur`, or letter-spaced uppercase labels; dashboards show only data the API actually returns.
 - **Workers** taking Postgres advisory locks must hold them on a pinned connection (or use xact locks), not the `*sql.DB` pool.
 - **Config:** every key settable by YAML must have an env override in `internal/config`, and be documented in `.env.example` and `openartifact.example.yaml`. Server read/write timeouts default to 0 (large uploads).
 - Errors: use `writeError` with the shared codes; never leak `err.Error()` from DB/upstream to clients.
 - Tests: assert behavior, not mock round-trips; no fixed sleeps — poll with deadlines.
+- **Package listing:** `ListRepoComponents` (`queries/components.sql`) unions every per-format table. Adding a format or a package table means adding a branch there (and to `CountRepoComponents`), or its packages silently vanish from the UI.
+- **Timestamps:** DB upserts must not persist zero `time.Time`; default `created_at`/`updated_at` to now when the caller leaves them unset.
+- **Anonymous access:** `repositories.public` grants anonymous `read` (never write) independent of `allowAnonymousRead`; the evaluator in `internal/auth/permission*.go` is the single place that decides it.
+- **Client auth:** format routes accept API tokens (Bearer, or Basic with the token as password); account passwords work only for the UI login. Use tokens in examples and smoke tests.
+
+## Verifying changes
+
+- Web: `bun run typecheck && bun test`, then look at the page in the running app (dark and light theme).
+- Go: `make lint` (gocyclo limit 20 applies to tests too; prefer table-driven subtests) and `make test`.
+- End to end: rebuild with `docker compose -f docker/docker-compose.yml up -d --build openartifact`, create a token via `POST /api/v1/auth/tokens` (`{"name":…,"kind":"access"}`), and publish with the real client (`npm publish`, `curl -T` for raw, …) before claiming a format works.
 
 ## Bootstrap
 

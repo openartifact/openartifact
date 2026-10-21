@@ -4,14 +4,35 @@ SPDX-FileCopyrightText: The OpenArtifact Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
-<p align="center"><img src="docs/logo.png" alt="OpenArtifact" width="160"></p>
+<p align="center">
+  <img src="docs/logo.png" alt="OpenArtifact logo" width="120">
+</p>
 
-# OpenArtifact
+<h1 align="center">OpenArtifact</h1>
 
-OpenArtifact is an enterprise-grade, free-as-in-freedom artifact repository
-manager. It is a single Go binary with an embedded Vue 3 web UI, backed by
-PostgreSQL, that hosts and proxies packages for many ecosystems, with RBAC,
-SSO, security scanning and pluggable blob storage.
+<p align="center">
+  <b>Self-hosted artifact repository for 16 package formats.</b><br>
+  One Go binary, embedded web UI, PostgreSQL. Hosted, proxy and group repositories with RBAC, SSO and security scanning.
+</p>
+
+<p align="center">
+  <a href="https://github.com/openartifact/openartifact/actions/workflows/ci.yml"><img src="https://github.com/openartifact/openartifact/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="LICENSE"><img src="https://img.shields.io/badge/license-AGPL--3.0--or--later-blue" alt="License: AGPL-3.0-or-later"></a>
+  <img src="https://img.shields.io/badge/go-1.27-00ADD8?logo=go&logoColor=white" alt="Go 1.27">
+  <a href="https://api.reuse.software/info/github.com/openartifact/openartifact"><img src="https://api.reuse.software/badge/github.com/openartifact/openartifact" alt="REUSE"></a>
+</p>
+
+<p align="center">
+  <a href="#quickstart-docker-compose">Quickstart</a> ·
+  <a href="#supported-formats">Formats</a> ·
+  <a href="#configuration">Configuration</a> ·
+  <a href="#cli">CLI</a> ·
+  <a href="CONTRIBUTING.md">Contributing</a>
+</p>
+
+npm, PyPI, Maven, Docker/OCI, Helm, Debian, RPM, Go, Cargo, NuGet, RubyGems,
+Conda, Conan, Ivy, sbt and raw files, behind one URL scheme and one permission
+model, on your own infrastructure. Free software under the AGPL.
 
 ## Features
 
@@ -52,13 +73,15 @@ with the repository name.
 | Conan (v2) | `HOST/repos/REPO/` (`v2/conans/...`) |
 
 Authentication is required unless `allowAnonymousRead` is enabled or the
-repository is public.
+repository is marked public (anonymous read only; writes always need a token).
+Package clients authenticate with an API token (Bearer, or Basic with the token
+as password); account passwords are only accepted by the web UI login.
 
 ## Quickstart (Docker Compose)
 
 ```sh
 cp docker/.env.example docker/.env      # set POSTGRES_PASSWORD
-docker compose -f docker/docker-compose.yml --env-file docker/.env up --build
+docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
 ```
 
 The UI and API are on <http://localhost:8080>. PostgreSQL is not published to
@@ -146,7 +169,8 @@ make generate          # sqlc v1.31.1 (DB code generation)
 cd web && bun install && bun run dev
 ```
 
-See [CONTRIBUTING.md](CONTRIBUTING.md).
+See [CONTRIBUTING.md](CONTRIBUTING.md) and [AGENTS.md](AGENTS.md) (conventions
+for humans and coding agents alike).
 
 ## Contributing
 
