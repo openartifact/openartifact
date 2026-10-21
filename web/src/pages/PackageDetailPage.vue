@@ -88,7 +88,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </div>
               <div v-if="currentPkg.created_at" class="leading-tight">
                 <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.uploaded') }}</div>
-                <div class="mt-0.5 text-sm font-medium tabular-nums">{{ new Date(currentPkg.created_at).toLocaleDateString() }}</div>
+                <div class="mt-0.5 text-sm font-medium tabular-nums">{{ formatDate(currentPkg.created_at) }}</div>
               </div>
               <div v-if="currentPkg.sha256" class="leading-tight">
                 <div class="text-[10px] text-muted font-semibold">SHA256</div>
@@ -165,7 +165,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
             <div v-if="currentPkg.created_at" class="flex items-center justify-between py-2.5">
               <span class="text-sm text-muted">{{ t('repoDetail.created') }}</span>
-              <span class="text-sm text-foreground font-mono">{{ new Date(currentPkg.created_at).toLocaleDateString() }}</span>
+              <span class="text-sm text-foreground font-mono">{{ formatDate(currentPkg.created_at) }}</span>
             </div>
           </div>
         </div>
@@ -199,7 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </div>
                 </td>
                 <td class="px-4 py-3 text-foreground font-mono text-xs tabular-nums">{{ pkg.size ? formatSize(pkg.size) : '—' }}</td>
-                <td class="px-4 py-3 text-foreground text-xs">{{ pkg.created_at ? new Date(pkg.created_at).toLocaleDateString() : '—' }}</td>
+                <td class="px-4 py-3 text-foreground text-xs">{{ pkg.created_at ? formatDate(pkg.created_at) : '—' }}</td>
                 <td class="px-4 py-3 text-foreground font-mono text-xs">{{ pkg.sha256 ? pkg.sha256.slice(0, 12) : '—' }}</td>
               </tr>
             </tbody>
@@ -402,7 +402,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div><dt class="text-xs text-muted">{{ t('pkg.security.low') }}</dt><dd class="font-mono">{{ scan.low_count }}</dd></div>
           </dl>
           <p v-if="scan.scanned_at" class="text-xs text-muted">
-            {{ t('pkg.security.scannedAt') }} {{ new Date(scan.scanned_at).toLocaleString() }}
+            {{ t('pkg.security.scannedAt') }} {{ formatDateTime(scan.scanned_at) }}
           </p>
         </div>
       </div>
@@ -411,6 +411,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { formatDate, formatDateTime } from '../lib/datetime'
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {

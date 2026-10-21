@@ -146,6 +146,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { FORMAT_LOCALE } from '../../lib/datetime'
 import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
 import { listAudit, type AuditEntry } from '../../api/audit'
 import { ChevronRightIcon } from '@heroicons/vue/24/outline'
@@ -178,7 +179,7 @@ function formatTimestamp(ts: string | undefined): string {
   if (!ts) return '—'
   const d = new Date(ts)
   if (Number.isNaN(d.getTime())) return ts
-  return d.toLocaleString(undefined, {
+  return d.toLocaleString(FORMAT_LOCALE, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

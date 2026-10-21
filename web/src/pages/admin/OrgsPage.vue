@@ -386,6 +386,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { FORMAT_LOCALE } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import { request } from '../../api/client'
 import { listAllUsers, type UserItem } from '../../api/admin'
@@ -457,7 +458,7 @@ const availableUsers = computed(() => {
 
 function formatDate(iso?: string): string {
   if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  return new Date(iso).toLocaleDateString(FORMAT_LOCALE, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 // The member payload carries only user_id; resolve the username from the user list.

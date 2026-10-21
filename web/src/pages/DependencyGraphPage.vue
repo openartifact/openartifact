@@ -282,6 +282,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { formatDate } from '../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { request } from '../api/client'
@@ -342,7 +343,7 @@ function packagesFromCycloneDx(doc: CycloneDxDocument): SbomPackage[] {
 }
 
 function sbomLabel(sbom: SbomItem): string {
-  const when = sbom.created_at ? new Date(sbom.created_at).toLocaleDateString() : sbom.id.slice(0, 8)
+  const when = sbom.created_at ? formatDate(sbom.created_at) : sbom.id.slice(0, 8)
   return `${sbom.format}${sbom.spec_version ? ' ' + sbom.spec_version : ''} · ${when}`
 }
 

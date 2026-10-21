@@ -257,6 +257,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { FORMAT_LOCALE } from '../lib/datetime'
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { listComponents, getRepository } from '../api/repositories'
@@ -412,7 +413,7 @@ function formatBytes(bytes?: number): string {
 function formatDate(ts?: string): string {
   if (!ts) return '—'
   try {
-    return new Date(ts).toLocaleDateString(undefined, {
+    return new Date(ts).toLocaleDateString(FORMAT_LOCALE, {
       year: 'numeric',
       month: 'short',
       day: 'numeric',

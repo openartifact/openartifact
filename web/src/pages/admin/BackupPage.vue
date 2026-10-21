@@ -263,6 +263,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { FORMAT_LOCALE } from '../../lib/datetime'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { request } from '../../api/client'
 import { useToastStore } from '../../stores/toast'
@@ -391,7 +392,7 @@ function formatBytes(bytes: number): string {
 function formatDate(iso: string): string {
   const d = new Date(iso)
   if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })
+  return d.toLocaleDateString(FORMAT_LOCALE, { year: 'numeric', month: 'short', day: 'numeric' })
 }
 
 function timeAgo(iso: string): string {

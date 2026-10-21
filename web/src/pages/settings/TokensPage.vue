@@ -55,13 +55,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <span class="font-mono font-medium">{{ token.name }}</span>
               </td>
               <td class="px-6 py-4 text-sm text-muted">
-                {{ token.created_at ? new Date(token.created_at).toLocaleDateString() : '-' }}
+                {{ token.created_at ? formatDate(token.created_at) : '-' }}
               </td>
               <td class="px-6 py-4 text-sm text-muted">
-                {{ token.last_used_at ? new Date(token.last_used_at).toLocaleDateString() : t('settings.tokens.never') }}
+                {{ token.last_used_at ? formatDate(token.last_used_at) : t('settings.tokens.never') }}
               </td>
               <td class="px-6 py-4 text-sm" :class="isExpired(token) ? 'text-danger' : 'text-muted'">
-                {{ token.expires_at ? new Date(token.expires_at).toLocaleDateString() : t('settings.tokens.never') }}
+                {{ token.expires_at ? formatDate(token.expires_at) : t('settings.tokens.never') }}
               </td>
               <td class="px-6 py-4 text-right">
                 <button
@@ -181,6 +181,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { formatDate } from '../../lib/datetime'
 import { ref, onMounted } from 'vue'
 import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
 import { listMyTokens, createMyToken, revokeMyToken, type ApiToken, type CreatedToken } from '../../api/tokens'

@@ -101,6 +101,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { FORMAT_LOCALE } from '../../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
 import DataTable, { type Column } from '../../components/DataTable.vue'
 import { listTokens, revokeToken, type AdminToken } from '../../api/tokens'
@@ -142,7 +143,7 @@ function formatDate(date?: string): string {
   if (!date) return ''
   const d = new Date(date)
   if (Number.isNaN(d.getTime())) return date
-  return d.toLocaleDateString(undefined, { year: 'numeric', month: '2-digit', day: '2-digit' })
+  return d.toLocaleDateString(FORMAT_LOCALE, { year: 'numeric', month: '2-digit', day: '2-digit' })
 }
 
 function isExpired(date?: string): boolean {

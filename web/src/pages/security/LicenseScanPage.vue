@@ -203,6 +203,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch } from 'vue'
 import { ChevronRightIcon, ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import EmptyState from '../../components/EmptyState.vue'
@@ -270,7 +271,7 @@ function statusLabel(status: string): string {
 function formatDate(ts?: string | null): string {
   if (!ts) return '—'
   const d = new Date(ts)
-  return Number.isNaN(d.getTime()) ? ts : d.toLocaleString(undefined, { dateStyle: 'medium', timeStyle: 'short' })
+  return Number.isNaN(d.getTime()) ? ts : formatDateTime(d)
 }
 
 async function loadScans(): Promise<void> {

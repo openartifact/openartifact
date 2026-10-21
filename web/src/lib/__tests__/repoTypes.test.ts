@@ -37,7 +37,7 @@ describe('coerceFormat', () => {
 
 describe('formatTtl', () => {
   const unit = (n: number, u: string) =>
-    new Intl.NumberFormat(undefined, { style: 'unit', unit: u, unitDisplay: 'long' }).format(n)
+    new Intl.NumberFormat('en', { style: 'unit', unit: u, unitDisplay: 'long' }).format(n)
 
   it('renders single units', () => {
     expect(formatTtl(60)).toBe(unit(1, 'minute'))

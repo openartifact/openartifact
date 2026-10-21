@@ -6,6 +6,7 @@
 // server policy in internal/repotype; the server stays authoritative and
 // rejects anything else with validation_failed.
 
+import { FORMAT_LOCALE } from './datetime'
 import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
@@ -50,7 +51,7 @@ export function formatTtl(seconds: number | null | undefined): string {
     const n = Math.floor(rest / size)
     if (n === 0 && !(unit === 'second' && parts.length === 0)) continue
     rest -= n * size
-    parts.push(new Intl.NumberFormat(undefined, { style: 'unit', unit, unitDisplay: 'long' }).format(n))
+    parts.push(new Intl.NumberFormat(FORMAT_LOCALE, { style: 'unit', unit, unitDisplay: 'long' }).format(n))
   }
   return parts.join(' ')
 }

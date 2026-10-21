@@ -269,6 +269,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { FORMAT_LOCALE } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import { request } from '../../api/client'
 import { useToastStore } from '../../stores/toast'
@@ -334,7 +335,7 @@ const canSave = computed(
 
 function formatDate(date?: string): string {
   if (!date) return '—'
-  return new Date(date).toLocaleDateString('en-US', {
+  return new Date(date).toLocaleDateString(FORMAT_LOCALE, {
     year: 'numeric',
     month: '2-digit',
     day: '2-digit',

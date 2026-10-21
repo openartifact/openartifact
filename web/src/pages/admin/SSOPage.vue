@@ -323,7 +323,7 @@ import { saveSSOProvider, testSSOProvider, type SSOConfigInput } from '../../api
 import AdminDialog from '../../components/AdminDialog.vue'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
-import { formatDate } from '../../lib/datetime'
+import { formatDate, formatTime } from '../../lib/datetime'
 
 // Response shape of the admin SSO API: the client secret is never returned,
 // so `oidc_config.client_secret` is always absent.
@@ -496,7 +496,7 @@ async function testProvider(slug: string): Promise<void> {
     const result = await testSSOProvider(slug)
     testResults.value = {
       ...testResults.value,
-      [slug]: { ok: result.ok, message: result.message ?? result.error, at: new Date().toLocaleTimeString() },
+      [slug]: { ok: result.ok, message: result.message ?? result.error, at: formatTime(new Date()) },
     }
     if (result.ok) toasts.success(t('adm.sso.testSucceeded'))
     else toasts.error(result.message || result.error || t('adm.sso.testFailed'))
