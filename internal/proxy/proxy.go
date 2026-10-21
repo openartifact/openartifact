@@ -5,7 +5,9 @@
 // Package proxy serves proxy repositories: files are fetched from the
 // repository's upstream on first request, cached content-addressed in the blob
 // store, recorded in proxy_cache_entries (which also backs the repository's
-// package listing) and served from the cache until their TTL expires.
+// package listing) and served from the cache until their TTL expires. When an
+// expired entry cannot be revalidated because the upstream is down, it is
+// served stale for up to the repository's max_stale_seconds.
 package proxy
 
 import (
@@ -40,6 +42,13 @@ const (
 	// fetchTimeout bounds one upstream fetch, independent of any client.
 	fetchTimeout = 15 * time.Minute
 
+	// responseHeaderTimeout bounds the wait for an upstream's response
+	// headers (the dial and TLS handshake are bounded to 10s each by the
+	// SSRF-safe client). A hung upstream fails fast, as a network error, so
+	// a stale copy can be served; the body transfer is only bound by
+	// fetchTimeout.
+	responseHeaderTimeout = 30 * time.Second
+
 	// immutableTTL is how long immutable files (released Maven artifacts,
 	// deb/rpm package files) stay cached: effectively until evicted by an
 	// admin or repository delete.
@@ -52,7 +61,17 @@ var (
 	errNotFound = errors.New("not found upstream")
 	errUpstream = errors.New("upstream error")
 	errInternal = errors.New("internal error")
+
+	// errUpstreamDown is the errUpstream subset that justifies serving a stale
+	// cached copy: the upstream was unreachable, timed out, answered 5xx or
+	// broke the transfer. Refusals that signal misconfiguration (401/403, an
+	// oversized file, a blocked address) are plain errUpstream.
+	errUpstreamDown = fmt.Errorf("%w: unavailable", errUpstream)
 )
+
+// staleWarning marks a response served from an expired cache entry
+// (RFC 7234 section 5.5.1, "Response is Stale").
+const staleWarning = `110 - "Response is Stale"`
 
 // Service fetches and caches upstream files for proxy repositories.
 type Service struct {
@@ -75,7 +94,7 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 		log:       log,
 		db:        db,
 		blobStore: blobStore,
-		client:    netutil.SafeHTTPClient(fetchTimeout),
+		client:    netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout),
 		maxBody:   DefaultMaxBody,
 	}
 }
@@ -101,11 +120,13 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
-	entry, fromCache, err := s.resolve(r.Context(), repo, key)
+	res, err := s.resolve(r.Context(), repo, key)
 	if err != nil {
 		s.writeResolveError(w, r, err)
 		return
 	}
+
+	entry, fromCache := res.entry, res.fromCache
 
 	rc, err := s.blobStore.Get(r.Context(), entry.BlobKey)
 	if err != nil && fromCache {
@@ -117,11 +138,13 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 			s.log.Errorw("failed to drop stale proxy cache entry", "repo", repo.Name, "path", key, "error", derr)
 		}
 
-		entry, _, err = s.resolve(r.Context(), repo, key)
+		res, err = s.resolve(r.Context(), repo, key)
 		if err != nil {
 			s.writeResolveError(w, r, err)
 			return
 		}
+
+		entry = res.entry
 
 		rc, err = s.blobStore.Get(r.Context(), entry.BlobKey)
 	}
@@ -136,6 +159,10 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
 		return
+	}
+
+	if res.stale {
+		w.Header().Set("Warning", staleWarning)
 	}
 
 	writeEntry(w, r, entry, rc)
@@ -183,20 +210,33 @@ func writeEntry(w http.ResponseWriter, r *http.Request, entry *models.ProxyCache
 	_, _ = io.Copy(w, body)
 }
 
-// resolve returns a fresh cache entry for key, fetching it from upstream when
-// it is absent or expired. fromCache reports whether no fetch was needed.
-// errNotFound is returned for an upstream 404 (negatively cached).
-func (s *Service) resolve(ctx context.Context, repo *models.Repository, key string) (*models.ProxyCacheEntry, bool, error) {
-	entry, err := s.freshEntry(ctx, repo, key)
+// resolution is the outcome of resolve.
+type resolution struct {
+	entry *models.ProxyCacheEntry
+	// fromCache reports that no upstream response was stored for this request:
+	// the entry was fresh, or an expired one served stale.
+	fromCache bool
+	// stale reports that entry is past its TTL and was served because the
+	// upstream could not be reached.
+	stale bool
+}
+
+// resolve returns a cache entry for key, fetching it from upstream when it is
+// absent or expired. When revalidating an expired entry fails because the
+// upstream is down, the stale entry is returned (resolution.stale) as long as
+// it is within the repository's max-stale window. errNotFound is returned for
+// an upstream 404 (negatively cached).
+func (s *Service) resolve(ctx context.Context, repo *models.Repository, key string) (*resolution, error) {
+	fresh, _, err := s.lookup(ctx, repo, key)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	if entry != nil {
-		return entry, true, nil
+	if fresh != nil {
+		return &resolution{entry: fresh, fromCache: true}, nil
 	}
 
-	entry, err = s.flights.do(ctx, repo.ID+"\x00"+key, func() (*models.ProxyCacheEntry, error) {
+	res, err := s.flights.do(ctx, repo.ID+"\x00"+key, func() (*resolution, error) {
 		// The flight outlives the request that started it: other requests
 		// are waiting on it.
 		fctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), fetchTimeout)
@@ -204,42 +244,81 @@ func (s *Service) resolve(ctx context.Context, repo *models.Repository, key stri
 
 		// A flight that finished just before this one started has already
 		// filled the cache.
-		if e, ferr := s.freshEntry(fctx, repo, key); ferr != nil || e != nil {
-			return e, ferr
+		fresh, stale, lerr := s.lookup(fctx, repo, key)
+		if lerr != nil {
+			return nil, lerr
 		}
 
-		return s.fetch(fctx, repo, key)
+		if fresh != nil {
+			return &resolution{entry: fresh, fromCache: true}, nil
+		}
+
+		entry, ferr := s.fetch(fctx, repo, key)
+		if ferr == nil {
+			return &resolution{entry: entry}, nil
+		}
+
+		if errors.Is(ferr, errUpstreamDown) && s.staleUsable(repo, stale) {
+			s.log.Warnw("proxy upstream unavailable, serving stale cached copy",
+				"repo", repo.Name, "path", key, "expired_for", time.Since(stale.ExpiresAt).Round(time.Second).String(), "error", ferr)
+
+			return &resolution{entry: stale, fromCache: true, stale: true}, nil
+		}
+
+		return nil, ferr
 	})
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
 
-	if entry == nil {
+	if res == nil {
 		// The flight leader died (panic) before producing a result.
-		return nil, false, errInternal
-	}
-
-	return entry, false, nil
-}
-
-// freshEntry returns the cached entry if it has not expired. A negative entry
-// yields errNotFound.
-func (s *Service) freshEntry(ctx context.Context, repo *models.Repository, key string) (*models.ProxyCacheEntry, error) {
-	entry, err := s.db.GetProxyCacheEntry(ctx, repo.ID, key)
-	if err != nil {
-		s.log.Errorw("failed to read proxy cache entry", "repo", repo.Name, "path", key, "error", err)
 		return nil, errInternal
 	}
 
-	if entry == nil || !entry.ExpiresAt.After(time.Now()) {
-		return nil, nil //nolint:nilnil // (nil, nil) means "no usable entry": the caller fetches
+	return res, nil
+}
+
+// lookup reads the cache row for key. A fresh positive entry is returned as
+// fresh; an expired positive entry (a candidate for serving stale) as stale;
+// a fresh negative entry yields errNotFound. Both are nil when the caller has
+// to fetch with nothing to fall back on.
+func (s *Service) lookup(ctx context.Context, repo *models.Repository, key string) (*models.ProxyCacheEntry, *models.ProxyCacheEntry, error) {
+	entry, err := s.db.GetProxyCacheEntry(ctx, repo.ID, key)
+	if err != nil {
+		s.log.Errorw("failed to read proxy cache entry", "repo", repo.Name, "path", key, "error", err)
+		return nil, nil, errInternal
 	}
 
-	if entry.StatusCode == http.StatusNotFound || entry.BlobKey == "" {
-		return nil, errNotFound
+	if entry == nil {
+		return nil, nil, nil
 	}
 
-	return entry, nil
+	positive := entry.StatusCode != http.StatusNotFound && entry.BlobKey != ""
+
+	if !entry.ExpiresAt.After(time.Now()) {
+		if positive {
+			return nil, entry, nil
+		}
+
+		return nil, nil, nil
+	}
+
+	if !positive {
+		return nil, nil, errNotFound
+	}
+
+	return entry, nil, nil
+}
+
+// staleUsable reports whether an expired entry may still be served: it exists
+// and expired less than the repository's max_stale_seconds ago.
+func (s *Service) staleUsable(repo *models.Repository, entry *models.ProxyCacheEntry) bool {
+	if entry == nil || repo.MaxStaleSeconds <= 0 {
+		return false
+	}
+
+	return time.Since(entry.ExpiresAt) < time.Duration(repo.MaxStaleSeconds)*time.Second
 }
 
 // fetch downloads key from the upstream, stores the blob and records the cache
@@ -265,7 +344,7 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 	resp, err := s.client.Do(req)
 	if err != nil {
 		s.log.Warnw("proxy upstream request failed", "repo", repo.Name, "path", key, "error", err)
-		return nil, errUpstream
+		return nil, errUpstreamDown
 	}
 	defer func() { base.CloseLog(resp.Body, s.log) }()
 
@@ -273,6 +352,9 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 	case resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone:
 		s.recordNegative(ctx, repo, key)
 		return nil, errNotFound
+	case resp.StatusCode >= http.StatusInternalServerError:
+		s.log.Warnw("proxy upstream returned an error", "repo", repo.Name, "path", key, "status", resp.StatusCode)
+		return nil, errUpstreamDown
 	case resp.StatusCode != http.StatusOK:
 		s.log.Warnw("proxy upstream returned an error", "repo", repo.Name, "path", key, "status", resp.StatusCode)
 		return nil, errUpstream
@@ -337,12 +419,17 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 	size, err := io.Copy(io.MultiWriter(spool, hasher), io.LimitReader(resp.Body, s.maxBody+1))
 	if err != nil {
 		s.log.Warnw("proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
+		return nil, errUpstreamDown
+	}
+
+	if size > s.maxBody {
+		s.log.Warnw("proxy upstream body oversized", "repo", repo.Name, "path", key, "size", size)
 		return nil, errUpstream
 	}
 
-	if size > s.maxBody || (resp.ContentLength >= 0 && size != resp.ContentLength) {
-		s.log.Warnw("proxy upstream body oversized or truncated", "repo", repo.Name, "path", key, "size", size)
-		return nil, errUpstream
+	if resp.ContentLength >= 0 && size != resp.ContentLength {
+		s.log.Warnw("proxy upstream body truncated", "repo", repo.Name, "path", key, "size", size)
+		return nil, errUpstreamDown
 	}
 
 	sum := hex.EncodeToString(hasher.Sum(nil))
@@ -403,6 +490,12 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 func (s *Service) recordNegative(ctx context.Context, repo *models.Repository, key string) {
 	ttl := time.Duration(repo.NegativeCacheTTLSeconds) * time.Second
 	if ttl <= 0 {
+		// Nothing to negative-cache, but an expired positive entry must not
+		// outlive the upstream's 404/410 as a stale fallback.
+		if err := s.db.DeleteProxyCacheEntry(ctx, repo.ID, key); err != nil {
+			s.log.Errorw("failed to drop proxy cache entry for removed upstream file", "repo", repo.Name, "path", key, "error", err)
+		}
+
 		return
 	}
 
@@ -495,14 +588,14 @@ type flightGroup struct {
 
 type flight struct {
 	done    chan struct{}
-	entry   *models.ProxyCacheEntry
+	res     *resolution
 	err     error
 	waiters int
 }
 
 // do runs fn once per key at a time; concurrent callers wait for its result.
 // A waiter whose ctx ends stops waiting without disturbing the flight.
-func (g *flightGroup) do(ctx context.Context, key string, fn func() (*models.ProxyCacheEntry, error)) (*models.ProxyCacheEntry, error) {
+func (g *flightGroup) do(ctx context.Context, key string, fn func() (*resolution, error)) (*resolution, error) {
 	g.mu.Lock()
 
 	if g.calls == nil {
@@ -515,7 +608,7 @@ func (g *flightGroup) do(ctx context.Context, key string, fn func() (*models.Pro
 
 		select {
 		case <-f.done:
-			return f.entry, f.err
+			return f.res, f.err
 		case <-ctx.Done():
 			return nil, fmt.Errorf("waiting for upstream fetch: %w", ctx.Err())
 		}
@@ -532,9 +625,9 @@ func (g *flightGroup) do(ctx context.Context, key string, fn func() (*models.Pro
 		close(f.done)
 	}()
 
-	f.entry, f.err = fn()
+	f.res, f.err = fn()
 
-	return f.entry, f.err
+	return f.res, f.err
 }
 
 // waiting reports how many callers are blocked on the in-flight fetch of key.

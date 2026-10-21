@@ -19,6 +19,7 @@ type Repository struct {
 	UpstreamPasswordEnc     string // proxy only — AES-256-GCM encrypted
 	CacheTTLSeconds         int    // proxy only, default 3600
 	NegativeCacheTTLSeconds int    // proxy only, default 60
+	MaxStaleSeconds         int    // proxy only: how long past expiry a cached copy may be served when the upstream fails; 0 disables, default 604800
 	Blocked                 bool   // proxy only
 	OrgID                   *string
 	CreatedAt               time.Time

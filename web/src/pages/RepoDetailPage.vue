@@ -106,6 +106,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <dd class="text-foreground">{{ formatTtl(repo.cache_ttl_seconds) }}</dd>
             <dt class="text-muted">{{ t('repoDetail.proxy.negativeCacheTtl') }}</dt>
             <dd class="text-foreground">{{ formatTtl(repo.negative_cache_ttl_seconds) }}</dd>
+            <dt class="text-muted" :title="t('repoDetail.proxy.maxStaleHint')">{{ t('repoDetail.proxy.maxStale') }}</dt>
+            <dd class="text-foreground">
+              {{ repo.max_stale_seconds ? formatTtl(repo.max_stale_seconds) : t('repoDetail.proxy.maxStaleOff') }}
+            </dd>
           </dl>
         </div>
 

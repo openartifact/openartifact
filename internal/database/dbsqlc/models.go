@@ -705,7 +705,8 @@ type Repository struct {
 	NegativeCacheTtlSeconds int32   `db:"negative_cache_ttl_seconds" json:"negative_cache_ttl_seconds"`
 	Blocked                 bool    `db:"blocked" json:"blocked"`
 	// Organization this repository belongs to. NOT NULL — all repos must be org-scoped.
-	OrgID string `db:"org_id" json:"org_id"`
+	OrgID           string `db:"org_id" json:"org_id"`
+	MaxStaleSeconds int32  `db:"max_stale_seconds" json:"max_stale_seconds"`
 }
 
 type RepositoryGroupMember struct {

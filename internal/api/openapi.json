@@ -292,6 +292,10 @@
             "type": "integer",
             "description": "Negative cache TTL in seconds"
           },
+          "max_stale_seconds": {
+            "type": "integer",
+            "description": "Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000."
+          },
           "blocked": {
             "type": "boolean",
             "description": "Whether the repository is blocked"
@@ -1552,6 +1556,10 @@
                   },
                   "negative_cache_ttl_seconds": {
                     "type": "integer"
+                  },
+                  "max_stale_seconds": {
+                    "type": "integer",
+                    "description": "Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000."
                   },
                   "blocked": {
                     "type": "boolean"
@@ -6201,6 +6209,10 @@
                   },
                   "negative_cache_ttl_seconds": {
                     "type": "integer"
+                  },
+                  "max_stale_seconds": {
+                    "type": "integer",
+                    "description": "Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000."
                   },
                   "blocked": {
                     "type": "boolean"

@@ -109,10 +109,20 @@ and can be downloaded there) and served from the cache afterwards.
   without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian
   `dists/` and RPM `repodata/` metadata, and everything in raw repositories.
   Released Maven artifacts and `.deb`/`.rpm` files are immutable once cached.
-- An upstream 404 is cached for `negative_cache_ttl_seconds`. Any other upstream
-  failure (5xx, 401/403, timeout, redirect to a disallowed address, a file over
-  4 GiB) answers `502` with a generic message and caches nothing; there is no
-  serve-stale fallback.
+- An upstream 404/410 is cached for `negative_cache_ttl_seconds` and drops any
+  cached copy of the file (it is never served stale). Any other upstream failure
+  (401/403, timeout, redirect to a disallowed address, a file over 4 GiB, 5xx)
+  answers `502` with a generic message and caches nothing, except as below.
+- **Serve-stale:** when an expired entry cannot be revalidated because the
+  upstream is unreachable, times out, answers 5xx or breaks the transfer, the
+  cached copy is served with `200` and `Warning: 110 - "Response is Stale"`, and
+  a warning is logged. This holds for up to `max_stale_seconds` past the entry's
+  expiry (default 7 days, max 365 days; `0` disables serve-stale, then the
+  client gets `502`). The eviction worker keeps expired files for that window
+  (plus a one-hour grace), so a larger value trades disk for availability. A
+  successful refetch replaces the entry. 401/403 from the upstream are not
+  treated as an outage and stay `502`. Cache hits do not update `hit_count` or
+  `last_hit_at`: that would add a database write to every download.
 - Concurrent requests for the same uncached path share one upstream fetch.
   Clients get the first byte once the whole file is cached.
 - `upstream_url` must be a plain `http(s)` base URL (no credentials, query or

@@ -90,6 +90,14 @@ func (d *memDB) expire(repoID, key string) {
 	d.entries[repoID+"|"+key].ExpiresAt = time.Now().Add(-time.Minute)
 }
 
+// expireAgo makes an entry expire ago in the past.
+func (d *memDB) expireAgo(repoID, key string, ago time.Duration) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	d.entries[repoID+"|"+key].ExpiresAt = time.Now().Add(-ago)
+}
+
 func (d *memDB) entry(repoID, key string) *models.ProxyCacheEntry {
 	e, _ := d.GetProxyCacheEntry(context.Background(), repoID, key)
 	return e
@@ -136,6 +144,7 @@ func newFixture(t *testing.T, handler http.HandlerFunc) *fixture {
 		UpstreamURL:             upstream.URL + "/maven2/",
 		CacheTTLSeconds:         600,
 		NegativeCacheTTLSeconds: 60,
+		MaxStaleSeconds:         3600,
 	}
 
 	return f

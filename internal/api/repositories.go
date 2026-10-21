@@ -70,8 +70,10 @@ const (
 
 	defaultCacheTTLSeconds         = 3600
 	defaultNegativeCacheTTLSeconds = 60
+	defaultMaxStaleSeconds         = 7 * 24 * 3600
 	maxCacheTTLSeconds             = 30 * 24 * 3600
 	maxNegativeCacheTTLSeconds     = 24 * 3600
+	maxMaxStaleSeconds             = 365 * 24 * 3600
 )
 
 func validFormatList() string {
@@ -306,6 +308,19 @@ func normalizeTTL(field string, v, def, maxV int) (int, error) {
 	return min(v, maxV), nil
 }
 
+// normalizeMaxStale validates max_stale_seconds. Unlike the TTLs, 0 is a real
+// value (never serve a stale copy); only an absent field takes the default.
+func normalizeMaxStale(v *int) (int, error) {
+	switch {
+	case v == nil:
+		return defaultMaxStaleSeconds, nil
+	case *v < 0:
+		return 0, validationError("max_stale_seconds must not be negative")
+	}
+
+	return min(*v, maxMaxStaleSeconds), nil
+}
+
 // resolveGroupMembers validates a member list for a group repository and
 // returns the member repository IDs in priority order.
 func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, groupName, groupFormat string, names []string) ([]string, int, string, string) {
@@ -384,6 +399,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		UpstreamPassword        string   `json:"upstream_password"`
 		CacheTTLSeconds         int      `json:"cache_ttl_seconds"`
 		NegativeCacheTTLSeconds int      `json:"negative_cache_ttl_seconds"`
+		MaxStaleSeconds         *int     `json:"max_stale_seconds"`
 		MemberRepos             []string `json:"member_repos"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
@@ -450,6 +466,12 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
+		maxStale, err := normalizeMaxStale(body.MaxStaleSeconds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
 		encPassword, err := encryptUpstreamPassword(body.UpstreamPassword)
 		if err != nil {
 			h.log.Errorw("create repository: encrypt upstream password", "error", err)
@@ -463,6 +485,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		repo.UpstreamPasswordEnc = encPassword
 		repo.CacheTTLSeconds = ttl
 		repo.NegativeCacheTTLSeconds = negTTL
+		repo.MaxStaleSeconds = maxStale
 	default:
 		if hasUpstream {
 			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_* fields are only valid for proxy repositories")
@@ -471,6 +494,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 		repo.CacheTTLSeconds = defaultCacheTTLSeconds
 		repo.NegativeCacheTTLSeconds = defaultNegativeCacheTTLSeconds
+		repo.MaxStaleSeconds = defaultMaxStaleSeconds
 	}
 
 	var memberIDs []string
@@ -549,6 +573,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		UpstreamPassword        *string   `json:"upstream_password"`
 		CacheTTLSeconds         *int      `json:"cache_ttl_seconds"`
 		NegativeCacheTTLSeconds *int      `json:"negative_cache_ttl_seconds"`
+		MaxStaleSeconds         *int      `json:"max_stale_seconds"`
 		Blocked                 *bool     `json:"blocked"`
 		MemberRepos             *[]string `json:"member_repos"`
 	}
@@ -558,7 +583,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	touchesUpstream := body.UpstreamURL != nil || body.UpstreamUsername != nil || body.UpstreamPassword != nil ||
-		body.CacheTTLSeconds != nil || body.NegativeCacheTTLSeconds != nil
+		body.CacheTTLSeconds != nil || body.NegativeCacheTTLSeconds != nil || body.MaxStaleSeconds != nil
 	if touchesUpstream && repo.RepoType != "proxy" {
 		writeError(w, http.StatusBadRequest, "validation_failed", "upstream and cache fields are only valid for proxy repositories")
 		return
@@ -625,6 +650,16 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		}
 
 		repo.NegativeCacheTTLSeconds = ttl
+	}
+
+	if body.MaxStaleSeconds != nil {
+		maxStale, err := normalizeMaxStale(body.MaxStaleSeconds)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		repo.MaxStaleSeconds = maxStale
 	}
 
 	if body.Blocked != nil {
@@ -1068,11 +1103,12 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 	}
 
 	if r.RepoType == repotype.Proxy {
-		ttl, negTTL := r.CacheTTLSeconds, r.NegativeCacheTTLSeconds
+		ttl, negTTL, maxStale := r.CacheTTLSeconds, r.NegativeCacheTTLSeconds, r.MaxStaleSeconds
 		resp.UpstreamURL = r.UpstreamURL
 		resp.UpstreamUsername = r.UpstreamUsername
 		resp.CacheTTLSeconds = &ttl
 		resp.NegativeCacheTTLSeconds = &negTTL
+		resp.MaxStaleSeconds = &maxStale
 	}
 
 	return resp

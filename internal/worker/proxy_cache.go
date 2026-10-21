@@ -20,6 +20,20 @@ import (
 // deleted while a concurrent request may still be re-registering it.
 const proxyCacheGrace = "1 hour"
 
+// evictExpiredSQL deletes entries expired beyond the grace period. A cached
+// file (non-null blob_key) is additionally kept for its repository's
+// max_stale_seconds, the window in which it may be served stale while the
+// upstream is failing; negative entries are evicted as soon as grace ends.
+const evictExpiredSQL = `
+	DELETE FROM proxy_cache_entries e
+	USING repositories r
+	WHERE r.id = e.repository_id
+	  AND e.expires_at < now() - interval '` + proxyCacheGrace + `' - CASE
+	      WHEN e.blob_key IS NOT NULL THEN COALESCE(r.max_stale_seconds, 0) * interval '1 second'
+	      ELSE interval '0'
+	  END
+	RETURNING COALESCE(e.blob_key, '')`
+
 type ProxyCacheWorker struct {
 	db        database.Database
 	blobStore storage.BlobStore
@@ -118,13 +132,11 @@ func (w *ProxyCacheWorker) evict(ctx context.Context) (int, error) {
 	return total, nil
 }
 
-// deleteExpiredEntries deletes entries expired beyond the grace period and
+// deleteExpiredEntries deletes entries expired beyond the grace period (and
+// their repository's max-stale window) and
 // returns the distinct blob keys they referenced plus the number of rows deleted.
 func deleteExpiredEntries(ctx context.Context, sqlDB *sql.DB) (map[string]struct{}, int, error) {
-	rows, err := sqlDB.QueryContext(ctx, `
-		DELETE FROM proxy_cache_entries
-		WHERE expires_at < now() - interval '`+proxyCacheGrace+`'
-		RETURNING COALESCE(blob_key, '')`)
+	rows, err := sqlDB.QueryContext(ctx, evictExpiredSQL)
 	if err != nil {
 		return nil, 0, fmt.Errorf("delete expired proxy cache entries: %w", err)
 	}

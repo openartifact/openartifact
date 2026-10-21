@@ -84,6 +84,7 @@ type RepositoryResponse struct {
 	UpstreamUsername        string `json:"upstream_username,omitempty"`
 	CacheTTLSeconds         *int   `json:"cache_ttl_seconds,omitempty"`
 	NegativeCacheTTLSeconds *int   `json:"negative_cache_ttl_seconds,omitempty"`
+	MaxStaleSeconds         *int   `json:"max_stale_seconds,omitempty"`
 }
 
 // PackageItem represents a package in list responses.

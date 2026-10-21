@@ -124,6 +124,10 @@ export type Repository = {
      */
     negative_cache_ttl_seconds?: number;
     /**
+     * Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000.
+     */
+    max_stale_seconds?: number;
+    /**
      * Whether the repository is blocked
      */
     blocked?: boolean;
@@ -703,6 +707,10 @@ export type PostApiV1RepositoriesData = {
         upstream_password?: string;
         cache_ttl_seconds?: number;
         negative_cache_ttl_seconds?: number;
+        /**
+         * Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000.
+         */
+        max_stale_seconds?: number;
         blocked?: boolean;
         /**
          * For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested.
@@ -3457,6 +3465,10 @@ export type PatchApiV1RepositoryByNameData = {
         upstream_password?: string;
         cache_ttl_seconds?: number;
         negative_cache_ttl_seconds?: number;
+        /**
+         * Seconds past a cached file's expiry during which it may still be served, with a Warning: 110 header, when the upstream is unreachable, times out or answers 5xx. 0 disables serve-stale; default 604800 (7 days); max 31536000.
+         */
+        max_stale_seconds?: number;
         blocked?: boolean;
         member_repos?: Array<string>;
     };

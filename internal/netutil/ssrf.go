@@ -97,6 +97,14 @@ func ValidateOutboundURLContext(ctx context.Context, raw string) error {
 // addresses (checked at dial time, defeating DNS rebinding) and caps and
 // re-validates redirects, dropping credentials on cross-host redirects.
 func SafeHTTPClient(timeout time.Duration) *http.Client {
+	return SafeHTTPClientWithHeaderTimeout(timeout, 0)
+}
+
+// SafeHTTPClientWithHeaderTimeout is SafeHTTPClient with an additional bound
+// on the wait between sending a request and receiving the response headers
+// (0 means unbounded, leaving only the overall timeout). Body transfer is not
+// covered by it, so large downloads are unaffected.
+func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duration) *http.Client {
 	d := &net.Dialer{
 		Timeout: 10 * time.Second,
 		Control: func(_, address string, _ syscall.RawConn) error {
@@ -111,11 +119,12 @@ func SafeHTTPClient(timeout time.Duration) *http.Client {
 		},
 	}
 	tr := &http.Transport{
-		Proxy:               nil,
-		DialContext:         func(ctx context.Context, n, a string) (net.Conn, error) { return d.DialContext(ctx, n, a) },
-		TLSHandshakeTimeout: 10 * time.Second,
-		MaxIdleConns:        20,
-		IdleConnTimeout:     60 * time.Second,
+		Proxy:                 nil,
+		DialContext:           func(ctx context.Context, n, a string) (net.Conn, error) { return d.DialContext(ctx, n, a) },
+		TLSHandshakeTimeout:   10 * time.Second,
+		ResponseHeaderTimeout: responseHeaderTimeout,
+		MaxIdleConns:          20,
+		IdleConnTimeout:       60 * time.Second,
 	}
 	return &http.Client{
 		Timeout:   timeout,
