@@ -34,6 +34,21 @@ npm, PyPI, Maven, Docker/OCI, Helm, Debian, RPM, Go, Cargo, NuGet, RubyGems,
 Conda, Conan, Ivy, sbt and raw files, behind one URL scheme and one permission
 model, on your own infrastructure. Free software under the AGPL.
 
+<p align="center">
+  <img src="docs/screenshots/dashboard.png" alt="Dashboard: repository counts, repositories by format, recent activity" width="900">
+</p>
+
+<table>
+  <tr>
+    <td><img src="docs/screenshots/repositories.png" alt="Repository list filtered by format"></td>
+    <td><img src="docs/screenshots/repository.png" alt="npm repository with published package versions"></td>
+  </tr>
+  <tr>
+    <td align="center">Repositories</td>
+    <td align="center">Repository detail</td>
+  </tr>
+</table>
+
 ## Features
 
 - 16 package formats (table below), hosted, proxy and group repositories
