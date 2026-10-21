@@ -53,11 +53,16 @@ type Package struct {
 	Requires      []Dependency
 	Conflicts     []Dependency
 	Obsoletes     []Dependency
+	Recommends    []Dependency
 	Suggests      []Dependency
 	Supplements   []Dependency
 	Enhances      []Dependency
 	Files         []FileEntry
 	Changelogs    []ChangelogEntry
+
+	// WeakDepsParsed is true when the persisted extra data already carries
+	// weak dependencies (see extraData.WeakDeps).
+	WeakDepsParsed bool
 }
 
 func ParseRPM(r io.Reader) (*Package, error) {
@@ -119,6 +124,7 @@ func ParseRPM(r io.Reader) (*Package, error) {
 	pkg.Requires, _ = ParseDependencies(pkgHeader, RPMTAG_REQUIRENAME, RPMTAG_REQUIREFLAGS, RPMTAG_REQUIREVERSION)
 	pkg.Conflicts, _ = ParseDependencies(pkgHeader, RPMTAG_CONFLICTNAME, RPMTAG_CONFLICTFLAGS, RPMTAG_CONFLICTVERSION)
 	pkg.Obsoletes, _ = ParseDependencies(pkgHeader, RPMTAG_OBSOLETENAME, RPMTAG_OBSOLETEFLAGS, RPMTAG_OBSOLETEVERSION)
+	pkg.Recommends, _ = ParseDependencies(pkgHeader, RPMTAG_RECOMMENDNAME, RPMTAG_RECOMMENDFLAGS, RPMTAG_RECOMMENDVERSION)
 	pkg.Suggests, _ = ParseDependencies(pkgHeader, RPMTAG_SUGGESTSNAME, RPMTAG_SUGGESTSFLAGS, RPMTAG_SUGGESTSVERSION)
 	pkg.Supplements, _ = ParseDependencies(pkgHeader, RPMTAG_SUPPLEMENTNAME, RPMTAG_SUPPLEMENTFLAGS, RPMTAG_SUPPLEMENTVERSION)
 	pkg.Enhances, _ = ParseDependencies(pkgHeader, RPMTAG_ENHANCENAME, RPMTAG_ENHANCEFLAGS, RPMTAG_ENHANCEVERSION)
@@ -270,6 +276,10 @@ func (p *Package) GetMetadata() map[string]any {
 		metadata["obsoletes"] = p.Obsoletes
 	}
 
+	if len(p.Recommends) > 0 {
+		metadata["recommends"] = p.Recommends
+	}
+
 	if len(p.Suggests) > 0 {
 		metadata["suggests"] = p.Suggests
 	}
@@ -295,22 +305,27 @@ func (p *Package) GetMetadata() map[string]any {
 
 // extraData is the persisted (JSON) subset of a Package not stored in scalar columns.
 type extraData struct {
-	Provides    []Dependency     `json:"provides,omitempty"`
-	Requires    []Dependency     `json:"requires,omitempty"`
-	Conflicts   []Dependency     `json:"conflicts,omitempty"`
-	Obsoletes   []Dependency     `json:"obsoletes,omitempty"`
-	Suggests    []Dependency     `json:"suggests,omitempty"`
-	Supplements []Dependency     `json:"supplements,omitempty"`
-	Enhances    []Dependency     `json:"enhances,omitempty"`
-	Files       []FileEntry      `json:"files,omitempty"`
-	Changelogs  []ChangelogEntry `json:"changelogs,omitempty"`
+	Provides    []Dependency `json:"provides,omitempty"`
+	Requires    []Dependency `json:"requires,omitempty"`
+	Conflicts   []Dependency `json:"conflicts,omitempty"`
+	Obsoletes   []Dependency `json:"obsoletes,omitempty"`
+	Recommends  []Dependency `json:"recommends,omitempty"`
+	Suggests    []Dependency `json:"suggests,omitempty"`
+	Supplements []Dependency `json:"supplements,omitempty"`
+	Enhances    []Dependency `json:"enhances,omitempty"`
+	// WeakDeps marks rows persisted by a version that stored weak dependencies
+	// (recommends/suggests/supplements/enhances). Rows without it are re-read
+	// from their blob when metadata is regenerated.
+	WeakDeps   bool             `json:"weak_deps,omitempty"`
+	Files      []FileEntry      `json:"files,omitempty"`
+	Changelogs []ChangelogEntry `json:"changelogs,omitempty"`
 }
 
 // MarshalExtra encodes dependencies, files and changelogs for persistence.
 func (p *Package) MarshalExtra() ([]byte, error) {
 	return json.Marshal(extraData{
 		Provides: p.Provides, Requires: p.Requires, Conflicts: p.Conflicts, Obsoletes: p.Obsoletes,
-		Suggests: p.Suggests, Supplements: p.Supplements, Enhances: p.Enhances,
+		Recommends: p.Recommends, WeakDeps: true, Suggests: p.Suggests, Supplements: p.Supplements, Enhances: p.Enhances,
 		Files: p.Files, Changelogs: p.Changelogs,
 	})
 }
@@ -327,6 +342,7 @@ func (p *Package) UnmarshalExtra(data []byte) error {
 	}
 
 	p.Provides, p.Requires, p.Conflicts, p.Obsoletes = e.Provides, e.Requires, e.Conflicts, e.Obsoletes
+	p.Recommends, p.WeakDepsParsed = e.Recommends, e.WeakDeps
 	p.Suggests, p.Supplements, p.Enhances = e.Suggests, e.Supplements, e.Enhances
 	p.Files, p.Changelogs = e.Files, e.Changelogs
 

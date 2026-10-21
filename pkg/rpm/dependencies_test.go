@@ -21,7 +21,7 @@ func TestSenseFlagsString(t *testing.T) {
 		{SENSE_GREATEREQUAL, "GE"},
 		{SENSE_ANY, ""},
 		{0, ""},
-		{SENSE_LESS | SENSE_GREATER, "GT&LT"},
+		{SENSE_LESS | SENSE_GREATER, ""},
 	}
 
 	for _, tt := range tests {

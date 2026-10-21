@@ -162,6 +162,9 @@ func (m *BaseMockDB) RpmPackageExists(ctx context.Context, repoID, name, version
 func (m *BaseMockDB) ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
 	return nil, errNotImpl("ListRpmPackagesForMetadata")
 }
+func (m *BaseMockDB) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
+	return errNotImpl("UpdateRpmPackageExtra")
+}
 func (m *BaseMockDB) GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error) {
 	return nil, errNotImpl("GetRpmPackageByID")
 }

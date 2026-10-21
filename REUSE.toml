@@ -25,3 +25,10 @@ path = [
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Binary rpm test fixture (built from a trivial spec with rpmbuild).
+[[annotations]]
+path = "pkg/rpm/testdata/weakdeps.rpm"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "The OpenArtifact Authors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

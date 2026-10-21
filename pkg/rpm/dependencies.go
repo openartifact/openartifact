@@ -10,13 +10,26 @@ import (
 	"strings"
 )
 
+// Sense flag bits as defined by rpm (RPMSENSE_*).
 const (
-	SENSE_LESS         uint32 = 0x01
-	SENSE_GREATER      uint32 = 0x02
-	SENSE_EQUAL        uint32 = 0x04
-	SENSE_ANY          uint32 = 0x08
+	SENSE_LESS         uint32 = 1 << 1
+	SENSE_GREATER      uint32 = 1 << 2
+	SENSE_EQUAL        uint32 = 1 << 3
+	SENSE_ANY          uint32 = 0
 	SENSE_LESSEQUAL    uint32 = SENSE_LESS | SENSE_EQUAL
 	SENSE_GREATEREQUAL uint32 = SENSE_GREATER | SENSE_EQUAL
+
+	// SENSE_PREREQ, SENSE_SCRIPT_PRE and SENSE_SCRIPT_POST mark requirements
+	// that must be satisfied before the package scriptlets run (createrepo_c
+	// emits pre="1" for them).
+	SENSE_PREREQ      uint32 = 1 << 6
+	SENSE_SCRIPT_PRE  uint32 = 1 << 9
+	SENSE_SCRIPT_POST uint32 = 1 << 10
+	// SENSE_RPMLIB marks rpmlib(...) feature requirements, which createrepo_c
+	// leaves out of primary.xml.
+	SENSE_RPMLIB uint32 = 1 << 24
+
+	senseCompareMask = SENSE_LESS | SENSE_GREATER | SENSE_EQUAL
 )
 
 type Dependency struct {
@@ -26,38 +39,42 @@ type Dependency struct {
 	Epoch   uint32
 }
 
+// SenseFlagsString renders the comparison bits of flags as the createrepo_c
+// flags attribute value; an unversioned dependency yields "".
 func SenseFlagsString(flags uint32) string {
-	if flags&SENSE_ANY != 0 || flags == 0 {
+	switch flags & senseCompareMask {
+	case SENSE_LESS:
+		return "LT"
+	case SENSE_GREATER:
+		return "GT"
+	case SENSE_EQUAL:
+		return "EQ"
+	case SENSE_LESSEQUAL:
+		return "LE"
+	case SENSE_GREATEREQUAL:
+		return "GE"
+	default:
 		return ""
 	}
+}
 
-	parts := make([]string, 0, 2)
+// IsPre reports whether the requirement must be met before scriptlets run.
+func (d Dependency) IsPre() bool {
+	return d.Flags&(SENSE_PREREQ|SENSE_SCRIPT_PRE|SENSE_SCRIPT_POST) != 0
+}
 
-	if flags&SENSE_GREATER != 0 && flags&SENSE_EQUAL != 0 {
-		return "GE"
+// IsRPMLib reports whether the dependency is an rpmlib(...) feature requirement.
+func (d Dependency) IsRPMLib() bool {
+	return d.Flags&SENSE_RPMLIB != 0
+}
+
+// SplitVersionRelease splits a dependency version "ver[-rel]" at the last dash.
+func SplitVersionRelease(v string) (string, string) {
+	if i := strings.LastIndexByte(v, '-'); i >= 0 { //nolint:modernize // CutLast unavailable in supported toolchains
+		return v[:i], v[i+1:]
 	}
 
-	if flags&SENSE_LESS != 0 && flags&SENSE_EQUAL != 0 {
-		return "LE"
-	}
-
-	if flags&SENSE_GREATER != 0 {
-		parts = append(parts, "GT")
-	}
-
-	if flags&SENSE_LESS != 0 {
-		parts = append(parts, "LT")
-	}
-
-	if flags&SENSE_EQUAL != 0 {
-		parts = append(parts, "EQ")
-	}
-
-	if len(parts) == 1 {
-		return parts[0]
-	}
-
-	return strings.Join(parts, "&")
+	return v, ""
 }
 
 func ParseDependencies(header *Header, nameTag, flagsTag, versionTag TagType) ([]Dependency, error) {

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"database/sql"
 	"errors"
 	"fmt"
 	"sort"
@@ -153,6 +154,8 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 		return fmt.Errorf("rpm worker: loading packages: %w", err)
 	}
 
+	w.backfillWeakDeps(ctx, repoID, packages)
+
 	blobs, err := w.buildMetadata(ctx, repoID, packages)
 	if err != nil {
 		return err
@@ -235,6 +238,93 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 	w.log.Infow("metadata regeneration complete", "repo_id", repoID, "packages", len(packages))
 
 	return nil
+}
+
+// backfillWeakDeps re-reads the headers of packages persisted before weak
+// dependencies were stored (recommends/suggests/supplements/enhances), updates
+// the in-memory packages and persists the result. Failures are logged and leave
+// the package without weak deps rather than failing the regeneration.
+func (w *RPMetadataWorker) backfillWeakDeps(ctx context.Context, repoID string, packages []pkgrpm.Package) {
+	for i := range packages {
+		pkg := &packages[i]
+		if pkg.WeakDepsParsed {
+			continue
+		}
+
+		parsed, err := w.readPackageBlob(ctx, pkg.SHA256)
+		if err != nil {
+			w.log.Warnw("rpm weak-dependency backfill failed", "repo_id", repoID, "package", pkg.Name, "error", err)
+			continue
+		}
+
+		pkg.Recommends, pkg.Suggests = parsed.Recommends, parsed.Suggests
+		pkg.Supplements, pkg.Enhances = parsed.Supplements, parsed.Enhances
+		pkg.WeakDepsParsed = true
+
+		extra, err := pkg.MarshalExtra()
+		if err == nil {
+			err = w.db.UpdateRpmPackageExtra(ctx, repoID, pkg.SHA256, extra)
+		}
+
+		if err != nil {
+			w.log.Warnw("rpm weak-dependency backfill not persisted", "repo_id", repoID, "package", pkg.Name, "error", err)
+		}
+	}
+}
+
+func (w *RPMetadataWorker) readPackageBlob(ctx context.Context, sha256 string) (*pkgrpm.Package, error) {
+	rc, err := w.blobStore.Get(ctx, sha256)
+	if err != nil {
+		return nil, fmt.Errorf("opening blob: %w", err)
+	}
+	defer func() { _ = rc.Close() }()
+
+	parsed, err := pkgrpm.ParseRPM(rc)
+	if err != nil {
+		return nil, fmt.Errorf("parsing rpm: %w", err)
+	}
+
+	return parsed, nil
+}
+
+// RegenerateStale regenerates every RPM repository flagged metadata_stale; it
+// runs once at startup so migrations that invalidate metadata take effect
+// without waiting for an upload.
+func (w *RPMetadataWorker) RegenerateStale(ctx context.Context) {
+	rows, err := w.db.GetDB().QueryContext(ctx, `SELECT repository_id FROM rpm_repos WHERE metadata_stale`)
+	if err != nil {
+		w.log.Warnw("listing stale rpm repos failed", "error", err)
+		return
+	}
+
+	ids, err := scanStaleRepoIDs(rows)
+	if err != nil {
+		w.log.Warnw("listing stale rpm repos failed", "error", err)
+		return
+	}
+
+	for _, id := range ids {
+		if err := w.Regenerate(ctx, id); err != nil {
+			w.log.Warnw("startup rpm metadata regeneration failed", "repo_id", id, "error", err)
+		}
+	}
+}
+
+func scanStaleRepoIDs(rows *sql.Rows) ([]string, error) {
+	defer func() { _ = rows.Close() }()
+
+	var ids []string
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan repo id: %w", err)
+		}
+
+		ids = append(ids, id)
+	}
+
+	return ids, rows.Err()
 }
 
 // buildMetadata renders every generated metadata file, keyed by repo-relative path.

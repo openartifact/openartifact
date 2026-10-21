@@ -206,6 +206,8 @@ func main() {
 
 	// Initialize metadata workers
 	rpmWorker := worker.NewRPMetadataWorker(db, blobStore, signer, log, reg)
+	go rpmWorker.RegenerateStale(context.Background())
+
 	debWorker := worker.NewDebMetadataWorker(db, blobStore, signer, log)
 	mavenWorker := worker.NewMavenMetadataWorker(db, blobStore, db.GetDB(), log, reg)
 	npmWorker := worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg)

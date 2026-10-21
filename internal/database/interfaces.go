@@ -93,6 +93,9 @@ type Database interface {
 	// ListRpmPackagesForMetadata returns every rpm package of a repo with
 	// dependencies, files, changelogs and header range loaded.
 	ListRpmPackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error)
+	// UpdateRpmPackageExtra replaces rpm_extra for the repo's package(s) whose
+	// blob has the given sha256 (used to backfill weak dependencies).
+	UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error
 
 	CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error
 	GetMavenArtifactByPath(ctx context.Context, repoID, path string) (*models.MavenArtifact, error)

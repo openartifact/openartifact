@@ -82,3 +82,15 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 
 	return out, rows.Err()
 }
+
+// UpdateRpmPackageExtra replaces rpm_extra for the packages of a repo backed by the blob with the given sha256.
+func (p *PostgresDB) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
+	if _, err := p.db.ExecContext(ctx, `
+		UPDATE rpm_packages SET rpm_extra = $3::jsonb
+		WHERE repository_id = $1 AND blob_id IN (SELECT id FROM blobs WHERE sha256 = $2)`,
+		repoID, sha256, extra); err != nil {
+		return fmt.Errorf("update rpm package extra: %w", err)
+	}
+
+	return nil
+}

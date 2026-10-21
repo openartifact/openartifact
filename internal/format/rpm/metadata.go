@@ -107,6 +107,10 @@ type primaryFormatXML struct {
 	Requires    []primaryEntryXML `xml:"rpm:requires>rpm:entry,omitempty"`
 	Conflicts   []primaryEntryXML `xml:"rpm:conflicts>rpm:entry,omitempty"`
 	Obsoletes   []primaryEntryXML `xml:"rpm:obsoletes>rpm:entry,omitempty"`
+	Suggests    []primaryEntryXML `xml:"rpm:suggests>rpm:entry,omitempty"`
+	Enhances    []primaryEntryXML `xml:"rpm:enhances>rpm:entry,omitempty"`
+	Recommends  []primaryEntryXML `xml:"rpm:recommends>rpm:entry,omitempty"`
+	Supplements []primaryEntryXML `xml:"rpm:supplements>rpm:entry,omitempty"`
 }
 
 type primaryHeaderRangeXML struct {
@@ -173,28 +177,6 @@ func GeneratePrimaryXML(packages []rpm.Package, baseURL string) ([]byte, error) 
 			epochStr = strconv.FormatUint(uint64(pkg.Epoch), 10)
 		}
 
-		provides := make([]primaryEntryXML, len(pkg.Provides))
-		for j, dep := range pkg.Provides {
-			provides[j] = depToPrimaryEntry(dep)
-		}
-
-		requires := make([]primaryEntryXML, len(pkg.Requires))
-		for j, dep := range pkg.Requires {
-			e := depToPrimaryEntry(dep)
-			e.Pre = "0"
-			requires[j] = e
-		}
-
-		conflicts := make([]primaryEntryXML, len(pkg.Conflicts))
-		for j, dep := range pkg.Conflicts {
-			conflicts[j] = depToPrimaryEntry(dep)
-		}
-
-		obsoletes := make([]primaryEntryXML, len(pkg.Obsoletes))
-		for j, dep := range pkg.Obsoletes {
-			obsoletes[j] = depToPrimaryEntry(dep)
-		}
-
 		pkgEntries[i] = primaryPackageXML{
 			Type:        "rpm",
 			Name:        pkg.Name,
@@ -216,10 +198,14 @@ func GeneratePrimaryXML(packages []rpm.Package, baseURL string) ([]byte, error) 
 				BuildHost:   pkg.BuildHost,
 				SourceRPM:   pkg.SourceRPM,
 				HeaderRange: primaryHeaderRangeXML{Start: pkg.HeaderStart, End: pkg.HeaderEnd},
-				Provides:    provides,
-				Requires:    requires,
-				Conflicts:   conflicts,
-				Obsoletes:   obsoletes,
+				Provides:    depsToPrimaryEntries(pkg.Provides, false),
+				Requires:    depsToPrimaryEntries(pkg.Requires, true),
+				Conflicts:   depsToPrimaryEntries(pkg.Conflicts, false),
+				Obsoletes:   depsToPrimaryEntries(pkg.Obsoletes, false),
+				Suggests:    depsToPrimaryEntries(pkg.Suggests, false),
+				Enhances:    depsToPrimaryEntries(pkg.Enhances, false),
+				Recommends:  depsToPrimaryEntries(pkg.Recommends, false),
+				Supplements: depsToPrimaryEntries(pkg.Supplements, false),
 			},
 		}
 	}
@@ -239,18 +225,42 @@ func GeneratePrimaryXML(packages []rpm.Package, baseURL string) ([]byte, error) 
 	return append([]byte(xml.Header), output...), nil
 }
 
-func depToPrimaryEntry(dep rpm.Dependency) primaryEntryXML {
-	epochStr := ""
-	if dep.Epoch > 0 {
-		epochStr = strconv.FormatUint(uint64(dep.Epoch), 10)
+// depsToPrimaryEntries renders dependencies the way createrepo_c does. When
+// isRequires is set, rpmlib(...) features are skipped and script-time
+// requirements carry pre="1".
+func depsToPrimaryEntries(deps []rpm.Dependency, isRequires bool) []primaryEntryXML {
+	if len(deps) == 0 {
+		return nil
 	}
 
-	return primaryEntryXML{
-		Name:  dep.Name,
-		Flags: rpm.SenseFlagsString(dep.Flags),
-		Epoch: epochStr,
-		Ver:   dep.Version,
+	out := make([]primaryEntryXML, 0, len(deps))
+
+	for _, dep := range deps {
+		if isRequires && dep.IsRPMLib() {
+			continue
+		}
+
+		e := depToPrimaryEntry(dep)
+		if isRequires && dep.IsPre() {
+			e.Pre = "1"
+		}
+
+		out = append(out, e)
 	}
+
+	return out
+}
+
+func depToPrimaryEntry(dep rpm.Dependency) primaryEntryXML {
+	e := primaryEntryXML{Name: dep.Name, Flags: rpm.SenseFlagsString(dep.Flags)}
+	if e.Flags == "" {
+		return e
+	}
+
+	e.Epoch = strconv.FormatUint(uint64(dep.Epoch), 10)
+	e.Ver, e.Rel = rpm.SplitVersionRelease(dep.Version)
+
+	return e
 }
 
 type filelistsPackageXML struct {
