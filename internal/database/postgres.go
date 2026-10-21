@@ -3696,6 +3696,16 @@ func (p *PostgresDB) UpsertRawArtifact(ctx context.Context, artifact *models.Raw
 		return fmt.Errorf("failed to upsert blob for raw artifact: %w", err)
 	}
 
+	// Callers (the raw PUT handler) leave the timestamps unset; storing the
+	// zero time made every raw artifact show as uploaded on 0001-01-01.
+	now := time.Now().UTC()
+	if artifact.CreatedAt.IsZero() {
+		artifact.CreatedAt = now
+	}
+	if artifact.UpdatedAt.IsZero() {
+		artifact.UpdatedAt = now
+	}
+
 	if err := p.q.UpsertRawArtifact(ctx, dbsqlc.UpsertRawArtifactParams{
 		ID:           artifact.ID,
 		RepositoryID: artifact.RepositoryID,
