@@ -85,6 +85,17 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### 0.4.1
+
+Security fixes; no migrations. Behavior changes:
+
+| Area | Change |
+|---|---|
+| AI analysis | Endpoints on private or loopback addresses (e.g. a local Ollama) need `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. |
+| Cargo publish | Declared metadata over 1 MiB or crate over 128 MiB is rejected with 413. |
+| SSO | Login redirects accept only same-origin relative paths; OIDC state and session cookies are `Secure` under TLS or an https base URL. |
+| Group repositories | Member content is served with `X-Content-Type-Options: nosniff`, defaulting to `application/octet-stream`. |
+
 ### 0.4.0
 
 Migrations `008`–`015` run at first start (RPM repositories regenerate their metadata once; the first Docker GC run backfills manifest references). Behavior changes:
