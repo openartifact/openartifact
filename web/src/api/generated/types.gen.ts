@@ -544,6 +544,57 @@ export type LicenseScanRunResult = {
     policy_violations: Array<LicensePolicyViolation>;
 };
 
+export type DockerGcRequest = {
+    /**
+     * Report what would be deleted without deleting anything
+     */
+    dry_run?: boolean;
+    /**
+     * Minimum age of what may be deleted; 0 disables the grace period. Omitted: the configured workers.dockerGcGracePeriod
+     */
+    grace_period_seconds?: number;
+};
+
+export type DockerGcManifest = {
+    image: string;
+    digest: string;
+    size: number;
+};
+
+export type DockerGcBlob = {
+    digest: string;
+    size: number;
+};
+
+export type DockerGcReport = {
+    repository: string;
+    dry_run: boolean;
+    grace_period_seconds: number;
+    /**
+     * Untagged manifests deleted (would be, in a dry run)
+     */
+    manifests_deleted: number;
+    /**
+     * Blob records of the repository no manifest references any more
+     */
+    blob_refs_deleted: number;
+    /**
+     * Storage objects removed; in a dry run an upper bound that ignores sharing with other repositories
+     */
+    blobs_freed: number;
+    bytes_freed: number;
+    /**
+     * Storage deletions that failed (logged server-side; the orphan collector retries them)
+     */
+    failures: number;
+    manifests: Array<DockerGcManifest>;
+    blobs: Array<DockerGcBlob>;
+    /**
+     * manifests/blobs are capped at 1000 entries each
+     */
+    truncated: boolean;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -4398,6 +4449,33 @@ export type PostApiV1RepositoriesByNameCleanupPoliciesByIdRunResponses = {
      */
     202: unknown;
 };
+
+export type PostApiV1RepositoriesByNameRegistryGcData = {
+    body?: DockerGcRequest;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/registry-gc';
+};
+
+export type PostApiV1RepositoriesByNameRegistryGcErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameRegistryGcError = PostApiV1RepositoriesByNameRegistryGcErrors[keyof PostApiV1RepositoriesByNameRegistryGcErrors];
+
+export type PostApiV1RepositoriesByNameRegistryGcResponses = {
+    /**
+     * GC report
+     */
+    200: DockerGcReport;
+};
+
+export type PostApiV1RepositoriesByNameRegistryGcResponse = PostApiV1RepositoriesByNameRegistryGcResponses[keyof PostApiV1RepositoriesByNameRegistryGcResponses];
 
 export type GetApiV1RepositoriesByNameAiAnalysisData = {
     body?: never;

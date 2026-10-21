@@ -113,6 +113,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/repositories/{name}/packages`, `/debs`, `/comps` | list, download and delete packages; upload (`debs` for Debian, `packages` for RPM) |
 | `/repositories/{name}/members` | member repositories of a group repository |
 | `/repositories/{name}/{cleanup-policies,quota,webhooks}` | [cleanup and quotas](../repositories/cleanup-and-quotas.md), per-repository [webhooks](../operations/webhooks.md) |
+| `/repositories/{name}/registry-gc` | `POST` (admin): run [Docker registry garbage collection](../formats/docker.md#garbage-collection), optionally as a dry run |
 | `/repositories/{name}/{sbom,vuln,license,secrets}` | SBOMs and [scanning](../security/scanning.md) (scans, quarantine, license policies) |
 | `/repositories/{name}/artifacts/...` | [properties](../repositories/properties.md) and property search |
 | `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas |

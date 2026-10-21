@@ -199,8 +199,13 @@ func (p *PostgresDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploa
 
 // Docker manifest methods
 
+// CreateDockerManifest upserts the manifest row. When m.Refs is set, the
+// references of the manifest body are recorded in the same transaction, under
+// the shared per-repository docker lock that registry GC takes exclusively
+// before it deletes anything: GC then sees either none of this push or all of
+// it, never a manifest whose references it cannot see yet.
 func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error {
-	row, err := p.q.CreateDockerManifest(ctx, dbsqlc.CreateDockerManifestParams{
+	params := dbsqlc.CreateDockerManifestParams{
 		RepositoryID: m.RepositoryID,
 		Image:        m.Image,
 		Digest:       m.Digest,
@@ -208,9 +213,45 @@ func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerM
 		BlobID:       m.BlobID,
 		Size:         m.Size,
 		Column7:      m.SubjectDigest,
-	})
+	}
+
+	if m.Refs == nil {
+		row, err := p.q.CreateDockerManifest(ctx, params)
+		if err != nil {
+			return fmt.Errorf("failed to create docker manifest: %w", err)
+		}
+
+		m.ID = row.ID
+		m.CreatedAt = row.CreatedAt
+		m.UpdatedAt = row.UpdatedAt
+
+		return nil
+	}
+
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin docker manifest tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	if _, err := tx.Exec(ctx, `SELECT pg_advisory_xact_lock_shared(hashtextextended($1, 0))`, dockerRepoLockKey(m.RepositoryID)); err != nil {
+		return fmt.Errorf("lock docker repository: %w", err)
+	}
+
+	q := p.q.WithTx(tx)
+
+	row, err := q.CreateDockerManifest(ctx, params)
 	if err != nil {
 		return fmt.Errorf("failed to create docker manifest: %w", err)
+	}
+
+	if err := insertDockerManifestRefs(ctx, q, row.ID, m.RepositoryID, m.Image, m.Refs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit docker manifest: %w", err)
 	}
 
 	m.ID = row.ID
@@ -218,6 +259,22 @@ func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerM
 	m.UpdatedAt = row.UpdatedAt
 
 	return nil
+}
+
+// TouchDockerBlob records that a client has just relied on the blob (HEAD
+// probe, re-push, mount), so registry GC keeps it for its grace period. It
+// reports false when the repository no longer has the blob.
+func (p *PostgresDB) TouchDockerBlob(ctx context.Context, repoID, digest string) (bool, error) {
+	_, err := p.q.TouchDockerBlob(ctx, dbsqlc.TouchDockerBlobParams{RepositoryID: repoID, Digest: digest})
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("failed to touch docker blob: %w", err)
+	}
+
+	return true, nil
 }
 
 func (p *PostgresDB) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {

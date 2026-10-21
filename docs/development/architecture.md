@@ -21,7 +21,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
 | `internal/database` | `Database` interface (`interfaces.go`), Postgres implementation (`postgres*.go`), sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
 | `internal/storage` | Blob stores: filesystem, S3, GCS, Azure, OCI; `SafeDeleteBlob` refcounting |
-| `internal/worker` | Background workers: per-format metadata regeneration, cleanup, proxy cache, auth purge, AI analysis |
+| `internal/worker` | Background workers: per-format metadata regeneration, cleanup, Docker registry GC, proxy cache, auth purge, AI analysis |
 | `internal/repodispatch` | Chi middleware that serves proxy and group repositories in front of the per-format routes |
 | `internal/proxy`, `internal/group` | Proxy-repository fetch/cache service; group (ordered, read-only merge of members) service |
 | `internal/repotype` | Which formats may be proxy or group repositories (shared by repo creation and dispatch) |
@@ -93,6 +93,7 @@ Started in `cmd/server/main.go` and stopped in order on shutdown (HTTP first, th
 | RPM / Deb / Maven / npm metadata | Regenerate per-format repository metadata after uploads and deletes |
 | Proxy cache | Evicts expired proxy cache entries (and their blobs once unreferenced), honoring each repository's max-stale window |
 | Cleanup | Applies cleanup policies and reclaims blobs no package row references any more |
+| Docker registry GC | Deletes untagged Docker manifests past a grace period and the blobs only they referenced ([details](../formats/docker.md#garbage-collection)) |
 | Auth purge | Deletes expired sessions and long-expired or revoked API tokens |
 | AI analysis | Optional; runs when AI is enabled |
 | Webhook dispatcher | Delivers events (`artifact.uploaded`, `artifact.deleted`, ...) |

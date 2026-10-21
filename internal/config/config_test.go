@@ -5,9 +5,11 @@
 package config
 
 import (
+	"errors"
 	"os"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestLoad_Defaults(t *testing.T) {
@@ -583,4 +585,44 @@ func TestValidate_MCPTransport(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDockerGCConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if cfg.Workers.DockerGCInterval != time.Hour || cfg.Workers.DockerGCGracePeriod != 24*time.Hour {
+			t.Fatalf("defaults = %v / %v, want 1h / 24h", cfg.Workers.DockerGCInterval, cfg.Workers.DockerGCGracePeriod)
+		}
+	})
+
+	t.Run("env overrides", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_DOCKER_GC_INTERVAL", "0s")
+		t.Setenv("OPENARTIFACT_DOCKER_GC_GRACE_PERIOD", "36h")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if cfg.Workers.DockerGCInterval != 0 || cfg.Workers.DockerGCGracePeriod != 36*time.Hour {
+			t.Fatalf("overrides = %v / %v, want 0s / 36h", cfg.Workers.DockerGCInterval, cfg.Workers.DockerGCGracePeriod)
+		}
+	})
+
+	t.Run("negative grace is rejected", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_DOCKER_GC_GRACE_PERIOD", "-1h")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := cfg.Validate(); !errors.Is(err, errNegativeDockerGCGrace) {
+			t.Fatalf("Validate() = %v, want errNegativeDockerGCGrace", err)
+		}
+	})
 }

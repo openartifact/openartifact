@@ -1428,6 +1428,121 @@
             "description": "Always an array (empty when no policy is violated)."
           }
         }
+      },
+      "DockerGCRequest": {
+        "type": "object",
+        "properties": {
+          "dry_run": {
+            "type": "boolean",
+            "description": "Report what would be deleted without deleting anything"
+          },
+          "grace_period_seconds": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 0,
+            "description": "Minimum age of what may be deleted; 0 disables the grace period. Omitted: the configured workers.dockerGcGracePeriod"
+          }
+        }
+      },
+      "DockerGCManifest": {
+        "type": "object",
+        "properties": {
+          "image": {
+            "type": "string"
+          },
+          "digest": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "image",
+          "digest",
+          "size"
+        ]
+      },
+      "DockerGCBlob": {
+        "type": "object",
+        "properties": {
+          "digest": {
+            "type": "string"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64"
+          }
+        },
+        "required": [
+          "digest",
+          "size"
+        ]
+      },
+      "DockerGCReport": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "grace_period_seconds": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "manifests_deleted": {
+            "type": "integer",
+            "description": "Untagged manifests deleted (would be, in a dry run)"
+          },
+          "blob_refs_deleted": {
+            "type": "integer",
+            "description": "Blob records of the repository no manifest references any more"
+          },
+          "blobs_freed": {
+            "type": "integer",
+            "description": "Storage objects removed; in a dry run an upper bound that ignores sharing with other repositories"
+          },
+          "bytes_freed": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "failures": {
+            "type": "integer",
+            "description": "Storage deletions that failed (logged server-side; the orphan collector retries them)"
+          },
+          "manifests": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DockerGCManifest"
+            }
+          },
+          "blobs": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DockerGCBlob"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "manifests/blobs are capped at 1000 entries each"
+          }
+        },
+        "required": [
+          "repository",
+          "dry_run",
+          "grace_period_seconds",
+          "manifests_deleted",
+          "blob_refs_deleted",
+          "blobs_freed",
+          "bytes_freed",
+          "failures",
+          "manifests",
+          "blobs",
+          "truncated"
+        ]
       }
     }
   },
@@ -7871,6 +7986,57 @@
         "responses": {
           "202": {
             "description": "Accepted"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/registry-gc": {
+      "post": {
+        "summary": "Run Docker registry garbage collection now (admin; 409 if already running, 400 if not a docker repository)",
+        "description": "Deletes untagged manifests older than the grace period (keeping index children, subjects and referrers of kept manifests) and then the blob records no manifest references any more, freeing their storage once no other repository uses it. Synchronous; the body is optional.",
+        "tags": [
+          "Cleanup"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/DockerGCRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "GC report",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DockerGCReport"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",

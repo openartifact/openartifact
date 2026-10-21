@@ -10,10 +10,21 @@ import (
 	"time"
 )
 
+const blobRowExists = `-- name: BlobRowExists :one
+SELECT EXISTS (SELECT 1 FROM blobs WHERE sha256 = $1)
+`
+
+func (q *Queries) BlobRowExists(ctx context.Context, sha256 string) (bool, error) {
+	row := q.db.QueryRow(ctx, blobRowExists, sha256)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const createDockerBlob = `-- name: CreateDockerBlob :one
 INSERT INTO docker_blobs (repository_id, digest, blob_id)
 VALUES ($1, $2, $3)
-ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id
+ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id, last_used_at = now()
 RETURNING id, created_at
 `
 
@@ -117,6 +128,63 @@ func (q *Queries) DeleteDockerBlob(ctx context.Context, arg DeleteDockerBlobPara
 	return err
 }
 
+const deleteDockerBlobsForGC = `-- name: DeleteDockerBlobsForGC :many
+WITH deleted AS (
+DELETE FROM docker_blobs db
+WHERE db.repository_id = $1::uuid
+  AND db.digest = ANY($2::text[])
+  AND db.last_used_at <= now() - make_interval(secs => $3::float8)
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifest_refs r
+      WHERE r.repository_id = db.repository_id AND r.kind = 'blob' AND r.digest = db.digest
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifests dm
+      WHERE dm.repository_id = db.repository_id
+        AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs x WHERE x.manifest_id = dm.id AND x.kind = 'indexed')
+  )
+RETURNING db.digest, db.blob_id
+)
+SELECT d.digest, b.sha256 AS blob_sha256, b.size_bytes AS size
+FROM deleted d
+JOIN blobs b ON b.id = d.blob_id
+`
+
+type DeleteDockerBlobsForGCParams struct {
+	RepositoryID string   `db:"repository_id" json:"repository_id"`
+	Digests      []string `db:"digests" json:"digests"`
+	GraceSeconds float64  `db:"grace_seconds" json:"grace_seconds"`
+}
+
+type DeleteDockerBlobsForGCRow struct {
+	Digest     string `db:"digest" json:"digest"`
+	BlobSha256 string `db:"blob_sha256" json:"blob_sha256"`
+	Size       int64  `db:"size" json:"size"`
+}
+
+// Deletes the given blob records, re-checking against the current state that no
+// manifest references them and that they are still unused for the grace period.
+// Must run in a transaction holding the repository's exclusive docker lock.
+func (q *Queries) DeleteDockerBlobsForGC(ctx context.Context, arg DeleteDockerBlobsForGCParams) ([]DeleteDockerBlobsForGCRow, error) {
+	rows, err := q.db.Query(ctx, deleteDockerBlobsForGC, arg.RepositoryID, arg.Digests, arg.GraceSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeleteDockerBlobsForGCRow{}
+	for rows.Next() {
+		var i DeleteDockerBlobsForGCRow
+		if err := rows.Scan(&i.Digest, &i.BlobSha256, &i.Size); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const deleteDockerManifest = `-- name: DeleteDockerManifest :exec
 DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3
 `
@@ -130,6 +198,85 @@ type DeleteDockerManifestParams struct {
 func (q *Queries) DeleteDockerManifest(ctx context.Context, arg DeleteDockerManifestParams) error {
 	_, err := q.db.Exec(ctx, deleteDockerManifest, arg.RepositoryID, arg.Image, arg.Digest)
 	return err
+}
+
+const deleteDockerManifestsForGC = `-- name: DeleteDockerManifestsForGC :many
+WITH deleted AS (
+DELETE FROM docker_manifests dm
+WHERE dm.repository_id = $1::uuid
+  AND dm.id = ANY($2::uuid[])
+  AND dm.updated_at <= now() - make_interval(secs => $3::float8)
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_tags t
+      WHERE t.repository_id = dm.repository_id AND t.image = dm.image AND t.manifest_digest = dm.digest
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifest_refs r
+      WHERE r.repository_id = dm.repository_id AND r.kind = 'manifest'
+        AND r.image = dm.image AND r.digest = dm.digest
+        AND r.manifest_id <> ALL($2::uuid[])
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifests rf
+      WHERE rf.repository_id = dm.repository_id AND rf.image = dm.image
+        AND rf.subject_digest = dm.digest AND rf.id <> ALL($2::uuid[])
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifests s
+      WHERE s.repository_id = dm.repository_id AND s.image = dm.image
+        AND s.digest = dm.subject_digest AND s.id <> ALL($2::uuid[])
+  )
+RETURNING dm.id, dm.image, dm.digest, dm.size, dm.blob_id
+)
+SELECT d.id, d.image, d.digest, d.size, b.sha256 AS blob_sha256
+FROM deleted d
+JOIN blobs b ON b.id = d.blob_id
+`
+
+type DeleteDockerManifestsForGCParams struct {
+	RepositoryID string   `db:"repository_id" json:"repository_id"`
+	Ids          []string `db:"ids" json:"ids"`
+	GraceSeconds float64  `db:"grace_seconds" json:"grace_seconds"`
+}
+
+type DeleteDockerManifestsForGCRow struct {
+	ID         string `db:"id" json:"id"`
+	Image      string `db:"image" json:"image"`
+	Digest     string `db:"digest" json:"digest"`
+	Size       int64  `db:"size" json:"size"`
+	BlobSha256 string `db:"blob_sha256" json:"blob_sha256"`
+}
+
+// Deletes the given untagged manifests, re-checking every condition against the
+// current state: still older than the grace period, still untagged, and not
+// adjacent (index child, index parent, subject or referrer) to a manifest that
+// is not being deleted. Must run in a transaction holding the repository's
+// exclusive docker lock so a concurrent push cannot register new references
+// between the check and the delete.
+func (q *Queries) DeleteDockerManifestsForGC(ctx context.Context, arg DeleteDockerManifestsForGCParams) ([]DeleteDockerManifestsForGCRow, error) {
+	rows, err := q.db.Query(ctx, deleteDockerManifestsForGC, arg.RepositoryID, arg.Ids, arg.GraceSeconds)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []DeleteDockerManifestsForGCRow{}
+	for rows.Next() {
+		var i DeleteDockerManifestsForGCRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Image,
+			&i.Digest,
+			&i.Size,
+			&i.BlobSha256,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const deleteDockerTag = `-- name: DeleteDockerTag :exec
@@ -310,6 +457,34 @@ func (q *Queries) GetDockerUpload(ctx context.Context, arg GetDockerUploadParams
 	return i, err
 }
 
+const insertDockerManifestRefs = `-- name: InsertDockerManifestRefs :exec
+INSERT INTO docker_manifest_refs (manifest_id, repository_id, image, kind, digest)
+SELECT $1::uuid, $2::uuid, $3::text, $4::text, d
+FROM unnest($5::text[]) AS d
+ON CONFLICT (manifest_id, kind, digest) DO NOTHING
+`
+
+type InsertDockerManifestRefsParams struct {
+	ManifestID   string   `db:"manifest_id" json:"manifest_id"`
+	RepositoryID string   `db:"repository_id" json:"repository_id"`
+	Image        string   `db:"image" json:"image"`
+	Kind         string   `db:"kind" json:"kind"`
+	Digests      []string `db:"digests" json:"digests"`
+}
+
+// Records the references of one kind held by a manifest body (see
+// docker_manifest_refs). Idempotent: a re-pushed manifest has the same refs.
+func (q *Queries) InsertDockerManifestRefs(ctx context.Context, arg InsertDockerManifestRefsParams) error {
+	_, err := q.db.Exec(ctx, insertDockerManifestRefs,
+		arg.ManifestID,
+		arg.RepositoryID,
+		arg.Image,
+		arg.Kind,
+		arg.Digests,
+	)
+	return err
+}
+
 const listDockerBlobs = `-- name: ListDockerBlobs :many
 SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, b.size_bytes AS size, b.sha256 AS blob_sha256, dbb.created_at
 FROM docker_blobs dbb
@@ -345,6 +520,139 @@ func (q *Queries) ListDockerBlobs(ctx context.Context, repositoryID string) ([]L
 			&i.Size,
 			&i.BlobSha256,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDockerGCBlobs = `-- name: ListDockerGCBlobs :many
+SELECT db.digest, b.sha256 AS blob_sha256, b.size_bytes AS size
+FROM docker_blobs db
+JOIN blobs b ON b.id = db.blob_id
+WHERE db.repository_id = $1::uuid
+  AND db.last_used_at <= now() - make_interval(secs => $2::float8)
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifest_refs r
+      WHERE r.repository_id = db.repository_id AND r.kind = 'blob' AND r.digest = db.digest
+        AND r.manifest_id <> ALL($3::uuid[])
+  )
+  AND NOT EXISTS (
+      SELECT 1 FROM docker_manifests dm
+      WHERE dm.repository_id = db.repository_id
+        AND dm.id <> ALL($3::uuid[])
+        AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs x WHERE x.manifest_id = dm.id AND x.kind = 'indexed')
+  )
+ORDER BY db.last_used_at, db.digest
+LIMIT $4
+`
+
+type ListDockerGCBlobsParams struct {
+	RepositoryID       string   `db:"repository_id" json:"repository_id"`
+	GraceSeconds       float64  `db:"grace_seconds" json:"grace_seconds"`
+	ExcludeManifestIds []string `db:"exclude_manifest_ids" json:"exclude_manifest_ids"`
+	RowLimit           int32    `db:"row_limit" json:"row_limit"`
+}
+
+type ListDockerGCBlobsRow struct {
+	Digest     string `db:"digest" json:"digest"`
+	BlobSha256 string `db:"blob_sha256" json:"blob_sha256"`
+	Size       int64  `db:"size" json:"size"`
+}
+
+// Blob records of the repository that no manifest references any more (ignoring
+// the manifests in exclude_manifest_ids, which the caller is about to delete)
+// and that no client has used within the grace period. Returns nothing while
+// any manifest still has unrecorded references.
+func (q *Queries) ListDockerGCBlobs(ctx context.Context, arg ListDockerGCBlobsParams) ([]ListDockerGCBlobsRow, error) {
+	rows, err := q.db.Query(ctx, listDockerGCBlobs,
+		arg.RepositoryID,
+		arg.GraceSeconds,
+		arg.ExcludeManifestIds,
+		arg.RowLimit,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDockerGCBlobsRow{}
+	for rows.Next() {
+		var i ListDockerGCBlobsRow
+		if err := rows.Scan(&i.Digest, &i.BlobSha256, &i.Size); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDockerGCManifests = `-- name: ListDockerGCManifests :many
+SELECT dm.id, dm.image, dm.digest,
+       COALESCE(dm.subject_digest, '')::text AS subject_digest,
+       dm.size,
+       b.sha256 AS blob_sha256,
+       EXISTS (
+           SELECT 1 FROM docker_tags t
+           WHERE t.repository_id = dm.repository_id AND t.image = dm.image AND t.manifest_digest = dm.digest
+       ) AS tagged,
+       (dm.updated_at > now() - make_interval(secs => $1::float8))::boolean AS young,
+       COALESCE((
+           SELECT string_agg(r.digest, ',') FROM docker_manifest_refs r
+           WHERE r.manifest_id = dm.id AND r.kind = 'manifest'
+       ), '')::text AS children
+FROM docker_manifests dm
+JOIN blobs b ON b.id = dm.blob_id
+WHERE dm.repository_id = $2::uuid
+ORDER BY dm.created_at
+`
+
+type ListDockerGCManifestsParams struct {
+	GraceSeconds float64 `db:"grace_seconds" json:"grace_seconds"`
+	RepositoryID string  `db:"repository_id" json:"repository_id"`
+}
+
+type ListDockerGCManifestsRow struct {
+	ID            string `db:"id" json:"id"`
+	Image         string `db:"image" json:"image"`
+	Digest        string `db:"digest" json:"digest"`
+	SubjectDigest string `db:"subject_digest" json:"subject_digest"`
+	Size          int64  `db:"size" json:"size"`
+	BlobSha256    string `db:"blob_sha256" json:"blob_sha256"`
+	Tagged        bool   `db:"tagged" json:"tagged"`
+	Young         bool   `db:"young" json:"young"`
+	Children      string `db:"children" json:"children"`
+}
+
+// Every manifest of the repository with what GC needs to decide its fate:
+// tagged (some tag of the same image points at it), young (pushed or re-pushed
+// within the grace period) and the child manifests it references (an index).
+func (q *Queries) ListDockerGCManifests(ctx context.Context, arg ListDockerGCManifestsParams) ([]ListDockerGCManifestsRow, error) {
+	rows, err := q.db.Query(ctx, listDockerGCManifests, arg.GraceSeconds, arg.RepositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDockerGCManifestsRow{}
+	for rows.Next() {
+		var i ListDockerGCManifestsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Image,
+			&i.Digest,
+			&i.SubjectDigest,
+			&i.Size,
+			&i.BlobSha256,
+			&i.Tagged,
+			&i.Young,
+			&i.Children,
 		); err != nil {
 			return nil, err
 		}
@@ -539,6 +847,76 @@ func (q *Queries) ListDockerTagsByRepo(ctx context.Context, arg ListDockerTagsBy
 		return nil, err
 	}
 	return items, nil
+}
+
+const listUnindexedDockerManifests = `-- name: ListUnindexedDockerManifests :many
+SELECT dm.id, dm.image, dm.digest, b.sha256 AS blob_sha256
+FROM docker_manifests dm
+JOIN blobs b ON b.id = dm.blob_id
+WHERE dm.repository_id = $1
+  AND NOT EXISTS (SELECT 1 FROM docker_manifest_refs r WHERE r.manifest_id = dm.id AND r.kind = 'indexed')
+ORDER BY dm.created_at
+LIMIT $2
+`
+
+type ListUnindexedDockerManifestsParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Limit        int32  `db:"limit" json:"limit"`
+}
+
+type ListUnindexedDockerManifestsRow struct {
+	ID         string `db:"id" json:"id"`
+	Image      string `db:"image" json:"image"`
+	Digest     string `db:"digest" json:"digest"`
+	BlobSha256 string `db:"blob_sha256" json:"blob_sha256"`
+}
+
+// Manifests whose references have not been recorded yet (pushed before
+// docker_manifest_refs existed, or restored from a backup).
+func (q *Queries) ListUnindexedDockerManifests(ctx context.Context, arg ListUnindexedDockerManifestsParams) ([]ListUnindexedDockerManifestsRow, error) {
+	rows, err := q.db.Query(ctx, listUnindexedDockerManifests, arg.RepositoryID, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListUnindexedDockerManifestsRow{}
+	for rows.Next() {
+		var i ListUnindexedDockerManifestsRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.Image,
+			&i.Digest,
+			&i.BlobSha256,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const touchDockerBlob = `-- name: TouchDockerBlob :one
+UPDATE docker_blobs SET last_used_at = now()
+WHERE repository_id = $1 AND digest = $2
+RETURNING id
+`
+
+type TouchDockerBlobParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Digest       string `db:"digest" json:"digest"`
+}
+
+// Marks a blob as just relied on by a client (HEAD probe, re-push, mount) so
+// registry GC leaves it alone for its grace period. No row means the blob has
+// been removed and the client must upload it again.
+func (q *Queries) TouchDockerBlob(ctx context.Context, arg TouchDockerBlobParams) (string, error) {
+	row := q.db.QueryRow(ctx, touchDockerBlob, arg.RepositoryID, arg.Digest)
+	var id string
+	err := row.Scan(&id)
+	return id, err
 }
 
 const updateDockerUploadOffset = `-- name: UpdateDockerUploadOffset :exec

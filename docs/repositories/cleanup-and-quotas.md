@@ -14,7 +14,7 @@ A background worker checks every minute which enabled policies are due (their cr
 
 ### Supported formats
 
-Policies delete rows from the format's package table. Supported formats: **deb, rpm, helm, pypi, nuget, go**. For any other format (maven, npm, docker, cargo, rubygems, conda, conan, raw, ivy, sbt) the API accepts a policy, but every run fails with `unsupported format for cleanup: <format>` recorded in `last_run_error`.
+Policies delete rows from the format's package table. Supported formats: **deb, rpm, helm, pypi, nuget, go**. For any other format (maven, npm, docker, cargo, rubygems, conda, conan, raw, ivy, sbt) the API accepts a policy, but every run fails with `unsupported format for cleanup: <format>` recorded in `last_run_error`. Docker has its own [registry garbage collection](#docker-registry-garbage-collection).
 
 ### Policy fields
 
@@ -62,6 +62,19 @@ curl -X POST HOST/api/v1/repositories/REPO/cleanup-policies \
 curl -X POST HOST/api/v1/repositories/REPO/cleanup-policies/<ID>/run \
   -H "Authorization: Bearer <TOKEN>"
 ```
+
+## Docker registry garbage collection
+
+Deleting a Docker tag leaves its manifest, and the layers only that manifest used, in storage. A separate worker reclaims them: it deletes untagged manifests older than a grace period (keeping children of tagged indexes and subject/referrer pairs), then the blob records no manifest references any more, freeing the storage when no other repository uses it.
+
+| Setting | Environment variable | Default |
+|---|---|---|
+| `workers.dockerGcInterval` | `OPENARTIFACT_DOCKER_GC_INTERVAL` | `1h` (`0` disables the schedule) |
+| `workers.dockerGcGracePeriod` | `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `24h` |
+
+An admin can run it on demand, with a dry run, through `POST /api/v1/repositories/{repo}/registry-gc` (body `{"dry_run": bool, "grace_period_seconds": int}`, both optional; `409` while a run is in progress, `400` for a non-Docker repository). What is kept, the safety guarantees and the request and response format are in [Docker / OCI: garbage collection](../formats/docker.md#garbage-collection).
+
+Docker pushes are not counted against the repository quota (see [enforcement](#enforcement)), so registry garbage collection does not change the usage counters.
 
 ## Storage quotas
 

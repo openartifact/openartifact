@@ -325,6 +325,8 @@ type DockerBlob struct {
 	Digest    string    `db:"digest" json:"digest"`
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	BlobID    string    `db:"blob_id" json:"blob_id"`
+	// Last upload, mount, re-push or HEAD of this blob in the repository; registry GC keeps blobs used within its grace period.
+	LastUsedAt time.Time `db:"last_used_at" json:"last_used_at"`
 }
 
 // OCI/Docker image manifests indexed by digest
@@ -340,6 +342,17 @@ type DockerManifest struct {
 	BlobID        string    `db:"blob_id" json:"blob_id"`
 	// Image name inside the repository (distribution name minus its first segment); empty for the default image.
 	Image string `db:"image" json:"image"`
+}
+
+// References held by a manifest body: kind=blob (config, layers), kind=manifest (index children); kind=indexed marks the manifest as fully indexed.
+type DockerManifestRef struct {
+	ManifestID string `db:"manifest_id" json:"manifest_id"`
+	// Denormalised from docker_manifests so blob references can be looked up per repository without a join.
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	// Image of the referencing manifest; child manifests are resolved inside the same image.
+	Image  string `db:"image" json:"image"`
+	Kind   string `db:"kind" json:"kind"`
+	Digest string `db:"digest" json:"digest"`
 }
 
 // Named tags pointing to manifests in a repository

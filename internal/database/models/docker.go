@@ -47,9 +47,43 @@ type DockerManifest struct {
 	// BlobSHA256 is populated only by ListDockerManifestsByRepo (a JOIN with
 	// blobs, used for backup export) since BlobID above is a live blobs.id
 	// UUID that doesn't survive a restore into a fresh DB.
-	BlobSHA256 string    `db:"-"`
-	CreatedAt  time.Time `db:"created_at"`
-	UpdatedAt  time.Time `db:"updated_at"`
+	BlobSHA256 string `db:"-"`
+	// Refs, when set, is recorded together with the manifest in one
+	// transaction (see CreateDockerManifest). Nil leaves the manifest
+	// unindexed, to be indexed later by registry GC.
+	Refs      *DockerManifestRefs `db:"-"`
+	CreatedAt time.Time           `db:"created_at"`
+	UpdatedAt time.Time           `db:"updated_at"`
+}
+
+// DockerManifestRefs lists what a manifest body references: blob digests
+// (config and layers) and child manifest digests (an index).
+type DockerManifestRefs struct {
+	Blobs     []string
+	Manifests []string
+}
+
+// DockerGCManifest is a manifest as seen by registry GC.
+type DockerGCManifest struct {
+	ID            string
+	Image         string
+	Digest        string // sha256:<hex>
+	SubjectDigest string
+	Size          int64
+	BlobSHA256    string // blob-store key of the manifest body
+	// Tagged: some tag of the same image points at the manifest.
+	Tagged bool
+	// Young: pushed or re-pushed within the grace period.
+	Young bool
+	// Children are the digests of the manifests an index references.
+	Children []string
+}
+
+// DockerGCBlob is a blob record of a repository as seen by registry GC.
+type DockerGCBlob struct {
+	Digest     string // sha256:<hex>
+	BlobSHA256 string // blob-store key
+	Size       int64
 }
 
 // DockerTag is a named reference to a manifest.

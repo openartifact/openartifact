@@ -26,6 +26,8 @@ var (
 	errMissingStorageType = errors.New("storage type is required")
 	errMissingLogLevel    = errors.New("logger level is required")
 	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
+
+	errNegativeDockerGCGrace = errors.New("workers.dockerGcGracePeriod must not be negative")
 )
 
 type Config struct {
@@ -48,6 +50,15 @@ type WorkersConfig struct {
 	// maven, deb, rpm together) run at once. Each pins up to two database
 	// connections, so keep it well below database.maxOpenConns.
 	MetadataRegenConcurrency int `yaml:"metadataRegenConcurrency"`
+	// DockerGCInterval is the pause between scheduled Docker registry garbage
+	// collection passes (untagged manifests and the blobs only they used).
+	// Zero or negative disables the schedule; the admin API can still run it.
+	DockerGCInterval time.Duration `yaml:"dockerGcInterval"`
+	// DockerGCGracePeriod is how long an untagged manifest, or an unreferenced
+	// blob, must have been idle before registry GC may delete it. It must
+	// outlast the slowest push: layers are uploaded before the manifest that
+	// references them.
+	DockerGCGracePeriod time.Duration `yaml:"dockerGcGracePeriod"`
 }
 
 type AuthConfig struct {
@@ -249,6 +260,8 @@ func defaultConfig() *Config {
 		},
 		Workers: WorkersConfig{
 			MetadataRegenConcurrency: 4,
+			DockerGCInterval:         time.Hour,
+			DockerGCGracePeriod:      24 * time.Hour,
 		},
 		BaseURL: "http://localhost:8080",
 	}
@@ -366,6 +379,8 @@ func applyEnvOverrides(cfg *Config) {
 
 	// Worker config
 	overrideInt(&cfg.Workers.MetadataRegenConcurrency, "OPENARTIFACT_METADATA_REGEN_CONCURRENCY")
+	overrideDuration(&cfg.Workers.DockerGCInterval, "OPENARTIFACT_DOCKER_GC_INTERVAL")
+	overrideDuration(&cfg.Workers.DockerGCGracePeriod, "OPENARTIFACT_DOCKER_GC_GRACE_PERIOD")
 
 	// Base URL
 	overrideString(&cfg.BaseURL, "BASE_URL")
@@ -429,6 +444,10 @@ func (c *Config) Validate() error {
 
 	if c.MCP.Enabled && c.MCP.Transport != "http" {
 		return errMCPTransport
+	}
+
+	if c.Workers.DockerGCGracePeriod < 0 {
+		return errNegativeDockerGCGrace
 	}
 
 	return nil

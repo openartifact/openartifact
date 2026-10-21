@@ -122,3 +122,12 @@ workers:
   # Each pins up to two database connections while it runs; keep it well below
   # database.maxOpenConns.
   metadataRegenConcurrency: 4
+  # Docker registry garbage collection: deletes untagged manifests older than
+  # dockerGcGracePeriod and the blobs only they referenced. dockerGcInterval is
+  # the pause between passes over all docker repositories (0 disables the
+  # schedule; an admin can still run it with POST
+  # /api/v1/repositories/{name}/registry-gc). Digest-pinned references to an
+  # untagged manifest stop working once it is collected, so keep the grace
+  # period longer than your slowest push and the longest-lived digest pin.
+  dockerGcInterval: 1h
+  dockerGcGracePeriod: 24h

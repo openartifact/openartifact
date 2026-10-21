@@ -258,6 +258,12 @@ func run(args []string) error {
 
 	cleanupWorker.Start()
 
+	// Docker registry GC: untagged manifests past the grace period and the
+	// blobs only they referenced. Also runs on demand from the admin API.
+	dockerGCWorker := worker.NewDockerGCWorker(db, blobStore, log, cfg.Workers.DockerGCInterval, cfg.Workers.DockerGCGracePeriod)
+
+	dockerGCWorker.Start()
+
 	// Initialize webhook dispatcher
 	webhookDispatcher := webhook.NewDispatcher(db, log)
 
@@ -274,7 +280,7 @@ func run(args []string) error {
 	stopWorkers := func() {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
-				webhookDispatcher.Stop, cleanupWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
+				webhookDispatcher.Stop, cleanupWorker.Stop, dockerGCWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
 			} {
 				stop()
 			}
@@ -731,6 +737,8 @@ func run(args []string) error {
 
 	cleanupHandler := api.NewCleanupHandler(db, log, evaluator, cleanupWorker)
 	cleanupHandler.RegisterAuthed(authedAPI)
+
+	api.NewDockerGCHandler(db, log, evaluator, dockerGCWorker).RegisterAuthed(authedAPI)
 
 	api.NewBundlesHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 

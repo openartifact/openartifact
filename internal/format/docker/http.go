@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -27,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/ocimanifest"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -34,6 +36,10 @@ import (
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// errMountSourceGone means the blob to mount was removed from the source
+// repository after it was looked up.
+var errMountSourceGone = errors.New("mount source blob no longer exists")
 
 type HTTPHandler struct {
 	log       *logger.Logger
@@ -357,6 +363,10 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// The blobs and child manifests this body references are stored with the
+	// manifest so registry GC can tell what is still in use.
+	refs := ocimanifest.ParseRefs(body)
+
 	manifest := &models.DockerManifest{
 		ID:            uuid.New().String(),
 		RepositoryID:  repo.ID,
@@ -365,6 +375,7 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		MediaType:     contentType,
 		Size:          int64(len(body)),
 		SubjectDigest: subjectDigest,
+		Refs:          &refs,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -686,10 +697,57 @@ func (h *HTTPHandler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// A client that finds the blob here skips uploading it, so registry GC
+	// must not remove it before the manifest that references it arrives.
+	still, err := h.touchBlob(r.Context(), repo.ID, digest)
+	if err != nil {
+		h.log.Errorw("failed to touch blob", "digest", digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return
+	}
+
+	if !still {
+		h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
+		return
+	}
+
 	w.Header().Set("Content-Type", blob.MediaType)
 	w.Header().Set("Docker-Content-Digest", blob.Digest)
 	w.Header().Set("Content-Length", strconv.FormatInt(blob.Size, 10))
 	w.WriteHeader(http.StatusOK)
+}
+
+// blobAlreadyHeld reports whether the repository has the blob, marking it used
+// so registry GC keeps it. A blob GC removed since the lookup counts as absent.
+func (h *HTTPHandler) blobAlreadyHeld(ctx context.Context, repoID, digest string) (bool, error) {
+	existing, err := h.db.GetDockerBlob(ctx, repoID, digest)
+	if err != nil {
+		return false, fmt.Errorf("look up existing blob: %w", err)
+	}
+
+	if existing == nil {
+		return false, nil
+	}
+
+	still, err := h.touchBlob(ctx, repoID, digest)
+	if err != nil {
+		return false, fmt.Errorf("touch existing blob: %w", err)
+	}
+
+	return still, nil
+}
+
+// touchBlob records a client's use of the blob for registry GC. It reports
+// false when the repository no longer has the blob; databases that do not
+// track blob use always report true.
+func (h *HTTPHandler) touchBlob(ctx context.Context, repoID, digest string) (bool, error) {
+	t, ok := h.db.(database.DockerBlobToucher)
+	if !ok {
+		return true, nil
+	}
+
+	return t.TouchDockerBlob(ctx, repoID, digest)
 }
 
 // handleDeleteBlob deletes a blob.
@@ -806,6 +864,13 @@ func (h *HTTPHandler) tryMountBlob(w http.ResponseWriter, r *http.Request, repo 
 		return false
 	}
 
+	if existing != nil {
+		// The client reuses the blob without uploading it: keep it from GC.
+		if still, err := h.touchBlob(ctx, repo.ID, digest); err != nil || !still {
+			existing = nil
+		}
+	}
+
 	if existing == nil {
 		src := h.mountSource(r, repo, from, digest)
 		if src == nil {
@@ -876,6 +941,17 @@ func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, fr
 // exists afterwards.
 func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, digest string, src *models.DockerBlob) bool {
 	err := storage.WithBlobLock(ctx, h.db, src.BlobSHA256, func(ctx context.Context) error {
+		// Registry GC may have removed the source record (and its storage) since
+		// mountSource looked it up; linking then would point at a blob that is gone.
+		still, err := h.db.GetDockerBlob(ctx, src.RepositoryID, digest)
+		if err != nil {
+			return fmt.Errorf("re-check mount source: %w", err)
+		}
+
+		if still == nil {
+			return errMountSourceGone
+		}
+
 		return h.db.CreateDockerBlob(ctx, &models.DockerBlob{
 			ID:           uuid.New().String(),
 			RepositoryID: repoID,
@@ -887,7 +963,10 @@ func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, digest string, src *
 		})
 	})
 	if err != nil {
-		h.log.Errorw("failed to mount blob", "digest", digest, "error", err)
+		if !errors.Is(err, errMountSourceGone) {
+			h.log.Errorw("failed to mount blob", "digest", digest, "error", err)
+		}
+
 		return false
 	}
 
@@ -1154,12 +1233,12 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	if err := storage.WithBlobLock(r.Context(), h.db, computedDigestHex, func(ctx context.Context) error {
 		// A blob the repository already holds is not stored again: pushing an
 		// existing digest completes with 201, as the distribution spec requires.
-		existing, err := h.db.GetDockerBlob(ctx, repo.ID, digest)
+		held, err := h.blobAlreadyHeld(ctx, repo.ID, digest)
 		if err != nil {
-			return fmt.Errorf("look up existing blob: %w", err)
+			return err
 		}
 
-		if existing != nil {
+		if held {
 			return nil
 		}
 
