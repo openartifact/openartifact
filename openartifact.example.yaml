@@ -108,5 +108,5 @@ ai:
 
 mcp:
   enabled: false
-  transport: "http"   # http | stdio
-  httpPath: "/mcp"
+  transport: "http"   # only http is supported (stdio is rejected)
+  httpPath: "/mcp"    # mount path; requires "Authorization: Bearer <TOKEN>"

@@ -168,6 +168,131 @@ without echo; for scripts pipe the password and pass `--password-stdin`
 (with `--username`): `echo "$PW" | oa auth login --username alice --password-stdin`.
 The token file (`config.json` in the config directory) is written with mode 0600.
 
+## MCP
+
+OpenArtifact can expose a [Model Context Protocol](https://modelcontextprotocol.io)
+server so AI agents can browse repositories, inspect packages and
+vulnerabilities, and look up client setup commands. It is disabled by default.
+
+| Setting | Env var | Default | |
+|---|---|---|---|
+| `mcp.enabled` | `MCP_ENABLED` | `false` | set `true` to enable |
+| `mcp.transport` | `MCP_TRANSPORT` | `http` | only `http` is supported; `stdio` is rejected at startup |
+| `mcp.httpPath` | `MCP_HTTP_PATH` | `/mcp` | mount path of the endpoint |
+
+The endpoint is a Streamable HTTP server at `<BASE_URL>/mcp`. It sits behind
+the same authentication and RBAC as the REST API: send an API token as
+`Authorization: Bearer <TOKEN>` (create one with `POST /api/v1/auth/tokens`,
+`{"name":"mcp","kind":"access"}`). Every repository-scoped tool checks the
+`read` permission (`write` for `trigger_ai_analysis`; `get_vulnerabilities` additionally needs the global
+`manage` permission, matching the REST scan endpoints) on the repository;
+repositories you cannot read behave as if they do not exist. Use a token whose
+permission targets only grant what the agent should see.
+`BASE_URL` must be the address clients reach, since download and client-setup
+URLs are built from it.
+
+| Tool | Purpose |
+|---|---|
+| `list_repositories(format?, page?, limit?)` | repositories you can read |
+| `get_repository(name)` | one repository |
+| `list_packages(repository, format?, page?, limit?)` | packages of any format, newest first (limit max 100) |
+| `get_package(repository, name)` | all versions with filename, sha256, size, created_at and download URL |
+| `get_vulnerabilities(repository, package?, version?)` | severity counts and the most severe findings (max 100) from stored scans; administrators only (global `manage`), same as the REST scan endpoints |
+| `client_setup(repository)` | configure/publish commands per client; credentials are `<USERNAME>` / `<TOKEN>` placeholders |
+| `search_artifacts(query, repository?, format?)` | keyword match on recent package names, versions and filenames |
+| `list_ai_analyses(repository_id, status?, limit?, offset?)`, `get_artifact_analysis(repository_id, artifact_id)` | AI analysis results (needs `AI_ENABLED`) |
+| `trigger_ai_analysis(repository_id, artifact_id, artifact_format, manifest_text, …)` | queue an AI analysis (needs `AI_ENABLED`) |
+
+Results are JSON with snake_case keys and never contain upstream credentials
+or other secrets.
+
+### Client configuration
+
+Replace `<BASE_URL>` with your server address (for example
+`https://artifacts.example.com`) and `<TOKEN>` with an API token. Prefer the
+environment-variable forms below over writing the token into a file you commit.
+
+**Claude Code**
+
+```sh
+claude mcp add --transport http openartifact <BASE_URL>/mcp \
+  --header "Authorization: Bearer <TOKEN>"
+```
+
+**Claude Desktop** and other clients that read a `mcpServers` JSON file but
+cannot set HTTP headers: bridge with [`mcp-remote`](https://github.com/geelen/mcp-remote)
+(`claude_desktop_config.json`). The header value is passed through an
+environment variable because spaces in `args` can be mangled on some platforms.
+
+```json
+{
+  "mcpServers": {
+    "openartifact": {
+      "command": "npx",
+      "args": ["mcp-remote", "<BASE_URL>/mcp", "--header", "Authorization:${OA_AUTH_HEADER}"],
+      "env": { "OA_AUTH_HEADER": "Bearer <TOKEN>" }
+    }
+  }
+}
+```
+
+**Cursor** (`.cursor/mcp.json` or `~/.cursor/mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "openartifact": {
+      "url": "<BASE_URL>/mcp",
+      "headers": { "Authorization": "Bearer ${env:OPENARTIFACT_TOKEN}" }
+    }
+  }
+}
+```
+
+**VS Code** (`.vscode/mcp.json`); the token is prompted for and stored by VS Code
+
+```json
+{
+  "inputs": [
+    { "type": "promptString", "id": "openartifact-token", "description": "OpenArtifact API token", "password": true }
+  ],
+  "servers": {
+    "openartifact": {
+      "type": "http",
+      "url": "<BASE_URL>/mcp",
+      "headers": { "Authorization": "Bearer ${input:openartifact-token}" }
+    }
+  }
+}
+```
+
+**OpenAI Codex CLI** (`~/.codex/config.toml`); Codex reads the token from the
+named environment variable and sends it as a bearer token
+
+```toml
+[mcp_servers.openartifact]
+url = "<BASE_URL>/mcp"
+bearer_token_env_var = "OPENARTIFACT_TOKEN"
+```
+
+**oh-my-pi (omp)** (`~/.omp/agent/mcp.json` or project `.omp/mcp.json`)
+
+```json
+{
+  "mcpServers": {
+    "openartifact": {
+      "type": "http",
+      "url": "<BASE_URL>/mcp",
+      "headers": { "Authorization": "Bearer ${OPENARTIFACT_TOKEN}" }
+    }
+  }
+}
+```
+
+For any other MCP client, point it at `<BASE_URL>/mcp` as a Streamable HTTP
+server and add the `Authorization: Bearer <TOKEN>` header; see the client's
+documentation for the exact file format.
+
 ## API and operations
 
 - REST API under `/api/v1`; OpenAPI spec at `/api/v1/openapi.json`; Swagger UI at `/swagger/`

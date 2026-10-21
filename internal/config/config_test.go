@@ -554,3 +554,33 @@ func TestValidate_TLSRequiresFiles(t *testing.T) {
 		t.Fatal("TLS without cert/key must fail validation")
 	}
 }
+
+func TestValidate_MCPTransport(t *testing.T) {
+	tests := []struct {
+		name      string
+		enabled   bool
+		transport string
+		wantErr   bool
+	}{
+		{"http enabled", true, "http", false},
+		{"stdio enabled is rejected", true, "stdio", true},
+		{"empty enabled is rejected", true, "", true},
+		{"stdio disabled is ignored", false, "stdio", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg.MCP.Enabled = tt.enabled
+			cfg.MCP.Transport = tt.transport
+
+			if err := cfg.Validate(); (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

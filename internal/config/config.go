@@ -21,6 +21,7 @@ import (
 
 var (
 	errInvalidPort        = errors.New("invalid server port")
+	errMCPTransport       = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
 	errMissingDBDriver    = errors.New("database driver is required")
 	errMissingStorageType = errors.New("storage type is required")
 	errMissingLogLevel    = errors.New("logger level is required")
@@ -115,8 +116,8 @@ type AIConfig struct {
 // MCPConfig contains MCP server configuration.
 type MCPConfig struct {
 	Enabled   bool   `yaml:"enabled"`
-	Transport string `yaml:"transport"` // "stdio" or "http"
-	HTTPPath  string `yaml:"httpPath"`  // path prefix for HTTP transport, default "/mcp"
+	Transport string `yaml:"transport"` // only "http" is supported
+	HTTPPath  string `yaml:"httpPath"`  // mount path of the HTTP endpoint, default "/mcp"
 }
 
 // Load loads configuration from YAML file (if provided) and environment variables.
@@ -401,6 +402,10 @@ func (c *Config) Validate() error {
 
 	if c.Server.TLSEnabled && (c.Server.TLSCert == "" || c.Server.TLSKey == "") {
 		return errTLSFilesRequired
+	}
+
+	if c.MCP.Enabled && c.MCP.Transport != "http" {
+		return errMCPTransport
 	}
 
 	return nil

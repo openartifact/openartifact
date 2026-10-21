@@ -6,8 +6,6 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"fmt"
 	"net/http"
 	"strings"
 
@@ -23,30 +21,61 @@ import (
 // ("read", "write", ...) on the named repository.
 type Authorizer func(ctx context.Context, repoName, action string) bool
 
-// maxManifestTextBytes bounds manifest text accepted from MCP callers.
-const maxManifestTextBytes = 64 * 1024
+const (
+	// maxManifestTextBytes bounds manifest text accepted from MCP callers.
+	maxManifestTextBytes = 64 * 1024
+
+	defaultPageSize = 20
+	maxPageSize     = 100
+	maxPage         = 1_000_000
+
+	// repoScanBatch / maxRepoScanBatches bound the repository walk done to
+	// filter by permission before paginating.
+	repoScanBatch      = 100
+	maxRepoScanBatches = 100
+
+	msgNotFound = "not found or access denied"
+	msgInternal = "internal error"
+
+	msgAdminRequired = "admin access required"
+)
+
+// Options carries deployment values the tools need.
+type Options struct {
+	// Version is the build version reported in the MCP serverInfo.
+	Version string
+	// BaseURL is the externally reachable server origin used for download and
+	// client-setup URLs (config BASE_URL). Empty yields relative download paths.
+	BaseURL string
+}
 
 // Server wraps the MCP server with OpenArtifact dependencies.
 type Server struct {
-	authorizer Authorizer // nil only for the trusted local stdio transport
-	httpMode   bool
+	authorizer Authorizer // nil denies every repository-scoped call
 	mcpServer  *server.MCPServer
 	db         database.Database
 	aiWorker   *worker.AIAnalysisWorker
 	log        *logger.Logger
+	baseURL    string
 }
 
 // NewServer creates a new MCP server with all OpenArtifact tools registered.
-func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *logger.Logger) *Server {
+func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *logger.Logger, opts Options) *Server {
+	version := opts.Version
+	if version == "" {
+		version = "dev"
+	}
+
 	s := &Server{
 		db:       db,
 		aiWorker: aiWorker,
 		log:      log,
+		baseURL:  strings.TrimRight(opts.BaseURL, "/"),
 	}
 
 	s.mcpServer = server.NewMCPServer(
 		"OpenArtifact",
-		"1.0.0",
+		version,
 		server.WithToolCapabilities(true),
 		server.WithRecovery(),
 	)
@@ -57,39 +86,62 @@ func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *log
 }
 
 // SetAuthorizer installs the per-repository authorization check. It MUST be
-// set before HTTPHandler is used; without it HTTP tool calls are denied.
+// set before HTTPHandler is used; without it every tool call is denied.
 func (s *Server) SetAuthorizer(a Authorizer) { s.authorizer = a }
 
-// allowed enforces per-repository authorization. The stdio transport is a
-// trusted local process and is only unrestricted when no HTTP handler exists.
+// allowed enforces per-repository authorization. Without an authorizer every
+// call is denied.
 func (s *Server) allowed(ctx context.Context, repoName, action string) bool {
 	if s.authorizer == nil {
-		return !s.httpMode
+		return false
 	}
 
 	return s.authorizer(ctx, repoName, action)
 }
 
-// allowedByID resolves a repository ID to its name and checks authorization.
-func (s *Server) allowedByID(ctx context.Context, repoID, action string) bool {
-	repo, err := s.db.GetRepositoryByID(ctx, repoID)
-	if err != nil || repo == nil {
-		return false
+// resolveRepo loads a repository by name and checks authorization. A missing
+// repository and a denied one yield the same tool error so existence is not
+// leaked. The returned result is non-nil exactly when the caller must stop.
+func (s *Server) resolveRepo(ctx context.Context, name string) (*models.Repository, *mcp.CallToolResult) {
+	repo, err := s.db.GetRepositoryByName(ctx, name)
+	if err != nil {
+		return nil, s.internalError("get repository", err, "repository", name)
 	}
 
-	return s.allowed(ctx, repo.Name, action)
+	if repo == nil || !s.allowed(ctx, repo.Name, "read") {
+		return nil, mcp.NewToolResultError(msgNotFound)
+	}
+
+	return repo, nil
 }
 
-// HTTPHandler returns an http.Handler for embedding in the main router (HTTP transport).
+// authorizeByID checks action on the repository with the given UUID and
+// returns the tool error to send when the caller must stop, or nil.
+func (s *Server) authorizeByID(ctx context.Context, repoID, action string) *mcp.CallToolResult {
+	repo, err := s.db.GetRepositoryByID(ctx, repoID)
+	if err != nil {
+		return s.internalError("get repository by id", err, "repository_id", repoID)
+	}
+
+	if repo == nil || !s.allowed(ctx, repo.Name, action) {
+		return mcp.NewToolResultError(msgNotFound)
+	}
+
+	return nil
+}
+
+// internalError logs err with context server-side and returns a generic tool
+// error; underlying error text must never reach MCP clients.
+func (s *Server) internalError(op string, err error, kv ...any) *mcp.CallToolResult {
+	s.log.Errorw("mcp: "+op, append(kv, "error", err)...)
+
+	return mcp.NewToolResultError(msgInternal)
+}
+
+// HTTPHandler returns an http.Handler for embedding in the main router. The
+// caller must mount it behind the authenticated chain.
 func (s *Server) HTTPHandler() http.Handler {
-	s.httpMode = true
-
 	return server.NewStreamableHTTPServer(s.mcpServer)
-}
-
-// ServeStdio runs the MCP server over stdio (for standalone MCP process mode).
-func (s *Server) ServeStdio() error {
-	return server.ServeStdio(s.mcpServer)
 }
 
 func (s *Server) registerTools() {
@@ -115,10 +167,10 @@ func (s *Server) registerTools() {
 	// ── search_artifacts ─────────────────────────────────────────────────────
 	s.mcpServer.AddTool(
 		mcp.NewTool("search_artifacts",
-			mcp.WithDescription("Search for artifacts across repositories using natural language or keywords. Searches names, descriptions, and AI-generated tags."),
+			mcp.WithDescription("Search the most recent packages of the repositories you can read by keyword. Matches package name, version, architecture and filename (case-insensitive substring)."),
 			mcp.WithString("query",
 				mcp.Required(),
-				mcp.Description("Search query — can be natural language (e.g. 'PDF generation library') or a package name"),
+				mcp.Description("Keyword or package name to look for"),
 			),
 			mcp.WithString("repository",
 				mcp.Description("Restrict search to a specific repository name. Leave empty to search all."),
@@ -214,284 +266,6 @@ func (s *Server) registerTools() {
 		),
 		s.handleGetRepository,
 	)
-}
 
-// ── Tool Handlers ─────────────────────────────────────────────────────────────
-
-func (s *Server) handleListRepositories(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	format := req.GetString("format", "")
-	page := int(req.GetFloat("page", 1))
-	limit := int(req.GetFloat("limit", 20))
-
-	limit = min(limit, 100)
-
-	if page < 1 {
-		page = 1
-	}
-
-	offset := (page - 1) * limit
-
-	repos, total, err := s.db.ListComponentsByRepo(ctx, "", format, page, limit)
-
-	_ = offset
-
-	if err != nil {
-		// Fall back to listing repositories directly
-		repoList, listErr := s.db.ListRepositories(ctx, page, limit, format)
-		if listErr != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("failed to list repositories: %v", listErr)), nil
-		}
-
-		repoList = s.filterRepos(ctx, repoList)
-		repoCount, _ := s.db.CountRepositories(ctx, format)
-		result := map[string]any{
-			"repositories": repoList,
-			"total":        repoCount,
-			"page":         page,
-			"limit":        limit,
-		}
-
-		return jsonResult(result)
-	}
-
-	_ = repos
-
-	repoList, _ := s.db.ListRepositories(ctx, page, limit, format)
-	repoList = s.filterRepos(ctx, repoList)
-	repoCount, _ := s.db.CountRepositories(ctx, format)
-	_ = total
-
-	result := map[string]any{
-		"repositories": repoList,
-		"total":        repoCount,
-		"page":         page,
-		"limit":        limit,
-	}
-
-	return jsonResult(result)
-}
-
-func (s *Server) handleSearchArtifacts(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, err := req.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	repoName := req.GetString("repository", "")
-	format := req.GetString("format", "")
-
-	// Build a search summary using available DB methods
-	var results []map[string]any
-
-	if repoName != "" {
-		repo, err := s.db.GetRepositoryByName(ctx, repoName)
-		if err != nil || repo == nil || !s.allowed(ctx, repo.Name, "read") {
-			return mcp.NewToolResultError(fmt.Sprintf("repository %q not found", repoName)), nil //nolint:nilerr // MCP tool errors are returned as tool results, not Go errors
-		}
-
-		components, _, err := s.db.ListComponentsByRepo(ctx, repo.ID, format, 1, 50)
-		if err != nil {
-			return mcp.NewToolResultError(fmt.Sprintf("search failed: %v", err)), nil
-		}
-
-		queryLower := strings.ToLower(query)
-
-		for _, c := range components {
-			if matchesQuery(c, queryLower) {
-				results = append(results, map[string]any{
-					"repository": repoName,
-					"component":  c,
-				})
-			}
-		}
-	} else {
-		// Search across all repos
-		repos, _ := s.db.ListRepositories(ctx, 1, 100, format)
-		queryLower := strings.ToLower(query)
-
-		for _, repo := range repos {
-			if !s.allowed(ctx, repo.Name, "read") {
-				continue
-			}
-
-			components, _, err := s.db.ListComponentsByRepo(ctx, repo.ID, format, 1, 20)
-			if err != nil {
-				continue
-			}
-
-			for _, c := range components {
-				if matchesQuery(c, queryLower) {
-					results = append(results, map[string]any{
-						"repository": repo.Name,
-						"component":  c,
-					})
-				}
-			}
-
-			if len(results) >= 50 {
-				break
-			}
-		}
-	}
-
-	return jsonResult(map[string]any{
-		"query":   query,
-		"results": results,
-		"count":   len(results),
-	})
-}
-
-func (s *Server) handleGetArtifactAnalysis(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoID, err := req.RequireString("repository_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	artifactID, err := req.RequireString("artifact_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	if !s.allowedByID(ctx, repoID, "read") {
-		return mcp.NewToolResultError("repository not found or access denied"), nil
-	}
-
-	analysis, err := s.db.GetAIAnalysis(ctx, repoID, artifactID)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("database error: %v", err)), nil
-	}
-
-	if analysis == nil {
-		return mcp.NewToolResultText(fmt.Sprintf(`{"error":"no analysis found for artifact %q in repository %q"}`, artifactID, repoID)), nil
-	}
-
-	return jsonResult(analysis)
-}
-
-func (s *Server) handleListAIAnalyses(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoID, err := req.RequireString("repository_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	if !s.allowedByID(ctx, repoID, "read") {
-		return mcp.NewToolResultError("repository not found or access denied"), nil
-	}
-
-	status := req.GetString("status", "")
-	limit := int(req.GetFloat("limit", 20))
-	offset := int(req.GetFloat("offset", 0))
-
-	limit = min(limit, 100)
-
-	analyses, total, err := s.db.ListAIAnalyses(ctx, repoID, status, limit, offset)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("database error: %v", err)), nil
-	}
-
-	return jsonResult(map[string]any{
-		"analyses": analyses,
-		"total":    total,
-		"limit":    limit,
-		"offset":   offset,
-	})
-}
-
-func (s *Server) handleTriggerAIAnalysis(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoID, err := req.RequireString("repository_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	artifactID, err := req.RequireString("artifact_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	format, err := req.RequireString("artifact_format")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	manifestText, err := req.RequireString("manifest_text")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	name := req.GetString("artifact_name", "")
-	version := req.GetString("artifact_version", "")
-
-	if !s.allowedByID(ctx, repoID, "write") {
-		return mcp.NewToolResultError("repository not found or access denied"), nil
-	}
-
-	if len(manifestText) > maxManifestTextBytes {
-		return mcp.NewToolResultError(fmt.Sprintf("manifest_text exceeds %d bytes", maxManifestTextBytes)), nil
-	}
-
-	if s.aiWorker == nil {
-		return mcp.NewToolResultError("AI analysis worker is not configured (AI_ENABLED=false)"), nil
-	}
-
-	s.aiWorker.Notify(worker.AIAnalysisRequest{
-		RepositoryID:    repoID,
-		ArtifactID:      artifactID,
-		ArtifactFormat:  format,
-		ArtifactName:    name,
-		ArtifactVersion: version,
-		ManifestText:    manifestText,
-	})
-
-	return mcp.NewToolResultText(fmt.Sprintf(`{"status":"queued","artifact_id":%q,"message":"AI analysis has been queued and will complete asynchronously"}`, artifactID)), nil
-}
-
-func (s *Server) handleGetRepository(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	name, err := req.RequireString("name")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	repo, err := s.db.GetRepositoryByName(ctx, name)
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("database error: %v", err)), nil
-	}
-
-	if repo == nil || !s.allowed(ctx, repo.Name, "read") {
-		return mcp.NewToolResultText(fmt.Sprintf(`{"error":"repository %q not found"}`, name)), nil
-	}
-
-	return jsonResult(repo)
-}
-
-// ── Helpers ───────────────────────────────────────────────────────────────────
-
-// filterRepos drops repositories the caller may not read.
-func (s *Server) filterRepos(ctx context.Context, repos []*models.Repository) []*models.Repository {
-	out := make([]*models.Repository, 0, len(repos))
-
-	for _, r := range repos {
-		if r != nil && s.allowed(ctx, r.Name, "read") {
-			out = append(out, r)
-		}
-	}
-
-	return out
-}
-
-func jsonResult(v any) (*mcp.CallToolResult, error) {
-	b, err := json.MarshalIndent(v, "", "  ")
-	if err != nil {
-		return mcp.NewToolResultError(fmt.Sprintf("marshal error: %v", err)), nil
-	}
-
-	return mcp.NewToolResultText(string(b)), nil
-}
-
-func matchesQuery(c any, queryLower string) bool {
-	b, err := json.Marshal(c)
-	if err != nil {
-		return false
-	}
-
-	return strings.Contains(strings.ToLower(string(b)), queryLower)
+	s.registerPackageTools()
 }

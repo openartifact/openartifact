@@ -203,7 +203,7 @@ func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request)
 	filtered := make([]responses.RepositoryResponse, 0, len(repos))
 
 	for _, repo := range repos {
-		filtered = append(filtered, repoToMap(repo))
+		filtered = append(filtered, RepositoryToResponse(repo))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -240,7 +240,7 @@ func (h *RepositoriesHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	writeJSON(w, http.StatusOK, repoToMap(repo))
+	writeJSON(w, http.StatusOK, RepositoryToResponse(repo))
 }
 
 // validateUpstreamURL rejects non-http(s) schemes and private/metadata hosts.
@@ -460,7 +460,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventRepoCreated,
 		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
-	writeJSON(w, http.StatusCreated, repoToMap(repo))
+	writeJSON(w, http.StatusCreated, RepositoryToResponse(repo))
 }
 
 //nolint:gocyclo,cyclop // validation-heavy request handler
@@ -609,7 +609,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	writeJSON(w, http.StatusOK, repoToMap(repo))
+	writeJSON(w, http.StatusOK, RepositoryToResponse(repo))
 }
 
 func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
@@ -984,7 +984,9 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 	writeJSON(w, http.StatusOK, h.memberListResponse(members))
 }
 
-func repoToMap(r *models.Repository) responses.RepositoryResponse {
+// RepositoryToResponse converts a repository to its public API shape. It never
+// includes upstream credentials; the MCP server reuses it.
+func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 	desc := r.Description // copy to allow taking address
 
 	return responses.RepositoryResponse{

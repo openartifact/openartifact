@@ -354,8 +354,8 @@ func main() {
 	// Initialize MCP server
 	var mcpServer *aimcp.Server
 	if cfg.MCP.Enabled {
-		mcpServer = aimcp.NewServer(db, aiWorker, log)
-		log.Infow("MCP server enabled", "transport", cfg.MCP.Transport, "path", cfg.MCP.HTTPPath)
+		mcpServer = aimcp.NewServer(db, aiWorker, log, aimcp.Options{Version: version, BaseURL: cfg.BaseURL})
+		log.Infow("MCP server enabled", "path", cfg.MCP.HTTPPath)
 	}
 
 	// Create HTTP server
@@ -703,10 +703,10 @@ func main() {
 		h.SetPublisher(webhookDispatcher)
 	}
 
-	// Mount MCP server if enabled with HTTP transport. Mounted under authedAPI
+	// Mount the MCP server if enabled (HTTP is the only transport). Mounted under authedAPI
 	// (not the bare router) so it inherits the same RBAC/CSRF/audit chain as
 	// the rest of the API — MCP tools must require auth like any other route.
-	if mcpServer != nil && cfg.MCP.Transport == "http" {
+	if mcpServer != nil {
 		authedAPI.Mount(cfg.MCP.HTTPPath, mcpServer.HTTPHandler())
 		log.Infow("MCP HTTP endpoint registered", "path", cfg.MCP.HTTPPath)
 	}
