@@ -16,12 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :class="ui.sidebarCollapsed ? 'justify-center px-0' : 'px-3'"
     >
       <div class="w-8 h-8 rounded-md bg-primary flex items-center justify-center shrink-0">
-        <svg viewBox="0 0 24 24" class="w-5 h-5 text-white" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
-          <path d="M3 12v8a1 1 0 001 1h16a1 1 0 001-1v-8"/>
-          <rect x="2" y="9" width="20" height="3" rx="0.5"/>
-          <path d="M7 9V5h10v4"/>
-          <path d="M7 5l5-2.5L17 5"/>
-        </svg>
+        <AppLogo class="w-5 h-5 text-white" />
       </div>
       <div v-if="!ui.sidebarCollapsed" class="leading-none min-w-0">
         <div class="text-[15px] font-semibold tracking-tight">OpenArtifact</div>
@@ -171,6 +166,7 @@ import {
 import SidebarLink from './SidebarLink.vue'
 import { t } from '../i18n/en'
 import { useAppVersion, formatVersion } from '../composables/useAppVersion'
+import AppLogo from './AppLogo.vue'
 
 const session = useSessionStore()
 const ui = useUIStore()

@@ -17,7 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
        <!-- Top — brand mark -->
        <div class="relative flex items-center gap-3">
          <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
-           <svg viewBox="0 0 24 24" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12v8a1 1 0 001 1h16a1 1 0 001-1v-8"/><rect x="2" y="9" width="20" height="3" rx="0.5"/><path d="M7 9V5h10v4"/><path d="M7 5l5-2.5L17 5"/></svg>
+          <AppLogo class="w-5 h-5 text-white" />
          </div>
         <div>
           <span class="text-[15px] font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></span>
@@ -56,7 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
          <!-- Mobile brand mark (hidden on lg+) -->
          <div class="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
            <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-             <svg viewBox="0 0 24 24" class="w-4 h-4 text-white" fill="none" stroke="currentColor" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true"><path d="M3 12v8a1 1 0 001 1h16a1 1 0 001-1v-8"/><rect x="2" y="9" width="20" height="3" rx="0.5"/><path d="M7 9V5h10v4"/><path d="M7 5l5-2.5L17 5"/></svg>
+            <AppLogo class="w-5 h-5 text-white" />
            </div>
           <span class="text-[15px] font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></span>
         </div>
@@ -206,6 +206,7 @@ import { t } from '../i18n/en'
 import { ssoBrandIcon } from '../lib/brandIcons'
 import { ALL_FORMATS } from '../lib/formats'
 import { useAppVersion, formatVersion } from '../composables/useAppVersion'
+import AppLogo from '../components/AppLogo.vue'
 
 const router = useRouter()
 const route = useRoute()
