@@ -1,0 +1,12 @@
+<!--
+SPDX-FileCopyrightText: The OpenArtifact Authors
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<!-- One-colour mark: inherits currentColor (black when used standalone). -->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="512" height="512" fill="none" stroke="currentColor">
+  <title>OpenArtifact</title>
+  <rect x="13" y="10" width="10" height="10" fill="currentColor" stroke="none"/>
+  <path d="M5 11v15.25h22V11" stroke-width="3.5"/>
+  <path d="M3.5 9.5L13 3" stroke-width="3.5"/>
+</svg>
