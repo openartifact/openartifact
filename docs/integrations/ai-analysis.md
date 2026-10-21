@@ -33,7 +33,7 @@ All providers use the OpenAI chat-completions protocol: `POST <base>/chat/comple
 | Provider | Default base URL | Examples |
 |---|---|---|
 | `openai` | `https://api.openai.com/v1` | any OpenAI-compatible endpoint via `AI_BASE_URL` |
-| `ollama` | `http://localhost:11434/v1` | |
+| `ollama` | `http://localhost:11434/v1` | loopback/private endpoints are blocked by the SSRF policy; set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` to use a local Ollama |
 | `azure` | none, set `AI_BASE_URL` | `https://<resource>.openai.azure.com/openai/deployments/<deployment>` |
 
 No other provider is implemented (the example config comments also mention `vertex`; the server does not support it and the admin API rejects it).

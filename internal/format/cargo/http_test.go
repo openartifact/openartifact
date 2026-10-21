@@ -291,3 +291,37 @@ func TestPublishLicensePolicyNoLicenseAdmitted(t *testing.T) {
 		})
 	}
 }
+
+func TestPublishRejectsOversizedDeclaredLengths(t *testing.T) {
+	meta := []byte(`{"name":"demo","vers":"0.1.0"}`)
+
+	cases := map[string]func(*bytes.Buffer){
+		"metadata": func(b *bytes.Buffer) {
+			_ = binary.Write(b, binary.LittleEndian, uint32(0xFFFFFFFF))
+		},
+		"crate": func(b *bytes.Buffer) {
+			_ = binary.Write(b, binary.LittleEndian, uint32(len(meta)))
+			b.Write(meta)
+			_ = binary.Write(b, binary.LittleEndian, uint32(0xFFFFFFFF))
+		},
+	}
+
+	for name, build := range cases {
+		t.Run(name, func(t *testing.T) {
+			h, _, bs, pub := newCargoHandler(t)
+
+			var body bytes.Buffer
+
+			build(&body)
+
+			w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodPut, "/repos/myrepo/api/v1/crates/new", &body))
+			if w.Code != http.StatusRequestEntityTooLarge {
+				t.Fatalf("status = %d, want 413: %s", w.Code, w.Body.String())
+			}
+
+			if len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+				t.Error("oversized publish must not store or emit anything")
+			}
+		})
+	}
+}

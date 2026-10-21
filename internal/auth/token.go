@@ -24,6 +24,18 @@ const (
 	TokenKindDeploy   = "deploy"
 )
 
+// lookupDigest returns the hex SHA-256 used as the database lookup key for an
+// API token body. The body is 32 bytes (256 bits) from crypto/rand, not a
+// human-chosen password, so brute force is infeasible and a slow salted KDF
+// (bcrypt/argon2) would only add per-request latency without adding security.
+// The digest must stay deterministic and unsalted: it is the index
+// GetTokenByHash queries by, and changing it would invalidate stored tokens.
+func lookupDigest(body string) string {
+	sum := sha256.Sum256([]byte(body))
+
+	return hex.EncodeToString(sum[:])
+}
+
 func CreateToken(ctx context.Context, db database.Database, kind, name, userID string, scopes []string, expiresAt *time.Time) (string, *models.Token, error) {
 	if kind != TokenKindAccess && kind != TokenKindDeploy {
 		return "", nil, fmt.Errorf("invalid token kind: %s", kind) //nolint:err113 // dynamic error with runtime context
@@ -45,8 +57,7 @@ func CreateToken(ctx context.Context, db database.Database, kind, name, userID s
 
 	tokenString := prefix + body
 
-	hashBytes := sha256.Sum256([]byte(body))
-	tokenHash := hex.EncodeToString(hashBytes[:])
+	tokenHash := lookupDigest(body)
 
 	if scopes == nil {
 		scopes = []string{}
@@ -82,8 +93,7 @@ func ValidateToken(ctx context.Context, db database.Database, tokenString string
 		return nil, nil, nil
 	}
 
-	hashBytes := sha256.Sum256([]byte(body))
-	tokenHash := hex.EncodeToString(hashBytes[:])
+	tokenHash := lookupDigest(body)
 
 	token, err := db.GetTokenByHash(ctx, tokenHash)
 	if err != nil {

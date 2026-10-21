@@ -84,7 +84,11 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		id = computedSHA256
 	}
 
-	blobPath := fs.getBlobPath(id)
+	blobPath, err := fs.getBlobPath(id)
+	if err != nil {
+		_ = os.Remove(tmpPath)
+		return "", err
+	}
 
 	dir := filepath.Dir(blobPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
@@ -121,7 +125,10 @@ func (fs *FilesystemStore) Get(ctx context.Context, id string) (io.ReadCloser, e
 		return nil, err
 	}
 
-	blobPath := fs.getBlobPath(id)
+	blobPath, err := fs.getBlobPath(id)
+	if err != nil {
+		return nil, err
+	}
 
 	f, err := os.Open(blobPath)
 	if err != nil {
@@ -141,7 +148,10 @@ func (fs *FilesystemStore) Delete(ctx context.Context, id string) error {
 		return err
 	}
 
-	blobPath := fs.getBlobPath(id)
+	blobPath, err := fs.getBlobPath(id)
+	if err != nil {
+		return err
+	}
 	metaPath := blobPath + ".meta"
 
 	// Remove metadata file (ignore error if not exists)
@@ -166,9 +176,12 @@ func (fs *FilesystemStore) Exists(ctx context.Context, id string) (bool, error) 
 		return false, err
 	}
 
-	blobPath := fs.getBlobPath(id)
+	blobPath, err := fs.getBlobPath(id)
+	if err != nil {
+		return false, err
+	}
 
-	_, err := os.Stat(blobPath)
+	_, err = os.Stat(blobPath)
 	if err == nil {
 		return true, nil
 	}
@@ -186,7 +199,12 @@ func (fs *FilesystemStore) GetMetadata(ctx context.Context, id string) (map[stri
 		return nil, err
 	}
 
-	metaPath := fs.getBlobPath(id) + ".meta"
+	blobPath, err := fs.getBlobPath(id)
+	if err != nil {
+		return nil, err
+	}
+
+	metaPath := blobPath + ".meta"
 
 	data, err := os.ReadFile(metaPath)
 	if err != nil {
@@ -273,7 +291,10 @@ func (fs *FilesystemStore) GetSize(ctx context.Context, id string) (int64, error
 		return 0, err
 	}
 
-	blobPath := fs.getBlobPath(id)
+	blobPath, err := fs.getBlobPath(id)
+	if err != nil {
+		return 0, err
+	}
 
 	info, err := os.Stat(blobPath)
 	if err != nil {
@@ -317,8 +338,21 @@ func (fs *FilesystemStore) PresignURL(_ context.Context, _ string, _ time.Durati
 	return "", ErrPresignNotSupported
 }
 
-// getBlobPath returns the full path for a blob.
-func (fs *FilesystemStore) getBlobPath(id string) string {
-	// Callers validate id with ValidateBlobID; two-level layout /base/ab/cdef...
-	return filepath.Join(fs.basePath, id[:2], id[2:])
+// getBlobPath returns the full path for a blob. The id is validated as 64
+// lowercase hex characters and the resulting path is verified to stay inside
+// basePath, so an untrusted id can never escape the store root.
+func (fs *FilesystemStore) getBlobPath(id string) (string, error) {
+	if err := ValidateBlobID(id); err != nil {
+		return "", err
+	}
+
+	// Two-level layout /base/ab/cdef...
+	p := filepath.Join(fs.basePath, id[:2], id[2:])
+
+	rel, err := filepath.Rel(fs.basePath, p)
+	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+		return "", ErrInvalidBlobID
+	}
+
+	return p, nil
 }

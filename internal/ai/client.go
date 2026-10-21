@@ -18,6 +18,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/internal/crypto"
+	"github.com/openartifact/openartifact/internal/netutil"
 )
 
 var (
@@ -123,10 +124,8 @@ func NewClient(cfg Config) *Client {
 	}
 
 	return &Client{
-		cfg: cfg,
-		httpClient: &http.Client{
-			Timeout: timeout,
-		},
+		cfg:          cfg,
+		httpClient:   netutil.SafeHTTPClient(timeout),
 		baseURL:      baseURL,
 		systemPrompt: systemPrompt,
 	}
@@ -192,7 +191,7 @@ func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisRes
 		req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, nil, fmt.Errorf("http request: %w", err)
 	}
@@ -258,6 +257,23 @@ func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisRes
 	return &result, usage, nil
 }
 
+// do validates the request URL against the SSRF policy (scheme, resolved
+// addresses) and sends it through the SSRF-safe client, which re-checks the
+// destination at dial time. Private/loopback endpoints (e.g. a local Ollama)
+// require OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true.
+func (c *Client) do(req *http.Request) (*http.Response, error) {
+	if err := netutil.ValidateOutboundURLContext(req.Context(), req.URL.String()); err != nil {
+		return nil, fmt.Errorf("ai endpoint rejected: %w", err)
+	}
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, fmt.Errorf("send request: %w", err)
+	}
+
+	return resp, nil
+}
+
 // ListModels fetches the list of available models from the API.
 func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 	// Create a context with 10s timeout if not already shorter
@@ -289,7 +305,7 @@ func (c *Client) ListModels(ctx context.Context) ([]string, error) {
 		req.Header.Set("Authorization", "Bearer "+c.cfg.APIKey)
 	}
 
-	resp, err := c.httpClient.Do(req)
+	resp, err := c.do(req)
 	if err != nil {
 		return nil, fmt.Errorf("http request: %w", err)
 	}

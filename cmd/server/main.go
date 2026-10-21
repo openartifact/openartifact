@@ -476,9 +476,14 @@ func run(args []string) error {
 	}
 
 	rbacMiddleware := middleware.RBACMiddleware(rbacCfg, db, evaluator, log)
+	legacyAuthMode := "disabled"
+	if cfg.Auth.LegacyAPIKeyEnabled {
+		legacyAuthMode = "enabled"
+	}
+
 	log.Infow("RBAC middleware enabled",
 		"allow_anonymous_read", cfg.Auth.AllowAnonymousRead,
-		"legacy_api_key_enabled", cfg.Auth.LegacyAPIKeyEnabled,
+		"legacy_auth", legacyAuthMode,
 	)
 
 	router := server.GetRouter()

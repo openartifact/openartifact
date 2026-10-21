@@ -321,3 +321,18 @@ func TestMavenMetadataPath(t *testing.T) {
 		}
 	}
 }
+
+func TestServe_HitIsNotSniffableAsHTML(t *testing.T) {
+	f := newFixture(t, "raw", member("a", "raw", "hosted"))
+	f.set("a", "x.html", 200, "<script>alert(1)</script>")
+
+	w := f.get(http.MethodGet, "x.html")
+
+	if got := w.Header().Get("X-Content-Type-Options"); got != "nosniff" {
+		t.Errorf("X-Content-Type-Options = %q, want nosniff", got)
+	}
+
+	if got := w.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream default", got)
+	}
+}

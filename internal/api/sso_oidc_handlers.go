@@ -107,29 +107,12 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	nonce := hex.EncodeToString(rawNonce)
 
-	secure := isSecureRequest(r)
-	//nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
-	http.SetCookie(w, &http.Cookie{
-		Name: "oa_oidc_pkce_" + slug, Value: codeVerifier,
-		Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 300,
-	})
-	//nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
-	http.SetCookie(w, &http.Cookie{
-		Name: "oa_oidc_state_" + slug, Value: state,
-		Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 300,
-	})
-	//nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
-	http.SetCookie(w, &http.Cookie{
-		Name: "oa_oidc_nonce_" + slug, Value: nonce,
-		Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 300,
-	})
+	setSSOStateCookie(w, r, h.baseURL, "oa_oidc_pkce_"+slug, codeVerifier)
+	setSSOStateCookie(w, r, h.baseURL, "oa_oidc_state_"+slug, state)
+	setSSOStateCookie(w, r, h.baseURL, "oa_oidc_nonce_"+slug, nonce)
 
 	if redirect := r.URL.Query().Get("redirect"); redirect != "" && isOIDCRelativePath(redirect) {
-		//nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
-		http.SetCookie(w, &http.Cookie{
-			Name: "oa_oidc_redirect_" + slug, Value: redirect,
-			Path: "/", HttpOnly: true, Secure: secure, SameSite: http.SameSiteLaxMode, MaxAge: 300,
-		})
+		setSSOStateCookie(w, r, h.baseURL, "oa_oidc_redirect_"+slug, redirect)
 	}
 
 	//nolint:gosec // G710: redirect URL is validated against configured provider URLs
@@ -274,19 +257,11 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
-		Name:     auth.SessionCookieName,
-		Value:    cookieValue,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(auth.SessionDuration.Seconds()),
-	})
+	setSessionCookie(w, r, cookieValue)
 	setCSRFCookie(w, r, csrfToken)
 
 	for _, name := range []string{"oa_oidc_pkce_" + slug, "oa_oidc_state_" + slug, "oa_oidc_nonce_" + slug} {
-		http.SetCookie(w, &http.Cookie{Name: name, Value: "", Path: "/", MaxAge: -1}) //nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
+		clearSSOStateCookie(w, r, h.baseURL, name)
 	}
 
 	redirect := "/"
@@ -296,11 +271,11 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 			redirect = rc.Value
 		}
 
-		http.SetCookie(w, &http.Cookie{Name: "oa_oidc_redirect_" + slug, Value: "", Path: "/", MaxAge: -1}) //nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
+		clearSSOStateCookie(w, r, h.baseURL, "oa_oidc_redirect_"+slug)
 	}
 
-	//nolint:gosec // G710: redirect URL is validated against configured provider URLs
-	http.Redirect(w, r, redirect, http.StatusFound)
+	//nolint:gosec // G710: redirect is a same-origin relative path (safeRedirectPath)
+	http.Redirect(w, r, safeRedirectPath(redirect), http.StatusFound)
 }
 
 func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
@@ -318,13 +293,7 @@ func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		_ = auth.DeleteSession(ctx, h.db, cookie.Value)
 	}
 
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: OIDC state cookies are short-lived, Secure flag set by reverse proxy
-		Name:     auth.SessionCookieName,
-		Value:    "",
-		Path:     "/",
-		HttpOnly: true,
-		MaxAge:   -1,
-	})
+	clearSessionCookie(w, r)
 	clearCSRFCookie(w, r)
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
@@ -343,7 +312,7 @@ func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 }
 
 func isOIDCRelativePath(path string) bool {
-	return strings.HasPrefix(path, "/") && !strings.HasPrefix(path, "//")
+	return safeRedirectPath(path) == path
 }
 
 func constTimeEqual(a, b string) bool {

@@ -284,18 +284,26 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	settings := make([][2]string, 0, 8)
+	// Keys and values are kept in separate slices so the (secret) values are
+	// never reachable from anything that gets logged.
+	keys := make([]string, 0, 8)
+	vals := make([]string, 0, 8)
+
+	add := func(k, v string) {
+		keys = append(keys, k)
+		vals = append(vals, v)
+	}
 
 	if body.Enabled != nil {
-		settings = append(settings, [2]string{"ai.enabled", strconv.FormatBool(*body.Enabled)})
+		add("ai.enabled", strconv.FormatBool(*body.Enabled))
 	}
 
 	if body.Provider != nil {
-		settings = append(settings, [2]string{"ai.provider", *body.Provider})
+		add("ai.provider", *body.Provider)
 	}
 
 	if body.BaseURL != nil {
-		settings = append(settings, [2]string{"ai.base_url", *body.BaseURL})
+		add("ai.base_url", *body.BaseURL)
 	}
 
 	// The API key is write-only: the masked placeholder returned by GET means
@@ -315,28 +323,28 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 			stored = enc
 		}
 
-		settings = append(settings, [2]string{"ai.api_key", stored})
+		add("ai.api_key", stored)
 	}
 
 	if body.Model != nil {
-		settings = append(settings, [2]string{"ai.model", *body.Model})
+		add("ai.model", *body.Model)
 	}
 
 	if body.MaxTokens != nil {
-		settings = append(settings, [2]string{"ai.max_tokens", strconv.Itoa(*body.MaxTokens)})
+		add("ai.max_tokens", strconv.Itoa(*body.MaxTokens))
 	}
 
 	if body.TimeoutSecs != nil {
-		settings = append(settings, [2]string{"ai.timeout_secs", strconv.Itoa(*body.TimeoutSecs)})
+		add("ai.timeout_secs", strconv.Itoa(*body.TimeoutSecs))
 	}
 
 	if body.SystemPrompt != nil {
-		settings = append(settings, [2]string{"ai.system_prompt", *body.SystemPrompt})
+		add("ai.system_prompt", *body.SystemPrompt)
 	}
 
-	for _, kv := range settings {
-		if err := h.db.SetSystemSetting(r.Context(), kv[0], kv[1]); err != nil {
-			h.log.Errorw("admin ai: save setting failed", "key", kv[0], "error", err)
+	for i, key := range keys {
+		if err := h.db.SetSystemSetting(r.Context(), key, vals[i]); err != nil {
+			h.log.Errorw("admin ai: save setting failed", "key", key, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to save config")
 
 			return

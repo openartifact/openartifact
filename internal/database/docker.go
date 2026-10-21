@@ -463,7 +463,7 @@ func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID, image, last str
 			RepositoryID: repoID,
 			Image:        image,
 			Name:         last,
-			Limit:        int32(n),
+			Limit:        toInt32(n),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list docker tags: %w", err)
@@ -474,7 +474,7 @@ func (p *PostgresDB) ListDockerTags(ctx context.Context, repoID, image, last str
 		rows, err := p.q.ListDockerTags(ctx, dbsqlc.ListDockerTagsParams{
 			RepositoryID: repoID,
 			Image:        image,
-			Limit:        int32(n),
+			Limit:        toInt32(n),
 		})
 		if err != nil {
 			return nil, fmt.Errorf("failed to list docker tags: %w", err)

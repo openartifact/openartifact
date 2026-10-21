@@ -214,6 +214,13 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// Size caps for the client-declared lengths in a publish body; they bound the
+// buffers allocated before any data is read.
+const (
+	maxPublishMetadataBytes = 1 << 20   // 1 MiB of JSON metadata
+	maxPublishCrateBytes    = 128 << 20 // 128 MiB .crate file (crates.io allows 10 MiB)
+)
+
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
@@ -238,6 +245,11 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		h.Log.Errorw("failed to read metadata length", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 
+		return
+	}
+
+	if metadataLen > maxPublishMetadataBytes {
+		http.Error(w, "metadata too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 
@@ -284,6 +296,11 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		h.Log.Errorw("failed to read crate length", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 
+		return
+	}
+
+	if crateLen > maxPublishCrateBytes {
+		http.Error(w, "crate file too large", http.StatusRequestEntityTooLarge)
 		return
 	}
 

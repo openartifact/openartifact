@@ -176,6 +176,14 @@ func (p *probeWriter) WriteHeader(code int) {
 		}
 	}
 
+	// Group members stream stored artifacts verbatim; never let a browser
+	// sniff them into HTML/script, and default to a download type.
+	if dst.Get("Content-Type") == "" {
+		dst.Set("Content-Type", "application/octet-stream")
+	}
+
+	dst.Set("X-Content-Type-Options", "nosniff")
+
 	p.real.WriteHeader(code)
 	p.committed = true
 }

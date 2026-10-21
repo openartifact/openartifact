@@ -289,19 +289,11 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: SAML state cookie is short-lived, Secure flag set by reverse proxy
-		Name:     auth.SessionCookieName,
-		Value:    cookieValue,
-		Path:     "/",
-		HttpOnly: true,
-		Secure:   isSecureRequest(r),
-		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(auth.SessionDuration.Seconds()),
-	})
+	setSessionCookie(w, r, cookieValue)
 	setCSRFCookie(w, r, csrfToken)
 
-	//nolint:gosec // G710: redirect URL is validated against configured provider URLs
-	http.Redirect(w, r, redirect, http.StatusFound)
+	//nolint:gosec // G710: redirect is a same-origin relative path (safeRedirectPath)
+	http.Redirect(w, r, safeRedirectPath(redirect), http.StatusFound)
 }
 
 func (h *SAMLHandler) handleMetadata(w http.ResponseWriter, r *http.Request) {

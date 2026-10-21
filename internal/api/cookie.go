@@ -83,3 +83,55 @@ func clearCSRFCookie(w http.ResponseWriter, r *http.Request) {
 		MaxAge:   -1,
 	})
 }
+
+// isSecureContext reports whether cookies issued for r must carry Secure: the
+// request arrived over TLS (directly or via X-Forwarded-Proto) or the
+// configured public base URL is https.
+func isSecureContext(r *http.Request, baseURL string) bool {
+	return isSecureRequest(r) || strings.HasPrefix(strings.ToLower(baseURL), "https://")
+}
+
+// setSSOStateCookie issues a short-lived, HttpOnly, SameSite=Lax cookie used to
+// carry SSO flow state (PKCE verifier, state, nonce, post-login redirect).
+func setSSOStateCookie(w http.ResponseWriter, r *http.Request, baseURL, name, value string) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure follows TLS / https base URL so plain-HTTP dev setups still work
+		Name:     name,
+		Value:    value,
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecureContext(r, baseURL),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   300,
+	})
+}
+
+// clearSSOStateCookie expires a cookie set by setSSOStateCookie.
+func clearSSOStateCookie(w http.ResponseWriter, r *http.Request, baseURL, name string) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure follows TLS / https base URL so plain-HTTP dev setups still work
+		Name:     name,
+		Value:    "",
+		Path:     "/",
+		HttpOnly: true,
+		Secure:   isSecureContext(r, baseURL),
+		SameSite: http.SameSiteLaxMode,
+		MaxAge:   -1,
+	})
+}
+
+// safeRedirectPath returns p when it is a same-origin relative path and "/"
+// otherwise. It rejects absolute and scheme-relative URLs ("//host", "/\host",
+// "https://host"), backslashes and control characters, so the value can be
+// handed to http.Redirect without becoming an open redirect.
+func safeRedirectPath(p string) string {
+	if !strings.HasPrefix(p, "/") || strings.HasPrefix(p, "//") || strings.HasPrefix(p, "/\\") {
+		return "/"
+	}
+
+	for _, c := range p {
+		if c == '\\' || c < 0x20 || c == 0x7f {
+			return "/"
+		}
+	}
+
+	return p
+}

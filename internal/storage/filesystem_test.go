@@ -377,3 +377,23 @@ func TestFilesystem_ExistsBySHA256_AliasIndex(t *testing.T) {
 		t.Fatalf("unknown digest = (%v, %v), want (false, nil)", ok, err)
 	}
 }
+
+func TestFilesystem_getBlobPathStaysInsideRoot(t *testing.T) {
+	root := t.TempDir()
+
+	fs, err := NewFilesystemStore(root)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, id := range []string{"../../etc/passwd", "..", "/abs", strings.Repeat("A", 64), strings.Repeat("a", 63) + "/"} {
+		if _, err := fs.getBlobPath(id); !errors.Is(err, ErrInvalidBlobID) {
+			t.Errorf("getBlobPath(%q) err = %v, want ErrInvalidBlobID", id, err)
+		}
+	}
+
+	p, err := fs.getBlobPath(strings.Repeat("a", 64))
+	if err != nil || !strings.HasPrefix(p, root+string(os.PathSeparator)) {
+		t.Errorf("valid id: path=%q err=%v", p, err)
+	}
+}

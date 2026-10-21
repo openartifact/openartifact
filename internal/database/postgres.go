@@ -3255,7 +3255,7 @@ func (p *PostgresDB) UpdateWebhookDelivery(ctx context.Context, delivery *models
 func (p *PostgresDB) ListWebhookDeliveries(ctx context.Context, webhookID string, limit int) ([]*models.WebhookDelivery, error) {
 	rows, err := p.q.ListWebhookDeliveries(ctx, dbsqlc.ListWebhookDeliveriesParams{
 		WebhookID: webhookID,
-		Limit:     int32(limit), //nolint:gosec // G115: bounded by API
+		Limit:     toInt32(limit),
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list webhook deliveries: %w", err)
