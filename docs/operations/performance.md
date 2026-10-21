@@ -152,7 +152,7 @@ Uploads mark metadata stale; npm packument denormalisation, Maven `maven-metadat
 
 ### Storage quota
 
-Quota reservation is a single conditional upsert on the repository's `storage_quotas` row, committed with `synchronous_commit=off` so uploads do not queue behind each other's WAL flush. After a PostgreSQL crash the counters can lag the real usage by the last few hundred milliseconds of changes.
+Quota reservation is a single conditional upsert on the repository's `storage_quotas` row, committed with `synchronous_commit=off` so uploads do not queue behind each other's WAL flush. After a PostgreSQL crash the counters can lag the real usage by the last few hundred milliseconds of changes. The cleanup worker recounts every repository from its package rows at startup and then every 6 hours, which repairs such drift; see [keeping the counters correct](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct).
 
 ### HTTP caching
 

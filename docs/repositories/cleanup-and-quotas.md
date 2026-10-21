@@ -37,6 +37,7 @@ At least one of `keep_last_n` or `keep_since_days` is required; zero or negative
 - Versions are ranked per package: by name and architecture for rpm, by name, architecture and distribution for deb, by name (module path for go, package id for nuget) otherwise. A newer `arm64` build therefore never evicts the only `amd64` one. Files sharing a version (for example a PyPI sdist and wheel) count as one version.
 - The database row is deleted first; each blob is then removed from storage only if no other row still references it (blobs are deduplicated across repositories).
 - A package whose blob is referenced by a [release bundle](release-bundles.md) item is skipped and kept.
+- For deb, rpm and helm repositories, whose uploads count against the [storage quota](#storage-quotas), every deleted row also gives its usage (its blob's size and one artifact) back to the repository's counters, in one update at the end of the run. A row that an API delete removed between selection and deletion is skipped, so nothing is released twice. pypi, nuget and go uploads are not counted, so their runs release nothing.
 - There is no dry-run mode.
 
 ### API
@@ -76,9 +77,19 @@ The refusal is `507 Insufficient Storage`:
 {"error":"repository storage quota exceeded","code":"quota_exceeded"}
 ```
 
-Deletions made by [cleanup policies](#cleanup-policies) do not decrement the usage counters (only deletes through the format or upload APIs do), so usage can drift upwards in repositories that rely on cleanup. The API cannot reset the counters; raise or remove the limits if a repository reaches its quota with fewer artifacts than counted.
+Usage is the sum, over the repository's packages, of each package's blob size, plus one artifact per package. It is given back when a package is deleted through the format or upload API, when an upload is replaced (Maven snapshot overwrite) and when a [cleanup policy](#cleanup-policies) deletes it. A blob that is shared by several packages (blobs are deduplicated) counts once per package, the same way the upload reserved it. Deleting a repository removes its counters with it.
 
-Quotas are enforced on upload paths of these formats only: **Maven** (`/repos/maven/REPO`), **npm**, **Debian**, **RPM**, **Helm** and **RubyGems**. Uploads to the other formats (including Ivy and sbt, Docker, PyPI, Go, Cargo, NuGet, Conda, Conan and raw) neither check nor count against the quota.
+Quotas are enforced on upload paths of these formats only: **Maven** (`/repos/maven/REPO`), **npm**, **Debian**, **RPM**, **Helm** and **RubyGems**. Uploads to the other formats (including Ivy and sbt, Docker, PyPI, Go, Cargo, NuGet, Conda, Conan and raw) neither check nor count against the quota, and their counters stay at 0. A yanked RubyGems version keeps counting: yanking hides it but the file is stored until the repository is deleted.
+
+### Keeping the counters correct
+
+The counters are updated incrementally with `synchronous_commit=off` (see [performance](../operations/performance.md#storage-quota)), so a PostgreSQL crash can lose the last few hundred milliseconds of changes, and backups do not include quota rows. Usage is therefore **reconciled**: recomputed from the package rows themselves and written over the counters, limits untouched.
+
+- The cleanup worker reconciles every repository on its first tick after the server starts and then every 6 hours. A pass that finds drift logs `corrected drifted quota usage counters` with the number of repositories. Replicas take a database advisory lock, so only one recounts at a time.
+- A restore from a [backup](../operations/backup.md) reconciles when it finishes, because restored packages were not reserved against any quota.
+- An admin can reconcile one repository on demand with `POST /api/v1/repositories/{repo}/quota/reconcile`. The response is the quota, as for `GET`, with the recomputed `current_size_bytes` and `current_artifact_count`. A repository without a quota row gets an unlimited one.
+
+The recount is a single statement over one snapshot of the tables. An upload or delete that is in flight at that moment (reserved but not yet stored, or removed but not yet released) can leave the result off by that one operation until the next reconcile.
 
 ### API
 
@@ -87,6 +98,7 @@ Quotas are enforced on upload paths of these formats only: **Maven** (`/repos/ma
 | `GET /api/v1/repositories/{repo}/quota` | `read` on the repository | Limits and current usage. |
 | `PUT /api/v1/repositories/{repo}/quota` | admin | Set `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent` (partial: unset fields are unchanged). Negative limits and a threshold outside 0-100 are `400 validation_failed`. |
 | `DELETE /api/v1/repositories/{repo}/quota` | admin | Reset both limits to unlimited (`204`); usage counters are kept. |
+| `POST /api/v1/repositories/{repo}/quota/reconcile` | admin | Recompute the usage counters from the package rows (see [above](#keeping-the-counters-correct)); returns the quota. Limits are unchanged. |
 
 ```sh
 curl -X PUT HOST/api/v1/repositories/REPO/quota \

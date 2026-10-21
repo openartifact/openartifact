@@ -391,6 +391,14 @@ type Database interface {
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	// ReserveStorageUsage atomically adds usage if it fits the quota; false,nil when exceeded.
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	// ReconcileStorageUsage recomputes one repository's usage counters from its
+	// package rows (sum of blob sizes, one artifact per row) and returns the
+	// corrected quota.
+	ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error)
+	// ReconcileAllStorageUsage does the same for every repository and returns how
+	// many counters it had to correct. Concurrent callers (other replicas) are
+	// serialized: a caller that finds a run in progress returns 0, nil.
+	ReconcileAllStorageUsage(ctx context.Context) (int64, error)
 
 	// Storage backends
 	CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
@@ -426,6 +434,9 @@ type Database interface {
 	ListOrgMembers(ctx context.Context, orgID string) ([]*models.OrgMember, error)
 	GetOrgMember(ctx context.Context, orgID, userID string) (*models.OrgMember, error)
 	UpdateOrgMemberRole(ctx context.Context, orgID, userID, role string) error
+	// ListOrgGrantsByUser returns the user's organization memberships (cached
+	// like the other per-request auth lookups).
+	ListOrgGrantsByUser(ctx context.Context, userID string) ([]*models.OrgGrant, error)
 
 	// System settings methods
 	GetSystemSetting(ctx context.Context, key string) (string, error)

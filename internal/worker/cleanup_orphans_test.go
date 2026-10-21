@@ -74,6 +74,81 @@ func TestCollectOrphansIfDueIsThrottled(t *testing.T) {
 	}
 }
 
+type reconcileCountingDB struct {
+	database.BaseMockDB
+
+	calls     int
+	corrected int64
+	err       error
+}
+
+func (d *reconcileCountingDB) ReconcileAllStorageUsage(context.Context) (int64, error) {
+	d.calls++
+
+	return d.corrected, d.err
+}
+
+func TestReconcileQuotasIfDueIsThrottled(t *testing.T) {
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := &reconcileCountingDB{corrected: 2}
+	w := NewCleanupWorker(db, nil, log)
+	now := time.Now()
+
+	w.reconcileQuotasIfDue(context.Background(), now)
+
+	if db.calls != 1 {
+		t.Fatalf("first tick: reconcile calls = %d, want 1 (the first tick after startup repairs crash drift)", db.calls)
+	}
+
+	w.reconcileQuotasIfDue(context.Background(), now.Add(quotaReconcileInterval-time.Second))
+
+	if db.calls != 1 {
+		t.Errorf("reconcile ran again within %v (calls=%d)", quotaReconcileInterval, db.calls)
+	}
+
+	w.reconcileQuotasIfDue(context.Background(), now.Add(quotaReconcileInterval))
+
+	if db.calls != 2 {
+		t.Errorf("reconcile did not run after %v (calls=%d)", quotaReconcileInterval, db.calls)
+	}
+}
+
+func TestReconcileQuotasIfDueWaitsAfterFailure(t *testing.T) {
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := &reconcileCountingDB{err: context.DeadlineExceeded}
+	w := NewCleanupWorker(db, nil, log)
+	now := time.Now()
+
+	w.reconcileQuotasIfDue(context.Background(), now)
+	w.reconcileQuotasIfDue(context.Background(), now.Add(time.Minute))
+
+	if db.calls != 1 {
+		t.Errorf("a failed reconcile retried after one minute (calls=%d); it must wait for the next interval", db.calls)
+	}
+}
+
+func TestReconcileQuotasIfDueSkipsCancelledContext(t *testing.T) {
+	db := &reconcileCountingDB{}
+	w := NewCleanupWorker(db, nil, nil)
+
+	ctx, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	w.reconcileQuotasIfDue(ctx, time.Now())
+
+	if db.calls != 0 {
+		t.Errorf("reconciled with a cancelled context (calls=%d)", db.calls)
+	}
+}
+
 func TestCollectOrphansIfDueSkipsWithoutBlobStore(t *testing.T) {
 	db := &orphanListerDB{}
 	w := NewCleanupWorker(db, nil, nil)

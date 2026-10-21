@@ -5077,17 +5077,32 @@ func (p *PostgresDB) SearchByProperty(ctx context.Context, repoID, key, value st
 // Organization methods
 
 func (p *PostgresDB) CreateOrganization(ctx context.Context, org *models.Organization) error {
+	// The recorded owner is an implicit member: cached grants must not outlive this write.
+	defer p.authCache.invalidate()
+
+	memberRole := org.MemberRole
+	if memberRole == "" {
+		memberRole = models.OrgAccessRead
+	}
+
+	if org.Slug == "" {
+		org.Slug = models.OrgSlug(org.Name) // e.g. restored from a backup that predates slugs
+	}
+
 	row, err := p.q.CreateOrganization(ctx, dbsqlc.CreateOrganizationParams{
 		Name:        org.Name,
 		DisplayName: org.DisplayName,
 		Description: org.Description,
 		OwnerID:     org.OwnerID,
+		MemberRole:  memberRole,
+		Slug:        org.Slug,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create organization: %w", err)
 	}
 
 	org.ID = row.ID
+	org.MemberRole = memberRole
 	org.CreatedAt = row.CreatedAt
 	org.UpdatedAt = row.UpdatedAt
 
@@ -5110,6 +5125,8 @@ func (p *PostgresDB) GetOrganization(ctx context.Context, id string) (*models.Or
 		DisplayName: row.DisplayName,
 		Description: row.Description,
 		OwnerID:     row.OwnerID,
+		MemberRole:  row.MemberRole,
+		Slug:        row.Slug,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 	}, nil
@@ -5131,16 +5148,22 @@ func (p *PostgresDB) GetOrganizationByName(ctx context.Context, name string) (*m
 		DisplayName: row.DisplayName,
 		Description: row.Description,
 		OwnerID:     row.OwnerID,
+		MemberRole:  row.MemberRole,
+		Slug:        row.Slug,
 		CreatedAt:   row.CreatedAt,
 		UpdatedAt:   row.UpdatedAt,
 	}, nil
 }
 
 func (p *PostgresDB) UpdateOrganization(ctx context.Context, org *models.Organization) error {
+	// member_role and owner_id change what members may do.
+	defer p.authCache.invalidate()
+
 	err := p.q.UpdateOrganization(ctx, dbsqlc.UpdateOrganizationParams{
 		DisplayName: org.DisplayName,
 		Description: org.Description,
 		OwnerID:     org.OwnerID,
+		MemberRole:  org.MemberRole,
 		ID:          org.ID,
 	})
 	if err != nil {
@@ -5151,6 +5174,8 @@ func (p *PostgresDB) UpdateOrganization(ctx context.Context, org *models.Organiz
 }
 
 func (p *PostgresDB) DeleteOrganization(ctx context.Context, id string) error {
+	defer p.authCache.invalidate()
+
 	err := p.q.DeleteOrganization(ctx, id)
 	if err != nil {
 		return fmt.Errorf("failed to delete organization: %w", err)
@@ -5174,6 +5199,8 @@ func (p *PostgresDB) ListOrganizations(ctx context.Context, userID string) ([]*m
 			DisplayName: row.DisplayName,
 			Description: row.Description,
 			OwnerID:     row.OwnerID,
+			MemberRole:  row.MemberRole,
+			Slug:        row.Slug,
 			CreatedAt:   row.CreatedAt,
 			UpdatedAt:   row.UpdatedAt,
 		})
@@ -5183,6 +5210,8 @@ func (p *PostgresDB) ListOrganizations(ctx context.Context, userID string) ([]*m
 }
 
 func (p *PostgresDB) AddOrgMember(ctx context.Context, orgID, userID, role string) error {
+	defer p.authCache.invalidate()
+
 	_, err := p.q.AddOrgMember(ctx, dbsqlc.AddOrgMemberParams{
 		OrgID:  orgID,
 		UserID: userID,
@@ -5196,6 +5225,8 @@ func (p *PostgresDB) AddOrgMember(ctx context.Context, orgID, userID, role strin
 }
 
 func (p *PostgresDB) RemoveOrgMember(ctx context.Context, orgID, userID string) error {
+	defer p.authCache.invalidate()
+
 	err := p.q.RemoveOrgMember(ctx, dbsqlc.RemoveOrgMemberParams{
 		OrgID:  orgID,
 		UserID: userID,
@@ -5251,6 +5282,8 @@ func (p *PostgresDB) GetOrgMember(ctx context.Context, orgID, userID string) (*m
 }
 
 func (p *PostgresDB) UpdateOrgMemberRole(ctx context.Context, orgID, userID, role string) error {
+	defer p.authCache.invalidate()
+
 	err := p.q.UpdateOrgMemberRole(ctx, dbsqlc.UpdateOrgMemberRoleParams{
 		Role:   role,
 		OrgID:  orgID,

@@ -27,6 +27,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </button>
     </div>
 
+    <!-- What organization roles grant -->
+    <div class="bg-surface rounded-xl border border-border p-4 text-xs text-muted space-y-1.5" data-testid="org-effect">
+      <p class="font-semibold text-foreground">{{ t('adm.orgs.effect.title') }}</p>
+      <p>{{ t('adm.orgs.effect.owner') }}</p>
+      <p>{{ t('adm.orgs.effect.member') }}</p>
+      <p>{{ t('adm.orgs.effect.limits') }}</p>
+    </div>
+
     <!-- Stat Tiles -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
       <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
@@ -95,6 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <tr class="bg-surface-hover/30">
             <th scope="col" class="text-left text-[11px] font-semibold text-muted px-5 py-2.5">{{ t('adm.orgs.column.name') }}</th>
             <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.members') }}</th>
+            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.memberRole') }}</th>
             <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.created') }}</th>
             <th scope="col" class="text-right text-[11px] font-semibold text-muted px-5 py-2.5">{{ t('common.actions') }}</th>
           </tr>
@@ -124,6 +133,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <UsersIcon class="w-3 h-3 text-muted" aria-hidden="true" />
                 {{ memberCounts[org.id] ?? '—' }}
               </button>
+            </td>
+            <td class="px-3 py-3.5">
+              <span class="font-mono text-xs text-foreground">{{ org.member_role ?? 'read' }}</span>
             </td>
             <td class="px-3 py-3.5">
               <span class="font-mono text-xs text-muted">{{ formatDate(org.created_at) }}</span>
@@ -196,6 +208,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="text"
             class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
           />
+        </div>
+        <div>
+          <label for="org-member-role" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.orgs.field.memberRole') }}</label>
+          <select
+            id="org-member-role"
+            v-model="orgForm.member_role"
+            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+          >
+            <option v-for="level in MEMBER_ROLES" :key="level" :value="level">{{ t(`adm.orgs.memberRole.${level}`) }}</option>
+          </select>
+          <p class="text-[11px] text-muted mt-1">{{ t('adm.orgs.field.memberRoleHint') }}</p>
         </div>
         <div>
           <label for="org-description" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.orgs.field.description') }}</label>
@@ -409,6 +432,7 @@ interface Org {
   name: string
   display_name?: string | null
   description?: string | null
+  member_role?: MemberRole
   created_at?: string
 }
 
@@ -420,6 +444,8 @@ interface OrgMember {
 }
 
 const ORG_ROLES = ['member', 'admin', 'owner'] as const
+const MEMBER_ROLES = ['read', 'write', 'admin'] as const
+type MemberRole = (typeof MEMBER_ROLES)[number]
 
 const toasts = useToastStore()
 const items = ref<Org[]>([])
@@ -435,7 +461,12 @@ const orgDrawerOpen = ref(false)
 const orgDrawerMode = ref<'create' | 'edit'>('create')
 const editingOrg = ref<Org | null>(null)
 const orgSaving = ref(false)
-const orgForm = ref({ name: '', display_name: '', description: '' })
+const orgForm = ref<{ name: string; display_name: string; description: string; member_role: MemberRole }>({
+  name: '',
+  display_name: '',
+  description: '',
+  member_role: 'read',
+})
 
 // Members drawer
 const membersDrawerOpen = ref(false)
@@ -498,7 +529,7 @@ async function load(): Promise<void> {
 }
 
 function openCreate(): void {
-  orgForm.value = { name: '', display_name: '', description: '' }
+  orgForm.value = { name: '', display_name: '', description: '', member_role: 'read' }
   orgDrawerMode.value = 'create'
   editingOrg.value = null
   orgDrawerOpen.value = true
@@ -509,6 +540,7 @@ function openEdit(org: Org): void {
     name: org.name,
     display_name: org.display_name ?? '',
     description: org.description ?? '',
+    member_role: org.member_role ?? 'read',
   }
   orgDrawerMode.value = 'edit'
   editingOrg.value = org
@@ -532,6 +564,7 @@ async function saveOrg(): Promise<void> {
           name: orgForm.value.name.trim(),
           display_name: orgForm.value.display_name.trim() || undefined,
           description: orgForm.value.description.trim() || undefined,
+          member_role: orgForm.value.member_role,
         }),
       })
       toasts.success(t('adm.orgs.created'))
@@ -543,6 +576,7 @@ async function saveOrg(): Promise<void> {
         body: JSON.stringify({
           display_name: orgForm.value.display_name.trim(),
           description: orgForm.value.description.trim(),
+          member_role: orgForm.value.member_role,
         }),
       })
       toasts.success(t('adm.orgs.updated'))

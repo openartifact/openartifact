@@ -27,7 +27,7 @@ Checklist:
 - Migrations are SQL files embedded in the binary (`migrations/`) and applied in file-name order. Applied versions are recorded in the `schema_migrations` table (`version`, `applied_at`, `checksum`, the SHA-256 of the file).
 - They run automatically at every start unless `MIGRATE_ON_START=false`, under a PostgreSQL advisory lock, so several replicas can start at once and only one applies each migration. Each file runs in its own transaction (files named `*.no_tx.sql` run without one).
 - **Forward-only.** There are no down migrations. An applied file must never change: if the checksum of an applied migration differs from the one in the binary, the migrator aborts with a `checksum drift` error instead of continuing.
-- A failed migration is rolled back (transactional files) and the server logs `Auto-migrate failed` and does not start.
+- A failed migration is rolled back (transactional files) and the server logs `auto-migrate failed` and exits with status 1.
 - Running a new binary against an old database applies the pending migrations; there is no dry-run mode.
 
 ### Migrating separately from the rollout

@@ -45,11 +45,28 @@ func Enforce(ctx context.Context, db database.Database, repoID string, size int6
 // a context detached from request cancellation so a client that hung up still
 // gets its reservation back.
 func Release(ctx context.Context, db database.Database, repoID string, size int64) error {
+	return ReleaseN(ctx, db, repoID, size, 1)
+}
+
+// ReleaseN returns the usage of count artifacts totalling size bytes, e.g. a
+// batch of rows removed by a cleanup policy. The unit of usage is one package
+// row (its blob's size, counted once per row even when blobs are shared), the
+// same one Enforce reserves; the counters never go below zero. Like Release it
+// is detached from ctx cancellation.
+func ReleaseN(ctx context.Context, db database.Database, repoID string, size int64, count int) error {
 	if size < 0 {
 		size = 0
 	}
 
-	if err := db.DecrementStorageUsage(context.WithoutCancel(ctx), repoID, size, 1); err != nil {
+	if count < 0 {
+		count = 0
+	}
+
+	if size == 0 && count == 0 {
+		return nil
+	}
+
+	if err := db.DecrementStorageUsage(context.WithoutCancel(ctx), repoID, size, count); err != nil {
 		return fmt.Errorf("release quota: %w", err)
 	}
 

@@ -26,6 +26,7 @@ type HTTPServer struct {
 	middlewares []func(http.Handler) http.Handler
 	tlsCert     string
 	tlsKey      string
+	serveErr    chan error
 }
 
 // NewHTTPServer creates a new HTTP server. Defaults favor never truncating
@@ -43,13 +44,28 @@ func NewHTTPServer(addr string, log *logger.Logger) *HTTPServer {
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20 * time.Second,
 		},
-		log: log,
+		log:      log,
+		serveErr: make(chan error, 1),
 	}
 }
 
-// Start starts the server.
+// Start binds the listen address and serves in the background. Everything that
+// can be checked up front (the TLS key pair, the bind itself) fails here, so a
+// misconfigured server never reports a successful start. A later failure of
+// the accept loop is delivered on ServeErrors.
 func (s *HTTPServer) Start(ctx context.Context) error {
 	s.log.Infow("Starting HTTP server", "address", s.httpServer.Addr)
+
+	useTLS := s.tlsCert != "" && s.tlsKey != ""
+
+	if useTLS {
+		cert, err := tls.LoadX509KeyPair(s.tlsCert, s.tlsKey)
+		if err != nil {
+			return fmt.Errorf("load TLS key pair: %w", err)
+		}
+
+		s.httpServer.TLSConfig.Certificates = []tls.Certificate{cert}
+	}
 
 	ln, err := (&net.ListenConfig{}).Listen(ctx, "tcp", s.httpServer.Addr)
 	if err != nil {
@@ -58,17 +74,26 @@ func (s *HTTPServer) Start(ctx context.Context) error {
 
 	go func() {
 		var serveErr error
-		if s.tlsCert != "" && s.tlsKey != "" {
-			serveErr = s.httpServer.ServeTLS(ln, s.tlsCert, s.tlsKey)
+		if useTLS {
+			// The certificate is already in TLSConfig; empty file names make
+			// ServeTLS use it instead of re-reading the files.
+			serveErr = s.httpServer.ServeTLS(ln, "", "")
 		} else {
 			serveErr = s.httpServer.Serve(ln)
 		}
+
 		if serveErr != nil && !errors.Is(serveErr, http.ErrServerClosed) {
-			s.log.Errorw("HTTP server error", "error", serveErr)
+			s.serveErr <- fmt.Errorf("HTTP server: %w", serveErr)
 		}
 	}()
 
 	return nil
+}
+
+// ServeErrors delivers the error that ended the accept loop unexpectedly
+// (anything but a graceful Stop). The caller must treat it as fatal.
+func (s *HTTPServer) ServeErrors() <-chan error {
+	return s.serveErr
 }
 
 // EnableTLS makes Start serve HTTPS using the given certificate and key files.

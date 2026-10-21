@@ -29,7 +29,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/importmeta` | Admin-only `X-OA-Import-Created-At` header that preserves origin timestamps during migrations |
 | `internal/clientsetup` | Native client URLs and configure/publish snippets per format (Go port of `web/src/lib/installCommands.ts`; keep both in sync) |
 | `internal/quarantine` | Blocks downloads of artifacts flagged by vulnerability/secret scans |
-| `internal/quota` | Reserves/releases repository storage quota on upload and delete |
+| `internal/quota` | Reserves/releases repository storage quota on upload, delete and cleanup-policy deletes (the database's `ReconcileStorageUsage` recounts the counters from the package rows) |
 | `internal/netutil` | SSRF-safe outbound HTTP helpers (webhooks, proxy upstreams) |
 | `internal/cron` | 5-field cron expression parser (UTC fire times) |
 | `internal/urlparams` | `Vars(r)`: chi URL parameters as a map |

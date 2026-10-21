@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/cron"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -40,6 +41,13 @@ const (
 	// scan counts references across every package table, which is too heavy
 	// to repeat on each one-minute tick.
 	orphanInterval = 15 * time.Minute
+
+	// quotaReconcileInterval throttles the recount of every repository's quota
+	// counters from its package rows (database.ReconcileAllStorageUsage). The
+	// counters are written with asynchronous commits, so a database crash can
+	// leave them off; this is what brings them back. The first run happens on
+	// the first tick after startup, which also repairs a crash right before it.
+	quotaReconcileInterval = 6 * time.Hour
 )
 
 type CleanupWorker struct {
@@ -53,7 +61,8 @@ type CleanupWorker struct {
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // manually triggered policy runs
 
-	lastOrphanGC time.Time // only touched from the tick goroutine
+	lastOrphanGC         time.Time // only touched from the tick goroutine
+	lastQuotaReconcileAt time.Time // only touched from the tick goroutine
 }
 
 func NewCleanupWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger) *CleanupWorker {
@@ -104,7 +113,32 @@ func (w *CleanupWorker) Stop() {
 
 func (w *CleanupWorker) runCleanupCycle(ctx context.Context) {
 	w.runDuePolicies(ctx)
-	w.collectOrphansIfDue(ctx, time.Now())
+	now := time.Now()
+
+	w.collectOrphansIfDue(ctx, now)
+	w.reconcileQuotasIfDue(ctx, now)
+}
+
+// reconcileQuotasIfDue recounts every repository's quota usage from its package
+// rows, at most once per quotaReconcileInterval. Concurrent replicas are
+// serialized by the database call, so running it on each is harmless.
+func (w *CleanupWorker) reconcileQuotasIfDue(ctx context.Context, now time.Time) {
+	if ctx.Err() != nil || now.Sub(w.lastQuotaReconcileAt) < quotaReconcileInterval {
+		return
+	}
+
+	w.lastQuotaReconcileAt = now
+
+	corrected, err := w.db.ReconcileAllStorageUsage(ctx)
+	if err != nil {
+		w.log.Warnw("quota usage reconcile failed", "error", err)
+
+		return
+	}
+
+	if corrected > 0 {
+		w.log.Infow("corrected drifted quota usage counters", "repositories", corrected)
+	}
 }
 
 // collectOrphansIfDue reclaims blobs that no package row references any more
@@ -302,6 +336,10 @@ type formatTable struct {
 	versionExpr string
 	// blobCols are the (possibly nullable) FK columns to blobs.id owned by the row.
 	blobCols []string
+	// quotaTracked marks formats whose uploads reserve storage quota (one
+	// artifact per row, the row's blob size). Deleting such a row must give that
+	// usage back; the other formats are not metered, so there is nothing to give.
+	quotaTracked bool
 }
 
 // cleanupFormatTable covers formats whose packages live in one table with
@@ -311,17 +349,17 @@ type formatTable struct {
 func cleanupFormatTable(format string) (formatTable, bool) {
 	switch format {
 	case "rpm":
-		return formatTable{"rpm_packages", "name", []string{"name", "arch"}, "version || '-' || release || ':' || epoch::text", []string{"blob_id"}}, true
+		return formatTable{"rpm_packages", "name", []string{"name", "arch"}, "version || '-' || release || ':' || epoch::text", []string{"blob_id"}, true}, true
 	case "deb":
-		return formatTable{"deb_packages", "name", []string{"name", "arch", "distribution_id::text"}, "version", []string{"blob_id"}}, true
+		return formatTable{"deb_packages", "name", []string{"name", "arch", "distribution_id::text"}, "version", []string{"blob_id"}, true}, true
 	case "helm":
-		return formatTable{"helm_charts", "name", []string{"name"}, "version", []string{"blob_id"}}, true
+		return formatTable{"helm_charts", "name", []string{"name"}, "version", []string{"blob_id"}, true}, true
 	case "pypi":
-		return formatTable{"pypi_packages", "name", []string{"name"}, "version", []string{"blob_id"}}, true
+		return formatTable{"pypi_packages", "name", []string{"name"}, "version", []string{"blob_id"}, false}, true
 	case "nuget":
-		return formatTable{"nuget_packages", "package_id", []string{"package_id"}, "version", []string{"blob_id"}}, true
+		return formatTable{"nuget_packages", "package_id", []string{"package_id"}, "version", []string{"blob_id"}, false}, true
 	case "go": // repositories.format value is "go", not "gomod" (chk_repo_format)
-		return formatTable{"gomod_modules", "module_path", []string{"module_path"}, "version", []string{"zip_blob_id", "mod_blob_id"}}, true
+		return formatTable{"gomod_modules", "module_path", []string{"module_path"}, "version", []string{"zip_blob_id", "mod_blob_id"}, false}, true
 	default:
 		return formatTable{}, false
 	}
@@ -486,6 +524,13 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 	conn := w.db.GetDB()
 	totalDeleted := 0
 
+	// Usage of the rows removed so far is handed back to the repository's quota
+	// in one update when the run ends, however it ends (finished, timed out,
+	// cancelled); a crash in between leaves it to the periodic reconcile.
+	var released quotaRelease
+
+	defer func() { w.releaseQuota(ctx, policy.RepositoryID, released) }()
+
 	// Delete artifacts: the DB row first, then the underlying blobs from
 	// storage only if no other row still references them.
 	for _, c := range toDelete {
@@ -493,51 +538,39 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 			return totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
 		}
 
-		protected := false
-
-		for _, blobID := range c.blobIDs {
-			if blobID == "" {
-				continue
-			}
-
-			var bundleProtected bool
-
-			checkErr := conn.QueryRowContext(ctx,
-				`SELECT EXISTS(
-					SELECT 1 FROM release_bundle_items rbi
-					JOIN blobs b ON b.sha256 = rbi.sha256
-					WHERE b.id = $1
-				)`, blobID,
-			).Scan(&bundleProtected)
-			if checkErr != nil {
-				w.log.Warnw("failed to check bundle protection for blob", "blob_id", blobID, "error", checkErr)
-
-				protected = true
-
-				break
-			}
-
-			if bundleProtected {
-				w.log.Debugw("skipping cleanup: blob is referenced by a release bundle", "blob_id", blobID)
-
-				protected = true
-
-				break
-			}
+		if w.protectedByBundle(ctx, conn, c.blobIDs) {
+			continue
 		}
 
-		if protected {
-			continue
+		// Read the row's usage while its blob rows are certainly still there (the
+		// row references them); once the row is gone a concurrent delete could
+		// drop the blob and the size with it.
+		var rowBytes int64
+		if tableInfo.quotaTracked {
+			rowBytes = w.rowBlobBytes(ctx, conn, c.blobIDs)
 		}
 
 		//nolint:gosec // G201: query uses validated table/column names from internal constants
 		deleteQuery := fmt.Sprintf("DELETE FROM %s WHERE id = $1", tableInfo.table)
-		if _, err := conn.ExecContext(ctx, deleteQuery, c.id); err != nil {
+
+		res, err := conn.ExecContext(ctx, deleteQuery, c.id)
+		if err != nil {
 			w.log.Warnw("failed to delete artifact from database", "id", c.id, "error", err)
 			continue
 		}
 
+		// A concurrent API delete may have removed the row since it was
+		// selected; that delete already released its quota and blobs.
+		if n, rowsErr := res.RowsAffected(); rowsErr == nil && n == 0 {
+			continue
+		}
+
 		totalDeleted++
+
+		if tableInfo.quotaTracked {
+			released.bytes += rowBytes
+			released.rows++
+		}
 
 		for _, blobID := range c.blobIDs {
 			if blobID == "" {
@@ -561,4 +594,85 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 	}
 
 	return totalDeleted, nil
+}
+
+// protectedByBundle reports whether any of the blobs is referenced by a release
+// bundle, which pins them: such a row must not be deleted. A failed check also
+// protects, since deleting on doubt cannot be undone.
+func (w *CleanupWorker) protectedByBundle(ctx context.Context, conn *sql.DB, blobIDs []string) bool {
+	for _, blobID := range blobIDs {
+		if blobID == "" {
+			continue
+		}
+
+		var bundleProtected bool
+
+		checkErr := conn.QueryRowContext(ctx,
+			`SELECT EXISTS(
+				SELECT 1 FROM release_bundle_items rbi
+				JOIN blobs b ON b.sha256 = rbi.sha256
+				WHERE b.id = $1
+			)`, blobID,
+		).Scan(&bundleProtected)
+		if checkErr != nil {
+			w.log.Warnw("failed to check bundle protection for blob", "blob_id", blobID, "error", checkErr)
+
+			return true
+		}
+
+		if bundleProtected {
+			w.log.Debugw("skipping cleanup: blob is referenced by a release bundle", "blob_id", blobID)
+
+			return true
+		}
+	}
+
+	return false
+}
+
+// rowBlobBytes returns the combined size of the blobs a row owns, the amount an
+// upload of that row reserved against the repository's quota. A lookup failure
+// yields 0: the row's artifact is still released and the next reconcile
+// corrects the byte count.
+func (w *CleanupWorker) rowBlobBytes(ctx context.Context, conn *sql.DB, blobIDs []string) int64 {
+	var total int64
+
+	for _, blobID := range blobIDs {
+		if blobID == "" {
+			continue
+		}
+
+		var size int64
+		if err := conn.QueryRowContext(ctx, "SELECT size_bytes FROM blobs WHERE id = $1", blobID).Scan(&size); err != nil {
+			if !errors.Is(err, sql.ErrNoRows) {
+				w.log.Warnw("failed to resolve blob size for quota release", "blob_id", blobID, "error", err)
+			}
+
+			continue
+		}
+
+		total += size
+	}
+
+	return total
+}
+
+// quotaRelease is the usage a cleanup run took out of a repository: the summed
+// blob sizes and the number of package rows deleted.
+type quotaRelease struct {
+	bytes int64
+	rows  int
+}
+
+// releaseQuota gives r back to the repository's quota counters. It is detached
+// from ctx cancellation: a run that timed out still deleted its rows.
+func (w *CleanupWorker) releaseQuota(ctx context.Context, repoID string, r quotaRelease) {
+	if r.rows == 0 && r.bytes == 0 {
+		return
+	}
+
+	if err := quota.ReleaseN(ctx, w.db, repoID, r.bytes, r.rows); err != nil {
+		w.log.Warnw("failed to release quota for cleaned-up artifacts",
+			"repository_id", repoID, "artifacts", r.rows, "bytes", r.bytes, "error", err)
+	}
 }

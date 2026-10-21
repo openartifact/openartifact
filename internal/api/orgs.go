@@ -47,6 +47,14 @@ func (h *OrgsHandler) RegisterRoutes(r chi.Router) {
 	r.Delete("/api/v1/orgs/{org}/members/{user_id}", h.handleRemoveMember)
 }
 
+// validOrgMemberRole reports whether level is an organization-wide access
+// level (the access plain members get on the organization's repositories).
+func validOrgMemberRole(level string) bool {
+	return level == models.OrgAccessRead || level == models.OrgAccessWrite || level == models.OrgAccessAdmin
+}
+
+const orgMemberRoleMessage = "member_role must be read, write, or admin"
+
 func validOrgRole(role string) bool {
 	return role == orgRoleOwner || role == orgRoleAdmin || role == orgRoleMember
 }
@@ -168,6 +176,7 @@ func (h *OrgsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		Name        string `json:"name"`
 		DisplayName string `json:"display_name"`
 		Description string `json:"description"`
+		MemberRole  string `json:"member_role"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
@@ -179,12 +188,29 @@ func (h *OrgsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	slug := models.OrgSlug(req.Name)
+	if slug == "" || len(slug) > models.MaxOrgSlugLen {
+		writeError(w, http.StatusBadRequest, "validation_failed", "organization name must yield a URL slug of 1-64 lowercase letters, digits and hyphens")
+		return
+	}
+
+	if req.MemberRole == "" {
+		req.MemberRole = models.OrgAccessRead
+	}
+
+	if !validOrgMemberRole(req.MemberRole) {
+		writeError(w, http.StatusBadRequest, "validation_failed", orgMemberRoleMessage)
+		return
+	}
+
 	now := time.Now()
 	org := &models.Organization{
 		Name:        req.Name,
 		DisplayName: &req.DisplayName,
 		Description: &req.Description,
 		OwnerID:     p.UserID,
+		MemberRole:  req.MemberRole,
+		Slug:        slug,
 		CreatedAt:   now,
 		UpdatedAt:   now,
 	}
@@ -192,7 +218,7 @@ func (h *OrgsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// The unique constraints are authoritative: no check-then-insert race.
 	if err := h.db.CreateOrganization(r.Context(), org); err != nil {
 		if database.IsUniqueViolation(err) {
-			writeError(w, http.StatusConflict, "conflict", "organization name already taken")
+			writeError(w, http.StatusConflict, "conflict", "organization name or slug already taken")
 			return
 		}
 
@@ -262,13 +288,23 @@ func (h *OrgsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	var req struct {
 		DisplayName *string `json:"display_name"`
 		Description *string `json:"description"`
+		MemberRole  *string `json:"member_role"`
 	}
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
+	if req.MemberRole != nil && !validOrgMemberRole(*req.MemberRole) {
+		writeError(w, http.StatusBadRequest, "validation_failed", orgMemberRoleMessage)
+		return
+	}
+
 	org := access.org
+
+	if req.MemberRole != nil {
+		org.MemberRole = *req.MemberRole
+	}
 
 	if req.DisplayName != nil {
 		org.DisplayName = req.DisplayName
@@ -559,6 +595,8 @@ func orgToMap(org *models.Organization) responses.OrganizationResponse {
 		DisplayName: org.DisplayName,
 		Description: org.Description,
 		OwnerID:     org.OwnerID,
+		MemberRole:  org.MemberRole,
+		Slug:        org.Slug,
 		CreatedAt:   formatTime(org.CreatedAt),
 		UpdatedAt:   formatTime(org.UpdatedAt),
 	}

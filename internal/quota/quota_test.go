@@ -67,6 +67,43 @@ func TestReleaseSurvivesCancelledRequest(t *testing.T) {
 	}
 }
 
+func TestReleaseN(t *testing.T) {
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+
+	tests := []struct {
+		name      string
+		size      int64
+		count     int
+		wantSize  int64
+		wantCount int
+		wantCalls bool
+	}{
+		{"batch", 300, 3, 300, 3, true},
+		{"negative size is clamped", -5, 2, 0, 2, true},
+		{"negative count is clamped", 7, -1, 7, 0, true},
+		{"nothing to release makes no call", 0, 0, 0, 0, false},
+		{"all negative makes no call", -1, -1, 0, 0, false},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			db := &reserveMockDB{}
+			if err := ReleaseN(cancelled, db, "repo", tc.size, tc.count); err != nil {
+				t.Fatalf("ReleaseN: %v", err)
+			}
+
+			if db.released != tc.wantSize || db.relCount != tc.wantCount {
+				t.Errorf("released %d bytes / %d artifacts, want %d / %d", db.released, db.relCount, tc.wantSize, tc.wantCount)
+			}
+
+			if tc.wantCalls && !db.relCtxOK {
+				t.Error("release must be detached from a cancelled context")
+			}
+		})
+	}
+}
+
 func TestWriteExceeded(t *testing.T) {
 	rec := httptest.NewRecorder()
 	WriteExceeded(rec)

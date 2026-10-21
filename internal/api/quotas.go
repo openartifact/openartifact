@@ -46,6 +46,7 @@ func (h *QuotasHandler) RegisterRoutes(r chi.Router, pathPrefix string) {
 	r.Get(pathPrefix+"/quota", h.handleGetQuota)
 	r.Put(pathPrefix+"/quota", h.handleUpdateQuota)
 	r.Delete(pathPrefix+"/quota", h.handleDeleteQuota)
+	r.Post(pathPrefix+"/quota/reconcile", h.handleReconcileQuota)
 }
 
 func (h *QuotasHandler) handleGetQuota(w http.ResponseWriter, r *http.Request) {
@@ -200,6 +201,42 @@ func (h *QuotasHandler) handleDeleteQuota(w http.ResponseWriter, r *http.Request
 	}
 
 	writeNoContent(w)
+}
+
+// handleReconcileQuota recomputes the repository's usage counters from its
+// package rows. The counters are incremental and written with asynchronous
+// commits, so a database crash (or a restore) can leave them off; this repairs
+// them without touching the limits.
+func (h *QuotasHandler) handleReconcileQuota(w http.ResponseWriter, r *http.Request) {
+	if !h.requireAdmin(w, r) {
+		return
+	}
+
+	name := urlparams.Vars(r)["name"]
+	ctx := r.Context()
+
+	repo, err := h.db.GetRepositoryByName(ctx, name)
+	if err != nil {
+		h.log.Errorw("reconcile quota: db error getting repo", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return
+	}
+
+	quota, err := h.db.ReconcileStorageUsage(ctx, repo.ID)
+	if err != nil {
+		h.log.Errorw("reconcile quota: db error", "repository", name, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, quotaToMap(quota))
 }
 
 func quotaToMap(q *models.StorageQuota) responses.StorageQuotaResponse {

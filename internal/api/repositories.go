@@ -166,7 +166,7 @@ func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request)
 			}
 
 			for _, repo := range batch {
-				ok, err := canRead(repo.Name)
+				ok, err := canRead(repo)
 				if err == nil && ok {
 					repos = append(repos, repo)
 				}
@@ -205,9 +205,10 @@ func (h *RepositoriesHandler) handleList(w http.ResponseWriter, r *http.Request)
 	}
 
 	filtered := make([]responses.RepositoryResponse, 0, len(repos))
+	orgNames := map[string]string{}
 
 	for _, repo := range repos {
-		filtered = append(filtered, RepositoryToResponse(repo))
+		filtered = append(filtered, h.repositoryResponse(ctx, repo, orgNames))
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -244,7 +245,59 @@ func (h *RepositoriesHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	writeJSON(w, http.StatusOK, RepositoryToResponse(repo))
+	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))
+}
+
+// orgName resolves an organization ID to its name. memo caches lookups across
+// the repositories of one response. An unresolvable organization yields "".
+func (h *RepositoriesHandler) orgName(ctx context.Context, orgID *string, memo map[string]string) string {
+	if orgID == nil {
+		return ""
+	}
+
+	if name, ok := memo[*orgID]; ok {
+		return name
+	}
+
+	org, err := h.db.GetOrganization(ctx, *orgID)
+	if err != nil || org == nil {
+		if err != nil {
+			h.log.Errorw("resolve repository organization: db error", "org_id", *orgID, "error", err)
+		}
+
+		return ""
+	}
+
+	memo[*orgID] = org.Name
+
+	return org.Name
+}
+
+// repositoryResponse is RepositoryToResponse plus the owning organization's name.
+func (h *RepositoriesHandler) repositoryResponse(ctx context.Context, repo *models.Repository, orgNames map[string]string) responses.RepositoryResponse {
+	resp := RepositoryToResponse(repo)
+	resp.Org = h.orgName(ctx, repo.OrgID, orgNames)
+
+	return resp
+}
+
+// resolveOrg looks an organization up by name for a create/move request. It
+// writes the error response (404 for an unknown name) and returns nil on failure.
+func (h *RepositoriesHandler) resolveOrg(ctx context.Context, w http.ResponseWriter, name string) *models.Organization {
+	org, err := h.db.GetOrganizationByName(ctx, name)
+	if err != nil {
+		h.log.Errorw("resolve organization: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return nil
+	}
+
+	if org == nil {
+		writeError(w, http.StatusNotFound, "not_found", "organization not found")
+		return nil
+	}
+
+	return org
 }
 
 // validateUpstreamURL rejects non-http(s) schemes and private/metadata hosts.
@@ -401,6 +454,9 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		NegativeCacheTTLSeconds int      `json:"negative_cache_ttl_seconds"`
 		MaxStaleSeconds         *int     `json:"max_stale_seconds"`
 		MemberRepos             []string `json:"member_repos"`
+		// Org is the owning organization's name; empty means the built-in
+		// system organization.
+		Org string `json:"org"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
@@ -513,9 +569,19 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	systemOrgID := "00000000-0000-0000-0000-000000000001"
+	orgID := models.SystemOrgID
+
+	if body.Org != "" {
+		org := h.resolveOrg(r.Context(), w, body.Org)
+		if org == nil {
+			return
+		}
+
+		orgID = org.ID
+	}
+
 	now := time.Now()
-	repo.OrgID = &systemOrgID
+	repo.OrgID = &orgID
 	repo.CreatedAt = now
 	repo.UpdatedAt = now
 
@@ -534,7 +600,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventRepoCreated,
 		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
-	writeJSON(w, http.StatusCreated, RepositoryToResponse(repo))
+	writeJSON(w, http.StatusCreated, h.repositoryResponse(r.Context(), repo, map[string]string{}))
 }
 
 //nolint:gocyclo,cyclop // validation-heavy request handler
@@ -576,6 +642,8 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		MaxStaleSeconds         *int      `json:"max_stale_seconds"`
 		Blocked                 *bool     `json:"blocked"`
 		MemberRepos             *[]string `json:"member_repos"`
+		// Org moves the repository to the named organization.
+		Org *string `json:"org"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
@@ -666,6 +734,15 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		repo.Blocked = *body.Blocked
 	}
 
+	if body.Org != nil {
+		org := h.resolveOrg(ctx, w, *body.Org)
+		if org == nil {
+			return
+		}
+
+		repo.OrgID = &org.ID
+	}
+
 	var memberIDs []string
 
 	if body.MemberRepos != nil {
@@ -679,6 +756,11 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a repository with this name already exists")
+			return
+		}
+
 		h.log.Errorw("update repository: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
@@ -694,7 +776,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		}
 	}
 
-	writeJSON(w, http.StatusOK, RepositoryToResponse(repo))
+	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))
 }
 
 func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Request) {

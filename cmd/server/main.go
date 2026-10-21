@@ -8,6 +8,7 @@ import (
 	"context"
 	"crypto/subtle"
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"net/http"
@@ -72,31 +73,60 @@ var (
 )
 
 func main() {
-	startTime := time.Now()
-	migrateFlag := flag.Bool("migrate", false, "run migrations and exit")
-	configFile := flag.String("config", os.Getenv("OPENARTIFACT_CONFIG"), "path to YAML config file")
+	if err := run(os.Args[1:]); err != nil {
+		if _, reported := errors.AsType[reportedError](err); !reported {
+			fmt.Fprintf(os.Stderr, "openartifact-server: %v\n", err)
+		}
 
-	flag.Parse()
+		os.Exit(1)
+	}
+}
+
+var errVerifyUsage = errors.New("usage: openartifact-server verify <config.yaml>")
+
+// reportedError marks a failure the operator has already seen (structured log
+// line or flag usage), so main exits non-zero without printing it again.
+type reportedError struct{ error }
+
+func (e reportedError) Unwrap() error { return e.error }
+
+// run is the whole server lifetime: it returns nil after a clean shutdown (or
+// for -migrate, verify and -h) and an error for every startup or runtime
+// failure, so the process never exits 0 while the service is not running.
+func run(args []string) error {
+	startTime := time.Now()
+
+	flags := flag.NewFlagSet("openartifact-server", flag.ContinueOnError)
+	migrateFlag := flags.Bool("migrate", false, "run migrations and exit")
+	configFile := flags.String("config", os.Getenv("OPENARTIFACT_CONFIG"), "path to YAML config file")
+
+	if err := flags.Parse(args); err != nil {
+		if errors.Is(err, flag.ErrHelp) {
+			return nil
+		}
+
+		// The FlagSet already printed the problem and the usage text.
+		return reportedError{err}
+	}
 
 	// Handle 'verify' subcommand: openartifact-server verify config.yaml
-	if flag.NArg() > 0 && flag.Arg(0) == "verify" {
+	if flags.NArg() > 0 && flags.Arg(0) == "verify" {
 		path := *configFile
-		if flag.NArg() > 1 {
-			path = flag.Arg(1)
+		if flags.NArg() > 1 {
+			path = flags.Arg(1)
 		}
 
 		if path == "" {
-			fmt.Fprintln(os.Stderr, "Usage: openartifact-server verify <config.yaml>")
-			os.Exit(1)
+			return errVerifyUsage
 		}
 
 		if err := config.ValidateFile(path); err != nil {
-			fmt.Fprintf(os.Stderr, "Config validation failed: %v\n", err)
-			os.Exit(1)
+			return fmt.Errorf("config validation failed: %w", err)
 		}
 
 		fmt.Printf("Config file %q is valid.\n", path)
-		os.Exit(0)
+
+		return nil
 	}
 
 	migrateOnStart := os.Getenv("MIGRATE_ON_START") != "false"
@@ -104,27 +134,31 @@ func main() {
 	// Load configuration
 	cfg, err := config.Load(*configFile)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to load configuration: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to load configuration: %w", err)
 	}
 
 	if err := cfg.Validate(); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid configuration: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("invalid configuration: %w", err)
 	}
 
 	if err := crypto.InitFromEnv(); err != nil {
-		fmt.Fprintf(os.Stderr, "Invalid %s: %v\n", crypto.EnvKey, err)
-		os.Exit(1)
+		return fmt.Errorf("invalid %s: %w", crypto.EnvKey, err)
 	}
 
 	// Initialize logger
 	log, err := logger.New(cfg.Logger.Level, cfg.Logger.Format, cfg.Logger.OutputPath)
 	if err != nil {
-		fmt.Fprintf(os.Stderr, "Failed to initialize logger: %v\n", err)
-		os.Exit(1)
+		return fmt.Errorf("failed to initialize logger: %w", err)
 	}
 	defer func() { _ = log.Sync() }()
+
+	// fail logs a fatal startup/runtime error through the structured logger and
+	// returns it for main to turn into a non-zero exit status.
+	fail := func(msg string, err error) error {
+		log.Errorw(msg, "error", err)
+
+		return reportedError{fmt.Errorf("%s: %w", msg, err)}
+	}
 
 	if !crypto.Enabled() {
 		log.Warnw("OPENARTIFACT_SECRET_KEY not set: webhook secrets, upstream passwords and other stored credentials are NOT encrypted at rest")
@@ -141,8 +175,7 @@ func main() {
 	// Initialize database
 	db, err := database.NewPostgresDB(cfg.Database, log)
 	if err != nil {
-		log.Errorw("Failed to connect to database", "error", err)
-		return
+		return fail("failed to connect to database", err)
 	}
 	defer func() { _ = db.Close() }()
 
@@ -153,19 +186,17 @@ func main() {
 
 	if *migrateFlag {
 		if err := db.Migrate(context.Background()); err != nil {
-			log.Errorw("Migration failed", "error", err)
-			return
+			return fail("migration failed", err)
 		}
 
 		log.Infow("Migrations applied successfully")
 
-		return
+		return nil
 	}
 
 	if migrateOnStart {
 		if err := db.Migrate(context.Background()); err != nil {
-			log.Errorw("Auto-migrate failed", "error", err)
-			return
+			return fail("auto-migrate failed", err)
 		}
 	} else {
 		log.Warnw("MIGRATE_ON_START=false: automatic migrations skipped")
@@ -174,8 +205,7 @@ func main() {
 	auth.ConfigureSessionDuration(time.Duration(cfg.Auth.SessionDurationHours) * time.Hour)
 
 	if err := auth.BootstrapIfEmpty(context.Background(), db, log); err != nil {
-		log.Errorw("Bootstrap failed", "error", err)
-		return
+		return fail("bootstrap failed", err)
 	}
 
 	reg := metrics.NewRegistry()
@@ -186,8 +216,7 @@ func main() {
 	// Initialize storage
 	rawBlobStore, err := storage.NewBlobStore(cfg.Storage)
 	if err != nil {
-		log.Errorw("Failed to initialize storage", "error", err)
-		return
+		return fail("failed to initialize storage", err)
 	}
 
 	blobStore := storage.NewMetricsBlobStore(rawBlobStore, reg)
@@ -769,18 +798,24 @@ func main() {
 
 	// Start server
 	if err := server.Start(context.Background()); err != nil {
-		log.Errorw("Failed to start server", "error", err)
-		return
+		return fail("failed to start server", err)
 	}
 
 	log.Infow("Server started", "address", addr)
 
-	// Wait for interrupt signal
+	// Wait for an interrupt, or for the accept loop to die underneath us. The
+	// latter still runs the ordered shutdown below, then exits non-zero.
 	sigChan := make(chan os.Signal, 1)
 	signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-	<-sigChan
 
-	log.Infow("Shutdown signal received, gracefully stopping")
+	var serveErr error
+
+	select {
+	case <-sigChan:
+		log.Infow("Shutdown signal received, gracefully stopping")
+	case serveErr = <-server.ServeErrors():
+		log.Errorw("HTTP server stopped unexpectedly, shutting down", "error", serveErr)
+	}
 
 	// Graceful shutdown
 	ctx, cancel := context.WithTimeout(context.Background(), time.Duration(cfg.Server.ShutdownTimeout)*time.Second)
@@ -802,7 +837,13 @@ func main() {
 		log.Warnw("Audit logger shutdown incomplete", "error", err)
 	}
 
+	if serveErr != nil {
+		return reportedError{serveErr}
+	}
+
 	log.Infow("Server stopped successfully")
+
+	return nil
 }
 
 // metricsAuthMiddleware fails closed: with no token configured the endpoint

@@ -537,6 +537,8 @@ type Organization struct {
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 	// URL-safe identifier for the organization, e.g. "my-org"
 	Slug string `db:"slug" json:"slug"`
+	// Access level (read, write, admin) every plain member of the organization gets on the organization's repositories. Owners and admins always get admin. Ignored for the built-in system organization.
+	MemberRole string `db:"member_role" json:"member_role"`
 }
 
 // Organization membership with roles (owner, admin, member)

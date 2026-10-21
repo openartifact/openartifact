@@ -143,6 +143,10 @@ export type Repository = {
      * Last update timestamp
      */
     updated_at?: string;
+    /**
+     * Name of the organization that owns the repository (the built-in 'system' organization unless set at creation or moved). Members of any other organization get access to the repository according to their role; see docs/security/rbac.md.
+     */
+    org?: string;
 };
 
 export type RepositoryMember = {
@@ -353,6 +357,15 @@ export type Organization = {
     description?: string;
     created_at?: string;
     updated_at?: string;
+    /**
+     * Access level plain organization members get on every repository the organization owns: read, write (read+write) or admin (read+write+delete). Owners and admins of the organization always get admin. Never grants manage. Ignored for the built-in system organization. Default read.
+     */
+    member_role?: 'read' | 'write' | 'admin';
+    owner_id?: string | null;
+    /**
+     * URL-safe unique identifier derived from the name: lowercased, runs of characters outside a-z0-9 collapsed to '-', at most 64 characters. A name or slug collision on create returns 409.
+     */
+    slug?: string;
 };
 
 export type OrgMember = {
@@ -716,6 +729,10 @@ export type PostApiV1RepositoriesData = {
          * For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested.
          */
         member_repos?: Array<string>;
+        /**
+         * Name of the owning organization. Defaults to the built-in system organization, whose membership grants nothing. Unknown organization: 404.
+         */
+        org?: string;
     };
     path?: never;
     query?: never;
@@ -1479,6 +1496,35 @@ export type PutApiV1RepositoriesByNameQuotaResponses = {
      */
     200: unknown;
 };
+
+export type PostApiV1RepositoriesByNameQuotaReconcileData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/quota/reconcile';
+};
+
+export type PostApiV1RepositoriesByNameQuotaReconcileErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type PostApiV1RepositoriesByNameQuotaReconcileResponses = {
+    /**
+     * Quota with the recomputed usage
+     */
+    200: Quota;
+};
+
+export type PostApiV1RepositoriesByNameQuotaReconcileResponse = PostApiV1RepositoriesByNameQuotaReconcileResponses[keyof PostApiV1RepositoriesByNameQuotaReconcileResponses];
 
 export type GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesData = {
     body?: never;
@@ -3140,10 +3186,25 @@ export type PostApiV1OrgsData = {
         name: string;
         display_name?: string;
         description?: string;
+        /**
+         * Access level plain organization members get on every repository the organization owns: read, write (read+write) or admin (read+write+delete). Owners and admins of the organization always get admin. Never grants manage. Ignored for the built-in system organization. Default read.
+         */
+        member_role?: 'read' | 'write' | 'admin';
     };
     path?: never;
     query?: never;
     url: '/api/v1/orgs';
+};
+
+export type PostApiV1OrgsErrors = {
+    /**
+     * Invalid name, slug or member_role
+     */
+    400: unknown;
+    /**
+     * Organization name or slug already taken
+     */
+    409: unknown;
 };
 
 export type PostApiV1OrgsResponses = {
@@ -3209,6 +3270,10 @@ export type PutApiV1OrgsByOrgData = {
     body: {
         display_name?: string;
         description?: string;
+        /**
+         * Access level plain organization members get on every repository the organization owns: read, write (read+write) or admin (read+write+delete). Owners and admins of the organization always get admin. Never grants manage. Ignored for the built-in system organization. Default read.
+         */
+        member_role?: 'read' | 'write' | 'admin';
     };
     path: {
         org: string;
@@ -3508,6 +3573,10 @@ export type PatchApiV1RepositoryByNameData = {
         max_stale_seconds?: number;
         blocked?: boolean;
         member_repos?: Array<string>;
+        /**
+         * Move the repository to the named organization (global admin only; unknown organization: 404). Access of the old and new organization's members changes immediately.
+         */
+        org?: string;
     };
     path: {
         name: string;

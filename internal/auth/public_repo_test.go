@@ -131,7 +131,7 @@ func TestRepoReadFilterAnonymousIncludesPublic(t *testing.T) {
 		}
 
 		for name, want := range map[string]bool{"pub": true, "pubgrp": true, "priv": false, "nope": false} {
-			got, err := f(name)
+			got, err := f(&models.Repository{Name: name})
 			if err != nil {
 				t.Fatal(err)
 			}

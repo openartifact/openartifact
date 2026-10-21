@@ -766,6 +766,12 @@ func (m *BaseMockDB) CountBlobsOnStorageBackend(ctx context.Context, backendID s
 func (m *BaseMockDB) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
 	return false, errNotImpl("ReserveStorageUsage")
 }
+func (m *BaseMockDB) ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error) {
+	return nil, errNotImpl("ReconcileStorageUsage")
+}
+func (m *BaseMockDB) ReconcileAllStorageUsage(ctx context.Context) (int64, error) {
+	return 0, errNotImpl("ReconcileAllStorageUsage")
+}
 func (m *BaseMockDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error {
 	return errNotImpl("ReplaceGroupMembers")
 }
@@ -846,6 +852,12 @@ func (m *BaseMockDB) ListOrgMembers(ctx context.Context, orgID string) ([]*model
 }
 func (m *BaseMockDB) GetOrgMember(ctx context.Context, orgID, userID string) (*models.OrgMember, error) {
 	return nil, errNotImpl("GetOrgMember")
+}
+
+// ListOrgGrantsByUser reports no memberships: the evaluator consults it for
+// every request a permission target did not already allow.
+func (m *BaseMockDB) ListOrgGrantsByUser(ctx context.Context, userID string) ([]*models.OrgGrant, error) {
+	return nil, nil
 }
 func (m *BaseMockDB) UpdateOrgMemberRole(ctx context.Context, orgID, userID, role string) error {
 	return errNotImpl("UpdateOrgMemberRole")

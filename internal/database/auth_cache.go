@@ -6,6 +6,7 @@ package database
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"sync"
 	"time"
@@ -44,6 +45,7 @@ type authCache struct {
 	groups map[string]cacheEntry[[]*models.Group]
 	perms  map[string]cacheEntry[[]*models.PermissionTarget]
 	repos  map[string]cacheEntry[*models.Repository]
+	orgs   map[string]cacheEntry[[]*models.OrgGrant]
 }
 
 type cacheEntry[V any] struct {
@@ -71,7 +73,7 @@ func (c *authCache) invalidate() {
 	defer c.mu.Unlock()
 
 	c.gen++
-	c.tokens, c.users, c.groups, c.perms, c.repos = nil, nil, nil, nil, nil
+	c.tokens, c.users, c.groups, c.perms, c.repos, c.orgs = nil, nil, nil, nil, nil, nil
 }
 
 // cachedLookup returns the cached value for key in *m, or runs load and caches
@@ -154,6 +156,17 @@ func clonePermTargets(ts []*models.PermissionTarget) []*models.PermissionTarget 
 	return out
 }
 
+func cloneOrgGrants(gs []*models.OrgGrant) []*models.OrgGrant {
+	out := make([]*models.OrgGrant, len(gs))
+
+	for i, g := range gs {
+		cp := *g
+		out[i] = &cp
+	}
+
+	return out
+}
+
 // GetTokenByHash returns the token with the given hash, from the auth cache
 // when fresh.
 func (p *PostgresDB) GetTokenByHash(ctx context.Context, hash string) (*models.Token, error) {
@@ -194,4 +207,28 @@ func (p *PostgresDB) GetRepositoryByName(ctx context.Context, name string) (*mod
 	return cachedLookup(ctx, &p.authCache, &p.authCache.repos, name, cloneRepo,
 		func(r *models.Repository) bool { return r == nil },
 		func(ctx context.Context) (*models.Repository, error) { return p.GetRepositoryByNameUncached(ctx, name) })
+}
+
+// ListOrgGrantsByUser returns the organization memberships of a user (see
+// models.OrgGrant), from the auth cache when fresh.
+func (p *PostgresDB) ListOrgGrantsByUser(ctx context.Context, userID string) ([]*models.OrgGrant, error) {
+	return cachedLookup(ctx, &p.authCache, &p.authCache.orgs, userID, cloneOrgGrants,
+		func([]*models.OrgGrant) bool { return false },
+		func(ctx context.Context) ([]*models.OrgGrant, error) {
+			return p.listOrgGrantsByUserUncached(ctx, userID)
+		})
+}
+
+func (p *PostgresDB) listOrgGrantsByUserUncached(ctx context.Context, userID string) ([]*models.OrgGrant, error) {
+	rows, err := p.q.ListOrgGrantsByUser(ctx, &userID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list organization grants: %w", err)
+	}
+
+	grants := make([]*models.OrgGrant, 0, len(rows))
+	for _, row := range rows {
+		grants = append(grants, &models.OrgGrant{OrgID: row.OrgID, Role: row.Role, MemberRole: row.MemberRole})
+	}
+
+	return grants, nil
 }

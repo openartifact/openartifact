@@ -12,10 +12,11 @@ import (
 
 // RepoReadFilter returns a predicate reporting whether the principal may read a
 // repository by name. The principal's permission targets are loaded once, so
-// filtering N repositories costs one query instead of N.
-func (e *Evaluator) RepoReadFilter(ctx context.Context, principal Principal) (func(repoName string) (bool, error), error) {
+// filtering N repositories costs one query instead of N. Organization
+// memberships apply as in Evaluate (decided from the repository's OrgID).
+func (e *Evaluator) RepoReadFilter(ctx context.Context, principal Principal) (func(repo *models.Repository) (bool, error), error) {
 	if principal.IsLegacy {
-		return func(string) (bool, error) { return true, nil }, nil
+		return func(*models.Repository) (bool, error) { return true, nil }, nil
 	}
 
 	if principal.IsAnonymous {
@@ -38,7 +39,9 @@ func (e *Evaluator) RepoReadFilter(ctx context.Context, principal Principal) (fu
 			}
 		}
 
-		return func(repoName string) (bool, error) {
+		return func(repo *models.Repository) (bool, error) {
+			repoName := repo.Name
+
 			if _, ok := public[repoName]; ok {
 				return true, nil
 			}
@@ -56,9 +59,20 @@ func (e *Evaluator) RepoReadFilter(ctx context.Context, principal Principal) (fu
 		return nil, err
 	}
 
-	return func(repoName string) (bool, error) {
+	levels, err := e.orgLevels(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+
+	return func(repo *models.Repository) (bool, error) {
+		if repo.OrgID != nil {
+			if level, ok := levels[*repo.OrgID]; ok && orgLevelAllows(level, "read") {
+				return true, nil
+			}
+		}
+
 		for _, target := range targets {
-			ok, err := e.matchTarget(target, repoName, "", "read")
+			ok, err := e.matchTarget(target, repo.Name, "", "read")
 			if err != nil {
 				return false, err
 			}

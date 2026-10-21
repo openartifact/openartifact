@@ -30,16 +30,18 @@ func (q *Queries) AddOrgMember(ctx context.Context, arg AddOrgMemberParams) (tim
 }
 
 const createOrganization = `-- name: CreateOrganization :one
-INSERT INTO organizations (id, name, display_name, description, owner_id)
-VALUES (gen_random_uuid(), $1, $2, $3, $4)
+INSERT INTO organizations (id, name, slug, display_name, description, owner_id, member_role)
+VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, $6)
 RETURNING id, created_at, updated_at
 `
 
 type CreateOrganizationParams struct {
 	Name        string  `db:"name" json:"name"`
+	Slug        string  `db:"slug" json:"slug"`
 	DisplayName *string `db:"display_name" json:"display_name"`
 	Description *string `db:"description" json:"description"`
 	OwnerID     *string `db:"owner_id" json:"owner_id"`
+	MemberRole  string  `db:"member_role" json:"member_role"`
 }
 
 type CreateOrganizationRow struct {
@@ -51,9 +53,11 @@ type CreateOrganizationRow struct {
 func (q *Queries) CreateOrganization(ctx context.Context, arg CreateOrganizationParams) (CreateOrganizationRow, error) {
 	row := q.db.QueryRow(ctx, createOrganization,
 		arg.Name,
+		arg.Slug,
 		arg.DisplayName,
 		arg.Description,
 		arg.OwnerID,
+		arg.MemberRole,
 	)
 	var i CreateOrganizationRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -101,7 +105,7 @@ func (q *Queries) GetOrgMember(ctx context.Context, arg GetOrgMemberParams) (Get
 }
 
 const getOrganization = `-- name: GetOrganization :one
-SELECT id, name, display_name, description, owner_id, created_at, updated_at
+SELECT id, name, display_name, description, owner_id, member_role, slug, created_at, updated_at
 FROM organizations WHERE id = $1
 `
 
@@ -111,6 +115,8 @@ type GetOrganizationRow struct {
 	DisplayName *string   `db:"display_name" json:"display_name"`
 	Description *string   `db:"description" json:"description"`
 	OwnerID     *string   `db:"owner_id" json:"owner_id"`
+	MemberRole  string    `db:"member_role" json:"member_role"`
+	Slug        string    `db:"slug" json:"slug"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
@@ -124,6 +130,8 @@ func (q *Queries) GetOrganization(ctx context.Context, id string) (GetOrganizati
 		&i.DisplayName,
 		&i.Description,
 		&i.OwnerID,
+		&i.MemberRole,
+		&i.Slug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -131,7 +139,7 @@ func (q *Queries) GetOrganization(ctx context.Context, id string) (GetOrganizati
 }
 
 const getOrganizationByName = `-- name: GetOrganizationByName :one
-SELECT id, name, display_name, description, owner_id, created_at, updated_at
+SELECT id, name, display_name, description, owner_id, member_role, slug, created_at, updated_at
 FROM organizations WHERE name = $1
 `
 
@@ -141,6 +149,8 @@ type GetOrganizationByNameRow struct {
 	DisplayName *string   `db:"display_name" json:"display_name"`
 	Description *string   `db:"description" json:"description"`
 	OwnerID     *string   `db:"owner_id" json:"owner_id"`
+	MemberRole  string    `db:"member_role" json:"member_role"`
+	Slug        string    `db:"slug" json:"slug"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
@@ -154,10 +164,49 @@ func (q *Queries) GetOrganizationByName(ctx context.Context, name string) (GetOr
 		&i.DisplayName,
 		&i.Description,
 		&i.OwnerID,
+		&i.MemberRole,
+		&i.Slug,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
 	return i, err
+}
+
+const listOrgGrantsByUser = `-- name: ListOrgGrantsByUser :many
+SELECT o.id AS org_id,
+       (CASE WHEN o.owner_id = $1 THEN 'owner' ELSE om.role END)::text AS role,
+       o.member_role
+FROM organizations o
+LEFT JOIN organization_members om ON om.org_id = o.id AND om.user_id = $1
+WHERE o.owner_id = $1 OR om.user_id IS NOT NULL
+`
+
+type ListOrgGrantsByUserRow struct {
+	OrgID      string `db:"org_id" json:"org_id"`
+	Role       string `db:"role" json:"role"`
+	MemberRole string `db:"member_role" json:"member_role"`
+}
+
+// Every organization the user belongs to (membership row or recorded owner)
+// with the effective membership role; the recorded owner always counts as owner.
+func (q *Queries) ListOrgGrantsByUser(ctx context.Context, ownerID *string) ([]ListOrgGrantsByUserRow, error) {
+	rows, err := q.db.Query(ctx, listOrgGrantsByUser, ownerID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListOrgGrantsByUserRow{}
+	for rows.Next() {
+		var i ListOrgGrantsByUserRow
+		if err := rows.Scan(&i.OrgID, &i.Role, &i.MemberRole); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
 }
 
 const listOrgMembers = `-- name: ListOrgMembers :many
@@ -200,7 +249,7 @@ func (q *Queries) ListOrgMembers(ctx context.Context, orgID string) ([]ListOrgMe
 }
 
 const listOrganizationsByUser = `-- name: ListOrganizationsByUser :many
-SELECT DISTINCT o.id, o.name, o.display_name, o.description, o.owner_id, o.created_at, o.updated_at
+SELECT DISTINCT o.id, o.name, o.display_name, o.description, o.owner_id, o.member_role, o.slug, o.created_at, o.updated_at
 FROM organizations o
 LEFT JOIN organization_members om ON o.id = om.org_id
 WHERE o.owner_id = $1 OR om.user_id = $1
@@ -213,6 +262,8 @@ type ListOrganizationsByUserRow struct {
 	DisplayName *string   `db:"display_name" json:"display_name"`
 	Description *string   `db:"description" json:"description"`
 	OwnerID     *string   `db:"owner_id" json:"owner_id"`
+	MemberRole  string    `db:"member_role" json:"member_role"`
+	Slug        string    `db:"slug" json:"slug"`
 	CreatedAt   time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt   time.Time `db:"updated_at" json:"updated_at"`
 }
@@ -232,6 +283,8 @@ func (q *Queries) ListOrganizationsByUser(ctx context.Context, ownerID *string) 
 			&i.DisplayName,
 			&i.Description,
 			&i.OwnerID,
+			&i.MemberRole,
+			&i.Slug,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -275,13 +328,14 @@ func (q *Queries) UpdateOrgMemberRole(ctx context.Context, arg UpdateOrgMemberRo
 }
 
 const updateOrganization = `-- name: UpdateOrganization :exec
-UPDATE organizations SET display_name = $1, description = $2, owner_id = $3, updated_at = now() WHERE id = $4
+UPDATE organizations SET display_name = $1, description = $2, owner_id = $3, member_role = $4, updated_at = now() WHERE id = $5
 `
 
 type UpdateOrganizationParams struct {
 	DisplayName *string `db:"display_name" json:"display_name"`
 	Description *string `db:"description" json:"description"`
 	OwnerID     *string `db:"owner_id" json:"owner_id"`
+	MemberRole  string  `db:"member_role" json:"member_role"`
 	ID          string  `db:"id" json:"id"`
 }
 
@@ -290,6 +344,7 @@ func (q *Queries) UpdateOrganization(ctx context.Context, arg UpdateOrganization
 		arg.DisplayName,
 		arg.Description,
 		arg.OwnerID,
+		arg.MemberRole,
 		arg.ID,
 	)
 	return err

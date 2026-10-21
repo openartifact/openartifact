@@ -909,6 +909,16 @@ type restoreState struct {
 	orgIDMap        map[string]string // old organizations id -> new
 	npmPackageIDMap map[string]string // old npm_packages id -> new
 	failures        int               // records skipped/failed outside Engine methods
+	// orgRepos are restored repositories that belonged to a non-system
+	// organization. Repositories are restored before organizations, so they are
+	// inserted into the system organization and moved once the organization
+	// exists (restoreOrganizations).
+	orgRepos []orgRepo
+}
+
+type orgRepo struct {
+	repo     *models.Repository
+	oldOrgID string
 }
 
 func newRestoreState() *restoreState {
@@ -922,6 +932,16 @@ func newRestoreState() *restoreState {
 		bundleIDMap:     map[string]string{},
 		orgIDMap:        map[string]string{},
 		npmPackageIDMap: map[string]string{},
+	}
+}
+
+// reconcileQuotaUsage recounts every repository's storage quota usage after a
+// restore. Restored package rows are inserted directly, without reserving
+// quota, and quota rows are not part of a backup, so enforcement would
+// otherwise start from zero. Not fatal: the periodic reconcile would catch up.
+func (e *Engine) reconcileQuotaUsage(ctx context.Context) {
+	if _, err := e.db.ReconcileAllStorageUsage(ctx); err != nil {
+		e.log.Warnw("failed to reconcile quota usage after restore", "error", err)
 	}
 }
 
@@ -1023,6 +1043,8 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 			return fmt.Errorf("failed to restore %s: %w", header.Name, err)
 		}
 	}
+
+	e.reconcileQuotaUsage(ctx)
 
 	if failed := e.restoreFailures.Load() + int64(st.failures); failed > 0 {
 		e.log.Errorw("restore completed with failures", "backup_path", backupPath, "failed", failed)
@@ -1314,12 +1336,24 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 
 	for _, repo := range repos {
 		oldID := repo.ID
+
+		oldOrgID := ""
+		if repo.OrgID != nil && *repo.OrgID != models.SystemOrgID {
+			oldOrgID = *repo.OrgID
+			sys := models.SystemOrgID
+			repo.OrgID = &sys
+		}
+
 		if err := e.db.CreateRepository(ctx, repo); err != nil {
 			e.restoreWarn("failed to restore repository", "name", repo.Name, "error", err)
 			continue
 		}
 
 		st.repoIDMap[oldID] = repo.ID
+
+		if oldOrgID != "" {
+			st.orgRepos = append(st.orgRepos, orgRepo{repo: repo, oldOrgID: oldOrgID})
+		}
 	}
 
 	return nil
@@ -1850,7 +1884,29 @@ func (e *Engine) restoreOrganizations(ctx context.Context, r io.Reader, st *rest
 		st.orgIDMap[oldID] = it.ID
 	}
 
+	e.moveRestoredReposToOrgs(ctx, st)
+
 	return nil
+}
+
+// moveRestoredReposToOrgs puts restored repositories back into their
+// organization. One whose organization was not restored (for example the name
+// already exists) stays in the system organization, which grants nothing.
+func (e *Engine) moveRestoredReposToOrgs(ctx context.Context, st *restoreState) {
+	for _, it := range st.orgRepos {
+		newOrgID, ok := st.orgIDMap[it.oldOrgID]
+		if !ok {
+			e.restoreWarn("repository stays in the system organization: its organization was not restored", "repository", it.repo.Name)
+			continue
+		}
+
+		it.repo.OrgID = &newOrgID
+		if err := e.db.UpdateRepository(ctx, it.repo); err != nil {
+			e.restoreWarn("failed to move restored repository into its organization", "repository", it.repo.Name, "error", err)
+		}
+	}
+
+	st.orgRepos = nil
 }
 
 func (e *Engine) restoreOrgMembers(ctx context.Context, r io.Reader, st *restoreState) error {

@@ -76,8 +76,11 @@ type RepositoryResponse struct {
 	Description *string `json:"description"`
 	Public      bool    `json:"public"`
 	RepoType    string  `json:"repo_type"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	// Org is the name of the organization that owns the repository. Its
+	// members get access to the repository (see docs/security/rbac.md).
+	Org       string `json:"org,omitempty"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 
 	// Proxy repositories only. The upstream password is never returned.
 	UpstreamURL             string `json:"upstream_url,omitempty"`
@@ -149,8 +152,13 @@ type OrganizationResponse struct {
 	DisplayName *string `json:"display_name"`
 	Description *string `json:"description"`
 	OwnerID     *string `json:"owner_id"`
-	CreatedAt   string  `json:"created_at"`
-	UpdatedAt   string  `json:"updated_at"`
+	// MemberRole is the access level (read, write, admin) plain members get on
+	// the organization's repositories.
+	MemberRole string `json:"member_role"`
+	// Slug is the URL-safe unique identifier derived from the name.
+	Slug      string `json:"slug"`
+	CreatedAt string `json:"created_at"`
+	UpdatedAt string `json:"updated_at"`
 }
 
 // OrgMemberResponse represents an org member in API responses.

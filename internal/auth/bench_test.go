@@ -208,7 +208,7 @@ func BenchmarkRepoReadFilter(b *testing.B) {
 					}
 
 					for _, name := range names {
-						_, _ = canRead(name)
+						_, _ = canRead(&models.Repository{Name: name})
 					}
 				}
 			})

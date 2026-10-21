@@ -316,6 +316,10 @@
             "type": "string",
             "format": "date-time",
             "description": "Last update timestamp"
+          },
+          "org": {
+            "type": "string",
+            "description": "Name of the organization that owns the repository (the built-in 'system' organization unless set at creation or moved). Members of any other organization get access to the repository according to their role; see docs/security/rbac.md."
           }
         },
         "required": [
@@ -906,6 +910,24 @@
           "updated_at": {
             "type": "string",
             "format": "date-time"
+          },
+          "member_role": {
+            "type": "string",
+            "enum": [
+              "read",
+              "write",
+              "admin"
+            ],
+            "description": "Access level plain organization members get on every repository the organization owns: read, write (read+write) or admin (read+write+delete). Owners and admins of the organization always get admin. Never grants manage. Ignored for the built-in system organization. Default read."
+          },
+          "owner_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
+          },
+          "slug": {
+            "type": "string",
+            "description": "URL-safe unique identifier derived from the name: lowercased, runs of characters outside a-z0-9 collapsed to '-', at most 64 characters. A name or slug collision on create returns 409."
           }
         }
       },
@@ -1570,6 +1592,10 @@
                       "type": "string"
                     },
                     "description": "For group repos: ordered member repository names (first hit wins). Members must be hosted or proxy repositories of the group's format; groups cannot be nested."
+                  },
+                  "org": {
+                    "type": "string",
+                    "description": "Name of the owning organization. Defaults to the built-in system organization, whose membership grants nothing. Unknown organization: 404."
                   }
                 },
                 "required": [
@@ -2923,6 +2949,43 @@
         "responses": {
           "204": {
             "description": "Quota deleted"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/quota/reconcile": {
+      "post": {
+        "summary": "Reconcile repository quota usage",
+        "description": "Recompute the repository's usage counters (size and artifact count) from its package rows, correcting drift left by a database crash or a restore. Limits are unchanged. Admin only.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Quota with the recomputed usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Quota"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository not found"
           }
         }
       }
@@ -5695,7 +5758,7 @@
     "/api/v1/orgs": {
       "get": {
         "summary": "List organizations",
-        "description": "List all organizations",
+        "description": "List all organizations Requires the global manage permission (administrators); organization roles do not open this API.",
         "tags": [
           "Organizations"
         ],
@@ -5722,7 +5785,7 @@
       },
       "post": {
         "summary": "Create organization",
-        "description": "Create a new organization",
+        "description": "Create a new organization Requires the global manage permission (administrators); organization roles do not open this API.",
         "tags": [
           "Organizations"
         ],
@@ -5741,6 +5804,15 @@
                   },
                   "description": {
                     "type": "string"
+                  },
+                  "member_role": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "write",
+                      "admin"
+                    ],
+                    "description": "Access level plain organization members get on every repository the organization owns: read, write (read+write) or admin (read+write+delete). Owners and admins of the organization always get admin. Never grants manage. Ignored for the built-in system organization. Default read."
                   }
                 },
                 "required": [
@@ -5760,6 +5832,12 @@
                 }
               }
             }
+          },
+          "409": {
+            "description": "Organization name or slug already taken"
+          },
+          "400": {
+            "description": "Invalid name, slug or member_role"
           }
         }
       }
@@ -5767,7 +5845,7 @@
     "/api/v1/orgs/{org}": {
       "get": {
         "summary": "Get organization",
-        "description": "Get details of a specific organization",
+        "description": "Get details of a specific organization Requires the global manage permission (administrators); organization roles do not open this API.",
         "tags": [
           "Organizations"
         ],
@@ -5799,7 +5877,7 @@
       },
       "put": {
         "summary": "Update organization",
-        "description": "Update an organization",
+        "description": "Update an organization Requires the global manage permission (administrators); organization roles do not open this API.",
         "tags": [
           "Organizations"
         ],
@@ -5825,6 +5903,15 @@
                   },
                   "description": {
                     "type": "string"
+                  },
+                  "member_role": {
+                    "type": "string",
+                    "enum": [
+                      "read",
+                      "write",
+                      "admin"
+                    ],
+                    "description": "Access level plain organization members get on every repository the organization owns: read, write (read+write) or admin (read+write+delete). Owners and admins of the organization always get admin. Never grants manage. Ignored for the built-in system organization. Default read."
                   }
                 }
               }
@@ -5849,7 +5936,7 @@
       },
       "delete": {
         "summary": "Delete organization",
-        "description": "Delete an organization",
+        "description": "Delete an organization Requires the global manage permission (administrators); organization roles do not open this API.",
         "tags": [
           "Organizations"
         ],
@@ -6264,6 +6351,10 @@
                     "items": {
                       "type": "string"
                     }
+                  },
+                  "org": {
+                    "type": "string",
+                    "description": "Move the repository to the named organization (global admin only; unknown organization: 404). Access of the old and new organization's members changes immediately."
                   }
                 }
               }

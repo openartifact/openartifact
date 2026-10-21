@@ -31,13 +31,15 @@ Backup types, passed as `type`:
 - `full`: records and all blobs.
 - `metadata-only`: records only. Restoring it needs the blobs to be present in the target store already.
 
+There is no incremental backup: every archive is complete for its type, and any other `type` (including `incremental`) is refused with 400.
+
 Tables exported:
 
-- Global: repositories, users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, organizations and members, webhooks.
+- Global: repositories, users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, organizations (with their `member_role`) and members, webhooks. Repositories keep their organization on restore.
 - Per format: Debian distributions, components and architectures with deb packages; rpm, Helm, PyPI, NuGet, Cargo, RubyGems, Conan, Ivy, sbt, raw, Docker (blobs, manifests, tags), npm (packages, versions, dist-tags), Maven, Conda and Go module records.
 - Per repository: cleanup policies, SBOM, license, secret and vulnerability scan results, AI analyses.
 
-Not included: permission targets and group membership ([RBAC](../security/rbac.md)), quotas, artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed list call for one table is logged and skipped rather than aborting the backup.
+Not included: permission targets and group membership ([RBAC](../security/rbac.md)), quota limits, artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed list call for one table is logged and skipped rather than aborting the backup.
 
 ### Secrets in the archive
 
@@ -105,6 +107,7 @@ Behaviour:
 - The response only confirms the upload. The outcome is in the server log: `restore completed successfully`, or `restore completed with failures` with a count, or `restore failed`.
 - Records go through the normal create paths. IDs of repositories, users, Debian distributions and components, pipelines, bundles, organizations and npm packages are regenerated and rows that point at them are remapped. A name that already exists (a repository, or the bootstrap `admin` user of a fresh server) is skipped with a warning, and rows depending on a skipped parent are skipped too. Restore into an empty instance for a clean result.
 - Blobs are checked against the SHA-256 in their entry name, then written to the configured blob store.
+- When the restore finishes, the repositories' [storage quota](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct) usage counters are recounted from the restored packages, so quotas set afterwards start from the real usage. Quota limits are not part of the archive.
 - Entries a newer version wrote that this version does not know are ignored.
 
 Procedure for a new instance:
