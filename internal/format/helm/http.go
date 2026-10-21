@@ -57,11 +57,31 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("helm handler registered", "prefix", prefix)
 }
 
+// indexMaxAge is how long shared caches may reuse a public repository's
+// index.yaml before revalidating.
+const indexMaxAge = 60
+
+// indexETag derives the validator of index.yaml from the chart rows instead of
+// the rendered body, which embeds a generation timestamp and so differs on
+// every request. Every field a published chart can change is covered by its ID,
+// blob digest and update time; the repository name and base URL shape the URLs.
+func indexETag(repoName, baseURL string, charts []*models.HelmChart) string {
+	sum := sha256.New()
+
+	fmt.Fprintf(sum, "%s\x00%s\x00", repoName, baseURL)
+
+	for _, c := range charts {
+		fmt.Fprintf(sum, "%s\x00%s\x00%d\x00", c.ID, c.Digest, c.UpdatedAt.UnixNano())
+	}
+
+	return `"` + hex.EncodeToString(sum.Sum(nil)[:16]) + `"`
+}
+
 func (h *HTTPHandler) handleGetIndex(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -69,16 +89,21 @@ func (h *HTTPHandler) handleGetIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	charts, err := h.DB.ListHelmCharts(r.Context(), repoID)
+	charts, err := h.DB.ListHelmCharts(r.Context(), repo.ID)
 	if err != nil {
 		h.Log.Errorw("failed to list helm charts", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
+		return
+	}
+
+	// Revalidation is answered before the index is rendered and marshalled.
+	if base.Revalidate(w, r, repo.Public, indexETag(repoName, h.BaseURL, charts), indexMaxAge) {
 		return
 	}
 
@@ -94,7 +119,6 @@ func (h *HTTPHandler) handleGetIndex(w http.ResponseWriter, r *http.Request) {
 	}
 
 	w.Header().Set("Content-Type", "application/yaml")
-	w.Header().Set("Cache-Control", "public, max-age=60")
 	w.WriteHeader(http.StatusOK)
 	_, _ = w.Write(indexYAML)
 }

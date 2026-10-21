@@ -8,21 +8,18 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
-	"errors"
 	"fmt"
 	"sort"
-	"sync"
 	"time"
 
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
+	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
-
-var errDebLockBusy = errors.New("could not acquire advisory lock")
 
 // listOldMetadata returns path -> blob sha256 of the generated dists/ metadata rows.
 func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
@@ -55,76 +52,53 @@ type DebMetadataWorker struct {
 	blobStore storage.BlobStore
 	signer    gpg.Signer
 	log       *logger.Logger
-
-	mu       sync.Mutex
-	timers   map[string]*time.Timer
-	debounce time.Duration
+	q         *regenQueue[string]
 }
 
 func NewDebMetadataWorker(db sq.Database, blobStore storage.BlobStore, signer gpg.Signer, log *logger.Logger) *DebMetadataWorker {
-	return &DebMetadataWorker{
-		db:        db,
-		blobStore: blobStore,
-		signer:    signer,
-		log:       log,
-		timers:    make(map[string]*time.Timer),
-		debounce:  500 * time.Millisecond,
-	}
+	w := &DebMetadataWorker{db: db, blobStore: blobStore, signer: signer, log: log}
+	w.q = newRegenQueue("deb", log, w.regenerate)
+
+	return w
 }
 
+func (w *DebMetadataWorker) WithDebounce(d time.Duration) *DebMetadataWorker {
+	w.q.setDebounce(d)
+	return w
+}
+
+// WithMetrics records regeneration counts and durations in reg.
+func (w *DebMetadataWorker) WithMetrics(reg *metrics.Registry) *DebMetadataWorker {
+	w.q.setMetrics(reg)
+	return w
+}
+
+// WithRegenLimiter shares a concurrency limiter with the other metadata workers.
+func (w *DebMetadataWorker) WithRegenLimiter(l *RegenLimiter) *DebMetadataWorker {
+	w.q.setLimiter(l)
+	return w
+}
+
+// NotifyStale schedules a coalesced regeneration of the repository's dists/ metadata.
 func (w *DebMetadataWorker) NotifyStale(repoID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if t, ok := w.timers[repoID]; ok {
-		t.Stop()
-	}
-
-	var t *time.Timer
-
-	t = time.AfterFunc(w.debounce, func() {
-		defer func() {
-			if r := recover(); r != nil {
-				w.log.Errorw("panic in goroutine", "panic", r)
-			}
-		}()
-		w.log.Infow("deb metadata regeneration triggered", "repo_id", repoID)
-
-		if err := w.regenerate(context.Background(), repoID); err != nil {
-			w.log.Errorw("deb metadata regeneration failed", "repo_id", repoID, "error", err)
-		}
-
-		w.mu.Lock()
-		if w.timers[repoID] == t {
-			delete(w.timers, repoID)
-		}
-		w.mu.Unlock()
-	})
-	w.timers[repoID] = t
+	w.q.Notify(repoID)
 }
 
+// Stop drains pending regenerations and waits for running ones (bounded).
 func (w *DebMetadataWorker) Stop() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for id, t := range w.timers {
-		t.Stop()
-		delete(w.timers, id)
-	}
+	w.q.Stop()
 }
 
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error {
-	release, locked, err := tryAdvisoryLock(ctx, w.db.GetDB(), "deb:"+repoID)
-	if err != nil {
-		return fmt.Errorf("deb worker: could not acquire advisory lock for %s: %w", repoID, err)
-	}
+	if sqlDB := w.db.GetDB(); sqlDB != nil {
+		release, err := lockForRegeneration(ctx, sqlDB, "deb:"+repoID)
+		if err != nil {
+			return fmt.Errorf("deb worker: repository %s: %w", repoID, err)
+		}
 
-	if !locked {
-		return fmt.Errorf("%w: deb worker repository %s", errDebLockBusy, repoID)
+		defer release()
 	}
-
-	defer release()
 
 	tx, err := w.db.BeginTx(ctx)
 	if err != nil {

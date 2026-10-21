@@ -9,11 +9,10 @@ import (
 	"context"
 	"crypto/sha256"
 	"database/sql"
-	"errors"
 	"fmt"
+	"io"
 	"sort"
 	"strconv"
-	"sync"
 	"time"
 
 	sq "github.com/openartifact/openartifact/internal/database"
@@ -25,79 +24,41 @@ import (
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
-var errRPMLockBusy = errors.New("could not acquire advisory lock")
-
 type RPMetadataWorker struct {
 	db        sq.Database
 	blobStore storage.BlobStore
 	signer    gpg.Signer
 	log       *logger.Logger
-	reg       *metrics.Registry
-
-	mu       sync.Mutex
-	timers   map[string]*time.Timer
-	debounce time.Duration
+	q         *regenQueue[string]
 }
 
 func NewRPMetadataWorker(db sq.Database, blobStore storage.BlobStore, signer gpg.Signer, log *logger.Logger, reg *metrics.Registry) *RPMetadataWorker {
-	return &RPMetadataWorker{
-		db:        db,
-		blobStore: blobStore,
-		signer:    signer,
-		log:       log,
-		reg:       reg,
-		timers:    make(map[string]*time.Timer),
-		debounce:  500 * time.Millisecond,
-	}
+	w := &RPMetadataWorker{db: db, blobStore: blobStore, signer: signer, log: log}
+	w.q = newRegenQueue("rpm", log, w.Regenerate)
+	w.q.setMetrics(reg)
+
+	return w
 }
 
+func (w *RPMetadataWorker) WithDebounce(d time.Duration) *RPMetadataWorker {
+	w.q.setDebounce(d)
+	return w
+}
+
+// WithRegenLimiter shares a concurrency limiter with the other metadata workers.
+func (w *RPMetadataWorker) WithRegenLimiter(l *RegenLimiter) *RPMetadataWorker {
+	w.q.setLimiter(l)
+	return w
+}
+
+// NotifyStale schedules a coalesced regeneration of the repository's repodata.
 func (w *RPMetadataWorker) NotifyStale(repoID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if t, ok := w.timers[repoID]; ok {
-		t.Stop()
-	}
-
-	var t *time.Timer
-
-	t = time.AfterFunc(w.debounce, func() {
-		defer func() {
-			if r := recover(); r != nil {
-				w.log.Errorw("panic in goroutine", "panic", r)
-			}
-		}()
-		w.log.Infow("metadata regeneration triggered", "repo_id", repoID)
-
-		start := time.Now()
-
-		err := w.Regenerate(context.Background(), repoID)
-		if w.reg != nil {
-			w.reg.MetadataRegenerationDurationSeconds.WithLabelValues("rpm").Observe(time.Since(start).Seconds())
-			w.reg.MetadataRegenerationsTotal.WithLabelValues("rpm").Inc()
-		}
-
-		if err != nil {
-			w.log.Errorw("metadata regeneration failed", "repo_id", repoID, "error", err)
-		}
-
-		w.mu.Lock()
-		if w.timers[repoID] == t {
-			delete(w.timers, repoID)
-		}
-		w.mu.Unlock()
-	})
-	w.timers[repoID] = t
+	w.q.Notify(repoID)
 }
 
+// Stop drains pending regenerations and waits for running ones (bounded).
 func (w *RPMetadataWorker) Stop() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for id, t := range w.timers {
-		t.Stop()
-		delete(w.timers, id)
-	}
+	w.q.Stop()
 }
 
 // Regenerate synchronously rebuilds the repository's RPM metadata, including
@@ -125,13 +86,9 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 		return nil
 	}
 
-	release, locked, err := tryAdvisoryLock(ctx, conn, "rpm:"+repoID)
+	release, err := lockForRegeneration(ctx, conn, "rpm:"+repoID)
 	if err != nil {
-		return fmt.Errorf("rpm worker: advisory lock for %s: %w", repoID, err)
-	}
-
-	if !locked {
-		return fmt.Errorf("rpm worker: %w for %s", errRPMLockBusy, repoID)
+		return fmt.Errorf("rpm worker: repository %s: %w", repoID, err)
 	}
 
 	defer release()
@@ -333,14 +290,14 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 	ts := time.Now().Unix()
 
 	type kind struct {
-		name     string
-		generate func([]pkgrpm.Package) ([]byte, error)
+		name  string
+		write func(io.Writer, []pkgrpm.Package) error
 	}
 
 	kinds := []kind{
-		{"primary", func(p []pkgrpm.Package) ([]byte, error) { return formatrpm.GeneratePrimaryXML(p, "") }},
-		{"filelists", formatrpm.GenerateFilelistsXML},
-		{"other", formatrpm.GenerateOtherXML},
+		{"primary", formatrpm.WritePrimaryXML},
+		{"filelists", formatrpm.WriteFilelistsXML},
+		{"other", formatrpm.WriteOtherXML},
 	}
 
 	var (
@@ -349,14 +306,11 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 	)
 
 	for _, k := range kinds {
-		xmlData, err := k.generate(packages)
+		// The XML streams straight into the gzip and xz encoders; the
+		// uncompressed document is never held in memory.
+		comp, err := formatrpm.CompressMetadataStream(func(out io.Writer) error { return k.write(out, packages) })
 		if err != nil {
 			return nil, fmt.Errorf("rpm worker: generating %s.xml: %w", k.name, err)
-		}
-
-		comp, err := formatrpm.CompressMetadata(xmlData)
-		if err != nil {
-			return nil, fmt.Errorf("rpm worker: compressing %s.xml: %w", k.name, err)
 		}
 
 		entries = append(entries, formatrpm.RepomdData{

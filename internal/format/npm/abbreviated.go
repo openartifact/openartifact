@@ -5,9 +5,6 @@
 package npm
 
 import (
-	"encoding/json"
-	"fmt"
-
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -29,41 +26,46 @@ var abbreviatedFields = map[string]bool{
 	"deprecated":           true,
 }
 
+// isAbbreviatedField reports whether a raw manifest key survives in the
+// install-v1 (abbreviated) form.
+func isAbbreviatedField(raw []byte) bool {
+	if hasEscape(raw) {
+		return abbreviatedFields[decodeKey(raw)]
+	}
+
+	return abbreviatedFields[string(raw)]
+}
+
+// BuildAbbreviatedPackument renders the application/vnd.npm.install-v1+json
+// packument: {"_id","dist-tags","name","versions"} with each version reduced to
+// abbreviatedFields and its dist rewritten as in BuildPackument.
 func BuildAbbreviatedPackument(repoName, packageName string, versions []*models.NPMVersion, distTags map[string]string, baseURL string) ([]byte, error) {
-	versionMap := make(map[string]any, len(versions))
+	sorted := newestPerVersion(versions)
 
-	for _, v := range versions {
-		var full map[string]any
-		if err := json.Unmarshal(v.ManifestJSON, &full); err != nil {
-			return nil, fmt.Errorf("unmarshal manifest for %s@%s: %w", packageName, v.Version, err)
+	w := newPackumentWriter(repoName, packageName, baseURL, estimatePackumentSize(sorted, 320)*2/3)
+
+	w.buf = append(w.buf, `{"_id":`...)
+	w.buf = appendJSONString(w.buf, packageName)
+	w.buf = append(w.buf, `,"dist-tags":`...)
+	w.distTags(distTags)
+	w.buf = append(w.buf, `,"name":`...)
+	w.buf = appendJSONString(w.buf, packageName)
+	w.buf = append(w.buf, `,"versions":{`...)
+
+	for i, v := range sorted {
+		if i > 0 {
+			w.buf = append(w.buf, ',')
 		}
 
-		dist, _ := full["dist"].(map[string]any)
-		if dist == nil {
-			dist = make(map[string]any)
+		w.buf = appendJSONString(w.buf, v.Version)
+		w.buf = append(w.buf, ':')
+
+		if err := w.version(v, isAbbreviatedField); err != nil {
+			return nil, err
 		}
-
-		dist["tarball"] = fmt.Sprintf("%s/repos/%s/%s/-/%s", baseURL, repoName, packageName, v.TarballFilename)
-		dist["integrity"] = v.Integrity
-		dist["shasum"] = v.Shasum
-		full["dist"] = dist
-
-		slim := make(map[string]any, len(abbreviatedFields))
-		for field := range abbreviatedFields {
-			if val, ok := full[field]; ok {
-				slim[field] = val
-			}
-		}
-
-		versionMap[v.Version] = slim
 	}
 
-	packument := map[string]any{
-		"_id":       packageName,
-		"name":      packageName,
-		"dist-tags": distTags,
-		"versions":  versionMap,
-	}
+	w.buf = append(w.buf, '}', '}')
 
-	return json.Marshal(packument)
+	return w.buf, nil
 }

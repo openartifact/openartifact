@@ -55,12 +55,13 @@ Run it against a throwaway instance. Seeding writes thousands of artifacts and a
 
 #### Scenarios
 
-23 scenarios, each with a 1 s unmeasured warm-up first:
+27 scenarios, each with a 1 s unmeasured warm-up first:
 
 | Group | Scenarios |
 |---|---|
 | Downloads | Maven jar (8 KB), Maven jar (10 MB), npm tarball, Docker blob (8 MB), Docker manifest |
 | Metadata | `maven-metadata.xml` (200 versions), npm packument (100 versions), abbreviated npm packument, deb `Packages.gz`, deb `Release`, rpm `repomd.xml` |
+| Conditional metadata | `maven-metadata.xml`, npm packument, deb `Release`, rpm `repomd.xml` sent with `If-None-Match` (304 path; servers without an ETag see plain GETs) |
 | API | `GET /auth/me`, `GET /repositories`, package lists for Maven and npm (`limit=100`) |
 | Search | `q=bench`, `q=art1` |
 | Dashboard | audit log, system info, SPA `index.html` |
@@ -123,6 +124,7 @@ For each scenario this writes `<scenario>.{cpu,heap,allocs,mutex,block,goroutine
 | Warm DB connections | `DB_MAX_IDLE_CONNS` | `database.maxIdleConns` | 5 |
 | DB connection lifetime | `DB_CONN_MAX_LIFETIME_MINUTES` | `database.connMaxLifetimeMinutes` | 30 |
 | Auth lookup cache | `DB_AUTH_CACHE_TTL_MS` | `database.authCacheTtlMs` | 2000 |
+| Metadata regeneration workers | `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | 4 |
 | Per-IP rate limit | `OPENARTIFACT_RATE_LIMIT_RPS` | `server.rateLimitRps` | 0 (off) |
 | Request read timeout (seconds) | `SERVER_READ_TIMEOUT` | `server.readTimeout` | 0 (unlimited) |
 | Response write timeout (seconds) | `SERVER_WRITE_TIMEOUT` | `server.writeTimeout` | 0 (unlimited) |
@@ -143,6 +145,22 @@ For a single instance the default is safe. Lower the TTL or set `0` when a multi
 ### Database connections
 
 Two pools talk to PostgreSQL, a pgx pool for the generated queries and a `database/sql` handle for the rest. Each is capped at `DB_MAX_OPEN_CONNS`, so one instance can open up to twice that many connections. Size PostgreSQL `max_connections` for `2 x DB_MAX_OPEN_CONNS x replicas` plus headroom. `DB_MAX_IDLE_CONNS` is the pgx pool's warm minimum; the `database/sql` handle keeps idle connections up to the open limit and closes surplus ones after 5 minutes idle, so bursts do not reconnect. Blob-lock transactions use at most half of `DB_MAX_OPEN_CONNS` at once, to leave connections for their callbacks.
+
+### Metadata regeneration
+
+Uploads mark metadata stale; npm packument denormalisation, Maven `maven-metadata.xml`, deb and rpm indexes are rebuilt by a bounded queue (`internal/worker/regen_queue.go`). Per key (npm package, Maven artifact, deb/rpm repository) there is at most one running and one pending regeneration, bursts coalesce after a 500 ms debounce (at most 5 s from the first upload), and `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` caps concurrent runs across all formats. Runs take a Postgres advisory lock on a pinned connection; if another replica holds it the run is retried with backoff. On shutdown pending regenerations are drained for up to 10 s.
+
+### Storage quota
+
+Quota reservation is a single conditional upsert on the repository's `storage_quotas` row, committed with `synchronous_commit=off` so uploads do not queue behind each other's WAL flush. After a PostgreSQL crash the counters can lag the real usage by the last few hundred milliseconds of changes.
+
+### HTTP caching
+
+The embedded SPA is gzip-precompressed at startup; hashed `assets/*` get `Cache-Control: public, max-age=31536000, immutable`, `index.html` gets `no-cache` with an ETag. Package metadata endpoints (maven-metadata.xml and checksums, deb Release/Packages, rpm repodata, helm `index.yaml`, PyPI simple, npm packument) send an ETag and answer `If-None-Match` with 304 after authorisation. Only anonymous reads of public repositories are `public`; authenticated responses are `private, no-cache` with `Vary: Authorization`.
+
+### Audit log paging
+
+`GET /api/v1/admin/audit` avoids `COUNT(*)`: pass `cursor` (empty for the newest page) for keyset paging with `has_more` and `next_cursor`. In offset mode `total` is exact on small tables and on the last page, a planner estimate on large unfiltered tables, and a lower bound on large filtered ones; `total_exact` says which.
 
 ### Rate limit
 

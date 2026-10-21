@@ -472,8 +472,8 @@ func (m *provMockDB) InsertAuditLog(_ context.Context, _ *models.AuditLog) error
 	return nil
 }
 
-func (m *provMockDB) ListAuditLogs(_ context.Context, _, _ int, _, _ string) ([]*models.AuditLog, int, error) {
-	return nil, 0, nil
+func (m *provMockDB) ListAuditLogs(_ context.Context, _ models.AuditListParams) (*models.AuditPage, error) {
+	return &models.AuditPage{}, nil
 }
 
 func (m *provMockDB) ListAllTokens(_ context.Context, _, _ int) ([]*models.Token, int, error) {

@@ -5,38 +5,57 @@
 package npm
 
 import (
-	"encoding/json"
-	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// BuildPackument renders the full packument. Output is the JSON document
+// {"_id","dist-tags","name","time","versions"}: every stored manifest is passed
+// through with whitespace removed and its dist object rewritten to carry the
+// server's tarball URL, integrity and shasum. See packument_json.go.
 func BuildPackument(repoName, packageName string, versions []*models.NPMVersion, distTags map[string]string, baseURL string) ([]byte, error) {
-	versionMap := make(map[string]any, len(versions))
-	timeMap := make(map[string]string, len(versions)+2)
+	sorted := newestPerVersion(versions)
 
+	w := newPackumentWriter(repoName, packageName, baseURL, estimatePackumentSize(sorted, 320))
+
+	w.buf = append(w.buf, `{"_id":`...)
+	w.buf = appendJSONString(w.buf, packageName)
+	w.buf = append(w.buf, `,"dist-tags":`...)
+	w.distTags(distTags)
+	w.buf = append(w.buf, `,"name":`...)
+	w.buf = appendJSONString(w.buf, packageName)
+	w.buf = append(w.buf, `,"time":`...)
+	w.times(sorted, versions)
+	w.buf = append(w.buf, `,"versions":{`...)
+
+	for i, v := range sorted {
+		if i > 0 {
+			w.buf = append(w.buf, ',')
+		}
+
+		w.buf = appendJSONString(w.buf, v.Version)
+		w.buf = append(w.buf, ':')
+
+		if err := w.version(v, nil); err != nil {
+			return nil, err
+		}
+	}
+
+	w.buf = append(w.buf, '}', '}')
+
+	return w.buf, nil
+}
+
+// times appends the "time" object: one entry per version plus created (oldest
+// version) and modified (newest), keys in sorted order. versions must be sorted
+// by version string without duplicates; all is the unsorted input the
+// created/modified bounds are taken over.
+func (w *packumentWriter) times(versions, all []*models.NPMVersion) {
 	var oldest, newest time.Time
 
-	for _, v := range versions {
-		var manifest map[string]any
-		if err := json.Unmarshal(v.ManifestJSON, &manifest); err != nil {
-			return nil, fmt.Errorf("unmarshal manifest for %s@%s: %w", packageName, v.Version, err)
-		}
-
-		dist, _ := manifest["dist"].(map[string]any)
-		if dist == nil {
-			dist = make(map[string]any)
-		}
-
-		dist["tarball"] = fmt.Sprintf("%s/repos/%s/%s/-/%s", baseURL, repoName, packageName, v.TarballFilename)
-		dist["integrity"] = v.Integrity
-		dist["shasum"] = v.Shasum
-		manifest["dist"] = dist
-
-		versionMap[v.Version] = manifest
-		timeMap[v.Version] = v.CreatedAt.UTC().Format(time.RFC3339)
-
+	for _, v := range all {
 		if oldest.IsZero() || v.CreatedAt.Before(oldest) {
 			oldest = v.CreatedAt
 		}
@@ -46,21 +65,46 @@ func BuildPackument(repoName, packageName string, versions []*models.NPMVersion,
 		}
 	}
 
-	if !oldest.IsZero() {
-		timeMap["created"] = oldest.UTC().Format(time.RFC3339)
+	w.buf = append(w.buf, '{')
+	first := true
+
+	// created and modified sort among the version keys; they also replace a
+	// version of the same name, as the map-based encoder did.
+	pending := []struct {
+		key string
+		t   time.Time
+		ok  bool
+	}{{"created", oldest, !oldest.IsZero()}, {"modified", newest, !newest.IsZero()}}
+
+	emit := func(key string, t time.Time) {
+		w.member(&first, key)
+		w.buf = appendRFC3339(w.buf, t)
 	}
 
-	if !newest.IsZero() {
-		timeMap["modified"] = newest.UTC().Format(time.RFC3339)
+	flushBefore := func(key string) {
+		for i := range pending {
+			if pending[i].ok && strings.Compare(pending[i].key, key) <= 0 {
+				emit(pending[i].key, pending[i].t)
+				pending[i].ok = false
+			}
+		}
 	}
 
-	packument := map[string]any{
-		"_id":       packageName,
-		"name":      packageName,
-		"dist-tags": distTags,
-		"versions":  versionMap,
-		"time":      timeMap,
+	for _, v := range versions {
+		flushBefore(v.Version)
+
+		if (v.Version == "created" && !oldest.IsZero()) || (v.Version == "modified" && !newest.IsZero()) {
+			continue
+		}
+
+		emit(v.Version, v.CreatedAt)
 	}
 
-	return json.Marshal(packument)
+	for i := range pending {
+		if pending[i].ok {
+			emit(pending[i].key, pending[i].t)
+		}
+	}
+
+	w.buf = append(w.buf, '}')
 }

@@ -12,6 +12,23 @@ import (
 	"time"
 )
 
+// lockForRegeneration takes the advisory lock for key on a pinned connection
+// held until the returned release func runs. A lock held by another session
+// yields errLockBusy so the regeneration queue retries the key later instead of
+// dropping it. The connection is only held while the lock is.
+func lockForRegeneration(ctx context.Context, db *sql.DB, key string) (func(), error) {
+	release, locked, err := tryAdvisoryLock(ctx, db, key)
+	if err != nil {
+		return nil, fmt.Errorf("advisory lock %s: %w", key, err)
+	}
+
+	if !locked {
+		return nil, fmt.Errorf("advisory lock %s: %w", key, errLockBusy)
+	}
+
+	return release, nil
+}
+
 // tryAdvisoryLock takes a session-level Postgres advisory lock on a dedicated,
 // pinned connection so the unlock is guaranteed to run on the same session.
 // It returns acquired=false (and a nil error) if another session holds the lock.

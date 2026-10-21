@@ -5182,7 +5182,7 @@
     "/api/v1/admin/audit": {
       "get": {
         "summary": "List audit entries",
-        "description": "List audit log entries (admin only)",
+        "description": "List audit log entries, newest first (admin only). Two paging modes: offset paging (`page`/`per_page`, the default) and keyset paging (`cursor`). Keyset paging never counts rows or scans past an offset, so it stays fast on large tables; follow `next_cursor` while `has_more` is true. In offset mode `total` is exact when `total_exact` is true (small tables and the last page); otherwise it is the planner's row estimate (no filter) or a lower bound (with `actor`/`action` filters).",
         "tags": [
           "Admin",
           "Audit"
@@ -5191,6 +5191,7 @@
           {
             "name": "page",
             "in": "query",
+            "description": "1-based page number (offset paging). Ignored when `cursor` is present.",
             "schema": {
               "type": "integer",
               "minimum": 1
@@ -5203,6 +5204,30 @@
               "type": "integer",
               "minimum": 1,
               "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque `next_cursor` of the previous page. Present but empty starts keyset paging at the newest entry. Selects keyset paging: the response carries no `page`, `total` or `total_exact`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Case-insensitive substring of the actor name or actor id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Case-insensitive substring of the action name.",
+            "schema": {
+              "type": "string"
             }
           }
         ],
@@ -5221,18 +5246,35 @@
                       }
                     },
                     "page": {
-                      "type": "integer"
+                      "type": "integer",
+                      "description": "Offset paging only."
                     },
                     "per_page": {
                       "type": "integer"
                     },
                     "total": {
-                      "type": "integer"
+                      "type": "integer",
+                      "description": "Offset paging only. See `total_exact`."
+                    },
+                    "total_exact": {
+                      "type": "boolean",
+                      "description": "Offset paging only. False when `total` is an estimate or a lower bound."
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "True when entries follow this page."
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "description": "Pass as `cursor` to fetch the next page. Absent when `has_more` is false."
                     }
                   }
                 }
               }
             }
+          },
+          "400": {
+            "description": "Malformed cursor"
           },
           "403": {
             "description": "Admin access required"

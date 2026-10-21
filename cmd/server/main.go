@@ -208,12 +208,16 @@ func main() {
 	}
 
 	// Initialize metadata workers
-	rpmWorker := worker.NewRPMetadataWorker(db, blobStore, signer, log, reg)
+	// One limiter bounds regenerations across every format: each pins up to two
+	// database connections while it runs.
+	regenLimiter := worker.NewRegenLimiter(cfg.Workers.MetadataRegenConcurrency)
+
+	rpmWorker := worker.NewRPMetadataWorker(db, blobStore, signer, log, reg).WithRegenLimiter(regenLimiter)
 	go rpmWorker.RegenerateStale(context.Background())
 
-	debWorker := worker.NewDebMetadataWorker(db, blobStore, signer, log)
-	mavenWorker := worker.NewMavenMetadataWorker(db, blobStore, db.GetDB(), log, reg)
-	npmWorker := worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg)
+	debWorker := worker.NewDebMetadataWorker(db, blobStore, signer, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
+	mavenWorker := worker.NewMavenMetadataWorker(db, blobStore, db.GetDB(), log, reg).WithRegenLimiter(regenLimiter)
+	npmWorker := worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg).WithRegenLimiter(regenLimiter)
 	proxyCacheWorker := worker.NewProxyCacheWorker(db, blobStore, log)
 	proxyCacheWorker.Start()
 
@@ -242,10 +246,19 @@ func main() {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
 				webhookDispatcher.Stop, cleanupWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
-				npmWorker.Stop, mavenWorker.Stop, debWorker.Stop, rpmWorker.Stop,
 			} {
 				stop()
 			}
+
+			// The metadata workers drain pending regenerations (bounded wait each),
+			// so stop them in parallel to keep shutdown within one drain window.
+			var drain sync.WaitGroup
+
+			for _, stop := range []func(){npmWorker.Stop, mavenWorker.Stop, debWorker.Stop, rpmWorker.Stop} {
+				drain.Go(stop)
+			}
+
+			drain.Wait()
 
 			for _, stop := range extraStops {
 				stop()
@@ -402,13 +415,17 @@ func main() {
 	// authenticated chain's AuditMiddleware, so audit them explicitly.
 	server.AddMiddleware(middleware.AuthAuditMiddleware(auditLogger, db, trustedProxies))
 
+	// One SPA handler for both the RBAC page-load bypass and the router
+	// fallback: building it hashes and precompresses every embedded asset.
+	spaHandler := webhandler.Handler()
+
 	evaluator := auth.NewEvaluator(db, log, cfg.Auth.AllowAnonymousRead)
 	rbacCfg := middleware.RBACConfig{
 		LegacyAPIKey:        cfg.Server.APIKey,
 		LegacyAPIKeyEnabled: cfg.Auth.LegacyAPIKeyEnabled,
 		AllowAnonymousRead:  cfg.Auth.AllowAnonymousRead,
 		MCPPath:             cfg.MCP.HTTPPath,
-		SPAHandler:          webhandler.Handler(),
+		SPAHandler:          spaHandler,
 	}
 	if mcpServer != nil {
 		mcpServer.SetAuthorizer(func(ctx context.Context, repoName, action string) bool {
@@ -747,7 +764,7 @@ func main() {
 	// SPA fallback on the authed sub-router: paths not matched by any API or
 	// repo route serve the Vue SPA (client-side routing). RBAC is bypassed for
 	// these paths by the early-exit in RBACMiddleware below.
-	authedAPI.NotFound(webhandler.Handler().ServeHTTP)
+	authedAPI.NotFound(spaHandler.ServeHTTP)
 	router.Mount("/", authedAPI)
 
 	// Start server

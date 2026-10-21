@@ -1,0 +1,168 @@
+-- SPDX-FileCopyrightText: The OpenArtifact Authors
+--
+-- SPDX-License-Identifier: AGPL-3.0-or-later
+
+-- Verbatim copy of the ListRepoComponents query as it was before the two-stage
+-- rewrite (ranked rows joined to blobs before ORDER BY/LIMIT). It is the oracle
+-- of TestListRepoComponentsMatchesLegacyQuery. Parameters: $1 repo id, $2 format
+-- filter, $3 offset, $4 limit.
+
+SELECT id, repository_id, name, version, format, arch, sha256, release, epoch, build_time,
+       archive_size, package_size, installed_size, filename, created_at, updated_at
+FROM (
+    -- deb: one row per deb_packages row; size = blob size.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'deb'::text AS format, t.arch::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, COALESCE(t.installed_size, 0)::bigint AS installed_size,
+           COALESCE(t.filename, '')::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM deb_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'deb')
+    UNION ALL
+    -- rpm: one row per rpm_packages row.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'rpm'::text AS format, t.arch::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           t.release::text AS release, t.epoch::int AS epoch, COALESCE(EXTRACT(EPOCH FROM t.build_time)::bigint, 0)::bigint AS build_time,
+           COALESCE(t.archive_size, 0)::bigint AS archive_size, COALESCE(t.package_size, b.size_bytes, 0)::bigint AS package_size, COALESCE(t.installed_size, 0)::bigint AS installed_size,
+           COALESCE(t.filename, '')::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM rpm_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rpm')
+    UNION ALL
+    -- npm: one row per published version (scoped name in full_name).
+    SELECT t.id::uuid AS id, np.repository_id::uuid AS repository_id, np.full_name::text AS name, t.version::text AS version,
+           'npm'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.tarball_filename::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE np.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'npm')
+    UNION ALL
+    -- pypi: one row per distribution file; arch = python_version tag.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'pypi'::text AS format, COALESCE(t.python_version, '')::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.filename::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM pypi_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'pypi')
+    UNION ALL
+    -- maven: one row per stored file (jar, pom, ...); name = group:artifact, arch = classifier, filename = repo path.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.group_id || ':' || t.artifact_id_coord::text AS name, t.version::text AS version,
+           'maven'::text AS format, t.classifier::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.repo_path::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM maven_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'maven')
+    UNION ALL
+    -- ivy: one row per artifact file; name = organisation:module.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.organisation || ':' || t.module::text AS name, t.revision::text AS version,
+           'ivy'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.artifact_name || '.' || t.artifact_ext::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM ivy_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'ivy')
+    UNION ALL
+    -- sbt: one row per artifact file; arch = scala_version.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.group_id || ':' || t.artifact_id::text AS name, t.version::text AS version,
+           'sbt'::text AS format, t.scala_version::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.filename::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM sbt_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'sbt')
+    UNION ALL
+    -- nuget: one row per package version.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.package_id::text AS name, t.version::text AS version,
+           'nuget'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.package_id || '.' || t.version || '.nupkg'::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM nuget_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'nuget')
+    UNION ALL
+    -- gomod: one row per module version; the zip blob is preferred, the .mod blob otherwise.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.module_path::text AS name, t.version::text AS version,
+           'gomod'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM gomod_modules t LEFT JOIN blobs b ON b.id = COALESCE(t.zip_blob_id, t.mod_blob_id)
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'gomod')
+    UNION ALL
+    -- cargo: one row per crate version (yanked included).
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'cargo'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.name || '-' || t.version || '.crate'::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM cargo_crates t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'cargo')
+    UNION ALL
+    -- rubygems: one row per gem version/platform; arch = platform.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'rubygems'::text AS format, t.platform::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(NULLIF(t.size, 0), b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.name || '-' || t.version || CASE WHEN t.platform = 'ruby' THEN '' ELSE '-' || t.platform END || '.gem'::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM rubygems_gems t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'rubygems')
+    UNION ALL
+    -- conda: one row per build; arch = platform (subdir), release = build_string.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'conda'::text AS format, t.platform::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           t.build_string::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.name || '-' || t.version || '-' || t.build_string || '.tar.bz2'::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda')
+    UNION ALL
+    -- conan: one row per recipe revision (blob_id is nullable); release = recipe_revision, filename = full reference.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'conan'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           t.recipe_revision::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan')
+    UNION ALL
+    -- helm: one row per chart version.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
+           'helm'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.name || '-' || t.version || '.tgz'::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM helm_charts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'helm')
+    UNION ALL
+    -- raw: one row per stored path; name = filename = path, no version.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.path::text AS name, ''::text AS version,
+           'raw'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.path::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM raw_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'raw')
+    UNION ALL
+    -- proxy cache: one row per cached upstream file of a proxy repository (any format); name = filename = upstream-relative path.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.cache_key::text AS name, ''::text AS version,
+           r.format::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(b.size_bytes, t.size_bytes, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.cache_key::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id LEFT JOIN blobs b ON b.sha256 = t.blob_key
+    WHERE t.repository_id = $1::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
+      AND ($2::text = '' OR $2::text = r.format)
+    UNION ALL
+    -- docker: one row per tag (the registry image name is the repository name); size = manifest size, filename = manifest digest.
+    SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, r.name::text AS name, t.name::text AS version,
+           'docker'::text AS format, ''::text AS arch, COALESCE(b.sha256, '')::text AS sha256,
+           ''::text AS release, 0::int AS epoch, 0::bigint AS build_time,
+           0::bigint AS archive_size, COALESCE(dm.size, 0)::bigint AS package_size, 0::bigint AS installed_size,
+           t.manifest_digest::text AS filename, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM docker_tags t JOIN repositories r ON r.id = t.repository_id LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.digest = t.manifest_digest LEFT JOIN blobs b ON b.id = dm.blob_id
+    WHERE t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'docker')
+) AS p
+ORDER BY created_at DESC, id
+LIMIT $4::int OFFSET $3::int

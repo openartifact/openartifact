@@ -24,6 +24,10 @@ import (
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
 )
 
+// metadataMaxAge is how long shared caches may reuse a public repository's
+// metadata and artifacts before revalidating.
+const metadataMaxAge = 300
+
 type HTTPHandler struct {
 	*base.Handler
 }
@@ -66,7 +70,11 @@ func (h *HTTPHandler) handlePath(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, art *models.MavenArtifact, contentType string) {
+func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, repoPublic bool, art *models.MavenArtifact, contentType string) {
+	if base.Revalidate(w, r, repoPublic, `"`+art.SHA256+`"`, metadataMaxAge) {
+		return
+	}
+
 	rc, err := h.BlobStore.Get(r.Context(), art.SHA256)
 	if err != nil {
 		h.Log.Errorw("blob fetch failed", "sha256", art.SHA256, "error", err)
@@ -76,8 +84,6 @@ func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, 
 	defer func() { _ = rc.Close() }()
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("ETag", `"`+art.SHA256+`"`)
-	w.Header().Set("Cache-Control", "public, max-age=300")
 
 	if _, err := io.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write response", "path", art.RepoPath, "error", err)
@@ -89,7 +95,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -97,11 +103,12 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
 
+	repoID := repo.ID
 	artPath := chi.URLParam(r, "*")
 
 	checksumSuffixes := []string{".md5", ".sha1", ".sha256", ".sha512"}
@@ -121,6 +128,13 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 
 				if meta == nil {
 					http.NotFound(w, r)
+					return
+				}
+
+				// The checksum is a pure function of the metadata blob, so the
+				// blob digest (plus the algorithm) is a complete validator and
+				// the blob is never read for a revalidation.
+				if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+suffix+`"`, metadataMaxAge) {
 					return
 				}
 
@@ -222,6 +236,10 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
+		if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+`"`, metadataMaxAge) {
+			return
+		}
+
 		rc, err := h.BlobStore.Get(r.Context(), meta.BlobSHA256)
 		if err != nil {
 			h.Log.Errorw("failed to read metadata blob", "sha256", meta.BlobSHA256, "error", err)
@@ -233,8 +251,6 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		defer func() { _ = rc.Close() }()
 
 		w.Header().Set("Content-Type", "application/xml")
-		w.Header().Set("ETag", `"`+meta.BlobSHA256+`"`)
-		w.Header().Set("Cache-Control", "public, max-age=300")
 
 		if _, err := io.Copy(w, rc); err != nil {
 			h.Log.Errorw("failed to write metadata response", "path", artPath, "error", err)
@@ -265,7 +281,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.serveArtifactBlob(w, r, art, ContentTypeForFile(art.RepoPath))
+		h.serveArtifactBlob(w, r, repo.Public, art, ContentTypeForFile(art.RepoPath))
 
 		return
 	}
@@ -287,7 +303,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.serveArtifactBlob(w, r, art, ContentTypeForFile(filename))
+	h.serveArtifactBlob(w, r, repo.Public, art, ContentTypeForFile(filename))
 }
 
 func (h *HTTPHandler) handleHead(w http.ResponseWriter, r *http.Request) {

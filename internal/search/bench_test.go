@@ -55,13 +55,13 @@ func BenchmarkBuildWhereClause(b *testing.B) {
 	}
 }
 
-// BenchmarkUnifiedSearchView renders the 17-way UNION ALL subquery, which
+// BenchmarkNarrowSearchView renders the 16-way UNION ALL subquery, which
 // Search and CountResults rebuild on every call.
-func BenchmarkUnifiedSearchView(b *testing.B) {
+func BenchmarkNarrowSearchView(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_ = unifiedSearchView()
+		_ = narrowSearchView()
 	}
 }
 

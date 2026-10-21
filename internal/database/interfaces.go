@@ -297,7 +297,7 @@ type Database interface {
 	ListGoModulesByRepo(ctx context.Context, repoID string) ([]*models.GoModule, error)
 
 	InsertAuditLog(ctx context.Context, event *models.AuditLog) error
-	ListAuditLogs(ctx context.Context, page, perPage int, actor, action string) ([]*models.AuditLog, int, error)
+	ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error)
 	ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error)
 
 	// Cleanup policy methods

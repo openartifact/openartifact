@@ -11,6 +11,8 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
+	"io"
 
 	"github.com/ulikunitz/xz"
 )
@@ -25,71 +27,87 @@ type CompressedMetadata struct {
 	OpenSize int64
 }
 
+// CompressMetadata compresses an in-memory XML document; see
+// CompressMetadataStream for the streaming form.
 func CompressMetadata(xmlData []byte) (*CompressedMetadata, error) {
 	if len(xmlData) == 0 {
 		return nil, errors.New("rpm: empty xml data") //nolint:err113 // static error
 	}
 
-	gzData, err := compressGzip(xmlData)
+	return CompressMetadataStream(func(w io.Writer) error {
+		_, err := w.Write(xmlData)
+		return err
+	})
+}
+
+// hashedBuffer collects compressed output and hashes it on the way.
+type hashedBuffer struct {
+	buf bytes.Buffer
+	h   hash.Hash
+}
+
+func newHashedBuffer() *hashedBuffer { return &hashedBuffer{h: sha256.New()} }
+
+func (b *hashedBuffer) Write(p []byte) (int, error) {
+	b.h.Write(p)
+
+	return b.buf.Write(p)
+}
+
+// countingWriter counts the bytes that pass through it.
+type countingWriter struct {
+	w io.Writer
+	n int64
+}
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	n, err := c.w.Write(p)
+	c.n += int64(n)
+
+	return n, err
+}
+
+// CompressMetadataStream runs write against a sink that feeds the gzip and xz
+// encoders at once, so the uncompressed document never has to exist in memory.
+// OpenSize is the number of uncompressed bytes write produced.
+func CompressMetadataStream(write func(io.Writer) error) (*CompressedMetadata, error) {
+	gzBuf, xzBuf := newHashedBuffer(), newHashedBuffer()
+
+	gw, err := gzip.NewWriterLevel(gzBuf, gzip.BestCompression)
 	if err != nil {
 		return nil, fmt.Errorf("rpm: gzip compression: %w", err)
 	}
 
-	xzData, err := compressXZ(xmlData)
+	xw, err := xz.NewWriter(xzBuf)
 	if err != nil {
 		return nil, fmt.Errorf("rpm: xz compression: %w", err)
 	}
 
-	gzHash := sha256.Sum256(gzData)
-	xzHash := sha256.Sum256(xzData)
+	src := &countingWriter{w: io.MultiWriter(gw, xw)}
+
+	if err := write(src); err != nil {
+		return nil, fmt.Errorf("rpm: writing xml: %w", err)
+	}
+
+	if src.n == 0 {
+		return nil, errors.New("rpm: empty xml data") //nolint:err113 // static error
+	}
+
+	if err := gw.Close(); err != nil {
+		return nil, fmt.Errorf("rpm: gzip compression: %w", err)
+	}
+
+	if err := xw.Close(); err != nil {
+		return nil, fmt.Errorf("rpm: xz compression: %w", err)
+	}
 
 	return &CompressedMetadata{
-		GzipData: gzData,
-		XZData:   xzData,
-		GzSHA256: hex.EncodeToString(gzHash[:]),
-		XZSHA256: hex.EncodeToString(xzHash[:]),
-		GzSize:   int64(len(gzData)),
-		XZSize:   int64(len(xzData)),
-		OpenSize: int64(len(xmlData)),
+		GzipData: gzBuf.buf.Bytes(),
+		XZData:   xzBuf.buf.Bytes(),
+		GzSHA256: hex.EncodeToString(gzBuf.h.Sum(nil)),
+		XZSHA256: hex.EncodeToString(xzBuf.h.Sum(nil)),
+		GzSize:   int64(gzBuf.buf.Len()),
+		XZSize:   int64(xzBuf.buf.Len()),
+		OpenSize: src.n,
 	}, nil
-}
-
-func compressGzip(data []byte) ([]byte, error) {
-	var buf bytes.Buffer
-
-	w, err := gzip.NewWriterLevel(&buf, gzip.BestCompression)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := w.Write(data); err != nil {
-		_ = w.Close()
-		return nil, err
-	}
-
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
-}
-
-func compressXZ(data []byte) ([]byte, error) {
-	var buf bytes.Buffer
-
-	w, err := xz.NewWriter(&buf)
-	if err != nil {
-		return nil, err
-	}
-
-	if _, err := w.Write(data); err != nil {
-		_ = w.Close()
-		return nil, err
-	}
-
-	if err := w.Close(); err != nil {
-		return nil, err
-	}
-
-	return buf.Bytes(), nil
 }

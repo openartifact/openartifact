@@ -116,3 +116,9 @@ mcp:
   enabled: false
   transport: "http"   # only http is supported (stdio is rejected)
   httpPath: "/mcp"    # mount path; requires "Authorization: Bearer <TOKEN>"
+
+workers:
+  # Max metadata regenerations (npm, maven, deb, rpm together) running at once.
+  # Each pins up to two database connections while it runs; keep it well below
+  # database.maxOpenConns.
+  metadataRegenConcurrency: 4

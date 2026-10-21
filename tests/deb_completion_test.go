@@ -7,13 +7,16 @@ package integration_test
 import (
 	"bytes"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	debformat "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/worker"
@@ -364,16 +367,36 @@ func TestDebHTTPHandler_ServeRelease_NotFound(t *testing.T) {
 	}
 }
 
-func TestDebWorkerNotifyStale(t *testing.T) {
-	mockDB := newMockDatabase()
-	mockBlobStore := newMockBlobStore()
+// debTxCountingDB fails BeginTx so a deb regeneration ends right after taking
+// its transaction, which is enough to observe that it ran.
+type debTxCountingDB struct {
+	*MockDatabase
 
-	log, _ := logger.New("error", "console", "")
-	debWorker := worker.NewDebMetadataWorker(mockDB, mockBlobStore, nil, log)
+	beginCalls atomic.Int64
+}
 
-	debWorker.NotifyStale("repo-1")
+var errTestNoTx = errors.New("no transaction in test")
 
-	time.Sleep(100 * time.Millisecond)
+func (d *debTxCountingDB) BeginTx(context.Context) (database.Transaction, error) {
+	d.beginCalls.Add(1)
+	return nil, errTestNoTx
+}
+
+// A pending deb regeneration must run to completion when the worker stops, not
+// be discarded, and repeated notifications must coalesce into one run.
+func TestDebWorkerNotifyStaleDrainsOnStop(t *testing.T) {
+	db := &debTxCountingDB{MockDatabase: newMockDatabase()}
+
+	log, _ := logger.New("error", "json", "stdout")
+	debWorker := worker.NewDebMetadataWorker(db, newMockBlobStore(), nil, log).WithDebounce(time.Hour)
+
+	for range 5 {
+		debWorker.NotifyStale("repo-1")
+	}
 
 	debWorker.Stop()
+
+	if got := db.beginCalls.Load(); got != 1 {
+		t.Errorf("deb regeneration ran %d times during Stop(), want 1", got)
+	}
 }

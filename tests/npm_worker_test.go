@@ -7,6 +7,7 @@ package integration_test
 import (
 	"context"
 	"encoding/json"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -89,5 +90,91 @@ func TestNPMWorker_LatestVersionRecomputation(t *testing.T) {
 
 	if db.updateCalls.Load() != 1 {
 		t.Errorf("expected 1 update call, got %d", db.updateCalls.Load())
+	}
+}
+
+// gatedNPMDB serves versions from a concurrency-safe store and blocks the first
+// GetNPMVersionsByPackage (after taking its snapshot) until released, so a
+// regeneration is deterministically in flight while publishes keep arriving.
+type gatedNPMDB struct {
+	*npmCountingDB
+
+	vmu      sync.Mutex
+	versions []*models.NPMVersion
+
+	release chan struct{}
+	reads   atomic.Int64
+}
+
+func (g *gatedNPMDB) publish(pkgID, version string) {
+	g.vmu.Lock()
+	defer g.vmu.Unlock()
+
+	g.versions = append(g.versions, &models.NPMVersion{
+		ID: "v-" + version, PackageID: pkgID, Version: version, ManifestJSON: []byte(`{}`),
+	})
+}
+
+func (g *gatedNPMDB) GetNPMVersionsByPackage(_ context.Context, pkgID string) ([]*models.NPMVersion, error) {
+	g.vmu.Lock()
+
+	var snapshot []*models.NPMVersion
+
+	for _, v := range g.versions {
+		if v.PackageID == pkgID {
+			snapshot = append(snapshot, v)
+		}
+	}
+
+	g.vmu.Unlock()
+
+	if g.reads.Add(1) == 1 {
+		<-g.release
+	}
+
+	return snapshot, nil
+}
+
+// Publishing storms must collapse into at most one running plus one rerun, and
+// the rerun must see the newest version.
+func TestNPMWorker_ConcurrentNotifyCoalesces(t *testing.T) {
+	const publishes = 200
+
+	log, _ := logger.New("info", "json", "stdout")
+	db := &gatedNPMDB{
+		npmCountingDB: &npmCountingDB{MockDatabase: newMockDatabase()},
+		release:       make(chan struct{}),
+	}
+
+	w := worker.NewNPMMetadataWorker(db, log, nil, nil).WithDebounce(5 * time.Millisecond)
+
+	db.publish("pkg-1", "1.0.0")
+	w.NotifyStale("pkg-1")
+
+	waitUntil(t, 5*time.Second, "first regeneration to start", func() bool { return db.reads.Load() >= 1 })
+
+	var wg sync.WaitGroup
+
+	for i := 1; i <= publishes; i++ {
+		wg.Go(func() {
+			db.publish("pkg-1", "1.0."+strconv.Itoa(i))
+			w.NotifyStale("pkg-1")
+		})
+	}
+
+	wg.Wait()
+	close(db.release)
+
+	newest := "1.0." + strconv.Itoa(publishes)
+	waitUntil(t, 5*time.Second, "latest version to include the newest publish", func() bool { return db.getLastVersion() == newest })
+
+	w.Stop()
+
+	if calls := db.updateCalls.Load(); calls > 2 {
+		t.Errorf("UpdateNPMPackageLatestVersion called %d times for %d publishes, want <= 2", calls, publishes+1)
+	}
+
+	if got := db.getLastVersion(); got != newest {
+		t.Errorf("final latest version = %q, want %q", got, newest)
 	}
 }

@@ -10,29 +10,6 @@ import (
 	"time"
 )
 
-const decrementStorageUsage = `-- name: DecrementStorageUsage :exec
-UPDATE storage_quotas
-SET current_size_bytes = GREATEST(0, current_size_bytes - $1), current_artifact_count = GREATEST(0, current_artifact_count - $2), updated_at = $3
-WHERE repository_id = $4
-`
-
-type DecrementStorageUsageParams struct {
-	CurrentSizeBytes     int64     `db:"current_size_bytes" json:"current_size_bytes"`
-	CurrentArtifactCount int64     `db:"current_artifact_count" json:"current_artifact_count"`
-	UpdatedAt            time.Time `db:"updated_at" json:"updated_at"`
-	RepositoryID         string    `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) DecrementStorageUsage(ctx context.Context, arg DecrementStorageUsageParams) error {
-	_, err := q.db.Exec(ctx, decrementStorageUsage,
-		arg.CurrentSizeBytes,
-		arg.CurrentArtifactCount,
-		arg.UpdatedAt,
-		arg.RepositoryID,
-	)
-	return err
-}
-
 const getStorageQuota = `-- name: GetStorageQuota :one
 SELECT id, repository_id, max_size_bytes, max_artifact_count, warn_threshold_percent, current_size_bytes, current_artifact_count, created_at, updated_at
 FROM storage_quotas WHERE repository_id = $1

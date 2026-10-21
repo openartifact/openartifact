@@ -556,8 +556,8 @@ func (m *BaseMockDB) GetLatestGoModule(ctx context.Context, repoID, modulePath s
 func (m *BaseMockDB) InsertAuditLog(ctx context.Context, event *models.AuditLog) error {
 	return errNotImpl("InsertAuditLog")
 }
-func (m *BaseMockDB) ListAuditLogs(ctx context.Context, page, perPage int, actor, action string) ([]*models.AuditLog, int, error) {
-	return nil, 0, errNotImpl("ListAuditLogs")
+func (m *BaseMockDB) ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error) {
+	return nil, errNotImpl("ListAuditLogs")
 }
 func (m *BaseMockDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error) {
 	return nil, 0, errNotImpl("ListAllTokens")

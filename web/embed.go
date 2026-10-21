@@ -5,29 +5,19 @@
 package web
 
 import (
-	"crypto/sha256"
 	"embed"
-	"encoding/hex"
 	"io/fs"
 	"log"
-	"mime"
 	"net/http"
 	"net/http/httputil"
 	"net/url"
 	"os"
 	"path"
-	"strconv"
 	"strings"
 )
 
 //go:embed all:dist
 var distFS embed.FS
-
-type asset struct {
-	body []byte
-	etag string
-	ctyp string
-}
 
 // setSecurityHeaders applies the headers every SPA response carries. The
 // frame-ancestors / X-Frame-Options pair prevents clickjacking of the admin UI.
@@ -39,49 +29,6 @@ func setSecurityHeaders(h http.Header) {
 		"default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; "+
 			"img-src 'self' data:; font-src 'self' data:; connect-src 'self'; "+
 			"object-src 'none'; base-uri 'self'; form-action 'self'; frame-ancestors 'none'")
-}
-
-func loadAssets(sub fs.FS) map[string]*asset {
-	assets := make(map[string]*asset)
-	_ = fs.WalkDir(sub, ".", func(p string, d fs.DirEntry, err error) error {
-		if err != nil || d.IsDir() {
-			return nil //nolint:nilerr // unreadable entries of the embedded FS are skipped; directories hold no assets
-		}
-		body, readErr := fs.ReadFile(sub, p)
-		if readErr != nil {
-			return nil //nolint:nilerr // an unreadable embedded file is simply not served
-		}
-		sum := sha256.Sum256(body)
-		ctyp := mime.TypeByExtension(path.Ext(p))
-		if ctyp == "" {
-			ctyp = http.DetectContentType(body)
-		}
-		assets[p] = &asset{body: body, etag: `"` + hex.EncodeToString(sum[:16]) + `"`, ctyp: ctyp}
-		return nil
-	})
-	return assets
-}
-
-func serveAsset(w http.ResponseWriter, r *http.Request, name string, a *asset) {
-	h := w.Header()
-	setSecurityHeaders(h)
-	h.Set("Content-Type", a.ctyp)
-	h.Set("ETag", a.etag)
-	if strings.HasPrefix(name, "assets/") {
-		// Vite content-hashes everything under assets/.
-		h.Set("Cache-Control", "public, max-age=31536000, immutable")
-	} else {
-		h.Set("Cache-Control", "no-cache")
-	}
-	if r.Header.Get("If-None-Match") == a.etag {
-		w.WriteHeader(http.StatusNotModified)
-		return
-	}
-	h.Set("Content-Length", strconv.Itoa(len(a.body)))
-	w.WriteHeader(http.StatusOK)
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(a.body)
-	}
 }
 
 func notFound(w http.ResponseWriter, apiPath bool) {
@@ -108,6 +55,12 @@ func Handler() http.Handler {
 	if err != nil {
 		panic("web: failed to create sub FS: " + err.Error())
 	}
+	return newSPAHandler(sub)
+}
+
+// newSPAHandler builds the handler for the SPA files in sub. The files are
+// hashed and precompressed once, here, never per request.
+func newSPAHandler(sub fs.FS) http.Handler {
 	assets := loadAssets(sub)
 
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -127,7 +80,7 @@ func Handler() http.Handler {
 		}
 
 		if a, ok := assets[clean]; ok {
-			serveAsset(w, r, clean, a)
+			serveAsset(w, r, a)
 			return
 		}
 
@@ -143,6 +96,6 @@ func Handler() http.Handler {
 			notFound(w, false)
 			return
 		}
-		serveAsset(w, r, "index.html", index)
+		serveAsset(w, r, index)
 	})
 }

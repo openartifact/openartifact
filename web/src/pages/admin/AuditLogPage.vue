@@ -47,7 +47,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.audit.entries') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ total }} {{ t('adm.common.total') }}</span>
       </div>
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
@@ -121,21 +120,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </div>
 
     <!-- Pagination -->
-    <div v-if="entries.length" class="flex items-center justify-between">
-      <span class="text-sm text-muted">{{ t('adm.audit.page') }} {{ page }} / {{ pageCount }}</span>
+    <div v-if="entries.length || pageIndex > 0" class="flex items-center justify-between">
+      <span class="text-sm text-muted">{{ t('adm.audit.page') }} {{ pageIndex + 1 }}</span>
       <div class="flex items-center gap-2">
         <button
           type="button"
-          @click="page--"
-          :disabled="page <= 1"
+          @click="goTo(pageIndex - 1)"
+          :disabled="pageIndex <= 0"
           class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {{ t('adm.audit.previous') }}
         </button>
         <button
           type="button"
-          @click="page++"
-          :disabled="page >= pageCount"
+          @click="goTo(pageIndex + 1)"
+          :disabled="!hasMore"
           class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
         >
           {{ t('adm.audit.next') }}
@@ -147,7 +146,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { FORMAT_LOCALE } from '../../lib/datetime'
-import { ref, computed, onMounted, onUnmounted, watch } from 'vue'
+import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { listAudit, type AuditEntry } from '../../api/audit'
 import { ChevronRightIcon } from '@heroicons/vue/24/outline'
 import { useToastStore } from '../../stores/toast'
@@ -157,16 +156,18 @@ const PAGE_SIZE = 25
 
 const toasts = useToastStore()
 const entries = ref<AuditEntry[]>([])
-const total = ref(0)
 const loading = ref(true)
 const loadError = ref('')
 const expanded = ref<Set<string>>(new Set())
 
-const page = ref(1)
+// Keyset paging: the server returns no total, only whether more entries follow
+// and the cursor of the next page. pageCursors[i] is the cursor that loads page
+// i ('' is the newest entry), so going back is a lookup.
+const pageCursors = ref<string[]>([''])
+const pageIndex = ref(0)
+const hasMore = ref(false)
 const actor = ref('')
 const action = ref('')
-
-const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 
 function toggleExpand(id: string | undefined): void {
   if (id == null) return
@@ -208,14 +209,17 @@ async function load(): Promise<void> {
   loadError.value = ''
   try {
     const res = await listAudit({
-      page: page.value,
+      cursor: pageCursors.value[pageIndex.value],
       limit: PAGE_SIZE,
       actor: actor.value.trim(),
       action: action.value.trim(),
     })
     if (seq !== requestSeq) return
     entries.value = res.items
-    total.value = res.total
+    hasMore.value = res.hasMore
+    // Remember where the following page starts so Next needs no extra state.
+    pageCursors.value = pageCursors.value.slice(0, pageIndex.value + 1)
+    if (res.nextCursor) pageCursors.value.push(res.nextCursor)
   } catch (err) {
     if (seq !== requestSeq) return
     loadError.value = err instanceof Error ? err.message : t('adm.audit.loadFailed')
@@ -230,14 +234,18 @@ let debounceHandle: ReturnType<typeof setTimeout> | null = null
 watch([actor, action], () => {
   if (debounceHandle) clearTimeout(debounceHandle)
   debounceHandle = setTimeout(() => {
-    // Changing a filter returns to page 1; the page watcher performs the load
-    // when the page actually changes.
-    if (page.value !== 1) page.value = 1
-    else void load()
+    // Changing a filter returns to the newest entries.
+    pageCursors.value = ['']
+    pageIndex.value = 0
+    void load()
   }, 300)
 })
 
-watch(page, () => void load())
+function goTo(index: number): void {
+  if (index < 0 || index >= pageCursors.value.length) return
+  pageIndex.value = index
+  void load()
+}
 
 onMounted(load)
 onUnmounted(() => {

@@ -13,7 +13,6 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -30,86 +29,53 @@ type MavenMetadataWorker struct {
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	sqlDB     *sql.DB
-	reg       *metrics.Registry
-
-	mu       sync.Mutex
-	timers   map[string]*time.Timer
-	debounce time.Duration
+	q         *regenQueue[mavenKey]
 }
+
+// mavenKey identifies one group:artifact within a repository.
+type mavenKey struct {
+	repoID, groupID, artifactID string
+}
+
+func (k mavenKey) String() string { return k.repoID + ":" + k.groupID + ":" + k.artifactID }
 
 func NewMavenMetadataWorker(db database.Database, blobStore storage.BlobStore, sqlDB *sql.DB, log *logger.Logger, reg *metrics.Registry) *MavenMetadataWorker {
-	return &MavenMetadataWorker{
-		db:        db,
-		blobStore: blobStore,
-		log:       log,
-		sqlDB:     sqlDB,
-		reg:       reg,
-		timers:    make(map[string]*time.Timer),
-		debounce:  500 * time.Millisecond,
-	}
-}
+	w := &MavenMetadataWorker{db: db, blobStore: blobStore, log: log, sqlDB: sqlDB}
+	w.q = newRegenQueue("maven", log, func(ctx context.Context, k mavenKey) error {
+		return w.regenerate(ctx, k.repoID, k.groupID, k.artifactID)
+	})
+	w.q.setMetrics(reg)
 
-func (w *MavenMetadataWorker) WithDebounce(d time.Duration) *MavenMetadataWorker {
-	w.debounce = d
 	return w
 }
 
-func (w *MavenMetadataWorker) NotifyStale(repoID, groupID, artifactID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	key := repoID + ":" + groupID + ":" + artifactID
-	if t, ok := w.timers[key]; ok {
-		t.Stop()
-	}
-
-	var t *time.Timer
-
-	t = time.AfterFunc(w.debounce, func() {
-		start := time.Now()
-
-		err := w.regenerate(context.Background(), repoID, groupID, artifactID)
-		if w.reg != nil {
-			w.reg.MetadataRegenerationDurationSeconds.WithLabelValues("maven").Observe(time.Since(start).Seconds())
-			w.reg.MetadataRegenerationsTotal.WithLabelValues("maven").Inc()
-		}
-
-		if err != nil {
-			w.log.Errorw("maven metadata regeneration failed", "repo_id", repoID, "group_id", groupID, "artifact_id", artifactID, "error", err)
-		}
-
-		w.mu.Lock()
-		if w.timers[key] == t {
-			delete(w.timers, key)
-		}
-		w.mu.Unlock()
-	})
-	w.timers[key] = t
+func (w *MavenMetadataWorker) WithDebounce(d time.Duration) *MavenMetadataWorker {
+	w.q.setDebounce(d)
+	return w
 }
 
-func (w *MavenMetadataWorker) Stop() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
+// WithRegenLimiter shares a concurrency limiter with the other metadata workers.
+func (w *MavenMetadataWorker) WithRegenLimiter(l *RegenLimiter) *MavenMetadataWorker {
+	w.q.setLimiter(l)
+	return w
+}
 
-	for key, t := range w.timers {
-		t.Stop()
-		delete(w.timers, key)
-	}
+// NotifyStale schedules a coalesced regeneration of the artifact's maven-metadata.xml.
+func (w *MavenMetadataWorker) NotifyStale(repoID, groupID, artifactID string) {
+	w.q.Notify(mavenKey{repoID: repoID, groupID: groupID, artifactID: artifactID})
+}
+
+// Stop drains pending regenerations and waits for running ones (bounded).
+func (w *MavenMetadataWorker) Stop() {
+	w.q.Stop()
 }
 
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, artifactID string) error {
-	lockKey := repoID + ":" + groupID + ":" + artifactID
-
 	if w.sqlDB != nil {
-		release, locked, err := tryAdvisoryLock(ctx, w.sqlDB, "maven:"+lockKey)
+		release, err := lockForRegeneration(ctx, w.sqlDB, "maven:"+mavenKey{repoID, groupID, artifactID}.String())
 		if err != nil {
-			return fmt.Errorf("maven worker: advisory lock query: %w", err)
-		}
-
-		if !locked {
-			w.log.Infow("maven metadata: advisory lock held by another process, skipping", "key", lockKey)
-			return nil
+			return fmt.Errorf("maven worker: %w", err)
 		}
 
 		defer release()

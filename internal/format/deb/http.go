@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	db "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -62,23 +64,37 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.log.Infow("Debian repository HTTP handler registered", "prefix", prefix)
 }
 
-func (h *HTTPHandler) resolveRepoID(ctx context.Context, name string) (string, error) {
+func (h *HTTPHandler) resolveRepo(ctx context.Context, name string) (*models.Repository, error) {
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if repo == nil {
-		return "", fmt.Errorf("repository not found: %s", name) //nolint:err113 // dynamic error with runtime context
+		return nil, fmt.Errorf("repository not found: %s", name) //nolint:err113 // dynamic error with runtime context
+	}
+
+	return repo, nil
+}
+
+func (h *HTTPHandler) resolveRepoID(ctx context.Context, name string) (string, error) {
+	repo, err := h.resolveRepo(ctx, name)
+	if err != nil {
+		return "", err
 	}
 
 	return repo.ID, nil
 }
 
-// tryServeRepoBlob attempts to serve a pre-generated metadata blob.
-// Returns true if served, false if the blob does not exist yet.
-func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, repoID string, path string, contentType string) bool {
-	meta, err := h.db.GetRepoMetadataByPath(r.Context(), repoID, path)
+// metadataMaxAge is how long shared caches may reuse a public repository's
+// metadata before revalidating.
+const metadataMaxAge = 300
+
+// tryServeRepoBlob attempts to serve a pre-generated metadata blob. The blob
+// digest is the ETag, so a matching If-None-Match is answered without reading
+// the blob. Returns true if served, false if the blob does not exist yet.
+func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, path string, contentType string) bool {
+	meta, err := h.db.GetRepoMetadataByPath(r.Context(), repo.ID, path)
 	if err != nil {
 		h.log.Errorw("failed to query repo metadata", "path", path, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -88,6 +104,10 @@ func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, r
 
 	if meta == nil {
 		return false // not found; caller should fall back to streaming
+	}
+
+	if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+`"`, metadataMaxAge) {
+		return true
 	}
 
 	reader, err := h.blobStore.Get(r.Context(), meta.BlobSHA256)
@@ -100,8 +120,6 @@ func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, r
 	defer func() { _ = reader.Close() }()
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("ETag", `"`+meta.BlobSHA256+`"`)
-	w.Header().Set("Cache-Control", "public, max-age=300")
 
 	if _, err := io.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write response", "path", path, "error", err)
@@ -115,7 +133,7 @@ func (h *HTTPHandler) handleRelease(w http.ResponseWriter, r *http.Request) {
 	dist := vars["dist"]
 	name := vars["name"]
 
-	repoID, err := h.resolveRepoID(r.Context(), name)
+	repo, err := h.resolveRepo(r.Context(), name)
 	if err != nil {
 		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
 		http.NotFound(w, r)
@@ -125,7 +143,7 @@ func (h *HTTPHandler) handleRelease(w http.ResponseWriter, r *http.Request) {
 
 	// Fast path: serve pre-generated blob.
 	path := GetReleasePath(dist)
-	if h.tryServeRepoBlob(w, r, repoID, path, "text/plain") {
+	if h.tryServeRepoBlob(w, r, repo, path, "text/plain") {
 		return
 	}
 
@@ -133,7 +151,7 @@ func (h *HTTPHandler) handleRelease(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	if err := StreamRelease(r.Context(), h.db, repoID, dist, w); err != nil {
+	if err := StreamRelease(r.Context(), h.db, repo.ID, dist, w); err != nil {
 		h.log.Errorw("failed to stream Release", "dist", dist, "error", err)
 	}
 }
@@ -143,7 +161,7 @@ func (h *HTTPHandler) handleInRelease(w http.ResponseWriter, r *http.Request) {
 	dist := vars["dist"]
 	name := vars["name"]
 
-	repoID, err := h.resolveRepoID(r.Context(), name)
+	repo, err := h.resolveRepo(r.Context(), name)
 	if err != nil {
 		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
 		http.NotFound(w, r)
@@ -152,7 +170,7 @@ func (h *HTTPHandler) handleInRelease(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := GetInReleasePath(dist)
-	if !h.tryServeRepoBlob(w, r, repoID, path, "text/plain") {
+	if !h.tryServeRepoBlob(w, r, repo, path, "text/plain") {
 		http.NotFound(w, r)
 	}
 }
@@ -162,7 +180,7 @@ func (h *HTTPHandler) handleReleaseGPG(w http.ResponseWriter, r *http.Request) {
 	dist := vars["dist"]
 	name := vars["name"]
 
-	repoID, err := h.resolveRepoID(r.Context(), name)
+	repo, err := h.resolveRepo(r.Context(), name)
 	if err != nil {
 		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
 		http.NotFound(w, r)
@@ -171,7 +189,7 @@ func (h *HTTPHandler) handleReleaseGPG(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := GetReleaseGPGPath(dist)
-	if !h.tryServeRepoBlob(w, r, repoID, path, "application/pgp-signature") {
+	if !h.tryServeRepoBlob(w, r, repo, path, "application/pgp-signature") {
 		http.NotFound(w, r)
 	}
 }
@@ -183,7 +201,7 @@ func (h *HTTPHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
 	arch := vars["arch"]
 	name := vars["name"]
 
-	repoID, err := h.resolveRepoID(r.Context(), name)
+	repo, err := h.resolveRepo(r.Context(), name)
 	if err != nil {
 		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
 		http.NotFound(w, r)
@@ -191,14 +209,14 @@ func (h *HTTPHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.tryServeRepoBlob(w, r, repoID, GetPackagesPath(dist, comp, arch), "text/plain") {
+	if h.tryServeRepoBlob(w, r, repo, GetPackagesPath(dist, comp, arch), "text/plain") {
 		return
 	}
 
 	w.Header().Set("Content-Type", "text/plain")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	if _, err := StreamPackages(r.Context(), h.db, repoID, dist, comp, arch, CompressionNone, w); err != nil {
+	if _, err := StreamPackages(r.Context(), h.db, repo.ID, dist, comp, arch, CompressionNone, w); err != nil {
 		h.log.Errorw("failed to stream Packages", "dist", dist, "comp", comp, "arch", arch, "error", err)
 	}
 }
@@ -210,7 +228,7 @@ func (h *HTTPHandler) handlePackagesGz(w http.ResponseWriter, r *http.Request) {
 	arch := vars["arch"]
 	name := vars["name"]
 
-	repoID, err := h.resolveRepoID(r.Context(), name)
+	repo, err := h.resolveRepo(r.Context(), name)
 	if err != nil {
 		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
 		http.NotFound(w, r)
@@ -218,14 +236,14 @@ func (h *HTTPHandler) handlePackagesGz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.tryServeRepoBlob(w, r, repoID, GetPackagesGzPath(dist, comp, arch), "application/gzip") {
+	if h.tryServeRepoBlob(w, r, repo, GetPackagesGzPath(dist, comp, arch), "application/gzip") {
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/gzip")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	if _, err := StreamPackages(r.Context(), h.db, repoID, dist, comp, arch, CompressionGzip, w); err != nil {
+	if _, err := StreamPackages(r.Context(), h.db, repo.ID, dist, comp, arch, CompressionGzip, w); err != nil {
 		h.log.Errorw("failed to stream Packages.gz", "dist", dist, "comp", comp, "arch", arch, "error", err)
 	}
 }
@@ -237,7 +255,7 @@ func (h *HTTPHandler) handlePackagesXz(w http.ResponseWriter, r *http.Request) {
 	arch := vars["arch"]
 	name := vars["name"]
 
-	repoID, err := h.resolveRepoID(r.Context(), name)
+	repo, err := h.resolveRepo(r.Context(), name)
 	if err != nil {
 		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
 		http.NotFound(w, r)
@@ -245,14 +263,14 @@ func (h *HTTPHandler) handlePackagesXz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.tryServeRepoBlob(w, r, repoID, GetPackagesXzPath(dist, comp, arch), "application/x-xz") {
+	if h.tryServeRepoBlob(w, r, repo, GetPackagesXzPath(dist, comp, arch), "application/x-xz") {
 		return
 	}
 
 	w.Header().Set("Content-Type", "application/x-xz")
 	w.Header().Set("Cache-Control", "no-cache")
 
-	if _, err := StreamPackages(r.Context(), h.db, repoID, dist, comp, arch, CompressionXZ, w); err != nil {
+	if _, err := StreamPackages(r.Context(), h.db, repo.ID, dist, comp, arch, CompressionXZ, w); err != nil {
 		h.log.Errorw("failed to stream Packages.xz", "dist", dist, "comp", comp, "arch", arch, "error", err)
 	}
 }
@@ -309,7 +327,7 @@ func (h *HTTPHandler) handlePoolFile(w http.ResponseWriter, r *http.Request) {
 func (h *HTTPHandler) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 
-	repoID, err := h.resolveRepoID(r.Context(), name)
+	repo, err := h.resolveRepo(r.Context(), name)
 	if err != nil {
 		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
 		http.NotFound(w, r)
@@ -318,7 +336,7 @@ func (h *HTTPHandler) handlePublicKey(w http.ResponseWriter, r *http.Request) {
 	}
 
 	path := "public.key"
-	if !h.tryServeRepoBlob(w, r, repoID, path, "application/pgp-keys") {
+	if !h.tryServeRepoBlob(w, r, repo, path, "application/pgp-keys") {
 		http.NotFound(w, r)
 	}
 }

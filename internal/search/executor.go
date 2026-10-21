@@ -8,7 +8,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"regexp"
 	"strings"
 	"time"
 
@@ -43,117 +42,107 @@ func NewExecutor(db *sql.DB) *Executor {
 	return &Executor{db: db}
 }
 
-// unifiedSearchView returns a subquery joining every format table (through the
-// global content-addressed blobs table for sha256/size) into a single shape:
-// repository_id, format, name, version, created_at, path, sha256, size,
-// group_id, artifact_id_coord, scope. group_id/artifact_id_coord are populated
-// only for maven (used to enrich SearchResult.Metadata); scope only for npm.
-func unifiedSearchView() string {
+// Every branch of the search view yields the same columns, in this order: the
+// row's identity and sort key (repository_id, created_at, id), the fields shown
+// in a result (format, name, version, path; group_id and artifact_id_coord are
+// populated only for maven, scope only for npm) and the two locators of its
+// size/checksum, blob_id (blobs row) and manifest_image/manifest_digest (docker: the digest and
+// size come from the manifest).
+
+// searchBlobJoins resolves a view row's sha256 and size. A row has either a
+// blob_id (every format but docker) or a manifest_digest (docker), so the
+// COALESCEs pick whichever join matched; rows with neither report ” and 0.
+const searchBlobJoins = `LEFT JOIN blobs b ON b.id = %[1]s.blob_id
+		LEFT JOIN docker_manifests dm ON dm.repository_id = %[1]s.repository_id AND dm.image = %[1]s.manifest_image AND dm.digest = %[1]s.manifest_digest`
+
+const (
+	searchSHA256Expr = `COALESCE(b.sha256, regexp_replace(dm.digest, '^sha256:', ''), '')`
+	searchSizeExpr   = `COALESCE(b.size_bytes, dm.size, 0)`
+)
+
+// narrowSearchView is the union of every format table reduced to
+// searchColumns, without touching the blobs table: no row is widened by a join
+// until the caller has filtered and paged the union.
+func narrowSearchView() string {
 	return `(` + strings.Join(unifiedSearchBranches(), "\n\tUNION ALL\n\t") + `)`
 }
 
-// blobJoinRe matches the "LEFT JOIN blobs b" every branch of the view uses to
-// resolve sha256 and size.
-var blobJoinRe = regexp.MustCompile(`\s+LEFT JOIN blobs b ON b\.id = \w+\.\w+`)
+// searchSource returns the FROM source of the filter's predicates, aliased s,
+// and whether the repositories table must be joined as r to evaluate them.
+// Only a sha256 prefix needs checksums, so only then is the union enriched
+// with them for every row; otherwise the filter, the count and the page
+// selection all run on the narrow union and blobs is joined for one page only.
+// repositories is joined only for a repo: filter: every row's repository_id
+// already references an existing repository and is scoped in SQL to the
+// readable set.
+func searchSource(filter SearchFilter) (string, bool) {
+	joinRepo := len(filter.Repos) > 0
 
-// countSearchView is unifiedSearchView without the blobs join, for queries that
-// never read sha256 or size (a count without a sha256 filter): the join forces
-// a hash join over the whole blobs table per format, and removing it cuts the
-// count roughly in half.
-func countSearchView() string {
-	v := blobJoinRe.ReplaceAllString(unifiedSearchView(), "")
-	v = strings.ReplaceAll(v, "COALESCE(b.sha256, '')", "''::text")
+	if filter.SHA256Prefix == "" {
+		return narrowSearchView(), joinRepo
+	}
 
-	return strings.ReplaceAll(v, "COALESCE(b.size_bytes, 0)", "0::bigint")
+	//nolint:unqueryvet // n.* is the narrow view above: its columns are the fixed, documented search columns
+	return `(SELECT n.*, ` + searchSHA256Expr + ` AS sha256, ` + searchSizeExpr + ` AS size
+		FROM ` + narrowSearchView() + ` AS n ` + fmt.Sprintf(searchBlobJoins, "n") + `)`, joinRepo
+}
+
+// searchBranch renders one branch of the view: alias, repository column and
+// per-format expressions are given in searchColumns order.
+func searchBranch(format, name, version, path, groupID, artifactID, blobID, manifestDigest, from string) string {
+	manifestImage := "NULL"
+	if manifestDigest != "NULL" {
+		manifestImage = from + ".image"
+	}
+
+	return `SELECT ` + from + `.repository_id, '` + format + `'::text AS format, ` + name + `::text AS name, ` + version + `::text AS version,
+			` + from + `.created_at, ` + from + `.id, ` + path + `::text AS path,
+			` + groupID + `::text AS group_id, ` + artifactID + `::text AS artifact_id_coord, NULL::text AS scope,
+			` + blobID + `::uuid AS blob_id, ` + manifestImage + `::text AS manifest_image, ` + manifestDigest + `::text AS manifest_digest`
 }
 
 func unifiedSearchBranches() []string {
+	const null = "NULL"
+
 	return []string{
-		`SELECT cc.repository_id, 'cargo'::text AS format, cc.name, cc.version, cc.created_at,
-			cc.name || '-' || cc.version || '.crate' AS path,
-			COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0) AS size,
-			NULL::text AS group_id, NULL::text AS artifact_id_coord, NULL::text AS scope
-		FROM cargo_crates cc LEFT JOIN blobs b ON b.id = cc.blob_id`,
-		`SELECT cp.repository_id, 'conda'::text, cp.name, cp.version, cp.created_at,
-			''::text,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM conda_packages cp LEFT JOIN blobs b ON b.id = cp.blob_id`,
-		`SELECT co.repository_id, 'conan'::text, co.name, co.version, co.created_at,
-			''::text,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM conan_packages co LEFT JOIN blobs b ON b.id = co.blob_id`,
-		`SELECT dt.repository_id, 'docker'::text, dt.name, ''::text, dt.created_at,
-			''::text,
-			COALESCE(regexp_replace(dm.digest, '^sha256:', ''), ''),
-			COALESCE(dm.size, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM docker_tags dt
-		LEFT JOIN docker_manifests dm
-			ON dm.repository_id = dt.repository_id AND dm.image = dt.image AND dm.digest = dt.manifest_digest`,
-		`SELECT gm.repository_id, 'gomod'::text, gm.module_path, gm.version, gm.created_at,
-			''::text,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM gomod_modules gm LEFT JOIN blobs b ON b.id = gm.zip_blob_id`,
-		`SELECT hc.repository_id, 'helm'::text, hc.name, hc.version, hc.created_at,
-			hc.name || '-' || hc.version || '.tgz',
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM helm_charts hc LEFT JOIN blobs b ON b.id = hc.blob_id`,
-		`SELECT iv.repository_id, 'ivy'::text, iv.organisation || '/' || iv.module, iv.revision, iv.created_at,
-			iv.artifact_name || '.' || iv.artifact_ext,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM ivy_artifacts iv LEFT JOIN blobs b ON b.id = iv.blob_id`,
-		`SELECT ma.repository_id, 'maven'::text, ma.group_id || ':' || ma.artifact_id_coord, ma.version, ma.created_at,
-			ma.repo_path,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			ma.group_id, ma.artifact_id_coord, NULL::text
-		FROM maven_artifacts ma LEFT JOIN blobs b ON b.id = ma.blob_id`,
-		`SELECT np.repository_id, 'npm'::text, np.full_name, nv.version, nv.created_at,
-			nv.tarball_filename,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULLIF(np.scope, '')
+		searchBranch("cargo", "cc.name", "cc.version", "cc.name || '-' || cc.version || '.crate'", null, null, "cc.blob_id", null, "cc") +
+			"\n\t\tFROM cargo_crates cc",
+		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
+			"\n\t\tFROM conda_packages cp",
+		searchBranch("conan", "co.name", "co.version", "''", null, null, "co.blob_id", null, "co") +
+			"\n\t\tFROM conan_packages co",
+		searchBranch("docker", "dt.name", "''", "''", null, null, null, "dt.manifest_digest", "dt") +
+			"\n\t\tFROM docker_tags dt",
+		// gomod: only the zip blob is reported (a module with just a .mod has none).
+		searchBranch("gomod", "gm.module_path", "gm.version", "''", null, null, "gm.zip_blob_id", null, "gm") +
+			"\n\t\tFROM gomod_modules gm",
+		searchBranch("helm", "hc.name", "hc.version", "hc.name || '-' || hc.version || '.tgz'", null, null, "hc.blob_id", null, "hc") +
+			"\n\t\tFROM helm_charts hc",
+		searchBranch("ivy", "iv.organisation || '/' || iv.module", "iv.revision", "iv.artifact_name || '.' || iv.artifact_ext", null, null, "iv.blob_id", null, "iv") +
+			"\n\t\tFROM ivy_artifacts iv",
+		searchBranch("maven", "ma.group_id || ':' || ma.artifact_id_coord", "ma.version", "ma.repo_path", "ma.group_id", "ma.artifact_id_coord", "ma.blob_id", null, "ma") +
+			"\n\t\tFROM maven_artifacts ma",
+		// npm: id and created_at are the version's, repository and name the package's.
+		`SELECT np.repository_id, 'npm'::text AS format, np.full_name::text AS name, nv.version::text AS version,
+			nv.created_at, nv.id, nv.tarball_filename::text AS path,
+			NULL::text AS group_id, NULL::text AS artifact_id_coord, NULLIF(np.scope, '')::text AS scope,
+			nv.blob_id::uuid AS blob_id, NULL::text AS manifest_image, NULL::text AS manifest_digest
 		FROM npm_packages np
-		JOIN npm_versions nv ON nv.package_id = np.id
-		LEFT JOIN blobs b ON b.id = nv.blob_id`,
-		`SELECT ng.repository_id, 'nuget'::text, ng.package_id, ng.version, ng.created_at,
-			ng.package_id || '.' || ng.version || '.nupkg',
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM nuget_packages ng LEFT JOIN blobs b ON b.id = ng.blob_id`,
-		`SELECT pp.repository_id, 'pypi'::text, pp.name, pp.version, pp.created_at,
-			pp.filename,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM pypi_packages pp LEFT JOIN blobs b ON b.id = pp.blob_id`,
-		`SELECT ra.repository_id, 'raw'::text, ra.path, ''::text, ra.created_at,
-			ra.path,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM raw_artifacts ra LEFT JOIN blobs b ON b.id = ra.blob_id`,
-		`SELECT rg.repository_id, 'rubygems'::text, rg.name, rg.version, rg.created_at,
-			rg.name || '-' || rg.version || '.gem',
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM rubygems_gems rg LEFT JOIN blobs b ON b.id = rg.blob_id`,
-		`SELECT sa.repository_id, 'sbt'::text, sa.group_id || '/' || sa.artifact_id, sa.version, sa.created_at,
-			sa.filename,
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM sbt_artifacts sa LEFT JOIN blobs b ON b.id = sa.blob_id`,
-		`SELECT rp.repository_id, 'rpm'::text, rp.name, rp.version, rp.created_at,
-			COALESCE(rp.filename, ''),
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM rpm_packages rp LEFT JOIN blobs b ON b.id = rp.blob_id`,
-		`SELECT dp.repository_id, 'deb'::text, dp.name, dp.version, dp.created_at,
-			COALESCE(dp.filename, ''),
-			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
-			NULL::text, CAST(NULL AS text), NULL::text
-		FROM deb_packages dp LEFT JOIN blobs b ON b.id = dp.blob_id`,
+		JOIN npm_versions nv ON nv.package_id = np.id`,
+		searchBranch("nuget", "ng.package_id", "ng.version", "ng.package_id || '.' || ng.version || '.nupkg'", null, null, "ng.blob_id", null, "ng") +
+			"\n\t\tFROM nuget_packages ng",
+		searchBranch("pypi", "pp.name", "pp.version", "pp.filename", null, null, "pp.blob_id", null, "pp") +
+			"\n\t\tFROM pypi_packages pp",
+		searchBranch("raw", "ra.path", "''", "ra.path", null, null, "ra.blob_id", null, "ra") +
+			"\n\t\tFROM raw_artifacts ra",
+		searchBranch("rubygems", "rg.name", "rg.version", "rg.name || '-' || rg.version || '.gem'", null, null, "rg.blob_id", null, "rg") +
+			"\n\t\tFROM rubygems_gems rg",
+		searchBranch("sbt", "sa.group_id || '/' || sa.artifact_id", "sa.version", "sa.filename", null, null, "sa.blob_id", null, "sa") +
+			"\n\t\tFROM sbt_artifacts sa",
+		searchBranch("rpm", "rp.name", "rp.version", "COALESCE(rp.filename, '')", null, null, "rp.blob_id", null, "rp") +
+			"\n\t\tFROM rpm_packages rp",
+		searchBranch("deb", "dp.name", "dp.version", "COALESCE(dp.filename, '')", null, null, "dp.blob_id", null, "dp") +
+			"\n\t\tFROM deb_packages dp",
 	}
 }
 
@@ -167,13 +156,9 @@ func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readab
 
 	where, args := buildWhereClause(filter, readableRepos)
 
-	view := countSearchView()
-	if filter.SHA256Prefix != "" {
-		view = unifiedSearchView()
-	}
+	source, joinRepo := searchSource(filter)
 
-	q := `SELECT COUNT(*) FROM ` + view + ` AS s
-		JOIN repositories r ON r.id = s.repository_id`
+	q := `SELECT COUNT(*) FROM ` + source + ` AS s` + repoJoin(joinRepo)
 	if where != "" {
 		q += " WHERE " + where
 	}
@@ -186,10 +171,22 @@ func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readab
 	return count, nil
 }
 
+func repoJoin(join bool) string {
+	if !join {
+		return ""
+	}
+
+	return " JOIN repositories r ON r.id = s.repository_id"
+}
+
 // Search runs the filter scoped to readableRepos. Repo scoping is enforced
 // twice: at the SQL level (repository_id = ANY($n)) and again in Go after
 // scanning, so a caller with no readable repositories always gets an empty
 // result set even if the SQL-level filter were ever bypassed or misapplied.
+//
+// The query is staged: the page (newest first, id as tiebreak so paging is
+// stable) is selected from the narrow union, and only those rows are joined to
+// repositories (name) and blobs (sha256, size).
 func (e *Executor) Search(
 	ctx context.Context,
 	filter SearchFilter,
@@ -202,36 +199,49 @@ func (e *Executor) Search(
 
 	where, args := buildWhereClause(filter, readableRepos)
 
-	orderBy := "s.created_at DESC"
-
 	limitN := len(args) + 1
 	offsetN := len(args) + 2
 	args = append(args, limit, offset)
 
-	q := fmt.Sprintf(`SELECT
-		s.repository_id,
+	source, joinRepo := searchSource(filter)
+
+	//nolint:gosec // G201: every formatted fragment is a constant or built from constants; user values are bound $n arguments
+	q := fmt.Sprintf(`WITH page AS (
+		SELECT s.repository_id, s.format, s.name, s.version, s.created_at, s.id, s.path,
+			s.group_id, s.artifact_id_coord, s.scope, s.blob_id, s.manifest_image, s.manifest_digest
+		FROM %s AS s%s
+		%s
+		ORDER BY s.created_at DESC, s.id
+		LIMIT $%d OFFSET $%d
+	)
+	SELECT
+		p.repository_id,
 		r.name AS repository,
-		s.format,
-		s.name,
-		s.version,
-		s.path,
-		s.sha256,
-		s.size,
-		s.created_at,
-		s.group_id,
-		s.artifact_id_coord,
-		s.scope
-	FROM `+unifiedSearchView()+` AS s
-	JOIN repositories r ON r.id = s.repository_id
+		p.format,
+		p.name,
+		p.version,
+		p.path,
+		%s AS sha256,
+		%s AS size,
+		p.created_at,
+		p.group_id,
+		p.artifact_id_coord,
+		p.scope
+	FROM page AS p
+	JOIN repositories r ON r.id = p.repository_id
 	%s
-	ORDER BY %s
-	LIMIT $%d OFFSET $%d`,
+	ORDER BY p.created_at DESC, p.id`,
+		source,
+		repoJoin(joinRepo),
 		whereClause(where),
-		orderBy,
 		limitN,
 		offsetN,
+		searchSHA256Expr,
+		searchSizeExpr,
+		fmt.Sprintf(searchBlobJoins, "p"),
 	)
 
+	//nolint:gosec // G701: see G201 above, q contains placeholders only
 	rows, err := e.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, fmt.Errorf("search query: %w", err)

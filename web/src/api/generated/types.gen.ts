@@ -2784,13 +2784,32 @@ export type GetApiV1AdminAuditData = {
     body?: never;
     path?: never;
     query?: {
+        /**
+         * 1-based page number (offset paging). Ignored when `cursor` is present.
+         */
         page?: number;
         per_page?: number;
+        /**
+         * Opaque `next_cursor` of the previous page. Present but empty starts keyset paging at the newest entry. Selects keyset paging: the response carries no `page`, `total` or `total_exact`.
+         */
+        cursor?: string;
+        /**
+         * Case-insensitive substring of the actor name or actor id.
+         */
+        actor?: string;
+        /**
+         * Case-insensitive substring of the action name.
+         */
+        action?: string;
     };
     url: '/api/v1/admin/audit';
 };
 
 export type GetApiV1AdminAuditErrors = {
+    /**
+     * Malformed cursor
+     */
+    400: unknown;
     /**
      * Admin access required
      */
@@ -2803,9 +2822,27 @@ export type GetApiV1AdminAuditResponses = {
      */
     200: {
         data?: Array<AuditEntry>;
+        /**
+         * Offset paging only.
+         */
         page?: number;
         per_page?: number;
+        /**
+         * Offset paging only. See `total_exact`.
+         */
         total?: number;
+        /**
+         * Offset paging only. False when `total` is an estimate or a lower bound.
+         */
+        total_exact?: boolean;
+        /**
+         * True when entries follow this page.
+         */
+        has_more?: boolean;
+        /**
+         * Pass as `cursor` to fetch the next page. Absent when `has_more` is false.
+         */
+        next_cursor?: string;
     };
 };
 

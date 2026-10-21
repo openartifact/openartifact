@@ -1212,18 +1212,18 @@ func (m *MockDatabase) InsertAuditLog(ctx context.Context, event *models.AuditLo
 	return nil
 }
 
-func (m *MockDatabase) ListAuditLogs(ctx context.Context, page, perPage int, actor, action string) ([]*models.AuditLog, int, error) {
+func (m *MockDatabase) ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
 	var filtered []*models.AuditLog
 
 	for _, log := range m.AuditLogs {
-		if actor != "" && (log.ActorID == nil || *log.ActorID != actor) {
+		if params.Actor != "" && (log.ActorID == nil || *log.ActorID != params.Actor) {
 			continue
 		}
 
-		if action != "" && log.Action != action {
+		if params.Action != "" && log.Action != params.Action {
 			continue
 		}
 
@@ -1231,18 +1231,27 @@ func (m *MockDatabase) ListAuditLogs(ctx context.Context, page, perPage int, act
 	}
 
 	total := len(filtered)
-	start := (page - 1) * perPage
+	start := min(params.Offset, total)
 
-	end := start + perPage
-	if start > total {
+	if params.After != nil {
 		start = total
+
+		for i, log := range filtered {
+			if log.ID == params.After.ID {
+				start = i + 1
+			}
+		}
 	}
 
-	if end > total {
-		end = total
+	end := min(start+params.Limit, total)
+	page := &models.AuditPage{Logs: filtered[start:end], Total: total, TotalExact: true}
+
+	if end < total && end > start {
+		last := filtered[end-1]
+		page.Next = &models.AuditCursor{CreatedAt: last.CreatedAt, ID: last.ID}
 	}
 
-	return filtered[start:end], total, nil
+	return page, nil
 }
 
 func (m *MockDatabase) ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error) {

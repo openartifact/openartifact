@@ -774,18 +774,6 @@ func (h *RepositoriesHandler) collectOrphansAsync() {
 	})
 }
 
-// isComponentFormat reports whether ListRepoComponents has a branch for format;
-// only such formats may narrow a listing to the repository's own.
-func isComponentFormat(format string) bool {
-	switch format {
-	case "cargo", "conan", "conda", "deb", "docker", "gomod", "helm", "ivy", "maven", "npm",
-		"nuget", "pypi", "raw", "rpm", "rubygems", "sbt":
-		return true
-	}
-
-	return false
-}
-
 func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	q := r.URL.Query()
@@ -815,13 +803,6 @@ func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Requ
 			writeError(w, http.StatusForbidden, "forbidden", "access denied")
 			return
 		}
-	}
-
-	// A repository stores one format, so unless the caller asked otherwise the
-	// listing can skip every other format's table: the union over all of them
-	// costs several times more and its plan cannot prune at runtime.
-	if formatFilter == "" && isComponentFormat(repo.Format) {
-		formatFilter = repo.Format
 	}
 
 	components, total, err := h.db.ListComponentsByRepo(ctx, repo.ID, formatFilter, page, limit)

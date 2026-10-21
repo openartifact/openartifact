@@ -410,8 +410,8 @@ func (m *tokenMockDB) InsertAuditLog(_ context.Context, _ *models.AuditLog) erro
 	return nil
 }
 
-func (m *tokenMockDB) ListAuditLogs(_ context.Context, _, _ int, _, _ string) ([]*models.AuditLog, int, error) {
-	return nil, 0, nil
+func (m *tokenMockDB) ListAuditLogs(_ context.Context, _ models.AuditListParams) (*models.AuditPage, error) {
+	return &models.AuditPage{}, nil
 }
 
 func (m *tokenMockDB) ListAllTokens(_ context.Context, _, _ int) ([]*models.Token, int, error) {

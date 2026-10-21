@@ -71,6 +71,26 @@ func buildScenarios(st *state, runID string) []scenario {
 		return func(int64) reqSpec { return reqSpec{method: "GET", path: path, hdr: hdr} }
 	}
 
+	// cond issues the request with If-None-Match set to the ETag the server
+	// returned for the same URL, so servers with conditional-request support
+	// answer 304; servers without an ETag see an unconditional request.
+	cond := func(path string) func(int64) reqSpec {
+		var (
+			once sync.Once
+			tag  string
+		)
+
+		return func(int64) reqSpec {
+			once.Do(func() { tag = fetchETag(st, path) })
+
+			if tag == "" {
+				return reqSpec{method: "GET", path: path}
+			}
+
+			return reqSpec{method: "GET", path: path, hdr: map[string]string{"If-None-Match": tag}}
+		}
+	}
+
 	return []scenario{
 		{name: "dl maven jar (8KB)", gen: func(n int64) reqSpec { return reqSpec{method: "GET", path: mavenJar(n)} }},
 		{name: "dl maven jar (10MB)", concurrency: 8, gen: get("/repos/maven/"+st.MavenRepo+"/"+st.BigJar, nil)},
@@ -83,6 +103,10 @@ func buildScenarios(st *state, runID string) []scenario {
 		{name: "meta deb Packages.gz", gen: get("/repos/"+st.DebRepo+"/dists/stable/main/binary-amd64/Packages.gz", nil)},
 		{name: "meta deb Release", gen: get("/repos/"+st.DebRepo+"/dists/stable/Release", nil)},
 		{name: "meta rpm repomd.xml", gen: get("/repos/"+st.RPMRepo+"/repodata/repomd.xml", nil)},
+		{name: "meta maven-metadata.xml conditional", gen: cond("/repos/maven/" + st.MavenRepo + "/com/bench/hot/hot-lib/maven-metadata.xml")},
+		{name: "meta npm packument conditional", gen: cond("/repos/" + st.NPMRepo + "/hot-pkg")},
+		{name: "meta deb Release conditional", gen: cond("/repos/" + st.DebRepo + "/dists/stable/Release")},
+		{name: "meta rpm repomd.xml conditional", gen: cond("/repos/" + st.RPMRepo + "/repodata/repomd.xml")},
 		{name: "api GET /auth/me", gen: get("/api/v1/auth/me", nil)},
 		{name: "api GET /repositories", gen: get("/api/v1/repositories", nil)},
 		{name: "api GET packages (maven, limit=100)", gen: func(n int64) reqSpec {
@@ -117,6 +141,27 @@ func buildScenarios(st *state, runID string) []scenario {
 			return reqSpec{method: "POST", body: buf.Bytes(), hdr: map[string]string{"Content-Type": mw.FormDataContentType()}, path: "/api/v1/repositories/" + st.DebRepo + "/debs"}
 		}},
 	}
+}
+
+// fetchETag returns the ETag of an authenticated GET, or "" when absent.
+func fetchETag(st *state, path string) string {
+	req, err := http.NewRequest(http.MethodGet, st.URL+path, nil)
+	if err != nil {
+		return ""
+	}
+
+	req.Header.Set("Authorization", "Bearer "+st.Token)
+
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return ""
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	_, _ = io.Copy(io.Discard, resp.Body)
+
+	return resp.Header.Get("ETag")
 }
 
 var bigPayload = randBytes(10 << 20)
@@ -203,6 +248,9 @@ type harness struct {
 	pid        int
 	metricsURL string
 	metricsTok string
+	// next is the request counter carried from the warmup into the measured
+	// run, so upload scenarios never reuse a name (and hit 409) across them.
+	next atomic.Int64
 }
 
 //nolint:gocyclo // measurement loop
@@ -216,6 +264,10 @@ func (h *harness) run(sc scenario, conc int, d time.Duration, prof *profiler, _ 
 		mu       sync.Mutex
 		all      []time.Duration
 	)
+
+	counter.Store(h.next.Load())
+
+	defer func() { h.next.Store(counter.Load()) }()
 
 	cpu0, wall0 := procCPU(h.pid), time.Now()
 	m0 := scrapeGo(h.hc, h.metricsURL, h.metricsTok)

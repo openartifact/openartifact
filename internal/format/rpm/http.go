@@ -13,6 +13,8 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	db "github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -39,23 +41,34 @@ func (h *HTTPHandler) Name() string {
 	return h.name
 }
 
-func (h *HTTPHandler) resolveRepoID(ctx context.Context, name string) (string, error) {
+func (h *HTTPHandler) resolveRepo(ctx context.Context, name string) (*models.Repository, error) {
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 
 	if repo == nil {
-		return "", fmt.Errorf("repository not found: %s", name) //nolint:err113 // dynamic error with runtime context
+		return nil, fmt.Errorf("repository not found: %s", name) //nolint:err113 // dynamic error with runtime context
 	}
 
-	return repo.ID, nil
+	return repo, nil
 }
 
-// tryServeRepoBlob attempts to serve a pre-generated metadata blob.
-// Returns true if served (or an error was written), false if not found.
-func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, repoID string, path string, contentType string) bool {
-	meta, err := h.db.GetRepoMetadataByPath(r.Context(), repoID, path)
+// How long shared caches may reuse a public repository's metadata before
+// revalidating. Content-addressed repodata files never change under their name.
+const (
+	metadataMaxAge  = 300
+	repodataMaxAge  = 86400
+	publicKeyMaxAge = 86400
+	packageMaxAge   = 3600
+)
+
+// tryServeRepoBlob attempts to serve a pre-generated metadata blob. The blob
+// digest is the ETag, so a matching If-None-Match is answered without reading
+// the blob. Returns true if served (or an error was written), false if not
+// found; nothing is written to w in the not-found case.
+func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, path string, contentType string, maxAge int) bool {
+	meta, err := h.db.GetRepoMetadataByPath(r.Context(), repo.ID, path)
 	if err != nil {
 		h.log.Errorw("failed to query repo metadata", "path", path, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -65,6 +78,10 @@ func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, r
 
 	if meta == nil {
 		return false
+	}
+
+	if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+`"`, maxAge) {
+		return true
 	}
 
 	reader, err := h.blobStore.Get(r.Context(), meta.BlobSHA256)
@@ -77,7 +94,6 @@ func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, r
 	defer func() { _ = reader.Close() }()
 
 	w.Header().Set("Content-Type", contentType)
-	w.Header().Set("ETag", `"`+meta.BlobSHA256+`"`)
 
 	if _, err := io.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write response", "path", path, "error", err)
@@ -109,15 +125,13 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 }
 
 func (h *HTTPHandler) handleRepomdXML(w http.ResponseWriter, r *http.Request) {
-	repoID, err := h.resolveRepoID(r.Context(), urlparams.Vars(r)["name"])
+	repo, err := h.resolveRepo(r.Context(), urlparams.Vars(r)["name"])
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	w.Header().Set("Cache-Control", "public, max-age=300")
-
-	if h.tryServeRepoBlob(w, r, repoID, "repodata/repomd.xml", "application/xml") {
+	if h.tryServeRepoBlob(w, r, repo, "repodata/repomd.xml", "application/xml", metadataMaxAge) {
 		return
 	}
 	// Metadata has not been generated yet; clients must retry rather than
@@ -128,13 +142,13 @@ func (h *HTTPHandler) handleRepomdXML(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) handleRepomdXMLAsc(w http.ResponseWriter, r *http.Request) {
-	repoID, err := h.resolveRepoID(r.Context(), urlparams.Vars(r)["name"])
+	repo, err := h.resolveRepo(r.Context(), urlparams.Vars(r)["name"])
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	if !h.tryServeRepoBlob(w, r, repoID, "repodata/repomd.xml.asc", "application/pgp-signature") {
+	if !h.tryServeRepoBlob(w, r, repo, "repodata/repomd.xml.asc", "application/pgp-signature", metadataMaxAge) {
 		http.NotFound(w, r)
 	}
 }
@@ -142,7 +156,7 @@ func (h *HTTPHandler) handleRepomdXMLAsc(w http.ResponseWriter, r *http.Request)
 func (h *HTTPHandler) handleMetadataFile(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 
-	repoID, err := h.resolveRepoID(r.Context(), vars["name"])
+	repo, err := h.resolveRepo(r.Context(), vars["name"])
 	if err != nil {
 		http.NotFound(w, r)
 		return
@@ -165,9 +179,8 @@ func (h *HTTPHandler) handleMetadataFile(w http.ResponseWriter, r *http.Request)
 
 	path := fmt.Sprintf("repodata/%s-%s.xml%s", checksum, metaType, ext)
 
-	w.Header().Set("Cache-Control", "public, max-age=300")
-
-	if h.tryServeRepoBlob(w, r, repoID, path, contentType) {
+	// The checksum is part of the file name: the content behind it never changes.
+	if h.tryServeRepoBlob(w, r, repo, path, contentType, repodataMaxAge) {
 		return
 	}
 
@@ -177,12 +190,13 @@ func (h *HTTPHandler) handleMetadataFile(w http.ResponseWriter, r *http.Request)
 func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 
-	repoID, err := h.resolveRepoID(r.Context(), vars["name"])
+	repo, err := h.resolveRepo(r.Context(), vars["name"])
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
+	repoID := repo.ID
 	filename := vars["filename"]
 
 	comp, err := h.db.GetComponentByFilename(r.Context(), repoID, filename)
@@ -202,6 +216,12 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	// Package files are content-addressed: the blob digest is a complete
+	// validator, and a public repository's packages may be reused for an hour.
+	if base.Revalidate(w, r, repo.Public, `"`+comp.SHA256+`"`, packageMaxAge) {
+		return
+	}
+
 	reader, err := h.blobStore.Get(r.Context(), comp.SHA256)
 	if err != nil {
 		h.log.Errorw("failed to read package blob", "artifact_id", comp.ArtifactID, "error", err)
@@ -212,7 +232,6 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 	defer func() { _ = reader.Close() }()
 
 	w.Header().Set("Content-Type", "application/x-rpm")
-	w.Header().Set("Cache-Control", "public, max-age=3600")
 
 	if _, err := io.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write package response", "filename", filename, "error", err)
@@ -220,28 +239,25 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *HTTPHandler) handleComps(w http.ResponseWriter, r *http.Request) {
-	repoID, err := h.resolveRepoID(r.Context(), urlparams.Vars(r)["name"])
+	repo, err := h.resolveRepo(r.Context(), urlparams.Vars(r)["name"])
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	w.Header().Set("Cache-Control", "public, max-age=300")
-
-	if !h.tryServeRepoBlob(w, r, repoID, "comps.xml", "application/xml") {
+	if !h.tryServeRepoBlob(w, r, repo, "comps.xml", "application/xml", metadataMaxAge) {
 		http.NotFound(w, r)
 	}
 }
 
 func (h *HTTPHandler) handlePublicKey(w http.ResponseWriter, r *http.Request) {
-	repoID, err := h.resolveRepoID(r.Context(), urlparams.Vars(r)["name"])
+	repo, err := h.resolveRepo(r.Context(), urlparams.Vars(r)["name"])
 	if err != nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	w.Header().Set("Cache-Control", "public, max-age=86400")
-	if !h.tryServeRepoBlob(w, r, repoID, "public.key", "application/pgp-keys") {
+	if !h.tryServeRepoBlob(w, r, repo, "public.key", "application/pgp-keys", publicKeyMaxAge) {
 		http.NotFound(w, r)
 	}
 }

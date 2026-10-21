@@ -7,7 +7,6 @@ package rpm
 import (
 	"encoding/xml"
 	"fmt"
-	"regexp"
 	"strconv"
 	"strings"
 	"time"
@@ -52,93 +51,6 @@ type checksumXML struct {
 	Value string `xml:",chardata"`
 }
 
-type primaryPackageXML struct {
-	XMLName     xml.Name `xml:"package"`
-	Type        string   `xml:"type,attr"`
-	Name        string   `xml:"name"`
-	Arch        string   `xml:"arch"`
-	Version     primaryVersionXML
-	Checksum    primaryChecksumXML
-	Summary     string `xml:"summary"`
-	Description string `xml:"description"`
-	Packager    string `xml:"packager,omitempty"`
-	URL         string `xml:"url,omitempty"`
-	Time        primaryTimeXML
-	Size        primarySizeXML
-	Location    locationXML
-	Format      primaryFormatXML
-}
-
-type primaryVersionXML struct {
-	XMLName xml.Name `xml:"version"`
-	Epoch   string   `xml:"epoch,attr,omitempty"`
-	Ver     string   `xml:"ver,attr"`
-	Rel     string   `xml:"rel,attr"`
-}
-
-type primaryChecksumXML struct {
-	XMLName xml.Name `xml:"checksum"`
-	Type    string   `xml:"type,attr"`
-	PkgID   string   `xml:"pkgid,attr"`
-	Value   string   `xml:",chardata"`
-}
-
-type primaryTimeXML struct {
-	XMLName xml.Name `xml:"time"`
-	File    int64    `xml:"file,attr"`
-	Build   int64    `xml:"build,attr"`
-}
-
-type primarySizeXML struct {
-	XMLName   xml.Name `xml:"size"`
-	Package   int64    `xml:"package,attr"`
-	Installed int64    `xml:"installed,attr"`
-	Archive   int64    `xml:"archive,attr"`
-}
-
-type primaryFormatXML struct {
-	XMLName     xml.Name `xml:"format"`
-	Xmlns       string   `xml:"xmlns:rpm,attr"`
-	License     string   `xml:"rpm:license,omitempty"`
-	Vendor      string   `xml:"rpm:vendor,omitempty"`
-	Group       string   `xml:"rpm:group,omitempty"`
-	BuildHost   string   `xml:"rpm:buildhost,omitempty"`
-	SourceRPM   string   `xml:"rpm:sourcerpm,omitempty"`
-	HeaderRange primaryHeaderRangeXML
-	Provides    []primaryEntryXML `xml:"rpm:provides>rpm:entry,omitempty"`
-	Requires    []primaryEntryXML `xml:"rpm:requires>rpm:entry,omitempty"`
-	Conflicts   []primaryEntryXML `xml:"rpm:conflicts>rpm:entry,omitempty"`
-	Obsoletes   []primaryEntryXML `xml:"rpm:obsoletes>rpm:entry,omitempty"`
-	Suggests    []primaryEntryXML `xml:"rpm:suggests>rpm:entry,omitempty"`
-	Enhances    []primaryEntryXML `xml:"rpm:enhances>rpm:entry,omitempty"`
-	Recommends  []primaryEntryXML `xml:"rpm:recommends>rpm:entry,omitempty"`
-	Supplements []primaryEntryXML `xml:"rpm:supplements>rpm:entry,omitempty"`
-}
-
-type primaryHeaderRangeXML struct {
-	XMLName xml.Name `xml:"rpm:header-range"`
-	Start   int64    `xml:"start,attr"`
-	End     int64    `xml:"end,attr"`
-}
-
-type primaryEntryXML struct {
-	XMLName xml.Name `xml:"rpm:entry"`
-	Name    string   `xml:"name,attr"`
-	Flags   string   `xml:"flags,attr,omitempty"`
-	Epoch   string   `xml:"epoch,attr,omitempty"`
-	Ver     string   `xml:"ver,attr,omitempty"`
-	Rel     string   `xml:"rel,attr,omitempty"`
-	Pre     string   `xml:"pre,attr,omitempty"`
-}
-
-type primaryMetadata struct {
-	XMLName  xml.Name            `xml:"metadata"`
-	Xmlns    string              `xml:"xmlns,attr"`
-	XmlnsRpm string              `xml:"xmlns:rpm,attr"`
-	Packages int                 `xml:"packages,attr"`
-	PkgList  []primaryPackageXML `xml:"package"`
-}
-
 func GenerateRepomdXML(revision string, entries []RepomdData) ([]byte, error) {
 	dataEntries := make([]repomdDataXML, len(entries))
 	for i, e := range entries {
@@ -171,76 +83,73 @@ func GenerateRepomdXML(revision string, entries []RepomdData) ([]byte, error) {
 	return append([]byte(xml.Header), output...), nil
 }
 
-func GeneratePrimaryXML(packages []rpm.Package, baseURL string) ([]byte, error) {
-	pkgEntries := make([]primaryPackageXML, len(packages))
-	for i, pkg := range packages {
-		epochStr := ""
-		if pkg.Epoch > 0 {
-			epochStr = strconv.FormatUint(uint64(pkg.Epoch), 10)
-		}
-
-		pkgEntries[i] = primaryPackageXML{
-			Type:        "rpm",
-			Name:        pkg.Name,
-			Arch:        pkg.Arch,
-			Version:     primaryVersionXML{Epoch: epochStr, Ver: pkg.Version, Rel: pkg.Release},
-			Checksum:    primaryChecksumXML{Type: "sha256", PkgID: "YES", Value: pkg.SHA256},
-			Summary:     pkg.Summary,
-			Description: pkg.Description,
-			Packager:    pkg.Packager,
-			URL:         pkg.URL,
-			Time:        primaryTimeXML{File: pkg.BuildTime, Build: pkg.BuildTime},
-			Size:        primarySizeXML{Package: pkg.PackageSize, Installed: pkg.InstalledSize, Archive: pkg.ArchiveSize},
-			Location:    locationXML{Href: fmt.Sprintf("Packages/%s-%s-%s.%s.rpm", pkg.Name, pkg.Version, pkg.Release, pkg.Arch)},
-			Format: primaryFormatXML{
-				Xmlns:       "http://linux.duke.edu/metadata/rpm",
-				License:     pkg.License,
-				Vendor:      pkg.Vendor,
-				Group:       pkg.Group,
-				BuildHost:   pkg.BuildHost,
-				SourceRPM:   pkg.SourceRPM,
-				HeaderRange: primaryHeaderRangeXML{Start: pkg.HeaderStart, End: pkg.HeaderEnd},
-				Provides:    depsToPrimaryEntries(pkg.Provides, false),
-				Requires:    depsToPrimaryEntries(filterRequires(&pkg), true),
-				Conflicts:   depsToPrimaryEntries(pkg.Conflicts, false),
-				Obsoletes:   depsToPrimaryEntries(pkg.Obsoletes, false),
-				Suggests:    depsToPrimaryEntries(pkg.Suggests, false),
-				Enhances:    depsToPrimaryEntries(pkg.Enhances, false),
-				Recommends:  depsToPrimaryEntries(pkg.Recommends, false),
-				Supplements: depsToPrimaryEntries(pkg.Supplements, false),
-			},
-		}
-	}
-
-	metadata := primaryMetadata{
-		Xmlns:    "http://linux.duke.edu/metadata/common",
-		XmlnsRpm: "http://linux.duke.edu/metadata/rpm",
-		Packages: len(packages),
-		PkgList:  pkgEntries,
-	}
-
-	output, err := xml.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("rpm: marshaling primary.xml: %w", err)
-	}
-
-	return append([]byte(xml.Header), output...), nil
+// glibcSymbol is a parsed `lib(GLIBC_x.y)[(64bit)]` requirement name.
+type glibcSymbol struct {
+	lib   string // everything before "(GLIBC_"
+	ver   string // dotted numeric symbol version
+	arch  bool   // trailing "(64bit)"
+	valid bool
 }
 
-var glibcSymbolRe = regexp.MustCompile(`^(.*)\(GLIBC_(\d+(?:\.\d+)*)\)((?:\(64bit\))?)$`)
+const (
+	glibcMarker = "(GLIBC_"
+	arch64Tag   = "(64bit)"
+)
+
+// parseGlibcSymbol is the hand-written equivalent of
+// ^(.*)\(GLIBC_(\d+(?:\.\d+)*)\)((?:\(64bit\))?)$ (the regexp allocated a
+// submatch slice per call, ~50 times per package).
+func parseGlibcSymbol(name string) glibcSymbol {
+	rest, arch := strings.CutSuffix(name, arch64Tag)
+
+	rest, ok := strings.CutSuffix(rest, ")")
+	if !ok {
+		return glibcSymbol{}
+	}
+
+	i := strings.LastIndex(rest, glibcMarker)
+	if i < 0 {
+		return glibcSymbol{}
+	}
+
+	lib, ver := rest[:i], rest[i+len(glibcMarker):]
+	if strings.IndexByte(lib, '\n') >= 0 || !isDottedNumber(ver) {
+		return glibcSymbol{}
+	}
+
+	return glibcSymbol{lib: lib, ver: ver, arch: arch, valid: true}
+}
+
+// isDottedNumber reports whether s matches \d+(\.\d+)*.
+func isDottedNumber(s string) bool {
+	prevDigit := false
+
+	for i := range len(s) {
+		switch c := s[i]; {
+		case c >= '0' && c <= '9':
+			prevDigit = true
+		case c == '.' && prevDigit:
+			prevDigit = false
+		default:
+			return false
+		}
+	}
+
+	return prevDigit
+}
 
 // compareDotted compares dotted numeric versions ("2.9" < "2.34").
 func compareDotted(a, b string) int {
-	as, bs := strings.Split(a, "."), strings.Split(b, ".")
-	for i := 0; i < len(as) || i < len(bs); i++ {
+	for a != "" || b != "" {
 		var x, y int
-		if i < len(as) {
-			x, _ = strconv.Atoi(as[i])
-		}
 
-		if i < len(bs) {
-			y, _ = strconv.Atoi(bs[i])
-		}
+		var as, bs string
+
+		as, a, _ = strings.Cut(a, ".")
+		bs, b, _ = strings.Cut(b, ".")
+
+		x, _ = strconv.Atoi(as)
+		y, _ = strconv.Atoi(bs)
 
 		if x != y {
 			return x - y
@@ -260,25 +169,31 @@ func keyOf(d rpm.Dependency) depKey {
 	return depKey{d.Name, rpm.SenseFlagsString(d.Flags), d.Version, d.Epoch, d.IsPre()}
 }
 
+// glibcLib identifies a library+arch pair for GLIBC collapsing.
+type glibcLib struct {
+	lib  string
+	arch bool
+}
+
 type glibcBest struct {
 	idx int
 	ver string
 }
 
 // bestGlibcRequires finds, per library+arch, the requirement with the highest GLIBC_x symbol version.
-func bestGlibcRequires(reqs []rpm.Dependency) map[string]glibcBest {
-	best := map[string]glibcBest{}
-
+func bestGlibcRequires(best map[glibcLib]glibcBest, reqs []rpm.Dependency) {
 	for i, d := range reqs {
-		if m := glibcSymbolRe.FindStringSubmatch(d.Name); m != nil && !d.Versioned() {
-			key := m[1] + "|" + m[3]
-			if b, ok := best[key]; !ok || compareDotted(m[2], b.ver) > 0 {
-				best[key] = glibcBest{i, m[2]}
+		if d.Versioned() {
+			continue
+		}
+
+		if g := parseGlibcSymbol(d.Name); g.valid {
+			key := glibcLib{g.lib, g.arch}
+			if b, ok := best[key]; !ok || compareDotted(g.ver, b.ver) > 0 {
+				best[key] = glibcBest{i, g.ver}
 			}
 		}
 	}
-
-	return best
 }
 
 type glibcAction int
@@ -290,13 +205,13 @@ const (
 )
 
 // dropGlibc decides how a requirement is treated by the GLIBC collapsing.
-func dropGlibc(d rpm.Dependency, idx int, best map[string]glibcBest) glibcAction {
+func dropGlibc(d rpm.Dependency, idx int, best map[glibcLib]glibcBest) glibcAction {
 	if d.Versioned() {
 		return glibcKeep
 	}
 
-	if m := glibcSymbolRe.FindStringSubmatch(d.Name); m != nil {
-		if best[m[1]+"|"+m[3]].idx != idx {
+	if g := parseGlibcSymbol(d.Name); g.valid {
+		if best[glibcLib{g.lib, g.arch}].idx != idx {
 			return glibcDrop
 		}
 
@@ -305,11 +220,11 @@ func dropGlibc(d rpm.Dependency, idx int, best map[string]glibcBest) glibcAction
 	}
 
 	if base, ok := strings.CutSuffix(d.Name, "()(64bit)"); ok {
-		if _, has := best[base+"|(64bit)"]; has {
+		if _, has := best[glibcLib{base, true}]; has {
 			return glibcDrop
 		}
 	} else if base, ok := strings.CutSuffix(d.Name, "()"); ok {
-		if _, has := best[base+"|"]; has {
+		if _, has := best[glibcLib{base, false}]; has {
 			return glibcDrop
 		}
 	}
@@ -317,228 +232,84 @@ func dropGlibc(d rpm.Dependency, idx int, best map[string]glibcBest) glibcAction
 	return glibcKeep
 }
 
+// requiresFilter applies the createrepo_c requirement filtering and keeps its
+// scratch maps and slices between packages, so repeated use (one filter per
+// metadata run) does not allocate per package. The slice returned by filter is
+// only valid until the next call.
+type requiresFilter struct {
+	provides map[depKey]bool
+	provided map[string]bool
+	seen     map[depKey]bool
+	best     map[glibcLib]glibcBest
+	out      []rpm.Dependency
+	glibc    []rpm.Dependency
+}
+
+func newRequiresFilter() *requiresFilter {
+	return &requiresFilter{
+		provides: make(map[depKey]bool),
+		provided: make(map[string]bool),
+		seen:     make(map[depKey]bool),
+		best:     make(map[glibcLib]glibcBest),
+	}
+}
+
 // filterRequires mirrors createrepo_c: duplicates are dropped, requirements the
 // package satisfies itself (own provides or packaged files) are dropped unless
 // they are script-time requirements, and versioned GLIBC symbol requirements
 // collapse to the highest version per library.
 func filterRequires(pkg *rpm.Package) []rpm.Dependency {
-	provides := make(map[depKey]bool, len(pkg.Provides))
-	provided := make(map[string]bool, len(pkg.Provides)+len(pkg.Files))
+	return newRequiresFilter().filter(pkg)
+}
+
+func (f *requiresFilter) filter(pkg *rpm.Package) []rpm.Dependency {
+	clear(f.provides)
+	clear(f.provided)
+	clear(f.seen)
+	clear(f.best)
 
 	for _, d := range pkg.Provides {
 		k := keyOf(d)
 		k.pre = false
-		provides[k] = true
-		provided[d.Name] = true
+		f.provides[k] = true
+		f.provided[d.Name] = true
 	}
 
-	for _, f := range pkg.Files {
-		provided[f.Path] = true
+	for i := range pkg.Files {
+		f.provided[pkg.Files[i].Path] = true
 	}
 
-	best := bestGlibcRequires(pkg.Requires)
+	bestGlibcRequires(f.best, pkg.Requires)
 
-	var glibc []rpm.Dependency
-
-	seen := make(map[depKey]bool, len(pkg.Requires))
-	out := make([]rpm.Dependency, 0, len(pkg.Requires))
+	f.out = f.out[:0]
+	f.glibc = f.glibc[:0]
 
 	for i, d := range pkg.Requires {
 		k := keyOf(d)
-		if seen[k] {
+		if f.seen[k] {
 			continue
 		}
 
-		seen[k] = true
+		f.seen[k] = true
 
 		if !d.IsPre() && !d.IsRPMLib() {
 			versioned := k.flags != ""
-			if (versioned && provides[k]) || (!versioned && provided[d.Name]) {
+			if (versioned && f.provides[k]) || (!versioned && f.provided[d.Name]) {
 				continue
 			}
 		}
 
-		switch dropGlibc(d, i, best) {
+		switch dropGlibc(d, i, f.best) {
 		case glibcDrop:
 			continue
 		case glibcLast:
-			glibc = append(glibc, d)
+			f.glibc = append(f.glibc, d)
 			continue
 		case glibcKeep:
 		}
 
-		out = append(out, d)
+		f.out = append(f.out, d)
 	}
 
-	return append(out, glibc...)
-}
-
-// depsToPrimaryEntries renders dependencies the way createrepo_c does. When
-// isRequires is set, rpmlib(...) features are skipped and script-time
-// requirements carry pre="1".
-func depsToPrimaryEntries(deps []rpm.Dependency, isRequires bool) []primaryEntryXML {
-	if len(deps) == 0 {
-		return nil
-	}
-
-	out := make([]primaryEntryXML, 0, len(deps))
-
-	for _, dep := range deps {
-		if isRequires && dep.IsRPMLib() {
-			continue
-		}
-
-		e := depToPrimaryEntry(dep)
-		if isRequires && dep.IsPre() {
-			e.Pre = "1"
-		}
-
-		out = append(out, e)
-	}
-
-	return out
-}
-
-func depToPrimaryEntry(dep rpm.Dependency) primaryEntryXML {
-	e := primaryEntryXML{Name: dep.Name, Flags: rpm.SenseFlagsString(dep.Flags)}
-	if e.Flags == "" {
-		return e
-	}
-
-	e.Epoch = strconv.FormatUint(uint64(dep.Epoch), 10)
-	e.Ver, e.Rel = rpm.SplitVersionRelease(dep.Version)
-
-	return e
-}
-
-type filelistsPackageXML struct {
-	XMLName xml.Name `xml:"package"`
-	PkgID   string   `xml:"pkgid,attr"`
-	Name    string   `xml:"name,attr"`
-	Arch    string   `xml:"arch,attr"`
-	Version versionRefXML
-	Files   []filelistsFileXML
-}
-
-type versionRefXML struct {
-	XMLName xml.Name `xml:"version"`
-	Epoch   string   `xml:"epoch,attr,omitempty"`
-	Ver     string   `xml:"ver,attr"`
-	Rel     string   `xml:"rel,attr"`
-}
-
-type filelistsFileXML struct {
-	XMLName xml.Name `xml:"file"`
-	Path    string   `xml:",chardata"`
-	Type    string   `xml:"type,attr,omitempty"`
-}
-
-type filelistsMetadata struct {
-	XMLName  xml.Name              `xml:"filelists"`
-	Xmlns    string                `xml:"xmlns,attr"`
-	Packages int                   `xml:"packages,attr"`
-	PkgList  []filelistsPackageXML `xml:"package"`
-}
-
-func GenerateFilelistsXML(packages []rpm.Package) ([]byte, error) {
-	pkgEntries := make([]filelistsPackageXML, len(packages))
-	for i, pkg := range packages {
-		epochStr := ""
-		if pkg.Epoch > 0 {
-			epochStr = strconv.FormatUint(uint64(pkg.Epoch), 10)
-		}
-
-		files := make([]filelistsFileXML, len(pkg.Files))
-		for j, f := range pkg.Files {
-			files[j] = filelistsFileXML{Path: f.Path}
-		}
-
-		if len(files) == 0 {
-			files = nil
-		}
-
-		pkgEntries[i] = filelistsPackageXML{
-			PkgID:   pkg.SHA256,
-			Name:    pkg.Name,
-			Arch:    pkg.Arch,
-			Version: versionRefXML{Epoch: epochStr, Ver: pkg.Version, Rel: pkg.Release},
-			Files:   files,
-		}
-	}
-
-	metadata := filelistsMetadata{
-		Xmlns:    "http://linux.duke.edu/metadata/filelists",
-		Packages: len(packages),
-		PkgList:  pkgEntries,
-	}
-
-	output, err := xml.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("rpm: marshaling filelists.xml: %w", err)
-	}
-
-	return append([]byte(xml.Header), output...), nil
-}
-
-type otherChangelogXML struct {
-	XMLName xml.Name `xml:"changelog"`
-	Author  string   `xml:"author,attr"`
-	Date    int64    `xml:"date,attr"`
-	Text    string   `xml:",chardata"`
-}
-
-type otherPackageXML struct {
-	XMLName    xml.Name `xml:"package"`
-	PkgID      string   `xml:"pkgid,attr"`
-	Name       string   `xml:"name,attr"`
-	Arch       string   `xml:"arch,attr"`
-	Version    versionRefXML
-	Changelogs []otherChangelogXML `xml:"changelog"`
-}
-
-type otherMetadata struct {
-	XMLName  xml.Name          `xml:"otherdata"`
-	Xmlns    string            `xml:"xmlns,attr"`
-	Packages int               `xml:"packages,attr"`
-	PkgList  []otherPackageXML `xml:"package"`
-}
-
-func GenerateOtherXML(packages []rpm.Package) ([]byte, error) {
-	pkgEntries := make([]otherPackageXML, len(packages))
-	for i, pkg := range packages {
-		epochStr := ""
-		if pkg.Epoch > 0 {
-			epochStr = strconv.FormatUint(uint64(pkg.Epoch), 10)
-		}
-
-		changelogs := make([]otherChangelogXML, len(pkg.Changelogs))
-		for j, cl := range pkg.Changelogs {
-			changelogs[j] = otherChangelogXML{
-				Author: cl.Author,
-				Date:   cl.Time,
-				Text:   cl.Description,
-			}
-		}
-
-		pkgEntries[i] = otherPackageXML{
-			PkgID:      pkg.SHA256,
-			Name:       pkg.Name,
-			Arch:       pkg.Arch,
-			Version:    versionRefXML{Epoch: epochStr, Ver: pkg.Version, Rel: pkg.Release},
-			Changelogs: changelogs,
-		}
-	}
-
-	metadata := otherMetadata{
-		Xmlns:    "http://linux.duke.edu/metadata/other",
-		Packages: len(packages),
-		PkgList:  pkgEntries,
-	}
-
-	output, err := xml.MarshalIndent(metadata, "", "  ")
-	if err != nil {
-		return nil, fmt.Errorf("rpm: marshaling other.xml: %w", err)
-	}
-
-	return append([]byte(xml.Header), output...), nil
+	return append(f.out, f.glibc...)
 }

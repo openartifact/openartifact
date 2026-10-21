@@ -2349,55 +2349,158 @@ func (p *PostgresDB) InsertAuditLog(ctx context.Context, event *models.AuditLog)
 	return nil
 }
 
-func (p *PostgresDB) ListAuditLogs(ctx context.Context, page, perPage int, actor, action string) ([]*models.AuditLog, int, error) {
+// auditExactCountMax bounds the work spent on an audit total: tables the
+// planner estimates at or below it are counted exactly, larger ones are not
+// counted at all (see auditTotal).
+const auditExactCountMax = 10_000
+
+// ErrInvalidAuditLimit is returned by ListAuditLogs for a page size below 1.
+var ErrInvalidAuditLimit = errors.New("audit page limit must be positive")
+
+// auditFilterWhere builds the actor/action predicate shared by the page and
+// count queries. Placeholders start at $1.
+func auditFilterWhere(actor, action string) (string, []any) {
 	where := "WHERE 1=1"
 	args := []any{}
 
-	idx := 1
 	if action != "" {
-		where += fmt.Sprintf(" AND action ILIKE $%d", idx)
 		args = append(args, "%"+escapeLike(action)+"%")
-		idx++
+		where += fmt.Sprintf(" AND action ILIKE $%d", len(args))
 	}
 
 	// The human-readable actor (username / token name) is stored in
 	// details_json; the user UUID is in actor_id. Accept either.
 	if actor != "" {
-		where += fmt.Sprintf(" AND (details_json->>'actor' ILIKE $%[1]d OR actor_id::text ILIKE $%[1]d)", idx)
 		args = append(args, "%"+escapeLike(actor)+"%")
-		idx++
+		where += fmt.Sprintf(" AND (details_json->>'actor' ILIKE $%[1]d OR actor_id::text ILIKE $%[1]d)", len(args))
 	}
 
-	var total int
-	countArgs := make([]any, len(args))
-	copy(countArgs, args)
-	if err := p.db.QueryRowContext(ctx, "SELECT COUNT(*) FROM audit_logs "+where, countArgs...).Scan(&total); err != nil {
-		return nil, 0, fmt.Errorf("count audit logs: %w", err)
+	return where, args
+}
+
+// ListAuditLogs returns one page of audit entries, newest first. It reads
+// Limit+1 rows to learn whether more follow, so no COUNT(*) runs for keyset
+// (After) paging, and offset paging only counts when the page itself cannot
+// answer (see auditTotal).
+func (p *PostgresDB) ListAuditLogs(ctx context.Context, params models.AuditListParams) (*models.AuditPage, error) {
+	if params.Limit < 1 {
+		return nil, fmt.Errorf("list audit logs: %w, got %d", ErrInvalidAuditLimit, params.Limit)
 	}
 
-	query := fmt.Sprintf("SELECT id, action, org_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d", where, idx, idx+1)
-	args = append(args, perPage, (page-1)*perPage)
+	where, args := auditFilterWhere(params.Actor, params.Action)
+	filtered := len(args) > 0
+	offset := params.Offset
+
+	if c := params.After; c != nil {
+		// created_at <= $c is the index condition; the OR only trims the
+		// rows tied with the cursor.
+		args = append(args, c.CreatedAt, c.ID)
+		where += fmt.Sprintf(" AND created_at <= $%[1]d AND (created_at < $%[1]d OR id > $%[2]d::uuid)", len(args)-1, len(args))
+		offset = 0
+	}
+
+	args = append(args, params.Limit+1, offset)
+	// The formatted parts are the predicate built by auditFilterWhere from
+	// constant clauses and $n placeholders (values are always bound
+	// arguments) and placeholder numbers; no caller input reaches the text.
+	query := fmt.Sprintf("SELECT id, action, org_id, repository_id, actor_id, actor_type, details_json::text, resource_type, resource_id, host(ip_address) AS ip_address, created_at FROM audit_logs %s ORDER BY created_at DESC, id LIMIT $%d OFFSET $%d", where, len(args)-1, len(args)) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
 
 	rows, err := p.db.QueryContext(ctx, query, args...)
 	if err != nil {
-		return nil, 0, fmt.Errorf("list audit logs: %w", err)
+		return nil, fmt.Errorf("list audit logs: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var logs []*models.AuditLog
+	logs := make([]*models.AuditLog, 0, params.Limit+1)
+
 	for rows.Next() {
 		l := &models.AuditLog{}
-		var detailsStr string
-		var ipStr *string
+
+		var (
+			detailsStr string
+			ipStr      *string
+		)
+
 		if err := rows.Scan(&l.ID, &l.Action, &l.OrgID, &l.RepositoryID, &l.ActorID, &l.ActorType, &detailsStr, &l.ResourceType, &l.ResourceID, &ipStr, &l.CreatedAt); err != nil {
-			return nil, 0, fmt.Errorf("scan audit log: %w", err)
+			return nil, fmt.Errorf("scan audit log: %w", err)
 		}
+
 		l.IPAddress = ipStr
 		l.DetailsJSON = json.RawMessage(detailsStr)
 		logs = append(logs, l)
 	}
 
-	return logs, total, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("list audit logs: %w", err)
+	}
+
+	page := &models.AuditPage{Logs: logs}
+
+	hasMore := len(logs) > params.Limit
+	if hasMore {
+		page.Logs = logs[:params.Limit]
+		last := page.Logs[params.Limit-1]
+		page.Next = &models.AuditCursor{CreatedAt: last.CreatedAt, ID: last.ID}
+	}
+
+	if params.After != nil {
+		return page, nil
+	}
+
+	// Count args are the filter args only (the cursor branch returned above).
+	page.Total, page.TotalExact, err = p.auditTotal(ctx, where, args[:len(args)-2], filtered, offset, len(page.Logs), hasMore)
+	if err != nil {
+		return nil, err
+	}
+
+	return page, nil
+}
+
+// auditTotal reports the number of matching audit entries without a full
+// COUNT(*) whenever the page already answers it. args are the filter
+// arguments of where; offset and returned describe the page just read, and
+// hasMore whether a further entry exists.
+//
+//   - Last page (or an empty first page): offset+returned is the exact total.
+//   - Otherwise the table size decides. Small (planner estimate <= cap) or
+//     never analysed: a count bounded to cap+1 rows (exact up to the cap, a
+//     lower bound above it). Large: unfiltered reports the planner estimate,
+//     filtered the lower bound offset+returned+1; neither touches the table.
+//
+// An empty page past the end of a large filtered result still needs the
+// bounded count, because offset says nothing about the real total there.
+func (p *PostgresDB) auditTotal(ctx context.Context, where string, args []any, filtered bool, offset, returned int, hasMore bool) (int, bool, error) {
+	seen := offset + returned
+	if !hasMore && (returned > 0 || offset == 0) {
+		return seen, true, nil
+	}
+
+	var estimate int64
+
+	err := p.db.QueryRowContext(ctx, `SELECT reltuples::bigint FROM pg_class WHERE oid = 'audit_logs'::regclass`).Scan(&estimate)
+	if err != nil {
+		return 0, false, fmt.Errorf("estimate audit logs: %w", err)
+	}
+
+	if estimate > auditExactCountMax {
+		switch {
+		case !filtered && hasMore:
+			return max(int(estimate), seen+1), false, nil
+		case !filtered:
+			return int(estimate), false, nil
+		case hasMore:
+			return seen + 1, false, nil
+		}
+	}
+
+	var counted int
+
+	countQuery := fmt.Sprintf("SELECT count(*) FROM (SELECT 1 FROM audit_logs %s LIMIT $%d) s", where, len(args)+1) //nolint:gosec // G201: where is built from constant clauses with bound placeholders
+	if err := p.db.QueryRowContext(ctx, countQuery, append(args, auditExactCountMax+1)...).Scan(&counted); err != nil {
+		return 0, false, fmt.Errorf("count audit logs: %w", err)
+	}
+
+	return counted, counted <= auditExactCountMax, nil
 }
 
 func (p *PostgresDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*models.Token, int, error) {
@@ -4793,21 +4896,6 @@ func (p *PostgresDB) IncrementStorageUsage(ctx context.Context, repoID string, s
 	})
 	if err != nil {
 		return fmt.Errorf("failed to increment storage usage: %w", err)
-	}
-
-	return nil
-}
-
-// DecrementStorageUsage decrements the storage usage for a repository.
-func (p *PostgresDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
-	err := p.q.DecrementStorageUsage(ctx, dbsqlc.DecrementStorageUsageParams{
-		CurrentSizeBytes:     sizeBytes,
-		CurrentArtifactCount: int64(artifactCount),
-		UpdatedAt:            time.Now(),
-		RepositoryID:         repoID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to decrement storage usage: %w", err)
 	}
 
 	return nil

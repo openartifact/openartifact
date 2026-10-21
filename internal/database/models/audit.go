@@ -24,3 +24,36 @@ type AuditLog struct {
 	IPAddress    *string         `db:"ip_address"`
 	CreatedAt    time.Time       `db:"created_at"`
 }
+
+// AuditCursor is a keyset position in the audit listing order
+// (created_at DESC, id ASC).
+type AuditCursor struct {
+	CreatedAt time.Time
+	ID        string
+}
+
+// AuditListParams selects a page of audit entries. Entries are ordered
+// newest first, ties on created_at broken by ascending id.
+type AuditListParams struct {
+	Actor  string
+	Action string
+	Limit  int
+	// Offset skips that many entries. Ignored when After is set.
+	Offset int
+	// After, when set, returns only entries strictly after this position
+	// (keyset paging: no offset scan, no total).
+	After *AuditCursor
+}
+
+// AuditPage is one page of audit entries.
+type AuditPage struct {
+	Logs []*AuditLog
+	// Next is the position of the last entry in Logs when more entries
+	// follow, nil on the last page.
+	Next *AuditCursor
+	// Total is the number of matching entries, computed for offset paging
+	// only. It is exact when TotalExact is true; otherwise it is the planner
+	// estimate (unfiltered) or a lower bound (filtered).
+	Total      int
+	TotalExact bool
+}

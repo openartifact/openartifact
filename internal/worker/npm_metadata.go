@@ -8,9 +8,9 @@ import (
 	"context"
 	"database/sql"
 	"encoding/json"
+	"fmt"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -20,100 +20,69 @@ import (
 )
 
 type NPMMetadataWorker struct {
-	db       database.Database
-	log      *logger.Logger
-	sqlDB    *sql.DB
-	reg      *metrics.Registry
-	mu       sync.Mutex
-	timers   map[string]*time.Timer
-	debounce time.Duration
+	db    database.Database
+	log   *logger.Logger
+	sqlDB *sql.DB
+	q     *regenQueue[string]
 }
 
 func NewNPMMetadataWorker(db database.Database, log *logger.Logger, sqlDB *sql.DB, reg *metrics.Registry) *NPMMetadataWorker {
-	return &NPMMetadataWorker{
-		db:       db,
-		log:      log,
-		sqlDB:    sqlDB,
-		reg:      reg,
-		timers:   make(map[string]*time.Timer),
-		debounce: 500 * time.Millisecond,
-	}
-}
+	w := &NPMMetadataWorker{db: db, log: log, sqlDB: sqlDB}
+	w.q = newRegenQueue("npm", log, w.regenerate)
+	w.q.setMetrics(reg)
 
-func (w *NPMMetadataWorker) WithDebounce(d time.Duration) *NPMMetadataWorker {
-	w.debounce = d
 	return w
 }
 
+func (w *NPMMetadataWorker) WithDebounce(d time.Duration) *NPMMetadataWorker {
+	w.q.setDebounce(d)
+	return w
+}
+
+// WithRegenLimiter shares a concurrency limiter with the other metadata workers.
+func (w *NPMMetadataWorker) WithRegenLimiter(l *RegenLimiter) *NPMMetadataWorker {
+	w.q.setLimiter(l)
+	return w
+}
+
+// NotifyStale schedules a coalesced regeneration of the package's denormalized
+// metadata.
 func (w *NPMMetadataWorker) NotifyStale(packageID string) {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	if t, ok := w.timers[packageID]; ok {
-		t.Stop()
-	}
-
-	var t *time.Timer
-
-	t = time.AfterFunc(w.debounce, func() {
-		start := time.Now()
-
-		w.regenerate(packageID)
-
-		if w.reg != nil {
-			w.reg.MetadataRegenerationDurationSeconds.WithLabelValues("npm").Observe(time.Since(start).Seconds())
-			w.reg.MetadataRegenerationsTotal.WithLabelValues("npm").Inc()
-		}
-
-		w.mu.Lock()
-		if w.timers[packageID] == t {
-			delete(w.timers, packageID)
-		}
-		w.mu.Unlock()
-	})
-	w.timers[packageID] = t
+	w.q.Notify(packageID)
 }
 
+// Stop drains pending regenerations and waits for running ones (bounded).
 func (w *NPMMetadataWorker) Stop() {
-	w.mu.Lock()
-	defer w.mu.Unlock()
-
-	for key, t := range w.timers {
-		t.Stop()
-		delete(w.timers, key)
-	}
+	w.q.Stop()
 }
 
-func (w *NPMMetadataWorker) regenerate(packageID string) {
-	ctx := context.Background()
-
+func (w *NPMMetadataWorker) regenerate(ctx context.Context, packageID string) error {
 	if w.sqlDB != nil {
-		release, locked, err := tryAdvisoryLock(ctx, w.sqlDB, "npm:"+packageID)
-		if err != nil || !locked {
-			w.log.Warnw("npm regenerate skipped: lock unavailable", "package_id", packageID, "error", err)
-			return
+		release, err := lockForRegeneration(ctx, w.sqlDB, "npm:"+packageID)
+		if err != nil {
+			return fmt.Errorf("npm worker: %w", err)
 		}
 		defer release()
 	}
 
 	versions, err := w.db.GetNPMVersionsByPackage(ctx, packageID)
 	if err != nil {
-		w.log.Errorw("npm worker: failed to get versions", "package_id", packageID, "error", err)
-		return
+		return fmt.Errorf("npm worker: getting versions of %s: %w", packageID, err)
 	}
 
 	if len(versions) == 0 {
-		return
+		return nil
 	}
 
 	latest := computeLatestVersion(versions)
 
 	if err := w.db.UpdateNPMPackageLatestVersion(ctx, packageID, latest); err != nil {
-		w.log.Errorw("npm worker: failed to update latest version", "package_id", packageID, "error", err)
-		return
+		return fmt.Errorf("npm worker: updating latest version of %s: %w", packageID, err)
 	}
 
 	w.log.Infow("npm packument denormalization updated", "package_id", packageID, "latest_version", latest)
+
+	return nil
 }
 
 func computeLatestVersion(versions []*models.NPMVersion) string {

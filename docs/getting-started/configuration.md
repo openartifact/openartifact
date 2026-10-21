@@ -94,6 +94,12 @@ PostgreSQL is the only supported database.
 | `DB_AUTH_CACHE_TTL_MS` | `authCacheTtlMs` | `2000` | In-memory cache of per-request auth lookups; changes made on this instance apply at once, other replicas see them within this time; `0` disables |
 | - | `options` | none | YAML only: extra `key: value` libpq connection parameters |
 
+### Workers (`workers`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | `4` | Max concurrent metadata regenerations (npm, maven, deb, rpm share it); each pins about two DB connections |
+
 ### Storage (`storage`)
 
 Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `garage` and `seaweedfs` reuse the S3 client with path-style addressing forced on. Details: [storage](../operations/storage.md).

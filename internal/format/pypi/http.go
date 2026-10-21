@@ -63,11 +63,30 @@ func normalizePyPIName(name string) string {
 	return name
 }
 
+// simpleIndexMaxAge is how long shared caches may reuse a public repository's
+// simple index pages before revalidating.
+const simpleIndexMaxAge = 60
+
+// serveSimplePage writes a simple-index HTML page. The page is a pure function
+// of the repository's rows, so a hash of the body is its validator: a matching
+// If-None-Match saves the transfer.
+func serveSimplePage(w http.ResponseWriter, r *http.Request, repoPublic bool, page string) {
+	sum := sha256.Sum256([]byte(page))
+
+	if base.Revalidate(w, r, repoPublic, `"`+hex.EncodeToString(sum[:16])+`"`, simpleIndexMaxAge) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "text/html; charset=utf-8")
+	w.WriteHeader(http.StatusOK)
+	_, _ = io.WriteString(w, page)
+}
+
 func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -75,12 +94,12 @@ func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	packages, err := h.DB.ListPyPIPackages(r.Context(), repoID)
+	packages, err := h.DB.ListPyPIPackages(r.Context(), repo.ID)
 	if err != nil {
 		h.Log.Errorw("failed to list packages", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -112,9 +131,7 @@ func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) 
 
 	html.WriteString("</body></html>\n")
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(html.String()))
+	serveSimplePage(w, r, repo.Public, html.String())
 }
 
 func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request) {
@@ -122,7 +139,7 @@ func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request)
 	repoName := vars["name"]
 	pkgName := vars["package"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -130,7 +147,7 @@ func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
@@ -138,7 +155,7 @@ func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request)
 	// Normalize the package name for lookup
 	normalizedName := normalizePyPIName(pkgName)
 
-	versions, err := h.DB.ListPyPIPackageVersions(r.Context(), repoID, normalizedName)
+	versions, err := h.DB.ListPyPIPackageVersions(r.Context(), repo.ID, normalizedName)
 	if err != nil {
 		h.Log.Errorw("failed to list package versions", "pkg", pkgName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -168,9 +185,7 @@ func (h *HTTPHandler) handlePackageIndex(w http.ResponseWriter, r *http.Request)
 
 	html.WriteString("</body></html>\n")
 
-	w.Header().Set("Content-Type", "text/html; charset=utf-8")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write([]byte(html.String()))
+	serveSimplePage(w, r, repo.Public, html.String())
 }
 
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {

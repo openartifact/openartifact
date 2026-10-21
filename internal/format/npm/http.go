@@ -53,6 +53,10 @@ func resolvePackageName(raw string) string {
 	return s
 }
 
+// packumentMaxAge is how long shared caches may reuse a public repository's
+// packument before revalidating.
+const packumentMaxAge = 60
+
 func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	if strings.HasPrefix(vars["pkg"], "-") {
@@ -63,7 +67,7 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 	repoName := vars["name"]
 	pkgName := resolvePackageName(vars["pkg"])
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -71,12 +75,12 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	pkg, err := h.DB.GetNPMPackageByName(r.Context(), repoID, pkgName)
+	pkg, err := h.DB.GetNPMPackageByName(r.Context(), repo.ID, pkgName)
 	if err != nil {
 		h.Log.Errorw("failed to get npm package", "name", pkgName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -96,18 +100,11 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 		etag = `"abbr-` + etag[1:]
 	}
 
-	setCacheHeaders := func() {
-		w.Header().Set("Vary", "Accept")
-		w.Header().Set("ETag", etag)
-		w.Header().Set("Cache-Control", "public, max-age=60")
-	}
+	w.Header().Set("Vary", "Accept")
 
 	// The ETag derives from the package row alone, so a revalidation is
 	// answered before loading and rendering every version.
-	if etagMatches(r.Header.Get("If-None-Match"), etag) {
-		setCacheHeaders()
-		w.WriteHeader(http.StatusNotModified)
-
+	if base.Revalidate(w, r, repo.Public, etag, packumentMaxAge) {
 		return
 	}
 
@@ -142,10 +139,9 @@ func (h *HTTPHandler) handlePackument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setCacheHeaders()
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(body)
+	_, _ = w.Write(body) //nolint:gosec // JSON document served as application/json, not HTML
 }
 
 func (h *HTTPHandler) handleVersionManifest(w http.ResponseWriter, r *http.Request) {
@@ -371,16 +367,4 @@ func (h *HTTPHandler) handleGetDistTags(w http.ResponseWriter, r *http.Request) 
 	if encErr := json.NewEncoder(w).Encode(distTags); encErr != nil {
 		_ = encErr // response header already written
 	}
-}
-
-// etagMatches reports whether an If-None-Match header value matches etag.
-func etagMatches(header, etag string) bool {
-	for c := range strings.SplitSeq(header, ",") {
-		c = strings.TrimPrefix(strings.TrimSpace(c), "W/")
-		if c == "*" || c == etag {
-			return true
-		}
-	}
-
-	return false
 }

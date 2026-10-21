@@ -6,6 +6,7 @@ package rpm
 
 import (
 	"fmt"
+	"io"
 	"strconv"
 	"testing"
 
@@ -172,6 +173,27 @@ func BenchmarkGenerateOtherXML(b *testing.B) {
 	})
 }
 
+// BenchmarkWritePrimaryXML streams primary.xml to io.Discard: the steady-state
+// cost when the caller does not need the whole document in memory.
+func BenchmarkWritePrimaryXML(b *testing.B) {
+	benchEachCount(b, func(b *testing.B, pkgs []pkgrpm.Package) {
+		b.Helper()
+
+		var size int64
+
+		for b.Loop() {
+			cw := &countingWriter{w: io.Discard}
+			if err := WritePrimaryXML(cw, pkgs); err != nil {
+				b.Fatal(err)
+			}
+
+			size = cw.n
+		}
+
+		b.SetBytes(size)
+	})
+}
+
 func BenchmarkFilterRequires(b *testing.B) {
 	pkgs := benchRPMPackages(1)
 
@@ -222,6 +244,45 @@ func BenchmarkCompressMetadata(b *testing.B) {
 
 			for b.Loop() {
 				if _, err := CompressMetadata(xmlData); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+	}
+}
+
+// BenchmarkPrimaryPipeline compares the worker's two ways of producing the
+// compressed primary metadata: generate the whole XML then compress it, or
+// stream the XML into the encoders. The 10000-package case is skipped under
+// -short.
+func BenchmarkPrimaryPipeline(b *testing.B) {
+	for _, n := range benchPackageCounts {
+		if n >= 10000 && testing.Short() {
+			continue
+		}
+
+		pkgs := benchRPMPackages(n)
+
+		b.Run(fmt.Sprintf("buffered/packages=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+
+			for b.Loop() {
+				xmlData, err := GeneratePrimaryXML(pkgs, "")
+				if err != nil {
+					b.Fatal(err)
+				}
+
+				if _, err := CompressMetadata(xmlData); err != nil {
+					b.Fatal(err)
+				}
+			}
+		})
+
+		b.Run(fmt.Sprintf("streamed/packages=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+
+			for b.Loop() {
+				if _, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) }); err != nil {
 					b.Fatal(err)
 				}
 			}

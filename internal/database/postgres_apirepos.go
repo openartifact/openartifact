@@ -107,36 +107,6 @@ func insertGroupMembers(ctx context.Context, tx *sql.Tx, groupRepoID string, mem
 	return nil
 }
 
-// ReserveStorageUsage atomically adds sizeBytes/artifactCount to the repository
-// quota counters if doing so would not exceed the configured limits (a limit of
-// 0 means unlimited). It returns false, nil when the quota would be exceeded.
-func (p *PostgresDB) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
-	if err := p.q.InsertStorageQuotaIfNotExists(ctx, repoID); err != nil {
-		return false, fmt.Errorf("failed to ensure storage quota: %w", err)
-	}
-
-	res, err := p.db.ExecContext(ctx,
-		`UPDATE storage_quotas
-		    SET current_size_bytes = current_size_bytes + $1,
-		        current_artifact_count = current_artifact_count + $2,
-		        updated_at = now()
-		  WHERE repository_id = $3
-		    AND (max_size_bytes = 0 OR current_size_bytes + $1 <= max_size_bytes)
-		    AND (max_artifact_count = 0 OR current_artifact_count + $2 <= max_artifact_count)`,
-		sizeBytes, artifactCount, repoID,
-	)
-	if err != nil {
-		return false, fmt.Errorf("failed to reserve storage usage: %w", err)
-	}
-
-	n, err := res.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("failed to reserve storage usage: %w", err)
-	}
-
-	return n > 0, nil
-}
-
 // escapeLike escapes LIKE/ILIKE metacharacters so user input matches literally.
 func escapeLike(s string) string {
 	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)

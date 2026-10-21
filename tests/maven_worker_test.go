@@ -56,7 +56,9 @@ func TestMavenWorkerNotifyStale_Debounce(t *testing.T) {
 	}
 }
 
-func TestMavenWorkerStop(t *testing.T) {
+// Stop must drain: a regeneration still debouncing when the server shuts down
+// runs immediately and completes before Stop returns, instead of being lost.
+func TestMavenWorkerStopDrainsPendingRegeneration(t *testing.T) {
 	log, _ := logger.New("info", "json", "stdout")
 	db := &countingMockDatabase{MockDatabase: newMockDatabase()}
 	bs := newMockBlobStore()
@@ -69,15 +71,20 @@ func TestMavenWorkerStop(t *testing.T) {
 		Version:       "1.0.0",
 	}
 
-	w := worker.NewMavenMetadataWorker(db, bs, nil, log, nil).WithDebounce(100 * time.Millisecond)
+	w := worker.NewMavenMetadataWorker(db, bs, nil, log, nil).WithDebounce(time.Hour)
 	w.NotifyStale("repo-1", "com.example", "myapp")
 	w.Stop()
 
-	time.Sleep(200 * time.Millisecond)
+	if calls := db.upsertCalls.Load(); calls != 1 {
+		t.Errorf("expected the pending regeneration to run during Stop(), got %d UpsertRepoMetadata calls", calls)
+	}
 
-	calls := db.upsertCalls.Load()
-	if calls != 0 {
-		t.Errorf("expected 0 UpsertRepoMetadata calls after Stop(), got %d", calls)
+	// Work offered after Stop is rejected.
+	w.NotifyStale("repo-1", "com.example", "other")
+	w.Stop()
+
+	if calls := db.upsertCalls.Load(); calls != 1 {
+		t.Errorf("expected no regeneration after Stop(), got %d UpsertRepoMetadata calls", calls)
 	}
 }
 
@@ -97,7 +104,8 @@ func TestMavenWorkerNotifyStale_DifferentKeys(t *testing.T) {
 	w.NotifyStale("repo-1", "com.example", "app1")
 	w.NotifyStale("repo-1", "com.example", "app2")
 
-	time.Sleep(200 * time.Millisecond)
+	waitUntil(t, 5*time.Second, "both keys regenerated", func() bool { return db.upsertCalls.Load() >= 2 })
+	w.Stop()
 
 	calls := db.upsertCalls.Load()
 	if calls != 2 {

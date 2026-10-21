@@ -38,7 +38,16 @@ type Config struct {
 	Backup   BackupConfig            `yaml:"backup"`
 	AI       AIConfig                `yaml:"ai"`
 	MCP      MCPConfig               `yaml:"mcp"`
+	Workers  WorkersConfig           `yaml:"workers"`
 	BaseURL  string                  `yaml:"baseUrl"`
+}
+
+// WorkersConfig contains background worker tuning.
+type WorkersConfig struct {
+	// MetadataRegenConcurrency caps how many metadata regenerations (npm,
+	// maven, deb, rpm together) run at once. Each pins up to two database
+	// connections, so keep it well below database.maxOpenConns.
+	MetadataRegenConcurrency int `yaml:"metadataRegenConcurrency"`
 }
 
 type AuthConfig struct {
@@ -238,6 +247,9 @@ func defaultConfig() *Config {
 			Transport: "http",
 			HTTPPath:  "/mcp",
 		},
+		Workers: WorkersConfig{
+			MetadataRegenConcurrency: 4,
+		},
 		BaseURL: "http://localhost:8080",
 	}
 }
@@ -351,6 +363,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideBool(&cfg.MCP.Enabled, "MCP_ENABLED")
 	overrideString(&cfg.MCP.Transport, "MCP_TRANSPORT")
 	overrideString(&cfg.MCP.HTTPPath, "MCP_HTTP_PATH")
+
+	// Worker config
+	overrideInt(&cfg.Workers.MetadataRegenConcurrency, "OPENARTIFACT_METADATA_REGEN_CONCURRENCY")
 
 	// Base URL
 	overrideString(&cfg.BaseURL, "BASE_URL")

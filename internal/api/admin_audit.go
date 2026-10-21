@@ -12,6 +12,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -36,18 +37,40 @@ func (h *AdminAuditHandler) handleList(w http.ResponseWriter, r *http.Request) {
 
 	page := queryIntParam(r, "page", 1, 1, 10000)
 	perPage := queryIntParam(r, "per_page", 25, 1, 100)
-	actor := r.URL.Query().Get("actor")
-	action := r.URL.Query().Get("action")
 
-	logs, total, err := h.db.ListAuditLogs(r.Context(), page, perPage, actor, action)
+	params := models.AuditListParams{
+		Actor:  r.URL.Query().Get("actor"),
+		Action: r.URL.Query().Get("action"),
+		Limit:  perPage,
+		Offset: (page - 1) * perPage,
+	}
+
+	// A cursor parameter switches to keyset paging: no offset scan and no
+	// total. An empty value starts at the newest entry.
+	keyset := r.URL.Query().Has("cursor")
+	if raw := r.URL.Query().Get("cursor"); raw != "" {
+		cursor, err := decodeAuditCursor(raw)
+		if err != nil {
+			writeError(w, http.StatusBadRequest, "bad_request", "invalid cursor")
+			return
+		}
+
+		params.After = cursor
+	}
+
+	if keyset {
+		params.Offset = 0
+	}
+
+	result, err := h.db.ListAuditLogs(r.Context(), params)
 	if err != nil {
 		h.log.Errorw("admin audit list error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
 
-	data := make([]any, 0, len(logs))
-	for _, log := range logs {
+	data := make([]any, 0, len(result.Logs))
+	for _, log := range result.Logs {
 		details := parseDetailsJSON(log.DetailsJSON)
 		data = append(data, map[string]any{
 			"id":            log.ID,
@@ -63,12 +86,23 @@ func (h *AdminAuditHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		})
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	resp := map[string]any{
 		"data":     data,
-		"page":     page,
 		"per_page": perPage,
-		"total":    total,
-	})
+		"has_more": result.Next != nil,
+	}
+
+	if result.Next != nil {
+		resp["next_cursor"] = encodeAuditCursor(result.Next)
+	}
+
+	if !keyset {
+		resp["page"] = page
+		resp["total"] = result.Total
+		resp["total_exact"] = result.TotalExact
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }
 
 // parseDetailsJSON safely parses a JSON string into a map, falling back to raw string.
