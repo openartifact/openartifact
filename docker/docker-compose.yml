@@ -4,7 +4,7 @@
 
 services:
   postgres:
-    image: docker.io/postgres:18-alpine
+    image: docker.io/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
     container_name: artifact-repo-postgres
     restart: unless-stopped
     security_opt:

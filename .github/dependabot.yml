@@ -2,21 +2,80 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
+# Everything that can be pinned is pinned so Dependabot can bump it:
+#   - GitHub Actions: full commit SHA + `# vX.Y.Z` comment      (github-actions)
+#   - Dockerfile FROM lines: tag@sha256 digest                   (docker)
+#   - docker-compose images: tag@sha256 digest                   (docker-compose)
+#   - sqlc / govulncheck / actionlint: `tool` directives in tools/go.mod (gomod, /tools)
+# Not tracked by Dependabot (bump by hand): bun-version and golangci-lint
+# version in the workflows, GO_VERSION in the workflows, and the
+# dxflrs/garage + postgres images used by the `integration` job in ci.yml.
 version: 2
 updates:
   - package-ecosystem: github-actions
     directory: /
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      github-actions:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
   - package-ecosystem: gomod
     directory: /
     schedule:
       interval: weekly
-  - package-ecosystem: npm
+    cooldown:
+      default-days: 7
+    groups:
+      go-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: gomod
+    directory: /tools
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      go-tools:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  - package-ecosystem: bun
     directory: /web
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      web-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # Dockerfile base images (FROM tag@sha256).
   - package-ecosystem: docker
     directory: /docker
     schedule:
       interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      docker-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
+  # docker-compose.yml images (tag@sha256).
+  - package-ecosystem: docker-compose
+    directory: /docker
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      compose-minor-patch:
+        patterns: ["*"]
+        update-types: [minor, patch]

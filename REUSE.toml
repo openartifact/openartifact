@@ -12,6 +12,7 @@ path = [
   "web/src/api/generated/**",
   "internal/api/openapi.json",
   "go.sum",
+  "tools/go.sum",
   "web/bun.lock",
   "web/package.json",
   "web/tsconfig.json",

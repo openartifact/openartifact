@@ -8,6 +8,15 @@ run:
   build-tags:
     - integration
 
+formatters:
+  enable:
+    - gofmt
+    - goimports
+  exclusions:
+    generated: lax
+    paths:
+      - internal/database/dbsqlc/
+
 linters:
   default: all
   disable:

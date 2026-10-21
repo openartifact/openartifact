@@ -6,29 +6,43 @@ name: CI
 
 on:
   push:
-    branches: ["**"]
+    branches: [main]
+    tags: ["v*"]
   pull_request:
 
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 env:
   GO_VERSION: "1.27.3"
-  SQLC_VERSION: "v1.31.1"
+  # Dependabot does not track the two version inputs below (bun-version,
+  # golangci-lint version); bump them by hand. sqlc, govulncheck and actionlint
+  # live in tools/go.mod and are bumped by Dependabot (gomod, /tools).
+  BUN_VERSION: "1.4.3"
   GOLANGCI_LINT_VERSION: "v2.15.0"
+  IMAGE_TAG: openartifact:ci
 
 jobs:
   go:
     name: build / vet / test
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: go build
         run: go build ./...
@@ -37,10 +51,12 @@ jobs:
         run: go vet ./...
 
       - name: go mod tidy (verify no drift)
-        run: go mod tidy -diff
+        run: |
+          go mod tidy -diff
+          cd tools && go mod tidy -diff
 
       - name: govulncheck
-        run: go run golang.org/x/vuln/cmd/govulncheck@v1.9.0 ./...
+        run: go tool -modfile=tools/go.mod govulncheck ./...
 
       - name: go test (race, unit packages)
         run: go test -race -timeout 10m ./...
@@ -48,6 +64,7 @@ jobs:
   integration:
     name: integration (postgres + garage + testcontainers)
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     env:
       TEST_DATABASE_URL: postgres://postgres:postgres@localhost:5432/openartifact_test?sslmode=disable
       TEST_S3_ENDPOINT: http://localhost:3900
@@ -58,7 +75,7 @@ jobs:
       TEST_S3_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     services:
       postgres:
-        image: postgres:18-alpine
+        image: docker.io/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: openartifact_test
@@ -67,12 +84,17 @@ jobs:
           --health-cmd "pg_isready -U postgres"
           --health-interval 5s --health-timeout 5s --health-retries 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       # MinIO no longer publishes container images; Garage is the S3 test backend.
       - name: start Garage
@@ -93,9 +115,10 @@ jobs:
           api_bind_addr = "[::]:3903"
           EOF
           docker run -d --name garage -p 3900:3900 \
-            -v /tmp/garage.toml:/etc/garage.toml docker.io/dxflrs/garage:v2.1.0
+            -v /tmp/garage.toml:/etc/garage.toml \
+            docker.io/dxflrs/garage:v2.4.1@sha256:9c96caa2612d3411acc5b0e6701fb238dbfba33e533a6d7d3d811a4b12d0d020
           G="docker exec garage /garage"
-          for i in $(seq 1 30); do $G status >/dev/null 2>&1 && break; sleep 1; done
+          for _ in $(seq 1 30); do $G status >/dev/null 2>&1 && break; sleep 1; done
           NODE=$($G node id -q | cut -d@ -f1)
           $G layout assign -z dc1 -c 1G "$NODE"
           $G layout apply --version 1
@@ -109,15 +132,22 @@ jobs:
   lint:
     name: golangci-lint
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
-      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9
+      # Runs the linters plus the gofmt/goimports formatters from .golangci.yaml.
+      - uses: golangci/golangci-lint-action@ba0d7d2ec06a0ea1cb5fa41b2e4a3ab91d21278a # v9.3.0
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: --config=.golangci.yaml
@@ -125,64 +155,57 @@ jobs:
   reuse:
     name: REUSE compliance
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6
+      - uses: fsfe/reuse-action@676e2d560c9a403aa252096d99fcab3e1132b0f5 # v6.0.0
 
   sqlc:
     name: sqlc generate (verify no drift)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
         with:
           go-version: ${{ env.GO_VERSION }}
           cache: true
-
-      - name: Install sqlc
-        run: go install github.com/sqlc-dev/sqlc/cmd/sqlc@${{ env.SQLC_VERSION }}
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
 
       - name: Run sqlc generate
-        run: sqlc generate
+        run: go tool -modfile=tools/go.mod sqlc generate
 
       - name: Fail if generated code is out of date
         run: |
           if ! git diff --quiet -- internal/database/dbsqlc; then
-            echo "::error::sqlc generate produced a diff — run 'sqlc generate' locally and commit internal/database/dbsqlc/"
+            echo "::error::sqlc generate produced a diff — run 'make generate' locally and commit internal/database/dbsqlc/"
             git diff --stat -- internal/database/dbsqlc
             exit 1
           fi
 
-  docker:
-    name: docker build
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
-
-      - uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7
-        with:
-          context: .
-          file: docker/Dockerfile
-          push: false
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
-
   web:
     name: web build
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     defaults:
       run:
         working-directory: web
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
-
-      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
-          bun-version: "1.4.3"
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
 
       - run: bun install --frozen-lockfile
       - run: bun run typecheck
@@ -198,3 +221,166 @@ jobs:
       - run: bun run web/scripts/check-bundle-size.js
         working-directory: .
 
+  security:
+    name: security (trivy image + repo)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      security-events: write # upload SARIF to code scanning
+    env:
+      # Fork PRs and Dependabot runs get a read-only token: scan and gate, skip the upload.
+      CAN_UPLOAD_SARIF: ${{ github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.actor != 'dependabot[bot]') }}
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
+
+      - name: Build image (loaded into the local daemon)
+        uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
+        with:
+          context: .
+          file: docker/Dockerfile
+          load: true
+          push: false
+          provenance: false
+          sbom: false
+          tags: ${{ env.IMAGE_TAG }}
+          cache-from: type=gha,scope=security
+          cache-to: type=gha,scope=security,mode=max
+
+      # --- image ---------------------------------------------------------
+      - name: Trivy image scan (SARIF)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_TAG }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-image.sarif
+          exit-code: "0"
+
+      - name: Upload image SARIF
+        if: ${{ !cancelled() && env.CAN_UPLOAD_SARIF == 'true' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+      - name: Trivy image gate (fail on fixable HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          image-ref: ${{ env.IMAGE_TAG }}
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          format: table
+          exit-code: "1"
+
+      # --- repository: vulns in go.mod / bun.lock, secrets ---------------
+      - name: Trivy fs scan (SARIF)
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-fs.sarif
+          exit-code: "0"
+
+      - name: Upload fs SARIF
+        if: ${{ !cancelled() && env.CAN_UPLOAD_SARIF == 'true' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      - name: Trivy fs gate
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: fs
+          scan-ref: .
+          scanners: vuln,secret
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          trivyignores: .trivyignore.yaml
+          format: table
+          exit-code: "1"
+
+      # --- repository: misconfiguration (Dockerfile, compose, k8s) -------
+      - name: Trivy config scan (SARIF)
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          limit-severities-for-sarif: true
+          format: sarif
+          output: trivy-config.sarif
+          exit-code: "0"
+
+      - name: Upload config SARIF
+        if: ${{ !cancelled() && env.CAN_UPLOAD_SARIF == 'true' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: trivy-config.sarif
+          category: trivy-config
+
+      - name: Trivy config gate
+        if: ${{ !cancelled() }}
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
+        with:
+          scan-type: config
+          scan-ref: .
+          severity: HIGH,CRITICAL
+          format: table
+          exit-code: "1"
+
+  workflow-lint:
+    name: workflow lint (actionlint + zizmor)
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: tools/go.sum
+
+      - name: actionlint
+        run: go tool -modfile=tools/go.mod actionlint -color
+
+      - name: zizmor
+        uses: zizmorcore/zizmor-action@85b2b9fb8e3325e7a23d7d0a9d7ba5ae0f999e3e # v0.7.1
+        with:
+          advanced-security: false
+          annotations: true
+
+  dependency-review:
+    name: dependency review
+    if: ${{ github.event_name == 'pull_request' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294 # v5.0.0
+        with:
+          fail-on-severity: high

@@ -7,15 +7,16 @@ package maven
 import (
 	"bytes"
 	"fmt"
+	"io"
+	"net/http"
+	"path/filepath"
+	"strings"
+
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
-	"io"
-	"net/http"
-	"path/filepath"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/urlparams"

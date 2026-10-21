@@ -48,7 +48,7 @@ DB/S3-backed tests skip unless `TEST_DATABASE_URL` / `TEST_S3_ENDPOINT` (+ `TEST
 
 Routing: every repo-scoped format handler registers relative routes on the single `/repos/{name}` subrouter in `cmd/server/main.go`. Never register an absolute `/repos/{name}/...` route on `authedAPI` — the mount shadows it (404) or it hijacks the subrouter. Shared catch-alls (`PUT /*`: npm publish + GOPROXY upload) are dispatched explicitly there.
 
-Toolchain: Go 1.27.x, sqlc v1.31.1, golangci-lint v2, bun.
+Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint are `tool` directives in `tools/go.mod` (separate module so Dependabot bumps them without bloating the main module): run `go tool -modfile=tools/go.mod sqlc generate` (`make generate`). CI actions are pinned by commit SHA and container images by `@sha256` digest; Dependabot updates both.
 
 ## Conventions and invariants
 

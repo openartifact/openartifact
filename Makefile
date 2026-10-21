@@ -116,8 +116,7 @@ check: fmt vet lint
 
 generate:
 	@echo "Running sqlc generate..."
-	@which sqlc > /dev/null || (echo "sqlc not found. Install: go install github.com/sqlc-dev/sqlc/cmd/sqlc@v1.31.1" && exit 1)
-	sqlc generate
+	$(GO) tool -modfile=tools/go.mod sqlc generate
 
 bench:
 	@echo "Running benchmarks..."

@@ -1,0 +1,12 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+rules:
+  cache-poisoning:
+    ignore:
+      # ci.yml also runs on tag pushes, which zizmor reads as "publishes
+      # artifacts". It does not: it has no registry/release credentials
+      # (contents: read, plus security-events: write in the `security` job only).
+      # Publishing happens in release.yml, where all caches are disabled.
+      - ci.yml
