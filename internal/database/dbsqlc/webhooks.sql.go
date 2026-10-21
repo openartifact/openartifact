@@ -354,13 +354,13 @@ func (q *Queries) ListWebhooksByRepo(ctx context.Context, repositoryID *string) 
 const listWebhooksForEvent = `-- name: ListWebhooksForEvent :many
 SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks
-WHERE (repository_id = $1 OR repository_id IS NULL) AND enabled = true AND $2 = ANY(events)
+WHERE (repository_id = $1 OR repository_id IS NULL) AND enabled = true AND $2::text = ANY(events)
 ORDER BY created_at DESC
 `
 
 type ListWebhooksForEventParams struct {
-	RepositoryID *string  `db:"repository_id" json:"repository_id"`
-	Events       []string `db:"events" json:"events"`
+	RepositoryID *string `db:"repository_id" json:"repository_id"`
+	EventType    string  `db:"event_type" json:"event_type"`
 }
 
 type ListWebhooksForEventRow struct {
@@ -379,8 +379,11 @@ type ListWebhooksForEventRow struct {
 	UpdatedAt      time.Time   `db:"updated_at" json:"updated_at"`
 }
 
+// event_type must stay an explicit ::text scalar: with a bare `$2 = ANY(events)`
+// sqlc infers the array column's type (generating a []string param) while
+// Postgres types the placeholder as text, so pgx fails to encode the argument.
 func (q *Queries) ListWebhooksForEvent(ctx context.Context, arg ListWebhooksForEventParams) ([]ListWebhooksForEventRow, error) {
-	rows, err := q.db.Query(ctx, listWebhooksForEvent, arg.RepositoryID, arg.Events)
+	rows, err := q.db.Query(ctx, listWebhooksForEvent, arg.RepositoryID, arg.EventType)
 	if err != nil {
 		return nil, err
 	}

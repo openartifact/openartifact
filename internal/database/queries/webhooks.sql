@@ -24,9 +24,12 @@ SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALES
 FROM webhooks WHERE repository_id = $1 ORDER BY created_at DESC;
 
 -- name: ListWebhooksForEvent :many
+-- event_type must stay an explicit ::text scalar: with a bare `$2 = ANY(events)`
+-- sqlc infers the array column's type (generating a []string param) while
+-- Postgres types the placeholder as text, so pgx fails to encode the argument.
 SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks
-WHERE (repository_id = $1 OR repository_id IS NULL) AND enabled = true AND $2 = ANY(events)
+WHERE (repository_id = sqlc.narg(repository_id) OR repository_id IS NULL) AND enabled = true AND sqlc.arg(event_type)::text = ANY(events)
 ORDER BY created_at DESC;
 
 -- name: CreateWebhookDelivery :one

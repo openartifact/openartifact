@@ -2993,7 +2993,7 @@ func (p *PostgresDB) ListWebhooksForEvent(ctx context.Context, repoID, eventType
 
 	rows, err := p.q.ListWebhooksForEvent(ctx, dbsqlc.ListWebhooksForEventParams{
 		RepositoryID: repoIDPtr,
-		Events:       []string{eventType},
+		EventType:    eventType,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("failed to list webhooks for event: %w", err)
