@@ -92,7 +92,7 @@ func (h *AIHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	analyses, total, err := h.db.ListAIAnalyses(r.Context(), repo.ID, status, limit, offset)
+	analyses, total, err := h.db.ListAIAnalyses(r.Context(), repo.ID, status, false, limit, offset)
 	if err != nil {
 		h.log.Errorw("ai handler: list analyses failed", "repo", repo.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")

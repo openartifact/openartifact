@@ -51,7 +51,11 @@ export type ReadyResponse = {
 
 export type SystemInfo = {
     version?: string;
-    status?: string;
+    commit?: string;
+    build_time?: string;
+    go_version?: string;
+    os?: string;
+    arch?: string;
 };
 
 export type User = {
@@ -186,7 +190,6 @@ export type RepositoryMember = {
 
 export type CleanupPolicy = {
     id?: string;
-    repository_id?: string;
     name?: string;
     enabled?: boolean;
     keep_since_days?: number;
@@ -199,6 +202,7 @@ export type CleanupPolicy = {
     last_run_at?: string | null;
     last_run_deleted?: number | null;
     last_run_error?: string;
+    repo_id?: string;
 };
 
 export type Webhook = {
@@ -351,13 +355,28 @@ export type GpgKey = {
 };
 
 export type SsoProvider = {
+    id?: string;
     slug?: string;
     kind?: 'oidc' | 'saml';
     display_name?: string;
     enabled?: boolean;
-    config?: {
+    oidc_config?: {
         [key: string]: unknown;
     };
+    saml_config?: {
+        [key: string]: unknown;
+    };
+    claim_mapping?: {
+        [key: string]: unknown;
+    };
+    group_mapping?: {
+        [key: string]: string;
+    };
+    permission_mapping?: {
+        [key: string]: string;
+    };
+    auto_provision_users?: boolean;
+    link_by_email?: boolean;
     created_at?: string;
     updated_at?: string;
 };
@@ -381,6 +400,8 @@ export type Organization = {
 };
 
 export type OrgMember = {
+    id?: string;
+    org_id?: string;
     user_id?: string;
     role?: string;
     created_at?: string;
@@ -388,10 +409,19 @@ export type OrgMember = {
 
 export type SbomReport = {
     id?: string;
-    artifact_name?: string;
-    artifact_version?: string;
-    created_at?: string;
+    repo_id?: string;
+    artifact_id?: string;
     format?: string;
+    spec_version?: string;
+    content_type?: string;
+    component_count?: number;
+    generated_at?: string;
+    created_at?: string;
+    updated_at?: string;
+    /**
+     * The SBOM document (only on the detail endpoint)
+     */
+    sbom_data?: unknown;
 };
 
 export type Quota = {
@@ -412,8 +442,12 @@ export type ScanResult = {
 export type LicensePolicy = {
     id?: string;
     name?: string;
-    allowed?: Array<string>;
-    denied?: Array<string>;
+    description?: string | null;
+    action?: string | null;
+    allowed_licenses?: Array<string>;
+    denied_licenses?: Array<string>;
+    enabled?: boolean;
+    repo_id?: string | null;
     created_at?: string;
     updated_at?: string;
 };
@@ -700,6 +734,54 @@ export type TrashList = {
     total: number;
     page: number;
     limit: number;
+};
+
+export type PackageUploadResult = {
+    success: boolean;
+    /**
+     * Format-specific metadata of the stored package (name, version, arch, sha256, ...)
+     */
+    data?: {
+        [key: string]: unknown;
+    };
+    error?: string;
+    code?: string;
+};
+
+export type PackageDeleteResult = {
+    success: boolean;
+    data?: {
+        repository?: string;
+        package_id?: string;
+    };
+    error?: string;
+    code?: string;
+};
+
+export type CompsUploadResult = {
+    success: boolean;
+    data?: {
+        repository?: string;
+        blob_id?: string;
+    };
+    error?: string;
+    code?: string;
+};
+
+export type PackageDelta = {
+    from_sha256?: string;
+    from_filename?: string;
+    to_sha256?: string;
+    to_filename?: string;
+    delta_size?: number;
+    format?: string;
+};
+
+export type PackageDeltaList = {
+    success: boolean;
+    data?: Array<PackageDelta>;
+    error?: string;
+    code?: string;
 };
 
 export type GetHealthData = {
@@ -1120,6 +1202,57 @@ export type GetApiV1RepositoriesByNamePackagesResponses = {
 };
 
 export type GetApiV1RepositoriesByNamePackagesResponse = GetApiV1RepositoriesByNamePackagesResponses[keyof GetApiV1RepositoriesByNamePackagesResponses];
+
+export type PostApiV1RepositoriesByNamePackagesData = {
+    body: {
+        /**
+         * The .rpm package
+         */
+        file: Blob | File;
+    };
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/packages';
+};
+
+export type PostApiV1RepositoriesByNamePackagesErrors = {
+    /**
+     * Invalid input or wrong repository format
+     */
+    400: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * Proxy and group repositories are read-only
+     */
+    405: Error;
+    /**
+     * Package already exists
+     */
+    409: Error;
+    /**
+     * File too large
+     */
+    413: Error;
+};
+
+export type PostApiV1RepositoriesByNamePackagesError = PostApiV1RepositoriesByNamePackagesErrors[keyof PostApiV1RepositoriesByNamePackagesErrors];
+
+export type PostApiV1RepositoriesByNamePackagesResponses = {
+    /**
+     * Package stored
+     */
+    200: PackageUploadResult;
+};
+
+export type PostApiV1RepositoriesByNamePackagesResponse = PostApiV1RepositoriesByNamePackagesResponses[keyof PostApiV1RepositoriesByNamePackagesResponses];
 
 export type GetApiV1RepositoriesByNameMembersData = {
     body?: never;
@@ -5344,3 +5477,257 @@ export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses = {
 };
 
 export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponse = PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses[keyof PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses];
+
+export type PostApiV1RepositoriesByNameDebsData = {
+    body: {
+        /**
+         * The .deb package
+         */
+        file: Blob | File;
+        /**
+         * Target distribution (default stable)
+         */
+        distribution?: string;
+        /**
+         * Target component (default main)
+         */
+        component?: string;
+    };
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/debs';
+};
+
+export type PostApiV1RepositoriesByNameDebsErrors = {
+    /**
+     * Invalid input or wrong repository format
+     */
+    400: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * Proxy and group repositories are read-only
+     */
+    405: Error;
+    /**
+     * Package already exists
+     */
+    409: Error;
+    /**
+     * File too large
+     */
+    413: Error;
+};
+
+export type PostApiV1RepositoriesByNameDebsError = PostApiV1RepositoriesByNameDebsErrors[keyof PostApiV1RepositoriesByNameDebsErrors];
+
+export type PostApiV1RepositoriesByNameDebsResponses = {
+    /**
+     * Package stored
+     */
+    200: PackageUploadResult;
+};
+
+export type PostApiV1RepositoriesByNameDebsResponse = PostApiV1RepositoriesByNameDebsResponses[keyof PostApiV1RepositoriesByNameDebsResponses];
+
+export type DeleteApiV1RepositoriesByNameDebsByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+        /**
+         * Package ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/debs/{id}';
+};
+
+export type DeleteApiV1RepositoriesByNameDebsByIdErrors = {
+    /**
+     * Repository or package not found
+     */
+    404: Error;
+    /**
+     * Release versions are immutable in this repository
+     */
+    409: Error;
+};
+
+export type DeleteApiV1RepositoriesByNameDebsByIdError = DeleteApiV1RepositoriesByNameDebsByIdErrors[keyof DeleteApiV1RepositoriesByNameDebsByIdErrors];
+
+export type DeleteApiV1RepositoriesByNameDebsByIdResponses = {
+    /**
+     * Package deleted
+     */
+    200: PackageDeleteResult;
+};
+
+export type DeleteApiV1RepositoriesByNameDebsByIdResponse = DeleteApiV1RepositoriesByNameDebsByIdResponses[keyof DeleteApiV1RepositoriesByNameDebsByIdResponses];
+
+export type DeleteApiV1RepositoriesByNamePackagesByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+        /**
+         * Package ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/packages/{id}';
+};
+
+export type DeleteApiV1RepositoriesByNamePackagesByIdErrors = {
+    /**
+     * Repository or package not found
+     */
+    404: Error;
+    /**
+     * Release versions are immutable in this repository
+     */
+    409: Error;
+};
+
+export type DeleteApiV1RepositoriesByNamePackagesByIdError = DeleteApiV1RepositoriesByNamePackagesByIdErrors[keyof DeleteApiV1RepositoriesByNamePackagesByIdErrors];
+
+export type DeleteApiV1RepositoriesByNamePackagesByIdResponses = {
+    /**
+     * Package deleted
+     */
+    200: PackageDeleteResult;
+};
+
+export type DeleteApiV1RepositoriesByNamePackagesByIdResponse = DeleteApiV1RepositoriesByNamePackagesByIdResponses[keyof DeleteApiV1RepositoriesByNamePackagesByIdResponses];
+
+export type PutApiV1RepositoriesByNameCompsData = {
+    body: string;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/comps';
+};
+
+export type PutApiV1RepositoriesByNameCompsErrors = {
+    /**
+     * Invalid XML or not an RPM repository
+     */
+    400: Error;
+    /**
+     * Repository not found
+     */
+    404: Error;
+    /**
+     * Body too large
+     */
+    413: Error;
+};
+
+export type PutApiV1RepositoriesByNameCompsError = PutApiV1RepositoriesByNameCompsErrors[keyof PutApiV1RepositoriesByNameCompsErrors];
+
+export type PutApiV1RepositoriesByNameCompsResponses = {
+    /**
+     * comps stored
+     */
+    200: CompsUploadResult;
+};
+
+export type PutApiV1RepositoriesByNameCompsResponse = PutApiV1RepositoriesByNameCompsResponses[keyof PutApiV1RepositoriesByNameCompsResponses];
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltaData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+        /**
+         * Target package ID
+         */
+        id: string;
+    };
+    query: {
+        /**
+         * sha256 (64 hex characters) of the package the client already has
+         */
+        from: string;
+    };
+    url: '/api/v1/repositories/{name}/packages/{id}/delta';
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltaErrors = {
+    /**
+     * Missing or invalid from
+     */
+    400: Error;
+    /**
+     * Repository, target or source package not found
+     */
+    404: Error;
+    /**
+     * Package too large for delta generation
+     */
+    413: Error;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltaError = GetApiV1RepositoriesByNamePackagesByIdDeltaErrors[keyof GetApiV1RepositoriesByNamePackagesByIdDeltaErrors];
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltaResponses = {
+    /**
+     * Binary delta
+     */
+    200: Blob | File;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltaResponse = GetApiV1RepositoriesByNamePackagesByIdDeltaResponses[keyof GetApiV1RepositoriesByNamePackagesByIdDeltaResponses];
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltasData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+        /**
+         * Target package ID
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/packages/{id}/deltas';
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltasErrors = {
+    /**
+     * Repository or package not found
+     */
+    404: Error;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltasError = GetApiV1RepositoriesByNamePackagesByIdDeltasErrors[keyof GetApiV1RepositoriesByNamePackagesByIdDeltasErrors];
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltasResponses = {
+    /**
+     * Available deltas
+     */
+    200: PackageDeltaList;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdDeltasResponse = GetApiV1RepositoriesByNamePackagesByIdDeltasResponses[keyof GetApiV1RepositoriesByNamePackagesByIdDeltasResponses];

@@ -30,6 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
@@ -518,6 +519,15 @@ func run(args []string) error {
 
 			return err == nil && ok
 		})
+		mcpServer.SetReadFilter(func(ctx context.Context) (func(*models.Repository) (bool, error), error) {
+			principal := middleware.PrincipalFromContext(ctx)
+			if principal == nil {
+				return func(*models.Repository) (bool, error) { return false, nil }, nil
+			}
+
+			return evaluator.RepoReadFilter(ctx, *principal)
+		})
+		mcpServer.SetSearcher(search.NewExecutor(db.GetDB()))
 	}
 
 	rbacMiddleware := middleware.RBACMiddleware(rbacCfg, db, evaluator, log)

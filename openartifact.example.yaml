@@ -42,6 +42,9 @@ database:
   database: "artifact_repo"
   # "require" by default; use "disable" only for local development without TLS.
   sslMode: "require"
+  # Extra libpq connection parameters (env: DB_OPTIONS=key=value,key=value).
+  # options:
+  #   connect_timeout: "5"
   maxOpenConns: 25
   maxIdleConns: 5
   connMaxLifetimeMinutes: 30
@@ -54,6 +57,8 @@ database:
 storage:
   # type: filesystem | s3 | gcs | azure | garage | seaweedfs | oci
   type: "filesystem"
+  # Free-form backend options (env: STORAGE_OPTIONS=key=value,key=value).
+  # options: {}
   path: "/var/lib/artifacts"
   # S3 / S3-compatible:
   # type: s3

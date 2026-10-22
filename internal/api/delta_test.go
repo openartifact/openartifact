@@ -39,8 +39,14 @@ func (d *deltaTestDB) GetComponentByID(_ context.Context, id string) (*models.Co
 	return nil, nil
 }
 
-func (d *deltaTestDB) GetComponentsByRepo(context.Context, string) ([]models.Component, error) {
-	return d.comps, nil
+func (d *deltaTestDB) GetComponentBySHA256(_ context.Context, repoID, sha string) (*models.Component, error) {
+	for i := range d.comps {
+		if d.comps[i].RepositoryID == repoID && d.comps[i].SHA256 == sha {
+			return &d.comps[i], nil
+		}
+	}
+
+	return nil, nil
 }
 
 func (d *deltaTestDB) GetPackageDelta(context.Context, string, string, string) (*models.PackageDelta, error) {

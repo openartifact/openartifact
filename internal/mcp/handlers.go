@@ -10,9 +10,12 @@ import (
 	"math"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/worker"
 )
 
@@ -65,23 +68,11 @@ func (s *Server) handleSearchArtifacts(ctx context.Context, req mcp.CallToolRequ
 
 		hits = appendMatches(hits, repo.Name, components, queryLower)
 	} else {
-		repos, err := s.readableRepos(ctx, format)
-		if err != nil {
-			return s.internalError("search list repositories", err), nil
-		}
+		var searchErr error
 
-		for _, repo := range repos {
-			components, _, err := s.db.ListComponentsByRepo(ctx, repo.ID, format, 1, 20)
-			if err != nil {
-				s.log.Errorw("mcp: search components", "repository", repo.Name, "error", err)
-				continue
-			}
-
-			hits = appendMatches(hits, repo.Name, components, queryLower)
-
-			if len(hits) >= 50 {
-				break
-			}
+		hits, searchErr = s.searchAllRepos(ctx, query, format)
+		if searchErr != nil {
+			return s.internalError("search artifacts", searchErr), nil
 		}
 	}
 
@@ -130,10 +121,11 @@ func (s *Server) handleListAIAnalyses(ctx context.Context, req mcp.CallToolReque
 	}
 
 	status := req.GetString("status", "")
+	licenseConcern := strings.EqualFold(strings.TrimSpace(req.GetString("license_concern", "")), "true")
 	limit := intArg(req, "limit", defaultPageSize, 1, maxPageSize)
 	offset := intArg(req, "offset", 0, 0, maxPage*maxPageSize)
 
-	analyses, total, err := s.db.ListAIAnalyses(ctx, repoID, status, limit, offset)
+	analyses, total, err := s.db.ListAIAnalyses(ctx, repoID, status, licenseConcern, limit, offset)
 	if err != nil {
 		return s.internalError("list ai analyses", err, "repository_id", repoID), nil
 	}
@@ -211,11 +203,66 @@ func (s *Server) handleGetRepository(ctx context.Context, req mcp.CallToolReques
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
+// searchAllRepos runs one SQL search over every repository the caller may
+// read. The readable set is resolved with a single batched permission lookup.
+func (s *Server) searchAllRepos(ctx context.Context, query, format string) ([]searchHit, error) {
+	if s.searcher == nil {
+		return nil, nil
+	}
+
+	repos, err := s.readableRepos(ctx, format)
+	if err != nil {
+		return nil, err
+	}
+
+	readable := make(map[uuid.UUID]struct{}, len(repos))
+
+	for _, r := range repos {
+		if id, perr := uuid.Parse(r.ID); perr == nil {
+			readable[id] = struct{}{}
+		}
+	}
+
+	filter := search.ParseQuery(query)
+	if format != "" {
+		filter.Formats = append(filter.Formats, format)
+	}
+
+	results, err := s.searcher.Search(ctx, filter, maxSearchHits, 0, readable)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // logged by the caller with context
+	}
+
+	hits := make([]searchHit, 0, len(results))
+	for _, r := range results {
+		hits = append(hits, searchHit{Repository: r.Repository, Package: packageDTO{
+			Name:      r.Name,
+			Version:   r.Version,
+			Format:    r.Format,
+			Size:      r.Size,
+			SHA256:    r.SHA256,
+			Filename:  r.Path,
+			CreatedAt: formatTime(r.CreatedAt),
+		}})
+	}
+
+	return hits, nil
+}
+
 // readableRepos returns every repository (optionally of one format) the caller
 // may read, in listing order. Permission filtering happens before pagination
 // so totals and pages only count visible repositories.
 func (s *Server) readableRepos(ctx context.Context, format string) ([]*models.Repository, error) {
 	var out []*models.Repository
+
+	if s.readFilter == nil {
+		return out, nil
+	}
+
+	canRead, err := s.readFilter(ctx)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // logged by the caller with context
+	}
 
 	for dbPage := 1; dbPage <= maxRepoScanBatches; dbPage++ {
 		batch, err := s.db.ListRepositories(ctx, dbPage, repoScanBatch, format)
@@ -224,7 +271,11 @@ func (s *Server) readableRepos(ctx context.Context, format string) ([]*models.Re
 		}
 
 		for _, r := range batch {
-			if r != nil && s.allowed(ctx, r.Name, "read") {
+			if r == nil {
+				continue
+			}
+
+			if ok, rerr := canRead(r); rerr == nil && ok {
 				out = append(out, r)
 			}
 		}

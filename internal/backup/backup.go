@@ -661,7 +661,7 @@ func (e *Engine) exportRepoScopedTables(ctx context.Context, repo *models.Reposi
 	vulns, err := e.db.ListVulnScanResults(ctx, id, false)
 	collectRepoList(pkg, &pkg.vulnResults, "vuln scan results", id, vulns, err)
 
-	analyses, _, err := e.db.ListAIAnalyses(ctx, id, "", bulkListLimit, 0)
+	analyses, _, err := e.db.ListAIAnalyses(ctx, id, "", false, bulkListLimit, 0)
 	collectRepoList(pkg, &pkg.aiAnalyses, "ai analyses", id, analyses, err)
 }
 

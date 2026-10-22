@@ -2470,7 +2470,7 @@ func (m *MockDatabase) GetAIAnalysis(_ context.Context, _, _ string) (*models.AI
 	return nil, nil
 }
 
-func (m *MockDatabase) ListAIAnalyses(_ context.Context, _ string, _ string, _, _ int) ([]*models.AIAnalysis, int, error) {
+func (m *MockDatabase) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
 }
 

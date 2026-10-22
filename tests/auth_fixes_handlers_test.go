@@ -612,6 +612,31 @@ func loginFrom(router http.Handler, remoteAddr, username, password string) *http
 	return rw
 }
 
+// loginDistributedLimit mirrors the handler's per-username failure budget
+// across all IPs.
+const loginDistributedLimit = 100
+
+// An attacker burning the per-(username, IP) budget locks out only their own
+// address; the real user logging in from another IP is unaffected.
+func TestHandlerLogin_PairLockoutDoesNotBlockOtherIP(t *testing.T) {
+	db := newMockDatabase()
+	createLoginUser(t, db, "victim", "the-real-password-1", false)
+
+	router, _ := setupHandlerRouter(t, db)
+
+	for range 10 {
+		loginFrom(router, "198.51.100.7:5000", "victim", "wrong-guess")
+	}
+
+	if rw := loginFrom(router, "198.51.100.7:5000", "victim", "the-real-password-1"); rw.Code != http.StatusTooManyRequests {
+		t.Fatalf("attacker IP must be locked for that username, got %d", rw.Code)
+	}
+
+	if rw := loginFrom(router, "192.0.2.77:5000", "victim", "the-real-password-1"); rw.Code != http.StatusOK {
+		t.Fatalf("legitimate login from another IP must succeed, got %d: %s", rw.Code, rw.Body.String())
+	}
+}
+
 func TestHandlerLogin_PerUsernameFailureLimit(t *testing.T) {
 	db := newMockDatabase()
 	createLoginUser(t, db, "bruteforced", "the-real-password-1", false)
@@ -621,8 +646,8 @@ func TestHandlerLogin_PerUsernameFailureLimit(t *testing.T) {
 
 	// Distributed attack: every guess comes from a different IP, so the
 	// per-IP limiter never trips; only the per-username limiter can stop it.
-	for i := range 10 {
-		rw := loginFrom(router, fmt.Sprintf("198.51.100.%d:5000", i+1), "bruteforced", "wrong-guess")
+	for i := range loginDistributedLimit {
+		rw := loginFrom(router, fmt.Sprintf("198.51.%d.%d:5000", 100+i/250, i%250+1), "bruteforced", "wrong-guess")
 		if rw.Code != http.StatusUnauthorized {
 			t.Fatalf("attempt %d: expected 401, got %d", i+1, rw.Code)
 		}
@@ -648,8 +673,8 @@ func TestHandlerLogin_PerUsernameFailureLimit(t *testing.T) {
 	}
 
 	// A username that does not exist is throttled identically (no oracle).
-	for i := range 10 {
-		loginFrom(router, fmt.Sprintf("203.0.113.%d:5000", i+1), "ghost-account", "guess")
+	for i := range loginDistributedLimit {
+		loginFrom(router, fmt.Sprintf("203.0.%d.%d:5000", i/250, i%250+1), "ghost-account", "guess")
 	}
 
 	if rw = loginFrom(router, "203.0.113.250:5000", "ghost-account", "guess"); rw.Code != http.StatusTooManyRequests {

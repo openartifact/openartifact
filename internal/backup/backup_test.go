@@ -709,7 +709,7 @@ func (d *fakeDB) ListVulnScanResults(context.Context, string, bool) ([]*models.V
 	return nil, nil
 }
 
-func (d *fakeDB) ListAIAnalyses(context.Context, string, string, int, int) ([]*models.AIAnalysis, int, error) {
+func (d *fakeDB) ListAIAnalyses(context.Context, string, string, bool, int, int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
 }
 

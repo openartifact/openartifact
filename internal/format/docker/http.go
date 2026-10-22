@@ -337,6 +337,29 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 	}
 }
 
+// blobsExist verifies every blob a pushed manifest references is stored in the
+// repository, so a manifest never lands pointing at a blob that registry GC
+// already removed. It writes the error response and returns false otherwise.
+func (h *HTTPHandler) blobsExist(w http.ResponseWriter, r *http.Request, repoID string, digests []string) bool {
+	for _, d := range digests {
+		blob, err := h.db.GetDockerBlob(r.Context(), repoID, d)
+		if err != nil {
+			h.log.Errorw("failed to look up referenced blob", "digest", d, "error", err)
+			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+			return false
+		}
+
+		if blob == nil {
+			h.errorResponse(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "manifest references a blob that is not in the repository: "+d)
+
+			return false
+		}
+	}
+
+	return true
+}
+
 // handlePutManifest pushes a manifest. Pushing a manifest the image already
 // holds succeeds, and pushing it under a tag moves that tag to it.
 func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) {
@@ -403,6 +426,10 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	// The blobs and child manifests this body references are stored with the
 	// manifest so registry GC can tell what is still in use.
 	refs := ocimanifest.ParseRefs(body)
+
+	if !h.blobsExist(w, r, repo.ID, refs.Blobs) {
+		return
+	}
 
 	manifest := &models.DockerManifest{
 		ID:            uuid.New().String(),

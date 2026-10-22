@@ -133,6 +133,17 @@ func replaceGroupMembersTx(ctx context.Context, tx *sql.Tx, groupRepoID string, 
 		return fmt.Errorf("failed to clear group members: %w", err)
 	}
 
+	// Kept members rank after the new list so their old priorities cannot
+	// collide with it; on restore they rejoin at the end in their old order.
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE repository_group_members m SET priority = $2 + k.rn - 1
+		   FROM (SELECT member_repo_id, row_number() OVER (ORDER BY priority, created_at, member_repo_id) AS rn
+		           FROM repository_group_members WHERE group_repo_id = $1) k
+		  WHERE m.group_repo_id = $1 AND m.member_repo_id = k.member_repo_id`,
+		groupRepoID, len(memberIDs)); err != nil {
+		return fmt.Errorf("failed to renumber kept group members: %w", err)
+	}
+
 	return insertGroupMembers(ctx, tx, groupRepoID, memberIDs)
 }
 

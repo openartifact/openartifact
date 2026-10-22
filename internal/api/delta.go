@@ -202,19 +202,17 @@ func (h *DeltaHandler) handleListDeltas(w http.ResponseWriter, r *http.Request) 
 
 // findFromFilename looks up the source component by sha256 within the repository.
 func (h *DeltaHandler) findFromFilename(r *http.Request, repoID, sha string) (string, bool) {
-	comps, err := h.db.GetComponentsByRepo(r.Context(), repoID)
+	c, err := h.db.GetComponentBySHA256(r.Context(), repoID, sha)
 	if err != nil {
-		h.log.Errorw("failed to list repository components", "error", err)
+		h.log.Errorw("failed to look up source component", "error", err)
 		return "", false
 	}
 
-	for _, c := range comps {
-		if c.SHA256 == sha {
-			return c.Filename, true
-		}
+	if c == nil {
+		return "", false
 	}
 
-	return "", false
+	return c.Filename, true
 }
 
 // generateDeltaOnce collapses concurrent requests for the same

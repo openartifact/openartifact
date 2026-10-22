@@ -16,8 +16,10 @@ import (
 	"testing"
 	"time"
 
+	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"go.uber.org/zap"
 	"go.uber.org/zap/zapcore"
@@ -116,7 +118,7 @@ func (m *mockDB) GetAIAnalysis(context.Context, string, string) (*models.AIAnaly
 	return m.analysis, m.err
 }
 
-func (m *mockDB) ListAIAnalyses(context.Context, string, string, int, int) ([]*models.AIAnalysis, int, error) {
+func (m *mockDB) ListAIAnalyses(context.Context, string, string, bool, int, int) ([]*models.AIAnalysis, int, error) {
 	if m.analysis == nil {
 		return nil, 0, m.err
 	}
@@ -132,6 +134,12 @@ type harness struct {
 
 // newHarness builds a server whose authorizer allows every repository except
 // the names in denied.
+type fakeSearcher struct{}
+
+func (fakeSearcher) Search(context.Context, search.SearchFilter, int, int, map[uuid.UUID]struct{}) ([]search.SearchResult, error) {
+	return []search.SearchResult{{Repository: "web-npm", Format: "npm", Name: "left-pad", Version: "1.0.0", Path: "left-pad-1.0.0.tgz", SHA256: "aa", Size: 10}}, nil
+}
+
 func newHarness(t *testing.T, db *mockDB, denied ...string) *harness {
 	t.Helper()
 
@@ -142,6 +150,10 @@ func newHarness(t *testing.T, db *mockDB, denied ...string) *harness {
 	s.SetAuthorizer(func(_ context.Context, repoName, _ string) bool {
 		return !slices.Contains(denied, repoName)
 	})
+	s.SetReadFilter(func(context.Context) (func(*models.Repository) (bool, error), error) {
+		return func(r *models.Repository) (bool, error) { return !slices.Contains(denied, r.Name), nil }, nil
+	})
+	s.SetSearcher(fakeSearcher{})
 
 	return &harness{s: s, db: db, logs: logs}
 }

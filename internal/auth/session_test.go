@@ -926,7 +926,7 @@ func (m *sessionMockDB) GetAIAnalysis(_ context.Context, _, _ string) (*models.A
 	return nil, nil
 }
 
-func (m *sessionMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _, _ int) ([]*models.AIAnalysis, int, error) {
+func (m *sessionMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
 }
 

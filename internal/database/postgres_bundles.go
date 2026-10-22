@@ -300,12 +300,41 @@ func (p *PostgresDB) AddBundleItem(ctx context.Context, item *models.ReleaseBund
 	return err
 }
 
+// RemoveBundleItem deletes an item only while the bundle is still a draft. The
+// draft check and the delete are one statement that row-locks the bundle, so a
+// concurrent seal cannot slip between them; a non-draft bundle yields
+// ErrBundleNotDraft. Removing an item that is already gone is a no-op.
 func (p *PostgresDB) RemoveBundleItem(ctx context.Context, bundleID, sha256 string) error {
-	_, err := p.db.ExecContext(ctx,
-		`DELETE FROM release_bundle_items WHERE bundle_id=$1 AND sha256=$2`, bundleID, sha256,
+	res, err := p.db.ExecContext(ctx,
+		`DELETE FROM release_bundle_items
+		 WHERE bundle_id = $1 AND sha256 = $2
+		   AND bundle_id IN (SELECT id FROM release_bundles WHERE id = $1 AND state = 'draft' FOR UPDATE)`,
+		bundleID, sha256,
 	)
+	if err != nil {
+		return err
+	}
 
-	return err
+	if n, _ := res.RowsAffected(); n > 0 {
+		return nil
+	}
+
+	var notDraft bool
+
+	err = p.db.QueryRowContext(ctx, `SELECT state <> 'draft' FROM release_bundles WHERE id = $1`, bundleID).Scan(&notDraft)
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrBundleNotFound
+	}
+
+	if err != nil {
+		return err
+	}
+
+	if notDraft {
+		return ErrBundleNotDraft
+	}
+
+	return nil
 }
 
 func (p *PostgresDB) ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error) {

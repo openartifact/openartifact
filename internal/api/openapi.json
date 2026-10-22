@@ -125,7 +125,19 @@
           "version": {
             "type": "string"
           },
-          "status": {
+          "commit": {
+            "type": "string"
+          },
+          "build_time": {
+            "type": "string"
+          },
+          "go_version": {
+            "type": "string"
+          },
+          "os": {
+            "type": "string"
+          },
+          "arch": {
             "type": "string"
           }
         }
@@ -388,10 +400,6 @@
             "type": "string",
             "format": "uuid"
           },
-          "repository_id": {
-            "type": "string",
-            "format": "uuid"
-          },
           "name": {
             "type": "string"
           },
@@ -434,6 +442,10 @@
           },
           "last_run_error": {
             "type": "string"
+          },
+          "repo_id": {
+            "type": "string",
+            "format": "uuid"
           }
         }
       },
@@ -878,6 +890,10 @@
       "SSOProvider": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "slug": {
             "type": "string"
           },
@@ -894,8 +910,32 @@
           "enabled": {
             "type": "boolean"
           },
-          "config": {
+          "oidc_config": {
             "type": "object"
+          },
+          "saml_config": {
+            "type": "object"
+          },
+          "claim_mapping": {
+            "type": "object"
+          },
+          "group_mapping": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "permission_mapping": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            }
+          },
+          "auto_provision_users": {
+            "type": "boolean"
+          },
+          "link_by_email": {
+            "type": "boolean"
           },
           "created_at": {
             "type": "string",
@@ -954,6 +994,14 @@
       "OrgMember": {
         "type": "object",
         "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "org_id": {
+            "type": "string",
+            "format": "uuid"
+          },
           "user_id": {
             "type": "string",
             "format": "uuid"
@@ -974,18 +1022,39 @@
             "type": "string",
             "format": "uuid"
           },
-          "artifact_name": {
+          "repo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifact_id": {
             "type": "string"
           },
-          "artifact_version": {
+          "format": {
             "type": "string"
+          },
+          "spec_version": {
+            "type": "string"
+          },
+          "content_type": {
+            "type": "string"
+          },
+          "component_count": {
+            "type": "integer"
+          },
+          "generated_at": {
+            "type": "string",
+            "format": "date-time"
           },
           "created_at": {
             "type": "string",
             "format": "date-time"
           },
-          "format": {
-            "type": "string"
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "sbom_data": {
+            "description": "The SBOM document (only on the detail endpoint)"
           }
         }
       },
@@ -1030,17 +1099,33 @@
           "name": {
             "type": "string"
           },
-          "allowed": {
+          "description": {
+            "type": "string",
+            "nullable": true
+          },
+          "action": {
+            "type": "string",
+            "nullable": true
+          },
+          "allowed_licenses": {
             "type": "array",
             "items": {
               "type": "string"
             }
           },
-          "denied": {
+          "denied_licenses": {
             "type": "array",
             "items": {
               "type": "string"
             }
+          },
+          "enabled": {
+            "type": "boolean"
+          },
+          "repo_id": {
+            "type": "string",
+            "format": "uuid",
+            "nullable": true
           },
           "created_at": {
             "type": "string",
@@ -1779,6 +1864,132 @@
           "page",
           "limit"
         ]
+      },
+      "PackageUploadResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "description": "Format-specific metadata of the stored package (name, version, arch, sha256, ...)",
+            "additionalProperties": true
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "PackageDeleteResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "repository": {
+                "type": "string"
+              },
+              "package_id": {
+                "type": "string",
+                "format": "uuid"
+              }
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "CompsUploadResult": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "object",
+            "properties": {
+              "repository": {
+                "type": "string"
+              },
+              "blob_id": {
+                "type": "string"
+              }
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success"
+        ]
+      },
+      "PackageDelta": {
+        "type": "object",
+        "properties": {
+          "from_sha256": {
+            "type": "string"
+          },
+          "from_filename": {
+            "type": "string"
+          },
+          "to_sha256": {
+            "type": "string"
+          },
+          "to_filename": {
+            "type": "string"
+          },
+          "delta_size": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "format": {
+            "type": "string"
+          }
+        }
+      },
+      "PackageDeltaList": {
+        "type": "object",
+        "properties": {
+          "success": {
+            "type": "boolean"
+          },
+          "data": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PackageDelta"
+            }
+          },
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "success"
+        ]
       }
     }
   },
@@ -2402,6 +2613,106 @@
       }
     },
     "/api/v1/repositories/{name}/packages": {
+      "post": {
+        "summary": "Upload a RPM package",
+        "description": "Upload a package into a hosted rpm repository (multipart/form-data). Requires write access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The .rpm package"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Package stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageUploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or wrong repository format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Proxy and group repositories are read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Package already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
       "get": {
         "summary": "List packages in repository",
         "description": "List all packages in a specific repository",
@@ -9564,6 +9875,469 @@
           },
           "403": {
             "description": "Delete permission on the repository required (restoring a repository needs an admin)"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/debs": {
+      "post": {
+        "summary": "Upload a DEB package",
+        "description": "Upload a package into a hosted deb repository (multipart/form-data). Requires write access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "multipart/form-data": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "file": {
+                    "type": "string",
+                    "format": "binary",
+                    "description": "The .deb package"
+                  },
+                  "distribution": {
+                    "type": "string",
+                    "description": "Target distribution (default stable)"
+                  },
+                  "component": {
+                    "type": "string",
+                    "description": "Target component (default main)"
+                  }
+                },
+                "required": [
+                  "file"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Package stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageUploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid input or wrong repository format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "405": {
+            "description": "Proxy and group repositories are read-only",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Package already exists",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "File too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/debs/{id}": {
+      "delete": {
+        "summary": "Delete a DEB package",
+        "description": "Delete a package from a hosted repository. Requires write access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Package ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageDeleteResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or package not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Release versions are immutable in this repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/packages/{id}": {
+      "delete": {
+        "summary": "Delete a RPM package",
+        "description": "Delete a package from a hosted repository. Requires write access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Package ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Package deleted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageDeleteResult"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or package not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Release versions are immutable in this repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/comps": {
+      "put": {
+        "summary": "Upload RPM comps.xml",
+        "description": "Replace the comps (package groups) XML of a hosted RPM repository. The body is the raw XML document. Requires write access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/xml": {
+              "schema": {
+                "type": "string"
+              }
+            },
+            "text/xml": {
+              "schema": {
+                "type": "string"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "comps stored",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CompsUploadResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid XML or not an RPM repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Body too large",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/packages/{id}/delta": {
+      "get": {
+        "summary": "Download a binary delta",
+        "description": "Returns a binary diff that turns the package whose sha256 is given in `from` into the target package. The delta is generated on demand and cached. Applies to rpm and deb packages. Requires read access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Target package ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "from",
+            "in": "query",
+            "required": true,
+            "description": "sha256 (64 hex characters) of the package the client already has",
+            "schema": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{64}$"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Binary delta",
+            "headers": {
+              "X-Delta-From": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Delta-To": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "X-Delta-Size": {
+                "schema": {
+                  "type": "integer"
+                }
+              }
+            },
+            "content": {
+              "application/octet-stream": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Missing or invalid from",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository, target or source package not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Package too large for delta generation",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/packages/{id}/deltas": {
+      "get": {
+        "summary": "List deltas of a package",
+        "description": "List the pre-computed deltas targeting a package. Requires read access.",
+        "tags": [
+          "Repositories"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "description": "Repository name",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Target package ID",
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Available deltas",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PackageDeltaList"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository or package not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

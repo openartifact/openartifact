@@ -13,6 +13,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -142,20 +143,31 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *Handler) resolveReadableRepos(ctx context.Context, principal *auth.Principal) (map[uuid.UUID]struct{}, error) {
-	rows, err := h.db.QueryContext(ctx, `SELECT id, name FROM repositories WHERE deleted_at IS NULL`)
+	readable := make(map[uuid.UUID]struct{})
+
+	if principal == nil {
+		return readable, nil
+	}
+
+	// One batched permission lookup instead of one Evaluate per repository.
+	canRead, err := h.evaluator.RepoReadFilter(ctx, *principal)
+	if err != nil {
+		return nil, err
+	}
+
+	rows, err := h.db.QueryContext(ctx, `SELECT id, name, org_id FROM repositories WHERE deleted_at IS NULL`)
 	if err != nil {
 		return nil, err
 	}
 	defer func() { _ = rows.Close() }()
 
-	readable := make(map[uuid.UUID]struct{})
-
 	for rows.Next() {
 		var (
 			rawID string
-			name  string
+			repo  models.Repository
 		)
-		if err := rows.Scan(&rawID, &name); err != nil {
+
+		if err := rows.Scan(&rawID, &repo.Name, &repo.OrgID); err != nil {
 			return nil, err
 		}
 
@@ -164,11 +176,7 @@ func (h *Handler) resolveReadableRepos(ctx context.Context, principal *auth.Prin
 			continue
 		}
 
-		if principal == nil {
-			continue
-		}
-
-		allowed, err := h.evaluator.Evaluate(ctx, *principal, name, "", "read")
+		allowed, err := canRead(&repo)
 		if err != nil {
 			return nil, err
 		}

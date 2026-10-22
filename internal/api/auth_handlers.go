@@ -38,17 +38,25 @@ func formatTimePtr(t *time.Time) *string {
 const (
 	// loginIPLimit is the number of login requests a single client IP may
 	// make per loginIPWindow. It throttles request volume only; guessing
-	// passwords for one account across many IPs is bounded separately by
-	// the per-username failure limiter.
+	// passwords for one account from one IP is bounded separately by the
+	// per-(username, IP) failure limiter.
 	loginIPLimit  = 10
 	loginIPWindow = time.Minute
 
 	// loginUserFailureLimit failures within loginUserFailureWindow lock a
-	// username out of logging in until the oldest failure ages out. A
+	// (username, client IP) pair out of logging in until the oldest failure
+	// ages out. Keying by IP as well means an attacker can only lock out their
+	// own address, never the legitimate user connecting from elsewhere. A
 	// sliding window (rather than a permanent lock) keeps this from being a
-	// durable denial of service against the legitimate user.
+	// durable denial of service.
 	loginUserFailureLimit  = 10
 	loginUserFailureWindow = 15 * time.Minute
+
+	// loginDistributedFailureLimit bounds failures for one username across all
+	// IPs in the same window, so guessing spread over many addresses is still
+	// stopped. It is deliberately 10x the per-pair limit: holding an account
+	// locked then takes a distributed effort, not one host.
+	loginDistributedFailureLimit = 100
 
 	// limiterMaxKeys bounds the memory a limiter may use. An attacker
 	// rotating source IPs or usernames cannot grow the map past this.
@@ -73,11 +81,11 @@ type slidingWindowLimiter struct {
 	now       func() time.Time
 }
 
-func newSlidingWindowLimiter(limit int, window time.Duration, maxKeys int) *slidingWindowLimiter {
+func newSlidingWindowLimiter(limit int, window time.Duration) *slidingWindowLimiter {
 	return &slidingWindowLimiter{
 		limit:   limit,
 		window:  window,
-		maxKeys: maxKeys,
+		maxKeys: limiterMaxKeys,
 		events:  make(map[string][]time.Time),
 		now:     time.Now,
 	}
@@ -215,19 +223,25 @@ type AuthHandler struct {
 	evaluator        *auth.Evaluator
 	loginIPLimiter   *slidingWindowLimiter
 	loginUserLimiter *slidingWindowLimiter
-	trustedProxies   *middleware.TrustedProxies
+	// loginPairLimiter counts login failures per (username, IP);
+	// loginAnyIPLimiter per username across all IPs.
+	loginPairLimiter  *slidingWindowLimiter
+	loginAnyIPLimiter *slidingWindowLimiter
+	trustedProxies    *middleware.TrustedProxies
 
 	proxyWarnOnce sync.Once
 }
 
 func NewAuthHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, trustedProxies *middleware.TrustedProxies) *AuthHandler {
 	return &AuthHandler{
-		db:               db,
-		log:              log,
-		evaluator:        evaluator,
-		loginIPLimiter:   newSlidingWindowLimiter(loginIPLimit, loginIPWindow, limiterMaxKeys),
-		loginUserLimiter: newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow, limiterMaxKeys),
-		trustedProxies:   trustedProxies,
+		db:                db,
+		log:               log,
+		evaluator:         evaluator,
+		loginIPLimiter:    newSlidingWindowLimiter(loginIPLimit, loginIPWindow),
+		loginUserLimiter:  newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
+		loginPairLimiter:  newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
+		loginAnyIPLimiter: newSlidingWindowLimiter(loginDistributedFailureLimit, loginUserFailureWindow),
+		trustedProxies:    trustedProxies,
 	}
 }
 
@@ -309,16 +323,25 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Per-username throttle. It applies to every submitted name, existing or
+	// Per-(username, IP) throttle: an attacker can only lock themselves out,
+	// never the legitimate user connecting from another address. It applies to every submitted name, existing or
 	// not, so a 429 reveals nothing about which accounts exist.
 	userKey := limiterKey("login:", username)
-	if wait, blocked := h.loginUserLimiter.retryAfter(userKey); blocked {
+	pairKey := userKey + "|" + ip
+
+	wait, blocked := h.loginPairLimiter.retryAfter(pairKey)
+	if !blocked {
+		wait, blocked = h.loginAnyIPLimiter.retryAfter(userKey)
+	}
+
+	if blocked {
 		writeRateLimited(w, wait, "too many failed login attempts for this account")
 		return
 	}
 
 	invalid := func() {
-		h.loginUserLimiter.record(userKey)
+		h.loginPairLimiter.record(pairKey)
+		h.loginAnyIPLimiter.record(userKey)
 		writeError(w, http.StatusUnauthorized, "invalid_credentials", "invalid username or password")
 	}
 
@@ -353,7 +376,8 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.loginUserLimiter.reset(userKey)
+	h.loginPairLimiter.reset(pairKey)
+	h.loginAnyIPLimiter.reset(userKey)
 
 	csrfToken, err := middleware.NewCSRFToken()
 	if err != nil {

@@ -724,3 +724,21 @@ func TestValidate_PresignMaxPendingUploadsNegative(t *testing.T) {
 		t.Error("Validate() accepted a negative presignMaxPendingUploads")
 	}
 }
+
+func TestLoad_OptionsEnv(t *testing.T) {
+	t.Setenv("DB_OPTIONS", "connect_timeout=5, application_name = oa ,bogus")
+	t.Setenv("STORAGE_OPTIONS", "k=v=w")
+
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if got := cfg.Database.Options; len(got) != 2 || got["connect_timeout"] != "5" || got["application_name"] != "oa" {
+		t.Errorf("database options = %v", got)
+	}
+
+	if got := cfg.Storage.Options; len(got) != 1 || got["k"] != "v=w" {
+		t.Errorf("storage options = %v", got)
+	}
+}

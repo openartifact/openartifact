@@ -66,6 +66,8 @@ type Database interface {
 	GetRepoComponentBlob(ctx context.Context, repoID, id string) (*models.ComponentBlob, error)
 	GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error)
 	GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error)
+	// GetComponentBySHA256 returns the live rpm or deb package in a repository whose blob has the given sha256, or nil.
+	GetComponentBySHA256(ctx context.Context, repoID, sha256 string) (*models.Component, error)
 	DeleteComponent(ctx context.Context, componentID string) error
 
 	GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error)
@@ -545,6 +547,7 @@ type Database interface {
 	ListReleaseBundles(ctx context.Context, nameFilter, stateFilter string, page, limit int) ([]*models.ReleaseBundle, int, error)
 
 	AddBundleItem(ctx context.Context, item *models.ReleaseBundleItem) error
+	// RemoveBundleItem deletes an item of a draft bundle (ErrBundleNotDraft otherwise).
 	RemoveBundleItem(ctx context.Context, bundleID, sha256 string) error
 	ListBundleItems(ctx context.Context, bundleID string) ([]*models.ReleaseBundleItem, error)
 	GetBundleItem(ctx context.Context, bundleID, sha256 string) (*models.ReleaseBundleItem, error)
@@ -575,7 +578,7 @@ type Database interface {
 	// AI analysis methods
 	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error
 	GetAIAnalysis(ctx context.Context, repoID, artifactID string) (*models.AIAnalysis, error)
-	ListAIAnalyses(ctx context.Context, repoID string, status string, limit, offset int) ([]*models.AIAnalysis, int, error)
+	ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error)
 	DeleteAIAnalysis(ctx context.Context, repoID, artifactID string) error
 	ListPendingAIAnalyses(ctx context.Context, limit int) ([]*models.AIAnalysis, error)
 }

@@ -146,7 +146,7 @@ The default scopes already include `groups`, and the default claims (`preferred_
 4. Unknown user and `auto_provision_users` off: 403 `user_not_provisioned`. Disabled account: 403 `account_disabled`.
 5. Otherwise a user is created (username from the username claim, else the email local part, else the subject) with no password and SSO-managed groups.
 
-Email verification: for OIDC `email_verified` must be `true`, and a custom `email_claim` counts as never verified; for SAML the email is treated as verified unless an `email_verified` attribute says otherwise.
+Email verification: for OIDC `email_verified` must be `true`, and a custom `email_claim` counts as never verified; for SAML the email is treated as verified unless an `email_verified` attribute says otherwise. **Warning:** with `link_by_email` on, a SAML IdP that lets users edit their own mail attribute allows linking to an arbitrary local account; enable `link_by_email` for SAML only when the IdP controls that attribute.
 
 ### Groups and permissions
 

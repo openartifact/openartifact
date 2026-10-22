@@ -23,6 +23,7 @@ import (
 
 var (
 	errInvalidPort        = errors.New("invalid server port")
+	errMalformedKeyValue  = errors.New("expected key=value")
 	errMCPTransport       = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
 	errMissingDBDriver    = errors.New("database driver is required")
 	errMissingStorageType = errors.New("storage type is required")
@@ -354,6 +355,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Database.MaxIdleConns, "DB_MAX_IDLE_CONNS")
 	overrideInt(&cfg.Database.ConnMaxLifetimeMinutes, "DB_CONN_MAX_LIFETIME_MINUTES")
 	overrideInt(&cfg.Database.AuthCacheTTLMillis, "DB_AUTH_CACHE_TTL_MS")
+	overrideKeyValues(&cfg.Database.Options, "DB_OPTIONS")
 
 	// Storage config
 	if v, ok := os.LookupEnv("STORAGE_BACKEND"); ok {
@@ -369,6 +371,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Storage.AccessKey, "STORAGE_ACCESS_KEY")
 	overrideString(&cfg.Storage.SecretKey, "STORAGE_SECRET_KEY")
 	overrideString(&cfg.Storage.Path, "STORAGE_PATH")
+	overrideKeyValues(&cfg.Storage.Options, "STORAGE_OPTIONS")
 	overrideBool(&cfg.Storage.ForcePathStyle, "STORAGE_S3_FORCE_PATH_STYLE")
 	overrideDuration(&cfg.Storage.PresignTTL, "STORAGE_S3_PRESIGN_TTL")
 	overrideDuration(&cfg.Storage.PresignUploadTTL, "STORAGE_PRESIGN_UPLOAD_TTL")
@@ -597,6 +600,35 @@ func overrideSlice(cfg *[]string, key string) {
 		if len(result) > 0 {
 			*cfg = result
 		}
+	}
+}
+
+// overrideKeyValues merges comma-separated key=value pairs from the
+// environment into dst, replacing values of keys already set (for example by
+// YAML). Entries without a key are ignored with a warning.
+func overrideKeyValues(dst *map[string]string, key string) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+
+	if *dst == nil {
+		*dst = make(map[string]string)
+	}
+
+	for pair := range strings.SplitSeq(v, ",") {
+		if pair = strings.TrimSpace(pair); pair == "" {
+			continue
+		}
+
+		k, val, found := strings.Cut(pair, "=")
+		if k = strings.TrimSpace(k); !found || k == "" {
+			warnBadEnv(key, pair, errMalformedKeyValue)
+
+			continue
+		}
+
+		(*dst)[k] = strings.TrimSpace(val)
 	}
 }
 

@@ -93,7 +93,7 @@ PostgreSQL is the only supported database.
 | `DB_MAX_IDLE_CONNS` | `maxIdleConns` | `5` | Warm connections kept by the pgx pool |
 | `DB_CONN_MAX_LIFETIME_MINUTES` | `connMaxLifetimeMinutes` | `30` | Maximum connection lifetime |
 | `DB_AUTH_CACHE_TTL_MS` | `authCacheTtlMs` | `2000` | In-memory cache of per-request auth lookups; changes made on this instance apply at once, other replicas see them within this time; `0` disables |
-| - | `options` | none | YAML only: extra `key: value` libpq connection parameters |
+| `DB_OPTIONS` | `options` | none | Extra libpq connection parameters; env form is comma-separated `key=value` pairs (`DB_OPTIONS=connect_timeout=5,application_name=oa`), merged over YAML keys |
 
 ### Workers (`workers`)
 
@@ -121,6 +121,7 @@ Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `gar
 |---|---|---|---|
 | `STORAGE_BACKEND` (alias `STORAGE_TYPE`) | `type` | `filesystem` | Backend; `STORAGE_BACKEND` wins when both are set |
 | `STORAGE_PATH` | `path` | `/var/lib/artifacts` | Directory (filesystem) |
+| `STORAGE_OPTIONS` | `options` | none | Free-form backend options as comma-separated `key=value` pairs, merged over YAML keys; none of the built-in backends reads any key yet |
 | `STORAGE_ENDPOINT` | `endpoint` | empty | S3-compatible endpoint, or OCI registry URL |
 | `STORAGE_BUCKET` | `bucket` | `artifacts` | Bucket (S3 family) or OCI repository prefix |
 | `STORAGE_REGION` | `region` | `us-east-1` | Region |

@@ -1202,7 +1202,7 @@ func (m *provMockDB) UpsertAIAnalysis(_ context.Context, _ *models.AIAnalysis) e
 func (m *provMockDB) GetAIAnalysis(_ context.Context, _, _ string) (*models.AIAnalysis, error) {
 	return nil, nil
 }
-func (m *provMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _, _ int) ([]*models.AIAnalysis, int, error) {
+func (m *provMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
 }
 func (m *provMockDB) DeleteAIAnalysis(_ context.Context, _, _ string) error { return nil }

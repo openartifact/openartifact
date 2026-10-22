@@ -93,6 +93,10 @@ Migrations `017` and `018` run at first start: `017` adds the soft-delete column
 
 | Area | Change |
 |---|---|
+| Config | `database.options` and `storage.options` now have env overrides, `DB_OPTIONS` and `STORAGE_OPTIONS` (comma-separated `key=value` pairs merged over YAML); `STORAGE_TYPE` is listed in `.env.example`. |
+| Security (login) | The failed-login lockout is now per (username, client IP) instead of per username, so an attacker can no longer lock the real user out from another address. |
+| Docker | Pushing a manifest whose config or layer blobs are not stored in the repository now fails with `400 MANIFEST_BLOB_UNKNOWN` instead of storing a manifest that cannot be pulled. |
+| API | `GET .../packages/{id}/delta` now also finds deb source packages and no longer scans the whole repository. MCP `list_ai_analyses` honors `license_concern`; MCP `search_artifacts` and REST search resolve readable repositories with one permission lookup. Removing a bundle item races safely with sealing (`409` if sealed). The OpenAPI spec documents the deb/rpm upload, delete, comps and delta routes and corrected schemas. |
 | Config | New opt-in keys `storage.presignDownloads`, `presignMinSize`, `presignEndpoint`, `presignUploadTtl`, `presignMaxPendingUploads` (default 20 outstanding uploads per user, `0` = unlimited; env `STORAGE_PRESIGN_*`). `presignTtl` (`STORAGE_S3_PRESIGN_TTL`) now takes effect: it is the lifetime of presigned download URLs, clamped to 1 m - 1 h. A negative `presignMinSize` stops startup. |
 | Downloads | With `presignDownloads` on (s3 and gcs backends), blob downloads of every format answer `307` with a presigned URL; metadata is still streamed. Per-repository override `presign_downloads` (`true`, `false`, `null` to inherit) on the repository API and in the repository Settings tab. |
 | API | New `POST /api/v1/repositories/{name}/uploads` and `POST /api/v1/repositories/{name}/uploads/{id}/complete` for presigned raw uploads (s3 and gcs backends; `501` elsewhere). RBAC treats them as repository write; only the creator or an admin can complete an upload, and `complete` is idempotent. |

@@ -817,7 +817,7 @@ func (m *tokenMockDB) UpsertAIAnalysis(_ context.Context, _ *models.AIAnalysis) 
 func (m *tokenMockDB) GetAIAnalysis(_ context.Context, _, _ string) (*models.AIAnalysis, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _, _ int) ([]*models.AIAnalysis, int, error) {
+func (m *tokenMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
 }
 func (m *tokenMockDB) DeleteAIAnalysis(_ context.Context, _, _ string) error { return nil }

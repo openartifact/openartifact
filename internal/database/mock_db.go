@@ -93,6 +93,10 @@ func (m *BaseMockDB) GetRepoComponentBlob(ctx context.Context, repoID, id string
 func (m *BaseMockDB) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
 	return nil, errNotImpl("GetComponentByFilename")
 }
+func (m *BaseMockDB) GetComponentBySHA256(ctx context.Context, repoID, sha256 string) (*models.Component, error) {
+	return nil, errNotImpl("GetComponentBySHA256")
+}
+
 func (m *BaseMockDB) GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error) {
 	return nil, errNotImpl("GetComponentsByRepo")
 }
@@ -1070,7 +1074,7 @@ func (m *BaseMockDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAn
 func (m *BaseMockDB) GetAIAnalysis(ctx context.Context, repoID, artifactID string) (*models.AIAnalysis, error) {
 	return nil, errNotImpl("GetAIAnalysis")
 }
-func (m *BaseMockDB) ListAIAnalyses(ctx context.Context, repoID string, status string, limit, offset int) ([]*models.AIAnalysis, int, error) {
+func (m *BaseMockDB) ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, errNotImpl("ListAIAnalyses")
 }
 func (m *BaseMockDB) DeleteAIAnalysis(ctx context.Context, repoID, artifactID string) error {

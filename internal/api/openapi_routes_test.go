@@ -12,6 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 // specOnlyAllowed lists spec operations served outside this package (root
@@ -76,9 +77,17 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewQuotasHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	NewPropertiesHandler(nil, nil).RegisterRoutes(r, repoPrefix)
 	NewAIHandler(nil, nil, nil, nil).RegisterRoutes(r, repoPrefix)
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	NewDebUploadHandler(log, nil, nil, nil).Register(r)
+	NewRPMUploadHandler(log, nil, nil, nil).Register(r)
+	NewDeltaHandler(log, nil, nil).Register(r)
 
 	routes := map[string]bool{}
-	err := chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
+	err = chi.Walk(r, func(method, route string, _ http.Handler, _ ...func(http.Handler) http.Handler) error {
 		route = strings.TrimSuffix(route, "/")
 		if route == "" {
 			return nil

@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/google/uuid"
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/mark3labs/mcp-go/server"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -20,6 +22,17 @@ import (
 // Authorizer reports whether the caller identified by ctx may perform action
 // ("read", "write", ...) on the named repository.
 type Authorizer func(ctx context.Context, repoName, action string) bool
+
+// ReadFilterFunc resolves, once per call, a predicate reporting whether the
+// caller identified by ctx may read a repository. Resolving it once avoids one
+// permission evaluation per repository.
+type ReadFilterFunc func(ctx context.Context) (func(repo *models.Repository) (bool, error), error)
+
+// ArtifactSearcher runs the cross-repository artifact search restricted to the
+// given readable repositories.
+type ArtifactSearcher interface {
+	Search(ctx context.Context, filter search.SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]search.SearchResult, error)
+}
 
 const (
 	// maxManifestTextBytes bounds manifest text accepted from MCP callers.
@@ -33,6 +46,8 @@ const (
 	// filter by permission before paginating.
 	repoScanBatch      = 100
 	maxRepoScanBatches = 100
+
+	maxSearchHits = 50
 
 	msgNotFound = "not found or access denied"
 	msgInternal = "internal error"
@@ -51,7 +66,9 @@ type Options struct {
 
 // Server wraps the MCP server with OpenArtifact dependencies.
 type Server struct {
-	authorizer Authorizer // nil denies every repository-scoped call
+	authorizer Authorizer       // nil denies every repository-scoped call
+	readFilter ReadFilterFunc   // nil hides every repository from listings
+	searcher   ArtifactSearcher // nil disables cross-repository search
 	mcpServer  *server.MCPServer
 	db         database.Database
 	aiWorker   *worker.AIAnalysisWorker
@@ -88,6 +105,14 @@ func NewServer(db database.Database, aiWorker *worker.AIAnalysisWorker, log *log
 // SetAuthorizer installs the per-repository authorization check. It MUST be
 // set before HTTPHandler is used; without it every tool call is denied.
 func (s *Server) SetAuthorizer(a Authorizer) { s.authorizer = a }
+
+// SetReadFilter installs the batch read check used to list and search across
+// repositories. Without it repository listings and cross-repository search
+// return nothing.
+func (s *Server) SetReadFilter(f ReadFilterFunc) { s.readFilter = f }
+
+// SetSearcher installs the SQL search backend for cross-repository search.
+func (s *Server) SetSearcher(a ArtifactSearcher) { s.searcher = a }
 
 // allowed enforces per-repository authorization. Without an authorizer every
 // call is denied.

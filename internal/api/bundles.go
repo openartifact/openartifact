@@ -898,6 +898,11 @@ func (h *BundlesHandler) handleRemoveItem(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := h.db.RemoveBundleItem(ctx, bundle.ID, sha256); err != nil {
+		if errors.Is(err, database.ErrBundleNotDraft) {
+			writeError(w, http.StatusConflict, "conflict", "can only remove items from draft bundles")
+			return
+		}
+
 		h.log.Errorw("remove item: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 

@@ -643,6 +643,30 @@ func (p *PostgresDB) GetComponentByFilename(ctx context.Context, repoID string, 
 	return c, nil
 }
 
+// GetComponentBySHA256 finds a live rpm or deb package in a repository by the
+// sha256 of its blob using a single-row lookup per table.
+func (p *PostgresDB) GetComponentBySHA256(ctx context.Context, repoID, sha256 string) (*models.Component, error) {
+	c, err := p.scanRpmComponent(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND b.sha256 = $2 AND rp.deleted_at IS NULL LIMIT 1", repoID, sha256)
+	if err == nil {
+		return c, nil
+	}
+
+	if !errors.Is(err, sql.ErrNoRows) {
+		return nil, fmt.Errorf("failed to get component by sha256: %w", err)
+	}
+
+	c, err = p.scanDebComponent(ctx, "SELECT "+debComponentColumns+" WHERE dp.repository_id = $1 AND b.sha256 = $2 AND dp.deleted_at IS NULL LIMIT 1", repoID, sha256)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get component by sha256: %w", err)
+	}
+
+	return c, nil
+}
+
 // GetComponentsByRepo lists RPM packages for a repository.
 func (p *PostgresDB) GetComponentsByRepo(ctx context.Context, repoID string) ([]models.Component, error) {
 	rows, err := p.db.QueryContext(ctx, "SELECT "+rpmComponentColumns+" WHERE rp.repository_id = $1 AND rp.deleted_at IS NULL", repoID)
@@ -6063,14 +6087,19 @@ func (p *PostgresDB) GetAIAnalysis(ctx context.Context, repoID, artifactID strin
 	return scanAIAnalysis(row)
 }
 
-// ListAIAnalyses lists AI analyses for a repository with optional status filter.
-func (p *PostgresDB) ListAIAnalyses(ctx context.Context, repoID string, status string, limit, offset int) ([]*models.AIAnalysis, int, error) {
+// ListAIAnalyses lists AI analyses for a repository with optional status and
+// REVIEW_REQUIRED license filters.
+func (p *PostgresDB) ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error) {
 	args := []any{repoID}
 	where := "WHERE sj.scan_type = 'ai' AND ref.repository_id = $1"
 
 	if status != "" {
 		args = append(args, aiStatusToJob(status))
 		where += fmt.Sprintf(" AND sj.status = $%d", len(args))
+	}
+
+	if licenseReviewOnly {
+		where += " AND air.license_status = 'REVIEW_REQUIRED'"
 	}
 
 	var total int

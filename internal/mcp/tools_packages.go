@@ -312,7 +312,7 @@ func toFindingDTO(scan *models.VulnScanResult, v models.Vulnerability) findingDT
 
 	summary := v.Summary
 	if len(summary) > maxFindingSummary {
-		summary = summary[:maxFindingSummary]
+		summary = strings.ToValidUTF8(summary[:maxFindingSummary], "") // never cut a multi-byte rune in half
 	}
 
 	return findingDTO{
