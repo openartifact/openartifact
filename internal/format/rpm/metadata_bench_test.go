@@ -282,7 +282,7 @@ func BenchmarkPrimaryPipeline(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				if _, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) }); err != nil {
+				if _, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) }, len(pkgs)*2048); err != nil {
 					b.Fatal(err)
 				}
 			}

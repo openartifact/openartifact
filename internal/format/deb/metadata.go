@@ -14,9 +14,10 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"strings"
 	"time"
 
-	"github.com/ulikunitz/xz"
+	"github.com/openartifact/openartifact/internal/xzutil"
 )
 
 // ReleaseFileGenerator generates Debian Release files.
@@ -138,6 +139,9 @@ func (rfg *ReleaseFileGenerator) GenerateRelease(files []FileInfo) string {
 // PackagesFileGenerator generates Packages files.
 type PackagesFileGenerator struct {
 	entries []string
+	// rendered caches Generate's result; AddEntry invalidates it so the
+	// plain, gzip and xz variants share one render.
+	rendered *string
 }
 
 // NewPackagesFileGenerator creates a new Packages file generator.
@@ -151,17 +155,33 @@ func NewPackagesFileGenerator() *PackagesFileGenerator {
 func (pfg *PackagesFileGenerator) AddEntry(entry string) {
 	if entry != "" {
 		pfg.entries = append(pfg.entries, entry)
+		pfg.rendered = nil
 	}
 }
 
 // Generate generates the Packages file content.
 func (pfg *PackagesFileGenerator) Generate() string {
-	var buf bytes.Buffer
-	for _, entry := range pfg.entries {
-		buf.WriteString(entry)
+	if pfg.rendered != nil {
+		return *pfg.rendered
 	}
 
-	return buf.String()
+	var b strings.Builder
+
+	n := 0
+	for _, entry := range pfg.entries {
+		n += len(entry)
+	}
+
+	b.Grow(n)
+
+	for _, entry := range pfg.entries {
+		b.WriteString(entry)
+	}
+
+	out := b.String()
+	pfg.rendered = &out
+
+	return out
 }
 
 // GenerateGzipped generates gzipped Packages file content.
@@ -171,7 +191,7 @@ func (pfg *PackagesFileGenerator) GenerateGzipped() ([]byte, error) {
 	var buf bytes.Buffer
 
 	gzWriter := gzip.NewWriter(&buf)
-	if _, err := gzWriter.Write([]byte(content)); err != nil {
+	if _, err := io.WriteString(gzWriter, content); err != nil {
 		return nil, fmt.Errorf("failed to write gzipped content: %w", err)
 	}
 
@@ -188,12 +208,12 @@ func (pfg *PackagesFileGenerator) GenerateXZipped() ([]byte, error) {
 
 	var buf bytes.Buffer
 
-	xzWriter, err := xz.NewWriter(&buf)
+	xzWriter, err := xzutil.NewWriter(&buf, len(content))
 	if err != nil {
 		return nil, fmt.Errorf("failed to create xz writer: %w", err)
 	}
 
-	if _, err := xzWriter.Write([]byte(content)); err != nil {
+	if _, err := io.WriteString(xzWriter, content); err != nil {
 		return nil, fmt.Errorf("failed to write xz content: %w", err)
 	}
 

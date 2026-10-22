@@ -275,7 +275,9 @@ func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duratio
 		DialContext:           func(ctx context.Context, n, a string) (net.Conn, error) { return d.DialContext(ctx, n, a) },
 		TLSHandshakeTimeout:   10 * time.Second,
 		ResponseHeaderTimeout: responseHeaderTimeout,
-		MaxIdleConns:          20,
+		MaxIdleConns:          100,
+		MaxIdleConnsPerHost:   32,
+		ForceAttemptHTTP2:     true,
 		IdleConnTimeout:       60 * time.Second,
 	}
 	return &http.Client{

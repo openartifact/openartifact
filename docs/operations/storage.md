@@ -106,7 +106,7 @@ Every blob is named by the lowercase hex SHA-256 of its content (64 characters; 
 | s3, garage, seaweedfs, gcs, azure | object key `blobs/<sha[0:2]>/<sha[2:4]>/<sha>` |
 | oci | `<registry>/v2/<repository>/blobs/sha256:<sha>` |
 
-S3, Azure and OCI uploads must carry the digest (`sha256` metadata); the OCI store skips the upload when the blob already exists. S3 uploads use multipart with 64 MiB parts and 4 parallel parts. Azure uploads are spooled to a temporary file in the system temp directory first.
+S3, Azure and OCI uploads must carry the digest (`sha256` metadata); the OCI store skips the upload when the blob already exists. S3 uploads use multipart with 16 MiB parts and 4 parallel parts. Azure uploads are spooled to a temporary file in the system temp directory first.
 
 The filesystem store writes to a `blob-upload-*.tmp` file inside `STORAGE_PATH`, fsyncs it and renames it into place, so `STORAGE_PATH` must be a single filesystem. Leftover `.tmp` files are safe to delete when the server is stopped.
 

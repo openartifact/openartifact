@@ -24,6 +24,9 @@ type benchWorkerDB struct {
 	components    []models.DebianComponent
 	architectures []models.DebianArchitecture
 	artifacts     []*models.MavenArtifact
+
+	meta    map[string]*models.RepoMetadata
+	upserts int
 }
 
 func (d *benchWorkerDB) GetDebianComponentsByDist(context.Context, string) ([]models.DebianComponent, error) {
@@ -38,7 +41,21 @@ func (d *benchWorkerDB) GetMavenArtifactsByGA(context.Context, string, string, s
 	return d.artifacts, nil
 }
 
-func (d *benchWorkerDB) UpsertRepoMetadata(context.Context, *models.RepoMetadata) error { return nil }
+func (d *benchWorkerDB) GetRepoMetadataByPath(_ context.Context, _, path string) (*models.RepoMetadata, error) {
+	return d.meta[path], nil
+}
+
+func (d *benchWorkerDB) UpsertRepoMetadata(_ context.Context, m *models.RepoMetadata) error {
+	if d.meta == nil {
+		d.meta = make(map[string]*models.RepoMetadata)
+	}
+
+	cp := *m
+	d.meta[m.Path] = &cp
+	d.upserts++
+
+	return nil
+}
 
 func benchDebWorkerEntries(n int) []models.DebPackageEntry {
 	entries := make([]models.DebPackageEntry, n)

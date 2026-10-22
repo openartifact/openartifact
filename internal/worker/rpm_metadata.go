@@ -130,10 +130,19 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 	}
 
 	newSHA := make(map[string]string, len(blobs))
+	changed := make(map[string][]byte, len(blobs))
 
 	for path, data := range blobs {
 		checksum := fmt.Sprintf("%x", sha256.Sum256(data))
 		newSHA[path] = checksum
+
+		// Identical to what the row already points at: nothing to store or
+		// write, and the blob is protected by that row from reclaim.
+		if oldSHA[path] == checksum {
+			continue
+		}
+
+		changed[path] = data
 
 		if _, err := w.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
 			"path":      path,
@@ -188,7 +197,7 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 	// The new set is durable: make sure a concurrent reclaim of an identical
 	// blob (another repo's superseded row) did not remove one of its objects,
 	// then drop the blobs nothing references any more.
-	w.blobs().ensure(ctx, repoID, blobs, newSHA, func(path, sum string) map[string]string {
+	w.blobs().ensure(ctx, repoID, changed, newSHA, func(path, sum string) map[string]string {
 		return map[string]string{
 			"path":      path,
 			"format":    "rpm",
@@ -304,6 +313,9 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 		write func(io.Writer, []pkgrpm.Package) error
 	}
 
+	// Typical uncompressed XML bytes per package, used only to size the xz dictionary.
+	const xmlBytesPerPackageHint = 2048
+
 	kinds := []kind{
 		{"primary", formatrpm.WritePrimaryXML},
 		{"filelists", formatrpm.WriteFilelistsXML},
@@ -318,7 +330,7 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 	for _, k := range kinds {
 		// The XML streams straight into the gzip and xz encoders; the
 		// uncompressed document is never held in memory.
-		comp, err := formatrpm.CompressMetadataStream(func(out io.Writer) error { return k.write(out, packages) })
+		comp, err := formatrpm.CompressMetadataStream(func(out io.Writer) error { return k.write(out, packages) }, len(packages)*xmlBytesPerPackageHint)
 		if err != nil {
 			return nil, fmt.Errorf("rpm worker: generating %s.xml: %w", k.name, err)
 		}

@@ -89,15 +89,9 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		return "", fmt.Errorf("failed to write blob data: %w", err)
 	}
 
-	if err := tmpFile.Sync(); err != nil {
-		_ = tmpFile.Close()
-		_ = os.Remove(tmpPath)
-
-		return "", fmt.Errorf("failed to sync blob file: %w", err)
-	}
-
-	_ = tmpFile.Close()
-
+	// The fsync is deferred until the blob is known to be new: a duplicate
+	// Put (the common case for shared base layers and re-uploads) otherwise
+	// pays the dominant cost of the whole call for bytes it then discards.
 	computedSHA256 := hex.EncodeToString(hasher.Sum(nil))
 
 	// The blob is content-addressed: a caller-supplied digest must be the
@@ -105,6 +99,7 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 	id := computedSHA256
 
 	if sha, ok := metadata["sha256"]; ok && sha != "" && sha != computedSHA256 {
+		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 
 		return "", fmt.Errorf("%w: claimed %s, computed %s", ErrDigestMismatch, sha, computedSHA256)
@@ -112,12 +107,15 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 
 	blobPath, err := fs.getBlobPath(id)
 	if err != nil {
+		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
+
 		return "", err
 	}
 
 	dir := filepath.Dir(blobPath)
 	if err := os.MkdirAll(dir, 0755); err != nil {
+		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to create blob directory: %w", err)
 	}
@@ -130,10 +128,20 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 	// Verified content already present stays untouched: never replace an
 	// object other repositories resolve through the same address.
 	if _, statErr := os.Stat(blobPath); statErr == nil {
+		_ = tmpFile.Close()
 		_ = os.Remove(tmpPath)
 
 		return id, nil
 	}
+
+	if err := tmpFile.Sync(); err != nil {
+		_ = tmpFile.Close()
+		_ = os.Remove(tmpPath)
+
+		return "", fmt.Errorf("failed to sync blob file: %w", err)
+	}
+
+	_ = tmpFile.Close()
 
 	if err := os.Rename(tmpPath, blobPath); err != nil {
 		_ = os.Remove(tmpPath)

@@ -14,7 +14,7 @@ import (
 	"hash"
 	"io"
 
-	"github.com/ulikunitz/xz"
+	"github.com/openartifact/openartifact/internal/xzutil"
 )
 
 type CompressedMetadata struct {
@@ -37,7 +37,7 @@ func CompressMetadata(xmlData []byte) (*CompressedMetadata, error) {
 	return CompressMetadataStream(func(w io.Writer) error {
 		_, err := w.Write(xmlData)
 		return err
-	})
+	}, len(xmlData))
 }
 
 // hashedBuffer collects compressed output and hashes it on the way.
@@ -69,8 +69,10 @@ func (c *countingWriter) Write(p []byte) (int, error) {
 
 // CompressMetadataStream runs write against a sink that feeds the gzip and xz
 // encoders at once, so the uncompressed document never has to exist in memory.
-// OpenSize is the number of uncompressed bytes write produced.
-func CompressMetadataStream(write func(io.Writer) error) (*CompressedMetadata, error) {
+// OpenSize is the number of uncompressed bytes write produced. sizeHint is the
+// expected uncompressed size; it only sizes the xz dictionary (a low guess costs
+// a little compression ratio, never correctness).
+func CompressMetadataStream(write func(io.Writer) error, sizeHint int) (*CompressedMetadata, error) {
 	gzBuf, xzBuf := newHashedBuffer(), newHashedBuffer()
 
 	gw, err := gzip.NewWriterLevel(gzBuf, gzip.BestCompression)
@@ -78,7 +80,7 @@ func CompressMetadataStream(write func(io.Writer) error) (*CompressedMetadata, e
 		return nil, fmt.Errorf("rpm: gzip compression: %w", err)
 	}
 
-	xw, err := xz.NewWriter(xzBuf)
+	xw, err := xzutil.NewWriter(xzBuf, sizeHint)
 	if err != nil {
 		return nil, fmt.Errorf("rpm: xz compression: %w", err)
 	}

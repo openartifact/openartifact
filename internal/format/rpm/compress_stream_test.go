@@ -30,7 +30,7 @@ func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	streamed, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) })
+	streamed, err := CompressMetadataStream(func(w io.Writer) error { return WritePrimaryXML(w, pkgs) }, 0)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -84,11 +84,11 @@ func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 func TestCompressMetadataStreamErrors(t *testing.T) {
 	boom := errors.New("generator failed")
 
-	if _, err := CompressMetadataStream(func(io.Writer) error { return boom }); !errors.Is(err, boom) {
+	if _, err := CompressMetadataStream(func(io.Writer) error { return boom }, 0); !errors.Is(err, boom) {
 		t.Errorf("writer error not propagated: %v", err)
 	}
 
-	if _, err := CompressMetadataStream(func(io.Writer) error { return nil }); err == nil {
+	if _, err := CompressMetadataStream(func(io.Writer) error { return nil }, 0); err == nil {
 		t.Error("expected an error when nothing was written")
 	}
 }

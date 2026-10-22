@@ -10,7 +10,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
+	"os"
 	"strings"
 	"time"
 
@@ -124,14 +126,14 @@ func requireAuth(w http.ResponseWriter, r *http.Request) bool {
 type npmPublishBody struct {
 	Name        string                     `json:"name"`
 	Versions    map[string]json.RawMessage `json:"versions"`
-	Attachments map[string]map[string]any  `json:"_attachments"`
+	Attachments map[string]*npmAttachment  `json:"-"`
 	DistTags    map[string]string          `json:"dist-tags"`
 }
 
 // attachment returns the tarball attachment of a version. The npm CLI keys
 // attachments by the full (scoped) name, "@scope/pkg-1.0.0.tgz"; the bare
 // filename is accepted too.
-func (b *npmPublishBody) attachment(version string) (map[string]any, bool) {
+func (b *npmPublishBody) attachment(version string) (*npmAttachment, bool) {
 	att, ok := b.Attachments[b.Name+"-"+version+".tgz"]
 	if !ok {
 		att, ok = b.Attachments[formatnpm.TarballFilename(b.Name, version)]
@@ -144,7 +146,7 @@ type npmPreparedVersion struct {
 	version  string
 	manifest json.RawMessage
 	filename string
-	data     []byte
+	att      *npmAttachment
 	integrity,
 	sha1Hex,
 	sha256Hex string
@@ -209,12 +211,11 @@ func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublish
 			return nil, &npmPublishError{http.StatusBadRequest, "missing attachment: " + filename}
 		}
 
-		data, _, err := pkgnpm.DecodeAttachment(att)
-		if err != nil {
+		if err := att.validate(); err != nil {
 			return nil, &npmPublishError{http.StatusBadRequest, "invalid attachment: " + err.Error()}
 		}
 
-		integrity, sha1Hex, sha256Hex, _, err := pkgnpm.ComputeIntegrity(bytes.NewReader(data))
+		integrity, sha1Hex, sha256Hex, err := att.integrity()
 		if err != nil {
 			return nil, &npmPublishError{http.StatusInternalServerError, "internal error"}
 		}
@@ -226,7 +227,7 @@ func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublish
 		}
 
 		prepared = append(prepared, &npmPreparedVersion{
-			version: version, manifest: manifestRaw, filename: filename, data: data,
+			version: version, manifest: manifestRaw, filename: filename, att: att,
 			integrity: integrity, sha1Hex: sha1Hex, sha256Hex: sha256Hex,
 		})
 	}
@@ -327,12 +328,17 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 
 	body := http.MaxBytesReader(w, r.Body, MaxNPMUploadBytes)
 
-	var buf bytes.Buffer
-	if _, err := buf.ReadFrom(body); err != nil {
+	parsed, cleanup, err := parseNPMPublishBody(body)
+	if err != nil {
 		uploadResult = "error"
 
 		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
 			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
+
+		if errors.Is(err, errNPMBodySyntax) || errors.Is(err, io.ErrUnexpectedEOF) {
+			http.Error(w, "invalid JSON", http.StatusBadRequest)
 			return
 		}
 
@@ -342,17 +348,9 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	dec := json.NewDecoder(bytes.NewReader(buf.Bytes()))
-	dec.UseNumber()
+	defer cleanup()
 
-	var pub npmPublishBody
-	if err := dec.Decode(&pub); err != nil {
-		uploadResult = "error"
-
-		http.Error(w, "invalid JSON", http.StatusBadRequest)
-
-		return
-	}
+	pub := *parsed
 
 	if pub.Name != pkgName {
 		uploadResult = "error"
@@ -510,7 +508,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 					continue
 				}
 
-				h.releaseQuota(ctx, repo.ID, int64(len(pv.data)))
+				h.releaseQuota(ctx, repo.ID, pv.att.size)
 
 				if delErr := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, pv.sha256Hex); delErr != nil {
 					h.log.Warnw("npm publish rollback: delete blob", "sha256", pv.sha256Hex, "error", delErr)
@@ -634,7 +632,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 			Version:    pv.version,
 			Path:       pv.filename,
 			SHA256:     pv.sha256Hex,
-			Size:       int64(len(pv.data)),
+			Size:       pv.att.size,
 		}))
 	}
 
@@ -643,6 +641,25 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		"id":  pub.Name,
 		"rev": "1-" + time.Now().UTC().Format("20060102150405"),
 	})
+}
+
+// putNPMTarball stores the spooled tarball of a prepared version.
+func (h *NPMUploadHandler) putNPMTarball(ctx context.Context, pv *npmPreparedVersion) error {
+	f, err := os.Open(pv.att.path)
+	if err != nil {
+		return fmt.Errorf("failed to open spooled tarball: %w", err)
+	}
+
+	defer func() { _ = f.Close() }()
+
+	if _, err := h.blobStore.Put(ctx, f, map[string]string{
+		"sha256": pv.sha256Hex,
+		"format": "npm",
+	}); err != nil {
+		return fmt.Errorf("failed to store tarball blob: %w", err)
+	}
+
+	return nil
 }
 
 var errNPMVersionExists = errors.New("npm version already exists")
@@ -658,7 +675,7 @@ func (h *NPMUploadHandler) releaseQuota(ctx context.Context, repoID string, size
 // blob lock so a concurrent unpublish cannot delete the blob in between. The
 // reservation is released on every failure path.
 func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID string, pv *npmPreparedVersion) error {
-	size := int64(len(pv.data))
+	size := pv.att.size
 
 	if err := quota.Enforce(ctx, h.db, repoID, size); err != nil {
 		return err
@@ -673,11 +690,8 @@ func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID st
 		}
 
 		if !exists {
-			if _, err := h.blobStore.Put(ctx, bytes.NewReader(pv.data), map[string]string{
-				"sha256": pv.sha256Hex,
-				"format": "npm",
-			}); err != nil {
-				return fmt.Errorf("failed to store tarball blob: %w", err)
+			if err := h.putNPMTarball(ctx, pv); err != nil {
+				return err
 			}
 
 			newBlob = true

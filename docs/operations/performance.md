@@ -168,4 +168,4 @@ With `OPENARTIFACT_RATE_LIMIT_RPS` above 0, each client IP gets a token bucket o
 
 ### Storage
 
-Blobs are streamed through the server by default. On S3 and GCS backends you can opt in to [presigned URLs](storage.md#presigned-urls) (`storage.presignDownloads`), which redirect blob downloads of at least `presignMinSize` straight to the object store and take large transfers off the server. S3 uploads use 64 MiB parts with 4 in parallel. See [storage](storage.md).
+Blobs are streamed through the server by default. On S3 and GCS backends you can opt in to [presigned URLs](storage.md#presigned-urls) (`storage.presignDownloads`), which redirect blob downloads of at least `presignMinSize` straight to the object store and take large transfers off the server. S3 uploads use 16 MiB parts with 4 in parallel. See [storage](storage.md).

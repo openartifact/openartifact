@@ -8,7 +8,6 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"encoding/base64"
 	"fmt"
 	"math/rand/v2"
 	"testing"
@@ -140,28 +139,6 @@ func BenchmarkValidatePackageName(b *testing.B) {
 
 			for b.Loop() {
 				if err := ValidatePackageName(name); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
-func BenchmarkDecodeAttachment(b *testing.B) {
-	for _, size := range []int{4 << 10, 1 << 20} {
-		raw := make([]byte, size)
-		att := map[string]any{
-			"content_type": "application/octet-stream",
-			"data":         base64.StdEncoding.EncodeToString(raw),
-			"length":       float64(size),
-		}
-
-		b.Run(fmt.Sprintf("payload=%dKiB", size>>10), func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(size))
-
-			for b.Loop() {
-				if _, _, err := DecodeAttachment(att); err != nil {
 					b.Fatal(err)
 				}
 			}

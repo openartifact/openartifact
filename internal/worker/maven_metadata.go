@@ -119,20 +119,12 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		}
 	}
 
-	xmlData, err := fmtmaven.GenerateGroupMetadataXML(groupID, artifactID, versions, latestRelease, latestVersion, time.Now().UTC())
-	if err != nil {
-		return fmt.Errorf("maven worker: generating group metadata xml: %w", err)
-	}
-
-	sha256Hex, err := computeChecksumsForSHA256(bytes.NewReader(xmlData))
-	if err != nil {
-		return fmt.Errorf("maven worker: computing checksums: %w", err)
-	}
-
 	groupMetaPath := dir + "maven-metadata.xml"
 	keep = append(keep, groupMetaPath)
 
-	if err := w.storeMetadata(ctx, repoID, groupMetaPath, "group-metadata", sha256Hex, xmlData); err != nil {
+	if err := w.storeMetadata(ctx, repoID, groupMetaPath, "group-metadata", func(updated time.Time) ([]byte, error) {
+		return fmtmaven.GenerateGroupMetadataXML(groupID, artifactID, versions, latestRelease, latestVersion, updated)
+	}); err != nil {
 		return fmt.Errorf("maven worker: group metadata: %w", err)
 	}
 
@@ -195,20 +187,12 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 			Version:    snapVersion,
 		}
 
-		snapXML, err := fmtmaven.GenerateSnapshotMetadataXML(coord, latestTs, latestBn, time.Now().UTC(), entries)
-		if err != nil {
-			return fmt.Errorf("maven worker: generating snapshot metadata xml for %s: %w", snapVersion, err)
-		}
-
-		_, _, snapSHA256, _, err := pkgmaven.ComputeChecksums(bytes.NewReader(snapXML))
-		if err != nil {
-			return fmt.Errorf("maven worker: computing snapshot checksums: %w", err)
-		}
-
 		snapMetaPath := dir + snapVersion + "/maven-metadata.xml"
 		keep = append(keep, snapMetaPath)
 
-		if err := w.storeMetadata(ctx, repoID, snapMetaPath, "snapshot-metadata", snapSHA256, snapXML); err != nil {
+		if err := w.storeMetadata(ctx, repoID, snapMetaPath, "snapshot-metadata", func(updated time.Time) ([]byte, error) {
+			return fmtmaven.GenerateSnapshotMetadataXML(coord, latestTs, latestBn, updated, entries)
+		}); err != nil {
 			return fmt.Errorf("maven worker: snapshot metadata for %s: %w", snapVersion, err)
 		}
 	}
@@ -216,16 +200,53 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 	return w.pruneMetadata(ctx, repoID, dir, keep)
 }
 
-// storeMetadata stores one generated maven-metadata.xml and points its
-// repository_metadata row at it. Put and upsert run under the blob's lock so a
-// concurrent reclaim of identical content (another repository, or a previous
-// generation) cannot delete the object between them. The blob the row pointed
-// to before is reclaimed afterwards: every regeneration changes lastUpdated,
-// hence the hash, and nothing else would ever free the old object.
-func (w *MavenMetadataWorker) storeMetadata(ctx context.Context, repoID, path, pathType, sha string, data []byte) error {
+// storeMetadata renders one maven-metadata.xml and points its
+// repository_metadata row at it, doing nothing when the content is unchanged.
+//
+// lastUpdated is part of the document, so rendering with the current time
+// would change the hash on every run and rewrite (and re-reclaim) every
+// metadata file of the artifact each time any one of them changed. The
+// document is therefore first rendered with the previous generation time: when
+// that reproduces the stored hash nothing changed and nothing is written;
+// otherwise it is rendered again with the current time, which is what clients
+// compare to notice a change.
+//
+// Put and upsert run under the blob's lock so a concurrent reclaim of
+// identical content (another repository, or a previous generation) cannot
+// delete the object between them. The blob the row pointed to before is
+// reclaimed afterwards, since nothing else would ever free the old object.
+func (w *MavenMetadataWorker) storeMetadata(ctx context.Context, repoID, path, pathType string, render func(lastUpdated time.Time) ([]byte, error)) error {
 	prev, err := w.db.GetRepoMetadataByPath(ctx, repoID, path)
 	if err != nil {
 		return fmt.Errorf("looking up current metadata: %w", err)
+	}
+
+	var (
+		data      []byte
+		sha       string
+		generated time.Time
+	)
+
+	for _, at := range []time.Time{prevGenerated(prev), time.Now().UTC()} {
+		if at.IsZero() {
+			continue
+		}
+
+		generated = at
+
+		data, err = render(at)
+		if err != nil {
+			return fmt.Errorf("generating xml: %w", err)
+		}
+
+		sha, err = computeChecksumsForSHA256(bytes.NewReader(data))
+		if err != nil {
+			return fmt.Errorf("computing checksums: %w", err)
+		}
+
+		if prev != nil && prev.BlobSHA256 == sha {
+			return nil
+		}
 	}
 
 	err = storage.WithBlobLock(ctx, w.db, sha, func(ctx context.Context) error {
@@ -244,7 +265,7 @@ func (w *MavenMetadataWorker) storeMetadata(ctx context.Context, repoID, path, p
 			Path:          path,
 			BlobSHA256:    blobID,
 			BlobSize:      int64(len(data)),
-			LastGenerated: time.Now().UTC(),
+			LastGenerated: generated,
 		}); err != nil {
 			return fmt.Errorf("upserting row: %w", err)
 		}
@@ -290,6 +311,14 @@ func (w *MavenMetadataWorker) pruneMetadata(ctx context.Context, repoID, dir str
 	}
 
 	return nil
+}
+
+func prevGenerated(prev *models.RepoMetadata) time.Time {
+	if prev == nil {
+		return time.Time{}
+	}
+
+	return prev.LastGenerated.UTC()
 }
 
 // computeChecksumsForSHA256 computes checksums and returns only the SHA256 hex value.

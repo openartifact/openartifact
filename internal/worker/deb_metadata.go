@@ -140,10 +140,19 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 		return err
 	}
 	newSHA := make(map[string]string, len(blobs))
+	changed := make(map[string][]byte, len(blobs))
 
 	for path, data := range blobs {
 		checksum := fmt.Sprintf("%x", sha256.Sum256(data))
 		newSHA[path] = checksum
+
+		// Identical to what the row already points at: nothing to store or
+		// write, and the blob is protected by that row from reclaim.
+		if oldSHA[path] == checksum {
+			continue
+		}
+
+		changed[path] = data
 
 		_, err = w.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
 			"path":    path,
@@ -182,7 +191,7 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 	// The new set is durable: make sure a concurrent reclaim of an identical
 	// blob (another repo's superseded row) did not remove one of its objects,
 	// then drop the blobs nothing references any more.
-	w.blobs().ensure(ctx, repoID, blobs, newSHA, func(path, sum string) map[string]string {
+	w.blobs().ensure(ctx, repoID, changed, newSHA, func(path, sum string) map[string]string {
 		return map[string]string{
 			"path":    path,
 			"format":  "deb",

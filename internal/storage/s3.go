@@ -62,7 +62,7 @@ func NewS3BlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 	client := s3.NewFromConfig(awsCfg, s3Opts)
 
 	uploader := transfermanager.New(client, func(o *transfermanager.Options) {
-		o.PartSizeBytes = 64 * 1024 * 1024
+		o.PartSizeBytes = 16 * 1024 * 1024
 		o.Concurrency = 4
 	})
 

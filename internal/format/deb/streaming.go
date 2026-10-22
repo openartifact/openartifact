@@ -20,7 +20,7 @@ import (
 	"strings"
 
 	db "github.com/openartifact/openartifact/internal/database"
-	"github.com/ulikunitz/xz"
+	"github.com/openartifact/openartifact/internal/xzutil"
 )
 
 // Compression selects the output encoding for StreamPackages.
@@ -68,7 +68,7 @@ func StreamPackages(ctx context.Context, database db.Database, repoID, dist, com
 	case CompressionXZ:
 		cw := newCountingWriter(w)
 
-		xzw, err := xz.NewWriter(cw)
+		xzw, err := xzutil.NewWriter(cw, len(content))
 		if err != nil {
 			return cw.n, fmt.Errorf("stream packages: xz writer: %w", err)
 		}

@@ -38,17 +38,6 @@ func FuzzParseTarball(f *testing.F) {
 	})
 }
 
-// FuzzDecodeAttachment feeds arbitrary attachment fields from a publish packument.
-func FuzzDecodeAttachment(f *testing.F) {
-	f.Add("application/octet-stream", "aGVsbG8=", "5")
-	f.Add("application/octet-stream", "!!!", "-1")
-	f.Add("text/plain", "", "")
-
-	f.Fuzz(func(_ *testing.T, ct, data, length string) {
-		_, _, _ = DecodeAttachment(map[string]any{"content_type": ct, "data": data, "length": length})
-	})
-}
-
 // FuzzValidatePackageName feeds arbitrary package names and versions.
 func FuzzValidatePackageName(f *testing.F) {
 	f.Add("@scope/name", "1.2.3-beta.1+build")

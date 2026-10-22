@@ -88,10 +88,12 @@ func cachedLookup[V any](ctx context.Context, c *authCache, m *map[string]cacheE
 	gen := c.gen
 
 	if e, ok := (*m)[key]; ok && c.clock().Before(e.expires) {
-		v := clone(e.val)
+		// Cached values are never mutated (callers get clones), so the
+		// copy can happen outside the lock.
+		val := e.val
 		c.mu.Unlock()
 
-		return v, nil
+		return clone(val), nil
 	}
 	c.mu.Unlock()
 
@@ -99,6 +101,8 @@ func cachedLookup[V any](ctx context.Context, c *authCache, m *map[string]cacheE
 	if err != nil || isNil(v) {
 		return v, err
 	}
+
+	stored := clone(v)
 
 	c.mu.Lock()
 	defer c.mu.Unlock()
@@ -108,7 +112,7 @@ func cachedLookup[V any](ctx context.Context, c *authCache, m *map[string]cacheE
 			*m = make(map[string]cacheEntry[V])
 		}
 
-		(*m)[key] = cacheEntry[V]{val: clone(v), expires: c.clock().Add(c.ttl)}
+		(*m)[key] = cacheEntry[V]{val: stored, expires: c.clock().Add(c.ttl)}
 	}
 
 	return v, nil
