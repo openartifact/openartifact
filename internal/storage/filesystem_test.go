@@ -10,9 +10,12 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"fmt"
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
+	"sort"
 	"strings"
 	"testing"
 )
@@ -185,7 +188,7 @@ func TestFilesystem_List(t *testing.T) {
 	}
 
 	// List all blobs
-	list, err := store.List(ctx, "", 0, 0)
+	list, _, err := store.List(ctx, "", 0)
 	if err != nil {
 		t.Fatalf("List failed: %v", err)
 	}
@@ -314,7 +317,7 @@ func TestFilesystem_ListSkipsUploadTmp(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	ids, err := store.List(ctx, "", 0, 0)
+	ids, _, err := store.List(ctx, "", 0)
 	if err != nil || len(ids) != 0 {
 		t.Fatalf("List = %v, %v; want empty", ids, err)
 	}
@@ -395,5 +398,46 @@ func TestFilesystem_getBlobPathStaysInsideRoot(t *testing.T) {
 	p, err := fs.getBlobPath(strings.Repeat("a", 64))
 	if err != nil || !strings.HasPrefix(p, root+string(os.PathSeparator)) {
 		t.Errorf("valid id: path=%q err=%v", p, err)
+	}
+}
+
+func TestFilesystem_ListPagesByToken(t *testing.T) {
+	store := newTestFilesystemStore(t)
+	ctx := context.Background()
+
+	want := make([]string, 0, 25)
+
+	for i := range 25 {
+		id, err := store.Put(ctx, bytes.NewReader([]byte(fmt.Sprintf("blob %d", i))), nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		want = append(want, id)
+	}
+
+	sort.Strings(want)
+
+	var got []string
+
+	token := ""
+
+	for {
+		ids, next, err := store.List(ctx, token, 7)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		got = append(got, ids...)
+
+		if next == "" {
+			break
+		}
+
+		token = next
+	}
+
+	if !slices.Equal(got, want) {
+		t.Fatalf("paged list = %v, want %v", got, want)
 	}
 }

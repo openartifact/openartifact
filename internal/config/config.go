@@ -29,8 +29,9 @@ var (
 	errMissingLogLevel    = errors.New("logger level is required")
 	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
 
-	errNegativeDockerGCGrace  = errors.New("workers.dockerGcGracePeriod must not be negative")
-	errNegativeTrashRetention = errors.New("trash.retentionDays must not be negative")
+	errNegativeDockerGCGrace    = errors.New("workers.dockerGcGracePeriod must not be negative")
+	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
+	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
 
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
 	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
@@ -74,6 +75,10 @@ type WorkersConfig struct {
 	// DockerUploadDir is where in-progress blob uploads are staged. Empty
 	// means /tmp/openartifact/docker-uploads.
 	DockerUploadDir string `yaml:"dockerUploadDir"`
+	// WebhookDeliveryRetentionDays is how many days finished (success or
+	// failed) webhook delivery records are kept before the hourly purge deletes
+	// them. 0 keeps them forever. Pending deliveries are never purged.
+	WebhookDeliveryRetentionDays int `yaml:"webhookDeliveryRetentionDays"`
 }
 
 // TrashConfig tunes soft delete (see docs/operations/trash.md).
@@ -289,10 +294,11 @@ func defaultConfig() *Config {
 			HTTPPath:  "/mcp",
 		},
 		Workers: WorkersConfig{
-			MetadataRegenConcurrency: 4,
-			DockerGCInterval:         time.Hour,
-			DockerGCGracePeriod:      24 * time.Hour,
-			DockerUploadTTL:          24 * time.Hour,
+			MetadataRegenConcurrency:     4,
+			DockerGCInterval:             time.Hour,
+			DockerGCGracePeriod:          24 * time.Hour,
+			DockerUploadTTL:              24 * time.Hour,
+			WebhookDeliveryRetentionDays: 30,
 		},
 		Trash: TrashConfig{
 			RetentionDays: 7,
@@ -423,6 +429,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Workers.DockerGCGracePeriod, "OPENARTIFACT_DOCKER_GC_GRACE_PERIOD")
 	overrideDuration(&cfg.Workers.DockerUploadTTL, "OPENARTIFACT_DOCKER_UPLOAD_TTL")
 	overrideString(&cfg.Workers.DockerUploadDir, "OPENARTIFACT_DOCKER_UPLOAD_DIR")
+	overrideInt(&cfg.Workers.WebhookDeliveryRetentionDays, "OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS")
 	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
 	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
 
@@ -488,6 +495,10 @@ func (c *Config) Validate() error {
 
 	if c.MCP.Enabled && c.MCP.Transport != "http" {
 		return errMCPTransport
+	}
+
+	if c.Workers.WebhookDeliveryRetentionDays < 0 {
+		return errNegativeWebhookRetention
 	}
 
 	if c.Workers.DockerGCGracePeriod < 0 {

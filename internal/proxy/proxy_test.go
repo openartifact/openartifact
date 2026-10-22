@@ -263,6 +263,33 @@ func TestServe_ReleasedArtifactIsCachedAsImmutable(t *testing.T) {
 	}
 }
 
+// A close-delimited body (no Content-Length, not chunked) cut by a clean FIN is
+// indistinguishable from a complete one, so a release must not be pinned for a
+// century (STOR-10).
+func TestServe_CloseDelimitedBodyIsNotCachedAsImmutable(t *testing.T) {
+	f := newFixture(t, func(w http.ResponseWriter, _ *http.Request) {
+		conn, buf, err := w.(http.Hijacker).Hijack()
+		if err != nil {
+			return
+		}
+
+		_, _ = buf.WriteString("HTTP/1.1 200 OK\r\nConnection: close\r\nContent-Type: application/java-archive\r\n\r\njar")
+		_ = buf.Flush()
+		_ = conn.Close()
+	})
+
+	f.do(http.MethodGet, "g/a/1.0/a-1.0.jar")
+
+	e := f.db.entry("repo-1", "g/a/1.0/a-1.0.jar")
+	if e == nil {
+		t.Fatal("no cache entry")
+	}
+
+	if time.Until(e.ExpiresAt) > time.Duration(f.repo.CacheTTLSeconds)*time.Second {
+		t.Errorf("close-delimited release expires in %v, want within the repo TTL", time.Until(e.ExpiresAt))
+	}
+}
+
 func TestServe_NegativeCache(t *testing.T) {
 	f := newFixture(t, http.NotFound)
 

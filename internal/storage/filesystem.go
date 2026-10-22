@@ -133,7 +133,7 @@ func (fs *FilesystemStore) Get(ctx context.Context, id string) (io.ReadCloser, e
 	f, err := os.Open(blobPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return nil, fmt.Errorf("blob not found: %s", id) //nolint:err113 // dynamic error with runtime context
+			return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 		}
 
 		return nil, fmt.Errorf("failed to open blob: %w", err)
@@ -223,66 +223,74 @@ func (fs *FilesystemStore) GetMetadata(ctx context.Context, id string) (map[stri
 	return metadata, nil
 }
 
-// List returns a list of blob identifiers with optional filtering.
-func (fs *FilesystemStore) List(ctx context.Context, prefix string, limit int, offset int) ([]string, error) {
+// List returns up to limit blob ids in ascending order that sort after token
+// (the last id of the previous page). Directories that sort entirely before
+// the token are skipped, so the cost of a page does not grow with the number
+// of blobs already listed.
+func (fs *FilesystemStore) List(ctx context.Context, token string, limit int) ([]string, string, error) {
+	if limit <= 0 {
+		limit = 1000
+	}
+
 	var ids []string
 
-	count := 0
-	skipped := 0
+	more := false
 
-	err := filepath.Walk(fs.basePath, func(path string, info os.FileInfo, err error) error {
+	err := filepath.WalkDir(fs.basePath, func(path string, d os.DirEntry, err error) error {
 		if err != nil {
 			//nolint:nilerr // intentionally skip walk errors
 			return nil
 		}
 
-		if info.IsDir() || strings.HasSuffix(path, ".meta") {
-			return nil
+		if cerr := ctx.Err(); cerr != nil {
+			return cerr
 		}
 
-		if strings.HasPrefix(info.Name(), "blob-upload-") && strings.HasSuffix(info.Name(), ".tmp") {
-			return nil
-		}
-
-		// Reconstruct the blob ID from path
-		rel, err := filepath.Rel(fs.basePath, path)
-		if err != nil {
+		rel, rerr := filepath.Rel(fs.basePath, path)
+		if rerr != nil {
 			//nolint:nilerr // intentionally skip walk errors
 			return nil
 		}
+
+		if d.IsDir() {
+			// Two-character shard dirs sorting before the token's shard hold no id after it.
+			if token != "" && rel != "." && !strings.Contains(rel, string(os.PathSeparator)) && rel < token[:min(len(rel), len(token))] {
+				return filepath.SkipDir
+			}
+
+			return nil
+		}
+
+		name := d.Name()
+		if strings.HasSuffix(name, ".meta") || (strings.HasPrefix(name, "blob-upload-") && strings.HasSuffix(name, ".tmp")) {
+			return nil
+		}
+
 		// The ID is the directory prefix + filename: "ab" + "cdef123..." = "abcdef123..."
-		parts := strings.SplitN(rel, string(os.PathSeparator), 2)
-
-		var id string
-		if len(parts) == 2 {
-			id = parts[0] + parts[1]
-		} else {
-			id = rel
-		}
-
-		if prefix != "" && !strings.HasPrefix(id, prefix) {
+		id := strings.ReplaceAll(rel, string(os.PathSeparator), "")
+		if id <= token || !isBlobID(id) {
 			return nil
 		}
 
-		if skipped < offset {
-			skipped++
-			return nil
-		}
-
-		if limit > 0 && count >= limit {
+		if len(ids) >= limit {
+			more = true
 			return filepath.SkipAll
 		}
 
 		ids = append(ids, id)
-		count++
 
 		return nil
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to list blobs: %w", err)
+		return nil, "", fmt.Errorf("failed to list blobs: %w", err)
 	}
 
-	return ids, nil
+	next := ""
+	if more && len(ids) > 0 {
+		next = ids[len(ids)-1]
+	}
+
+	return ids, next, nil
 }
 
 // GetSize returns the size of a blob in bytes.
@@ -299,7 +307,7 @@ func (fs *FilesystemStore) GetSize(ctx context.Context, id string) (int64, error
 	info, err := os.Stat(blobPath)
 	if err != nil {
 		if os.IsNotExist(err) {
-			return 0, fmt.Errorf("blob not found: %s", id) //nolint:err113 // dynamic error with runtime context
+			return 0, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 		}
 
 		return 0, fmt.Errorf("failed to stat blob: %w", err)
@@ -356,3 +364,6 @@ func (fs *FilesystemStore) getBlobPath(id string) (string, error) {
 
 	return p, nil
 }
+
+// isBlobID reports whether id is a well-formed blob id.
+func isBlobID(id string) bool { return ValidateBlobID(id) == nil }

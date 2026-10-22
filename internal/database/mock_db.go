@@ -51,6 +51,9 @@ func (m *BaseMockDB) ListRepositories(ctx context.Context, page, limit int, form
 func (m *BaseMockDB) CountRepositories(ctx context.Context, formatFilter string) (int, error) {
 	return 0, errNotImpl("CountRepositories")
 }
+func (m *BaseMockDB) UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
+	return errNotImpl("UpdateRepositoryAndMembers")
+}
 func (m *BaseMockDB) UpdateRepository(ctx context.Context, repo *models.Repository) error {
 	return errNotImpl("UpdateRepository")
 }
@@ -703,8 +706,8 @@ func (m *BaseMockDB) ReleasePresignedUpload(ctx context.Context, id string) erro
 func (m *BaseMockDB) MarkPresignedUploadCompleted(ctx context.Context, id, artifactID string) error {
 	return errNotImpl("MarkPresignedUploadCompleted")
 }
-func (m *BaseMockDB) CountPendingPresignedUploads(ctx context.Context, createdBy string) (int, error) {
-	return 0, errNotImpl("CountPendingPresignedUploads")
+func (m *BaseMockDB) CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error {
+	return errNotImpl("CreatePresignedUploadCapped")
 }
 func (m *BaseMockDB) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
 	return nil, errNotImpl("ExistingPresignedUploadIDs")

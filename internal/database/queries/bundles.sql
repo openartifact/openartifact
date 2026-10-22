@@ -86,7 +86,7 @@ SELECT rbi.id, rbi.bundle_id, rbi.source_repo_id, rbi.sha256, rbi.artifact_path,
        COALESCE(u.username, '') AS added_by, rbi.added_at
 FROM release_bundle_items rbi
 LEFT JOIN auth_users u ON u.id = rbi.adder_id
-WHERE rbi.bundle_id = $1 ORDER BY rbi.added_at;
+WHERE rbi.bundle_id = $1 ORDER BY rbi.added_at, rbi.id;
 
 -- name: GetBundleItem :one
 SELECT rbi.id, rbi.bundle_id, rbi.source_repo_id, rbi.sha256, rbi.artifact_path, rbi.format, rbi.size_bytes,
@@ -109,4 +109,4 @@ SELECT bp.id, bp.bundle_id, bp.from_stage, bp.to_stage, bp.target_repo_id, bp.st
        COALESCE(bp.notes, '') AS notes, bp.error_message, bp.item_count, bp.started_at, bp.completed_at
 FROM bundle_promotions bp
 LEFT JOIN auth_users u ON u.id = bp.promoter_id
-WHERE bp.bundle_id = $1 ORDER BY bp.started_at;
+WHERE bp.bundle_id = $1 ORDER BY bp.started_at, bp.id;

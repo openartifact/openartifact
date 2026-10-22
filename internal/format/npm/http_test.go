@@ -110,8 +110,8 @@ func (m *tarballMockBlobStore) GetMetadata(_ context.Context, _ string) (map[str
 	return nil, nil
 }
 
-func (m *tarballMockBlobStore) List(_ context.Context, _ string, _ int, _ int) ([]string, error) {
-	return nil, nil
+func (m *tarballMockBlobStore) List(_ context.Context, _ string, _ int) ([]string, string, error) {
+	return nil, "", nil
 }
 
 func (m *tarballMockBlobStore) GetSize(_ context.Context, id string) (int64, error) {

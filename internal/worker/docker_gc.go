@@ -158,11 +158,6 @@ func (w *DockerGCWorker) Start() {
 	}
 
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				w.log.Errorw("panic in goroutine", "panic", r)
-			}
-		}()
 		defer close(w.doneCh)
 
 		ticker := time.NewTicker(w.interval)
@@ -171,12 +166,23 @@ func (w *DockerGCWorker) Start() {
 		for {
 			select {
 			case <-ticker.C:
-				w.runAll(w.runCtx)
+				w.runAllSafely()
 			case <-w.stopCh:
 				return
 			}
 		}
 	}()
+}
+
+// runAllSafely contains a panic to one pass so the schedule keeps running.
+func (w *DockerGCWorker) runAllSafely() {
+	defer func() {
+		if r := recover(); r != nil {
+			w.log.Errorw("panic in docker gc pass; continuing", "panic", r)
+		}
+	}()
+
+	w.runAll(w.runCtx)
 }
 
 // Stop cancels in-flight runs and waits for the schedule goroutine to exit.

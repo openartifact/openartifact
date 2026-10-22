@@ -167,16 +167,22 @@ func (d *presignUploadDB) MarkPresignedUploadCompleted(_ context.Context, id, ar
 	return nil
 }
 
-func (d *presignUploadDB) CountPendingPresignedUploads(_ context.Context, createdBy string) (int, error) {
-	n := 0
+func (d *presignUploadDB) CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error {
+	if maxPending > 0 {
+		n := 0
 
-	for _, u := range d.uploads {
-		if u.CreatedBy == createdBy && u.CompletedAt == nil && u.ExpiresAt.After(time.Now()) {
-			n++
+		for _, o := range d.uploads {
+			if o.CreatedBy == u.CreatedBy && o.CompletedAt == nil && o.ExpiresAt.After(time.Now()) {
+				n++
+			}
+		}
+
+		if n >= maxPending {
+			return database.ErrPresignedUploadCap
 		}
 	}
 
-	return n, nil
+	return d.CreatePresignedUpload(ctx, u)
 }
 
 func (d *presignUploadDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
@@ -543,6 +549,27 @@ func TestPresignedUpload_CompleteExpiredOrUnknown(t *testing.T) {
 
 	if rw := f.call(t, false, completePath("not-a-uuid"), nil); rw.Code != http.StatusNotFound {
 		t.Errorf("malformed id status = %d, want 404", rw.Code)
+	}
+}
+
+// STOR-7: an expired upload whose complete is still verifying (lease held) must
+// not have its staging object deleted from under that call.
+func TestPresignedUpload_ExpiredCompleteRespectsActiveLease(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted")
+	resp := f.start(t, []byte("data"))
+
+	up := f.db.uploads[resp.ID]
+	up.ExpiresAt = time.Now().Add(-time.Minute)
+	lease := time.Now()
+	up.CompletingSince = &lease
+	f.store.staged[resp.ID] = []byte("data")
+
+	if rw := f.call(t, false, completePath(resp.ID), nil); rw.Code != http.StatusConflict {
+		t.Fatalf("expired complete during an active lease = %d, want 409", rw.Code)
+	}
+
+	if f.db.uploads[resp.ID] == nil || f.store.staged[resp.ID] == nil {
+		t.Error("the row or staging object was deleted while another complete holds the lease")
 	}
 }
 

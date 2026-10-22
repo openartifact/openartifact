@@ -14,6 +14,13 @@ import (
 // ErrPresignNotSupported is returned by storage backends that do not support presigned URLs.
 var ErrPresignNotSupported = errors.New("presign URL not supported by this storage backend")
 
+// ErrBlobNotFound is wrapped by every backend when a blob does not exist.
+var ErrBlobNotFound = errors.New("blob not found")
+
+// ErrListNotSupported is returned by List on backends that cannot enumerate
+// their blobs (OCI registries expose no flat blob listing).
+var ErrListNotSupported = errors.New("blob listing is not supported by this storage backend")
+
 // BlobStore defines the interface for blob storage operations.
 type BlobStore interface {
 	// Put stores a blob and returns its identifier
@@ -31,8 +38,12 @@ type BlobStore interface {
 	// GetMetadata retrieves metadata for a blob
 	GetMetadata(ctx context.Context, id string) (map[string]string, error)
 
-	// List returns a list of blob identifiers with optional filtering
-	List(ctx context.Context, prefix string, limit int, offset int) ([]string, error)
+	// List returns up to limit blob identifiers (sha256 hex, ascending) that
+	// follow the opaque continuation token. An empty token starts at the
+	// beginning; the returned next token is empty once the listing is
+	// exhausted. Cost per call is independent of how many blobs precede the
+	// token. Backends that cannot enumerate return ErrListNotSupported.
+	List(ctx context.Context, token string, limit int) (ids []string, next string, err error)
 
 	// GetSize returns the size of a blob in bytes
 	GetSize(ctx context.Context, id string) (int64, error)

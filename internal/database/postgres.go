@@ -315,7 +315,16 @@ func (p *PostgresDB) UpdateRepository(ctx context.Context, repo *models.Reposito
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	_, err := p.db.ExecContext(ctx,
+	return updateRepositoryRow(ctx, p.db, repo)
+}
+
+// repoExecer is the part of *sql.DB and *sql.Tx the repository update needs.
+type repoExecer interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}
+
+func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Repository) error {
+	_, err := db.ExecContext(ctx,
 		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, org_id = $11, trash_retention_days = $12, immutable_releases = $13, presign_downloads = $15, updated_at = now() WHERE id = $14 AND deleted_at IS NULL`,
 		repo.Description, repo.Public, repo.RepoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.ID, repo.PresignDownloads,
 	)
@@ -430,8 +439,8 @@ func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Reposito
 	}
 
 	return p.db.QueryRowContext(ctx,
-		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, org_id, trash_retention_days, immutable_releases, presign_downloads) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16) RETURNING id, created_at, updated_at`,
-		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.PresignDownloads,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, org_id, trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16, $17) RETURNING id, created_at, updated_at`,
+		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.OrgID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.PresignDownloads, repo.AllowFullUnpublish,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 }
 
@@ -854,24 +863,44 @@ func (p *PostgresDB) UpsertRepoMetadata(ctx context.Context, meta *models.RepoMe
 // and the one of each snapshot version directory, except the paths in keep. The
 // regeneration calls it with the paths it just wrote, so metadata of an
 // artifact (or snapshot version) that has no live file left disappears
-// instead of advertising versions that were deleted or trashed.
-func (p *PostgresDB) PruneMavenMetadata(ctx context.Context, repositoryID, dir string, keep []string) error {
+// instead of advertising versions that were deleted or trashed. The blob shas of
+// the deleted rows are returned so the caller can reclaim the objects.
+func (p *PostgresDB) PruneMavenMetadata(ctx context.Context, repositoryID, dir string, keep []string) ([]string, error) {
 	if keep == nil {
 		keep = []string{}
 	}
 
-	if _, err := p.db.ExecContext(ctx,
+	rows, err := p.db.QueryContext(ctx,
 		`DELETE FROM repository_metadata
 		  WHERE repository_id = $1 AND starts_with(path, $2) AND NOT (path = ANY($3::text[]))
 		    AND (substr(path, length($2) + 1) = 'maven-metadata.xml'
 		         OR (substr(path, length($2) + 1) LIKE '%-SNAPSHOT/maven-metadata.xml'
-		             AND position('/' IN substr(path, length($2) + 1)) = length(substr(path, length($2) + 1)) - length('maven-metadata.xml')))`,
+		             AND position('/' IN substr(path, length($2) + 1)) = length(substr(path, length($2) + 1)) - length('maven-metadata.xml')))
+		RETURNING blob_sha256`,
 		repositoryID, dir, keep,
-	); err != nil {
-		return fmt.Errorf("failed to prune maven metadata: %w", err)
+	)
+	if err != nil {
+		return nil, fmt.Errorf("failed to prune maven metadata: %w", err)
 	}
 
-	return nil
+	defer func() { _ = rows.Close() }()
+
+	var shas []string
+
+	for rows.Next() {
+		var sha string
+		if err := rows.Scan(&sha); err != nil {
+			return nil, fmt.Errorf("failed to scan pruned maven metadata: %w", err)
+		}
+
+		shas = append(shas, sha)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to prune maven metadata: %w", err)
+	}
+
+	return shas, nil
 }
 
 func (p *PostgresDB) CreateDebianDistribution(ctx context.Context, dist *models.DebianDistribution) error {
@@ -1676,29 +1705,49 @@ func (p *PostgresDB) BlobReferenceCount(ctx context.Context, sha256 string) (int
 	return blobRefCount(ctx, p.db, sha256)
 }
 
+// blobRefSpecs lists every (table, condition) that references blob alias b. It
+// is the single source of truth for both the reference sum (blobRefSumExpr,
+// point lookups by sha) and the anti-join (blobUnreferencedExpr, orphan scan);
+// a new package table is added here once.
+var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // built once, read-only
+	{"rpm_packages", "blob_id = b.id"},
+	{"deb_packages", "blob_id = b.id"},
+	{"npm_versions", "blob_id = b.id"},
+	{"maven_artifacts", "blob_id = b.id"},
+	{"docker_blobs", "blob_id = b.id"},
+	{"docker_manifests", "blob_id = b.id"},
+	{"pypi_packages", "blob_id = b.id"},
+	{"nuget_packages", "blob_id = b.id"},
+	{"gomod_modules", "zip_blob_id = b.id OR mod_blob_id = b.id"},
+	{"cargo_crates", "blob_id = b.id"},
+	{"rubygems_gems", "blob_id = b.id"},
+	{"conda_packages", "blob_id = b.id"},
+	{"conan_packages", "blob_id = b.id"},
+	{"ivy_artifacts", "blob_id = b.id"},
+	{"sbt_artifacts", "blob_id = b.id"},
+	{"helm_charts", "blob_id = b.id"},
+	{"raw_artifacts", "blob_id = b.id"},
+	{"release_bundle_items", "sha256 = b.sha256"},
+	{"proxy_cache_entries", "blob_key = b.sha256"},
+	{"sbom_results", "blob_id = b.id"},
+}
+
 // blobRefSumExpr is the SQL sum of every reference to blob alias b.
-const blobRefSumExpr = `
-			(SELECT COUNT(*) FROM rpm_packages   WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM deb_packages   WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM npm_versions    WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM maven_artifacts WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM docker_blobs    WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM docker_manifests WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM pypi_packages   WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM nuget_packages  WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM gomod_modules   WHERE zip_blob_id = b.id OR mod_blob_id = b.id) +
-			(SELECT COUNT(*) FROM cargo_crates    WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM rubygems_gems   WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM conda_packages  WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM conan_packages  WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM ivy_artifacts   WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM sbt_artifacts   WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM helm_charts     WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM raw_artifacts   WHERE blob_id = b.id) +
-			(SELECT COUNT(*) FROM release_bundle_items WHERE sha256 = b.sha256) +
-			(SELECT COUNT(*) FROM proxy_cache_entries WHERE blob_key = b.sha256) +
-			(SELECT COUNT(*) FROM sbom_results   WHERE blob_id = b.id)
-`
+var blobRefSumExpr = buildBlobRefExpr(" +\n", "(SELECT COUNT(*) FROM %s WHERE %s)") //nolint:gochecknoglobals // built once, read-only
+
+// blobUnreferencedExpr is true when no table references blob alias b. NOT
+// EXISTS short-circuits at the first hit and never counts, unlike
+// blobRefSumExpr = 0.
+var blobUnreferencedExpr = buildBlobRefExpr(" AND\n", "NOT EXISTS (SELECT 1 FROM %s WHERE %s)") //nolint:gochecknoglobals // built once, read-only
+
+func buildBlobRefExpr(sep, format string) string {
+	parts := make([]string, len(blobRefSpecs))
+	for i, r := range blobRefSpecs {
+		parts[i] = fmt.Sprintf(format, r.table, r.cond)
+	}
+
+	return strings.Join(parts, sep)
+}
 
 // rowQuerier is satisfied by *sql.DB and *sql.Tx.
 type rowQuerier interface {

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -105,13 +106,28 @@ func WithBlobLocks(ctx context.Context, db database.Database, shas []string, fn 
 }
 
 type unreferencedLister interface {
-	ListUnreferencedBlobs(ctx context.Context, minAge time.Duration, limit int) ([]string, error)
+	ListUnreferencedBlobs(ctx context.Context, minAge time.Duration, after string, scan, limit int) (shas []string, next string, err error)
 }
 
 // OrphanMinAge is how old an unreferenced blobs row must be before it is
 // collected, so an in-flight upload (which creates the blobs row before the
 // row that references it) is never mistaken for garbage.
 const OrphanMinAge = time.Hour
+
+// OrphanScanWindow bounds how many blobs rows one CollectOrphanBlobs call
+// examines, so the cost of a pass does not grow with the table.
+const OrphanScanWindow = 20000
+
+// orphanCursor is where the next CollectOrphanBlobs call resumes (a sha256, ""
+// = from the start). It is shared by every caller in the process, so each pass
+// -- scheduled, after a trash purge or after a repository delete -- continues
+// the sweep instead of rescanning the oldest rows, and a blob that cannot be
+// removed is simply scanned past.
+var orphanCursor struct { //nolint:gochecknoglobals // process-wide sweep position shared by every orphan collection caller
+	sync.Mutex
+
+	after string
+}
 
 // OrphanBatch bounds how many orphan blobs one CollectOrphanBlobs call removes.
 const OrphanBatch = 500
@@ -120,21 +136,63 @@ const OrphanBatch = 500
 // package row references any more — e.g. after a repository delete cascaded
 // its package rows away. Only blobs older than minAge are considered. It
 // returns the number removed; databases without ListUnreferencedBlobs
-// support are a no-op.
+// support are a no-op. One call examines at most OrphanScanWindow blobs rows
+// starting at a process-wide cursor and advances it (wrapping to the start at
+// the end of the table), so a full sweep takes several calls.
 //
 // A blob that cannot be removed (storage error, invalid id) does not stop the
 // pass: the remaining blobs are still processed and every failure is returned
 // joined, so one poisoned blob cannot starve the rest of the batch forever.
 func CollectOrphanBlobs(ctx context.Context, db database.Database, blobStore BlobStore, minAge time.Duration, batch int) (int, error) {
-	l, ok := db.(unreferencedLister)
-	if !ok {
-		return 0, nil
+	removed, _, err := collectOrphanWindow(ctx, db, blobStore, minAge, batch)
+
+	return removed, err
+}
+
+// CollectOrphanBlobsSweep runs up to maxWindows consecutive CollectOrphanBlobs
+// windows and stops early once the cursor wrapped past the end of the blobs
+// table, i.e. every blob was examined once. The scheduled sweep uses it so
+// that a large table is covered within one tick, in bounded steps.
+func CollectOrphanBlobsSweep(ctx context.Context, db database.Database, blobStore BlobStore, minAge time.Duration, batch, maxWindows int) (int, error) {
+	total := 0
+
+	var errs []error
+
+	for range maxWindows {
+		removed, next, err := collectOrphanWindow(ctx, db, blobStore, minAge, batch)
+		total += removed
+
+		if err != nil {
+			errs = append(errs, err)
+		}
+
+		if next == "" || ctx.Err() != nil {
+			break
+		}
 	}
 
-	shas, err := l.ListUnreferencedBlobs(ctx, minAge, batch)
-	if err != nil {
-		return 0, err
+	return total, errors.Join(errs...)
+}
+
+// collectOrphanWindow does one window and reports the cursor it left behind.
+func collectOrphanWindow(ctx context.Context, db database.Database, blobStore BlobStore, minAge time.Duration, batch int) (int, string, error) {
+	l, ok := db.(unreferencedLister)
+	if !ok {
+		return 0, "", nil
 	}
+
+	orphanCursor.Lock()
+	after := orphanCursor.after
+	orphanCursor.Unlock()
+
+	shas, next, err := l.ListUnreferencedBlobs(ctx, minAge, after, OrphanScanWindow, batch)
+	if err != nil {
+		return 0, "", err
+	}
+
+	orphanCursor.Lock()
+	orphanCursor.after = next
+	orphanCursor.Unlock()
 
 	var (
 		removed int
@@ -157,5 +215,49 @@ func CollectOrphanBlobs(ctx context.Context, db database.Database, blobStore Blo
 		removed++
 	}
 
-	return removed, errors.Join(errs...)
+	return removed, next, errors.Join(errs...)
+}
+
+// ReclaimMetadataBlob deletes a superseded generated-metadata blob (maven
+// maven-metadata.xml, ...) when nothing references it any more. Such blobs have
+// no blobs row, so neither SafeDeleteBlob's package-table count nor the orphan
+// collector sees them: the repository_metadata rows (which identical content in
+// another repository may share) and the package tables are checked here, under
+// the per-blob lock a generator holds while it stores the blob and commits its
+// row, so a concurrent regeneration of the same content is never undercut.
+func ReclaimMetadataBlob(ctx context.Context, db database.Database, blobStore BlobStore, sha string) error {
+	if err := ValidateBlobID(sha); err != nil {
+		return err
+	}
+
+	sqlDB := db.GetDB()
+	if sqlDB == nil || blobStore == nil {
+		return nil
+	}
+
+	return WithBlobLock(ctx, db, sha, func(ctx context.Context) error {
+		var refs int
+		if err := sqlDB.QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, sha).Scan(&refs); err != nil {
+			return fmt.Errorf("count metadata references of %s: %w", sha, err)
+		}
+
+		if refs > 0 {
+			return nil
+		}
+
+		pkgRefs, err := db.BlobReferenceCount(ctx, sha)
+		if err != nil {
+			return fmt.Errorf("count package references of %s: %w", sha, err)
+		}
+
+		if pkgRefs > 0 {
+			return nil
+		}
+
+		if err := blobStore.Delete(ctx, sha); err != nil {
+			return fmt.Errorf("delete metadata blob %s: %w", sha, err)
+		}
+
+		return nil
+	})
 }

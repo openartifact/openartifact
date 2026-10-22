@@ -84,6 +84,46 @@ func (p *PostgresDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string
 
 	defer func() { _ = tx.Rollback() }()
 
+	if err := replaceGroupMembersTx(ctx, tx, groupRepoID, memberIDs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit group members: %w", err)
+	}
+
+	return nil
+}
+
+// UpdateRepositoryAndMembers updates the repository row and replaces its group
+// members in one transaction, so a failure of either leaves neither applied.
+func (p *PostgresDB) UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if err := updateRepositoryRow(ctx, tx, repo); err != nil {
+		return err
+	}
+
+	if err := replaceGroupMembersTx(ctx, tx, repo.ID, memberIDs); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit repository update: %w", err)
+	}
+
+	return nil
+}
+
+func replaceGroupMembersTx(ctx context.Context, tx *sql.Tx, groupRepoID string, memberIDs []string) error {
 	// Members sitting in the trash are invisible to the caller (ListGroupMembers
 	// skips them), so they are kept and rejoin the group on restore.
 	if _, err := tx.ExecContext(ctx,
@@ -93,15 +133,7 @@ func (p *PostgresDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string
 		return fmt.Errorf("failed to clear group members: %w", err)
 	}
 
-	if err := insertGroupMembers(ctx, tx, groupRepoID, memberIDs); err != nil {
-		return err
-	}
-
-	if err := tx.Commit(); err != nil {
-		return fmt.Errorf("failed to commit group members: %w", err)
-	}
-
-	return nil
+	return insertGroupMembers(ctx, tx, groupRepoID, memberIDs)
 }
 
 func insertGroupMembers(ctx context.Context, tx *sql.Tx, groupRepoID string, memberIDs []string) error {

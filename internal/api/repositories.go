@@ -16,6 +16,7 @@ import (
 	"net/url"
 	"path"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -820,7 +821,13 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		memberIDs = ids
 	}
 
-	if err := h.db.UpdateRepository(ctx, repo); err != nil {
+	if body.MemberRepos != nil {
+		err = h.db.UpdateRepositoryAndMembers(ctx, repo, memberIDs)
+	} else {
+		err = h.db.UpdateRepository(ctx, repo)
+	}
+
+	if err != nil {
 		if database.IsUniqueViolation(err) {
 			writeError(w, http.StatusConflict, "conflict", "a repository with this name already exists")
 			return
@@ -830,15 +837,6 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
-	}
-
-	if body.MemberRepos != nil {
-		if err := h.db.ReplaceGroupMembers(ctx, repo.ID, memberIDs); err != nil {
-			h.log.Errorw("update repository: replace group members", "group_id", repo.ID, "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return
-		}
 	}
 
 	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))
@@ -950,6 +948,18 @@ func (h *RepositoriesHandler) softDeleteRepository(ctx context.Context, repo *mo
 // hardDeleteRepository permanently deletes the repository (cascading its
 // contents). It writes the error response and returns false on failure.
 func (h *RepositoriesHandler) hardDeleteRepository(ctx context.Context, w http.ResponseWriter, repo *models.Repository) bool {
+	// The generated-metadata blobs are only reachable through the rows the
+	// cascade is about to remove, so note them first.
+	var metadataSHAs []string
+
+	if metas, err := h.db.GetRepoMetadataByRepo(ctx, repo.ID); err != nil {
+		h.log.Warnw("delete repository: listing metadata blobs failed; they will leak", "repository", repo.Name, "error", err)
+	} else {
+		for _, m := range metas {
+			metadataSHAs = append(metadataSHAs, m.BlobSHA256)
+		}
+	}
+
 	if err := h.db.DeleteRepository(ctx, repo.ID); err != nil {
 		if database.IsForeignKeyViolation(err) {
 			writeError(w, http.StatusConflict, "conflict", "repository is still referenced (for example by a release bundle or promotion)")
@@ -962,7 +972,24 @@ func (h *RepositoriesHandler) hardDeleteRepository(ctx context.Context, w http.R
 		return false
 	}
 
+	reclaimMetadataBlobs(context.WithoutCancel(ctx), h.db, h.blobStore, h.log, repo.Name, metadataSHAs)
+
 	return true
+}
+
+// reclaimMetadataBlobs frees generated-metadata blobs (no blobs row, so the
+// orphan collector cannot find them) of a repository that was just deleted.
+// Best effort: a failure only leaves unreferenced space behind.
+func reclaimMetadataBlobs(ctx context.Context, db database.Database, store storage.BlobStore, log *logger.Logger, repo string, shas []string) {
+	if store == nil {
+		return
+	}
+
+	for _, sha := range slices.Compact(slices.Sorted(slices.Values(shas))) {
+		if err := storage.ReclaimMetadataBlob(ctx, db, store, sha); err != nil {
+			log.Warnw("delete repository: reclaiming metadata blob failed", "repository", repo, "sha256", sha, "error", err)
+		}
+	}
 }
 
 // trashedNameLookup is implemented by *database.PostgresDB; fakes need not.

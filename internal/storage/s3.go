@@ -9,7 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"strings"
+	"path"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
@@ -168,8 +168,7 @@ func (s *S3BlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error)
 	})
 	if err != nil {
 		if isNotFound(err) {
-			//nolint:err113 // dynamic error with runtime context
-			return nil, fmt.Errorf("blob not found: %s", id)
+			return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 		}
 
 		return nil, fmt.Errorf("s3: get %s: %w", key, err)
@@ -234,8 +233,7 @@ func (s *S3BlobStore) GetSize(ctx context.Context, id string) (int64, error) {
 	})
 	if err != nil {
 		if isNotFound(err) {
-			//nolint:err113 // dynamic error with runtime context
-			return 0, fmt.Errorf("blob not found: %s", id)
+			return 0, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 		}
 
 		return 0, fmt.Errorf("s3: head %s: %w", key, err)
@@ -271,43 +269,50 @@ func (s *S3BlobStore) GetMetadata(ctx context.Context, id string) (map[string]st
 	return out.Metadata, nil
 }
 
-// List returns blob identifiers matching the given prefix, skipping offset and returning up to limit items.
-func (s *S3BlobStore) List(ctx context.Context, prefix string, limit int, offset int) ([]string, error) {
-	paginator := s3.NewListObjectsV2Paginator(s.client, &s3.ListObjectsV2Input{
-		Bucket: aws.String(s.bucket),
-		Prefix: aws.String("blobs/" + prefix),
-	})
+// List returns one page of at most limit (capped at 1000) blob ids following
+// token, the last key of the previous page (ListObjectsV2 StartAfter). Keys
+// sort lexicographically, which for the ab/cd/<sha> layout is ascending sha
+// order. Objects whose basename is not a blob id are skipped, so a page may
+// hold fewer than limit ids; keep calling until next is empty.
+func (s *S3BlobStore) List(ctx context.Context, token string, limit int) ([]string, string, error) {
+	if limit <= 0 || limit > 1000 {
+		limit = 1000
+	}
 
-	var ids []string
+	in := &s3.ListObjectsV2Input{
+		Bucket:  aws.String(s.bucket),
+		Prefix:  aws.String("blobs/"),
+		MaxKeys: aws.Int32(int32(limit)),
+	}
+	if token != "" {
+		in.StartAfter = aws.String(token)
+	}
 
-	skipped := 0
+	page, err := s.client.ListObjectsV2(ctx, in)
+	if err != nil {
+		return nil, "", fmt.Errorf("s3: list: %w", err)
+	}
 
-	for paginator.HasMorePages() {
-		page, err := paginator.NextPage(ctx)
-		if err != nil {
-			return nil, fmt.Errorf("s3: list: %w", err)
+	ids := make([]string, 0, len(page.Contents))
+	last := ""
+
+	for _, obj := range page.Contents {
+		if obj.Key == nil {
+			continue
 		}
 
-		for _, obj := range page.Contents {
-			if obj.Key == nil {
-				continue
-			}
+		last = *obj.Key
 
-			if skipped < offset {
-				skipped++
-				continue
-			}
-
-			if limit > 0 && len(ids) >= limit {
-				return ids, nil
-			}
-
-			id := strings.TrimPrefix(*obj.Key, "blobs/")
+		if id := path.Base(last); ValidateBlobID(id) == nil {
 			ids = append(ids, id)
 		}
 	}
 
-	return ids, nil
+	if !aws.ToBool(page.IsTruncated) {
+		last = ""
+	}
+
+	return ids, last, nil
 }
 
 // ExistsBySHA256 checks whether a blob with the given SHA-256 hash exists using HeadObject.

@@ -103,17 +103,17 @@ func (db *repoLifecycleDB) IsArtifactQuarantined(_ context.Context, repoID strin
 	return false, nil
 }
 
-func (db *repoLifecycleDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, _ int) ([]string, error) {
+func (db *repoLifecycleDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, _ string, _, _ int) ([]string, string, error) {
 	db.minAge = minAge
 
 	if !db.deleted {
-		return nil, nil
+		return nil, "", nil
 	}
 
 	out := db.orphans
 	db.orphans = nil
 
-	return out, nil
+	return out, "", nil
 }
 
 func (db *repoLifecycleDB) BlobReferenceCount(context.Context, string) (int, error) { return 0, nil }

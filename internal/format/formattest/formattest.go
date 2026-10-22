@@ -90,8 +90,8 @@ func (m *BlobStore) GetMetadata(_ context.Context, _ string) (map[string]string,
 }
 
 // List returns nothing.
-func (m *BlobStore) List(_ context.Context, _ string, _, _ int) ([]string, error) {
-	return nil, nil
+func (m *BlobStore) List(_ context.Context, _ string, _ int) ([]string, string, error) {
+	return nil, "", nil
 }
 
 // GetSize returns the blob size.

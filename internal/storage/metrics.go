@@ -65,8 +65,8 @@ func (m *MetricsBlobStore) GetMetadata(ctx context.Context, id string) (map[stri
 	return m.inner.GetMetadata(ctx, id)
 }
 
-func (m *MetricsBlobStore) List(ctx context.Context, prefix string, limit int, offset int) ([]string, error) {
-	return m.inner.List(ctx, prefix, limit, offset)
+func (m *MetricsBlobStore) List(ctx context.Context, token string, limit int) ([]string, string, error) {
+	return m.inner.List(ctx, token, limit)
 }
 
 func (m *MetricsBlobStore) GetSize(ctx context.Context, id string) (int64, error) {

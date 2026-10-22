@@ -142,6 +142,10 @@ workers:
   # in-progress uploads; it must hold your biggest layer.
   dockerUploadTtl: 24h
   dockerUploadDir: /tmp/openartifact/docker-uploads
+  # Days finished (success/failed) webhook delivery records are kept before the
+  # hourly purge deletes them (0 keeps them forever; pending ones are never
+  # purged).
+  webhookDeliveryRetentionDays: 30
 
 # Trash (soft delete). Deleted artifacts, versions and repositories stay
 # restorable for retentionDays before the purge worker removes them for good.

@@ -235,9 +235,6 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 	}
 
 	createdBy := currentPrincipal(r).Username
-	if !h.underPendingCap(w, r, createdBy) {
-		return
-	}
 
 	h.createUpload(w, r, repo, &models.PresignedUpload{
 		RepositoryID: repo.ID,
@@ -250,36 +247,23 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 	})
 }
 
-// underPendingCap answers 429 when the user already has the maximum number of
+// writePendingCap answers 429 when the user already has the maximum number of
 // outstanding uploads. Each one can hold up to 5 GiB of staging storage.
-func (h *PresignedUploadHandler) underPendingCap(w http.ResponseWriter, r *http.Request, createdBy string) bool {
-	if h.maxPending <= 0 {
-		return true
-	}
-
-	n, err := h.DB.CountPendingPresignedUploads(r.Context(), createdBy)
-	if err != nil {
-		h.Log.Errorw("presigned upload: failed to count pending uploads", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "internal error")
-
-		return false
-	}
-
-	if n >= h.maxPending {
-		w.Header().Set("Retry-After", "60")
-		writeError(w, http.StatusTooManyRequests, "too_many_uploads",
-			"too many uploads in progress; complete or wait for expiry of existing ones")
-
-		return false
-	}
-
-	return true
+func writePendingCap(w http.ResponseWriter) {
+	w.Header().Set("Retry-After", "60")
+	writeError(w, http.StatusTooManyRequests, "too_many_uploads",
+		"too many uploads in progress; complete or wait for expiry of existing ones")
 }
 
 func (h *PresignedUploadHandler) createUpload(w http.ResponseWriter, r *http.Request, repo *models.Repository, up *models.PresignedUpload) {
 	ctx := r.Context()
 
-	if err := h.DB.CreatePresignedUpload(ctx, up); err != nil {
+	if err := h.DB.CreatePresignedUploadCapped(ctx, up, h.maxPending); err != nil {
+		if errors.Is(err, database.ErrPresignedUploadCap) {
+			writePendingCap(w)
+			return
+		}
+
 		h.Log.Errorw("presigned upload: failed to record upload", "repo", repo.Name, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal error")
 
@@ -467,13 +451,11 @@ func (h *PresignedUploadHandler) handleComplete(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	if time.Now().After(up.ExpiresAt) {
-		h.forgetUpload(up.ID)
-		writeError(w, http.StatusGone, "upload_expired", "upload expired; start a new one")
+	expired := time.Now().After(up.ExpiresAt)
 
-		return
-	}
-
+	// Claim before anything else, even for an expired upload: a complete that
+	// started earlier may still be verifying the staging object, and deleting
+	// it from under that call would fail it. Only the claim holder may discard.
 	claimed, err := h.DB.ClaimPresignedUpload(r.Context(), repo.ID, up.ID, presignedCompleteLease)
 	if err != nil {
 		h.Log.Errorw("presigned upload: failed to claim upload", "upload_id", up.ID, "error", err)
@@ -485,6 +467,13 @@ func (h *PresignedUploadHandler) handleComplete(w http.ResponseWriter, r *http.R
 	if !claimed {
 		w.Header().Set("Retry-After", presignedRetryAfter)
 		writeError(w, http.StatusConflict, "upload_in_progress", "this upload is being completed; retry shortly for the result")
+
+		return
+	}
+
+	if expired {
+		h.forgetUpload(up.ID)
+		writeError(w, http.StatusGone, "upload_expired", "upload expired; start a new one")
 
 		return
 	}

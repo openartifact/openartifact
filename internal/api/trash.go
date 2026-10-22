@@ -507,7 +507,9 @@ func (h *TrashHandler) purgeBatch(ctx context.Context, store database.TrashStore
 // the quota back.
 func (h *TrashHandler) afterPurge(ctx context.Context, res *models.TrashPurgeResult) {
 	if res.Kind == models.TrashKindRepository {
+		h.reclaimMetadataBlobs(ctx, res.RepositoryName, res.MetadataBlobSHA256)
 		collectOrphansAsync(&h.gc, h.db, h.blobStore, h.log)
+
 		return
 	}
 
@@ -526,6 +528,12 @@ func (h *TrashHandler) afterPurge(ctx context.Context, res *models.TrashPurgeRes
 			h.log.Warnw("trash purge: release quota failed", "repository", res.RepositoryName, "error", err)
 		}
 	}
+}
+
+// reclaimMetadataBlobs frees the generated-metadata blobs a purged repository
+// owned; best effort, they are only space.
+func (h *TrashHandler) reclaimMetadataBlobs(ctx context.Context, repo string, shas []string) {
+	reclaimMetadataBlobs(ctx, h.db, h.blobStore, h.log, repo, shas)
 }
 
 func (h *TrashHandler) emitPurged(ctx context.Context, res *models.TrashPurgeResult) {

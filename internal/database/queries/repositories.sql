@@ -42,7 +42,7 @@ SELECT id, name, format, description,
        org_id, created_at, updated_at
 FROM repositories
 WHERE deleted_at IS NULL
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id
 LIMIT $1 OFFSET $2;
 
 -- name: ListRepositoriesByFormat :many
@@ -59,7 +59,7 @@ SELECT id, name, format, description,
        org_id, created_at, updated_at
 FROM repositories
 WHERE format = $1 AND deleted_at IS NULL
-ORDER BY created_at DESC
+ORDER BY created_at DESC, id
 LIMIT $2 OFFSET $3;
 
 -- name: CountRepositories :one

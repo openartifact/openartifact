@@ -116,7 +116,7 @@ SELECT m.group_repo_id, m.member_repo_id, m.priority, m.created_at
 FROM repository_group_members m
 JOIN repositories r ON r.id = m.member_repo_id AND r.deleted_at IS NULL
 WHERE m.group_repo_id = $1
-ORDER BY m.priority ASC
+ORDER BY m.priority ASC, m.created_at, m.member_repo_id
 `
 
 func (q *Queries) ListGroupMembers(ctx context.Context, groupRepoID string) ([]RepositoryGroupMember, error) {

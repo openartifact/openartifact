@@ -277,3 +277,39 @@ func TestCleanupPolicyRerunDoesNotReleaseTwice(t *testing.T) {
 		}
 	}
 }
+
+type recordingNotifier struct{ ids []string }
+
+func (r *recordingNotifier) NotifyStale(repoID string) { r.ids = append(r.ids, repoID) }
+
+// TestCleanupPolicyRefreshesMetadata (STOR-3): a cleanup run that deleted rpm
+// or deb packages must schedule the regeneration of the repository's index;
+// before the fix primary.xml / Packages kept listing files that were gone.
+func TestCleanupPolicyRefreshesMetadata(t *testing.T) {
+	for _, format := range []string{"rpm", "deb"} {
+		t.Run(format, func(t *testing.T) {
+			e := newCleanupQuotaEnv(t)
+			repoID := e.repo(format)
+
+			rpm, deb := &recordingNotifier{}, &recordingNotifier{}
+			e.worker.SetMetadataNotifiers(rpm, deb)
+
+			e.pkg(repoID, format, "pkg", "1.0.0", 100, 30)
+			e.pkg(repoID, format, "pkg", "2.0.0", 100, 10)
+
+			got := e.runPolicy(repoID, 1)
+			if got.LastRunError != "" || got.LastRunDeleted == nil || *got.LastRunDeleted != 1 {
+				t.Fatalf("policy run: deleted = %v error = %q, want 1 deleted", got.LastRunDeleted, got.LastRunError)
+			}
+
+			notified := rpm.ids
+			if format == "deb" {
+				notified = deb.ids
+			}
+
+			if len(notified) != 1 || notified[0] != repoID {
+				t.Errorf("%s regeneration notifications = %v, want [%s]", format, notified, repoID)
+			}
+		})
+	}
+}

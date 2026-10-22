@@ -120,7 +120,7 @@ func (d *trashPurgeDB) BlobReferenceCount(_ context.Context, sha string) (int, e
 	return d.refCounts[sha], nil
 }
 
-func (d *trashPurgeDB) ListUnreferencedBlobs(_ context.Context, _ time.Duration, _ int) ([]string, error) {
+func (d *trashPurgeDB) ListUnreferencedBlobs(_ context.Context, _ time.Duration, _ string, _, _ int) ([]string, string, error) {
 	d.mu.Lock()
 	defer d.mu.Unlock()
 
@@ -129,7 +129,7 @@ func (d *trashPurgeDB) ListUnreferencedBlobs(_ context.Context, _ time.Duration,
 	shas := d.orphans
 	d.orphans = nil
 
-	return shas, nil
+	return shas, "", nil
 }
 
 func (d *trashPurgeDB) DecrementStorageUsage(_ context.Context, repoID string, size int64, count int) error {

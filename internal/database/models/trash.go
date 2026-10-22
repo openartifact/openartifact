@@ -98,6 +98,10 @@ type TrashPurgeResult struct {
 	// them with storage.SafeDeleteBlob (which keeps blobs still referenced
 	// elsewhere).
 	BlobSHA256 []string
+	// MetadataBlobSHA256 lists the generated-metadata blobs (repodata, dists,
+	// maven-metadata.xml) of a purged repository. They have no blobs row, so
+	// the caller frees them with storage.ReclaimMetadataBlob.
+	MetadataBlobSHA256 []string
 	// QuotaArtifacts is the number of quota-counted package rows removed
 	// (0 for formats that do not enforce quotas); QuotaBytes their size.
 	QuotaArtifacts int

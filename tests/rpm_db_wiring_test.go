@@ -1919,8 +1919,8 @@ func (m *MockBlobStore) GetMetadata(ctx context.Context, id string) (map[string]
 	return nil, nil
 }
 
-func (m *MockBlobStore) List(ctx context.Context, prefix string, limit int, offset int) ([]string, error) {
-	return nil, nil
+func (m *MockBlobStore) List(_ context.Context, _ string, _ int) ([]string, string, error) {
+	return nil, "", nil
 }
 
 func (m *MockBlobStore) GetSize(ctx context.Context, id string) (int64, error) {

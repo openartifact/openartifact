@@ -22,11 +22,11 @@ type orphanListerDB struct {
 	minAge time.Duration
 }
 
-func (d *orphanListerDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, _ int) ([]string, error) {
+func (d *orphanListerDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, _ string, _, _ int) ([]string, string, error) {
 	d.calls++
 	d.minAge = minAge
 
-	return []string{strings.Repeat("e", 64)}, nil
+	return []string{strings.Repeat("e", 64)}, "", nil
 }
 
 func (d *orphanListerDB) BlobReferenceCount(context.Context, string) (int, error) { return 0, nil }

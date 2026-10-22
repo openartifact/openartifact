@@ -6,6 +6,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"slices"
 	"time"
@@ -122,19 +124,38 @@ func (p *PostgresDB) DeleteBlobIfUnreferenced(ctx context.Context, sha256 string
 	return true, nil
 }
 
-// ListUnreferencedBlobs returns up to limit sha256 values of blobs rows that no
+// ListUnreferencedBlobs scans one window of at most scan blobs rows whose
+// sha256 sorts after the cursor and returns up to limit of them that no
 // package row references and that are older than minAge (so in-flight uploads,
 // which create the blobs row before their referencing row, are never picked).
-// Used to reclaim storage after repository deletion cascades its package rows.
-func (p *PostgresDB) ListUnreferencedBlobs(ctx context.Context, minAge time.Duration, limit int) ([]string, error) {
+// next is the cursor for the following call and is "" once the end of the
+// table was reached, i.e. the scan wraps around.
+//
+// Bounding the window (instead of evaluating the reference check for every old
+// blob on every call) keeps the cost of a pass independent of table size, and
+// advancing by sha256 means orphans that cannot be removed never block the
+// ones behind them. Used to reclaim storage after repository deletion cascades
+// its package rows.
+func (p *PostgresDB) ListUnreferencedBlobs(ctx context.Context, minAge time.Duration, after string, scan, limit int) ([]string, string, error) {
+	// Upper bound of the window: the scan-th sha after the cursor.
+	var upper sql.NullString
+
+	err := p.db.QueryRowContext(ctx,
+		`SELECT sha256 FROM blobs WHERE sha256 > $1 ORDER BY sha256 OFFSET $2 LIMIT 1`, after, scan-1,
+	).Scan(&upper)
+	if err != nil && !errors.Is(err, sql.ErrNoRows) {
+		return nil, "", fmt.Errorf("list unreferenced blobs: window: %w", err)
+	}
+
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT b.sha256 FROM blobs b
-		 WHERE b.created_at < now() - make_interval(secs => $1)
-		   AND (`+blobRefSumExpr+`) = 0
-		 ORDER BY b.created_at
-		 LIMIT $2`, minAge.Seconds(), limit)
+		 WHERE b.sha256 > $1 AND ($2::text IS NULL OR b.sha256 <= $2::text)
+		   AND b.created_at < now() - make_interval(secs => $3)
+		   AND `+blobUnreferencedExpr+`
+		 ORDER BY b.sha256
+		 LIMIT $4`, after, upper, minAge.Seconds(), limit)
 	if err != nil {
-		return nil, fmt.Errorf("list unreferenced blobs: %w", err)
+		return nil, "", fmt.Errorf("list unreferenced blobs: %w", err)
 	}
 
 	defer func() { _ = rows.Close() }()
@@ -144,11 +165,25 @@ func (p *PostgresDB) ListUnreferencedBlobs(ctx context.Context, minAge time.Dura
 	for rows.Next() {
 		var sha string
 		if err := rows.Scan(&sha); err != nil {
-			return nil, fmt.Errorf("scan unreferenced blob: %w", err)
+			return nil, "", fmt.Errorf("scan unreferenced blob: %w", err)
 		}
 
 		out = append(out, sha)
 	}
 
-	return out, rows.Err()
+	if err := rows.Err(); err != nil {
+		return nil, "", fmt.Errorf("list unreferenced blobs: %w", err)
+	}
+
+	next := ""
+
+	switch {
+	case len(out) >= limit:
+		// The window was cut short by the limit; resume right after the last hit.
+		next = out[len(out)-1]
+	case upper.Valid:
+		next = upper.String
+	}
+
+	return out, next, nil
 }

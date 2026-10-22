@@ -333,7 +333,7 @@ func TestPruneMavenMetadataKeepsNeighbours(t *testing.T) {
 	}
 
 	keep := []string{"com/example/a/1.0-SNAPSHOT/maven-metadata.xml"}
-	if err := pg.PruneMavenMetadata(ctx, s.repo, "com/example/a/", keep); err != nil {
+	if _, err := pg.PruneMavenMetadata(ctx, s.repo, "com/example/a/", keep); err != nil {
 		t.Fatalf("PruneMavenMetadata: %v", err)
 	}
 

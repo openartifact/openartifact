@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"path"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -470,7 +471,7 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 		ContentType:  contentType,
 		StatusCode:   http.StatusOK,
 		SizeBytes:    size,
-		ExpiresAt:    now.Add(ttlFor(repo, key)),
+		ExpiresAt:    now.Add(ttlFor(repo, key, completeBody(resp))),
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -535,8 +536,19 @@ func (s *Service) recordNegative(ctx context.Context, repo *models.Repository, k
 	}
 }
 
-func ttlFor(repo *models.Repository, key string) time.Duration {
-	if Immutable(repo.Format, key) {
+// completeBody reports whether the response framing proves the body arrived
+// whole: a declared Content-Length (checked against the bytes read) or chunked
+// encoding (a missing terminating chunk is a read error). A close-delimited
+// body cut by a clean FIN looks complete, so it must not be cached for good.
+func completeBody(resp *http.Response) bool {
+	return resp.ContentLength >= 0 || slices.Contains(resp.TransferEncoding, "chunked")
+}
+
+// ttlFor picks the cache lifetime. Immutable files are cached (almost) forever
+// only when their body is known to be complete; otherwise the repository TTL
+// applies so a truncated copy is revalidated.
+func ttlFor(repo *models.Repository, key string, complete bool) time.Duration {
+	if complete && Immutable(repo.Format, key) {
 		return immutableTTL
 	}
 

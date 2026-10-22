@@ -9,11 +9,15 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/base64"
+	"encoding/xml"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
+	"path"
+	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -59,7 +63,7 @@ func NewAzureBlobStore(cfg StorageConfig) (*AzureBlobStore, error) {
 		accountKey:    cfg.AzureAccountKey,
 		containerName: cfg.AzureContainerName,
 		baseURL:       baseURL,
-		client:        &http.Client{Timeout: 30 * time.Second},
+		client:        newStreamingHTTPClient(nil),
 	}, nil
 }
 
@@ -249,7 +253,7 @@ func (a *AzureBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, err
 
 	if resp.StatusCode == http.StatusNotFound {
 		_ = resp.Body.Close()
-		return nil, fmt.Errorf("blob not found: %s", id) //nolint:err113 // dynamic error with runtime context
+		return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -413,7 +417,7 @@ func (a *AzureBlobStore) GetSize(ctx context.Context, id string) (int64, error) 
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		return 0, fmt.Errorf("blob not found: %s", id) //nolint:err113 // dynamic error with runtime context
+		return 0, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 	}
 
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
@@ -500,12 +504,108 @@ func (a *AzureBlobStore) GetMetadata(ctx context.Context, id string) (map[string
 	return metadata, nil
 }
 
-// List returns a list of blob identifiers with optional filtering.
-// Listing is not supported for Azure Blob Storage; this always returns an empty list.
-func (a *AzureBlobStore) List(ctx context.Context, prefix string, limit int, offset int) ([]string, error) {
-	// Azure Blob Storage requires XML parsing for list operations.
-	// Listing is not supported for Azure; return an empty list.
-	return []string{}, nil
+// azureListResult is the subset of the List Blobs response the store needs.
+type azureListResult struct {
+	Blobs []struct {
+		Name string `xml:"Name"`
+	} `xml:"Blobs>Blob"`
+	NextMarker string `xml:"NextMarker"`
+}
+
+// signList signs a "List Blobs" request (comp=list&restype=container). The
+// canonicalized resource carries the query parameters sorted by name.
+func (a *AzureBlobStore) signList(date string, query map[string]string) (string, error) {
+	decodedKey, err := base64.StdEncoding.DecodeString(a.accountKey)
+	if err != nil {
+		return "", fmt.Errorf("azure: decode account key: %w", err)
+	}
+
+	names := make([]string, 0, len(query))
+	for k := range query {
+		names = append(names, k)
+	}
+
+	sort.Strings(names)
+
+	var canon strings.Builder
+	for _, k := range names {
+		canon.WriteString("\n" + k + ":" + query[k])
+	}
+
+	stringToSign := fmt.Sprintf("GET\n\n\n\n\n\n\n\n\n\n\n\nx-ms-date:%s\nx-ms-version:2020-10-02\n/%s/%s%s",
+		date, a.accountName, a.containerName, canon.String())
+
+	h := hmac.New(sha256.New, decodedKey)
+	h.Write([]byte(stringToSign))
+
+	return fmt.Sprintf("SharedKey %s:%s", a.accountName, base64.StdEncoding.EncodeToString(h.Sum(nil))), nil
+}
+
+// List returns one page of at most limit blob ids after token, an Azure
+// NextMarker. Blobs are returned in name order, which for the ab/cd/<sha>
+// layout is ascending sha order. Entries that are not blob ids are skipped.
+func (a *AzureBlobStore) List(ctx context.Context, token string, limit int) ([]string, string, error) {
+	if limit <= 0 || limit > 5000 {
+		limit = 5000
+	}
+
+	query := map[string]string{
+		"comp":       "list",
+		"restype":    "container",
+		"prefix":     "blobs/",
+		"maxresults": strconv.Itoa(limit),
+	}
+	if token != "" {
+		query["marker"] = token
+	}
+
+	now := time.Now().UTC().Format(time.RFC1123)
+
+	authHeader, err := a.signList(now, query)
+	if err != nil {
+		return nil, "", err
+	}
+
+	values := url.Values{}
+	for k, v := range query {
+		values.Set(k, v)
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, a.baseURL+"?"+values.Encode(), http.NoBody)
+	if err != nil {
+		return nil, "", fmt.Errorf("azure: create request: %w", err)
+	}
+
+	req.Header.Set("Authorization", authHeader)
+	//nolint:canonicalheader // Azure REST API requires lowercase headers
+	req.Header.Set("x-ms-date", now)
+	//nolint:canonicalheader // Azure REST API requires lowercase headers
+	req.Header.Set("x-ms-version", "2020-10-02")
+
+	resp, err := a.client.Do(req)
+	if err != nil {
+		return nil, "", fmt.Errorf("azure: list request: %w", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode != http.StatusOK {
+		return nil, "", fmt.Errorf("azure: list failed with status %d", resp.StatusCode) //nolint:err113 // dynamic error with runtime context
+	}
+
+	var res azureListResult
+	if err := xml.NewDecoder(resp.Body).Decode(&res); err != nil {
+		return nil, "", fmt.Errorf("azure: decode list response: %w", err)
+	}
+
+	ids := make([]string, 0, len(res.Blobs))
+
+	for _, b := range res.Blobs {
+		if id := path.Base(b.Name); ValidateBlobID(id) == nil {
+			ids = append(ids, id)
+		}
+	}
+
+	return ids, res.NextMarker, nil
 }
 
 // ExistsBySHA256 checks if a blob with the given SHA-256 hash exists.

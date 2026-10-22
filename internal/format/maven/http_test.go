@@ -73,8 +73,8 @@ func (m *mavenMockBlobStore) GetMetadata(_ context.Context, _ string) (map[strin
 	return nil, nil
 }
 
-func (m *mavenMockBlobStore) List(_ context.Context, _ string, _ int, _ int) ([]string, error) {
-	return nil, nil
+func (m *mavenMockBlobStore) List(_ context.Context, _ string, _ int) ([]string, string, error) {
+	return nil, "", nil
 }
 
 func (m *mavenMockBlobStore) GetSize(_ context.Context, id string) (int64, error) {

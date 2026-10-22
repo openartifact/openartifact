@@ -134,15 +134,53 @@ func (p *PostgresDB) MarkPresignedUploadCompleted(ctx context.Context, id, artif
 	return nil
 }
 
-// CountPendingPresignedUploads counts createdBy's uploads that are neither
-// completed nor expired.
-func (p *PostgresDB) CountPendingPresignedUploads(ctx context.Context, createdBy string) (int, error) {
-	n, err := p.q.CountPendingPresignedUploads(ctx, createdBy)
-	if err != nil {
-		return 0, fmt.Errorf("failed to count pending presigned uploads: %w", err)
+// ErrPresignedUploadCap is returned by CreatePresignedUploadCapped when the
+// user already has the maximum number of outstanding uploads.
+var ErrPresignedUploadCap = errors.New("too many pending presigned uploads")
+
+// CreatePresignedUploadCapped counts the user's outstanding uploads and inserts
+// the new one in one transaction holding a per-user advisory lock, so parallel
+// creates cannot all pass the check before any of them inserts.
+func (p *PostgresDB) CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error {
+	if maxPending <= 0 {
+		return p.CreatePresignedUpload(ctx, u)
 	}
 
-	return int(n), nil
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("begin presigned upload transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, "presigned-upload:"+u.CreatedBy); err != nil {
+		return fmt.Errorf("lock presigned uploads of user: %w", err)
+	}
+
+	var pending int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT count(*) FROM presigned_uploads WHERE created_by = $1 AND completed_at IS NULL AND expires_at > now()`,
+		u.CreatedBy).Scan(&pending); err != nil {
+		return fmt.Errorf("count pending presigned uploads: %w", err)
+	}
+
+	if pending >= maxPending {
+		return ErrPresignedUploadCap
+	}
+
+	if err := tx.QueryRowContext(ctx,
+		`INSERT INTO presigned_uploads (repository_id, path, size_bytes, sha256, content_type, created_by, expires_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`,
+		u.RepositoryID, u.Path, u.SizeBytes, u.SHA256, u.ContentType, u.CreatedBy, u.ExpiresAt,
+	).Scan(&u.ID, &u.CreatedAt); err != nil {
+		return fmt.Errorf("failed to create presigned upload: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("commit presigned upload: %w", err)
+	}
+
+	return nil
 }
 
 // ExistingPresignedUploadIDs returns the subset of ids that have a row. Ids

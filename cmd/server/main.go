@@ -264,10 +264,12 @@ func run(args []string) error {
 	proxyCacheWorker.Start()
 
 	authPurgeWorker := worker.NewAuthPurgeWorker(db, log)
+	authPurgeWorker.SetWebhookDeliveryRetention(cfg.Workers.WebhookDeliveryRetentionDays)
 	authPurgeWorker.Start()
 
 	// Initialize cleanup worker
 	cleanupWorker := worker.NewCleanupWorker(db, blobStore, log)
+	cleanupWorker.SetMetadataNotifiers(rpmWorker, debWorker)
 
 	cleanupWorker.Start()
 
@@ -795,6 +797,7 @@ func run(args []string) error {
 	webhooksHandler.RegisterAuthed(authedAPI)
 
 	backupEngine := backup.NewEngine(db, blobStore, log, cfg.Backup.BackupDir)
+	backupEngine.SetRegenerator(api.NewWorkerRegenerator(debWorker, rpmWorker, mavenWorker, npmWorker))
 	backupHandler := api.NewBackupHandler(db, log, evaluator, backupEngine)
 	backupHandler.RegisterAuthed(authedAPI)
 

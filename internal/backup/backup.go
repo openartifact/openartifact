@@ -112,7 +112,22 @@ type Engine struct {
 	// restoreFailures counts records skipped or failed during the current
 	// restore so RunRestore can report partial failure instead of success.
 	restoreFailures atomic.Int64
+
+	// regen schedules metadata regeneration for restored repositories; optional.
+	regen Regenerator
 }
+
+// Regenerator enqueues generated-metadata refreshes after a restore. It is
+// satisfied by api.NewWorkerRegenerator.
+type Regenerator interface {
+	NotifyDebStale(repoID string)
+	NotifyRPMStale(repoID string)
+	NotifyMavenStale(repoID, groupID, artifactID string)
+}
+
+// SetRegenerator wires the metadata workers so a restore regenerates rpm, deb
+// and maven metadata immediately instead of waiting for the next upload.
+func (e *Engine) SetRegenerator(r Regenerator) { e.regen = r }
 
 func NewEngine(db database.Database, blobStore storage.BlobStore, log *logger.Logger, backupDir string) *Engine {
 	return &Engine{
@@ -178,15 +193,18 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		return err
 	}
 
-	defer func() { base.CloseLog(file, e.log) }()
-
-	// Create gzip writer
 	gzipWriter := gzip.NewWriter(file)
-	defer func() { base.CloseLog(gzipWriter, e.log) }()
-
-	// Create tar writer
 	tarWriter := tar.NewWriter(gzipWriter)
-	defer func() { base.CloseLog(tarWriter, e.log) }()
+
+	// The success path closes (and checks) the writers itself; this only
+	// releases them when a failure returns early.
+	archiveClosed := false
+
+	defer func() {
+		if !archiveClosed {
+			_ = closeArchive(tarWriter, gzipWriter, file)
+		}
+	}()
 
 	// Create manifest
 	manifest := BackupManifest{
@@ -262,10 +280,20 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		return err
 	}
 
-	// Close tar and gzip writers
-	_ = tarWriter.Close()
-	_ = gzipWriter.Close()
-	_ = file.Close()
+	// The tar trailer, gzip footer and the last buffered block are written by
+	// these closes: a failure here (ENOSPC, EIO) means a truncated archive.
+	archiveClosed = true
+
+	if err := closeArchive(tarWriter, gzipWriter, file); err != nil {
+		e.log.Errorw("failed to finalize backup archive", "job_id", jobID, "error", err)
+
+		job.Status = "failed"
+		job.ErrorMessage = fmt.Sprintf("failed to finalize backup archive: %v", err)
+		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = os.Remove(tempFile)
+
+		return err
+	}
 
 	// Get file size
 	fileInfo, err := os.Stat(tempFile)
@@ -309,6 +337,15 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	e.log.Infow("backup completed successfully", "job_id", jobID, "size_bytes", fileInfo.Size(), "path", finalPath)
 
 	return nil
+}
+
+// closeArchive finishes the tar and gzip streams, flushes the file to disk
+// and closes it, returning the first error. Every step runs even after a
+// failure so no descriptor leaks.
+func closeArchive(tw *tar.Writer, gz *gzip.Writer, f *os.File) error {
+	errs := []error{tw.Close(), gz.Close(), f.Sync(), f.Close()}
+
+	return errors.Join(errs...)
 }
 
 // debPackageRecord pairs an exported Debian package's Component data with
@@ -356,6 +393,7 @@ type packageExport struct {
 	secretResults   []*models.SecretScanResult
 	vulnResults     []*models.VulnScanResult
 	aiAnalyses      []*models.AIAnalysis
+	errs            []error
 }
 
 // exportMetadata exports database metadata to the archive.
@@ -400,7 +438,14 @@ func (e *Engine) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *B
 		return err
 	}
 
+	if err := e.exportGroupMembers(ctx, tw, manifest, repos); err != nil {
+		return err
+	}
+
 	pkg := e.exportPackageTables(ctx, repos)
+	if len(pkg.errs) > 0 {
+		return fmt.Errorf("incomplete export: %w", errors.Join(pkg.errs...))
+	}
 
 	for i, w := range pkg.webhooks {
 		if w != nil {
@@ -456,11 +501,49 @@ func (e *Engine) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *B
 	return e.exportGlobalTables(ctx, tw, manifest, users)
 }
 
+// groupMemberRecord is one repository_group_members row in the archive. It
+// carries repository ids; restore remaps both through repoIDMap.
+type groupMemberRecord struct {
+	GroupRepoID  string `json:"group_repo_id"`
+	MemberRepoID string `json:"member_repo_id"`
+	Priority     int    `json:"priority"`
+}
+
+// exportGroupMembers writes the ordered member list of every group
+// repository. Without it a restored group repository exists but is empty.
+func (e *Engine) exportGroupMembers(ctx context.Context, tw *tar.Writer, manifest *BackupManifest, repos []*models.Repository) error {
+	records := []groupMemberRecord{}
+
+	for _, repo := range repos {
+		if repo.RepoType != "group" {
+			continue
+		}
+
+		members, err := e.db.ListGroupMembers(ctx, repo.ID)
+		if err != nil {
+			return fmt.Errorf("failed to list members of group repository %s: %w", repo.ID, err)
+		}
+
+		for _, m := range members {
+			records = append(records, groupMemberRecord{GroupRepoID: repo.ID, MemberRepoID: m.MemberRepoID, Priority: m.Priority})
+		}
+	}
+
+	return e.writeTable(tw, manifest, "repository_group_members", records, len(records))
+}
+
+// fail records a failed list call. A backup missing rows it could not list
+// must not be reported as completed (retention would then rotate away the
+// last good one), so exportMetadata aborts when any list call failed.
+func (p *packageExport) fail(what, scope string, err error) {
+	p.errs = append(p.errs, fmt.Errorf("list %s (%s): %w", what, scope, err))
+}
+
 // collectRepoList appends a successfully listed per-repo table to dst; a
-// failed list call is logged and skipped rather than aborting the backup.
-func collectRepoList[T any](log *logger.Logger, dst *[]T, what, repoID string, v []T, err error) {
+// failed list call is recorded on pkg and fails the backup.
+func collectRepoList[T any](pkg *packageExport, dst *[]T, what, repoID string, v []T, err error) {
 	if err != nil {
-		log.Warnw("backup: failed to list "+what, "repo_id", repoID, "error", err)
+		pkg.fail(what, "repo "+repoID, err)
 		return
 	}
 
@@ -470,7 +553,7 @@ func collectRepoList[T any](log *logger.Logger, dst *[]T, what, repoID string, v
 // exportPackageTables walks every repository once, gathering every
 // per-repo/format-specific table it can reach via an existing bulk-list (or
 // composable) Database method. Errors from an individual list call are
-// logged and skipped rather than aborting the whole backup.
+// collected in packageExport.errs; exportMetadata fails the backup on any.
 func (e *Engine) exportPackageTables(ctx context.Context, repos []*models.Repository) packageExport {
 	var pkg packageExport
 
@@ -481,7 +564,7 @@ func (e *Engine) exportPackageTables(ctx context.Context, repos []*models.Reposi
 
 	v, err := e.db.ListWebhooks(ctx, "")
 	if err != nil {
-		e.log.Warnw("backup: failed to list global webhooks", "error", err)
+		pkg.fail("global webhooks", "-", err)
 	} else {
 		pkg.webhooks = append(pkg.webhooks, v...)
 	}
@@ -491,7 +574,7 @@ func (e *Engine) exportPackageTables(ctx context.Context, repos []*models.Reposi
 
 // exportFormatTables gathers the format-specific package tables of one repo.
 func (e *Engine) exportFormatTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
-	l, id := e.log, repo.ID
+	id := repo.ID
 
 	switch repo.Format {
 	case "rpm":
@@ -499,87 +582,87 @@ func (e *Engine) exportFormatTables(ctx context.Context, repo *models.Repository
 		// their blob's sha256 — exactly what CreateRpmPackage needs to
 		// round-trip on restore.
 		v, err := e.db.GetComponentsByRepo(ctx, id)
-		collectRepoList(l, &pkg.rpmComponents, "rpm packages", id, v, err)
+		collectRepoList(pkg, &pkg.rpmComponents, "rpm packages", id, v, err)
 	case "deb":
 		e.exportDebPackages(ctx, repo, pkg)
 	case "helm":
 		v, err := e.db.ListHelmCharts(ctx, id)
-		collectRepoList(l, &pkg.helmCharts, "helm charts", id, v, err)
+		collectRepoList(pkg, &pkg.helmCharts, "helm charts", id, v, err)
 	case "pypi":
 		v, err := e.db.ListPyPIPackages(ctx, id)
-		collectRepoList(l, &pkg.pypiPackages, "pypi packages", id, v, err)
+		collectRepoList(pkg, &pkg.pypiPackages, "pypi packages", id, v, err)
 	case "nuget":
 		v, err := e.db.ListNuGetPackages(ctx, id)
-		collectRepoList(l, &pkg.nugetPackages, "nuget packages", id, v, err)
+		collectRepoList(pkg, &pkg.nugetPackages, "nuget packages", id, v, err)
 	case "cargo":
 		// SearchCargoCrates ILIKEs name/description against "%"+query+"%";
 		// an empty query matches everything, giving a bulk "list all"
 		// without a dedicated method.
 		v, err := e.db.SearchCargoCrates(ctx, id, "", bulkListLimit)
-		collectRepoList(l, &pkg.cargoCrates, "cargo crates", id, v, err)
+		collectRepoList(pkg, &pkg.cargoCrates, "cargo crates", id, v, err)
 	case "rubygems":
 		v, err := e.db.ListRubyGems(ctx, id)
-		collectRepoList(l, &pkg.rubyGems, "ruby gems", id, v, err)
+		collectRepoList(pkg, &pkg.rubyGems, "ruby gems", id, v, err)
 	case "conan":
 		v, err := e.db.ListConanPackages(ctx, id)
-		collectRepoList(l, &pkg.conanPackages, "conan packages", id, v, err)
+		collectRepoList(pkg, &pkg.conanPackages, "conan packages", id, v, err)
 	case "ivy":
 		v, err := e.db.ListIvyArtifacts(ctx, id)
-		collectRepoList(l, &pkg.ivyArtifacts, "ivy artifacts", id, v, err)
+		collectRepoList(pkg, &pkg.ivyArtifacts, "ivy artifacts", id, v, err)
 	case "sbt":
 		v, err := e.db.ListSBTArtifacts(ctx, id)
-		collectRepoList(l, &pkg.sbtArtifacts, "sbt artifacts", id, v, err)
+		collectRepoList(pkg, &pkg.sbtArtifacts, "sbt artifacts", id, v, err)
 	case "raw":
 		v, err := e.db.ListRawArtifacts(ctx, id, "")
-		collectRepoList(l, &pkg.rawArtifacts, "raw artifacts", id, v, err)
+		collectRepoList(pkg, &pkg.rawArtifacts, "raw artifacts", id, v, err)
 	case "docker":
 		blobs, err := e.db.ListDockerBlobs(ctx, id)
-		collectRepoList(l, &pkg.dockerBlobs, "docker blobs", id, blobs, err)
+		collectRepoList(pkg, &pkg.dockerBlobs, "docker blobs", id, blobs, err)
 
 		manifests, err := e.db.ListDockerManifestsByRepo(ctx, id)
-		collectRepoList(l, &pkg.dockerManifests, "docker manifests", id, manifests, err)
+		collectRepoList(pkg, &pkg.dockerManifests, "docker manifests", id, manifests, err)
 
 		tags, err := e.db.ListDockerTagsByRepo(ctx, id, bulkListLimit)
-		collectRepoList(l, &pkg.dockerTags, "docker tags", id, tags, err)
+		collectRepoList(pkg, &pkg.dockerTags, "docker tags", id, tags, err)
 	case "npm":
 		e.exportNPMPackages(ctx, repo, pkg)
 	case "maven":
 		v, err := e.db.ListMavenArtifactsByRepo(ctx, id)
-		collectRepoList(l, &pkg.mavenArtifacts, "maven artifacts", id, v, err)
+		collectRepoList(pkg, &pkg.mavenArtifacts, "maven artifacts", id, v, err)
 	case "conda":
 		v, err := e.db.ListAllCondaPackages(ctx, id)
-		collectRepoList(l, &pkg.condaPackages, "conda packages", id, v, err)
-	case "gomod":
+		collectRepoList(pkg, &pkg.condaPackages, "conda packages", id, v, err)
+	case "go", "gomod":
 		v, err := e.db.ListGoModulesByRepo(ctx, id)
-		collectRepoList(l, &pkg.gomodModules, "gomod modules", id, v, err)
+		collectRepoList(pkg, &pkg.gomodModules, "gomod modules", id, v, err)
 	}
 }
 
 // exportRepoScopedTables gathers the tables every repo can have regardless of
 // its format (webhooks, policies, scan results, ...).
 func (e *Engine) exportRepoScopedTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
-	l, id := e.log, repo.ID
+	id := repo.ID
 
 	webhooks, err := e.db.ListWebhooks(ctx, id)
-	collectRepoList(l, &pkg.webhooks, "webhooks", id, webhooks, err)
+	collectRepoList(pkg, &pkg.webhooks, "webhooks", id, webhooks, err)
 
 	policies, err := e.db.ListCleanupPolicies(ctx, id)
-	collectRepoList(l, &pkg.cleanupPolicies, "cleanup policies", id, policies, err)
+	collectRepoList(pkg, &pkg.cleanupPolicies, "cleanup policies", id, policies, err)
 
 	sboms, err := e.db.ListSBOMReports(ctx, id)
-	collectRepoList(l, &pkg.sbomReports, "sbom reports", id, sboms, err)
+	collectRepoList(pkg, &pkg.sbomReports, "sbom reports", id, sboms, err)
 
 	licenses, err := e.db.ListLicenseScanResults(ctx, id)
-	collectRepoList(l, &pkg.licenseResults, "license scan results", id, licenses, err)
+	collectRepoList(pkg, &pkg.licenseResults, "license scan results", id, licenses, err)
 
 	secrets, err := e.db.ListSecretScanResults(ctx, id, false)
-	collectRepoList(l, &pkg.secretResults, "secret scan results", id, secrets, err)
+	collectRepoList(pkg, &pkg.secretResults, "secret scan results", id, secrets, err)
 
 	vulns, err := e.db.ListVulnScanResults(ctx, id, false)
-	collectRepoList(l, &pkg.vulnResults, "vuln scan results", id, vulns, err)
+	collectRepoList(pkg, &pkg.vulnResults, "vuln scan results", id, vulns, err)
 
 	analyses, _, err := e.db.ListAIAnalyses(ctx, id, "", bulkListLimit, 0)
-	collectRepoList(l, &pkg.aiAnalyses, "ai analyses", id, analyses, err)
+	collectRepoList(pkg, &pkg.aiAnalyses, "ai analyses", id, analyses, err)
 }
 
 // exportDebPackages backs up one Debian repo's distribution/component/
@@ -590,7 +673,7 @@ func (e *Engine) exportRepoScopedTables(ctx context.Context, repo *models.Reposi
 func (e *Engine) exportDebPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	dists, err := e.db.GetDebianDistributionsByRepo(ctx, repo.ID)
 	if err != nil {
-		e.log.Warnw("backup: failed to list debian distributions", "repo_id", repo.ID, "error", err)
+		pkg.fail("debian distributions", "repo "+repo.ID, err)
 		return
 	}
 
@@ -599,7 +682,7 @@ func (e *Engine) exportDebPackages(ctx context.Context, repo *models.Repository,
 	for _, dist := range dists {
 		comps, err := e.db.GetDebianComponentsByDist(ctx, dist.ID)
 		if err != nil {
-			e.log.Warnw("backup: failed to list debian components", "dist_id", dist.ID, "error", err)
+			pkg.fail("debian components", "dist "+dist.ID, err)
 			continue
 		}
 
@@ -607,7 +690,7 @@ func (e *Engine) exportDebPackages(ctx context.Context, repo *models.Repository,
 
 		archs, err := e.db.GetDebianArchitecturesByDist(ctx, dist.ID)
 		if err != nil {
-			e.log.Warnw("backup: failed to list debian architectures", "dist_id", dist.ID, "error", err)
+			pkg.fail("debian architectures", "dist "+dist.ID, err)
 			continue
 		}
 
@@ -617,8 +700,7 @@ func (e *Engine) exportDebPackages(ctx context.Context, repo *models.Repository,
 			for _, arch := range archs {
 				dps, err := e.db.GetDebianPackagesByDistComp(ctx, repo.ID, dist.Name, comp.Name, arch.Name)
 				if err != nil {
-					e.log.Warnw("backup: failed to list deb packages", "repo_id", repo.ID,
-						"dist", dist.Name, "comp", comp.Name, "arch", arch.Name, "error", err)
+					pkg.fail("deb packages", "repo "+repo.ID+" "+dist.Name+"/"+comp.Name+"/"+arch.Name, err)
 
 					continue
 				}
@@ -642,14 +724,14 @@ func (e *Engine) exportDebPackages(ctx context.Context, repo *models.Repository,
 func (e *Engine) exportNPMPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	packages, err := e.db.ListAllNPMPackages(ctx, repo.ID)
 	if err != nil {
-		e.log.Warnw("backup: failed to list npm packages", "repo_id", repo.ID, "error", err)
+		pkg.fail("npm packages", "repo "+repo.ID, err)
 		return
 	}
 
 	pkg.npmPackages = append(pkg.npmPackages, packages...)
 
 	if versions, err := e.db.ListNPMVersionsByRepo(ctx, repo.ID); err != nil {
-		e.log.Warnw("backup: failed to list npm versions", "repo_id", repo.ID, "error", err)
+		pkg.fail("npm versions", "repo "+repo.ID, err)
 	} else {
 		pkg.npmVersions = append(pkg.npmVersions, versions...)
 	}
@@ -657,7 +739,7 @@ func (e *Engine) exportNPMPackages(ctx context.Context, repo *models.Repository,
 	for _, p := range packages {
 		tags, err := e.db.GetNPMDistTags(ctx, p.ID)
 		if err != nil {
-			e.log.Warnw("backup: failed to list npm dist tags", "package_id", p.ID, "error", err)
+			pkg.fail("npm dist tags", "package "+p.ID, err)
 			continue
 		}
 
@@ -671,11 +753,11 @@ func (e *Engine) exportNPMPackages(ctx context.Context, repo *models.Repository,
 	}
 }
 
-// writeListedTable writes a listed global table, logging (not failing) when
-// the list call itself errored — the table is then written empty.
+// writeListedTable writes a listed global table. A failed list call fails the
+// backup: writing the table empty would report success for a partial archive.
 func writeListedTable[T any](e *Engine, tw *tar.Writer, manifest *BackupManifest, name string, v []T, err error) error {
 	if err != nil {
-		e.log.Warnw("backup: failed to list "+name, "error", err)
+		return fmt.Errorf("failed to list %s: %w", name, err)
 	}
 
 	return e.writeTable(tw, manifest, name, v, len(v))
@@ -742,17 +824,19 @@ func (e *Engine) exportBundles(ctx context.Context, tw *tar.Writer, manifest *Ba
 	var bundlePromotions []*models.BundlePromotion
 
 	for _, b := range bundles {
-		if items, err := e.db.ListBundleItems(ctx, b.ID); err != nil {
-			e.log.Warnw("backup: failed to list bundle items", "bundle_id", b.ID, "error", err)
-		} else {
-			bundleItems = append(bundleItems, items...)
+		items, err := e.db.ListBundleItems(ctx, b.ID)
+		if err != nil {
+			return fmt.Errorf("failed to list items of bundle %s: %w", b.ID, err)
 		}
 
-		if proms, err := e.db.ListBundlePromotions(ctx, b.ID); err != nil {
-			e.log.Warnw("backup: failed to list bundle promotions", "bundle_id", b.ID, "error", err)
-		} else {
-			bundlePromotions = append(bundlePromotions, proms...)
+		bundleItems = append(bundleItems, items...)
+
+		proms, err := e.db.ListBundlePromotions(ctx, b.ID)
+		if err != nil {
+			return fmt.Errorf("failed to list promotions of bundle %s: %w", b.ID, err)
 		}
+
+		bundlePromotions = append(bundlePromotions, proms...)
 	}
 
 	if err := e.writeTable(tw, manifest, "release_bundle_items", bundleItems, len(bundleItems)); err != nil {
@@ -769,8 +853,7 @@ func (e *Engine) exportOrganizations(ctx context.Context, tw *tar.Writer, manife
 	for _, u := range users {
 		orgs, err := e.db.ListOrganizations(ctx, u.ID)
 		if err != nil {
-			e.log.Warnw("backup: failed to list organizations for user", "user_id", u.ID, "error", err)
-			continue
+			return fmt.Errorf("failed to list organizations for user %s: %w", u.ID, err)
 		}
 
 		for _, o := range orgs {
@@ -792,8 +875,7 @@ func (e *Engine) exportOrganizations(ctx context.Context, tw *tar.Writer, manife
 	for _, o := range organizations {
 		members, err := e.db.ListOrgMembers(ctx, o.ID)
 		if err != nil {
-			e.log.Warnw("backup: failed to list org members", "org_id", o.ID, "error", err)
-			continue
+			return fmt.Errorf("failed to list members of organization %s: %w", o.ID, err)
 		}
 
 		orgMembers = append(orgMembers, members...)
@@ -802,32 +884,44 @@ func (e *Engine) exportOrganizations(ctx context.Context, tw *tar.Writer, manife
 	return e.writeTable(tw, manifest, "org_members", orgMembers, len(orgMembers))
 }
 
-// exportBlobs exports all blobs from the blob store to the archive, paging
-// through blobStore.List instead of relying on a single limit=10000 call.
+// ErrBlobListingUnsupported is returned by a full backup on a storage backend
+// that cannot enumerate its blobs (OCI registries).
+var ErrBlobListingUnsupported = errors.New("storage backend cannot list blobs; a full backup is not possible, use a metadata backup")
+
+// exportBlobs exports every blob in the blob store to the archive. It walks the
+// store with List continuation tokens, so each page costs the same however
+// many blobs were already exported and concurrent deletes cannot shift the
+// window and skip blobs.
 func (e *Engine) exportBlobs(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	blobCount := 0
+	token := ""
 
-	for offset := 0; ; offset += blobPageSize {
-		blobs, err := e.blobStore.List(ctx, "", blobPageSize, offset)
+	for {
+		blobs, next, err := e.blobStore.List(ctx, token, blobPageSize)
+		if errors.Is(err, storage.ErrListNotSupported) {
+			return ErrBlobListingUnsupported
+		}
+
 		if err != nil {
 			return fmt.Errorf("failed to list blobs: %w", err)
 		}
 
-		if len(blobs) == 0 {
-			break
-		}
-
 		for _, blobID := range blobs {
-			if err := e.exportOneBlob(ctx, tw, blobID); err != nil {
+			exported, err := e.exportOneBlob(ctx, tw, blobID)
+			if err != nil {
 				return err
 			}
 
-			blobCount++
+			if exported {
+				blobCount++
+			}
 		}
 
-		if len(blobs) < blobPageSize {
+		if next == "" {
 			break
 		}
+
+		token = next
 	}
 
 	manifest.TableCounts["blobs"] = blobCount
@@ -835,16 +929,28 @@ func (e *Engine) exportBlobs(ctx context.Context, tw *tar.Writer, manifest *Back
 	return nil
 }
 
-func (e *Engine) exportOneBlob(ctx context.Context, tw *tar.Writer, blobID string) error {
+// exportOneBlob copies one blob into the archive. It reports false when the
+// blob vanished between listing and reading (a concurrent GC or trash purge
+// deleted it): that blob is no longer referenced, so skipping it is correct.
+func (e *Engine) exportOneBlob(ctx context.Context, tw *tar.Writer, blobID string) (bool, error) {
 	reader, err := e.blobStore.Get(ctx, blobID)
-	if err != nil {
-		return fmt.Errorf("failed to get blob %s: %w", blobID, err)
+	if errors.Is(err, storage.ErrBlobNotFound) {
+		return false, nil
 	}
+
+	if err != nil {
+		return false, fmt.Errorf("failed to get blob %s: %w", blobID, err)
+	}
+
 	defer func() { _ = reader.Close() }()
 
 	size, err := e.blobStore.GetSize(ctx, blobID)
+	if errors.Is(err, storage.ErrBlobNotFound) {
+		return false, nil
+	}
+
 	if err != nil {
-		return fmt.Errorf("failed to get size of blob %s: %w", blobID, err)
+		return false, fmt.Errorf("failed to get size of blob %s: %w", blobID, err)
 	}
 
 	header := &tar.Header{
@@ -853,14 +959,14 @@ func (e *Engine) exportOneBlob(ctx context.Context, tw *tar.Writer, blobID strin
 		Mode: 0o600,
 	}
 	if err := tw.WriteHeader(header); err != nil {
-		return fmt.Errorf("failed to write blob header: %w", err)
+		return false, fmt.Errorf("failed to write blob header: %w", err)
 	}
 
 	if _, err := io.Copy(tw, reader); err != nil {
-		return fmt.Errorf("failed to write blob content: %w", err)
+		return false, fmt.Errorf("failed to write blob content: %w", err)
 	}
 
-	return nil
+	return true, nil
 }
 
 // writeTable marshals data as a JSON array under <name>.jsonl in the archive
@@ -906,16 +1012,17 @@ func (e *Engine) writeJSONLFile(tw *tar.Writer, filename string, data any) error
 // organizations all do), so every table that references one of those ids
 // must be rewritten to point at the NEW id before it's restored.
 type restoreState struct {
-	repoIDMap       map[string]string // old repository id -> new
-	userIDMap       map[string]string // old user id -> new
-	distIDMap       map[string]string // old debian_distributions id -> new
-	distByRepoName  map[string]string // old_repo_id+"|"+dist_name -> new dist id
-	compByDistName  map[string]string // new_dist_id+"|"+comp_name -> new comp id
-	pipelineIDMap   map[string]string // old promotion_pipelines id -> new
-	bundleIDMap     map[string]string // old release_bundles id -> new
-	orgIDMap        map[string]string // old organizations id -> new
-	npmPackageIDMap map[string]string // old npm_packages id -> new
-	failures        int               // records skipped/failed outside Engine methods
+	repoIDMap       map[string]string    // old repository id -> new
+	userIDMap       map[string]string    // old user id -> new
+	distIDMap       map[string]string    // old debian_distributions id -> new
+	distByRepoName  map[string]string    // old_repo_id+"|"+dist_name -> new dist id
+	compByDistName  map[string]string    // new_dist_id+"|"+comp_name -> new comp id
+	pipelineIDMap   map[string]string    // old promotion_pipelines id -> new
+	bundleIDMap     map[string]string    // old release_bundles id -> new
+	orgIDMap        map[string]string    // old organizations id -> new
+	npmPackageIDMap map[string]string    // old npm_packages id -> new
+	hostedRepos     []*models.Repository // restored non-proxy, non-group repos (new ids)
+	failures        int                  // records skipped/failed outside Engine methods
 	// orgRepos are restored repositories that belonged to a non-system
 	// organization. Repositories are restored before organizations, so they are
 	// inserted into the system organization and moved once the organization
@@ -1051,6 +1158,7 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 		}
 	}
 
+	e.regenerateRestoredMetadata(ctx, st)
 	e.reconcileQuotaUsage(ctx)
 
 	if failed := e.restoreFailures.Load() + int64(st.failures); failed > 0 {
@@ -1115,6 +1223,8 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 		return e.restoreUsers(ctx, r, st)
 	case "groups.jsonl":
 		return e.restoreGroups(ctx, r)
+	case "repository_group_members.jsonl":
+		return e.restoreGroupMembers(ctx, r, st)
 	case "debian_distributions.jsonl":
 		return e.restoreDebianDistributions(ctx, r, st)
 	case "debian_components.jsonl":
@@ -1358,6 +1468,10 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 
 		st.repoIDMap[oldID] = repo.ID
 
+		if repo.RepoType != "proxy" && repo.RepoType != "group" {
+			st.hostedRepos = append(st.hostedRepos, repo)
+		}
+
 		if oldOrgID != "" {
 			st.orgRepos = append(st.orgRepos, orgRepo{repo: repo, oldOrgID: oldOrgID})
 		}
@@ -1402,6 +1516,102 @@ func (e *Engine) restoreGroups(ctx context.Context, r io.Reader) error {
 	}
 
 	return nil
+}
+
+// restoreGroupMembers re-adds the ordered member lists of group repositories.
+// Both ends are remapped through repoIDMap; a member whose repository was not
+// restored is counted as a failure rather than silently shortening the group.
+func (e *Engine) restoreGroupMembers(ctx context.Context, r io.Reader, st *restoreState) error {
+	records, err := decodeSlice[groupMemberRecord](r)
+	if err != nil {
+		return fmt.Errorf("failed to decode repository group members: %w", err)
+	}
+
+	for _, rec := range records {
+		groupID, gok := st.repoIDMap[rec.GroupRepoID]
+		memberID, mok := st.repoIDMap[rec.MemberRepoID]
+
+		if !gok || !mok {
+			e.restoreWarn("skipping group member: repository not restored", "group_repo_id", rec.GroupRepoID, "member_repo_id", rec.MemberRepoID)
+			continue
+		}
+
+		if err := e.db.AddGroupMember(ctx, groupID, memberID, rec.Priority); err != nil {
+			e.restoreWarn("failed to restore group member", "group_repo_id", rec.GroupRepoID, "member_repo_id", rec.MemberRepoID, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// regenerateRestoredMetadata makes the generated metadata of restored hosted
+// repositories servable. Backups carry package rows only; repodata, dists and
+// maven-metadata.xml are derived, and nothing else would create them until a
+// new upload hits the same repository. rpm gets its rpm_repos row (the
+// worker's only index of work) marked stale, so the periodic stale sweep also
+// covers a missing notifier; deb and maven are enqueued per repo / per GA.
+func (e *Engine) regenerateRestoredMetadata(ctx context.Context, st *restoreState) {
+	for _, repo := range st.hostedRepos {
+		switch repo.Format {
+		case "rpm":
+			e.regenerateRestoredRPM(ctx, repo)
+		case "deb":
+			if e.regen != nil {
+				e.regen.NotifyDebStale(repo.ID)
+			}
+		case "maven":
+			e.regenerateRestoredMaven(ctx, repo)
+		}
+	}
+}
+
+func (e *Engine) regenerateRestoredRPM(ctx context.Context, repo *models.Repository) {
+	existing, err := e.db.GetRPMRepo(ctx, repo.ID)
+	if err != nil {
+		e.restoreWarn("failed to look up rpm repo after restore", "repo", repo.Name, "error", err)
+		return
+	}
+
+	if existing == nil {
+		if err := e.db.CreateRPMRepo(ctx, &models.RPMRepo{RepositoryID: repo.ID, BaseArch: "x86_64"}); err != nil {
+			e.restoreWarn("failed to create rpm repo after restore", "repo", repo.Name, "error", err)
+			return
+		}
+	}
+
+	if err := e.db.MarkRepoStale(ctx, repo.ID); err != nil {
+		e.restoreWarn("failed to mark rpm repo stale after restore", "repo", repo.Name, "error", err)
+		return
+	}
+
+	if e.regen != nil {
+		e.regen.NotifyRPMStale(repo.ID)
+	}
+}
+
+func (e *Engine) regenerateRestoredMaven(ctx context.Context, repo *models.Repository) {
+	if e.regen == nil {
+		return
+	}
+
+	arts, err := e.db.ListMavenArtifactsByRepo(ctx, repo.ID)
+	if err != nil {
+		e.restoreWarn("failed to list maven artifacts after restore", "repo", repo.Name, "error", err)
+		return
+	}
+
+	seen := map[[2]string]struct{}{}
+
+	for _, a := range arts {
+		key := [2]string{a.GroupID, a.ArtifactCoord}
+		if _, dup := seen[key]; dup {
+			continue
+		}
+
+		seen[key] = struct{}{}
+
+		e.regen.NotifyMavenStale(repo.ID, a.GroupID, a.ArtifactCoord)
+	}
 }
 
 func (e *Engine) restoreDebianDistributions(ctx context.Context, r io.Reader, st *restoreState) error {
@@ -1742,6 +1952,13 @@ func (e *Engine) restoreStorageBackends(ctx context.Context, r io.Reader) error 
 
 	for _, it := range items {
 		if err := e.db.CreateStorageBackend(ctx, it); err != nil {
+			if database.IsUniqueViolation(err) {
+				// The migrations seed a backend (local); a fresh target already
+				// has it, which is not a restore failure.
+				e.log.Infow("storage backend already exists, keeping the existing one", "name", it.Name)
+				continue
+			}
+
 			e.restoreWarn("failed to restore storage backend", "name", it.Name, "error", err)
 		}
 	}

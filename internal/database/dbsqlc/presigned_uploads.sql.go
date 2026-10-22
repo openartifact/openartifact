@@ -35,19 +35,6 @@ func (q *Queries) ClaimPresignedUpload(ctx context.Context, arg ClaimPresignedUp
 	return result.RowsAffected(), nil
 }
 
-const countPendingPresignedUploads = `-- name: CountPendingPresignedUploads :one
-SELECT count(*)::bigint
-FROM presigned_uploads
-WHERE created_by = $1 AND completed_at IS NULL AND expires_at > now()
-`
-
-func (q *Queries) CountPendingPresignedUploads(ctx context.Context, createdBy string) (int64, error) {
-	row := q.db.QueryRow(ctx, countPendingPresignedUploads, createdBy)
-	var column_1 int64
-	err := row.Scan(&column_1)
-	return column_1, err
-}
-
 const createPresignedUpload = `-- name: CreatePresignedUpload :one
 INSERT INTO presigned_uploads (repository_id, path, size_bytes, sha256, content_type, created_by, expires_at)
 VALUES ($1, $2, $3, $4, $5, $6, $7)

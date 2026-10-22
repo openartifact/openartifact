@@ -43,6 +43,11 @@ const (
 	// to repeat on each one-minute tick.
 	orphanInterval = 15 * time.Minute
 
+	// orphanMaxWindows bounds one orphan sweep to this many scan windows
+	// (storage.OrphanScanWindow blobs each); a larger table is continued by the
+	// next sweep from where this one stopped.
+	orphanMaxWindows = 50
+
 	// quotaReconcileInterval throttles the recount of every repository's quota
 	// counters from its package rows (database.ReconcileAllStorageUsage). The
 	// counters are written with asynchronous commits, so a database crash can
@@ -61,6 +66,8 @@ type CleanupWorker struct {
 	runCtx context.Context //nolint:containedctx // lifetime of the worker, cancelled by Stop
 	cancel context.CancelFunc
 	wg     sync.WaitGroup // manually triggered policy runs
+
+	rpmNotifier, debNotifier MetadataNotifier
 
 	lastOrphanGC         time.Time // only touched from the tick goroutine
 	lastQuotaReconcileAt time.Time // only touched from the tick goroutine
@@ -82,11 +89,6 @@ func NewCleanupWorker(db database.Database, blobStore storage.BlobStore, log *lo
 
 func (w *CleanupWorker) Start() {
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				w.log.Errorw("panic in goroutine", "panic", r)
-			}
-		}()
 		defer close(w.doneCh)
 
 		ticker := time.NewTicker(1 * time.Minute)
@@ -95,14 +97,27 @@ func (w *CleanupWorker) Start() {
 		for {
 			select {
 			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(w.runCtx, policyRunTimeout)
-				w.runCleanupCycle(ctx)
-				cancel()
+				w.safeCycle()
 			case <-w.stopCh:
 				return
 			}
 		}
 	}()
+}
+
+// safeCycle runs one cleanup cycle and contains a panic to that cycle: the
+// schedule (policies, orphan GC, quota reconcile) must keep ticking.
+func (w *CleanupWorker) safeCycle() {
+	defer func() {
+		if r := recover(); r != nil {
+			w.log.Errorw("panic in cleanup cycle; continuing", "panic", r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(w.runCtx, policyRunTimeout)
+	defer cancel()
+
+	w.runCleanupCycle(ctx)
 }
 
 func (w *CleanupWorker) Stop() {
@@ -154,7 +169,20 @@ func (w *CleanupWorker) collectOrphansIfDue(ctx context.Context, now time.Time) 
 
 	w.lastOrphanGC = now
 
-	removed, err := storage.CollectOrphanBlobs(ctx, w.db, w.blobStore, storage.OrphanMinAge, storage.OrphanBatch)
+	// Every replica ticks; the scan is expensive, so only one runs it at a time.
+	if w.db.GetDB() != nil {
+		release, err := w.acquirePolicyLock(ctx, "orphan-blob-gc")
+		if err != nil {
+			if !errors.Is(err, ErrPolicyBusy) {
+				w.log.Warnw("orphan blob collection: could not take lock", "error", err)
+			}
+
+			return
+		}
+		defer release()
+	}
+
+	removed, err := storage.CollectOrphanBlobsSweep(ctx, w.db, w.blobStore, storage.OrphanMinAge, storage.OrphanBatch, orphanMaxWindows)
 	if err != nil {
 		w.log.Warnw("orphan blob collection failed", "removed", removed, "error", err)
 	}
@@ -389,7 +417,49 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 		return 0, fmt.Errorf("unsupported format for cleanup: %s", repo.Format) //nolint:err113 // dynamic error with runtime context
 	}
 
-	return w.deleteArtifacts(ctx, policy, repo, tableInfo)
+	deleted, err := w.deleteArtifacts(ctx, policy, repo, tableInfo)
+	// Also after a partial run: whatever was removed before the error must
+	// leave the generated metadata.
+	if deleted > 0 {
+		w.refreshMetadata(ctx, repo)
+	}
+
+	return deleted, err
+}
+
+// MetadataNotifier schedules the regeneration of a repository's generated
+// metadata (repodata, dists). It is satisfied by the rpm and deb metadata workers.
+type MetadataNotifier interface{ NotifyStale(repoID string) }
+
+// SetMetadataNotifiers wires the rpm and deb metadata workers so a cleanup run
+// that removed packages refreshes the repository's index (otherwise
+// primary.xml / Packages keep listing files that no longer exist). Either may
+// be nil when that worker is not running.
+func (w *CleanupWorker) SetMetadataNotifiers(rpm, deb MetadataNotifier) {
+	w.rpmNotifier, w.debNotifier = rpm, deb
+}
+
+// refreshMetadata runs once per policy run for the repository the run touched.
+// rpm is marked stale in the database first, so the stale sweep recovers the
+// refresh even if the notifier is absent or the process dies.
+func (w *CleanupWorker) refreshMetadata(ctx context.Context, repo *models.Repository) {
+	rctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), policyRecordTimeout)
+	defer cancel()
+
+	switch repo.Format {
+	case "rpm":
+		if err := w.db.MarkRepoStale(rctx, repo.ID); err != nil {
+			w.log.Warnw("cleanup: failed to mark rpm repository stale", "repository_id", repo.ID, "error", err)
+		}
+
+		if w.rpmNotifier != nil {
+			w.rpmNotifier.NotifyStale(repo.ID)
+		}
+	case "deb":
+		if w.debNotifier != nil {
+			w.debNotifier.NotifyStale(repo.ID)
+		}
+	}
 }
 
 // cleanupCandidate is a row selected for deletion: its primary key (for the

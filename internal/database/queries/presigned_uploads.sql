@@ -27,11 +27,6 @@ UPDATE presigned_uploads
 SET completed_at = now(), completing_since = NULL, artifact_id = $2
 WHERE id = $1;
 
--- name: CountPendingPresignedUploads :one
-SELECT count(*)::bigint
-FROM presigned_uploads
-WHERE created_by = $1 AND completed_at IS NULL AND expires_at > now();
-
 -- name: ExistingPresignedUploadIDs :many
 SELECT id FROM presigned_uploads WHERE id = ANY(sqlc.arg(ids)::uuid[]);
 

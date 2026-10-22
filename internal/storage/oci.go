@@ -26,6 +26,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -61,13 +62,13 @@ func NewOCIBlobStore(cfg StorageConfig) (*OCIBlobStore, error) {
 		return nil, ErrOCIBucketRequired
 	}
 
-	transport := http.DefaultTransport
+	var transport http.RoundTripper
 	if cfg.OCIInsecure {
 		transport = insecureTransport()
 	}
 
 	return &OCIBlobStore{
-		client:   &http.Client{Transport: transport, Timeout: 30 * time.Second},
+		client:   newStreamingHTTPClient(transport),
 		base:     strings.TrimRight(cfg.Endpoint, "/"),
 		repo:     cfg.Bucket,
 		username: cfg.OCIUsername,
@@ -204,8 +205,7 @@ func (o *OCIBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error
 
 	if resp.StatusCode == http.StatusNotFound {
 		_ = resp.Body.Close()
-		//nolint:err113 // dynamic error with runtime context
-		return nil, fmt.Errorf("blob not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -295,8 +295,7 @@ func (o *OCIBlobStore) GetMetadata(ctx context.Context, id string) (map[string]s
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		//nolint:err113 // dynamic error with runtime context
-		return nil, fmt.Errorf("blob not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -313,11 +312,9 @@ func (o *OCIBlobStore) GetMetadata(ctx context.Context, id string) (map[string]s
 	return meta, nil
 }
 
-// List returns blob identifiers by querying the OCI catalog and tag list.
-// OCI registries do not expose a flat blob list; this implementation returns
-// an empty slice and is provided for interface compliance only.
-func (o *OCIBlobStore) List(_ context.Context, _ string, _ int, _ int) ([]string, error) {
-	return nil, nil
+// List is not supported: OCI registries expose no flat blob listing.
+func (o *OCIBlobStore) List(_ context.Context, _ string, _ int) ([]string, string, error) {
+	return nil, "", ErrListNotSupported
 }
 
 // GetSize returns the size of a blob in bytes using HEAD.
@@ -339,8 +336,7 @@ func (o *OCIBlobStore) GetSize(ctx context.Context, id string) (int64, error) {
 	defer func() { _ = resp.Body.Close() }()
 
 	if resp.StatusCode == http.StatusNotFound {
-		//nolint:err113 // dynamic error with runtime context
-		return 0, fmt.Errorf("blob not found: %s", id)
+		return 0, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
 	}
 
 	if resp.StatusCode != http.StatusOK {
@@ -408,5 +404,8 @@ func (o *OCIBlobStore) HealthCheck(ctx context.Context) error {
 // insecureTransport returns an http.RoundTripper that skips TLS verification.
 // Used only when OCIInsecure=true (development/testing).
 func insecureTransport() http.RoundTripper {
-	return &http.Transport{} // plain HTTP; TLS not configured
+	return &http.Transport{ // plain HTTP; TLS not configured
+		DialContext:           (&net.Dialer{Timeout: storageDialTimeout}).DialContext,
+		ResponseHeaderTimeout: storageResponseHeaderTimeout,
+	}
 }

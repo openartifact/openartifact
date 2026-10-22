@@ -25,10 +25,10 @@ type orphanDB struct {
 	refCountOf map[string]int
 }
 
-func (d *orphanDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, limit int) ([]string, error) {
+func (d *orphanDB) ListUnreferencedBlobs(_ context.Context, minAge time.Duration, _ string, _, limit int) ([]string, string, error) {
 	d.gotMinAge, d.gotLimit = minAge, limit
 
-	return d.shas, nil
+	return d.shas, "", nil
 }
 
 func (d *orphanDB) BlobReferenceCount(_ context.Context, sha string) (int, error) {

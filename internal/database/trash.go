@@ -680,19 +680,37 @@ func (p *PostgresDB) purgeRepository(ctx context.Context, id string) (*models.Tr
 		return nil, err
 	}
 
-	res, err := p.db.ExecContext(ctx, `DELETE FROM repositories WHERE id = $1::uuid AND deleted_at IS NOT NULL`, id)
-	if err != nil {
+	// One statement: every sub-statement sees the same snapshot, so the
+	// repository's generated-metadata blobs are read before the cascade removes
+	// their repository_metadata rows. Those blobs have no blobs row and would
+	// otherwise stay in the object store forever.
+	var (
+		deleted int
+		shas    string
+	)
+
+	if err := p.db.QueryRowContext(ctx,
+		`WITH del AS (DELETE FROM repositories WHERE id = $1::uuid AND deleted_at IS NOT NULL RETURNING id)
+		 SELECT (SELECT COUNT(*) FROM del),
+		        COALESCE((SELECT string_agg(DISTINCT blob_sha256, ',') FROM repository_metadata WHERE repository_id = $1::uuid), '')`,
+		id).Scan(&deleted, &shas); err != nil {
 		return nil, fmt.Errorf("purge repository: %w", err)
 	}
 
-	if n, _ := res.RowsAffected(); n == 0 {
+	if deleted == 0 {
 		return nil, ErrTrashNotFound
 	}
 
-	return &models.TrashPurgeResult{
+	out := &models.TrashPurgeResult{
 		Kind: models.TrashKindRepository, ID: id, RepositoryID: id, RepositoryName: item.RepositoryName,
 		Format: item.Format, Name: item.Name,
-	}, nil
+	}
+
+	if shas != "" {
+		out.MetadataBlobSHA256 = strings.Split(shas, ",")
+	}
+
+	return out, nil
 }
 
 // RegenKeys implements TrashStore.

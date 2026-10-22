@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -44,6 +45,7 @@ type fakeDB struct {
 	npmVersions     map[string][]*models.NPMVersion     // keyed by package id
 	npmDistTags     map[string][]*models.NPMDistTag     // keyed by package id
 	dockerManifests map[string][]*models.DockerManifest // keyed by repository id
+	extra           *r2State
 }
 
 func newFakeDB(salt string) *fakeDB {
@@ -596,7 +598,7 @@ func (f *fakeBlobStore) Put(context.Context, io.Reader, map[string]string) (stri
 func (f *fakeBlobStore) Get(_ context.Context, id string) (io.ReadCloser, error) {
 	data, ok := f.data[id]
 	if !ok {
-		return nil, fmt.Errorf("blob not found: %s", id)
+		return nil, fmt.Errorf("%w: %s", storage.ErrBlobNotFound, id)
 	}
 
 	return io.NopCloser(bytes.NewReader(data)), nil
@@ -615,22 +617,33 @@ func (f *fakeBlobStore) GetMetadata(context.Context, string) (map[string]string,
 	return nil, errors.New("fakeBlobStore.GetMetadata not implemented")
 }
 
-func (f *fakeBlobStore) List(_ context.Context, _ string, limit, offset int) ([]string, error) {
+func (f *fakeBlobStore) List(_ context.Context, token string, limit int) ([]string, string, error) {
 	f.listCalls++
 
-	if offset >= len(f.keys) {
-		return nil, nil
+	start := 0
+	if token != "" {
+		start = sort.SearchStrings(f.keys, token)
+		if start < len(f.keys) && f.keys[start] == token {
+			start++
+		}
 	}
 
-	end := min(offset+limit, len(f.keys))
+	if start >= len(f.keys) {
+		return nil, "", nil
+	}
 
-	return f.keys[offset:end], nil
+	end := min(start+limit, len(f.keys))
+	if end == len(f.keys) {
+		return f.keys[start:end], "", nil
+	}
+
+	return f.keys[start:end], f.keys[end-1], nil
 }
 
 func (f *fakeBlobStore) GetSize(_ context.Context, id string) (int64, error) {
 	data, ok := f.data[id]
 	if !ok {
-		return 0, fmt.Errorf("blob not found: %s", id)
+		return 0, fmt.Errorf("%w: %s", storage.ErrBlobNotFound, id)
 	}
 
 	return int64(len(data)), nil
@@ -670,4 +683,62 @@ func TestRestoreBlob_RejectsTraversalAndDigestMismatch(t *testing.T) {
 	if ok, _ := store.Exists(ctx, sha); !ok {
 		t.Error("valid blob not stored")
 	}
+}
+
+// The tables below are not under test: an empty list stands in for them, since
+// a failing list now fails the export instead of being skipped.
+func (d *fakeDB) ListWebhooks(context.Context, string) ([]*models.Webhook, error) { return nil, nil }
+
+func (d *fakeDB) ListCleanupPolicies(context.Context, string) ([]*models.CleanupPolicy, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListSBOMReports(context.Context, string) ([]*models.SBOMReport, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListLicenseScanResults(context.Context, string) ([]*models.LicenseScanResult, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListSecretScanResults(context.Context, string, bool) ([]*models.SecretScanResult, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListVulnScanResults(context.Context, string, bool) ([]*models.VulnScanResult, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListAIAnalyses(context.Context, string, string, int, int) ([]*models.AIAnalysis, int, error) {
+	return nil, 0, nil
+}
+
+func (d *fakeDB) ListDockerBlobs(context.Context, string) ([]*models.DockerBlob, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListDockerTagsByRepo(context.Context, string, int) ([]*models.DockerTag, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListAllSSOProviders(context.Context) ([]*models.SSOProvider, error) { return nil, nil }
+
+func (d *fakeDB) ListAllTokens(context.Context, int, int) ([]*models.Token, int, error) {
+	return nil, 0, nil
+}
+
+func (d *fakeDB) ListStorageBackends(context.Context) ([]*models.StorageBackend, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListOrganizations(context.Context, string) ([]*models.Organization, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListPromotionPipelines(context.Context) ([]*models.PromotionPipeline, error) {
+	return nil, nil
+}
+
+func (d *fakeDB) ListReleaseBundles(context.Context, string, string, int, int) ([]*models.ReleaseBundle, int, error) {
+	return nil, 0, nil
 }

@@ -129,26 +129,11 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		return fmt.Errorf("maven worker: computing checksums: %w", err)
 	}
 
-	blobID, err := w.blobStore.Put(ctx, bytes.NewReader(xmlData), map[string]string{
-		"sha256":    sha256Hex,
-		"format":    "maven",
-		"repo_id":   repoID,
-		"path_type": "group-metadata",
-	})
-	if err != nil {
-		return fmt.Errorf("maven worker: storing group metadata blob: %w", err)
-	}
-
 	groupMetaPath := dir + "maven-metadata.xml"
 	keep = append(keep, groupMetaPath)
-	if err := w.db.UpsertRepoMetadata(ctx, &models.RepoMetadata{
-		RepositoryID:  repoID,
-		Path:          groupMetaPath,
-		BlobSHA256:    blobID,
-		BlobSize:      int64(len(xmlData)),
-		LastGenerated: time.Now().UTC(),
-	}); err != nil {
-		return fmt.Errorf("maven worker: upserting group metadata: %w", err)
+
+	if err := w.storeMetadata(ctx, repoID, groupMetaPath, "group-metadata", sha256Hex, xmlData); err != nil {
+		return fmt.Errorf("maven worker: group metadata: %w", err)
 	}
 
 	snapshotVersions := make(map[string][]*models.MavenArtifact)
@@ -220,44 +205,88 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 			return fmt.Errorf("maven worker: computing snapshot checksums: %w", err)
 		}
 
-		snapBlobID, err := w.blobStore.Put(ctx, bytes.NewReader(snapXML), map[string]string{
-			"sha256":    snapSHA256,
-			"format":    "maven",
-			"repo_id":   repoID,
-			"path_type": "snapshot-metadata",
-		})
-		if err != nil {
-			return fmt.Errorf("maven worker: storing snapshot metadata blob: %w", err)
-		}
-
 		snapMetaPath := dir + snapVersion + "/maven-metadata.xml"
 		keep = append(keep, snapMetaPath)
-		if err := w.db.UpsertRepoMetadata(ctx, &models.RepoMetadata{
-			RepositoryID:  repoID,
-			Path:          snapMetaPath,
-			BlobSHA256:    snapBlobID,
-			BlobSize:      int64(len(snapXML)),
-			LastGenerated: time.Now().UTC(),
-		}); err != nil {
-			return fmt.Errorf("maven worker: upserting snapshot metadata for %s: %w", snapVersion, err)
+
+		if err := w.storeMetadata(ctx, repoID, snapMetaPath, "snapshot-metadata", snapSHA256, snapXML); err != nil {
+			return fmt.Errorf("maven worker: snapshot metadata for %s: %w", snapVersion, err)
 		}
 	}
 
 	return w.pruneMetadata(ctx, repoID, dir, keep)
 }
 
+// storeMetadata stores one generated maven-metadata.xml and points its
+// repository_metadata row at it. Put and upsert run under the blob's lock so a
+// concurrent reclaim of identical content (another repository, or a previous
+// generation) cannot delete the object between them. The blob the row pointed
+// to before is reclaimed afterwards: every regeneration changes lastUpdated,
+// hence the hash, and nothing else would ever free the old object.
+func (w *MavenMetadataWorker) storeMetadata(ctx context.Context, repoID, path, pathType, sha string, data []byte) error {
+	prev, err := w.db.GetRepoMetadataByPath(ctx, repoID, path)
+	if err != nil {
+		return fmt.Errorf("looking up current metadata: %w", err)
+	}
+
+	err = storage.WithBlobLock(ctx, w.db, sha, func(ctx context.Context) error {
+		blobID, err := w.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			"sha256":    sha,
+			"format":    "maven",
+			"repo_id":   repoID,
+			"path_type": pathType,
+		})
+		if err != nil {
+			return fmt.Errorf("storing blob: %w", err)
+		}
+
+		if err := w.db.UpsertRepoMetadata(ctx, &models.RepoMetadata{
+			RepositoryID:  repoID,
+			Path:          path,
+			BlobSHA256:    blobID,
+			BlobSize:      int64(len(data)),
+			LastGenerated: time.Now().UTC(),
+		}); err != nil {
+			return fmt.Errorf("upserting row: %w", err)
+		}
+
+		return nil
+	})
+	if err != nil {
+		return err
+	}
+
+	if prev != nil && prev.BlobSHA256 != sha {
+		w.reclaim(ctx, prev.BlobSHA256)
+	}
+
+	return nil
+}
+
+// reclaim frees a superseded metadata blob; failures are logged, the next
+// regeneration of another path cannot retry it, but the object is only space.
+func (w *MavenMetadataWorker) reclaim(ctx context.Context, sha string) {
+	if err := storage.ReclaimMetadataBlob(ctx, w.db, w.blobStore, sha); err != nil {
+		w.log.Warnw("maven worker: failed to reclaim superseded metadata blob", "sha256", sha, "error", err)
+	}
+}
+
 // pruneMetadata removes generated metadata rows under dir except keep, when
 // the database can (the PostgreSQL implementation does).
 func (w *MavenMetadataWorker) pruneMetadata(ctx context.Context, repoID, dir string, keep []string) error {
 	pruner, ok := w.db.(interface {
-		PruneMavenMetadata(ctx context.Context, repositoryID, dir string, keep []string) error
+		PruneMavenMetadata(ctx context.Context, repositoryID, dir string, keep []string) ([]string, error)
 	})
 	if !ok {
 		return nil
 	}
 
-	if err := pruner.PruneMavenMetadata(ctx, repoID, dir, keep); err != nil {
+	pruned, err := pruner.PruneMavenMetadata(ctx, repoID, dir, keep)
+	if err != nil {
 		return fmt.Errorf("maven worker: %w", err)
+	}
+
+	for _, sha := range pruned {
+		w.reclaim(ctx, sha)
 	}
 
 	return nil

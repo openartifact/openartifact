@@ -352,6 +352,31 @@ func (w *TrashPurgeWorker) afterPurge(ctx context.Context, res *models.TrashPurg
 	}
 
 	stats.BlobErrors += w.freeBlobs(ctx, res)
+	stats.BlobErrors += w.freeMetadataBlobs(ctx, res)
+}
+
+// freeMetadataBlobs reclaims the generated-metadata blobs of a purged
+// repository (they have no blobs row, so the orphan collector never sees them).
+func (w *TrashPurgeWorker) freeMetadataBlobs(ctx context.Context, res *models.TrashPurgeResult) int {
+	if w.blobStore == nil {
+		return 0
+	}
+
+	failed := 0
+
+	for _, sha := range res.MetadataBlobSHA256 {
+		if ctx.Err() != nil {
+			return failed + 1
+		}
+
+		if err := storage.ReclaimMetadataBlob(ctx, w.db, w.blobStore, sha); err != nil {
+			w.log.Warnw("trash purge: freeing metadata blob failed", "sha256", sha, "repository", res.RepositoryName, "error", err)
+
+			failed++
+		}
+	}
+
+	return failed
 }
 
 // releaseQuota gives back the quota the purged rows were holding (soft-deleted

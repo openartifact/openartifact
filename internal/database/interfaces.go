@@ -46,6 +46,9 @@ type Database interface {
 	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)
 	CountRepositories(ctx context.Context, formatFilter string) (int, error)
 	UpdateRepository(ctx context.Context, repo *models.Repository) error
+	// UpdateRepositoryAndMembers is UpdateRepository plus ReplaceGroupMembers in
+	// one transaction.
+	UpdateRepositoryAndMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
 	DeleteRepository(ctx context.Context, id string) error
 	ListComponentsByRepo(ctx context.Context, repoID, formatFilter string, page, limit int) ([]*models.Component, int, error)
 
@@ -382,9 +385,12 @@ type Database interface {
 	ReleasePresignedUpload(ctx context.Context, id string) error
 	// MarkPresignedUploadCompleted records that the upload produced artifactID.
 	MarkPresignedUploadCompleted(ctx context.Context, id, artifactID string) error
-	// CountPendingPresignedUploads counts createdBy's uploads that are neither
-	// completed nor expired.
-	CountPendingPresignedUploads(ctx context.Context, createdBy string) (int, error)
+	// CreatePresignedUploadCapped is CreatePresignedUpload that fails with
+	// ErrPresignedUploadCap when u.CreatedBy already has maxPending uploads
+	// that are neither completed nor expired (maxPending <= 0: no cap). The
+	// count and the insert are serialized per user, so parallel creates cannot
+	// overshoot the cap.
+	CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error
 	// ExistingPresignedUploadIDs returns the subset of ids that have a row.
 	ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error)
 	ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error)

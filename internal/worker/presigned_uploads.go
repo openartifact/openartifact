@@ -62,11 +62,6 @@ func NewPresignedUploadWorker(db database.Database, blobStore storage.BlobStore,
 // Start launches the sweep loop.
 func (w *PresignedUploadWorker) Start() {
 	go func() {
-		defer func() {
-			if r := recover(); r != nil {
-				w.log.Errorw("panic in presigned upload worker", "panic", r)
-			}
-		}()
 		defer close(w.doneCh)
 
 		ticker := time.NewTicker(presignedUploadSweepInterval)
@@ -75,14 +70,26 @@ func (w *PresignedUploadWorker) Start() {
 		for {
 			select {
 			case <-ticker.C:
-				ctx, cancel := context.WithTimeout(context.Background(), presignedUploadSweepTimeout)
-				w.Sweep(ctx)
-				cancel()
+				w.safeSweep()
 			case <-w.stopCh:
 				return
 			}
 		}
 	}()
+}
+
+// safeSweep contains a panic to one sweep so the loop keeps running.
+func (w *PresignedUploadWorker) safeSweep() {
+	defer func() {
+		if r := recover(); r != nil {
+			w.log.Errorw("panic in presigned upload sweep; continuing", "panic", r)
+		}
+	}()
+
+	ctx, cancel := context.WithTimeout(context.Background(), presignedUploadSweepTimeout)
+	defer cancel()
+
+	w.Sweep(ctx)
 }
 
 // Stop ends the loop and waits for the in-flight sweep.

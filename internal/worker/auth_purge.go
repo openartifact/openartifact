@@ -6,6 +6,7 @@ package worker
 
 import (
 	"context"
+	"database/sql"
 	"sync"
 	"time"
 
@@ -13,8 +14,9 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// AuthPurgeWorker periodically deletes expired sessions and long-expired or
-// revoked API tokens so the auth tables do not grow without bound.
+// AuthPurgeWorker periodically deletes expired sessions, long-expired or
+// revoked API tokens and finished webhook deliveries so those tables do not
+// grow without bound.
 type AuthPurgeWorker struct {
 	db       database.Database
 	log      *logger.Logger
@@ -23,8 +25,12 @@ type AuthPurgeWorker struct {
 	doneCh   chan struct{}
 	stopOnce sync.Once
 	started  bool
-	ctx      context.Context //nolint:containedctx // worker lifetime context, cancelled by Stop
-	cancel   context.CancelFunc
+
+	// webhookRetentionDays: age after which finished webhook deliveries are
+	// deleted; 0 keeps them.
+	webhookRetentionDays int
+	ctx                  context.Context //nolint:containedctx // worker lifetime context, cancelled by Stop
+	cancel               context.CancelFunc
 }
 
 func NewAuthPurgeWorker(db database.Database, log *logger.Logger) *AuthPurgeWorker {
@@ -39,6 +45,12 @@ func NewAuthPurgeWorker(db database.Database, log *logger.Logger) *AuthPurgeWork
 		ctx:      ctx,
 		cancel:   cancel,
 	}
+}
+
+// SetWebhookDeliveryRetention sets how many days finished webhook deliveries
+// are kept (0: forever). Call before Start.
+func (w *AuthPurgeWorker) SetWebhookDeliveryRetention(days int) {
+	w.webhookRetentionDays = days
 }
 
 func (w *AuthPurgeWorker) Start() {
@@ -93,6 +105,25 @@ func (w *AuthPurgeWorker) purgeSafely() {
 		w.log.Errorw("failed to purge expired tokens", "error", err)
 	} else if n, _ := res.RowsAffected(); n > 0 {
 		w.log.Infow("purged expired tokens", "count", n)
+	}
+
+	w.purgeWebhookDeliveries(ctx, sqlDB)
+}
+
+// purgeWebhookDeliveries deletes finished deliveries older than the retention.
+// Pending ones belong to the retry loop and are never touched.
+func (w *AuthPurgeWorker) purgeWebhookDeliveries(ctx context.Context, sqlDB *sql.DB) {
+	if w.webhookRetentionDays <= 0 {
+		return
+	}
+
+	res, err := sqlDB.ExecContext(ctx,
+		`DELETE FROM webhook_deliveries WHERE status IN ('success', 'failed') AND created_at < now() - make_interval(days => $1)`,
+		w.webhookRetentionDays)
+	if err != nil {
+		w.log.Errorw("failed to purge webhook deliveries", "error", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		w.log.Infow("purged webhook deliveries", "count", n)
 	}
 }
 
