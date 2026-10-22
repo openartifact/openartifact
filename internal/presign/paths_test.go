@@ -33,7 +33,11 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"pypi", "files/requests/requests-2.32.0-py3-none-any.whl.metadata", false},
 		{"pypi", "simple/requests/", false},
 		{"pypi", "simple/", false},
-		{"npm", "left-pad/-/left-pad-1.0.0.tgz", false},
+		{"npm", "left-pad/-/left-pad-1.0.0.tgz", true},
+		{"npm", "@babel/core/-/core-7.0.0.tgz", true},
+		{"npm", "left-pad", false},
+		{"npm", "-/install-v1/left-pad", false},
+		{"helm", "charts/x-1.0.0.tgz", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}

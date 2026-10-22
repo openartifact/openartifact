@@ -28,6 +28,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		}
 
 		return strings.HasSuffix(base, ".rpm") || strings.HasSuffix(base, ".drpm")
+	case "npm":
+		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
 	case "raw":
 		return true
 	case "pypi":

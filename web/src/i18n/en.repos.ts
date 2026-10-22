@@ -236,8 +236,8 @@ export const enRepos = {
   'repoDetail.group.emptyTitle': 'No members',
   'repoDetail.group.emptyHint': 'This group has no member repositories, so every request returns not found.',
   'repoDetail.group.loadFailed': 'Failed to load group members',
-  'repos.new.proxyFormatsHint': 'Proxy repositories are available for deb, maven, pypi, raw and rpm.',
-  'repos.new.groupFormatsHint': 'Group repositories are available for maven, pypi and raw. deb and rpm groups are not supported.',
+  'repos.new.proxyFormatsHint': 'Proxy repositories are available for deb, maven, npm, pypi, raw and rpm.',
+  'repos.new.groupFormatsHint': 'Group repositories are available for maven, npm, pypi and raw. deb and rpm groups are not supported.',
 
   // Trash / soft delete
   'browser.selectItem': 'Select {name}',

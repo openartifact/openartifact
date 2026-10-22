@@ -13,11 +13,12 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 | Format | Hosted | Proxy | Group |
 |---|---|---|---|
 | maven | yes | yes | yes |
+| npm | yes | yes | yes |
 | raw | yes | yes | yes |
 | pypi | yes | yes | yes |
 | deb | yes | yes | no |
 | rpm | yes | yes | no |
-| npm, docker, helm, nuget, go, cargo, rubygems, conda, conan, ivy, sbt | yes | no | no |
+| docker, helm, nuget, go, cargo, rubygems, conda, conan, ivy, sbt | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Deb and RPM groups are rejected because their `Packages`/`Release`/`repodata` metadata is generated per repository and cannot be merged across members. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -79,12 +80,12 @@ Each entry has `id`, `name`, `format`, `repo_type`, `priority`. `DELETE /api/v1/
 
 ## Proxy repositories
 
-Requests are mirrored by path from `upstream_url`. A file is fetched on first request, stored content-addressed in the blob store, recorded under the repository (it appears in the package list and can be downloaded there) and served from the cache afterwards. Path segments that are empty, `.`, `..`, contain backslashes or control characters, and directory paths (trailing `/`) answer `404`; upstream requests carry `Accept-Encoding: identity`, so bytes are mirrored unchanged.
+Requests are mirrored by path from `upstream_url` (npm proxies are the exception, see [npm proxies](#npm-proxies)). A file is fetched on first request, stored content-addressed in the blob store, recorded under the repository (it appears in the package list and can be downloaded there) and served from the cache afterwards. Path segments that are empty, `.`, `..`, contain backslashes or control characters, and directory paths (trailing `/`) answer `404`; upstream requests carry `Accept-Encoding: identity`, so bytes are mirrored unchanged.
 
 ### Cache TTLs
 
 - `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, and everything in raw repositories.
-- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`) are immutable once cached and never revalidated.
+- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`) and npm tarballs are immutable once cached and never revalidated.
 - An upstream 404/410 is cached for `negative_cache_ttl_seconds` and drops any cached copy of the file (it is never served stale).
 
 ### Upstream failures and serve-stale
@@ -111,6 +112,15 @@ A pypi proxy is not a path mirror. `upstream_url` is the simple index (default `
 - A distribution is fetched on first download, hashed while spooling and compared with the sha256 the index advertises (and `.metadata` with the metadata hash); a mismatch is `502`, nothing is stored. A file with no sha256 in the index is cached unverified. Cached files are immutable, so a second install works with the upstream down.
 - The upstream's Basic credentials go only to the upstream's own origin: files hosted on another origin (for example `files.pythonhosted.org`) are fetched without them.
 - Uploads (`twine upload` to `/legacy/`) are `405`.
+
+### npm proxies
+
+An npm proxy (`upstream_url` such as `https://registry.npmjs.org`) is a registry, not a path mirror: clients use `HOST/repos/REPO/` as their registry exactly as with a hosted npm repository ([client setup](../formats/npm.md#client-setup)).
+
+- **Packuments** (`GET /<pkg>`, `GET /@scope%2fname`, also `@scope/name`) are fetched from the upstream, cached as received with the repository TTL (`cache_ttl_seconds`) and served stale on upstream failure like every other proxy file. A client sending `Accept: application/vnd.npm.install-v1+json` (npm, pnpm and yarn do) gets the abbreviated document; it and the full document are cached separately. Each response is rewritten: every `dist.tarball` points at `BASE_URL/repos/REPO/<pkg>/-/<file>`, all other fields (including `dist.integrity` and `dist.shasum`) are untouched. `GET /<pkg>/<version-or-tag>` is cut from the full packument.
+- **Tarballs** (`GET /<pkg>/-/<file>`) are fetched from the URL the packument's `dist.tarball` names for that file (a file no version lists is `404` and never fetched), checked against `dist.integrity` (the strongest SRI algorithm present) or, when absent, `dist.shasum`, and only then cached. A mismatching download answers `502` and is not stored; a version that advertises no digest cannot be checked and is accepted. Cached tarballs are immutable. Upstream credentials are sent only to the configured upstream host, never to another host a packument points at.
+- **Writes:** `npm publish`, `unpublish`, `deprecate` and `dist-tag` against a proxy answer `405` (`Allow: GET, HEAD`). Other registry endpoints (search, audit, login) are not proxied.
+- With the upstream down, installs keep working from the cache: cached tarballs are always served, and a packument is served stale (`Warning: 110`) for up to `max_stale_seconds` past its expiry; a package never requested before answers `502`.
 
 ### Upstream URL, SSRF and credentials
 

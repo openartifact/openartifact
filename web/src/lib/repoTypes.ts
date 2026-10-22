@@ -11,8 +11,8 @@ import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
-const PROXY_FORMATS: readonly FormatId[] = ['deb', 'maven', 'pypi', 'raw', 'rpm']
-const GROUP_FORMATS: readonly FormatId[] = ['maven', 'pypi', 'raw']
+const PROXY_FORMATS: readonly FormatId[] = ['deb', 'maven', 'npm', 'pypi', 'raw', 'rpm']
+const GROUP_FORMATS: readonly FormatId[] = ['maven', 'npm', 'pypi', 'raw']
 
 /** Formats selectable for a repository type, in picker order. */
 export function allowedFormats(type: RepoType): FormatId[] {

@@ -32,8 +32,9 @@ type Backend struct {
 
 // Handler resolves requests for group repositories.
 type Handler struct {
-	log *logger.Logger
-	db  database.Database
+	log     *logger.Logger
+	db      database.Database
+	baseURL string
 }
 
 // NewHandler creates the group handler.
@@ -75,6 +76,10 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 	}
 
 	if grp.Format == "pypi" && h.servePyPI(w, r, grp, readable, relPath, be) {
+		return
+	}
+
+	if grp.Format == "npm" && h.serveNPM(w, r, grp, relPath, readable, be) {
 		return
 	}
 

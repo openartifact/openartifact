@@ -90,6 +90,9 @@ type Service struct {
 	client    *http.Client
 	flights   flightGroup
 
+	// baseURL is the server URL rewritten metadata points at (npm tarballs).
+	baseURL string
+
 	// maxBody caps a single upstream response; DefaultMaxBody unless a test
 	// lowers it.
 	maxBody int64
@@ -125,6 +128,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	if repo.Format == "pypi" {
 		s.servePyPI(w, r, repo, relPath)
+		return
+	}
+
+	if repo.Format == "npm" {
+		s.serveNPM(w, r, repo, relPath)
 		return
 	}
 
@@ -642,6 +650,9 @@ func Immutable(format, key string) bool {
 	case "pypi":
 		// Distribution files (and their PEP 658 metadata), not the index pages.
 		return strings.HasPrefix(key, "files/")
+	case "npm":
+		// Tarballs (<pkg>/-/<file>), not packuments.
+		return strings.HasSuffix(name, ".tgz") && strings.Contains(key, "/-/")
 	}
 
 	return false

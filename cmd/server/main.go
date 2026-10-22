@@ -765,9 +765,10 @@ func run(args []string) error {
 	// Proxy and group repositories are served by the dispatcher in front of the
 	// per-format routes; hosted repositories fall through to them. Groups read
 	// their hosted members through in-memory routers of the same handlers.
-	mavenHosted, rawHosted := chi.NewRouter(), chi.NewRouter()
+	mavenHosted, rawHosted, npmHosted := chi.NewRouter(), chi.NewRouter(), chi.NewRouter()
 	mavenHTTP.RegisterRepoRoutes(mavenHosted)
 	rawHTTP.RegisterRepoRoutes(rawHosted)
+	npmHTTP.RegisterRepoRoutes(npmHosted)
 
 	pypiHosted := chi.NewRouter()
 	pypiHTTP.RegisterRepoRoutes(pypiHosted)
@@ -776,7 +777,8 @@ func run(args []string) error {
 		"maven": mavenHosted,
 		"pypi":  pypiHosted,
 		"raw":   rawHosted,
-	})
+		"npm":   npmHosted,
+	}).WithBaseURL(cfg.BaseURL)
 
 	authedAPI.Route("/repos/{name}", func(r chi.Router) {
 		r.Use(repoDispatch.Middleware)

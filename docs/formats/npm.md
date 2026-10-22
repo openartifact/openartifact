@@ -12,7 +12,7 @@ Hosted npm registry for `npm`, `pnpm` and `yarn`: publish, install, dist-tags, s
 |---|---|
 | Format id | `npm` |
 | Registry URL | `HOST/repos/REPO/` |
-| Repository types | hosted only ([details](../repositories/hosted-proxy-group.md)) |
+| Repository types | hosted, proxy, group ([details](../repositories/hosted-proxy-group.md)) |
 
 ## Client setup
 
@@ -76,6 +76,17 @@ Dist-tags (`npm dist-tag`):
 - `dist.tarball` is `BASE_URL/repos/REPO/<pkg>/-/<tarball>`: set `BASE_URL` to the URL clients use, or installs download from the wrong host.
 - Tarball names are `<unscoped-name>-<version>.tgz`.
 - There is no search or login endpoint; configure the token as shown above rather than `npm login`.
+
+## Proxy and group repositories
+
+- **Proxy:** mirrors an upstream registry (for example `https://registry.npmjs.org`): `npm install` against `HOST/repos/PROXY/` fetches and caches packuments (with the repository TTL, served stale when the upstream is down) and immutable, integrity-verified tarballs; `dist.tarball` is rewritten to the proxy. Publishing to a proxy is `405`. See [npm proxies](../repositories/hosted-proxy-group.md#npm-proxies).
+- **Group:** an ordered list of hosted and proxy npm members behind one registry URL. Packuments are merged (versions united, first member wins on a version conflict, each dist-tag from the first member that has it), tarball URLs point at the group, tarballs come from the first member that has them. Publishing to a group is `405`: publish to a hosted member and read through the group. See [group repositories](../repositories/hosted-proxy-group.md#group-repositories).
+
+```sh
+npm config set registry HOST/repos/PROXY_OR_GROUP/
+npm config set //HOSTPORT/repos/PROXY_OR_GROUP/:_authToken <TOKEN>
+npm install lodash @babel/core
+```
 
 ## Signing
 

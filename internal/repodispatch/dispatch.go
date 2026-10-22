@@ -57,6 +57,15 @@ func New(log *logger.Logger, db database.Database, proxySvc *proxy.Service, auth
 	}
 }
 
+// WithBaseURL sets the server base URL that rewritten metadata (npm tarball
+// URLs) points at: the same value the hosted format handlers use.
+func (d *Dispatcher) WithBaseURL(baseURL string) *Dispatcher {
+	d.proxy.SetBaseURL(baseURL)
+	d.group.SetBaseURL(baseURL)
+
+	return d
+}
+
 // Middleware serves the request itself when the {name} repository is a proxy
 // or group, and otherwise hands it to next.
 func (d *Dispatcher) Middleware(next http.Handler) http.Handler {

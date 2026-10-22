@@ -27,7 +27,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | sbt | `sbt` | `HOST/repos/sbt/REPO` | hosted | `PUT` per file (`sbt publish`) | [ivy-sbt](ivy-sbt.md) |
 | Ivy | `ivy` | `HOST/repos/ivy/REPO` | hosted | `PUT` per file (`ivy:publish`) | [ivy-sbt](ivy-sbt.md) |
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |
-| npm | `npm` | `HOST/repos/REPO/` | hosted | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
+| npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
 | Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted | `docker push` | [docker](docker.md) |
 | Helm | `helm` | `HOST/repos/REPO/` (`index.yaml`, `charts/`) | hosted | `POST /charts` (raw chart `.tgz`) | [helm](helm.md) |

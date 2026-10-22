@@ -18,7 +18,7 @@ const (
 // the formats whose upstream files are mirrored by path.
 func ProxySupported(format string) bool {
 	switch format {
-	case "maven", "deb", "rpm", "raw", "pypi":
+	case "maven", "deb", "rpm", "raw", "pypi", "npm":
 		return true
 	}
 
@@ -26,13 +26,13 @@ func ProxySupported(format string) bool {
 }
 
 // GroupSupported reports whether group repositories of format can be served.
-// Groups resolve members by path (and merge Maven metadata and PyPI project
-// pages); deb/rpm groups
+// Groups resolve members by path (and merge Maven metadata, npm packuments and
+// PyPI project pages); deb/rpm groups
 // would need Packages/Release and repodata merged across members and are
 // rejected instead.
 func GroupSupported(format string) bool {
 	switch format {
-	case "maven", "raw", "pypi":
+	case "maven", "raw", "pypi", "npm":
 		return true
 	}
 
@@ -50,7 +50,7 @@ func DefaultUpstreamURL(format string) string {
 }
 
 // ProxyFormats lists the proxy-capable formats for error messages.
-func ProxyFormats() string { return "deb, maven, pypi, raw, rpm" }
+func ProxyFormats() string { return "deb, maven, npm, pypi, raw, rpm" }
 
 // GroupFormats lists the group-capable formats for error messages.
-func GroupFormats() string { return "maven, pypi, raw" }
+func GroupFormats() string { return "maven, npm, pypi, raw" }

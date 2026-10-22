@@ -55,9 +55,9 @@ func newProxyGroupDB() *proxyGroupMockDB {
 
 func TestCreateProxyAndGroupRejectsUnsupportedFormats(t *testing.T) {
 	cases := []struct{ name, body, wantInMsg string }{
-		{"proxy npm", `{"name":"p","format":"npm","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
+		{"proxy helm", `{"name":"p","format":"helm","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
 		{"proxy docker", `{"name":"p","format":"docker","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
-		{"group npm", `{"name":"g","format":"npm","repo_type":"group"}`, "not supported for format"},
+		{"group helm", `{"name":"g","format":"helm","repo_type":"group"}`, "not supported for format"},
 		{"group deb", `{"name":"g","format":"deb","repo_type":"group"}`, "cannot be merged"},
 		{"group rpm", `{"name":"g","format":"rpm","repo_type":"group"}`, "cannot be merged"},
 	}
@@ -98,7 +98,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm"} {
 		db := newProxyGroupDB()
 		rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy","upstream_url":"https://93.184.216.34/repo/","upstream_username":"u","upstream_password":"p"}`)
 

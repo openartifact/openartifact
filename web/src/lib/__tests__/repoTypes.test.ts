@@ -10,11 +10,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to deb, maven, pypi, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['pypi', 'maven', 'deb', 'rpm', 'raw'])
+  it('restricts proxy to deb, maven, npm, pypi, raw, rpm in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['npm', 'pypi', 'maven', 'deb', 'rpm', 'raw'])
   })
-  it('restricts group to maven, pypi and raw', () => {
-    expect(allowedFormats('group')).toEqual(['pypi', 'maven', 'raw'])
+  it('restricts group to maven, npm, pypi and raw', () => {
+    expect(allowedFormats('group')).toEqual(['npm', 'pypi', 'maven', 'raw'])
     expect(isFormatAllowed('group', 'deb')).toBe(false)
     expect(isFormatAllowed('group', 'rpm')).toBe(false)
   })

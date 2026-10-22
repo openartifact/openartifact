@@ -1104,7 +1104,7 @@ export type PostApiV1RepositoriesData = {
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Proxy repositories are supported for maven, deb, rpm, pypi and raw; group repositories for maven, pypi and raw (deb/rpm groups cannot merge repository metadata). Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Proxy repositories are supported for maven, deb, rpm, npm, pypi and raw; group repositories for maven, npm, pypi and raw (deb/rpm groups cannot merge repository metadata). Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**
