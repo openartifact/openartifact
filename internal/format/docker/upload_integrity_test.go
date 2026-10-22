@@ -20,6 +20,7 @@ import (
 // asked to Put; swap, when set, replaces those bytes.
 type hookStore struct {
 	storage.BlobStore
+
 	hook func()
 	swap []byte
 }

@@ -1501,31 +1501,12 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	// Stream any final bytes from the request body directly to the temp file.
 	// For monolithic uploads (single PUT carrying the whole blob) this avoids
 	// buffering the entire layer in memory.
-	f, err := openUploadFile(tempFile, upload.Offset)
-	if err != nil {
-		h.uploadFileError(w, uploadUUID, err)
-
-		return
-	}
-
-	if _, err := io.Copy(f, r.Body); err != nil {
-		_ = f.Close()
-
-		h.log.Errorw("failed to write final chunk", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if err := f.Close(); err != nil {
-		h.log.Errorw("failed to close temp file", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
+	if !h.appendFinalChunk(w, r, tempFile, uploadUUID, upload.Offset) {
 		return
 	}
 
 	// Compute the SHA256 (and size) of the temp file in a single pass.
-	f, err = os.Open(tempFile)
+	f, err := os.Open(tempFile)
 	if err != nil {
 		h.log.Errorw("failed to open temp file for hashing", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -1611,15 +1592,8 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 
 		return nil
 	}); err != nil {
-		// The store hashes what it is given and refuses bytes that differ from
-		// the digest that was verified above: the staged file changed in between.
 		if errors.Is(err, storage.ErrDigestMismatch) {
-			h.log.Warnw("staged upload changed while completing", "uuid", uploadUUID, "digest", digest, "error", err)
-			h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "computed digest does not match")
-
-			_ = os.Remove(tempFile)
-			_ = h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID)
-
+			h.digestChanged(w, r, repo.ID, uploadUUID, tempFile, err)
 			return
 		}
 
@@ -1637,6 +1611,46 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	w.Header().Set("Docker-Content-Digest", digest)
 	w.Header().Set("Content-Length", "0")
 	w.WriteHeader(http.StatusCreated)
+}
+
+// appendFinalChunk appends the request body to the staged file (after
+// truncating it to offset). On failure it has written the error response.
+func (h *HTTPHandler) appendFinalChunk(w http.ResponseWriter, r *http.Request, tempFile, uploadUUID string, offset int64) bool {
+	f, err := openUploadFile(tempFile, offset)
+	if err != nil {
+		h.uploadFileError(w, uploadUUID, err)
+
+		return false
+	}
+
+	if _, err := io.Copy(f, r.Body); err != nil {
+		_ = f.Close()
+
+		h.log.Errorw("failed to write final chunk", "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return false
+	}
+
+	if err := f.Close(); err != nil {
+		h.log.Errorw("failed to close temp file", "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return false
+	}
+
+	return true
+}
+
+// digestChanged answers a completion whose staged bytes no longer match the
+// digest verified a moment earlier: the blob store re-hashes what it is given
+// and refuses a mismatch, so nothing was stored; the upload is discarded.
+func (h *HTTPHandler) digestChanged(w http.ResponseWriter, r *http.Request, repoID, uploadUUID, tempFile string, err error) {
+	h.log.Warnw("staged upload changed while completing", "uuid", uploadUUID, "error", err)
+	h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "computed digest does not match")
+
+	_ = os.Remove(tempFile)
+	_ = h.db.DeleteDockerUpload(r.Context(), repoID, uploadUUID)
 }
 
 // handleCancelBlobUpload cancels an in-progress upload.
