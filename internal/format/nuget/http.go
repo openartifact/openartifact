@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"slices"
 	"strconv"
 	"strings"
@@ -40,12 +41,37 @@ import (
 // registrationPageSize is the number of versions per registration page.
 const registrationPageSize = 64
 
+const (
+	// pushFormOverhead leaves room for form fields and multipart boundaries on
+	// top of the package.
+	pushFormOverhead = 1 << 20
+	// pushFormMemory is the in-memory threshold of the multipart parser; larger
+	// parts spill to disk.
+	pushFormMemory = 32 << 20
+)
+
+// validPackageID is the id charset NuGet accepts; anything else (notably "/")
+// would be stored but never retrievable through the URL routes.
+var validPackageID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
+
 type HTTPHandler struct {
 	*base.Handler
+
+	// maxPush bounds one pushed .nupkg.
+	maxPush int64
+	// deps caches dependency groups by blob digest; nuspecGate bounds the
+	// concurrent nupkg reads behind cache misses.
+	deps       *depCache
+	nuspecGate base.Gate
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+	return &HTTPHandler{
+		Handler:    base.New(log, db, blobStore, baseURL),
+		maxPush:    maxNuGetPackageBytes,
+		deps:       newDepCache(depCacheEntries),
+		nuspecGate: base.NewGate(maxConcurrentNuspecReads),
+	}
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
@@ -156,7 +182,16 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 // readPushedPackage reads the "package" part of a push request. On failure it
 // writes the response and returns false.
 func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
-	if err := r.ParseMultipartForm(100 * 1024 * 1024); err != nil { //nolint:gosec // G120: form size bounded by ParseMultipartForm limit
+	// Cap the whole body: ParseMultipartForm only bounds the in-memory part and
+	// spools the rest to disk.
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxPush+pushFormOverhead)
+
+	if err := r.ParseMultipartForm(pushFormMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
+		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
+			http.Error(w, "package too large", http.StatusRequestEntityTooLarge)
+			return nil, false
+		}
+
 		h.Log.Errorw("failed to parse multipart form", "error", err)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 
@@ -172,7 +207,12 @@ func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) 
 	}
 	defer func() { _ = file.Close() }()
 
-	data, err := io.ReadAll(file)
+	data, err := base.ReadAllLimited(file, h.maxPush)
+	if errors.Is(err, base.ErrContentTooLarge) {
+		http.Error(w, "package too large", http.StatusRequestEntityTooLarge)
+		return nil, false
+	}
+
 	if err != nil {
 		h.Log.Errorw("failed to read package data", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -189,8 +229,8 @@ func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) 
 // package without a usable id or version.
 func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models.NuGetPackage, error) {
 	id, _ := metadata["id"].(string)
-	if id == "" {
-		return nil, errors.New("package id missing") //nolint:err113 // static error
+	if !validPackageID.MatchString(id) {
+		return nil, fmt.Errorf("invalid package id %q", id) //nolint:err113 // reported to the log only
 	}
 
 	rawVersion, _ := metadata["version"].(string)
@@ -896,16 +936,44 @@ func parseIntClamp(s string, defaultVal, minVal, maxVal int) int {
 
 // nuspecDependencyGroups fetches the .nupkg blob for one package version and
 // extracts its <dependencies> element, converted to the registration index
-// "dependencyGroups" shape. There is no dependency column on nuget_packages
-// (the DB layer is out of scope here), so this re-parses the stored package
-// on every registration index request; failures are logged and degrade to
+// "dependencyGroups" shape. There is no dependency column on nuget_packages,
+// so the result is cached by blob digest (content-addressed, never stale) and
+// a miss reads the package behind nuspecGate, which bounds how many packages
+// are held in memory at once. Failures are logged, not cached, and degrade to
 // no dependency groups rather than failing the whole response.
 func (h *HTTPHandler) nuspecDependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) []map[string]any {
+	if groups, ok := h.deps.get(v.BlobKey); ok {
+		return groups
+	}
+
+	if err := h.nuspecGate.Acquire(ctx); err != nil {
+		h.Log.Warnw("dependency groups skipped", "id", packageID, "version", v.Version, "error", err)
+
+		return []map[string]any{}
+	}
+	defer h.nuspecGate.Release()
+
+	// Another request may have filled the entry while this one waited.
+	if groups, ok := h.deps.get(v.BlobKey); ok {
+		return groups
+	}
+
+	groups, ok := h.readDependencyGroups(ctx, packageID, v)
+	if ok {
+		h.deps.put(v.BlobKey, groups)
+	}
+
+	return groups
+}
+
+// readDependencyGroups parses the stored package of one version. ok is false
+// when the package could not be read, so the caller does not cache the result.
+func (h *HTTPHandler) readDependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) ([]map[string]any, bool) {
 	rc, err := h.BlobStore.Get(ctx, v.BlobKey)
 	if err != nil {
 		h.Log.Warnw("failed to fetch package blob for dependency groups", "id", packageID, "version", v.Version, "error", err)
 
-		return []map[string]any{}
+		return []map[string]any{}, false
 	}
 	defer func() { _ = rc.Close() }()
 
@@ -913,8 +981,8 @@ func (h *HTTPHandler) nuspecDependencyGroups(ctx context.Context, packageID stri
 	if err != nil {
 		h.Log.Warnw("failed to parse nuspec for dependency groups", "id", packageID, "version", v.Version, "error", err)
 
-		return []map[string]any{}
+		return []map[string]any{}, false
 	}
 
-	return nuspec.Metadata.Dependencies.DependencyGroups()
+	return nuspec.Metadata.Dependencies.DependencyGroups(), true
 }

@@ -5,6 +5,7 @@
 package deb
 
 import (
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -22,21 +23,69 @@ func controlFieldOrder() []string {
 	}
 }
 
-// fieldsOwnedByRepo are always generated from the stored blob and must not be
+// repoOwnedFields are always generated from the stored blob and must not be
 // taken from the uploaded control stanza.
+var repoOwnedFields = []string{ //nolint:gochecknoglobals // read-only
+	"Package", "Version", "Architecture", "Installed-Size",
+	"Filename", "Size", "MD5sum", "SHA1", "SHA256", "SHA512", "Description",
+}
+
+// canonicalField maps a control field name onto its canonical spelling when it
+// is a field the repository knows or owns. apt matches field names
+// case-insensitively, so "filename" or "sha256" in an uploaded stanza is the
+// same field as "Filename"/"SHA256" and must not slip past the owned-field
+// filter. Unknown fields keep their spelling.
+func canonicalField(k string) string {
+	for _, f := range controlFieldOrder() {
+		if strings.EqualFold(k, f) {
+			return f
+		}
+	}
+
+	for _, f := range repoOwnedFields {
+		if strings.EqualFold(k, f) {
+			return f
+		}
+	}
+
+	return k
+}
+
 func isRepoOwnedField(k string) bool {
-	return map[string]bool{
-		"Package": true, "Version": true, "Architecture": true, "Installed-Size": true,
-		"Filename": true, "Size": true, "MD5sum": true, "SHA1": true, "SHA256": true,
-		"SHA512": true, "Description": true,
-	}[k]
+	return slices.Contains(repoOwnedFields, canonicalField(k))
+}
+
+// canonicalFields rewrites every key to its canonical spelling. Spelling
+// variants of one field collapse deterministically: the exact canonical key
+// wins, otherwise the lexically smallest variant.
+func canonicalFields(fields map[string]string) map[string]string {
+	keys := make([]string, 0, len(fields))
+	for k := range fields {
+		keys = append(keys, k)
+	}
+
+	sort.Strings(keys)
+
+	out := make(map[string]string, len(fields))
+
+	for _, k := range keys {
+		c := canonicalField(k)
+		if _, dup := out[c]; dup && k != c {
+			continue
+		}
+
+		out[c] = fields[k]
+	}
+
+	return out
 }
 
 // ControlFieldsToStore returns the subset of control fields persisted at upload.
 func ControlFieldsToStore(fields map[string]string) map[string]string {
-	out := make(map[string]string, len(fields))
+	canon := canonicalFields(fields)
+	out := make(map[string]string, len(canon))
 
-	for k, v := range fields {
+	for k, v := range canon {
 		if !isRepoOwnedField(k) || k == "Description" {
 			out[k] = v
 		}
@@ -49,6 +98,9 @@ func ControlFieldsToStore(fields map[string]string) map[string]string {
 // blank line) for the entry, including a pool-relative Filename.
 func FormatPackagesEntry(e models.DebPackageEntry) string {
 	var sb strings.Builder
+
+	// Rows stored before field names were canonicalized may carry other spellings.
+	fields := canonicalFields(e.ControlFields)
 
 	write := func(k, v string) {
 		if v == "" {
@@ -82,7 +134,7 @@ func FormatPackagesEntry(e models.DebPackageEntry) string {
 			continue
 		}
 
-		write(k, e.ControlFields[k])
+		write(k, fields[k])
 	}
 
 	order := controlFieldOrder()
@@ -93,7 +145,7 @@ func FormatPackagesEntry(e models.DebPackageEntry) string {
 
 	extra := make([]string, 0)
 
-	for k := range e.ControlFields {
+	for k := range fields {
 		if !known[k] && !isRepoOwnedField(k) {
 			extra = append(extra, k)
 		}
@@ -102,13 +154,13 @@ func FormatPackagesEntry(e models.DebPackageEntry) string {
 	sort.Strings(extra)
 
 	for _, k := range extra {
-		write(k, e.ControlFields[k])
+		write(k, fields[k])
 	}
 
 	write("Filename", GetPoolPath(e.ComponentName, e.Name, e.Version, e.Filename))
 	write("Size", strconv.FormatInt(e.Size, 10))
 	write("SHA256", e.SHA256)
-	write("Description", e.ControlFields["Description"])
+	write("Description", fields["Description"])
 	sb.WriteString("\n")
 
 	return sb.String()

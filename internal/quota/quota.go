@@ -96,3 +96,44 @@ func WriteExceeded(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusInsufficientStorage)
 	_, _ = w.Write([]byte(`{"error":"` + Message + `","code":"quota_exceeded"}` + "\n"))
 }
+
+// Room returns how many more bytes the repository's size quota can take and
+// whether it is limited at all. It reserves nothing; see Precheck. Callers that
+// stream bytes of unknown length (a Docker layer) cap the stream at room.
+func Room(ctx context.Context, db database.Database, repoID string) (int64, bool, error) {
+	q, err := db.GetOrCreateStorageQuota(ctx, repoID)
+	if err != nil {
+		return 0, false, fmt.Errorf("quota room: %w", err)
+	}
+
+	if q == nil || q.MaxSizeBytes <= 0 {
+		return 0, false, nil
+	}
+
+	return max(q.MaxSizeBytes-q.CurrentSizeBytes, 0), true, nil
+}
+
+// Precheck reports ErrExceeded when size more bytes and one more artifact
+// cannot fit the repository's quota, without reserving anything. Handlers call
+// it with the declared Content-Length before spooling a body to disk so a
+// writer on a full repository cannot stage bytes the reservation would refuse
+// afterwards. It is advisory: a size <= 0 (unknown length) or a quota that
+// cannot be read passes, because the reservation (Enforce) stays authoritative
+// and reports such failures itself. It returns only nil or ErrExceeded.
+func Precheck(ctx context.Context, db database.Database, repoID string, size int64) error {
+	if size <= 0 {
+		return nil
+	}
+
+	q, err := db.GetOrCreateStorageQuota(ctx, repoID)
+	if err != nil || q == nil {
+		return nil //nolint:nilerr // advisory; Enforce reports lookup failures
+	}
+
+	if (q.MaxSizeBytes > 0 && q.CurrentSizeBytes+size > q.MaxSizeBytes) ||
+		(q.MaxArtifactCount > 0 && q.CurrentArtifactCount >= q.MaxArtifactCount) {
+		return ErrExceeded
+	}
+
+	return nil
+}

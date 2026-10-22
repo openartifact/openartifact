@@ -10,6 +10,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -128,7 +129,8 @@ type presignUploadDB struct {
 	targets   map[string][]*models.PermissionTarget // by user id
 	claims    int
 
-	quotaLimit     int64 // 0 = unlimited
+	precheck       *models.StorageQuota // served to the advisory quota precheck when set
+	quotaLimit     int64                // 0 = unlimited
 	quotaUsed      int64
 	quotaArtifacts int
 }
@@ -142,6 +144,14 @@ func (d *presignUploadDB) ReserveStorageUsage(_ context.Context, _ string, size 
 	d.quotaArtifacts += count
 
 	return true, nil
+}
+
+func (d *presignUploadDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
+	if d.precheck == nil {
+		return nil, errPresignNoQuotaRow
+	}
+
+	return d.precheck, nil
 }
 
 func (d *presignUploadDB) DecrementStorageUsage(_ context.Context, _ string, size int64, count int) error {
@@ -344,6 +354,26 @@ func (f *presignUploadFixture) start(t *testing.T, content []byte) CreatePresign
 }
 
 func completePath(id string) string { return "/api/v1/repositories/files/uploads/" + id + "/complete" }
+
+var errPresignNoQuotaRow = errors.New("no quota row")
+
+// A declared size the repository quota cannot take is refused at create time,
+// before any bytes are parked in the bucket.
+func TestPresignedUpload_CreateRefusesOverQuotaSize(t *testing.T) {
+	f := newPresignUploadFixture(t, "raw", "hosted")
+	f.db.precheck = &models.StorageQuota{MaxSizeBytes: 10, CurrentSizeBytes: 4}
+
+	rw := f.call(t, false, "/api/v1/repositories/files/uploads", CreatePresignedUploadRequest{
+		Path: "releases/app.bin", Size: 7, SHA256: digestOf([]byte("x")),
+	})
+	if rw.Code != http.StatusInsufficientStorage {
+		t.Fatalf("status = %d, want 507; body %s", rw.Code, rw.Body.String())
+	}
+
+	if len(f.db.uploads) != 0 {
+		t.Errorf("upload rows = %d, want none", len(f.db.uploads))
+	}
+}
 
 func TestPresignedUpload_CreateReturnsSignedPut(t *testing.T) {
 	f := newPresignUploadFixture(t, "raw", "hosted")

@@ -187,6 +187,13 @@ func parseNuspec(r io.Reader) (*Nuspec, error) {
 	return &nuspec, nil
 }
 
+// isRootNuspec reports whether a zip entry name is a .nuspec at the package root.
+func isRootNuspec(name string) bool {
+	return len(name) > len(".nuspec") &&
+		!strings.ContainsAny(name, `/\`) &&
+		strings.EqualFold(name[len(name)-len(".nuspec"):], ".nuspec")
+}
+
 // readNuspec returns the raw .nuspec XML of a .nupkg (zip) file.
 func readNuspec(r io.Reader) ([]byte, error) {
 	// Read the entire content into memory for zip reading
@@ -201,14 +208,21 @@ func readNuspec(r io.Reader) ([]byte, error) {
 		return nil, fmt.Errorf("failed to open as zip: %w", err)
 	}
 
-	// Find .nuspec file
+	// Find the root-level .nuspec, the one NuGet clients read; a nested one is
+	// package content and must not decide the package's identity.
 	var nuspecFile *zip.File
 
 	for _, f := range zr.File {
-		if len(f.Name) > 7 && f.Name[len(f.Name)-7:] == ".nuspec" {
-			nuspecFile = f
-			break
+		if !isRootNuspec(f.Name) {
+			continue
 		}
+
+		if nuspecFile != nil {
+			// NuGet clients refuse a package with several root nuspecs.
+			return nil, errors.New("multiple .nuspec files found in package") //nolint:err113 // static error
+		}
+
+		nuspecFile = f
 	}
 
 	if nuspecFile == nil {

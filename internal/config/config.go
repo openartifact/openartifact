@@ -128,16 +128,20 @@ type ServerConfig struct {
 	// ReadHeaderTimeout bounds only the time to read request headers, kept
 	// short regardless of ReadTimeout to still mitigate slowloris-style
 	// attacks even when body reads are unbounded.
-	ReadHeaderTimeout int      `yaml:"readHeaderTimeout"` // seconds
-	ShutdownTimeout   int      `yaml:"shutdownTimeout"`   // seconds
-	TLSEnabled        bool     `yaml:"tlsEnabled"`
-	TLSCert           string   `yaml:"tlsCert"`
-	TLSKey            string   `yaml:"tlsKey"`
-	APIKey            string   `yaml:"apiKey"`       // API key for write endpoint authentication (empty = auth disabled)
-	CORSOrigins       []string `yaml:"corsOrigins"`  // Allowed CORS origins (default: none)
-	InstanceID        string   `yaml:"instanceId"`   // Instance identifier for HA deployments
-	IPAllowlist       []string `yaml:"ipAllowlist"`  // Allowed CIDR blocks (empty = allow all)
-	RateLimitRPS      int      `yaml:"rateLimitRps"` // Rate limit in requests per second (0 = disabled)
+	ReadHeaderTimeout int `yaml:"readHeaderTimeout"` // seconds
+	// MaxBodyBytes caps the body of every request (http.MaxBytesReader), a
+	// last line of defence behind the per-handler limits so no endpoint can be
+	// made to spool or buffer an unbounded body. 0 disables the cap.
+	MaxBodyBytes    int64    `yaml:"maxBodyBytes"`
+	ShutdownTimeout int      `yaml:"shutdownTimeout"` // seconds
+	TLSEnabled      bool     `yaml:"tlsEnabled"`
+	TLSCert         string   `yaml:"tlsCert"`
+	TLSKey          string   `yaml:"tlsKey"`
+	APIKey          string   `yaml:"apiKey"`       // API key for write endpoint authentication (empty = auth disabled)
+	CORSOrigins     []string `yaml:"corsOrigins"`  // Allowed CORS origins (default: none)
+	InstanceID      string   `yaml:"instanceId"`   // Instance identifier for HA deployments
+	IPAllowlist     []string `yaml:"ipAllowlist"`  // Allowed CIDR blocks (empty = allow all)
+	RateLimitRPS    int      `yaml:"rateLimitRps"` // Rate limit in requests per second (0 = disabled)
 	// TrustedProxies lists CIDR blocks of reverse proxies allowed to set
 	// X-Forwarded-For/X-Real-IP. Empty (default) means no proxy is trusted —
 	// the immediate TCP peer (RemoteAddr) is always used as the client IP,
@@ -222,6 +226,7 @@ func defaultConfig() *Config {
 			ReadTimeout:       0,
 			WriteTimeout:      0,
 			ReadHeaderTimeout: 20,
+			MaxBodyBytes:      16 << 30,
 			ShutdownTimeout:   30,
 			TLSEnabled:        false,
 			TLSCert:           "",
@@ -343,6 +348,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Server.ReadTimeout, "SERVER_READ_TIMEOUT")
 	overrideInt(&cfg.Server.WriteTimeout, "SERVER_WRITE_TIMEOUT")
 	overrideInt(&cfg.Server.ReadHeaderTimeout, "SERVER_READ_HEADER_TIMEOUT")
+	overrideInt64(&cfg.Server.MaxBodyBytes, "SERVER_MAX_BODY_BYTES")
 	overrideInt(&cfg.Server.ShutdownTimeout, "SERVER_SHUTDOWN_TIMEOUT")
 	overrideBool(&cfg.Server.TLSEnabled, "SERVER_TLS_ENABLED")
 	overrideString(&cfg.Server.TLSCert, "SERVER_TLS_CERT")

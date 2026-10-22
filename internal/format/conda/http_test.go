@@ -7,7 +7,9 @@ package conda
 import (
 	"context"
 	"fmt"
+	"mime"
 	"net/http"
+	"net/url"
 	"slices"
 	"strings"
 	"testing"
@@ -148,5 +150,29 @@ func TestDownloadQuarantine(t *testing.T) {
 
 	if c := get(); c != http.StatusForbidden {
 		t.Fatalf("status = %d, want 403", c)
+	}
+}
+
+func TestDownloadContentDispositionEscapesFilename(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	db.pkgs = []*models.CondaPackage{{ID: "p", Name: `ev"il;x=y`, Version: "1.0", BuildString: "py_0", Platform: "linux-64", Extension: models.CondaExtTarBz2, BlobKey: "abc", SHA256: "abc", SizeBytes: 3}}
+	bs.Blobs["abc"] = []byte("xyz")
+
+	name := `ev"il;x=y-1.0-py_0.tar.bz2`
+	req := formattest.Request(http.MethodGet, "/repos/myrepo/linux-64/"+url.PathEscape(name), nil)
+	req.URL.RawPath = "" // route on the decoded path so chi hands the raw name to the handler
+
+	w := formattest.Do(h.RegisterRepoRoutes, req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+
+	disp, params, err := mime.ParseMediaType(w.Header().Get("Content-Disposition"))
+	if err != nil {
+		t.Fatalf("Content-Disposition %q: %v", w.Header().Get("Content-Disposition"), err)
+	}
+
+	if disp != "attachment" || params["filename"] != name || len(params) != 1 {
+		t.Fatalf("disposition = %q params = %v", disp, params)
 	}
 }

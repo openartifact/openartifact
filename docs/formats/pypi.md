@@ -64,8 +64,8 @@ Package names are normalized (lowercase, each `_` and `.` becomes `-`) on upload
 - `content` is the file (wheel or sdist); a missing part is `400 missing file`. The file is stored as sent, with its MD5 and SHA-256 computed on the server.
 - Metadata fields read: `name`, `version`, `filetype`, `pyversion`, `requires_python`, `summary`, `author`, `author_email`, `license`, `keywords`, `classifiers` (newline-separated).
 - `name` and `version` must be present, and the file name must belong to them (`<dist>-<version>.tar.gz`, or `<dist>-<version>-<tags>.whl` with `-` in the version written `_`); otherwise `400`. Names are normalized per PEP 503 (runs of `-_.` become one `-`).
-- A file name that already exists in the repository is `409 file already exists`: distributions are immutable, bump the version instead.
-- The uploaded file is read fully into memory to compute its SHA-256 and there is no explicit size cap on the upload; the repository's [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is enforced (`507` over quota).
+- A file name that already exists in the repository is `409 file already exists`: distributions are immutable, bump the version instead. This also covers a file name another name/version pair already holds (`foo-1-2.tar.gz` is both `foo` `1-2` and `foo-1` `2`); a download of an already ambiguous file name is `409`.
+- The upload body is capped at 512 MiB of file plus 1 MiB of form fields (`413` above it). The file is read fully into memory to compute its SHA-256; the repository's [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is enforced (`507` over quota).
 - Downloads of quarantined files are refused.
 
 ## Proxy and group

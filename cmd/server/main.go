@@ -423,6 +423,7 @@ func run(args []string) error {
 		server.EnableTLS(cfg.Server.TLSCert, cfg.Server.TLSKey)
 	}
 
+	server.AddMiddleware(middleware.MaxBodyMiddleware(cfg.Server.MaxBodyBytes))
 	server.AddMiddleware(middleware.SecurityHeadersMiddleware(cfg.Server.TLSEnabled))
 	server.AddMiddleware(middleware.RecoveryMiddleware(log))
 	server.AddMiddleware(middleware.RequestIDMiddleware)

@@ -180,6 +180,10 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 		}
 
 	case strings.HasSuffix(ext, ".xz"):
+		if err := checkXZDictCap(raw); err != nil {
+			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
+		}
+
 		xr, err := xz.NewReader(bytes.NewReader(raw))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
@@ -191,7 +195,8 @@ func extractControlFile(raw []byte, ext string) (*ControlFile, error) {
 		}
 
 	case strings.HasSuffix(ext, ".zst"):
-		zr, err := zstd.NewReader(bytes.NewReader(raw))
+		zr, err := zstd.NewReader(bytes.NewReader(raw),
+			zstd.WithDecoderMaxWindow(maxControlDictSize), zstd.WithDecoderConcurrency(1))
 		if err != nil {
 			return nil, fmt.Errorf("failed to decompress %s: %w", ext, err)
 		}

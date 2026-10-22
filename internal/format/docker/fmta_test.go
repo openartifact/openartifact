@@ -117,7 +117,7 @@ func TestHandleUploadChunk_TruncatesStrayBytes(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db := &fakeDB{repo: &models.Repository{ID: "repo-1"}, upload: &models.DockerUpload{Offset: 5}}
+	db := &fakeDB{repo: &models.Repository{ID: "repo-1", Format: "docker"}, upload: &models.DockerUpload{Offset: 5}}
 	h, _ := newTestHandler(t, db)
 
 	req := withChiVars(

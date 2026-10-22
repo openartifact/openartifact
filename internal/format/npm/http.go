@@ -203,10 +203,18 @@ func (h *HTTPHandler) handleVersionManifest(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
+	body, err := BuildVersionManifest(repoName, pkgName, v, h.BaseURL)
+	if err != nil {
+		h.Log.Errorw("failed to render npm version manifest", "pkg", pkgName, "version", resolvedVersion, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 	//nolint:gosec // G705: npm package manifest JSON, not HTML output
-	_, _ = w.Write(v.ManifestJSON)
+	_, _ = w.Write(body)
 }
 
 func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {

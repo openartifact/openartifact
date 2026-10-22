@@ -1762,6 +1762,7 @@ var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // 
 	{"release_bundle_items", "sha256 = b.sha256"},
 	{"proxy_cache_entries", "blob_key = b.sha256"},
 	{"sbom_results", "blob_id = b.id"},
+	{"package_deltas", "delta_sha256 = b.sha256"},
 }
 
 // blobRefSumExpr is the SQL sum of every reference to blob alias b.
@@ -1889,6 +1890,46 @@ func (p *PostgresDB) ListPackageDeltas(ctx context.Context, repoID, toSHA256 str
 	}
 
 	return deltas, rows.Err()
+}
+
+// PruneRepoDeltas deletes the oldest package_deltas rows of a repository until
+// at most maxCount rows totalling at most maxBytes remain, and returns the
+// delta blob sha256s of the deleted rows (callers release them through
+// storage.SafeDeleteBlob once the rows are gone).
+func (p *PostgresDB) PruneRepoDeltas(ctx context.Context, repoID string, maxCount int, maxBytes int64) ([]string, error) {
+	rows, err := p.db.QueryContext(ctx, `
+		WITH ranked AS (
+			SELECT id,
+			       row_number() OVER w AS rn,
+			       sum(delta_size) OVER w AS cum
+			FROM package_deltas
+			WHERE repository_id = $1
+			WINDOW w AS (ORDER BY created_at DESC, id)
+		)
+		DELETE FROM package_deltas d
+		USING ranked r
+		WHERE d.id = r.id AND (r.rn > $2 OR r.cum > $3)
+		RETURNING d.delta_sha256`,
+		repoID, maxCount, maxBytes,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("prune package deltas: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var shas []string
+
+	for rows.Next() {
+		var sha string
+		if err := rows.Scan(&sha); err != nil {
+			return nil, fmt.Errorf("prune package deltas: scan: %w", err)
+		}
+
+		shas = append(shas, sha)
+	}
+
+	return shas, rows.Err()
 }
 
 func (p *PostgresDB) DeletePackageDelta(ctx context.Context, id string) error {

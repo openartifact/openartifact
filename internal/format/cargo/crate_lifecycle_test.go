@@ -437,3 +437,46 @@ func TestPublishDoesNotPreallocateDeclaredLength(t *testing.T) {
 		t.Errorf("a 16-byte body made the server allocate %d MiB; the declared 100 MiB must not be preallocated", allocated>>20)
 	}
 }
+
+func TestYankUnknownCrateIs404(t *testing.T) {
+	h, db, _, _ := newCargoHandler(t)
+
+	for _, c := range []struct{ method, path string }{
+		{http.MethodDelete, "/api/v1/crates/ghost/0.1.0/yank"},
+		{http.MethodPut, "/api/v1/crates/ghost/0.1.0/unyank"},
+	} {
+		if w := call(h, c.method, c.path, nil); w.Code != http.StatusNotFound {
+			t.Errorf("%s %s = %d, want 404", c.method, c.path, w.Code)
+		}
+	}
+
+	if len(db.crates) != 0 {
+		t.Errorf("crates = %d, want none", len(db.crates))
+	}
+}
+
+func TestYankHonoursImmutableReleases(t *testing.T) {
+	h, db, _, _ := newCargoHandler(t)
+
+	if w := publish(t, h, "demo", "0.1.0", []byte("x")); w.Code != http.StatusOK {
+		t.Fatalf("publish = %d: %s", w.Code, w.Body.String())
+	}
+
+	db.Repo.ImmutableReleases = true
+
+	if w := call(h, http.MethodDelete, "/api/v1/crates/demo/0.1.0/yank", nil); w.Code != http.StatusConflict {
+		t.Fatalf("yank of immutable release = %d, want 409", w.Code)
+	}
+
+	if db.crates[0].Yanked {
+		t.Error("release was yanked despite immutable_releases")
+	}
+
+	if w := publish(t, h, "demo", "0.2.0-rc1", []byte("y")); w.Code != http.StatusOK {
+		t.Fatalf("publish prerelease = %d", w.Code)
+	}
+
+	if w := call(h, http.MethodDelete, "/api/v1/crates/demo/0.2.0-rc1/yank", nil); w.Code != http.StatusOK {
+		t.Fatalf("yank of prerelease = %d, want 200", w.Code)
+	}
+}

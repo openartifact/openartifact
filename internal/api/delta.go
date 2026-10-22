@@ -18,6 +18,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"errors"
 	"fmt"
 	"io"
@@ -32,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/httpcache"
+	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	pkgdelta "github.com/openartifact/openartifact/pkg/delta"
@@ -42,6 +44,24 @@ var sha256HexRe = regexp.MustCompile(`^[0-9a-f]{64}$`)
 
 // errDeltaInputTooLarge is returned when a delta source blob exceeds the cap.
 var errDeltaInputTooLarge = errors.New("delta input exceeds size limit")
+
+const (
+	// maxConcurrentDeltas bounds the bsdiff runs in flight server-wide: each
+	// builds a suffix array several times the size of its (up to 64 MiB)
+	// inputs, so unbounded distinct (from,to) pairs would exhaust memory.
+	maxConcurrentDeltas = 2
+
+	// maxRepoDeltas and maxRepoDeltaBytes bound the cached patches kept per
+	// repository; the oldest are pruned (and their blobs released) beyond them.
+	maxRepoDeltas     = 256
+	maxRepoDeltaBytes = int64(1 << 30)
+)
+
+// deltaPruner is implemented by databases that can bound the stored deltas of
+// a repository.
+type deltaPruner interface {
+	PruneRepoDeltas(ctx context.Context, repoID string, maxCount int, maxBytes int64) ([]string, error)
+}
 
 // deltaCall is a single in-flight delta generation shared by concurrent callers.
 type deltaCall struct {
@@ -54,6 +74,7 @@ type deltaCall struct {
 type DeltaHandler struct {
 	inflightMu sync.Mutex
 	inflight   map[string]*deltaCall
+	slots      chan struct{} // bounds concurrent generations
 
 	log       *logger.Logger
 	db        database.Database
@@ -62,7 +83,7 @@ type DeltaHandler struct {
 
 // NewDeltaHandler creates a new DeltaHandler.
 func NewDeltaHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *DeltaHandler {
-	return &DeltaHandler{log: log, db: db, blobStore: blobStore, inflight: map[string]*deltaCall{}}
+	return &DeltaHandler{log: log, db: db, blobStore: blobStore, inflight: map[string]*deltaCall{}, slots: make(chan struct{}, maxConcurrentDeltas)}
 }
 
 // Register registers the delta routes on the given router.
@@ -109,11 +130,20 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// The source package must also live in this repository.
-	fromFilename, found := h.findFromFilename(r, repo.ID, fromSHA256)
+	fromComp, found := h.findFromComponent(r, repo.ID, fromSHA256)
 	if !found {
 		writeError(w, http.StatusNotFound, "NOT_FOUND", "source package not found in repository")
 		return
 	}
+
+	// A patch reconstructs its target byte for byte from the source, so a
+	// quarantined or blocked package on either side must not be derivable.
+	if quarantine.Enforce(w, r, h.db, repo.ID, componentQuarantineKeys(toComp)...) ||
+		quarantine.Enforce(w, r, h.db, repo.ID, componentQuarantineKeys(fromComp)...) {
+		return
+	}
+
+	fromFilename := fromComp.Filename
 
 	// Check for a pre-computed delta.
 	existing, err := h.db.GetPackageDelta(r.Context(), repo.ID, fromSHA256, toComp.SHA256)
@@ -200,19 +230,31 @@ func (h *DeltaHandler) handleListDeltas(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, Response{Success: true, Data: result})
 }
 
-// findFromFilename looks up the source component by sha256 within the repository.
-func (h *DeltaHandler) findFromFilename(r *http.Request, repoID, sha string) (string, bool) {
+// findFromComponent looks up the source component by sha256 within the repository.
+func (h *DeltaHandler) findFromComponent(r *http.Request, repoID, sha string) (*models.Component, bool) {
 	c, err := h.db.GetComponentBySHA256(r.Context(), repoID, sha)
 	if err != nil {
 		h.log.Errorw("failed to look up source component", "error", err)
-		return "", false
+		return nil, false
 	}
 
-	if c == nil {
-		return "", false
-	}
+	return c, c != nil
+}
 
-	return c.Filename, true
+// componentQuarantineKeys are the spellings a scan of the component may be
+// recorded under (id, filename, and the per-format download paths).
+func componentQuarantineKeys(c *models.Component) []string {
+	return quarantine.PathKeys(c.ID, c.Filename, "Packages/"+c.Filename, "gems/"+c.Filename)
+}
+
+// acquire takes a generation slot, or reports false when ctx ends first.
+func (h *DeltaHandler) acquire(ctx context.Context) bool {
+	select {
+	case h.slots <- struct{}{}:
+		return true
+	case <-ctx.Done():
+		return false
+	}
 }
 
 // generateDeltaOnce collapses concurrent requests for the same
@@ -278,6 +320,12 @@ func (h *DeltaHandler) readCapped(r *http.Request, id string) ([]byte, error) {
 // generateDelta generates a bsdiff patch from fromSHA256 to toComp, stores it,
 // and returns the PackageDelta record.
 func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256, fromFilename string, toComp *models.Component) (*models.PackageDelta, error) {
+	if !h.acquire(r.Context()) {
+		return nil, r.Context().Err()
+	}
+
+	defer func() { <-h.slots }()
+
 	fromData, err := h.readCapped(r, fromSHA256)
 	if err != nil {
 		return nil, err
@@ -293,14 +341,6 @@ func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256, fromFi
 		return nil, fmt.Errorf("generate diff: %w", err)
 	}
 
-	_, err = h.blobStore.Put(r.Context(), bytes.NewReader(patch), map[string]string{
-		"sha256": patchSHA256,
-		"type":   "delta",
-	})
-	if err != nil {
-		return nil, fmt.Errorf("store delta blob: %w", err)
-	}
-
 	d := &models.PackageDelta{
 		RepositoryID: repoID,
 		FromSHA256:   fromSHA256,
@@ -311,12 +351,51 @@ func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256, fromFi
 		DeltaSize:    int64(len(patch)),
 		Format:       toComp.Format,
 	}
-	if err := h.db.CreatePackageDelta(r.Context(), d); err != nil {
-		h.log.Warnw("failed to persist delta record", "error", err)
-		// Non-fatal: we can still serve the delta even if DB write fails.
+
+	// Store the blob, register it in the blobs table (so the orphan sweep and
+	// SafeDeleteBlob see it) and insert the referencing row under the blob lock.
+	err = storage.WithBlobLock(r.Context(), h.db, patchSHA256, func(ctx context.Context) error {
+		if _, err := h.blobStore.Put(ctx, bytes.NewReader(patch), map[string]string{
+			"sha256": patchSHA256,
+			"type":   "delta",
+		}); err != nil {
+			return fmt.Errorf("store delta blob: %w", err)
+		}
+
+		if _, err := h.db.UpsertBlob(ctx, patchSHA256, patchSHA256, d.DeltaSize); err != nil {
+			return fmt.Errorf("register delta blob: %w", err)
+		}
+
+		return h.db.CreatePackageDelta(ctx, d)
+	})
+	if err != nil {
+		return nil, err
 	}
 
+	h.pruneDeltas(r.Context(), repoID)
+
 	return d, nil
+}
+
+// pruneDeltas keeps the stored patches of a repository within the caps,
+// releasing the blobs of the pruned rows.
+func (h *DeltaHandler) pruneDeltas(ctx context.Context, repoID string) {
+	pr, ok := h.db.(deltaPruner)
+	if !ok {
+		return
+	}
+
+	shas, err := pr.PruneRepoDeltas(ctx, repoID, maxRepoDeltas, maxRepoDeltaBytes)
+	if err != nil {
+		h.log.Warnw("failed to prune package deltas", "repo", repoID, "error", err)
+		return
+	}
+
+	for _, sha := range shas {
+		if err := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, sha); err != nil {
+			h.log.Warnw("failed to release pruned delta blob", "sha256", sha, "error", err)
+		}
+	}
 }
 
 // serveDeltaBlob streams a delta blob to the client.

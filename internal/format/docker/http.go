@@ -34,6 +34,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -201,6 +202,12 @@ func (h *HTTPHandler) resolveRepo(ctx context.Context, name string) (*models.Rep
 	return repo, nil
 }
 
+// isHostedDocker reports whether repo is a hosted docker repository, the only
+// kind the registry handler reads from or writes to.
+func isHostedDocker(repo *models.Repository) bool {
+	return repo != nil && repo.Format == "docker" && (repo.RepoType == "" || repo.RepoType == repotype.Hosted)
+}
+
 // target resolves a distribution name ("repo/org/team/app") to the
 // OpenArtifact repository (first segment) and the image inside it (the rest;
 // empty for the repository's default image). On failure it has already written
@@ -221,7 +228,9 @@ func (h *HTTPHandler) target(w http.ResponseWriter, r *http.Request, name string
 		return nil, "", false
 	}
 
-	if repo == nil {
+	if !isHostedDocker(repo) {
+		// Other formats and proxy/group repos are never writable (or even
+		// served) through the hosted registry handler.
 		h.errorResponse(w, http.StatusNotFound, "NAME_UNKNOWN", "repository not found")
 		return nil, "", false
 	}
@@ -1199,7 +1208,7 @@ func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, im
 	}
 
 	srcRepo, err := h.resolveRepo(ctx, srcRepoName)
-	if err != nil || srcRepo == nil || (srcRepo.ID == target.ID && srcImage == image) {
+	if err != nil || !isHostedDocker(srcRepo) || (srcRepo.ID == target.ID && srcImage == image) {
 		return nil
 	}
 
@@ -1520,9 +1529,22 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	written, err := io.Copy(f, r.Body)
+	body, room := h.quotaBoundedBody(w, r, repo.ID, upload.Offset, "")
+	if !room {
+		_ = f.Close()
+		h.refuseOverQuota(w, r, repo.ID, uploadUUID, tempFile)
+
+		return
+	}
+
+	written, err := io.Copy(f, body)
 	if err != nil {
 		_ = f.Close()
+
+		if _, over := errors.AsType[*http.MaxBytesError](err); over {
+			h.refuseOverQuota(w, r, repo.ID, uploadUUID, tempFile)
+			return
+		}
 
 		h.log.Errorw("failed to write chunk", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -1558,6 +1580,47 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Range", uploadRange(newOffset))
 	w.Header().Set("Docker-Upload-Uuid", uploadUUID)
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// quotaBoundedBody returns the request body capped at the bytes the repository
+// quota still has room for (the session's staged offset already counts), so a
+// writer on a full repository cannot stage data the reservation at completion
+// would refuse. ok=false means the declared Content-Length alone cannot fit and
+// nothing may be staged. A completion whose digest is already stored in the
+// repository (an idempotent re-push, which reserves nothing) is not capped.
+func (h *HTTPHandler) quotaBoundedBody(w http.ResponseWriter, r *http.Request, repoID string, offset int64, digest string) (io.Reader, bool) {
+	room, limited, err := quota.Room(r.Context(), h.db, repoID)
+	if err != nil {
+		// Advisory only: the reservation at completion stays authoritative.
+		h.log.Warnw("failed to read quota room", "repo", repoID, "error", err)
+		return r.Body, true
+	}
+
+	if !limited {
+		return r.Body, true
+	}
+
+	if digest != "" {
+		if held, err := h.db.GetDockerBlob(r.Context(), repoID, digest); err == nil && held != nil {
+			return r.Body, true
+		}
+	}
+
+	left := room - offset
+	if left < 0 || (r.ContentLength > 0 && r.ContentLength > left) {
+		return nil, false
+	}
+
+	return http.MaxBytesReader(w, r.Body, left), true
+}
+
+// refuseOverQuota answers a push the quota has no room for with 507 and
+// discards the staged upload, like a completion the reservation refused.
+func (h *HTTPHandler) refuseOverQuota(w http.ResponseWriter, r *http.Request, repoID, uploadUUID, tempFile string) {
+	_ = os.Remove(tempFile)
+	_ = h.db.DeleteDockerUpload(r.Context(), repoID, uploadUUID)
+
+	h.quotaExceeded(w)
 }
 
 // uploadFileError answers a failure to open an upload's staging file.
@@ -1637,7 +1700,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	// Stream any final bytes from the request body directly to the temp file.
 	// For monolithic uploads (single PUT carrying the whole blob) this avoids
 	// buffering the entire layer in memory.
-	if !h.appendFinalChunk(w, r, tempFile, uploadUUID, upload.Offset) {
+	if !h.appendFinalChunk(w, r, repo.ID, tempFile, uploadUUID, digest, upload.Offset) {
 		return
 	}
 
@@ -1778,7 +1841,7 @@ func (h *HTTPHandler) storeNewBlob(ctx context.Context, content io.Reader, blob 
 
 // appendFinalChunk appends the request body to the staged file (after
 // truncating it to offset). On failure it has written the error response.
-func (h *HTTPHandler) appendFinalChunk(w http.ResponseWriter, r *http.Request, tempFile, uploadUUID string, offset int64) bool {
+func (h *HTTPHandler) appendFinalChunk(w http.ResponseWriter, r *http.Request, repoID, tempFile, uploadUUID, digest string, offset int64) bool {
 	f, err := openUploadFile(tempFile, offset)
 	if err != nil {
 		h.uploadFileError(w, uploadUUID, err)
@@ -1786,8 +1849,21 @@ func (h *HTTPHandler) appendFinalChunk(w http.ResponseWriter, r *http.Request, t
 		return false
 	}
 
-	if _, err := io.Copy(f, r.Body); err != nil {
+	body, room := h.quotaBoundedBody(w, r, repoID, offset, digest)
+	if !room {
 		_ = f.Close()
+		h.refuseOverQuota(w, r, repoID, uploadUUID, tempFile)
+
+		return false
+	}
+
+	if _, err := io.Copy(f, body); err != nil {
+		_ = f.Close()
+
+		if _, over := errors.AsType[*http.MaxBytesError](err); over {
+			h.refuseOverQuota(w, r, repoID, uploadUUID, tempFile)
+			return false
+		}
 
 		h.log.Errorw("failed to write final chunk", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")

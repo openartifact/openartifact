@@ -200,3 +200,27 @@ func TestListDirectoryMatchesWholeSegment(t *testing.T) {
 		t.Errorf("listing leaks sibling directories: %s", body)
 	}
 }
+
+func TestHeadQuarantine(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+	db.art = &models.RawArtifact{Path: "a/b.txt", BlobKey: "abc", SHA256: "abc", SizeBytes: 3, ContentType: "text/plain"}
+
+	head := func() *httptest.ResponseRecorder {
+		return formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodHead, "/repos/myrepo/a/b.txt", nil))
+	}
+
+	if w := head(); w.Code != http.StatusOK {
+		t.Fatalf("status = %d, want 200", w.Code)
+	}
+
+	db.Keys["a/b.txt"] = true
+
+	w := head()
+	if w.Code != http.StatusForbidden {
+		t.Fatalf("status = %d, want 403", w.Code)
+	}
+
+	if w.Header().Get("X-Checksum-Sha256") != "" {
+		t.Error("quarantined HEAD leaked checksum")
+	}
+}

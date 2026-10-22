@@ -61,15 +61,15 @@ Version lists, registration pages and search results order versions by SemVer 2.
 
 `PUT /v3/package` with a multipart form whose `package` field is the `.nupkg`; success is `201`.
 
-- Form limit 100 MiB.
-- The `.nupkg` must be a zip with a `.nuspec` (max 4 MiB) carrying `id` and `version`; otherwise `400 invalid package`.
+- The package is limited to 100 MiB (`413` above it); the whole request body is capped at that plus 1 MiB of form overhead.
+- The `.nupkg` must be a zip with exactly one root-level `.nuspec` (max 4 MiB; nested `.nuspec` files are package content and ignored) carrying an `id` of 1–100 characters from `A-Z a-z 0-9 . _ -` and a valid `version`; otherwise `400 invalid package`.
 - The package id is lower-cased and the version normalized (see [Versions](#versions)); a SHA-512 of the package is computed.
 - Pushing an id and version that already exist answers `409 package version already exists` and changes nothing: the stored package and its blob stay as they were. Delete the version first to publish it again (`dotnet nuget push --skip-duplicate` treats the `409` as a skip).
 - The [storage quota](../repositories/cleanup-and-quotas.md#what-counts) is enforced on push (`507` over quota) and released when the version is deleted for good.
 
 ## Metadata served
 
-The registration index (`@id`, `count`, `items`) holds pages of at most 64 versions in ascending order. Each page has `@id`, `lower`, `upper`, `count`, `parent` and `items`; each item has an `@id` (its leaf URL, `.../v3/registration/<id>/<version>.json`), `packageContent`, `registration` and a `catalogEntry` with `@id`, id, version, description, authors, title, summary, tags, projectUrl, licenseUrl, iconUrl, `listed` (always `true`), `published` (push time), dependency groups (per target framework) and the `packageContent` download URL. The leaf document returned by the leaf URL has `@id`, `catalogEntry` (the entry URL), `listed`, `packageContent`, `published` and `registration`.
+The registration index (`@id`, `count`, `items`) holds pages of at most 64 versions in ascending order. Each page has `@id`, `lower`, `upper`, `count`, `parent` and `items`; each item has an `@id` (its leaf URL, `.../v3/registration/<id>/<version>.json`), `packageContent`, `registration` and a `catalogEntry` with `@id`, id, version, description, authors, title, summary, tags, projectUrl, licenseUrl, iconUrl, `listed` (always `true`), `published` (push time), dependency groups (per target framework, read from the stored package on first use and then cached in memory by package digest) and the `packageContent` download URL. The leaf document returned by the leaf URL has `@id`, `catalogEntry` (the entry URL), `listed`, `packageContent`, `published` and `registration`.
 
 Search returns one entry per package: `totalHits` counts packages, and each entry carries the latest version's metadata (the highest stable version, or the highest prerelease when there is no stable one), `totalDownloads` over all versions and a `versions` array of `{"@id", "version", "downloads"}`. `skip` and `take` count packages. Autocomplete lists each package id once.
 

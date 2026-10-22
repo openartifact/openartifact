@@ -37,7 +37,7 @@ type manifestFakeDB struct {
 
 func newManifestFakeDB(repoID string) *manifestFakeDB {
 	return &manifestFakeDB{
-		repo:      &models.Repository{ID: repoID},
+		repo:      &models.Repository{ID: repoID, Format: "docker"},
 		manifests: map[string]*models.DockerManifest{},
 		tags:      map[string]*models.DockerTag{},
 	}

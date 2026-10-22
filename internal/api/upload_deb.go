@@ -235,6 +235,11 @@ func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 		return nil, err
 	}
 
+	// Refuse a body the quota cannot take before it is spooled to disk.
+	if err := quota.Precheck(r.Context(), h.db, repoID, r.ContentLength); err != nil {
+		return nil, err
+	}
+
 	// Stream to temp file while computing SHA256
 	tmpFile, err := os.CreateTemp("", "deb-upload-*.tmp")
 	if err != nil {

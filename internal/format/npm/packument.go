@@ -108,3 +108,17 @@ func (w *packumentWriter) times(versions, all []*models.NPMVersion) {
 
 	w.buf = append(w.buf, '}')
 }
+
+// BuildVersionManifest renders one version's manifest with the same dist
+// rewrite the packument gets: the publisher's dist.tarball/integrity/shasum are
+// replaced by the server-computed values, so the single-version endpoint never
+// advertises a publisher-chosen tarball URL.
+func BuildVersionManifest(repoName, packageName string, v *models.NPMVersion, baseURL string) ([]byte, error) {
+	w := newPackumentWriter(repoName, packageName, baseURL, len(v.ManifestJSON)+320)
+
+	if err := w.version(v, nil); err != nil {
+		return nil, err
+	}
+
+	return w.buf, nil
+}

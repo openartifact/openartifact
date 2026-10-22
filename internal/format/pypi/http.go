@@ -15,6 +15,7 @@ import (
 	"fmt"
 	htmlesc "html"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
 	"regexp"
@@ -38,10 +39,13 @@ import (
 
 type HTTPHandler struct {
 	*base.Handler
+
+	// maxUpload bounds one uploaded distribution file.
+	maxUpload int64
 }
 
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL)}
+	return &HTTPHandler{Handler: base.New(log, db, blobStore, baseURL), maxUpload: maxUploadBytes}
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
@@ -59,6 +63,17 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	})
 	h.Log.Infow("pypi handler registered", "prefix", prefix)
 }
+
+const (
+	// maxUploadBytes bounds one uploaded distribution file.
+	maxUploadBytes = 512 << 20
+	// uploadFormOverhead leaves room for the form fields and multipart
+	// boundaries on top of the file.
+	uploadFormOverhead = 1 << 20
+	// uploadFormMemory is the in-memory threshold of the multipart parser;
+	// larger parts spill to disk.
+	uploadFormMemory = 32 << 20
+)
 
 var pypiNameSeparators = regexp.MustCompile(`[-_.]+`)
 
@@ -280,6 +295,11 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	pkg, err := h.DB.GetPyPIPackageByFilename(r.Context(), repoID, filename)
+	if errors.Is(err, database.ErrAmbiguousPyPIFilename) {
+		http.Error(w, "filename is ambiguous", http.StatusConflict)
+		return
+	}
+
 	if err != nil {
 		h.Log.Errorw("failed to look up pypi file", "repo", repoName, "filename", filename, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -312,11 +332,76 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Length", strconv.FormatInt(pkg.SizeBytes, 10))
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s"`, pkg.Filename))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": pkg.Filename}))
 
 	if _, err := io.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write file response", "filename", filename, "error", err)
 	}
+}
+
+// readUploadedFile parses the multipart upload and returns the "content" part
+// with its file name. On failure it writes the response and returns false.
+func (h *HTTPHandler) readUploadedFile(w http.ResponseWriter, r *http.Request) ([]byte, string, bool) {
+	// Cap the whole body: ParseMultipartForm only bounds the in-memory part and
+	// spools the rest to disk.
+	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload+uploadFormOverhead)
+
+	if err := r.ParseMultipartForm(uploadFormMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
+		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
+			http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+			return nil, "", false
+		}
+
+		h.Log.Errorw("failed to parse form", "error", err)
+		http.Error(w, "invalid form", http.StatusBadRequest)
+
+		return nil, "", false
+	}
+
+	file, fileHeader, err := r.FormFile("content")
+	if err != nil {
+		h.Log.Errorw("failed to get file from form", "error", err)
+		http.Error(w, "missing file", http.StatusBadRequest)
+
+		return nil, "", false
+	}
+	defer func() { _ = file.Close() }()
+
+	data, err := base.ReadAllLimited(file, h.maxUpload)
+	if errors.Is(err, base.ErrContentTooLarge) {
+		http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
+		return nil, "", false
+	}
+
+	if err != nil {
+		h.Log.Errorw("failed to read file", "error", err)
+		http.Error(w, "failed to read file", http.StatusBadRequest)
+
+		return nil, "", false
+	}
+
+	return data, fileHeader.Filename, true
+}
+
+// filenameTaken reports, after writing the response, whether the repository
+// already holds a file called filename. A filename resolves to exactly one
+// row: refusing a file whose name another (name, version) already holds keeps
+// its download route from becoming ambiguous.
+func (h *HTTPHandler) filenameTaken(w http.ResponseWriter, r *http.Request, repoID, filename string) bool {
+	existing, err := h.DB.GetPyPIPackageByFilename(r.Context(), repoID, filename)
+	if err != nil && !errors.Is(err, database.ErrAmbiguousPyPIFilename) {
+		h.Log.Errorw("failed to look up pypi file", "repo", repoID, "filename", filename, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return true
+	}
+
+	if existing != nil || err != nil {
+		http.Error(w, "file already exists", http.StatusConflict)
+		return true
+	}
+
+	return false
 }
 
 func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
@@ -336,31 +421,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse multipart form
-	//nolint:gosec // G120: form size is bounded by the 100MB limit passed to ParseMultipartForm
-	if err := r.ParseMultipartForm(100 * 1024 * 1024); err != nil {
-		h.Log.Errorw("failed to parse form", "error", err)
-		http.Error(w, "invalid form", http.StatusBadRequest)
-
-		return
-	}
-
-	// Get file from form
-	file, fileHeader, err := r.FormFile("content")
-	if err != nil {
-		h.Log.Errorw("failed to get file from form", "error", err)
-		http.Error(w, "missing file", http.StatusBadRequest)
-
-		return
-	}
-	defer func() { _ = file.Close() }()
-
-	// Read file content
-	fileData, err := io.ReadAll(file)
-	if err != nil {
-		h.Log.Errorw("failed to read file", "error", err)
-		http.Error(w, "failed to read file", http.StatusBadRequest)
-
+	fileData, filename, ok := h.readUploadedFile(w, r)
+	if !ok {
 		return
 	}
 
@@ -389,7 +451,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		classifiers = strings.Split(classifiersStr, "\n")
 	}
 
-	if err := validateUploadIdentity(name, version, fileHeader.Filename); err != nil {
+	if err := validateUploadIdentity(name, version, filename); err != nil {
 		http.Error(w, err.Error(), http.StatusBadRequest)
 		return
 	}
@@ -398,16 +460,20 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.filenameTaken(w, r, repoID, filename) {
+		return
+	}
+
 	// Normalize package name
 	normalizedName := normalizePyPIName(name)
 
-	blobKey := fmt.Sprintf("pypi/%s/%s", repoID, fileHeader.Filename)
+	blobKey := fmt.Sprintf("pypi/%s/%s", repoID, filename)
 
 	pkg := &models.PyPIPackage{
 		RepositoryID:   repoID,
 		Name:           normalizedName,
 		Version:        version,
-		Filename:       fileHeader.Filename,
+		Filename:       filename,
 		PackageType:    filetype,
 		PythonVersion:  pyversion,
 		RequiresPython: requiresPython,
@@ -493,7 +559,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Format:     "pypi",
 		Name:       normalizedName,
 		Version:    version,
-		Path:       fileHeader.Filename,
+		Path:       filename,
 		SHA256:     sha256Digest,
 		Size:       int64(len(fileData)),
 	}))

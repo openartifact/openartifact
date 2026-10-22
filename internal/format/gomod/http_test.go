@@ -10,12 +10,14 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -439,5 +441,66 @@ func TestUploadUsesRootGoModNotNestedOne(t *testing.T) {
 
 	if len(db.mods) != 1 || db.mods[0].GoModContent != sampleGoMod {
 		t.Errorf("stored go.mod = %+v, want the root one", db.mods)
+	}
+}
+
+func TestUploadDuplicateVersionIs409AndKeepsOriginal(t *testing.T) {
+	router, db, bs, _ := newTestRouter(t)
+	url := "/repos/myrepo/" + testModule + "/@v/v1.0.0"
+
+	if w := serve(router, http.MethodPut, url, moduleZip(t, testModule, "v1.0.0")); w.Code != http.StatusCreated {
+		t.Fatalf("first upload = %d", w.Code)
+	}
+
+	blobs := len(bs.Blobs)
+	other := createGoModZip(t, map[string]string{
+		testModule + "@v1.0.0/go.mod":  "module " + testModule + "\n\ngo 1.21\n",
+		testModule + "@v1.0.0/main.go": "package mymodule // different\n",
+	})
+
+	if w := serve(router, http.MethodPut, url, other); w.Code != http.StatusConflict {
+		t.Fatalf("duplicate upload = %d, want 409", w.Code)
+	}
+
+	if len(db.mods) != 1 || len(bs.Blobs) != blobs {
+		t.Errorf("mods=%d blobs=%d (was %d): duplicate left state behind", len(db.mods), len(bs.Blobs), blobs)
+	}
+}
+
+func TestUploadCreateFailureCleansBlobsAndRaceIs409(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want int
+	}{{errors.New("boom"), http.StatusInternalServerError}, {database.ErrDuplicate, http.StatusConflict}} {
+		router, db, bs, _ := newTestRouter(t)
+		db.createErr = tc.err
+		url := "/repos/myrepo/" + testModule + "/@v/v1.0.0"
+
+		if w := serve(router, http.MethodPut, url, moduleZip(t, testModule, "v1.0.0")); w.Code != tc.want {
+			t.Errorf("%v: status = %d, want %d", tc.err, w.Code, tc.want)
+		}
+
+		if len(bs.Blobs) != 0 {
+			t.Errorf("%v: %d orphan blobs left", tc.err, len(bs.Blobs))
+		}
+	}
+}
+
+func TestQuarantinedVersionHiddenFromListLatestInfo(t *testing.T) {
+	router, db, _, _ := newTestRouter(t)
+	db.seed(testModule, "v1.0.0", "v1.1.0")
+	db.Keys[testModule+"/@v/v1.1.0.zip"] = true
+	base := "/repos/myrepo/" + testModule
+
+	if w := serve(router, http.MethodGet, base+"/@v/v1.1.0.info", nil); w.Code != http.StatusForbidden {
+		t.Errorf(".info status = %d, want 403", w.Code)
+	}
+
+	if w := serve(router, http.MethodGet, base+"/@v/list", nil); strings.TrimSpace(w.Body.String()) != "v1.0.0" {
+		t.Errorf("list = %q, want only v1.0.0", w.Body.String())
+	}
+
+	if got := latestInfo(t, router, testModule); got != "v1.0.0" {
+		t.Errorf("@latest = %q, want v1.0.0", got)
 	}
 }

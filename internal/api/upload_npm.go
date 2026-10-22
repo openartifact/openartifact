@@ -32,6 +32,11 @@ import (
 
 const MaxNPMUploadBytes int64 = 200 << 20
 
+// maxConcurrentNPMPublishes bounds the publishes buffering a body at once: a
+// publish holds roughly three copies of its body (raw bytes, the decoded
+// base64 string and the tarball), up to ~600 MiB for a 200 MiB upload.
+const maxConcurrentNPMPublishes = 4
+
 // maxNPMDistTagBody caps the dist-tag PUT body, a JSON string holding a version.
 const maxNPMDistTagBody int64 = 1 << 10
 
@@ -43,10 +48,13 @@ type NPMUploadHandler struct {
 	reg       *metrics.Registry
 	npmWorker *worker.NPMMetadataWorker
 	publisher webhook.Publisher
+
+	publishSlots chan struct{} // bounds concurrent publishes
 }
 
 func NewNPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string, reg *metrics.Registry) *NPMUploadHandler {
-	return &NPMUploadHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL, reg: reg}
+	return &NPMUploadHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL, reg: reg,
+		publishSlots: make(chan struct{}, maxConcurrentNPMPublishes)}
 }
 
 // SetNPMWorker wires the debounced npm packument regeneration worker.
@@ -288,6 +296,19 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 
 	if h.reg != nil {
 		defer func() { h.reg.UploadsTotal.WithLabelValues("npm", uploadResult).Inc() }()
+	}
+
+	if h.publishSlots != nil {
+		select {
+		case h.publishSlots <- struct{}{}:
+			defer func() { <-h.publishSlots }()
+		case <-r.Context().Done():
+			uploadResult = "error"
+
+			http.Error(w, "request cancelled", http.StatusServiceUnavailable)
+
+			return
+		}
 	}
 
 	vars := urlparams.Vars(r)

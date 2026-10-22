@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strconv"
 	"strings"
 	"time"
@@ -33,6 +34,7 @@ import (
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"go.yaml.in/yaml/v3"
+	"golang.org/x/mod/semver"
 )
 
 const maxHelmUploadBytes = 100 << 20
@@ -241,6 +243,24 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 
 	if !validChartIdent(chartName) || !validChartIdent(version) {
 		http.Error(w, "invalid chart name or version", http.StatusBadRequest)
+		return
+	}
+
+	if !strictSemver(version) {
+		http.Error(w, "chart version must be a semantic version (MAJOR.MINOR.PATCH)", http.StatusBadRequest)
+		return
+	}
+
+	collides, err := h.filenameCollides(r.Context(), repoID, chartName, version)
+	if err != nil {
+		h.Log.Errorw("failed to check chart filename collision", "chart", chartName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if collides {
+		http.Error(w, "chart filename conflicts with an existing chart", http.StatusConflict)
 		return
 	}
 
@@ -632,31 +652,67 @@ func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, d
 // contain hyphens (mychart-1.0.0-rc1.tgz), so every hyphen followed by a digit
 // (or 'v' + digit) is tried as the name/version split point.
 func (h *HTTPHandler) findChart(ctx context.Context, repoID, filename string) (*models.HelmChart, error) {
+	var found *models.HelmChart
+
+	err := h.eachSplit(ctx, repoID, filename, func(c *models.HelmChart) bool {
+		found = c
+		return true
+	})
+
+	return found, err
+}
+
+// filenameCollides reports whether "{name}-{version}.tgz" would also resolve to
+// a different stored chart, which would make downloads of that file ambiguous.
+func (h *HTTPHandler) filenameCollides(ctx context.Context, repoID, name, version string) (bool, error) {
+	collides := false
+
+	err := h.eachSplit(ctx, repoID, name+"-"+version+".tgz", func(c *models.HelmChart) bool {
+		if c.Name == name && c.Version == version {
+			return false
+		}
+
+		collides = true
+
+		return true
+	})
+
+	return collides, err
+}
+
+// eachSplit calls fn for every stored chart matching a name/version split of
+// filename until fn returns true.
+func (h *HTTPHandler) eachSplit(ctx context.Context, repoID, filename string, fn func(*models.HelmChart) bool) error {
 	base, ok := strings.CutSuffix(filename, ".tgz")
 	if !ok {
-		return nil, nil //nolint:nilnil // not found
+		return nil
 	}
 
 	for i := 1; i < len(base)-1; i++ {
-		if base[i] != '-' {
-			continue
-		}
-
-		if !startsVersion(base[i+1:]) {
+		if base[i] != '-' || !startsVersion(base[i+1:]) {
 			continue
 		}
 
 		chart, err := h.DB.GetHelmChart(ctx, repoID, base[:i], base[i+1:])
 		if err != nil {
-			return nil, err
+			return err
 		}
 
-		if chart != nil {
-			return chart, nil
+		if chart != nil && fn(chart) {
+			return nil
 		}
 	}
 
-	return nil, nil //nolint:nilnil // not found
+	return nil
+}
+
+// strictSemver reports whether v is a full MAJOR.MINOR.PATCH[-pre][+build]
+// semantic version with no "v" prefix or shortened forms.
+func strictSemver(v string) bool {
+	core, _, _ := strings.Cut(v, "+")
+	sv := "v" + core
+
+	return semver.IsValid(sv) && semver.Canonical(sv) == sv
 }
 
 // startsVersion reports whether s begins like a chart version: a digit, or 'v'
@@ -725,7 +781,7 @@ func buildHelmIndex(charts []*models.HelmChart, repoName, baseURL string) *HelmI
 			Description: chart.Description,
 			Digest:      chart.Digest,
 			URLs: []string{
-				fmt.Sprintf("%s/repos/%s/charts/%s-%s.tgz", baseURL, repoName, chart.Name, chart.Version),
+				fmt.Sprintf("%s/repos/%s/charts/%s.tgz", baseURL, url.PathEscape(repoName), url.PathEscape(chart.Name+"-"+chart.Version)),
 			},
 			Created:     chart.CreatedAt.UTC().Format(time.RFC3339),
 			Home:        chart.Home,

@@ -468,6 +468,11 @@ func (h *RPMUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 		return nil, err
 	}
 
+	// Refuse a body the quota cannot take before it is spooled to disk.
+	if err := quota.Precheck(ctx, h.db, repo.ID, r.ContentLength); err != nil {
+		return nil, fmt.Errorf("rpm upload: %w", err)
+	}
+
 	sp, err := h.spoolUpload(file)
 	if err != nil {
 		return nil, err
@@ -703,28 +708,63 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 
 	compsSHA := fmt.Sprintf("%x", sha256.Sum256(body))
 
-	blobID, err := h.blobStore.Put(r.Context(), bytes.NewReader(body), map[string]string{
-		"format":    "rpm",
-		"type":      "comps",
-		"repo_name": repoName,
-		"sha256":    compsSHA,
-	})
+	// The upload replaces the repository's single comps.xml row: remember the
+	// blob it supersedes so it is reclaimed instead of piling up per upload.
+	previous, err := h.db.GetRepoMetadataByPath(r.Context(), repoID, "comps.xml")
 	if err != nil {
-		writeError(w, http.StatusInternalServerError, "STORAGE_ERROR", "failed to store comps XML")
-		return
-	}
-
-	meta := &models.RepoMetadata{
-		RepositoryID: repoID,
-		Path:         "comps.xml",
-		BlobSHA256:   compsSHA,
-		BlobSize:     int64(len(body)),
-	}
-	if err := h.db.UpsertRepoMetadata(r.Context(), meta); err != nil {
-		h.log.Errorw("failed to upsert comps metadata", "error", err)
+		h.log.Errorw("failed to look up comps metadata", "error", err)
 		writeError(w, http.StatusInternalServerError, "DATABASE_ERROR", "failed to store comps metadata")
 
 		return
+	}
+
+	var blobID string
+
+	// Store the blob and commit its row under the per-blob lock, so a concurrent
+	// reclaim of identical content cannot delete it in between.
+	err = storage.WithBlobLock(r.Context(), h.db, compsSHA, func(ctx context.Context) error {
+		id, putErr := h.blobStore.Put(ctx, bytes.NewReader(body), map[string]string{
+			"format":    "rpm",
+			"type":      "comps",
+			"repo_name": repoName,
+			"sha256":    compsSHA,
+		})
+		if putErr != nil {
+			return &compsStoreError{status: http.StatusInternalServerError, code: "STORAGE_ERROR", msg: "failed to store comps XML", err: putErr}
+		}
+
+		blobID = id
+
+		meta := &models.RepoMetadata{
+			RepositoryID: repoID,
+			Path:         "comps.xml",
+			BlobSHA256:   compsSHA,
+			BlobSize:     int64(len(body)),
+		}
+		if upErr := h.db.UpsertRepoMetadata(ctx, meta); upErr != nil {
+			return &compsStoreError{status: http.StatusInternalServerError, code: "DATABASE_ERROR", msg: "failed to store comps metadata", err: upErr}
+		}
+
+		return nil
+	})
+	if err != nil {
+		if se, ok := errors.AsType[*compsStoreError](err); ok {
+			h.log.Errorw("failed to store comps", "repo_id", repoID, "error", se.err)
+			writeError(w, se.status, se.code, se.msg)
+
+			return
+		}
+
+		h.log.Errorw("failed to store comps", "repo_id", repoID, "error", err)
+		writeError(w, http.StatusInternalServerError, "STORAGE_ERROR", "failed to store comps XML")
+
+		return
+	}
+
+	if previous != nil && previous.BlobSHA256 != compsSHA {
+		if err := storage.ReclaimMetadataBlob(context.WithoutCancel(r.Context()), h.db, h.blobStore, previous.BlobSHA256); err != nil {
+			h.log.Warnw("failed to reclaim superseded comps blob", "sha256", previous.BlobSHA256, "error", err)
+		}
 	}
 
 	if err := h.db.MarkRepoStale(r.Context(), repoID); err != nil {
@@ -745,6 +785,16 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 		},
 	})
 }
+
+// compsStoreError carries the response of a failed comps store out of the blob lock.
+type compsStoreError struct {
+	status    int
+	code, msg string
+	err       error
+}
+
+func (e *compsStoreError) Error() string { return e.msg + ": " + e.err.Error() }
+func (e *compsStoreError) Unwrap() error { return e.err }
 
 func writeJSON(w http.ResponseWriter, status int, v any) {
 	w.Header().Set("Content-Type", "application/json")

@@ -67,7 +67,7 @@ func newRegFakeDB(repoNames ...string) *regFakeDB {
 	d.Keys = map[string]bool{}
 
 	for _, n := range repoNames {
-		d.repos[n] = &models.Repository{ID: "id-" + n, Name: n}
+		d.repos[n] = &models.Repository{ID: "id-" + n, Name: n, Format: "docker"}
 	}
 
 	return d

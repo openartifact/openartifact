@@ -607,7 +607,14 @@ func classifyRoute(r *http.Request) routeScope {
 
 	repoName, artifactPath := extractRepoAndPath(r.URL.Path)
 
-	return routeScope{action: methodToAction(r.Method, r.URL.Path), repoName: repoName, artifactPath: artifactPath}
+	action := methodToAction(r.Method, r.URL.Path)
+	if r.Method == http.MethodPut && strings.Contains(r.URL.Path, "/-rev/") {
+		// `npm unpublish pkg@ver` PUTs the reduced packument to /pkg/-rev/<rev>;
+		// versions missing from the body are removed, so it needs "delete".
+		action = "delete"
+	}
+
+	return routeScope{action: action, repoName: repoName, artifactPath: artifactPath}
 }
 
 // repoDataSegments are the sub-resources of /api/v1/repositories/{name}/ that

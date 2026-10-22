@@ -204,6 +204,14 @@ func (h *HTTPHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	versions, err = h.dropQuarantined(r.Context(), repoID, modulePath, versions)
+	if err != nil {
+		h.Log.Errorw("failed to check quarantine", "module", modulePath, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
 	if len(versions) == 0 {
 		http.NotFound(w, r)
 		return
@@ -260,6 +268,10 @@ func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.DenyIfQuarantined(w, r, repoID, versionQuarantineKeys(modulePath, version)...) {
+		return
+	}
+
 	info := versionInfo{
 		Version: mod.Version,
 		Time:    mod.CreatedAt,
@@ -271,6 +283,33 @@ func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 	if encErr := json.NewEncoder(w).Encode(info); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// versionQuarantineKeys are the spellings under which a go module version may
+// be quarantined: any of its files, or the module@version coordinate.
+func versionQuarantineKeys(modulePath, version string) []string {
+	base := modulePath + "/@v/" + version
+
+	return quarantine.PathKeys(base+".zip", base+".mod", base+".info", modulePath+"@"+version)
+}
+
+// dropQuarantined removes quarantined versions so list, @latest and .info do
+// not advertise them. It fails closed when the state cannot be determined.
+func (h *HTTPHandler) dropQuarantined(ctx context.Context, repoID, modulePath string, versions []*models.GoModule) ([]*models.GoModule, error) {
+	kept := make([]*models.GoModule, 0, len(versions))
+
+	for _, v := range versions {
+		blocked, err := quarantine.IsQuarantined(ctx, h.DB, repoID, versionQuarantineKeys(modulePath, v.Version)...)
+		if err != nil {
+			return nil, fmt.Errorf("check quarantine: %w", err)
+		}
+
+		if !blocked {
+			kept = append(kept, v)
+		}
+	}
+
+	return kept, nil
 }
 
 func (h *HTTPHandler) handleMod(w http.ResponseWriter, r *http.Request) {
@@ -416,6 +455,14 @@ func (h *HTTPHandler) handleLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	versions, err = h.dropQuarantined(r.Context(), repoID, modulePath, versions)
+	if err != nil {
+		h.Log.Errorw("failed to check quarantine", "module", modulePath, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
 	mod := latestVersion(versions)
 	if mod == nil {
 		http.NotFound(w, r)
@@ -490,6 +537,19 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	goModContent := mf.content
+
+	existing, err := h.DB.GetGoModule(r.Context(), repoID, modulePath, version)
+	if err != nil {
+		h.Log.Errorw("failed to check existing go module", "module", modulePath, "version", version, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if existing != nil {
+		http.Error(w, "module version already exists", http.StatusConflict)
+		return
+	}
 
 	zipSum := sha256.Sum256(zipData)
 	zipSHA := hex.EncodeToString(zipSum[:])
@@ -569,6 +629,10 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
 		}
 
+		if h.failStore(w, r, lockErr, zipSHA, modSHA) {
+			return
+		}
+
 		h.Log.Errorw("failed to store go module", "module", modulePath, "version", version, "error", lockErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
@@ -594,4 +658,22 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// failStore removes the blobs of a failed upload (refcounted: a blob another
+// version references stays) and answers 409 when the failure was a lost
+// duplicate race. It reports whether it wrote the response.
+func (h *HTTPHandler) failStore(w http.ResponseWriter, r *http.Request, storeErr error, sums ...string) bool {
+	for _, sum := range sums {
+		if err := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, sum); err != nil {
+			h.Log.Warnw("failed to clean up go module blob", "sha256", sum, "error", err)
+		}
+	}
+
+	if errors.Is(storeErr, database.ErrDuplicate) || database.IsUniqueViolation(storeErr) {
+		http.Error(w, "module version already exists", http.StatusConflict)
+		return true
+	}
+
+	return false
 }

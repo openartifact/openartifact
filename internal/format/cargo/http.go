@@ -25,6 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -452,6 +453,14 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) handleYank(w http.ResponseWriter, r *http.Request) {
+	h.setYanked(w, r, true)
+}
+
+func (h *HTTPHandler) handleUnyank(w http.ResponseWriter, r *http.Request) {
+	h.setYanked(w, r, false)
+}
+
+func (h *HTTPHandler) setYanked(w http.ResponseWriter, r *http.Request, yanked bool) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	crateName := vars["crate"]
@@ -470,61 +479,55 @@ func (h *HTTPHandler) handleYank(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.DB.YankCargoCrate(r.Context(), repoID, crateName, version, true); err != nil {
-		h.Log.Errorw("failed to yank cargo crate", "name", crateName, "version", version, "error", err)
+	if !h.guardYank(w, r, repoID, repoName, crateName, version) {
+		return
+	}
+
+	if err := h.DB.YankCargoCrate(r.Context(), repoID, crateName, version, yanked); err != nil {
+		h.Log.Errorw("failed to update cargo crate yank state", "name", crateName, "version", version, "yanked", yanked, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	response := map[string]any{
-		"ok": true,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if encErr := json.NewEncoder(w).Encode(response); encErr != nil {
+	if encErr := json.NewEncoder(w).Encode(map[string]any{"ok": true}); encErr != nil {
 		_ = encErr // response header already written
 	}
 }
 
-func (h *HTTPHandler) handleUnyank(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	crateName := vars["crate"]
-	version := vars["version"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+// guardYank answers 404 for an unknown crate version and 409 when the
+// repository's immutable releases forbid hiding it. It reports whether the
+// yank/unyank may proceed.
+func (h *HTTPHandler) guardYank(w http.ResponseWriter, r *http.Request, repoID, repoName, crateName, version string) bool {
+	crate, err := h.DB.GetCargoCrate(r.Context(), repoID, crateName, version)
 	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
+		h.Log.Errorw("failed to get cargo crate", "name", crateName, "version", version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
-		return
+		return false
 	}
 
-	if repoID == "" {
+	if crate == nil {
 		http.NotFound(w, r)
-		return
+		return false
 	}
 
-	if err := h.DB.YankCargoCrate(r.Context(), repoID, crateName, version, false); err != nil {
-		h.Log.Errorw("failed to unyank cargo crate", "name", crateName, "version", version, "error", err)
+	if gErr := trash.GuardReleaseByName(r, h.DB, repoName, "cargo", crate.Version); gErr != nil {
+		if errors.Is(gErr, trash.ErrImmutableRelease) {
+			http.Error(w, "repository has immutable releases", http.StatusConflict)
+			return false
+		}
+
+		h.Log.Errorw("failed to check release immutability", "name", crateName, "error", gErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
-		return
+		return false
 	}
 
-	response := map[string]any{
-		"ok": true,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(response); encErr != nil {
-		_ = encErr // response header already written
-	}
+	return true
 }
 
 func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {

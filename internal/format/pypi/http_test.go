@@ -7,9 +7,11 @@ package pypi
 import (
 	"bytes"
 	"context"
+	"mime"
 	"mime/multipart"
 	"net/http"
 	"net/http/httptest"
+	"net/url"
 	"strings"
 	"testing"
 
@@ -347,5 +349,108 @@ func TestDownloadAmbiguousFilename(t *testing.T) {
 
 	if len(db.pkgs) != 2 {
 		t.Errorf("ambiguous delete removed a package")
+	}
+}
+
+func TestUploadBodyTooLarge(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	h.maxUpload = 1024
+
+	req := uploadRequest(t, "demo_pkg-1.0.tar.gz", bytes.Repeat([]byte("x"), 4*uploadFormOverhead))
+
+	w := formattest.Do(register(h), req)
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413: %s", w.Code, w.Body.String())
+	}
+
+	if len(db.pkgs) != 0 || len(bs.Blobs) != 0 {
+		t.Fatalf("oversized upload stored something: pkgs=%d blobs=%d", len(db.pkgs), len(bs.Blobs))
+	}
+}
+
+func TestUploadFilePartTooLarge(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	h.maxUpload = 8
+
+	// Within the body cap (limit + form overhead) but over the per-file limit.
+	w := formattest.Do(register(h), uploadRequest(t, "demo_pkg-1.0.tar.gz", []byte("0123456789abcdef")))
+	if w.Code != http.StatusRequestEntityTooLarge {
+		t.Fatalf("status = %d, want 413: %s", w.Code, w.Body.String())
+	}
+
+	if len(db.pkgs) != 0 || len(bs.Blobs) != 0 {
+		t.Fatalf("oversized upload stored something: pkgs=%d blobs=%d", len(db.pkgs), len(bs.Blobs))
+	}
+}
+
+// A second upload that reuses a filename already held by another
+// (name, version) is refused instead of making the file ambiguous.
+func TestUploadRejectsUsedFilename(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+
+	if got := uploadAs(t, h, "foo", "1-2", "foo-1-2.tar.gz"); got != http.StatusOK {
+		t.Fatalf("first upload = %d, want 200", got)
+	}
+
+	if got := uploadAs(t, h, "foo-1", "2", "foo-1-2.tar.gz"); got != http.StatusConflict {
+		t.Fatalf("colliding upload = %d, want 409", got)
+	}
+
+	if len(db.pkgs) != 1 || len(bs.Blobs) != 1 {
+		t.Fatalf("colliding upload stored something: pkgs=%d blobs=%d", len(db.pkgs), len(bs.Blobs))
+	}
+
+	w := formattest.Do(register(h), formattest.Request(http.MethodGet, "/repos/myrepo/files/foo-1-2.tar.gz", nil))
+	if w.Code != http.StatusOK {
+		t.Fatalf("download after rejected collision = %d, want 200", w.Code)
+	}
+}
+
+func TestUploadRejectsAmbiguousExistingFilename(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+	db.pkgs = []*models.PyPIPackage{
+		{Name: "foo", Version: "1-2", Filename: "foo-1-2.tar.gz"},
+		{Name: "foo-1", Version: "2", Filename: "foo-1-2.tar.gz"},
+	}
+
+	if got := uploadAs(t, h, "foo", "1-2", "foo-1-2.tar.gz"); got != http.StatusConflict {
+		t.Fatalf("upload over ambiguous filename = %d, want 409", got)
+	}
+}
+
+func TestDownloadAmbiguousFilenameConflict(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+	db.pkgs = []*models.PyPIPackage{
+		{Name: "foo", Version: "1-2", Filename: "foo-1-2.tar.gz", SHA256Digest: "a"},
+		{Name: "foo-1", Version: "2", Filename: "foo-1-2.tar.gz", SHA256Digest: "b"},
+	}
+
+	w := formattest.Do(register(h), formattest.Request(http.MethodGet, "/repos/myrepo/files/foo-1-2.tar.gz", nil))
+	if w.Code != http.StatusConflict {
+		t.Fatalf("status = %d, want 409", w.Code)
+	}
+}
+
+func TestDownloadContentDispositionEscapesFilename(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	name := `evil"; x=y.tar.gz`
+	db.pkgs = []*models.PyPIPackage{{Name: "evil", Version: "1.0", Filename: name, SHA256Digest: "abc", SizeBytes: 3}}
+	bs.Blobs["abc"] = []byte("xyz")
+
+	req := formattest.Request(http.MethodGet, "/repos/myrepo/files/"+url.PathEscape(name), nil)
+	req.URL.RawPath = "" // route on the decoded path so chi hands the raw name to the handler
+
+	w := formattest.Do(register(h), req)
+	if w.Code != http.StatusOK {
+		t.Fatalf("status = %d", w.Code)
+	}
+
+	disp, params, err := mime.ParseMediaType(w.Header().Get("Content-Disposition"))
+	if err != nil {
+		t.Fatalf("Content-Disposition %q: %v", w.Header().Get("Content-Disposition"), err)
+	}
+
+	if disp != "attachment" || params["filename"] != name || len(params) != 1 {
+		t.Fatalf("disposition = %q params = %v", disp, params)
 	}
 }

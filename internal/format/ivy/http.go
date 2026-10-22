@@ -161,11 +161,26 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request, rep
 	_, _ = io.Copy(w, blob)
 }
 
+// lookupForUpload returns the row an upload replaces (previous: current
+// coordinates only) and the row it collides with (existing: previous, else one
+// stored under the legacy reading of the path), so the immutability guard
+// cannot be sidestepped by shadowing a legacy row.
+func (h *HTTPHandler) lookupForUpload(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*models.IvyArtifact, *models.IvyArtifact, error) {
+	previous, err := h.get(ctx, repoID, cur)
+	if err != nil || previous != nil || cur == legacy {
+		return previous, previous, err
+	}
+
+	existing, err := h.get(ctx, repoID, legacy)
+
+	return nil, existing, err
+}
+
 // handleUpload stores a file. Publishing the same bytes again is a no-op;
 // different bytes replace the file (Ivy publishes with overwrite="true") unless
 // the repository has immutable releases and the version is a release.
 func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
-	cur, _, ok := base.SplitArtifactPath(filePath)
+	cur, legacy, ok := base.SplitArtifactPath(filePath)
 	if !ok {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
@@ -204,7 +219,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		SHA256:       sha256Hex,
 	}
 
-	previous, err := h.get(r.Context(), repoID, cur)
+	previous, existing, err := h.lookupForUpload(r.Context(), repoID, cur, legacy)
 	if err != nil {
 		h.Log.Errorw("failed to look up ivy artifact", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -212,13 +227,18 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		return
 	}
 
-	if previous != nil {
-		if previous.SHA256 == sha256Hex {
-			writeStored(w, previous)
+	if existing != nil {
+		if existing.SHA256 == sha256Hex {
+			writeStored(w, existing)
 			return
 		}
 
-		if guardErr := trash.GuardReleaseByName(r, h.DB, repoNameOf(r), "ivy", cur.Version); guardErr != nil {
+		guardVersion := cur.Version
+		if previous == nil {
+			guardVersion = legacy.Version
+		}
+
+		if guardErr := trash.GuardReleaseByName(r, h.DB, repoNameOf(r), "ivy", guardVersion); guardErr != nil {
 			h.rejectImmutable(w, filePath, guardErr)
 			return
 		}

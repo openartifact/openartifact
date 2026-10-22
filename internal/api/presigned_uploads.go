@@ -235,6 +235,20 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	// Advisory: refuse to park bytes in the bucket that completion would
+	// refuse anyway (the reservation at completion stays authoritative).
+	if err := quota.Precheck(r.Context(), h.DB, repo.ID, req.Size); err != nil {
+		if errors.Is(err, quota.ErrExceeded) {
+			quota.WriteExceeded(w)
+			return
+		}
+
+		h.Log.Errorw("presigned upload: quota precheck failed", "repo", repo.Name, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "internal error")
+
+		return
+	}
+
 	createdBy := currentPrincipal(r).Username
 
 	h.createUpload(w, r, repo, &models.PresignedUpload{

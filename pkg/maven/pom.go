@@ -37,9 +37,13 @@ type POM struct {
 	Dependencies []Dependency `xml:"dependencies>dependency"`
 }
 
+// MaxPOMBytes bounds the pom bytes read: element text accumulates in memory,
+// so an unbounded document could exhaust it. Uploads of larger poms are refused.
+const MaxPOMBytes = 4 << 20
+
 func ParsePOM(r io.Reader) (*POM, error) {
 	var pom POM
-	if err := xml.NewDecoder(r).Decode(&pom); err != nil {
+	if err := xml.NewDecoder(io.LimitReader(r, MaxPOMBytes)).Decode(&pom); err != nil {
 		return nil, err
 	}
 

@@ -742,3 +742,25 @@ func TestLoad_OptionsEnv(t *testing.T) {
 		t.Errorf("storage options = %v", got)
 	}
 }
+
+func TestLoad_MaxBodyBytes(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Server.MaxBodyBytes != 16<<30 {
+		t.Errorf("default MaxBodyBytes = %d, want 16 GiB", cfg.Server.MaxBodyBytes)
+	}
+
+	t.Setenv("SERVER_MAX_BODY_BYTES", "1048576")
+
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if cfg.Server.MaxBodyBytes != 1<<20 {
+		t.Errorf("env MaxBodyBytes = %d, want 1 MiB", cfg.Server.MaxBodyBytes)
+	}
+}

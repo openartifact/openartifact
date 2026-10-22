@@ -66,6 +66,7 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 | `SERVER_READ_TIMEOUT` | `readTimeout` | `0` | Seconds for a whole request; `0` = unlimited |
 | `SERVER_WRITE_TIMEOUT` | `writeTimeout` | `0` | Seconds for writing a response; `0` = unlimited |
 | `SERVER_READ_HEADER_TIMEOUT` | `readHeaderTimeout` | `20` | Seconds to read request headers |
+| `SERVER_MAX_BODY_BYTES` | `maxBodyBytes` | `17179869184` | Maximum request body (bytes) accepted by any endpoint; `0` = unlimited. Format handlers enforce lower limits of their own |
 | `SERVER_SHUTDOWN_TIMEOUT` | `shutdownTimeout` | `30` | Seconds allowed for graceful shutdown |
 | `SERVER_TLS_ENABLED` | `tlsEnabled` | `false` | Serve HTTPS; requires cert and key; sends HSTS |
 | `SERVER_TLS_CERT` | `tlsCert` | empty | TLS certificate file (PEM) |

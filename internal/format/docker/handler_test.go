@@ -84,7 +84,7 @@ func TestHandleUploadChunk_MismatchedRepositoryReturnsUnknownUpload(t *testing.T
 	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
-		repo: &models.Repository{ID: "repo-other"},
+		repo: &models.Repository{ID: "repo-other", Format: "docker"},
 		upload: &models.DockerUpload{
 			RepositoryID: "repo-actual",
 			UploadUUID:   uid,

@@ -41,9 +41,11 @@ Relative to `HOST/repos/REPO`:
 ## Push validation
 
 - Body limit 200 MiB (`413` above it); invalid gem archive is `400 invalid gem file`.
-- Metadata must contain a valid `name` and `version`; platform defaults to `ruby`. Invalid identifiers give `400`.
+- Metadata must contain a valid `name` and `version`; platform defaults to `ruby`. Invalid identifiers give `400`. A version starts with a digit and holds no `-`.
+- A gem whose file name (`<name>-<version>[-<platform>]`) another gem already resolves to (`a-1-2.gem` is both `a` `1` platform `2` and `a-1` `2`) is `409`; a download or gemspec request for an already ambiguous file name is `409` too.
 - `metadata.gz` is limited to 4 MiB uncompressed. A Marshal 4.8 payload nested deeper than 64 levels is not decoded as a gemspec (it falls back to the raw metadata, like any other unparseable payload) instead of exhausting the stack.
 - An existing name/version/platform is `409 gem version already exists`: gems are immutable once pushed.
-- Yank requires `gem_name` and `version` (`400` otherwise; body limit 64 KiB). Yanked gems drop out of the spec indexes.
+- Yank requires `gem_name` and `version` (`400` otherwise; body limit 64 KiB). Yanked gems drop out of the spec indexes, the info and the search responses. Yanking a release of a repository with `immutable_releases` is `409` (an admin may force it with `?force=true`); a version with nothing to yank is `404`.
+- Info and search return snake_case entries (`name`, `version`, `platform`, `summary`, `description`, `homepage`, `authors`, `licenses`, `sha256`, `downloads`, `size`, `created_at`).
 
 Specs are generated from the stored gem metadata at request time.

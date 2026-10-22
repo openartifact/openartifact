@@ -66,9 +66,27 @@ func (l *quotaLedger) release(repoID string, size int64, count int) {
 	u.artifacts = max(0, u.artifacts-count)
 }
 
+func (l *quotaLedger) quota(repoID string) *models.StorageQuota {
+	u := l.row(repoID)
+
+	return &models.StorageQuota{RepositoryID: repoID, MaxSizeBytes: l.maxBytes, CurrentSizeBytes: u.bytes, CurrentArtifactCount: u.artifacts}
+}
+
 func (l *quotaLedger) of(repoID string) quotaUsage { return *l.row(repoID) }
 
 // The fake databases' metering methods.
+
+func (d *regFakeDB) GetOrCreateStorageQuota(_ context.Context, repoID string) (*models.StorageQuota, error) {
+	return d.ledger.quota(repoID), nil
+}
+
+func (f *manifestFakeDB) GetOrCreateStorageQuota(_ context.Context, repoID string) (*models.StorageQuota, error) {
+	return f.ledger.quota(repoID), nil
+}
+
+func (f *fakeDB) GetOrCreateStorageQuota(_ context.Context, repoID string) (*models.StorageQuota, error) {
+	return f.ledger.quota(repoID), nil
+}
 
 func (d *regFakeDB) ReserveStorageUsage(_ context.Context, repoID string, size int64, count int) (bool, error) {
 	return d.ledger.reserve(repoID, size, count), nil
@@ -500,7 +518,7 @@ func TestQuotaMountOfBlobDstAlreadyHoldsReservesNothing(t *testing.T) {
 }
 
 func TestQuotaStoreFailureReleasesBlobReservation(t *testing.T) {
-	db := &fakeDB{repo: &models.Repository{ID: "repo-1", Name: "reg"}, createBlobErr: errCreateFailed}
+	db := &fakeDB{repo: &models.Repository{ID: "repo-1", Name: "reg", Format: "docker"}, createBlobErr: errCreateFailed}
 	h, _ := newTestHandler(t, db)
 
 	layer := []byte("layer-bytes")

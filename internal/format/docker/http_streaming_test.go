@@ -156,7 +156,7 @@ func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
 	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
-		repo:   &models.Repository{ID: "repo-1"},
+		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
 		upload: &models.DockerUpload{RepositoryID: "repo-1", UploadUUID: uid, Offset: 0},
 	}
 	h, _ := newTestHandler(t, db)
@@ -216,7 +216,7 @@ func TestHandleCompleteBlobUpload_MonolithicBodyAndDigest(t *testing.T) {
 		defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 		db := &fakeDB{
-			repo:   &models.Repository{ID: "repo-1"},
+			repo:   &models.Repository{ID: "repo-1", Format: "docker"},
 			upload: &models.DockerUpload{RepositoryID: "repo-1", UploadUUID: uid, Offset: 0},
 		}
 		h, store := newTestHandler(t, db)
@@ -282,7 +282,7 @@ func TestHandleCompleteBlobUpload_MonolithicBodyAndDigest(t *testing.T) {
 		defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 		db := &fakeDB{
-			repo:   &models.Repository{ID: "repo-1"},
+			repo:   &models.Repository{ID: "repo-1", Format: "docker"},
 			upload: &models.DockerUpload{RepositoryID: "repo-1", UploadUUID: uid, Offset: 0},
 		}
 		h, _ := newTestHandler(t, db)

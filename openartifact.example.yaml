@@ -26,6 +26,7 @@ server:
   # rateLimitRps: 100
   # pprofEnabled: false     # Go profiler at /api/v1/admin/pprof/ (admin only); env OPENARTIFACT_PPROF_ENABLED
   # readHeaderTimeout: 10   # seconds
+  # maxBodyBytes: 17179869184  # max request body for every endpoint (16 GiB); 0 = unlimited
   # trustedProxies:         # CIDRs whose X-Forwarded-For is trusted
   #   - "10.0.0.0/8"
   # apiKey: ""              # legacy write API key

@@ -15,10 +15,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"mime"
 	"net/http"
 	"net/url"
+	"slices"
 	"strconv"
 	"strings"
+	"time"
 	"unicode"
 
 	"github.com/go-chi/chi/v5"
@@ -30,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -268,6 +272,11 @@ func (h *HTTPHandler) handleGemspec(w http.ResponseWriter, r *http.Request) {
 	}
 
 	gem, err := h.findGem(r.Context(), repoID, nameVersion)
+	if errors.Is(err, errAmbiguousGemFile) {
+		http.Error(w, "gem file name is ambiguous", http.StatusConflict)
+		return
+	}
+
 	if err != nil {
 		h.Log.Errorw("failed to get gem", "file", nameVersion, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -338,6 +347,11 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 	}
 
 	gem, err := h.findGem(r.Context(), repoID, nameVersion)
+	if errors.Is(err, errAmbiguousGemFile) {
+		http.Error(w, "gem file name is ambiguous", http.StatusConflict)
+		return
+	}
+
 	if err != nil {
 		h.Log.Errorw("failed to get gem", "file", nameVersion, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -369,7 +383,7 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 	defer func() { _ = blob.Close() }()
 
 	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", fmt.Sprintf(`attachment; filename="%s.gem"`, nameVersion))
+	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": nameVersion + ".gem"}))
 	_, _ = io.Copy(w, blob)
 }
 
@@ -420,7 +434,7 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 	name, _ := metadata["name"].(string)
 	version, _ := metadata["version"].(string)
 
-	if !validGemIdent(name) || !validGemIdent(version) {
+	if !validGemIdent(name) || !validGemVersion(version) {
 		http.Error(w, "gem metadata is missing a valid name or version", http.StatusBadRequest)
 		return
 	}
@@ -449,6 +463,10 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 
 	if existing != nil {
 		http.Error(w, "gem version already exists", http.StatusConflict)
+		return
+	}
+
+	if h.gemFileNameTaken(w, r, repoID, name, version, platform) {
 		return
 	}
 
@@ -659,6 +677,20 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Yanking hides a release from resolution, so it is as destructive as a
+	// delete for immutable_releases.
+	if err := trash.GuardReleaseByName(r, h.DB, repoName, "rubygems", version); err != nil {
+		if errors.Is(err, trash.ErrImmutableRelease) {
+			http.Error(w, "release versions of this repository are immutable", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to check release immutability", "repo", repoName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
 	if err := h.DB.YankRubyGem(r.Context(), repoID, gemName, version, platform, true); err != nil {
 		h.Log.Errorw("failed to yank gem", "name", gemName, "version", version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -734,21 +766,16 @@ func (h *HTTPHandler) handleGemInfo(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	versions = liveGems(versions)
 	if len(versions) == 0 {
 		http.NotFound(w, r)
 		return
 	}
 
-	// Build response
-	response := map[string]any{
-		"name":     gemName,
-		"versions": versions,
-	}
-
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if encErr := json.NewEncoder(w).Encode(response); encErr != nil {
+	if encErr := json.NewEncoder(w).Encode(gemInfoResponse{Name: gemName, Versions: gemVersionResponses(versions)}); encErr != nil {
 		_ = encErr // response header already written
 	}
 }
@@ -788,11 +815,72 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusOK)
 
-	if encErr := json.NewEncoder(w).Encode(map[string]any{
-		"gems": gems,
-	}); encErr != nil {
+	if encErr := json.NewEncoder(w).Encode(gemSearchResponse{Gems: gemVersionResponses(liveGems(gems))}); encErr != nil {
 		_ = encErr // response header already written
 	}
+}
+
+// gemVersionResponse is the public JSON view of one gem version: no internal
+// ids, storage keys or raw metadata.
+type gemVersionResponse struct {
+	Name        string    `json:"name"`
+	Version     string    `json:"version"`
+	Platform    string    `json:"platform"`
+	Summary     string    `json:"summary"`
+	Description string    `json:"description"`
+	Homepage    string    `json:"homepage"`
+	Authors     []string  `json:"authors"`
+	Licenses    []string  `json:"licenses"`
+	SHA256      string    `json:"sha256"`
+	Downloads   int       `json:"downloads"`
+	Size        int64     `json:"size"`
+	CreatedAt   time.Time `json:"created_at"`
+}
+
+type gemInfoResponse struct {
+	Name     string               `json:"name"`
+	Versions []gemVersionResponse `json:"versions"`
+}
+
+type gemSearchResponse struct {
+	Gems []gemVersionResponse `json:"gems"`
+}
+
+// liveGems drops yanked versions: a yanked gem is no longer offered.
+func liveGems(gems []*models.RubyGem) []*models.RubyGem {
+	return slices.DeleteFunc(slices.Clone(gems), func(g *models.RubyGem) bool { return g.Yanked })
+}
+
+func gemVersionResponses(gems []*models.RubyGem) []gemVersionResponse {
+	out := make([]gemVersionResponse, len(gems))
+
+	for i, g := range gems {
+		authors, licenses := g.Authors, g.Licenses
+		if authors == nil {
+			authors = []string{}
+		}
+
+		if licenses == nil {
+			licenses = []string{}
+		}
+
+		out[i] = gemVersionResponse{
+			Name:        g.Name,
+			Version:     g.Version,
+			Platform:    g.Platform,
+			Summary:     g.Summary,
+			Description: g.Description,
+			Homepage:    g.Homepage,
+			Authors:     authors,
+			Licenses:    licenses,
+			SHA256:      g.ChecksumSHA256,
+			Downloads:   g.DownloadCount,
+			Size:        g.Size,
+			CreatedAt:   g.CreatedAt,
+		}
+	}
+
+	return out
 }
 
 // Helper functions
@@ -935,10 +1023,43 @@ func compareVersions(v1, v2 string) int {
 	return 0
 }
 
-// findGem resolves "{name}-{version}[-{platform}]". Names may contain hyphens
-// and versions never do, so each hyphen followed by a digit is tried as the
-// name/version boundary.
+// errAmbiguousGemFile means several gems of one repository share a
+// "{name}-{version}[-{platform}]" file name.
+var errAmbiguousGemFile = errors.New("gem file name is ambiguous")
+
+// findGem resolves "{name}-{version}[-{platform}]" to the one live (not
+// yanked) gem it names, or nil. Names and platforms may contain hyphens and
+// versions never do, so each hyphen followed by a digit is tried as the
+// name/version boundary; every candidate is looked up and more than one hit is
+// errAmbiguousGemFile instead of an arbitrary pick.
 func (h *HTTPHandler) findGem(ctx context.Context, repoID, nameVersion string) (*models.RubyGem, error) {
+	gems, err := h.gemsNamed(ctx, repoID, nameVersion)
+	if err != nil {
+		return nil, err
+	}
+
+	var live *models.RubyGem
+
+	for _, g := range gems {
+		if g.Yanked {
+			continue
+		}
+
+		if live != nil {
+			return nil, errAmbiguousGemFile
+		}
+
+		live = g
+	}
+
+	return live, nil
+}
+
+// gemsNamed returns every gem (yanked or not) whose file name, without the
+// ".gem" suffix, is nameVersion.
+func (h *HTTPHandler) gemsNamed(ctx context.Context, repoID, nameVersion string) ([]*models.RubyGem, error) {
+	var gems []*models.RubyGem
+
 	for i := 1; i < len(nameVersion)-1; i++ {
 		if nameVersion[i] != '-' || nameVersion[i+1] < '0' || nameVersion[i+1] > '9' {
 			continue
@@ -955,11 +1076,41 @@ func (h *HTTPHandler) findGem(ctx context.Context, repoID, nameVersion string) (
 		}
 
 		if gem != nil {
-			return gem, nil
+			gems = append(gems, gem)
 		}
 	}
 
-	return nil, nil //nolint:nilnil // not found
+	return gems, nil
+}
+
+// gemFileNameTaken reports, after writing the response, whether the file name
+// of the gem about to be stored already resolves to another gem.
+// "{name}-{version}[-{platform}]" must name exactly one gem: otherwise one of
+// the two could never be downloaded, or would shadow the other.
+func (h *HTTPHandler) gemFileNameTaken(w http.ResponseWriter, r *http.Request, repoID, name, version, platform string) bool {
+	file := strings.TrimSuffix(gemFilename(&models.RubyGem{Name: name, Version: version, Platform: platform}), ".gem")
+
+	clashing, err := h.gemsNamed(r.Context(), repoID, file)
+	if err != nil {
+		h.Log.Errorw("failed to check gem file name", "name", name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return true
+	}
+
+	if len(clashing) > 0 {
+		http.Error(w, "gem file name is already used by another gem", http.StatusConflict)
+		return true
+	}
+
+	return false
+}
+
+// validGemVersion accepts the canonical RubyGems version spelling: it starts
+// with a digit, as findGem requires to locate the name/version boundary, and
+// never holds a hyphen (Gem::Version rewrites "-" to ".pre.").
+func validGemVersion(s string) bool {
+	return validGemIdent(s) && s[0] >= '0' && s[0] <= '9' && !strings.Contains(s, "-")
 }
 
 func validGemIdent(s string) bool {

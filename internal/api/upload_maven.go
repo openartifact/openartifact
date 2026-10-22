@@ -137,7 +137,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	filename := filepath.Base(artPath)
 
 	groupPath, artifactIDCoord, version, _, parseErr := pkgmaven.ParseRepositoryPath(artPath)
-	if parseErr != nil || groupPath == "" || version == "" {
+	if parseErr != nil || groupPath == "" || version == "" || !pkgmaven.CleanSegments(artPath) {
 		uploadResult = "error"
 
 		http.Error(w, "invalid maven repository path", http.StatusBadRequest)
@@ -176,6 +176,21 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if err := quota.Precheck(r.Context(), h.db, repoID, r.ContentLength); err != nil {
+		uploadResult = "error"
+
+		if errors.Is(err, quota.ErrExceeded) {
+			quota.WriteExceeded(w)
+
+			return
+		}
+
+		h.log.Errorw("failed to precheck quota", "repository", repoName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
 	tmp, err := os.CreateTemp("", "maven-upload-*")
 	if err != nil {
 		uploadResult = "error"
@@ -196,9 +211,19 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	hSHA256 := sha256.New()
 	hSHA512 := sha512.New()
 
-	size, err := io.Copy(io.MultiWriter(tmp, hMD5, hSHA1, hSHA256, hSHA512), http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
+	limit := MaxMavenUploadBytes
+	if parts.ext == "pom" {
+		limit = pkgmaven.MaxPOMBytes
+	}
+
+	size, err := io.Copy(io.MultiWriter(tmp, hMD5, hSHA1, hSHA256, hSHA512), http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		uploadResult = "error"
+
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			http.Error(w, "payload too large", http.StatusRequestEntityTooLarge)
+			return
+		}
 
 		h.log.Errorw("failed to read request body", "path", artPath, "error", err)
 		http.Error(w, "failed to read body", http.StatusBadRequest)

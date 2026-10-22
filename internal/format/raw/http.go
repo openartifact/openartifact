@@ -340,6 +340,10 @@ func (h *HTTPHandler) handleHead(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(path, r.URL.Path)...) {
+		return
+	}
+
 	w.Header().Set("Content-Type", artifact.ContentType)
 	w.Header().Set("Content-Length", strconv.FormatInt(artifact.SizeBytes, 10))
 

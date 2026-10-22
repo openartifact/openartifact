@@ -258,3 +258,44 @@ func TestFindChartHyphenatedVersion(t *testing.T) {
 		t.Fatalf("findChart = %+v, %v", got, err)
 	}
 }
+
+func chartYAML(name, version string) string {
+	return "apiVersion: v2\nname: " + name + "\nversion: " + version + "\n"
+}
+
+func TestUploadRejectsNonSemverVersion(t *testing.T) {
+	for _, v := range []string{"'1-2.0.0'", "'1.0'", "'v1.0.0'", "'1.0.0#x'"} {
+		h, db, bs, _ := newTestHandler(t)
+
+		if code := upload(h, createHelmChart(t, chartYAML("a", v))); code != http.StatusBadRequest {
+			t.Errorf("version %s: status = %d, want 400", v, code)
+		}
+
+		if len(db.charts) != 0 || len(bs.Blobs) != 0 {
+			t.Errorf("version %s: persisted despite rejection", v)
+		}
+	}
+}
+
+func TestUploadRefusesFilenameCollision(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+	// chart "a-1.0.0-x" 2.0.0 serves file a-1.0.0-x-2.0.0.tgz
+	db.charts[chartKey("a-1.0.0-x", "2.0.0")] = &models.HelmChart{Name: "a-1.0.0-x", Version: "2.0.0"}
+
+	if code := upload(h, createHelmChart(t, chartYAML("a", "1.0.0-x-2.0.0"))); code != http.StatusConflict {
+		t.Fatalf("colliding upload status = %d, want 409", code)
+	}
+
+	if _, ok := db.charts[chartKey("a", "1.0.0-x-2.0.0")]; ok {
+		t.Error("colliding chart was stored")
+	}
+}
+
+func TestIndexURLsArePathEscaped(t *testing.T) {
+	idx := buildHelmIndex([]*models.HelmChart{{Name: "a", Version: "1.0.0+b#c?d"}}, "r", "http://h")
+
+	got := idx.Entries["a"][0].URLs[0]
+	if want := "http://h/repos/r/charts/a-1.0.0+b%23c%3Fd.tgz"; got != want {
+		t.Errorf("url = %q, want %q", got, want)
+	}
+}

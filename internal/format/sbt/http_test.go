@@ -323,3 +323,20 @@ func TestTooShortOrEmptySegmentsAreRejected(t *testing.T) {
 		t.Errorf("rows = %v, want none", db.rows)
 	}
 }
+
+// A row stored under the legacy reading of a multi-segment-group path must
+// still be protected: a new row at the current coordinates would shadow it.
+func TestImmutableGuardSeesLegacyRow(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+	db.Repo.ImmutableReleases = true
+	db.seed(&models.SBTArtifact{ID: "legacy", GroupID: "com", ArtifactID: "example", Version: "lib", Filename: "1.0/lib-1.0.jar", SHA256: "old", BlobKey: "old"})
+
+	u := "/repos/myrepo/com/example/lib/1.0/lib-1.0.jar"
+	if w := send(t, h, http.MethodPut, u, "tampered"); w.Code != http.StatusConflict {
+		t.Fatalf("overwrite shadowing a legacy release = %d, want 409", w.Code)
+	}
+
+	if len(db.rows) != 1 {
+		t.Errorf("rows = %v, want only the legacy row", db.rows)
+	}
+}

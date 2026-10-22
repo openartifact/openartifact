@@ -225,6 +225,12 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 				return
 			}
 
+			// A checksum discloses the artifact's digest: it is as quarantined
+			// as the artifact itself.
+			if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.RepoPath, underlyingPath, r.URL.Path, before)...) {
+				return
+			}
+
 			var hashVal string
 
 			switch suffix {

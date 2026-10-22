@@ -29,7 +29,7 @@ func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
-		repo:   &models.Repository{ID: "repo-1"},
+		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
 		upload: &models.DockerUpload{Offset: 10},
 	}
 	h, _ := newTestHandler(t, db)
@@ -73,7 +73,7 @@ func TestHandleUploadChunk_AcceptsContiguousRange(t *testing.T) {
 	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
-		repo:   &models.Repository{ID: "repo-1"},
+		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
 		upload: &models.DockerUpload{Offset: 0},
 	}
 	h, _ := newTestHandler(t, db)
