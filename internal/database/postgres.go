@@ -1682,7 +1682,8 @@ func (p *PostgresDB) UpsertBlob(ctx context.Context, sha256, blobKey string, siz
 	err := p.db.QueryRowContext(ctx,
 		`INSERT INTO blobs (sha256, size_bytes, blob_key)
 		 VALUES ($1, $2, $3)
-		 ON CONFLICT (sha256) DO UPDATE SET ref_count = blobs.ref_count
+		 ON CONFLICT (sha256) DO UPDATE SET
+		     size_bytes = CASE WHEN blobs.size_bytes = 0 THEN EXCLUDED.size_bytes ELSE blobs.size_bytes END
 		 RETURNING id`,
 		sha256, sizeBytes, blobKey,
 	).Scan(&blobID)
@@ -2839,7 +2840,7 @@ func (p *PostgresDB) CreateGoModule(ctx context.Context, mod *models.GoModule) e
 		return fmt.Errorf("failed to upsert zip blob for go module: %w", err)
 	}
 
-	modBlobID, err := p.upsertBlobWithMediaType(ctx, mod.ModBlobKey, mod.ModBlobKey, "text/plain", 0)
+	modBlobID, err := p.upsertBlobWithMediaType(ctx, mod.ModBlobKey, mod.ModBlobKey, "text/plain", int64(len(mod.GoModContent)))
 	if err != nil {
 		return fmt.Errorf("failed to upsert mod blob for go module: %w", err)
 	}
@@ -3633,10 +3634,10 @@ func (p *PostgresDB) ListBackupJobs(ctx context.Context, limit int) ([]*models.B
 
 // CreateCargoCrate creates a new Cargo crate.
 //
-// cargo_crates has no size_bytes column; the crate
-// blob is upserted with size_bytes=0.
+// cargo_crates has no size_bytes column; the crate blob row takes its size
+// from crate.SizeBytes.
 func (p *PostgresDB) CreateCargoCrate(ctx context.Context, crate *models.CargoCrate) error {
-	blobID, err := p.upsertBlobWithMediaType(ctx, crate.Checksum, crate.BlobKey, "application/gzip", 0)
+	blobID, err := p.upsertBlobWithMediaType(ctx, crate.Checksum, crate.BlobKey, "application/gzip", crate.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for cargo crate: %w", err)
 	}

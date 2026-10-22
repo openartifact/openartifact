@@ -180,10 +180,12 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	blobPath := azureBlobKey(sha)
 	url := fmt.Sprintf("%s/%s", a.baseURL, blobPath)
 
-	// Spool to a temp file to learn the content length without buffering in memory.
-	spool, err := os.CreateTemp("", "azure-put-*.tmp")
+	// Spool to a private temp file: it yields the content length without
+	// buffering in memory and proves the bytes hash to the claimed digest
+	// before anything becomes visible.
+	spool, size, err := spoolVerified(data, sha, "", "azure-put-*.tmp")
 	if err != nil {
-		return "", fmt.Errorf("azure: create spool file: %w", err)
+		return "", fmt.Errorf("azure: %w", err)
 	}
 
 	defer func() {
@@ -191,13 +193,14 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 		_ = os.Remove(spool.Name())
 	}()
 
-	size, err := io.Copy(spool, data)
+	// Verified content already present is never overwritten.
+	exists, err := a.Exists(ctx, sha)
 	if err != nil {
-		return "", fmt.Errorf("azure: read data: %w", err)
+		return "", err
 	}
 
-	if _, err := spool.Seek(0, io.SeekStart); err != nil {
-		return "", fmt.Errorf("azure: rewind spool: %w", err)
+	if exists {
+		return sha, nil
 	}
 
 	// Prepare headers

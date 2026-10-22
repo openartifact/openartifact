@@ -25,6 +25,7 @@ type CargoCrate struct {
 	MetadataJSON  []byte
 	BlobKey       string
 	Checksum      string
+	SizeBytes     int64 // size of the crate archive; recorded on the shared blobs row
 	Yanked        bool
 	DownloadCount int
 	CreatedAt     time.Time

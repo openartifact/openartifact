@@ -60,8 +60,9 @@ func NewFilesystemStore(basePath string) (*FilesystemStore, error) {
 }
 
 // Put stores a blob and returns its identifier.
-// If metadata contains a "sha256" key, that value is used as the blob ID (content-addressed).
-// Otherwise the computed SHA-256 of the content is the ID.
+// The blob ID is the computed SHA-256 of the content; if metadata contains a
+// "sha256" key it must equal it, else ErrDigestMismatch is returned and nothing is stored.
+// An already-present blob is left untouched.
 func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map[string]string) (string, error) {
 	var tmpPath string
 
@@ -99,12 +100,14 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 
 	computedSHA256 := hex.EncodeToString(hasher.Sum(nil))
 
-	var id string
-	if sha, ok := metadata["sha256"]; ok && sha != "" {
-		id = sha
-	} else {
-		// No caller-supplied digest: the blob is content-addressed by its computed hash.
-		id = computedSHA256
+	// The blob is content-addressed: a caller-supplied digest must be the
+	// digest of the bytes just written, otherwise nothing becomes visible.
+	id := computedSHA256
+
+	if sha, ok := metadata["sha256"]; ok && sha != "" && sha != computedSHA256 {
+		_ = os.Remove(tmpPath)
+
+		return "", fmt.Errorf("%w: claimed %s, computed %s", ErrDigestMismatch, sha, computedSHA256)
 	}
 
 	blobPath, err := fs.getBlobPath(id)
@@ -119,23 +122,30 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		return "", fmt.Errorf("failed to create blob directory: %w", err)
 	}
 
+	if metadata != nil {
+		metadata["_size"] = strconv.FormatInt(written, 10)
+		metadata["_sha256"] = computedSHA256
+	}
+
+	// Verified content already present stays untouched: never replace an
+	// object other repositories resolve through the same address.
+	if _, statErr := os.Stat(blobPath); statErr == nil {
+		_ = os.Remove(tmpPath)
+
+		return id, nil
+	}
+
 	if err := os.Rename(tmpPath, blobPath); err != nil {
 		_ = os.Remove(tmpPath)
 		return "", fmt.Errorf("failed to move blob to final path: %w", err)
 	}
 
 	if metadata != nil {
-		metadata["_size"] = strconv.FormatInt(written, 10)
-		metadata["_sha256"] = computedSHA256
 		metaPath := blobPath + ".meta"
 
 		metaData, err := json.Marshal(metadata)
 		if err == nil {
 			_ = os.WriteFile(metaPath, metaData, 0600)
-		}
-
-		if computedSHA256 != id {
-			fs.aliases.add(computedSHA256, id)
 		}
 	}
 

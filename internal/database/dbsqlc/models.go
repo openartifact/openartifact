@@ -349,6 +349,16 @@ type DockerBlob struct {
 	BlobID    string    `db:"blob_id" json:"blob_id"`
 	// Last upload, mount, re-push or HEAD of this blob in the repository; registry GC keeps blobs used within its grace period.
 	LastUsedAt time.Time `db:"last_used_at" json:"last_used_at"`
+	// Size in bytes verified at upload; NULL for rows created before it was recorded.
+	SizeBytes *int64 `db:"size_bytes" json:"size_bytes"`
+}
+
+// Images of a repository that may serve and reference a blob (pushed, mounted or referenced by one of their manifests). A docker_blobs row with no entry here predates this table and stays visible to every image of its repository.
+type DockerBlobImage struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	Image        string    `db:"image" json:"image"`
+	Digest       string    `db:"digest" json:"digest"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
 }
 
 // OCI/Docker image manifests indexed by digest

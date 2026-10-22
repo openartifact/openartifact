@@ -266,8 +266,8 @@ func (m *sessionMockDB) CreateDockerUpload(_ context.Context, _ *models.DockerUp
 func (m *sessionMockDB) GetDockerUpload(_ context.Context, _, _ string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdateDockerUploadOffset(_ context.Context, _, _ string, _ int64) error {
-	return nil
+func (m *sessionMockDB) UpdateDockerUploadOffset(_ context.Context, _, _ string, _, _ int64) (bool, error) {
+	return true, nil
 }
 func (m *sessionMockDB) DeleteDockerUpload(_ context.Context, _, _ string) error { return nil }
 

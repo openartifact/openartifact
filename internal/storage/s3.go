@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"os"
 	"path"
 	"time"
 
@@ -141,10 +142,33 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 
 	key := objectKey(sha)
 
-	_, err := s.uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
+	// Hash into a private spool first: the object only becomes visible once
+	// the claimed digest matches the bytes, and the bytes uploaded are the
+	// bytes that were hashed.
+	spool, _, err := spoolVerified(data, sha, "", "s3-put-*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("s3: %w", err)
+	}
+
+	defer func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name())
+	}()
+
+	// Verified content already present is never overwritten.
+	exists, err := s.Exists(ctx, sha)
+	if err != nil {
+		return "", err
+	}
+
+	if exists {
+		return sha, nil
+	}
+
+	_, err = s.uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
 		Bucket:   aws.String(s.bucket),
 		Key:      aws.String(key),
-		Body:     data,
+		Body:     spool,
 		Metadata: metadata,
 	})
 	if err != nil {

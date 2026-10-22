@@ -135,6 +135,11 @@ func TestAzurePutSignsMetadataAndEmptyBlob(t *testing.T) {
 	var chunked bool
 
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodHead {
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+
 		gotAuth = r.Header.Get("Authorization")
 		gotCL = r.Header.Get("Content-Length")
 		gotMeta = r.Header.Get("X-Ms-Meta-Content_type")

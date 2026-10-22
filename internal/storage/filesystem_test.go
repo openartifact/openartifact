@@ -9,9 +9,12 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net/http"
+	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"slices"
@@ -206,16 +209,17 @@ func TestFilesystem_ExistsBySHA256(t *testing.T) {
 	ctx := context.Background()
 
 	testData := []byte("test data")
+	sha := sha256Hex(testData)
 	// Put with SHA256 as ID (content-addressed)
 	id, err := store.Put(ctx, bytes.NewReader(testData), map[string]string{
-		"sha256": sha64,
+		"sha256": sha,
 	})
 	if err != nil {
 		t.Fatalf("Put failed: %v", err)
 	}
 
 	// Check with correct hash
-	foundID, exists, err := store.ExistsBySHA256(ctx, sha64)
+	foundID, exists, err := store.ExistsBySHA256(ctx, sha)
 	if err != nil {
 		t.Fatalf("ExistsBySHA256 failed: %v", err)
 	}
@@ -329,15 +333,37 @@ func sha256Hex(b []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// putLegacyAliased lays out a blob the way versions that accepted an unverified
+// "sha256" claim did: stored under id, with a sidecar naming the real digest.
+func putLegacyAliased(t *testing.T, store *FilesystemStore, id string, data []byte) {
+	t.Helper()
+
+	blobPath, err := store.getBlobPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.MkdirAll(filepath.Dir(blobPath), 0o755); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.WriteFile(blobPath, data, 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	meta, _ := json.Marshal(map[string]string{"sha256": id, "_sha256": sha256Hex(data)})
+	if err := os.WriteFile(blobPath+".meta", meta, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
 func TestFilesystem_ExistsBySHA256_AliasIndex(t *testing.T) {
 	store := newTestFilesystemStore(t)
 	ctx := context.Background()
 
-	// The blob ID is caller-supplied and differs from the content digest.
+	// A blob written by an older version under an ID that differs from the content digest.
 	dataA := []byte("alias blob A")
-	if _, err := store.Put(ctx, bytes.NewReader(dataA), map[string]string{"sha256": sha64}); err != nil {
-		t.Fatalf("Put A: %v", err)
-	}
+	putLegacyAliased(t, store, sha64, dataA)
 
 	// First lookup builds the index from the sidecars.
 	id, ok, err := store.ExistsBySHA256(ctx, sha256Hex(dataA))
@@ -349,9 +375,8 @@ func TestFilesystem_ExistsBySHA256_AliasIndex(t *testing.T) {
 	dataB := []byte("alias blob B")
 	idB := strings.Repeat("cd", 32)
 
-	if _, err := store.Put(ctx, bytes.NewReader(dataB), map[string]string{"sha256": idB}); err != nil {
-		t.Fatalf("Put B: %v", err)
-	}
+	putLegacyAliased(t, store, idB, dataB)
+	store.aliases.add(sha256Hex(dataB), idB)
 
 	if id, ok, err = store.ExistsBySHA256(ctx, sha256Hex(dataB)); err != nil || !ok || id != idB {
 		t.Fatalf("lookup B = (%q, %v, %v), want (%q, true, nil)", id, ok, err, idB)
@@ -469,5 +494,73 @@ func TestNewFilesystemStoreSweepsStaleUploadTemps(t *testing.T) {
 
 	if _, err := os.Stat(fresh); err != nil {
 		t.Errorf("fresh temp file must be kept: %v", err)
+	}
+}
+
+func TestFilesystem_PutRejectsDigestMismatch(t *testing.T) {
+	store := newTestFilesystemStore(t)
+	ctx := context.Background()
+
+	good := []byte("verified")
+	sha := sha256Hex(good)
+
+	if _, err := store.Put(ctx, bytes.NewReader([]byte("other")), map[string]string{"sha256": sha}); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("Put mismatching bytes = %v, want ErrDigestMismatch", err)
+	}
+
+	if ok, _ := store.Exists(ctx, sha); ok {
+		t.Fatal("object visible after rejected Put")
+	}
+
+	entries, _ := os.ReadDir(store.basePath)
+	for _, e := range entries {
+		if strings.HasSuffix(e.Name(), ".tmp") {
+			t.Fatalf("temp file %s left behind", e.Name())
+		}
+	}
+
+	if _, err := store.Put(ctx, bytes.NewReader(good), map[string]string{"sha256": sha}); err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	// Verified content already present is not replaced, and a mismatching
+	// Put over it cannot corrupt it.
+	if _, err := store.Put(ctx, bytes.NewReader([]byte("poison")), map[string]string{"sha256": sha}); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("Put over existing = %v, want ErrDigestMismatch", err)
+	}
+
+	rc, err := store.Get(ctx, sha)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	got, _ := io.ReadAll(rc)
+	if !bytes.Equal(got, good) {
+		t.Fatalf("stored bytes = %q, want %q", got, good)
+	}
+}
+
+func TestAzurePutRejectsDigestMismatchWithoutRequest(t *testing.T) {
+	var puts int
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Method == http.MethodPut {
+			puts++
+		}
+
+		w.WriteHeader(http.StatusNotFound)
+	}))
+	defer srv.Close()
+
+	s := azureTestStore(t, srv.URL)
+
+	if _, err := s.Put(context.Background(), strings.NewReader("bytes"), map[string]string{"sha256": strings.Repeat("0", 64)}); !errors.Is(err, ErrDigestMismatch) {
+		t.Fatalf("Put = %v, want ErrDigestMismatch", err)
+	}
+
+	if puts != 0 {
+		t.Fatalf("%d PUT requests reached the server, want 0", puts)
 	}
 }

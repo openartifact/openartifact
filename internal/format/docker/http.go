@@ -52,6 +52,7 @@ type HTTPHandler struct {
 	publisher webhook.Publisher
 	authz     Authorizer
 	uploadDir string
+	uploads   uploadLocks
 }
 
 // DefaultUploadDir is where in-progress blob uploads are staged unless
@@ -340,9 +341,9 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 // blobsExist verifies every blob a pushed manifest references is stored in the
 // repository, so a manifest never lands pointing at a blob that registry GC
 // already removed. It writes the error response and returns false otherwise.
-func (h *HTTPHandler) blobsExist(w http.ResponseWriter, r *http.Request, repoID string, digests []string) bool {
+func (h *HTTPHandler) blobsExist(w http.ResponseWriter, r *http.Request, repoID, image string, digests []string) bool {
 	for _, d := range digests {
-		blob, err := h.db.GetDockerBlob(r.Context(), repoID, d)
+		blob, err := h.getVisibleBlob(r.Context(), repoID, image, d)
 		if err != nil {
 			h.log.Errorw("failed to look up referenced blob", "digest", d, "error", err)
 			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -351,7 +352,7 @@ func (h *HTTPHandler) blobsExist(w http.ResponseWriter, r *http.Request, repoID 
 		}
 
 		if blob == nil {
-			h.errorResponse(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "manifest references a blob that is not in the repository: "+d)
+			h.errorResponse(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "manifest references a blob that is not in the image: "+d)
 
 			return false
 		}
@@ -427,7 +428,9 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	// manifest so registry GC can tell what is still in use.
 	refs := ocimanifest.ParseRefs(body)
 
-	if !h.blobsExist(w, r, repo.ID, ocimanifest.PushedBlobs(body)) {
+	pushedBlobs := ocimanifest.PushedBlobs(body)
+
+	if !h.blobsExist(w, r, repo.ID, image, pushedBlobs) {
 		return
 	}
 
@@ -440,6 +443,7 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		Size:          int64(len(body)),
 		SubjectDigest: subjectDigest,
 		Refs:          &refs,
+		RequiredBlobs: pushedBlobs,
 		CreatedAt:     time.Now(),
 		UpdatedAt:     time.Now(),
 	}
@@ -473,6 +477,11 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 
 		return nil
 	}); err != nil {
+		if errors.Is(err, database.ErrDockerBlobsMissing) {
+			h.errorResponse(w, http.StatusBadRequest, "MANIFEST_BLOB_UNKNOWN", "manifest references a blob that is not in the image")
+			return
+		}
+
 		h.log.Errorw("failed to store manifest", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
@@ -773,12 +782,12 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	name := vars["name"]
 	digest := vars["digest"]
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
 
-	blob, err := h.db.GetDockerBlob(r.Context(), repo.ID, digest)
+	blob, err := h.getVisibleBlob(r.Context(), repo.ID, image, digest)
 	if err != nil {
 		h.log.Errorw("failed to get blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -791,6 +800,14 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	size, err := h.blobSize(r.Context(), blob)
+	if err != nil {
+		h.log.Errorw("failed to size blob", "digest", digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return
+	}
+
 	if quarantine.Enforce(w, r, h.db, repo.ID, quarantine.PathKeys(
 		blob.ID, digest, name+"/blobs/"+digest, r.URL.Path)...) {
 		return
@@ -799,7 +816,7 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	// Layers and configs are the bulk of a pull; the registry spec lets a
 	// server answer a blob GET with a redirect, which every client follows.
 	// Manifests (above) are never presigned.
-	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: blob.BlobSHA256, Size: blob.Size, Repository: repo}) {
+	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: blob.BlobSHA256, Size: size, Repository: repo}) {
 		return
 	}
 
@@ -813,9 +830,9 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = rc.Close() }()
 
-	w.Header().Set("Content-Type", blob.MediaType)
+	w.Header().Set("Content-Type", blobContentType)
 	w.Header().Set("Docker-Content-Digest", blob.Digest)
-	w.Header().Set("Content-Length", strconv.FormatInt(blob.Size, 10))
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := io.Copy(w, rc); err != nil {
@@ -829,12 +846,12 @@ func (h *HTTPHandler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 	name := vars["name"]
 	digest := vars["digest"]
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
 
-	blob, err := h.db.GetDockerBlob(r.Context(), repo.ID, digest)
+	blob, err := h.getVisibleBlob(r.Context(), repo.ID, image, digest)
 	if err != nil {
 		h.log.Errorw("failed to get blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -844,6 +861,14 @@ func (h *HTTPHandler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 
 	if blob == nil {
 		h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
+		return
+	}
+
+	size, err := h.blobSize(r.Context(), blob)
+	if err != nil {
+		h.log.Errorw("failed to size blob", "digest", digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
 		return
 	}
 
@@ -862,15 +887,16 @@ func (h *HTTPHandler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	w.Header().Set("Content-Type", blob.MediaType)
+	w.Header().Set("Content-Type", blobContentType)
 	w.Header().Set("Docker-Content-Digest", blob.Digest)
-	w.Header().Set("Content-Length", strconv.FormatInt(blob.Size, 10))
+	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)
 }
 
 // blobAlreadyHeld reports whether the repository has the blob, marking it used
-// so registry GC keeps it. A blob GC removed since the lookup counts as absent.
-func (h *HTTPHandler) blobAlreadyHeld(ctx context.Context, repoID, digest string) (bool, error) {
+// so registry GC keeps it and linking it to the image: the caller has just
+// proven it holds the bytes. A blob GC removed since the lookup counts as absent.
+func (h *HTTPHandler) blobAlreadyHeld(ctx context.Context, repoID, image, digest string) (bool, error) {
 	existing, err := h.db.GetDockerBlob(ctx, repoID, digest)
 	if err != nil {
 		return false, fmt.Errorf("look up existing blob: %w", err)
@@ -883,6 +909,12 @@ func (h *HTTPHandler) blobAlreadyHeld(ctx context.Context, repoID, digest string
 	still, err := h.touchBlob(ctx, repoID, digest)
 	if err != nil {
 		return false, fmt.Errorf("touch existing blob: %w", err)
+	}
+
+	if still {
+		if err := h.linkBlobImage(ctx, repoID, image, digest); err != nil {
+			return false, fmt.Errorf("link existing blob: %w", err)
+		}
 	}
 
 	return still, nil
@@ -906,12 +938,12 @@ func (h *HTTPHandler) handleDeleteBlob(w http.ResponseWriter, r *http.Request) {
 	name := vars["name"]
 	digest := vars["digest"]
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
 
-	blob, err := h.db.GetDockerBlob(r.Context(), repo.ID, digest)
+	blob, err := h.getVisibleBlob(r.Context(), repo.ID, image, digest)
 	if err != nil {
 		h.log.Errorw("failed to get blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -950,12 +982,12 @@ func (h *HTTPHandler) handleInitiateBlobUpload(w http.ResponseWriter, r *http.Re
 	vars := urlparams.Vars(r)
 	name := vars["name"]
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
 
-	if h.tryMountBlob(w, r, repo, name) {
+	if h.tryMountBlob(w, r, repo, image, name) {
 		return
 	}
 
@@ -998,7 +1030,7 @@ func (h *HTTPHandler) handleInitiateBlobUpload(w http.ResponseWriter, r *http.Re
 // returns false without writing anything and the caller opens a regular upload
 // session — the spec's fallback, which also avoids revealing whether a blob the
 // caller cannot read exists elsewhere.
-func (h *HTTPHandler) tryMountBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, name string) bool {
+func (h *HTTPHandler) tryMountBlob(w http.ResponseWriter, r *http.Request, repo *models.Repository, image, name string) bool {
 	q := r.URL.Query()
 	digest, from := q.Get("mount"), q.Get("from")
 
@@ -1008,7 +1040,7 @@ func (h *HTTPHandler) tryMountBlob(w http.ResponseWriter, r *http.Request, repo 
 
 	ctx := r.Context()
 
-	existing, err := h.db.GetDockerBlob(ctx, repo.ID, digest)
+	existing, err := h.getVisibleBlob(ctx, repo.ID, image, digest)
 	if err != nil {
 		h.log.Errorw("failed to look up mount target blob", "digest", digest, "error", err)
 		return false
@@ -1022,12 +1054,12 @@ func (h *HTTPHandler) tryMountBlob(w http.ResponseWriter, r *http.Request, repo 
 	}
 
 	if existing == nil {
-		src := h.mountSource(r, repo, from, digest)
+		src := h.mountSource(r, repo, image, from, digest)
 		if src == nil {
 			return false
 		}
 
-		if !h.linkBlob(ctx, repo.ID, digest, src) {
+		if !h.linkBlob(ctx, repo.ID, image, digest, src) {
 			return false
 		}
 	}
@@ -1040,9 +1072,10 @@ func (h *HTTPHandler) tryMountBlob(w http.ResponseWriter, r *http.Request, repo 
 	return true
 }
 
-// mountSource returns the blob digest in the `from` repository when the caller
-// may read it and it is not quarantined, or nil.
-func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, from, digest string) *models.DockerBlob {
+// mountSource returns the blob digest in the `from` image when the caller may
+// read it and it is not quarantined, or nil. `from` may be another image of the
+// target repository: that is how an image takes a blob it was not pushed.
+func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, image, from, digest string) *models.DockerBlob {
 	if from == "" || h.authz == nil {
 		return nil
 	}
@@ -1055,7 +1088,7 @@ func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, fr
 	}
 
 	srcRepo, err := h.resolveRepo(ctx, srcRepoName)
-	if err != nil || srcRepo == nil || srcRepo.ID == target.ID {
+	if err != nil || srcRepo == nil || (srcRepo.ID == target.ID && srcImage == image) {
 		return nil
 	}
 
@@ -1073,7 +1106,7 @@ func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, fr
 		return nil
 	}
 
-	blob, err := h.db.GetDockerBlob(ctx, srcRepo.ID, digest)
+	blob, err := h.getVisibleBlob(ctx, srcRepo.ID, srcImage, digest)
 	if err != nil || blob == nil {
 		return nil
 	}
@@ -1086,10 +1119,11 @@ func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, fr
 	return blob
 }
 
-// linkBlob adds a docker_blobs row for the target repository pointing at the
-// same content-addressed storage blob as src. It reports whether the link
-// exists afterwards.
-func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, digest string, src *models.DockerBlob) bool {
+// linkBlob makes src available to the target image: it adds a docker_blobs row
+// for the target repository pointing at the same content-addressed storage
+// blob (none for a source in the same repository) and links the image. It
+// reports whether the link exists afterwards.
+func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, image, digest string, src *models.DockerBlob) bool {
 	err := storage.WithBlobLock(ctx, h.db, src.BlobSHA256, func(ctx context.Context) error {
 		// Registry GC may have removed the source record (and its storage) since
 		// mountSource looked it up; linking then would point at a blob that is gone.
@@ -1102,6 +1136,10 @@ func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, digest string, src *
 			return errMountSourceGone
 		}
 
+		if src.RepositoryID == repoID {
+			return h.linkBlobImage(ctx, repoID, image, digest)
+		}
+
 		return h.db.CreateDockerBlob(ctx, &models.DockerBlob{
 			ID:           uuid.New().String(),
 			RepositoryID: repoID,
@@ -1109,6 +1147,7 @@ func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, digest string, src *
 			MediaType:    src.MediaType,
 			Size:         src.Size,
 			BlobSHA256:   src.BlobSHA256,
+			Image:        &image,
 			CreatedAt:    time.Now(),
 		})
 	})
@@ -1122,6 +1161,84 @@ func (h *HTTPHandler) linkBlob(ctx context.Context, repoID, digest string, src *
 
 	return true
 }
+
+// lockUpload takes the upload session's lock, so requests on one session run
+// one at a time. On failure (the request was cancelled while waiting) it has
+// written the error response.
+func (h *HTTPHandler) lockUpload(w http.ResponseWriter, r *http.Request, repoID, uploadUUID string) (func(), bool) {
+	unlock, err := h.uploads.lock(r.Context(), repoID+"/"+uploadUUID)
+	if err != nil {
+		h.errorResponse(w, http.StatusServiceUnavailable, "UNKNOWN", "upload session is busy")
+		return nil, false
+	}
+
+	return unlock, true
+}
+
+// blobVisible reports whether the image may serve and reference the blob the
+// repository holds. Databases that do not track image links see every blob of
+// the repository.
+func (h *HTTPHandler) blobVisible(ctx context.Context, repoID, image, digest string) (bool, error) {
+	v, ok := h.db.(database.DockerBlobImages)
+	if !ok {
+		return true, nil
+	}
+
+	return v.DockerBlobVisible(ctx, repoID, image, digest)
+}
+
+// linkBlobImage records that the image holds a blob the repository has.
+func (h *HTTPHandler) linkBlobImage(ctx context.Context, repoID, image, digest string) error {
+	v, ok := h.db.(database.DockerBlobImages)
+	if !ok {
+		return nil
+	}
+
+	return v.LinkDockerBlob(ctx, repoID, image, digest)
+}
+
+// getVisibleBlob returns the repository's blob only when the image may see it
+// (nil otherwise), so a principal limited to one image by RBAC path_pattern
+// cannot read or reference another image's blobs through its own image path.
+func (h *HTTPHandler) getVisibleBlob(ctx context.Context, repoID, image, digest string) (*models.DockerBlob, error) {
+	blob, err := h.db.GetDockerBlob(ctx, repoID, digest)
+	if err != nil || blob == nil {
+		return nil, err //nolint:wrapcheck // callers log and answer with their own error
+	}
+
+	visible, err := h.blobVisible(ctx, repoID, image, digest)
+	if err != nil {
+		return nil, fmt.Errorf("check blob image link: %w", err)
+	}
+
+	if !visible {
+		return nil, nil //nolint:nilnil // not visible reads as absent
+	}
+
+	return blob, nil
+}
+
+// blobSize is the blob's byte length for Content-Length: the size verified at
+// upload, or, for rows whose recorded size is missing or zero (the shared blobs
+// row keeps the first writer's size, which some formats record as 0), the size
+// of the stored object.
+func (h *HTTPHandler) blobSize(ctx context.Context, blob *models.DockerBlob) (int64, error) {
+	if blob.Size > 0 {
+		return blob.Size, nil
+	}
+
+	size, err := h.blobStore.GetSize(ctx, blob.BlobSHA256)
+	if err != nil {
+		return 0, fmt.Errorf("stat stored blob: %w", err)
+	}
+
+	return size, nil
+}
+
+// blobContentType is what every registry blob is served as; the layer or
+// config media type lives in the manifest's descriptor, and the shared blobs
+// row's media_type belongs to whichever format stored the bytes first.
+const blobContentType = "application/octet-stream"
 
 // handleGetUploadStatus gets the status of an in-progress upload.
 func (h *HTTPHandler) handleGetUploadStatus(w http.ResponseWriter, r *http.Request) {
@@ -1212,6 +1329,15 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// One request at a time per session, and the offset is read under the
+	// lock: the bytes this chunk appends start exactly where the previous
+	// request on the session ended.
+	unlock, ok := h.lockUpload(w, r, repo.ID, uploadUUID)
+	if !ok {
+		return
+	}
+	defer unlock()
+
 	upload, err := h.db.GetDockerUpload(r.Context(), repo.ID, uploadUUID)
 	if err != nil {
 		h.log.Errorw("failed to get upload", "uuid", uploadUUID, "error", err)
@@ -1275,12 +1401,20 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Update offset in database
+	// Advance the offset only if it is still where this chunk started; the
+	// bytes written past it are truncated by whichever request opens the file next.
 	newOffset := upload.Offset + written
-	if err := h.db.UpdateDockerUploadOffset(r.Context(), repo.ID, uploadUUID, newOffset); err != nil {
+
+	moved, err := h.db.UpdateDockerUploadOffset(r.Context(), repo.ID, uploadUUID, upload.Offset, newOffset)
+	if err != nil {
 		h.log.Errorw("failed to update upload offset", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
+		return
+	}
+
+	if !moved {
+		h.errorResponse(w, http.StatusConflict, "BLOB_UPLOAD_INVALID", "upload changed concurrently; query its status and resume")
 		return
 	}
 
@@ -1315,10 +1449,18 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	repo, _, ok := h.target(w, r, name)
+	repo, image, ok := h.target(w, r, name)
 	if !ok {
 		return
 	}
+
+	// The session is locked from here to the end of the request: nothing can
+	// append to or truncate the staged file while it is hashed and stored.
+	unlock, ok := h.lockUpload(w, r, repo.ID, uploadUUID)
+	if !ok {
+		return
+	}
+	defer unlock()
 
 	upload, err := h.db.GetDockerUpload(r.Context(), repo.ID, uploadUUID)
 	if err != nil {
@@ -1431,6 +1573,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		Digest:       digest,
 		MediaType:    "application/octet-stream",
 		Size:         size,
+		Image:        &image,
 		CreatedAt:    time.Now(),
 	}
 
@@ -1442,7 +1585,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	if err := storage.WithBlobLock(r.Context(), h.db, computedDigestHex, func(ctx context.Context) error {
 		// A blob the repository already holds is not stored again: pushing an
 		// existing digest completes with 201, as the distribution spec requires.
-		held, err := h.blobAlreadyHeld(ctx, repo.ID, digest)
+		held, err := h.blobAlreadyHeld(ctx, repo.ID, image, digest)
 		if err != nil {
 			return err
 		}
@@ -1468,6 +1611,18 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 
 		return nil
 	}); err != nil {
+		// The store hashes what it is given and refuses bytes that differ from
+		// the digest that was verified above: the staged file changed in between.
+		if errors.Is(err, storage.ErrDigestMismatch) {
+			h.log.Warnw("staged upload changed while completing", "uuid", uploadUUID, "digest", digest, "error", err)
+			h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "computed digest does not match")
+
+			_ = os.Remove(tempFile)
+			_ = h.db.DeleteDockerUpload(r.Context(), repo.ID, uploadUUID)
+
+			return
+		}
+
 		h.log.Errorw("failed to store blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
@@ -1494,6 +1649,12 @@ func (h *HTTPHandler) handleCancelBlobUpload(w http.ResponseWriter, r *http.Requ
 	if !ok {
 		return
 	}
+
+	unlock, ok := h.lockUpload(w, r, repo.ID, uploadUUID)
+	if !ok {
+		return
+	}
+	defer unlock()
 
 	upload, err := h.db.GetDockerUpload(r.Context(), repo.ID, uploadUUID)
 	if err != nil {

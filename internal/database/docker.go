@@ -27,13 +27,39 @@ func (p *PostgresDB) CreateDockerBlob(ctx context.Context, blob *models.DockerBl
 		return fmt.Errorf("failed to upsert blob for docker blob: %w", err)
 	}
 
-	row, err := p.q.CreateDockerBlob(ctx, dbsqlc.CreateDockerBlobParams{
+	size := blob.Size
+
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin docker blob tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(context.WithoutCancel(ctx)) }()
+
+	q := p.q.WithTx(tx)
+
+	row, err := q.CreateDockerBlob(ctx, dbsqlc.CreateDockerBlobParams{
 		RepositoryID: blob.RepositoryID,
 		Digest:       blob.Digest,
 		BlobID:       blobID,
+		SizeBytes:    &size,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create docker blob: %w", err)
+	}
+
+	if blob.Image != nil {
+		if err := q.LinkDockerBlobImages(ctx, dbsqlc.LinkDockerBlobImagesParams{
+			RepositoryID: blob.RepositoryID,
+			Image:        *blob.Image,
+			Digests:      []string{blob.Digest},
+		}); err != nil {
+			return fmt.Errorf("link docker blob to image: %w", err)
+		}
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit docker blob: %w", err)
 	}
 
 	blob.ID = row.ID
@@ -42,9 +68,11 @@ func (p *PostgresDB) CreateDockerBlob(ctx context.Context, blob *models.DockerBl
 	return nil
 }
 
-// upsertBlobWithMediaType is like UpsertBlob but also sets media_type,
-// needed by docker blobs (layers/configs have a real content type, unlike
-// the generic default used elsewhere).
+// upsertBlobWithMediaType is like UpsertBlob but also sets media_type on
+// insert. The blobs row is shared by every repository and format: the first
+// writer's media_type stays (a later writer, possibly another tenant storing
+// the same bytes, never overwrites it), and a size recorded as 0 is corrected
+// by the first writer that knows the real one.
 func (p *PostgresDB) upsertBlobWithMediaType(ctx context.Context, sha256, blobKey, mediaType string, sizeBytes int64) (string, error) {
 	if err := validateBlobSHA256(sha256); err != nil {
 		return "", err
@@ -55,7 +83,8 @@ func (p *PostgresDB) upsertBlobWithMediaType(ctx context.Context, sha256, blobKe
 	err := p.db.QueryRowContext(ctx,
 		`INSERT INTO blobs (sha256, size_bytes, media_type, blob_key)
 		 VALUES ($1, $2, $3, $4)
-		 ON CONFLICT (sha256) DO UPDATE SET media_type = EXCLUDED.media_type
+		 ON CONFLICT (sha256) DO UPDATE SET
+		     size_bytes = CASE WHEN blobs.size_bytes = 0 THEN EXCLUDED.size_bytes ELSE blobs.size_bytes END
 		 RETURNING id`,
 		sha256, sizeBytes, mediaType, blobKey,
 	).Scan(&blobID)
@@ -67,7 +96,7 @@ func (p *PostgresDB) upsertBlobWithMediaType(ctx context.Context, sha256, blobKe
 }
 
 // EnsureBlob ensures the global blobs table has a row for sha256 (creating
-// it, or updating its media type, if it already exists) and returns its
+// it if it does not exist yet) and returns its
 // blobs.id. Manifests are stored directly in the blob store without a
 // per-repo registry row (unlike docker_blobs), so this is the manifest
 // handlers' entry point into upsertBlobWithMediaType.
@@ -179,16 +208,21 @@ func (p *PostgresDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUU
 	}, nil
 }
 
-func (p *PostgresDB) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, offset int64) error {
-	if err := p.q.UpdateDockerUploadOffset(ctx, dbsqlc.UpdateDockerUploadOffsetParams{
+// UpdateDockerUploadOffset moves the session's offset from oldOffset to
+// newOffset and reports whether it did: false means the offset no longer
+// equals oldOffset (another request advanced or completed the session).
+func (p *PostgresDB) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+	n, err := p.q.UpdateDockerUploadOffset(ctx, dbsqlc.UpdateDockerUploadOffsetParams{
 		RepositoryID: repositoryID,
 		UploadUuid:   uploadUUID,
-		Offset:       offset,
-	}); err != nil {
-		return fmt.Errorf("failed to update docker upload offset: %w", err)
+		OldOffset:    oldOffset,
+		NewOffset:    newOffset,
+	})
+	if err != nil {
+		return false, fmt.Errorf("failed to update docker upload offset: %w", err)
 	}
 
-	return nil
+	return n == 1, nil
 }
 
 func (p *PostgresDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
@@ -220,6 +254,10 @@ type DockerUploadSweepStore interface {
 }
 
 var _ DockerUploadSweepStore = (*PostgresDB)(nil)
+
+// ErrDockerBlobsMissing is returned by CreateDockerManifest when a blob the
+// manifest requires is not (or no longer) available to its image.
+var ErrDockerBlobsMissing = errors.New("manifest references a blob that is not available to the image")
 
 // Docker manifest methods
 
@@ -264,6 +302,23 @@ func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerM
 	}
 
 	q := p.q.WithTx(tx)
+
+	// GC deletes unused blobs under the exclusive lock, so under the shared
+	// lock every required blob that is present stays until this commit.
+	if len(m.RequiredBlobs) > 0 {
+		n, err := q.CountDockerBlobsVisibleToImage(ctx, dbsqlc.CountDockerBlobsVisibleToImageParams{
+			RepositoryID: m.RepositoryID,
+			Image:        m.Image,
+			Digests:      m.RequiredBlobs,
+		})
+		if err != nil {
+			return fmt.Errorf("verify docker manifest blobs: %w", err)
+		}
+
+		if n != int64(len(m.RequiredBlobs)) {
+			return ErrDockerBlobsMissing
+		}
+	}
 
 	row, err := q.CreateDockerManifest(ctx, params)
 	if err != nil {

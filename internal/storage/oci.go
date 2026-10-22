@@ -29,6 +29,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"os"
 	"strings"
 	"time"
 )
@@ -114,6 +115,18 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 		return "", err
 	}
 
+	// Verify locally before talking to the registry, so a mismatch never
+	// leaves an upload session behind and the bytes sent are the bytes hashed.
+	spool, size, err := spoolVerified(data, sha, "", "oci-put-*.tmp")
+	if err != nil {
+		return "", fmt.Errorf("oci: %w", err)
+	}
+
+	defer func() {
+		_ = spool.Close()
+		_ = os.Remove(spool.Name())
+	}()
+
 	// Check if blob already exists (avoid re-upload).
 	exists, err := o.Exists(ctx, sha)
 	if err != nil {
@@ -165,9 +178,14 @@ func (o *OCIBlobStore) Put(ctx context.Context, data io.Reader, metadata map[str
 	q.Set("digest", "sha256:"+sha)
 	putURL.RawQuery = q.Encode()
 
-	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, putURL.String(), data)
+	putReq, err := http.NewRequestWithContext(ctx, http.MethodPut, putURL.String(), spool)
 	if err != nil {
 		return "", fmt.Errorf("oci: complete upload: %w", err)
+	}
+
+	putReq.ContentLength = size
+	if size == 0 {
+		putReq.Body = http.NoBody
 	}
 
 	putReq.Header.Set("Content-Type", "application/octet-stream")

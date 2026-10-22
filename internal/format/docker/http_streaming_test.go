@@ -72,15 +72,15 @@ func (f *fakeDB) GetDockerUpload(_ context.Context, repositoryID, uploadUUID str
 	return f.upload, nil
 }
 
-func (f *fakeDB) UpdateDockerUploadOffset(_ context.Context, repositoryID, uploadUUID string, offset int64) error {
-	if !f.uploadMatches(repositoryID, uploadUUID) {
-		return nil
+func (f *fakeDB) UpdateDockerUploadOffset(_ context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+	if !f.uploadMatches(repositoryID, uploadUUID) || f.upload.Offset != oldOffset {
+		return false, nil
 	}
 
-	f.offset = offset
-	f.upload.Offset = offset
+	f.offset = newOffset
+	f.upload.Offset = newOffset
 
-	return nil
+	return true, nil
 }
 
 func (f *fakeDB) GetDockerBlob(_ context.Context, _, digest string) (*models.DockerBlob, error) {

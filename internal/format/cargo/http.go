@@ -371,6 +371,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		Readme:        readme,
 		MetadataJSON:  metadataBytes,
 		Checksum:      checksum,
+		SizeBytes:     int64(len(crateBytes)),
 		Yanked:        false,
 		DownloadCount: 0,
 	}

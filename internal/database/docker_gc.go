@@ -92,6 +92,36 @@ func (p *PostgresDB) beginDockerGCTx(ctx context.Context, repoID string) (pgx.Tx
 	return tx, nil
 }
 
+// DockerBlobImages is implemented by databases that track which images of a
+// repository a blob belongs to, so RBAC path_pattern scoped to one image also
+// scopes the blob digests it can read and reference.
+type DockerBlobImages interface {
+	// DockerBlobVisible reports whether the image may serve and reference the
+	// blob: it is linked to the image, or it predates image links and has none.
+	DockerBlobVisible(ctx context.Context, repoID, image, digest string) (bool, error)
+	// LinkDockerBlob links a blob the repository holds to the image.
+	LinkDockerBlob(ctx context.Context, repoID, image, digest string) error
+}
+
+var _ DockerBlobImages = (*PostgresDB)(nil)
+
+func (p *PostgresDB) DockerBlobVisible(ctx context.Context, repoID, image, digest string) (bool, error) {
+	v, err := p.q.DockerBlobVisibleToImage(ctx, dbsqlc.DockerBlobVisibleToImageParams{RepositoryID: repoID, Image: image, Digest: digest})
+	if err != nil {
+		return false, fmt.Errorf("check docker blob image link: %w", err)
+	}
+
+	return v != nil && *v, nil
+}
+
+func (p *PostgresDB) LinkDockerBlob(ctx context.Context, repoID, image, digest string) error {
+	if err := p.q.LinkDockerBlobImages(ctx, dbsqlc.LinkDockerBlobImagesParams{RepositoryID: repoID, Image: image, Digests: []string{digest}}); err != nil {
+		return fmt.Errorf("link docker blob to image: %w", err)
+	}
+
+	return nil
+}
+
 func insertDockerManifestRefs(ctx context.Context, q *dbsqlc.Queries, manifestID, repoID, image string, refs *models.DockerManifestRefs) error {
 	for _, set := range []struct {
 		kind    string
@@ -113,6 +143,18 @@ func insertDockerManifestRefs(ctx context.Context, q *dbsqlc.Queries, manifestID
 			Digests:      set.digests,
 		}); err != nil {
 			return fmt.Errorf("record docker manifest %s refs: %w", set.kind, err)
+		}
+
+		// An image that references a blob may serve it (covers manifests that
+		// GC indexes after the fact).
+		if set.kind == dockerRefBlob {
+			if err := q.LinkDockerBlobImages(ctx, dbsqlc.LinkDockerBlobImagesParams{
+				RepositoryID: repoID,
+				Image:        image,
+				Digests:      set.digests,
+			}); err != nil {
+				return fmt.Errorf("link docker blobs to image: %w", err)
+			}
 		}
 	}
 

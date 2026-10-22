@@ -145,7 +145,9 @@ type Database interface {
 
 	CreateDockerUpload(ctx context.Context, upload *models.DockerUpload) error
 	GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error)
-	UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, offset int64) error
+	// UpdateDockerUploadOffset is a compare-and-set: it moves the offset from
+	// oldOffset to newOffset and reports false when it no longer equals oldOffset.
+	UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error)
 	DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error
 
 	CreateDockerManifest(ctx context.Context, m *models.DockerManifest) error

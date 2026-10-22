@@ -21,10 +21,46 @@ func (q *Queries) BlobRowExists(ctx context.Context, sha256 string) (bool, error
 	return exists, err
 }
 
+const countDockerBlobsVisibleToImage = `-- name: CountDockerBlobsVisibleToImage :one
+WITH visible AS (
+    UPDATE docker_blobs b SET last_used_at = now()
+    WHERE b.repository_id = $1::uuid AND b.digest = ANY($2::text[])
+      AND (
+          EXISTS (
+              SELECT 1 FROM docker_blob_images i
+              WHERE i.repository_id = b.repository_id AND i.image = $3::text AND i.digest = b.digest
+          )
+          OR NOT EXISTS (
+              SELECT 1 FROM docker_blob_images i
+              WHERE i.repository_id = b.repository_id AND i.digest = b.digest
+          )
+      )
+    RETURNING b.id
+)
+SELECT count(*)::bigint AS n FROM visible
+`
+
+type CountDockerBlobsVisibleToImageParams struct {
+	RepositoryID string   `db:"repository_id" json:"repository_id"`
+	Digests      []string `db:"digests" json:"digests"`
+	Image        string   `db:"image" json:"image"`
+}
+
+// How many of the digests the repository holds and the image may reference
+// (see DockerBlobVisibleToImage); also marks them as just used, so registry GC
+// keeps them for its grace period.
+func (q *Queries) CountDockerBlobsVisibleToImage(ctx context.Context, arg CountDockerBlobsVisibleToImageParams) (int64, error) {
+	row := q.db.QueryRow(ctx, countDockerBlobsVisibleToImage, arg.RepositoryID, arg.Digests, arg.Image)
+	var n int64
+	err := row.Scan(&n)
+	return n, err
+}
+
 const createDockerBlob = `-- name: CreateDockerBlob :one
-INSERT INTO docker_blobs (repository_id, digest, blob_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id, last_used_at = now()
+INSERT INTO docker_blobs (repository_id, digest, blob_id, size_bytes)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id, last_used_at = now(),
+    size_bytes = COALESCE(docker_blobs.size_bytes, EXCLUDED.size_bytes)
 RETURNING id, created_at
 `
 
@@ -32,6 +68,7 @@ type CreateDockerBlobParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Digest       string `db:"digest" json:"digest"`
 	BlobID       string `db:"blob_id" json:"blob_id"`
+	SizeBytes    *int64 `db:"size_bytes" json:"size_bytes"`
 }
 
 type CreateDockerBlobRow struct {
@@ -41,7 +78,12 @@ type CreateDockerBlobRow struct {
 
 // Re-pushing a blob the repository already holds is a no-op, not an error.
 func (q *Queries) CreateDockerBlob(ctx context.Context, arg CreateDockerBlobParams) (CreateDockerBlobRow, error) {
-	row := q.db.QueryRow(ctx, createDockerBlob, arg.RepositoryID, arg.Digest, arg.BlobID)
+	row := q.db.QueryRow(ctx, createDockerBlob,
+		arg.RepositoryID,
+		arg.Digest,
+		arg.BlobID,
+		arg.SizeBytes,
+	)
 	var i CreateDockerBlobRow
 	err := row.Scan(&i.ID, &i.CreatedAt)
 	return i, err
@@ -352,8 +394,33 @@ func (q *Queries) DeleteStaleDockerUploads(ctx context.Context, updatedAt time.T
 	return items, nil
 }
 
+const dockerBlobVisibleToImage = `-- name: DockerBlobVisibleToImage :one
+SELECT EXISTS (
+    SELECT 1 FROM docker_blob_images i
+    WHERE i.repository_id = $1::uuid AND i.image = $2::text AND i.digest = $3::text
+) OR NOT EXISTS (
+    SELECT 1 FROM docker_blob_images i
+    WHERE i.repository_id = $1::uuid AND i.digest = $3::text
+) AS visible
+`
+
+type DockerBlobVisibleToImageParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
+	Digest       string `db:"digest" json:"digest"`
+}
+
+// Whether the image may serve and reference the blob: it is linked to the
+// image, or it predates docker_blob_images and has no link to any image.
+func (q *Queries) DockerBlobVisibleToImage(ctx context.Context, arg DockerBlobVisibleToImageParams) (*bool, error) {
+	row := q.db.QueryRow(ctx, dockerBlobVisibleToImage, arg.RepositoryID, arg.Image, arg.Digest)
+	var visible *bool
+	err := row.Scan(&visible)
+	return visible, err
+}
+
 const getDockerBlob = `-- name: GetDockerBlob :one
-SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, b.size_bytes AS size, b.sha256 AS blob_sha256, dbb.created_at
+SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, COALESCE(dbb.size_bytes, b.size_bytes)::bigint AS size, b.sha256 AS blob_sha256, dbb.created_at
 FROM docker_blobs dbb
 JOIN blobs b ON b.id = dbb.blob_id
 WHERE dbb.repository_id = $1 AND dbb.digest = $2
@@ -522,8 +589,29 @@ func (q *Queries) InsertDockerManifestRefs(ctx context.Context, arg InsertDocker
 	return err
 }
 
+const linkDockerBlobImages = `-- name: LinkDockerBlobImages :exec
+INSERT INTO docker_blob_images (repository_id, image, digest)
+SELECT b.repository_id, $1::text, b.digest
+FROM docker_blobs b
+WHERE b.repository_id = $2::uuid AND b.digest = ANY($3::text[])
+ON CONFLICT DO NOTHING
+`
+
+type LinkDockerBlobImagesParams struct {
+	Image        string   `db:"image" json:"image"`
+	RepositoryID string   `db:"repository_id" json:"repository_id"`
+	Digests      []string `db:"digests" json:"digests"`
+}
+
+// Records that the image may serve and reference the blobs (see
+// docker_blob_images). Digests the repository does not hold are skipped.
+func (q *Queries) LinkDockerBlobImages(ctx context.Context, arg LinkDockerBlobImagesParams) error {
+	_, err := q.db.Exec(ctx, linkDockerBlobImages, arg.Image, arg.RepositoryID, arg.Digests)
+	return err
+}
+
 const listDockerBlobs = `-- name: ListDockerBlobs :many
-SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, b.size_bytes AS size, b.sha256 AS blob_sha256, dbb.created_at
+SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, COALESCE(dbb.size_bytes, b.size_bytes)::bigint AS size, b.sha256 AS blob_sha256, dbb.created_at
 FROM docker_blobs dbb
 JOIN blobs b ON b.id = dbb.blob_id
 WHERE dbb.repository_id = $1
@@ -984,19 +1072,32 @@ func (q *Queries) TouchDockerBlob(ctx context.Context, arg TouchDockerBlobParams
 	return id, err
 }
 
-const updateDockerUploadOffset = `-- name: UpdateDockerUploadOffset :exec
-UPDATE docker_uploads SET "offset" = $1, updated_at = now() WHERE repository_id = $2 AND upload_uuid = $3
+const updateDockerUploadOffset = `-- name: UpdateDockerUploadOffset :execrows
+UPDATE docker_uploads SET "offset" = $1, updated_at = now()
+WHERE repository_id = $2 AND upload_uuid = $3 AND "offset" = $4
 `
 
 type UpdateDockerUploadOffsetParams struct {
-	Offset       int64  `db:"offset" json:"offset"`
+	NewOffset    int64  `db:"new_offset" json:"new_offset"`
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	UploadUuid   string `db:"upload_uuid" json:"upload_uuid"`
+	OldOffset    int64  `db:"old_offset" json:"old_offset"`
 }
 
-func (q *Queries) UpdateDockerUploadOffset(ctx context.Context, arg UpdateDockerUploadOffsetParams) error {
-	_, err := q.db.Exec(ctx, updateDockerUploadOffset, arg.Offset, arg.RepositoryID, arg.UploadUuid)
-	return err
+// Compare-and-set: advances the offset only while it still equals the value the
+// caller based its write on, so two requests on one session cannot both claim
+// the same byte range.
+func (q *Queries) UpdateDockerUploadOffset(ctx context.Context, arg UpdateDockerUploadOffsetParams) (int64, error) {
+	result, err := q.db.Exec(ctx, updateDockerUploadOffset,
+		arg.NewOffset,
+		arg.RepositoryID,
+		arg.UploadUuid,
+		arg.OldOffset,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }
 
 const upsertDockerTag = `-- name: UpsertDockerTag :one

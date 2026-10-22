@@ -7,6 +7,8 @@ package docker
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"net/http"
 	"net/http/httptest"
 	"testing"
@@ -111,8 +113,10 @@ func TestGetBlobQuarantine(t *testing.T) {
 
 	payload := []byte("layer-bytes")
 
+	sum := sha256.Sum256(payload)
+
 	sha, err := store.Put(context.Background(), bytes.NewReader(payload), map[string]string{
-		"sha256": "0000000000000000000000000000000000000000000000000000000000000001",
+		"sha256": hex.EncodeToString(sum[:]),
 	})
 	if err != nil {
 		t.Fatal(err)

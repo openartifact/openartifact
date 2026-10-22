@@ -15,13 +15,16 @@ type DockerRepository struct {
 
 // DockerBlob represents a content-addressable blob (layer or config).
 type DockerBlob struct {
-	ID           string    `db:"id"`
-	RepositoryID string    `db:"repository_id"`
-	Digest       string    `db:"digest"` // sha256:<hex>
-	MediaType    string    `db:"media_type"`
-	Size         int64     `db:"size"`
-	BlobSHA256   string    `db:"blob_sha256"` // blobstore key
-	CreatedAt    time.Time `db:"created_at"`
+	ID           string `db:"id"`
+	RepositoryID string `db:"repository_id"`
+	Digest       string `db:"digest"` // sha256:<hex>
+	MediaType    string `db:"media_type"`
+	Size         int64  `db:"size"`
+	BlobSHA256   string `db:"blob_sha256"` // blobstore key
+	// Image, when set on create, also links the blob to that image of the
+	// repository ("" is the default image); nil records the repository only.
+	Image     *string   `db:"-"`
+	CreatedAt time.Time `db:"created_at"`
 }
 
 // DockerUpload tracks an in-progress chunked blob upload.
@@ -51,9 +54,14 @@ type DockerManifest struct {
 	// Refs, when set, is recorded together with the manifest in one
 	// transaction (see CreateDockerManifest). Nil leaves the manifest
 	// unindexed, to be indexed later by registry GC.
-	Refs      *DockerManifestRefs `db:"-"`
-	CreatedAt time.Time           `db:"created_at"`
-	UpdatedAt time.Time           `db:"updated_at"`
+	Refs *DockerManifestRefs `db:"-"`
+	// RequiredBlobs, when set together with Refs, are the config and layer
+	// digests the manifest needs pushed. CreateDockerManifest verifies, under
+	// the lock registry GC takes exclusively, that the repository holds each of
+	// them for this image, and fails with ErrDockerBlobsMissing otherwise.
+	RequiredBlobs []string  `db:"-"`
+	CreatedAt     time.Time `db:"created_at"`
+	UpdatedAt     time.Time `db:"updated_at"`
 }
 
 // DockerManifestRefs lists what a manifest body references: blob digests

@@ -268,8 +268,8 @@ func (m *BaseMockDB) CreateDockerUpload(ctx context.Context, upload *models.Dock
 func (m *BaseMockDB) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
 	return nil, errNotImpl("GetDockerUpload")
 }
-func (m *BaseMockDB) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, offset int64) error {
-	return errNotImpl("UpdateDockerUploadOffset")
+func (m *BaseMockDB) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+	return false, errNotImpl("UpdateDockerUploadOffset")
 }
 func (m *BaseMockDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
 	return errNotImpl("DeleteDockerUpload")

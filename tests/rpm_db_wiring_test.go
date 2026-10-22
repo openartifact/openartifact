@@ -1330,8 +1330,8 @@ func (m *MockDatabase) CreateDockerUpload(ctx context.Context, upload *models.Do
 func (m *MockDatabase) GetDockerUpload(ctx context.Context, repositoryID, uploadUUID string) (*models.DockerUpload, error) {
 	return nil, nil
 }
-func (m *MockDatabase) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, offset int64) error {
-	return nil
+func (m *MockDatabase) UpdateDockerUploadOffset(ctx context.Context, repositoryID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+	return true, nil
 }
 func (m *MockDatabase) DeleteDockerUpload(ctx context.Context, repositoryID, uploadUUID string) error {
 	return nil

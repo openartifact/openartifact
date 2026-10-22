@@ -40,7 +40,8 @@ type regFakeDB struct {
 	manifests map[string]*models.DockerManifest
 	tags      map[string]*models.DockerTag
 	uploads   map[string]*models.DockerUpload
-	resolved  []string // repository names looked up, in order
+	links     map[string]bool // repoID|image|digest, like docker_blob_images
+	resolved  []string        // repository names looked up, in order
 }
 
 func newRegFakeDB(repoNames ...string) *regFakeDB {
@@ -50,6 +51,7 @@ func newRegFakeDB(repoNames ...string) *regFakeDB {
 		manifests: map[string]*models.DockerManifest{},
 		tags:      map[string]*models.DockerTag{},
 		uploads:   map[string]*models.DockerUpload{},
+		links:     map[string]bool{},
 	}
 	d.Keys = map[string]bool{}
 
@@ -77,6 +79,31 @@ func (d *regFakeDB) CreateDockerBlob(_ context.Context, b *models.DockerBlob) er
 
 	d.blobs[k] = b
 
+	if b.Image != nil {
+		d.links[scoped(b.RepositoryID, scoped(*b.Image, b.Digest))] = true
+	}
+
+	return nil
+}
+
+// DockerBlobVisible and LinkDockerBlob mirror docker_blob_images: a blob is
+// visible to an image it is linked to, or to every image while it has no link.
+func (d *regFakeDB) DockerBlobVisible(_ context.Context, repoID, image, digest string) (bool, error) {
+	if d.links[scoped(repoID, scoped(image, digest))] {
+		return true, nil
+	}
+
+	for k := range d.links {
+		if strings.HasPrefix(k, repoID+"|") && strings.HasSuffix(k, "|"+digest) {
+			return false, nil
+		}
+	}
+
+	return true, nil
+}
+
+func (d *regFakeDB) LinkDockerBlob(_ context.Context, repoID, image, digest string) error {
+	d.links[scoped(repoID, scoped(image, digest))] = true
 	return nil
 }
 
@@ -89,12 +116,15 @@ func (d *regFakeDB) GetDockerUpload(_ context.Context, repoID, uploadUUID string
 	return d.uploads[scoped(repoID, uploadUUID)], nil
 }
 
-func (d *regFakeDB) UpdateDockerUploadOffset(_ context.Context, repoID, uploadUUID string, offset int64) error {
-	if u := d.uploads[scoped(repoID, uploadUUID)]; u != nil {
-		u.Offset = offset
+func (d *regFakeDB) UpdateDockerUploadOffset(_ context.Context, repoID, uploadUUID string, oldOffset, newOffset int64) (bool, error) {
+	u := d.uploads[scoped(repoID, uploadUUID)]
+	if u == nil || u.Offset != oldOffset {
+		return false, nil
 	}
 
-	return nil
+	u.Offset = newOffset
+
+	return true, nil
 }
 
 func (d *regFakeDB) DeleteDockerUpload(_ context.Context, repoID, uploadUUID string) error {
@@ -656,7 +686,7 @@ func TestRegistry_MountAuthorizesSourceImagePath(t *testing.T) {
 	}
 }
 
-func TestRegistry_MountOfBlobAlreadyInTargetNeedsNoSource(t *testing.T) {
+func TestRegistry_MountOfBlobAlreadyInTargetImageNeedsNoSource(t *testing.T) {
 	layer := []byte("layer")
 	digest := digestOf(layer)
 	db := newRegFakeDB("dst")
@@ -666,9 +696,97 @@ func TestRegistry_MountOfBlobAlreadyInTargetNeedsNoSource(t *testing.T) {
 		t.Fatalf("seed push = %d", rec.Code)
 	}
 
-	// Same repository, other image: the blob is repository-scoped, so it is already there.
-	rec := g.do(http.MethodPost, "/v2/dst/team/other/blobs/uploads/?mount="+digest+"&from=dst/team/app", "")
+	// The image already holds the blob: no source is consulted.
+	rec := g.do(http.MethodPost, "/v2/dst/team/app/blobs/uploads/?mount="+digest+"&from=elsewhere/x", "")
 	if rec.Code != http.StatusCreated {
 		t.Fatalf("mount = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+}
+
+// RBAC path_pattern scopes a permission to one image, so a blob another image
+// of the same repository holds must not be readable, referenceable, deletable
+// or mountable through this image without proof the caller may read it there.
+func TestRegistry_BlobsAreScopedToTheirImage(t *testing.T) {
+	layer := []byte("secret layer of team-a")
+	digest := digestOf(layer)
+	db := newRegFakeDB("reg")
+	g := newRegistry(t, db)
+
+	if rec := g.pushBlob("reg/team-a/app", layer); rec.Code != http.StatusCreated {
+		t.Fatalf("push to team-a = %d; body=%s", rec.Code, rec.Body.String())
+	}
+
+	for _, method := range []string{http.MethodGet, http.MethodHead} {
+		if rec := g.do(method, "/v2/reg/team-a/app/blobs/"+digest, ""); rec.Code != http.StatusOK {
+			t.Fatalf("%s via owning image = %d, want 200", method, rec.Code)
+		}
+
+		if rec := g.do(method, "/v2/reg/team-b/app/blobs/"+digest, ""); rec.Code != http.StatusNotFound {
+			t.Fatalf("%s via other image = %d, want 404", method, rec.Code)
+		}
+	}
+
+	// A manifest of the other image may not reference the blob.
+	manifest := `{"schemaVersion":2,"mediaType":"` + ociManifestType + `","config":{"mediaType":"application/vnd.oci.image.config.v1+json","digest":"` + digest + `","size":22},"layers":[]}`
+	if rec := g.putManifest("reg/team-b/app", "1", manifest); rec.Code != http.StatusBadRequest {
+		t.Fatalf("manifest PUT referencing another image's blob = %d, want 400; body=%s", rec.Code, rec.Body.String())
+	}
+
+	if rec := g.do(http.MethodDelete, "/v2/reg/team-b/app/blobs/"+digest, ""); rec.Code != http.StatusNotFound {
+		t.Fatalf("DELETE via other image = %d, want 404", rec.Code)
+	}
+
+	// A mount without a source the caller can read does not link it.
+	if rec := g.do(http.MethodPost, "/v2/reg/team-b/app/blobs/uploads/?mount="+digest+"&from=reg/team-a/app", ""); rec.Code != http.StatusAccepted {
+		t.Fatalf("mount without authorizer = %d, want 202 (fallback upload)", rec.Code)
+	}
+
+	// With read access to the source image the mount links it.
+	g.h.SetAuthorizer(&fakeAuthz{allow: true})
+
+	if rec := g.do(http.MethodPost, "/v2/reg/team-b/app/blobs/uploads/?mount="+digest+"&from=reg/team-a/app", ""); rec.Code != http.StatusCreated {
+		t.Fatalf("authorised same-repo mount = %d, want 201; body=%s", rec.Code, rec.Body.String())
+	}
+
+	if rec := g.do(http.MethodGet, "/v2/reg/team-b/app/blobs/"+digest, ""); rec.Code != http.StatusOK {
+		t.Fatalf("GET after mount = %d, want 200", rec.Code)
+	}
+
+	// Pushing the same bytes proves possession and links the image too.
+	if rec := g.pushBlob("reg/team-c/app", layer); rec.Code != http.StatusCreated {
+		t.Fatalf("push of existing digest = %d, want 201", rec.Code)
+	}
+
+	if rec := g.do(http.MethodGet, "/v2/reg/team-c/app/blobs/"+digest, ""); rec.Code != http.StatusOK {
+		t.Fatalf("GET after push = %d, want 200", rec.Code)
+	}
+}
+
+// The shared blobs row keeps the first writer's size and media type; the
+// registry answers from the verified size and a fixed content type.
+func TestRegistry_BlobHeadersIgnoreSharedRow(t *testing.T) {
+	layer := []byte("0123456789")
+	db := newRegFakeDB("reg")
+	g := newRegistry(t, db)
+
+	if rec := g.pushBlob("reg/app", layer); rec.Code != http.StatusCreated {
+		t.Fatalf("push = %d", rec.Code)
+	}
+
+	// Another tenant stored the same bytes first as text/html with size 0.
+	db.blobs[scoped("id-reg", digestOf(layer))].MediaType = "text/html"
+	db.blobs[scoped("id-reg", digestOf(layer))].Size = 0
+
+	rec := g.do(http.MethodGet, "/v2/reg/app/blobs/"+digestOf(layer), "")
+	if rec.Code != http.StatusOK || rec.Body.String() != string(layer) {
+		t.Fatalf("GET = %d body %q", rec.Code, rec.Body.String())
+	}
+
+	if got := rec.Header().Get("Content-Length"); got != "10" {
+		t.Errorf("Content-Length = %q, want 10", got)
+	}
+
+	if got := rec.Header().Get("Content-Type"); got != "application/octet-stream" {
+		t.Errorf("Content-Type = %q, want application/octet-stream", got)
 	}
 }

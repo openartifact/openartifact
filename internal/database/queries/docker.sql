@@ -1,12 +1,13 @@
 -- name: CreateDockerBlob :one
 -- Re-pushing a blob the repository already holds is a no-op, not an error.
-INSERT INTO docker_blobs (repository_id, digest, blob_id)
-VALUES ($1, $2, $3)
-ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id, last_used_at = now()
+INSERT INTO docker_blobs (repository_id, digest, blob_id, size_bytes)
+VALUES ($1, $2, $3, $4)
+ON CONFLICT (repository_id, digest) DO UPDATE SET blob_id = EXCLUDED.blob_id, last_used_at = now(),
+    size_bytes = COALESCE(docker_blobs.size_bytes, EXCLUDED.size_bytes)
 RETURNING id, created_at;
 
 -- name: GetDockerBlob :one
-SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, b.size_bytes AS size, b.sha256 AS blob_sha256, dbb.created_at
+SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, COALESCE(dbb.size_bytes, b.size_bytes)::bigint AS size, b.sha256 AS blob_sha256, dbb.created_at
 FROM docker_blobs dbb
 JOIN blobs b ON b.id = dbb.blob_id
 WHERE dbb.repository_id = $1 AND dbb.digest = $2;
@@ -15,7 +16,7 @@ WHERE dbb.repository_id = $1 AND dbb.digest = $2;
 DELETE FROM docker_blobs WHERE repository_id = $1 AND digest = $2;
 
 -- name: ListDockerBlobs :many
-SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, b.size_bytes AS size, b.sha256 AS blob_sha256, dbb.created_at
+SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, COALESCE(dbb.size_bytes, b.size_bytes)::bigint AS size, b.sha256 AS blob_sha256, dbb.created_at
 FROM docker_blobs dbb
 JOIN blobs b ON b.id = dbb.blob_id
 WHERE dbb.repository_id = $1
@@ -31,8 +32,12 @@ SELECT id, repository_id, upload_uuid, "offset", created_at, updated_at
 FROM docker_uploads
 WHERE repository_id = $1 AND upload_uuid = $2;
 
--- name: UpdateDockerUploadOffset :exec
-UPDATE docker_uploads SET "offset" = $1, updated_at = now() WHERE repository_id = $2 AND upload_uuid = $3;
+-- name: UpdateDockerUploadOffset :execrows
+-- Compare-and-set: advances the offset only while it still equals the value the
+-- caller based its write on, so two requests on one session cannot both claim
+-- the same byte range.
+UPDATE docker_uploads SET "offset" = sqlc.arg(new_offset), updated_at = now()
+WHERE repository_id = sqlc.arg(repository_id) AND upload_uuid = sqlc.arg(upload_uuid) AND "offset" = sqlc.arg(old_offset);
 
 -- name: DeleteDockerUpload :exec
 DELETE FROM docker_uploads WHERE repository_id = $1 AND upload_uuid = $2;
@@ -142,6 +147,47 @@ ORDER BY dm.created_at;
 UPDATE docker_blobs SET last_used_at = now()
 WHERE repository_id = $1 AND digest = $2
 RETURNING id;
+
+-- name: LinkDockerBlobImages :exec
+-- Records that the image may serve and reference the blobs (see
+-- docker_blob_images). Digests the repository does not hold are skipped.
+INSERT INTO docker_blob_images (repository_id, image, digest)
+SELECT b.repository_id, sqlc.arg(image)::text, b.digest
+FROM docker_blobs b
+WHERE b.repository_id = sqlc.arg(repository_id)::uuid AND b.digest = ANY(sqlc.arg(digests)::text[])
+ON CONFLICT DO NOTHING;
+
+-- name: DockerBlobVisibleToImage :one
+-- Whether the image may serve and reference the blob: it is linked to the
+-- image, or it predates docker_blob_images and has no link to any image.
+SELECT EXISTS (
+    SELECT 1 FROM docker_blob_images i
+    WHERE i.repository_id = sqlc.arg(repository_id)::uuid AND i.image = sqlc.arg(image)::text AND i.digest = sqlc.arg(digest)::text
+) OR NOT EXISTS (
+    SELECT 1 FROM docker_blob_images i
+    WHERE i.repository_id = sqlc.arg(repository_id)::uuid AND i.digest = sqlc.arg(digest)::text
+) AS visible;
+
+-- name: CountDockerBlobsVisibleToImage :one
+-- How many of the digests the repository holds and the image may reference
+-- (see DockerBlobVisibleToImage); also marks them as just used, so registry GC
+-- keeps them for its grace period.
+WITH visible AS (
+    UPDATE docker_blobs b SET last_used_at = now()
+    WHERE b.repository_id = sqlc.arg(repository_id)::uuid AND b.digest = ANY(sqlc.arg(digests)::text[])
+      AND (
+          EXISTS (
+              SELECT 1 FROM docker_blob_images i
+              WHERE i.repository_id = b.repository_id AND i.image = sqlc.arg(image)::text AND i.digest = b.digest
+          )
+          OR NOT EXISTS (
+              SELECT 1 FROM docker_blob_images i
+              WHERE i.repository_id = b.repository_id AND i.digest = b.digest
+          )
+      )
+    RETURNING b.id
+)
+SELECT count(*)::bigint AS n FROM visible;
 
 -- name: InsertDockerManifestRefs :exec
 -- Records the references of one kind held by a manifest body (see
