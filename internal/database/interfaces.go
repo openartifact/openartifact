@@ -204,6 +204,11 @@ type Database interface {
 	GetUserByID(ctx context.Context, id string) (*models.User, error)
 	GetUserByUsername(ctx context.Context, username string) (*models.User, error)
 	UpdateUser(ctx context.Context, user *models.User) error
+	// UpdateUserLastLogin sets only last_login_at, so a login finishing from a
+	// stale snapshot cannot undo a concurrent disable or password reset.
+	UpdateUserLastLogin(ctx context.Context, id string, at time.Time) error
+	// UpdateUserPassword sets only password_hash and must_change_password.
+	UpdateUserPassword(ctx context.Context, id, passwordHash string, mustChange bool) error
 	ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error)
 	CountUsers(ctx context.Context) (int, error)
 	// CreateBootstrapAdmin atomically (advisory-locked transaction) creates the first

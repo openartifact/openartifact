@@ -136,6 +136,10 @@ type responseWriter struct {
 	statusCode int
 }
 
+// Unwrap lets http.ResponseController reach the underlying writer
+// (Flush, SetWriteDeadline, Hijack).
+func (rw *responseWriter) Unwrap() http.ResponseWriter { return rw.ResponseWriter }
+
 func (rw *responseWriter) WriteHeader(code int) {
 	rw.statusCode = code
 	rw.ResponseWriter.WriteHeader(code)

@@ -194,14 +194,17 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// A non-admin editing their own record may only change profile fields.
+	// A non-admin editing their own record may only change full_name.
 	// Privileged fields (disabled, must_change_password) are admin-only, and
 	// the password is deliberately NOT self-editable here: changing it
 	// requires proving knowledge of the current password, which is what
 	// POST /api/v1/auth/change-password does.
 	if !isAdmin && isSelf {
-		if body.Disabled != nil || body.MustChangePassword != nil || body.Password != nil {
-			writeError(w, http.StatusForbidden, "forbidden", "self-edit may only update email and full_name")
+		// email is admin-only: SSO link_by_email trusts local emails, so a
+		// self-set unverified address would let a user pre-claim a victim's
+		// identity.
+		if body.Disabled != nil || body.MustChangePassword != nil || body.Password != nil || body.Email != nil {
+			writeError(w, http.StatusForbidden, "forbidden", "self-edit may only update full_name")
 			return
 		}
 	}

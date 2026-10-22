@@ -682,6 +682,23 @@ func (m *MockDatabase) UpdateUser(ctx context.Context, user *models.User) error 
 	return nil
 }
 
+func (m *MockDatabase) UpdateUserLastLogin(ctx context.Context, id string, at time.Time) error {
+	if u, ok := m.authUsers[id]; ok {
+		u.LastLoginAt = &at
+	}
+
+	return nil
+}
+
+func (m *MockDatabase) UpdateUserPassword(ctx context.Context, id, passwordHash string, mustChange bool) error {
+	if u, ok := m.authUsers[id]; ok {
+		u.PasswordHash = &passwordHash
+		u.MustChangePassword = mustChange
+	}
+
+	return nil
+}
+
 func (m *MockDatabase) ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error) {
 	var users []*models.User
 	for _, u := range m.authUsers {

@@ -146,6 +146,25 @@ func (p *PostgresDB) UpdateUser(ctx context.Context, user *models.User) error {
 	return nil
 }
 
+func (p *PostgresDB) UpdateUserLastLogin(ctx context.Context, id string, at time.Time) error {
+	if _, err := p.db.ExecContext(ctx, `UPDATE auth_users SET last_login_at=$2 WHERE id=$1`, id, at); err != nil {
+		return fmt.Errorf("failed to update user last login: %w", err)
+	}
+
+	return nil
+}
+
+func (p *PostgresDB) UpdateUserPassword(ctx context.Context, id, passwordHash string, mustChange bool) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
+	if _, err := p.db.ExecContext(ctx, `UPDATE auth_users SET password_hash=$2, must_change_password=$3 WHERE id=$1`, id, passwordHash, mustChange); err != nil {
+		return fmt.Errorf("failed to update user password: %w", err)
+	}
+
+	return nil
+}
+
 func (p *PostgresDB) ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error) {
 	offset := (page - 1) * perPage
 

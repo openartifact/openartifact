@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -347,7 +348,13 @@ func (m *provMockDB) DeleteNPMDistTag(_ context.Context, _, _ string) error { re
 func (m *provMockDB) GetUserByID(_ context.Context, id string) (*models.User, error) {
 	return m.usersByID[id], nil
 }
-func (m *provMockDB) GetUserByUsername(_ context.Context, _ string) (*models.User, error) {
+func (m *provMockDB) GetUserByUsername(_ context.Context, name string) (*models.User, error) {
+	for _, u := range m.usersByID {
+		if u.Username == name {
+			return u, nil
+		}
+	}
+
 	return nil, nil
 }
 func (m *provMockDB) ListUsers(_ context.Context, _, _ int) ([]*models.User, int, error) {
@@ -1323,5 +1330,20 @@ func TestProvisioner_Login_WithoutGroupClaimKeepsOthersAssignments(t *testing.T)
 
 	if len(db.deletedAssignments) != 0 {
 		t.Errorf("login without group claim deleted assignments: %v", db.deletedAssignments)
+	}
+}
+
+func TestProvisioner_UsernameCollisionGetsSuffix(t *testing.T) {
+	db := newProvMockDB()
+	db.addUser(&models.User{ID: "local-1", Username: "newuser"})
+	p := newTestProvisioner(db)
+
+	user, err := p.Provision(context.Background(), testProvider(true, false, nil), testClaims("sub|9", "n@example.com", "newuser", nil))
+	if err != nil {
+		t.Fatalf("collision must not fail provisioning, got %v", err)
+	}
+
+	if user.Username == "newuser" || !strings.HasPrefix(user.Username, "newuser-") {
+		t.Errorf("expected suffixed username, got %q", user.Username)
 	}
 }

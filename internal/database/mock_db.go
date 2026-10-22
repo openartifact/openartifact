@@ -378,6 +378,12 @@ func (m *BaseMockDB) GetUserByUsername(ctx context.Context, username string) (*m
 func (m *BaseMockDB) UpdateUser(ctx context.Context, user *models.User) error {
 	return errNotImpl("UpdateUser")
 }
+func (m *BaseMockDB) UpdateUserLastLogin(ctx context.Context, id string, at time.Time) error {
+	return errNotImpl("UpdateUserLastLogin")
+}
+func (m *BaseMockDB) UpdateUserPassword(ctx context.Context, id, passwordHash string, mustChange bool) error {
+	return errNotImpl("UpdateUserPassword")
+}
 func (m *BaseMockDB) ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error) {
 	return nil, 0, errNotImpl("ListUsers")
 }

@@ -16,6 +16,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/storage"
 	"go.yaml.in/yaml/v3"
 )
@@ -485,6 +486,10 @@ func (c *Config) Validate() error {
 
 	if c.Trash.RetentionDays < 0 {
 		return errNegativeTrashRetention
+	}
+
+	if _, err := netutil.ParseNetworks(c.Server.IPAllowlist); err != nil {
+		return fmt.Errorf("server.ipAllowlist: %w", err)
 	}
 
 	return c.validatePresign()

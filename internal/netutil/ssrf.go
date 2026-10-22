@@ -37,10 +37,61 @@ func blockedIP(ip netip.Addr) bool {
 	if ip.Is6() && ip.As16()[0] == 0xfd && ip.As16()[1] == 0x00 && ip.As16()[2] == 0x0e && ip.As16()[3] == 0xc2 {
 		return true
 	}
+	// Cloud metadata endpoints outside link-local: always blocked, even with
+	// allowPrivate (which re-allows CGNAT, where Alibaba's lives).
+	if ip.Is4() && (ip.As4()[0] == 0 || alwaysBlocked[ip]) {
+		return true // 0.0.0.0/8 "this network"
+	}
 	if allowPrivate() {
 		return false
 	}
 	return ip.IsLoopback() || ip.IsPrivate() || isCGNAT(ip)
+}
+
+var errBadNetwork = errors.New("invalid IP or CIDR")
+
+//nolint:gochecknoglobals // read-only table
+var alwaysBlocked = map[netip.Addr]bool{
+	netip.MustParseAddr("168.63.129.16"):   true, // Azure wire server
+	netip.MustParseAddr("100.100.100.200"): true, // Alibaba Cloud metadata
+}
+
+// ParseNetworks parses CIDR blocks, accepting bare IPs as /32 (/128). Blank
+// entries are skipped; any unparsable entry is an error.
+func ParseNetworks(entries []string) ([]*net.IPNet, error) {
+	var out []*net.IPNet
+
+	for _, e := range entries {
+		e = strings.TrimSpace(e)
+		if e == "" {
+			continue
+		}
+
+		if !strings.Contains(e, "/") {
+			ip := net.ParseIP(e)
+			if ip == nil {
+				return nil, fmt.Errorf("%w %q", errBadNetwork, e)
+			}
+
+			bits := 128
+			if ip4 := ip.To4(); ip4 != nil {
+				ip, bits = ip4, 32
+			}
+
+			out = append(out, &net.IPNet{IP: ip, Mask: net.CIDRMask(bits, bits)})
+
+			continue
+		}
+
+		_, n, err := net.ParseCIDR(e)
+		if err != nil {
+			return nil, fmt.Errorf("%w %q: %w", errBadNetwork, e, err)
+		}
+
+		out = append(out, n)
+	}
+
+	return out, nil
 }
 
 func isCGNAT(ip netip.Addr) bool {

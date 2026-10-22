@@ -10,6 +10,7 @@ import (
 	"encoding/base64"
 	"encoding/json"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/auth"
@@ -37,6 +38,31 @@ func usesExplicitCredential(r *http.Request) bool {
 	switch p.Credential {
 	case auth.CredentialBearerToken, auth.CredentialBasicToken, auth.CredentialLegacy:
 		return true
+	}
+
+	return false
+}
+
+// crossSiteBasic reports whether r is Basic-authenticated and carries browser
+// signals showing it was initiated from another site. Browsers cache Basic
+// credentials per origin and attach them to cross-site requests; CLI clients
+// (curl, mvn, npm, docker) send neither Origin nor Sec-Fetch-Site.
+func crossSiteBasic(r *http.Request) bool {
+	p := PrincipalFromContext(r.Context())
+	if p == nil || p.Credential != auth.CredentialBasicToken {
+		return false
+	}
+
+	switch r.Header.Get("Sec-Fetch-Site") {
+	case "cross-site", "same-site":
+		return true
+	}
+
+	if origin := r.Header.Get("Origin"); origin != "" {
+		u, err := url.Parse(origin)
+		if err != nil || !strings.EqualFold(u.Host, r.Host) {
+			return true
+		}
 	}
 
 	return false
@@ -77,7 +103,9 @@ func CSRFMiddleware(next http.Handler) http.Handler {
 		// cookie). A request authenticated by an explicit header credential
 		// (bearer/basic token, legacy key) cannot be forged cross-site, and CI
 		// clients have no CSRF cookie to echo back.
-		if usesExplicitCredential(r) {
+		// Browser-cached Basic credentials ARE attached ambiently, though, so a
+		// Basic request that is visibly cross-site is rejected below.
+		if usesExplicitCredential(r) && !crossSiteBasic(r) {
 			next.ServeHTTP(w, r)
 			return
 		}

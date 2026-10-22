@@ -7,6 +7,7 @@ package middleware
 import (
 	"net"
 	"net/http"
+	"slices"
 	"strings"
 )
 
@@ -90,14 +91,30 @@ func ClientIP(r *http.Request, trusted *TrustedProxies) string {
 		return peer
 	}
 
-	if xff := r.Header.Get("X-Forwarded-For"); xff != "" {
-		if ip := strings.TrimSpace(strings.Split(xff, ",")[0]); ip != "" {
-			return ip
+	// Walk X-Forwarded-For right to left: each trusted proxy appends the peer
+	// it saw, so the rightmost hop that is not itself a trusted proxy is the
+	// real client. Anything further left is client-supplied and spoofable.
+	for _, xff := range r.Header.Values("X-Forwarded-For") {
+		hops := strings.Split(xff, ",")
+		for _, h := range slices.Backward(hops) {
+			hop := strings.TrimSpace(h)
+			ip := net.ParseIP(hop)
+
+			if ip == nil {
+				// Unparseable hop: stop; it cannot be attributed.
+				break
+			}
+
+			if !trusted.trusts(ip) {
+				return hop
+			}
 		}
 	}
 
 	if xri := r.Header.Get("X-Real-IP"); xri != "" {
-		return strings.TrimSpace(xri)
+		if ip := net.ParseIP(strings.TrimSpace(xri)); ip != nil && !trusted.trusts(ip) {
+			return ip.String()
+		}
 	}
 
 	return peer

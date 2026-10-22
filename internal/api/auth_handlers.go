@@ -376,7 +376,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	now := time.Now()
 	user.LastLoginAt = &now
-	_ = h.db.UpdateUser(ctx, user)
+	_ = h.db.UpdateUserLastLogin(ctx, user.ID, now)
 
 	writeJSON(w, http.StatusOK, userToResponse(user))
 }
@@ -514,10 +514,7 @@ func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	user.PasswordHash = &newHash
-
-	user.MustChangePassword = false
-	if err := h.db.UpdateUser(ctx, user); err != nil {
+	if err := h.db.UpdateUserPassword(ctx, user.ID, newHash, false); err != nil {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}

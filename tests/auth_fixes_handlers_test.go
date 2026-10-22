@@ -223,7 +223,7 @@ func TestAdminUsers_SelfPatchIsLimitedToProfileFields(t *testing.T) {
 	user, p := plainUser(t, db, "self-1", "selfone")
 	_, other := plainUser(t, db, "self-2", "selftwo")
 
-	rw := doJSON(router, "PATCH", "/api/v1/users/"+user.ID, `{"full_name":"Self One","email":"a@b.c"}`, p)
+	rw := doJSON(router, "PATCH", "/api/v1/users/"+user.ID, `{"full_name":"Self One"}`, p)
 	if rw.Code != http.StatusOK {
 		t.Fatalf("self profile edit: expected 200, got %d: %s", rw.Code, rw.Body.String())
 	}
@@ -232,6 +232,9 @@ func TestAdminUsers_SelfPatchIsLimitedToProfileFields(t *testing.T) {
 		`{"password":"a-brand-new-password-1"}`,
 		`{"disabled":true}`,
 		`{"must_change_password":false}`,
+		// AUTH-3: a self-set email would let the user pre-claim an address
+		// and hijack the owner's SSO identity via link_by_email.
+		`{"email":"victim@example.com"}`,
 	} {
 		rw = doJSON(router, "PATCH", "/api/v1/users/"+user.ID, body, p)
 		if rw.Code != http.StatusForbidden {

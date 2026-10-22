@@ -118,6 +118,17 @@ Migrations `017` and `018` run at first start: `017` adds the soft-delete column
 | API | `GET /api/v1/repositories/{name}/packages` accepts `package_name` (exact listed name) next to `format`. |
 | CLI | `oa webhook create` and `oa webhook repo create` no longer accept `--secret` (visible in `ps`); use `--secret-file FILE` (`-` for stdin) or `OA_WEBHOOK_SECRET`. `oa auth logout --revoke --username U --password-stdin` also revokes the saved server-side token. A corrupt `config.json` no longer blocks `oa auth login`, `help` and `version`. `oa import` resumes assets without a source SHA-256 (falls back to SHA-1, then size). |
 | CLI | New `oa trash list|restore|purge`; `oa repo create|update` accept `--trash-retention-days` and `--immutable-releases`. |
+| Security (proxies) | `X-Forwarded-For` is read right to left and the first hop that is not in `trustedProxies` is the client IP (before: the leftmost entry, which a client could forge). Rate limits, the IP allowlist, login throttling and audit now see the real client. `X-Real-IP` is honored only when it is not itself a trusted proxy. |
+| Security (IP allowlist) | `ipAllowlist` accepts bare IPs as well as CIDRs, and an unparsable entry now stops startup instead of silently disabling the allowlist. |
+| Security (raw/artifact downloads) | All `/repos/...` responses carry `Content-Security-Policy: sandbox; default-src 'none'`, and HTML, SVG, XML and other actively rendered types are served with `Content-Disposition: attachment` (stored XSS fix). Browsers download instead of rendering such files. |
+| Security (users) | A non-admin can no longer change their own `email` (`PATCH /api/v1/users/{id}` returns `403`); admins still can. This closes pre-claiming a victim's address to be linked by SSO `link_by_email`. |
+| Security (CSRF) | Basic-token requests carrying `Sec-Fetch-Site: cross-site/same-site` or a foreign `Origin` now need the CSRF token like session requests. CLI clients are unaffected. |
+| Sessions | The session and CSRF cookies' `Max-Age` is the absolute session lifetime (30 days) instead of the 24 h idle window, so the sliding expiry works for active users. |
+| Audit | `PATCH` requests are audited like POST/PUT/DELETE. |
+| SSO | A new SSO user whose username already exists gets a suffixed username (`alice-1a2b3c`) instead of a permanent 500. OIDC discovery, JWKS and token requests now go through the outbound SSRF guard; an IdP on a private address needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. `POST /api/v1/admin/sso-providers/{slug}/test` returns a fixed failure message (details are in the server log). |
+| SSRF | The cloud metadata addresses `168.63.129.16` and `100.100.100.200`, and `0.0.0.0/8`, are always blocked, even with `ALLOW_PRIVATE_UPSTREAMS`. |
+| Webhooks | Queued and retried deliveries of a disabled webhook are dropped (marked `failed`) instead of being sent; `webhook.test` is unaffected. |
+| Caching | Delta downloads (`.../packages/{id}/delta`) are `Cache-Control: private, no-cache` unless an anonymous read of a public repository. |
 
 There is deliberately no `OPENARTIFACT_REPO_DELETE_DELAY`: the trash window is the deletion delay.
 

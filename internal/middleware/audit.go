@@ -29,7 +29,7 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
 			next.ServeHTTP(wrapped, r)
 
-			if r.Method != http.MethodPost && r.Method != http.MethodPut && r.Method != http.MethodDelete {
+			if r.Method != http.MethodPost && r.Method != http.MethodPut && r.Method != http.MethodPatch && r.Method != http.MethodDelete {
 				return
 			}
 

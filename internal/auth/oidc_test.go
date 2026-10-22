@@ -12,10 +12,12 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
 
+	gooidc "github.com/coreos/go-oidc/v3/oidc"
 	"github.com/go-jose/go-jose/v4"
 	josejwt "github.com/go-jose/go-jose/v4/jwt"
 
@@ -104,6 +106,9 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 
 		_ = json.NewEncoder(w).Encode(map[string]any{"access_token": "at", "token_type": "Bearer", "id_token": raw})
 	})
+
+	// The fake IdP listens on loopback, which the SSRF dial guard blocks.
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
 
 	f.srv = httptest.NewServer(mux)
 	t.Cleanup(f.srv.Close)
@@ -302,5 +307,17 @@ func TestExchangeWithRetry_RedeemsCodeOnceAndBoundsReloads(t *testing.T) {
 
 	if got := idp.tokenHits.Load(); got != 2 {
 		t.Errorf("each callback redeems its own code once, token endpoint hit %d times", got)
+	}
+}
+
+func TestOIDCDiscoveryBlockedForPrivateIssuer(t *testing.T) {
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "")
+
+	srv := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(srv.Close)
+
+	_, err := gooidc.NewProvider(oidcContext(context.Background()), srv.URL)
+	if err == nil || !strings.Contains(err.Error(), "not allowed") {
+		t.Fatalf("discovery against loopback issuer must hit the dial guard, got %v", err)
 	}
 }

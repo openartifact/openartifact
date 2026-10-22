@@ -9,6 +9,7 @@ import (
 	"context"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -96,5 +97,14 @@ func TestDeltaFromValidationAndScoping(t *testing.T) {
 
 	if c := get(base + "to/delta?from=" + oldID); c != http.StatusOK {
 		t.Errorf("valid delta: got %d, want 200", c)
+	}
+
+	// API-1: the endpoint is RBAC-gated, so a delta response must never be
+	// marked public for a request that is not an anonymous public read.
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodGet, base+"to/delta?from="+oldID, http.NoBody))
+
+	if cc := rec.Header().Get("Cache-Control"); strings.Contains(cc, "public") {
+		t.Errorf("Cache-Control = %q, must not be public", cc)
 	}
 }

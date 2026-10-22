@@ -9,6 +9,8 @@ import (
 	"net"
 	"net/http"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/netutil"
 )
 
 // IPAllowlistMiddleware blocks requests not from allowed CIDRs.
@@ -16,26 +18,13 @@ import (
 // reverse proxies' X-Forwarded-For/X-Real-IP are honored when resolving the
 // client IP — see ClientIP.
 func IPAllowlistMiddleware(allowedCIDRs []string, trusted *TrustedProxies) func(http.Handler) http.Handler {
-	// Parse CIDRs at middleware creation time
-	var networks []*net.IPNet
+	// Config validation rejects unparsable entries at startup. If one still
+	// gets here (programmatic use), fail closed on it rather than open: an
+	// unparsable entry never widens access, and a non-empty list that yields
+	// no networks denies everyone.
+	networks, _ := netutil.ParseNetworks(allowedCIDRs)
 
-	for _, cidr := range allowedCIDRs {
-		cidr = strings.TrimSpace(cidr)
-		if cidr == "" {
-			continue
-		}
-
-		_, network, err := net.ParseCIDR(cidr)
-		if err != nil {
-			// Skip invalid CIDRs (log would be ideal but we don't have logger here)
-			continue
-		}
-
-		networks = append(networks, network)
-	}
-
-	// If no valid networks, allow all (passthrough)
-	if len(networks) == 0 {
+	if len(networks) == 0 && !hasEntries(allowedCIDRs) {
 		return func(next http.Handler) http.Handler {
 			return next
 		}
@@ -69,4 +58,14 @@ func IPAllowlistMiddleware(allowedCIDRs []string, trusted *TrustedProxies) func(
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+func hasEntries(entries []string) bool {
+	for _, e := range entries {
+		if strings.TrimSpace(e) != "" {
+			return true
+		}
+	}
+
+	return false
 }

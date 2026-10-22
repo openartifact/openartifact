@@ -31,6 +31,7 @@ import (
 	database "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/httpcache"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	pkgdelta "github.com/openartifact/openartifact/pkg/delta"
@@ -125,7 +126,7 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 
 	if existing != nil {
 		// Serve the pre-computed delta blob.
-		h.serveDeltaBlob(w, r, existing)
+		h.serveDeltaBlob(w, r, repo.Public, existing)
 		return
 	}
 
@@ -143,7 +144,7 @@ func (h *DeltaHandler) handleGetDelta(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	h.serveDeltaBlob(w, r, delta)
+	h.serveDeltaBlob(w, r, repo.Public, delta)
 }
 
 // handleListDeltas lists all available deltas targeting a package.
@@ -321,7 +322,7 @@ func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256, fromFi
 }
 
 // serveDeltaBlob streams a delta blob to the client.
-func (h *DeltaHandler) serveDeltaBlob(w http.ResponseWriter, r *http.Request, d *models.PackageDelta) {
+func (h *DeltaHandler) serveDeltaBlob(w http.ResponseWriter, r *http.Request, repoPublic bool, d *models.PackageDelta) {
 	reader, err := h.blobStore.Get(r.Context(), d.DeltaSHA256)
 	if err != nil {
 		h.log.Errorw("failed to read delta blob", "sha256", d.DeltaSHA256, "error", err)
@@ -337,7 +338,10 @@ func (h *DeltaHandler) serveDeltaBlob(w http.ResponseWriter, r *http.Request, d 
 	w.Header().Set("X-Delta-From", d.FromSHA256)
 	w.Header().Set("X-Delta-To", d.ToSHA256)
 	w.Header().Set("X-Delta-Size", strconv.FormatInt(d.DeltaSize, 10))
-	w.Header().Set("Cache-Control", "public, max-age=86400")
+	// Shared caches may store the delta only for an anonymous read of a public
+	// repository; the endpoint is RBAC-gated otherwise.
+	w.Header().Set("Cache-Control", httpcache.CacheControl(base.SharedCacheable(r, repoPublic), 86400))
+	w.Header().Add("Vary", "Authorization")
 
 	if _, err := io.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write delta response", "error", err)

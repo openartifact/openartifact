@@ -6,6 +6,8 @@ package auth
 
 import (
 	"context"
+	"crypto/rand"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strings"
@@ -41,6 +43,9 @@ func NewProvisioner(db database.Database, log *logger.Logger) *Provisioner {
 var ErrUserNotProvisioned = errors.New("user not provisioned")
 var ErrAccountDisabled = errors.New("account disabled")
 var ErrEmailAlreadyInUse = errors.New("email already in use")
+
+// ErrUsernameUnavailable is returned when no free username could be derived.
+var ErrUsernameUnavailable = errors.New("no free username available")
 var ErrEmailLinkAmbiguous = errors.New("multiple users share email")
 
 // ErrIdentityConflict is returned when an SSO login would re-bind a local user
@@ -128,9 +133,9 @@ func (p *Provisioner) Provision(ctx context.Context, provider *models.SSOProvide
 			SSOManagedGroups:   true,
 		}
 
-		created, err := p.db.CreateUser(ctx, newUser)
+		created, err := p.createSSOUser(ctx, newUser, claims)
 		if err != nil {
-			return nil, fmt.Errorf("sso provision create user: %w", err)
+			return nil, err
 		}
 
 		user = created
@@ -168,6 +173,54 @@ func (p *Provisioner) Provision(ctx context.Context, provider *models.SSOProvide
 	}
 
 	return user, nil
+}
+
+// maxUsernameAttempts bounds the suffix search on username collisions.
+const maxUsernameAttempts = 5
+
+// createSSOUser inserts newUser. A username that already exists (local user,
+// other provider) gets a random suffix instead of failing the login for good.
+// A unique violation on the SSO identity means a concurrent callback for the
+// same subject won the race: the existing row is reloaded and used.
+func (p *Provisioner) createSSOUser(ctx context.Context, newUser *models.User, claims SSOClaims) (*models.User, error) {
+	base := newUser.Username
+
+	for attempt := range maxUsernameAttempts {
+		if attempt > 0 {
+			var b [3]byte
+			if _, err := rand.Read(b[:]); err != nil {
+				return nil, fmt.Errorf("sso provision username suffix: %w", err)
+			}
+
+			newUser.Username = base + "-" + hex.EncodeToString(b[:])
+		}
+
+		taken, err := p.db.GetUserByUsername(ctx, newUser.Username)
+		if err != nil {
+			return nil, fmt.Errorf("sso provision username check: %w", err)
+		}
+
+		if taken != nil {
+			continue
+		}
+
+		created, err := p.db.CreateUser(ctx, newUser)
+		if err == nil {
+			return created, nil
+		}
+
+		if !database.IsUniqueViolation(err) {
+			return nil, fmt.Errorf("sso provision create user: %w", err)
+		}
+
+		// Lost a race: same identity created concurrently, or the username
+		// was taken between the check and the insert.
+		if existing, gerr := p.db.GetUserByExternalID(ctx, claims.ExternalID, claims.ProviderSlug); gerr == nil && existing != nil {
+			return existing, nil
+		}
+	}
+
+	return nil, fmt.Errorf("sso provision create user: %w", ErrUsernameUnavailable)
 }
 
 // hasSSOIdentity reports whether u is already bound to an SSO identity.

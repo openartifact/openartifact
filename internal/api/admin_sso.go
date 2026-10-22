@@ -640,11 +640,13 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 	case "oidc":
 		_, err := auth.LoadOIDCProviderRow(ctx, existing, h.baseURL)
 		if err != nil {
+			h.log.Warnw("admin sso test: oidc load failed", "slug", existing.Slug, "error", err)
+
 			if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
 				writeJSON(w, http.StatusOK, map[string]any{
 					"ok":      false,
 					"error":   "oidc_discovery_failed",
-					"message": err.Error(),
+					"message": ssoTestMessage(true),
 				})
 
 				return
@@ -653,7 +655,7 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"ok":      false,
 				"error":   "load_failed",
-				"message": err.Error(),
+				"message": ssoTestMessage(false),
 			})
 
 			return
@@ -664,11 +666,13 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 	case "saml":
 		_, err := auth.LoadSAMLProviderRow(ctx, existing, h.baseURL, h.cfg, h.log)
 		if err != nil {
+			h.log.Warnw("admin sso test: saml load failed", "slug", existing.Slug, "error", err)
+
 			if errors.Is(err, auth.ErrIDPMetadataUnavailable) {
 				writeJSON(w, http.StatusOK, map[string]any{
 					"ok":      false,
 					"error":   "idp_metadata_unavailable",
-					"message": err.Error(),
+					"message": ssoTestMessage(true),
 				})
 
 				return
@@ -677,7 +681,7 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 			writeJSON(w, http.StatusOK, map[string]any{
 				"ok":      false,
 				"error":   "load_failed",
-				"message": err.Error(),
+				"message": ssoTestMessage(false),
 			})
 
 			return
@@ -738,4 +742,15 @@ func ssoProviderToResponse(p *models.SSOProvider) responses.SSOProviderResponse 
 		CreatedAt:          formatTime(p.CreatedAt),
 		UpdatedAt:          formatTime(p.UpdatedAt),
 	}
+}
+
+// ssoTestMessage is the fixed /test failure text. The underlying error is
+// never echoed: it would turn the endpoint into an SSRF response oracle
+// (connection refused vs. TLS vs. blocked address vs. HTTP status).
+func ssoTestMessage(unreachable bool) string {
+	if unreachable {
+		return "the identity provider could not be reached or returned an invalid response; see server logs"
+	}
+
+	return "the provider configuration could not be loaded; see server logs"
 }

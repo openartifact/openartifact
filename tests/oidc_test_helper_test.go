@@ -89,6 +89,9 @@ func newMockOIDCServer(t *testing.T) *mockOIDCServer {
 		_, _ = w.Write([]byte(body))
 	})
 
+	// The mock IdP listens on loopback, which the SSRF dial guard blocks.
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
+
 	m.Server = httptest.NewServer(mux)
 	t.Cleanup(m.Server.Close)
 

@@ -57,7 +57,20 @@ func TestClientIP_TrustedPeer_HonorsForwardedFor(t *testing.T) {
 	})
 
 	if got := ClientIP(r, trusted); got != "1.2.3.4" {
-		t.Errorf("expected first XFF entry from trusted peer, got %q", got)
+		t.Errorf("expected first untrusted XFF hop from trusted peer, got %q", got)
+	}
+}
+
+func TestClientIP_SpoofedLeftmostXFFIgnored(t *testing.T) {
+	trusted := NewTrustedProxies([]string{"10.0.0.0/8"})
+
+	// Attacker 198.51.100.7 sends XFF "8.8.8.8"; the proxy appends the attacker.
+	r := newReqWithHeaders("10.1.2.3:54321", map[string]string{
+		"X-Forwarded-For": "8.8.8.8, 198.51.100.7, 10.9.9.9",
+	})
+
+	if got := ClientIP(r, trusted); got != "198.51.100.7" {
+		t.Errorf("expected rightmost untrusted hop, got %q", got)
 	}
 }
 

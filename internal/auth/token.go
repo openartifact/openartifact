@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -137,13 +138,27 @@ func UpdateLastUsed(ctx context.Context, db database.Database, tokenID string) {
 	_ = db.UpdateTokenLastUsed(bgCtx, tokenID)
 }
 
+// tokenLastTouch maps token ID to the last time this process wrote last_used_at.
+//
+//nolint:gochecknoglobals // process-wide throttle state
+var tokenLastTouch sync.Map
+
 // TouchToken records usage of an authenticated token, at most once per
 // tokenTouchInterval so a busy CI client does not hammer one hot row.
+//
+// The token comes from the auth cache, whose LastUsedAt is stale for the whole
+// cache TTL, so the throttle is tracked per token ID in process memory instead.
 func TouchToken(ctx context.Context, db database.Database, token *models.Token) {
-	if token.LastUsedAt != nil && time.Since(*token.LastUsedAt) < tokenTouchInterval {
+	now := time.Now()
+	if last, ok := tokenLastTouch.Load(token.ID); ok {
+		if t, ok := last.(time.Time); ok && now.Sub(t) < tokenTouchInterval {
+			return
+		}
+	} else if token.LastUsedAt != nil && now.Sub(*token.LastUsedAt) < tokenTouchInterval {
 		return
 	}
 
+	tokenLastTouch.Store(token.ID, now)
 	UpdateLastUsed(ctx, db, token.ID)
 }
 

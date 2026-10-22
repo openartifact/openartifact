@@ -10,6 +10,8 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/auth"
 )
 
 func csrfNext(called *bool) http.Handler {
@@ -118,5 +120,37 @@ func TestCSRFMiddlewareAllowsSAMLACS(t *testing.T) {
 
 	if !called || w.Code != http.StatusNoContent {
 		t.Fatalf("expected SAML ACS to reach handler, got called=%v status=%d", called, w.Code)
+	}
+}
+
+func TestCSRFMiddlewareBasicCrossSiteRejected(t *testing.T) {
+	cases := []struct {
+		name    string
+		headers map[string]string
+		want    bool
+	}{
+		{"cli no browser headers", nil, true},
+		{"same origin", map[string]string{"Origin": "http://example.com", "Sec-Fetch-Site": "same-origin"}, true},
+		{"cross-site fetch", map[string]string{"Sec-Fetch-Site": "cross-site", "Origin": "http://evil.test"}, false},
+		{"foreign origin only", map[string]string{"Origin": "http://evil.test"}, false},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			called := false
+			r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/repositories", nil)
+			r.Host = "example.com"
+
+			for k, v := range tc.headers {
+				r.Header.Set(k, v)
+			}
+
+			r = r.WithContext(WithPrincipal(r.Context(), &auth.Principal{Credential: auth.CredentialBasicToken}))
+			CSRFMiddleware(csrfNext(&called)).ServeHTTP(httptest.NewRecorder(), r)
+
+			if called != tc.want {
+				t.Fatalf("called=%v want %v", called, tc.want)
+			}
+		})
 	}
 }

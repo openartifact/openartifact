@@ -189,6 +189,22 @@ func (d *Dispatcher) process(delivery *models.WebhookDelivery) {
 		d.log.Warnw("webhook not found", "webhook_id", delivery.WebhookID)
 		return
 	}
+	// A disabled webhook must not keep receiving queued deliveries or retries
+	// (the admin may have disabled it because the endpoint is compromised).
+	// webhook.test is sent directly to one webhook and is exempt.
+	if !wh.Enabled && delivery.EventType != EventWebhookTest {
+		delivery.Status = "failed"
+		delivery.NextRetryAt = nil
+
+		if err := d.db.UpdateWebhookDelivery(context.Background(), delivery); err != nil {
+			d.log.Errorw("failed to update webhook delivery", "webhook_id", wh.ID, "error", err)
+		}
+
+		d.log.Infow("webhook disabled; delivery dropped", "webhook_id", wh.ID, "delivery_id", delivery.ID)
+
+		return
+	}
+
 	d.deliver(wh, delivery)
 }
 

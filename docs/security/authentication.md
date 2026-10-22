@@ -54,9 +54,11 @@ curl -sS -c jar -X POST HOST/api/v1/auth/login \
 - Throttling: 10 login requests per minute per client IP and 10 failures per 15 minutes per username; both answer 429 with `Retry-After`.
 - Disabling a user revokes the user's sessions; disabled users are rejected on every credential type.
 
+Session cookies (`oa_session`, `oa_csrf`) carry `Max-Age` equal to the absolute session lifetime; the sliding idle expiry is enforced server-side, so an active user is no longer logged out by the browser after the idle window.
+
 ### CSRF
 
-On `/api/v1/*` every POST/PUT/PATCH/DELETE made with a session must send `X-CSRF-Token` equal to the `oa_csrf` cookie, otherwise 403 `csrf_protection`. Bearer, Basic-token and legacy-key requests, and the SAML `/acs` POST, are exempt.
+On `/api/v1/*` every POST/PUT/PATCH/DELETE made with a session must send `X-CSRF-Token` equal to the `oa_csrf` cookie, otherwise 403 `csrf_protection`. Bearer, Basic-token and legacy-key requests, and the SAML `/acs` POST, are exempt. The one exception: a Basic-token request that carries browser signals of a cross-site origin (`Sec-Fetch-Site: cross-site` or `same-site`, or an `Origin` that is not the request host) is not exempt and needs the CSRF token, because browsers cache Basic credentials and attach them to cross-site requests. `curl`, `mvn`, `npm` and `docker` send neither header and are unaffected.
 
 ## API tokens
 
@@ -124,9 +126,9 @@ A denied anonymous request gets 401 with `WWW-Authenticate` (`Bearer realm="open
 
 | Setting | Env | Behaviour |
 |---|---|---|
-| `server.ipAllowlist` | `OPENARTIFACT_IP_ALLOWLIST` (comma-separated CIDRs) | other client IPs get 403 `IP not allowed`. Empty = allow all |
+| `server.ipAllowlist` | `OPENARTIFACT_IP_ALLOWLIST` (comma-separated CIDRs) | other client IPs get 403 `IP not allowed`. Empty = allow all. Entries may be CIDRs or bare IPs; an entry that parses as neither stops startup (it never silently disables the allowlist) |
 | `server.rateLimitRps` | `OPENARTIFACT_RATE_LIMIT_RPS` | per-client-IP token bucket per second, 0 = off; 429 `rate limit exceeded` with `Retry-After: 1`. In-process, so each replica counts separately |
-| `server.trustedProxies` | `OPENARTIFACT_TRUSTED_PROXIES` (comma-separated CIDRs) | only a peer inside these CIDRs may set `X-Forwarded-For` (first entry) or `X-Real-IP` |
+| `server.trustedProxies` | `OPENARTIFACT_TRUSTED_PROXIES` (comma-separated CIDRs) | only a peer inside these CIDRs may set `X-Forwarded-For` (the rightmost entry that is not itself a trusted proxy) or `X-Real-IP` |
 
 The resolved client IP feeds the allowlist, rate limit, login throttle, audit log and sessions. Behind a reverse proxy set `trustedProxies`, otherwise every client appears as the proxy (a warning is logged once when forwarding headers arrive from an untrusted peer). Entries must be CIDRs (`10.0.0.1/32`, not `10.0.0.1`); invalid entries are skipped silently, and an allowlist with no valid entry allows everyone.
 

@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
 )
 
 var (
@@ -126,7 +127,7 @@ func LoadOIDCProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 
 	cfg.ClientSecret = secret
 
-	provider, err := gooidc.NewProvider(ctx, cfg.Issuer)
+	provider, err := gooidc.NewProvider(oidcContext(ctx), cfg.Issuer)
 	if err != nil {
 		return nil, fmt.Errorf("oidc_discovery_failed: %w", ErrOIDCDiscoveryFailed)
 	}
@@ -161,6 +162,18 @@ func LoadOIDCProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 	return p, nil
 }
 
+// oidcHTTPClient performs every outbound OIDC request (discovery, JWKS, token
+// exchange). Issuer metadata is attacker-influenceable (admin-configured URL,
+// DNS rebinding), so all of it goes through the SSRF dial guard.
+//
+//nolint:gochecknoglobals // shared SSRF-guarded client, reuses connections
+var oidcHTTPClient = netutil.SafeHTTPClient(30 * time.Second)
+
+// oidcContext attaches oidcHTTPClient to ctx for go-oidc and oauth2.
+func oidcContext(ctx context.Context) context.Context {
+	return gooidc.ClientContext(ctx, oidcHTTPClient)
+}
+
 func ensureOpenID(scopes []string) []string {
 	if len(scopes) == 0 {
 		return []string{"openid", "profile", "email", "groups"}
@@ -185,7 +198,7 @@ func (p *OIDCProvider) AuthURL(state, nonce, codeChallenge string) string {
 // ExchangeCode redeems the (single-use) authorization code and returns the raw
 // ID token without verifying it.
 func (p *OIDCProvider) ExchangeCode(ctx context.Context, code, codeVerifier string) (string, error) {
-	token, err := p.Config.Exchange(ctx, code, oauth2.SetAuthURLParam("code_verifier", codeVerifier))
+	token, err := p.Config.Exchange(oidcContext(ctx), code, oauth2.SetAuthURLParam("code_verifier", codeVerifier))
 	if err != nil {
 		return "", fmt.Errorf("code exchange: %w", err)
 	}
@@ -201,7 +214,7 @@ func (p *OIDCProvider) ExchangeCode(ctx context.Context, code, codeVerifier stri
 // VerifyIDToken verifies rawIDToken against this provider's verifier and
 // decodes its claims.
 func (p *OIDCProvider) VerifyIDToken(ctx context.Context, rawIDToken string) (*gooidc.IDToken, map[string]any, error) {
-	idToken, err := p.Verifier.Verify(ctx, rawIDToken)
+	idToken, err := p.Verifier.Verify(oidcContext(ctx), rawIDToken)
 	if err != nil {
 		if _, expired := errors.AsType[*gooidc.TokenExpiredError](err); expired {
 			return nil, nil, fmt.Errorf("%w: %w", ErrIDTokenExpired, err)

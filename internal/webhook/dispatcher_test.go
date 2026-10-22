@@ -263,3 +263,51 @@ func TestDeliveryBlocksLoopbackByDefault(t *testing.T) {
 		t.Fatalf("status=%s", delivery.Status)
 	}
 }
+
+type disabledWebhookDB struct {
+	deliveryTestDB
+
+	wh *models.Webhook
+}
+
+func (db *disabledWebhookDB) GetWebhook(context.Context, string) (*models.Webhook, error) {
+	return db.wh, nil
+}
+
+func TestProcessDropsDeliveriesOfDisabledWebhook(t *testing.T) {
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
+
+	hits := 0
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		hits++
+		w.WriteHeader(http.StatusOK)
+	}))
+	t.Cleanup(server.Close)
+
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, tc := range []struct {
+		event    string
+		wantHits int
+		want     string
+	}{
+		{"artifact.uploaded", 0, "failed"},
+		{EventWebhookTest, 1, "success"},
+	} {
+		hits = 0
+		db := &disabledWebhookDB{
+			wh: &models.Webhook{ID: "wh", URL: server.URL, Enabled: false, ContentType: "application/json", MaxRetries: 3, TimeoutSeconds: 1},
+		}
+		db.BaseMockDB = &database.BaseMockDB{}
+		delivery := &models.WebhookDelivery{ID: "d", WebhookID: "wh", EventType: tc.event, Payload: map[string]any{}}
+
+		NewDispatcher(db, log).process(delivery)
+
+		if hits != tc.wantHits || db.delivery == nil || db.delivery.Status != tc.want {
+			t.Errorf("%s: hits=%d delivery=%+v, want hits=%d status=%s", tc.event, hits, db.delivery, tc.wantHits, tc.want)
+		}
+	}
+}

@@ -39,7 +39,7 @@ Create body:
 | `group_mapping` | IdP group → local group name |
 | `permission_mapping` | local group name → permission target name |
 | `auto_provision_users` | create unknown users on first login |
-| `link_by_email` | link to an existing local user with the same verified email |
+| `link_by_email` | link to an existing local user with the same IdP-verified email. Local users cannot change their own email (only an admin can), so a user cannot pre-claim another person's address to be linked to their SSO identity |
 
 Providers are created enabled; `PATCH` can toggle `enabled`. Mappings accept at most 256 entries, keys and values up to 512 characters. A `claim_mapping` field is stored and returned but not used by login.
 
