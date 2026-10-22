@@ -44,6 +44,21 @@ WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND versio
 ORDER BY snapshot_timestamp DESC, snapshot_build_number DESC
 LIMIT 1;
 
+-- name: GetLatestSnapshotFile :one
+-- The newest timestamped snapshot build of one file (classifier + extension),
+-- for the legacy "foo-1.0-SNAPSHOT.<ext>" lookup.
+SELECT id, repository_id,
+       blob_id,
+       group_id, artifact_id_coord, version, classifier, extension,
+       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
+       created_at, updated_at
+FROM maven_artifacts
+WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4
+  AND classifier = $5 AND extension = $6
+  AND is_snapshot = true AND deleted_at IS NULL
+ORDER BY snapshot_timestamp DESC NULLS LAST, snapshot_build_number DESC
+LIMIT 1;
+
 -- name: DeleteMavenArtifact :exec
 DELETE FROM maven_artifacts WHERE id = $1 AND deleted_at IS NULL;
 

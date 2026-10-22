@@ -37,6 +37,11 @@ UPDATE docker_uploads SET "offset" = $1, updated_at = now() WHERE repository_id 
 -- name: DeleteDockerUpload :exec
 DELETE FROM docker_uploads WHERE repository_id = $1 AND upload_uuid = $2;
 
+-- name: DeleteStaleDockerUploads :many
+-- Drops upload sessions that saw no activity since the cutoff and returns their
+-- UUIDs so the caller can remove the staged files.
+DELETE FROM docker_uploads WHERE updated_at < $1 RETURNING upload_uuid;
+
 -- name: CreateDockerManifest :one
 -- Re-pushing a manifest already stored for the image is a no-op refresh, not
 -- an error (OCI distribution: manifest PUT is idempotent). A copy of the same

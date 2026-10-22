@@ -326,6 +326,32 @@ func (q *Queries) DeleteDockerUpload(ctx context.Context, arg DeleteDockerUpload
 	return err
 }
 
+const deleteStaleDockerUploads = `-- name: DeleteStaleDockerUploads :many
+DELETE FROM docker_uploads WHERE updated_at < $1 RETURNING upload_uuid
+`
+
+// Drops upload sessions that saw no activity since the cutoff and returns their
+// UUIDs so the caller can remove the staged files.
+func (q *Queries) DeleteStaleDockerUploads(ctx context.Context, updatedAt time.Time) ([]string, error) {
+	rows, err := q.db.Query(ctx, deleteStaleDockerUploads, updatedAt)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var upload_uuid string
+		if err := rows.Scan(&upload_uuid); err != nil {
+			return nil, err
+		}
+		items = append(items, upload_uuid)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getDockerBlob = `-- name: GetDockerBlob :one
 SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, b.size_bytes AS size, b.sha256 AS blob_sha256, dbb.created_at
 FROM docker_blobs dbb

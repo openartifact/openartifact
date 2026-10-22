@@ -256,8 +256,11 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) handleList(w http.ResponseWriter, r *http.Request, repoID, prefix string) {
-	// Remove trailing slash for prefix matching
-	prefix = strings.TrimSuffix(prefix, "/")
+	// A directory listing matches whole path segments: "docs/" must not list
+	// "docs-old/x". The store matches a plain string prefix, so keep the slash.
+	if prefix = strings.TrimSuffix(prefix, "/"); prefix != "" {
+		prefix += "/"
+	}
 
 	artifacts, err := h.DB.ListRawArtifacts(r.Context(), repoID, prefix)
 	if err != nil {

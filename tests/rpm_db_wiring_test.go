@@ -604,6 +604,14 @@ func (m *MockDatabase) GetNPMVersionsByPackage(ctx context.Context, packageID st
 	return result, nil
 }
 
+func (m *MockDatabase) UpdateNPMVersionManifest(ctx context.Context, packageID, version string, manifest []byte) error {
+	if v := m.npmVersions[packageID+":"+version]; v != nil {
+		v.ManifestJSON = manifest
+	}
+
+	return nil
+}
+
 func (m *MockDatabase) DeleteNPMVersion(ctx context.Context, packageID, version string) error {
 	delete(m.npmVersions, packageID+":"+version)
 	return nil

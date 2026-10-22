@@ -183,6 +183,9 @@ func (m *BaseMockDB) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID
 func (m *BaseMockDB) GetMavenArtifactsByGA(ctx context.Context, repoID, groupID, artifactID string) ([]*models.MavenArtifact, error) {
 	return nil, errNotImpl("GetMavenArtifactsByGA")
 }
+func (m *BaseMockDB) GetLatestSnapshotFile(ctx context.Context, repoID, groupID, artifactID, version, classifier, extension string) (*models.MavenArtifact, error) {
+	return nil, errNotImpl("GetLatestSnapshotFile")
+}
 func (m *BaseMockDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error) {
 	return nil, errNotImpl("GetLatestSnapshot")
 }
@@ -215,6 +218,9 @@ func (m *BaseMockDB) GetNPMVersion(ctx context.Context, packageID, version strin
 }
 func (m *BaseMockDB) GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error) {
 	return nil, errNotImpl("GetNPMVersionsByPackage")
+}
+func (m *BaseMockDB) UpdateNPMVersionManifest(ctx context.Context, packageID, version string, manifest []byte) error {
+	return errNotImpl("UpdateNPMVersionManifest")
 }
 func (m *BaseMockDB) DeleteNPMVersion(ctx context.Context, packageID, version string) error {
 	return errNotImpl("DeleteNPMVersion")
@@ -335,6 +341,9 @@ func (m *BaseMockDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPack
 }
 func (m *BaseMockDB) GetPyPIPackage(ctx context.Context, repoID, name, version, filename string) (*models.PyPIPackage, error) {
 	return nil, errNotImpl("GetPyPIPackage")
+}
+func (m *BaseMockDB) GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error) {
+	return nil, errNotImpl("GetPyPIPackageByFilename")
 }
 func (m *BaseMockDB) DeletePyPIPackage(ctx context.Context, repoID, name, version, filename string) error {
 	return errNotImpl("DeletePyPIPackage")

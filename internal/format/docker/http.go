@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"os"
 	"path/filepath"
 	"slices"
@@ -50,10 +51,34 @@ type HTTPHandler struct {
 	baseURL   string
 	publisher webhook.Publisher
 	authz     Authorizer
+	uploadDir string
 }
 
+// DefaultUploadDir is where in-progress blob uploads are staged unless
+// SetUploadDir overrides it.
+const DefaultUploadDir = "/tmp/openartifact/docker-uploads"
+
+const (
+	// maxManifestBytes caps a pushed manifest; the distribution spec
+	// recommends registries accept at least 4 MiB.
+	maxManifestBytes = 4 << 20
+
+	// defaultTagPage is the tags/list page size when `n` is absent; maxTagPage
+	// caps an explicit `n`.
+	defaultTagPage = 100
+	maxTagPage     = 1000
+)
+
 func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *HTTPHandler {
-	return &HTTPHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL}
+	return &HTTPHandler{log: log, db: db, blobStore: blobStore, baseURL: baseURL, uploadDir: DefaultUploadDir}
+}
+
+// SetUploadDir sets the directory blob uploads are staged in. It must be
+// called before the handler serves requests.
+func (h *HTTPHandler) SetUploadDir(dir string) {
+	if dir != "" {
+		h.uploadDir = dir
+	}
 }
 
 // SetPublisher sets the webhook publisher used for artifact events. It must be
@@ -325,8 +350,14 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Read manifest body
-	body, err := io.ReadAll(r.Body)
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, maxManifestBytes))
 	if err != nil {
+		if _, ok := errors.AsType[*http.MaxBytesError](err); ok {
+			h.errorResponse(w, http.StatusRequestEntityTooLarge, "SIZE_INVALID", "manifest too large")
+
+			return
+		}
+
 		h.log.Errorw("failed to read manifest body", "error", err)
 		h.errorResponse(w, http.StatusBadRequest, "DIGEST_INVALID", "failed to read body")
 
@@ -919,7 +950,7 @@ func (h *HTTPHandler) handleInitiateBlobUpload(w http.ResponseWriter, r *http.Re
 	}
 
 	// Create temp directory if needed
-	uploadDir := "/tmp/openartifact/docker-uploads"
+	uploadDir := h.uploadDir
 	if err := os.MkdirAll(uploadDir, 0755); err != nil {
 		h.log.Errorw("failed to create upload directory", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -1089,10 +1120,58 @@ func (h *HTTPHandler) handleGetUploadStatus(w http.ResponseWriter, r *http.Reque
 	}
 
 	w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/uploads/%s", name, uploadUUID))
-	w.Header().Set("Range", fmt.Sprintf("0-%d", upload.Offset-1))
+	w.Header().Set("Range", uploadRange(upload.Offset))
 	w.Header().Set("Docker-Upload-Uuid", uploadUUID)
 	w.WriteHeader(http.StatusNoContent)
 }
+
+// uploadRange formats the Range header for an upload holding offset bytes. An
+// empty upload reports 0-0, as the initiate response does.
+func uploadRange(offset int64) string {
+	if offset <= 0 {
+		return "0-0"
+	}
+
+	return fmt.Sprintf("0-%d", offset-1)
+}
+
+// openUploadFile opens the staging file for appending after truncating it to
+// the offset the database accepted. Bytes a previous, failed request wrote
+// past that offset are discarded, so a client resuming at the reported offset
+// never appends after stray data.
+func openUploadFile(path string, offset int64) (*os.File, error) {
+	f, err := os.OpenFile(path, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
+	if err != nil {
+		return nil, fmt.Errorf("open upload file: %w", err)
+	}
+
+	info, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+
+		return nil, fmt.Errorf("stat upload file: %w", err)
+	}
+
+	if info.Size() < offset {
+		_ = f.Close()
+
+		return nil, errUploadFileShort
+	}
+
+	if info.Size() > offset {
+		if err := f.Truncate(offset); err != nil {
+			_ = f.Close()
+
+			return nil, fmt.Errorf("truncate upload file: %w", err)
+		}
+	}
+
+	return f, nil
+}
+
+// errUploadFileShort means the staging file holds fewer bytes than the
+// database recorded (it was lost), so the upload cannot continue.
+var errUploadFileShort = errors.New("upload file is shorter than the recorded offset")
 
 // handleUploadChunk appends data to an in-progress upload.
 func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) {
@@ -1130,7 +1209,7 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 		if offsetErr := validateChunkOffset(upload.Offset, start); offsetErr != nil {
 			h.log.Warnw("chunk offset mismatch", "uuid", uploadUUID, "current_offset", upload.Offset, "start", start)
 			w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/uploads/%s", name, uploadUUID))
-			w.Header().Set("Range", fmt.Sprintf("0-%d", upload.Offset-1))
+			w.Header().Set("Range", uploadRange(upload.Offset))
 			h.errorResponse(w, http.StatusRequestedRangeNotSatisfiable, "RANGE_INVALID", offsetErr.Error())
 
 			return
@@ -1141,13 +1220,12 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 
 	// Stream chunk data straight to the temp file to avoid buffering the whole
 	// chunk (up to GBs for large layers) in memory.
-	uploadDir := "/tmp/openartifact/docker-uploads"
+	uploadDir := h.uploadDir
 	tempFile := filepath.Join(uploadDir, uploadUUID)
 
-	f, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := openUploadFile(tempFile, upload.Offset)
 	if err != nil {
-		h.log.Errorw("failed to open temp file", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+		h.uploadFileError(w, uploadUUID, err)
 
 		return
 	}
@@ -1179,9 +1257,22 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 	}
 
 	w.Header().Set("Location", fmt.Sprintf("/v2/%s/blobs/uploads/%s", name, uploadUUID))
-	w.Header().Set("Range", fmt.Sprintf("0-%d", newOffset-1))
+	w.Header().Set("Range", uploadRange(newOffset))
 	w.Header().Set("Docker-Upload-Uuid", uploadUUID)
 	w.WriteHeader(http.StatusAccepted)
+}
+
+// uploadFileError answers a failure to open an upload's staging file.
+func (h *HTTPHandler) uploadFileError(w http.ResponseWriter, uploadUUID string, err error) {
+	h.log.Errorw("failed to open upload file", "uuid", uploadUUID, "error", err)
+
+	if errors.Is(err, errUploadFileShort) {
+		h.errorResponse(w, http.StatusNotFound, "BLOB_UPLOAD_UNKNOWN", "upload data lost; restart the upload")
+
+		return
+	}
+
+	h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 }
 
 // handleCompleteBlobUpload finalizes a blob upload.
@@ -1225,7 +1316,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 
 		if offsetErr := validateChunkOffset(upload.Offset, start); offsetErr != nil {
 			h.log.Warnw("final chunk offset mismatch", "uuid", uploadUUID, "current_offset", upload.Offset, "start", start)
-			w.Header().Set("Range", fmt.Sprintf("0-%d", upload.Offset-1))
+			w.Header().Set("Range", uploadRange(upload.Offset))
 			h.errorResponse(w, http.StatusRequestedRangeNotSatisfiable, "RANGE_INVALID", offsetErr.Error())
 
 			return
@@ -1234,16 +1325,15 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 
 	defer func() { _ = r.Body.Close() }()
 
-	uploadDir := "/tmp/openartifact/docker-uploads"
+	uploadDir := h.uploadDir
 	tempFile := filepath.Join(uploadDir, uploadUUID)
 
 	// Stream any final bytes from the request body directly to the temp file.
 	// For monolithic uploads (single PUT carrying the whole blob) this avoids
 	// buffering the entire layer in memory.
-	f, err := os.OpenFile(tempFile, os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0644)
+	f, err := openUploadFile(tempFile, upload.Offset)
 	if err != nil {
-		h.log.Errorw("failed to open temp file for final chunk", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+		h.uploadFileError(w, uploadUUID, err)
 
 		return
 	}
@@ -1390,7 +1480,7 @@ func (h *HTTPHandler) handleCancelBlobUpload(w http.ResponseWriter, r *http.Requ
 	}
 
 	// Delete temp file
-	uploadDir := "/tmp/openartifact/docker-uploads"
+	uploadDir := h.uploadDir
 	tempFile := filepath.Join(uploadDir, uploadUUID)
 	_ = os.Remove(tempFile)
 
@@ -1415,24 +1505,44 @@ func (h *HTTPHandler) handleListTags(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Parse pagination parameters
-	nStr := r.URL.Query().Get("n")
+	// Pagination per the distribution spec: n bounds the page, last is the
+	// final tag of the previous page, and a Link header points at the next
+	// page whenever more tags remain.
+	n := defaultTagPage
+
+	if nStr := r.URL.Query().Get("n"); nStr != "" {
+		parsed, parseErr := strconv.Atoi(nStr)
+		if parseErr != nil || parsed < 0 {
+			h.errorResponse(w, http.StatusBadRequest, "PAGINATION_NUMBER_INVALID", "invalid n")
+
+			return
+		}
+
+		n = min(parsed, maxTagPage)
+	}
+
 	lastStr := r.URL.Query().Get("last")
 
-	n := 100 // default
+	var tags []*models.DockerTag
 
-	if nStr != "" {
-		if parsed, err := strconv.Atoi(nStr); err == nil && parsed > 0 {
-			n = parsed
+	if n > 0 {
+		var err error
+
+		// One extra row tells whether another page follows.
+		tags, err = h.db.ListDockerTags(r.Context(), repo.ID, image, lastStr, n+1)
+		if err != nil {
+			h.log.Errorw("failed to list tags", "error", err)
+			h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+			return
 		}
 	}
 
-	tags, err := h.db.ListDockerTags(r.Context(), repo.ID, image, lastStr, n)
-	if err != nil {
-		h.log.Errorw("failed to list tags", "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+	if len(tags) > n {
+		tags = tags[:n]
 
-		return
+		next := url.Values{"n": {strconv.Itoa(n)}, "last": {tags[n-1].Name}}
+		w.Header().Set("Link", fmt.Sprintf("</v2/%s/tags/list?%s>; rel=\"next\"", name, next.Encode()))
 	}
 
 	// Build tag names list

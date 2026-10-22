@@ -43,6 +43,9 @@ SELECT id, package_id, version, manifest_json, integrity, shasum, blob_id, tarba
 FROM npm_versions
 WHERE package_id = $1 AND deleted_at IS NULL;
 
+-- name: UpdateNPMVersionManifest :exec
+UPDATE npm_versions SET manifest_json = $3::jsonb WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL;
+
 -- name: DeleteNPMVersion :exec
 DELETE FROM npm_versions WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL;
 

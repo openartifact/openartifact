@@ -398,6 +398,21 @@ func (q *Queries) UpdateNPMPackageLatestVersion(ctx context.Context, arg UpdateN
 	return err
 }
 
+const updateNPMVersionManifest = `-- name: UpdateNPMVersionManifest :exec
+UPDATE npm_versions SET manifest_json = $3::jsonb WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+`
+
+type UpdateNPMVersionManifestParams struct {
+	PackageID string          `db:"package_id" json:"package_id"`
+	Version   string          `db:"version" json:"version"`
+	Column3   json.RawMessage `db:"column_3" json:"column_3"`
+}
+
+func (q *Queries) UpdateNPMVersionManifest(ctx context.Context, arg UpdateNPMVersionManifestParams) error {
+	_, err := q.db.Exec(ctx, updateNPMVersionManifest, arg.PackageID, arg.Version, arg.Column3)
+	return err
+}
+
 const upsertNPMDistTag = `-- name: UpsertNPMDistTag :one
 INSERT INTO npm_dist_tags (package_id, tag, version)
 VALUES ($1, $2, $3)

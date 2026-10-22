@@ -102,6 +102,8 @@ PostgreSQL is the only supported database.
 | `OPENARTIFACT_METADATA_REGEN_CONCURRENCY` | `workers.metadataRegenConcurrency` | `4` | Max concurrent metadata regenerations (npm, maven, deb, rpm share it); each pins about two DB connections |
 | `OPENARTIFACT_DOCKER_GC_INTERVAL` | `workers.dockerGcInterval` | `1h` | Pause between Docker registry garbage-collection passes over all docker repositories; `0` disables the schedule (an admin can still run it through the API). See [Docker registry GC](../formats/docker.md#garbage-collection) |
 | `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `workers.dockerGcGracePeriod` | `24h` | How long an untagged manifest or an unreferenced blob must sit idle before GC may delete it; keep it longer than your slowest push and any digest-pinned reference to an untagged image. Must not be negative |
+| `OPENARTIFACT_DOCKER_UPLOAD_TTL` | `workers.dockerUploadTtl` | `24h` | Age after which an unfinished Docker blob upload session and its staged file are removed; `0` disables the sweep. Must not be negative |
+| `OPENARTIFACT_DOCKER_UPLOAD_DIR` | `workers.dockerUploadDir` | `/tmp/openartifact/docker-uploads` | Directory where in-progress Docker blob uploads are staged; use a persistent volume that all replicas handling one upload share |
 
 ### Trash (`trash`)
 

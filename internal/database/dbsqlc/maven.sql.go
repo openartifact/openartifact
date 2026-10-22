@@ -126,6 +126,77 @@ func (q *Queries) GetLatestSnapshot(ctx context.Context, arg GetLatestSnapshotPa
 	return i, err
 }
 
+const getLatestSnapshotFile = `-- name: GetLatestSnapshotFile :one
+SELECT id, repository_id,
+       blob_id,
+       group_id, artifact_id_coord, version, classifier, extension,
+       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
+       created_at, updated_at
+FROM maven_artifacts
+WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4
+  AND classifier = $5 AND extension = $6
+  AND is_snapshot = true AND deleted_at IS NULL
+ORDER BY snapshot_timestamp DESC NULLS LAST, snapshot_build_number DESC
+LIMIT 1
+`
+
+type GetLatestSnapshotFileParams struct {
+	RepositoryID    string `db:"repository_id" json:"repository_id"`
+	GroupID         string `db:"group_id" json:"group_id"`
+	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
+	Version         string `db:"version" json:"version"`
+	Classifier      string `db:"classifier" json:"classifier"`
+	Extension       string `db:"extension" json:"extension"`
+}
+
+type GetLatestSnapshotFileRow struct {
+	ID                  string    `db:"id" json:"id"`
+	RepositoryID        string    `db:"repository_id" json:"repository_id"`
+	BlobID              string    `db:"blob_id" json:"blob_id"`
+	GroupID             string    `db:"group_id" json:"group_id"`
+	ArtifactIDCoord     string    `db:"artifact_id_coord" json:"artifact_id_coord"`
+	Version             string    `db:"version" json:"version"`
+	Classifier          string    `db:"classifier" json:"classifier"`
+	Extension           string    `db:"extension" json:"extension"`
+	SnapshotTimestamp   *string   `db:"snapshot_timestamp" json:"snapshot_timestamp"`
+	SnapshotBuildNumber int32     `db:"snapshot_build_number" json:"snapshot_build_number"`
+	IsSnapshot          bool      `db:"is_snapshot" json:"is_snapshot"`
+	RepoPath            string    `db:"repo_path" json:"repo_path"`
+	CreatedAt           time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// The newest timestamped snapshot build of one file (classifier + extension),
+// for the legacy "foo-1.0-SNAPSHOT.<ext>" lookup.
+func (q *Queries) GetLatestSnapshotFile(ctx context.Context, arg GetLatestSnapshotFileParams) (GetLatestSnapshotFileRow, error) {
+	row := q.db.QueryRow(ctx, getLatestSnapshotFile,
+		arg.RepositoryID,
+		arg.GroupID,
+		arg.ArtifactIDCoord,
+		arg.Version,
+		arg.Classifier,
+		arg.Extension,
+	)
+	var i GetLatestSnapshotFileRow
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.BlobID,
+		&i.GroupID,
+		&i.ArtifactIDCoord,
+		&i.Version,
+		&i.Classifier,
+		&i.Extension,
+		&i.SnapshotTimestamp,
+		&i.SnapshotBuildNumber,
+		&i.IsSnapshot,
+		&i.RepoPath,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getMavenArtifactByPath = `-- name: GetMavenArtifactByPath :one
 SELECT id, repository_id,
        blob_id,

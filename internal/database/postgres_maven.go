@@ -41,7 +41,7 @@ func (p *PostgresDB) fillMavenChecksums(ctx context.Context, arts ...*models.Mav
 	}
 
 	rows, err := p.pool.Query(ctx,
-		`SELECT ma.id::text, b.sha256, ma.md5, ma.sha1, ma.sha512
+		`SELECT ma.id::text, b.sha256, ma.md5, ma.sha1, ma.sha512, b.size_bytes
 		   FROM maven_artifacts ma JOIN blobs b ON b.id = ma.blob_id
 		  WHERE ma.id = ANY($1::uuid[]) AND ma.deleted_at IS NULL`, ids)
 	if err != nil {
@@ -51,12 +51,16 @@ func (p *PostgresDB) fillMavenChecksums(ctx context.Context, arts ...*models.Mav
 
 	for rows.Next() {
 		var id, sha256, md5, sha1, sha512 string
-		if err := rows.Scan(&id, &sha256, &md5, &sha1, &sha512); err != nil {
+
+		var size int64
+
+		if err := rows.Scan(&id, &sha256, &md5, &sha1, &sha512, &size); err != nil {
 			return fmt.Errorf("failed to scan maven checksums: %w", err)
 		}
 
 		if a := byID[id]; a != nil {
 			a.SHA256, a.MD5, a.SHA1, a.SHA512 = sha256, md5, sha1, sha512
+			a.BlobSizeBytes = size
 		}
 	}
 

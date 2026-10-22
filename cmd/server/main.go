@@ -280,6 +280,10 @@ func run(args []string) error {
 
 	dockerGCWorker.Start()
 
+	// Abandoned docker blob uploads: idle sessions and their staged files.
+	dockerUploadSweeper := worker.NewDockerUploadSweeper(db, dockerUploadDir(cfg), cfg.Workers.DockerUploadTTL, log)
+	dockerUploadSweeper.Start()
+
 	// Initialize webhook dispatcher
 	webhookDispatcher := webhook.NewDispatcher(db, log)
 
@@ -302,7 +306,7 @@ func run(args []string) error {
 	stopWorkers := func() {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
-				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, trashPurgeWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
+				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, dockerUploadSweeper.Stop, trashPurgeWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
 			} {
 				stop()
 			}
@@ -721,6 +725,7 @@ func run(args []string) error {
 
 	authedAPI.Route("/repos/{name}", func(r chi.Router) {
 		r.Use(repoDispatch.Middleware)
+		r.Use(npmHTTP.ShadowGuard)
 		rpmHTTP.RegisterRepoRoutes(r)
 		debHTTP.RegisterRepoRoutes(r)
 		helmHTTP.RegisterRepoRoutes(r)
@@ -760,6 +765,7 @@ func run(args []string) error {
 	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) { ivyHTTP.RegisterRepoRoutes(r) })
 	log.Infow("Maven/SBT/Ivy handlers registered (isolated prefixes)")
 	dockerHTTP := formatdocker.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	dockerHTTP.SetUploadDir(dockerUploadDir(cfg))
 	dockerHTTP.SetAuthorizer(evaluator)
 	dockerHTTP.RegisterRoutes(authedAPI)
 
@@ -895,6 +901,15 @@ func run(args []string) error {
 
 // metricsAuthMiddleware fails closed: with no token configured the endpoint
 // answers 401 unless anonymous access was explicitly enabled.
+// dockerUploadDir is where docker blob uploads are staged.
+func dockerUploadDir(cfg *config.Config) string {
+	if cfg.Workers.DockerUploadDir != "" {
+		return cfg.Workers.DockerUploadDir
+	}
+
+	return formatdocker.DefaultUploadDir
+}
+
 func metricsAuthMiddleware(token string, allowAnonymous bool) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

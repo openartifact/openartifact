@@ -102,6 +102,9 @@ type Database interface {
 	GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID, artifactID, version string) ([]*models.MavenArtifact, error)
 	GetMavenArtifactsByGA(ctx context.Context, repoID, groupID, artifactID string) ([]*models.MavenArtifact, error)
 	GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error)
+	// GetLatestSnapshotFile returns the newest snapshot build of the file with
+	// the given classifier and extension.
+	GetLatestSnapshotFile(ctx context.Context, repoID, groupID, artifactID, version, classifier, extension string) (*models.MavenArtifact, error)
 	DeleteMavenArtifact(ctx context.Context, id string) error
 
 	// ListMavenArtifactsByRepo is a bulk-list-by-repo method used only by
@@ -116,6 +119,9 @@ type Database interface {
 	CreateNPMVersion(ctx context.Context, v *models.NPMVersion) (*models.NPMVersion, error)
 	GetNPMVersion(ctx context.Context, packageID, version string) (*models.NPMVersion, error)
 	GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error)
+	// UpdateNPMVersionManifest replaces the stored manifest of a live version
+	// (used for `npm deprecate`).
+	UpdateNPMVersionManifest(ctx context.Context, packageID, version string, manifest []byte) error
 	DeleteNPMVersion(ctx context.Context, packageID, version string) error
 	UpsertNPMDistTag(ctx context.Context, t *models.NPMDistTag) (*models.NPMDistTag, error)
 	GetNPMDistTags(ctx context.Context, packageID string) (map[string]string, error)
@@ -187,6 +193,10 @@ type Database interface {
 	// PyPI methods
 	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error
 	GetPyPIPackage(ctx context.Context, repoID, name, version, filename string) (*models.PyPIPackage, error)
+	// GetPyPIPackageByFilename returns the live file with this filename, nil
+	// when there is none and ErrAmbiguousPyPIFilename when several packages of
+	// the repository hold a file of that name.
+	GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error)
 	DeletePyPIPackage(ctx context.Context, repoID, name, version, filename string) error
 	ListPyPIPackages(ctx context.Context, repoID string) ([]*models.PyPIPackage, error)
 	ListPyPIPackageVersions(ctx context.Context, repoID, name string) ([]*models.PyPIPackage, error)

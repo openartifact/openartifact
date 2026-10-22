@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -196,6 +197,25 @@ func (p *PostgresDB) DeleteDockerUpload(ctx context.Context, repositoryID, uploa
 
 	return nil
 }
+
+// DeleteStaleDockerUploads deletes the upload sessions idle since before the
+// cutoff and returns their UUIDs.
+func (p *PostgresDB) DeleteStaleDockerUploads(ctx context.Context, cutoff time.Time) ([]string, error) {
+	uuids, err := p.q.DeleteStaleDockerUploads(ctx, cutoff)
+	if err != nil {
+		return nil, fmt.Errorf("failed to delete stale docker uploads: %w", err)
+	}
+
+	return uuids, nil
+}
+
+// DockerUploadSweepStore is implemented by PostgresDB; the upload sweeper
+// reports itself unsupported for databases that do not.
+type DockerUploadSweepStore interface {
+	DeleteStaleDockerUploads(ctx context.Context, cutoff time.Time) ([]string, error)
+}
+
+var _ DockerUploadSweepStore = (*PostgresDB)(nil)
 
 // Docker manifest methods
 

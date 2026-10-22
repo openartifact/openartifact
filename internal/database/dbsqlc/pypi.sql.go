@@ -150,11 +150,89 @@ func (q *Queries) GetPyPIPackage(ctx context.Context, arg GetPyPIPackageParams) 
 	return i, err
 }
 
+const getPyPIPackagesByFilename = `-- name: GetPyPIPackagesByFilename :many
+SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at
+FROM pypi_packages pp
+JOIN blobs b ON b.id = pp.blob_id
+WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL AND pp.filename = $2
+ORDER BY pp.created_at, pp.id
+LIMIT 2
+`
+
+type GetPyPIPackagesByFilenameParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Filename     string `db:"filename" json:"filename"`
+}
+
+type GetPyPIPackagesByFilenameRow struct {
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	Name           string    `db:"name" json:"name"`
+	Version        string    `db:"version" json:"version"`
+	Filename       string    `db:"filename" json:"filename"`
+	PackageType    string    `db:"package_type" json:"package_type"`
+	PythonVersion  *string   `db:"python_version" json:"python_version"`
+	RequiresPython *string   `db:"requires_python" json:"requires_python"`
+	Summary        *string   `db:"summary" json:"summary"`
+	Author         *string   `db:"author" json:"author"`
+	AuthorEmail    *string   `db:"author_email" json:"author_email"`
+	License        *string   `db:"license" json:"license"`
+	Keywords       *string   `db:"keywords" json:"keywords"`
+	Classifiers    []string  `db:"classifiers" json:"classifiers"`
+	BlobKey        string    `db:"blob_key" json:"blob_key"`
+	Sha256Digest   string    `db:"sha256_digest" json:"sha256_digest"`
+	SizeBytes      int64     `db:"size_bytes" json:"size_bytes"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// At most two rows: enough to tell a unique file from an ambiguous filename.
+func (q *Queries) GetPyPIPackagesByFilename(ctx context.Context, arg GetPyPIPackagesByFilenameParams) ([]GetPyPIPackagesByFilenameRow, error) {
+	rows, err := q.db.Query(ctx, getPyPIPackagesByFilename, arg.RepositoryID, arg.Filename)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetPyPIPackagesByFilenameRow{}
+	for rows.Next() {
+		var i GetPyPIPackagesByFilenameRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.Name,
+			&i.Version,
+			&i.Filename,
+			&i.PackageType,
+			&i.PythonVersion,
+			&i.RequiresPython,
+			&i.Summary,
+			&i.Author,
+			&i.AuthorEmail,
+			&i.License,
+			&i.Keywords,
+			&i.Classifiers,
+			&i.BlobKey,
+			&i.Sha256Digest,
+			&i.SizeBytes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPyPIPackageVersions = `-- name: ListPyPIPackageVersions :many
 SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at
 FROM pypi_packages pp
 JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL AND pp.name = $2
+WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL
+  AND (pp.name = $2 OR (pp.name LIKE '%--%' AND regexp_replace(pp.name, '-+', '-', 'g') = $2))
 ORDER BY pp.version DESC
 `
 

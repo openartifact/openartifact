@@ -6,10 +6,12 @@ package maven
 
 import (
 	"bytes"
+	"context"
 	"fmt"
 	"io"
 	"net/http"
 	"path/filepath"
+	"strconv"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -73,6 +75,14 @@ func (h *HTTPHandler) handlePath(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, repoPublic bool, art *models.MavenArtifact, contentType string) {
 	if base.Revalidate(w, r, repoPublic, `"`+art.SHA256+`"`, metadataMaxAge) {
+		return
+	}
+
+	if r.Method == http.MethodHead {
+		w.Header().Set("Content-Type", contentType)
+		w.Header().Set("Content-Length", strconv.FormatInt(art.BlobSizeBytes, 10))
+		w.WriteHeader(http.StatusOK)
+
 		return
 	}
 
@@ -201,6 +211,16 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			}
 
 			if art == nil {
+				art, err = h.latestSnapshotFile(r.Context(), repoID, underlyingPath)
+				if err != nil {
+					h.Log.Errorw("failed to resolve latest snapshot", "path", underlyingPath, "error", err)
+					http.Error(w, "internal error", http.StatusInternalServerError)
+
+					return
+				}
+			}
+
+			if art == nil {
 				http.NotFound(w, r)
 				return
 			}
@@ -264,12 +284,19 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	_, artifactID, version, _, err := pkgmaven.ParseRepositoryPath(artPath)
-	if err == nil && pkgmaven.IsSnapshot(version) && strings.Contains(filename, "-SNAPSHOT.") {
-		groupPath, _, _, _, _ := pkgmaven.ParseRepositoryPath(artPath)
-		groupID := strings.ReplaceAll(groupPath, "/", ".")
+	art, err := h.DB.GetMavenArtifactByPath(r.Context(), repoID, artPath)
+	if err != nil {
+		h.Log.Errorw("failed to query artifact", "path", artPath, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 
-		art, err := h.DB.GetLatestSnapshot(r.Context(), repoID, groupID, artifactID, version)
+		return
+	}
+
+	// A path with no row of its own may be the legacy non-unique snapshot name
+	// ("foo-1.0-SNAPSHOT[-classifier].ext"): serve the newest build of that
+	// very file.
+	if art == nil {
+		art, err = h.latestSnapshotFile(r.Context(), repoID, artPath)
 		if err != nil {
 			h.Log.Errorw("failed to resolve latest snapshot", "path", artPath, "error", err)
 			http.Error(w, "internal error", http.StatusInternalServerError)
@@ -277,26 +304,15 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if art == nil {
-			http.NotFound(w, r)
+		if art != nil {
+			if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.RepoPath, artPath, r.URL.Path)...) {
+				return
+			}
+
+			h.serveArtifactBlob(w, r, repo.Public, art, ContentTypeForFile(art.RepoPath))
+
 			return
 		}
-
-		if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(art.RepoPath, artPath, r.URL.Path)...) {
-			return
-		}
-
-		h.serveArtifactBlob(w, r, repo.Public, art, ContentTypeForFile(art.RepoPath))
-
-		return
-	}
-
-	art, err := h.DB.GetMavenArtifactByPath(r.Context(), repoID, artPath)
-	if err != nil {
-		h.Log.Errorw("failed to query artifact", "path", artPath, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
 	}
 
 	if art == nil {
@@ -311,39 +327,100 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	h.serveArtifactBlob(w, r, repo.Public, art, ContentTypeForFile(filename))
 }
 
+// handleHead answers exactly what GET would (metadata, checksums, snapshots,
+// quarantine, validators) without a body. Artifact blobs are never read: the
+// size comes from the database.
 func (h *HTTPHandler) handleHead(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
+	hw := &headWriter{ResponseWriter: w}
+	h.handleGet(hw, r)
+	hw.finish()
+}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+// headWriter turns a GET response into a HEAD one. The small bodies GET
+// builds itself (metadata, checksums) are buffered to learn their length; a
+// handler that already declared Content-Length (artifact blobs) keeps it.
+type headWriter struct {
+	http.ResponseWriter
+
+	status int
+	body   bytes.Buffer
+}
+
+func (w *headWriter) WriteHeader(status int) {
+	if w.status == 0 {
+		w.status = status
+	}
+}
+
+func (w *headWriter) Write(p []byte) (int, error) {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+
+	return w.body.Write(p)
+}
+
+func (w *headWriter) finish() {
+	if w.status == 0 {
+		w.status = http.StatusOK
+	}
+
+	hdr := w.Header()
+	if hdr.Get("Content-Length") == "" && w.body.Len() > 0 {
+		hdr.Set("Content-Length", strconv.Itoa(w.body.Len()))
+	}
+
+	w.ResponseWriter.WriteHeader(w.status)
+}
+
+// latestSnapshotFile resolves "<artifact>-<X>-SNAPSHOT[-classifier].<ext>" in
+// <group>/<artifact>/<X>-SNAPSHOT/ to the newest build of that classifier and
+// extension. It returns nil when the path has another shape or no build.
+func (h *HTTPHandler) latestSnapshotFile(ctx context.Context, repoID, artPath string) (*models.MavenArtifact, error) {
+	groupPath, artifactID, version, filename, err := pkgmaven.ParseRepositoryPath(artPath)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return nil, nil //nolint:nilnil,nilerr // an unparsable path is simply not a snapshot file
 	}
 
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
+	if !pkgmaven.IsSnapshot(version) {
+		return nil, nil //nolint:nilnil // not a snapshot path
 	}
 
-	artPath := chi.URLParam(r, "*")
+	classifier, ext, ok := splitSnapshotFilename(filename, artifactID, version)
+	if !ok {
+		return nil, nil //nolint:nilnil // not a legacy snapshot name
+	}
 
-	art, err := h.DB.GetMavenArtifactByPath(r.Context(), repoID, artPath)
+	art, err := h.DB.GetLatestSnapshotFile(ctx, repoID, strings.ReplaceAll(groupPath, "/", "."), artifactID, version, classifier, ext)
 	if err != nil {
-		http.Error(w, "internal error", http.StatusInternalServerError)
-		return
+		return nil, fmt.Errorf("get latest snapshot file: %w", err)
 	}
 
-	if art == nil {
-		http.NotFound(w, r)
-		return
+	return art, nil
+}
+
+// splitSnapshotFilename splits "<artifact>-<version>[-classifier].<ext>"
+// (extensions may contain dots: tar.gz).
+func splitSnapshotFilename(filename, artifactID, version string) (string, string, bool) {
+	rest, found := strings.CutPrefix(filename, artifactID+"-"+version)
+	if !found {
+		return "", "", false
 	}
 
-	filename := filepath.Base(artPath)
-	w.Header().Set("Content-Type", ContentTypeForFile(filename))
-	w.Header().Set("Content-Length", "0")
-	w.Header().Set("ETag", `"`+art.SHA256+`"`)
-	w.WriteHeader(http.StatusOK)
+	if after, hasDash := strings.CutPrefix(rest, "-"); hasDash {
+		cls, e, hasExt := strings.Cut(after, ".")
+		if !hasExt || cls == "" || e == "" {
+			return "", "", false
+		}
+
+		return cls, e, true
+	}
+
+	if after, hasDot := strings.CutPrefix(rest, "."); hasDot && after != "" {
+		return "", after, true
+	}
+
+	return "", "", false
 }
 
 func (h *HTTPHandler) handleMKCOL(w http.ResponseWriter) {

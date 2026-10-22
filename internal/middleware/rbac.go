@@ -108,7 +108,7 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 
 			scope := classifyRoute(r)
 
-			if scope.anyAuthenticated && !principal.IsAnonymous {
+			if (scope.anyAuthenticated || isDockerPing(r)) && !principal.IsAnonymous {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -134,6 +134,13 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// isDockerPing reports whether r is the distribution API version check
+// (GET|HEAD /v2/). It names no repository, so it authorizes as "any
+// authenticated principal"; the handler answers a static 200.
+func isDockerPing(r *http.Request) bool {
+	return isSafeMethod(r.Method) && r.URL.Path == "/v2/"
 }
 
 func isSafeMethod(method string) bool {

@@ -17,6 +17,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"regexp"
 	"strconv"
 	"strings"
 
@@ -58,13 +59,80 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("pypi handler registered", "prefix", prefix)
 }
 
-func normalizePyPIName(name string) string {
-	// Normalize: lowercase, replace _ and . with -
-	name = strings.ToLower(name)
-	name = strings.ReplaceAll(name, "_", "-")
-	name = strings.ReplaceAll(name, ".", "-")
+var pypiNameSeparators = regexp.MustCompile(`[-_.]+`)
 
-	return name
+// normalizePyPIName is the PEP 503 normalization: runs of "-", "_" and "." become
+// a single "-", lowercased.
+func normalizePyPIName(name string) string {
+	return strings.ToLower(pypiNameSeparators.ReplaceAllString(name, "-"))
+}
+
+// pypiFileExtensions are the multi-part file endings stripped before a
+// filename is split into distribution and version.
+func pypiFileExtensions() []string {
+	return []string{".tar.gz", ".tar.bz2", ".tar.xz", ".tar.Z", ".zip", ".egg", ".tar", ".exe", ".msi", ".rpm", ".dmg"}
+}
+
+// validateUploadIdentity checks that the form's name and version are present
+// and that the file's name belongs to them, so a file can never be stored
+// under (or later resolved as) another package.
+func validateUploadIdentity(name, version, filename string) error {
+	switch {
+	case strings.Trim(name, "-_.") == "":
+		return errPyPIMissingName
+	case version == "":
+		return errPyPIMissingVersion
+	case filename == "" || strings.ContainsAny(filename, `/\`) || filename == "." || filename == "..":
+		return errPyPIBadFilename
+	}
+
+	dist, ok := splitPyPIFilename(filename, version)
+	if !ok || normalizePyPIName(dist) != normalizePyPIName(name) {
+		return errPyPIFilenameMismatch
+	}
+
+	return nil
+}
+
+var (
+	errPyPIMissingName      = errors.New("missing package name")
+	errPyPIMissingVersion   = errors.New("missing package version")
+	errPyPIBadFilename      = errors.New("invalid filename")
+	errPyPIFilenameMismatch = errors.New("filename does not match package name and version")
+)
+
+// splitPyPIFilename returns the distribution name of a filename that carries
+// the given version. Wheels are {dist}-{version}-{tags}.whl with "-" in the
+// version escaped as "_"; everything else is {dist}-{version}{ext}, read from
+// the end of the stem because dist names may contain "-".
+func splitPyPIFilename(filename, version string) (string, bool) {
+	if stem, isWheel := strings.CutSuffix(filename, ".whl"); isWheel {
+		parts := strings.Split(stem, "-")
+		if len(parts) < 5 {
+			return "", false
+		}
+
+		return parts[0], parts[1] == strings.ReplaceAll(version, "-", "_")
+	}
+
+	stem := filename
+
+	for _, ext := range pypiFileExtensions() {
+		if cut, found := strings.CutSuffix(filename, ext); found {
+			stem = cut
+			break
+		}
+	}
+
+	if stem == filename {
+		if i := strings.LastIndex(filename, "."); i > 0 {
+			stem = filename[:i]
+		}
+	}
+
+	dist, found := strings.CutSuffix(stem, "-"+version)
+
+	return dist, found && dist != ""
 }
 
 // simpleIndexMaxAge is how long shared caches may reuse a public repository's
@@ -210,21 +278,12 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	packages, err := h.DB.ListPyPIPackages(r.Context(), repoID)
+	pkg, err := h.DB.GetPyPIPackageByFilename(r.Context(), repoID, filename)
 	if err != nil {
-		h.Log.Errorw("failed to list packages", "repo", repoName, "error", err)
+		h.Log.Errorw("failed to look up pypi file", "repo", repoName, "filename", filename, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
-	}
-
-	var pkg *models.PyPIPackage
-
-	for _, p := range packages {
-		if p.Filename == filename {
-			pkg = p
-			break
-		}
 	}
 
 	if pkg == nil {
@@ -327,6 +386,11 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	var classifiers []string
 	if classifiersStr != "" {
 		classifiers = strings.Split(classifiersStr, "\n")
+	}
+
+	if err := validateUploadIdentity(name, version, fileHeader.Filename); err != nil {
+		http.Error(w, err.Error(), http.StatusBadRequest)
+		return
 	}
 
 	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, declaredLicenses(r)...) {
@@ -437,22 +501,17 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Find package by filename
-	packages, err := h.DB.ListPyPIPackages(r.Context(), repoID)
-	if err != nil {
-		h.Log.Errorw("failed to list packages", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	pkg, err := h.DB.GetPyPIPackageByFilename(r.Context(), repoID, filename)
+	if errors.Is(err, database.ErrAmbiguousPyPIFilename) {
+		http.Error(w, "filename is ambiguous", http.StatusConflict)
 		return
 	}
 
-	var pkg *models.PyPIPackage
+	if err != nil {
+		h.Log.Errorw("failed to look up pypi file", "repo", repoName, "filename", filename, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 
-	for _, p := range packages {
-		if p.Filename == filename {
-			pkg = p
-			break
-		}
+		return
 	}
 
 	if pkg == nil {

@@ -18,6 +18,9 @@ var (
 	// ErrTrashNotFound means no trashed row matches the kind/id (it was never
 	// deleted, was already restored, or was purged).
 	ErrTrashNotFound = errors.New("trash item not found")
+	// ErrAmbiguousPyPIFilename means several packages of one repository hold a
+	// file with the same name.
+	ErrAmbiguousPyPIFilename = errors.New("pypi filename is ambiguous")
 	// ErrTrashConflict means a restore collided with a live row that took over
 	// the item's unique key while it sat in the trash.
 	ErrTrashConflict = errors.New("a live item with the same identity already exists")

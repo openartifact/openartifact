@@ -32,6 +32,9 @@ import (
 
 const MaxNPMUploadBytes int64 = 200 << 20
 
+// maxNPMDistTagBody caps the dist-tag PUT body, a JSON string holding a version.
+const maxNPMDistTagBody int64 = 1 << 10
+
 type NPMUploadHandler struct {
 	log       *logger.Logger
 	db        database.Database
@@ -117,6 +120,18 @@ type npmPublishBody struct {
 	DistTags    map[string]string          `json:"dist-tags"`
 }
 
+// attachment returns the tarball attachment of a version. The npm CLI keys
+// attachments by the full (scoped) name, "@scope/pkg-1.0.0.tgz"; the bare
+// filename is accepted too.
+func (b *npmPublishBody) attachment(version string) (map[string]any, bool) {
+	att, ok := b.Attachments[b.Name+"-"+version+".tgz"]
+	if !ok {
+		att, ok = b.Attachments[formatnpm.TarballFilename(b.Name, version)]
+	}
+
+	return att, ok
+}
+
 type npmPreparedVersion struct {
 	version  string
 	manifest json.RawMessage
@@ -181,12 +196,7 @@ func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublish
 
 		filename := formatnpm.TarballFilename(pub.Name, version)
 
-		// The npm CLI keys attachments by the full (scoped) name,
-		// "@scope/pkg-1.0.0.tgz"; accept the bare filename too.
-		att, ok := pub.Attachments[pub.Name+"-"+version+".tgz"]
-		if !ok {
-			att, ok = pub.Attachments[filename]
-		}
+		att, ok := pub.attachment(version)
 		if !ok {
 			return nil, &npmPublishError{http.StatusBadRequest, "missing attachment: " + filename}
 		}
@@ -382,6 +392,16 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	deprecations, derr := h.extractNPMDeprecations(r.Context(), pkg, &pub)
+	if derr != nil {
+		uploadResult = "error"
+
+		h.log.Errorw("failed to read npm versions for deprecation", "pkg", pub.Name, "error", derr)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
 	prepared, perr := prepareNPMVersions(&pub)
 	if perr != nil {
 		uploadResult = "error"
@@ -528,7 +548,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		createdPkg = true
 	}
 
-	if pkg == nil {
+	if pkg == nil || (len(prepared) == 0 && len(deprecations) == 0) {
 		uploadResult = "error"
 
 		http.Error(w, "no versions to publish", http.StatusBadRequest)
@@ -570,6 +590,11 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 			fail("failed to upsert dist-tag", err)
 			return
 		}
+	}
+
+	if err := h.applyNPMDeprecations(r.Context(), pkg, deprecations); err != nil {
+		fail("failed to apply npm deprecation", err)
+		return
 	}
 
 	if err := h.db.MarkPackumentStale(r.Context(), pkg.ID); err != nil {
@@ -928,6 +953,10 @@ func (h *NPMUploadHandler) handleRevPut(w http.ResponseWriter, r *http.Request, 
 				return
 			}
 		}
+
+		if len(pub.DistTags) > 0 {
+			h.markStaleAfterTagChange(r.Context(), pkg)
+		}
 	}
 
 	if h.npmWorker != nil {
@@ -1098,7 +1127,7 @@ func (h *NPMUploadHandler) handlePutDistTag(w http.ResponseWriter, r *http.Reque
 	}
 
 	var version string
-	if err := json.NewDecoder(r.Body).Decode(&version); err != nil {
+	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, maxNPMDistTagBody)).Decode(&version); err != nil {
 		http.Error(w, "invalid body", http.StatusBadRequest)
 		return
 	}
@@ -1126,6 +1155,8 @@ func (h *NPMUploadHandler) handlePutDistTag(w http.ResponseWriter, r *http.Reque
 
 		return
 	}
+
+	h.markStaleAfterTagChange(r.Context(), pkg)
 
 	distTags, err := h.db.GetNPMDistTags(r.Context(), pkg.ID)
 	if err != nil {
@@ -1191,6 +1222,8 @@ func (h *NPMUploadHandler) handleDeleteDistTag(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	h.markStaleAfterTagChange(r.Context(), pkg)
+
 	distTags, err := h.db.GetNPMDistTags(r.Context(), pkg.ID)
 	if err != nil {
 		h.log.Errorw("failed to get npm dist-tags", "pkg", pkgName, "error", err)
@@ -1203,6 +1236,19 @@ func (h *NPMUploadHandler) handleDeleteDistTag(w http.ResponseWriter, r *http.Re
 
 	if encErr := json.NewEncoder(w).Encode(distTags); encErr != nil {
 		_ = encErr // response header already written
+	}
+}
+
+// markStaleAfterTagChange bumps the packument ETag after dist-tags changed, so
+// a client holding the cached packument revalidates instead of getting a 304
+// with the old tags, and schedules the regeneration.
+func (h *NPMUploadHandler) markStaleAfterTagChange(ctx context.Context, pkg *models.NPMPackage) {
+	if err := h.db.MarkPackumentStale(ctx, pkg.ID); err != nil {
+		h.log.Warnw("failed to mark packument stale after dist-tag change", "pkg", pkg.FullName, "error", err)
+	}
+
+	if h.npmWorker != nil {
+		h.npmWorker.NotifyStale(pkg.ID)
 	}
 }
 

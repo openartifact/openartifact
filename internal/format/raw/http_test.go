@@ -163,3 +163,39 @@ func TestPutImportCreatedAt(t *testing.T) {
 		})
 	}
 }
+
+type listDB struct {
+	*formattest.DB
+
+	paths []string
+}
+
+// ListRawArtifacts mirrors the store: prefix is a plain string prefix.
+func (d *listDB) ListRawArtifacts(_ context.Context, _, prefix string) ([]*models.RawArtifact, error) {
+	out := []*models.RawArtifact{}
+
+	for _, p := range d.paths {
+		if strings.HasPrefix(p, prefix) {
+			out = append(out, &models.RawArtifact{Path: p})
+		}
+	}
+
+	return out, nil
+}
+
+// FMTA-10: listing "docs/" must not include siblings sharing the string prefix.
+func TestListDirectoryMatchesWholeSegment(t *testing.T) {
+	db := &listDB{DB: formattest.NewDB(), paths: []string{"docs/a.txt", "docs-old/b.txt", "docs/sub/c.txt", "docsx"}}
+	h := NewHTTPHandler(formattest.NewLogger(t), db, formattest.NewBlobStore(), "http://localhost")
+
+	w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodGet, "/repos/myrepo/docs/", nil))
+	body := w.Body.String()
+
+	if !strings.Contains(body, "docs/a.txt") || !strings.Contains(body, "docs/sub/c.txt") {
+		t.Errorf("listing misses children: %s", body)
+	}
+
+	if strings.Contains(body, "docs-old") || strings.Contains(body, "docsx") {
+		t.Errorf("listing leaks sibling directories: %s", body)
+	}
+}

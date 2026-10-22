@@ -52,14 +52,15 @@ Unpublish:
 - `npm unpublish pkg@ver` sends `PUT /<package>/-rev/<rev>` with the reduced packument (versions missing from it are removed; the package is deleted if none remain), then `DELETE /<package>/-/<file>.tgz/-rev/<rev>`, which is a no-op once the version is gone.
 - `npm unpublish pkg` sends `DELETE /<package>/-rev/<rev>`, removing every version and the package.
 - Versions older than 72 hours cannot be unpublished: `403 cannot unpublish after 72h, use npm deprecate instead`. The per-repository override is the `repositories.allow_full_unpublish` database column; no API or UI field sets it.
-- `npm deprecate` is not implemented: its `PUT` carries existing versions without `_attachments`, which the publish handler rejects with `400 missing attachment`.
+- `npm deprecate` works: a `PUT` that carries existing versions without `_attachments` updates only their `deprecated` field (an empty message un-deprecates). New versions still need their attachment.
+- Package names that collide with other formats' routes (`charts`, `index.yaml`, `config.json`, `public.key`) are served as npm packages in an npm repository.
 
 Dist-tags (`npm dist-tag`):
 
 | Request | Behaviour |
 |---|---|
 | `GET /-/package/<pkg>/dist-tags` | `{tag: version}` |
-| `PUT /-/package/<pkg>/dist-tags/<tag>` | body is the version as a JSON string; `404` if the version does not exist |
+| `PUT /-/package/<pkg>/dist-tags/<tag>` | body is the version as a JSON string (max 1 KiB); `404` if the version does not exist; the packument ETag changes immediately |
 | `DELETE /-/package/<pkg>/dist-tags/<tag>` | removes the tag; `latest` cannot be deleted (`400`) |
 
 ## Read and generated metadata

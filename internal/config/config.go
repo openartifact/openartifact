@@ -67,6 +67,13 @@ type WorkersConfig struct {
 	// outlast the slowest push: layers are uploaded before the manifest that
 	// references them.
 	DockerGCGracePeriod time.Duration `yaml:"dockerGcGracePeriod"`
+	// DockerUploadTTL is how long a blob upload session may sit idle before
+	// the sweeper deletes it and its staged file. Zero or negative disables
+	// the sweeper.
+	DockerUploadTTL time.Duration `yaml:"dockerUploadTtl"`
+	// DockerUploadDir is where in-progress blob uploads are staged. Empty
+	// means /tmp/openartifact/docker-uploads.
+	DockerUploadDir string `yaml:"dockerUploadDir"`
 }
 
 // TrashConfig tunes soft delete (see docs/operations/trash.md).
@@ -285,6 +292,7 @@ func defaultConfig() *Config {
 			MetadataRegenConcurrency: 4,
 			DockerGCInterval:         time.Hour,
 			DockerGCGracePeriod:      24 * time.Hour,
+			DockerUploadTTL:          24 * time.Hour,
 		},
 		Trash: TrashConfig{
 			RetentionDays: 7,
@@ -413,6 +421,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Workers.MetadataRegenConcurrency, "OPENARTIFACT_METADATA_REGEN_CONCURRENCY")
 	overrideDuration(&cfg.Workers.DockerGCInterval, "OPENARTIFACT_DOCKER_GC_INTERVAL")
 	overrideDuration(&cfg.Workers.DockerGCGracePeriod, "OPENARTIFACT_DOCKER_GC_GRACE_PERIOD")
+	overrideDuration(&cfg.Workers.DockerUploadTTL, "OPENARTIFACT_DOCKER_UPLOAD_TTL")
+	overrideString(&cfg.Workers.DockerUploadDir, "OPENARTIFACT_DOCKER_UPLOAD_DIR")
 	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
 	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
 

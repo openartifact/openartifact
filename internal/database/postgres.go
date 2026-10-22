@@ -1257,6 +1257,47 @@ func (p *PostgresDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, art
 	return art, nil
 }
 
+func (p *PostgresDB) GetLatestSnapshotFile(ctx context.Context, repoID, groupID, artifactID, version, classifier, extension string) (*models.MavenArtifact, error) {
+	row, err := p.q.GetLatestSnapshotFile(ctx, dbsqlc.GetLatestSnapshotFileParams{
+		RepositoryID:    repoID,
+		GroupID:         groupID,
+		ArtifactIDCoord: artifactID,
+		Version:         version,
+		Classifier:      classifier,
+		Extension:       extension,
+	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get latest snapshot file: %w", err)
+	}
+
+	art := &models.MavenArtifact{
+		ID:                  row.ID,
+		RepositoryID:        row.RepositoryID,
+		BlobID:              row.BlobID,
+		GroupID:             row.GroupID,
+		ArtifactCoord:       row.ArtifactIDCoord,
+		Version:             row.Version,
+		Classifier:          row.Classifier,
+		Extension:           row.Extension,
+		SnapshotTimestamp:   derefStr(row.SnapshotTimestamp),
+		SnapshotBuildNumber: int(row.SnapshotBuildNumber),
+		IsSnapshot:          row.IsSnapshot,
+		RepoPath:            row.RepoPath,
+		CreatedAt:           row.CreatedAt,
+		UpdatedAt:           row.UpdatedAt,
+	}
+
+	if err := p.fillMavenChecksums(ctx, art); err != nil {
+		return nil, err
+	}
+
+	return art, nil
+}
+
 func (p *PostgresDB) DeleteMavenArtifact(ctx context.Context, id string) error {
 	if err := p.q.DeleteMavenArtifact(ctx, id); err != nil {
 		return fmt.Errorf("failed to delete maven artifact: %w", err)
@@ -1449,6 +1490,18 @@ func (p *PostgresDB) UpdateNPMPackageLatestVersion(ctx context.Context, packageI
 		LatestVersion: latestVersion,
 	}); err != nil {
 		return fmt.Errorf("failed to update npm package latest version: %w", err)
+	}
+
+	return nil
+}
+
+func (p *PostgresDB) UpdateNPMVersionManifest(ctx context.Context, packageID, version string, manifest []byte) error {
+	if err := p.q.UpdateNPMVersionManifest(ctx, dbsqlc.UpdateNPMVersionManifestParams{
+		PackageID: packageID,
+		Version:   version,
+		Column3:   manifest,
+	}); err != nil {
+		return fmt.Errorf("failed to update npm version manifest: %w", err)
 	}
 
 	return nil
@@ -2126,6 +2179,45 @@ func (p *PostgresDB) GetPyPIPackage(ctx context.Context, repoID, name, version, 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get pypi package: %w", err)
 	}
+
+	return &models.PyPIPackage{
+		ID:             row.ID,
+		RepositoryID:   row.RepositoryID,
+		Name:           row.Name,
+		Version:        row.Version,
+		Filename:       row.Filename,
+		PackageType:    row.PackageType,
+		PythonVersion:  derefStr(row.PythonVersion),
+		RequiresPython: derefStr(row.RequiresPython),
+		Summary:        derefStr(row.Summary),
+		Author:         derefStr(row.Author),
+		AuthorEmail:    derefStr(row.AuthorEmail),
+		License:        derefStr(row.License),
+		Keywords:       derefStr(row.Keywords),
+		Classifiers:    row.Classifiers,
+		BlobKey:        row.BlobKey,
+		SHA256Digest:   row.Sha256Digest,
+		SizeBytes:      row.SizeBytes,
+		CreatedAt:      row.CreatedAt,
+		UpdatedAt:      row.UpdatedAt,
+	}, nil
+}
+
+func (p *PostgresDB) GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error) {
+	rows, err := p.q.GetPyPIPackagesByFilename(ctx, dbsqlc.GetPyPIPackagesByFilenameParams{RepositoryID: repoID, Filename: filename})
+	if err != nil {
+		return nil, fmt.Errorf("failed to get pypi package by filename: %w", err)
+	}
+
+	switch len(rows) {
+	case 0:
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	case 1:
+	default:
+		return nil, ErrAmbiguousPyPIFilename
+	}
+
+	row := rows[0]
 
 	return &models.PyPIPackage{
 		ID:             row.ID,

@@ -129,6 +129,17 @@ Migrations `017` and `018` run at first start: `017` adds the soft-delete column
 | SSRF | The cloud metadata addresses `168.63.129.16` and `100.100.100.200`, and `0.0.0.0/8`, are always blocked, even with `ALLOW_PRIVATE_UPSTREAMS`. |
 | Webhooks | Queued and retried deliveries of a disabled webhook are dropped (marked `failed`) instead of being sent; `webhook.test` is unaffected. |
 | Caching | Delta downloads (`.../packages/{id}/delta`) are `Cache-Control: private, no-cache` unless an anonymous read of a public repository. |
+||||||| parent of 97feaec (fix(formats): docker, npm, maven, pypi, raw review fixes (AUTH-2, FMTA-2..FMTA-14, FMTA-16))
+| Docker login | `GET /v2/` (the registry ping behind `docker login`) now succeeds for any authenticated user, including users whose only grants are scoped to specific repositories (it was `403`). It stays `401` for anonymous callers. (AUTH-2) |
+| Docker tags | `GET /v2/<name>/tags/list` is paginated: `n` (default 100, at most 1000) and `last`, with a `Link: <...>; rel="next"` header when more tags exist. Clients that follow `Link` (docker, skopeo, crane) see no change; scripts reading the raw JSON now get at most 100 tags per call. Invalid `n` is `400 PAGINATION_NUMBER_INVALID`. (FMTA-2) |
+| Docker upload | Manifest `PUT` bodies over 4 MiB are rejected with `413 SIZE_INVALID`. Chunk `PATCH`/`PUT` now verify the staged file against the recorded offset instead of appending to stray bytes. (FMTA-13, FMTA-11) |
+| Docker upload sweep | Abandoned blob-upload sessions and their staged files are removed after `workers.dockerUploadTtl` (`OPENARTIFACT_DOCKER_UPLOAD_TTL`, default `24h`, `0` disables); staging directory `workers.dockerUploadDir` (`OPENARTIFACT_DOCKER_UPLOAD_DIR`, default `/tmp/openartifact/docker-uploads`). (FMTA-12) |
+| npm | `npm deprecate` now works: a publish request that changes only `deprecated` on existing versions updates the stored version (an empty message un-deprecates). dist-tag changes now refresh the packument ETag immediately, and dist-tag `PUT` bodies over 1 KiB are rejected. (FMTA-3, FMTA-4, FMTA-13) |
+| npm | In an npm repository, packages named `charts`, `index.yaml`, `config.json` or `public.key` are reachable again (they were shadowed by the helm, cargo, rpm and deb routes). (FMTA-14) |
+| Maven | `foo-1.0-SNAPSHOT.<ext>` and `foo-1.0-SNAPSHOT-<classifier>.<ext>` resolve to the newest build of that exact file (they could return the wrong classifier or extension). `HEAD` now answers like `GET`: snapshot names, metadata, checksums, quarantine and a real `Content-Length`. (FMTA-5, FMTA-6) |
+| PyPI | Package names use full PEP 503 normalization (runs of `-_.` collapse to one `-`); uploads with an empty name or version, or a filename that does not belong to the declared name and version, are `400`. Files are resolved by filename, and a filename shared by several packages is `409` on delete. Rows stored by older versions with a run of `-` remain reachable. (FMTA-7, FMTA-8, FMTA-9) |
+| Raw | Listing a directory (`GET /repos/<repo>/dir/`) returns only paths under `dir/`, no longer siblings such as `dir-old/`. (FMTA-10) |
+| Uploads | Helm chart and npm tarball scans stop after 1 GiB of decompressed data. (FMTA-13) |
 
 There is deliberately no `OPENARTIFACT_REPO_DELETE_DELAY`: the trash window is the deletion delay.
 

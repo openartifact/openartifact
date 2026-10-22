@@ -20,6 +20,9 @@ import (
 const (
 	maxTarballSize     = 200 << 20 // 200 MiB
 	maxPackageJSONSize = 4 << 20   // 4 MiB
+	// maxUnpackedSize bounds the decompressed bytes read while looking for
+	// package.json, so a gzip bomb cannot burn CPU before the entry is found.
+	maxUnpackedSize = 1 << 30 // 1 GiB
 )
 
 var (
@@ -118,7 +121,7 @@ func extractPackageJSON(r io.Reader) (map[string]any, error) {
 	}
 	defer func() { _ = gr.Close() }()
 
-	tr := tar.NewReader(gr)
+	tr := tar.NewReader(&limitedReader{r: gr, n: maxUnpackedSize})
 	for {
 		hdr, err := tr.Next()
 		if err == io.EOF {

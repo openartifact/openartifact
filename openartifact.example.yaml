@@ -137,6 +137,11 @@ workers:
   # period longer than your slowest push and the longest-lived digest pin.
   dockerGcInterval: 1h
   dockerGcGracePeriod: 24h
+  # Abandoned docker blob uploads idle longer than dockerUploadTtl are deleted
+  # with their staged file (0 disables the sweeper). dockerUploadDir stages
+  # in-progress uploads; it must hold your biggest layer.
+  dockerUploadTtl: 24h
+  dockerUploadDir: /tmp/openartifact/docker-uploads
 
 # Trash (soft delete). Deleted artifacts, versions and repositories stay
 # restorable for retentionDays before the purge worker removes them for good.

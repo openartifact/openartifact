@@ -36,6 +36,25 @@ func (d *pypiDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPa
 	return d.pkgs, nil
 }
 
+func (d *pypiDB) GetPyPIPackageByFilename(_ context.Context, _, filename string) (*models.PyPIPackage, error) {
+	var found []*models.PyPIPackage
+
+	for _, p := range d.pkgs {
+		if p.Filename == filename {
+			found = append(found, p)
+		}
+	}
+
+	switch len(found) {
+	case 0:
+		return nil, nil
+	case 1:
+		return found[0], nil
+	default:
+		return nil, database.ErrAmbiguousPyPIFilename
+	}
+}
+
 func (d *pypiDB) DeletePyPIPackage(_ context.Context, _, _, _, filename string) error {
 	for i, p := range d.pkgs {
 		if p.Filename == filename {
@@ -87,7 +106,7 @@ func uploadRequest(t *testing.T, filename string, data []byte) *http.Request {
 func TestUploadAndDeleteEmitEvents(t *testing.T) {
 	h, db, _, pub := newTestHandler(t)
 
-	w := formattest.Do(register(h), uploadRequest(t, "demo-1.0.tar.gz", []byte("payload")))
+	w := formattest.Do(register(h), uploadRequest(t, "demo_pkg-1.0.tar.gz", []byte("payload")))
 	if w.Code != http.StatusOK {
 		t.Fatalf("upload status = %d: %s", w.Code, w.Body.String())
 	}
@@ -97,7 +116,7 @@ func TestUploadAndDeleteEmitEvents(t *testing.T) {
 		t.Fatalf("events after upload = %+v", evs)
 	}
 
-	if a := evs[0].Artifact(); a["name"] != "demo-pkg" || a["version"] != "1.0" || a["path"] != "demo-1.0.tar.gz" {
+	if a := evs[0].Artifact(); a["name"] != "demo-pkg" || a["version"] != "1.0" || a["path"] != "demo_pkg-1.0.tar.gz" {
 		t.Errorf("artifact = %v", a)
 	}
 
@@ -105,7 +124,7 @@ func TestUploadAndDeleteEmitEvents(t *testing.T) {
 		t.Fatalf("pkgs = %d", len(db.pkgs))
 	}
 
-	w = formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/files/demo-1.0.tar.gz", nil))
+	w = formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/files/demo_pkg-1.0.tar.gz", nil))
 	if w.Code != http.StatusOK {
 		t.Fatalf("delete status = %d", w.Code)
 	}
@@ -154,7 +173,7 @@ func uploadWithFields(t *testing.T, db database.Database, bs *formattest.BlobSto
 		_ = mw.WriteField(f.key, f.value)
 	}
 
-	fw, err := mw.CreateFormFile("content", "demo-1.0.tar.gz")
+	fw, err := mw.CreateFormFile("content", "demo_pkg-1.0.tar.gz")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -236,5 +255,91 @@ func TestUploadLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertPkgStored(t, c, w.Code, inner, bs, pub)
 		})
+	}
+}
+
+// FMTA-7: PEP 503 normalization collapses runs of separators.
+func TestNormalizePyPIName(t *testing.T) {
+	for in, want := range map[string]string{
+		"Foo_Bar":    "foo-bar",
+		"foo__bar":   "foo-bar",
+		"foo_.bar":   "foo-bar",
+		"Foo-.-Bar":  "foo-bar",
+		"zope.Event": "zope-event",
+		"plain":      "plain",
+	} {
+		if got := normalizePyPIName(in); got != want {
+			t.Errorf("normalizePyPIName(%q) = %q, want %q", in, got, want)
+		}
+	}
+}
+
+func uploadAs(t *testing.T, h *HTTPHandler, name, version, filename string) int {
+	t.Helper()
+
+	var body bytes.Buffer
+
+	mw := multipart.NewWriter(&body)
+	_ = mw.WriteField("name", name)
+	_ = mw.WriteField("version", version)
+
+	fw, _ := mw.CreateFormFile("content", filename)
+	_, _ = fw.Write([]byte("payload"))
+	_ = mw.Close()
+
+	req := formattest.Request(http.MethodPost, "/repos/myrepo/legacy/", &body)
+	req.Header.Set("Content-Type", mw.FormDataContentType())
+
+	return formattest.Do(register(h), req).Code
+}
+
+// FMTA-8: empty identity fields and a filename that belongs to another package
+// are rejected before anything is stored.
+func TestUploadValidatesIdentity(t *testing.T) {
+	h, db, _, _ := newTestHandler(t)
+
+	for _, tc := range []struct {
+		name, version, filename string
+		want                    int
+	}{
+		{"", "1.0", "foo-1.0.tar.gz", http.StatusBadRequest},
+		{"foo", "", "foo-1.0.tar.gz", http.StatusBadRequest},
+		{"aaa", "1.0", "foo-1.0.tar.gz", http.StatusBadRequest}, // shadowing another package's file
+		{"foo", "2.0", "foo-1.0.tar.gz", http.StatusBadRequest}, // version mismatch
+		{"foo", "1.0", "foo-1.0.whl", http.StatusBadRequest},    // malformed wheel name
+		{"My_Pkg", "1.0", "my-pkg-1.0.tar.gz", http.StatusOK},   // sdist, normalized equal
+		{"my.pkg", "1.0", "my_pkg-1.0-py3-none-any.whl", http.StatusOK},
+		{"foo-bar", "1.0-1", "foo_bar-1.0_1-py3-none-any.whl", http.StatusOK},
+	} {
+		if got := uploadAs(t, h, tc.name, tc.version, tc.filename); got != tc.want {
+			t.Errorf("upload(%q,%q,%q) = %d, want %d", tc.name, tc.version, tc.filename, got, tc.want)
+		}
+	}
+
+	if len(db.pkgs) != 3 {
+		t.Errorf("stored %d packages, want 3", len(db.pkgs))
+	}
+}
+
+// FMTA-8/9: a file resolves by its own filename, never through the whole
+// repository list, and an ambiguous filename is not served arbitrarily.
+func TestDownloadAmbiguousFilename(t *testing.T) {
+	h, db, bs, _ := newTestHandler(t)
+	db.pkgs = []*models.PyPIPackage{
+		{Name: "aaa", Version: "1.0", Filename: "foo-1.0.tar.gz", SHA256Digest: "a1", SizeBytes: 1},
+		{Name: "foo", Version: "1.0", Filename: "foo-1.0.tar.gz", SHA256Digest: "f1", SizeBytes: 1},
+	}
+	bs.Blobs["a1"], bs.Blobs["f1"] = []byte("A"), []byte("F")
+
+	if c := formattest.Do(register(h), formattest.Request(http.MethodGet, "/repos/myrepo/files/foo-1.0.tar.gz", nil)).Code; c == http.StatusOK {
+		t.Errorf("ambiguous filename served with 200")
+	}
+
+	if c := formattest.Do(register(h), formattest.Request(http.MethodDelete, "/repos/myrepo/files/foo-1.0.tar.gz", nil)).Code; c != http.StatusConflict {
+		t.Errorf("ambiguous delete = %d, want 409", c)
+	}
+
+	if len(db.pkgs) != 2 {
+		t.Errorf("ambiguous delete removed a package")
 	}
 }
