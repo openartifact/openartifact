@@ -85,7 +85,9 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
-### 0.5.0 (Unreleased)
+### 0.5.0
+
+> **Before upgrading a multi-replica deployment:** stop every pre-0.5.0 replica before the new version starts (Kubernetes: `strategy: Recreate`, or scale to 0 first). Migrations `018`, `019` and `022` change unique indexes and tables that older binaries write to, so old and new replicas cannot run side by side. The runtime image no longer contains a shell: with Helm chart 0.1.4 or older set `database.waitForDatabase=false` (the server waits for the database itself), or upgrade to chart 0.2.0.
 
 > **Security: Go module repositories on 0.4.1 and earlier leak zips across repositories and organizations.** Up to 0.4.1 the Go module upload stored every zip's database row without a digest, so all Go module versions of an instance shared one blob record that points at the **first** zip ever uploaded. Every `.zip` download in every Go repository, of any organization, returned that one zip: a user who could read any Go repository could read the source of the first module published anywhere on the instance. **Upgrade, then check your Go repositories.**
 >
