@@ -2978,7 +2978,8 @@ func cleanupPolicyToModel(row dbsqlc.CleanupPolicy) *models.CleanupPolicy {
 
 	return &models.CleanupPolicy{
 		ID:                      row.ID,
-		RepositoryID:            row.RepositoryID,
+		RepositoryID:            derefStr(row.RepositoryID),
+		ProjectID:               derefStr(row.ProjectID),
 		Name:                    row.Name,
 		Enabled:                 row.Enabled,
 		KeepLastN:               keepLastN,
@@ -3015,7 +3016,8 @@ func createCleanupPolicyParams(policy *models.CleanupPolicy) dbsqlc.CreateCleanu
 	}
 
 	return dbsqlc.CreateCleanupPolicyParams{
-		RepositoryID:            policy.RepositoryID,
+		RepositoryID:            strPtr(policy.RepositoryID),
+		ProjectID:               strPtr(policy.ProjectID),
 		Name:                    policy.Name,
 		Enabled:                 policy.Enabled,
 		KeepLastN:               keepLastN,
@@ -3104,7 +3106,7 @@ func (p *PostgresDB) DeleteCleanupPolicy(ctx context.Context, id string) error {
 
 // ListCleanupPolicies lists all cleanup policies for a repository.
 func (p *PostgresDB) ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error) {
-	rows, err := p.q.ListCleanupPolicies(ctx, repoID)
+	rows, err := p.q.ListCleanupPolicies(ctx, &repoID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to list cleanup policies: %w", err)
 	}
@@ -3115,6 +3117,33 @@ func (p *PostgresDB) ListCleanupPolicies(ctx context.Context, repoID string) ([]
 	}
 
 	return policies, nil
+}
+
+// ListProjectCleanupPolicies lists the default cleanup policies of a project.
+func (p *PostgresDB) ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error) {
+	rows, err := p.q.ListProjectCleanupPolicies(ctx, &projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list project cleanup policies: %w", err)
+	}
+
+	policies := make([]*models.CleanupPolicy, len(rows))
+	for i, row := range rows {
+		policies[i] = cleanupPolicyToModel(row)
+	}
+
+	return policies, nil
+}
+
+// ListProjectCleanupRepositories returns the IDs of the live hosted
+// repositories a project default policy applies to: those without an enabled
+// repository-level policy.
+func (p *PostgresDB) ListProjectCleanupRepositories(ctx context.Context, projectID string) ([]string, error) {
+	ids, err := p.q.ListProjectCleanupRepositories(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list project cleanup repositories: %w", err)
+	}
+
+	return ids, nil
 }
 
 // ListEnabledCleanupPolicies lists all enabled cleanup policies.

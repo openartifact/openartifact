@@ -239,7 +239,7 @@ type CargoCrate struct {
 // Cleanup/retention policies for automatic artifact deletion
 type CleanupPolicy struct {
 	ID                      string     `db:"id" json:"id"`
-	RepositoryID            string     `db:"repository_id" json:"repository_id"`
+	RepositoryID            *string    `db:"repository_id" json:"repository_id"`
 	Name                    string     `db:"name" json:"name"`
 	Enabled                 bool       `db:"enabled" json:"enabled"`
 	KeepLastN               *int32     `db:"keep_last_n" json:"keep_last_n"`
@@ -252,6 +252,8 @@ type CleanupPolicy struct {
 	LastRunError            *string    `db:"last_run_error" json:"last_run_error"`
 	CreatedAt               time.Time  `db:"created_at" json:"created_at"`
 	UpdatedAt               time.Time  `db:"updated_at" json:"updated_at"`
+	// Set for a project default policy (repository_id is then NULL).
+	ProjectID *string `db:"project_id" json:"project_id"`
 }
 
 type ConanPackage struct {
@@ -697,6 +699,18 @@ type ProjectMember struct {
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 	// Auto-updated by trigger on every UPDATE.
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Project storage ceiling (0 = unlimited); counters are maintained only while a limit is set
+type ProjectQuota struct {
+	ProjectID            string    `db:"project_id" json:"project_id"`
+	MaxSizeBytes         int64     `db:"max_size_bytes" json:"max_size_bytes"`
+	MaxArtifactCount     int64     `db:"max_artifact_count" json:"max_artifact_count"`
+	WarnThresholdPercent int32     `db:"warn_threshold_percent" json:"warn_threshold_percent"`
+	CurrentSizeBytes     int64     `db:"current_size_bytes" json:"current_size_bytes"`
+	CurrentArtifactCount int64     `db:"current_artifact_count" json:"current_artifact_count"`
+	CreatedAt            time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt            time.Time `db:"updated_at" json:"updated_at"`
 }
 
 // Named, ordered promotion stage sequences reusable across bundles

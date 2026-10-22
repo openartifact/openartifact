@@ -80,8 +80,11 @@ func projectItemAction(method string) (auth.ProjectAction, bool) {
 // projectCollectionAction is the action for /projects/{project}/{collection}.
 func projectCollectionAction(method, collection string) (auth.ProjectAction, bool) {
 	switch {
-	case method == http.MethodGet && (collection == "repositories" || collection == "members" || collection == "groups"):
+	case method == http.MethodGet && (collection == "repositories" || collection == "members" || collection == "groups" ||
+		collection == "usage" || collection == "quota" || collection == "cleanup-policies"):
 		return auth.ProjectActionRead, true
+	case (method == http.MethodPut && collection == "quota") || (method == http.MethodPost && collection == "cleanup-policies"):
+		return auth.ProjectActionUpdate, true
 	case method == http.MethodPost && collection == "members":
 		return auth.ProjectActionMembersManage, true
 	case method == http.MethodPost && collection == "repositories":
@@ -106,6 +109,8 @@ func projectMemberAction(method, collection, id string) (auth.ProjectAction, boo
 		return auth.ProjectActionMembersManage, true
 	case collection == "tokens" && method == http.MethodDelete:
 		return auth.ProjectActionTokens, true
+	case collection == "cleanup-policies" && (method == http.MethodPut || method == http.MethodDelete):
+		return auth.ProjectActionUpdate, true
 	}
 
 	return "", false

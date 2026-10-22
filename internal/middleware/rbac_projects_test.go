@@ -150,6 +150,14 @@ func TestRBACProjectRouteMatrix(t *testing.T) {
 		{http.MethodGet, "/api/v1/projects/acme/groups", read},
 		{http.MethodPut, "/api/v1/projects/acme/groups/g1", members},
 		{http.MethodDelete, "/api/v1/projects/acme/groups/g1", members},
+		{http.MethodGet, "/api/v1/projects/acme/usage", read},
+		{http.MethodGet, "/api/v1/projects/acme/quota", read},
+		{http.MethodPut, "/api/v1/projects/acme/quota", owner},
+		{http.MethodGet, "/api/v1/projects/acme/cleanup-policies", read},
+		{http.MethodPost, "/api/v1/projects/acme/cleanup-policies", owner},
+		{http.MethodPut, "/api/v1/projects/acme/cleanup-policies/p1", owner},
+		{http.MethodDelete, "/api/v1/projects/acme/cleanup-policies/p1", owner},
+		{http.MethodPost, "/api/v1/projects/acme/usage", expect{deny, deny, deny, deny, deny, ok}},
 		// Unknown shapes are global manage: only admins pass, a plain 403
 		// even for owners (no project existence is leaked either).
 		{http.MethodGet, "/api/v1/projects/acme/tokens", read},

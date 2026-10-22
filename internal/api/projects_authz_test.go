@@ -412,6 +412,10 @@ func (db *projectsMockDB) GetRepositoryByName(_ context.Context, name string) (*
 	return nil, nil
 }
 
+func (db *projectsMockDB) MoveRepositoryToProject(_ context.Context, _, _ string, _ int) error {
+	return nil
+}
+
 func (db *projectsMockDB) UpdateRepository(_ context.Context, repo *models.Repository) error {
 	db.updRepo = repo
 	return nil

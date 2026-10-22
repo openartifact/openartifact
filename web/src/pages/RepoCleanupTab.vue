@@ -177,99 +177,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :title="drawerMode === 'create' ? t('cleanup.addTitle') : `${t('cleanup.editTitle')} · ${editingPolicy?.name}`"
       @close="closeDrawer"
     >
-      <div class="space-y-5">
-            <!-- Name -->
-            <div>
-              <label for="cleanup-name" class="block text-xs font-semibold text-foreground mb-1.5">
-                {{ t('cleanup.name') }} <span class="text-danger ml-0.5">*</span>
-              </label>
-              <input
-                id="cleanup-name"
-                v-model="form.name"
-                type="text"
-                :placeholder="t('cleanup.namePlaceholder')"
-                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
-              />
-            </div>
-
-            <!-- Type selector -->
-            <div>
-              <label class="block text-xs font-semibold text-foreground mb-2">
-                {{ t('cleanup.type') }} <span class="text-danger ml-0.5">*</span>
-              </label>
-              <div class="grid grid-cols-2 gap-2">
-                <button
-                  v-for="opt in POLICY_TYPES"
-                  :key="opt.value"
-                  type="button"
-                  :aria-pressed="form.type === opt.value"
-                  class="relative text-left p-3 rounded-lg border overflow-hidden transition-all"
-                  :class="
-                    form.type === opt.value
-                      ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
-                      : 'border-border bg-surface hover:bg-surface-hover cursor-pointer'
-                  "
-                  @click="form.type = opt.value as 'keep-last-n' | 'keep-by-age'"
-                >
-                  <span
-                    class="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg"
-                    :style="{ background: opt.color }"
-                  />
-                  <div class="pl-3">
-                    <component :is="opt.icon" class="w-4 h-4 mb-1" :style="{ color: opt.color }" />
-                    <p class="text-xs font-semibold text-foreground leading-tight">{{ opt.label }}</p>
-                    <p class="text-caption text-muted leading-snug mt-0.5">{{ opt.desc }}</p>
-                  </div>
-                </button>
-              </div>
-            </div>
-
-            <!-- Conditional rule input -->
-            <div v-if="form.type === 'keep-last-n'">
-              <label class="block text-xs font-semibold text-foreground mb-1.5">
-                {{ t('cleanup.keepCount') }} <span class="text-danger ml-0.5">*</span>
-              </label>
-              <div class="flex items-center gap-2">
-                <input
-                  v-model.number="form.keep_count"
-                  type="number"
-                  min="1"
-                  max="9999"
-                  placeholder="10"
-                  class="w-28 px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
-                />
-                <span class="text-sm text-muted">{{ t('cleanup.perPackage') }}</span>
-              </div>
-            </div>
-
-            <div v-else-if="form.type === 'keep-by-age'">
-              <label class="block text-xs font-semibold text-foreground mb-1.5">
-                {{ t('cleanup.retention') }} <span class="text-danger ml-0.5">*</span>
-              </label>
-              <div class="flex items-center gap-2">
-                <input
-                  v-model.number="form.keep_days"
-                  type="number"
-                  min="1"
-                  max="3650"
-                  placeholder="30"
-                  class="w-28 px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
-                />
-                <span class="text-sm text-muted">{{ t('cleanup.days') }}</span>
-              </div>
-            </div>
-
-            <!-- Enabled toggle -->
-            <div class="flex items-start gap-3 p-3.5 rounded-lg border border-border bg-surface-hover/30">
-              <AppToggle v-model="form.enabled" size="sm" labelledby="cleanup-enable-label" class="mt-0.5" />
-              <div>
-                <p id="cleanup-enable-label" class="text-xs font-semibold text-foreground">{{ t('cleanup.enable') }}</p>
-                <p class="text-caption text-muted mt-0.5 leading-relaxed">
-                  {{ t('cleanup.enableHint') }}
-                </p>
-              </div>
-            </div>
-      </div>
+      <CleanupPolicyForm v-model="form" />
       <template #footer>
         <AppButton variant="ghost" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
         <AppButton :disabled="!formValid" :loading="savingDrawer" @click="saveDrawer">
@@ -302,8 +210,18 @@ import { ref, computed, onMounted, reactive } from 'vue'
 import AdminDialog from '../components/AdminDialog.vue'
 import AppButton from '../components/AppButton.vue'
 import AppToggle from '../components/AppToggle.vue'
+import CleanupPolicyForm from '../components/CleanupPolicyForm.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import { formatDateTime } from '../lib/datetime'
+import {
+  cleanupFormFrom,
+  cleanupFormValid,
+  cleanupPayload,
+  cleanupPolicyFromApi,
+  emptyCleanupForm,
+  type ApiCleanupPolicy,
+  type CleanupPolicyView as CleanupPolicy,
+} from '../lib/cleanupPolicy'
 import { request } from '../api/client'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
@@ -317,69 +235,9 @@ import {
   CalendarIcon,
 } from '@heroicons/vue/24/outline'
 
-// ─── Props ─────────────────────────────────────────────────────────────────────
-
 const props = defineProps<{
   repoName: string
 }>()
-
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-interface CleanupPolicy {
-  id: string
-  name: string
-  type: 'keep-last-n' | 'keep-by-age'
-  keep_count?: number
-  keep_days?: number
-  enabled: boolean
-  last_run_at?: string
-  created_at: string
-}
-
-// Wire shape of the backend's CleanupPolicyResponse.
-interface ApiCleanupPolicy {
-  id: string
-  name: string
-  enabled: boolean
-  keep_last_n: number | null
-  keep_since_days: number | null
-  last_run_at: string | null
-  created_at: string
-}
-
-function fromApi(p: ApiCleanupPolicy): CleanupPolicy {
-  return {
-    id: p.id,
-    name: p.name,
-    type: p.keep_last_n != null ? 'keep-last-n' : 'keep-by-age',
-    keep_count: p.keep_last_n ?? undefined,
-    keep_days: p.keep_since_days ?? undefined,
-    enabled: p.enabled,
-    last_run_at: p.last_run_at ?? undefined,
-    created_at: p.created_at,
-  }
-}
-
-// ─── Constants ─────────────────────────────────────────────────────────────────
-
-const POLICY_TYPES = [
-  {
-    value: 'keep-last-n',
-    label: t('cleanup.type.lastN'),
-    desc: t('cleanup.type.lastNDesc'),
-    icon: QueueListIcon,
-    color: 'rgb(var(--color-primary))',
-  },
-  {
-    value: 'keep-by-age',
-    label: t('cleanup.type.age'),
-    desc: t('cleanup.type.ageDesc'),
-    icon: CalendarIcon,
-    color: 'rgb(var(--color-severity-medium))',
-  },
-] as const
-
-// ─── State ─────────────────────────────────────────────────────────────────────
 
 const toasts = useToastStore()
 
@@ -396,32 +254,13 @@ const drawerMode = ref<'create' | 'edit'>('create')
 const editingPolicy = ref<CleanupPolicy | null>(null)
 const savingDrawer = ref(false)
 
-const form = reactive<{
-  name: string
-  type: 'keep-last-n' | 'keep-by-age'
-  keep_count: number | undefined
-  keep_days: number | undefined
-  enabled: boolean
-}>({
-  name: '',
-  type: 'keep-last-n',
-  keep_count: 10,
-  keep_days: 30,
-  enabled: true,
-})
+const form = reactive(emptyCleanupForm())
 
 // Delete
 const deleteTarget = ref<CleanupPolicy | null>(null)
 const deleting = ref(false)
 
-// ─── Computed ──────────────────────────────────────────────────────────────────
-
-const formValid = computed(() => {
-  if (!form.name.trim()) return false
-  if (form.type === 'keep-last-n') return (form.keep_count ?? 0) > 0
-  if (form.type === 'keep-by-age') return (form.keep_days ?? 0) > 0
-  return false
-})
+const formValid = computed(() => cleanupFormValid(form))
 
 // ─── Base URL helper ───────────────────────────────────────────────────────────
 
@@ -437,7 +276,7 @@ async function load(): Promise<void> {
   loading.value = true
   try {
     const res = await request<{ policies: ApiCleanupPolicy[] }>(baseUrl())
-    items.value = (res?.policies ?? []).map(fromApi)
+    items.value = (res?.policies ?? []).map(cleanupPolicyFromApi)
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('cleanup.loadFailed'))
   } finally {
@@ -480,25 +319,15 @@ async function runPolicy(policy: CleanupPolicy): Promise<void> {
 
 // ─── Drawer Actions ────────────────────────────────────────────────────────────
 
-function resetForm(): void {
-  form.name = ''
-  form.type = 'keep-last-n'
-  form.keep_count = 10
-  form.keep_days = 30
-  form.enabled = true
-}
+
 
 function openDrawer(mode: 'create' | 'edit', policy?: CleanupPolicy): void {
   drawerMode.value = mode
   if (mode === 'edit' && policy) {
     editingPolicy.value = policy
-    form.name = policy.name
-    form.type = policy.type
-    form.keep_count = policy.keep_count
-    form.keep_days = policy.keep_days
-    form.enabled = policy.enabled
+    Object.assign(form, cleanupFormFrom(policy))
   } else {
-    resetForm()
+    Object.assign(form, emptyCleanupForm())
     editingPolicy.value = null
   }
   drawerOpen.value = true
@@ -513,12 +342,7 @@ async function saveDrawer(): Promise<void> {
   if (!formValid.value) return
   savingDrawer.value = true
   try {
-    const payload: Record<string, unknown> = {
-      name: form.name,
-      enabled: form.enabled,
-    }
-    if (form.type === 'keep-last-n') payload.keep_last_n = form.keep_count
-    else payload.keep_since_days = form.keep_days
+    const payload = cleanupPayload(form)
 
     if (drawerMode.value === 'create') {
       await request(baseUrl(), {

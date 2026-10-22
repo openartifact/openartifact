@@ -74,6 +74,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </dl>
     </section>
 
+    <!-- Quota: edited by global admins only -->
+    <ProjectQuotaEditor v-if="project.name" :project="project.name" :editable="session.isAdmin" />
+
+    <!-- Cleanup defaults -->
+    <ProjectCleanupDefaults v-if="project.name" :project="project.name" :can-edit="isOwner || session.isAdmin" />
+
     <!-- Delete -->
     <section v-if="isOwner" class="rounded-xl border border-danger/30 bg-surface p-4 sm:p-5" :aria-label="t('projects.settings.danger')" data-testid="project-danger">
       <h2 class="text-sm font-semibold text-foreground">{{ t('projects.settings.danger') }}</h2>
@@ -113,6 +119,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import ProjectCleanupDefaults from './ProjectCleanupDefaults.vue'
+import ProjectQuotaEditor from './ProjectQuotaEditor.vue'
 import { deleteProject, updateProject, PROJECT_REPO_TYPES, type Project } from '../api/projects'
 import { formatLabel } from '../lib/formats'
 import { errorStatus } from '../lib/projectAccess'

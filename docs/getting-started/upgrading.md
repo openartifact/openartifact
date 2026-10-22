@@ -110,6 +110,15 @@ Breaking changes:
 | CLI | `oa org` is now `oa project` (new `groups`, `add-group`, `rm-group`; `add-member --role` takes `viewer\|developer\|maintainer\|owner`, default `viewer`; `add-member` also takes `--username`; new `update` and `set-role`, both sending `PATCH`). |
 | Audit log | The `org_id` column/field is `project_id`. |
 
+Project quotas and cleanup defaults:
+
+| Area | Change |
+|---|---|
+| Quotas | A project can carry a storage quota (`PUT /api/v1/projects/{project}/quota`, global admin only) over the total of its repositories. An upload must fit the repository's limit and the project's (`507`), and a repository limit above the project limit is refused (`400 validation_failed`). Counters are maintained only while a project limit is set; reconcile repairs drift. Projects start unlimited, so nothing changes until an admin sets a limit. See [project quotas](../repositories/cleanup-and-quotas.md#project-quotas). |
+| Projects | Transferring a repository moves its storage usage to the target project and fails with `409 project_quota_exceeded` when the target's quota cannot take it (usage counters were not moved before). `GET /api/v1/projects/{project}/usage` reports totals and a per-repository breakdown. |
+| Cleanup | Projects can define default cleanup policies (`/api/v1/projects/{project}/cleanup-policies`), applied to hosted repositories without an enabled policy of their own. See [project default cleanup policies](../repositories/cleanup-and-quotas.md#project-default-cleanup-policies). |
+| Web UI | Project page: new **Usage** section for all members; **Settings** gains the project quota (admin-editable) and the cleanup defaults. |
+
 Backup archives written by older versions still restore: the old table names `organizations` and `organization_members` are accepted.
 
 ### 0.5.1

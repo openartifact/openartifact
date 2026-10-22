@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Cleanup policies and storage quotas
 
-Cleanup policies remove old package versions on a schedule (into the [trash](../operations/trash.md) by default); storage quotas cap the size and artifact count of a repository. Both are per repository and managed by admins through `/api/v1/repositories/{repo}/...`.
+Cleanup policies remove old package versions on a schedule (into the [trash](../operations/trash.md) by default); storage quotas cap the size and artifact count of a repository, and of a [project](../security/projects.md) as a whole. Both are set per repository (admins, or maintainers and owners of its project) through `/api/v1/repositories/{repo}/...`; a project adds [default cleanup policies](#project-default-cleanup-policies) and a [project quota](#project-quotas) through `/api/v1/projects/{project}/...`.
 
 ## Cleanup policies
 
@@ -64,6 +64,27 @@ curl -X POST HOST/api/v1/repositories/REPO/cleanup-policies/<ID>/run \
   -H "Authorization: Bearer <TOKEN>"
 ```
 
+### Project default cleanup policies
+
+A [project](../security/projects.md) can define default cleanup policies that cover all of its repositories, so a retention rule does not have to be copied into each one. They have the same fields, validation and schedule as the repository policies above (`name`, `enabled`, `keep_last_n`, `keep_since_days`, `name_pattern`, `schedule_cron`); the response carries `project_id` and an empty `repo_id`.
+
+A default policy applies to every live **hosted** repository of the project that has **no enabled policy of its own**. A repository's own enabled policy overrides the defaults: it replaces them, it does not add to them. Disabling or deleting the repository's policy makes the repository fall back to the defaults again. Repositories whose format has no cleanup support (see [supported formats](#supported-formats)) are skipped, and proxy and group repositories are never touched. A run applies the policy to each covered repository with that repository's format rules, and a failure in one repository does not stop the others.
+
+| Method and path | Who | Purpose |
+|---|---|---|
+| `GET /api/v1/projects/{project}/cleanup-policies` | any project member | List (`{"policies": [...]}`). |
+| `POST /api/v1/projects/{project}/cleanup-policies` | project owner, admin | Create; `201`. |
+| `PUT /api/v1/projects/{project}/cleanup-policies/{id}` | project owner, admin | Partial update. |
+| `DELETE /api/v1/projects/{project}/cleanup-policies/{id}` | project owner, admin | Delete; `204`. |
+
+```sh
+curl -X POST HOST/api/v1/projects/PROJECT/cleanup-policies \
+  -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
+  -d '{"name":"keep-10","enabled":true,"keep_last_n":10}'
+```
+
+In the web UI they are in the project's **Settings** section under **Cleanup defaults**, next to a note that a repository's own enabled policy overrides them.
+
 ## Docker registry garbage collection
 
 Deleting a Docker tag (a tag moved to the [trash](../operations/trash.md) included) leaves its manifest, and the layers only that manifest used, in storage. A separate worker reclaims them: it deletes untagged manifests older than a grace period (keeping children of tagged indexes and subject/referrer pairs), then the blob records no manifest references any more, freeing the storage when no other repository uses it.
@@ -79,7 +100,7 @@ Docker pushes are counted against the repository quota (see [what counts](#what-
 
 ## Storage quotas
 
-Each repository has an optional quota: a maximum total size and a maximum artifact count. `0` means unlimited, which is the default for new repositories. Quotas are per repository (there is no organization-wide quota).
+Each repository has an optional quota: a maximum total size and a maximum artifact count. `0` means unlimited, which is the default for new repositories. Quotas are set per repository; a project can additionally cap the total of its repositories (see [project quotas](#project-quotas)).
 
 ### Enforcement
 
@@ -139,4 +160,31 @@ curl -X PUT HOST/api/v1/repositories/REPO/quota \
 
 Response fields: `id`, `repository_id`, `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent` (default 80), `current_size_bytes`, `current_artifact_count`, `usage_percent` (of the size limit; 0 when unlimited), `is_exceeded` (true once either current value reaches its limit), `created_at`, `updated_at`.
 
-`warn_threshold_percent` is stored and returned; the server takes no action on it.
+`warn_threshold_percent` is stored and returned; the server takes no action on it. The web UI uses it to colour the usage bar of the [project quota](#project-quotas).
+
+## Project quotas
+
+Quotas have two levels. Every repository keeps its own limit (above), and a [project](../security/projects.md) can set a **ceiling** over the sum of all repositories it owns: `max_size_bytes` and `max_artifact_count`, `0` meaning unlimited (the default), plus a `warn_threshold_percent` (default 80).
+
+- **Upload:** an upload must fit the repository's limit **and** the project's. The server reserves the artifact against both counters; if either would be exceeded the upload is refused with `507 Insufficient Storage` (`quota_exceeded`) and nothing is stored. Releases (delete, purge, cleanup, failed upload) give the usage back to both.
+- **Ordering of limits:** only a global admin sets the project ceiling. A repository limit must be less than or equal to the project limit: `PUT /api/v1/repositories/{repo}/quota` with a larger value is `400 validation_failed` (`max_size_bytes must not exceed the project limit (...)`). `0` is always accepted; the project ceiling then bounds the repository.
+- **Counters:** project counters are maintained **only while a project limit is set**. Setting a limit initialises them from the repositories' current usage in the same transaction; clearing it (all limits `0`) zeroes them. Without a limit the usage endpoint still reports the sums of the repositories' own counters.
+- **Reconcile:** drift is repaired by the same [reconcile](#keeping-the-counters-correct) that repairs repository counters: the periodic cleanup-worker pass, the pass after a backup restore, and `POST /api/v1/repositories/{repo}/quota/reconcile` also rewrite the counters of every project that has a limit from its repositories' counters.
+- **Not metered:** proxy and group repositories, as for repository quotas. They are listed in the usage view with `quota_enforced: false`.
+- **Transfer:** [moving a repository](../security/projects.md#repository-self-service) to another project moves its usage with it (subtracted from the source's counters, added to the target's). If the target's ceiling cannot take it, the transfer fails with `409 project_quota_exceeded` and nothing changes.
+
+| Method and path | Who | Purpose |
+|---|---|---|
+| `GET /api/v1/projects/{project}/usage` | any project member | Totals (`size_bytes`, `artifact_count`), the project `quota` and one entry per live repository in `repositories` (`name`, `format`, `repo_type`, `size_bytes`, `artifact_count`, `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent`, `quota_enforced`), largest first. |
+| `GET /api/v1/projects/{project}/quota` | any project member | The ceiling and live usage: `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent`, `current_size_bytes`, `current_artifact_count`, `usage_percent`, `enforced` (a limit is set), `updated_at`. |
+| `PUT /api/v1/projects/{project}/quota` | **global admin only** (owners get `403`) | Set `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent`; omitted fields keep their value. Negative limits and a threshold outside 0-100 are `400 validation_failed`. |
+
+```sh
+curl -X PUT HOST/api/v1/projects/PROJECT/quota \
+  -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
+  -d '{"max_size_bytes":107374182400,"max_artifact_count":0,"warn_threshold_percent":85}'
+```
+
+### In the web UI
+
+Every member sees the project's **Usage** section: stored size and artifact count, the project quota as a bar that turns amber at the warning threshold and red at the limit, and a table with the size, artifact count and limits of each repository (proxy and group rows read "Not metered"). The project's **Settings** section shows the quota: global admins edit it there, owners and maintainers see it read-only.

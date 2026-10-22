@@ -6,10 +6,17 @@ import { describe, it, expect, spyOn, afterEach, type Mock } from 'bun:test'
 import {
   addProjectMember,
   createProject,
+  createProjectCleanupPolicy,
   deleteProject,
+  deleteProjectCleanupPolicy,
   getProject,
+  getProjectQuota,
   getProjectSettings,
+  getProjectUsage,
+  listProjectCleanupPolicies,
   listProjectGroups,
+  setProjectQuota,
+  updateProjectCleanupPolicy,
   listProjectMembers,
   listProjectRepositories,
   listProjects,
@@ -152,5 +159,48 @@ describe('projects api', () => {
     expect(lastCall().url).toBe('/api/v1/admin/projects/settings')
     expect(lastCall().init.method).toBe('PUT')
     expect(body()).toEqual({ self_create: false })
+  })
+
+  it('reads usage and quota of a project', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ project: 'a/b', size_bytes: 5 }))
+    expect(await getProjectUsage('a/b')).toEqual({ project: 'a/b', size_bytes: 5 })
+    expect(lastCall().url).toBe('/api/v1/projects/a%2Fb/usage')
+    await getProjectQuota('a/b')
+    expect(lastCall().url).toBe('/api/v1/projects/a%2Fb/quota')
+    expect(lastCall().init.method ?? 'GET').toBe('GET')
+  })
+
+  it('sets the project quota with PUT', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ enforced: true }))
+    await setProjectQuota('p', { max_size_bytes: 10, max_artifact_count: 0, warn_threshold_percent: 80 })
+    expect(lastCall().url).toBe('/api/v1/projects/p/quota')
+    expect(lastCall().init.method).toBe('PUT')
+    expect(body()).toEqual({ max_size_bytes: 10, max_artifact_count: 0, warn_threshold_percent: 80 })
+  })
+
+  it('manages the default cleanup policies', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ policies: [{ id: 'c1', name: 'n' }] }))
+    expect(await listProjectCleanupPolicies('p')).toEqual([{ id: 'c1', name: 'n' } as never])
+    expect(lastCall().url).toBe('/api/v1/projects/p/cleanup-policies')
+
+    spy.mockRestore()
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({}))
+    expect(await listProjectCleanupPolicies('p')).toEqual([])
+
+    await createProjectCleanupPolicy('p', { name: 'n', enabled: true, keep_last_n: 3 })
+    expect(lastCall().url).toBe('/api/v1/projects/p/cleanup-policies')
+    expect(lastCall().init.method).toBe('POST')
+    expect(body()).toEqual({ name: 'n', enabled: true, keep_last_n: 3 })
+
+    await updateProjectCleanupPolicy('p', 'c/1', { enabled: false })
+    expect(lastCall().url).toBe('/api/v1/projects/p/cleanup-policies/c%2F1')
+    expect(lastCall().init.method).toBe('PUT')
+    expect(body()).toEqual({ enabled: false })
+
+    spy.mockRestore()
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => new Response(null, { status: 204 }))
+    await deleteProjectCleanupPolicy('p', 'c1')
+    expect(lastCall().url).toBe('/api/v1/projects/p/cleanup-policies/c1')
+    expect(lastCall().init.method).toBe('DELETE')
   })
 })

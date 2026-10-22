@@ -344,6 +344,11 @@ type Database interface {
 	DeleteCleanupPolicy(ctx context.Context, id string) error
 	ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error)
 	ListEnabledCleanupPolicies(ctx context.Context) ([]*models.CleanupPolicy, error)
+	// ListProjectCleanupPolicies lists a project's default policies (RepositoryID "").
+	ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error)
+	// ListProjectCleanupRepositories lists the live hosted repositories a project
+	// default policy applies to: those without an enabled repository-level policy.
+	ListProjectCleanupRepositories(ctx context.Context, projectID string) ([]string, error)
 	UpdateCleanupPolicyRunResult(ctx context.Context, id string, deletedCount int, runErr error) error
 
 	// Webhook methods
@@ -450,6 +455,13 @@ type Database interface {
 	QuarantineVulnArtifact(ctx context.Context, repoID, artifactID string, quarantined bool) error
 
 	// Storage quota methods
+	// GetProjectQuota returns the project's storage ceiling (unlimited when never set).
+	GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error)
+	// SetProjectQuota stores the ceiling (0 = unlimited) and initialises the
+	// counters from the repository counters when a limit is first enabled.
+	SetProjectQuota(ctx context.Context, projectID string, maxSizeBytes, maxArtifactCount int64, warnThresholdPercent int) (*models.ProjectQuota, error)
+	// GetProjectUsage sums the repository counters of a project and lists them per repository.
+	GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error)
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
 	IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error

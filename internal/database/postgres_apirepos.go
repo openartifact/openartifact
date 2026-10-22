@@ -55,7 +55,9 @@ func (p *PostgresDB) CreateProjectRepository(ctx context.Context, repo *models.R
 }
 
 // MoveRepositoryToProject reassigns a repository to another project, under the
-// target's repository cap when maxRepositories > 0 (ErrProjectRepoLimit).
+// target's repository cap when maxRepositories > 0 (ErrProjectRepoLimit). The
+// repository's storage usage moves between the projects' ceilings in the same
+// transaction and must fit the target's (ErrProjectQuotaExceeded).
 func (p *PostgresDB) MoveRepositoryToProject(ctx context.Context, repoID, toProjectID string, maxRepositories int) error {
 	// Cached repository lookups carry the project; they must not outlive this write.
 	defer p.authCache.invalidate()
@@ -68,6 +70,11 @@ func (p *PostgresDB) MoveRepositoryToProject(ctx context.Context, repoID, toProj
 	defer func() { _ = tx.Rollback() }()
 
 	if err := lockProjectCap(ctx, tx, toProjectID, maxRepositories); err != nil {
+		return err
+	}
+
+	// The repository's usage follows it to the target project's ceiling.
+	if err := moveRepositoryUsage(ctx, tx, repoID, toProjectID); err != nil {
 		return err
 	}
 

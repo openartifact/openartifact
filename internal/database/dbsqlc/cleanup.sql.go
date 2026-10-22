@@ -11,13 +11,14 @@ import (
 )
 
 const createCleanupPolicy = `-- name: CreateCleanupPolicy :one
-INSERT INTO cleanup_policies (repository_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO cleanup_policies (repository_id, project_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
 RETURNING id, created_at, updated_at
 `
 
 type CreateCleanupPolicyParams struct {
-	RepositoryID            string  `db:"repository_id" json:"repository_id"`
+	RepositoryID            *string `db:"repository_id" json:"repository_id"`
+	ProjectID               *string `db:"project_id" json:"project_id"`
 	Name                    string  `db:"name" json:"name"`
 	Enabled                 bool    `db:"enabled" json:"enabled"`
 	KeepLastN               *int32  `db:"keep_last_n" json:"keep_last_n"`
@@ -36,6 +37,7 @@ type CreateCleanupPolicyRow struct {
 func (q *Queries) CreateCleanupPolicy(ctx context.Context, arg CreateCleanupPolicyParams) (CreateCleanupPolicyRow, error) {
 	row := q.db.QueryRow(ctx, createCleanupPolicy,
 		arg.RepositoryID,
+		arg.ProjectID,
 		arg.Name,
 		arg.Enabled,
 		arg.KeepLastN,
@@ -59,7 +61,7 @@ func (q *Queries) DeleteCleanupPolicy(ctx context.Context, id string) error {
 }
 
 const getCleanupPolicy = `-- name: GetCleanupPolicy :one
-SELECT id, repository_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron, last_run_at, last_run_deleted, last_run_error, created_at, updated_at
+SELECT id, repository_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron, last_run_at, last_run_deleted, last_run_error, created_at, updated_at, project_id
 FROM cleanup_policies WHERE id = $1
 `
 
@@ -81,16 +83,17 @@ func (q *Queries) GetCleanupPolicy(ctx context.Context, id string) (CleanupPolic
 		&i.LastRunError,
 		&i.CreatedAt,
 		&i.UpdatedAt,
+		&i.ProjectID,
 	)
 	return i, err
 }
 
 const listCleanupPolicies = `-- name: ListCleanupPolicies :many
-SELECT id, repository_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron, last_run_at, last_run_deleted, last_run_error, created_at, updated_at
+SELECT id, repository_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron, last_run_at, last_run_deleted, last_run_error, created_at, updated_at, project_id
 FROM cleanup_policies WHERE repository_id = $1 ORDER BY created_at DESC, id
 `
 
-func (q *Queries) ListCleanupPolicies(ctx context.Context, repositoryID string) ([]CleanupPolicy, error) {
+func (q *Queries) ListCleanupPolicies(ctx context.Context, repositoryID *string) ([]CleanupPolicy, error) {
 	rows, err := q.db.Query(ctx, listCleanupPolicies, repositoryID)
 	if err != nil {
 		return nil, err
@@ -114,6 +117,7 @@ func (q *Queries) ListCleanupPolicies(ctx context.Context, repositoryID string) 
 			&i.LastRunError,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
@@ -126,10 +130,10 @@ func (q *Queries) ListCleanupPolicies(ctx context.Context, repositoryID string) 
 }
 
 const listEnabledCleanupPolicies = `-- name: ListEnabledCleanupPolicies :many
-SELECT cp.id, cp.repository_id, cp.name, cp.enabled, cp.keep_last_n, cp.keep_since_days, cp.keep_downloaded_since_days, cp.name_pattern, cp.schedule_cron, cp.last_run_at, cp.last_run_deleted, cp.last_run_error, cp.created_at, cp.updated_at
+SELECT cp.id, cp.repository_id, cp.name, cp.enabled, cp.keep_last_n, cp.keep_since_days, cp.keep_downloaded_since_days, cp.name_pattern, cp.schedule_cron, cp.last_run_at, cp.last_run_deleted, cp.last_run_error, cp.created_at, cp.updated_at, cp.project_id
 FROM cleanup_policies cp
-JOIN repositories r ON r.id = cp.repository_id AND r.deleted_at IS NULL
-WHERE cp.enabled = true ORDER BY cp.created_at DESC, cp.id
+LEFT JOIN repositories r ON r.id = cp.repository_id
+WHERE cp.enabled = true AND (cp.project_id IS NOT NULL OR r.deleted_at IS NULL) ORDER BY cp.created_at DESC, cp.id
 `
 
 func (q *Queries) ListEnabledCleanupPolicies(ctx context.Context) ([]CleanupPolicy, error) {
@@ -156,10 +160,81 @@ func (q *Queries) ListEnabledCleanupPolicies(ctx context.Context) ([]CleanupPoli
 			&i.LastRunError,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+			&i.ProjectID,
 		); err != nil {
 			return nil, err
 		}
 		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectCleanupPolicies = `-- name: ListProjectCleanupPolicies :many
+SELECT id, repository_id, name, enabled, keep_last_n, keep_since_days, keep_downloaded_since_days, name_pattern, schedule_cron, last_run_at, last_run_deleted, last_run_error, created_at, updated_at, project_id
+FROM cleanup_policies WHERE project_id = $1 ORDER BY created_at DESC, id
+`
+
+func (q *Queries) ListProjectCleanupPolicies(ctx context.Context, projectID *string) ([]CleanupPolicy, error) {
+	rows, err := q.db.Query(ctx, listProjectCleanupPolicies, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CleanupPolicy{}
+	for rows.Next() {
+		var i CleanupPolicy
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.Name,
+			&i.Enabled,
+			&i.KeepLastN,
+			&i.KeepSinceDays,
+			&i.KeepDownloadedSinceDays,
+			&i.NamePattern,
+			&i.ScheduleCron,
+			&i.LastRunAt,
+			&i.LastRunDeleted,
+			&i.LastRunError,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+			&i.ProjectID,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listProjectCleanupRepositories = `-- name: ListProjectCleanupRepositories :many
+SELECT r.id FROM repositories r
+WHERE r.project_id = $1 AND r.deleted_at IS NULL AND r.repo_type = 'hosted'
+  AND NOT EXISTS (SELECT 1 FROM cleanup_policies cp WHERE cp.repository_id = r.id AND cp.enabled)
+ORDER BY r.name
+`
+
+// Live hosted repositories of the project that a project default policy
+// applies to: those with no enabled repository-level policy of their own.
+func (q *Queries) ListProjectCleanupRepositories(ctx context.Context, projectID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listProjectCleanupRepositories, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, err
+		}
+		items = append(items, id)
 	}
 	if err := rows.Err(); err != nil {
 		return nil, err

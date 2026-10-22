@@ -35,8 +35,8 @@ describe('project role rules', () => {
   })
 
   it('shows the project sections only to roles that may read them', () => {
-    expect(visibleProjectTabs('viewer')).toEqual(['overview', 'repositories', 'members', 'tokens', 'settings'])
-    expect(visibleProjectTabs('owner')).toEqual(['overview', 'repositories', 'members', 'tokens', 'settings'])
+    expect(visibleProjectTabs('viewer')).toEqual(['overview', 'repositories', 'usage', 'members', 'tokens', 'settings'])
+    expect(visibleProjectTabs('owner')).toEqual(['overview', 'repositories', 'usage', 'members', 'tokens', 'settings'])
     expect(visibleProjectTabs(undefined)).toEqual(['overview'])
   })
 

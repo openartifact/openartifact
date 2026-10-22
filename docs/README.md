@@ -31,7 +31,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | Page | Contents |
 |---|---|
 | [Hosted, proxy and group](repositories/hosted-proxy-group.md) | Repository types, proxy cache and serve-stale, groups, the public flag |
-| [Cleanup and quotas](repositories/cleanup-and-quotas.md) | Cleanup policies and per-repository storage quotas |
+| [Cleanup and quotas](repositories/cleanup-and-quotas.md) | Cleanup policies, per-repository and per-project storage quotas, project default cleanup policies |
 | [Trash](operations/trash.md) | Deleted artifacts and repositories stay restorable for a retention period; immutable releases |
 | [Properties](repositories/properties.md) | Artifact key/value properties: API, limits, search |
 | [Release bundles](repositories/release-bundles.md) | Release bundles and promotion pipelines |

@@ -249,8 +249,10 @@ type BackupJobResponse struct {
 
 // CleanupPolicyResponse represents a cleanup policy in API responses.
 type CleanupPolicyResponse struct {
-	ID                      string  `json:"id"`
-	RepositoryID            string  `json:"repo_id"`
+	ID string `json:"id"`
+	// RepositoryID is empty for a project default policy, which carries ProjectID.
+	RepositoryID            string  `json:"repo_id,omitempty"`
+	ProjectID               string  `json:"project_id,omitempty"`
 	Name                    string  `json:"name"`
 	Enabled                 bool    `json:"enabled"`
 	KeepLastN               *int    `json:"keep_last_n"`
@@ -278,6 +280,45 @@ type StorageQuotaResponse struct {
 	IsExceeded           bool   `json:"is_exceeded"`
 	CreatedAt            string `json:"created_at"`
 	UpdatedAt            string `json:"updated_at"`
+}
+
+// ProjectQuotaResponse is a project's storage ceiling and its live usage (the
+// sum of its repositories' counters). Limits of 0 mean unlimited.
+type ProjectQuotaResponse struct {
+	Project              string `json:"project"`
+	MaxSizeBytes         int64  `json:"max_size_bytes"`
+	MaxArtifactCount     int64  `json:"max_artifact_count"`
+	WarnThresholdPercent int    `json:"warn_threshold_percent"`
+	CurrentSizeBytes     int64  `json:"current_size_bytes"`
+	CurrentArtifactCount int64  `json:"current_artifact_count"`
+	UsagePercent         int    `json:"usage_percent"`
+	// Enforced is true when a limit is set, i.e. uploads must fit the project ceiling.
+	Enforced  bool   `json:"enforced"`
+	UpdatedAt string `json:"updated_at"`
+}
+
+// ProjectRepoUsageResponse is one repository's line in a project usage report.
+type ProjectRepoUsageResponse struct {
+	Name                 string `json:"name"`
+	Format               string `json:"format"`
+	RepoType             string `json:"repo_type"`
+	SizeBytes            int64  `json:"size_bytes"`
+	ArtifactCount        int64  `json:"artifact_count"`
+	MaxSizeBytes         int64  `json:"max_size_bytes"`
+	MaxArtifactCount     int64  `json:"max_artifact_count"`
+	WarnThresholdPercent int    `json:"warn_threshold_percent"`
+	// QuotaEnforced is false for repositories whose bytes are not metered
+	// (proxy and group repositories hold no uploaded packages).
+	QuotaEnforced bool `json:"quota_enforced"`
+}
+
+// ProjectUsageResponse is GET /api/v1/projects/{project}/usage.
+type ProjectUsageResponse struct {
+	Project       string                     `json:"project"`
+	SizeBytes     int64                      `json:"size_bytes"`
+	ArtifactCount int64                      `json:"artifact_count"`
+	Quota         ProjectQuotaResponse       `json:"quota"`
+	Repositories  []ProjectRepoUsageResponse `json:"repositories"`
 }
 
 // VulnScanResultResponse represents a vulnerability scan result.

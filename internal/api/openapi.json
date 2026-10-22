@@ -463,7 +463,13 @@
           },
           "repo_id": {
             "type": "string",
-            "format": "uuid"
+            "format": "uuid",
+            "description": "Empty for a project default policy."
+          },
+          "project_id": {
+            "type": "string",
+            "format": "uuid",
+            "description": "Set for a project default policy."
           }
         }
       },
@@ -1456,6 +1462,101 @@
           },
           "sbom_data": {
             "description": "The SBOM document (only on the detail endpoint)"
+          }
+        }
+      },
+      "ProjectQuota": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "max_size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "max_artifact_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "warn_threshold_percent": {
+            "type": "integer"
+          },
+          "current_size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "current_artifact_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "usage_percent": {
+            "type": "integer"
+          },
+          "enforced": {
+            "type": "boolean",
+            "description": "True when a limit is set."
+          },
+          "updated_at": {
+            "type": "string"
+          }
+        }
+      },
+      "ProjectUsage": {
+        "type": "object",
+        "properties": {
+          "project": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "artifact_count": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "quota": {
+            "$ref": "#/components/schemas/ProjectQuota"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string"
+                },
+                "format": {
+                  "type": "string"
+                },
+                "repo_type": {
+                  "type": "string"
+                },
+                "size_bytes": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "artifact_count": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "max_size_bytes": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "max_artifact_count": {
+                  "type": "integer",
+                  "format": "int64"
+                },
+                "warn_threshold_percent": {
+                  "type": "integer"
+                },
+                "quota_enforced": {
+                  "type": "boolean"
+                }
+              }
+            }
           }
         }
       },
@@ -8256,6 +8357,365 @@
           },
           "404": {
             "description": "Group not attached"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/usage": {
+      "get": {
+        "summary": "Project usage",
+        "description": "Storage usage of a project: the sum of its repositories' counters, the project quota and one line per live repository, largest first. Every repository of a hosted type is metered (quota_enforced); proxy and group repositories hold no uploaded packages. Any member; a non-member gets 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Usage",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectUsage"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/quota": {
+      "get": {
+        "summary": "Get project quota",
+        "description": "The project's storage ceiling (0 = unlimited) and its live usage. Any member.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project quota",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectQuota"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      },
+      "put": {
+        "summary": "Set project quota",
+        "description": "Global admins only: sets the ceiling over the sum of the project's repositories (0 = unlimited). An upload must fit both its repository's limit and the project's. Enabling a limit initialises the project counters from the repositories' usage. Omitted fields keep their value. Repository limits above the project limit are refused when set.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "max_size_bytes": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "max_artifact_count": {
+                    "type": "integer",
+                    "format": "int64",
+                    "minimum": 0
+                  },
+                  "warn_threshold_percent": {
+                    "type": "integer",
+                    "minimum": 0,
+                    "maximum": 100
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project quota",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectQuota"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid limits"
+          },
+          "403": {
+            "description": "Not a global admin"
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/cleanup-policies": {
+      "get": {
+        "summary": "List project cleanup policies",
+        "description": "Default cleanup policies of the project. A project policy applies to every live hosted repository of the project that has no enabled policy of its own (a repository policy overrides the default). Any member.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Policies",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "policies": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/CleanupPolicy"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create project cleanup policy",
+        "description": "Owners and global admins. Same fields and validation as a repository cleanup policy.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "keep_last_n": {
+                    "type": "integer"
+                  },
+                  "keep_since_days": {
+                    "type": "integer"
+                  },
+                  "name_pattern": {
+                    "type": "string"
+                  },
+                  "schedule_cron": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid policy"
+          },
+          "403": {
+            "description": "Not an owner"
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/cleanup-policies/{id}": {
+      "put": {
+        "summary": "Update project cleanup policy",
+        "description": "Owners and global admins. Partial update.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "name": {
+                    "type": "string"
+                  },
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "keep_last_n": {
+                    "type": "integer"
+                  },
+                  "keep_since_days": {
+                    "type": "integer"
+                  },
+                  "name_pattern": {
+                    "type": "string"
+                  },
+                  "schedule_cron": {
+                    "type": "string"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupPolicy"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid policy"
+          },
+          "403": {
+            "description": "Not an owner"
+          },
+          "404": {
+            "description": "Project or policy not found"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete project cleanup policy",
+        "description": "Owners and global admins.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Deleted"
+          },
+          "403": {
+            "description": "Not an owner"
+          },
+          "404": {
+            "description": "Project or policy not found"
           }
         }
       }

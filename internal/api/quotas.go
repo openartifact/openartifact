@@ -5,6 +5,8 @@
 package api
 
 import (
+	"context"
+	"fmt"
 	"net/http"
 
 	"github.com/go-chi/chi/v5"
@@ -145,6 +147,16 @@ func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request
 		quota.WarnThresholdPercent = *body.WarnThresholdPercent
 	}
 
+	if msg, err := h.projectCeilingViolation(ctx, repo, quota); err != nil {
+		h.log.Errorw("update quota: project quota lookup failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	} else if msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
 	if err := h.db.UpdateStorageQuota(ctx, quota); err != nil {
 		h.log.Errorw("update quota: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -153,6 +165,31 @@ func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request
 	}
 
 	writeJSON(w, http.StatusOK, quotaToMap(quota))
+}
+
+// projectCeilingViolation returns why quota's limits do not fit the repository
+// project's ceiling ("" when they do): a repository limit above the project's
+// is refused, since the project limit would silently win. 0 (unlimited) is
+// always accepted, the project ceiling then bounds the repository.
+func (h *QuotasHandler) projectCeilingViolation(ctx context.Context, repo *models.Repository, quota *models.StorageQuota) (string, error) {
+	if repo.ProjectID == nil {
+		return "", nil
+	}
+
+	pq, err := h.db.GetProjectQuota(ctx, *repo.ProjectID)
+	if err != nil {
+		return "", err //nolint:wrapcheck // logged by the caller
+	}
+
+	if pq.MaxSizeBytes > 0 && quota.MaxSizeBytes > pq.MaxSizeBytes {
+		return fmt.Sprintf("max_size_bytes must not exceed the project limit (%d)", pq.MaxSizeBytes), nil
+	}
+
+	if pq.MaxArtifactCount > 0 && int64(quota.MaxArtifactCount) > pq.MaxArtifactCount {
+		return fmt.Sprintf("max_artifact_count must not exceed the project limit (%d)", pq.MaxArtifactCount), nil
+	}
+
+	return "", nil
 }
 
 func (h *QuotasHandler) handleDeleteQuota(w http.ResponseWriter, r *http.Request) {

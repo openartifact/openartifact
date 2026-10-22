@@ -41,6 +41,8 @@ type prDB struct {
 	deleted []string
 	// extraTargets are permission targets of non-admin users.
 	extraTargets map[string][]*models.PermissionTarget
+	// projectQuota is the ceiling GetProjectQuota reports (zero: unlimited).
+	projectQuota models.ProjectQuota
 }
 
 func (d *prDB) GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groups []string) ([]*models.PermissionTarget, error) {
@@ -170,6 +172,13 @@ func (d *prDB) ListCleanupPolicies(context.Context, string) ([]*models.CleanupPo
 
 func (d *prDB) GetOrCreateStorageQuota(_ context.Context, repoID string) (*models.StorageQuota, error) {
 	return &models.StorageQuota{RepositoryID: repoID, WarnThresholdPercent: 80}, nil
+}
+
+func (d *prDB) GetProjectQuota(_ context.Context, projectID string) (*models.ProjectQuota, error) {
+	q := d.projectQuota
+	q.ProjectID = projectID
+
+	return &q, nil
 }
 
 func (d *prDB) UpdateStorageQuota(context.Context, *models.StorageQuota) error { return nil }
@@ -318,6 +327,31 @@ func TestProjectRepos_DelegatedRoutes(t *testing.T) {
 			f.seed("sys-repo", models.SystemProjectID, "npm", true)
 
 			f.expect(tt.user, tt.method, tt.path, tt.body, tt.want)
+		})
+	}
+}
+
+// A maintainer may set a repository limit only up to the project's ceiling.
+func TestProjectRepos_RepoQuotaWithinProjectCeiling(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want int
+	}{
+		{"below the ceiling", `{"max_size_bytes":1000}`, http.StatusOK},
+		{"at the ceiling", `{"max_size_bytes":2000}`, http.StatusOK},
+		{"size above the ceiling", `{"max_size_bytes":2001}`, http.StatusBadRequest},
+		{"count above the ceiling", `{"max_artifact_count":11}`, http.StatusBadRequest},
+		{"unlimited stays allowed: the project ceiling bounds it", `{"max_size_bytes":0}`, http.StatusOK},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			f := newPRFixture(t)
+			f.seed("acme-web", pzAcme, "npm", false)
+			f.db.projectQuota = models.ProjectQuota{MaxSizeBytes: 2000, MaxArtifactCount: 10}
+
+			f.expect(prMark, http.MethodPut, "/api/v1/repositories/acme-web/quota", tt.body, tt.want)
 		})
 	}
 }

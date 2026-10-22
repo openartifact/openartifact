@@ -857,8 +857,10 @@ func (e *Engine) exportProjects(ctx context.Context, tw *tar.Writer, manifest *B
 	}
 
 	var (
-		members []*models.ProjectMember
-		groups  []*models.ProjectGroup
+		members  []*models.ProjectMember
+		groups   []*models.ProjectGroup
+		quotas   []*models.ProjectQuota
+		policies []*models.CleanupPolicy
 	)
 
 	for _, project := range projects {
@@ -875,13 +877,37 @@ func (e *Engine) exportProjects(ctx context.Context, tw *tar.Writer, manifest *B
 		}
 
 		groups = append(groups, g...)
+
+		q, err := e.db.GetProjectQuota(ctx, project.ID)
+		if err != nil {
+			return fmt.Errorf("failed to get quota of project %s: %w", project.ID, err)
+		}
+
+		if q.Limited() {
+			quotas = append(quotas, q) // counters are rebuilt after a restore
+		}
+
+		cp, err := e.db.ListProjectCleanupPolicies(ctx, project.ID)
+		if err != nil {
+			return fmt.Errorf("failed to list cleanup policies of project %s: %w", project.ID, err)
+		}
+
+		policies = append(policies, cp...)
 	}
 
 	if err := e.writeTable(tw, manifest, "project_members", members, len(members)); err != nil {
 		return err
 	}
 
-	return e.writeTable(tw, manifest, "project_groups", groups, len(groups))
+	if err := e.writeTable(tw, manifest, "project_groups", groups, len(groups)); err != nil {
+		return err
+	}
+
+	if err := e.writeTable(tw, manifest, "project_quotas", quotas, len(quotas)); err != nil {
+		return err
+	}
+
+	return e.writeTable(tw, manifest, "project_cleanup_policies", policies, len(policies))
 }
 
 // ErrBlobListingUnsupported is returned by a full backup on a storage backend
@@ -1381,6 +1407,10 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 		return e.restoreProjects(ctx, r, st)
 	case "project_members.jsonl":
 		return e.restoreProjectMembers(ctx, r, st)
+	case "project_quotas.jsonl":
+		return e.restoreProjectQuotas(ctx, r, st)
+	case "project_cleanup_policies.jsonl":
+		return e.restoreProjectCleanupPolicies(ctx, r, st)
 	case "project_groups.jsonl":
 		return e.restoreProjectGroups(ctx, r, st)
 	// Archives written before organizations became projects.
@@ -2315,6 +2345,52 @@ func (e *Engine) restoreProjectMember(ctx context.Context, st *restoreState, old
 	if err := e.db.AddProjectMember(ctx, newProjectID, newUserID, role); err != nil {
 		e.restoreWarn("failed to restore project member", "project_id", newProjectID, "user_id", newUserID, "error", err)
 	}
+}
+
+// restoreProjectQuotas restores the project storage ceilings; the usage
+// counters are rebuilt from the repositories by reconcileQuotaUsage.
+func (e *Engine) restoreProjectQuotas(ctx context.Context, r io.Reader, st *restoreState) error {
+	items, err := decodeSlice[*models.ProjectQuota](r)
+	if err != nil {
+		return fmt.Errorf("failed to decode project quotas: %w", err)
+	}
+
+	for _, it := range items {
+		newProjectID, ok := st.projectIDMap[it.ProjectID]
+		if !ok || newProjectID == models.SystemProjectID {
+			continue
+		}
+
+		if _, err := e.db.SetProjectQuota(ctx, newProjectID, it.MaxSizeBytes, it.MaxArtifactCount, it.WarnThresholdPercent); err != nil {
+			e.restoreWarn("failed to restore project quota", "project_id", newProjectID, "error", err)
+		}
+	}
+
+	return nil
+}
+
+// restoreProjectCleanupPolicies restores the project default cleanup policies.
+func (e *Engine) restoreProjectCleanupPolicies(ctx context.Context, r io.Reader, st *restoreState) error {
+	items, err := decodeSlice[*models.CleanupPolicy](r)
+	if err != nil {
+		return fmt.Errorf("failed to decode project cleanup policies: %w", err)
+	}
+
+	for _, it := range items {
+		newProjectID, ok := st.projectIDMap[it.ProjectID]
+		if !ok || newProjectID == models.SystemProjectID {
+			continue
+		}
+
+		it.ProjectID = newProjectID
+		it.RepositoryID = ""
+
+		if err := e.db.CreateCleanupPolicy(ctx, it); err != nil {
+			e.restoreWarn("failed to restore project cleanup policy", "project_id", newProjectID, "error", err)
+		}
+	}
+
+	return nil
 }
 
 func (e *Engine) restoreProjectGroups(ctx context.Context, r io.Reader, st *restoreState) error {

@@ -147,6 +147,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/repositories/{name}/members` | member repositories of a group repository |
 | `/trash`, `/repositories/{name}/trash` | [trash](../operations/trash.md): list, restore and purge deleted items and repositories |
 | `/repositories/{name}/{cleanup-policies,quota,webhooks}` | [cleanup and quotas](../repositories/cleanup-and-quotas.md), per-repository [webhooks](../operations/webhooks.md) |
+| `/projects/{project}/{usage,quota,cleanup-policies}` | project storage usage, the project [quota](../repositories/cleanup-and-quotas.md#project-quotas) (`PUT` is global-admin only) and [default cleanup policies](../repositories/cleanup-and-quotas.md#project-default-cleanup-policies); access follows the caller's [project role](../security/projects.md) |
 | `/repositories/{name}/registry-gc` | `POST` (admin): run [Docker registry garbage collection](../formats/docker.md#garbage-collection), optionally as a dry run |
 | `/repositories/{name}/{sbom,vuln,license,secrets}` | SBOMs and [scanning](../security/scanning.md) (scans, quarantine, license policies) |
 | `/repositories/{name}/artifacts/...` | [properties](../repositories/properties.md) and property search |

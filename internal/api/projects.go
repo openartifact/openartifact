@@ -67,6 +67,13 @@ func (h *ProjectsHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/projects/{project}/tokens", h.handleListTokens)
 	r.Post("/api/v1/projects/{project}/tokens", h.handleCreateToken)
 	r.Delete("/api/v1/projects/{project}/tokens/{token_id}", h.handleRevokeToken)
+	r.Get("/api/v1/projects/{project}/usage", h.handleGetUsage)
+	r.Get("/api/v1/projects/{project}/quota", h.handleGetQuota)
+	r.Put("/api/v1/projects/{project}/quota", h.handlePutQuota)
+	r.Get("/api/v1/projects/{project}/cleanup-policies", h.handleListCleanupPolicies)
+	r.Post("/api/v1/projects/{project}/cleanup-policies", h.handleCreateCleanupPolicy)
+	r.Put("/api/v1/projects/{project}/cleanup-policies/{id}", h.handleUpdateCleanupPolicy)
+	r.Delete("/api/v1/projects/{project}/cleanup-policies/{id}", h.handleDeleteCleanupPolicy)
 	r.Get("/api/v1/admin/projects/settings", h.handleGetSettings)
 	r.Put("/api/v1/admin/projects/settings", h.handlePutSettings)
 }

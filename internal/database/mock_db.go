@@ -596,6 +596,12 @@ func (m *BaseMockDB) DeleteCleanupPolicy(ctx context.Context, id string) error {
 func (m *BaseMockDB) ListCleanupPolicies(ctx context.Context, repoID string) ([]*models.CleanupPolicy, error) {
 	return nil, errNotImpl("ListCleanupPolicies")
 }
+func (m *BaseMockDB) ListProjectCleanupPolicies(ctx context.Context, projectID string) ([]*models.CleanupPolicy, error) {
+	return nil, errNotImpl("ListProjectCleanupPolicies")
+}
+func (m *BaseMockDB) ListProjectCleanupRepositories(ctx context.Context, projectID string) ([]string, error) {
+	return nil, errNotImpl("ListProjectCleanupRepositories")
+}
 func (m *BaseMockDB) ListEnabledCleanupPolicies(ctx context.Context) ([]*models.CleanupPolicy, error) {
 	return nil, errNotImpl("ListEnabledCleanupPolicies")
 }
@@ -1118,4 +1124,14 @@ func (m *BaseMockDB) DeleteAIAnalysis(ctx context.Context, repoID, artifactID st
 }
 func (m *BaseMockDB) ListPendingAIAnalyses(ctx context.Context, limit int) ([]*models.AIAnalysis, error) {
 	return nil, errNotImpl("ListPendingAIAnalyses")
+}
+
+func (m *BaseMockDB) GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error) {
+	return nil, errNotImpl("GetProjectQuota")
+}
+func (m *BaseMockDB) SetProjectQuota(ctx context.Context, projectID string, maxSizeBytes, maxArtifactCount int64, warnThresholdPercent int) (*models.ProjectQuota, error) {
+	return nil, errNotImpl("SetProjectQuota")
+}
+func (m *BaseMockDB) GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error) {
+	return nil, errNotImpl("GetProjectUsage")
 }

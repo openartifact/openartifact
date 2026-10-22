@@ -25,6 +25,8 @@ type projectFakeDB struct {
 	projects []*models.Project
 	members  []*models.ProjectMember
 	pgroups  []*models.ProjectGroup
+	quotas   map[string]*models.ProjectQuota
+	policies []*models.CleanupPolicy
 }
 
 func newProjectFakeDB(salt string) *projectFakeDB {
@@ -72,6 +74,43 @@ func (f *projectFakeDB) ListProjectGroups(_ context.Context, projectID string) (
 	for _, g := range f.pgroups {
 		if g.ProjectID == projectID {
 			out = append(out, g)
+		}
+	}
+
+	return out, nil
+}
+
+func (f *projectFakeDB) GetProjectQuota(_ context.Context, projectID string) (*models.ProjectQuota, error) {
+	if q, ok := f.quotas[projectID]; ok {
+		return q, nil
+	}
+
+	return &models.ProjectQuota{ProjectID: projectID, WarnThresholdPercent: 80}, nil
+}
+
+func (f *projectFakeDB) SetProjectQuota(_ context.Context, projectID string, maxSize, maxCount int64, warn int) (*models.ProjectQuota, error) {
+	if f.quotas == nil {
+		f.quotas = map[string]*models.ProjectQuota{}
+	}
+
+	q := &models.ProjectQuota{ProjectID: projectID, MaxSizeBytes: maxSize, MaxArtifactCount: maxCount, WarnThresholdPercent: warn}
+	f.quotas[projectID] = q
+
+	return q, nil
+}
+
+func (f *projectFakeDB) CreateCleanupPolicy(_ context.Context, p *models.CleanupPolicy) error {
+	f.policies = append(f.policies, p)
+
+	return nil
+}
+
+func (f *projectFakeDB) ListProjectCleanupPolicies(_ context.Context, projectID string) ([]*models.CleanupPolicy, error) {
+	var out []*models.CleanupPolicy
+
+	for _, p := range f.policies {
+		if p.ProjectID == projectID {
+			out = append(out, p)
 		}
 	}
 
@@ -171,6 +210,13 @@ func seedProjectsSource(t *testing.T, src *projectFakeDB) projectsSeed {
 	_ = src.AddProjectMember(ctx, acme.ID, dev.ID, models.ProjectRoleDeveloper)
 	_ = src.SetProjectGroup(ctx, acme.ID, team.ID, models.ProjectRoleMaintainer, &owner.ID)
 
+	if _, err := src.SetProjectQuota(ctx, acme.ID, 1000, 5, 70); err != nil {
+		t.Fatal(err)
+	}
+
+	keep := 3
+	_ = src.CreateCleanupPolicy(ctx, &models.CleanupPolicy{ProjectID: acme.ID, Name: "default", Enabled: true, KeepLastN: &keep, ScheduleCron: "0 3 * * *"})
+
 	sys := models.SystemProjectID
 	_ = src.CreateRepository(ctx, &models.Repository{Name: "acme-libs", Format: "rpm", RepoType: "hosted", ProjectID: &acme.ID})
 	_ = src.CreateRepository(ctx, &models.Repository{Name: "loose", Format: "rpm", RepoType: "hosted", ProjectID: &sys})
@@ -239,6 +285,27 @@ func assertRestoredProjectGroup(t *testing.T, dst *projectFakeDB, got *models.Pr
 	}
 }
 
+func assertRestoredProjectQuotaAndPolicies(t *testing.T, dst *projectFakeDB, got *models.Project) {
+	t.Helper()
+
+	if q := dst.quotas[got.ID]; q == nil || q.MaxSizeBytes != 1000 || q.MaxArtifactCount != 5 || q.WarnThresholdPercent != 70 {
+		t.Fatalf("project quota = %+v, want 1000 bytes / 5 artifacts / warn 70", dst.quotas[got.ID])
+	}
+
+	if len(dst.quotas) != 1 {
+		t.Fatalf("restored %d project quotas, want only the limited one", len(dst.quotas))
+	}
+
+	if len(dst.policies) != 1 {
+		t.Fatalf("restored %d project cleanup policies, want 1", len(dst.policies))
+	}
+
+	p := dst.policies[0]
+	if p.ProjectID != got.ID || p.RepositoryID != "" || p.Name != "default" || p.KeepLastN == nil || *p.KeepLastN != 3 {
+		t.Fatalf("project cleanup policy = %+v, want default/keep 3 on project %s", p, got.ID)
+	}
+}
+
 func TestBackupRestore_ProjectsRoundTrip(t *testing.T) {
 	ctx := context.Background()
 
@@ -263,6 +330,7 @@ func TestBackupRestore_ProjectsRoundTrip(t *testing.T) {
 	got := assertRestoredProjectPolicy(t, dst, seed)
 	assertRestoredProjectMembers(t, dst, got)
 	assertRestoredProjectGroup(t, dst, got, seed)
+	assertRestoredProjectQuotaAndPolicies(t, dst, got)
 
 	if r := dst.repoByName(t, "acme-libs"); r.ProjectID == nil || *r.ProjectID != got.ID {
 		t.Fatalf("acme-libs project = %v, want %s", r.ProjectID, got.ID)

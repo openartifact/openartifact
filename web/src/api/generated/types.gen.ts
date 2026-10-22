@@ -224,7 +224,14 @@ export type CleanupPolicy = {
     last_run_at?: string | null;
     last_run_deleted?: number | null;
     last_run_error?: string;
+    /**
+     * Empty for a project default policy.
+     */
     repo_id?: string;
+    /**
+     * Set for a project default policy.
+     */
+    project_id?: string;
 };
 
 export type Webhook = {
@@ -620,6 +627,39 @@ export type SbomReport = {
      * The SBOM document (only on the detail endpoint)
      */
     sbom_data?: unknown;
+};
+
+export type ProjectQuota = {
+    project?: string;
+    max_size_bytes?: number;
+    max_artifact_count?: number;
+    warn_threshold_percent?: number;
+    current_size_bytes?: number;
+    current_artifact_count?: number;
+    usage_percent?: number;
+    /**
+     * True when a limit is set.
+     */
+    enforced?: boolean;
+    updated_at?: string;
+};
+
+export type ProjectUsage = {
+    project?: string;
+    size_bytes?: number;
+    artifact_count?: number;
+    quota?: ProjectQuota;
+    repositories?: Array<{
+        name?: string;
+        format?: string;
+        repo_type?: string;
+        size_bytes?: number;
+        artifact_count?: number;
+        max_size_bytes?: number;
+        max_artifact_count?: number;
+        warn_threshold_percent?: number;
+        quota_enforced?: boolean;
+    }>;
 };
 
 export type Quota = {
@@ -4516,6 +4556,231 @@ export type PutApiV1ProjectsByProjectGroupsByGroupResponses = {
 };
 
 export type PutApiV1ProjectsByProjectGroupsByGroupResponse = PutApiV1ProjectsByProjectGroupsByGroupResponses[keyof PutApiV1ProjectsByProjectGroupsByGroupResponses];
+
+export type GetApiV1ProjectsByProjectUsageData = {
+    body?: never;
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/usage';
+};
+
+export type GetApiV1ProjectsByProjectUsageErrors = {
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type GetApiV1ProjectsByProjectUsageResponses = {
+    /**
+     * Usage
+     */
+    200: ProjectUsage;
+};
+
+export type GetApiV1ProjectsByProjectUsageResponse = GetApiV1ProjectsByProjectUsageResponses[keyof GetApiV1ProjectsByProjectUsageResponses];
+
+export type GetApiV1ProjectsByProjectQuotaData = {
+    body?: never;
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/quota';
+};
+
+export type GetApiV1ProjectsByProjectQuotaErrors = {
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type GetApiV1ProjectsByProjectQuotaResponses = {
+    /**
+     * Project quota
+     */
+    200: ProjectQuota;
+};
+
+export type GetApiV1ProjectsByProjectQuotaResponse = GetApiV1ProjectsByProjectQuotaResponses[keyof GetApiV1ProjectsByProjectQuotaResponses];
+
+export type PutApiV1ProjectsByProjectQuotaData = {
+    body: {
+        max_size_bytes?: number;
+        max_artifact_count?: number;
+        warn_threshold_percent?: number;
+    };
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/quota';
+};
+
+export type PutApiV1ProjectsByProjectQuotaErrors = {
+    /**
+     * Invalid limits
+     */
+    400: unknown;
+    /**
+     * Not a global admin
+     */
+    403: unknown;
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type PutApiV1ProjectsByProjectQuotaResponses = {
+    /**
+     * Project quota
+     */
+    200: ProjectQuota;
+};
+
+export type PutApiV1ProjectsByProjectQuotaResponse = PutApiV1ProjectsByProjectQuotaResponses[keyof PutApiV1ProjectsByProjectQuotaResponses];
+
+export type GetApiV1ProjectsByProjectCleanupPoliciesData = {
+    body?: never;
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/cleanup-policies';
+};
+
+export type GetApiV1ProjectsByProjectCleanupPoliciesErrors = {
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type GetApiV1ProjectsByProjectCleanupPoliciesResponses = {
+    /**
+     * Policies
+     */
+    200: {
+        policies?: Array<CleanupPolicy>;
+    };
+};
+
+export type GetApiV1ProjectsByProjectCleanupPoliciesResponse = GetApiV1ProjectsByProjectCleanupPoliciesResponses[keyof GetApiV1ProjectsByProjectCleanupPoliciesResponses];
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesData = {
+    body: {
+        name?: string;
+        enabled?: boolean;
+        keep_last_n?: number;
+        keep_since_days?: number;
+        name_pattern?: string;
+        schedule_cron?: string;
+    };
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/cleanup-policies';
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesErrors = {
+    /**
+     * Invalid policy
+     */
+    400: unknown;
+    /**
+     * Not an owner
+     */
+    403: unknown;
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesResponses = {
+    /**
+     * Created
+     */
+    201: CleanupPolicy;
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesResponse = PostApiV1ProjectsByProjectCleanupPoliciesResponses[keyof PostApiV1ProjectsByProjectCleanupPoliciesResponses];
+
+export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdData = {
+    body?: never;
+    path: {
+        project: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/cleanup-policies/{id}';
+};
+
+export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdErrors = {
+    /**
+     * Not an owner
+     */
+    403: unknown;
+    /**
+     * Project or policy not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdResponses = {
+    /**
+     * Deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdResponse = DeleteApiV1ProjectsByProjectCleanupPoliciesByIdResponses[keyof DeleteApiV1ProjectsByProjectCleanupPoliciesByIdResponses];
+
+export type PutApiV1ProjectsByProjectCleanupPoliciesByIdData = {
+    body: {
+        name?: string;
+        enabled?: boolean;
+        keep_last_n?: number;
+        keep_since_days?: number;
+        name_pattern?: string;
+        schedule_cron?: string;
+    };
+    path: {
+        project: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/cleanup-policies/{id}';
+};
+
+export type PutApiV1ProjectsByProjectCleanupPoliciesByIdErrors = {
+    /**
+     * Invalid policy
+     */
+    400: unknown;
+    /**
+     * Not an owner
+     */
+    403: unknown;
+    /**
+     * Project or policy not found
+     */
+    404: unknown;
+};
+
+export type PutApiV1ProjectsByProjectCleanupPoliciesByIdResponses = {
+    /**
+     * Updated
+     */
+    200: CleanupPolicy;
+};
+
+export type PutApiV1ProjectsByProjectCleanupPoliciesByIdResponse = PutApiV1ProjectsByProjectCleanupPoliciesByIdResponses[keyof PutApiV1ProjectsByProjectCleanupPoliciesByIdResponses];
 
 export type GetApiV1AdminProjectsSettingsData = {
     body?: never;

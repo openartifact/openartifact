@@ -22,12 +22,15 @@ Roles rank `viewer` < `developer` < `maintainer` < `owner`. A user's effective r
 | Delete artifacts, list and restore repository trash | | | x | x | |
 | Create repositories in the project (policy applies) | | | x | x | |
 | Update, delete and configure the project's repositories (cleanup policies, quota, trash emptying) | | | x | x | |
+| See the project's storage usage, quota and default cleanup policies | x | x | x | x | |
 | Move a repository to another project (owner of both) | | | | x | |
+| Create, change and delete the project's default cleanup policies | | | | x | |
 | Add, change and remove members and groups below `maintainer` | | | x | x | |
 | Grant, change or remove `maintainer` and `owner` | | | | x | |
 | Edit `display_name` and `description` | | | | x | |
 | Delete the project (when it owns no repositories) | | | | x | |
 | Create a project with a chosen `owner` or policy fields | | | | | x |
+| Set the project's storage quota (ceiling over all its repositories) | | | | | x |
 | Change policy fields (`allowed_formats`, `allowed_repo_types`, `repo_name_prefix`, `allow_public_repos`, `max_repositories`, `token_max_ttl_days`) | | | | | x |
 
 Project roles never grant the global `manage` permission: users, groups, permission targets, settings and every other `/api/v1/*` route outside `/api/v1/projects/**` stay admin-only. The one exception is the **delegated repository administration** of the table above: for a repository owned by a (non-system) project, a maintainer or owner of that project passes the checks of `PATCH` and `DELETE /repository/{name}`, `/repositories/{name}/cleanup-policies[...]`, `GET`, `PUT`, `DELETE /repositories/{name}/quota` and `DELETE /repositories/{name}/trash`. This is a separate check (`repo.admin`): it is never satisfied by a repository-scoped `manage` permission target, and it is never granted by a scoped, deploy or anonymous credential. A caller who cannot even read the repository gets `404`. Webhooks, quota reconcile, group-member management and every other repository sub-route stay admin-only. Repository responses report the caller's `permissions.admin`.
@@ -46,7 +49,7 @@ Project roles never grant the global `manage` permission: users, groups, permiss
 
 Global admins bypass the policy, on both routes. A non-admin `PATCH /repository/{name}` may change `description`, retention, immutability and the upstream settings but not `project`, `blocked` or `presign_downloads`, and may not make the repository public unless the project allows it (403).
 
-`POST /projects/{project}/repositories/{name}/transfer` with `{"to_project": "<name>"}` moves a repository between projects. The caller must be owner of both (admins always); a caller with no role in the target gets 404, a lower role 403. A non-admin transfer must also satisfy the target's policy (prefix, format, type, visibility, `max_repositories`). Storage usage counters are not moved.
+`POST /projects/{project}/repositories/{name}/transfer` with `{"to_project": "<name>"}` moves a repository between projects. The caller must be owner of both (admins always); a caller with no role in the target gets 404, a lower role 403. A non-admin transfer must also satisfy the target's policy (prefix, format, type, visibility, `max_repositories`). The repository's storage usage moves with it: it is subtracted from the source project's counters and added to the target's, and the transfer fails with `409 project_quota_exceeded` when the target's [project quota](#storage-quota-and-cleanup-defaults) cannot take it.
 
 Group grants take `viewer`, `developer` or `maintainer`; `owner` is personal and cannot be given to a group. The built-in `system` project grants nothing and cannot be deleted (409).
 
@@ -112,6 +115,16 @@ A project token is a CI credential that belongs to one project. Each token is a 
 
 `project.token_created` and `project.token_revoked` are audited with the token as the resource. The admin token list (`GET /api/v1/admin/tokens`) shows `project`, `project_role` and `created_by` for project tokens.
 
+## Storage quota and cleanup defaults
+
+A project can carry a **storage quota**: a ceiling on the total size and artifact count of all the repositories it owns, set by a global admin (`PUT /projects/{project}/quota`; owners and maintainers can read it, not change it). It sits on top of the per-repository quotas: an upload must fit the repository's own limit **and** the project's, and a repository limit cannot exceed the project limit (setting one above it is `400 validation_failed`; `0`, unlimited, is always accepted and the project ceiling then bounds the repository). Exceeding either is `507 Insufficient Storage` with code `quota_exceeded`. The rules, the counters and the reconcile are described in [Cleanup policies and storage quotas](../repositories/cleanup-and-quotas.md#project-quotas).
+
+Members see the numbers with `GET /projects/{project}/usage`, or in the **Usage** section of the project page: totals, the project quota against its warning threshold and one line per repository. Proxy and group repositories hold no uploaded packages and are shown as not metered.
+
+A project can also define **default cleanup policies** (`/projects/{project}/cleanup-policies`; members read, owners and admins write). A default policy applies to every hosted repository of the project that has no enabled cleanup policy of its own; a repository's own enabled policy overrides the defaults. Details: [project default cleanup policies](../repositories/cleanup-and-quotas.md#project-default-cleanup-policies).
+
+In the web UI the project **Settings** section holds both: the project quota (editable by global admins, read-only for everyone else) and the cleanup defaults (listed for all members, editable by owners and admins).
+
 ## Audit events
 
 Every project mutation writes an audit entry with the project in `project_id`:
@@ -150,6 +163,12 @@ All paths are under `/api/v1`, JSON is snake_case, errors are `{"error": message
 | `GET /projects/{project}/tokens` | viewer | maintainers see all tokens, others their own; `{tokens}` without secrets |
 | `POST /projects/{project}/tokens` | viewer | session only; body `name`, `role` (`viewer`, `developer`, at most your own), `expires_at`; 201 with the secret in `token`, shown once; 409 on duplicate name or 100 active tokens |
 | `DELETE /projects/{project}/tokens/{token_id}` | viewer | maintainer for tokens of others; 204 |
+| `GET /projects/{project}/usage` | viewer | `{project, size_bytes, artifact_count, quota, repositories}`: totals, the project quota and one line per live repository (`name`, `format`, `repo_type`, `size_bytes`, `artifact_count`, repository limits, `quota_enforced`) |
+| `GET /projects/{project}/quota` | viewer | the project quota: `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent`, `current_size_bytes`, `current_artifact_count`, `usage_percent`, `enforced`, `updated_at` |
+| `PUT /projects/{project}/quota` | admin | body `max_size_bytes`, `max_artifact_count`, `warn_threshold_percent` (omitted fields keep their value, `0` = unlimited); owners get 403, a negative limit or a threshold outside 0-100 is 400 `validation_failed` |
+| `GET /projects/{project}/cleanup-policies` | viewer | `{policies}`, the project default policies |
+| `POST /projects/{project}/cleanup-policies` | owner | same body and validation as a repository cleanup policy; 201 |
+| `PUT`, `DELETE /projects/{project}/cleanup-policies/{id}` | owner | partial update; delete is 204 |
 | `GET`, `PUT /admin/projects/settings` | admin | `{self_create: bool}` |
 
 `GET /api/v1/auth/me` lists the caller's own roles in `projects: [{name, role}]` (admins get no implicit entries there).

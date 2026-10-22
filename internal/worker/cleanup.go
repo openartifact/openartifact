@@ -403,6 +403,10 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 		return 0, err
 	}
 
+	if policy.RepositoryID == "" && policy.ProjectID != "" {
+		return w.runProjectPolicy(ctx, policy)
+	}
+
 	repo, err := w.db.GetRepositoryByID(ctx, policy.RepositoryID)
 	if err != nil {
 		return 0, fmt.Errorf("failed to get repository: %w", err)
@@ -414,7 +418,7 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 
 	tableInfo, ok := cleanupFormatTable(repo.Format)
 	if !ok {
-		return 0, fmt.Errorf("unsupported format for cleanup: %s", repo.Format) //nolint:err113 // dynamic error with runtime context
+		return 0, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
 	}
 
 	deleted, err := w.deleteArtifacts(ctx, policy, repo, tableInfo)
@@ -425,6 +429,45 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 	}
 
 	return deleted, err
+}
+
+// errUnsupportedCleanupFormat: the repository's format has no cleanup support.
+var errUnsupportedCleanupFormat = errors.New("unsupported format for cleanup")
+
+// runProjectPolicy applies a project default policy: it is expanded into one
+// run per live hosted repository of the project that has no enabled policy of
+// its own (a repository-level policy overrides the default, it never adds to
+// it), each with that repository's format table. Repositories whose format has
+// no cleanup support, or that vanished meanwhile, are skipped; other failures
+// do not stop the remaining repositories and are reported together.
+func (w *CleanupWorker) runProjectPolicy(ctx context.Context, policy *models.CleanupPolicy) (int, error) {
+	repoIDs, err := w.db.ListProjectCleanupRepositories(ctx, policy.ProjectID)
+	if err != nil {
+		return 0, fmt.Errorf("failed to list project repositories: %w", err)
+	}
+
+	total := 0
+
+	var errs []error
+
+	for _, repoID := range repoIDs {
+		if ctx.Err() != nil {
+			errs = append(errs, ctx.Err())
+			break
+		}
+
+		perRepo := *policy
+		perRepo.RepositoryID = repoID
+
+		n, err := w.runPolicy(ctx, &perRepo)
+		total += n
+
+		if err != nil && !errors.Is(err, errUnsupportedCleanupFormat) && !errors.Is(err, ErrRepositoryNotFound) {
+			errs = append(errs, fmt.Errorf("repository %s: %w", repoID, err))
+		}
+	}
+
+	return total, errors.Join(errs...)
 }
 
 // MetadataNotifier schedules the regeneration of a repository's generated

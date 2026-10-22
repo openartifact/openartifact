@@ -6,6 +6,7 @@ package database
 
 import (
 	"context"
+	"errors"
 	"fmt"
 
 	"github.com/jackc/pgx/v5"
@@ -48,13 +49,55 @@ UPDATE storage_quotas
        current_artifact_count = GREATEST(0, current_artifact_count - $2)
  WHERE repository_id = $3`
 
-// execQuota runs one quota counter statement in its own short transaction with
-// asynchronous commit (see above) and returns the rows it affected. The setting
-// and the statement travel in one batch, i.e. one round trip.
-func (p *PostgresDB) execQuota(ctx context.Context, sql string, sizeBytes int64, artifactCount int, repoID string) (int64, error) {
+// reserveProjectSQL adds ($1 bytes, $2 artifacts) to the project ($3) ceiling
+// unless that would pass a non-zero limit. Zero rows affected means the project
+// quota would be exceeded.
+const reserveProjectSQL = `
+UPDATE project_quotas
+   SET current_size_bytes = current_size_bytes + $1,
+       current_artifact_count = current_artifact_count + $2
+ WHERE project_id = $3
+   AND (max_size_bytes = 0 OR current_size_bytes + $1 <= max_size_bytes)
+   AND (max_artifact_count = 0 OR current_artifact_count + $2 <= max_artifact_count)`
+
+// releaseProjectSQL returns ($1 bytes, $2 artifacts) of repository $3 to its
+// project's ceiling. Only a project with a limit keeps counters; an unlimited
+// project (or one without a quota row) matches nothing and costs nothing.
+const releaseProjectSQL = `
+UPDATE project_quotas
+   SET current_size_bytes = GREATEST(0, current_size_bytes - $1),
+       current_artifact_count = GREATEST(0, current_artifact_count - $2)
+ WHERE project_id = (SELECT project_id FROM repositories WHERE id = $3)
+   AND (max_size_bytes > 0 OR max_artifact_count > 0)`
+
+// limitedProjectSQL finds the project of repository $1 when that project has a
+// ceiling to enforce.
+const limitedProjectSQL = `
+SELECT pq.project_id
+  FROM repositories r
+  JOIN project_quotas pq ON pq.project_id = r.project_id
+ WHERE r.id = $1 AND (pq.max_size_bytes > 0 OR pq.max_artifact_count > 0)`
+
+// Lock order. Quota counters live on two levels, the project ceiling
+// (project_quotas) and the repository (storage_quotas). Every code path that
+// touches both takes the project row first and the repository row second:
+// reserve (below), release (one batch, project statement first) and transfer
+// (both projects in id order, then the repository). Paths touching one level
+// only cannot close a cycle. Reconcile rewrites the repository counters in
+// one transaction and the project counters in a later one, never holding both.
+
+// execQuota runs the quota counter statements (all taking bytes, artifacts and
+// the repository) in one short transaction with asynchronous commit (see above)
+// and returns the rows the last one affected. The setting and the statements
+// travel in one batch, i.e. one round trip; the batch is a single implicit
+// transaction, so either every statement applies or none does.
+func (p *PostgresDB) execQuota(ctx context.Context, sizeBytes int64, artifactCount int, repoID string, statements ...string) (int64, error) {
 	batch := &pgx.Batch{}
 	batch.Queue(`SELECT set_config('synchronous_commit', 'off', true)`)
-	batch.Queue(sql, sizeBytes, int64(artifactCount), repoID)
+
+	for _, st := range statements {
+		batch.Queue(st, sizeBytes, int64(artifactCount), repoID)
+	}
 
 	br := p.pool.SendBatch(ctx, batch)
 
@@ -64,36 +107,97 @@ func (p *PostgresDB) execQuota(ctx context.Context, sql string, sizeBytes int64,
 		return 0, fmt.Errorf("set quota commit mode: %w", err)
 	}
 
-	tag, err := br.Exec()
-	if err != nil {
-		_ = br.Close()
+	var affected int64
 
-		return 0, err
+	for range statements {
+		tag, err := br.Exec()
+		if err != nil {
+			_ = br.Close()
+
+			return 0, err
+		}
+
+		affected = tag.RowsAffected()
 	}
 
 	if err := br.Close(); err != nil {
 		return 0, fmt.Errorf("commit quota update: %w", err)
 	}
 
-	return tag.RowsAffected(), nil
+	return affected, nil
 }
 
 // ReserveStorageUsage atomically adds sizeBytes/artifactCount to the repository
 // quota counters if doing so would not exceed the configured limits (a limit of
-// 0 means unlimited). It returns false, nil when the quota would be exceeded.
+// 0 means unlimited), and, when the repository's project has a ceiling, to the
+// project's counters too: the upload must fit both levels, otherwise nothing is
+// reserved. It returns false, nil when a quota would be exceeded.
 func (p *PostgresDB) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
-	n, err := p.execQuota(ctx, reserveStorageSQL, sizeBytes, artifactCount, repoID)
+	var projectID string
+
+	err := p.pool.QueryRow(ctx, limitedProjectSQL, repoID).Scan(&projectID)
+
+	switch {
+	case errors.Is(err, pgx.ErrNoRows):
+		// No project ceiling: the repository statement alone (single round trip).
+		n, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, reserveStorageSQL)
+		if err != nil {
+			return false, fmt.Errorf("failed to reserve storage usage: %w", err)
+		}
+
+		return n > 0, nil
+	case err != nil:
+		return false, fmt.Errorf("failed to look up project quota: %w", err)
+	}
+
+	return p.reserveTwoLevel(ctx, projectID, repoID, sizeBytes, artifactCount)
+}
+
+// reserveTwoLevel reserves on the project row, then the repository row, in one
+// transaction (lock order: project, repository). A failed repository
+// reservation rolls the project reservation back.
+func (p *PostgresDB) reserveTwoLevel(ctx context.Context, projectID, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
+	tx, err := p.pool.Begin(ctx)
+	if err != nil {
+		return false, fmt.Errorf("failed to begin quota reservation: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback(ctx) }()
+
+	if _, err := tx.Exec(ctx, `SELECT set_config('synchronous_commit', 'off', true)`); err != nil {
+		return false, fmt.Errorf("set quota commit mode: %w", err)
+	}
+
+	tag, err := tx.Exec(ctx, reserveProjectSQL, sizeBytes, int64(artifactCount), projectID)
+	if err != nil {
+		return false, fmt.Errorf("failed to reserve project storage usage: %w", err)
+	}
+
+	if tag.RowsAffected() == 0 {
+		return false, nil
+	}
+
+	tag, err = tx.Exec(ctx, reserveStorageSQL, sizeBytes, int64(artifactCount), repoID)
 	if err != nil {
 		return false, fmt.Errorf("failed to reserve storage usage: %w", err)
 	}
 
-	return n > 0, nil
+	if tag.RowsAffected() == 0 {
+		return false, nil // deferred rollback gives the project reservation back
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return false, fmt.Errorf("failed to commit quota reservation: %w", err)
+	}
+
+	return true, nil
 }
 
-// DecrementStorageUsage gives a reservation back (or accounts for a delete). A
-// repository without a quota row has nothing to decrement.
+// DecrementStorageUsage gives a reservation back (or accounts for a delete), on
+// the repository and on its project's ceiling when that has one. A repository
+// without a quota row has nothing to decrement.
 func (p *PostgresDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
-	if _, err := p.execQuota(ctx, releaseStorageSQL, sizeBytes, artifactCount, repoID); err != nil {
+	if _, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, releaseProjectSQL, releaseStorageSQL); err != nil {
 		return fmt.Errorf("failed to decrement storage usage: %w", err)
 	}
 
@@ -183,6 +287,47 @@ SELECT (SELECT COUNT(*) FROM fixed) + (SELECT COUNT(*) FROM emptied)`
 		` AND q.repository_id = $1::uuid` + reconcileCountSQL
 )
 
+// reconcileProjectsSQL rewrites the counters of every project with a ceiling
+// from the (already reconciled) repository counters; $1, when not NULL,
+// restricts it to that project. It returns the number of counters changed.
+// Run in its own transaction after the repository counters are committed so it
+// never holds a project row while waiting on repository rows (lock order).
+const reconcileProjectsSQL = `
+WITH sums AS (
+    SELECT r.project_id,
+           COALESCE(SUM(sq.current_size_bytes), 0)::bigint AS size_bytes,
+           COALESCE(SUM(sq.current_artifact_count), 0)::bigint AS artifacts
+      FROM repositories r
+      LEFT JOIN storage_quotas sq ON sq.repository_id = r.id
+     WHERE $1::uuid IS NULL OR r.project_id = $1::uuid
+     GROUP BY r.project_id
+), fixed AS (
+    UPDATE project_quotas pq
+       SET current_size_bytes = s.size_bytes,
+           current_artifact_count = s.artifacts
+      FROM sums s
+     WHERE s.project_id = pq.project_id
+       AND (pq.max_size_bytes > 0 OR pq.max_artifact_count > 0)
+       AND (pq.current_size_bytes <> s.size_bytes OR pq.current_artifact_count <> s.artifacts)
+    RETURNING 1
+)
+SELECT COUNT(*) FROM fixed`
+
+// reconcileProjects runs reconcileProjectsSQL (projectID "" = every project).
+func (p *PostgresDB) reconcileProjects(ctx context.Context, projectID string) (int64, error) {
+	var arg *string
+	if projectID != "" {
+		arg = &projectID
+	}
+
+	var changed int64
+	if err := p.pool.QueryRow(ctx, reconcileProjectsSQL, arg).Scan(&changed); err != nil {
+		return 0, fmt.Errorf("failed to reconcile project storage usage: %w", err)
+	}
+
+	return changed, nil
+}
+
 // quotaReconcileLockKey serializes ReconcileAllStorageUsage across replicas.
 const quotaReconcileLockKey = `hashtext('openartifact-quota-reconcile')::bigint`
 
@@ -198,6 +343,13 @@ const quotaReconcileLockKey = `hashtext('openartifact-quota-reconcile')::bigint`
 func (p *PostgresDB) ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error) {
 	if _, err := p.pool.Exec(ctx, reconcileOneStorageSQL, repoID); err != nil {
 		return nil, fmt.Errorf("failed to reconcile storage usage: %w", err)
+	}
+
+	var projectID string
+	if err := p.pool.QueryRow(ctx, `SELECT COALESCE(project_id::text, '') FROM repositories WHERE id = $1`, repoID).Scan(&projectID); err == nil && projectID != "" {
+		if _, err := p.reconcileProjects(ctx, projectID); err != nil {
+			return nil, err
+		}
 	}
 
 	return p.GetOrCreateStorageQuota(ctx, repoID)
@@ -233,5 +385,10 @@ func (p *PostgresDB) ReconcileAllStorageUsage(ctx context.Context) (int64, error
 		return 0, fmt.Errorf("failed to commit storage reconcile: %w", err)
 	}
 
-	return changed, nil
+	projects, err := p.reconcileProjects(ctx, "")
+	if err != nil {
+		return changed, err
+	}
+
+	return changed + projects, nil
 }

@@ -228,6 +228,8 @@ func (h *RepositoriesHandler) handleTransfer(w http.ResponseWriter, r *http.Requ
 		switch {
 		case errors.Is(err, database.ErrProjectRepoLimit):
 			writeError(w, http.StatusConflict, "project_repository_limit", "the target project has reached its repository limit")
+		case errors.Is(err, database.ErrProjectQuotaExceeded):
+			writeError(w, http.StatusConflict, "project_quota_exceeded", "the target project's storage quota cannot take this repository's usage")
 		case errors.Is(err, database.ErrRepositoryNotFound):
 			writeError(w, http.StatusNotFound, "not_found", "repository not found")
 		default:

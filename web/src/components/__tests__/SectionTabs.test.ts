@@ -80,6 +80,7 @@ describe('the one tab convention', () => {
     expect(hrefs).toEqual([
       '/projects/my%20p',
       '/projects/my%20p?tab=repositories',
+      '/projects/my%20p?tab=usage',
       '/projects/my%20p?tab=members',
       '/projects/my%20p?tab=tokens',
       '/projects/my%20p?tab=settings',

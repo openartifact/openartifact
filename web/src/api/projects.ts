@@ -4,8 +4,12 @@
 
 import { request } from './client'
 import type { Repository } from './repositories'
+import type { ApiCleanupPolicy } from '../lib/cleanupPolicy'
 import type {
   Project as GeneratedProject,
+  ProjectQuota as GeneratedProjectQuota,
+  ProjectUsage as GeneratedProjectUsage,
+  Quota as QuotaLimits,
   ProjectCreateRequest,
   ProjectGroup,
   ProjectGroupUpdateRequest,
@@ -192,3 +196,48 @@ export const createProjectToken = (project: string, body: ProjectTokenCreateRequ
 
 export const revokeProjectToken = (project: string, tokenId: string) =>
   request<void>(`${base(project)}/tokens/${enc(tokenId)}`, { method: 'DELETE' })
+
+export type ProjectQuota = GeneratedProjectQuota
+export type ProjectUsage = GeneratedProjectUsage
+/** One repository row of {@link ProjectUsage}. */
+export type ProjectUsageRepository = NonNullable<GeneratedProjectUsage['repositories']>[number]
+/** Limits accepted by {@link setProjectQuota}; 0 means unlimited. */
+export type ProjectQuotaUpdate = QuotaLimits
+
+/** Totals, the project quota and the per-repository breakdown; any member. */
+export const getProjectUsage = (project: string) => request<ProjectUsage>(`${base(project)}/usage`)
+
+/** Any member may read it; `enforced` is false while no limit is set. */
+export const getProjectQuota = (project: string) => request<ProjectQuota>(`${base(project)}/quota`)
+
+/** Global admins only (owners get 403). A limit of 0 is unlimited; counters are kept only while a limit is set. */
+export const setProjectQuota = (project: string, body: ProjectQuotaUpdate) =>
+  send<ProjectQuota>(`${base(project)}/quota`, 'PUT', body)
+
+/** Rule fields of a project default cleanup policy; same shape as a repository policy. */
+export interface ProjectCleanupPolicyRequest {
+  name?: string
+  enabled?: boolean
+  keep_last_n?: number
+  keep_since_days?: number
+  name_pattern?: string
+  schedule_cron?: string
+}
+
+/** Default policies of the project, applied to hosted repositories without an enabled policy of their own. */
+export async function listProjectCleanupPolicies(project: string): Promise<ApiCleanupPolicy[]> {
+  const res = await request<{ policies?: ApiCleanupPolicy[] }>(`${base(project)}/cleanup-policies`)
+  return res?.policies ?? []
+}
+
+/** Owners and global admins. */
+export const createProjectCleanupPolicy = (project: string, body: ProjectCleanupPolicyRequest) =>
+  send<ApiCleanupPolicy>(`${base(project)}/cleanup-policies`, 'POST', body)
+
+/** Owners and global admins. */
+export const updateProjectCleanupPolicy = (project: string, id: string, body: ProjectCleanupPolicyRequest) =>
+  send<ApiCleanupPolicy>(`${base(project)}/cleanup-policies/${enc(id)}`, 'PUT', body)
+
+/** Owners and global admins. */
+export const deleteProjectCleanupPolicy = (project: string, id: string) =>
+  request<void>(`${base(project)}/cleanup-policies/${enc(id)}`, { method: 'DELETE' })

@@ -118,6 +118,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </section>
       </template>
 
+      <!-- Usage -->
+      <ProjectUsageTab v-else-if="activeTab === 'usage'" :project="projectName" />
+
       <!-- Members -->
       <MemberTable
         v-else-if="activeTab === 'members'"
@@ -153,6 +156,7 @@ import ProjectHeader from '../components/ProjectHeader.vue'
 import ProjectRoleBadge from '../components/ProjectRoleBadge.vue'
 import ProjectSettingsTab from '../components/ProjectSettingsTab.vue'
 import ProjectTokensTab from '../components/ProjectTokensTab.vue'
+import ProjectUsageTab from '../components/ProjectUsageTab.vue'
 import {
   getProject,
   listProjectGroups,

@@ -21,8 +21,10 @@ const DefaultCleanupCron = "0 2 * * *"
 var ErrInvalidCleanupPolicy = errors.New("invalid cleanup policy")
 
 type CleanupPolicy struct {
-	ID                      string     `json:"id"`
+	ID string `json:"id"`
+	// RepositoryID is "" for a project default policy, whose ProjectID is set.
 	RepositoryID            string     `json:"repository_id"`
+	ProjectID               string     `json:"project_id,omitempty"`
 	Name                    string     `json:"name"`
 	Enabled                 bool       `json:"enabled"`
 	KeepLastN               *int       `json:"keep_last_n"`

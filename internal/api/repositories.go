@@ -917,7 +917,9 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
-		repo.ProjectID = &project.ID
+		if !h.moveToProject(ctx, w, repo, project.ID) {
+			return
+		}
 	}
 
 	var memberIDs []string
@@ -951,6 +953,35 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))
+}
+
+// moveToProject reassigns repo to the project (admin PATCH with "project").
+// The move goes through MoveRepositoryToProject so the repository's usage
+// follows it to the target project's quota; it writes the error response and
+// returns false on failure. The caller's own update then re-writes the same
+// project_id.
+func (h *RepositoriesHandler) moveToProject(ctx context.Context, w http.ResponseWriter, repo *models.Repository, projectID string) bool {
+	if repo.ProjectID != nil && *repo.ProjectID == projectID {
+		return true
+	}
+
+	if err := h.db.MoveRepositoryToProject(ctx, repo.ID, projectID, 0); err != nil {
+		switch {
+		case errors.Is(err, database.ErrProjectQuotaExceeded):
+			writeError(w, http.StatusConflict, "project_quota_exceeded", "the target project's storage quota cannot take this repository's usage")
+		case errors.Is(err, database.ErrRepositoryNotFound):
+			writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		default:
+			h.log.Errorw("update repository: move to project failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		}
+
+		return false
+	}
+
+	repo.ProjectID = &projectID
+
+	return true
 }
 
 func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Request) {

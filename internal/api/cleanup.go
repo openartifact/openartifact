@@ -434,6 +434,7 @@ func policyToMap(p *models.CleanupPolicy) responses.CleanupPolicyResponse {
 	return responses.CleanupPolicyResponse{
 		ID:                      p.ID,
 		RepositoryID:            p.RepositoryID,
+		ProjectID:               p.ProjectID,
 		Name:                    p.Name,
 		Enabled:                 p.Enabled,
 		KeepLastN:               p.KeepLastN,
