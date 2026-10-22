@@ -596,9 +596,6 @@ func (m *provMockDB) DeleteGoModule(_ context.Context, _, _, _ string) error { r
 func (m *provMockDB) ListGoModuleVersions(_ context.Context, _, _ string) ([]*models.GoModule, error) {
 	return nil, nil
 }
-func (m *provMockDB) GetLatestGoModule(_ context.Context, _, _ string) (*models.GoModule, error) {
-	return nil, nil
-}
 
 // Cleanup policy methods
 func (m *provMockDB) CreateCleanupPolicy(_ context.Context, _ *models.CleanupPolicy) error {
@@ -817,7 +814,7 @@ func (m *provMockDB) SetSystemSetting(_ context.Context, _, _ string) error     
 
 // Conda methods
 func (m *provMockDB) CreateCondaPackage(_ context.Context, _ *models.CondaPackage) error { return nil }
-func (m *provMockDB) GetCondaPackage(_ context.Context, _, _, _, _, _ string) (*models.CondaPackage, error) {
+func (m *provMockDB) GetCondaPackageFile(_ context.Context, _, _, _, _, _, _ string) (*models.CondaPackage, error) {
 	return nil, nil
 }
 func (m *provMockDB) DeleteCondaPackage(_ context.Context, _ string) error { return nil }
@@ -827,7 +824,13 @@ func (m *provMockDB) ListCondaPackages(_ context.Context, _, _ string) ([]*model
 
 // Conan methods
 func (m *provMockDB) CreateConanPackage(_ context.Context, _ *models.ConanPackage) error { return nil }
-func (m *provMockDB) GetConanPackage(_ context.Context, _, _, _, _, _ string) (*models.ConanPackage, error) {
+func (m *provMockDB) GetConanPackage(_ context.Context, _ string, _ models.ConanFileKey) (*models.ConanPackage, error) {
+	return nil, nil
+}
+func (m *provMockDB) ListConanRecipeFiles(_ context.Context, _, _, _, _ string) ([]*models.ConanPackage, error) {
+	return nil, nil
+}
+func (m *provMockDB) ListConanRecipes(_ context.Context, _ string) ([]models.ConanRecipe, error) {
 	return nil, nil
 }
 func (m *provMockDB) DeleteConanPackage(_ context.Context, _ string) error { return nil }

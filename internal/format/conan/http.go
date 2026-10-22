@@ -2,34 +2,45 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Package conan serves a hosted Conan 2 remote: the REST API (v2) the conan
+// client speaks, with revisions.
+//
+// Every stored file is one conan_packages row, addressed by its recipe
+// revision, package id, package revision and path; a revision "exists" on the
+// remote once its conanmanifest.txt is stored, which the client uploads last.
 package conan
 
 import (
-	"bytes"
-	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
-	"errors"
-	"fmt"
-	"io"
 	"net/http"
+	"net/url"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
-	"github.com/openartifact/openartifact/internal/presign"
-	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
-	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
-	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-const maxConanUploadBytes = 200 << 20
+const (
+	maxConanUploadBytes = 200 << 20
+
+	// manifestFile is the file whose presence publishes a revision.
+	manifestFile = "conanmanifest.txt"
+	// conanInfoFile describes a package's configuration.
+	conanInfoFile = "conaninfo.txt"
+
+	// maxRefPart bounds one recipe reference component (name, version, user,
+	// channel); maxRevisionLen and maxFilenameLen bound the other URL segments
+	// (conan_packages.recipe_revision/package_id/package_revision are varchar(64)).
+	maxRefPart     = 100
+	maxRevisionLen = 64
+	maxFilenameLen = 512
+)
 
 type HTTPHandler struct {
 	*base.Handler
@@ -41,13 +52,44 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 
 // RegisterRepoRoutes registers Conan-specific routes on the provided sub-router.
 // It does NOT wrap in r.Route() — callers are responsible for the path prefix.
+//
+// The conan client pings {remote}/v1/ping, then speaks {remote}/v2/....
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
-	r.Get("/v2/conans/{pkg}/{version}/{user}/{channel}/revisions", h.handleListRevisions)
-	r.Get("/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rev}/files", h.handleListFiles)
-	r.Get("/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rev}/files/{filename}", h.handleDownload)
-	r.Put("/v2/conans/{pkg}/{version}/{user}/{channel}/revisions/{rev}/files/{filename}", h.handleUpload)
-	r.Delete("/v2/conans/{pkg}/{version}/{user}/{channel}", h.handleDelete)
+	r.Get("/v1/ping", h.handlePing)
+	r.Get("/v2/ping", h.handlePing)
+	r.Get("/v2/users/authenticate", h.handleAuthenticate)
+	r.Get("/v2/users/check_credentials", h.handleCheckCredentials)
 	r.Get("/v2/conans/search", h.handleSearch)
+
+	const recipe = "/v2/conans/{pkg}/{version}/{user}/{channel}"
+
+	r.Get(recipe+"/latest", h.handleRecipeLatest)
+	r.Get(recipe+"/revisions", h.handleRecipeRevisions)
+	r.Get(recipe+"/search", h.handleSearchPackages)
+	r.Delete(recipe, h.handleDeleteRecipe)
+
+	const revision = recipe + "/revisions/{rrev}"
+
+	r.Delete(revision, h.handleDeleteRecipeRevision)
+	r.Get(revision+"/search", h.handleSearchPackages)
+	r.Get(revision+"/files", h.handleListFiles)
+	r.Get(revision+"/files/*", h.handleDownload)
+	r.Head(revision+"/files/*", h.handleDownload)
+	r.Put(revision+"/files/*", h.handleUpload)
+	r.Delete(revision+"/packages", h.handleDeletePackages)
+
+	const pkg = revision + "/packages/{pid}"
+
+	r.Get(pkg+"/latest", h.handlePackageLatest)
+	r.Get(pkg+"/revisions", h.handlePackageRevisions)
+
+	const pkgRevision = pkg + "/revisions/{prev}"
+
+	r.Delete(pkgRevision, h.handleDeletePackageRevision)
+	r.Get(pkgRevision+"/files", h.handleListFiles)
+	r.Get(pkgRevision+"/files/*", h.handleDownload)
+	r.Head(pkgRevision+"/files/*", h.handleDownload)
+	r.Put(pkgRevision+"/files/*", h.handleUpload)
 }
 
 func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
@@ -55,6 +97,52 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 		h.RegisterRepoRoutes(r)
 	})
 	h.Log.Infow("conan handler registered", "prefix", prefix)
+}
+
+// scope is what one request addresses: the repository, the recipe and, when the
+// URL carries them, a recipe revision, package id, package revision and file.
+type scope struct {
+	repoName string
+	repoID   string
+	recipe   models.ConanRecipe
+	rrev     string
+	pid      string
+	prev     string
+	filename string
+}
+
+// joinUserChannel is the stored "user/channel"; "_/_" without either.
+func joinUserChannel(user, channel string) string { return user + "/" + channel }
+
+// key is the stored identity of the file filename of this scope's revision.
+func (s *scope) key(filename string) models.ConanFileKey {
+	return models.ConanFileKey{
+		Name:            s.recipe.Name,
+		Version:         s.recipe.Version,
+		UserChannel:     s.recipe.UserChannel,
+		RecipeRevision:  s.rrev,
+		PackageID:       s.pid,
+		PackageRevision: s.prev,
+		Filename:        filename,
+	}
+}
+
+// resource describes the addressed revision for audit and webhook payloads.
+func (s *scope) resource() string {
+	p := conanPath(s.recipe.Name, s.recipe.Version, s.recipe.UserChannel, "")
+	if s.rrev != "" {
+		p += "/" + s.rrev
+	}
+
+	if s.pid != "" {
+		p += "/" + s.pid
+	}
+
+	if s.prev != "" {
+		p += "/" + s.prev
+	}
+
+	return p
 }
 
 // conanPath is the repository-relative identifier of a recipe (or one of its
@@ -68,382 +156,168 @@ func conanPath(pkg, version, userChannel, filename string) string {
 	return p
 }
 
-func (h *HTTPHandler) handleListRevisions(w http.ResponseWriter, r *http.Request) {
+// scopeOf resolves the repository and validates the URL parameters; when it
+// returns false the response has been written. Nothing in the parameters ever
+// reaches a file system, but they become database keys, so they are bounded
+// and stripped of anything that is not a plain name.
+func (h *HTTPHandler) scopeOf(w http.ResponseWriter, r *http.Request) (*scope, bool) {
 	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	pkg := vars["pkg"]
-	version := vars["version"]
-	user := vars["user"]
-	channel := vars["channel"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	userChannel := fmt.Sprintf("%s/%s", user, channel)
-
-	conanPkg, err := h.DB.GetConanPackage(r.Context(), repoID, pkg, version, userChannel, "0")
-	if err != nil {
-		h.Log.Errorw("failed to get conan package", "pkg", pkg, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if conanPkg == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(map[string]any{
-		"revisions": map[string]any{
-			"0": map[string]any{
-				"timestamp": conanPkg.CreatedAt.Unix(),
-			},
+	s := &scope{
+		repoName: vars["name"],
+		recipe: models.ConanRecipe{
+			Name:        vars["pkg"],
+			Version:     vars["version"],
+			UserChannel: joinUserChannel(vars["user"], vars["channel"]),
 		},
-	}); encErr != nil {
-		_ = encErr // response header already written
+		rrev: vars["rrev"],
+		pid:  vars["pid"],
+		prev: vars["prev"],
 	}
+
+	if !validRef(vars["pkg"], vars["version"], vars["user"], vars["channel"]) ||
+		!validRevision(s.rrev) || !validRevision(s.pid) || !validRevision(s.prev) {
+		http.Error(w, "invalid reference", http.StatusBadRequest)
+		return nil, false
+	}
+
+	if !h.resolveRepo(w, r, s) {
+		return nil, false
+	}
+
+	return s, true
 }
 
-func (h *HTTPHandler) handleListFiles(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
+// fileScopeOf is scopeOf for the routes that end in a `files/*` wildcard: it
+// also validates the file path (which may hold subdirectories, e.g. metadata/).
+func (h *HTTPHandler) fileScopeOf(w http.ResponseWriter, r *http.Request) (*scope, bool) {
+	name, err := url.PathUnescape(urlparams.Vars(r)["*"])
+	if err != nil || !validFilename(name) {
+		http.Error(w, "invalid file name", http.StatusBadRequest)
+		return nil, false
+	}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	s, ok := h.scopeOf(w, r)
+	if !ok {
+		return nil, false
+	}
+
+	s.filename = name
+
+	return s, true
+}
+
+// repoScopeOf resolves only the repository, for the routes that address no
+// recipe (search).
+func (h *HTTPHandler) repoScopeOf(w http.ResponseWriter, r *http.Request) (*scope, bool) {
+	s := &scope{repoName: urlparams.Vars(r)["name"]}
+
+	if !h.resolveRepo(w, r, s) {
+		return nil, false
+	}
+
+	return s, true
+}
+
+// resolveRepo fills s.repoID; when it returns false the response is written.
+func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request, s *scope) bool {
+	repoID, err := h.ResolveRepoID(r.Context(), s.repoName)
 	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
+		h.fail(w, "failed to resolve repo", err, "name", s.repoName)
+		return false
 	}
 
 	if repoID == "" {
 		http.NotFound(w, r)
-		return
+		return false
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	s.repoID = repoID
 
-	if encErr := json.NewEncoder(w).Encode(map[string]any{
-		"files": map[string]any{
-			"conanfile.py": map[string]any{
-				"size": 0,
-			},
-			"conaninfo.txt": map[string]any{
-				"size": 0,
-			},
-		},
-	}); encErr != nil {
-		_ = encErr // response header already written
-	}
+	return true
 }
 
-func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	pkg := vars["pkg"]
-	version := vars["version"]
-	user := vars["user"]
-	channel := vars["channel"]
-	filename := vars["filename"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
+// validRef reports whether name, version, user and channel are usable
+// reference components ("_" stands for an absent user or channel).
+func validRef(parts ...string) bool {
+	for _, p := range parts {
+		if p == "" || len(p) > maxRefPart || p == "." || p == ".." || !plainText(p) || strings.ContainsAny(p, `/\`) {
+			return false
+		}
 	}
 
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	userChannel := fmt.Sprintf("%s/%s", user, channel)
-
-	conanPkg, err := h.DB.GetConanPackage(r.Context(), repoID, pkg, version, userChannel, "0")
-	if err != nil {
-		h.Log.Errorw("failed to get conan package", "pkg", pkg, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if conanPkg == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
-		filename, conanPath(pkg, version, userChannel, filename), r.URL.Path)...) {
-		return
-	}
-
-	if h.TryPresign(w, r, presign.Blob{SHA256: conanPkg.BlobKey, Filename: filename, ContentType: "application/octet-stream"}) {
-		return
-	}
-
-	// Download blob
-	blob, err := h.BlobStore.Get(r.Context(), conanPkg.BlobKey)
-	if err != nil {
-		h.Log.Errorw("failed to get blob", "key", conanPkg.BlobKey, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-	defer func() { _ = blob.Close() }()
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Disposition", "attachment; filename="+filename)
-	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, blob)
+	return true
 }
 
-func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	pkg := vars["pkg"]
-	version := vars["version"]
-	user := vars["user"]
-	channel := vars["channel"]
-	filename := vars["filename"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
+// validRevision reports whether s is a revision or package id; empty (absent
+// from the route) is fine.
+func validRevision(s string) bool {
+	if len(s) > maxRevisionLen {
+		return false
 	}
 
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Read file data
-	data, err := base.ReadAllLimited(r.Body, maxConanUploadBytes)
-	if err != nil {
-		if errors.Is(err, base.ErrContentTooLarge) {
-			http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
-
-			return
+	for _, c := range s {
+		switch {
+		case c >= 'a' && c <= 'z', c >= 'A' && c <= 'Z', c >= '0' && c <= '9', c == '.', c == '_', c == '-':
+		default:
+			return false
 		}
-		h.Log.Errorw("failed to read upload", "error", err)
-		http.Error(w, "failed to read upload", http.StatusBadRequest)
-
-		return
-	}
-	defer func() { _ = r.Body.Close() }()
-
-	sha256Hash := sha256.Sum256(data)
-
-	sha256Hex := hex.EncodeToString(sha256Hash[:])
-	userChannel := fmt.Sprintf("%s/%s", user, channel)
-	conanPkg := &models.ConanPackage{
-		RepositoryID:   repoID,
-		Name:           pkg,
-		Version:        version,
-		UserChannel:    userChannel,
-		RecipeRevision: "0",
-		ConanFile:      "",
-		ConanInfo:      "",
 	}
 
-	// Store the blob and insert the referencing row under the per-blob lock so
-	// a concurrent unpublish cannot delete the blob in between.
-	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
-			"sha256":   sha256Hex,
-			"filename": filename,
-			"package":  pkg,
-		})
-		if err != nil {
-			return fmt.Errorf("store blob: %w", err)
-		}
-
-		conanPkg.BlobKey = blobKey
-
-		if err := h.DB.CreateConanPackage(ctx, conanPkg); err != nil {
-			return fmt.Errorf("create conan package: %w", err)
-		}
-
-		return nil
-	}); err != nil {
-		h.Log.Errorw("failed to store conan package", "pkg", pkg, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: repoName,
-		Format:     "conan",
-		Name:       pkg,
-		Version:    version,
-		Path:       conanPath(pkg, version, userChannel, filename),
-		SHA256:     sha256Hex,
-		Size:       int64(len(data)),
-	}))
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusCreated)
-
-	if encErr := json.NewEncoder(w).Encode(map[string]any{
-		"id":     conanPkg.ID,
-		"name":   conanPkg.Name,
-		"sha256": sha256Hex,
-	}); encErr != nil {
-		_ = encErr // response header already written
-	}
+	return true
 }
 
-func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	pkg := vars["pkg"]
-	version := vars["version"]
-	user := vars["user"]
-	channel := vars["channel"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
+// validFilename reports whether name is a relative path of plain segments, as
+// conan names its files (conanfile.py, metadata/sign/signature.json).
+func validFilename(name string) bool {
+	if name == "" || len(name) > maxFilenameLen || !plainText(name) || strings.Contains(name, `\`) {
+		return false
 	}
 
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	userChannel := fmt.Sprintf("%s/%s", user, channel)
-
-	conanPkg, err := h.DB.GetConanPackage(r.Context(), repoID, pkg, version, userChannel, "0")
-	if err != nil {
-		h.Log.Errorw("failed to get conan package", "pkg", pkg, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if conanPkg == nil {
-		http.NotFound(w, r)
-		return
-	}
-
-	if gErr := trash.GuardReleaseByName(r, h.DB, repoName, "conan", version); gErr != nil {
-		if errors.Is(gErr, trash.ErrImmutableRelease) {
-			http.Error(w, "repository has immutable releases", http.StatusConflict)
-			return
+	for seg := range strings.SplitSeq(name, "/") {
+		if seg == "" || seg == "." || seg == ".." {
+			return false
 		}
-
-		h.Log.Errorw("failed to check release immutability", "pkg", pkg, "error", gErr)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
 	}
 
-	err = trash.Delete(r.Context(), h.DB, trash.Request{
-		RepoID:   repoID,
-		Kind:     models.TrashKindConan,
-		IDs:      []string{conanPkg.ID},
-		Resource: conanPath(pkg, version, userChannel, ""),
-	}, func() error {
-		if delErr := h.DB.DeleteConanPackage(r.Context(), conanPkg.ID); delErr != nil {
-			return fmt.Errorf("delete conan package: %w", delErr)
-		}
-
-		// The blob is content-addressed and may be shared; remove it only once
-		// no row references it any more.
-		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, conanPkg.BlobKey); delErr != nil {
-			h.Log.Warnw("failed to clean up blob after conan delete", "sha256", conanPkg.BlobKey, "error", delErr)
-		}
-
-		return nil
-	})
-	if err != nil {
-		if errors.Is(err, database.ErrTrashNotFound) {
-			http.NotFound(w, r)
-			return
-		}
-
-		h.Log.Errorw("failed to delete conan package", "id", conanPkg.ID, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: repoName,
-		Format:     "conan",
-		Name:       pkg,
-		Version:    version,
-		Path:       conanPath(pkg, version, userChannel, ""),
-		SHA256:     conanPkg.BlobKey,
-	}))
-
-	w.WriteHeader(http.StatusNoContent)
+	return true
 }
 
-func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	query := r.URL.Query().Get("q")
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
+// plainText reports whether s is valid UTF-8 without control characters.
+func plainText(s string) bool {
+	if !utf8.ValidString(s) {
+		return false
 	}
 
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	packages, err := h.DB.ListConanPackages(r.Context(), repoID)
-	if err != nil {
-		h.Log.Errorw("failed to list conan packages", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	// Filter by query if provided
-	var results []*models.ConanPackage
-
-	for _, pkg := range packages {
-		if query == "" || strings.Contains(pkg.Name, query) {
-			results = append(results, pkg)
+	for _, c := range s {
+		if c < 0x20 || c == 0x7f {
+			return false
 		}
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	return true
+}
 
-	if encErr := json.NewEncoder(w).Encode(map[string]any{
-		"results": results,
-	}); encErr != nil {
-		_ = encErr // response header already written
+// writeJSON writes v as an application/json response; the conan client rejects
+// any other content type for JSON endpoints.
+func (h *HTTPHandler) writeJSON(w http.ResponseWriter, v any) {
+	h.writeJSONStatus(w, http.StatusOK, v)
+}
+
+func (h *HTTPHandler) writeJSONStatus(w http.ResponseWriter, status int, v any) {
+	data, err := json.Marshal(v)
+	if err != nil {
+		h.Log.Errorw("failed to encode conan response", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
 	}
+
+	base.WriteJSON(w, status, data)
+}
+
+// fail answers 500 for an internal error after logging it with msg.
+func (h *HTTPHandler) fail(w http.ResponseWriter, msg string, err error, kv ...any) {
+	h.Log.Errorw(msg, append([]any{"error", err}, kv...)...)
+	http.Error(w, "internal error", http.StatusInternalServerError)
 }

@@ -30,3 +30,15 @@ type CargoCrate struct {
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
+
+// CargoCrateSummary is one crate in a search result, aggregated over all of
+// its live versions.
+type CargoCrateSummary struct {
+	Name        string
+	Description string // of the newest version
+	Downloads   int64  // summed over every version
+	// Versions lists every live version, yanked ones included, oldest first.
+	Versions []string
+	// LiveVersions lists the versions that are not yanked, oldest first.
+	LiveVersions []string
+}

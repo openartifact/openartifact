@@ -77,7 +77,7 @@ Trash items are addressed by `kind` and `id` (both shown by the list endpoints).
 | `cargo_crate` | a Cargo crate version |
 | `rubygems_gem` | a gem version |
 | `conda_package` | a Conda package |
-| `conan_package` | a Conan package |
+| `conan_package` | one stored file of a Conan recipe or package revision |
 | `helm_chart` | a Helm chart version |
 | `raw_artifact` | a raw file |
 | `docker_manifest` | a Docker/OCI manifest (and its tags) |

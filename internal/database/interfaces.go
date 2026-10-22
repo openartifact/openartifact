@@ -210,6 +210,9 @@ type Database interface {
 	DeleteNuGetPackage(ctx context.Context, repoID, packageID, version string) error
 	ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error)
 	ListNuGetPackageVersions(ctx context.Context, repoID, packageID string) ([]*models.NuGetPackage, error)
+	// SearchNuGetPackages pages over matching packages: skip/take count
+	// packages, the total is the number of matching packages, and every live
+	// version of each package on the page is returned.
 	SearchNuGetPackages(ctx context.Context, repoID, query string, skip, take int) ([]*models.NuGetPackage, int, error)
 	IncrementNuGetDownloadCount(ctx context.Context, repoID, packageID, version string) error
 
@@ -308,7 +311,6 @@ type Database interface {
 	GetGoModule(ctx context.Context, repoID, modulePath, version string) (*models.GoModule, error)
 	DeleteGoModule(ctx context.Context, repoID, modulePath, version string) error
 	ListGoModuleVersions(ctx context.Context, repoID, modulePath string) ([]*models.GoModule, error)
-	GetLatestGoModule(ctx context.Context, repoID, modulePath string) (*models.GoModule, error)
 
 	// ListGoModulesByRepo is a bulk-list-by-repo method used only by backup
 	// export (no module path filter required).
@@ -353,6 +355,10 @@ type Database interface {
 	DeleteCargoCrate(ctx context.Context, id string) error
 	ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error)
 	SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error)
+	// SearchCargoCrateSummaries matches crates by name or description and
+	// returns one summary per crate (at most limit, by name) together with the
+	// total number of matching crates.
+	SearchCargoCrateSummaries(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrateSummary, int, error)
 	YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error
 	IncrementCargoDownloadCount(ctx context.Context, repoID, name, version string) error
 
@@ -486,7 +492,9 @@ type Database interface {
 
 	// Conda methods
 	CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error
-	GetCondaPackage(ctx context.Context, repoID, name, version, buildString, platform string) (*models.CondaPackage, error)
+	// GetCondaPackageFile returns the live package file with exactly this
+	// name, version, build, platform and extension (".tar.bz2" or ".conda").
+	GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error)
 	DeleteCondaPackage(ctx context.Context, id string) error
 	ListCondaPackages(ctx context.Context, repoID, platform string) ([]*models.CondaPackage, error)
 
@@ -494,9 +502,18 @@ type Database interface {
 	// export (no platform filter required).
 	ListAllCondaPackages(ctx context.Context, repoID string) ([]*models.CondaPackage, error)
 
-	// Conan methods
+	// Conan methods. A conan_packages row is one stored file of a recipe or
+	// package revision.
+	//
+	// CreateConanPackage stores the file, replacing the blob of the live row with
+	// the same key. GetConanPackage returns (nil, nil) when there is none.
 	CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error
-	GetConanPackage(ctx context.Context, repoID, name, version, userChannel, recipeRevision string) (*models.ConanPackage, error)
+	GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error)
+	// ListConanRecipeFiles returns every live file of one recipe: all its recipe
+	// and package revisions.
+	ListConanRecipeFiles(ctx context.Context, repoID, name, version, userChannel string) ([]*models.ConanPackage, error)
+	// ListConanRecipes returns the distinct recipes of a repository.
+	ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error)
 	DeleteConanPackage(ctx context.Context, id string) error
 	ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error)
 

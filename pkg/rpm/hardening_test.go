@@ -70,7 +70,7 @@ func TestExtractFilesJoinsDirAndBase(t *testing.T) {
 		{Tag: RPMTAG_DIRINDEXES, Type: TagTypeINT32, Offset: 22, Count: 2},
 	}}
 
-	files := extractFiles(h)
+	files, _ := extractFiles(h)
 	if len(files) != 2 || files[0].Path != "/usr/bin/foo" || files[1].Path != "/usr/bin/bar" {
 		t.Fatalf("unexpected files: %+v", files)
 	}

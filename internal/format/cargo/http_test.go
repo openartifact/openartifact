@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -112,19 +113,65 @@ func TestTransformCargoIndexDepsNilOrMalformed(t *testing.T) {
 	}
 }
 
+// cargoDB keeps crates in publish order and looks crate names up
+// case-insensitively, as the SQL queries do.
 type cargoDB struct {
 	*formattest.DB
 
-	crate *models.CargoCrate
+	crates []*models.CargoCrate
+
+	// createErr, when set, is returned by CreateCargoCrate (a lost publish race).
+	createErr error
+
+	// summaries and total are what SearchCargoCrateSummaries answers with.
+	summaries []*models.CargoCrateSummary
+	total     int
 }
 
 func (d *cargoDB) CreateCargoCrate(_ context.Context, c *models.CargoCrate) error {
-	d.crate = c
+	if d.createErr != nil {
+		return d.createErr
+	}
+
+	d.crates = append(d.crates, c)
+
 	return nil
 }
 
-func (d *cargoDB) GetCargoCrate(_ context.Context, _, _, _ string) (*models.CargoCrate, error) {
-	return d.crate, nil
+func (d *cargoDB) GetCargoCrate(_ context.Context, _, name, version string) (*models.CargoCrate, error) {
+	for _, c := range d.crates {
+		if strings.EqualFold(c.Name, name) && c.Version == version {
+			return c, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (d *cargoDB) ListCargoCrateVersions(_ context.Context, _, name string) ([]*models.CargoCrate, error) {
+	var out []*models.CargoCrate
+
+	for _, c := range d.crates {
+		if strings.EqualFold(c.Name, name) {
+			out = append(out, c)
+		}
+	}
+
+	return out, nil
+}
+
+func (d *cargoDB) YankCargoCrate(_ context.Context, _, name, version string, yanked bool) error {
+	for _, c := range d.crates {
+		if strings.EqualFold(c.Name, name) && c.Version == version {
+			c.Yanked = yanked
+		}
+	}
+
+	return nil
+}
+
+func (d *cargoDB) SearchCargoCrateSummaries(_ context.Context, _, _ string, _ int) ([]*models.CargoCrateSummary, int, error) {
+	return d.summaries, d.total, nil
 }
 
 func (d *cargoDB) IncrementCargoDownloadCount(_ context.Context, _, _, _ string) error { return nil }
@@ -164,18 +211,22 @@ func TestPublishEmitsEvent(t *testing.T) {
 		t.Fatalf("events = %+v", evs)
 	}
 
-	if a := evs[0].Artifact(); a["name"] != "demo" || a["version"] != "0.1.0" || a["sha256"] != db.crate.Checksum {
+	if len(db.crates) != 1 {
+		t.Fatalf("stored crates = %d, want 1", len(db.crates))
+	}
+
+	if a := evs[0].Artifact(); a["name"] != "demo" || a["version"] != "0.1.0" || a["sha256"] != db.crates[0].Checksum {
 		t.Errorf("artifact = %v", a)
 	}
 
-	if _, ok := bs.Blobs[db.crate.Checksum]; !ok {
+	if _, ok := bs.Blobs[db.crates[0].Checksum]; !ok {
 		t.Error("blob not stored")
 	}
 }
 
 func TestDownloadQuarantine(t *testing.T) {
 	h, db, bs, _ := newCargoHandler(t)
-	db.crate = &models.CargoCrate{Name: "demo", Version: "0.1.0", BlobKey: "abc", Checksum: "abc"}
+	db.crates = []*models.CargoCrate{{Name: "demo", Version: "0.1.0", BlobKey: "abc", Checksum: "abc"}}
 	bs.Blobs["abc"] = []byte("xyz")
 
 	get := func() int {
@@ -240,8 +291,8 @@ func assertStored(t *testing.T, c policytest.Case, status int, db *cargoDB, bs *
 	t.Helper()
 
 	if c.Stopped() {
-		if db.crate != nil || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
-			t.Fatalf("rejected upload stored something: crate=%v blobs=%d events=%d", db.crate, len(bs.Blobs), len(pub.Events()))
+		if len(db.crates) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+			t.Fatalf("rejected upload stored something: crates=%d blobs=%d events=%d", len(db.crates), len(bs.Blobs), len(pub.Events()))
 		}
 
 		return
@@ -251,8 +302,8 @@ func assertStored(t *testing.T, c policytest.Case, status int, db *cargoDB, bs *
 		t.Fatalf("status = %d, want 200", status)
 	}
 
-	if db.crate == nil || len(bs.Blobs) != 1 || len(pub.Events()) != 1 {
-		t.Fatalf("admitted upload not stored: crate=%v blobs=%d events=%d", db.crate, len(bs.Blobs), len(pub.Events()))
+	if len(db.crates) != 1 || len(bs.Blobs) != 1 || len(pub.Events()) != 1 {
+		t.Fatalf("admitted upload not stored: crates=%d blobs=%d events=%d", len(db.crates), len(bs.Blobs), len(pub.Events()))
 	}
 }
 

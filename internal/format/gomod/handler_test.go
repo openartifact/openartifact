@@ -8,6 +8,7 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
+	"errors"
 	"strings"
 	"testing"
 )
@@ -61,9 +62,16 @@ func TestGoModHandler_Validate(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("valid zip with go.mod", func(t *testing.T) {
-		data := createGoModZip(t, map[string]string{"mymodule@v1.0.0/go.mod": sampleGoMod})
+		data := createGoModZip(t, map[string]string{"github.com/example/mymodule@v1.0.0/go.mod": sampleGoMod})
 		if err := h.Validate(ctx, bytes.NewReader(data)); err != nil {
 			t.Errorf("unexpected error: %v", err)
+		}
+	})
+
+	t.Run("invalid: only a file ending in go.mod", func(t *testing.T) {
+		data := createGoModZip(t, map[string]string{"github.com/example/mymodule@v1.0.0/foo-go.mod": sampleGoMod})
+		if err := h.Validate(ctx, bytes.NewReader(data)); err == nil {
+			t.Error("foo-go.mod must not pass for go.mod")
 		}
 	})
 
@@ -86,7 +94,7 @@ func TestGoModHandler_Parse(t *testing.T) {
 	ctx := context.Background()
 
 	t.Run("valid module", func(t *testing.T) {
-		data := createGoModZip(t, map[string]string{"mymodule@v1.0.0/go.mod": sampleGoMod})
+		data := createGoModZip(t, map[string]string{"github.com/example/mymodule@v1.0.0/go.mod": sampleGoMod})
 
 		result, err := h.Parse(ctx, bytes.NewReader(data))
 		if err != nil {
@@ -110,19 +118,73 @@ func TestGoModHandler_Parse(t *testing.T) {
 	})
 }
 
-func TestExtractModulePath(t *testing.T) {
+func TestParseModuleZip(t *testing.T) {
+	const prefix = "github.com/foo/bar@v1.2.3/"
+
 	cases := []struct {
-		input string
-		want  string
+		name       string
+		files      map[string]string
+		wantEntry  string
+		wantModule string
+		wantErr    error
 	}{
-		{"module github.com/foo/bar\ngo 1.21\n", "github.com/foo/bar"},
-		{"  module   github.com/foo/bar  \n", "github.com/foo/bar"},
-		{"go 1.21\nno module line\n", ""},
+		{
+			name:       "plain module line",
+			files:      map[string]string{prefix + "go.mod": "module github.com/foo/bar\ngo 1.21\n"},
+			wantEntry:  prefix + "go.mod",
+			wantModule: "github.com/foo/bar",
+		},
+		{
+			name:       "extra spaces and a trailing comment",
+			files:      map[string]string{prefix + "go.mod": "  module   github.com/foo/bar  // legacy\n"},
+			wantEntry:  prefix + "go.mod",
+			wantModule: "github.com/foo/bar",
+		},
+		{
+			name:       "quoted module path",
+			files:      map[string]string{prefix + "go.mod": "module \"github.com/foo/bar\"\n"},
+			wantEntry:  prefix + "go.mod",
+			wantModule: "github.com/foo/bar",
+		},
+		{
+			name:    "no module line",
+			files:   map[string]string{prefix + "go.mod": "go 1.21\nno module line\n"},
+			wantErr: errNoModuleLine,
+		},
+		{
+			name:    "foo-go.mod is not a go.mod",
+			files:   map[string]string{prefix + "foo-go.mod": "module github.com/foo/bar\n"},
+			wantErr: errNoGoMod,
+		},
+		{
+			name: "root go.mod wins over a nested one",
+			files: map[string]string{
+				prefix + "nested/go.mod": "module github.com/foo/nested\n",
+				prefix + "go.mod":        "module github.com/foo/bar\n",
+			},
+			wantEntry:  prefix + "go.mod",
+			wantModule: "github.com/foo/bar",
+		},
 	}
+
 	for _, c := range cases {
-		got := extractModulePath(c.input)
-		if got != c.want {
-			t.Errorf("extractModulePath(%q) = %q, want %q", c.input, got, c.want)
-		}
+		t.Run(c.name, func(t *testing.T) {
+			got, err := parseModuleZip(createGoModZip(t, c.files))
+			if c.wantErr != nil {
+				if !errors.Is(err, c.wantErr) {
+					t.Fatalf("err = %v, want %v", err, c.wantErr)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatalf("unexpected error: %v", err)
+			}
+
+			if got.entry != c.wantEntry || got.modulePath != c.wantModule {
+				t.Errorf("got entry %q module %q, want %q %q", got.entry, got.modulePath, c.wantEntry, c.wantModule)
+			}
+		})
 	}
 }

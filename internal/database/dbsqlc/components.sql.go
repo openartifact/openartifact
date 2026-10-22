@@ -62,7 +62,7 @@ SELECT COUNT(*)::bigint FROM (
     UNION ALL
     -- conan
     SELECT 1 FROM conan_packages t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text)
+    WHERE t.deleted_at IS NULL AND t.package_id = '' AND t.filename IN ('', 'conanmanifest.txt') AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text)
     UNION ALL
     -- helm
     SELECT 1 FROM helm_charts t
@@ -330,7 +330,7 @@ FROM (
     FROM rubygems_gems t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
-    SELECT t.id::uuid, 'conda'::text, t.name || '-' || t.version || '-' || t.build_string || '.tar.bz2'::text,
+    SELECT t.id::uuid, 'conda'::text, t.name || '-' || t.version || '-' || t.build_string || t.extension::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
@@ -492,15 +492,16 @@ FROM (
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
            'conda'::text AS format, t.platform::text AS arch, t.build_string::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
            0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
-           t.name || '-' || t.version || '-' || t.build_string || '.tar.bz2'::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, build_string, platform, depends, created_at, updated_at, blob_id, deleted_at, deleted_by FROM conda_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) ORDER BY created_at DESC, id LIMIT ($4::int + $5::int)) t
+           t.name || '-' || t.version || '-' || t.build_string || t.extension::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
+    FROM (SELECT id, repository_id, name, version, build_string, platform, depends, created_at, updated_at, blob_id, deleted_at, deleted_by, extension, build_number, md5, timestamp_ms, index_extra FROM conda_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conda') AND ($3::text = '' OR name = $3::text) ORDER BY created_at DESC, id LIMIT ($4::int + $5::int)) t
     UNION ALL
-    -- conan: one row per recipe revision (blob_id is nullable); release = recipe_revision, filename = full reference.
+    -- conan: one row per recipe revision (its conanmanifest.txt, or a pre-0.5.0 row with no file name);
+    -- release = recipe_revision, filename = full reference.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
            'conan'::text AS format, ''::text AS arch, t.recipe_revision::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
            0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
            t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text AS filename, t.blob_id::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, name, version, user_channel, recipe_revision, conanfile, conaninfo, created_at, updated_at, blob_id, deleted_at, deleted_by FROM conan_packages WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) ORDER BY created_at DESC, id LIMIT ($4::int + $5::int)) t
+    FROM (SELECT id, repository_id, name, version, user_channel, recipe_revision, conanfile, conaninfo, created_at, updated_at, blob_id, deleted_at, deleted_by, package_id, package_revision, filename FROM conan_packages WHERE deleted_at IS NULL AND package_id = '' AND filename IN ('', 'conanmanifest.txt') AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'conan') AND ($3::text = '' OR name = $3::text) ORDER BY created_at DESC, id LIMIT ($4::int + $5::int)) t
     UNION ALL
     -- helm: one row per chart version.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,

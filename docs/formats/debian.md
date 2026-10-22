@@ -64,11 +64,12 @@ Served relative to `HOST/repos/REPO`:
 
 - A debounced worker (500 ms after an upload or delete) regenerates the indexes of the repository. Until it has run, `Release` and `Packages*` are streamed from the database instead.
 - Architecture `all` packages are listed in every real architecture index; a distribution with only `all` packages gets `binary-all`.
+- Generated files with identical content (for example the empty `Packages` of two repositories) share one stored blob. A superseded blob is deleted only once no repository's metadata and no package references it, and every run re-checks that the blobs of its committed set still exist, so concurrent regenerations of different repositories cannot leave an index without its file.
 - Package files are looked up by file name, honour quarantine, and are served with `Content-Disposition`.
 
 ## Signing
 
-Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` to sign `InRelease` and `Release.gpg` ([signing](../security/signing.md)). Without a key apt refuses the repository unless the source line is marked `[trusted=yes]`.
+Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` to sign `InRelease` and `Release.gpg` ([signing](../security/signing.md)). Without a key apt refuses the repository unless the source line is marked `[trusted=yes]`. `Release.gpg` is a standard ASCII-armored detached signature that `gpgv` and apt verify (`gpgv --keyring KEYRING Release.gpg Release`); before 0.5.0 it was armored twice and only `InRelease` was usable. It is rewritten the next time the repository's indexes are regenerated (any upload or delete).
 
 ## Proxy
 

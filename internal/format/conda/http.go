@@ -16,7 +16,6 @@ import (
 	"io"
 	"net/http"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
@@ -58,21 +57,72 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("conda handler registered", "prefix", prefix)
 }
 
-func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	platform := vars["platform"]
+// resolveRepo returns the ID of the repository named in the URL. When there is
+// none (unknown repository or a lookup failure) it writes the response and
+// returns "".
+func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) string {
+	repoName := urlparams.Vars(r)["name"]
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
-		return
+		return ""
 	}
 
 	if repoID == "" {
 		http.NotFound(w, r)
+	}
+
+	return repoID
+}
+
+// repodataEntry is the repodata.json record of one package file.
+func repodataEntry(pkg *models.CondaPackage, platform string) map[string]any {
+	depends := pkg.Depends
+	if depends == nil {
+		depends = []string{}
+	}
+
+	entry := map[string]any{
+		"name":         pkg.Name,
+		"version":      pkg.Version,
+		"build":        pkg.BuildString,
+		"build_number": pkg.BuildNumber,
+		"depends":      depends,
+		"sha256":       pkg.SHA256,
+		"size":         pkg.SizeBytes,
+		"subdir":       platform,
+	}
+
+	if pkg.MD5 != "" {
+		entry["md5"] = pkg.MD5
+	}
+
+	if pkg.Timestamp != 0 {
+		entry["timestamp"] = pkg.Timestamp
+	}
+
+	var extra map[string]json.RawMessage
+	if json.Unmarshal(pkg.Extra, &extra) == nil {
+		for k, v := range extra {
+			if _, taken := entry[k]; !taken {
+				entry[k] = v
+			}
+		}
+	}
+
+	return entry
+}
+
+func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
+	vars := urlparams.Vars(r)
+	repoName := vars["name"]
+	platform := vars["platform"]
+
+	repoID := h.resolveRepo(w, r)
+	if repoID == "" {
 		return
 	}
 
@@ -85,33 +135,24 @@ func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build repodata.json
+	// .tar.bz2 files go under "packages", .conda files under "packages.conda".
+	tarBz2 := make(map[string]any)
+	conda := make(map[string]any)
+
+	for _, pkg := range packages {
+		if pkg.Extension == models.CondaExtConda {
+			conda[pkg.Filename()] = repodataEntry(pkg, platform)
+		} else {
+			tarBz2[pkg.Filename()] = repodataEntry(pkg, platform)
+		}
+	}
+
 	repodata := map[string]any{
 		"info": map[string]any{
 			"subdir": platform,
 		},
-		"packages":       make(map[string]any),
-		"packages.conda": make(map[string]any),
-	}
-
-	pkgs, ok := repodata["packages"].(map[string]any)
-	if !ok {
-		h.Log.Errorw("failed to cast packages to map", "repo", repoName, "platform", platform)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	for _, pkg := range packages {
-		filename := fmt.Sprintf("%s-%s-%s.tar.bz2", pkg.Name, pkg.Version, pkg.BuildString)
-		pkgs[filename] = map[string]any{
-			"name":    pkg.Name,
-			"version": pkg.Version,
-			"build":   pkg.BuildString,
-			"depends": pkg.Depends,
-			"sha256":  pkg.SHA256,
-			"size":    pkg.SizeBytes,
-		}
+		"packages":       tarBz2,
+		"packages.conda": conda,
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -124,40 +165,23 @@ func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
-	repoName := vars["name"]
 	platform := vars["platform"]
 	filename := vars["filename"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	file, ok := parsePackageFilename(filename)
+	if !ok {
+		http.NotFound(w, r)
 		return
 	}
 
+	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
-	// Parse filename to get package info
-	parts := strings.TrimSuffix(filename, ".tar.bz2")
-	parts = strings.TrimSuffix(parts, ".conda")
-
-	segments := strings.Split(parts, "-")
-	if len(segments) < 3 {
-		http.NotFound(w, r)
-		return
-	}
-
-	name := segments[0]
-	version := segments[1]
-	buildString := strings.Join(segments[2:], "-")
-
-	pkg, err := h.DB.GetCondaPackage(r.Context(), repoID, name, version, buildString, platform)
+	pkg, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.name, file.version, file.build, platform, file.ext)
 	if err != nil {
-		h.Log.Errorw("failed to get conda package", "name", name, "error", err)
+		h.Log.Errorw("failed to get conda package", "name", file.name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -193,32 +217,35 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	_, _ = io.Copy(w, blob)
 }
 
+// uploadFilename returns the file name an upload request names (query
+// parameter or X-Filename header), or "".
+func uploadFilename(r *http.Request) string {
+	if filename := r.URL.Query().Get("filename"); filename != "" {
+		return filename
+	}
+
+	return r.Header.Get("X-Filename")
+}
+
 func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	platform := vars["platform"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
-	// Get filename from query or header
-	filename := r.URL.Query().Get("filename")
-	if filename == "" {
-		filename = r.Header.Get("X-Filename")
-	}
-
+	filename := uploadFilename(r)
 	if filename == "" {
 		http.Error(w, "filename required", http.StatusBadRequest)
+		return
+	}
+
+	file, ok := parsePackageFilename(filename)
+	if !ok {
+		http.Error(w, "invalid filename format", http.StatusBadRequest)
 		return
 	}
 
@@ -237,62 +264,33 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = r.Body.Close() }()
 
-	sha256Hash := sha256.Sum256(data)
-	md5Hash := md5.Sum(data) //nolint:gosec // required by protocol specification
-
-	// Parse filename
-	parts := strings.TrimSuffix(filename, ".tar.bz2")
-	parts = strings.TrimSuffix(parts, ".conda")
-
-	segments := strings.Split(parts, "-")
-	if len(segments) < 3 {
-		http.Error(w, "invalid filename format", http.StatusBadRequest)
+	idx := readPackageIndex(file.ext, data)
+	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, idx.License) {
 		return
 	}
 
-	name := segments[0]
-	version := segments[1]
-	buildString := strings.Join(segments[2:], "-")
+	existing, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.name, file.version, file.build, platform, file.ext)
+	if err != nil {
+		h.Log.Errorw("failed to check existing conda package", "name", file.name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 
-	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, declaredLicense(filename, data)) {
 		return
 	}
 
-	sha256Hex := hex.EncodeToString(sha256Hash[:])
-
-	pkg := &models.CondaPackage{
-		RepositoryID: repoID,
-		Name:         name,
-		Version:      version,
-		BuildString:  buildString,
-		Platform:     platform,
-		Depends:      []string{},
-		SizeBytes:    int64(len(data)),
-		SHA256:       sha256Hex,
-		MD5:          hex.EncodeToString(md5Hash[:]),
+	if existing != nil {
+		http.Error(w, "package file already exists", http.StatusConflict)
+		return
 	}
 
-	// Store the blob and insert the referencing row under the per-blob lock so
-	// a concurrent unpublish cannot delete the blob in between.
-	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
-			"sha256":   sha256Hex,
-			"filename": filename,
-			"platform": platform,
-		})
-		if err != nil {
-			return fmt.Errorf("store blob: %w", err)
+	pkg := newPackage(repoID, platform, file, idx, data)
+
+	if err := h.storePackage(r.Context(), pkg, filename, data); err != nil {
+		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
+			http.Error(w, "package file already exists", http.StatusConflict)
+			return
 		}
 
-		pkg.BlobKey = blobKey
-
-		if err := h.DB.CreateCondaPackage(ctx, pkg); err != nil {
-			return fmt.Errorf("create conda package: %w", err)
-		}
-
-		return nil
-	}); err != nil {
-		h.Log.Errorw("failed to store conda package", "name", name, "error", err)
+		h.Log.Errorw("failed to store conda package", "name", file.name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -301,10 +299,10 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
 		Repository: repoName,
 		Format:     "conda",
-		Name:       name,
-		Version:    version,
+		Name:       file.name,
+		Version:    file.version,
 		Path:       platform + "/" + filename,
-		SHA256:     sha256Hex,
+		SHA256:     pkg.SHA256,
 		Size:       pkg.SizeBytes,
 	}))
 
@@ -321,42 +319,82 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// newPackage builds the database record for an uploaded package file.
+func newPackage(repoID, platform string, file packageFile, idx packageIndex, data []byte) *models.CondaPackage {
+	sha := sha256.Sum256(data)
+	sum := md5.Sum(data) //nolint:gosec // required by protocol specification
+
+	return &models.CondaPackage{
+		RepositoryID: repoID,
+		Name:         file.name,
+		Version:      file.version,
+		BuildString:  file.build,
+		Platform:     platform,
+		Extension:    file.ext,
+		BuildNumber:  idx.BuildNumber,
+		Timestamp:    idx.Timestamp,
+		Depends:      idx.Depends,
+		Extra:        idx.Extra,
+		SizeBytes:    int64(len(data)),
+		SHA256:       hex.EncodeToString(sha[:]),
+		MD5:          hex.EncodeToString(sum[:]),
+	}
+}
+
+// storePackage stores the blob and inserts the referencing row under the
+// per-blob lock so a concurrent unpublish cannot delete the blob in between.
+// When the row is not created (a concurrent upload of the same file won) the
+// blob is dropped again unless something else references it.
+func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.CondaPackage, filename string, data []byte) error {
+	err := storage.WithBlobLock(ctx, h.DB, pkg.SHA256, func(ctx context.Context) error {
+		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			"sha256":   pkg.SHA256,
+			"filename": filename,
+			"platform": pkg.Platform,
+		})
+		if err != nil {
+			return fmt.Errorf("store blob: %w", err)
+		}
+
+		pkg.BlobKey = blobKey
+
+		if err := h.DB.CreateCondaPackage(ctx, pkg); err != nil {
+			return fmt.Errorf("create conda package: %w", err)
+		}
+
+		return nil
+	})
+	if err == nil {
+		return nil
+	}
+
+	if cleanErr := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, pkg.SHA256); cleanErr != nil {
+		h.Log.Warnw("failed to clean up conda blob", "sha256", pkg.SHA256, "error", cleanErr)
+	}
+
+	return err
+}
+
 func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	platform := vars["platform"]
 	filename := vars["filename"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	file, ok := parsePackageFilename(filename)
+	if !ok {
+		http.NotFound(w, r)
 		return
 	}
 
+	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
-	// Parse filename
-	parts := strings.TrimSuffix(filename, ".tar.bz2")
-	parts = strings.TrimSuffix(parts, ".conda")
-
-	segments := strings.Split(parts, "-")
-	if len(segments) < 3 {
-		http.NotFound(w, r)
-		return
-	}
-
-	name := segments[0]
-	version := segments[1]
-	buildString := strings.Join(segments[2:], "-")
-
-	pkg, err := h.DB.GetCondaPackage(r.Context(), repoID, name, version, buildString, platform)
+	pkg, err := h.DB.GetCondaPackageFile(r.Context(), repoID, file.name, file.version, file.build, platform, file.ext)
 	if err != nil {
-		h.Log.Errorw("failed to get conda package", "name", name, "error", err)
+		h.Log.Errorw("failed to get conda package", "name", file.name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
@@ -373,7 +411,7 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.Log.Errorw("failed to check release immutability", "name", name, "error", gErr)
+		h.Log.Errorw("failed to check release immutability", "name", file.name, "error", gErr)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return

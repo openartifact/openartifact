@@ -568,9 +568,6 @@ func (m *BaseMockDB) ListGoModuleVersions(ctx context.Context, repoID, modulePat
 func (m *BaseMockDB) ListGoModulesByRepo(ctx context.Context, repoID string) ([]*models.GoModule, error) {
 	return nil, errNotImpl("ListGoModulesByRepo")
 }
-func (m *BaseMockDB) GetLatestGoModule(ctx context.Context, repoID, modulePath string) (*models.GoModule, error) {
-	return nil, errNotImpl("GetLatestGoModule")
-}
 func (m *BaseMockDB) InsertAuditLog(ctx context.Context, event *models.AuditLog) error {
 	return errNotImpl("InsertAuditLog")
 }
@@ -657,6 +654,9 @@ func (m *BaseMockDB) ListCargoCrateVersions(ctx context.Context, repoID, name st
 }
 func (m *BaseMockDB) SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error) {
 	return nil, errNotImpl("SearchCargoCrates")
+}
+func (m *BaseMockDB) SearchCargoCrateSummaries(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrateSummary, int, error) {
+	return nil, 0, errNotImpl("SearchCargoCrateSummaries")
 }
 func (m *BaseMockDB) YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error {
 	return errNotImpl("YankCargoCrate")
@@ -920,8 +920,8 @@ func (m *BaseMockDB) SetSystemSetting(ctx context.Context, key, value string) er
 func (m *BaseMockDB) CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error {
 	return errNotImpl("CreateCondaPackage")
 }
-func (m *BaseMockDB) GetCondaPackage(ctx context.Context, repoID, name, version, buildString, platform string) (*models.CondaPackage, error) {
-	return nil, errNotImpl("GetCondaPackage")
+func (m *BaseMockDB) GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error) {
+	return nil, errNotImpl("GetCondaPackageFile")
 }
 func (m *BaseMockDB) DeleteCondaPackage(ctx context.Context, id string) error {
 	return errNotImpl("DeleteCondaPackage")
@@ -935,8 +935,14 @@ func (m *BaseMockDB) ListAllCondaPackages(ctx context.Context, repoID string) ([
 func (m *BaseMockDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error {
 	return errNotImpl("CreateConanPackage")
 }
-func (m *BaseMockDB) GetConanPackage(ctx context.Context, repoID, name, version, userChannel, recipeRevision string) (*models.ConanPackage, error) {
+func (m *BaseMockDB) GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error) {
 	return nil, errNotImpl("GetConanPackage")
+}
+func (m *BaseMockDB) ListConanRecipeFiles(ctx context.Context, repoID, name, version, userChannel string) ([]*models.ConanPackage, error) {
+	return nil, errNotImpl("ListConanRecipeFiles")
+}
+func (m *BaseMockDB) ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error) {
+	return nil, errNotImpl("ListConanRecipes")
 }
 func (m *BaseMockDB) DeleteConanPackage(ctx context.Context, id string) error {
 	return errNotImpl("DeleteConanPackage")

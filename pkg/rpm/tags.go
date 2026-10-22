@@ -17,6 +17,8 @@ const (
 	RPMTAG_BUILDTIME         TagType = 1006
 	RPMTAG_BUILDHOST         TagType = 1007
 	RPMTAG_SIZE              TagType = 1009
+	RPMTAG_LONGSIZE          TagType = 5009
+	RPMTAG_PAYLOADSIZEALT    TagType = 5113
 	RPMTAG_LICENSE           TagType = 1014
 	RPMTAG_VENDOR            TagType = 1011
 	RPMTAG_PACKAGER          TagType = 1015
@@ -60,4 +62,11 @@ const (
 	RPMTAG_ENHANCENAME       TagType = 5055
 	RPMTAG_ENHANCEVERSION    TagType = 5056
 	RPMTAG_ENHANCEFLAGS      TagType = 5057
+
+	// RPMSIGTAG_PAYLOADSIZE and RPMSIGTAG_LONGARCHIVESIZE are signature-header
+	// tags (rpm format 4). They share numbers with unrelated main-header tags
+	// (1007 is BUILDHOST there), so they must only be read from the signature
+	// header.
+	RPMSIGTAG_PAYLOADSIZE     TagType = 1007
+	RPMSIGTAG_LONGARCHIVESIZE TagType = 271
 )

@@ -1452,9 +1452,6 @@ func (m *MockDatabase) DeleteGoModule(ctx context.Context, repoID, modulePath, v
 func (m *MockDatabase) ListGoModuleVersions(ctx context.Context, repoID, modulePath string) ([]*models.GoModule, error) {
 	return nil, nil
 }
-func (m *MockDatabase) GetLatestGoModule(ctx context.Context, repoID, modulePath string) (*models.GoModule, error) {
-	return nil, nil
-}
 
 // Cleanup policy methods
 func (m *MockDatabase) CreateCleanupPolicy(ctx context.Context, policy *models.CleanupPolicy) error {
@@ -1749,7 +1746,7 @@ func (m *MockDatabase) SetSystemSetting(ctx context.Context, key, value string) 
 func (m *MockDatabase) CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error {
 	return nil
 }
-func (m *MockDatabase) GetCondaPackage(ctx context.Context, repoID, name, version, buildString, platform string) (*models.CondaPackage, error) {
+func (m *MockDatabase) GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error) {
 	return nil, nil
 }
 func (m *MockDatabase) DeleteCondaPackage(ctx context.Context, id string) error { return nil }
@@ -1761,7 +1758,13 @@ func (m *MockDatabase) ListCondaPackages(ctx context.Context, repoID, platform s
 func (m *MockDatabase) CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error {
 	return nil
 }
-func (m *MockDatabase) GetConanPackage(ctx context.Context, repoID, name, version, userChannel, recipeRevision string) (*models.ConanPackage, error) {
+func (m *MockDatabase) GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error) {
+	return nil, nil
+}
+func (m *MockDatabase) ListConanRecipeFiles(ctx context.Context, repoID, name, version, userChannel string) ([]*models.ConanPackage, error) {
+	return nil, nil
+}
+func (m *MockDatabase) ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error) {
 	return nil, nil
 }
 func (m *MockDatabase) DeleteConanPackage(ctx context.Context, id string) error { return nil }

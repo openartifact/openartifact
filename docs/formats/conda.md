@@ -38,9 +38,23 @@ Relative to `HOST/repos/REPO`; `<platform>` is any path segment such as `linux-6
 ## Upload
 
 - Filename comes from the `filename` query parameter or the `X-Filename` header (`400 filename required` if neither).
-- Name must be `<name>-<version>-<build>` with optional `.tar.bz2` or `.conda` suffix: split on `-`, first segment = name, second = version, the rest = build; fewer than three segments is `400 invalid filename format`. Package names containing `-` therefore cannot be uploaded correctly.
+- The file name must be `<name>-<version>-<build>.tar.bz2` or `<name>-<version>-<build>.conda`. It is split from the right: the build is the part after the last `-`, the version the part before that, and the name everything before, so names containing `-` (`scikit-learn-1.0-py39_0.tar.bz2`) work. Earlier releases split at the first two hyphens and stored such a package as name `scikit`, version `learn`; migration `019` re-splits those rows. Any other extension, fewer than three parts, an empty part, a path separator or a part longer than its column (name 255, version 100, build 255) is `400 invalid filename format`.
+- The `.tar.bz2` and the `.conda` of one name, version, build and platform are separate files and can both be uploaded. Uploading a file that already exists is `409 package file already exists` and changes nothing; delete it first to replace it.
 - Body limit 500 MiB. sha256 and md5 are computed; success is `201` with `{id, name, version, sha256}`.
+- `info/index.json` is read from the package (from `info-*.tar.zst` inside a `.conda`) for the license policy and for the repodata fields below. Reading is bounded: at most 256 MiB of the decompressed archive and 100000 archive entries are scanned, and a package whose `info/index.json` cannot be found or parsed within that is accepted with empty `depends`, build number `0` and no timestamp.
 
 ## repodata.json
 
-`info.subdir` is the platform. Every package in the platform appears under `packages` as `<name>-<version>-<build>.tar.bz2` with `name`, `version`, `build`, `depends`, `sha256`, `size`. `packages.conda` is always empty, and `depends` is empty because the package is not inspected on upload.
+`info.subdir` is the platform. `.tar.bz2` files are listed under `packages` and `.conda` files under `packages.conda`, keyed by file name (`<name>-<version>-<build>.tar.bz2` or `.conda`). Each entry has:
+
+| Field | Source |
+|---|---|
+| `name`, `version`, `build` | the file name |
+| `build_number` | `info/index.json` (`0` when absent) |
+| `depends` | `info/index.json` (`[]` when absent) |
+| `subdir` | the platform the file was uploaded to |
+| `sha256`, `md5`, `size` | computed on upload |
+| `timestamp` | `info/index.json`, in milliseconds; omitted when the package declares none |
+| `constrains`, `license`, `license_family`, `noarch`, `arch`, `platform`, `features`, `track_features` | `info/index.json`, copied as they are when present |
+
+Packages stored before these fields were kept have no `info/index.json` data (empty `depends`, build number `0`, no `md5` or `timestamp`). They are all listed as `.tar.bz2`, including files that were uploaded with a `.conda` name (the extension was not recorded then), until they are deleted and uploaded again.

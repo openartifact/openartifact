@@ -137,17 +137,12 @@ func (s *LocalSigner) CleartextSign(data io.Reader) (io.Reader, error) {
 func (s *LocalSigner) DetachedSign(data io.Reader) ([]byte, error) {
 	var buf bytes.Buffer
 
-	w, err := armor.Encode(&buf, "PGP SIGNATURE", nil)
-	if err != nil {
-		return nil, fmt.Errorf("failed to create armor encoder: %w", err)
-	}
-
-	err = openpgp.ArmoredDetachSign(w, s.entity, data, nil)
+	// ArmoredDetachSign already wraps the signature in an armor block; adding
+	// another armor.Encode layer makes Release.gpg/repomd.xml.asc unverifiable.
+	err := openpgp.ArmoredDetachSign(&buf, s.entity, data, &packet.Config{DefaultHash: crypto.SHA256})
 	if err != nil {
 		return nil, fmt.Errorf("failed to create detached signature: %w", err)
 	}
-
-	_ = w.Close()
 
 	return buf.Bytes(), nil
 }

@@ -14,8 +14,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"path"
 	"strconv"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
@@ -44,8 +44,11 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 // RegisterRepoRoutes registers SBT-specific routes on the provided sub-router.
 // It does NOT wrap in r.Route() — callers are responsible for the path prefix.
 // Routes use a true chi wildcard ("/*"): {name:regexp} params never span "/".
+// chi does not answer HEAD from a GET route, so it is registered explicitly:
+// resolvers probe for a file with HEAD before fetching it.
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/*", h.handleRequest)
+	r.Head("/*", h.handleRequest)
 	r.Put("/*", h.handleRequest)
 	r.Delete("/*", h.handleRequest)
 }
@@ -76,7 +79,7 @@ func (h *HTTPHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 
 	switch r.Method {
-	case http.MethodGet:
+	case http.MethodGet, http.MethodHead:
 		h.handleDownload(w, r, repoID, filePath)
 	case http.MethodPut:
 		h.handleUpload(w, r, repoID, filePath)
@@ -85,20 +88,32 @@ func (h *HTTPHandler) handleRequest(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+func repoNameOf(r *http.Request) string { return urlparams.Vars(r)["name"] }
+
+func (h *HTTPHandler) get(ctx context.Context, repoID string, c base.ArtifactPath) (*models.SBTArtifact, error) {
+	return h.DB.GetSBTArtifact(ctx, repoID, c.Group, c.Module, c.Version, c.Filename)
+}
+
+// lookup finds the artifact at cur, else the one an older release stored under
+// the legacy reading of the same path.
+func (h *HTTPHandler) lookup(ctx context.Context, repoID string, cur, legacy base.ArtifactPath) (*models.SBTArtifact, error) {
+	artifact, err := h.get(ctx, repoID, cur)
+	if err != nil || artifact != nil || cur == legacy {
+		return artifact, err
+	}
+
+	return h.get(ctx, repoID, legacy)
+}
+
+// handleDownload serves a file (GET) or just its headers (HEAD).
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
-	// Parse path: group/artifact/version/filename
-	parts := strings.Split(filePath, "/")
-	if len(parts) < 4 {
+	cur, legacy, ok := base.SplitArtifactPath(filePath)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
-	groupID := parts[0]
-	artifactID := parts[1]
-	version := parts[2]
-	filename := strings.Join(parts[3:], "/")
-
-	artifact, err := h.DB.GetSBTArtifact(r.Context(), repoID, groupID, artifactID, version, filename)
+	artifact, err := h.lookup(r.Context(), repoID, cur, legacy)
 	if err != nil {
 		h.Log.Errorw("failed to get sbt artifact", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -111,11 +126,19 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request, rep
 		return
 	}
 
-	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(filePath, filename, r.URL.Path)...) {
+	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(filePath, cur.Filename, r.URL.Path)...) {
 		return
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: artifact.BlobKey, Size: artifact.SizeBytes, Filename: filename, ContentType: "application/octet-stream"}) {
+	if r.Method != http.MethodHead && h.TryPresign(w, r, presign.Blob{SHA256: artifact.BlobKey, Size: artifact.SizeBytes, Filename: path.Base(cur.Filename), ContentType: "application/octet-stream"}) {
+		return
+	}
+
+	w.Header().Set("Content-Type", "application/octet-stream")
+	w.Header().Set("Content-Length", strconv.FormatInt(artifact.SizeBytes, 10))
+
+	if r.Method == http.MethodHead {
+		w.WriteHeader(http.StatusOK)
 		return
 	}
 
@@ -128,23 +151,19 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request, rep
 	}
 	defer func() { _ = blob.Close() }()
 
-	w.Header().Set("Content-Type", "application/octet-stream")
-	w.Header().Set("Content-Length", strconv.FormatInt(artifact.SizeBytes, 10))
 	w.WriteHeader(http.StatusOK)
 	_, _ = io.Copy(w, blob)
 }
 
+// handleUpload stores a file. Publishing the same bytes again is a no-op;
+// different bytes replace the file unless the repository has immutable releases
+// and the version is a release.
 func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
-	parts := strings.Split(filePath, "/")
-	if len(parts) < 4 {
+	cur, _, ok := base.SplitArtifactPath(filePath)
+	if !ok {
 		http.Error(w, "invalid path", http.StatusBadRequest)
 		return
 	}
-
-	groupID := parts[0]
-	artifactID := parts[1]
-	version := parts[2]
-	filename := strings.Join(parts[3:], "/")
 
 	data, err := base.ReadAllLimited(r.Body, maxSBTUploadBytes)
 	if err != nil {
@@ -159,7 +178,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 	}
 	defer func() { _ = r.Body.Close() }()
 
-	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, base.DescriptorLicenses(filename, data)...) {
+	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, base.DescriptorLicenses(cur.Filename, data)...) {
 		return
 	}
 
@@ -169,13 +188,33 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 
 	artifact := &models.SBTArtifact{
 		RepositoryID: repoID,
-		GroupID:      groupID,
-		ArtifactID:   artifactID,
-		Version:      version,
+		GroupID:      cur.Group,
+		ArtifactID:   cur.Module,
+		Version:      cur.Version,
 		ScalaVersion: "",
-		Filename:     filename,
+		Filename:     cur.Filename,
 		SizeBytes:    int64(len(data)),
 		SHA256:       sha256Hex,
+	}
+
+	previous, err := h.get(r.Context(), repoID, cur)
+	if err != nil {
+		h.Log.Errorw("failed to look up sbt artifact", "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if previous != nil {
+		if previous.SHA256 == sha256Hex {
+			writeStored(w, previous)
+			return
+		}
+
+		if guardErr := trash.GuardReleaseByName(r, h.DB, repoNameOf(r), "sbt", cur.Version); guardErr != nil {
+			h.rejectImmutable(w, filePath, guardErr)
+			return
+		}
 	}
 
 	// Store the blob and insert the referencing row under the per-blob lock so
@@ -183,8 +222,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
 		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
 			"sha256":   sha256Hex,
-			"filename": filename,
-			"group":    groupID,
+			"filename": cur.Filename,
+			"group":    cur.Group,
 		})
 		if err != nil {
 			return fmt.Errorf("store blob: %w", err)
@@ -204,40 +243,59 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		return
 	}
 
+	// The replaced bytes are content-addressed and may be shared; drop them only
+	// once nothing references them.
+	if previous != nil {
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.DB, h.BlobStore, previous.SHA256); delErr != nil {
+			h.Log.Warnw("failed to clean up replaced sbt blob", "sha256", previous.SHA256, "error", delErr)
+		}
+	}
+
 	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: urlparams.Vars(r)["name"],
+		Repository: repoNameOf(r),
 		Format:     "sbt",
-		Name:       groupID + "/" + artifactID,
-		Version:    version,
+		Name:       cur.Group + "/" + cur.Module,
+		Version:    cur.Version,
 		Path:       filePath,
 		SHA256:     sha256Hex,
 		Size:       artifact.SizeBytes,
 	}))
 
+	writeStored(w, artifact)
+}
+
+func writeStored(w http.ResponseWriter, a *models.SBTArtifact) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusCreated)
 
 	if encErr := json.NewEncoder(w).Encode(map[string]any{
-		"id":     artifact.ID,
-		"sha256": artifact.SHA256,
+		"id":     a.ID,
+		"sha256": a.SHA256,
 	}); encErr != nil {
 		_ = encErr // response header already written
 	}
 }
 
+// rejectImmutable answers a refused overwrite or delete: 409 when the
+// repository has immutable releases.
+func (h *HTTPHandler) rejectImmutable(w http.ResponseWriter, filePath string, err error) {
+	if errors.Is(err, trash.ErrImmutableRelease) {
+		http.Error(w, "released versions are immutable in this repository", http.StatusConflict)
+		return
+	}
+
+	h.Log.Errorw("failed to check release immutability", "path", filePath, "error", err)
+	http.Error(w, "internal error", http.StatusInternalServerError)
+}
+
 func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request, repoID, filePath string) {
-	parts := strings.Split(filePath, "/")
-	if len(parts) < 4 {
+	cur, legacy, ok := base.SplitArtifactPath(filePath)
+	if !ok {
 		http.NotFound(w, r)
 		return
 	}
 
-	groupID := parts[0]
-	artifactID := parts[1]
-	version := parts[2]
-	filename := strings.Join(parts[3:], "/")
-
-	artifact, err := h.DB.GetSBTArtifact(r.Context(), repoID, groupID, artifactID, version, filename)
+	artifact, err := h.lookup(r.Context(), repoID, cur, legacy)
 	if err != nil {
 		h.Log.Errorw("failed to get sbt artifact", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -250,15 +308,8 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request, repoI
 		return
 	}
 
-	if guardErr := trash.GuardReleaseByName(r, h.DB, urlparams.Vars(r)["name"], "sbt", version); guardErr != nil {
-		if errors.Is(guardErr, trash.ErrImmutableRelease) {
-			http.Error(w, "released versions are immutable in this repository", http.StatusConflict)
-			return
-		}
-
-		h.Log.Errorw("failed to check release immutability", "path", filePath, "error", guardErr)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
+	if guardErr := trash.GuardReleaseByName(r, h.DB, repoNameOf(r), "sbt", cur.Version); guardErr != nil {
+		h.rejectImmutable(w, filePath, guardErr)
 		return
 	}
 
@@ -290,10 +341,10 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request, repoI
 	}
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactDeleted, webhook.ArtifactPayload(webhook.EventArtifactDeleted, webhook.Artifact{
-		Repository: urlparams.Vars(r)["name"],
+		Repository: repoNameOf(r),
 		Format:     "sbt",
-		Name:       groupID + "/" + artifactID,
-		Version:    version,
+		Name:       cur.Group + "/" + cur.Module,
+		Version:    cur.Version,
 		Path:       filePath,
 		SHA256:     artifact.SHA256,
 		Size:       artifact.SizeBytes,

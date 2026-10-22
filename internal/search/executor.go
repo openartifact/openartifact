@@ -110,7 +110,8 @@ func unifiedSearchBranches() []string {
 		searchBranch("conda", "cp.name", "cp.version", "''", null, null, "cp.blob_id", null, "cp") +
 			"\n\t\tFROM conda_packages cp WHERE cp.deleted_at IS NULL",
 		searchBranch("conan", "co.name", "co.version", "''", null, null, "co.blob_id", null, "co") +
-			"\n\t\tFROM conan_packages co WHERE co.deleted_at IS NULL",
+			// One result per recipe revision: its manifest row, or a pre-0.5.0 row without a file name.
+			"\n\t\tFROM conan_packages co WHERE co.deleted_at IS NULL AND co.package_id = '' AND co.filename IN ('', 'conanmanifest.txt')",
 		searchBranch("docker", "dt.name", "''", "''", null, null, null, "dt.manifest_digest", "dt") +
 			"\n\t\tFROM docker_tags dt WHERE dt.deleted_at IS NULL",
 		// gomod: only the zip blob is reported (a module with just a .mod has none).

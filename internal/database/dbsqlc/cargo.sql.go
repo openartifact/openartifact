@@ -79,7 +79,9 @@ const getCargoCrate = `-- name: GetCargoCrate :one
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc
 JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND cc.name = $2 AND cc.version = $3
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text) AND cc.version = $3
+ORDER BY (cc.name = $2::text) DESC
+LIMIT 1
 `
 
 type GetCargoCrateParams struct {
@@ -111,6 +113,9 @@ type GetCargoCrateRow struct {
 	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Crate names are case-insensitive: cargo lowercases them in index paths, so
+// every lookup by name compares lower(name). A row whose name matches exactly
+// wins when legacy data holds two crates that differ only in case.
 func (q *Queries) GetCargoCrate(ctx context.Context, arg GetCargoCrateParams) (GetCargoCrateRow, error) {
 	row := q.db.QueryRow(ctx, getCargoCrate, arg.RepositoryID, arg.Name, arg.Version)
 	var i GetCargoCrateRow
@@ -141,7 +146,7 @@ func (q *Queries) GetCargoCrate(ctx context.Context, arg GetCargoCrateParams) (G
 
 const incrementCargoDownloadCount = `-- name: IncrementCargoDownloadCount :exec
 UPDATE cargo_crates SET download_count = download_count + 1, updated_at = NOW()
-WHERE repository_id = $1 AND name = $2 AND version = $3 AND deleted_at IS NULL
+WHERE repository_id = $1 AND lower(name) = lower($2::text) AND version = $3 AND deleted_at IS NULL
 `
 
 type IncrementCargoDownloadCountParams struct {
@@ -159,7 +164,8 @@ const listCargoCrateVersions = `-- name: ListCargoCrateVersions :many
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc
 JOIN blobs b ON b.id = cc.blob_id
-WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND cc.name = $2 ORDER BY cc.version DESC
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text)
+ORDER BY cc.created_at, cc.id
 `
 
 type ListCargoCrateVersionsParams struct {
@@ -231,6 +237,65 @@ func (q *Queries) ListCargoCrateVersions(ctx context.Context, arg ListCargoCrate
 	return items, nil
 }
 
+const searchCargoCrateSummaries = `-- name: SearchCargoCrateSummaries :many
+SELECT cc.name,
+       COALESCE((ARRAY_AGG(cc.description ORDER BY cc.created_at DESC))[1], '')::text AS description,
+       COALESCE(SUM(cc.download_count), 0)::bigint AS downloads,
+       ARRAY_AGG(cc.version ORDER BY cc.created_at, cc.id)::text[] AS versions,
+       (ARRAY_AGG(cc.version ORDER BY cc.created_at, cc.id) FILTER (WHERE NOT cc.yanked))::text[] AS live_versions,
+       (COUNT(*) OVER ())::bigint AS total
+FROM cargo_crates cc
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND (cc.name ILIKE $2 OR cc.description ILIKE $2)
+GROUP BY cc.name
+ORDER BY cc.name ASC
+LIMIT $3
+`
+
+type SearchCargoCrateSummariesParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+	Limit        int32  `db:"limit" json:"limit"`
+}
+
+type SearchCargoCrateSummariesRow struct {
+	Name         string   `db:"name" json:"name"`
+	Description  string   `db:"description" json:"description"`
+	Downloads    int64    `db:"downloads" json:"downloads"`
+	Versions     []string `db:"versions" json:"versions"`
+	LiveVersions []string `db:"live_versions" json:"live_versions"`
+	Total        int64    `db:"total" json:"total"`
+}
+
+// One row per crate: versions are listed oldest first for the caller to rank
+// by semver; description comes from the newest version; total is the number
+// of matching crates, not of returned rows.
+func (q *Queries) SearchCargoCrateSummaries(ctx context.Context, arg SearchCargoCrateSummariesParams) ([]SearchCargoCrateSummariesRow, error) {
+	rows, err := q.db.Query(ctx, searchCargoCrateSummaries, arg.RepositoryID, arg.Name, arg.Limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []SearchCargoCrateSummariesRow{}
+	for rows.Next() {
+		var i SearchCargoCrateSummariesRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.Description,
+			&i.Downloads,
+			&i.Versions,
+			&i.LiveVersions,
+			&i.Total,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const searchCargoCrates = `-- name: SearchCargoCrates :many
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc
@@ -268,6 +333,8 @@ type SearchCargoCratesRow struct {
 	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 }
 
+// Per-version rows. Used by backup export (an empty query lists everything);
+// the search API uses SearchCargoCrateSummaries.
 func (q *Queries) SearchCargoCrates(ctx context.Context, arg SearchCargoCratesParams) ([]SearchCargoCratesRow, error) {
 	rows, err := q.db.Query(ctx, searchCargoCrates, arg.RepositoryID, arg.Name, arg.Limit)
 	if err != nil {
@@ -310,7 +377,7 @@ func (q *Queries) SearchCargoCrates(ctx context.Context, arg SearchCargoCratesPa
 }
 
 const yankCargoCrate = `-- name: YankCargoCrate :exec
-UPDATE cargo_crates SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND deleted_at IS NULL
+UPDATE cargo_crates SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND lower(name) = lower($3::text) AND version = $4 AND deleted_at IS NULL
 `
 
 type YankCargoCrateParams struct {

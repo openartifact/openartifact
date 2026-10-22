@@ -529,9 +529,6 @@ func (m *tokenMockDB) DeleteGoModule(_ context.Context, _, _, _ string) error { 
 func (m *tokenMockDB) ListGoModuleVersions(_ context.Context, _, _ string) ([]*models.GoModule, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) GetLatestGoModule(_ context.Context, _, _ string) (*models.GoModule, error) {
-	return nil, nil
-}
 
 // Cleanup policy methods
 func (m *tokenMockDB) CreateCleanupPolicy(_ context.Context, _ *models.CleanupPolicy) error {
@@ -754,7 +751,7 @@ func (m *tokenMockDB) SetSystemSetting(_ context.Context, _, _ string) error    
 
 // Conda methods
 func (m *tokenMockDB) CreateCondaPackage(_ context.Context, _ *models.CondaPackage) error { return nil }
-func (m *tokenMockDB) GetCondaPackage(_ context.Context, _, _, _, _, _ string) (*models.CondaPackage, error) {
+func (m *tokenMockDB) GetCondaPackageFile(_ context.Context, _, _, _, _, _, _ string) (*models.CondaPackage, error) {
 	return nil, nil
 }
 func (m *tokenMockDB) DeleteCondaPackage(_ context.Context, _ string) error { return nil }
@@ -764,7 +761,13 @@ func (m *tokenMockDB) ListCondaPackages(_ context.Context, _, _ string) ([]*mode
 
 // Conan methods
 func (m *tokenMockDB) CreateConanPackage(_ context.Context, _ *models.ConanPackage) error { return nil }
-func (m *tokenMockDB) GetConanPackage(_ context.Context, _, _, _, _, _ string) (*models.ConanPackage, error) {
+func (m *tokenMockDB) GetConanPackage(_ context.Context, _ string, _ models.ConanFileKey) (*models.ConanPackage, error) {
+	return nil, nil
+}
+func (m *tokenMockDB) ListConanRecipeFiles(_ context.Context, _, _, _, _ string) ([]*models.ConanPackage, error) {
+	return nil, nil
+}
+func (m *tokenMockDB) ListConanRecipes(_ context.Context, _ string) ([]models.ConanRecipe, error) {
 	return nil, nil
 }
 func (m *tokenMockDB) DeleteConanPackage(_ context.Context, _ string) error { return nil }

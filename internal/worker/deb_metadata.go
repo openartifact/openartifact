@@ -84,12 +84,16 @@ func (w *DebMetadataWorker) NotifyStale(repoID string) {
 	w.q.Notify(repoID)
 }
 
+// blobs returns the shared blob bookkeeping (see metadataBlobs) for this worker.
+func (w *DebMetadataWorker) blobs() metadataBlobs {
+	return metadataBlobs{db: w.db, store: w.blobStore, log: w.log, who: "deb worker"}
+}
+
 // Stop drains pending regenerations and waits for running ones (bounded).
 func (w *DebMetadataWorker) Stop() {
 	w.q.Stop()
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error {
 	if sqlDB := w.db.GetDB(); sqlDB != nil {
 		release, err := lockForRegeneration(ctx, sqlDB, "deb:"+repoID)
@@ -163,35 +167,11 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 	}
 
 	// Drop rows for paths that are no longer generated (removed dists/comps/archs).
-	for path := range oldSHA {
-		if _, ok := newSHA[path]; ok {
-			continue
-		}
+	stalePaths, reclaim := supersededMetadata(oldSHA, newSHA)
 
+	for _, path := range stalePaths {
 		if _, err := tx.ExecContext(ctx, `DELETE FROM repository_metadata WHERE repository_id = $1 AND path = $2`, repoID, path); err != nil {
 			return fmt.Errorf("deb worker: deleting stale repo_metadata %s: %w", path, err)
-		}
-	}
-
-	// Superseded blobs: old checksums no longer referenced by any metadata row.
-	var reclaim []string
-
-	seen := make(map[string]bool)
-
-	for path, old := range oldSHA {
-		if old == "" || seen[old] || newSHA[path] == old {
-			continue
-		}
-
-		seen[old] = true
-
-		var refs int
-		if err := tx.QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, old).Scan(&refs); err != nil {
-			return fmt.Errorf("deb worker: counting metadata refs: %w", err)
-		}
-
-		if refs == 0 {
-			reclaim = append(reclaim, old)
 		}
 	}
 
@@ -199,11 +179,18 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 		return fmt.Errorf("deb worker: commit: %w", err)
 	}
 
-	for _, sum := range reclaim {
-		if err := w.blobStore.Delete(ctx, sum); err != nil {
-			w.log.Warnw("deb worker: failed to delete superseded metadata blob", "sha256", sum, "error", err)
+	// The new set is durable: make sure a concurrent reclaim of an identical
+	// blob (another repo's superseded row) did not remove one of its objects,
+	// then drop the blobs nothing references any more.
+	w.blobs().ensure(ctx, repoID, blobs, newSHA, func(path, sum string) map[string]string {
+		return map[string]string{
+			"path":    path,
+			"format":  "deb",
+			"repo_id": repoID,
+			"sha256":  sum,
 		}
-	}
+	})
+	w.blobs().reclaim(ctx, reclaim)
 
 	w.log.Infow("deb metadata regeneration complete", "repo_id", repoID, "distributions", len(distributions))
 

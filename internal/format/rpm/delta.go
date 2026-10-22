@@ -43,14 +43,19 @@ type DeltaEntry struct {
 }
 
 type DeltaDetail struct {
-	XMLName      xml.Name `xml:"delta"`
-	OldEpoch     string   `xml:"oldepoch,attr,omitempty"`
-	OldVer       string   `xml:"oldver,attr"`
-	OldRel       string   `xml:"oldrel,attr"`
-	Filename     string   `xml:"filename"`
-	Size         int64    `xml:"size"`
-	ChecksumType string   `xml:"checksum type,attr"`
-	Checksum     string   `xml:"checksum"`
+	XMLName  xml.Name      `xml:"delta"`
+	OldEpoch string        `xml:"oldepoch,attr,omitempty"`
+	OldVer   string        `xml:"oldver,attr"`
+	OldRel   string        `xml:"oldrel,attr"`
+	Filename string        `xml:"filename"`
+	Size     int64         `xml:"size"`
+	Checksum DeltaChecksum `xml:"checksum"`
+}
+
+// DeltaChecksum is <checksum type="sha256">hex</checksum>.
+type DeltaChecksum struct {
+	Type  string `xml:"type,attr"`
+	Value string `xml:",chardata"`
 }
 
 func GeneratePrestodeltaXML(packages []DeltaRPM) ([]byte, error) {
@@ -62,13 +67,12 @@ func GeneratePrestodeltaXML(packages []DeltaRPM) ([]byte, error) {
 
 	for _, pkg := range packages {
 		entry := DeltaDetail{
-			OldEpoch:     strconv.FormatUint(uint64(pkg.OldEpoch), 10),
-			OldVer:       pkg.OldVer,
-			OldRel:       pkg.OldRel,
-			Filename:     pkg.Filename,
-			Size:         pkg.Size,
-			ChecksumType: pkg.ChecksumType,
-			Checksum:     pkg.Checksum,
+			OldEpoch: strconv.FormatUint(uint64(pkg.OldEpoch), 10),
+			OldVer:   pkg.OldVer,
+			OldRel:   pkg.OldRel,
+			Filename: pkg.Filename,
+			Size:     pkg.Size,
+			Checksum: DeltaChecksum{Type: pkg.ChecksumType, Value: pkg.Checksum},
 		}
 		key := fmt.Sprintf("%s-%s-%s", pkg.NewName, pkg.NewArch, pkg.NewVer)
 		deltas[key] = append(deltas[key], entry)

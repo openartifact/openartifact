@@ -16,6 +16,8 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -33,6 +35,9 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// registrationPageSize is the number of versions per registration page.
+const registrationPageSize = 64
+
 type HTTPHandler struct {
 	*base.Handler
 }
@@ -45,8 +50,12 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/v3/index.json", h.handleServiceIndex)
 	r.Put("/v3/package", h.handlePushPackage)
 	r.Delete("/v3/package/{id}/{version}", h.handleDeletePackage)
+	r.Get("/v3/package/{id}/index.json", h.handleVersionIndex)
 	r.Get("/v3/package/{id}/{version}/{filename}", h.handleDownloadPackage)
 	r.Get("/v3/registration/{id}/index.json", h.handleRegistrationIndex)
+	// {versionfile} is "<version>.json"; a chi parameter would stop at the
+	// first '.' of the version.
+	r.Get("/v3/registration/{id}/{versionfile}", h.handleRegistrationLeaf)
 	r.Get("/v3/query", h.handleSearch)
 	r.Get("/v3/autocomplete", h.handleAutocomplete)
 }
@@ -58,24 +67,60 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("nuget handler registered", "prefix", prefix)
 }
 
-func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
+// resolveRepo returns the ID of the repository named in the URL. When there is
+// none (unknown repository or a lookup failure) it writes the response and
+// returns "".
+func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) string {
+	repoName := urlparams.Vars(r)["name"]
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
-		return
+		return ""
 	}
 
 	if repoID == "" {
 		http.NotFound(w, r)
+	}
+
+	return repoID
+}
+
+func (h *HTTPHandler) repoBaseURL(r *http.Request) string {
+	return fmt.Sprintf("%s/repos/%s", h.BaseURL, urlparams.Vars(r)["name"])
+}
+
+func writeJSON(w http.ResponseWriter, v any) {
+	w.Header().Set("Content-Type", "application/json")
+	w.WriteHeader(http.StatusOK)
+
+	if encErr := json.NewEncoder(w).Encode(v); encErr != nil {
+		_ = encErr // response header already written
+	}
+}
+
+func registrationIndexURL(baseURL, id string) string {
+	return baseURL + "/v3/registration/" + url.PathEscape(id) + "/index.json"
+}
+
+func registrationLeafURL(baseURL, id, version string) string {
+	return baseURL + "/v3/registration/" + url.PathEscape(id) + "/" + url.PathEscape(version) + ".json"
+}
+
+func packageContentURL(baseURL, id, version string) string {
+	return fmt.Sprintf("%s/v3/package/%s/%s/%s.%s.nupkg", baseURL, url.PathEscape(id), url.PathEscape(version), url.PathEscape(id), url.PathEscape(version))
+}
+
+func nupkgName(id, version string) string { return id + "." + version + ".nupkg" }
+
+func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request) {
+	if h.resolveRepo(w, r) == "" {
 		return
 	}
 
-	baseURL := fmt.Sprintf("%s/repos/%s", h.BaseURL, repoName)
+	baseURL := h.repoBaseURL(r)
 
 	index := map[string]any{
 		"version": "3.0.0",
@@ -103,37 +148,17 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 		},
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(index); encErr != nil {
-		_ = encErr // response header already written
-	}
+	writeJSON(w, index)
 }
 
-func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	// Parse multipart form
+// readPushedPackage reads the "package" part of a push request. On failure it
+// writes the response and returns false.
+func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
 	if err := r.ParseMultipartForm(100 * 1024 * 1024); err != nil { //nolint:gosec // G120: form size bounded by ParseMultipartForm limit
 		h.Log.Errorw("failed to parse multipart form", "error", err)
 		http.Error(w, "invalid request", http.StatusBadRequest)
 
-		return
+		return nil, false
 	}
 
 	file, _, err := r.FormFile("package")
@@ -141,23 +166,83 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		h.Log.Errorw("failed to get package file", "error", err)
 		http.Error(w, "package file required", http.StatusBadRequest)
 
-		return
+		return nil, false
 	}
 	defer func() { _ = file.Close() }()
 
-	// Read and hash the package
 	data, err := io.ReadAll(file)
 	if err != nil {
 		h.Log.Errorw("failed to read package data", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
+		return nil, false
+	}
+
+	return data, true
+}
+
+// pushedPackage builds the database record for a pushed .nupkg from its
+// nuspec metadata. The id is lower-cased and the version normalized (see
+// normalizeVersion), the form clients request. It returns an error for a
+// package without a usable id or version.
+func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models.NuGetPackage, error) {
+	id, _ := metadata["id"].(string)
+	if id == "" {
+		return nil, errors.New("package id missing") //nolint:err113 // static error
+	}
+
+	rawVersion, _ := metadata["version"].(string)
+
+	version, ok := normalizeVersion(rawVersion)
+	if !ok {
+		return nil, fmt.Errorf("invalid package version %q", rawVersion) //nolint:err113 // reported to the log only
+	}
+
+	hash := sha512.Sum512(data)
+	sum256 := sha256.Sum256(data)
+
+	str := func(key string) string {
+		s, _ := metadata[key].(string)
+		return s
+	}
+	requireLicenseAcceptance, _ := metadata["requireLicenseAcceptance"].(bool)
+
+	return &models.NuGetPackage{
+		RepositoryID:             repoID,
+		PackageID:                strings.ToLower(id),
+		Version:                  version,
+		Title:                    str("title"),
+		Description:              str("description"),
+		Summary:                  str("summary"),
+		Authors:                  str("authors"),
+		Owners:                   str("owners"),
+		Tags:                     str("tags"),
+		ProjectURL:               str("projectUrl"),
+		LicenseURL:               str("licenseUrl"),
+		IconURL:                  str("iconUrl"),
+		RequireLicenseAcceptance: requireLicenseAcceptance,
+		MinClientVersion:         str("minClientVersion"),
+		BlobKey:                  hex.EncodeToString(sum256[:]),
+		PackageHash:              base64.StdEncoding.EncodeToString(hash[:]),
+		PackageHashAlgorithm:     "SHA512",
+		PackageSize:              int64(len(data)),
+	}, nil
+}
+
+func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) {
+	repoName := urlparams.Vars(r)["name"]
+
+	repoID := h.resolveRepo(w, r)
+	if repoID == "" {
 		return
 	}
 
-	// Parse metadata from .nupkg
-	handler := NewNuGetHandler()
+	data, ok := h.readPushedPackage(w, r)
+	if !ok {
+		return
+	}
 
-	metadata, err := handler.Parse(r.Context(), io.NopCloser(strings.NewReader(string(data))))
+	metadata, err := NewNuGetHandler().Parse(r.Context(), bytes.NewReader(data))
 	if err != nil {
 		h.Log.Errorw("failed to parse package metadata", "error", err)
 		http.Error(w, "invalid package", http.StatusBadRequest)
@@ -165,19 +250,9 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	packageIDVal, ok := metadata["id"].(string)
-	if !ok {
-		h.Log.Errorw("failed to extract package id from metadata", "error", "id not found or not a string")
-		http.Error(w, "invalid package", http.StatusBadRequest)
-
-		return
-	}
-
-	packageID := strings.ToLower(packageIDVal)
-
-	version, ok := metadata["version"].(string)
-	if !ok {
-		h.Log.Errorw("failed to extract version from metadata", "error", "version not found or not a string")
+	pkg, err := pushedPackage(repoID, metadata, data)
+	if err != nil {
+		h.Log.Errorw("rejected nuget package", "error", err)
 		http.Error(w, "invalid package", http.StatusBadRequest)
 
 		return
@@ -189,56 +264,55 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Compute SHA512 hash
-	hash := sha512.Sum512(data)
-	hashB64 := base64.StdEncoding.EncodeToString(hash[:])
+	existing, err := h.DB.GetNuGetPackage(r.Context(), repoID, pkg.PackageID, pkg.Version)
+	if err != nil {
+		h.Log.Errorw("failed to check existing nuget package", "id", pkg.PackageID, "version", pkg.Version, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
 
-	sum256 := sha256.Sum256(data)
-	blobSHA := hex.EncodeToString(sum256[:])
-
-	// Extract metadata fields with type checking
-	title, _ := metadata["title"].(string)
-	description, _ := metadata["description"].(string)
-	summary, _ := metadata["summary"].(string)
-	authors, _ := metadata["authors"].(string)
-	owners, _ := metadata["owners"].(string)
-	tags, _ := metadata["tags"].(string)
-	projectURL, _ := metadata["projectUrl"].(string)
-	licenseURL, _ := metadata["licenseUrl"].(string)
-	iconURL, _ := metadata["iconUrl"].(string)
-	requireLicenseAcceptance, _ := metadata["requireLicenseAcceptance"].(bool)
-	minClientVersion, _ := metadata["minClientVersion"].(string)
-
-	// Create database record
-	pkg := &models.NuGetPackage{
-		RepositoryID:             repoID,
-		PackageID:                packageID,
-		Version:                  version,
-		Title:                    title,
-		Description:              description,
-		Summary:                  summary,
-		Authors:                  authors,
-		Owners:                   owners,
-		Tags:                     tags,
-		ProjectURL:               projectURL,
-		LicenseURL:               licenseURL,
-		IconURL:                  iconURL,
-		RequireLicenseAcceptance: requireLicenseAcceptance,
-		MinClientVersion:         minClientVersion,
-		BlobKey:                  blobSHA,
-		PackageHash:              hashB64,
-		PackageHashAlgorithm:     "SHA512",
-		PackageSize:              int64(len(data)),
+		return
 	}
 
-	// Store the blob and insert the referencing row under the per-blob lock so
-	// a concurrent unpublish cannot delete the blob in between.
-	if err := storage.WithBlobLock(r.Context(), h.DB, blobSHA, func(ctx context.Context) error {
+	if existing != nil {
+		http.Error(w, "package version already exists", http.StatusConflict)
+		return
+	}
+
+	if err := h.storePackage(r.Context(), pkg, data); err != nil {
+		if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
+			http.Error(w, "package version already exists", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to store nuget package", "id", pkg.PackageID, "version", pkg.Version, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
+		Repository: repoName,
+		Format:     "nuget",
+		Name:       pkg.PackageID,
+		Version:    pkg.Version,
+		Path:       nupkgName(pkg.PackageID, pkg.Version),
+		SHA256:     pkg.BlobKey,
+		Size:       pkg.PackageSize,
+	}))
+
+	w.WriteHeader(http.StatusCreated)
+}
+
+// storePackage stores the blob and inserts the referencing row under the
+// per-blob lock so a concurrent unpublish cannot delete the blob in between.
+// When the row is not created (a concurrent push of the same version won) the
+// blob is dropped again unless something else references it.
+func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.NuGetPackage, data []byte) error {
+	err := storage.WithBlobLock(ctx, h.DB, pkg.BlobKey, func(ctx context.Context) error {
 		if _, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
-			"sha256":   blobSHA,
-			"filename": fmt.Sprintf("%s.%s.nupkg", packageID, version),
-			"package":  packageID,
-			"version":  version,
+			"sha256":   pkg.BlobKey,
+			"filename": nupkgName(pkg.PackageID, pkg.Version),
+			"package":  pkg.PackageID,
+			"version":  pkg.Version,
 		}); err != nil {
 			return fmt.Errorf("store blob: %w", err)
 		}
@@ -248,42 +322,26 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		}
 
 		return nil
-	}); err != nil {
-		h.Log.Errorw("failed to store nuget package", "id", packageID, "version", version, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
+	})
+	if err == nil {
+		return nil
 	}
 
-	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
-		Repository: repoName,
-		Format:     "nuget",
-		Name:       packageID,
-		Version:    version,
-		Path:       fmt.Sprintf("%s.%s.nupkg", packageID, version),
-		SHA256:     blobSHA,
-		Size:       int64(len(data)),
-	}))
+	if cleanErr := storage.SafeDeleteBlob(ctx, h.DB, h.BlobStore, pkg.BlobKey); cleanErr != nil {
+		h.Log.Warnw("failed to clean up nuget blob", "sha256", pkg.BlobKey, "error", cleanErr)
+	}
 
-	w.WriteHeader(http.StatusCreated)
+	return err
 }
 
 func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	packageID := strings.ToLower(vars["id"])
-	version := vars["version"]
+	version, _ := normalizeVersion(vars["version"])
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
@@ -313,7 +371,7 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindNuGet, IDs: []string{pkg.ID}, Resource: fmt.Sprintf("%s.%s.nupkg", packageID, version)}, func() error {
+	err = trash.Delete(r.Context(), h.DB, trash.Request{RepoID: repoID, Kind: models.TrashKindNuGet, IDs: []string{pkg.ID}, Resource: nupkgName(packageID, version)}, func() error {
 		if err := h.DB.DeleteNuGetPackage(r.Context(), repoID, packageID, version); err != nil {
 			return fmt.Errorf("delete nuget package: %w", err)
 		}
@@ -343,7 +401,7 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 		Format:     "nuget",
 		Name:       packageID,
 		Version:    version,
-		Path:       fmt.Sprintf("%s.%s.nupkg", packageID, version),
+		Path:       nupkgName(packageID, version),
 		SHA256:     pkg.BlobKey,
 		Size:       pkg.PackageSize,
 	}))
@@ -351,22 +409,99 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 	w.WriteHeader(http.StatusNoContent)
 }
 
-func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	packageID := strings.ToLower(vars["id"])
-	version := vars["version"]
+// sortedVersions returns the packages ordered by version, oldest first.
+func sortedVersions(pkgs []*models.NuGetPackage) []*models.NuGetPackage {
+	out := slices.Clone(pkgs)
+	slices.SortStableFunc(out, func(a, b *models.NuGetPackage) int {
+		return compareVersionStrings(a.Version, b.Version)
+	})
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	return out
+}
+
+// latestVersion returns the highest stable version, or the highest prerelease
+// when there is no stable one.
+func latestVersion(pkgs []*models.NuGetPackage) *models.NuGetPackage {
+	sorted := sortedVersions(pkgs)
+
+	for _, p := range slices.Backward(sorted) {
+		if v, err := parseVersion(p.Version); err == nil && !v.isPrerelease() {
+			return p
+		}
+	}
+
+	return sorted[len(sorted)-1]
+}
+
+// handleVersionIndex serves the PackageBaseAddress version list
+// (GET {base}/{id}/index.json), the first request `dotnet restore` makes for a
+// package.
+func (h *HTTPHandler) handleVersionIndex(w http.ResponseWriter, r *http.Request) {
+	repoID := h.resolveRepo(w, r)
+	if repoID == "" {
+		return
+	}
+
+	packageID := strings.ToLower(urlparams.Vars(r)["id"])
+
+	pkgs, err := h.DB.ListNuGetPackageVersions(r.Context(), repoID, packageID)
 	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
+		h.Log.Errorw("failed to list nuget versions", "id", packageID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	if repoID == "" {
+	if len(pkgs) == 0 {
 		http.NotFound(w, r)
+		return
+	}
+
+	versions := make([]string, 0, len(pkgs))
+	for _, p := range sortedVersions(pkgs) {
+		versions = append(versions, p.Version)
+	}
+
+	writeJSON(w, map[string]any{"versions": versions})
+}
+
+type packageFile int
+
+const (
+	fileUnknown packageFile = iota
+	fileNupkg
+	fileNuspec
+)
+
+// classifyPackageFile maps the {filename} of a PackageBaseAddress request to
+// the file it names: <id>.<version>.nupkg (version as requested or
+// normalized) or <id>.nuspec. Names are matched case-insensitively.
+func classifyPackageFile(filename, packageID, rawVersion, version string) packageFile {
+	name := strings.ToLower(filename)
+
+	switch name {
+	case nupkgName(packageID, version), nupkgName(packageID, strings.ToLower(rawVersion)):
+		return fileNupkg
+	case packageID + ".nuspec":
+		return fileNuspec
+	}
+
+	return fileUnknown
+}
+
+func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Request) {
+	vars := urlparams.Vars(r)
+	packageID := strings.ToLower(vars["id"])
+	version, _ := normalizeVersion(vars["version"])
+
+	kind := classifyPackageFile(vars["filename"], packageID, vars["version"], version)
+	if kind == fileUnknown {
+		http.NotFound(w, r)
+		return
+	}
+
+	repoID := h.resolveRepo(w, r)
+	if repoID == "" {
 		return
 	}
 
@@ -384,7 +519,12 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 	}
 
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
-		fmt.Sprintf("%s.%s.nupkg", packageID, version), vars["filename"], r.URL.Path)...) {
+		nupkgName(packageID, version), vars["filename"], r.URL.Path)...) {
+		return
+	}
+
+	if kind == fileNuspec {
+		h.serveNuspec(w, r, packageID, pkg)
 		return
 	}
 
@@ -395,7 +535,7 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 		// Continue anyway
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: pkg.BlobKey, Size: pkg.PackageSize, Filename: fmt.Sprintf("%s.%s.nupkg", packageID, version), ContentType: "application/zip"}) {
+	if h.TryPresign(w, r, presign.Blob{SHA256: pkg.BlobKey, Size: pkg.PackageSize, Filename: nupkgName(packageID, version), ContentType: "application/zip"}) {
 		return
 	}
 
@@ -414,29 +554,72 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := io.Copy(w, rc); err != nil {
-		h.Log.Errorw("failed to write package response", "id", packageID, "version", version, "error", err)
+		h.Log.Errorw("failed to write package response", "id", packageID, "version", pkg.Version, "error", err)
 	}
 }
 
-func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	packageID := strings.ToLower(vars["id"])
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+// serveNuspec answers GET {base}/{id}/{version}/{id}.nuspec with the nuspec
+// extracted from the stored package.
+func (h *HTTPHandler) serveNuspec(w http.ResponseWriter, r *http.Request, packageID string, pkg *models.NuGetPackage) {
+	rc, err := h.BlobStore.Get(r.Context(), pkg.BlobKey)
 	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
+		h.Log.Errorw("failed to get blob", "key", pkg.BlobKey, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+	defer func() { _ = rc.Close() }()
+
+	nuspec, err := readNuspec(rc)
+	if err != nil {
+		h.Log.Errorw("failed to read nuspec", "id", packageID, "version", pkg.Version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
+	w.Header().Set("Content-Type", "application/xml")
+	w.Header().Set("Content-Length", strconv.Itoa(len(nuspec)))
+	w.WriteHeader(http.StatusOK)
+
+	_, _ = w.Write(nuspec)
+}
+
+// catalogEntry is the registration "catalogEntry" object of one version. The
+// server keeps no catalog, so its @id is the version's registration leaf.
+func (h *HTTPHandler) catalogEntry(ctx context.Context, baseURL, packageID string, v *models.NuGetPackage) map[string]any {
+	leaf := registrationLeafURL(baseURL, packageID, v.Version)
+
+	return map[string]any{
+		"@id":                      leaf,
+		"@type":                    "PackageDetails",
+		"id":                       v.PackageID,
+		"version":                  v.Version,
+		"description":              v.Description,
+		"authors":                  v.Authors,
+		"title":                    v.Title,
+		"summary":                  v.Summary,
+		"tags":                     v.Tags,
+		"projectUrl":               v.ProjectURL,
+		"licenseUrl":               v.LicenseURL,
+		"iconUrl":                  v.IconURL,
+		"requireLicenseAcceptance": v.RequireLicenseAcceptance,
+		"listed":                   true,
+		"published":                v.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		"packageContent":           packageContentURL(baseURL, packageID, v.Version),
+		"dependencyGroups":         h.nuspecDependencyGroups(ctx, packageID, v),
+	}
+}
+
+func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Request) {
+	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
-	versions, err := h.DB.ListNuGetPackageVersions(r.Context(), repoID, packageID)
+	packageID := strings.ToLower(urlparams.Vars(r)["id"])
+
+	pkgs, err := h.DB.ListNuGetPackageVersions(r.Context(), repoID, packageID)
 	if err != nil {
 		h.Log.Errorw("failed to list nuget versions", "id", packageID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -444,65 +627,150 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if len(versions) == 0 {
+	if len(pkgs) == 0 {
 		http.NotFound(w, r)
 		return
 	}
 
-	baseURL := fmt.Sprintf("%s/repos/%s", h.BaseURL, repoName)
+	baseURL := h.repoBaseURL(r)
+	indexURL := registrationIndexURL(baseURL, packageID)
+	versions := sortedVersions(pkgs)
 
-	items := make([]map[string]any, len(versions))
-	for i, v := range versions {
-		items[i] = map[string]any{
-			"catalogEntry": map[string]any{
-				"id":               v.PackageID,
-				"version":          v.Version,
-				"description":      v.Description,
-				"authors":          v.Authors,
-				"title":            v.Title,
-				"summary":          v.Summary,
-				"tags":             v.Tags,
-				"projectUrl":       v.ProjectURL,
-				"licenseUrl":       v.LicenseURL,
-				"iconUrl":          v.IconURL,
-				"dependencyGroups": h.nuspecDependencyGroups(r.Context(), packageID, v),
-			},
-			"packageContent": fmt.Sprintf("%s/v3/package/%s/%s/%s.%s.nupkg", baseURL, packageID, v.Version, packageID, v.Version),
+	var pages []map[string]any
+
+	for chunk := range slices.Chunk(versions, registrationPageSize) {
+		items := make([]map[string]any, len(chunk))
+		for i, v := range chunk {
+			items[i] = map[string]any{
+				"@id":            registrationLeafURL(baseURL, packageID, v.Version),
+				"@type":          "Package",
+				"catalogEntry":   h.catalogEntry(r.Context(), baseURL, packageID, v),
+				"packageContent": packageContentURL(baseURL, packageID, v.Version),
+				"registration":   indexURL,
+			}
 		}
+
+		lower, upper := chunk[0].Version, chunk[len(chunk)-1].Version
+		pages = append(pages, map[string]any{
+			"@id":    indexURL + "#page/" + lower + "/" + upper,
+			"@type":  "catalog:CatalogPage",
+			"count":  len(items),
+			"items":  items,
+			"lower":  lower,
+			"parent": indexURL,
+			"upper":  upper,
+		})
 	}
 
-	index := map[string]any{
-		"count": len(versions),
-		"items": []map[string]any{
-			{
-				"count": len(versions),
-				"items": items,
-			},
-		},
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(index); encErr != nil {
-		_ = encErr // response header already written
-	}
+	writeJSON(w, map[string]any{
+		"@id":   indexURL,
+		"count": len(pages),
+		"items": pages,
+	})
 }
 
-func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
+// handleRegistrationLeaf serves GET {registration}/{id}/{version}.json.
+func (h *HTTPHandler) handleRegistrationLeaf(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
-	repoName := vars["name"]
+	packageID := strings.ToLower(vars["id"])
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	rawVersion, isJSON := strings.CutSuffix(vars["versionfile"], ".json")
+	if !isJSON {
+		http.NotFound(w, r)
+		return
+	}
+
+	version, _ := normalizeVersion(rawVersion)
+
+	repoID := h.resolveRepo(w, r)
+	if repoID == "" {
+		return
+	}
+
+	pkg, err := h.DB.GetNuGetPackage(r.Context(), repoID, packageID, version)
 	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
+		h.Log.Errorw("failed to get nuget package", "id", packageID, "version", version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	if repoID == "" {
+	if pkg == nil {
 		http.NotFound(w, r)
+		return
+	}
+
+	baseURL := h.repoBaseURL(r)
+	leaf := registrationLeafURL(baseURL, packageID, pkg.Version)
+
+	writeJSON(w, map[string]any{
+		"@id":            leaf,
+		"@type":          "Package",
+		"catalogEntry":   leaf,
+		"listed":         true,
+		"packageContent": packageContentURL(baseURL, packageID, pkg.Version),
+		"published":      pkg.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
+		"registration":   registrationIndexURL(baseURL, packageID),
+	})
+}
+
+// groupByPackage splits rows ordered by package id into one slice per package.
+func groupByPackage(pkgs []*models.NuGetPackage) [][]*models.NuGetPackage {
+	var groups [][]*models.NuGetPackage
+
+	for _, p := range pkgs {
+		if n := len(groups); n > 0 && groups[n-1][0].PackageID == p.PackageID {
+			groups[n-1] = append(groups[n-1], p)
+			continue
+		}
+
+		groups = append(groups, []*models.NuGetPackage{p})
+	}
+
+	return groups
+}
+
+// searchEntry is the search result of one package: the latest version's
+// metadata plus every version.
+func searchEntry(baseURL string, versions []*models.NuGetPackage) map[string]any {
+	latest := latestVersion(versions)
+	indexURL := registrationIndexURL(baseURL, latest.PackageID)
+
+	var downloads int
+
+	entries := make([]map[string]any, 0, len(versions))
+
+	for _, v := range sortedVersions(versions) {
+		downloads += v.DownloadCount
+		entries = append(entries, map[string]any{
+			"@id":       registrationLeafURL(baseURL, v.PackageID, v.Version),
+			"version":   v.Version,
+			"downloads": v.DownloadCount,
+		})
+	}
+
+	return map[string]any{
+		"@id":            indexURL,
+		"@type":          "Package",
+		"registration":   indexURL,
+		"id":             latest.PackageID,
+		"version":        latest.Version,
+		"description":    latest.Description,
+		"summary":        latest.Summary,
+		"title":          latest.Title,
+		"iconUrl":        latest.IconURL,
+		"licenseUrl":     latest.LicenseURL,
+		"projectUrl":     latest.ProjectURL,
+		"tags":           latest.Tags,
+		"authors":        latest.Authors,
+		"totalDownloads": downloads,
+		"versions":       entries,
+	}
+}
+
+func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
+	repoID := h.resolveRepo(w, r)
+	if repoID == "" {
 		return
 	}
 
@@ -511,6 +779,7 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 	skip := parseIntMin(q.Get("skip"), 0, 0)
 	take := parseIntClamp(q.Get("take"), 20, 1, 100)
 
+	// One row per version of every package on the page; totalHits counts packages.
 	packages, total, err := h.DB.SearchNuGetPackages(r.Context(), repoID, query, skip, take)
 	if err != nil {
 		h.Log.Errorw("failed to search nuget packages", "query", query, "error", err)
@@ -519,56 +788,27 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	baseURL := fmt.Sprintf("%s/repos/%s", h.BaseURL, repoName)
+	baseURL := h.repoBaseURL(r)
+	groups := groupByPackage(packages)
+	data := make([]map[string]any, len(groups))
 
-	data := make([]map[string]any, len(packages))
-	for i, pkg := range packages {
-		data[i] = map[string]any{
-			"id":          pkg.PackageID,
-			"version":     pkg.Version,
-			"description": pkg.Description,
-			"authors":     pkg.Authors,
-			"title":       pkg.Title,
-			"summary":     pkg.Summary,
-			"tags":        pkg.Tags,
-			"projectUrl":  pkg.ProjectURL,
-			"iconUrl":     pkg.IconURL,
-			"packageUrl":  fmt.Sprintf("%s/v3/package/%s/%s/%s.%s.nupkg", baseURL, pkg.PackageID, pkg.Version, pkg.PackageID, pkg.Version),
-		}
+	for i, versions := range groups {
+		data[i] = searchEntry(baseURL, versions)
 	}
 
-	result := map[string]any{
+	writeJSON(w, map[string]any{
 		"totalHits": total,
 		"data":      data,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(result); encErr != nil {
-		_ = encErr // response header already written
-	}
+	})
 }
 
 func (h *HTTPHandler) handleAutocomplete(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
+	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
-		http.NotFound(w, r)
 		return
 	}
 
-	q := r.URL.Query()
-	query := q.Get("q")
+	query := r.URL.Query().Get("q")
 
 	packages, total, err := h.DB.SearchNuGetPackages(r.Context(), repoID, query, 0, 100)
 	if err != nil {
@@ -579,27 +819,17 @@ func (h *HTTPHandler) handleAutocomplete(w http.ResponseWriter, r *http.Request)
 	}
 
 	// Extract unique package IDs
-	seen := make(map[string]bool)
-	data := make([]string, 0)
+	groups := groupByPackage(packages)
+	data := make([]string, len(groups))
 
-	for _, pkg := range packages {
-		if !seen[pkg.PackageID] {
-			data = append(data, pkg.PackageID)
-			seen[pkg.PackageID] = true
-		}
+	for i, versions := range groups {
+		data[i] = versions[0].PackageID
 	}
 
-	result := map[string]any{
+	writeJSON(w, map[string]any{
 		"totalHits": total,
 		"data":      data,
-	}
-
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(result); encErr != nil {
-		_ = encErr // response header already written
-	}
+	})
 }
 
 func parseIntMin(s string, defaultVal, minVal int) int {

@@ -11,20 +11,24 @@ import (
 )
 
 const createConanPackage = `-- name: CreateConanPackage :one
-INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, blob_id, conanfile, conaninfo)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+ON CONFLICT (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename) WHERE deleted_at IS NULL DO UPDATE SET
+    blob_id = EXCLUDED.blob_id,
+    updated_at = now()
 RETURNING id, created_at, updated_at
 `
 
 type CreateConanPackageParams struct {
-	RepositoryID   string  `db:"repository_id" json:"repository_id"`
-	Name           string  `db:"name" json:"name"`
-	Version        string  `db:"version" json:"version"`
-	UserChannel    string  `db:"user_channel" json:"user_channel"`
-	RecipeRevision string  `db:"recipe_revision" json:"recipe_revision"`
-	BlobID         *string `db:"blob_id" json:"blob_id"`
-	Conanfile      *string `db:"conanfile" json:"conanfile"`
-	Conaninfo      *string `db:"conaninfo" json:"conaninfo"`
+	RepositoryID    string  `db:"repository_id" json:"repository_id"`
+	Name            string  `db:"name" json:"name"`
+	Version         string  `db:"version" json:"version"`
+	UserChannel     string  `db:"user_channel" json:"user_channel"`
+	RecipeRevision  string  `db:"recipe_revision" json:"recipe_revision"`
+	PackageID       string  `db:"package_id" json:"package_id"`
+	PackageRevision string  `db:"package_revision" json:"package_revision"`
+	Filename        string  `db:"filename" json:"filename"`
+	BlobID          *string `db:"blob_id" json:"blob_id"`
 }
 
 type CreateConanPackageRow struct {
@@ -33,6 +37,8 @@ type CreateConanPackageRow struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Upserts one stored file: re-uploading a file replaces its blob (a Conan client
+// does this for metadata and when a failed upload is retried).
 func (q *Queries) CreateConanPackage(ctx context.Context, arg CreateConanPackageParams) (CreateConanPackageRow, error) {
 	row := q.db.QueryRow(ctx, createConanPackage,
 		arg.RepositoryID,
@@ -40,9 +46,10 @@ func (q *Queries) CreateConanPackage(ctx context.Context, arg CreateConanPackage
 		arg.Version,
 		arg.UserChannel,
 		arg.RecipeRevision,
+		arg.PackageID,
+		arg.PackageRevision,
+		arg.Filename,
 		arg.BlobID,
-		arg.Conanfile,
-		arg.Conaninfo,
 	)
 	var i CreateConanPackageRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -59,32 +66,41 @@ func (q *Queries) DeleteConanPackage(ctx context.Context, id string) error {
 }
 
 const getConanPackage = `-- name: GetConanPackage :one
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, COALESCE(b.blob_key, '') AS blob_key, cp.conanfile, cp.conaninfo, cp.created_at, cp.updated_at
+SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
+       COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
+       cp.created_at, cp.updated_at
 FROM conan_packages cp
 LEFT JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.user_channel = $4 AND cp.recipe_revision = $5 AND cp.deleted_at IS NULL
+WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.user_channel = $4 AND cp.recipe_revision = $5
+  AND cp.package_id = $6 AND cp.package_revision = $7 AND cp.filename = $8 AND cp.deleted_at IS NULL
 `
 
 type GetConanPackageParams struct {
-	RepositoryID   string `db:"repository_id" json:"repository_id"`
-	Name           string `db:"name" json:"name"`
-	Version        string `db:"version" json:"version"`
-	UserChannel    string `db:"user_channel" json:"user_channel"`
-	RecipeRevision string `db:"recipe_revision" json:"recipe_revision"`
+	RepositoryID    string `db:"repository_id" json:"repository_id"`
+	Name            string `db:"name" json:"name"`
+	Version         string `db:"version" json:"version"`
+	UserChannel     string `db:"user_channel" json:"user_channel"`
+	RecipeRevision  string `db:"recipe_revision" json:"recipe_revision"`
+	PackageID       string `db:"package_id" json:"package_id"`
+	PackageRevision string `db:"package_revision" json:"package_revision"`
+	Filename        string `db:"filename" json:"filename"`
 }
 
 type GetConanPackageRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	UserChannel    string    `db:"user_channel" json:"user_channel"`
-	RecipeRevision string    `db:"recipe_revision" json:"recipe_revision"`
-	BlobKey        string    `db:"blob_key" json:"blob_key"`
-	Conanfile      *string   `db:"conanfile" json:"conanfile"`
-	Conaninfo      *string   `db:"conaninfo" json:"conaninfo"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	ID              string    `db:"id" json:"id"`
+	RepositoryID    string    `db:"repository_id" json:"repository_id"`
+	Name            string    `db:"name" json:"name"`
+	Version         string    `db:"version" json:"version"`
+	UserChannel     string    `db:"user_channel" json:"user_channel"`
+	RecipeRevision  string    `db:"recipe_revision" json:"recipe_revision"`
+	PackageID       string    `db:"package_id" json:"package_id"`
+	PackageRevision string    `db:"package_revision" json:"package_revision"`
+	Filename        string    `db:"filename" json:"filename"`
+	BlobKey         string    `db:"blob_key" json:"blob_key"`
+	Sha256          string    `db:"sha256" json:"sha256"`
+	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams) (GetConanPackageRow, error) {
@@ -94,6 +110,9 @@ func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams
 		arg.Version,
 		arg.UserChannel,
 		arg.RecipeRevision,
+		arg.PackageID,
+		arg.PackageRevision,
+		arg.Filename,
 	)
 	var i GetConanPackageRow
 	err := row.Scan(
@@ -103,9 +122,12 @@ func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams
 		&i.Version,
 		&i.UserChannel,
 		&i.RecipeRevision,
+		&i.PackageID,
+		&i.PackageRevision,
+		&i.Filename,
 		&i.BlobKey,
-		&i.Conanfile,
-		&i.Conaninfo,
+		&i.Sha256,
+		&i.SizeBytes,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -113,24 +135,29 @@ func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams
 }
 
 const listConanPackages = `-- name: ListConanPackages :many
-SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, COALESCE(b.blob_key, '') AS blob_key, cp.conanfile, cp.conaninfo, cp.created_at, cp.updated_at
+SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
+       COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
+       cp.created_at, cp.updated_at
 FROM conan_packages cp
 LEFT JOIN blobs b ON b.id = cp.blob_id
-WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC
+WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename
 `
 
 type ListConanPackagesRow struct {
-	ID             string    `db:"id" json:"id"`
-	RepositoryID   string    `db:"repository_id" json:"repository_id"`
-	Name           string    `db:"name" json:"name"`
-	Version        string    `db:"version" json:"version"`
-	UserChannel    string    `db:"user_channel" json:"user_channel"`
-	RecipeRevision string    `db:"recipe_revision" json:"recipe_revision"`
-	BlobKey        string    `db:"blob_key" json:"blob_key"`
-	Conanfile      *string   `db:"conanfile" json:"conanfile"`
-	Conaninfo      *string   `db:"conaninfo" json:"conaninfo"`
-	CreatedAt      time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	ID              string    `db:"id" json:"id"`
+	RepositoryID    string    `db:"repository_id" json:"repository_id"`
+	Name            string    `db:"name" json:"name"`
+	Version         string    `db:"version" json:"version"`
+	UserChannel     string    `db:"user_channel" json:"user_channel"`
+	RecipeRevision  string    `db:"recipe_revision" json:"recipe_revision"`
+	PackageID       string    `db:"package_id" json:"package_id"`
+	PackageRevision string    `db:"package_revision" json:"package_revision"`
+	Filename        string    `db:"filename" json:"filename"`
+	BlobKey         string    `db:"blob_key" json:"blob_key"`
+	Sha256          string    `db:"sha256" json:"sha256"`
+	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
 }
 
 func (q *Queries) ListConanPackages(ctx context.Context, repositoryID string) ([]ListConanPackagesRow, error) {
@@ -149,12 +176,123 @@ func (q *Queries) ListConanPackages(ctx context.Context, repositoryID string) ([
 			&i.Version,
 			&i.UserChannel,
 			&i.RecipeRevision,
+			&i.PackageID,
+			&i.PackageRevision,
+			&i.Filename,
 			&i.BlobKey,
-			&i.Conanfile,
-			&i.Conaninfo,
+			&i.Sha256,
+			&i.SizeBytes,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConanRecipeFiles = `-- name: ListConanRecipeFiles :many
+SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
+       COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
+       cp.created_at, cp.updated_at
+FROM conan_packages cp
+LEFT JOIN blobs b ON b.id = cp.blob_id
+WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.user_channel = $4 AND cp.deleted_at IS NULL
+ORDER BY cp.created_at, cp.id
+`
+
+type ListConanRecipeFilesParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+	Version      string `db:"version" json:"version"`
+	UserChannel  string `db:"user_channel" json:"user_channel"`
+}
+
+type ListConanRecipeFilesRow struct {
+	ID              string    `db:"id" json:"id"`
+	RepositoryID    string    `db:"repository_id" json:"repository_id"`
+	Name            string    `db:"name" json:"name"`
+	Version         string    `db:"version" json:"version"`
+	UserChannel     string    `db:"user_channel" json:"user_channel"`
+	RecipeRevision  string    `db:"recipe_revision" json:"recipe_revision"`
+	PackageID       string    `db:"package_id" json:"package_id"`
+	PackageRevision string    `db:"package_revision" json:"package_revision"`
+	Filename        string    `db:"filename" json:"filename"`
+	BlobKey         string    `db:"blob_key" json:"blob_key"`
+	Sha256          string    `db:"sha256" json:"sha256"`
+	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Every live file of one recipe: all its recipe revisions and package revisions.
+func (q *Queries) ListConanRecipeFiles(ctx context.Context, arg ListConanRecipeFilesParams) ([]ListConanRecipeFilesRow, error) {
+	rows, err := q.db.Query(ctx, listConanRecipeFiles,
+		arg.RepositoryID,
+		arg.Name,
+		arg.Version,
+		arg.UserChannel,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListConanRecipeFilesRow{}
+	for rows.Next() {
+		var i ListConanRecipeFilesRow
+		if err := rows.Scan(
+			&i.ID,
+			&i.RepositoryID,
+			&i.Name,
+			&i.Version,
+			&i.UserChannel,
+			&i.RecipeRevision,
+			&i.PackageID,
+			&i.PackageRevision,
+			&i.Filename,
+			&i.BlobKey,
+			&i.Sha256,
+			&i.SizeBytes,
+			&i.CreatedAt,
+			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listConanRecipes = `-- name: ListConanRecipes :many
+SELECT DISTINCT cp.name, cp.version, cp.user_channel
+FROM conan_packages cp
+WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL AND cp.filename <> ''
+ORDER BY cp.name, cp.version, cp.user_channel
+`
+
+type ListConanRecipesRow struct {
+	Name        string `db:"name" json:"name"`
+	Version     string `db:"version" json:"version"`
+	UserChannel string `db:"user_channel" json:"user_channel"`
+}
+
+func (q *Queries) ListConanRecipes(ctx context.Context, repositoryID string) ([]ListConanRecipesRow, error) {
+	rows, err := q.db.Query(ctx, listConanRecipes, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListConanRecipesRow{}
+	for rows.Next() {
+		var i ListConanRecipesRow
+		if err := rows.Scan(&i.Name, &i.Version, &i.UserChannel); err != nil {
 			return nil, err
 		}
 		items = append(items, i)

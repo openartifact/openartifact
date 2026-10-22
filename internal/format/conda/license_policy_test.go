@@ -9,7 +9,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"net/http"
-	"strings"
 	"testing"
 
 	"github.com/klauspost/compress/zstd"
@@ -61,21 +60,16 @@ func condaArchive(t *testing.T, indexJSON string) []byte {
 func TestDeclaredLicense(t *testing.T) {
 	const index = `{"name":"demo","license":"GPL-3.0-only","license_family":"GPL"}`
 
-	if got := declaredLicense("demo-1.0-py_0.conda", condaArchive(t, index)); got != "GPL-3.0-only" {
+	if got := readPackageIndex(models.CondaExtConda, condaArchive(t, index)).License; got != "GPL-3.0-only" {
 		t.Errorf(".conda license = %q", got)
 	}
 
-	for name, data := range map[string][]byte{
-		"garbage tar.bz2": []byte("not an archive"),
-		"garbage conda":   []byte("not an archive"),
+	for ext, data := range map[string][]byte{
+		models.CondaExtTarBz2: []byte("not an archive"),
+		models.CondaExtConda:  []byte("not an archive"),
 	} {
-		fn := "demo-1.0-py_0.tar.bz2"
-		if strings.Contains(name, "conda") {
-			fn = "demo-1.0-py_0.conda"
-		}
-
-		if got := declaredLicense(fn, data); got != "" {
-			t.Errorf("%s: license = %q, want empty", name, got)
+		if got := readPackageIndex(ext, data).License; got != "" {
+			t.Errorf("garbage %s: license = %q, want empty", ext, got)
 		}
 	}
 }

@@ -11,7 +11,6 @@ import (
 	"database/sql"
 	"fmt"
 	"io"
-	"sort"
 	"strconv"
 	"time"
 
@@ -111,7 +110,7 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 		return fmt.Errorf("rpm worker: loading packages: %w", err)
 	}
 
-	w.backfillWeakDeps(ctx, repoID, packages)
+	w.backfillFromBlob(ctx, repoID, packages)
 
 	blobs, err := w.buildMetadata(ctx, repoID, packages)
 	if err != nil {
@@ -189,34 +188,45 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 	// The new set is durable: make sure a concurrent reclaim of an identical
 	// blob (another repo's superseded row) did not remove one of its objects,
 	// then drop the blobs nothing references any more.
-	w.ensureBlobs(ctx, repoID, baseArch, blobs, newSHA)
-	w.reclaimBlobs(ctx, reclaim)
+	w.blobs().ensure(ctx, repoID, blobs, newSHA, func(path, sum string) map[string]string {
+		return map[string]string{
+			"path":      path,
+			"format":    "rpm",
+			"repo_id":   repoID,
+			"base_arch": baseArch,
+			"sha256":    sum,
+		}
+	})
+	w.blobs().reclaim(ctx, reclaim)
 
 	w.log.Infow("metadata regeneration complete", "repo_id", repoID, "packages", len(packages))
 
 	return nil
 }
 
-// backfillWeakDeps re-reads the headers of packages persisted before weak
-// dependencies were stored (recommends/suggests/supplements/enhances), updates
-// the in-memory packages and persists the result. Failures are logged and leave
-// the package without weak deps rather than failing the regeneration.
-func (w *RPMetadataWorker) backfillWeakDeps(ctx context.Context, repoID string, packages []pkgrpm.Package) {
+// backfillFromBlob re-reads the headers of packages persisted before weak
+// dependencies (recommends/suggests/supplements/enhances) or the installed and
+// archive sizes were stored correctly, updates the in-memory packages and
+// persists the result. Failures are logged and leave the package as it was
+// rather than failing the regeneration.
+func (w *RPMetadataWorker) backfillFromBlob(ctx context.Context, repoID string, packages []pkgrpm.Package) {
 	for i := range packages {
 		pkg := &packages[i]
-		if pkg.WeakDepsParsed {
+		if pkg.WeakDepsParsed && pkg.SizesParsed {
 			continue
 		}
 
 		parsed, err := w.readPackageBlob(ctx, pkg.SHA256)
 		if err != nil {
-			w.log.Warnw("rpm weak-dependency backfill failed", "repo_id", repoID, "package", pkg.Name, "error", err)
+			w.log.Warnw("rpm metadata backfill failed", "repo_id", repoID, "package", pkg.Name, "error", err)
 			continue
 		}
 
 		pkg.Recommends, pkg.Suggests = parsed.Recommends, parsed.Suggests
 		pkg.Supplements, pkg.Enhances = parsed.Supplements, parsed.Enhances
 		pkg.WeakDepsParsed = true
+		pkg.InstalledSize, pkg.ArchiveSize = parsed.InstalledSize, parsed.ArchiveSize
+		pkg.SizesParsed = true
 
 		extra, err := pkg.MarshalExtra()
 		if err == nil {
@@ -224,7 +234,7 @@ func (w *RPMetadataWorker) backfillWeakDeps(ctx context.Context, repoID string, 
 		}
 
 		if err != nil {
-			w.log.Warnw("rpm weak-dependency backfill not persisted", "repo_id", repoID, "package", pkg.Name, "error", err)
+			w.log.Warnw("rpm metadata backfill not persisted", "repo_id", repoID, "package", pkg.Name, "error", err)
 		}
 	}
 }
@@ -390,129 +400,7 @@ func listOldRPMMetadata(ctx context.Context, tx sq.Transaction, repoID string) (
 	return old, nil
 }
 
-// supersededMetadata compares the previous and the freshly generated metadata
-// set. stalePaths are previous paths that are no longer generated (their rows
-// must go); reclaim are blob checksums that were referenced by a previous row
-// that was removed or re-pointed and that the new set no longer uses (candidates
-// for deletion once nothing else references them).
-func supersededMetadata(oldSHA, newSHA map[string]string) ([]string, []string) {
-	var stalePaths, reclaim []string
-
-	stillUsed := make(map[string]struct{}, len(newSHA))
-	for _, sum := range newSHA {
-		stillUsed[sum] = struct{}{}
-	}
-
-	seen := make(map[string]struct{})
-
-	for path, old := range oldSHA {
-		cur, kept := newSHA[path]
-		if !kept {
-			stalePaths = append(stalePaths, path)
-		}
-
-		if old == "" || (kept && cur == old) {
-			continue
-		}
-
-		if _, ok := stillUsed[old]; ok {
-			continue
-		}
-
-		if _, dup := seen[old]; dup {
-			continue
-		}
-
-		seen[old] = struct{}{}
-
-		reclaim = append(reclaim, old)
-	}
-
-	sort.Strings(stalePaths)
-	sort.Strings(reclaim)
-
-	return stalePaths, reclaim
-}
-
-// ensureBlobs re-stores any blob of the committed set that is missing from the
-// blob store. Under the per-blob lock this serializes with reclaimBlobs, so a
-// reclaim that raced with this run's still-uncommitted rows cannot leave a
-// committed row without its object.
-func (w *RPMetadataWorker) ensureBlobs(ctx context.Context, repoID, baseArch string, blobs map[string][]byte, newSHA map[string]string) {
-	for path, data := range blobs {
-		sum := newSHA[path]
-
-		err := storage.WithBlobLock(ctx, w.db, sum, func(ctx context.Context) error {
-			_, exists, err := w.blobStore.ExistsBySHA256(ctx, sum)
-			if err != nil {
-				return fmt.Errorf("check blob: %w", err)
-			}
-
-			if exists {
-				return nil
-			}
-
-			if _, err := w.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
-				"path":      path,
-				"format":    "rpm",
-				"repo_id":   repoID,
-				"base_arch": baseArch,
-				"sha256":    sum,
-			}); err != nil {
-				return fmt.Errorf("restore blob: %w", err)
-			}
-
-			return nil
-		})
-		if err != nil {
-			w.log.Errorw("rpm worker: failed to verify metadata blob", "repo_id", repoID, "path", path, "sha256", sum, "error", err)
-		}
-	}
-}
-
-// reclaimBlobs deletes superseded metadata blobs that no repository_metadata
-// row (in any repository) and no package row references.
-func (w *RPMetadataWorker) reclaimBlobs(ctx context.Context, shas []string) {
-	for _, sum := range shas {
-		if err := w.reclaimBlob(ctx, sum); err != nil {
-			w.log.Warnw("rpm worker: failed to delete superseded metadata blob", "sha256", sum, "error", err)
-		}
-	}
-}
-
-// reclaimBlob runs the reference checks and the storage delete under the
-// per-blob lock shared with uploaders. storage.SafeDeleteBlob is not used
-// because it only counts package-table rows; generated metadata blobs are
-// referenced from repository_metadata, which identical content in another
-// repository (e.g. two empty repos) may share.
-func (w *RPMetadataWorker) reclaimBlob(ctx context.Context, sum string) error {
-	if err := storage.ValidateBlobID(sum); err != nil {
-		return fmt.Errorf("invalid blob id: %w", err)
-	}
-
-	return storage.WithBlobLock(ctx, w.db, sum, func(ctx context.Context) error {
-		var refs int
-		if err := w.db.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM repository_metadata WHERE blob_sha256 = $1`, sum).Scan(&refs); err != nil {
-			return fmt.Errorf("count metadata references: %w", err)
-		}
-
-		if refs > 0 {
-			return nil
-		}
-
-		pkgRefs, err := w.db.BlobReferenceCount(ctx, sum)
-		if err != nil {
-			return fmt.Errorf("count package references: %w", err)
-		}
-
-		if pkgRefs > 0 {
-			return nil
-		}
-
-		if err := w.blobStore.Delete(ctx, sum); err != nil {
-			return fmt.Errorf("delete blob: %w", err)
-		}
-
-		return nil
-	})
+// blobs returns the shared blob bookkeeping (see metadataBlobs) for this worker.
+func (w *RPMetadataWorker) blobs() metadataBlobs {
+	return metadataBlobs{db: w.db, store: w.blobStore, log: w.log, who: "rpm worker"}
 }

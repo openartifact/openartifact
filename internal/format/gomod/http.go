@@ -28,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
+	xmod "golang.org/x/mod/module"
 )
 
 const maxGoModUploadBytes = 100 << 20
@@ -105,17 +106,23 @@ func (h *HTTPHandler) dispatchGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	module, rest := tail.module, tail.rest
+	// The module path and version travel case-encoded in the URL ("!x" = "X");
+	// every handler below works with the decoded values.
+	modulePath, err := xmod.UnescapePath(tail.module)
+	if err != nil {
+		http.NotFound(w, r)
+		return
+	}
 
 	if tail.latest {
-		setModuleVars(r, module, "")
+		setModuleVars(r, modulePath, "")
 		h.handleLatest(w, r)
 
 		return
 	}
 
-	if rest == "list" {
-		setModuleVars(r, module, "")
+	if tail.rest == "list" {
+		setModuleVars(r, modulePath, "")
 		h.handleList(w, r)
 
 		return
@@ -127,12 +134,21 @@ func (h *HTTPHandler) dispatchGet(w http.ResponseWriter, r *http.Request) {
 	}{{".info", h.handleInfo}, {".mod", h.handleMod}, {".zip", h.handleZip}}
 
 	for _, e := range handlers {
-		if version, found := strings.CutSuffix(rest, e.ext); found && version != "" {
-			setModuleVars(r, module, version)
-			e.handle(w, r)
+		encodedVersion, found := strings.CutSuffix(tail.rest, e.ext)
+		if !found || encodedVersion == "" {
+			continue
+		}
 
+		version, err := xmod.UnescapeVersion(encodedVersion)
+		if err != nil {
+			http.NotFound(w, r)
 			return
 		}
+
+		setModuleVars(r, modulePath, version)
+		e.handle(w, r)
+
+		return
 	}
 
 	http.NotFound(w, r)
@@ -145,34 +161,26 @@ func (h *HTTPHandler) dispatchPut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setModuleVars(r, tail.module, tail.rest)
-	h.handleUpload(w, r)
-}
-
-// decodePath decodes module path: "github.com/!my!org/pkg" -> "github.com/MyOrg/pkg".
-func decodePath(encoded string) string {
-	var result strings.Builder
-
-	i := 0
-	for i < len(encoded) {
-		if encoded[i] == '!' && i+1 < len(encoded) {
-			// Next character should be lowercase, convert to uppercase
-			result.WriteString(strings.ToUpper(string(encoded[i+1])))
-			i += 2
-		} else {
-			result.WriteString(string(encoded[i]))
-			i++
-		}
+	modulePath, err := xmod.UnescapePath(tail.module)
+	if err != nil {
+		http.Error(w, "invalid module path", http.StatusBadRequest)
+		return
 	}
 
-	return result.String()
+	version, err := xmod.UnescapeVersion(tail.rest)
+	if err != nil || !validVersion(version) {
+		http.Error(w, "invalid module version", http.StatusBadRequest)
+		return
+	}
+
+	setModuleVars(r, modulePath, version)
+	h.handleUpload(w, r)
 }
 
 func (h *HTTPHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	encodedModule := vars["module"]
-	modulePath := decodePath(encodedModule)
+	modulePath := vars["module"]
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -200,8 +208,11 @@ func (h *HTTPHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Return newline-separated list of versions
-	var versionList []string
+	// Newline-separated list, highest version first. The versions are plain
+	// (never case-encoded): only URL paths use the "!x" encoding.
+	sortVersionsDesc(versions)
+
+	versionList := make([]string, 0, len(versions))
 	for _, v := range versions {
 		versionList = append(versionList, v.Version)
 	}
@@ -219,9 +230,8 @@ type versionInfo struct {
 func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	encodedModule := vars["module"]
+	modulePath := vars["module"]
 	version := vars["version"]
-	modulePath := decodePath(encodedModule)
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -265,9 +275,8 @@ func (h *HTTPHandler) handleInfo(w http.ResponseWriter, r *http.Request) {
 func (h *HTTPHandler) handleMod(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	encodedModule := vars["module"]
+	modulePath := vars["module"]
 	version := vars["version"]
-	modulePath := decodePath(encodedModule)
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -308,9 +317,8 @@ func (h *HTTPHandler) handleMod(w http.ResponseWriter, r *http.Request) {
 func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	encodedModule := vars["module"]
+	modulePath := vars["module"]
 	version := vars["version"]
-	modulePath := decodePath(encodedModule)
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -373,8 +381,7 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 func (h *HTTPHandler) handleLatest(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	encodedModule := vars["module"]
-	modulePath := decodePath(encodedModule)
+	modulePath := vars["module"]
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -389,7 +396,7 @@ func (h *HTTPHandler) handleLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	mod, err := h.DB.GetLatestGoModule(r.Context(), repoID, modulePath)
+	versions, err := h.DB.ListGoModuleVersions(r.Context(), repoID, modulePath)
 	if err != nil {
 		h.Log.Errorw("failed to get latest go module", "module", modulePath, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -397,6 +404,7 @@ func (h *HTTPHandler) handleLatest(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mod := latestVersion(versions)
 	if mod == nil {
 		http.NotFound(w, r)
 		return
@@ -418,9 +426,8 @@ func (h *HTTPHandler) handleLatest(w http.ResponseWriter, r *http.Request) {
 func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	encodedModule := vars["module"]
+	modulePath := vars["module"]
 	version := vars["version"]
-	modulePath := decodePath(encodedModule)
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -450,10 +457,9 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 	defer func() { _ = r.Body.Close() }()
 
-	// Parse go.mod from zip
-	handler := NewGoModHandler()
-
-	metadata, err := handler.Parse(r.Context(), bytes.NewReader(zipData))
+	// The module zip must be the one the URL names: its files live under
+	// "<module>@<version>/" and its go.mod declares that same module path.
+	mf, err := parseModuleZip(zipData)
 	if err != nil {
 		h.Log.Errorw("failed to parse go module", "error", err)
 		http.Error(w, "invalid go module", http.StatusBadRequest)
@@ -461,13 +467,17 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	goModContent, ok := metadata["go_mod"].(string)
-	if !ok {
-		h.Log.Errorw("failed to extract go_mod from metadata", "error", "go_mod not found or not a string")
-		http.Error(w, "invalid go module", http.StatusBadRequest)
-
+	if mf.entry != modulePath+"@"+version+"/"+goModFileName {
+		http.Error(w, "go.mod is not at <module>@<version>/go.mod in the zip", http.StatusBadRequest)
 		return
 	}
+
+	if mf.modulePath != modulePath {
+		http.Error(w, "go.mod module line does not match the module path in the URL", http.StatusBadRequest)
+		return
+	}
+
+	goModContent := mf.content
 
 	zipSum := sha256.Sum256(zipData)
 	zipSHA := hex.EncodeToString(zipSum[:])
@@ -480,6 +490,9 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Version:      version,
 		GoModContent: goModContent,
 		ZipSizeBytes: int64(len(zipData)),
+		// The database keys the zip blob row by this digest; left empty, every
+		// module version of the instance would share the first zip stored.
+		ZipHash: zipSHA,
 	}
 
 	// Store both blobs and insert the referencing row under the per-blob locks

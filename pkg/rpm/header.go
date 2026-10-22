@@ -18,6 +18,20 @@ var (
 	ErrHeaderTooLarge     = errors.New("rpm: header too large")
 )
 
+// Hard limits that bound the memory a hostile header can make the parser use.
+const (
+	// MaxHeaderEntries is rpm's own cap on index entries (hdrchkTags: fewer
+	// than 0x10000), enforced regardless of the caller's byte limit.
+	MaxHeaderEntries = 0xffff
+	// MaxHeaderDataSize is the default (and ParseRPM's) cap on a header's
+	// data store (rpm's hdrchkData: below 16 MiB).
+	MaxHeaderDataSize = 1 << 24
+	// MaxArrayEntries bounds how many elements of one array tag the getters
+	// decode. A 16 MiB data store can otherwise declare ~16M one-byte
+	// elements, which later code amplifies into gigabytes of structs.
+	MaxArrayEntries = 100_000
+)
+
 const (
 	TagTypeNULL         int32 = 0
 	TagTypeCHAR         int32 = 1
@@ -65,7 +79,11 @@ func ParseHeader(r io.Reader, maxLen int64) (*Header, error) {
 		return nil, fmt.Errorf("%w: nindex=%d, hsize=%d", ErrInvalidHeader, nindex, hsize)
 	}
 
-	if maxLen > 0 && (int64(nindex) > maxLen/16 || int64(hsize) > maxLen) {
+	if maxLen <= 0 {
+		maxLen = MaxHeaderDataSize
+	}
+
+	if nindex > MaxHeaderEntries || int64(nindex) > maxLen/16 || int64(hsize) > maxLen {
 		return nil, fmt.Errorf("%w: nindex=%d, hsize=%d, max=%d", ErrHeaderTooLarge, nindex, hsize, maxLen)
 	}
 
@@ -147,8 +165,10 @@ func (h *Header) GetInt32s(tag int32) ([]int32, bool) {
 		return nil, false
 	}
 
-	result := make([]int32, entry.Count)
-	for i := int32(0); i < entry.Count; i++ {
+	n := min(entry.Count, MaxArrayEntries)
+
+	result := make([]int32, n)
+	for i := range n {
 		off := int(entry.Offset) + int(i)*4
 		result[i] = int32(binary.BigEndian.Uint32(h.Data[off : off+4])) //nolint:gosec // RPM binary format requires specific integer widths
 	}
@@ -200,22 +220,60 @@ func (h *Header) GetStringArray(tag int32) ([]string, bool) {
 
 	data := h.Data[entry.Offset:]
 
+	limit := int(min(entry.Count, MaxArrayEntries))
+
 	var result []string
 
 	start := 0
 
 	for i := range data {
+		if len(result) >= limit {
+			break
+		}
+
 		if data[i] == 0 {
 			result = append(result, string(data[start:i]))
 			start = i + 1
-
-			if len(result) >= int(entry.Count) {
-				break
-			}
 		}
 	}
 
 	return result, true
+}
+
+// ArrayLen returns the element count declared by the tag's index entry
+// (0 when absent). It is the untruncated count: the array getters stop at
+// MaxArrayEntries, so callers compare against it to detect truncation.
+func (h *Header) ArrayLen(tag int32) int {
+	entry := h.findEntry(tag)
+	if entry == nil || entry.Count < 0 {
+		return 0
+	}
+
+	return int(entry.Count)
+}
+
+// GetNumber returns an INT32 (unsigned) or INT64 tag as a non-negative int64.
+func (h *Header) GetNumber(tag int32) (int64, bool) {
+	if v, ok := h.GetInt64(tag); ok && v >= 0 {
+		return v, true
+	}
+
+	if v, ok := h.GetUint32(tag); ok {
+		return int64(v), true
+	}
+
+	return 0, false
+}
+
+// firstNumber returns the first present numeric tag of tags, else 0.
+func (h *Header) firstNumber(tags ...int32) int64 {
+	for _, tag := range tags {
+		if v, ok := h.GetNumber(tag); ok {
+			return v
+		}
+	}
+
+	return 0
 }
 
 func (h *Header) TotalSize() int64 {

@@ -109,56 +109,6 @@ func (q *Queries) GetGoModule(ctx context.Context, arg GetGoModuleParams) (GetGo
 	return i, err
 }
 
-const getLatestGoModule = `-- name: GetLatestGoModule :one
-SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
-       COALESCE(zb.blob_key, '') AS zip_blob_key, COALESCE(mb.blob_key, '') AS mod_blob_key,
-       COALESCE(zb.size_bytes, 0) AS zip_size_bytes, COALESCE(zb.sha256, '') AS zip_hash, gm.created_at, gm.updated_at
-FROM gomod_modules gm
-LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
-LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
-WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL AND gm.module_path = $2
-ORDER BY gm.version DESC
-LIMIT 1
-`
-
-type GetLatestGoModuleParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	ModulePath   string `db:"module_path" json:"module_path"`
-}
-
-type GetLatestGoModuleRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	ModulePath   string    `db:"module_path" json:"module_path"`
-	Version      string    `db:"version" json:"version"`
-	GoModContent string    `db:"go_mod_content" json:"go_mod_content"`
-	ZipBlobKey   string    `db:"zip_blob_key" json:"zip_blob_key"`
-	ModBlobKey   string    `db:"mod_blob_key" json:"mod_blob_key"`
-	ZipSizeBytes int64     `db:"zip_size_bytes" json:"zip_size_bytes"`
-	ZipHash      string    `db:"zip_hash" json:"zip_hash"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetLatestGoModule(ctx context.Context, arg GetLatestGoModuleParams) (GetLatestGoModuleRow, error) {
-	row := q.db.QueryRow(ctx, getLatestGoModule, arg.RepositoryID, arg.ModulePath)
-	var i GetLatestGoModuleRow
-	err := row.Scan(
-		&i.ID,
-		&i.RepositoryID,
-		&i.ModulePath,
-		&i.Version,
-		&i.GoModContent,
-		&i.ZipBlobKey,
-		&i.ModBlobKey,
-		&i.ZipSizeBytes,
-		&i.ZipHash,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const listGoModuleVersions = `-- name: ListGoModuleVersions :many
 SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
        COALESCE(zb.blob_key, '') AS zip_blob_key, COALESCE(mb.blob_key, '') AS mod_blob_key,
@@ -167,7 +117,7 @@ FROM gomod_modules gm
 LEFT JOIN blobs zb ON zb.id = gm.zip_blob_id
 LEFT JOIN blobs mb ON mb.id = gm.mod_blob_id
 WHERE gm.repository_id = $1 AND gm.deleted_at IS NULL AND gm.module_path = $2
-ORDER BY gm.version DESC
+ORDER BY gm.created_at, gm.id
 `
 
 type ListGoModuleVersionsParams struct {
@@ -189,6 +139,9 @@ type ListGoModuleVersionsRow struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Versions are ordered by semantic-version precedence in Go (SQL can only sort
+// them as strings: v1.9.0 > v1.10.0, v1.0.0-rc1 > v1.0.0), so the order here
+// is only a stable one.
 func (q *Queries) ListGoModuleVersions(ctx context.Context, arg ListGoModuleVersionsParams) ([]ListGoModuleVersionsRow, error) {
 	rows, err := q.db.Query(ctx, listGoModuleVersions, arg.RepositoryID, arg.ModulePath)
 	if err != nil {

@@ -6,6 +6,7 @@ package gomod
 
 import (
 	"archive/zip"
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -14,11 +15,20 @@ import (
 
 	"github.com/openartifact/openartifact/internal/format"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"golang.org/x/mod/modfile"
 )
 
 // maxGoModFileBytes caps the decompressed go.mod entry read from an uploaded
 // module zip, preventing a decompression bomb from exhausting memory.
 const maxGoModFileBytes = 4 << 20 // 4 MiB
+
+// goModFileName is the name of the module file at the root of a module.
+const goModFileName = "go.mod"
+
+var (
+	errNoGoMod      = errors.New("zip does not contain a root go.mod file")
+	errNoModuleLine = errors.New("go.mod has no module line")
+)
 
 type GoModHandler struct{}
 
@@ -38,103 +48,95 @@ func (h *GoModHandler) GetFileExtension() string {
 	return ".zip"
 }
 
-// Validate checks if the artifact is a valid zip containing go.mod.
+// Validate checks if the artifact is a valid zip containing a root go.mod.
 func (h *GoModHandler) Validate(ctx context.Context, r io.Reader) error {
-	// Read into memory to allow multiple reads
 	data, err := base.ReadAllLimited(r, maxGoModUploadBytes)
 	if err != nil {
 		return fmt.Errorf("failed to read zip: %w", err)
 	}
 
-	// Try to open as zip
-	zr, err := zip.NewReader(strings.NewReader(string(data)), int64(len(data)))
-	if err != nil {
-		return fmt.Errorf("invalid zip file: %w", err)
-	}
+	_, err = parseModuleZip(data)
 
-	// Check for go.mod file
-	hasGoMod := false
-
-	for _, f := range zr.File {
-		if strings.HasSuffix(f.Name, "go.mod") {
-			hasGoMod = true
-			break
-		}
-	}
-
-	if !hasGoMod {
-		return errors.New("zip does not contain go.mod file") //nolint:err113 // static error
-	}
-
-	return nil
+	return err
 }
 
-// Parse extracts module path and version from go.mod in the zip.
+// Parse extracts the module path and go.mod from the module zip.
 func (h *GoModHandler) Parse(ctx context.Context, r io.Reader) (map[string]any, error) {
-	// Read into memory
 	data, err := base.ReadAllLimited(r, maxGoModUploadBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read zip: %w", err)
 	}
 
-	// Open as zip
-	zr, err := zip.NewReader(strings.NewReader(string(data)), int64(len(data)))
+	mf, err := parseModuleZip(data)
+	if err != nil {
+		return nil, err
+	}
+
+	return map[string]any{
+		"module_path": mf.modulePath,
+		"go_mod":      mf.content,
+		"go_mod_path": mf.entry,
+	}, nil
+}
+
+// moduleFile is the root go.mod of a module zip.
+type moduleFile struct {
+	entry      string // zip entry name, "<module>@<version>/go.mod"
+	content    string
+	modulePath string // from the module line
+}
+
+// parseModuleZip opens a module zip held in memory and reads its root go.mod.
+func parseModuleZip(data []byte) (*moduleFile, error) {
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("invalid zip file: %w", err)
 	}
 
-	// Find and read go.mod
-	var goModContent string
-
-	for _, f := range zr.File {
-		if strings.HasSuffix(f.Name, "go.mod") {
-			rc, err := f.Open()
-			if err != nil {
-				return nil, fmt.Errorf("failed to open go.mod: %w", err)
-			}
-			defer func() { _ = rc.Close() }()
-
-			content, err := base.ReadAllLimited(rc, maxGoModFileBytes)
-			if err != nil {
-				return nil, fmt.Errorf("failed to read go.mod: %w", err)
-			}
-
-			goModContent = string(content)
-
-			break
-		}
+	f := rootGoMod(zr.File)
+	if f == nil {
+		return nil, errNoGoMod
 	}
 
-	if goModContent == "" {
-		return nil, errors.New("go.mod not found in zip") //nolint:err113 // static error
+	rc, err := f.Open()
+	if err != nil {
+		return nil, fmt.Errorf("failed to open go.mod: %w", err)
+	}
+	defer func() { _ = rc.Close() }()
+
+	content, err := base.ReadAllLimited(rc, maxGoModFileBytes)
+	if err != nil {
+		return nil, fmt.Errorf("failed to read go.mod: %w", err)
 	}
 
-	// Parse module path from go.mod
-	modulePath := extractModulePath(goModContent)
+	modulePath := modfile.ModulePath(content)
 	if modulePath == "" {
-		return nil, errors.New("failed to extract module path from go.mod") //nolint:err113 // static error
+		return nil, errNoModuleLine
 	}
 
-	return map[string]any{
-		"module_path": modulePath,
-		"go_mod":      goModContent,
-	}, nil
+	return &moduleFile{entry: f.Name, content: string(content), modulePath: modulePath}, nil
 }
 
-// extractModulePath extracts the module path from go.mod content.
-func extractModulePath(goModContent string) string {
-	lines := strings.SplitSeq(goModContent, "\n")
-	for line := range lines {
-		line = strings.TrimSpace(line)
-		if strings.HasPrefix(line, "module ") {
-			parts := strings.Fields(line)
-			if len(parts) >= 2 {
-				return parts[1]
-			}
+// rootGoMod returns the go.mod at the root of a module zip, or nil. A module
+// zip stores every file under "<module>@<version>/" and omits nested modules,
+// so the root go.mod is the one with the fewest path elements; entries that
+// merely end in "go.mod" (such as "foo-go.mod") are not go.mod files.
+func rootGoMod(files []*zip.File) *zip.File {
+	var root *zip.File
+
+	depth := 0
+
+	for _, f := range files {
+		if f.Name != goModFileName && !strings.HasSuffix(f.Name, "/"+goModFileName) {
+			continue
+		}
+
+		if d := strings.Count(f.Name, "/"); root == nil || d < depth {
+			root, depth = f, d
 		}
 	}
 
-	return ""
+	return root
 }
 
 var _ format.FormatHandler = (*GoModHandler)(nil)

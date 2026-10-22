@@ -40,6 +40,8 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 // It does NOT wrap in r.Route() — callers are responsible for the path prefix.
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/config.json", h.handleConfig)
+	// Cargo reads config.json from the root of the index it was pointed at.
+	r.Get("/index/config.json", h.handleConfig)
 	r.Get("/index/{prefix1}/{prefix2}/{crate}", h.handleSparseIndex)
 	r.Get("/index/{prefix1}/{crate}", h.handleSparseIndex)
 	r.Get("/index/{crate}", h.handleSparseIndex)
@@ -61,7 +63,7 @@ func (h *HTTPHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -69,14 +71,21 @@ func (h *HTTPHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	config := map[string]string{
+	config := map[string]any{
 		"dl":  fmt.Sprintf("%s/repos/%s/api/v1/crates", h.BaseURL, repoName),
 		"api": fmt.Sprintf("%s/repos/%s", h.BaseURL, repoName),
+	}
+
+	// A private repository needs credentials for the index and the downloads
+	// too; this tells cargo to send its token with every request instead of
+	// trying anonymously first.
+	if !repo.Public {
+		config["auth-required"] = true
 	}
 
 	w.Header().Set("Content-Type", "application/json")
@@ -181,11 +190,9 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if crate.Yanked {
-		http.Error(w, "crate version yanked", http.StatusGone)
-		return
-	}
-
+	// A yanked version stays downloadable: yanking only keeps new dependency
+	// resolution away from it (index "yanked": true), while every existing
+	// Cargo.lock that pins it must keep building.
 	if h.DenyIfQuarantined(w, r, repoID, quarantine.PathKeys(
 		fmt.Sprintf("%s-%s.crate", crateName, version), crateName+"/"+version, r.URL.Path)...) {
 		return
@@ -260,8 +267,8 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read metadata JSON
-	metadataBytes := make([]byte, metadataLen)
-	if _, err := io.ReadFull(r.Body, metadataBytes); err != nil {
+	metadataBytes, err := readDeclared(r.Body, metadataLen)
+	if err != nil {
 		h.Log.Errorw("failed to read metadata", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 
@@ -279,20 +286,35 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	// Extract required fields
 	crateName, ok := metadata["name"].(string)
-	if !ok {
-		http.Error(w, "missing or invalid 'name' field", http.StatusBadRequest)
+	if !ok || !validCrateName(crateName) {
+		writePublishError(w, http.StatusBadRequest, "missing or invalid 'name' field: a crate name starts with a letter or '_' and holds only ASCII letters, digits, '-' and '_' (at most 64)")
 		return
 	}
 
 	version, ok := metadata["vers"].(string)
-	if !ok {
-		http.Error(w, "missing or invalid 'vers' field", http.StatusBadRequest)
+	if !ok || !validCrateVersion(version) {
+		writePublishError(w, http.StatusBadRequest, "missing or invalid 'vers' field: expected a semantic version such as 1.2.3 or 1.2.3-rc.1")
 		return
 	}
 
 	// A crate that only declares license_file has no enforceable license.
 	declared, _ := metadata["license"].(string)
 	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, declared) {
+		return
+	}
+
+	// Refuse a duplicate before the (up to 128 MiB) crate is read: a version
+	// is published once, and a crate name is unique regardless of case.
+	conflict, err := h.publishConflict(r.Context(), repoID, crateName, version)
+	if err != nil {
+		h.Log.Errorw("failed to check existing crate versions", "name", crateName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if conflict != "" {
+		writePublishError(w, http.StatusConflict, conflict)
 		return
 	}
 
@@ -311,8 +333,8 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read crate file and compute checksum
-	crateBytes := make([]byte, crateLen)
-	if _, err := io.ReadFull(r.Body, crateBytes); err != nil {
+	crateBytes, err := readDeclared(r.Body, crateLen)
+	if err != nil {
 		h.Log.Errorw("failed to read crate file", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 
@@ -329,32 +351,9 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	license, _ := metadata["license"].(string)
 	readme, _ := metadata["readme"].(string)
 
-	// Extract arrays
-	var keywords, categories, authors []string
-
-	if kw, ok := metadata["keywords"].([]any); ok {
-		for _, k := range kw {
-			if s, ok := k.(string); ok {
-				keywords = append(keywords, s)
-			}
-		}
-	}
-
-	if cat, ok := metadata["categories"].([]any); ok {
-		for _, c := range cat {
-			if s, ok := c.(string); ok {
-				categories = append(categories, s)
-			}
-		}
-	}
-
-	if auth, ok := metadata["authors"].([]any); ok {
-		for _, a := range auth {
-			if s, ok := a.(string); ok {
-				authors = append(authors, s)
-			}
-		}
-	}
+	keywords := stringList(metadata["keywords"])
+	categories := stringList(metadata["categories"])
+	authors := stringList(metadata["authors"])
 
 	// Create crate record
 	crate := &models.CargoCrate{
@@ -396,6 +395,12 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 		return nil
 	}); err != nil {
+		// A concurrent publish of the same version won the race.
+		if database.IsUniqueViolation(err) {
+			writePublishError(w, http.StatusConflict, fmt.Sprintf("crate version `%s@%s` is already uploaded", crateName, version))
+			return
+		}
+
 		h.Log.Errorw("failed to store cargo crate", "name", crateName, "version", version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
@@ -528,7 +533,7 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	crates, err := h.DB.SearchCargoCrates(r.Context(), repoID, query, perPage)
+	crates, total, err := h.DB.SearchCargoCrateSummaries(r.Context(), repoID, query, perPage)
 	if err != nil {
 		h.Log.Errorw("failed to search cargo crates", "query", query, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -536,25 +541,22 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Build response
-	var results []map[string]any
+	// One entry per crate; "total" counts every matching crate, not just the
+	// page, so clients can tell there is more.
+	results := make([]map[string]any, 0, len(crates))
 	for _, crate := range crates {
 		results = append(results, map[string]any{
 			"name":        crate.Name,
-			"max_version": crate.Version,
+			"max_version": maxCrateVersion(crate),
 			"description": crate.Description,
-			"downloads":   crate.DownloadCount,
+			"downloads":   crate.Downloads,
 		})
-	}
-
-	if results == nil {
-		results = []map[string]any{}
 	}
 
 	response := map[string]any{
 		"crates": results,
 		"meta": map[string]any{
-			"total": len(results),
+			"total": total,
 		},
 	}
 

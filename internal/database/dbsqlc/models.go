@@ -256,6 +256,12 @@ type ConanPackage struct {
 	BlobID         *string    `db:"blob_id" json:"blob_id"`
 	DeletedAt      *time.Time `db:"deleted_at" json:"deleted_at"`
 	DeletedBy      *string    `db:"deleted_by" json:"deleted_by"`
+	// Package id (binary configuration hash); empty for a file of the recipe revision itself.
+	PackageID string `db:"package_id" json:"package_id"`
+	// Package revision; empty for a file of the recipe revision itself.
+	PackageRevision string `db:"package_revision" json:"package_revision"`
+	// Path of the stored file inside its recipe or package revision (conanfile.py, conan_package.tgz, metadata/sign/...); empty for rows stored before migration 019.
+	Filename string `db:"filename" json:"filename"`
 }
 
 type CondaPackage struct {
@@ -271,6 +277,14 @@ type CondaPackage struct {
 	BlobID       string     `db:"blob_id" json:"blob_id"`
 	DeletedAt    *time.Time `db:"deleted_at" json:"deleted_at"`
 	DeletedBy    *string    `db:"deleted_by" json:"deleted_by"`
+	// Package file extension: .tar.bz2 (legacy) or .conda (zip with zstd members).
+	Extension   string `db:"extension" json:"extension"`
+	BuildNumber int32  `db:"build_number" json:"build_number"`
+	Md5         string `db:"md5" json:"md5"`
+	// info/index.json timestamp in milliseconds since the epoch; 0 when the package declares none.
+	TimestampMs int64 `db:"timestamp_ms" json:"timestamp_ms"`
+	// Remaining info/index.json fields emitted into repodata.json (constrains, license, noarch, ...).
+	IndexExtra json.RawMessage `db:"index_extra" json:"index_extra"`
 }
 
 // Debian packages. Canonical table for Debian format. Scoped to distribution+component for proper Debian model. blob_id FK to global blobs table.

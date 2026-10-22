@@ -11,6 +11,12 @@ import (
 	"strings"
 )
 
+// MaxFileListBytes bounds the total size of the strings (path, digest, link
+// target) kept for a package's file list. Every path is dirname+basename and
+// all entries may reference the same multi-megabyte dirname, so the entry
+// count alone does not bound the expanded size.
+const MaxFileListBytes = 16 << 20
+
 type FileEntry struct {
 	Path   string
 	Size   int64
@@ -60,9 +66,18 @@ type Package struct {
 	Files         []FileEntry
 	Changelogs    []ChangelogEntry
 
+	// FilesTruncated is true when the header declared more files than
+	// MaxArrayEntries or their strings exceeded MaxFileListBytes, so Files is
+	// only a prefix of the package's file list.
+	FilesTruncated bool
+
 	// WeakDepsParsed is true when the persisted extra data already carries
 	// weak dependencies (see extraData.WeakDeps).
 	WeakDepsParsed bool
+
+	// SizesParsed is true when the persisted extra data already carries the
+	// installed and archive sizes (see extraData.SizesParsed).
+	SizesParsed bool
 }
 
 func ParseRPM(r io.Reader) (*Package, error) {
@@ -71,7 +86,7 @@ func ParseRPM(r io.Reader) (*Package, error) {
 		return nil, fmt.Errorf("rpm: parsing lead: %w", err)
 	}
 
-	sigHeader, err := ParseHeader(r, 1<<24)
+	sigHeader, err := ParseHeader(r, MaxHeaderDataSize)
 	if err != nil {
 		return nil, fmt.Errorf("rpm: parsing signature header: %w", err)
 	}
@@ -87,7 +102,7 @@ func ParseRPM(r io.Reader) (*Package, error) {
 	// Calculate header start offset: 96 (lead) + sigHeader.TotalSize() + padBytes
 	headerStart := int64(96) + sigHeader.TotalSize() + padBytes
 
-	pkgHeader, err := ParseHeader(r, 1<<24)
+	pkgHeader, err := ParseHeader(r, MaxHeaderDataSize)
 	if err != nil {
 		return nil, fmt.Errorf("rpm: parsing package header: %w", err)
 	}
@@ -111,28 +126,65 @@ func ParseRPM(r io.Reader) (*Package, error) {
 		SourceRPM:   getString(pkgHeader, RPMTAG_SOURCERPM),
 		BuildHost:   getString(pkgHeader, RPMTAG_BUILDHOST),
 		BuildTime:   int64(getUint32(pkgHeader, RPMTAG_BUILDTIME)),
-		PackageSize: int64(getUint32(pkgHeader, RPMTAG_SIZE)),
 		HeaderStart: headerStart,
 		HeaderEnd:   headerEnd,
+		// PackageSize (the .rpm file size) is not in the header; callers set it.
+		InstalledSize: pkgHeader.firstNumber(RPMTAG_LONGSIZE, RPMTAG_SIZE),
+		ArchiveSize:   archiveSize(sigHeader, pkgHeader),
 	}
 
 	if err := validateRequired(pkg); err != nil {
 		return nil, err
 	}
 
-	pkg.Provides, _ = ParseDependencies(pkgHeader, RPMTAG_PROVIDES, RPMTAG_PROVIDEFLAGS, RPMTAG_PROVIDEVERSION)
-	pkg.Requires, _ = ParseDependencies(pkgHeader, RPMTAG_REQUIRENAME, RPMTAG_REQUIREFLAGS, RPMTAG_REQUIREVERSION)
-	pkg.Conflicts, _ = ParseDependencies(pkgHeader, RPMTAG_CONFLICTNAME, RPMTAG_CONFLICTFLAGS, RPMTAG_CONFLICTVERSION)
-	pkg.Obsoletes, _ = ParseDependencies(pkgHeader, RPMTAG_OBSOLETENAME, RPMTAG_OBSOLETEFLAGS, RPMTAG_OBSOLETEVERSION)
-	pkg.Recommends, _ = ParseDependencies(pkgHeader, RPMTAG_RECOMMENDNAME, RPMTAG_RECOMMENDFLAGS, RPMTAG_RECOMMENDVERSION)
-	pkg.Suggests, _ = ParseDependencies(pkgHeader, RPMTAG_SUGGESTSNAME, RPMTAG_SUGGESTSFLAGS, RPMTAG_SUGGESTSVERSION)
-	pkg.Supplements, _ = ParseDependencies(pkgHeader, RPMTAG_SUPPLEMENTNAME, RPMTAG_SUPPLEMENTFLAGS, RPMTAG_SUPPLEMENTVERSION)
-	pkg.Enhances, _ = ParseDependencies(pkgHeader, RPMTAG_ENHANCENAME, RPMTAG_ENHANCEFLAGS, RPMTAG_ENHANCEVERSION)
+	if err := parseAllDependencies(pkg, pkgHeader); err != nil {
+		return nil, err
+	}
 
-	pkg.Files = extractFiles(pkgHeader)
+	pkg.Files, pkg.FilesTruncated = extractFiles(pkgHeader)
 	pkg.Changelogs = extractChangelogs(pkgHeader)
 
 	return pkg, nil
+}
+
+// archiveSize returns the uncompressed payload size: format-4 packages carry it
+// in the signature header (LONGARCHIVESIZE, else PAYLOADSIZE); format-6
+// packages moved it to the main header as PAYLOADSIZEALT (their PAYLOADSIZE is
+// the compressed size).
+func archiveSize(sigHeader, pkgHeader *Header) int64 {
+	if v := sigHeader.firstNumber(RPMSIGTAG_LONGARCHIVESIZE, RPMSIGTAG_PAYLOADSIZE); v > 0 {
+		return v
+	}
+
+	return pkgHeader.firstNumber(RPMTAG_PAYLOADSIZEALT)
+}
+
+// parseAllDependencies fills every dependency list of pkg from h. Malformed
+// lists are skipped, but a list over the entry cap rejects the package: silently
+// dropping part of a dependency list would make the package installable
+// without its requirements.
+func parseAllDependencies(pkg *Package, h *Header) error {
+	for _, d := range []struct {
+		dst                   *[]Dependency
+		name, flags, versions TagType
+	}{
+		{&pkg.Provides, RPMTAG_PROVIDES, RPMTAG_PROVIDEFLAGS, RPMTAG_PROVIDEVERSION},
+		{&pkg.Requires, RPMTAG_REQUIRENAME, RPMTAG_REQUIREFLAGS, RPMTAG_REQUIREVERSION},
+		{&pkg.Conflicts, RPMTAG_CONFLICTNAME, RPMTAG_CONFLICTFLAGS, RPMTAG_CONFLICTVERSION},
+		{&pkg.Obsoletes, RPMTAG_OBSOLETENAME, RPMTAG_OBSOLETEFLAGS, RPMTAG_OBSOLETEVERSION},
+		{&pkg.Recommends, RPMTAG_RECOMMENDNAME, RPMTAG_RECOMMENDFLAGS, RPMTAG_RECOMMENDVERSION},
+		{&pkg.Suggests, RPMTAG_SUGGESTSNAME, RPMTAG_SUGGESTSFLAGS, RPMTAG_SUGGESTSVERSION},
+		{&pkg.Supplements, RPMTAG_SUPPLEMENTNAME, RPMTAG_SUPPLEMENTFLAGS, RPMTAG_SUPPLEMENTVERSION},
+		{&pkg.Enhances, RPMTAG_ENHANCENAME, RPMTAG_ENHANCEFLAGS, RPMTAG_ENHANCEVERSION},
+	} {
+		if n := h.ArrayLen(d.name); n > MaxArrayEntries {
+			return fmt.Errorf("%w: tag %d declares %d entries, max %d", ErrHeaderTooLarge, d.name, n, MaxArrayEntries)
+		}
+
+		*d.dst, _ = ParseDependencies(h, d.name, d.flags, d.versions)
+	}
+
+	return nil
 }
 
 func getString(h *Header, tag TagType) string {
@@ -161,11 +213,15 @@ func validateRequired(p *Package) error {
 	return nil
 }
 
-func extractFiles(h *Header) []FileEntry {
+// extractFiles decodes the file list. It keeps at most MaxArrayEntries files
+// and MaxFileListBytes of strings, and reports whether it stopped early.
+func extractFiles(h *Header) ([]FileEntry, bool) {
 	bases, _ := h.GetStringArray(RPMTAG_BASENAMES)
 	if len(bases) == 0 {
-		return nil
+		return nil, false
 	}
+
+	truncated := h.ArrayLen(RPMTAG_BASENAMES) > len(bases) && len(bases) >= MaxArrayEntries
 
 	dirNames, _ := h.GetStringArray(RPMTAG_DIRNAMES)
 	dirIdx, _ := h.GetInt32s(RPMTAG_DIRINDEXES)
@@ -175,14 +231,35 @@ func extractFiles(h *Header) []FileEntry {
 	digests, _ := h.GetStringArray(RPMTAG_FILEDIGESTS)
 	linktos, _ := h.GetStringArray(RPMTAG_FILELINKTOS)
 
+	budget := MaxFileListBytes
 	files := make([]FileEntry, 0, len(bases))
+
 	for i, base := range bases {
 		dir := ""
 		if i < len(dirIdx) && dirIdx[i] >= 0 && int(dirIdx[i]) < len(dirNames) {
 			dir = dirNames[dirIdx[i]]
 		}
 
-		entry := FileEntry{Path: dir + base}
+		entry := FileEntry{}
+
+		if i < len(digests) {
+			entry.Digest = digests[i]
+		}
+
+		if i < len(linktos) {
+			entry.LinkTo = linktos[i]
+		}
+
+		// Check before concatenating: dir may be megabytes long.
+		cost := len(dir) + len(base) + len(entry.Digest) + len(entry.LinkTo)
+		if cost > budget {
+			truncated = true
+
+			break
+		}
+
+		budget -= cost
+		entry.Path = dir + base
 
 		if i < len(sizes) {
 			entry.Size = int64(sizes[i])
@@ -197,18 +274,10 @@ func extractFiles(h *Header) []FileEntry {
 			entry.MTime = int64(mtimes[i])
 		}
 
-		if i < len(digests) {
-			entry.Digest = digests[i]
-		}
-
-		if i < len(linktos) {
-			entry.LinkTo = linktos[i]
-		}
-
 		files = append(files, entry)
 	}
 
-	return files
+	return files, truncated
 }
 
 func extractChangelogs(h *Header) []ChangelogEntry {
@@ -296,6 +365,10 @@ func (p *Package) GetMetadata() map[string]any {
 		metadata["filecount"] = len(p.Files)
 	}
 
+	if p.FilesTruncated {
+		metadata["files_truncated"] = true
+	}
+
 	if len(p.Changelogs) > 0 {
 		metadata["changelogcount"] = len(p.Changelogs)
 	}
@@ -316,16 +389,24 @@ type extraData struct {
 	// WeakDeps marks rows persisted by a version that stored weak dependencies
 	// (recommends/suggests/supplements/enhances). Rows without it are re-read
 	// from their blob when metadata is regenerated.
-	WeakDeps   bool             `json:"weak_deps,omitempty"`
-	Files      []FileEntry      `json:"files,omitempty"`
-	Changelogs []ChangelogEntry `json:"changelogs,omitempty"`
+	WeakDeps bool `json:"weak_deps,omitempty"`
+	// SizesParsed marks rows whose installed/archive sizes were read from the
+	// header correctly: older versions stored 0 (installed_size/archive_size
+	// columns), so rows without it are re-read from their blob when metadata
+	// is regenerated and the values below take precedence over the columns.
+	SizesParsed   bool             `json:"sizes_parsed,omitempty"`
+	InstalledSize int64            `json:"installed_size,omitempty"`
+	ArchiveSize   int64            `json:"archive_size,omitempty"`
+	Files         []FileEntry      `json:"files,omitempty"`
+	Changelogs    []ChangelogEntry `json:"changelogs,omitempty"`
 }
 
-// MarshalExtra encodes dependencies, files and changelogs for persistence.
+// MarshalExtra encodes dependencies, sizes, files and changelogs for persistence.
 func (p *Package) MarshalExtra() ([]byte, error) {
 	return json.Marshal(extraData{
 		Provides: p.Provides, Requires: p.Requires, Conflicts: p.Conflicts, Obsoletes: p.Obsoletes,
 		Recommends: p.Recommends, WeakDeps: true, Suggests: p.Suggests, Supplements: p.Supplements, Enhances: p.Enhances,
+		SizesParsed: true, InstalledSize: p.InstalledSize, ArchiveSize: p.ArchiveSize,
 		Files: p.Files, Changelogs: p.Changelogs,
 	})
 }
@@ -345,6 +426,11 @@ func (p *Package) UnmarshalExtra(data []byte) error {
 	p.Recommends, p.WeakDepsParsed = e.Recommends, e.WeakDeps
 	p.Suggests, p.Supplements, p.Enhances = e.Suggests, e.Supplements, e.Enhances
 	p.Files, p.Changelogs = e.Files, e.Changelogs
+
+	p.SizesParsed = e.SizesParsed
+	if e.SizesParsed {
+		p.InstalledSize, p.ArchiveSize = e.InstalledSize, e.ArchiveSize
+	}
 
 	return nil
 }

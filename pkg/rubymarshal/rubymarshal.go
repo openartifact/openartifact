@@ -49,6 +49,16 @@ const (
 // specs index ever needs, yet trivially cheap to allocate.
 const maxMarshalElements = 1 << 20
 
+// maxMarshalDepth caps how deeply values may nest ('I' wrappers, arrays,
+// hash keys/values, object ivars, …) in an attacker-controlled Marshal
+// stream. readValue recurses once per nesting level, so a stream of 4 MiB of
+// 'I' bytes (each opening one more level) would otherwise grow the goroutine
+// stack past Go's 1 GB limit — a fatal, unrecoverable error that takes the
+// whole process down rather than failing the one upload. A real
+// Gem::Specification nests roughly ten levels (spec array -> dependency
+// object -> requirement array -> version); 64 leaves ample headroom.
+const maxMarshalDepth = 64
+
 // ErrUnsupported is wrapped into errors returned by Decode when the stream
 // uses a Marshal construct outside this package's subset.
 var ErrUnsupported = errors.New("rubymarshal: unsupported marshal construct")
@@ -350,6 +360,7 @@ func (e *encoder) writeUserDefined(u UserDefined) {
 type decoder struct {
 	data    []byte
 	pos     int
+	depth   int
 	symbols []string
 	objects []any
 }
@@ -469,7 +480,21 @@ func (d *decoder) reserve() int {
 	return len(d.objects) - 1
 }
 
+// readValue decodes one value, bounding the recursion depth (see
+// maxMarshalDepth).
 func (d *decoder) readValue() (any, error) {
+	if d.depth >= maxMarshalDepth {
+		return nil, fmt.Errorf("%w: nesting deeper than %d levels", ErrInvalid, maxMarshalDepth)
+	}
+
+	d.depth++
+	v, err := d.decodeValue()
+	d.depth--
+
+	return v, err
+}
+
+func (d *decoder) decodeValue() (any, error) {
 	tag, err := d.readByte()
 	if err != nil {
 		return nil, err

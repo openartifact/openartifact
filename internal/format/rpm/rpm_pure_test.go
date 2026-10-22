@@ -273,3 +273,23 @@ func TestGenerateOtherXML_Valid(t *testing.T) {
 		t.Error("output should contain otherdata element")
 	}
 }
+
+// The checksum is a child element with a plain type attribute; the former
+// `xml:"checksum type,attr"` tag put the attribute in a "checksum" namespace.
+func TestGeneratePrestodeltaXML_ChecksumElement(t *testing.T) {
+	data, err := GeneratePrestodeltaXML([]DeltaRPM{{
+		NewName: "bash", NewVer: "5.1", NewRel: "1", NewArch: "x86_64", OldVer: "5.0", OldRel: "1",
+		Filename: "bash.drpm", Size: 1, Checksum: "abc123", ChecksumType: "sha256",
+	}})
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if !bytes.Contains(data, []byte(`<checksum type="sha256">abc123</checksum>`)) {
+		t.Errorf("checksum element not rendered as <checksum type=\"sha256\">: %s", data)
+	}
+
+	if bytes.Contains(data, []byte("xmlns")) {
+		t.Errorf("output carries a namespace declaration: %s", data)
+	}
+}

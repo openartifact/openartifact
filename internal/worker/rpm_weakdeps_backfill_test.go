@@ -55,9 +55,9 @@ func TestBackfillWeakDepsReadsBlob(t *testing.T) {
 
 	db := &weakDepsDB{}
 	w := NewRPMetadataWorker(db, store, nil, log, nil)
-	pkgs := []pkgrpm.Package{{Name: "oa-weakdep-test", SHA256: sha}, {Name: "done", SHA256: "x", WeakDepsParsed: true}}
+	pkgs := []pkgrpm.Package{{Name: "oa-weakdep-test", SHA256: sha}, {Name: "done", SHA256: "x", WeakDepsParsed: true, SizesParsed: true}}
 
-	w.backfillWeakDeps(context.Background(), "repo1", pkgs)
+	w.backfillFromBlob(context.Background(), "repo1", pkgs)
 
 	if len(pkgs[0].Recommends) != 1 || pkgs[0].Recommends[0].Name != "carbonio-recommended" || !pkgs[0].WeakDepsParsed {
 		t.Errorf("recommends not backfilled: %+v", pkgs[0])

@@ -174,6 +174,21 @@ func nuspecDependencyGroupEntry(targetFramework string, deps []NuspecDependency)
 
 // parseNuspec extracts and parses the .nuspec XML from a .nupkg (zip) file.
 func parseNuspec(r io.Reader) (*Nuspec, error) {
+	nuspecData, err := readNuspec(r)
+	if err != nil {
+		return nil, err
+	}
+
+	var nuspec Nuspec
+	if err := xml.Unmarshal(nuspecData, &nuspec); err != nil {
+		return nil, fmt.Errorf("failed to parse .nuspec XML: %w", err)
+	}
+
+	return &nuspec, nil
+}
+
+// readNuspec returns the raw .nuspec XML of a .nupkg (zip) file.
+func readNuspec(r io.Reader) ([]byte, error) {
 	// Read the entire content into memory for zip reading
 	data, err := base.ReadAllLimited(r, maxNuGetPackageBytes)
 	if err != nil {
@@ -212,12 +227,7 @@ func parseNuspec(r io.Reader) (*Nuspec, error) {
 		return nil, fmt.Errorf("failed to read .nuspec: %w", err)
 	}
 
-	var nuspec Nuspec
-	if err := xml.Unmarshal(nuspecData, &nuspec); err != nil {
-		return nil, fmt.Errorf("failed to parse .nuspec XML: %w", err)
-	}
-
-	return &nuspec, nil
+	return nuspecData, nil
 }
 
 var _ format.FormatHandler = (*NuGetHandler)(nil)

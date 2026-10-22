@@ -6,34 +6,78 @@ package conda
 
 import (
 	"context"
+	"fmt"
 	"net/http"
+	"slices"
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
+// condaDB is an in-memory conda_packages table: lookups match on the full
+// file key (name, version, build, platform, extension), like the real
+// queries, and creating a key twice yields database.ErrDuplicate.
 type condaDB struct {
 	*formattest.DB
 
-	pkg *models.CondaPackage
+	// pkg is the most recently stored package, nil after it was deleted.
+	pkg  *models.CondaPackage
+	pkgs []*models.CondaPackage
 }
 
-func (d *condaDB) CreateCondaPackage(_ context.Context, p *models.CondaPackage) error {
-	p.ID = "pkg-1"
-	d.pkg = p
+func (d *condaDB) find(name, version, build, platform, ext string) *models.CondaPackage {
+	for _, p := range d.pkgs {
+		if p.Name == name && p.Version == version && p.BuildString == build && p.Platform == platform && p.Extension == ext {
+			return p
+		}
+	}
 
 	return nil
 }
 
-func (d *condaDB) GetCondaPackage(_ context.Context, _, _, _, _, _ string) (*models.CondaPackage, error) {
-	return d.pkg, nil
+func (d *condaDB) CreateCondaPackage(_ context.Context, p *models.CondaPackage) error {
+	if p.Extension == "" {
+		p.Extension = models.CondaExtTarBz2
+	}
+
+	if d.find(p.Name, p.Version, p.BuildString, p.Platform, p.Extension) != nil {
+		return database.ErrDuplicate
+	}
+
+	p.ID = fmt.Sprintf("pkg-%d", len(d.pkgs)+1)
+	d.pkg = p
+	d.pkgs = append(d.pkgs, p)
+
+	return nil
 }
 
-func (d *condaDB) DeleteCondaPackage(_ context.Context, _ string) error {
-	d.pkg = nil
+func (d *condaDB) GetCondaPackageFile(_ context.Context, _, name, version, build, platform, ext string) (*models.CondaPackage, error) {
+	return d.find(name, version, build, platform, ext), nil
+}
+
+func (d *condaDB) ListCondaPackages(_ context.Context, _, platform string) ([]*models.CondaPackage, error) {
+	var out []*models.CondaPackage
+
+	for _, p := range d.pkgs {
+		if p.Platform == platform {
+			out = append(out, p)
+		}
+	}
+
+	return out, nil
+}
+
+func (d *condaDB) DeleteCondaPackage(_ context.Context, id string) error {
+	d.pkgs = slices.DeleteFunc(d.pkgs, func(p *models.CondaPackage) bool { return p.ID == id })
+
+	if d.pkg != nil && d.pkg.ID == id {
+		d.pkg = nil
+	}
+
 	return nil
 }
 
@@ -88,7 +132,7 @@ func TestUploadAndDeleteEmitEvents(t *testing.T) {
 
 func TestDownloadQuarantine(t *testing.T) {
 	h, db, bs, _ := newTestHandler(t)
-	db.pkg = &models.CondaPackage{ID: "p", Name: "demo", Version: "1.0", BuildString: "py_0", BlobKey: "abc", SHA256: "abc", SizeBytes: 3}
+	db.pkgs = []*models.CondaPackage{{ID: "p", Name: "demo", Version: "1.0", BuildString: "py_0", Platform: "linux-64", Extension: models.CondaExtTarBz2, BlobKey: "abc", SHA256: "abc", SizeBytes: 3}}
 	bs.Blobs["abc"] = []byte("xyz")
 
 	get := func() int {

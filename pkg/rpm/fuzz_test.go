@@ -6,6 +6,7 @@ package rpm
 
 import (
 	"bytes"
+	"os"
 	"testing"
 )
 
@@ -19,6 +20,27 @@ func FuzzParseRPM(f *testing.F) {
 	f.Add(full[:len(full)/2])
 	f.Add(buildValidLead())
 	f.Add([]byte{})
+
+	for _, fixture := range []string{"testdata/weakdeps.rpm", "testdata/sizes-v4.rpm", "testdata/sizes-v6.rpm"} {
+		if data, err := os.ReadFile(fixture); err == nil {
+			f.Add(data)
+		}
+	}
+
+	// Amplification shapes: many declared array elements, a shared huge
+	// dirname, an over-long dependency list and an index-entry count over the cap.
+	var bomb craft
+
+	bomb.identity()
+	bomb.strArray(RPMTAG_DIRNAMES, 1, []byte("/\x00"))
+	bomb.strArray(RPMTAG_BASENAMES, 1<<16, emptyStrings(1<<16))
+	f.Add(bomb.rpmBytes())
+
+	var deps craft
+
+	deps.identity()
+	deps.strArray(RPMTAG_REQUIRENAME, MaxArrayEntries+1, emptyStrings(MaxArrayEntries+1))
+	f.Add(deps.rpmBytes())
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
 		_, _ = ParseRPM(bytes.NewReader(data))

@@ -13,7 +13,7 @@ import (
 const createNuGetPackage = `-- name: CreateNuGetPackage :one
 INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
-ON CONFLICT (repository_id, package_id, version) WHERE deleted_at IS NULL DO UPDATE SET updated_at = NOW()
+ON CONFLICT (repository_id, package_id, version) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, created_at, updated_at
 `
 
@@ -323,12 +323,19 @@ func (q *Queries) ListNuGetPackages(ctx context.Context, repositoryID string) ([
 }
 
 const searchNuGetPackages = `-- name: SearchNuGetPackages :many
+WITH matched AS (
+    SELECT m.package_id
+    FROM nuget_packages m
+    WHERE m.repository_id = $1 AND m.deleted_at IS NULL AND (lower(m.package_id) LIKE $2 OR lower(m.title) LIKE $2 OR lower(m.description) LIKE $2)
+    GROUP BY m.package_id
+    ORDER BY m.package_id
+    OFFSET $3 LIMIT $4
+)
 SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
 FROM nuget_packages np
 JOIN blobs b ON b.id = np.blob_id
-WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND (lower(np.package_id) LIKE $2 OR lower(np.title) LIKE $2 OR lower(np.description) LIKE $2)
-ORDER BY np.package_id, np.version DESC
-OFFSET $3 LIMIT $4
+WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id IN (SELECT package_id FROM matched)
+ORDER BY np.package_id, np.created_at, np.id
 `
 
 type SearchNuGetPackagesParams struct {
@@ -363,6 +370,8 @@ type SearchNuGetPackagesRow struct {
 	UpdatedAt                time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// OFFSET/LIMIT page over matching packages, not versions: every live version of
+// each package on the page is returned so callers can group them per package.
 func (q *Queries) SearchNuGetPackages(ctx context.Context, arg SearchNuGetPackagesParams) ([]SearchNuGetPackagesRow, error) {
 	rows, err := q.db.Query(ctx, searchNuGetPackages,
 		arg.RepositoryID,
@@ -412,7 +421,7 @@ func (q *Queries) SearchNuGetPackages(ctx context.Context, arg SearchNuGetPackag
 }
 
 const searchNuGetPackagesCount = `-- name: SearchNuGetPackagesCount :one
-SELECT COUNT(*) FROM nuget_packages
+SELECT COUNT(DISTINCT package_id) FROM nuget_packages
 WHERE repository_id = $1 AND deleted_at IS NULL AND (lower(package_id) LIKE $2 OR lower(title) LIKE $2 OR lower(description) LIKE $2)
 `
 
@@ -421,6 +430,7 @@ type SearchNuGetPackagesCountParams struct {
 	PackageID    string `db:"package_id" json:"package_id"`
 }
 
+// Counts matching packages (not versions).
 func (q *Queries) SearchNuGetPackagesCount(ctx context.Context, arg SearchNuGetPackagesCountParams) (int64, error) {
 	row := q.db.QueryRow(ctx, searchNuGetPackagesCount, arg.RepositoryID, arg.PackageID)
 	var count int64

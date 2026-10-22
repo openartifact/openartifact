@@ -2412,6 +2412,12 @@ func (p *PostgresDB) CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPa
 		MinClientVersion:         strPtr(pkg.MinClientVersion),
 		BlobID:                   blobID,
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		// ON CONFLICT DO NOTHING returned no row: the live (repo, id, version)
+		// already exists. Its content is left untouched.
+		return ErrDuplicate
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create nuget package: %w", err)
 	}
@@ -2485,6 +2491,9 @@ func (p *PostgresDB) ListNuGetPackageVersions(ctx context.Context, repoID, packa
 	return packages, nil
 }
 
+// SearchNuGetPackages pages over matching packages: skip/take count packages,
+// the total is the number of matching packages, and every live version of each
+// package on the page is returned (grouped by package id, oldest first).
 func (p *PostgresDB) SearchNuGetPackages(ctx context.Context, repoID, query string, skip, take int) ([]*models.NuGetPackage, int, error) {
 	searchQuery := "%" + escapeLike(strings.ToLower(query)) + "%"
 
@@ -2910,35 +2919,6 @@ func (p *PostgresDB) ListGoModulesByRepo(ctx context.Context, repoID string) ([]
 	}
 
 	return modules, nil
-}
-
-// GetLatestGoModule gets the latest version of a module.
-func (p *PostgresDB) GetLatestGoModule(ctx context.Context, repoID, modulePath string) (*models.GoModule, error) {
-	row, err := p.q.GetLatestGoModule(ctx, dbsqlc.GetLatestGoModuleParams{
-		RepositoryID: repoID,
-		ModulePath:   modulePath,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get latest go module: %w", err)
-	}
-
-	return &models.GoModule{
-		ID:           row.ID,
-		RepositoryID: row.RepositoryID,
-		ModulePath:   row.ModulePath,
-		Version:      row.Version,
-		GoModContent: row.GoModContent,
-		ZipBlobKey:   row.ZipBlobKey,
-		ModBlobKey:   row.ModBlobKey,
-		ZipSizeBytes: row.ZipSizeBytes,
-		ZipHash:      row.ZipHash,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
-	}, nil
 }
 
 // cleanupPolicyToModel converts a dbsqlc.CleanupPolicy to *models.CleanupPolicy.
@@ -3771,6 +3751,36 @@ func (p *PostgresDB) SearchCargoCrates(ctx context.Context, repoID, query string
 	}
 
 	return crates, nil
+}
+
+func (p *PostgresDB) SearchCargoCrateSummaries(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrateSummary, int, error) {
+	rows, err := p.q.SearchCargoCrateSummaries(ctx, dbsqlc.SearchCargoCrateSummariesParams{
+		RepositoryID: repoID,
+		Name:         "%" + escapeLike(query) + "%",
+		//nolint:gosec // G115: value is bounded by API validation
+		Limit: int32(limit),
+	})
+	if err != nil {
+		return nil, 0, fmt.Errorf("failed to search cargo crates: %w", err)
+	}
+
+	var total int
+
+	summaries := make([]*models.CargoCrateSummary, 0, len(rows))
+
+	for _, row := range rows {
+		total = int(row.Total)
+
+		summaries = append(summaries, &models.CargoCrateSummary{
+			Name:         row.Name,
+			Description:  row.Description,
+			Downloads:    row.Downloads,
+			Versions:     row.Versions,
+			LiveVersions: row.LiveVersions,
+		})
+	}
+
+	return summaries, total, nil
 }
 
 func (p *PostgresDB) YankCargoCrate(ctx context.Context, repoID, name, version string, yanked bool) error {
@@ -5455,14 +5465,29 @@ func (p *PostgresDB) SetSystemSetting(ctx context.Context, key, value string) er
 	return nil
 }
 
-// CreateCondaPackage creates a new Conda package.
-//
-// conda_packages has no md5 column and the blobs table only tracks sha256,
-// so pkg.MD5 never round-trips.
+// CreateCondaPackage creates a new Conda package file. An empty
+// pkg.Extension is stored as ".tar.bz2" and an empty pkg.Extra as "{}".
+// A live row for the same (name, version, build, platform, extension) yields
+// ErrDuplicate and is left untouched.
 func (p *PostgresDB) CreateCondaPackage(ctx context.Context, pkg *models.CondaPackage) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, pkg.SHA256, pkg.BlobKey, "application/x-conda", pkg.SizeBytes)
 	if err != nil {
 		return fmt.Errorf("failed to upsert blob for conda package: %w", err)
+	}
+
+	ext := pkg.Extension
+	if ext == "" {
+		ext = models.CondaExtTarBz2
+	}
+
+	extra := pkg.Extra
+	if len(extra) == 0 || string(extra) == "null" {
+		extra = json.RawMessage(`{}`)
+	}
+
+	depends := pkg.Depends
+	if depends == nil {
+		depends = []string{}
 	}
 
 	row, err := p.q.CreateCondaPackage(ctx, dbsqlc.CreateCondaPackageParams{
@@ -5471,27 +5496,40 @@ func (p *PostgresDB) CreateCondaPackage(ctx context.Context, pkg *models.CondaPa
 		Version:      pkg.Version,
 		BuildString:  pkg.BuildString,
 		Platform:     pkg.Platform,
-		Depends:      pkg.Depends,
+		Depends:      depends,
 		BlobID:       blobID,
+		Extension:    ext,
+		BuildNumber:  toInt32(pkg.BuildNumber),
+		Md5:          pkg.MD5,
+		TimestampMs:  pkg.Timestamp,
+		IndexExtra:   extra,
 	})
+	if errors.Is(err, sql.ErrNoRows) {
+		return ErrDuplicate
+	}
+
 	if err != nil {
 		return fmt.Errorf("failed to create conda package: %w", err)
 	}
 
 	pkg.ID = row.ID
+	pkg.Extension = ext
 	pkg.CreatedAt = row.CreatedAt
 	pkg.UpdatedAt = row.UpdatedAt
 
 	return nil
 }
 
-func (p *PostgresDB) GetCondaPackage(ctx context.Context, repoID, name, version, buildString, platform string) (*models.CondaPackage, error) {
-	row, err := p.q.GetCondaPackage(ctx, dbsqlc.GetCondaPackageParams{
+// GetCondaPackageFile returns the live package file with this exact
+// name, version, build, platform and extension, or nil.
+func (p *PostgresDB) GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error) {
+	row, err := p.q.GetCondaPackageFile(ctx, dbsqlc.GetCondaPackageFileParams{
 		RepositoryID: repoID,
 		Name:         name,
 		Version:      version,
 		BuildString:  buildString,
 		Platform:     platform,
+		Extension:    extension,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -5501,6 +5539,12 @@ func (p *PostgresDB) GetCondaPackage(ctx context.Context, repoID, name, version,
 		return nil, fmt.Errorf("failed to get conda package: %w", err)
 	}
 
+	return condaRowToModel(row), nil
+}
+
+// condaRowToModel converts any of the three structurally identical conda row
+// types (GetFile/List/ListAll share the same SELECT list).
+func condaRowToModel(row dbsqlc.GetCondaPackageFileRow) *models.CondaPackage {
 	return &models.CondaPackage{
 		ID:           row.ID,
 		RepositoryID: row.RepositoryID,
@@ -5508,14 +5552,18 @@ func (p *PostgresDB) GetCondaPackage(ctx context.Context, repoID, name, version,
 		Version:      row.Version,
 		BuildString:  row.BuildString,
 		Platform:     row.Platform,
+		Extension:    row.Extension,
+		BuildNumber:  int(row.BuildNumber),
+		Timestamp:    row.TimestampMs,
 		Depends:      row.Depends,
+		Extra:        row.IndexExtra,
 		BlobKey:      row.BlobKey,
 		SizeBytes:    row.SizeBytes,
 		SHA256:       row.Sha256,
-		MD5:          "",
+		MD5:          row.Md5,
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
-	}, nil
+	}
 }
 
 func (p *PostgresDB) DeleteCondaPackage(ctx context.Context, id string) error {
@@ -5539,22 +5587,7 @@ func (p *PostgresDB) ListCondaPackages(ctx context.Context, repoID, platform str
 	var packages []*models.CondaPackage
 
 	for _, row := range rows {
-		pkg := &models.CondaPackage{
-			ID:           row.ID,
-			RepositoryID: row.RepositoryID,
-			Name:         row.Name,
-			Version:      row.Version,
-			BuildString:  row.BuildString,
-			Platform:     row.Platform,
-			Depends:      row.Depends,
-			BlobKey:      row.BlobKey,
-			SizeBytes:    row.SizeBytes,
-			SHA256:       row.Sha256,
-			MD5:          "",
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-		}
-		packages = append(packages, pkg)
+		packages = append(packages, condaRowToModel(dbsqlc.GetCondaPackageFileRow(row)))
 	}
 
 	return packages, nil
@@ -5572,36 +5605,27 @@ func (p *PostgresDB) ListAllCondaPackages(ctx context.Context, repoID string) ([
 	var packages []*models.CondaPackage
 
 	for _, row := range rows {
-		packages = append(packages, &models.CondaPackage{
-			ID:           row.ID,
-			RepositoryID: row.RepositoryID,
-			Name:         row.Name,
-			Version:      row.Version,
-			BuildString:  row.BuildString,
-			Platform:     row.Platform,
-			Depends:      row.Depends,
-			BlobKey:      row.BlobKey,
-			SizeBytes:    row.SizeBytes,
-			SHA256:       row.Sha256,
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-		})
+		packages = append(packages, condaRowToModel(dbsqlc.GetCondaPackageFileRow(row)))
 	}
 
 	return packages, nil
 }
 
-// CreateConanPackage creates a new Conan package.
+// CreateConanPackage stores one Conan file, replacing the blob of the live row
+// with the same (recipe revision, package id, package revision, filename).
 //
-// conan_packages.blob_id is nullable (it is not declared NOT NULL)
-// and the model has no dedicated hash field, so the blob key doubles as the
-// blobs.sha256 value (self-referential, unique per upload — same pattern as
-// docker blobs).
+// conan_packages.blob_id is nullable; rows restored from a backup that predates
+// the sha256 field carry only the blob key, which then stands in for the digest.
 func (p *PostgresDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPackage) error {
 	var blobID *string
 
 	if pkg.BlobKey != "" {
-		id, err := p.upsertBlobWithMediaType(ctx, pkg.BlobKey, pkg.BlobKey, "application/octet-stream", 0)
+		sha := pkg.SHA256
+		if sha == "" {
+			sha = pkg.BlobKey
+		}
+
+		id, err := p.upsertBlobWithMediaType(ctx, sha, pkg.BlobKey, "application/octet-stream", pkg.SizeBytes)
 		if err != nil {
 			return fmt.Errorf("failed to upsert blob for conan package: %w", err)
 		}
@@ -5610,14 +5634,15 @@ func (p *PostgresDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPa
 	}
 
 	row, err := p.q.CreateConanPackage(ctx, dbsqlc.CreateConanPackageParams{
-		RepositoryID:   pkg.RepositoryID,
-		Name:           pkg.Name,
-		Version:        pkg.Version,
-		UserChannel:    pkg.UserChannel,
-		RecipeRevision: pkg.RecipeRevision,
-		BlobID:         blobID,
-		Conanfile:      strPtr(pkg.ConanFile),
-		Conaninfo:      strPtr(pkg.ConanInfo),
+		RepositoryID:    pkg.RepositoryID,
+		Name:            pkg.Name,
+		Version:         pkg.Version,
+		UserChannel:     pkg.UserChannel,
+		RecipeRevision:  pkg.RecipeRevision,
+		PackageID:       pkg.PackageID,
+		PackageRevision: pkg.PackageRevision,
+		Filename:        pkg.Filename,
+		BlobID:          blobID,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create conan package: %w", err)
@@ -5630,13 +5655,37 @@ func (p *PostgresDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPa
 	return nil
 }
 
-func (p *PostgresDB) GetConanPackage(ctx context.Context, repoID, name, version, userChannel, recipeRevision string) (*models.ConanPackage, error) {
+// conanPackageFromRow converts a conan_packages row joined with its blob.
+func conanPackageFromRow(row dbsqlc.GetConanPackageRow) *models.ConanPackage {
+	return &models.ConanPackage{
+		ID:              row.ID,
+		RepositoryID:    row.RepositoryID,
+		Name:            row.Name,
+		Version:         row.Version,
+		UserChannel:     row.UserChannel,
+		RecipeRevision:  row.RecipeRevision,
+		PackageID:       row.PackageID,
+		PackageRevision: row.PackageRevision,
+		Filename:        row.Filename,
+		BlobKey:         row.BlobKey,
+		SHA256:          row.Sha256,
+		SizeBytes:       row.SizeBytes,
+		CreatedAt:       row.CreatedAt,
+		UpdatedAt:       row.UpdatedAt,
+	}
+}
+
+// GetConanPackage returns the live file stored under key, or (nil, nil).
+func (p *PostgresDB) GetConanPackage(ctx context.Context, repoID string, key models.ConanFileKey) (*models.ConanPackage, error) {
 	row, err := p.q.GetConanPackage(ctx, dbsqlc.GetConanPackageParams{
-		RepositoryID:   repoID,
-		Name:           name,
-		Version:        version,
-		UserChannel:    userChannel,
-		RecipeRevision: recipeRevision,
+		RepositoryID:    repoID,
+		Name:            key.Name,
+		Version:         key.Version,
+		UserChannel:     key.UserChannel,
+		RecipeRevision:  key.RecipeRevision,
+		PackageID:       key.PackageID,
+		PackageRevision: key.PackageRevision,
+		Filename:        key.Filename,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
@@ -5646,19 +5695,45 @@ func (p *PostgresDB) GetConanPackage(ctx context.Context, repoID, name, version,
 		return nil, fmt.Errorf("failed to get conan package: %w", err)
 	}
 
-	return &models.ConanPackage{
-		ID:             row.ID,
-		RepositoryID:   row.RepositoryID,
-		Name:           row.Name,
-		Version:        row.Version,
-		UserChannel:    row.UserChannel,
-		RecipeRevision: row.RecipeRevision,
-		BlobKey:        row.BlobKey,
-		ConanFile:      derefStr(row.Conanfile),
-		ConanInfo:      derefStr(row.Conaninfo),
-		CreatedAt:      row.CreatedAt,
-		UpdatedAt:      row.UpdatedAt,
-	}, nil
+	return conanPackageFromRow(row), nil
+}
+
+// ListConanRecipeFiles returns every live file of one recipe (all its recipe
+// and package revisions), oldest first.
+func (p *PostgresDB) ListConanRecipeFiles(ctx context.Context, repoID, name, version, userChannel string) ([]*models.ConanPackage, error) {
+	rows, err := p.q.ListConanRecipeFiles(ctx, dbsqlc.ListConanRecipeFilesParams{
+		RepositoryID: repoID,
+		Name:         name,
+		Version:      version,
+		UserChannel:  userChannel,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("failed to query conan recipe files: %w", err)
+	}
+
+	files := make([]*models.ConanPackage, 0, len(rows))
+
+	for _, row := range rows {
+		files = append(files, conanPackageFromRow(dbsqlc.GetConanPackageRow(row)))
+	}
+
+	return files, nil
+}
+
+// ListConanRecipes returns the distinct recipes that have at least one file.
+func (p *PostgresDB) ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error) {
+	rows, err := p.q.ListConanRecipes(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query conan recipes: %w", err)
+	}
+
+	recipes := make([]models.ConanRecipe, 0, len(rows))
+
+	for _, row := range rows {
+		recipes = append(recipes, models.ConanRecipe{Name: row.Name, Version: row.Version, UserChannel: row.UserChannel})
+	}
+
+	return recipes, nil
 }
 
 func (p *PostgresDB) DeleteConanPackage(ctx context.Context, id string) error {
@@ -5678,25 +5753,14 @@ func (p *PostgresDB) ListConanPackages(ctx context.Context, repoID string) ([]*m
 	var packages []*models.ConanPackage
 
 	for _, row := range rows {
-		packages = append(packages, &models.ConanPackage{
-			ID:             row.ID,
-			RepositoryID:   row.RepositoryID,
-			Name:           row.Name,
-			Version:        row.Version,
-			UserChannel:    row.UserChannel,
-			RecipeRevision: row.RecipeRevision,
-			BlobKey:        row.BlobKey,
-			ConanFile:      derefStr(row.Conanfile),
-			ConanInfo:      derefStr(row.Conaninfo),
-			CreatedAt:      row.CreatedAt,
-			UpdatedAt:      row.UpdatedAt,
-		})
+		packages = append(packages, conanPackageFromRow(dbsqlc.GetConanPackageRow(row)))
 	}
 
 	return packages, nil
 }
 
-// CreateIvyArtifact creates a new Ivy artifact.
+// CreateIvyArtifact stores an Ivy artifact; a live artifact with the same
+// coordinates is repointed at the new blob.
 func (p *PostgresDB) CreateIvyArtifact(ctx context.Context, artifact *models.IvyArtifact) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, artifact.SHA256, artifact.BlobKey, "application/java-archive", artifact.SizeBytes)
 	if err != nil {
@@ -5795,7 +5859,8 @@ func (p *PostgresDB) ListIvyArtifacts(ctx context.Context, repoID string) ([]*mo
 	return artifacts, nil
 }
 
-// CreateSBTArtifact inserts a new SBT artifact record.
+// CreateSBTArtifact stores an SBT artifact; a live artifact with the same
+// coordinates is repointed at the new blob.
 func (p *PostgresDB) CreateSBTArtifact(ctx context.Context, artifact *models.SBTArtifact) error {
 	blobID, err := p.upsertBlobWithMediaType(ctx, artifact.SHA256, artifact.BlobKey, "application/java-archive", artifact.SizeBytes)
 	if err != nil {

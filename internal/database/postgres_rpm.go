@@ -83,10 +83,18 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 	return out, rows.Err()
 }
 
-// UpdateRpmPackageExtra replaces rpm_extra for the packages of a repo backed by the blob with the given sha256.
+// UpdateRpmPackageExtra replaces rpm_extra for the packages of a repo backed by
+// the blob with the given sha256. When the extra data carries sizes
+// (sizes_parsed, see pkgrpm.Package.MarshalExtra) the installed_size and
+// archive_size columns are corrected from it too: rows stored before the
+// header size tags were read properly hold 0.
 func (p *PostgresDB) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 string, extra []byte) error {
 	if _, err := p.db.ExecContext(ctx, `
-		UPDATE rpm_packages SET rpm_extra = $3::jsonb
+		UPDATE rpm_packages SET rpm_extra = $3::jsonb,
+		    installed_size = CASE WHEN ($3::jsonb ->> 'sizes_parsed') = 'true'
+		                          THEN COALESCE(($3::jsonb ->> 'installed_size')::bigint, 0) ELSE installed_size END,
+		    archive_size = CASE WHEN ($3::jsonb ->> 'sizes_parsed') = 'true'
+		                        THEN COALESCE(($3::jsonb ->> 'archive_size')::bigint, 0) ELSE archive_size END
 		WHERE repository_id = $1 AND deleted_at IS NULL AND blob_id IN (SELECT id FROM blobs WHERE sha256 = $2)`,
 		repoID, sha256, extra); err != nil {
 		return fmt.Errorf("update rpm package extra: %w", err)
