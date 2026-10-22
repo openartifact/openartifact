@@ -21,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="searchQuery"
             type="search"
             :placeholder="t('browser.filterPlaceholder')"
-            class="h-8 w-56 pl-7 pr-2 rounded-md text-xs bg-surface-hover/60 border border-border text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-primary"
+            class="h-8 w-56 pl-7 pr-2 rounded-md text-xs bg-surface-hover/60 border border-border-strong text-foreground placeholder:text-muted focus:ring-2 focus:ring-primary"
           />
         </div>
 
@@ -46,24 +46,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
 
         <!-- Sort button -->
-        <button
-          class="flex items-center gap-1 px-2.5 h-8 text-xs rounded-md border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-          @click="sortKey = sortKey === 'name' ? 'created' : 'name'"
-        >
+        <AppButton variant="secondary" size="sm" @click="sortKey = sortKey === 'name' ? 'created' : 'name'">
           <ArrowsUpDownIcon class="w-3.5 h-3.5" aria-hidden="true" />
           {{ t('browser.sort') }}: {{ sortKey === 'name' ? t('packages.column.name') : t('packages.column.uploaded') }}
-        </button>
+        </AppButton>
 
         <!-- Refresh -->
-        <button
-          class="flex items-center justify-center w-8 h-8 rounded-md border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50"
-          :disabled="loading"
+        <AppButton
+          variant="secondary"
+          size="sm"
+          :loading="loading"
           :title="t('common.refresh')"
           :aria-label="t('common.refresh')"
           @click="load"
         >
-          <ArrowPathIcon class="w-3.5 h-3.5" :class="{ 'animate-spin': loading }" aria-hidden="true" />
-        </button>
+          <ArrowPathIcon v-if="!loading" class="w-3.5 h-3.5" aria-hidden="true" />
+        </AppButton>
       </div>
     </div>
 
@@ -83,12 +81,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p class="font-medium text-foreground mb-1">{{ t('browser.errorTitle') }}</p>
         <p class="text-sm text-muted">{{ error }}</p>
       </div>
-      <button
-        class="mt-2 px-4 py-2 text-sm rounded-md bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-        @click="load"
-      >
+      <AppButton class="mt-2" @click="load">
         {{ t('browser.retry') }}
-      </button>
+      </AppButton>
     </div>
 
     <!-- Empty state -->
@@ -102,14 +97,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-else-if="viewMode === 'list'" class="bg-surface rounded-lg border border-border overflow-hidden">
       <!-- List header -->
       <div
-        class="grid grid-cols-[28px_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px] items-center gap-3 px-4 py-2.5 border-b border-border bg-surface-hover text-xs font-semibold text-muted uppercase tracking-wider"
+        class="grid grid-cols-[28px_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px] items-center gap-3 px-4 py-2.5 border-b border-border bg-surface-hover text-xs font-semibold text-muted"
       >
         <div>
           <input
             type="checkbox"
             :checked="allPageSelected"
             :indeterminate="somePageSelected && !allPageSelected"
-            class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+            class="w-4 h-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer"
             :aria-label="t('browser.selectAll')"
             @change="toggleAll"
           />
@@ -134,9 +129,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <input
               type="checkbox"
               :checked="selectedIds.has(itemKey(item))"
-              class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+              class="w-4 h-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
               :class="{ 'opacity-100': selectedIds.has(itemKey(item)) }"
-              :aria-label="`Select ${item.name}`"
+              :aria-label="t('browser.selectItem').replace('{name}', item.name)"
               @change="toggleItem(item)"
             />
           </div>
@@ -156,8 +151,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >{{ item.name }}</router-link>
             <span
               v-if="item.version === 'latest'"
-              class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary-soft text-primary shrink-0"
-            >latest</span>
+              class="text-micro font-mono px-1.5 py-0.5 rounded bg-primary-soft text-primary shrink-0"
+            >{{ t('pkg.latest') }}</span>
           </div>
 
           <!-- Version -->
@@ -215,7 +210,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <input
             type="checkbox"
             :checked="selectedIds.has(itemKey(item))"
-            class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+            class="w-4 h-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
             :class="{ 'opacity-100': selectedIds.has(itemKey(item)) }"
             @click.stop
             @change="toggleItem(item)"
@@ -255,6 +250,7 @@ import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { listComponents, getRepository } from '../api/repositories'
 import type { Repository, ComponentItem } from '../api/repositories'
+import AppButton from '../components/AppButton.vue'
 import EmptyState from '../components/EmptyState.vue'
 import Pagination from '../components/Pagination.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
@@ -333,18 +329,18 @@ function clearSelection(): void {
 function fileTypeClasses(name: string): string {
   const lower = name.toLowerCase()
   if (lower.endsWith('.deb') || lower.endsWith('.rpm')) {
-    return 'bg-red-500/15 text-red-600 dark:text-red-300'
+    return 'bg-danger-soft text-danger'
   }
   if (lower.endsWith('.jar') || lower.endsWith('.war') || lower.endsWith('.ear')) {
-    return 'bg-rose-500/15 text-rose-600 dark:text-rose-300'
+    return 'bg-warning-soft text-warning'
   }
   if (lower.endsWith('.tgz') || lower.endsWith('.tar.gz') || lower.endsWith('.tar')) {
-    return 'bg-blue-500/15 text-blue-600 dark:text-blue-300'
+    return 'bg-info-soft text-info'
   }
   if (lower.endsWith('.whl') || lower.endsWith('.egg')) {
-    return 'bg-sky-500/15 text-sky-600 dark:text-sky-300'
+    return 'bg-primary-soft text-primary'
   }
-  return 'bg-gray-500/15 text-gray-600 dark:text-gray-300'
+  return 'bg-surface-hover text-muted'
 }
 
 // ── Bulk action handlers ───────────────────────────────────────────────────

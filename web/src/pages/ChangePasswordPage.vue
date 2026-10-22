@@ -22,7 +22,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="password"
             autocomplete="current-password"
             required
-            class="w-full px-3 py-2 border border-border rounded-md text-sm bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            class="w-full px-3 py-2 border border-border-strong rounded-md text-sm bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </FormField>
         <FormField :label="t('auth.newPassword')" id="new_password" :error="errors.new_password">
@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             autocomplete="new-password"
             required
             minlength="12"
-            class="w-full px-3 py-2 border border-border rounded-md text-sm bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            class="w-full px-3 py-2 border border-border-strong rounded-md text-sm bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           />
           <p class="mt-1 text-xs text-muted">{{ t('auth.passwordMin') }}</p>
         </FormField>
@@ -44,30 +44,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="password"
             autocomplete="new-password"
             required
-            class="w-full px-3 py-2 border border-border rounded-md text-sm bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+            class="w-full px-3 py-2 border border-border-strong rounded-md text-sm bg-surface text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
           />
         </FormField>
         <p v-if="errorMsg" role="alert" class="text-sm text-danger text-center">{{ errorMsg }}</p>
-        <button
-          type="submit"
-          :disabled="loading"
-          class="w-full py-2 px-4 bg-primary text-primary-contrast text-sm font-medium rounded-md hover:opacity-90 disabled:opacity-50"
-        >
+        <AppButton variant="primary" size="md" block type="submit" :disabled="loading">
           {{ loading ? t('common.saving') : t('auth.changePasswordCta') }}
-        </button>
-        <button
-          type="button"
-          class="w-full py-2 px-4 text-sm text-muted hover:text-foreground"
-          @click="handleLogout"
-        >
+        </AppButton>
+        <AppButton variant="ghost" block @click="handleLogout">
           {{ t('auth.signOut') }}
-        </button>
+        </AppButton>
       </form>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../components/AppButton.vue'
 import { ref } from 'vue'
 import { useRouter } from 'vue-router'
 import { changePassword, logout } from '../api/auth'

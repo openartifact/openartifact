@@ -17,13 +17,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <ArrowUpTrayIcon class="w-8 h-8 text-muted mb-2" aria-hidden="true" />
       <p class="text-sm text-foreground">{{ t('upload.dropzone') }}</p>
       <p class="text-xs text-muted mt-1">{{ formatHint }}</p>
-      <button
-        type="button"
-        class="mt-3 px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary"
-        @click="fileInput?.click()"
-      >
+      <AppButton variant="secondary" size="sm" class="mt-3" @click="fileInput?.click()">
         {{ t('upload.browse') }}
-      </button>
+      </AppButton>
       <input
         ref="fileInput"
         type="file"
@@ -67,6 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { ref, computed } from 'vue'
+import AppButton from './AppButton.vue'
 import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { useUpload, type UploadEntry, type UploadStatus } from '../composables/useUpload'
 import { useToastStore } from '../stores/toast'

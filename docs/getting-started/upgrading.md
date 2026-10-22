@@ -223,6 +223,9 @@ Migrations `008`–`015` run at first start (RPM repositories regenerate their m
 | Audit API | Keyset paging (`cursor`, `has_more`); `total` may be an estimate (`total_exact`). |
 | CLI | `oa search --format json` prints `{repositories, results}`; `storage create/update` take `--config-file`; `user create --admin` and `license delete` are removed. |
 | Startup | Failures exit with status 1 (was 0). |
+| Web UI (trash) | A repository's Trash page is no longer admin-only: users with the repository-scoped `delete` permission can open it and restore items, and `Empty trash` is offered to users with `manage` on the repository (the API already enforced both). The global Trash page and Purge now stay admin only. |
+| API | `GET /api/v1/repository/{name}` now returns `permissions` (`write`, `delete`, `manage`: the caller's effective repository-scoped permissions); list responses do not. |
+| Web UI | Quota tab: a repository with only a `max_artifact_count` quota is shown as configured, with the count usage. Shared button, switch and confirm dialog components (focus trap, Escape) replace the hand-rolled variants; form controls and switch tracks use a stronger border (3:1 contrast); colours and font sizes come from theme tokens. |
 
 ## Rollback
 

@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <router-link
     :to="to"
-    class="group relative flex items-center gap-3 w-full h-8 rounded-md text-[13px] font-medium tracking-tight transition-[background,color] duration-150"
+    class="group relative flex items-center gap-3 w-full h-8 rounded-md text-ui font-medium tracking-tight transition-[background,color] duration-150"
     :class="[
       collapsed ? 'justify-center px-0' : 'px-2.5',
       isActive
@@ -26,7 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <span
       v-if="badge != null && !collapsed"
-      class="text-[10px] font-mono font-semibold text-muted bg-surface-hover px-1.5 py-0.5 rounded"
+      class="text-micro font-mono font-semibold text-muted bg-surface-hover px-1.5 py-0.5 rounded"
     >{{ badge }}</span>
 
     <!-- Tooltip shown only when sidebar is collapsed -->

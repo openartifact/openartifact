@@ -10,25 +10,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('adm.ai.title')" :description="t('adm.ai.description')">
       <template #actions>
         <div class="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            :disabled="testing || loading"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            @click="testConnection"
-          >
-            <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': testing }" aria-hidden="true" />
+          <AppButton variant="secondary" size="sm" :loading="testing" :disabled="loading" @click="testConnection">
+            <ArrowPathIcon v-if="!testing" class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.ai.testConnection') }}
-          </button>
-          <button
-            type="button"
-            :disabled="saving || loading"
-            class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-            @click="save"
-          >
-            <ArrowPathIcon v-if="saving" class="w-4 h-4 animate-spin" aria-hidden="true" />
-            <CheckIcon v-else class="w-4 h-4" aria-hidden="true" />
+          </AppButton>
+          <AppButton size="sm" :loading="saving" :disabled="loading" @click="save">
+            <CheckIcon v-if="!saving" class="w-4 h-4" aria-hidden="true" />
             {{ saving ? t('common.saving') : t('adm.ai.saveChanges') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -47,26 +36,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template v-else>
       <!-- Enable Toggle Banner -->
       <div class="bg-surface rounded-xl border border-border p-5 flex items-start gap-4">
-        <button
-          type="button"
-          role="switch"
-          aria-labelledby="ai-enable-label"
-          :aria-checked="form.enabled"
-          class="relative inline-flex h-6 w-11 shrink-0 rounded-full transition-colors duration-200 mt-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-          :class="form.enabled ? 'bg-primary' : 'bg-border'"
-          @click="form.enabled = !form.enabled"
-        >
-          <span
-            class="inline-block h-5 w-5 rounded-full bg-white shadow-sm transition-transform duration-200 mt-0.5"
-            :class="form.enabled ? 'translate-x-5' : 'translate-x-0.5'"
-          />
-        </button>
+        <AppToggle v-model="form.enabled" labelledby="ai-enable-label" class="mt-0.5" />
         <div class="min-w-0">
           <p id="ai-enable-label" class="text-sm font-semibold text-foreground leading-tight">{{ t('adm.ai.enable') }}</p>
-          <p class="text-[12px] text-muted mt-0.5 leading-relaxed">{{ t('adm.ai.enableHint') }}</p>
+          <p class="text-xs text-muted mt-0.5 leading-relaxed">{{ t('adm.ai.enableHint') }}</p>
         </div>
         <span
-          class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-[11px] font-semibold"
+          class="shrink-0 inline-flex items-center gap-1.5 px-2.5 py-1 rounded-full text-caption font-semibold"
           :class="form.enabled ? 'bg-success-soft text-success' : 'bg-surface-hover text-muted'"
         >
           <span class="w-1.5 h-1.5 rounded-full" :class="form.enabled ? 'bg-success' : 'bg-muted'" aria-hidden="true" />
@@ -80,7 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="bg-surface rounded-xl border border-border p-5 space-y-3">
           <div>
             <h3 class="text-sm font-semibold text-foreground">{{ t('adm.ai.provider') }}</h3>
-            <p class="text-[11px] text-muted mt-0.5">{{ t('adm.ai.providerHint') }}</p>
+            <p class="text-caption text-muted mt-0.5">{{ t('adm.ai.providerHint') }}</p>
           </div>
           <div class="grid grid-cols-2 gap-2" role="radiogroup" :aria-label="t('adm.ai.provider')">
             <button
@@ -90,30 +66,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               role="radio"
               :aria-checked="form.provider === key"
               :tabindex="form.enabled ? 0 : -1"
-              class="relative text-left p-3 rounded-lg border overflow-hidden transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+              class="relative text-left p-3 rounded-lg border overflow-hidden transition-all focus-visible:ring-2 focus-visible:ring-primary"
               :class="form.provider === key
                 ? 'border-primary bg-primary-soft/40 ring-1 ring-primary/30'
                 : 'border-border bg-surface hover:bg-surface-hover cursor-pointer'"
               @click="selectProvider(key)"
             >
-              <span class="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" :style="{ background: meta.color }" />
+              <span class="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg" :style="{ background: aiProviderColor(String(key)) }" />
               <div class="pl-3 flex items-start gap-2.5">
-                <div class="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5" :style="{ background: meta.color + '20' }">
+                <div class="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5" :style="{ background: tint(aiProviderColor(String(key)), 12) }">
                   <svg
                     v-if="aiBrandIcon(String(key))"
                     class="w-4 h-4"
-                    :style="{ color: meta.color }"
+                    :style="{ color: aiProviderColor(String(key)) }"
                     aria-hidden="true"
                     :viewBox="aiBrandIcon(String(key))!.viewBox"
                     fill="currentColor"
                   >
                     <path :d="aiBrandIcon(String(key))!.path" />
                   </svg>
-                  <component v-else :is="meta.icon" class="w-4 h-4" :style="{ color: meta.color }" aria-hidden="true" />
+                  <component v-else :is="meta.icon" class="w-4 h-4" :style="{ color: aiProviderColor(String(key)) }" aria-hidden="true" />
                 </div>
                 <div class="min-w-0">
-                  <p class="text-[12px] font-semibold text-foreground leading-tight">{{ meta.label }}</p>
-                  <p class="text-[11px] text-muted leading-snug mt-0.5">{{ meta.desc }}</p>
+                  <p class="text-xs font-semibold text-foreground leading-tight">{{ meta.label }}</p>
+                  <p class="text-caption text-muted leading-snug mt-0.5">{{ meta.desc }}</p>
                 </div>
               </div>
             </button>
@@ -124,7 +100,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="bg-surface rounded-xl border border-border p-5 space-y-4">
           <div>
             <h3 class="text-sm font-semibold text-foreground">{{ t('adm.ai.configuration') }}</h3>
-            <p class="text-[11px] text-muted mt-0.5">{{ t('adm.ai.configurationHint') }}</p>
+            <p class="text-caption text-muted mt-0.5">{{ t('adm.ai.configurationHint') }}</p>
           </div>
 
           <div class="grid grid-cols-2 gap-x-4 gap-y-4">
@@ -137,9 +113,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="form.base_url"
                 type="text"
                 placeholder="https://api.openai.com/v1"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
               />
-              <p class="text-[11px] text-muted mt-1">{{ t('adm.ai.baseUrlHint') }}</p>
+              <p class="text-caption text-muted mt-1">{{ t('adm.ai.baseUrlHint') }}</p>
             </div>
 
             <div class="col-span-2 sm:col-span-1">
@@ -151,18 +127,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   :type="apiKeyRevealed ? 'text' : 'password'"
                   autocomplete="off"
                   placeholder="••••••••"
-                  class="w-full px-3 py-2 pr-14 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                  class="w-full px-3 py-2 pr-14 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
                 />
                 <button
                   type="button"
                   :aria-label="apiKeyRevealed ? t('adm.ai.hideKey') : t('adm.ai.showKey')"
-                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-muted hover:text-foreground transition-colors"
+                  class="absolute right-2.5 top-1/2 -translate-y-1/2 text-caption font-medium text-muted hover:text-foreground transition-colors"
                   @click="apiKeyRevealed = !apiKeyRevealed"
                 >
                   {{ apiKeyRevealed ? t('adm.ai.hide') : t('adm.ai.show') }}
                 </button>
               </div>
-              <p class="text-[11px] text-muted mt-1">{{ t('adm.ai.apiKeyHint') }}</p>
+              <p class="text-caption text-muted mt-1">{{ t('adm.ai.apiKeyHint') }}</p>
             </div>
 
             <div class="col-span-2 sm:col-span-1">
@@ -175,27 +151,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     type="text"
                     list="model-suggestions"
                     :placeholder="PROVIDERS[form.provider]?.defaultModels?.[0] ?? 'gpt-4o'"
-                    class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                    class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
                   />
                   <datalist id="model-suggestions">
                     <option v-for="m in modelSuggestions" :key="m" :value="m" />
                   </datalist>
                 </div>
-                <button
-                  type="button"
-                  :disabled="loadingModels"
-                  class="shrink-0 inline-flex items-center gap-1.5 px-3 py-2 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed whitespace-nowrap"
+                <AppButton
+                  variant="secondary"
+                  :loading="loadingModels"
+                  class="shrink-0 whitespace-nowrap"
                   :title="t('adm.ai.loadModelsHint')"
                   @click="loadModels"
                 >
-                  <ArrowPathIcon class="w-3.5 h-3.5" :class="{ 'animate-spin': loadingModels }" aria-hidden="true" />
+                  <ArrowPathIcon v-if="!loadingModels" class="w-3.5 h-3.5" aria-hidden="true" />
                   {{ t('adm.ai.load') }}
-                </button>
+                </AppButton>
               </div>
-              <p v-if="availableModels.length > 0" class="text-[11px] text-muted mt-1">
+              <p v-if="availableModels.length > 0" class="text-caption text-muted mt-1">
                 {{ availableModels.length }} {{ t('adm.ai.modelsAvailable') }}
               </p>
-              <p v-else class="text-[11px] text-muted mt-1">{{ t('adm.ai.modelHint') }}</p>
+              <p v-else class="text-caption text-muted mt-1">{{ t('adm.ai.modelHint') }}</p>
             </div>
 
             <div class="col-span-2 sm:col-span-1">
@@ -207,9 +183,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 min="128"
                 max="128000"
                 step="128"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
               />
-              <p class="text-[11px] text-muted mt-1">{{ t('adm.ai.maxTokensHint') }}</p>
+              <p class="text-caption text-muted mt-1">{{ t('adm.ai.maxTokensHint') }}</p>
             </div>
 
             <div class="col-span-2 sm:col-span-1">
@@ -221,9 +197,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 min="5"
                 max="300"
                 step="5"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
               />
-              <p class="text-[11px] text-muted mt-1">{{ t('adm.ai.timeoutHint') }}</p>
+              <p class="text-caption text-muted mt-1">{{ t('adm.ai.timeoutHint') }}</p>
             </div>
           </div>
         </div>
@@ -233,12 +209,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="flex items-start justify-between gap-3">
             <div>
               <label for="ai-system-prompt" class="block text-sm font-semibold text-foreground">{{ t('adm.ai.systemPrompt') }}</label>
-              <p class="text-[11px] text-muted mt-0.5">{{ t('adm.ai.systemPromptHint') }}</p>
+              <p class="text-caption text-muted mt-0.5">{{ t('adm.ai.systemPromptHint') }}</p>
             </div>
             <button
               v-if="form.system_prompt"
               type="button"
-              class="shrink-0 text-[11px] font-medium text-muted hover:text-danger transition-colors"
+              class="shrink-0 text-caption font-medium text-muted hover:text-danger transition-colors"
               @click="form.system_prompt = ''"
             >
               {{ t('adm.ai.resetPrompt') }}
@@ -249,7 +225,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="form.system_prompt"
             rows="6"
             :placeholder="t('adm.ai.systemPromptPlaceholder')"
-            class="w-full px-3 py-2.5 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors leading-relaxed"
+            class="w-full px-3 py-2.5 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary resize-none transition-colors leading-relaxed"
           />
         </div>
       </div>
@@ -278,7 +254,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <p class="text-sm font-semibold" :class="testResult.ok ? 'text-success' : 'text-danger'">
                 {{ testResult.ok ? t('adm.ai.testOk') : t('adm.ai.testFailed') }}
               </p>
-              <p v-if="testResult.error" class="text-[12px] mt-0.5 font-mono break-all" :class="testResult.ok ? 'text-success/80' : 'text-danger/80'">
+              <p v-if="testResult.error" class="text-xs mt-0.5 font-mono break-all" :class="testResult.ok ? 'text-success/80' : 'text-danger/80'">
                 {{ testResult.error }}
               </p>
               <div v-if="testResult.ok && testResult.models && testResult.models.length > 0" class="flex flex-wrap gap-1.5 mt-2">
@@ -286,14 +262,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   v-for="m in testResult.models"
                   :key="m"
                   type="button"
-                  class="inline-flex items-center px-2 py-0.5 rounded-md bg-success/15 text-success text-[11px] font-mono font-medium border border-success/20 hover:bg-success/25 transition-colors"
+                  class="inline-flex items-center px-2 py-0.5 rounded-md bg-success/15 text-success text-caption font-mono font-medium border border-success/20 hover:bg-success/25 transition-colors"
                   :title="`${t('adm.ai.useModel')} ${m}`"
                   @click="form.model = m"
                 >
                   {{ m }}
                 </button>
               </div>
-              <p v-if="testResult.ok && testResult.models && testResult.models.length > 0" class="text-[11px] text-success/70 mt-1.5">
+              <p v-if="testResult.ok && testResult.models && testResult.models.length > 0" class="text-caption text-success/70 mt-1.5">
                 {{ t('adm.ai.pickModelHint') }}
               </p>
             </div>
@@ -329,51 +305,53 @@ import {
 import { useToastStore } from '../../stores/toast'
 import { getAIConfig, saveAIConfig, testAIConfig } from '../../api/adminAi'
 import type { AIConfig, TestResult } from '../../api/adminAi'
+import AppButton from '../../components/AppButton.vue'
+import AppToggle from '../../components/AppToggle.vue'
+import { aiProviderColor, tint } from '../../lib/brandColors'
 import { aiBrandIcon } from '../../lib/brandIcons'
 import { t } from '../../i18n/en'
 
 interface ProviderMeta {
   label: string
   desc: string
-  color: string
   icon?: Component
   defaultUrl: string
   defaultModels: string[]
 }
 
-const PROVIDERS: Record<string, ProviderMeta> = {
+function buildProviders(): Record<string, ProviderMeta> {
+  return {
   openai: {
     label: 'OpenAI',
     desc: 'GPT-4o, GPT-4o-mini, o1',
-    color: '#10a37f',
     icon: SparklesIcon,
     defaultUrl: 'https://api.openai.com/v1',
     defaultModels: ['gpt-4o', 'gpt-4o-mini', 'o1-mini'],
   },
   azure: {
     label: 'Azure OpenAI',
-    desc: 'Azure-hosted OpenAI models',
-    color: '#0078d4',
+    desc: t('adm.ai.provider.azure.desc'),
     icon: CloudIcon,
     defaultUrl: 'https://{resource}.openai.azure.com/openai/deployments/{deployment}',
     defaultModels: ['gpt-4o', 'gpt-35-turbo'],
   },
   ollama: {
     label: 'Ollama',
-    desc: 'Local models via Ollama',
-    color: '#f97316',
+    desc: t('adm.ai.provider.ollama.desc'),
     defaultUrl: 'http://localhost:11434/v1',
     defaultModels: ['llama3.2', 'mistral', 'codellama'],
   },
   custom: {
-    label: 'Custom / OpenAI-compatible',
-    desc: 'Any OpenAI-compatible endpoint',
-    color: '#8b5cf6',
+    label: t('adm.ai.provider.custom.label'),
+    desc: t('adm.ai.provider.custom.desc'),
     icon: PuzzlePieceIcon,
     defaultUrl: '',
     defaultModels: [],
   },
+  }
 }
+
+const PROVIDERS = computed(buildProviders)
 
 const toasts = useToastStore()
 
@@ -398,7 +376,7 @@ const form = reactive<AIConfig>({
 })
 
 const modelSuggestions = computed<string[]>(() => {
-  const defaults = PROVIDERS[form.provider]?.defaultModels ?? []
+  const defaults = PROVIDERS.value[form.provider]?.defaultModels ?? []
   return [...new Set([...availableModels.value, ...defaults])]
 })
 
@@ -406,8 +384,8 @@ function selectProvider(key: string): void {
   const prev = form.provider
   form.provider = key
   availableModels.value = []
-  const prevDefault = PROVIDERS[prev]?.defaultUrl ?? ''
-  const newDefault = PROVIDERS[key]?.defaultUrl ?? ''
+  const prevDefault = PROVIDERS.value[prev]?.defaultUrl ?? ''
+  const newDefault = PROVIDERS.value[key]?.defaultUrl ?? ''
   if (!form.base_url || form.base_url === prevDefault) {
     form.base_url = newDefault
   }
@@ -472,7 +450,7 @@ onMounted(async () => {
     const cfg = await getAIConfig()
     form.enabled = cfg.enabled
     form.provider = cfg.provider || 'openai'
-    form.base_url = cfg.base_url || PROVIDERS[form.provider]?.defaultUrl || ''
+    form.base_url = cfg.base_url || PROVIDERS.value[form.provider]?.defaultUrl || ''
     form.api_key = cfg.api_key || ''
     form.model = cfg.model || ''
     form.max_tokens = cfg.max_tokens || 2048

@@ -10,13 +10,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('admin.groups.title')" :description="t('adm.groups.description')">
       <template #actions>
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            @click="openCreate"
-            class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
-          >
+          <AppButton variant="primary" size="sm" @click="openCreate">
             {{ t('admin.groups.create') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -28,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <FolderIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] font-semibold text-muted">{{ t('adm.groups.stat.groups') }}</div>
+          <div class="text-micro font-semibold text-muted">{{ t('adm.groups.stat.groups') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ groups.length }}</div>
         </div>
       </div>
@@ -37,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <UsersIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] font-semibold text-muted">{{ t('adm.groups.stat.memberships') }}</div>
+          <div class="text-micro font-semibold text-muted">{{ t('adm.groups.stat.memberships') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ totalMembers }}</div>
         </div>
       </div>
@@ -47,7 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.groups.listTitle') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ groups.length }} {{ t('adm.common.total') }}</span>
+        <span class="text-caption font-mono text-muted">{{ groups.length }} {{ t('adm.common.total') }}</span>
       </div>
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
@@ -55,7 +51,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30">
+            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.name') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.members') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.created') }}</th>
@@ -123,27 +119,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="text"
             required
             :placeholder="t('adm.groups.field.namePlaceholder')"
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
           <p class="text-xs text-muted mt-1">{{ t('adm.groups.field.nameHint') }}</p>
         </div>
       </form>
       <template #footer>
-        <button
-          type="button"
-          @click="closeCreateDrawer"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
-        >
+        <AppButton variant="secondary" size="sm" @click="closeCreateDrawer">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="submit"
-          form="group-form"
-          :disabled="saving"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium disabled:opacity-50"
-        >
+        </AppButton>
+        <AppButton variant="primary" size="sm" type="submit" form="group-form" :loading="saving">
           {{ t('common.create') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
 
@@ -165,7 +152,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               v-model="memberSearch"
               type="search"
               :placeholder="t('adm.groups.searchUsers')"
-              class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+              class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
             />
           </div>
           <div v-if="memberSearch" class="mt-2 space-y-1 max-h-40 overflow-y-auto">
@@ -208,19 +195,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
       <template #footer>
-        <button
-          type="button"
-          @click="closeMembersDrawer"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
-        >
+        <AppButton variant="secondary" size="sm" @click="closeMembersDrawer">
           {{ t('common.close') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
+
+    <ConfirmDialog
+      :open="deleteTarget !== null"
+      :title="t('adm.groups.confirmDelete')"
+      :description="deleteTarget?.name ?? ''"
+      :confirm-label="t('common.delete')"
+      :busy="deleting"
+      @confirm="confirmDelete"
+      @close="deleteTarget = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
@@ -387,14 +382,26 @@ async function removeMember(member: UserItem): Promise<void> {
   }
 }
 
-async function deleteOne(group: GroupItem): Promise<void> {
-  if (!window.confirm(`${t('adm.groups.confirmDelete')} "${group.name}"?`)) return
+const deleteTarget = ref<GroupItem | null>(null)
+const deleting = ref(false)
+
+function deleteOne(group: GroupItem): void {
+  deleteTarget.value = group
+}
+
+async function confirmDelete(): Promise<void> {
+  const group = deleteTarget.value
+  if (!group) return
+  deleting.value = true
   try {
     await deleteGroup(String(group.id))
     toasts.success(t('adm.groups.deleted'))
+    deleteTarget.value = null
     await load()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.groups.deleteFailed'))
+  } finally {
+    deleting.value = false
   }
 }
 

@@ -3,7 +3,14 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { confirmNameMatches, daysUntilPurge, emptyTrashResultText, parseRetentionInput, purgeInText } from '../trash'
+import {
+  confirmNameMatches,
+  daysUntilPurge,
+  emptyTrashResultText,
+  parseRetentionInput,
+  purgeInText,
+  trashCapabilities,
+} from '../trash'
 
 const now = Date.parse('2026-10-22T12:00:00Z')
 
@@ -52,5 +59,26 @@ describe('emptyTrashResultText', () => {
   })
   it('mentions what is left when the request was capped', () => {
     expect(emptyTrashResultText(1000, 250)).toBe('Purged 1000 items from the trash. 250 items remain; empty the trash again.')
+  })
+})
+
+describe('trashCapabilities', () => {
+  it('gives admins everything in repo scope', () => {
+    expect(trashCapabilities('repo', true, undefined)).toEqual({ restore: true, empty: true, purge: true })
+  })
+  it('maps delete to restore and manage to empty for non-admins', () => {
+    expect(trashCapabilities('repo', false, { write: true, delete: true, manage: false })).toEqual({
+      restore: true,
+      empty: false,
+      purge: false,
+    })
+    expect(trashCapabilities('repo', false, { write: true, delete: true, manage: true }).empty).toBe(true)
+  })
+  it('grants nothing without permissions', () => {
+    expect(trashCapabilities('repo', false, undefined)).toEqual({ restore: false, empty: false, purge: false })
+  })
+  it('global scope is admin-only and has no empty action', () => {
+    expect(trashCapabilities('global', true, undefined)).toEqual({ restore: true, empty: false, purge: true })
+    expect(trashCapabilities('global', false, { write: true, delete: true, manage: true }).restore).toBe(false)
   })
 })

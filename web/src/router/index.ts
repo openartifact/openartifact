@@ -84,7 +84,7 @@ const routes: RouteRecordRaw[] = [
     path: '/repos/:name/trash',
     name: 'repo-trash',
     component: () => import('../pages/TrashPage.vue'),
-    meta: { crumbs: [...repoTrail, { key: 'trash.title' }], requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [...repoTrail, { key: 'trash.title' }], requiresAuth: true },
   },
   {
     path: '/repos/:name',

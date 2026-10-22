@@ -9,15 +9,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <PageHeader :title="t('sec.ai.title')" :description="t('sec.ai.description')">
       <template #actions>
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="!selectedRepo"
-          @click="openTriggerDrawer"
-        >
+        <AppButton variant="primary" size="md" :disabled="!selectedRepo" @click="openTriggerDrawer">
           <SparklesIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('sec.ai.trigger') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -26,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <select
         v-model="selectedRepo"
         :aria-label="t('sec.common.selectRepo')"
-        class="h-9 px-3 rounded-lg bg-surface border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+        class="h-9 px-3 rounded-lg bg-surface border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
       >
         <option value="">{{ t('sec.common.selectRepo') }}</option>
         <option v-for="r in repos" :key="r.name" :value="r.name">{{ r.name }}</option>
@@ -45,19 +40,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Stats tiles -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.total') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.ai.total') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums">{{ analyses.length }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.license.SAFE') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.ai.license.SAFE') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-success">{{ countSafe }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.license.REVIEW_REQUIRED') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.ai.license.REVIEW_REQUIRED') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-warning">{{ countReview }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.ai.quarantineRecommended') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.ai.quarantineRecommended') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-danger">{{ countQuarantine }}</div>
       </div>
     </div>
@@ -71,7 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="search"
           :aria-label="t('sec.ai.search')"
           :placeholder="t('sec.ai.search')"
-          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
       <div role="group" :aria-label="t('sec.common.filterStatus')" class="flex items-center gap-1 bg-surface-hover/60 rounded-lg p-0.5">
@@ -102,7 +97,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('sec.ai.results') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ filteredAnalyses.length }} {{ t('sec.ai.analysesCount') }}</span>
+        <span class="text-caption font-mono text-muted">{{ filteredAnalyses.length }} {{ t('sec.ai.analysesCount') }}</span>
       </div>
 
       <div v-if="loadingAnalyses" class="py-12 flex flex-col items-center gap-3 text-muted" role="status">
@@ -112,9 +107,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <div v-else-if="loadError" class="py-12 text-center" role="alert">
         <p class="text-sm text-danger">{{ loadError }}</p>
-        <button type="button" class="mt-3 px-3 py-1.5 rounded-lg text-sm border border-border hover:bg-surface-hover" @click="loadAnalyses()">
+        <AppButton variant="secondary" size="sm" @click="loadAnalyses()">
           {{ t('sec.common.retry') }}
-        </button>
+        </AppButton>
       </div>
 
       <EmptyState
@@ -150,8 +145,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               <td class="px-4 py-3">
                 <button type="button" class="text-left focus:outline-none focus-visible:ring-2 focus-visible:ring-primary rounded" @click="selectedAnalysis = analysis">
-                  <div class="font-mono text-[13px] font-medium text-foreground">{{ analysis.artifact_name || analysis.artifact_id }}</div>
-                  <div class="font-mono text-[11px] text-muted mt-0.5">{{ analysis.artifact_version }}</div>
+                  <div class="font-mono text-ui font-medium text-foreground">{{ analysis.artifact_name || analysis.artifact_id }}</div>
+                  <div class="font-mono text-caption text-muted mt-0.5">{{ analysis.artifact_version }}</div>
                 </button>
               </td>
               <td class="px-4 py-3">
@@ -160,7 +155,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td class="px-4 py-3">
                 <div class="flex flex-col gap-1">
                   <span :class="licenseStatusClass(analysis.license_status)">{{ licenseStatusLabel(analysis.license_status) }}</span>
-                  <span v-if="analysis.license_name" class="text-[11px] text-muted font-mono truncate max-w-[140px]">{{ analysis.license_name }}</span>
+                  <span v-if="analysis.license_name" class="text-caption text-muted font-mono truncate max-w-[140px]">{{ analysis.license_name }}</span>
                 </div>
               </td>
               <td class="px-4 py-3">
@@ -172,7 +167,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td class="px-4 py-3">
                 <span
                   v-if="analysis.quarantine_recommended"
-                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold text-danger bg-danger-soft"
+                  class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-caption font-semibold text-danger bg-danger-soft"
                 >
                   <ExclamationTriangleIcon class="w-3 h-3" aria-hidden="true" />
                   {{ t('sec.ai.quarantine') }}
@@ -183,16 +178,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <span class="line-clamp-2">{{ truncate(analysis.summary, 60) }}</span>
               </td>
               <td class="px-4 py-3">
-                <button
-                  type="button"
-                  class="px-2 py-1 rounded-md text-[11px] font-medium border border-border text-muted hover:bg-surface-hover hover:text-foreground transition-colors disabled:opacity-50"
-                  :disabled="retriggering === analysis.id"
-                  :aria-label="`${t('sec.ai.retrigger')}: ${analysis.artifact_name || analysis.artifact_id}`"
-                  @click="retrigger(analysis)"
-                >
-                  <ArrowPathIcon v-if="retriggering === analysis.id" class="w-3 h-3 animate-spin inline mr-1" aria-hidden="true" />
+                <AppButton variant="secondary" size="xs" :loading="retriggering === analysis.id" :disabled="retriggering === analysis.id" :aria-label="`${t('sec.ai.retrigger')}: ${analysis.artifact_name || analysis.artifact_id}`" @click="retrigger(analysis)">
                   {{ t('sec.ai.retrigger') }}
-                </button>
+                </AppButton>
               </td>
             </tr>
           </tbody>
@@ -218,12 +206,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </span>
           <span
             v-if="selectedAnalysis.quarantine_recommended"
-            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold text-danger bg-danger-soft"
+            class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-caption font-semibold text-danger bg-danger-soft"
           >
             <ExclamationTriangleIcon class="w-3 h-3" aria-hidden="true" />
             {{ t('sec.ai.quarantineRecommended') }}
           </span>
-          <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold text-success bg-success-soft/60">
+          <span v-else class="inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-caption font-semibold text-success bg-success-soft/60">
             {{ t('sec.ai.noQuarantine') }}
           </span>
         </div>
@@ -244,7 +232,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span
               v-for="tag in selectedAnalysis.tags"
               :key="tag"
-              class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-medium bg-primary/10 text-primary border border-primary/20"
+              class="inline-flex items-center px-2 py-0.5 rounded-md text-caption font-medium bg-primary/10 text-primary border border-primary/20"
             >{{ tag }}</span>
           </div>
         </div>
@@ -286,20 +274,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
       <template #footer>
-        <button type="button" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors" @click="selectedAnalysis = null">
+        <AppButton variant="secondary" size="md" @click="selectedAnalysis = null">
           {{ t('common.close') }}
-        </button>
-        <button
-          v-if="selectedAnalysis"
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="retriggering === selectedAnalysis.id"
-          @click="retrigger(selectedAnalysis)"
-        >
-          <ArrowPathIcon v-if="retriggering === selectedAnalysis.id" class="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-          <SparklesIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
+        </AppButton>
+        <AppButton variant="primary" size="md" :loading="retriggering === selectedAnalysis.id" v-if="selectedAnalysis" :disabled="retriggering === selectedAnalysis.id" @click="retrigger(selectedAnalysis)">
+          <SparklesIcon v-if="!(retriggering === selectedAnalysis.id)" class="w-3.5 h-3.5" aria-hidden="true" />
           {{ retriggering === selectedAnalysis.id ? t('sec.ai.triggering') : t('sec.ai.retriggerLong') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
 
@@ -318,7 +299,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <select
             id="ai-pkg"
             v-model="triggerForm.artifactId"
-            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="" disabled>{{ t('sec.common.selectPackage') }}</option>
             <option v-for="pkg in packages" :key="pkg.id" :value="pkg.id">{{ pkg.name }}@{{ pkg.version || '?' }}</option>
@@ -335,30 +316,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             rows="5"
             spellcheck="false"
             :placeholder="t('sec.ai.manifestPlaceholder')"
-            class="w-full px-3 py-2 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none font-mono"
+            class="w-full px-3 py-2 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none font-mono"
           />
         </div>
       </div>
       <template #footer>
-        <button type="button" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors" @click="showTriggerDrawer = false">
+        <AppButton variant="secondary" size="md" @click="showTriggerDrawer = false">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="triggering || !triggerForm.artifactId"
-          @click="submitTrigger"
-        >
-          <ArrowPathIcon v-if="triggering" class="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-          <SparklesIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
+        </AppButton>
+        <AppButton variant="primary" size="md" :loading="triggering" :disabled="triggering || !triggerForm.artifactId" @click="submitTrigger">
+          <SparklesIcon v-if="!(triggering)" class="w-3.5 h-3.5" aria-hidden="true" />
           {{ triggering ? t('sec.ai.triggering') : t('sec.ai.start') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
@@ -428,7 +404,7 @@ function isActive(status: string): boolean {
 }
 
 function analysisStatusClass(status: string): string {
-  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold '
+  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-caption font-semibold '
   if (status === 'processing') return base + 'text-primary bg-primary/10'
   if (status === 'completed') return base + 'text-success bg-success-soft/60'
   if (status === 'failed') return base + 'text-danger bg-danger-soft'
@@ -440,7 +416,7 @@ function analysisStatusLabel(status: string): string {
 }
 
 function licenseStatusClass(status: string): string {
-  const base = 'inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold '
+  const base = 'inline-flex items-center px-2 py-0.5 rounded-md text-caption font-semibold '
   if (status === 'SAFE') return base + 'text-success bg-success-soft/60'
   if (status === 'REVIEW_REQUIRED') return base + 'text-warning bg-warning-soft/60'
   return base + 'text-muted bg-surface-hover'

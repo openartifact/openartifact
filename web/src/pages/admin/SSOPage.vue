@@ -9,14 +9,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- PageHead -->
     <PageHeader :title="t('admin.sso.title')" :description="t('admin.sso.description')">
       <template #actions>
-        <button
-          type="button"
-          @click="openAddDrawer"
-          class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-contrast rounded-lg hover:opacity-90 transition-opacity font-medium text-sm"
-        >
+        <AppButton size="sm" @click="openAddDrawer">
           <PlusIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('admin.sso.add') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -28,14 +24,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <ShieldCheckIcon class="w-12 h-12 text-muted mb-4" aria-hidden="true" />
       <h3 class="text-lg font-semibold text-foreground mb-2">{{ t('admin.sso.empty') }}</h3>
       <p class="text-sm text-muted mb-6">{{ t('adm.sso.emptyHint') }}</p>
-      <button
-        type="button"
-        @click="openAddDrawer"
-        class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-contrast rounded-lg hover:opacity-90 transition-opacity font-medium text-sm"
-      >
+      <AppButton size="sm" @click="openAddDrawer">
         <PlusIcon class="w-4 h-4" aria-hidden="true" />
         {{ t('admin.sso.add') }}
-      </button>
+      </AppButton>
     </div>
 
     <!-- Provider Cards Grid -->
@@ -52,12 +44,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="pl-2">
           <div class="flex items-start justify-between mb-3">
             <h3 class="font-semibold text-foreground">{{ provider.display_name }}</h3>
-            <span class="font-mono text-[10px] px-1.5 py-0.5 rounded bg-surface-hover text-muted">
+            <span class="font-mono text-micro px-1.5 py-0.5 rounded bg-surface-hover text-muted">
               {{ provider.kind.toUpperCase() }}
             </span>
           </div>
 
-          <p class="text-[11px] font-mono text-muted mb-3">{{ provider.slug }}</p>
+          <p class="text-caption font-mono text-muted mb-3">{{ provider.slug }}</p>
 
           <div class="flex items-center justify-between mb-4">
             <span
@@ -66,7 +58,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               {{ provider.enabled ? t('adm.sso.enabled') : t('adm.sso.disabled') }}
             </span>
-            <p class="text-[11px] text-muted" :class="testResults[provider.slug]?.ok === false ? 'text-danger' : ''">
+            <p class="text-caption text-muted" :class="testResults[provider.slug]?.ok === false ? 'text-danger' : ''">
               <template v-if="testResults[provider.slug]">
                 {{ testResults[provider.slug].ok ? t('adm.sso.testOkAt') : t('adm.sso.testFailedAt') }}
                 {{ testResults[provider.slug].at }}
@@ -84,46 +76,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </p>
 
           <div class="flex items-center gap-2">
-            <button
-              type="button"
-              @click="testProvider(provider.slug)"
-              :disabled="testing === provider.slug"
-              class="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded bg-surface-hover text-foreground hover:bg-border transition-colors disabled:opacity-50"
-            >
+            <AppButton variant="secondary" size="xs" :loading="testing === provider.slug" @click="testProvider(provider.slug)">
               <BoltIcon class="w-3.5 h-3.5" aria-hidden="true" />
               {{ t('adm.sso.test') }}
-            </button>
-            <button
-              type="button"
-              @click="openEditDrawer(provider)"
-              class="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded bg-surface-hover text-foreground hover:bg-border transition-colors"
-            >
+            </AppButton>
+            <AppButton variant="secondary" size="xs" @click="openEditDrawer(provider)">
               <PencilIcon class="w-3.5 h-3.5" aria-hidden="true" />
               {{ t('common.edit') }}
-            </button>
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="provider.enabled"
-              :aria-label="`${provider.enabled ? t('adm.sso.disable') : t('adm.sso.enable')}: ${provider.display_name}`"
-              @click="toggleEnabled(provider)"
-              class="ml-auto relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              :class="provider.enabled ? 'bg-success' : 'bg-border'"
-            >
-              <span
-                class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform mt-0.5"
-                :class="provider.enabled ? 'translate-x-4' : 'translate-x-0.5'"
-              />
-            </button>
-            <button
-              type="button"
-              @click="deleteProvider(provider)"
+            </AppButton>
+            <AppToggle
+              class="ml-auto"
+              size="sm"
+              :model-value="provider.enabled"
+              :label="`${provider.enabled ? t('adm.sso.disable') : t('adm.sso.enable')}: ${provider.display_name}`"
+              @update:model-value="toggleEnabled(provider)"
+            />
+            <AppButton
+              variant="danger-outline"
+              size="xs"
               :title="t('common.delete')"
               :aria-label="`${t('common.delete')}: ${provider.display_name}`"
-              class="inline-flex items-center gap-1 px-2 py-1.5 text-xs rounded bg-surface-hover text-danger hover:bg-danger/10 transition-colors"
+              @click="deleteTarget = provider"
             >
               <TrashIcon class="w-3.5 h-3.5" aria-hidden="true" />
-            </button>
+            </AppButton>
           </div>
         </div>
       </div>
@@ -144,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="form.display_name"
             type="text"
             required
-            class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+            class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
             placeholder="Google Workspace"
           />
         </div>
@@ -158,7 +134,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             required
             pattern="[a-z0-9_-]{1,64}"
             :disabled="!!editingProvider"
-            class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent disabled:opacity-50 disabled:cursor-not-allowed"
+            class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary disabled:opacity-50 disabled:cursor-not-allowed"
             placeholder="google-workspace"
           />
           <p class="text-xs text-muted mt-1">{{ t('adm.sso.field.slugHint') }}</p>
@@ -175,10 +151,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :aria-checked="form.kind === kind"
               @click="form.kind = kind"
               :disabled="!!editingProvider"
-              class="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed"
+              class="flex-1 px-3 py-2 rounded-lg text-sm font-medium transition-colors disabled:cursor-not-allowed border"
               :class="form.kind === kind
-                ? 'bg-primary text-primary-contrast'
-                : 'bg-surface-hover text-foreground hover:bg-border disabled:opacity-50'"
+                ? 'bg-primary text-primary-contrast border-primary'
+                : 'bg-surface-hover text-foreground border-border-strong hover:bg-border disabled:opacity-50'"
             >
               {{ kind.toUpperCase() }}
             </button>
@@ -193,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               v-model="form.oidc_config.issuer"
               type="url"
               required
-              class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
               placeholder="https://accounts.google.com"
             />
           </div>
@@ -204,7 +180,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               v-model="form.oidc_config.client_id"
               type="text"
               required
-              class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
             />
           </div>
           <div>
@@ -215,7 +191,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="password"
               autocomplete="new-password"
               :required="!editingProvider"
-              class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
               placeholder="••••••••••••••••"
             />
             <p v-if="editingProvider" class="text-xs text-muted mt-1">{{ t('adm.sso.field.secretEditHint') }}</p>
@@ -229,7 +205,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               id="idp-metadata-url"
               v-model="form.saml_config.idp_metadata_url"
               type="url"
-              class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent"
+              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
               placeholder="https://idp.example.com/metadata.xml"
             />
           </div>
@@ -239,65 +215,39 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               id="idp-metadata-xml"
               v-model="form.saml_config.idp_metadata_xml"
               rows="5"
-              class="w-full px-3 py-2 bg-bg border border-border rounded-lg text-sm font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent resize-none"
+              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary resize-none"
             />
           </div>
         </template>
 
         <div class="flex items-center gap-3">
-          <button
-            type="button"
-            role="switch"
-            aria-labelledby="sso-autoprovision-label"
-            :aria-checked="form.auto_provision_users"
-            @click="form.auto_provision_users = !form.auto_provision_users"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            :class="form.auto_provision_users ? 'bg-success' : 'bg-border'"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-              :class="form.auto_provision_users ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          <AppToggle v-model="form.auto_provision_users" labelledby="sso-autoprovision-label" />
           <span id="sso-autoprovision-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.autoProvision') }}</span>
         </div>
 
         <div class="flex items-center gap-3">
-          <button
-            type="button"
-            role="switch"
-            aria-labelledby="sso-linkemail-label"
-            :aria-checked="form.link_by_email"
-            @click="form.link_by_email = !form.link_by_email"
-            class="relative inline-flex h-6 w-11 items-center rounded-full transition-colors focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            :class="form.link_by_email ? 'bg-success' : 'bg-border'"
-          >
-            <span
-              class="inline-block h-4 w-4 transform rounded-full bg-white transition-transform"
-              :class="form.link_by_email ? 'translate-x-6' : 'translate-x-1'"
-            />
-          </button>
+          <AppToggle v-model="form.link_by_email" labelledby="sso-linkemail-label" />
           <span id="sso-linkemail-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.linkByEmail') }}</span>
         </div>
       </form>
       <template #footer>
-        <button
-          type="button"
-          @click="closeDrawer"
-          class="px-4 py-2 rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors font-medium text-sm"
-        >
-          {{ t('common.cancel') }}
-        </button>
-        <button
-          type="submit"
-          form="sso-form"
-          :disabled="saving"
-          class="px-4 py-2 rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium text-sm disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <AppButton variant="secondary" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
+        <AppButton type="submit" form="sso-form" :loading="saving">
           {{ saving ? t('common.saving') : t('common.save') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
+
+    <ConfirmDialog
+      :open="!!deleteTarget"
+      :title="t('adm.sso.confirmDelete')"
+      :description="deleteTarget?.display_name"
+      :confirm-label="t('common.delete')"
+      :cancel-label="t('common.cancel')"
+      :busy="deleting"
+      @confirm="deleteProvider"
+      @close="deleteTarget = null"
+    />
   </div>
 </template>
 
@@ -313,6 +263,9 @@ import {
 } from '@heroicons/vue/24/outline'
 import { request, ApiError } from '../../api/client'
 import { saveSSOProvider, testSSOProvider, type SSOConfigInput } from '../../api/admin'
+import AppButton from '../../components/AppButton.vue'
+import AppToggle from '../../components/AppToggle.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
@@ -354,6 +307,8 @@ const loadError = ref('')
 const drawerOpen = ref(false)
 const editingProvider = ref<SSOProvider | null>(null)
 const saving = ref(false)
+const deleteTarget = ref<SSOProvider | null>(null)
+const deleting = ref(false)
 const testing = ref<string | null>(null)
 // Results of tests run in this session (the API does not persist them).
 const testResults = ref<Record<string, TestOutcome>>({})
@@ -515,14 +470,19 @@ async function toggleEnabled(provider: SSOProvider): Promise<void> {
   }
 }
 
-async function deleteProvider(provider: SSOProvider): Promise<void> {
-  if (!window.confirm(`${t('adm.sso.confirmDelete')} "${provider.display_name}"?`)) return
+async function deleteProvider(): Promise<void> {
+  const provider = deleteTarget.value
+  if (!provider) return
+  deleting.value = true
   try {
     await request<void>(`/api/v1/admin/sso-providers/${encodeURIComponent(provider.slug)}`, { method: 'DELETE' })
     toasts.success(t('adm.sso.deleted'))
     await loadProviders()
   } catch (err) {
     toasts.error(errMessage(err, t('adm.sso.deleteFailed')))
+  } finally {
+    deleting.value = false
+    deleteTarget.value = null
   }
 }
 

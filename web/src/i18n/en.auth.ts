@@ -47,8 +47,6 @@ export const enAuth = {
   'settings.profile.roleAdmin': 'Administrator',
   'settings.profile.roleUser': 'User',
 
-  // Settings: notifications
-
   // Settings: tokens
   'settings.tokens.yourTokens': 'Your tokens',
   'settings.tokens.accessToken': 'Access token',

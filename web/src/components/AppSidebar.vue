@@ -25,11 +25,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :class="collapsed ? 'justify-center px-0' : 'px-3'"
     >
       <div class="w-8 h-8 rounded-md bg-primary flex items-center justify-center shrink-0">
-        <AppLogo class="w-5 h-5 text-white" />
+        <AppLogo class="w-5 h-5 text-primary-contrast" />
       </div>
       <div v-if="!collapsed" class="leading-none min-w-0 flex-1">
-        <div class="text-[15px] font-semibold tracking-tight">OpenArtifact</div>
-        <div class="mt-1 text-[11px] text-muted font-mono">{{ versionLabel }}</div>
+        <div class="text-lead font-semibold tracking-tight">OpenArtifact</div>
+        <div class="mt-1 text-caption text-muted font-mono">{{ versionLabel }}</div>
       </div>
       <button
         v-if="isMobile"

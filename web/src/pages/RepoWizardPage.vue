@@ -64,7 +64,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   :disabled="isEdit"
                   type="text"
                   placeholder="my-repo"
-                  class="w-full px-3 py-2 border border-border rounded-md text-sm font-mono bg-bg text-foreground disabled:opacity-60 focus:outline-none focus:ring-2 focus:ring-primary"
+                  class="w-full px-3 py-2 border border-border-strong rounded-md text-sm font-mono bg-bg text-foreground disabled:opacity-60 focus:ring-2 focus:ring-primary"
                 />
                 <p class="text-xs mt-1" :class="form.name && !nameValid ? 'text-danger' : 'text-muted'">{{ t('repos.new.nameHint') }}</p>
               </div>
@@ -170,21 +170,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   v-model="form.upstreamUrl"
                   type="url"
                   placeholder="https://registry.example.com"
-                  class="w-full px-3 py-2 border border-border rounded-md text-sm font-mono bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  class="w-full px-3 py-2 border border-border-strong rounded-md text-sm font-mono bg-bg text-foreground focus:ring-2 focus:ring-primary"
                 />
               </div>
               <div v-if="!isEdit" class="grid grid-cols-2 gap-2">
-                <input v-model="form.upstreamUsername" :placeholder="t('repos.new.upstreamUsername')" :aria-label="t('repos.new.upstreamUsername')" autocomplete="off" class="px-3 py-2 border border-border rounded-md text-sm bg-bg text-foreground" />
-                <input v-model="form.upstreamPassword" type="password" :placeholder="t('repos.new.upstreamPassword')" :aria-label="t('repos.new.upstreamPassword')" autocomplete="new-password" class="px-3 py-2 border border-border rounded-md text-sm bg-bg text-foreground" />
+                <input v-model="form.upstreamUsername" :placeholder="t('repos.new.upstreamUsername')" :aria-label="t('repos.new.upstreamUsername')" autocomplete="off" class="px-3 py-2 border border-border-strong rounded-md text-sm bg-bg text-foreground" />
+                <input v-model="form.upstreamPassword" type="password" :placeholder="t('repos.new.upstreamPassword')" :aria-label="t('repos.new.upstreamPassword')" autocomplete="new-password" class="px-3 py-2 border border-border-strong rounded-md text-sm bg-bg text-foreground" />
               </div>
             </div>
 
             <fieldset v-if="form.type === 'group' && !isEdit" class="mt-4">
               <legend class="block text-sm font-medium text-foreground mb-2">{{ t('repos.new.members') }}</legend>
               <p v-if="!candidateMembers.length" class="text-xs text-muted">{{ t('repos.new.noMembers') }}</p>
-              <div v-else class="max-h-40 overflow-y-auto rounded-md border border-border divide-y divide-border">
+              <div v-else class="max-h-40 overflow-y-auto rounded-md border border-border-strong divide-y divide-border">
                 <label v-for="r in candidateMembers" :key="r.id" class="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-surface-hover">
-                  <input v-model="form.members" type="checkbox" :value="r.name" />
+                  <input v-model="form.members" type="checkbox" :value="r.name" class="accent-[rgb(var(--color-primary))]" />
                   <span class="truncate">{{ r.name }}</span>
                 </label>
               </div>
@@ -204,7 +204,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   v-model="form.description"
                   :placeholder="t('wizard.descriptionHint')"
                   rows="4"
-                  class="w-full px-3 py-2 border border-border rounded-md text-sm bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  class="w-full px-3 py-2 border border-border-strong rounded-md text-sm bg-bg text-foreground focus:ring-2 focus:ring-primary"
                 />
               </div>
 
@@ -233,7 +233,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   min="0"
                   step="1"
                   :placeholder="t('repos.settings.trashRetentionPlaceholder')"
-                  class="w-full px-3 py-2 border border-border rounded-md text-sm bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+                  class="w-full px-3 py-2 border border-border-strong rounded-md text-sm bg-bg text-foreground focus:ring-2 focus:ring-primary"
                 />
                 <p v-if="retentionInvalid" role="alert" class="mt-1 text-xs text-danger">{{ t('repos.settings.trashRetentionInvalid') }}</p>
                 <p v-else class="mt-1 text-xs text-muted">{{ t('repos.settings.trashRetentionHint') }}</p>
@@ -242,7 +242,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <!-- Immutable releases -->
               <div>
                 <div class="flex items-center gap-3">
-                  <input id="repo-immutable" v-model="form.immutableReleases" type="checkbox" class="rounded" />
+                  <input id="repo-immutable" v-model="form.immutableReleases" type="checkbox" class="rounded accent-[rgb(var(--color-primary))]" />
                   <label for="repo-immutable" class="text-sm font-medium text-foreground">
                     {{ t('repos.settings.immutableReleases') }}
                   </label>
@@ -293,33 +293,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Navigation -->
         <div class="flex items-center justify-between mt-5 pt-4 border-t border-border">
-          <button
-            v-if="step > 0"
-            type="button"
-            class="px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover disabled:opacity-50"
-            @click="step--"
-          >
+          <AppButton v-if="step > 0" variant="secondary" size="sm" @click="step--">
             {{ t('wizard.back') }}
-          </button>
+          </AppButton>
           <div v-else />
-          <button
-            v-if="step < steps.length - 1"
-            type="button"
-            :disabled="!stepValid"
-            class="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-contrast hover:opacity-90 disabled:bg-surface-hover disabled:text-muted disabled:border disabled:border-border disabled:cursor-not-allowed disabled:hover:opacity-100"
-            @click="step++"
-          >
+          <AppButton v-if="step < steps.length - 1" size="sm" :disabled="!stepValid" @click="step++">
             {{ t('wizard.next') }}
-          </button>
-          <button
-            v-else
-            type="button"
-            :disabled="submitting || !allValid"
-            class="px-3 py-1.5 text-sm rounded-md bg-primary text-primary-contrast hover:opacity-90 disabled:opacity-50"
-            @click="submit"
-          >
+          </AppButton>
+          <AppButton v-else size="sm" :disabled="!allValid" :loading="submitting" @click="submit">
             {{ submitting ? t('repos.new.creating') : isEdit ? t('wizard.update') : t('wizard.create') }}
-          </button>
+          </AppButton>
         </div>
       </div>
 
@@ -329,6 +312,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
+import AppButton from '../components/AppButton.vue'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {

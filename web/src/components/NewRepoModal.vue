@@ -5,154 +5,128 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <TransitionRoot appear :show="open" as="template">
-    <Dialog as="div" class="relative z-50" @close="close">
-      <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" />
-      <div class="fixed inset-0 overflow-y-auto">
-        <div class="flex min-h-full items-center justify-center p-4">
-          <DialogPanel class="relative w-full max-w-xl rounded-xl bg-surface border border-border shadow-2xl overflow-hidden">
-            <div class="flex items-center justify-between px-5 py-4 border-b border-border">
-              <DialogTitle class="text-base font-semibold tracking-tight">{{ t('repos.new') }}</DialogTitle>
-              <button
-                class="text-muted hover:text-foreground p-1 rounded hover:bg-surface-hover"
-                :aria-label="t('common.close')"
-                @click="close"
-              >
-                <XMarkIcon class="w-4 h-4" aria-hidden="true" />
-              </button>
-            </div>
-
-            <form class="p-5 space-y-4" @submit.prevent="handleCreate">
-              <div>
-                <label for="new-repo-name" class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.column.name') }}</label>
-                <input
-                  id="new-repo-name"
-                  v-model="name"
-                  placeholder="e.g. docker-prod"
-                  autocomplete="off"
-                  class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono outline-none transition-colors"
-                />
-                <p class="mt-1 text-[11px]" :class="name && !nameValid ? 'text-danger' : 'text-muted'">{{ t('repos.new.nameHint') }}</p>
-              </div>
-
-              <fieldset>
-                <legend class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.column.format') }}</legend>
-                <div class="mt-1.5 grid grid-cols-4 sm:grid-cols-6 gap-1.5">
-                  <button
-                    v-for="f in formats"
-                    :key="f"
-                    type="button"
-                    :aria-pressed="format === f"
-                    :class="['flex items-center justify-center py-2 rounded-md border transition-all',
-                      format === f ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']"
-                    @click="format = f"
-                  >
-                    <FormatBadge :format="f" size="sm" />
-                  </button>
-                </div>
-                <p v-if="type === 'proxy'" class="mt-1.5 text-xs text-muted">{{ t('repos.new.proxyFormatsHint') }}</p>
-                <p v-else-if="type === 'group'" class="mt-1.5 text-xs text-muted">{{ t('repos.new.groupFormatsHint') }}</p>
-              </fieldset>
-
-              <fieldset>
-                <legend class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.column.type') }}</legend>
-                <div class="mt-1.5 grid grid-cols-3 gap-2">
-                  <button
-                    v-for="ty in types"
-                    :key="ty.value"
-                    type="button"
-                    :aria-pressed="type === ty.value"
-                    :class="['p-3 rounded-md border text-left transition-all',
-                      type === ty.value ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']"
-                    @click="type = ty.value"
-                  >
-                    <div :class="['text-sm font-semibold', type === ty.value ? 'text-primary' : '']">{{ ty.label }}</div>
-                    <div class="mt-0.5 text-[11px] text-muted leading-snug">{{ ty.desc }}</div>
-                  </button>
-                </div>
-              </fieldset>
-
-              <!-- Proxy: upstream -->
-              <div v-if="type === 'proxy'" class="space-y-3">
+  <AdminDialog :open="open" :title="t('repos.new')" max-width="max-w-xl" @close="close">
+    <form id="new-repo-form" class="space-y-4" @submit.prevent="handleCreate">
                 <div>
-                  <label for="new-repo-upstream" class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.new.upstreamUrl') }}</label>
+                  <label for="new-repo-name" class="text-caption font-semibold text-muted">{{ t('repos.column.name') }}</label>
                   <input
-                    id="new-repo-upstream"
-                    v-model="upstreamUrl"
-                    type="url"
-                    placeholder="https://registry.example.com"
-                    class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono outline-none transition-colors"
-                  />
-                </div>
-                <div class="grid grid-cols-2 gap-2">
-                  <input
-                    v-model="upstreamUsername"
-                    :placeholder="t('repos.new.upstreamUsername')"
-                    :aria-label="t('repos.new.upstreamUsername')"
+                    id="new-repo-name"
+                    v-model="name"
+                    placeholder="e.g. docker-prod"
                     autocomplete="off"
-                    class="h-9 px-3 rounded-md bg-surface-hover/40 border border-border text-sm outline-none focus:border-primary/50"
+                    class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border-strong focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono transition-colors"
                   />
-                  <input
-                    v-model="upstreamPassword"
-                    type="password"
-                    :placeholder="t('repos.new.upstreamPassword')"
-                    :aria-label="t('repos.new.upstreamPassword')"
-                    autocomplete="new-password"
-                    class="h-9 px-3 rounded-md bg-surface-hover/40 border border-border text-sm outline-none focus:border-primary/50"
-                  />
+                  <p class="mt-1 text-caption" :class="name && !nameValid ? 'text-danger' : 'text-muted'">{{ t('repos.new.nameHint') }}</p>
                 </div>
-              </div>
-
-              <!-- Group: members -->
-              <fieldset v-if="type === 'group'">
-                <legend class="text-[11px] uppercase tracking-[0.14em] font-semibold text-muted">{{ t('repos.new.members') }}</legend>
-                <p v-if="!candidateMembers.length" class="mt-1.5 text-xs text-muted">{{ t('repos.new.noMembers') }}</p>
-                <div v-else class="mt-1.5 max-h-32 overflow-y-auto rounded-md border border-border divide-y divide-border">
-                  <label v-for="r in candidateMembers" :key="r.id" class="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-surface-hover">
-                    <input v-model="members" type="checkbox" :value="r.name" class="accent-[rgb(var(--color-primary))]" />
-                    <span class="truncate">{{ r.name }}</span>
-                  </label>
+  
+                <fieldset>
+                  <legend class="text-caption font-semibold text-muted">{{ t('repos.column.format') }}</legend>
+                  <div class="mt-1.5 grid grid-cols-4 sm:grid-cols-6 gap-1.5">
+                    <button
+                      v-for="f in formats"
+                      :key="f"
+                      type="button"
+                      :aria-pressed="format === f"
+                      :class="['flex items-center justify-center py-2 rounded-md border transition-all',
+                        format === f ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']"
+                      @click="format = f"
+                    >
+                      <FormatBadge :format="f" size="sm" />
+                    </button>
+                  </div>
+                  <p v-if="type === 'proxy'" class="mt-1.5 text-xs text-muted">{{ t('repos.new.proxyFormatsHint') }}</p>
+                  <p v-else-if="type === 'group'" class="mt-1.5 text-xs text-muted">{{ t('repos.new.groupFormatsHint') }}</p>
+                </fieldset>
+  
+                <fieldset>
+                  <legend class="text-caption font-semibold text-muted">{{ t('repos.column.type') }}</legend>
+                  <div class="mt-1.5 grid grid-cols-3 gap-2">
+                    <button
+                      v-for="ty in types"
+                      :key="ty.value"
+                      type="button"
+                      :aria-pressed="type === ty.value"
+                      :class="['p-3 rounded-md border text-left transition-all',
+                        type === ty.value ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']"
+                      @click="type = ty.value"
+                    >
+                      <div :class="['text-sm font-semibold', type === ty.value ? 'text-primary' : '']">{{ ty.label }}</div>
+                      <div class="mt-0.5 text-caption text-muted leading-snug">{{ ty.desc }}</div>
+                    </button>
+                  </div>
+                </fieldset>
+  
+                <!-- Proxy: upstream -->
+                <div v-if="type === 'proxy'" class="space-y-3">
+                  <div>
+                    <label for="new-repo-upstream" class="text-caption font-semibold text-muted">{{ t('repos.new.upstreamUrl') }}</label>
+                    <input
+                      id="new-repo-upstream"
+                      v-model="upstreamUrl"
+                      type="url"
+                      placeholder="https://registry.example.com"
+                      class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border-strong focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono transition-colors"
+                    />
+                  </div>
+                  <div class="grid grid-cols-2 gap-2">
+                    <input
+                      v-model="upstreamUsername"
+                      :placeholder="t('repos.new.upstreamUsername')"
+                      :aria-label="t('repos.new.upstreamUsername')"
+                      autocomplete="off"
+                      class="h-9 px-3 rounded-md bg-surface-hover/40 border border-border-strong text-sm focus:border-primary/50"
+                    />
+                    <input
+                      v-model="upstreamPassword"
+                      type="password"
+                      :placeholder="t('repos.new.upstreamPassword')"
+                      :aria-label="t('repos.new.upstreamPassword')"
+                      autocomplete="new-password"
+                      class="h-9 px-3 rounded-md bg-surface-hover/40 border border-border-strong text-sm focus:border-primary/50"
+                    />
+                  </div>
                 </div>
-              </fieldset>
-
-              <RepoOrgSelect id="new-repo-org" v-model="org" />
-
-              <label class="flex items-center gap-2 pt-1 text-sm">
-                <input v-model="isPublic" type="checkbox" class="accent-[rgb(var(--color-primary))]" />
-                <span>{{ t('repos.new.public') }}</span>
-              </label>
-
-              <div class="pt-3 border-t border-border flex items-center justify-end gap-2 -mx-5 px-5 -mb-5 pb-4 bg-surface-hover/30">
-                <button type="button" class="px-3 py-1.5 rounded-md text-sm text-muted hover:text-foreground hover:bg-surface-hover transition-colors" @click="close">
-                  {{ t('common.cancel') }}
-                </button>
-                <button
-                  type="submit"
-                  :disabled="!canSubmit || creating"
-                  class="px-4 py-1.5 rounded-md bg-primary text-primary-contrast text-sm font-medium hover:bg-primary/90 active:scale-[0.97] transition-all disabled:opacity-50 flex items-center gap-1.5"
-                >
-                  <CheckIcon class="w-4 h-4" aria-hidden="true" />
-                  {{ creating ? t('repos.new.creating') : t('repos.create') }}
-                </button>
-              </div>
-            </form>
-          </DialogPanel>
-        </div>
-      </div>
-    </Dialog>
-  </TransitionRoot>
+  
+                <!-- Group: members -->
+                <fieldset v-if="type === 'group'">
+                  <legend class="text-caption font-semibold text-muted">{{ t('repos.new.members') }}</legend>
+                  <p v-if="!candidateMembers.length" class="mt-1.5 text-xs text-muted">{{ t('repos.new.noMembers') }}</p>
+                  <div v-else class="mt-1.5 max-h-32 overflow-y-auto rounded-md border border-border-strong divide-y divide-border">
+                    <label v-for="r in candidateMembers" :key="r.id" class="flex items-center gap-2 px-3 py-1.5 text-sm cursor-pointer hover:bg-surface-hover">
+                      <input v-model="members" type="checkbox" :value="r.name" class="accent-[rgb(var(--color-primary))]" />
+                      <span class="truncate">{{ r.name }}</span>
+                    </label>
+                  </div>
+                </fieldset>
+  
+                <RepoOrgSelect id="new-repo-org" v-model="org" />
+  
+                <label class="flex items-center gap-2 pt-1 text-sm">
+                  <input v-model="isPublic" type="checkbox" class="accent-[rgb(var(--color-primary))]" />
+                  <span>{{ t('repos.new.public') }}</span>
+                </label>
+              </form>
+    <template #footer>
+      <AppButton variant="ghost" @click="close">{{ t('common.cancel') }}</AppButton>
+      <AppButton type="submit" form="new-repo-form" :disabled="!canSubmit" :loading="creating">
+        <CheckIcon class="w-4 h-4" aria-hidden="true" />
+        {{ creating ? t('repos.new.creating') : t('repos.create') }}
+      </AppButton>
+    </template>
+  </AdminDialog>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { Dialog, DialogPanel, DialogTitle, TransitionRoot } from '@headlessui/vue'
 import { createRepository, listRepositories } from '../api/repositories'
 import type { Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
-import { XMarkIcon, CheckIcon } from '@heroicons/vue/24/outline'
+import { CheckIcon } from '@heroicons/vue/24/outline'
 import type { FormatId } from '../lib/formats'
 import { allowedFormats, coerceFormat } from '../lib/repoTypes'
+import AdminDialog from './AdminDialog.vue'
+import AppButton from './AppButton.vue'
 import FormatBadge from './FormatBadge.vue'
 import RepoOrgSelect from './RepoOrgSelect.vue'
 import { t } from '../i18n/en'

@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         leave-from="opacity-100"
         leave-to="opacity-0"
       >
-        <div class="fixed inset-0 bg-black/40 backdrop-blur-sm" aria-hidden="true" />
+        <div class="fixed inset-0 bg-black/50" aria-hidden="true" />
       </TransitionChild>
 
       <div class="fixed inset-0 overflow-y-auto">
@@ -43,7 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               <div class="px-6 py-4 border-b border-border flex items-start justify-between gap-3">
                 <div class="min-w-0">
-                  <div v-if="eyebrow" class="text-[11px] uppercase tracking-[0.14em] text-muted font-mono">
+                  <div v-if="eyebrow" class="text-caption text-muted font-mono">
                     {{ eyebrow }}
                   </div>
                   <DialogTitle as="h2" class="text-lg font-semibold tracking-tight text-foreground">
@@ -67,7 +67,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </div>
               <div
                 v-if="$slots.footer"
-                class="px-6 py-3 border-t border-border bg-surface-hover/30 flex items-center justify-end gap-2"
+                class="px-6 py-3 border-t border-border bg-surface-hover/30 flex flex-wrap items-center justify-end gap-2"
               >
                 <slot name="footer" />
               </div>

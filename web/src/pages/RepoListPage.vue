@@ -15,16 +15,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="search"
             :placeholder="t('repos.search')"
             :aria-label="t('repos.search')"
-            class="h-9 w-full sm:w-56 pl-8 pr-2 rounded-lg text-sm bg-surface-hover/60 border border-border text-foreground placeholder:text-muted focus:border-primary"
+            class="h-9 w-full sm:w-56 pl-8 pr-2 rounded-lg text-sm bg-surface-hover/60 border border-border-strong text-foreground placeholder:text-muted focus:border-primary"
           />
         </div>
-        <button
-          v-if="session.isAdmin"
-          class="bg-primary text-primary-contrast rounded-lg h-9 px-4 text-sm font-medium hover:bg-primary/90 active:scale-[0.97] transition inline-flex items-center gap-1.5"
-          @click="showNewModal = true"
-        >
+        <AppButton v-if="session.isAdmin" @click="showNewModal = true">
           {{ t('repos.new') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -42,7 +38,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           @click="activeFormat = null"
         >
           {{ t('repos.filter.all') }}
-          <span class="text-[10px] font-mono tabular-nums">{{ repos.length }}</span>
+          <span class="text-micro font-mono tabular-nums">{{ repos.length }}</span>
         </button>
 
         <button
@@ -58,7 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           @click="activeFormat = format"
         >
           <FormatBadge :format="format" size="sm" />
-          <span class="text-[10px] font-mono tabular-nums text-foreground/75">{{ count }}</span>
+          <span class="text-micro font-mono tabular-nums text-foreground/75">{{ count }}</span>
         </button>
       </div>
 
@@ -101,9 +97,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Error State -->
     <div v-else-if="loadError" class="mt-4 rounded-xl border border-danger/30 bg-surface p-8 text-center" role="alert">
       <p class="text-sm text-danger">{{ loadError }}</p>
-      <button class="mt-3 px-3 py-1.5 text-sm rounded-md border border-border hover:bg-surface-hover" @click="fetchRepos">
+      <AppButton variant="secondary" size="sm" class="mt-3" @click="fetchRepos">
         {{ t('browser.retry') }}
-      </button>
+      </AppButton>
     </div>
 
     <!-- Empty State -->
@@ -127,7 +123,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 type="checkbox"
                 :checked="selectedIds.has(repo.name)"
                 :aria-label="`${t('repoDetail.select')} ${repo.name}`"
-                class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer shrink-0"
+                class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer shrink-0"
                 :class="selectedIds.has(repo.name) ? '' : 'sr-only group-hover:not-sr-only focus:not-sr-only'"
                 @change="toggleRepo(repo.name)"
               />
@@ -150,7 +146,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </span>
           </div>
 
-          <p class="text-sm text-muted leading-relaxed line-clamp-2">
+          <p class="text-sm text-muted leading-relaxed line-clamp-2" :class="{ italic: !repo.description }">
             {{ repo.description || t('repos.noDescription') }}
           </p>
         </div>
@@ -169,7 +165,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :checked="allSelected"
               :indeterminate="someSelected && !allSelected"
               :aria-label="t('repoDetail.selectAll')"
-              class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+              class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer"
               @change="toggleAll"
             />
           </div>
@@ -191,7 +187,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="checkbox"
               :checked="selectedIds.has(repo.name)"
               :aria-label="`${t('repoDetail.select')} ${repo.name}`"
-              class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
+              class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 focus:opacity-100 transition-opacity"
               :class="{ 'opacity-100': selectedIds.has(repo.name) }"
               @change="toggleRepo(repo.name)"
             />
@@ -225,7 +221,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           v-if="selectedIds.size > 0"
           class="fixed bottom-6 left-1/2 -translate-x-1/2 z-40 w-full max-w-2xl px-4"
         >
-          <div class="flex items-center gap-2 px-4 py-3 rounded-xl border border-border bg-surface/95 backdrop-blur-sm shadow-2xl shadow-black/20 ring-1 ring-black/5">
+          <div class="flex items-center gap-2 px-4 py-3 rounded-xl border border-border bg-surface shadow-2xl shadow-black/20 ring-1 ring-black/5">
             <div class="flex items-center gap-2 shrink-0">
               <span class="inline-flex items-center justify-center w-6 h-6 rounded-full bg-primary text-primary-contrast text-xs font-bold">
                 {{ selectedIds.size > 99 ? '99+' : selectedIds.size }}
@@ -237,14 +233,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <div class="w-px h-5 bg-border mx-1 shrink-0" />
 
-            <button
-              class="flex items-center gap-1.5 px-3 py-1.5 text-xs rounded-md text-danger border border-danger/30 hover:bg-danger-soft transition-colors disabled:opacity-50"
-              :disabled="bulkBusy"
-              @click="confirmBulkDelete = true"
-            >
+            <AppButton variant="danger-outline" size="sm" :disabled="bulkBusy" @click="confirmBulkDelete = true">
               <TrashIcon class="w-3.5 h-3.5" aria-hidden="true" />
               {{ t('repos.deleteSelected') }}
-            </button>
+            </AppButton>
 
             <button
               class="shrink-0 w-7 h-7 flex items-center justify-center rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors ml-auto"
@@ -260,61 +252,37 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </Teleport>
 
     <!-- Delete confirmation -->
-    <TransitionRoot appear :show="confirmBulkDelete" as="template">
-      <Dialog as="div" class="relative z-50" @close="closeConfirm">
-        <div class="fixed inset-0 bg-black/50 backdrop-blur-sm" aria-hidden="true" />
-        <div class="fixed inset-0 flex items-center justify-center p-4">
-          <DialogPanel class="relative w-full max-w-sm rounded-xl border border-border bg-surface shadow-2xl p-6">
-            <div class="flex items-start gap-4">
-              <div class="w-10 h-10 rounded-full bg-danger-soft flex items-center justify-center shrink-0">
-                <ExclamationTriangleIcon class="w-5 h-5 text-danger" aria-hidden="true" />
-              </div>
-              <div class="flex-1 min-w-0">
-                <DialogTitle class="text-base font-semibold text-foreground">
-                  {{ t('repos.confirmDeleteTitle').replace('{n}', String(selectedIds.size)) }}
-                </DialogTitle>
-                <p class="mt-1 text-sm text-muted">{{ t('repos.confirmDeleteBody') }}</p>
-              </div>
-            </div>
-            <div v-if="bulkBusy" class="mt-4 flex items-center gap-2">
-              <div class="flex-1 h-1.5 bg-border rounded-full overflow-hidden">
-                <div class="h-full bg-primary rounded-full transition-all duration-300" :style="{ width: `${bulkProgress}%` }" />
-              </div>
-              <span class="text-xs text-muted tabular-nums">{{ bulkProgress }}%</span>
-            </div>
-            <div class="flex justify-end gap-2 mt-6">
-              <button
-                class="px-4 py-2 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50"
-                :disabled="bulkBusy"
-                @click="closeConfirm"
-              >{{ t('common.cancel') }}</button>
-              <button
-                class="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-                :disabled="bulkBusy"
-                @click="doBulkDelete"
-              >
-                <ArrowPathIcon v-if="bulkBusy" class="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-                <TrashIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
-                {{ bulkBusy ? t('repoDetail.deleting') : t('common.delete') }}
-              </button>
-            </div>
-          </DialogPanel>
+    <ConfirmDialog
+      :open="confirmBulkDelete"
+      :title="t('repos.confirmDeleteTitle').replace('{n}', String(selectedIds.size))"
+      :description="t('repos.confirmDeleteBody')"
+      :confirm-label="t('common.delete')"
+      :busy-label="t('repoDetail.deleting')"
+      :busy="bulkBusy"
+      @confirm="doBulkDelete"
+      @close="closeConfirm"
+    >
+      <div v-if="bulkBusy" class="flex items-center gap-2">
+        <div class="flex-1 h-1.5 bg-border rounded-full overflow-hidden">
+          <div class="h-full bg-primary rounded-full transition-all duration-300" :style="{ width: `${bulkProgress}%` }" />
         </div>
-      </Dialog>
-    </TransitionRoot>
+        <span class="text-xs text-muted tabular-nums">{{ bulkProgress }}%</span>
+      </div>
+    </ConfirmDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
-import { Dialog, DialogPanel, DialogTitle, TransitionRoot } from '@headlessui/vue'
 import {
   Squares2X2Icon, Bars3Icon, EyeIcon, EyeSlashIcon,
-  MagnifyingGlassIcon, TrashIcon, XMarkIcon, ExclamationTriangleIcon, ArrowPathIcon,
+  MagnifyingGlassIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { listAllRepositories, deleteRepository } from '../api/repositories'
 import type { Repository } from '../api/repositories'
+import AppButton from '../components/AppButton.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 import NewRepoModal from '../components/NewRepoModal.vue'

@@ -152,6 +152,20 @@ export type Repository = {
      */
     org?: string;
     /**
+     * The caller's effective repository-scoped permissions. Only present in the single-repository GET (`/api/v1/repository/{name}`); global administrators have every flag set.
+     */
+    permissions?: {
+        write: boolean;
+        /**
+         * Allows the repository's trash tab (list and restore).
+         */
+        delete: boolean;
+        /**
+         * Allows emptying the repository's trash.
+         */
+        manage: boolean;
+    };
+    /**
      * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected.
      */
     presign_downloads?: boolean | null;

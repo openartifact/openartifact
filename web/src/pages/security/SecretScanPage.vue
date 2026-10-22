@@ -9,15 +9,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <PageHeader :title="t('sec.secret.title')" :description="t('sec.secret.description')">
       <template #actions>
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="!selectedRepo"
-          @click="openDrawer"
-        >
+        <AppButton variant="primary" size="md" :disabled="!selectedRepo" @click="openDrawer">
           <ArrowPathIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('sec.secret.trigger') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -26,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <select
         v-model="selectedRepo"
         :aria-label="t('sec.common.selectRepo')"
-        class="h-9 px-3 rounded-lg bg-surface border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+        class="h-9 px-3 rounded-lg bg-surface border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
       >
         <option value="">{{ t('sec.common.selectRepo') }}</option>
         <option v-for="r in repos" :key="r.name" :value="r.name">{{ r.name }}</option>
@@ -45,19 +40,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Stats tiles -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.total') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.secret.total') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums">{{ scans.length }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.flagged') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.secret.flagged') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-danger">{{ flaggedCount }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.clean') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.secret.clean') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-success">{{ cleanCount }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.secret.quarantined') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.secret.quarantined') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-warning">{{ quarantinedCount }}</div>
       </div>
     </div>
@@ -75,7 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           @click="activeTab = tab.id"
         >
           {{ tab.label }}
-          <span class="ml-1 font-mono text-[10px]">({{ tab.count }})</span>
+          <span class="ml-1 font-mono text-micro">({{ tab.count }})</span>
         </button>
       </div>
       <div class="relative flex-1 max-w-sm">
@@ -85,7 +80,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="search"
           :aria-label="t('sec.secret.search')"
           :placeholder="t('sec.secret.search')"
-          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
     </div>
@@ -94,7 +89,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('sec.secret.results') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ filteredScans.length }} {{ t('sec.common.scans') }}</span>
+        <span class="text-caption font-mono text-muted">{{ filteredScans.length }} {{ t('sec.common.scans') }}</span>
       </div>
 
       <div v-if="loadingScans" class="py-12 flex flex-col items-center gap-3 text-muted" role="status">
@@ -104,9 +99,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <div v-else-if="loadError" class="py-12 text-center" role="alert">
         <p class="text-sm text-danger">{{ loadError }}</p>
-        <button type="button" class="mt-3 px-3 py-1.5 rounded-lg text-sm border border-border hover:bg-surface-hover" @click="loadScans">
+        <AppButton variant="secondary" size="sm" @click="loadScans">
           {{ t('sec.common.retry') }}
-        </button>
+        </AppButton>
       </div>
 
       <EmptyState
@@ -138,7 +133,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :key="scan.id"
               class="hover:bg-surface-hover/40 transition-colors border-b border-border last:border-0 align-top"
             >
-              <td class="px-4 py-3 font-mono text-[13px] text-foreground">
+              <td class="px-4 py-3 font-mono text-ui text-foreground">
                 <span class="inline-flex items-center gap-2">
                   <FormatBadge v-if="formatOf(scan.artifact_id)" :format="formatOf(scan.artifact_id)" size="sm" />
                   {{ packageLabel(scan.artifact_id) }}
@@ -147,10 +142,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td class="px-4 py-3">
                 <span :class="scanStatusClass(scan.scan_status)">{{ statusLabel(scan.scan_status) }}</span>
               </td>
-              <td class="px-4 py-3 text-[13px]">
+              <td class="px-4 py-3 text-ui">
                 <span class="font-mono text-foreground">{{ scan.finding_count }}</span>
                 <ul v-if="scan.findings?.length" class="mt-1 space-y-0.5">
-                  <li v-for="(f, i) in scan.findings" :key="i" class="text-[11px] text-muted">
+                  <li v-for="(f, i) in scan.findings" :key="i" class="text-caption text-muted">
                     <span class="font-semibold text-foreground/80">{{ f.type }}</span>
                     <span v-if="f.severity"> · {{ f.severity }}</span>
                     <span v-if="f.line_hint"> · {{ f.line_hint }}</span>
@@ -160,16 +155,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </td>
               <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDateTime(scan.scanned_at || scan.created_at) }}</td>
               <td class="px-4 py-3">
-                <button
-                  type="button"
-                  class="px-2 py-1 rounded-md text-[11px] font-medium border border-border text-muted hover:bg-surface-hover hover:text-foreground transition-colors disabled:opacity-50"
-                  :class="{ 'border-danger/30 text-danger bg-danger-soft/40': scan.quarantined }"
-                  :disabled="quarantining === scan.id"
-                  :aria-label="`${scan.quarantined ? t('sec.vuln.unquarantine') : t('sec.vuln.quarantine')}: ${packageLabel(scan.artifact_id)}`"
-                  @click="toggleQuarantine(scan)"
-                >
+                <AppButton variant="secondary" size="xs" :class="{ 'border-danger/30 text-danger bg-danger-soft/40': scan.quarantined }" :disabled="quarantining === scan.id" :aria-label="`${scan.quarantined ? t('sec.vuln.unquarantine') : t('sec.vuln.quarantine')}: ${packageLabel(scan.artifact_id)}`" @click="toggleQuarantine(scan)">
                   {{ scan.quarantined ? t('sec.vuln.unquarantine') : t('sec.vuln.quarantine') }}
-                </button>
+                </AppButton>
               </td>
             </tr>
           </tbody>
@@ -192,7 +180,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <select
             id="secret-pkg"
             v-model="form.artifactId"
-            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="" disabled>{{ t('sec.common.selectPackage') }}</option>
             <option v-for="pkg in packages" :key="pkg.id" :value="pkg.id">{{ pkg.name }}@{{ pkg.version }}</option>
@@ -207,30 +195,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             rows="8"
             spellcheck="false"
             :placeholder="t('sec.secret.contentPlaceholder')"
-            class="w-full px-3 py-2 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none font-mono"
+            class="w-full px-3 py-2 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50 resize-none font-mono"
           />
           <p class="text-xs text-muted mt-1">{{ t('sec.secret.contentHint') }}</p>
         </div>
       </div>
       <template #footer>
-        <button type="button" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors" @click="showDrawer = false">
+        <AppButton variant="secondary" size="md" @click="showDrawer = false">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="triggering || !form.artifactId || !form.content.trim()"
-          @click="triggerScan"
-        >
+        </AppButton>
+        <AppButton variant="primary" size="md" :disabled="triggering || !form.artifactId || !form.content.trim()" @click="triggerScan">
           <ArrowPathIcon class="w-3.5 h-3.5" :class="{ 'animate-spin': triggering }" aria-hidden="true" />
           {{ t('sec.secret.start') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch } from 'vue'
@@ -280,7 +264,7 @@ function formatOf(id: string): string {
 }
 
 function scanStatusClass(status: string): string {
-  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold '
+  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-caption font-semibold '
   if (status === 'flagged') return base + 'text-danger bg-danger-soft/60'
   if (status === 'clean') return base + 'text-success bg-success-soft/60'
   return base + 'text-warning bg-warning-soft/60'

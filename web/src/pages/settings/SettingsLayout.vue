@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Left Nav -->
       <nav class="bg-surface rounded-xl border border-border overflow-hidden" :aria-label="t('shell.settingsSections')">
         <div class="px-3 py-2 border-b border-border">
-          <span class="text-[10px] font-semibold text-muted">{{ t('nav.settings') }}</span>
+          <span class="text-micro font-semibold text-muted">{{ t('nav.settings') }}</span>
         </div>
         <div class="p-1.5 space-y-0.5">
           <router-link

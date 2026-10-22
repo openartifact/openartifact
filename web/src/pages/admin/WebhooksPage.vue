@@ -10,14 +10,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('adm.webhooks.title')" :description="t('adm.webhooks.description')">
       <template #actions>
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            @click="openCreate"
-            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          >
+          <AppButton size="sm" @click="openCreate">
             <PlusIcon class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.webhooks.add') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -29,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <BellAlertIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] font-semibold text-muted">{{ t('adm.webhooks.stat.active') }}</div>
+          <div class="text-micro font-semibold text-muted">{{ t('adm.webhooks.stat.active') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ activeCount }}</div>
         </div>
       </div>
@@ -38,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <PaperAirplaneIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] font-semibold text-muted">{{ t('adm.webhooks.stat.disabled') }}</div>
+          <div class="text-micro font-semibold text-muted">{{ t('adm.webhooks.stat.disabled') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ webhooks.length - activeCount }}</div>
         </div>
       </div>
@@ -48,7 +44,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.webhooks.listTitle') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ webhooks.length }} {{ t('adm.common.total') }}</span>
+        <span class="text-caption font-mono text-muted">{{ webhooks.length }} {{ t('adm.common.total') }}</span>
       </div>
 
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
@@ -62,7 +58,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30">
+            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.name') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.url') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.events') }}</th>
@@ -74,7 +70,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <tbody class="divide-y divide-border">
             <tr v-for="hook in webhooks" :key="hook.id" class="hover:bg-surface-hover/40 transition-colors">
               <td class="px-4 py-3">
-                <span class="font-mono text-[13px] font-medium">{{ hook.name || '—' }}</span>
+                <span class="font-mono text-ui font-medium">{{ hook.name || '—' }}</span>
               </td>
               <td class="px-4 py-3 max-w-[200px]">
                 <span class="text-xs text-muted font-mono truncate block" :title="hook.url">{{ hook.url || '—' }}</span>
@@ -84,7 +80,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <span
                     v-for="event in hook.events || []"
                     :key="event"
-                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-medium bg-surface-hover text-muted border border-border"
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-micro font-medium bg-surface-hover text-muted border border-border"
                   >
                     {{ event }}
                   </span>
@@ -94,12 +90,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td class="px-4 py-3">
                 <span
                   v-if="hook.enabled"
-                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-success-soft/40 text-success"
+                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium bg-success-soft/40 text-success"
                 >
                   <span class="w-1.5 h-1.5 rounded-full bg-success" />
                   {{ t('adm.webhooks.statusActive') }}
                 </span>
-                <span v-else class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-soft/40 text-danger">
+                <span v-else class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium bg-danger-soft/40 text-danger">
                   <span class="w-1.5 h-1.5 rounded-full bg-danger" />
                   {{ t('adm.webhooks.statusInactive') }}
                 </span>
@@ -108,7 +104,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td class="px-4 py-3">
                 <button
                   type="button"
-                  @click="deleteOne(hook)"
+                  @click="deleteTarget = hook"
                   :title="t('common.delete')"
                   :aria-label="`${t('common.delete')} ${hook.name || hook.url || ''}`"
                   class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
@@ -141,7 +137,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="text"
             required
             :placeholder="t('adm.webhooks.field.namePlaceholder')"
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
         </div>
 
@@ -155,7 +151,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="url"
             required
             placeholder="https://example.com/webhook"
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
         </div>
 
@@ -169,7 +165,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="password"
             autocomplete="new-password"
             :placeholder="t('adm.webhooks.field.secretPlaceholder')"
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
         </div>
 
@@ -186,12 +182,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <input
                 :checked="form.events.includes(event.value)"
                 type="checkbox"
-                class="rounded border-border text-primary focus:ring-primary/50"
+                class="rounded border-border-strong text-primary focus:ring-primary/50"
                 @change="toggleEvent(event.value)"
               />
               <div>
                 <span class="text-sm text-foreground font-mono">{{ event.value }}</span>
-                <p class="text-[11px] text-muted">{{ event.hint }}</p>
+                <p class="text-caption text-muted">{{ event.hint }}</p>
               </div>
             </label>
           </div>
@@ -200,64 +196,37 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="flex items-center justify-between py-1.5">
           <div>
             <p id="wh-ssl-label" class="text-sm font-medium text-foreground">{{ t('adm.webhooks.field.sslVerify') }}</p>
-            <p class="text-[11px] text-muted">{{ t('adm.webhooks.field.sslVerifyHint') }}</p>
+            <p class="text-caption text-muted">{{ t('adm.webhooks.field.sslVerifyHint') }}</p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-labelledby="wh-ssl-label"
-            :aria-checked="form.ssl_verify"
-            class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            :class="form.ssl_verify ? 'bg-primary' : 'bg-border'"
-            @click="form.ssl_verify = !form.ssl_verify"
-          >
-            <span
-              class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-              :class="form.ssl_verify ? 'translate-x-4' : 'translate-x-0.5'"
-            />
-          </button>
+          <AppToggle v-model="form.ssl_verify" labelledby="wh-ssl-label" />
         </div>
 
         <div class="flex items-center justify-between py-1.5">
           <div>
             <p id="wh-active-label" class="text-sm font-medium text-foreground">{{ t('adm.webhooks.field.active') }}</p>
-            <p class="text-[11px] text-muted">{{ t('adm.webhooks.field.activeHint') }}</p>
+            <p class="text-caption text-muted">{{ t('adm.webhooks.field.activeHint') }}</p>
           </div>
-          <button
-            type="button"
-            role="switch"
-            aria-labelledby="wh-active-label"
-            :aria-checked="form.enabled"
-            class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-            :class="form.enabled ? 'bg-primary' : 'bg-border'"
-            @click="form.enabled = !form.enabled"
-          >
-            <span
-              class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-              :class="form.enabled ? 'translate-x-4' : 'translate-x-0.5'"
-            />
-          </button>
+          <AppToggle v-model="form.enabled" labelledby="wh-active-label" />
         </div>
       </form>
       <template #footer>
-        <button
-          type="button"
-          @click="closeDrawer"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
-        >
-          {{ t('common.cancel') }}
-        </button>
-        <button
-          type="submit"
-          form="webhook-form"
-          :disabled="!canSave"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <ArrowPathIcon v-if="saving" class="w-4 h-4 animate-spin inline mr-1" aria-hidden="true" />
+        <AppButton variant="secondary" size="sm" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
+        <AppButton type="submit" form="webhook-form" size="sm" :loading="saving" :disabled="!canSave">
           {{ t('common.save') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
+
+    <ConfirmDialog
+      :open="!!deleteTarget"
+      :title="t('adm.webhooks.confirmDelete')"
+      :description="deleteTarget ? deleteTarget.name || deleteTarget.url : ''"
+      :confirm-label="t('common.delete')"
+      :cancel-label="t('common.cancel')"
+      :busy="deleting"
+      @confirm="deleteOne"
+      @close="deleteTarget = null"
+    />
   </div>
 </template>
 
@@ -273,9 +242,11 @@ import {
   BellAlertIcon,
   PaperAirplaneIcon,
   TrashIcon,
-  ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
 import EmptyState from '../../components/EmptyState.vue'
+import AppButton from '../../components/AppButton.vue'
+import AppToggle from '../../components/AppToggle.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
 import { WEBHOOK_EVENTS, type WebhookEvent } from '../../lib/webhookEvents'
 
@@ -306,6 +277,8 @@ const loading = ref(false)
 const loadError = ref('')
 const drawerOpen = ref(false)
 const saving = ref(false)
+const deleteTarget = ref<Webhook | null>(null)
+const deleting = ref(false)
 
 const form = ref({
   name: '',
@@ -403,15 +376,19 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-async function deleteOne(hook: Webhook): Promise<void> {
-  if (!hook.id) return
-  if (!window.confirm(`${t('adm.webhooks.confirmDelete')} "${hook.name || hook.url}"?`)) return
+async function deleteOne(): Promise<void> {
+  const hook = deleteTarget.value
+  if (!hook?.id) return
+  deleting.value = true
   try {
     await request(`/api/v1/webhooks/${encodeURIComponent(hook.id)}`, { method: 'DELETE' })
     toasts.success(t('adm.webhooks.deleted'))
     await load()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.webhooks.deleteFailed'))
+  } finally {
+    deleting.value = false
+    deleteTarget.value = null
   }
 }
 

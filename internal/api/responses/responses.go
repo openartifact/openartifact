@@ -82,6 +82,11 @@ type RepositoryResponse struct {
 	CreatedAt string `json:"created_at"`
 	UpdatedAt string `json:"updated_at"`
 
+	// Permissions is the caller's effective repository-scoped permissions. It
+	// is only set by the single-repository GET, so the UI can show the controls
+	// the API would accept (the trash tab needs delete, emptying it manage).
+	Permissions *RepositoryPermissions `json:"permissions,omitempty"`
+
 	// PresignDownloads overrides the global storage.presignDownloads setting:
 	// null inherits it, true redirects blob downloads to presigned URLs, false
 	// always streams through the server.
@@ -99,6 +104,13 @@ type RepositoryResponse struct {
 	CacheTTLSeconds         *int   `json:"cache_ttl_seconds,omitempty"`
 	NegativeCacheTTLSeconds *int   `json:"negative_cache_ttl_seconds,omitempty"`
 	MaxStaleSeconds         *int   `json:"max_stale_seconds,omitempty"`
+}
+
+// RepositoryPermissions reports which actions the calling principal may perform on one repository.
+type RepositoryPermissions struct {
+	Write  bool `json:"write"`
+	Delete bool `json:"delete"`
+	Manage bool `json:"manage"`
 }
 
 // PackageItem represents a package in list responses.

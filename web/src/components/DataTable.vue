@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-for="col in columns"
             :key="col.key"
             scope="col"
-            class="px-4 py-3 text-left text-xs font-medium text-muted uppercase tracking-wider"
+            class="px-4 py-3 text-left text-xs font-medium text-muted"
             :class="col.sortable ? 'cursor-pointer select-none hover:text-foreground' : ''"
             :aria-sort="col.sortable ? 'none' : undefined"
             @click="col.sortable ? emit('sort', col.key) : undefined"

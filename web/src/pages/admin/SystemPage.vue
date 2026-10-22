@@ -12,9 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="loading" class="text-muted" role="status">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="bg-surface rounded-xl border border-border py-12 text-center" role="alert">
       <p class="text-sm text-danger">{{ loadError }}</p>
-      <button type="button" class="mt-3 px-3 py-1.5 rounded-lg text-sm border border-border hover:bg-surface-hover" @click="load">
-        {{ t('sec.common.retry') }}
-      </button>
+      <AppButton variant="secondary" size="sm" class="mt-3" @click="load">{{ t('sec.common.retry') }}</AppButton>
     </div>
     <UnavailableStub v-else-if="!sysInfo" />
     <div v-else class="space-y-5">
@@ -73,6 +71,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import { getAdminSystemInfo, type AdminSystemInfo } from '../../api/admin'

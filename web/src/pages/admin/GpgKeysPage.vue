@@ -10,20 +10,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('admin.gpg.title')" :description="t('admin.gpg.description')">
       <template #actions>
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors font-medium"
-            @click="importOpen = true"
-          >
+          <AppButton variant="secondary" size="sm" @click="importOpen = true">
             {{ t('admin.gpg.import') }}
-          </button>
-          <button
-            type="button"
-            class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
-            @click="generateOpen = true"
-          >
+          </AppButton>
+          <AppButton variant="primary" size="sm" @click="generateOpen = true">
             {{ t('admin.gpg.generate') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -40,14 +32,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <span class="font-mono text-xs text-foreground">{{ row.fingerprint }}</span>
       </template>
       <template #cell-actions="{ row }">
-        <button
-          type="button"
-          class="text-xs text-danger hover:opacity-80"
+        <AppButton
+          variant="danger-outline"
+          size="xs"
           :aria-label="`${t('admin.gpg.revoke')}: ${row.fingerprint}`"
           @click="revoke(String(row.fingerprint))"
         >
           {{ t('admin.gpg.revoke') }}
-        </button>
+        </AppButton>
       </template>
     </DataTable>
 
@@ -61,7 +53,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="importForm.armored"
             rows="10"
             required
-            class="w-full px-3 py-2 border border-border rounded-lg text-xs font-mono bg-surface-hover/40 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg text-xs font-mono bg-surface-hover/40 text-foreground focus:ring-2 focus:ring-primary/50"
           />
         </div>
         <div>
@@ -73,22 +65,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="importForm.passphrase"
             type="password"
             autocomplete="new-password"
-            class="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
         </div>
       </form>
       <template #footer>
-        <button type="button" @click="importOpen = false" class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors">
+        <AppButton variant="secondary" size="sm" @click="importOpen = false">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="submit"
-          form="gpg-import-form"
-          :disabled="busy"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium disabled:opacity-50"
-        >
+        </AppButton>
+        <AppButton variant="primary" size="sm" type="submit" form="gpg-import-form" :loading="busy">
           {{ t('admin.gpg.import') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
 
@@ -97,35 +84,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <form id="gpg-generate-form" class="space-y-5" @submit.prevent="submitGenerate">
         <div>
           <label for="gpg-name" class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.gpg.name') }}</label>
-          <input id="gpg-name" v-model="genForm.name" required type="text" class="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50" />
+          <input id="gpg-name" v-model="genForm.name" required type="text" class="w-full px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50" />
         </div>
         <div>
           <label for="gpg-email" class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.gpg.email') }}</label>
-          <input id="gpg-email" v-model="genForm.email" required type="email" class="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50" />
+          <input id="gpg-email" v-model="genForm.email" required type="email" class="w-full px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50" />
         </div>
         <div>
           <label for="gpg-comment" class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.gpg.comment') }}</label>
-          <input id="gpg-comment" v-model="genForm.comment" type="text" class="w-full px-3 py-2 border border-border rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50" />
+          <input id="gpg-comment" v-model="genForm.comment" type="text" class="w-full px-3 py-2 border border-border-strong rounded-lg text-sm bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50" />
         </div>
       </form>
       <template #footer>
-        <button type="button" @click="generateOpen = false" class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors">
+        <AppButton variant="secondary" size="sm" @click="generateOpen = false">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="submit"
-          form="gpg-generate-form"
-          :disabled="busy"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium disabled:opacity-50"
-        >
+        </AppButton>
+        <AppButton variant="primary" size="sm" type="submit" form="gpg-generate-form" :loading="busy">
           {{ t('admin.gpg.generate') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
+
+    <ConfirmDialog
+      :open="revokeTarget !== null"
+      :title="t('adm.gpg.confirmRevoke')"
+      :description="revokeTarget ?? ''"
+      :confirm-label="t('admin.gpg.revoke')"
+      :busy="busy"
+      @confirm="confirmRevoke"
+      @close="revokeTarget = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { ref, onMounted } from 'vue'
 import { listGpgKeys, importGpgKey, generateGpgKey, revokeGpgKey, type GpgKey } from '../../api/gpg'
@@ -208,14 +202,25 @@ async function submitGenerate(): Promise<void> {
   }
 }
 
-async function revoke(fingerprint: string): Promise<void> {
-  if (!window.confirm(`${t('admin.gpg.revoke')}?`)) return
+const revokeTarget = ref<string | null>(null)
+
+function revoke(fingerprint: string): void {
+  revokeTarget.value = fingerprint
+}
+
+async function confirmRevoke(): Promise<void> {
+  const fingerprint = revokeTarget.value
+  if (!fingerprint) return
+  busy.value = true
   try {
     await revokeGpgKey(fingerprint)
     toasts.success(t('adm.gpg.revoked'))
+    revokeTarget.value = null
     await load()
   } catch (err) {
     reportFailure(err, t('adm.gpg.revokeFailed'))
+  } finally {
+    busy.value = false
   }
 }
 

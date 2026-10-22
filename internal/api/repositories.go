@@ -262,7 +262,37 @@ func (h *RepositoriesHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 		}
 	}
 
-	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))
+	resp := h.repositoryResponse(ctx, repo, map[string]string{})
+
+	if p != nil {
+		perms, err := h.repositoryPermissions(ctx, *p, repo.Name)
+		if err != nil {
+			h.log.Errorw("get repository: permission evaluation failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+
+			return
+		}
+
+		resp.Permissions = perms
+	}
+
+	writeJSON(w, http.StatusOK, resp)
+}
+
+// repositoryPermissions evaluates the write, delete and manage actions of p on repoName.
+func (h *RepositoriesHandler) repositoryPermissions(ctx context.Context, p auth.Principal, repoName string) (*responses.RepositoryPermissions, error) {
+	var perms responses.RepositoryPermissions
+
+	for action, dst := range map[string]*bool{"write": &perms.Write, "delete": &perms.Delete, "manage": &perms.Manage} {
+		ok, err := h.evaluator.Evaluate(ctx, p, repoName, "", action)
+		if err != nil {
+			return nil, err
+		}
+
+		*dst = ok
+	}
+
+	return &perms, nil
 }
 
 // orgName resolves an organization ID to its name. memo caches lookups across

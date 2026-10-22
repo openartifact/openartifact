@@ -10,22 +10,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('adm.backup.title')" :description="t('adm.backup.description')">
       <template #actions>
         <div class="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border text-foreground hover:bg-surface-hover transition-colors"
-            @click="openRestoreModal"
-          >
+          <AppButton variant="secondary" size="sm" @click="openRestoreModal">
             <ArrowUpTrayIcon class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.backup.restoreFromArchive') }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-            @click="openCreateModal"
-          >
+          </AppButton>
+          <AppButton size="sm" @click="openCreateModal">
             <PlusIcon class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.backup.create') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -41,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <component :is="tile.icon" class="w-5 h-5" :style="{ color: tile.iconColor }" aria-hidden="true" />
         </div>
         <div class="min-w-0">
-          <p class="text-[10px] font-mono font-semibold text-muted truncate">{{ tile.label }}</p>
+          <p class="text-micro font-mono font-semibold text-muted truncate">{{ tile.label }}</p>
           <p class="text-xl font-bold tabular-nums text-foreground leading-tight">{{ tile.value }}</p>
         </div>
       </div>
@@ -68,8 +60,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-else class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
         <h2 class="text-sm font-semibold text-foreground">{{ t('adm.backup.jobs') }}</h2>
-        <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-[11px] font-mono font-medium text-muted">{{ items.length }}</span>
-        <span v-if="polling" class="ml-auto flex items-center gap-1.5 text-[11px] text-muted font-mono" role="status">
+        <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-caption font-mono font-medium text-muted">{{ items.length }}</span>
+        <span v-if="polling" class="ml-auto flex items-center gap-1.5 text-caption text-muted font-mono" role="status">
           <span class="w-1.5 h-1.5 rounded-full bg-warning animate-pulse" aria-hidden="true" />
           {{ t('adm.backup.autoRefreshing') }}
         </span>
@@ -81,47 +73,43 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <p class="text-sm font-medium text-foreground">{{ t('adm.backup.empty') }}</p>
         <p class="text-xs text-muted mt-1 mb-4">{{ t('adm.backup.emptyHint') }}</p>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          @click="openCreateModal"
-        >
+        <AppButton size="sm" @click="openCreateModal">
           <PlusIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('adm.backup.create') }}
-        </button>
+        </AppButton>
       </div>
 
       <table v-else class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-5 py-2.5">{{ t('adm.backup.column.type') }}</th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.status') }}</th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.size') }}</th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.created') }}</th>
-            <th scope="col" class="text-right text-[11px] font-semibold text-muted px-5 py-2.5">{{ t('common.actions') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-5 py-2.5">{{ t('adm.backup.column.type') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.status') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.size') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.backup.column.created') }}</th>
+            <th scope="col" class="text-right text-caption font-semibold text-muted px-5 py-2.5">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
           <tr v-for="job in items" :key="job.id" class="hover:bg-surface-hover/30 transition-colors">
             <td class="px-5 py-3.5">
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface-hover text-[11px] font-mono font-medium text-foreground">
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface-hover text-caption font-mono font-medium text-foreground">
                 <component :is="job.type === 'full' ? ServerStackIcon : CircleStackIcon" class="w-3.5 h-3.5 text-muted" aria-hidden="true" />
                 {{ job.type === 'full' ? t('adm.backup.typeFull') : t('adm.backup.typeMetadata') }}
               </span>
             </td>
             <td class="px-3 py-3.5">
-              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium" :class="statusBadgeClass(job.status)">
+              <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium" :class="statusBadgeClass(job.status)">
                 <span class="w-1.5 h-1.5 rounded-full" :class="[statusDotClass(job.status), job.status === 'running' ? 'animate-pulse' : '']" aria-hidden="true" />
                 {{ statusLabel(job.status) }}
               </span>
-              <p v-if="job.error_message" class="text-[10px] text-danger font-mono mt-0.5 max-w-[180px] truncate" :title="job.error_message">
+              <p v-if="job.error_message" class="text-micro text-danger font-mono mt-0.5 max-w-[180px] truncate" :title="job.error_message">
                 {{ job.error_message }}
               </p>
             </td>
             <td class="px-3 py-3.5 text-sm text-muted font-mono">{{ job.size_bytes ? formatBytes(job.size_bytes) : '—' }}</td>
             <td class="px-3 py-3.5">
               <p class="text-sm text-foreground">{{ formatDate(job.created_at) }}</p>
-              <p v-if="job.completed_at" class="text-[11px] text-muted font-mono mt-0.5">
+              <p v-if="job.completed_at" class="text-caption text-muted font-mono mt-0.5">
                 {{ t('adm.backup.done') }} {{ timeAgo(job.completed_at) }}
               </p>
             </td>
@@ -164,41 +152,38 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="button"
           role="radio"
           :aria-checked="createForm.type === opt.value"
-          class="w-full text-left p-3 rounded-lg border transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          class="w-full text-left p-3 rounded-lg border transition-all focus-visible:ring-2 focus-visible:ring-primary"
           :class="createForm.type === opt.value ? 'border-primary bg-primary/5 ring-1 ring-primary/30' : 'border-border bg-surface hover:bg-surface-hover'"
           @click="createForm.type = opt.value"
         >
           <div class="flex items-start gap-2.5">
             <component :is="opt.icon" class="w-4 h-4 mt-0.5 shrink-0" :class="createForm.type === opt.value ? 'text-primary' : 'text-muted'" aria-hidden="true" />
             <div>
-              <p class="text-[13px] font-semibold text-foreground leading-tight">{{ opt.label }}</p>
-              <p class="text-[11px] text-muted mt-0.5 leading-snug">{{ opt.desc }}</p>
+              <p class="text-ui font-semibold text-foreground leading-tight">{{ opt.label }}</p>
+              <p class="text-caption text-muted mt-0.5 leading-snug">{{ opt.desc }}</p>
             </div>
           </div>
         </button>
       </fieldset>
       <template #footer>
-        <button type="button" class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors" @click="closeCreateModal">
-          {{ t('common.cancel') }}
-        </button>
-        <button
-          type="button"
-          :disabled="creating"
-          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          @click="confirmCreate"
-        >
-          <ArrowPathIcon v-if="creating" class="w-4 h-4 animate-spin" aria-hidden="true" />
-          <ArchiveBoxArrowDownIcon v-else class="w-4 h-4" aria-hidden="true" />
+        <AppButton variant="ghost" @click="closeCreateModal">{{ t('common.cancel') }}</AppButton>
+        <AppButton :loading="creating" @click="confirmCreate">
+          <ArchiveBoxArrowDownIcon v-if="!creating" class="w-4 h-4" aria-hidden="true" />
           {{ t('adm.backup.create') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
 
     <!-- Restore from an uploaded archive -->
-    <AdminDialog
+    <ConfirmDialog
       :open="restoreOpen"
       :title="t('adm.backup.restoreTitle')"
       :description="t('adm.backup.restoreHint')"
+      :confirm-label="t('adm.backup.restoreNow')"
+      :cancel-label="t('common.cancel')"
+      :busy="restoring"
+      :confirm-disabled="!restoreFile || restoreConfirmInput !== RESTORE_PHRASE"
+      @confirm="confirmRestore"
       @close="cancelRestore"
     >
       <div class="space-y-4">
@@ -207,7 +192,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <ExclamationCircleIcon class="w-4 h-4 text-danger mt-0.5 shrink-0" aria-hidden="true" />
             <div>
               <p class="text-xs font-semibold text-danger">{{ t('adm.backup.destructive') }}</p>
-              <p class="text-[11px] text-danger/80 mt-0.5 leading-relaxed">{{ t('adm.backup.destructiveBody') }}</p>
+              <p class="text-caption text-danger mt-0.5 leading-relaxed">{{ t('adm.backup.destructiveBody') }}</p>
             </div>
           </div>
         </div>
@@ -218,7 +203,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             id="restore-file"
             type="file"
             accept=".tar.gz,.tgz,application/gzip"
-            class="block w-full text-sm text-foreground file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-border file:bg-surface-hover file:text-foreground"
+            class="block w-full text-sm text-foreground file:mr-3 file:px-3 file:py-1.5 file:rounded-lg file:border file:border-border-strong file:bg-surface-hover file:text-foreground"
             @change="onFileChosen"
           />
         </div>
@@ -226,32 +211,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div>
           <label for="restore-confirm" class="block text-xs font-semibold text-foreground mb-1.5">
             {{ t('adm.backup.typeToConfirm') }}
-            <code class="font-mono text-danger bg-danger-soft px-1 py-0.5 rounded mx-1 text-[11px]">{{ RESTORE_PHRASE }}</code>
+            <code class="font-mono text-danger bg-danger-soft px-1 py-0.5 rounded mx-1 text-caption">{{ RESTORE_PHRASE }}</code>
           </label>
           <input
             id="restore-confirm"
             v-model="restoreConfirmInput"
             type="text"
             :placeholder="RESTORE_PHRASE"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-danger transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-danger transition-colors"
           />
         </div>
       </div>
-      <template #footer>
-        <button type="button" class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors" @click="cancelRestore">
-          {{ t('common.cancel') }}
-        </button>
-        <button
-          type="button"
-          :disabled="!restoreFile || restoreConfirmInput !== RESTORE_PHRASE || restoring"
-          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-          @click="confirmRestore"
-        >
-          <ArrowPathIcon class="w-4 h-4" :class="restoring ? 'animate-spin' : ''" aria-hidden="true" />
-          {{ t('adm.backup.restoreNow') }}
-        </button>
-      </template>
-    </AdminDialog>
+    </ConfirmDialog>
   </div>
 </template>
 
@@ -262,10 +233,11 @@ import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { request } from '../../api/client'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
+import AppButton from '../../components/AppButton.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
 import {
   PlusIcon,
-  ArrowPathIcon,
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
   ArchiveBoxIcon,

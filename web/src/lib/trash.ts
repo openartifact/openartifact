@@ -3,6 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { t } from '../i18n/en'
+import type { Repository } from '../api/generated/types.gen'
 
 const DAY_MS = 86_400_000
 
@@ -41,4 +42,31 @@ export function parseRetentionInput(raw: string | number | null | undefined): nu
 export function emptyTrashResultText(purged: number, remaining: number): string {
   const base = t('trash.emptiedCount').replace('{n}', String(purged))
   return remaining > 0 ? `${base} ${t('trash.emptiedRemaining').replace('{n}', String(remaining))}` : base
+}
+
+/** Per-repository capabilities of the current user (`Repository.permissions`). */
+export type RepoPermissions = NonNullable<Repository['permissions']>
+
+export interface TrashCapabilities {
+  restore: boolean
+  empty: boolean
+  purge: boolean
+}
+
+/**
+ * What the trash UI offers. Repo scope: restore needs repository `delete`, emptying needs
+ * `manage` (admins have both); purging a single item is always administrative. The global
+ * view is admin-only, so everything it shows is actionable.
+ */
+export function trashCapabilities(
+  scope: 'repo' | 'global',
+  isAdmin: boolean,
+  permissions: Partial<RepoPermissions> | null | undefined,
+): TrashCapabilities {
+  if (scope === 'global') return { restore: isAdmin, empty: false, purge: isAdmin }
+  return {
+    restore: isAdmin || permissions?.delete === true,
+    empty: isAdmin || permissions?.manage === true,
+    purge: isAdmin,
+  }
 }

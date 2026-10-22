@@ -13,7 +13,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <select
             v-model="selectedSbomId"
             :disabled="loadingSboms || sboms.length === 0"
-            class="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-border bg-surface text-sm text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            :aria-label="t('graph.sbomList')"
+            class="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-border-strong bg-surface text-sm text-foreground font-medium focus:ring-2 focus:ring-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
             @change="onSbomChange"
           >
             <option value="">
@@ -23,19 +24,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ sbomLabel(sbom) }}
             </option>
           </select>
-          <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
+          <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
         </div>
 
         <!-- Export SVG -->
-        <button
-          type="button"
-          :disabled="visibleNodes.length === 0"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          @click="exportSvg"
-        >
-          <ArrowDownTrayIcon class="w-4 h-4" />
+        <AppButton variant="secondary" :disabled="visibleNodes.length === 0" @click="exportSvg">
+          <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('graph.exportSvg') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -47,29 +43,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Loading spinner -->
         <div v-if="loadingSboms || loadingGraph" class="flex flex-col items-center gap-3 text-center">
-          <ArrowPathIcon class="w-8 h-8 text-muted animate-spin" />
+          <ArrowPathIcon class="w-8 h-8 text-muted animate-spin" aria-hidden="true" />
           <p class="text-sm text-muted">{{ t('graph.loading') }}</p>
         </div>
 
         <!-- No SBOMs available -->
         <div v-else-if="sboms.length === 0" class="text-center px-6">
           <div class="w-16 h-16 rounded-full bg-surface-hover flex items-center justify-center mx-auto mb-4">
-            <ShareIcon class="w-8 h-8 text-muted" />
+            <ShareIcon class="w-8 h-8 text-muted" aria-hidden="true" />
           </div>
           <p class="text-base font-semibold text-foreground">{{ t('graph.noSboms') }}</p>
           <p class="text-sm text-muted mt-1 mb-4">{{ t('graph.noSbomsHint') }}</p>
-          <router-link
-            :to="`/repos/${repoName}`"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          >
-            Go to repository
-          </router-link>
+          <AppButton size="sm" :to="`/repos/${encodeURIComponent(repoName)}`">{{ t('graph.goToRepo') }}</AppButton>
         </div>
 
         <!-- Select a SBOM first -->
         <div v-else-if="!selectedSbomId" class="text-center px-6">
           <div class="w-16 h-16 rounded-full bg-surface-hover flex items-center justify-center mx-auto mb-4">
-            <ShareIcon class="w-8 h-8 text-muted" />
+            <ShareIcon class="w-8 h-8 text-muted" aria-hidden="true" />
           </div>
           <p class="text-base font-semibold text-foreground">{{ t('graph.emptyTitle') }}</p>
           <p class="text-sm text-muted mt-1">{{ t('graph.emptyHint') }}</p>
@@ -78,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- No packages in SBOM -->
         <div v-else-if="visibleNodes.length === 0 && !loadingGraph" class="text-center px-6">
           <div class="w-16 h-16 rounded-full bg-surface-hover flex items-center justify-center mx-auto mb-4">
-            <ShareIcon class="w-8 h-8 text-muted" />
+            <ShareIcon class="w-8 h-8 text-muted" aria-hidden="true" />
           </div>
           <p class="text-base font-semibold text-foreground">{{ t('graph.noPackages') }}</p>
           <p class="text-sm text-muted mt-1">
@@ -106,7 +97,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 0 L 10 5 L 0 10 z" :fill="borderColor" fill-opacity="0.6" />
+              <path d="M 0 0 L 10 5 L 0 10 z" :fill="BORDER_STRONG" fill-opacity="0.6" />
             </marker>
             <!-- Highlighted arrowhead -->
             <marker
@@ -118,7 +109,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               markerHeight="6"
               orient="auto-start-reverse"
             >
-              <path d="M 0 0 L 10 5 L 0 10 z" fill="#6366f1" />
+              <path d="M 0 0 L 10 5 L 0 10 z" fill="rgb(var(--color-primary))" />
             </marker>
           </defs>
 
@@ -131,7 +122,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :y1="nodePositions[link.source]?.y ?? 0"
               :x2="nodePositions[link.target]?.x ?? 0"
               :y2="nodePositions[link.target]?.y ?? 0"
-              :stroke="isEdgeHighlighted(link) ? '#6366f1' : borderColor"
+              :stroke="isEdgeHighlighted(link) ? PRIMARY : BORDER_STRONG"
               :stroke-width="isEdgeHighlighted(link) ? 2 : 1.2"
               :stroke-opacity="isEdgeHighlighted(link) ? 0.9 : (selectedNodeId ? 0.15 : 0.5)"
               :marker-end="isEdgeHighlighted(link) ? 'url(#arrow-hl)' : 'url(#arrow)'"
@@ -155,7 +146,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 :cy="nodePositions[node.id]?.y ?? 0"
                 r="13"
                 :fill="nodeColor(node)"
-                :stroke="selectedNodeId === node.id ? '#6366f1' : borderColor"
+                :stroke="selectedNodeId === node.id ? PRIMARY : BORDER_STRONG"
                 :stroke-width="selectedNodeId === node.id ? 2.5 : 1.5"
                 class="transition-all duration-100"
               />
@@ -166,7 +157,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 text-anchor="middle"
                 font-size="10"
                 font-family="ui-monospace, monospace"
-                :fill="textColor"
+                :fill="MUTED"
                 class="pointer-events-none select-none"
               >
                 {{ node.label }}
@@ -178,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Click hint -->
         <p
           v-if="visibleNodes.length > 0 && !loadingGraph"
-          class="absolute bottom-3 left-0 right-0 text-center text-[11px] text-muted pointer-events-none"
+          class="absolute bottom-3 left-0 right-0 text-center text-caption text-muted pointer-events-none"
         >
           {{ t('graph.clickHint') }}
         </p>
@@ -208,14 +199,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Selected node info -->
         <div v-if="selectedNodeId" class="rounded-lg border border-primary/30 bg-primary/5 p-3">
-          <p class="text-[10px] font-mono font-semibold text-primary mb-1">{{ t('graph.selected') }}</p>
+          <p class="text-micro font-mono font-semibold text-primary mb-1">{{ t('graph.selected') }}</p>
           <p class="text-xs font-mono font-medium text-foreground break-all">{{ selectedNodeId }}</p>
           <div class="mt-2 space-y-1">
-            <p class="text-[11px] text-muted">
+            <p class="text-caption text-muted">
               <span class="font-semibold text-foreground">{{ outgoingEdges(selectedNodeId).length }}</span>
               {{ t('graph.outgoing') }}
             </p>
-            <p class="text-[11px] text-muted">
+            <p class="text-caption text-muted">
               <span class="font-semibold text-foreground">{{ incomingEdges(selectedNodeId).length }}</span>
               {{ t('graph.dependents') }}
             </p>
@@ -227,7 +218,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <h3 class="text-xs font-semibold text-muted mb-3">{{ t('graph.legend') }}</h3>
           <div class="space-y-2">
             <div class="flex items-center gap-2 text-sm">
-              <span class="w-3 h-3 rounded-full bg-[#6366f1]" />
+              <span class="w-3 h-3 rounded-full bg-primary" />
               <span class="text-muted">{{ t('graph.package') }}</span>
             </div>
             <div v-if="vulnerableCount > 0" class="flex items-center gap-2 text-sm">
@@ -240,22 +231,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Controls -->
         <div class="pt-3 border-t border-border space-y-3">
           <!-- Show vulnerable only -->
-          <label class="flex items-center gap-2.5 cursor-pointer">
-            <button
-              type="button"
-              role="switch"
-              :aria-checked="showVulnerableOnly"
-              class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-              :class="showVulnerableOnly ? 'bg-primary' : 'bg-border'"
-              @click="showVulnerableOnly = !showVulnerableOnly"
-            >
-              <span
-                class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-                :class="showVulnerableOnly ? 'translate-x-4' : 'translate-x-0.5'"
-              />
-            </button>
-            <span class="text-sm text-foreground">{{ t('graph.showVulnerableOnly') }}</span>
-          </label>
+          <div class="flex items-center gap-2.5">
+            <AppToggle v-model="showVulnerableOnly" labelledby="graph-vuln-only-label" />
+            <span id="graph-vuln-only-label" class="text-sm text-foreground">{{ t('graph.showVulnerableOnly') }}</span>
+          </div>
         </div>
       </div>
     </div>
@@ -263,6 +242,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import AppButton from '../components/AppButton.vue'
+import AppToggle from '../components/AppToggle.vue'
 import PageHeader from '../components/PageHeader.vue'
 import { formatDate } from '../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
@@ -357,15 +338,12 @@ const route = useRoute()
 const repoName = computed(() => route.params.name as string)
 const toasts = useToastStore()
 
-// ─── Theme helpers ─────────────────────────────────────────────────────────────
+// ─── Theme colours ─────────────────────────────────────────────────────────────
+// CSS variables are defined for both themes, so no dark-mode switch is needed.
 
-const isDark = computed(() =>
-  typeof document !== 'undefined'
-    ? document.documentElement.classList.contains('dark')
-    : false,
-)
-const borderColor = computed(() => (isDark.value ? '#475569' : '#cbd5e1'))
-const textColor = computed(() => (isDark.value ? '#94a3b8' : '#64748b'))
+const PRIMARY = 'rgb(var(--color-primary))'
+const BORDER_STRONG = 'rgb(var(--color-border-strong))'
+const MUTED = 'rgb(var(--color-muted))'
 
 // ─── State ─────────────────────────────────────────────────────────────────────
 
@@ -472,8 +450,7 @@ function toggleNode(nodeId: string): void {
 
 function nodeColor(node: GraphNode): string {
   if (node.vulnerable) return 'rgb(var(--color-danger))'
-  if (selectedNodeId.value === node.id) return '#6366f1'
-  return isDark.value ? '#4f46e5' : '#6366f1'
+  return PRIMARY
 }
 
 // ─── Data Loading ──────────────────────────────────────────────────────────────
@@ -488,7 +465,7 @@ async function loadSboms(): Promise<void> {
     sboms.value = res?.reports ?? []
   } catch (err) {
     sboms.value = []
-    loadError.value = err instanceof Error ? err.message : 'Failed to load SBOMs'
+    loadError.value = err instanceof Error ? err.message : t('graph.sbomsLoadFailed')
     toasts.error(loadError.value)
   } finally {
     loadingSboms.value = false
@@ -510,7 +487,7 @@ async function loadSbomDetail(id: string): Promise<void> {
   } catch (err) {
     if (generation !== detailGeneration) return
     allPackages.value = []
-    loadError.value = err instanceof Error ? err.message : 'Failed to load SBOM'
+    loadError.value = err instanceof Error ? err.message : t('graph.sbomLoadFailed')
     toasts.error(loadError.value)
   } finally {
     if (generation === detailGeneration) loadingGraph.value = false
@@ -532,8 +509,11 @@ function exportSvg(): void {
   const el = svgEl.value
   if (!el) return
 
-  const serializer = new XMLSerializer()
-  const raw = serializer.serializeToString(el)
+  // A standalone SVG has no access to the page's CSS variables: inline the resolved channels.
+  const rootStyle = getComputedStyle(document.documentElement)
+  const raw = new XMLSerializer()
+    .serializeToString(el)
+    .replace(/rgb\(var\((--color-[a-z-]+)\)\)/g, (_m, name: string) => `rgb(${rootStyle.getPropertyValue(name).trim().replace(/\s+/g, ',')})`)
   const blob = new Blob([raw], { type: 'image/svg+xml;charset=utf-8' })
   const url = URL.createObjectURL(blob)
 

@@ -9,25 +9,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('search.title')" />
 
     <!-- Search Input -->
-    <div class="w-full flex items-center gap-3 px-5 py-3 rounded-full bg-surface border border-border focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+    <div class="w-full flex items-center gap-3 px-3 h-11 rounded-lg bg-surface border border-border-strong focus-within:border-primary focus-within:ring-2 focus-within:ring-primary/30 transition-colors">
       <MagnifyingGlassIcon class="w-5 h-5 text-muted flex-shrink-0" aria-hidden="true" />
       <input
         v-model="query"
         type="text"
         :placeholder="t('search.placeholder')"
         :aria-label="t('search.title')"
-        class="flex-1 bg-transparent text-foreground placeholder:text-muted outline-none text-sm"
+        class="flex-1 bg-transparent text-foreground placeholder:text-muted text-sm focus-visible:outline-none"
         @input="onInput"
         @keydown.enter="doSearch"
       />
-      <button
-        v-if="query"
-        :aria-label="t('search.clear')"
-        @click="clearSearch"
-        class="flex-shrink-0 text-muted hover:text-foreground transition-colors"
-      >
-        <XMarkIcon class="w-5 h-5" aria-hidden="true" />
-      </button>
+      <AppButton v-if="query" variant="ghost" size="xs" :aria-label="t('search.clear')" @click="clearSearch">
+        <XMarkIcon class="w-4 h-4" aria-hidden="true" />
+      </AppButton>
     </div>
 
     <!-- Results Section -->
@@ -39,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="repoResults.length" class="bg-surface rounded-xl border border-border overflow-hidden">
         <div class="px-5 py-3 border-b border-border flex items-center justify-between">
           <span class="text-sm font-semibold">{{ t('search.results.repositories') }}</span>
-          <span class="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5">{{ repoResults.length }}</span>
+          <span class="text-xs bg-primary-soft text-primary rounded-full px-2 py-0.5">{{ repoResults.length }}</span>
         </div>
         <div>
           <router-link
@@ -62,7 +57,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="packageResults.length" class="bg-surface rounded-xl border border-border overflow-hidden">
         <div class="px-5 py-3 border-b border-border flex items-center justify-between">
           <span class="text-sm font-semibold">{{ t('search.results.packages') }}</span>
-          <span class="text-xs bg-primary/10 text-primary rounded-full px-2 py-0.5">{{ packageResults.length }}</span>
+          <span class="text-xs bg-primary-soft text-primary rounded-full px-2 py-0.5">{{ packageResults.length }}</span>
         </div>
         <div>
           <router-link
@@ -84,19 +79,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <!-- No Results -->
-      <p v-if="!repoResults.length && !packageResults.length" class="text-sm text-muted">
-        {{ t('search.empty') }} {{ t('search.emptyHint') }}
-      </p>
+      <EmptyState
+        v-if="!repoResults.length && !packageResults.length"
+        :title="t('search.empty')"
+        :description="t('search.emptyHint')"
+      />
     </div>
 
     <!-- Initial State -->
-    <p v-else class="mt-6 text-sm text-muted">{{ t('search.initialHint') }}</p>
+    <div v-else class="mt-6 flex flex-col items-center">
+      <MagnifyingGlassIcon class="w-8 h-8 text-muted mt-8" aria-hidden="true" />
+      <EmptyState :title="t('search.title')" :description="t('search.initialHint')" />
+    </div>
   </div>
 </template>
 
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
 import { useSearch } from '../composables/useSearch'
+import AppButton from '../components/AppButton.vue'
+import EmptyState from '../components/EmptyState.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import { t } from '../i18n/en'
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/vue/24/outline'

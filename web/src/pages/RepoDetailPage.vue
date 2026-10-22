@@ -18,44 +18,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </span>
       </template>
       <template v-if="repo" #actions>
-        <button
+        <AppButton
           v-if="canUpload"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
+          variant="secondary"
           :aria-expanded="showUpload"
           @click="showUpload = !showUpload"
         >
           <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('repoDetail.upload') }}
-        </button>
-        <router-link
-          :to="`/repos/${repo.name}/browse`"
-          class="inline-flex items-center px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
-        >
+        </AppButton>
+        <AppButton variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/browse`">
           {{ t('browser.title') }}
-        </router-link>
-        <router-link
-          v-if="session.isAdmin"
-          :to="`/repos/${repo.name}/edit`"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
-        >
+        </AppButton>
+        <AppButton v-if="session.isAdmin" variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/edit`">
           <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('common.edit') }}
-        </router-link>
-        <router-link
-          v-if="canDelete"
-          :to="`/repos/${encodeURIComponent(repo.name)}/trash`"
-          class="inline-flex items-center px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
-        >
+        </AppButton>
+        <AppButton v-if="canViewTrash" variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/trash`">
           {{ t('trash.title') }}
-        </router-link>
-        <button
-          v-if="canDelete"
-          :disabled="deleting"
-          class="px-3 py-1.5 text-sm rounded-lg border border-danger/40 text-danger hover:bg-danger/10 disabled:opacity-50"
-          @click="showDeleteDialog = true"
-        >
+        </AppButton>
+        <AppButton v-if="canDelete" variant="danger-outline" :loading="deleting" @click="showDeleteDialog = true">
           {{ deleting ? t('repoDetail.deleting') : t('common.delete') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -65,12 +49,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Error State -->
     <div v-else-if="loadError" class="rounded-xl border border-danger/30 bg-surface p-8 text-center">
       <p class="text-sm text-danger">{{ loadError }}</p>
-      <button
-        class="mt-3 px-3 py-1.5 text-sm rounded-md border border-border hover:bg-surface-hover"
-        @click="load()"
-      >
+      <AppButton variant="secondary" size="sm" class="mt-3" @click="load()">
         {{ t('browser.retry') }}
-      </button>
+      </AppButton>
     </div>
 
     <!-- Main Content -->
@@ -79,18 +60,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Header -->
         <div class="px-4 sm:px-6 pt-5 pb-4 border-b border-border">
           <p v-if="repo.description" class="text-sm text-muted max-w-2xl">{{ repo.description }}</p>
+          <p v-else class="text-sm text-muted italic max-w-2xl">{{ t('repos.noDescription') }}</p>
 
           <!-- Registry URL -->
           <div class="mt-4 first:mt-0 flex items-center gap-2 flex-wrap">
             <span class="text-xs text-muted shrink-0">{{ t('repoDetail.registryUrl') }}</span>
             <code class="flex-1 min-w-0 rounded-md border border-border bg-surface-hover px-2.5 py-1 text-xs font-mono text-foreground break-all">{{ repoUrl }}</code>
-            <button
-              class="inline-flex items-center gap-1.5 px-2.5 py-1 text-xs rounded-md border border-border text-foreground hover:bg-surface-hover shrink-0"
-              @click="copyUrl"
-            >
+            <AppButton variant="secondary" size="xs" class="shrink-0" @click="copyUrl">
               <ClipboardIcon class="w-3.5 h-3.5 text-muted" aria-hidden="true" />
               {{ t('repoDetail.copy') }}
-            </button>
+            </AppButton>
           </div>
 
           <!-- Proxy: upstream info (credentials are never shown) -->
@@ -141,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ tab.label }}
               <span
                 v-if="tab.count !== undefined"
-                class="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                class="text-micro font-mono px-1.5 py-0.5 rounded"
                 :class="activeTab === tab.id
                   ? 'bg-primary-soft text-primary'
                   : 'bg-surface-hover text-muted'
@@ -235,7 +214,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     type="checkbox"
                     :checked="allPkgsSelected"
                     :indeterminate="somePkgsSelected && !allPkgsSelected"
-                    class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer"
+                    class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer"
                     :aria-label="t('repoDetail.selectAll')"
                     @change="toggleAllPkgs"
                   />
@@ -259,7 +238,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <input
                     type="checkbox"
                     :checked="selectedIds.has(itemKey(pkg))"
-                    class="w-4 h-4 rounded border-border text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+                    class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
                     :class="{ 'opacity-100': selectedIds.has(itemKey(pkg)) }"
                     :aria-label="`${t('repoDetail.select')} ${pkg.name}`"
                     @change="togglePkg(pkg)"
@@ -272,7 +251,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     @click.stop
                   >{{ pkg.name }}</router-link>
                 </td>
-                <td class="px-4 py-3 text-xs font-mono text-muted">{{ pkg.version }}</td>
+                <td class="px-4 py-3 text-xs font-mono text-muted">{{ pkg.version || '—' }}</td>
                 <td class="px-4 py-3 text-sm">
                   <FormatBadge :format="pkg.format" />
                 </td>
@@ -293,7 +272,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       class="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors text-danger"
                       :title="`${t('common.delete')} ${pkg.name}`"
                       :aria-label="`${t('common.delete')} ${pkg.name}`"
-                      @click="deletePkg(pkg)"
+                      @click="pendingDeletePkg = pkg"
                     >
                       <TrashIcon class="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
@@ -325,6 +304,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     </template>
 
+    <ConfirmDialog
+      :open="!!pendingDeletePkg"
+      :title="t('common.delete')"
+      :description="t('repoDetail.confirmDeletePkg').replace('{name}', pendingDeletePkg?.name ?? '')"
+      :confirm-label="t('common.delete')"
+      :busy="deletingPkg"
+      @confirm="pendingDeletePkg && deletePkg(pendingDeletePkg)"
+      @close="pendingDeletePkg = null"
+    />
+
     <RepoDeleteDialog
       v-if="repo"
       :open="showDeleteDialog"
@@ -348,6 +337,8 @@ import {
   downloadPackage,
 } from '../api/repositories'
 import type { Repository, RepositoryMember, PackageItem } from '../api/repositories'
+import AppButton from '../components/AppButton.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import EmptyState from '../components/EmptyState.vue'
 import PageHeader from '../components/PageHeader.vue'
 import { resolveCrumbs, type Crumb } from '../lib/crumbs'
@@ -394,6 +385,8 @@ const membersError = ref('')
 const repoName = computed(() => route.params.name as string)
 const isProxy = computed(() => repo.value?.repo_type === 'proxy')
 const canDelete = computed(() => session.isAdmin)
+// Repo-scoped permissions come from the server, so non-admin principals with a delete grant also see the trash.
+const canViewTrash = computed(() => !!repo.value?.permissions?.delete)
 // Web upload is implemented by the deb and rpm handlers only; other formats
 // are published with their native client tooling. Proxy and group
 // repositories are read-only.
@@ -546,6 +539,8 @@ function copyUrl(): void {
 }
 
 const showDeleteDialog = ref(false)
+const pendingDeletePkg = ref<PackageItem | null>(null)
+const deletingPkg = ref(false)
 
 async function deleteRepo() {
   if (!repo.value) return
@@ -572,14 +567,17 @@ async function download(pkg: PackageItem): Promise<void> {
 
 async function deletePkg(pkg: PackageItem): Promise<void> {
   if (!repo.value) return
-  if (!confirm(t('repoDetail.confirmDeletePkg').replace('{name}', pkg.name))) return
+  deletingPkg.value = true
   try {
     await deletePackage(repo.value.name, pkg.id)
     packages.value = packages.value.filter((p) => p.id !== pkg.id)
     totalPackages.value = Math.max(0, totalPackages.value - 1)
-    toasts.success(`${t('repoDetail.deleted')} ${pkg.name}`)
+    pendingDeletePkg.value = null
+    toasts.success(t('repoDetail.movedToTrash').replace('{name}', pkg.name))
   } catch (err) {
     toasts.error(t('repoDetail.deletePkgFailed'), err instanceof Error ? err.message : undefined)
+  } finally {
+    deletingPkg.value = false
   }
 }
 

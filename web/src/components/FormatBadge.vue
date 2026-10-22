@@ -30,5 +30,5 @@ const icon = computed(() => formatIcon(props.format))
 const evenodd = computed(() => formatIconEvenOdd(props.format))
 const viewBox = computed(() => formatViewBox(props.format))
 const iconSize = computed(() => (props.size === 'sm' ? 'w-3 h-3' : 'w-3.5 h-3.5'))
-const sizeClass = computed(() => (props.size === 'sm' ? 'text-[11px]' : ''))
+const sizeClass = computed(() => (props.size === 'sm' ? 'text-caption' : ''))
 </script>

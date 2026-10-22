@@ -10,15 +10,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('sec.vuln.title')" :description="t('sec.vuln.description')">
       <template #actions>
         <div class="flex items-center gap-3 flex-wrap">
-          <button
-            type="button"
-            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-            :disabled="!selectedRepo"
-            @click="openDrawer"
-          >
+          <AppButton variant="primary" size="md" :disabled="!selectedRepo" @click="openDrawer">
             <ShieldCheckIcon class="w-4 h-4" aria-hidden="true" />
             {{ t('sec.vuln.scanPackage') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -28,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <select
         v-model="selectedRepo"
         :aria-label="t('sec.common.selectRepo')"
-        class="h-9 px-3 rounded-lg bg-surface border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+        class="h-9 px-3 rounded-lg bg-surface border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
       >
         <option value="">{{ t('sec.common.selectRepo') }}</option>
         <option v-for="r in repos" :key="r.name" :value="r.name">{{ r.name }}</option>
@@ -47,20 +42,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Stats tiles -->
     <div class="grid grid-cols-2 sm:grid-cols-4 gap-4">
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.totalScans') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.vuln.totalScans') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums">{{ scans.length }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.critical') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.vuln.critical') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-danger">{{ totalCritical }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.high') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.vuln.high') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-warning">{{ totalHigh }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.vuln.medium') }}</div>
-        <div class="text-2xl font-bold mt-1 tabular-nums text-[#f59e0b]">{{ totalMedium }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.vuln.medium') }}</div>
+        <div class="text-2xl font-bold mt-1 tabular-nums text-severity-medium">{{ totalMedium }}</div>
       </div>
     </div>
 
@@ -74,14 +69,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <template v-if="totalVulns > 0">
           <div class="h-full bg-danger transition-all" :style="{ width: `${(totalCritical / totalVulns) * 100}%` }" />
           <div class="h-full bg-warning transition-all" :style="{ width: `${(totalHigh / totalVulns) * 100}%` }" />
-          <div class="h-full bg-[#f59e0b] transition-all" :style="{ width: `${(totalMedium / totalVulns) * 100}%` }" />
+          <div class="h-full bg-severity-medium transition-all" :style="{ width: `${(totalMedium / totalVulns) * 100}%` }" />
           <div class="h-full bg-muted/40 transition-all" :style="{ width: `${(totalLow / totalVulns) * 100}%` }" />
         </template>
       </div>
       <div class="flex items-center gap-4 mt-3 text-xs text-muted flex-wrap">
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-danger" /> {{ t('sec.vuln.critical') }}: {{ totalCritical }}</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-warning" /> {{ t('sec.vuln.high') }}: {{ totalHigh }}</span>
-        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-[#f59e0b]" /> {{ t('sec.vuln.medium') }}: {{ totalMedium }}</span>
+        <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-severity-medium" /> {{ t('sec.vuln.medium') }}: {{ totalMedium }}</span>
         <span class="flex items-center gap-1.5"><span class="w-2 h-2 rounded-full bg-muted/40" /> {{ t('sec.vuln.low') }}: {{ totalLow }}</span>
       </div>
     </div>
@@ -95,7 +90,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="search"
           :aria-label="t('sec.vuln.searchPackages')"
           :placeholder="t('sec.vuln.searchPackages')"
-          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
       <div role="group" :aria-label="t('sec.vuln.filterSeverity')" class="flex items-center gap-1 bg-surface-hover/60 rounded-lg p-0.5">
@@ -126,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('sec.vuln.results') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ filteredScans.length }} {{ t('sec.common.scans') }}</span>
+        <span class="text-caption font-mono text-muted">{{ filteredScans.length }} {{ t('sec.common.scans') }}</span>
       </div>
 
       <div v-if="loadingScans" class="py-12 flex flex-col items-center gap-3 text-muted" role="status">
@@ -136,9 +131,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <div v-else-if="loadError" class="py-12 text-center" role="alert">
         <p class="text-sm text-danger">{{ loadError }}</p>
-        <button type="button" class="mt-3 px-3 py-1.5 rounded-lg text-sm border border-border hover:bg-surface-hover" @click="loadScans()">
+        <AppButton variant="secondary" size="sm" @click="loadScans()">
           {{ t('sec.common.retry') }}
-        </button>
+        </AppButton>
       </div>
 
       <EmptyState
@@ -173,18 +168,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :key="scan.id"
               class="hover:bg-surface-hover/40 transition-colors border-b border-border last:border-0"
             >
-              <td class="px-4 py-3 font-mono text-[13px] font-medium text-foreground">{{ scan.package_name }}</td>
-              <td class="px-4 py-3 font-mono text-[13px] text-muted">{{ scan.package_version }}</td>
+              <td class="px-4 py-3 font-mono text-ui font-medium text-foreground">{{ scan.package_name }}</td>
+              <td class="px-4 py-3 font-mono text-ui text-muted">{{ scan.package_version }}</td>
               <td class="px-4 py-3"><FormatBadge :format="scan.ecosystem" size="sm" /></td>
               <td class="px-4 py-3">
-                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-semibold border border-border text-muted">{{ scan.scanner || 'osv' }}</span>
+                <span class="inline-flex items-center px-2 py-0.5 rounded-md text-caption font-semibold border border-border text-muted">{{ scan.scanner || 'osv' }}</span>
               </td>
               <td class="px-4 py-3">
                 <div class="flex items-center gap-1.5 text-xs font-mono" :data-counts="vulnCountsState(scan)">
                   <template v-if="vulnCountsState(scan) === 'counts'">
                     <span v-if="scan.critical_count > 0" class="px-1.5 py-0.5 rounded bg-danger-soft text-danger font-semibold">{{ scan.critical_count }}C</span>
                     <span v-if="scan.high_count > 0" class="px-1.5 py-0.5 rounded bg-warning-soft text-warning font-semibold">{{ scan.high_count }}H</span>
-                    <span v-if="scan.medium_count > 0" class="px-1.5 py-0.5 rounded bg-[#f59e0b]/10 text-[#f59e0b] font-semibold">{{ scan.medium_count }}M</span>
+                    <span v-if="scan.medium_count > 0" class="px-1.5 py-0.5 rounded bg-severity-medium/10 text-severity-medium font-semibold">{{ scan.medium_count }}M</span>
                     <span v-if="scan.low_count > 0" class="px-1.5 py-0.5 rounded bg-surface-hover text-muted font-semibold">{{ scan.low_count }}L</span>
                   </template>
                   <span v-else-if="vulnCountsState(scan) === 'clean'" class="text-success text-xs">{{ t('sec.vuln.clean') }}</span>
@@ -201,16 +196,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </td>
               <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDateTime(scan.scanned_at || scan.created_at) }}</td>
               <td class="px-4 py-3">
-                <button
-                  type="button"
-                  class="px-2 py-1 rounded-md text-[11px] font-medium border border-border text-muted hover:bg-surface-hover hover:text-foreground transition-colors disabled:opacity-50"
-                  :class="{ 'border-danger/30 text-danger bg-danger-soft/40': scan.quarantined }"
-                  :disabled="quarantining === scan.id"
-                  :aria-label="`${scan.quarantined ? t('sec.vuln.unquarantine') : t('sec.vuln.quarantine')}: ${scan.package_name}`"
-                  @click="toggleQuarantine(scan)"
-                >
+                <AppButton variant="secondary" size="xs" :class="{ 'border-danger/30 text-danger bg-danger-soft/40': scan.quarantined }" :disabled="quarantining === scan.id" :aria-label="`${scan.quarantined ? t('sec.vuln.unquarantine') : t('sec.vuln.quarantine')}: ${scan.package_name}`" @click="toggleQuarantine(scan)">
                   {{ scan.quarantined ? t('sec.vuln.unquarantine') : t('sec.vuln.quarantine') }}
-                </button>
+                </AppButton>
               </td>
             </tr>
           </tbody>
@@ -237,7 +225,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 type="checkbox"
                 :value="s.value"
                 :data-testid="`scanner-${s.value}`"
-                class="h-4 w-4 rounded border-border accent-primary"
+                class="h-4 w-4 rounded border-border-strong accent-primary"
               />
               {{ s.label }}
             </label>
@@ -251,7 +239,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <select
             id="vuln-pkg"
             v-model="form.artifactId"
-            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
             @change="onPackageChange"
           >
             <option value="" disabled>{{ t('sec.common.selectPackage') }}</option>
@@ -264,7 +252,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <select
             id="vuln-eco"
             v-model="form.ecosystem"
-            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
           >
             <option value="" disabled>{{ t('sec.vuln.selectEcosystem') }}</option>
             <option v-for="e in VULN_ECOSYSTEMS" :key="e" :value="e">{{ formatLabel(e) }}</option>
@@ -273,25 +261,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
       <template #footer>
-        <button type="button" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors" @click="showDrawer = false">
+        <AppButton variant="secondary" size="md" @click="showDrawer = false">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="scanning || !form.artifactId || !form.ecosystem || !selectedScanners.length"
-          @click="startScan"
-        >
-          <ArrowPathIcon v-if="scanning" class="w-3.5 h-3.5 animate-spin" aria-hidden="true" />
-          <ShieldCheckIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
+        </AppButton>
+        <AppButton variant="primary" size="md" :loading="scanning" :disabled="scanning || !form.artifactId || !form.ecosystem || !selectedScanners.length" @click="startScan">
+          <ShieldCheckIcon v-if="!(scanning)" class="w-3.5 h-3.5" aria-hidden="true" />
           {{ scanning ? t('sec.vuln.starting') : t('sec.vuln.start') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'

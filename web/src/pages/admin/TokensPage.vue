@@ -16,7 +16,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <KeyIcon class="w-4 h-4" aria-hidden="true" />
         </span>
         <div>
-          <div class="text-[10px] font-semibold text-muted">{{ t('adm.tokens.total') }}</div>
+          <div class="text-micro font-semibold text-muted">{{ t('adm.tokens.total') }}</div>
           <div class="text-xl font-bold tabular-nums">{{ total }}</div>
         </div>
       </div>
@@ -26,7 +26,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.tokens.list') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ total }} {{ t('adm.common.total') }}</span>
+        <span class="text-caption font-mono text-muted">{{ total }} {{ t('adm.common.total') }}</span>
       </div>
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
@@ -34,7 +34,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else class="overflow-x-auto">
         <DataTable :columns="columns" :rows="tokens as Record<string, unknown>[]" row-key="id">
           <template #cell-name="{ value }">
-            <span class="font-mono text-[13px] font-medium">{{ value }}</span>
+            <span class="font-mono text-ui font-medium">{{ value }}</span>
           </template>
           <template #cell-user_id="{ value }">
             <span class="text-sm text-muted font-mono">{{ ownerName(value as string | undefined) }}</span>
@@ -51,15 +51,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </span>
           </template>
           <template #cell-actions="{ row }">
-            <button
-              type="button"
+            <AppButton
+              variant="danger-outline"
+              size="xs"
               :aria-label="`${t('admin.tokens.revoke')}: ${row.name}`"
-              class="inline-flex items-center gap-1.5 px-2 py-1 rounded-md text-[11px] font-medium text-danger hover:bg-danger/10 transition-colors"
-              @click="revoke(row.id as string)"
+              @click="revokeTarget = row as unknown as ApiToken"
             >
               <TrashIcon class="w-3.5 h-3.5" aria-hidden="true" />
               {{ t('admin.tokens.revoke') }}
-            </button>
+            </AppButton>
           </template>
         </DataTable>
       </div>
@@ -69,24 +69,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="tokens.length" class="flex items-center justify-between">
       <span class="text-sm text-muted">{{ t('adm.audit.page') }} {{ page }} / {{ pageCount }}</span>
       <div class="flex items-center gap-2">
-        <button
-          type="button"
-          @click="page--"
-          :disabled="page <= 1"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <AppButton variant="secondary" size="sm" :disabled="page <= 1" @click="page--">
           {{ t('adm.audit.previous') }}
-        </button>
-        <button
-          type="button"
-          @click="page++"
-          :disabled="page >= pageCount"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        </AppButton>
+        <AppButton variant="secondary" size="sm" :disabled="page >= pageCount" @click="page++">
           {{ t('adm.audit.next') }}
-        </button>
+        </AppButton>
       </div>
     </div>
+
+    <ConfirmDialog
+      :open="revokeTarget !== null"
+      :title="t('adm.tokens.confirmRevoke')"
+      :description="revokeTarget ? `${revokeTarget.name}` : ''"
+      :confirm-label="t('admin.tokens.revoke')"
+      :busy="revoking"
+      @confirm="confirmRevoke"
+      @close="revokeTarget = null"
+    />
   </div>
 </template>
 
@@ -94,6 +94,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
+import AppButton from '../../components/AppButton.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import DataTable, { type Column } from '../../components/DataTable.vue'
 import { listTokens, revokeToken, type AdminToken } from '../../api/tokens'
 import { listAllUsers, type UserItem } from '../../api/admin'
@@ -152,14 +154,22 @@ async function load(): Promise<void> {
   }
 }
 
-async function revoke(id: string): Promise<void> {
-  if (!window.confirm(t('adm.tokens.confirmRevoke'))) return
+const revokeTarget = ref<ApiToken | null>(null)
+const revoking = ref(false)
+
+async function confirmRevoke(): Promise<void> {
+  const target = revokeTarget.value
+  if (!target) return
+  revoking.value = true
   try {
-    await revokeToken(id)
+    await revokeToken(target.id)
     toasts.success(t('adm.tokens.revoked'))
+    revokeTarget.value = null
     await load()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.tokens.revokeFailed'))
+  } finally {
+    revoking.value = false
   }
 }
 

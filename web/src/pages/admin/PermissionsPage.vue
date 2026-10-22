@@ -10,13 +10,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('admin.permissions.title')" :description="t('adm.permissions.description')">
       <template #actions>
         <div class="flex items-center gap-2">
-          <button
-            type="button"
-            @click="openGrant"
-            class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
-          >
+          <AppButton variant="primary" size="sm" @click="openGrant">
             {{ t('adm.permissions.create') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -25,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.permissions.listTitle') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ permissions.length }} {{ t('adm.common.total') }}</span>
+        <span class="text-caption font-mono text-muted">{{ permissions.length }} {{ t('adm.common.total') }}</span>
       </div>
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
@@ -33,7 +29,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30">
+            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.permissions.column.name') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.permissions.column.repositories') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.permissions.column.paths') }}</th>
@@ -44,15 +40,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <tbody class="divide-y divide-border">
             <tr v-for="perm in permissions" :key="perm.id" class="hover:bg-surface-hover/40 transition-colors">
               <td class="px-4 py-3">
-                <span class="font-mono text-[13px] font-medium">{{ perm.name || '—' }}</span>
+                <span class="font-mono text-ui font-medium">{{ perm.name || '—' }}</span>
               </td>
               <td class="px-4 py-3">
-                <span class="font-mono text-[12px] px-2 py-0.5 rounded bg-surface-hover text-foreground/80">
+                <span class="font-mono text-xs px-2 py-0.5 rounded bg-surface-hover text-foreground/80">
                   {{ perm.repository_filter || '—' }}
                 </span>
               </td>
               <td class="px-4 py-3">
-                <span class="font-mono text-[12px] px-2 py-0.5 rounded bg-surface-hover text-foreground/80">
+                <span class="font-mono text-xs px-2 py-0.5 rounded bg-surface-hover text-foreground/80">
                   {{ perm.path_pattern || '—' }}
                 </span>
               </td>
@@ -96,7 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="formData.name"
             type="text"
             required
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
         </div>
         <div>
@@ -106,7 +102,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="formData.repository_filter"
             type="text"
             placeholder="^docker-.*$"
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
           <p class="mt-1 text-xs text-muted">{{ t('adm.permissions.field.regexHint') }}</p>
         </div>
@@ -117,7 +113,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="formData.path_pattern"
             type="text"
             placeholder=".*"
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 font-mono text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
           />
           <p class="mt-1 text-xs text-muted">{{ t('adm.permissions.field.regexHint') }}</p>
         </div>
@@ -125,7 +121,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <legend class="block text-sm font-medium text-foreground mb-2">{{ t('adm.permissions.field.actions') }}</legend>
           <div class="flex flex-wrap gap-4">
             <label v-for="action in PERMISSION_ACTIONS" :key="action" class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-              <input v-model="formData.actions" :value="action" type="checkbox" class="rounded border-border" />
+              <input v-model="formData.actions" :value="action" type="checkbox" class="rounded border-border-strong" />
               <span>{{ action }}</span>
             </label>
           </div>
@@ -136,18 +132,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </legend>
           <div class="flex gap-4">
             <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-              <input v-model="formData.principal_type" value="user" type="radio" class="border-border" />
+              <input v-model="formData.principal_type" value="user" type="radio" class="border-border-strong" />
               <span>{{ t('adm.permissions.principalUser') }}</span>
             </label>
             <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-              <input v-model="formData.principal_type" value="group" type="radio" class="border-border" />
+              <input v-model="formData.principal_type" value="group" type="radio" class="border-border-strong" />
               <span>{{ t('adm.permissions.principalGroup') }}</span>
             </label>
           </div>
           <select
             v-model="formData.principal_id"
             :aria-label="t('adm.permissions.field.principal')"
-            class="w-full px-3 py-2 border border-border rounded-lg bg-surface-hover/40 text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground focus:ring-2 focus:ring-primary/50"
           >
             <option value="">{{ t('adm.permissions.noPrincipal') }}</option>
             <option v-for="p in principalOptions" :key="p.id" :value="p.id">{{ p.label }}</option>
@@ -155,27 +151,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </fieldset>
       </form>
       <template #footer>
-        <button
-          type="button"
-          @click="closeGrant"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
-        >
+        <AppButton variant="secondary" size="sm" @click="closeGrant">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="submit"
-          form="permission-form"
-          :disabled="saving || formData.actions.length === 0"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        </AppButton>
+        <AppButton variant="primary" size="sm" type="submit" form="permission-form" :loading="saving" :disabled="formData.actions.length === 0">
           {{ t('common.create') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
+
+    <ConfirmDialog
+      :open="revokeTarget !== null"
+      :title="t('adm.permissions.confirmRevoke')"
+      :description="revokeTarget?.name ?? ''"
+      :confirm-label="t('admin.permissions.revoke')"
+      :busy="revoking"
+      @confirm="confirmRevoke"
+      @close="revokeTarget = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import {
@@ -222,7 +221,7 @@ const principalOptions = computed(() =>
 )
 
 function getActionPillClasses(action: string): string {
-  const base = 'inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium'
+  const base = 'inline-flex items-center px-2 py-0.5 rounded-full text-caption font-medium'
   if (action === 'manage' || action === 'delete') return `${base} bg-danger-soft/40 text-danger`
   if (action === 'write') return `${base} bg-warning-soft/40 text-warning`
   if (action === 'read') return `${base} bg-success-soft/40 text-success`
@@ -294,15 +293,27 @@ async function submitGrant(): Promise<void> {
   }
 }
 
-async function revoke(perm: PermissionItem): Promise<void> {
+const revokeTarget = ref<PermissionItem | null>(null)
+const revoking = ref(false)
+
+function revoke(perm: PermissionItem): void {
   if (!perm.id) return
-  if (!window.confirm(`${t('adm.permissions.confirmRevoke')} "${perm.name}"?`)) return
+  revokeTarget.value = perm
+}
+
+async function confirmRevoke(): Promise<void> {
+  const perm = revokeTarget.value
+  if (!perm?.id) return
+  revoking.value = true
   try {
     await revokePermission(perm.id)
     toasts.success(t('adm.permissions.revoked'))
+    revokeTarget.value = null
     await load()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.permissions.revokeFailed'))
+  } finally {
+    revoking.value = false
   }
 }
 

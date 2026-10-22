@@ -11,8 +11,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="flex items-center gap-5">
         <!-- Avatar -->
         <div
-          class="w-16 h-16 rounded-full flex items-center justify-center text-white font-bold text-xl ring-2 ring-surface shrink-0"
-          :style="avatarStyle"
+          class="w-16 h-16 rounded-full flex items-center justify-center bg-primary text-primary-contrast font-bold text-xl ring-2 ring-surface shrink-0"
+         
         >
           {{ initials }}
         </div>
@@ -22,11 +22,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="flex items-center gap-2 mt-1.5">
             <span
               v-if="session.isAdmin"
-              class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-danger-soft/60 text-danger"
+              class="inline-flex items-center px-2 py-0.5 rounded-full text-caption font-medium bg-danger-soft/60 text-danger"
             >
               {{ t('settings.profile.admin') }}
             </span>
-            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium bg-surface-hover text-foreground/70">
+            <span class="inline-flex items-center px-2 py-0.5 rounded-full text-caption font-medium bg-surface-hover text-foreground/70">
               {{ t('auth.username').toLowerCase() }}: {{ session.user?.username }}
             </span>
           </div>
@@ -42,25 +42,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="divide-y divide-border">
         <div class="flex items-center justify-between px-5 py-4">
           <div>
-            <div class="text-[11px] font-semibold text-muted mb-0.5">{{ t('auth.username') }}</div>
+            <div class="text-caption font-semibold text-muted mb-0.5">{{ t('auth.username') }}</div>
             <div class="font-mono text-sm text-foreground">{{ session.user?.username }}</div>
           </div>
         </div>
         <div v-if="session.user?.email" class="flex items-center justify-between px-5 py-4">
           <div>
-            <div class="text-[11px] font-semibold text-muted mb-0.5">{{ t('settings.profile.email') }}</div>
+            <div class="text-caption font-semibold text-muted mb-0.5">{{ t('settings.profile.email') }}</div>
             <div class="text-sm text-foreground">{{ session.user.email }}</div>
           </div>
         </div>
         <div v-if="session.user?.full_name" class="flex items-center justify-between px-5 py-4">
           <div>
-            <div class="text-[11px] font-semibold text-muted mb-0.5">{{ t('settings.profile.fullName') }}</div>
+            <div class="text-caption font-semibold text-muted mb-0.5">{{ t('settings.profile.fullName') }}</div>
             <div class="text-sm text-foreground">{{ session.user.full_name }}</div>
           </div>
         </div>
         <div class="flex items-center justify-between px-5 py-4">
           <div>
-            <div class="text-[11px] font-semibold text-muted mb-0.5">{{ t('settings.profile.role') }}</div>
+            <div class="text-caption font-semibold text-muted mb-0.5">{{ t('settings.profile.role') }}</div>
             <div class="text-sm text-foreground">{{ session.isAdmin ? t('settings.profile.roleAdmin') : t('settings.profile.roleUser') }}</div>
           </div>
         </div>
@@ -86,13 +86,4 @@ const initials = computed(() => {
     .join('')
 })
 
-const avatarStyle = computed(() => {
-  const name = session.user?.username || '?'
-  const seed = name.charCodeAt(0) + (name.charCodeAt(1) || 0)
-  const hues = [210, 280, 340, 25, 160, 195, 45]
-  const hue = hues[seed % hues.length]
-  return {
-    background: `linear-gradient(135deg, hsl(${hue} 65% 50%), hsl(${hue + 30} 65% 40%))`,
-  }
-})
 </script>

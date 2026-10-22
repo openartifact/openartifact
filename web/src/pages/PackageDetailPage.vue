@@ -14,31 +14,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </span>
         <span
           v-if="packages.length > 0 && currentPkg?.version === packages[0]?.version"
-          class="text-[10px] font-medium px-2 py-0.5 rounded-full border border-success/30 text-success bg-success-soft"
+          class="text-micro font-medium px-2 py-0.5 rounded-full border border-success/30 text-success bg-success-soft"
         >
           {{ t('pkg.latest') }}
         </span>
       </template>
       <template v-if="currentPkg" #actions>
-        <!-- Action group -->
-        <div class="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0 shadow-sm">
-          <button
-            class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
-            @click="copyUrl"
-          >
+        <div class="inline-flex items-center gap-2 shrink-0">
+          <AppButton variant="secondary" @click="copyUrl">
             <ClipboardDocumentIcon class="w-4 h-4 text-muted" aria-hidden="true" />
             {{ t('repoDetail.copyUrl') }}
-          </button>
-          <template v-if="session.isAdmin">
-            <div class="w-px h-6 bg-border" />
-            <button
-              class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
-              @click="router.push(`/repos/${repoName}/edit`)"
-            >
-              <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-              {{ t('nav.settings') }}
-            </button>
-          </template>
+          </AppButton>
+          <AppButton v-if="session.isAdmin" variant="secondary" :to="`/repos/${encodeURIComponent(repoName)}/edit`">
+            <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+            {{ t('nav.settings') }}
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -46,9 +36,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="loading" class="text-muted text-sm">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="rounded-xl border border-danger/30 bg-surface p-8 text-center">
       <p class="text-sm text-danger">{{ loadError }}</p>
-      <button class="mt-3 px-3 py-1.5 text-sm rounded-md border border-border hover:bg-surface-hover" @click="load">
+      <AppButton class="mt-3" variant="secondary" size="sm" @click="load">
         {{ t('browser.retry') }}
-      </button>
+      </AppButton>
     </div>
     <EmptyState
       v-else-if="!currentPkg"
@@ -69,16 +59,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- Stats row -->
             <div class="flex items-center gap-5 flex-wrap mt-3.5">
               <div v-if="currentPkg.size" class="leading-tight">
-                <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.size') }}</div>
+                <div class="text-micro text-muted font-semibold">{{ t('packages.column.size') }}</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ formatSize(currentPkg.size) }}</div>
               </div>
               <div v-if="currentPkg.created_at" class="leading-tight">
-                <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.uploaded') }}</div>
+                <div class="text-micro text-muted font-semibold">{{ t('packages.column.uploaded') }}</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums">{{ formatDate(currentPkg.created_at) }}</div>
               </div>
               <div v-if="currentPkg.sha256" class="leading-tight">
-                <div class="text-[10px] text-muted font-semibold">SHA256</div>
-                <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ currentPkg.sha256.slice(0, 12) }}</div>
+                <div class="text-micro text-muted font-semibold">{{ t('packages.column.sha') }}</div>
+                <button
+                  type="button"
+                  class="mt-0.5 text-sm font-medium tabular-nums font-mono text-left hover:text-primary"
+                  :title="`${currentPkg.sha256} — ${t('common.copy')}`"
+                  @click="copySha(currentPkg.sha256)"
+                >{{ currentPkg.sha256.slice(0, 12) }}</button>
               </div>
             </div>
           </div>
@@ -97,7 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ tab.label }}
               <span
                 v-if="tab.key === 'versions' && packages.length > 0"
-                class="text-[10px] font-mono px-1.5 py-0.5 rounded"
+                class="text-micro font-mono px-1.5 py-0.5 rounded"
                 :class="activeTab === 'versions' ? 'bg-primary-soft text-primary' : 'bg-surface-hover text-muted'"
               >
                 {{ packages.length }}
@@ -113,7 +108,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <!-- Pull Command -->
       <div class="bg-surface-hover rounded-lg border border-border p-3 mt-4 flex items-center gap-2">
-        <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
+        <span class="w-2 h-2 rounded-full bg-success shrink-0" />
         <code class="font-mono text-xs text-foreground/90 flex-1 truncate">{{ pullCommand }}</code>
         <button
           @click="copyCommand"
@@ -129,30 +124,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="activeTab === 'overview'" class="mt-6">
         <div class="bg-surface rounded-lg border border-border p-6">
           <div class="space-y-0">
-            <div class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
-              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.name') }}</span>
-              <span class="min-w-0 break-all text-right text-sm text-foreground font-mono">{{ currentPkg.name }}</span>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
-              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.version') }}</span>
-              <span class="min-w-0 break-all text-right text-sm text-foreground font-mono">{{ currentPkg.version }}</span>
-            </div>
-            <div class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
-              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.format') }}</span>
-              <FormatBadge :format="format" />
-            </div>
-            <div v-if="currentPkg.size" class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
-              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.size') }}</span>
-              <span class="text-sm text-foreground font-mono">{{ formatSize(currentPkg.size) }}</span>
-            </div>
-            <div v-if="currentPkg.sha256" class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
+            <div v-if="currentPkg.sha256" class="flex items-center justify-between gap-4 py-2.5">
               <span class="shrink-0 text-sm text-muted">{{ t('packages.column.sha') }}</span>
-              <span class="min-w-0 break-all text-right text-sm text-foreground font-mono">{{ currentPkg.sha256 }}</span>
+              <button
+                type="button"
+                class="min-w-0 break-all text-right text-sm text-foreground font-mono hover:text-primary"
+                :title="t('common.copy')"
+                @click="copySha(currentPkg.sha256)"
+              >{{ currentPkg.sha256 }}</button>
             </div>
-            <div v-if="currentPkg.created_at" class="flex items-center justify-between py-2.5">
-              <span class="text-sm text-muted">{{ t('repoDetail.created') }}</span>
-              <span class="text-sm text-foreground font-mono">{{ formatDate(currentPkg.created_at) }}</span>
-            </div>
+            <p v-else class="text-sm text-muted">{{ t('pkg.overview.noChecksum') }}</p>
           </div>
         </div>
       </div>
@@ -180,8 +161,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     <span class="text-foreground font-mono text-sm">{{ pkg.version }}</span>
                     <span
                       v-if="idx === 0"
-                      class="text-[10px] font-mono px-1.5 py-0.5 rounded bg-primary-soft text-primary"
-                    >latest</span>
+                      class="text-micro font-mono px-1.5 py-0.5 rounded bg-primary-soft text-primary"
+                    >{{ t('pkg.latest') }}</span>
                   </div>
                 </td>
                 <td class="px-4 py-3 text-foreground font-mono text-xs tabular-nums">{{ pkg.size ? formatSize(pkg.size) : '—' }}</td>
@@ -202,19 +183,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <h3 class="text-sm font-semibold text-foreground">{{ t('pkg.props.title') }}</h3>
               <span
                 v-if="Object.keys(properties).length > 0"
-                class="px-1.5 py-0.5 rounded-md bg-surface-hover text-[11px] font-mono font-medium text-muted"
+                class="px-1.5 py-0.5 rounded-md bg-surface-hover text-caption font-mono font-medium text-muted"
               >
                 {{ Object.keys(properties).length }}
               </span>
             </div>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-              @click="addingProp = true"
-            >
-              <PlusIcon class="w-4 h-4" />
+            <AppButton size="sm" @click="addingProp = true">
+              <PlusIcon class="w-4 h-4" aria-hidden="true" />
               {{ t('pkg.props.add') }}
-            </button>
+            </AppButton>
           </div>
 
           <!-- Add property inline form -->
@@ -224,7 +201,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="newPropKey"
                 type="text"
                 :placeholder="t('pkg.props.key')"
-                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="flex-1 px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
                 @keydown.enter="saveNewProp"
                 @keydown.escape="cancelAddProp"
               />
@@ -232,20 +209,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="newPropValue"
                 type="text"
                 :placeholder="t('pkg.props.value')"
-                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="flex-1 px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
                 @keydown.enter="saveNewProp"
                 @keydown.escape="cancelAddProp"
               />
-              <button
-                type="button"
-                :disabled="!newPropKey.trim() || propsSaving"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
+              <AppButton
+                class="shrink-0"
+                size="sm"
+                :loading="propsSaving"
+                :disabled="!newPropKey.trim()"
                 @click="saveNewProp"
               >
-                <ArrowPathIcon v-if="propsSaving" class="w-4 h-4 animate-spin" />
-                <CheckIcon v-else class="w-4 h-4" />
+                <CheckIcon v-if="!propsSaving" class="w-4 h-4" aria-hidden="true" />
                 {{ t('pkg.props.addShort') }}
-              </button>
+              </AppButton>
               <button
                 type="button"
                 class="p-2 rounded-lg text-muted hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
@@ -272,24 +249,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
             <p class="text-sm font-medium text-foreground">{{ t('pkg.props.none') }}</p>
             <p class="text-xs text-muted mt-1 mb-4">{{ t('pkg.props.noneHint') }}</p>
-            <button
-              type="button"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-              @click="addingProp = true"
-            >
-              <PlusIcon class="w-4 h-4" />
+            <AppButton size="sm" @click="addingProp = true">
+              <PlusIcon class="w-4 h-4" aria-hidden="true" />
               {{ t('pkg.props.add') }}
-            </button>
+            </AppButton>
           </div>
 
           <!-- Properties table -->
           <table v-else-if="Object.keys(properties).length > 0" class="w-full">
             <thead>
               <tr class="bg-surface-hover/30">
-                <th class="text-left text-[11px] font-semibold text-muted px-5 py-2.5 w-1/3">
+                <th class="text-left text-caption font-semibold text-muted px-5 py-2.5 w-1/3">
                   {{ t('pkg.props.key') }}
                 </th>
-                <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+                <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
                   {{ t('pkg.props.value') }}
                 </th>
                 <th class="w-10" />
@@ -302,7 +275,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 class="hover:bg-surface-hover/20 transition-colors group"
               >
                 <td class="px-5 py-3">
-                  <span class="font-mono text-[12px] font-medium text-foreground">{{ key }}</span>
+                  <span class="font-mono text-xs font-medium text-foreground">{{ key }}</span>
                 </td>
                 <td class="px-3 py-3">
                   <!-- Inline edit mode -->
@@ -311,7 +284,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       <input
                         v-model="editingValue"
                         type="text"
-                        class="flex-1 px-2 py-1 rounded border border-primary bg-bg text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                        class="flex-1 px-2 py-1 rounded border border-primary bg-bg text-foreground text-sm font-mono focus:ring-2 focus:ring-primary transition-colors"
                         @keydown.enter="saveEditProp(String(key))"
                         @keydown.escape="cancelEditProp"
                         autofocus
@@ -338,7 +311,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <button
                     v-else
                     type="button"
-                    class="font-mono text-[12px] text-foreground/80 hover:text-primary transition-colors text-left w-full truncate"
+                    class="font-mono text-xs text-foreground/80 hover:text-primary transition-colors text-left w-full truncate"
                     :title="t('pkg.props.clickEdit')"
                     @click="startEditProp(String(key), String(value))"
                   >
@@ -399,7 +372,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import PageHeader from '../components/PageHeader.vue'
 import { formatDate, formatDateTime } from '../lib/datetime'
 import { ref, computed, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import {
   ClipboardDocumentIcon,
   ShieldCheckIcon,
@@ -409,7 +382,6 @@ import {
   XMarkIcon,
   TrashIcon,
   TagIcon,
-  ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
 import { getRepository, listPackageVersions } from '../api/repositories'
 import type { Repository, PackageItem } from '../api/repositories'
@@ -420,6 +392,7 @@ import { request, ApiError } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import { listVulnScans, type VulnScan } from '../api/security'
 import { vulnCountsState } from '../lib/scanStatus'
+import AppButton from '../components/AppButton.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 import VulnScanStatus from '../components/VulnScanStatus.vue'
@@ -432,7 +405,6 @@ const tabs = [
 ] as const
 
 const route = useRoute()
-const router = useRouter()
 
 const repoName = computed(() => route.params.name as string)
 const format = computed(() => route.params.format as string)
@@ -642,6 +614,15 @@ async function copyUrl(): Promise<void> {
     toasts.success(t('repoDetail.urlCopied'))
   } catch {
     toasts.error(t('repoDetail.urlCopyFailed'))
+  }
+}
+
+async function copySha(sha: string): Promise<void> {
+  try {
+    await navigator.clipboard.writeText(sha)
+    toasts.success(t('common.copied'))
+  } catch {
+    toasts.error(t('settings.tokens.copyFailed'))
   }
 }
 

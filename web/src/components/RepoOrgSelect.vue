@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <select
       :id="id"
       v-model="model"
-      class="w-full px-3 py-2 border border-border rounded-md text-sm font-mono bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+      class="w-full px-3 py-2 border border-border-strong rounded-md text-sm font-mono bg-bg text-foreground focus:ring-2 focus:ring-primary"
     >
       <option value="">{{ t('repos.org.default') }}</option>
       <option v-for="name in names" :key="name" :value="name">{{ name }}</option>

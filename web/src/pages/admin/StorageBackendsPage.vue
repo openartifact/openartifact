@@ -10,23 +10,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('admin.storage.title')" :description="t('adm.storage.description')">
       <template #actions>
         <div class="flex items-center gap-2 shrink-0">
-          <button
-            type="button"
-            :disabled="testingAll || items.length === 0"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            @click="testAll"
-          >
-            <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': testingAll }" />
+          <AppButton variant="secondary" size="sm" :loading="testingAll" :disabled="items.length === 0" @click="testAll">
+            <ArrowPathIcon v-if="!testingAll" class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.storage.testAll') }}
-          </button>
-          <button
-            type="button"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-            @click="openCreate"
-          >
+          </AppButton>
+          <AppButton size="sm" @click="openCreate">
             <PlusIcon class="w-4 h-4" />
             {{ t('adm.storage.addTitle') }}
-          </button>
+          </AppButton>
         </div>
       </template>
     </PageHeader>
@@ -45,7 +36,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <component :is="tile.icon" class="w-5 h-5" :style="{ color: tile.iconColor }" />
         </div>
         <div class="min-w-0">
-          <p class="text-[10px] font-mono font-semibold text-muted truncate">
+          <p class="text-micro font-mono font-semibold text-muted truncate">
             {{ tile.label }}
           </p>
           <p class="text-xl font-bold tabular-nums text-foreground leading-tight">{{ tile.value }}</p>
@@ -78,7 +69,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Table caption row -->
       <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
         <h2 class="text-sm font-semibold text-foreground">{{ t('adm.storage.stat.configured') }}</h2>
-        <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-[11px] font-mono font-medium text-muted">
+        <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-caption font-mono font-medium text-muted">
           {{ items.length }}
         </span>
       </div>
@@ -90,33 +81,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <p class="text-sm font-medium text-foreground">{{ t('adm.storage.empty') }}</p>
         <p class="text-xs text-muted mt-1 mb-4">{{ t('adm.storage.emptyHint') }}</p>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          @click="openCreate"
-        >
+        <AppButton size="sm" @click="openCreate">
           <PlusIcon class="w-4 h-4" />
           {{ t('adm.storage.addTitle') }}
-        </button>
+        </AppButton>
       </div>
 
       <!-- Data table -->
       <table v-else class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-5 py-2.5">
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-5 py-2.5">
               {{ t('adm.storage.column.name') }}
             </th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('adm.storage.column.type') }}
             </th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('adm.storage.column.location') }}
             </th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('adm.storage.column.status') }}
             </th>
-            <th scope="col" class="text-right text-[11px] font-semibold text-muted px-5 py-2.5">
+            <th scope="col" class="text-right text-caption font-semibold text-muted px-5 py-2.5">
               {{ t('adm.storage.column.actions') }}
             </th>
           </tr>
@@ -141,13 +128,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   />
                 </div>
                 <div class="flex items-center gap-1.5 min-w-0">
-                  <span class="font-mono text-[13px] font-medium text-foreground">{{ backend.name }}</span>
+                  <span class="font-mono text-ui font-medium text-foreground">{{ backend.name }}</span>
                   <span
                     v-if="backend.is_default"
-                    class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-primary-soft text-primary text-[10px] font-semibold shrink-0"
+                    class="inline-flex items-center gap-0.5 px-1.5 py-0.5 rounded-md bg-primary-soft text-primary text-micro font-semibold shrink-0"
                   >
                     <StarIcon class="w-2.5 h-2.5" />
-                    default
+                    {{ t('adm.storage.defaultBadge') }}
                   </span>
                 </div>
               </div>
@@ -168,7 +155,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     class="w-3.5 h-3.5"
                     :style="{ color: typeColor(backend.kind) }"
                   />
-                  <span class="font-mono text-[11px] font-medium text-foreground whitespace-nowrap">
+                  <span class="font-mono text-caption font-medium text-foreground whitespace-nowrap">
                     {{ typeMeta(backend.kind)?.label ?? backend.kind }}
                   </span>
                 </span>
@@ -177,7 +164,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Location cell -->
             <td class="px-3 py-3.5 max-w-[260px]">
-              <span class="font-mono text-[12px] text-foreground/80 truncate block max-w-[260px]">
+              <span class="font-mono text-xs text-foreground/80 truncate block max-w-[260px]">
                 {{ locationSummary(backend) }}
               </span>
             </td>
@@ -186,13 +173,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <td class="px-3 py-3.5">
               <div>
                 <span
-                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium"
+                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium"
                   :class="statusBadgeClass(backend.status)"
                 >
                   <span class="w-1.5 h-1.5 rounded-full" :class="statusDotClass(backend.status)" />
                   {{ statusLabel(backend.status) }}
                 </span>
-                <p v-if="backend.last_checked_at" class="text-[10px] text-muted font-mono mt-0.5 whitespace-nowrap">
+                <p v-if="backend.last_checked_at" class="text-micro text-muted font-mono mt-0.5 whitespace-nowrap">
                   {{ t('adm.storage.checked') }} {{ timeAgo(backend.last_checked_at) }}
                 </p>
               </div>
@@ -266,17 +253,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- Name -->
             <div>
               <label class="block text-xs font-semibold text-foreground mb-1.5">
-                Name <span class="text-danger ml-0.5">*</span>
+                {{ t('adm.storage.field.name') }} <span class="text-danger ml-0.5">*</span>
               </label>
               <input
                 v-model="form.name"
                 type="text"
                 :disabled="drawerMode === 'edit'"
-                placeholder="e.g. primary-storage"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                :placeholder="t('adm.storage.field.namePlaceholder')"
+                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               />
-              <p v-if="drawerMode === 'edit'" class="text-[11px] text-muted mt-1 font-mono">
-                Name cannot be changed after creation.
+              <p v-if="drawerMode === 'edit'" class="text-caption text-muted mt-1 font-mono">
+                {{ t('adm.storage.field.nameLocked') }}
               </p>
             </div>
 
@@ -284,10 +271,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div>
               <div class="flex items-baseline gap-2 mb-2">
                 <label class="text-xs font-semibold text-foreground">
-                  Backend type <span class="text-danger ml-0.5">*</span>
+                  {{ t('adm.storage.field.backendType') }} <span class="text-danger ml-0.5">*</span>
                 </label>
-                <span v-if="drawerMode === 'edit'" class="text-[11px] text-muted font-mono">
-                  (locked after creation)
+                <span v-if="drawerMode === 'edit'" class="text-caption text-muted font-mono">
+                  {{ t('adm.storage.field.typeLocked') }}
                 </span>
               </div>
               <div class="grid grid-cols-2 gap-2">
@@ -296,7 +283,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   :key="key"
                   type="button"
                   :disabled="drawerMode === 'edit'"
-                  class="relative text-left p-3 rounded-lg border overflow-hidden transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  class="relative text-left p-3 rounded-lg border overflow-hidden transition-all focus-visible:ring-2 focus-visible:ring-primary"
                   :class="[
                     form.kind === key
                       ? 'border-primary bg-primary-soft/40 ring-1 ring-primary/30'
@@ -308,18 +295,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <!-- Accent bar -->
                   <span
                     class="absolute left-0 top-0 bottom-0 w-[3px] rounded-l-lg"
-                    :style="{ background: bt.color }"
+                    :style="{ background: typeColor(String(key)) }"
                   />
                   <div class="pl-3 flex items-start gap-2.5">
                     <div
                       class="w-7 h-7 rounded-md flex items-center justify-center shrink-0 mt-0.5"
-                      :style="{ background: bt.color + '20' }"
+                      :style="{ background: tint(typeColor(String(key)), 12) }"
                     >
-                      <component :is="typeIcon(key)" class="w-4 h-4" :style="{ color: bt.color }" />
+                      <component :is="typeIcon(key)" class="w-4 h-4" :style="{ color: typeColor(String(key)) }" />
                     </div>
                     <div class="min-w-0">
-                      <p class="text-[12px] font-semibold text-foreground leading-tight">{{ bt.label }}</p>
-                      <p class="text-[11px] text-muted leading-snug mt-0.5">{{ bt.desc }}</p>
+                      <p class="text-xs font-semibold text-foreground leading-tight">{{ bt.label }}</p>
+                      <p class="text-caption text-muted leading-snug mt-0.5">{{ bt.desc }}</p>
                     </div>
                   </div>
                 </button>
@@ -337,28 +324,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       <div class="flex items-center justify-between py-1.5">
                         <div class="min-w-0 pr-3">
                           <p class="text-xs font-semibold text-foreground">{{ field.label }}</p>
-                          <p v-if="field.hint" class="text-[11px] text-muted mt-0.5">{{ field.hint }}</p>
+                          <p v-if="field.hint" class="text-caption text-muted mt-0.5">{{ field.hint }}</p>
                         </div>
-                        <button
-                          type="button"
-                          role="switch"
-                          :aria-checked="!!form.config[field.key]"
-                          class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                          :class="form.config[field.key] ? 'bg-primary' : 'bg-border'"
-                          @click="form.config[field.key] = !form.config[field.key]"
-                        >
-                          <span
-                            class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-                            :class="form.config[field.key] ? 'translate-x-4' : 'translate-x-0.5'"
-                          />
-                        </button>
+                        <AppToggle
+                          size="sm"
+                          :label="field.label"
+                          :model-value="!!form.config[field.key]"
+                          @update:model-value="form.config[field.key] = $event"
+                        />
                       </div>
                     </template>
 
                     <!-- Segmented control -->
                     <template v-else-if="field.type === 'segmented'">
                       <label class="block text-xs font-semibold text-foreground mb-1.5">{{ field.label }}</label>
-                      <div class="inline-flex p-0.5 rounded-lg bg-surface-hover border border-border">
+                      <div class="inline-flex p-0.5 rounded-lg bg-surface-hover border border-border-strong">
                         <button
                           v-for="opt in field.options"
                           :key="opt.v"
@@ -386,10 +366,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         v-model="(form.config[field.key] as string)"
                         :placeholder="field.placeholder"
                         :rows="field.rows ?? 4"
-                        class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors"
-                        :class="field.mono ? 'font-mono text-[12px]' : ''"
+                        class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm placeholder:text-muted focus:ring-2 focus:ring-primary resize-none transition-colors"
+                        :class="field.mono ? 'font-mono text-xs' : ''"
                       />
-                      <p v-if="field.hint" class="text-[11px] text-muted mt-1">{{ field.hint }}</p>
+                      <p v-if="field.hint" class="text-caption text-muted mt-1">{{ field.hint }}</p>
                     </template>
 
                     <!-- Text / Secret -->
@@ -406,9 +386,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                             : 'text'"
                           :placeholder="field.type === 'secret' && form.config['has_' + field.key] ? t('adm.storage.secretStored') : field.placeholder"
                           :aria-label="field.label"
-                          class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                          class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
                           :class="[
-                            field.mono ? 'font-mono text-[12px]' : '',
+                            field.mono ? 'font-mono text-xs' : '',
                             field.type === 'secret' ? 'pr-12' : '',
                           ]"
                         />
@@ -417,13 +397,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                           type="button"
                           :aria-label="`${revealedSecrets[field.key] ? t('adm.ai.hideKey') : t('adm.ai.showKey')}: ${field.label}`"
                           :aria-pressed="!!revealedSecrets[field.key]"
-                          class="absolute right-2.5 top-1/2 -translate-y-1/2 text-[11px] font-medium text-muted hover:text-foreground transition-colors"
+                          class="absolute right-2.5 top-1/2 -translate-y-1/2 text-caption font-medium text-muted hover:text-foreground transition-colors"
                           @click="revealedSecrets[field.key] = !revealedSecrets[field.key]"
                         >
                           {{ revealedSecrets[field.key] ? t('adm.ai.hide') : t('adm.ai.show') }}
                         </button>
                       </div>
-                      <p v-if="field.hint" class="text-[11px] text-muted mt-1">{{ field.hint }}</p>
+                      <p v-if="field.hint" class="text-caption text-muted mt-1">{{ field.hint }}</p>
                     </template>
                   </div>
                 </template>
@@ -432,24 +412,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Set as default toggle -->
             <div class="flex items-start gap-3 p-3.5 rounded-lg border border-border bg-surface-hover/30">
-              <button
-                type="button"
-                role="switch"
-                :aria-checked="form.is_default"
-                class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 mt-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                :class="form.is_default ? 'bg-primary' : 'bg-border'"
-                @click="form.is_default = !form.is_default"
-              >
-                <span
-                  class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-                  :class="form.is_default ? 'translate-x-4' : 'translate-x-0.5'"
-                />
-              </button>
+              <AppToggle v-model="form.is_default" size="sm" :label="t('storage.setDefault')" class="mt-0.5" />
               <div>
                 <p class="text-xs font-semibold text-foreground">{{ t('storage.setDefault') }}</p>
-                <p class="text-[11px] text-muted mt-0.5 leading-relaxed">
+                <p class="text-caption text-muted mt-0.5 leading-relaxed">
                   {{ t('storage.setDefaultHint') }}
-                  Only one backend can be default at a time.
+                  {{ t('adm.storage.onlyOneDefault') }}
                 </p>
               </div>
             </div>
@@ -466,9 +434,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <ExclamationCircleIcon v-else class="w-4 h-4 mt-0.5 shrink-0" />
               <div class="min-w-0">
                 <p class="text-xs font-semibold">
-                  {{ testResult.ok ? 'Connection successful' : 'Connection failed' }}
+                  {{ testResult.ok ? t('adm.storage.testOk') : t('adm.storage.testFailed') }}
                 </p>
-                <p v-if="testResult.message" class="text-[11px] mt-0.5 font-mono break-all">
+                <p v-if="testResult.message" class="text-caption mt-0.5 font-mono break-all">
                   {{ testResult.message }}
                 </p>
               </div>
@@ -476,44 +444,33 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
 
           <template #footer>
-            <button
-              type="button"
-              :disabled="drawerMode === 'create' || !form.name || testingDrawer"
-              class="mr-auto inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            <AppButton
+              variant="secondary"
+              :loading="testingDrawer"
+              :disabled="drawerMode === 'create' || !form.name"
+              class="mr-auto"
               :title="drawerMode === 'create' ? t('adm.storage.saveFirst') : t('adm.storage.testSaved')"
               @click="testDrawer"
             >
-              <ArrowPathIcon v-if="testingDrawer" class="w-4 h-4 animate-spin" aria-hidden="true" />
-              <BoltIcon v-else class="w-4 h-4" aria-hidden="true" />
+              <BoltIcon v-if="!testingDrawer" class="w-4 h-4" aria-hidden="true" />
               {{ t('adm.storage.testConnection') }}
-            </button>
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-              @click="closeDrawer"
-            >
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              :disabled="savingDrawer || !form.name || !form.kind"
-              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              @click="saveDrawer"
-            >
-              <ArrowPathIcon v-if="savingDrawer" class="w-4 h-4 animate-spin" aria-hidden="true" />
+            </AppButton>
+            <AppButton variant="ghost" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
+            <AppButton :loading="savingDrawer" :disabled="!form.name || !form.kind" @click="saveDrawer">
               {{ drawerMode === 'create' ? t('adm.storage.createAction') : t('adm.orgs.saveAction') }}
-            </button>
+            </AppButton>
           </template>
     </AdminDialog>
 
-    <!-- ═══════════════════════════════════════════════════════════════════════
-         DELETE CONFIRMATION MODAL
-    ════════════════════════════════════════════════════════════════════════════ -->
-    <AdminDialog
+    <ConfirmDialog
       :open="!!deleteTarget"
-      max-width="max-w-md"
       :title="t('adm.storage.deleteTitle')"
       :description="t('adm.orgs.deleteHint')"
+      :confirm-label="t('adm.storage.deleteAction')"
+      :cancel-label="t('common.cancel')"
+      :busy="deleting"
+      :confirm-disabled="!deleteTarget || deleteConfirmName !== deleteTarget.name"
+      @confirm="confirmDelete"
       @close="cancelDelete"
     >
           <div v-if="deleteTarget" class="space-y-4">
@@ -523,7 +480,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <ExclamationCircleIcon class="w-4 h-4 text-danger mt-0.5 shrink-0" aria-hidden="true" />
                 <div>
                   <p class="text-xs font-semibold text-danger">{{ t('adm.storage.deleteWarnTitle') }}</p>
-                  <p class="text-[11px] text-danger/80 mt-0.5 leading-relaxed">{{ t('adm.storage.deleteWarnBody') }}</p>
+                  <p class="text-caption text-danger mt-0.5 leading-relaxed">{{ t('adm.storage.deleteWarnBody') }}</p>
                 </div>
               </div>
             </div>
@@ -541,12 +498,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     class="w-3.5 h-3.5"
                     :style="{ color: typeColor(deleteTarget.kind) }"
                   />
-                  <span class="font-mono text-[11px] font-medium text-foreground">
+                  <span class="font-mono text-caption font-medium text-foreground">
                     {{ typeMeta(deleteTarget.kind)?.label }}
                   </span>
                 </span>
               </span>
-              <span class="font-mono text-[12px] text-muted truncate">
+              <span class="font-mono text-xs text-muted truncate">
                 {{ locationSummary(deleteTarget) }}
               </span>
             </div>
@@ -562,30 +519,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="deleteConfirmName"
                 type="text"
                 :placeholder="deleteTarget.name"
-                class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 transition-colors border-border focus:ring-danger"
+                class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 transition-colors border-border-strong focus:ring-danger"
               />
             </div>
           </div>
-          <template #footer>
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-              @click="cancelDelete"
-            >
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              :disabled="!deleteTarget || deleteConfirmName !== deleteTarget.name || deleting"
-              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-              @click="confirmDelete"
-            >
-              <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" aria-hidden="true" />
-              <TrashIcon v-else class="w-4 h-4" aria-hidden="true" />
-              {{ t('adm.storage.deleteAction') }}
-            </button>
-          </template>
-    </AdminDialog>
+    </ConfirmDialog>
   </div>
 </template>
 
@@ -602,6 +540,10 @@ import {
   type StorageBackend as StorageApi,
 } from '../../api/storage'
 import { useToastStore } from '../../stores/toast'
+import AppButton from '../../components/AppButton.vue'
+import AppToggle from '../../components/AppToggle.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import { storageBackendColor, tint } from '../../lib/brandColors'
 import AdminDialog from '../../components/AdminDialog.vue'
 import { t } from '../../i18n/en'
 import {
@@ -651,47 +593,45 @@ interface FieldDef {
 interface BackendType {
   label: string
   desc: string
-  color: string
   fields: FieldDef[]
   summary: (c: Record<string, unknown>) => string
 }
 
 // ─── Backend Type Registry ─────────────────────────────────────────────────────
 
-const BACKEND_TYPES: Record<string, BackendType> = {
+function buildBackendTypes(): Record<string, BackendType> {
+  return {
   filesystem: {
-    label: 'Local Filesystem',
-    desc: 'Path on the server disk.',
-    color: '#64748b',
+    label: t('adm.storage.type.filesystem.label'),
+    desc: t('adm.storage.type.filesystem.desc'),
     fields: [
       {
         key: 'path',
-        label: 'Path',
+        label: t('adm.storage.field.path'),
         type: 'text',
         placeholder: '/var/lib/openartifact/storage',
         mono: true,
         required: true,
-        hint: 'Absolute path. Must be writable.',
+        hint: t('adm.storage.field.pathHint'),
       },
     ],
     summary: (c) => (c.path as string) || '',
   },
   s3: {
     label: 'S3 / S3-Compatible',
-    desc: 'AWS S3, MinIO, Ceph RGW, Backblaze B2.',
-    color: '#f59e0b',
+    desc: t('adm.storage.type.s3.desc'),
     fields: [
       {
         key: 'endpoint',
-        label: 'Endpoint',
+        label: t('adm.storage.field.endpoint'),
         type: 'text',
         placeholder: 'https://s3.amazonaws.com',
         mono: true,
-        hint: 'Leave default for AWS S3.',
+        hint: t('adm.storage.field.endpointHint'),
       },
       {
         key: 'bucket',
-        label: 'Bucket',
+        label: t('adm.storage.field.bucket'),
         type: 'text',
         placeholder: 'oa-prod-artifacts',
         mono: true,
@@ -699,7 +639,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'region',
-        label: 'Region',
+        label: t('adm.storage.field.region'),
         type: 'text',
         placeholder: 'eu-west-1',
         mono: true,
@@ -708,14 +648,14 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'pathStyle',
-        label: 'Path-style URLs',
+        label: t('adm.storage.field.pathStyle'),
         type: 'toggle',
         half: true,
-        hint: 'Required for MinIO/Ceph.',
+        hint: t('adm.storage.field.pathStyleHint'),
       },
       {
         key: 'accessKey',
-        label: 'Access key ID',
+        label: t('adm.storage.field.accessKey'),
         type: 'text',
         placeholder: 'AKIA…',
         mono: true,
@@ -723,7 +663,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'secretKey',
-        label: 'Secret access key',
+        label: t('adm.storage.field.secretKey'),
         type: 'secret',
         placeholder: '••••••••',
         mono: true,
@@ -734,12 +674,11 @@ const BACKEND_TYPES: Record<string, BackendType> = {
   },
   gcs: {
     label: 'Google Cloud Storage',
-    desc: 'GCS bucket with service-account credentials.',
-    color: '#4285f4',
+    desc: t('adm.storage.type.gcs.desc'),
     fields: [
       {
         key: 'project',
-        label: 'Project ID',
+        label: t('adm.storage.field.project'),
         type: 'text',
         placeholder: 'my-org-prod',
         mono: true,
@@ -748,7 +687,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'bucket',
-        label: 'Bucket',
+        label: t('adm.storage.field.bucket'),
         type: 'text',
         placeholder: 'oa-artifacts',
         mono: true,
@@ -757,13 +696,13 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'creds',
-        label: 'Service account JSON',
+        label: t('adm.storage.field.creds'),
         type: 'textarea',
         rows: 5,
         mono: true,
         required: true,
         placeholder: '{ "type": "service_account", ... }',
-        hint: 'Paste the full JSON key.',
+        hint: t('adm.storage.field.credsHint'),
       },
     ],
     summary: (c) =>
@@ -771,22 +710,21 @@ const BACKEND_TYPES: Record<string, BackendType> = {
   },
   azure: {
     label: 'Azure Blob Storage',
-    desc: 'Azure storage account, container.',
-    color: '#0078d4',
+    desc: t('adm.storage.type.azure.desc'),
     fields: [
       {
         key: 'authMode',
-        label: 'Auth mode',
+        label: t('adm.storage.field.authMode'),
         type: 'segmented',
         options: [
-          { v: 'key', label: 'Account key' },
-          { v: 'conn', label: 'Connection string' },
+          { v: 'key', label: t('adm.storage.field.authMode.key') },
+          { v: 'conn', label: t('adm.storage.field.authMode.conn') },
         ],
         default: 'key',
       },
       {
         key: 'account',
-        label: 'Account name',
+        label: t('adm.storage.field.account'),
         type: 'text',
         placeholder: 'oaprodstorage',
         mono: true,
@@ -796,7 +734,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'container',
-        label: 'Container',
+        label: t('adm.storage.field.container'),
         type: 'text',
         placeholder: 'artifacts',
         mono: true,
@@ -805,7 +743,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'accountKey',
-        label: 'Account key',
+        label: t('adm.storage.field.accountKey'),
         type: 'secret',
         placeholder: '••••••••',
         mono: true,
@@ -814,7 +752,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'connStr',
-        label: 'Connection string',
+        label: t('adm.storage.field.connStr'),
         type: 'secret',
         placeholder: 'DefaultEndpointsProtocol=https;…',
         mono: true,
@@ -827,21 +765,20 @@ const BACKEND_TYPES: Record<string, BackendType> = {
   },
   garage: {
     label: 'Garage',
-    desc: 'Self-hosted geo-distributed object storage',
-    color: '#f97316',
+    desc: t('adm.storage.type.garage.desc'),
     fields: [
       {
         key: 'endpoint',
-        label: 'Endpoint',
+        label: t('adm.storage.field.endpoint'),
         type: 'text',
         placeholder: 'https://garage.example.com',
         mono: true,
         required: true,
-        hint: 'HTTP(S) endpoint of your Garage node.',
+        hint: t('adm.storage.field.endpointHint.garage'),
       },
       {
         key: 'bucket',
-        label: 'Bucket',
+        label: t('adm.storage.field.bucket'),
         type: 'text',
         placeholder: 'oa-artifacts',
         mono: true,
@@ -850,7 +787,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'region',
-        label: 'Region',
+        label: t('adm.storage.field.region'),
         type: 'text',
         placeholder: 'garage',
         mono: true,
@@ -860,7 +797,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'accessKey',
-        label: 'Access key ID',
+        label: t('adm.storage.field.accessKey'),
         type: 'text',
         placeholder: 'GKabcdef…',
         mono: true,
@@ -868,7 +805,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'secretKey',
-        label: 'Secret access key',
+        label: t('adm.storage.field.secretKey'),
         type: 'secret',
         placeholder: '••••••••',
         mono: true,
@@ -879,21 +816,20 @@ const BACKEND_TYPES: Record<string, BackendType> = {
   },
   seaweedfs: {
     label: 'SeaweedFS',
-    desc: 'Distributed blob store with O(1) disk access',
-    color: '#8b5cf6',
+    desc: t('adm.storage.type.seaweedfs.desc'),
     fields: [
       {
         key: 'endpoint',
-        label: 'Endpoint',
+        label: t('adm.storage.field.endpoint'),
         type: 'text',
         placeholder: 'https://seaweedfs.example.com',
         mono: true,
         required: true,
-        hint: 'SeaweedFS S3 gateway endpoint.',
+        hint: t('adm.storage.field.endpointHint.seaweedfs'),
       },
       {
         key: 'bucket',
-        label: 'Bucket',
+        label: t('adm.storage.field.bucket'),
         type: 'text',
         placeholder: 'oa-artifacts',
         mono: true,
@@ -902,7 +838,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'region',
-        label: 'Region',
+        label: t('adm.storage.field.region'),
         type: 'text',
         placeholder: 'us-east-1',
         mono: true,
@@ -912,7 +848,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'accessKey',
-        label: 'Access key ID',
+        label: t('adm.storage.field.accessKey'),
         type: 'text',
         placeholder: 'admin',
         mono: true,
@@ -920,7 +856,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'secretKey',
-        label: 'Secret access key',
+        label: t('adm.storage.field.secretKey'),
         type: 'secret',
         placeholder: '••••••••',
         mono: true,
@@ -930,22 +866,21 @@ const BACKEND_TYPES: Record<string, BackendType> = {
     summary: (c) => `${(c.bucket as string) || 'bucket'} · ${(c.endpoint as string) || 'endpoint'}`,
   },
   oci: {
-    label: 'OCI Registry',
-    desc: 'OCI Distribution Spec v1.1 compliant registry',
-    color: '#ec4899',
+    label: t('adm.storage.type.oci.label'),
+    desc: t('adm.storage.type.oci.desc'),
     fields: [
       {
         key: 'endpoint',
-        label: 'Endpoint',
+        label: t('adm.storage.field.endpoint'),
         type: 'text',
         placeholder: 'registry.example.com',
         mono: true,
         required: true,
-        hint: 'Hostname (and optional port) of the OCI registry.',
+        hint: t('adm.storage.field.endpointHint.oci'),
       },
       {
         key: 'bucket',
-        label: 'Repository',
+        label: t('adm.storage.field.bucket.oci'),
         type: 'text',
         placeholder: 'org/artifacts',
         mono: true,
@@ -953,7 +888,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'username',
-        label: 'Username',
+        label: t('adm.storage.field.username'),
         type: 'text',
         placeholder: 'robot$push',
         mono: true,
@@ -961,7 +896,7 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'password',
-        label: 'Password / Token',
+        label: t('adm.storage.field.password'),
         type: 'secret',
         placeholder: '••••••••',
         mono: true,
@@ -969,14 +904,17 @@ const BACKEND_TYPES: Record<string, BackendType> = {
       },
       {
         key: 'insecure',
-        label: 'Allow insecure HTTP',
+        label: t('adm.storage.field.insecure'),
         type: 'toggle',
-        hint: 'Disable TLS verification (not recommended for production).',
+        hint: t('adm.storage.field.insecureHint'),
       },
     ],
     summary: (c) => `${(c.bucket as string) || 'repository'} · ${(c.endpoint as string) || 'endpoint'}`,
   },
+  }
 }
+
+const BACKEND_TYPES = computed(buildBackendTypes)
 
 // ─── Reactive State ────────────────────────────────────────────────────────────
 
@@ -1046,12 +984,12 @@ const statTiles = computed(() => [
 ])
 
 const visibleFields = computed<FieldDef[]>(() => {
-  if (!form.kind || !BACKEND_TYPES[form.kind]) return []
-  return BACKEND_TYPES[form.kind].fields.filter((field) => {
+  if (!form.kind || !BACKEND_TYPES.value[form.kind]) return []
+  return BACKEND_TYPES.value[form.kind].fields.filter((field) => {
     if (!field.when) return true
     return Object.entries(field.when).every(([k, v]) => {
       const cfgVal = form.config[k]
-      const fieldDef = BACKEND_TYPES[form.kind].fields.find((f) => f.key === k)
+      const fieldDef = BACKEND_TYPES.value[form.kind].fields.find((f) => f.key === k)
       const actual = cfgVal ?? fieldDef?.default
       return actual === v
     })
@@ -1061,16 +999,15 @@ const visibleFields = computed<FieldDef[]>(() => {
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 function typeMeta(kind: string): BackendType | undefined {
-  return BACKEND_TYPES[kind]
+  return BACKEND_TYPES.value[kind]
 }
 
 function typeColor(kind: string): string {
-  return BACKEND_TYPES[kind]?.color ?? '#6b7280'
+  return storageBackendColor(kind)
 }
 
 function typeColorBg(kind: string): string {
-  // Hex color with ~10% opacity
-  return typeColor(kind) + '1a'
+  return tint(typeColor(kind), 10)
 }
 
 function typeIcon(kind: string): Component {
@@ -1078,7 +1015,7 @@ function typeIcon(kind: string): Component {
 }
 
 function locationSummary(b: StorageBackend): string {
-  const meta = BACKEND_TYPES[b.kind]
+  const meta = BACKEND_TYPES.value[b.kind]
   return meta ? meta.summary(b.config as Record<string, unknown>) : ''
 }
 

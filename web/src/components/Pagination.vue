@@ -10,29 +10,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       {{ t('pagination.showing') }} {{ from }}–{{ to }} {{ t('pagination.of') }} {{ total }}
     </span>
     <div class="flex gap-2">
-      <button
-        type="button"
-        class="px-3 py-1 text-sm rounded border border-border bg-surface text-foreground disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary"
+      <AppButton
+        variant="secondary"
+        size="sm"
         :disabled="page <= 1"
         :aria-label="t('pagination.previous')"
         @click="emit('change', page - 1)"
       >
         {{ t('pagination.previous') }}
-      </button>
-      <button
-        type="button"
-        class="px-3 py-1 text-sm rounded border border-border bg-surface text-foreground disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-surface-hover focus-visible:ring-2 focus-visible:ring-primary"
+      </AppButton>
+      <AppButton
+        variant="secondary"
+        size="sm"
         :disabled="page * limit >= total"
         :aria-label="t('pagination.next')"
         @click="emit('change', page + 1)"
       >
         {{ t('pagination.next') }}
-      </button>
+      </AppButton>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from './AppButton.vue'
 import { computed } from 'vue'
 import { t } from '../i18n/en'
 

@@ -35,12 +35,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div>
         <div class="flex items-center justify-between mb-1.5">
           <h3 class="text-xs font-medium text-muted">{{ t('repoDetail.connect.configure') }}</h3>
-          <button
-            class="text-xs px-2 py-1 rounded-md border border-border text-foreground hover:bg-surface-hover"
+          <AppButton variant="secondary" size="xs"
             @click="copy(current.configure)"
           >
             {{ t('repoDetail.copy') }}
-          </button>
+          </AppButton>
         </div>
         <pre class="rounded-md border border-border bg-surface-hover p-3 text-xs font-mono text-foreground whitespace-pre-wrap break-all">{{ current.configure }}</pre>
       </div>
@@ -48,12 +47,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="current.publish">
         <div class="flex items-center justify-between mb-1.5">
           <h3 class="text-xs font-medium text-muted">{{ t('repoDetail.connect.publish') }}</h3>
-          <button
-            class="text-xs px-2 py-1 rounded-md border border-border text-foreground hover:bg-surface-hover"
+          <AppButton variant="secondary" size="xs"
             @click="copy(current.publish)"
           >
             {{ t('repoDetail.copy') }}
-          </button>
+          </AppButton>
         </div>
         <pre class="rounded-md border border-border bg-surface-hover p-3 text-xs font-mono text-foreground whitespace-pre-wrap break-all">{{ current.publish }}</pre>
       </div>
@@ -63,6 +61,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
+import AppButton from './AppButton.vue'
 import { clientSetup } from '../lib/installCommands'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'

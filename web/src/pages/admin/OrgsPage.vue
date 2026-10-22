@@ -9,14 +9,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- PageHead -->
     <PageHeader :title="t('adm.orgs.title')" :description="t('adm.orgs.description')">
       <template #actions>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          @click="openCreate"
-        >
+        <AppButton variant="primary" size="sm" @click="openCreate">
           <PlusIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('adm.orgs.new') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -35,7 +31,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <BuildingOfficeIcon class="w-5 h-5 text-primary" aria-hidden="true" />
         </div>
         <div class="min-w-0">
-          <p class="text-[10px] font-mono font-semibold text-muted truncate">{{ t('adm.orgs.stat.orgs') }}</p>
+          <p class="text-micro font-mono font-semibold text-muted truncate">{{ t('adm.orgs.stat.orgs') }}</p>
           <p class="text-xl font-bold tabular-nums text-foreground leading-tight">{{ items.length }}</p>
         </div>
       </div>
@@ -44,7 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <UsersIcon class="w-5 h-5 text-success" aria-hidden="true" />
         </div>
         <div class="min-w-0">
-          <p class="text-[10px] font-mono font-semibold text-muted truncate">{{ t('adm.orgs.stat.memberships') }}</p>
+          <p class="text-micro font-mono font-semibold text-muted truncate">{{ t('adm.orgs.stat.memberships') }}</p>
           <p class="text-xl font-bold tabular-nums text-foreground leading-tight">{{ totalMembers }}</p>
         </div>
       </div>
@@ -70,7 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-else class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-5 py-4 flex items-center gap-2 border-b border-border">
         <h2 class="text-sm font-semibold text-foreground">{{ t('adm.orgs.title') }}</h2>
-        <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-[11px] font-mono font-medium text-muted">
+        <span class="px-1.5 py-0.5 rounded-md bg-surface-hover text-caption font-mono font-medium text-muted">
           {{ items.length }}
         </span>
       </div>
@@ -81,24 +77,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <p class="text-sm font-medium text-foreground">{{ t('adm.orgs.empty') }}</p>
         <p class="text-xs text-muted mt-1 mb-4">{{ t('adm.orgs.emptyHint') }}</p>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          @click="openCreate"
-        >
+        <AppButton variant="primary" size="sm" @click="openCreate">
           <PlusIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('adm.orgs.new') }}
-        </button>
+        </AppButton>
       </div>
 
       <table v-else class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-5 py-2.5">{{ t('adm.orgs.column.name') }}</th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.members') }}</th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.memberRole') }}</th>
-            <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.created') }}</th>
-            <th scope="col" class="text-right text-[11px] font-semibold text-muted px-5 py-2.5">{{ t('common.actions') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-5 py-2.5">{{ t('adm.orgs.column.name') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.members') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.memberRole') }}</th>
+            <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.created') }}</th>
+            <th scope="col" class="text-right text-caption font-semibold text-muted px-5 py-2.5">{{ t('common.actions') }}</th>
           </tr>
         </thead>
         <tbody class="divide-y divide-border">
@@ -109,8 +101,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <BuildingOfficeIcon class="w-4 h-4 text-primary" aria-hidden="true" />
                 </div>
                 <div class="min-w-0">
-                  <p class="font-mono text-[13px] font-medium text-foreground truncate">{{ org.name }}</p>
-                  <p v-if="org.display_name && org.display_name !== org.name" class="text-[11px] text-muted truncate">
+                  <p class="font-mono text-ui font-medium text-foreground truncate">{{ org.name }}</p>
+                  <p v-if="org.display_name && org.display_name !== org.name" class="text-caption text-muted truncate">
                     {{ org.display_name }}
                   </p>
                 </div>
@@ -189,9 +181,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="text"
             required
             placeholder="my-org"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
           />
-          <p class="text-[11px] text-muted mt-1 font-mono">{{ t('adm.orgs.field.nameHint') }}</p>
+          <p class="text-caption text-muted mt-1 font-mono">{{ t('adm.orgs.field.nameHint') }}</p>
         </div>
         <div>
           <label for="org-display-name" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.orgs.field.displayName') }}</label>
@@ -199,7 +191,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             id="org-display-name"
             v-model="orgForm.display_name"
             type="text"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
           />
         </div>
         <div>
@@ -207,11 +199,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <select
             id="org-member-role"
             v-model="orgForm.member_role"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono focus:ring-2 focus:ring-primary transition-colors"
           >
             <option v-for="level in MEMBER_ROLES" :key="level" :value="level">{{ t(`adm.orgs.memberRole.${level}`) }}</option>
           </select>
-          <p class="text-[11px] text-muted mt-1">{{ t('adm.orgs.field.memberRoleHint') }}</p>
+          <p class="text-caption text-muted mt-1">{{ t('adm.orgs.field.memberRoleHint') }}</p>
         </div>
         <div>
           <label for="org-description" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.orgs.field.description') }}</label>
@@ -219,7 +211,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             id="org-description"
             v-model="orgForm.description"
             rows="3"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm placeholder:text-muted focus:ring-2 focus:ring-primary resize-none transition-colors"
           />
         </div>
       </form>
@@ -231,15 +223,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         >
           {{ t('common.cancel') }}
         </button>
-        <button
-          type="submit"
-          form="org-form"
-          :disabled="orgSaving || (orgDrawerMode === 'create' && !orgForm.name.trim())"
-          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-        >
-          <ArrowPathIcon v-if="orgSaving" class="w-4 h-4 animate-spin" aria-hidden="true" />
+        <AppButton variant="primary" size="sm" type="submit" form="org-form" :loading="orgSaving" :disabled="(orgDrawerMode === 'create' && !orgForm.name.trim())">
           {{ orgDrawerMode === 'create' ? t('adm.orgs.createAction') : t('adm.orgs.saveAction') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
 
@@ -259,7 +245,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <select
               v-model="newMemberUserId"
               :aria-label="t('adm.orgs.field.user')"
-              class="flex-1 min-w-0 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+              class="flex-1 min-w-0 px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono focus:ring-2 focus:ring-primary transition-colors"
             >
               <option value="">{{ t('adm.orgs.selectUser') }}</option>
               <option v-for="u in availableUsers" :key="u.id" :value="u.id">{{ u.username }}</option>
@@ -267,19 +253,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <select
               v-model="newMemberRole"
               :aria-label="t('adm.orgs.field.role')"
-              class="px-2.5 py-2 rounded-lg border border-border bg-bg text-foreground text-sm focus:outline-none focus:ring-2 focus:ring-primary shrink-0"
+              class="px-2.5 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm focus:ring-2 focus:ring-primary shrink-0"
             >
               <option v-for="role in ORG_ROLES" :key="role" :value="role">{{ role }}</option>
             </select>
-            <button
-              type="submit"
-              :disabled="!newMemberUserId || addingMember"
-              class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed shrink-0"
-            >
-              <ArrowPathIcon v-if="addingMember" class="w-4 h-4 animate-spin" aria-hidden="true" />
-              <PlusIcon v-else class="w-4 h-4" aria-hidden="true" />
+            <AppButton variant="primary" size="sm" type="submit" class="shrink-0" :loading="addingMember" :disabled="!newMemberUserId">
+              <PlusIcon class="w-4 h-4" aria-hidden="true" />
               {{ t('adm.orgs.add') }}
-            </button>
+            </AppButton>
           </div>
         </form>
 
@@ -293,9 +274,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <table v-else class="w-full">
             <thead>
               <tr class="bg-surface-hover/30">
-                <th scope="col" class="text-left text-[11px] font-semibold text-muted px-6 py-2.5">{{ t('adm.orgs.column.user') }}</th>
-                <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.role') }}</th>
-                <th scope="col" class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.joined') }}</th>
+                <th scope="col" class="text-left text-caption font-semibold text-muted px-6 py-2.5">{{ t('adm.orgs.column.user') }}</th>
+                <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.role') }}</th>
+                <th scope="col" class="text-left text-caption font-semibold text-muted px-3 py-2.5">{{ t('adm.orgs.column.joined') }}</th>
                 <th scope="col" class="w-10"><span class="sr-only">{{ t('common.actions') }}</span></th>
               </tr>
             </thead>
@@ -306,12 +287,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     <div class="w-7 h-7 rounded-full bg-primary/20 flex items-center justify-center shrink-0" aria-hidden="true">
                       <span class="text-primary text-xs font-medium">{{ memberName(member)[0]?.toUpperCase() ?? '?' }}</span>
                     </div>
-                    <span class="font-mono text-[12px] text-foreground">{{ memberName(member) }}</span>
+                    <span class="font-mono text-xs text-foreground">{{ memberName(member) }}</span>
                   </div>
                 </td>
                 <td class="px-3 py-3">
                   <span
-                    class="inline-flex items-center px-2 py-0.5 rounded-full text-[11px] font-medium"
+                    class="inline-flex items-center px-2 py-0.5 rounded-full text-caption font-medium"
                     :class="member.role === 'owner' ? 'bg-warning-soft text-warning' : 'bg-surface-hover text-muted'"
                   >
                     {{ member.role }}
@@ -326,7 +307,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     :title="t('adm.orgs.removeMember')"
                     :aria-label="`${t('adm.orgs.removeMember')}: ${memberName(member)}`"
                     class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors opacity-60 group-hover:opacity-100 focus:opacity-100"
-                    @click="removeMember(member)"
+                    @click="removeMemberTarget = member"
                   >
                     <TrashIcon class="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -348,10 +329,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </AdminDialog>
 
     <!-- Delete confirmation -->
-    <AdminDialog
+    <ConfirmDialog
       :open="!!deleteTarget"
       :title="t('adm.orgs.deleteTitle')"
       :description="t('adm.orgs.deleteHint')"
+      :confirm-label="t('adm.orgs.delete')"
+      :confirm-disabled="!deleteTarget || deleteConfirmName !== deleteTarget.name"
+      :busy="deleting"
+      @confirm="confirmDelete"
       @close="cancelDelete"
     >
       <div v-if="deleteTarget" class="space-y-4">
@@ -360,7 +345,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <ExclamationCircleIcon class="w-4 h-4 text-danger mt-0.5 shrink-0" aria-hidden="true" />
             <div>
               <p class="text-xs font-semibold text-danger">{{ t('adm.orgs.deleteWarnTitle') }}</p>
-              <p class="text-[11px] text-danger/80 mt-0.5 leading-relaxed">{{ t('adm.orgs.deleteWarnBody') }}</p>
+              <p class="text-caption text-danger mt-0.5 leading-relaxed">{{ t('adm.orgs.deleteWarnBody') }}</p>
             </div>
           </div>
         </div>
@@ -374,34 +359,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="deleteConfirmName"
             type="text"
             :placeholder="deleteTarget.name"
-            class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 transition-colors border-border focus:ring-danger"
+            class="w-full px-3 py-2 rounded-lg border bg-surface text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 transition-colors border-border-strong focus:ring-danger"
           />
         </div>
       </div>
-      <template #footer>
-        <button
-          type="button"
-          class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-          @click="cancelDelete"
-        >
-          {{ t('common.cancel') }}
-        </button>
-        <button
-          type="button"
-          :disabled="!deleteTarget || deleteConfirmName !== deleteTarget.name || deleting"
-          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-          @click="confirmDelete"
-        >
-          <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" aria-hidden="true" />
-          <TrashIcon v-else class="w-4 h-4" aria-hidden="true" />
-          {{ t('adm.orgs.delete') }}
-        </button>
-      </template>
-    </AdminDialog>
+    </ConfirmDialog>
+
+    <ConfirmDialog
+      :open="!!removeMemberTarget"
+      :title="t('adm.orgs.confirmRemoveMember')"
+      :description="removeMemberTarget ? memberName(removeMemberTarget) : ''"
+      :confirm-label="t('adm.orgs.removeMember')"
+      :busy="removingMember"
+      @confirm="confirmRemoveMember"
+      @close="removeMemberTarget = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
@@ -416,7 +394,6 @@ import {
   PlusIcon,
   PencilIcon,
   TrashIcon,
-  ArrowPathIcon,
   ExclamationCircleIcon,
 } from '@heroicons/vue/24/outline'
 
@@ -624,19 +601,26 @@ async function addMember(): Promise<void> {
   }
 }
 
-async function removeMember(member: OrgMember): Promise<void> {
+const removeMemberTarget = ref<OrgMember | null>(null)
+const removingMember = ref(false)
+
+async function confirmRemoveMember(): Promise<void> {
   const org = managingOrg.value
-  if (!org) return
-  if (!window.confirm(`${t('adm.orgs.confirmRemoveMember')} "${memberName(member)}"?`)) return
+  const member = removeMemberTarget.value
+  if (!org || !member) return
+  removingMember.value = true
   try {
     await request(
       `/api/v1/orgs/${encodeURIComponent(org.name)}/members/${encodeURIComponent(member.user_id)}`,
       { method: 'DELETE' },
     )
     toasts.success(t('adm.orgs.memberRemoved'))
+    removeMemberTarget.value = null
     await refreshMembers(org)
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.orgs.memberRemoveFailed'))
+  } finally {
+    removingMember.value = false
   }
 }
 

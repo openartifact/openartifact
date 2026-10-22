@@ -9,15 +9,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <PageHeader :title="t('sec.license.title')" :description="t('sec.license.description')">
       <template #actions>
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="!selectedRepo"
-          @click="openDrawer"
-        >
+        <AppButton variant="primary" size="md" :disabled="!selectedRepo" @click="openDrawer">
           <ArrowPathIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('sec.license.trigger') }}
-        </button>
+        </AppButton>
       </template>
     </PageHeader>
 
@@ -26,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <select
         v-model="selectedRepo"
         :aria-label="t('sec.common.selectRepo')"
-        class="h-9 px-3 rounded-lg bg-surface border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+        class="h-9 px-3 rounded-lg bg-surface border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
       >
         <option value="">{{ t('sec.common.selectRepo') }}</option>
         <option v-for="r in repos" :key="r.name" :value="r.name">{{ r.name }}</option>
@@ -45,15 +40,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Stat tiles (derived from the loaded scans) -->
     <div class="grid grid-cols-3 gap-4">
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.license.totalScans') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.license.totalScans') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums">{{ scans.length }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.license.distinct') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.license.distinct') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-success">{{ distinctLicenses }}</div>
       </div>
       <div class="rounded-xl border border-border bg-surface p-4">
-        <div class="text-[10px] font-semibold text-muted">{{ t('sec.license.noLicense') }}</div>
+        <div class="text-micro font-semibold text-muted">{{ t('sec.license.noLicense') }}</div>
         <div class="text-2xl font-bold mt-1 tabular-nums text-warning">{{ withoutLicense }}</div>
       </div>
     </div>
@@ -67,7 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           type="search"
           :aria-label="t('sec.license.search')"
           :placeholder="t('sec.license.search')"
-          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
         />
       </div>
       <div role="group" :aria-label="t('sec.common.filterStatus')" class="flex items-center gap-1 bg-surface-hover/60 rounded-lg p-0.5">
@@ -87,7 +82,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between">
         <h3 class="text-sm font-semibold tracking-tight">{{ t('sec.license.results') }}</h3>
-        <span class="text-[11px] font-mono text-muted">{{ filteredScans.length }} {{ t('sec.common.scans') }}</span>
+        <span class="text-caption font-mono text-muted">{{ filteredScans.length }} {{ t('sec.common.scans') }}</span>
       </div>
 
       <div v-if="loadingScans" class="py-12 flex flex-col items-center gap-3 text-muted" role="status">
@@ -97,9 +92,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <div v-else-if="loadError" class="py-12 text-center" role="alert">
         <p class="text-sm text-danger">{{ loadError }}</p>
-        <button type="button" class="mt-3 px-3 py-1.5 rounded-lg text-sm border border-border hover:bg-surface-hover" @click="loadScans">
+        <AppButton variant="secondary" size="sm" @click="loadScans">
           {{ t('sec.common.retry') }}
-        </button>
+        </AppButton>
       </div>
 
       <EmptyState
@@ -131,7 +126,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :key="scan.id"
               class="hover:bg-surface-hover/40 transition-colors border-b border-border last:border-0"
             >
-              <td class="px-4 py-3 font-mono text-[13px] text-foreground">
+              <td class="px-4 py-3 font-mono text-ui text-foreground">
                 <span class="inline-flex items-center gap-2">
                   <FormatBadge v-if="formatOf(scan.artifact_id)" :format="formatOf(scan.artifact_id)" size="sm" />
                   {{ packageLabel(scan.artifact_id) }}
@@ -142,7 +137,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <span
                     v-for="lic in scan.licenses"
                     :key="lic"
-                    class="inline-flex items-center px-2 py-0.5 rounded-md text-[11px] font-mono border border-border text-foreground/80"
+                    class="inline-flex items-center px-2 py-0.5 rounded-md text-caption font-mono border border-border text-foreground/80"
                   >{{ lic }}</span>
                 </div>
                 <span v-else class="text-xs text-muted">{{ t('sec.license.none') }}</span>
@@ -171,16 +166,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </td>
               <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDateTime(scan.scanned_at || scan.created_at) }}</td>
               <td class="px-4 py-3">
-                <button
-                  type="button"
-                  class="px-2 py-1 rounded-md text-[11px] font-medium border border-border text-muted hover:bg-surface-hover hover:text-foreground transition-colors disabled:opacity-50"
-                  :class="{ 'border-danger/30 text-danger bg-danger-soft/40': scan.quarantined }"
-                  :disabled="quarantining === scan.id"
-                  :aria-label="`${scan.quarantined ? t('sec.license.approve') : t('sec.license.quarantine')}: ${packageLabel(scan.artifact_id)}`"
-                  @click="toggleQuarantine(scan)"
-                >
+                <AppButton variant="secondary" size="xs" :class="{ 'border-danger/30 text-danger bg-danger-soft/40': scan.quarantined }" :disabled="quarantining === scan.id" :aria-label="`${scan.quarantined ? t('sec.license.approve') : t('sec.license.quarantine')}: ${packageLabel(scan.artifact_id)}`" @click="toggleQuarantine(scan)">
                   {{ scan.quarantined ? t('sec.license.approve') : t('sec.license.quarantine') }}
-                </button>
+                </AppButton>
               </td>
             </tr>
           </tbody>
@@ -202,7 +190,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <select
           id="license-pkg"
           v-model="artifactId"
-          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
+          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/50"
         >
           <option value="" disabled>{{ t('sec.common.selectPackage') }}</option>
           <option v-for="pkg in packages" :key="pkg.id" :value="pkg.id">{{ pkg.name }}@{{ pkg.version }}</option>
@@ -210,24 +198,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p v-if="!packages.length" class="text-xs text-muted mt-1">{{ t('sec.common.noPackages') }}</p>
       </div>
       <template #footer>
-        <button type="button" class="px-4 py-2 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors" @click="showDrawer = false">
+        <AppButton variant="secondary" size="md" @click="showDrawer = false">
           {{ t('common.cancel') }}
-        </button>
-        <button
-          type="button"
-          class="flex items-center gap-2 px-4 py-2 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="triggering || !artifactId"
-          @click="triggerScan"
-        >
+        </AppButton>
+        <AppButton variant="primary" size="md" :disabled="triggering || !artifactId" @click="triggerScan">
           <ArrowPathIcon class="w-3.5 h-3.5" :class="{ 'animate-spin': triggering }" aria-hidden="true" />
           {{ t('sec.license.start') }}
-        </button>
+        </AppButton>
       </template>
     </AdminDialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch } from 'vue'
@@ -301,7 +285,7 @@ function formatOf(id: string): string {
 }
 
 function scanStatusClass(status: string): string {
-  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-[11px] font-semibold '
+  const base = 'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-caption font-semibold '
   if (status === 'failed') return base + 'text-danger bg-danger-soft/60'
   if (status === 'completed') return base + 'text-success bg-success-soft/60'
   return base + 'text-warning bg-warning-soft/60'

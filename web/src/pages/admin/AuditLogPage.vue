@@ -12,23 +12,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Filter Panel (the server filters by actor and action) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
       <div>
-        <label for="audit-actor" class="block text-[11px] text-muted font-semibold mb-1.5">{{ t('admin.audit.filter.actor') }}</label>
+        <label for="audit-actor" class="block text-caption text-muted font-semibold mb-1.5">{{ t('admin.audit.filter.actor') }}</label>
         <input
           id="audit-actor"
           v-model="actor"
           type="text"
           :placeholder="t('adm.audit.filterActor')"
-          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
         />
       </div>
       <div>
-        <label for="audit-action" class="block text-[11px] text-muted font-semibold mb-1.5">{{ t('admin.audit.filter.action') }}</label>
+        <label for="audit-action" class="block text-caption text-muted font-semibold mb-1.5">{{ t('admin.audit.filter.action') }}</label>
         <input
           id="audit-action"
           v-model="action"
           type="text"
           :placeholder="t('adm.audit.filterAction')"
-          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary/50"
+          class="w-full h-9 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
         />
       </div>
     </div>
@@ -44,7 +44,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else class="relative overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
-            <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30">
+            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
               <th scope="col" class="text-left px-4 py-2.5 font-medium w-40">{{ t('admin.audit.column.timestamp') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium w-32">{{ t('admin.audit.column.actor') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium w-28">{{ t('admin.audit.column.action') }}</th>
@@ -56,18 +56,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <template v-for="entry in entries" :key="entry.id">
               <tr class="hover:bg-surface-hover/40 transition-colors">
                 <td class="px-4 py-3">
-                  <span class="font-mono text-[12px] text-muted">{{ formatTimestamp(entry.timestamp) }}</span>
+                  <span class="font-mono text-xs text-muted">{{ formatTimestamp(entry.timestamp) }}</span>
                 </td>
                 <td class="px-4 py-3">
                   <div class="flex items-center gap-2">
-                    <div class="w-6 h-6 rounded-full bg-primary/20 text-primary text-[10px] font-bold flex items-center justify-center flex-shrink-0" aria-hidden="true">
+                    <div class="w-6 h-6 rounded-full bg-primary/20 text-primary text-micro font-bold flex items-center justify-center flex-shrink-0" aria-hidden="true">
                       {{ (entry.actor || '?')[0].toUpperCase() }}
                     </div>
-                    <span class="font-mono text-[13px] font-medium truncate">{{ entry.actor || '—' }}</span>
+                    <span class="font-mono text-ui font-medium truncate">{{ entry.actor || '—' }}</span>
                   </div>
                 </td>
                 <td class="px-4 py-3">
-                  <span :class="['inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-medium', getActionPillClass(entry.action)]">
+                  <span :class="['inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium', getActionPillClass(entry.action)]">
                     {{ entry.action || '—' }}
                   </span>
                 </td>
@@ -93,12 +93,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <td colspan="5" class="px-4 py-3">
                   <div class="space-y-2">
                     <div v-if="entry.ip" class="flex gap-2">
-                      <span class="text-[11px] text-muted font-semibold min-w-fit">{{ t('adm.audit.ip') }}:</span>
-                      <span class="text-[11px] text-foreground font-mono">{{ entry.ip }}</span>
+                      <span class="text-caption text-muted font-semibold min-w-fit">{{ t('adm.audit.ip') }}:</span>
+                      <span class="text-caption text-foreground font-mono">{{ entry.ip }}</span>
                     </div>
                     <div v-if="entry.details" class="flex flex-col gap-1">
-                      <span class="text-[11px] text-muted font-semibold">{{ t('adm.audit.details') }}:</span>
-                      <pre class="font-mono text-[11px] bg-surface-hover rounded-lg p-3 overflow-x-auto text-foreground/80">{{ JSON.stringify(entry.details, null, 2) }}</pre>
+                      <span class="text-caption text-muted font-semibold">{{ t('adm.audit.details') }}:</span>
+                      <pre class="font-mono text-caption bg-surface-hover rounded-lg p-3 overflow-x-auto text-foreground/80">{{ JSON.stringify(entry.details, null, 2) }}</pre>
                     </div>
                   </div>
                 </td>
@@ -113,28 +113,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-if="entries.length || pageIndex > 0" class="flex items-center justify-between">
       <span class="text-sm text-muted">{{ t('adm.audit.page') }} {{ pageIndex + 1 }}</span>
       <div class="flex items-center gap-2">
-        <button
-          type="button"
-          @click="goTo(pageIndex - 1)"
-          :disabled="pageIndex <= 0"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        <AppButton variant="secondary" size="sm" @click="goTo(pageIndex - 1)" :disabled="pageIndex <= 0">
           {{ t('adm.audit.previous') }}
-        </button>
-        <button
-          type="button"
-          @click="goTo(pageIndex + 1)"
-          :disabled="!hasMore"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-        >
+        </AppButton>
+        <AppButton variant="secondary" size="sm" @click="goTo(pageIndex + 1)" :disabled="!hasMore">
           {{ t('adm.audit.next') }}
-        </button>
+        </AppButton>
       </div>
     </div>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatTimestamp } from '../../lib/datetime'
 import { ref, onMounted, onUnmounted, watch } from 'vue'

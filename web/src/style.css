@@ -15,6 +15,8 @@
   /* Muted text must hold 4.5:1 on bg, surface, surface-hover and the *-soft fills (WCAG 1.4.3). */
   --color-muted: 92 100 115;
   --color-border: 229 231 235;
+  /* Boundaries of form controls and switch tracks: >= 3:1 on bg, surface and surface-hover (WCAG 1.4.11). */
+  --color-border-strong: 130 137 150;
 
   --color-primary: 79 70 229;
   --color-primary-contrast: 255 255 255;
@@ -27,6 +29,10 @@
   --color-danger: 153 27 27;
   --color-danger-contrast: 255 255 255;
   --color-danger-soft: 254 226 226;
+  --color-info: 29 78 216;
+  --color-info-soft: 219 234 254;
+  /* Amber distinct from `warning` (which doubles as the "high" severity); >= 4.5:1 as text on surface. */
+  --color-severity-medium: 180 83 9;
 }
 
 .dark {
@@ -36,6 +42,7 @@
   --color-foreground: 235 238 245;
   --color-muted: 148 163 184;
   --color-border: 36 42 58;
+  --color-border-strong: 100 111 135;
 
   --color-primary: 129 140 248;
   --color-primary-contrast: 17 24 39;
@@ -48,12 +55,20 @@
   --color-danger: 248 113 113;
   --color-danger-contrast: 17 24 39;
   --color-danger-soft: 91 20 20;
+  --color-info: 147 197 253;
+  --color-info-soft: 30 58 138;
+  --color-severity-medium: 245 158 11;
 }
 
 html,
 body {
   background-color: rgb(var(--color-bg));
   color: rgb(var(--color-foreground));
+}
+
+input[type='checkbox'],
+input[type='radio'] {
+  accent-color: rgb(var(--color-primary));
 }
 
 *:focus-visible {

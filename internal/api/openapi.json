@@ -333,6 +333,16 @@
             "type": "string",
             "description": "Name of the organization that owns the repository (the built-in 'system' organization unless set at creation or moved). Members of any other organization get access to the repository according to their role; see docs/security/rbac.md."
           },
+          "permissions": {
+            "type": "object",
+            "description": "The caller's effective repository-scoped permissions. Only present in the single-repository GET (`/api/v1/repository/{name}`); global administrators have every flag set.",
+            "properties": {
+              "write": { "type": "boolean" },
+              "delete": { "type": "boolean", "description": "Allows the repository's trash tab (list and restore)." },
+              "manage": { "type": "boolean", "description": "Allows emptying the repository's trash." }
+            },
+            "required": ["write", "delete", "manage"]
+          },
           "presign_downloads": {
             "type": "boolean",
             "nullable": true,

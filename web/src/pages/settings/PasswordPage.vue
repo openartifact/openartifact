@@ -21,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Current password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-[11px] font-semibold text-muted mb-0.5">
+            <div class="text-caption font-semibold text-muted mb-0.5">
               {{ t('auth.currentPassword') }}
             </div>
           </div>
@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="password"
               autocomplete="current-password"
               required
-              class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             />
             <p v-if="errors.current_password" class="mt-1 text-xs text-danger">{{ errors.current_password }}</p>
           </div>
@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- New password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-[11px] font-semibold text-muted mb-0.5">
+            <div class="text-caption font-semibold text-muted mb-0.5">
               {{ t('auth.newPassword') }}
             </div>
             <div class="text-xs text-muted">{{ t('auth.passwordMin') }}</div>
@@ -54,7 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               autocomplete="new-password"
               required
               minlength="12"
-              class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             />
             <p v-if="errors.new_password" class="mt-1 text-xs text-danger">{{ errors.new_password }}</p>
           </div>
@@ -63,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Confirm password -->
         <div class="flex items-start justify-between px-5 py-4 gap-6">
           <div class="min-w-[10rem]">
-            <div class="text-[11px] font-semibold text-muted mb-0.5">
+            <div class="text-caption font-semibold text-muted mb-0.5">
               {{ t('auth.confirmPassword') }}
             </div>
           </div>
@@ -74,7 +74,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="password"
               autocomplete="new-password"
               required
-              class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
+              class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-sm text-foreground focus:outline-none focus:ring-2 focus:ring-primary/40 focus:border-primary"
             />
             <p v-if="errors.confirm_password" class="mt-1 text-xs text-danger">{{ errors.confirm_password }}</p>
           </div>
@@ -82,13 +82,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Submit -->
         <div class="px-5 py-4 flex justify-end">
-          <button
-            type="submit"
-            :disabled="loading"
-            class="px-3 py-1.5 rounded-lg bg-primary text-primary-contrast text-sm font-medium hover:opacity-90 disabled:opacity-50 transition-opacity"
-          >
+          <AppButton variant="primary" size="sm" type="submit" :disabled="loading">
             {{ loading ? t('common.saving') : t('auth.changePasswordCta') }}
-          </button>
+          </AppButton>
         </div>
       </form>
     </div>
@@ -96,6 +92,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import { ref } from 'vue'
 import { changePassword } from '../../api/auth'
 import { useToastStore } from '../../stores/toast'

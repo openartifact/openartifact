@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <header
-    class="bg-surface/80 backdrop-blur-sm border-b border-border relative flex items-center gap-2 px-4 md:px-8 py-3 shrink-0"
+    class="bg-surface border-b border-border relative flex items-center gap-2 px-4 md:px-8 py-3 shrink-0"
   >
     <!-- Mobile: opens the off-canvas navigation drawer -->
     <button
@@ -33,7 +33,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <MagnifyingGlassIcon class="w-4 h-4 text-muted shrink-0" aria-hidden="true" />
       <span class="text-sm text-muted truncate">{{ t('shell.searchPlaceholder') }}</span>
       <kbd
-        class="hidden sm:inline ml-auto text-[10px] font-mono text-muted bg-surface rounded px-1.5 py-0.5 border border-border leading-none"
+        class="hidden sm:inline ml-auto text-micro font-mono text-muted bg-surface rounded px-1.5 py-0.5 border border-border leading-none"
         aria-hidden="true"
       >⌘K</kbd>
     </div>

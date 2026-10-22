@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     autocomplete="off"
                     @change="onQueryChange(($event.target as HTMLInputElement).value)"
                   />
-                  <kbd class="text-[10px] text-muted border border-border rounded px-1">Esc</kbd>
+                  <kbd class="text-micro text-muted border border-border rounded px-1">{{ t('palette.esc') }}</kbd>
                 </div>
                 <ComboboxOptions
                   static

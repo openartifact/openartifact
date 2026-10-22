@@ -9,30 +9,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <PageHeader :title="t('dashboard.title')">
       <template #actions>
-        <button
-          class="inline-flex items-center gap-1.5 h-9 px-3 text-sm font-medium text-foreground bg-surface border border-border rounded-lg hover:bg-surface-hover transition-colors disabled:opacity-50"
-          :disabled="syncing"
-          @click="syncNow"
-        >
-          <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': syncing }" aria-hidden="true" />
+        <AppButton variant="secondary" :loading="syncing" @click="syncNow">
+          <ArrowPathIcon v-if="!syncing" class="w-4 h-4" aria-hidden="true" />
           {{ t('dashboard.refresh') }}
-        </button>
-        <router-link
-          v-if="session.isAdmin"
-          to="/repos/new"
-          class="inline-flex items-center h-9 px-3 text-sm font-medium text-primary-contrast bg-primary rounded-lg hover:bg-primary/90 transition-colors"
-        >
+        </AppButton>
+        <AppButton v-if="session.isAdmin" to="/repos/new">
           {{ t('repos.new') }}
-        </router-link>
+        </AppButton>
       </template>
     </PageHeader>
 
     <!-- KPI strip -->
     <section
-      class="rounded-lg border border-border bg-surface grid grid-cols-2 lg:grid-cols-5 divide-x divide-border"
+      class="rounded-lg border border-border bg-border overflow-hidden grid grid-cols-2 lg:grid-cols-5 gap-px"
       :aria-label="t('dashboard.title')"
     >
-      <div v-for="kpi in kpis" :key="kpi.label" class="px-5 py-3.5">
+      <div v-for="kpi in kpis" :key="kpi.label" class="px-5 py-3.5 bg-surface last:col-span-2 lg:last:col-span-1">
         <div class="text-xs text-muted">{{ kpi.label }}</div>
         <div class="mt-1 text-2xl leading-none font-semibold tabular-nums">{{ kpi.value }}</div>
       </div>
@@ -43,7 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Repositories by format -->
         <section class="rounded-lg border border-border bg-surface">
           <div class="px-5 h-11 flex items-center border-b border-border">
-            <h2 class="text-[13px] font-semibold">{{ t('dashboard.byFormat') }}</h2>
+            <h2 class="text-ui font-semibold">{{ t('dashboard.byFormat') }}</h2>
           </div>
           <div v-if="loading" class="px-5 py-4 text-sm text-muted">{{ t('common.loading') }}</div>
           <div v-else-if="formatCounts.length === 0" class="px-5 py-4 text-sm text-muted">
@@ -70,7 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Recent repositories -->
         <section class="rounded-lg border border-border bg-surface overflow-hidden">
           <div class="px-5 h-11 flex items-center justify-between border-b border-border">
-            <h2 class="text-[13px] font-semibold">{{ t('dashboard.recent') }}</h2>
+            <h2 class="text-ui font-semibold">{{ t('dashboard.recent') }}</h2>
             <router-link to="/repos" class="text-xs text-primary hover:underline">{{ t('dashboard.viewAll') }}</router-link>
           </div>
           <div v-if="loading" class="px-5 py-4 text-sm text-muted">{{ t('common.loading') }}</div>
@@ -108,7 +100,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Recent activity (admin only) -->
       <section v-if="session.isAdmin" class="rounded-lg border border-border bg-surface self-start">
         <div class="px-5 h-11 flex items-center justify-between border-b border-border">
-          <h2 class="text-[13px] font-semibold">{{ t('dashboard.activity') }}</h2>
+          <h2 class="text-ui font-semibold">{{ t('dashboard.activity') }}</h2>
           <router-link to="/admin/audit" class="text-xs text-primary hover:underline">{{ t('dashboard.viewAll') }}</router-link>
         </div>
         <div v-if="auditLoading" class="px-5 py-3 space-y-3">
@@ -135,6 +127,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import AppButton from '../components/AppButton.vue'
 import PageHeader from '../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'

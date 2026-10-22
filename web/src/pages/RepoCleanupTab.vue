@@ -13,14 +13,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <h2 class="text-base font-semibold text-foreground">{{ t('cleanup.title') }}</h2>
         <p class="text-sm text-muted mt-0.5">{{ t('cleanup.subtitle') }}</p>
       </div>
-      <button
-        type="button"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity shrink-0"
-        @click="openDrawer('create')"
-      >
+      <AppButton size="sm" class="shrink-0" @click="openDrawer('create')">
         <PlusIcon class="w-4 h-4" aria-hidden="true" />
         {{ t('cleanup.add') }}
-      </button>
+      </AppButton>
     </div>
 
     <!-- ─── Loading skeleton ────────────────────────────────────────────────── -->
@@ -44,40 +40,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Empty state -->
       <div v-if="items.length === 0" class="py-16 text-center">
         <div class="w-12 h-12 rounded-full bg-surface-hover mx-auto flex items-center justify-center mb-3">
-          <TrashIcon class="w-6 h-6 text-muted" />
+          <TrashIcon class="w-6 h-6 text-muted" aria-hidden="true" />
         </div>
         <p class="text-sm font-medium text-foreground">{{ t('cleanup.empty') }}</p>
         <p class="text-xs text-muted mt-1 mb-4">{{ t('cleanup.emptyHint') }}</p>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          @click="openDrawer('create')"
-        >
-          <PlusIcon class="w-4 h-4" />
+        <AppButton size="sm" @click="openDrawer('create')">
+          <PlusIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('cleanup.add') }}
-        </button>
+        </AppButton>
       </div>
 
       <!-- Data table -->
       <table v-else class="w-full">
         <thead>
           <tr class="bg-surface-hover/30">
-            <th class="text-left text-[11px] font-semibold text-muted px-5 py-2.5">
+            <th class="text-left text-caption font-semibold text-muted px-5 py-2.5">
               {{ t('cleanup.col.name') }}
             </th>
-            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.type') }}
             </th>
-            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.rule') }}
             </th>
-            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.enabled') }}
             </th>
-            <th class="text-left text-[11px] font-semibold text-muted px-3 py-2.5">
+            <th class="text-left text-caption font-semibold text-muted px-3 py-2.5">
               {{ t('cleanup.col.lastRun') }}
             </th>
-            <th class="text-right text-[11px] font-semibold text-muted px-5 py-2.5">
+            <th class="text-right text-caption font-semibold text-muted px-5 py-2.5">
               {{ t('cleanup.col.actions') }}
             </th>
           </tr>
@@ -96,7 +88,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <!-- Type chip -->
             <td class="px-3 py-3.5">
               <span
-                class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface-hover text-[11px] font-mono font-medium"
+                class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-md border border-border bg-surface-hover text-caption font-mono font-medium"
                 :class="policy.type === 'keep-last-n' ? 'text-primary' : 'text-warning'"
               >
                 <component :is="policy.type === 'keep-last-n' ? QueueListIcon : CalendarIcon" class="w-3.5 h-3.5" />
@@ -118,27 +110,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Enabled toggle -->
             <td class="px-3 py-3.5">
-              <button
-                type="button"
-                role="switch"
-                :aria-checked="policy.enabled"
-                :aria-label="t('cleanup.enable')"
+              <AppToggle
+                size="sm"
+                :model-value="policy.enabled"
+                :label="t('cleanup.enable')"
                 :disabled="togglingId === policy.id"
-                class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary disabled:opacity-50"
-                :class="policy.enabled ? 'bg-primary' : 'bg-border'"
-                @click="toggleEnabled(policy)"
-              >
-                <span
-                  class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-                  :class="policy.enabled ? 'translate-x-4' : 'translate-x-0.5'"
-                />
-              </button>
+                @update:model-value="toggleEnabled(policy)"
+              />
             </td>
 
             <!-- Last run -->
             <td class="px-3 py-3.5">
               <span v-if="policy.last_run_at" class="text-sm text-muted font-mono">
-                {{ timeAgo(policy.last_run_at) }}
+                {{ formatDateTime(policy.last_run_at) }}
               </span>
               <span v-else class="text-sm text-muted">{{ t('cleanup.never') }}</span>
             </td>
@@ -185,43 +169,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- ═══════════════════════════════════════════════════════════════════════
          SLIDE-RIGHT DRAWER
     ════════════════════════════════════════════════════════════════════════════ -->
-    <TransitionRoot :show="drawerOpen" as="template">
-      <Dialog as="div" class="relative z-50" @close="closeDrawer">
-        <div class="fixed inset-0 bg-black/40" aria-hidden="true" />
-        <div class="fixed inset-0 flex justify-end">
-        <DialogPanel class="relative w-full max-w-md bg-surface border-l border-border shadow-2xl flex flex-col animate-slideRight">
-          <!-- Header -->
-          <div class="px-6 py-5 border-b border-border shrink-0">
-            <p class="text-[10px] font-mono text-muted mb-0.5">
-              {{ drawerMode === 'create' ? t('cleanup.newLabel') : t('cleanup.editTitle') }}
-            </p>
-            <div class="flex items-center justify-between gap-3">
-              <DialogTitle class="text-lg font-bold text-foreground tracking-tight">
-                {{ drawerMode === 'create' ? t('cleanup.addTitle') : `${t('cleanup.editTitle')} · ${editingPolicy?.name}` }}
-              </DialogTitle>
-              <button
-                type="button"
-                :aria-label="t('common.close')"
-                class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors shrink-0"
-                @click="closeDrawer"
-              >
-                <XMarkIcon class="w-5 h-5" />
-              </button>
-            </div>
-          </div>
-
-          <!-- Body -->
-          <div class="flex-1 overflow-y-auto px-6 py-5 space-y-5">
+    <AdminDialog
+      drawer
+      max-width="max-w-md"
+      :open="drawerOpen"
+      :eyebrow="drawerMode === 'create' ? t('cleanup.newLabel') : t('cleanup.editTitle')"
+      :title="drawerMode === 'create' ? t('cleanup.addTitle') : `${t('cleanup.editTitle')} · ${editingPolicy?.name}`"
+      @close="closeDrawer"
+    >
+      <div class="space-y-5">
             <!-- Name -->
             <div>
-              <label class="block text-xs font-semibold text-foreground mb-1.5">
+              <label for="cleanup-name" class="block text-xs font-semibold text-foreground mb-1.5">
                 {{ t('cleanup.name') }} <span class="text-danger ml-0.5">*</span>
               </label>
               <input
+                id="cleanup-name"
                 v-model="form.name"
                 type="text"
                 :placeholder="t('cleanup.namePlaceholder')"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
               />
             </div>
 
@@ -235,7 +202,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   v-for="opt in POLICY_TYPES"
                   :key="opt.value"
                   type="button"
-                  class="relative text-left p-3 rounded-lg border overflow-hidden transition-all focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+                  :aria-pressed="form.type === opt.value"
+                  class="relative text-left p-3 rounded-lg border overflow-hidden transition-all"
                   :class="
                     form.type === opt.value
                       ? 'border-primary bg-primary/5 ring-1 ring-primary/30'
@@ -249,8 +217,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   />
                   <div class="pl-3">
                     <component :is="opt.icon" class="w-4 h-4 mb-1" :style="{ color: opt.color }" />
-                    <p class="text-[12px] font-semibold text-foreground leading-tight">{{ opt.label }}</p>
-                    <p class="text-[11px] text-muted leading-snug mt-0.5">{{ opt.desc }}</p>
+                    <p class="text-xs font-semibold text-foreground leading-tight">{{ opt.label }}</p>
+                    <p class="text-caption text-muted leading-snug mt-0.5">{{ opt.desc }}</p>
                   </div>
                 </button>
               </div>
@@ -268,7 +236,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   min="1"
                   max="9999"
                   placeholder="10"
-                  class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                  class="w-28 px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
                 />
                 <span class="text-sm text-muted">{{ t('cleanup.perPackage') }}</span>
               </div>
@@ -285,7 +253,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   min="1"
                   max="3650"
                   placeholder="30"
-                  class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                  class="w-28 px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
                 />
                 <span class="text-sm text-muted">{{ t('cleanup.days') }}</span>
               </div>
@@ -293,98 +261,49 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Enabled toggle -->
             <div class="flex items-start gap-3 p-3.5 rounded-lg border border-border bg-surface-hover/30">
-              <button
-                type="button"
-                role="switch"
-                :aria-checked="form.enabled"
-                :aria-label="t('cleanup.enable')"
-                class="relative inline-flex h-5 w-9 shrink-0 rounded-full transition-colors duration-200 mt-0.5 focus:outline-none focus-visible:ring-2 focus-visible:ring-primary"
-                :class="form.enabled ? 'bg-primary' : 'bg-border'"
-                @click="form.enabled = !form.enabled"
-              >
-                <span
-                  class="inline-block h-4 w-4 rounded-full bg-white shadow transition-transform duration-200 mt-0.5"
-                  :class="form.enabled ? 'translate-x-4' : 'translate-x-0.5'"
-                />
-              </button>
+              <AppToggle v-model="form.enabled" size="sm" labelledby="cleanup-enable-label" class="mt-0.5" />
               <div>
-                <p class="text-xs font-semibold text-foreground">{{ t('cleanup.enable') }}</p>
-                <p class="text-[11px] text-muted mt-0.5 leading-relaxed">
+                <p id="cleanup-enable-label" class="text-xs font-semibold text-foreground">{{ t('cleanup.enable') }}</p>
+                <p class="text-caption text-muted mt-0.5 leading-relaxed">
                   {{ t('cleanup.enableHint') }}
                 </p>
               </div>
             </div>
-          </div>
-
-          <!-- Footer -->
-          <div class="px-6 py-4 border-t border-border flex items-center gap-2 shrink-0 bg-surface">
-            <div class="flex-1" />
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-              @click="closeDrawer"
-            >
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              :disabled="savingDrawer || !formValid"
-              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-              @click="saveDrawer"
-            >
-              <ArrowPathIcon v-if="savingDrawer" class="w-4 h-4 animate-spin" />
-              {{ drawerMode === 'create' ? t('cleanup.create') : t('common.save') }}
-            </button>
-          </div>
-        </DialogPanel>
-        </div>
-      </Dialog>
-    </TransitionRoot>
+      </div>
+      <template #footer>
+        <AppButton variant="ghost" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
+        <AppButton :disabled="!formValid" :loading="savingDrawer" @click="saveDrawer">
+          {{ drawerMode === 'create' ? t('cleanup.create') : t('common.save') }}
+        </AppButton>
+      </template>
+    </AdminDialog>
 
     <!-- ═══════════════════════════════════════════════════════════════════════
          DELETE CONFIRMATION MODAL
     ════════════════════════════════════════════════════════════════════════════ -->
-    <TransitionRoot :show="!!deleteTarget" as="template">
-      <Dialog as="div" class="relative z-50" @close="cancelDelete">
-        <div class="fixed inset-0 bg-black/50" aria-hidden="true" />
-        <div class="fixed inset-0 flex items-center justify-center p-4">
-        <DialogPanel class="relative bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm">
-          <div class="px-6 pt-6 pb-4">
-            <DialogTitle class="text-base font-bold text-foreground tracking-tight">{{ t('cleanup.deleteTitle') }}</DialogTitle>
-            <p class="text-sm text-muted mt-0.5">
-              <span class="font-mono font-semibold text-foreground">{{ deleteTarget?.name }}</span>
-              {{ t('cleanup.deleteBody') }}
-            </p>
-          </div>
-          <div class="px-6 pb-6 flex items-center gap-2 justify-end">
-            <button
-              type="button"
-              class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-              @click="cancelDelete"
-            >
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="button"
-              :disabled="deleting"
-              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
-              @click="confirmDelete"
-            >
-              <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" />
-              <TrashIcon v-else class="w-4 h-4" />
-              {{ t('common.delete') }}
-            </button>
-          </div>
-        </DialogPanel>
-        </div>
-      </Dialog>
-    </TransitionRoot>
+    <ConfirmDialog
+      :open="!!deleteTarget"
+      :title="t('cleanup.deleteTitle')"
+      :confirm-label="t('common.delete')"
+      :busy="deleting"
+      @confirm="confirmDelete"
+      @close="cancelDelete"
+    >
+      <p class="text-sm text-muted">
+        <span class="font-mono font-semibold text-foreground">{{ deleteTarget?.name }}</span>
+        {{ t('cleanup.deleteBody') }}
+      </p>
+    </ConfirmDialog>
   </div>
 </template>
 
 <script setup lang="ts">
 import { ref, computed, onMounted, reactive } from 'vue'
-import { Dialog, DialogPanel, DialogTitle, TransitionRoot } from '@headlessui/vue'
+import AdminDialog from '../components/AdminDialog.vue'
+import AppButton from '../components/AppButton.vue'
+import AppToggle from '../components/AppToggle.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { formatDateTime } from '../lib/datetime'
 import { request } from '../api/client'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
@@ -394,7 +313,6 @@ import {
   TrashIcon,
   ArrowPathIcon,
   PlayIcon,
-  XMarkIcon,
   QueueListIcon,
   CalendarIcon,
 } from '@heroicons/vue/24/outline'
@@ -450,14 +368,14 @@ const POLICY_TYPES = [
     label: t('cleanup.type.lastN'),
     desc: t('cleanup.type.lastNDesc'),
     icon: QueueListIcon,
-    color: '#6366f1',
+    color: 'rgb(var(--color-primary))',
   },
   {
     value: 'keep-by-age',
     label: t('cleanup.type.age'),
     desc: t('cleanup.type.ageDesc'),
     icon: CalendarIcon,
-    color: '#f59e0b',
+    color: 'rgb(var(--color-severity-medium))',
   },
 ] as const
 
@@ -512,16 +430,6 @@ function baseUrl(): string {
 }
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
-
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return 'just now'
-  if (minutes < 60) return `${minutes}m ago`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h ago`
-  return `${Math.floor(hours / 24)}d ago`
-}
 
 // ─── Data Loading ──────────────────────────────────────────────────────────────
 

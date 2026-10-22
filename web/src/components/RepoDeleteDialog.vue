@@ -5,9 +5,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <AdminDialog :open="open" :title="t('repoDelete.title')" @close="close">
+  <ConfirmDialog
+    :open="open"
+    :title="t('repoDelete.title')"
+    :description="bodyText"
+    :confirm-label="t('common.delete')"
+    :busy-label="t('repoDetail.deleting')"
+    :busy="busy"
+    :confirm-disabled="!matches"
+    @confirm="emit('confirm')"
+    @close="emit('close')"
+  >
     <div class="space-y-3 text-sm">
-      <p class="text-foreground">{{ bodyText }}</p>
       <p class="text-muted">{{ t('repoDelete.trashHint') }}</p>
       <label for="repo-delete-confirm" class="block text-foreground">
         {{ t('repoDelete.typeName').replace('{name}', name) }}
@@ -18,29 +27,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         type="text"
         autocomplete="off"
         spellcheck="false"
-        class="w-full px-3 py-2 border border-border rounded-md text-sm font-mono bg-bg text-foreground focus:outline-none focus:ring-2 focus:ring-primary"
+        class="w-full px-3 py-2 border border-border-strong rounded-md text-sm font-mono bg-bg text-foreground focus:ring-2 focus:ring-primary"
       />
     </div>
-    <template #footer>
-      <button
-        type="button"
-        class="px-4 py-2 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover disabled:opacity-50"
-        :disabled="busy"
-        @click="close"
-      >{{ t('common.cancel') }}</button>
-      <button
-        type="button"
-        class="px-4 py-2 text-sm rounded-md bg-danger text-danger-contrast hover:opacity-90 disabled:opacity-50"
-        :disabled="busy || !matches"
-        @click="emit('confirm')"
-      >{{ busy ? t('repoDetail.deleting') : t('common.delete') }}</button>
-    </template>
-  </AdminDialog>
+  </ConfirmDialog>
 </template>
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import AdminDialog from './AdminDialog.vue'
+import ConfirmDialog from './ConfirmDialog.vue'
 import { confirmNameMatches } from '../lib/trash'
 import { t } from '../i18n/en'
 
@@ -57,8 +52,4 @@ watch(
     if (o) typed.value = ''
   },
 )
-
-function close(): void {
-  if (!props.busy) emit('close')
-}
 </script>

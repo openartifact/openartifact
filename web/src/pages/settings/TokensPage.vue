@@ -9,14 +9,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Page Head -->
     <div class="flex flex-wrap items-center justify-between gap-3">
       <p class="text-sm text-muted">{{ t('settings.tokens.subtitle') }}</p>
-      <button
-        type="button"
-        class="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity flex items-center gap-2 shrink-0"
-        @click="createOpen = true"
-      >
+      <AppButton variant="primary" size="md" @click="createOpen = true">
         <PlusIcon class="w-4 h-4" aria-hidden="true" />
         {{ t('settings.tokens.create') }}
-      </button>
+      </AppButton>
     </div>
 
     <!-- Token List -->
@@ -34,7 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Table -->
         <table class="w-full">
           <thead>
-            <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30 border-b border-border">
+            <tr class="text-caption font-semibold text-muted bg-surface-hover/30 border-b border-border">
               <th class="px-6 py-3 text-left">{{ t('settings.tokens.column.label') }}</th>
               <th class="px-6 py-3 text-left">{{ t('settings.tokens.column.created') }}</th>
               <th class="px-6 py-3 text-left">{{ t('settings.tokens.column.lastUsed') }}</th>
@@ -81,106 +77,72 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div v-else class="text-muted">{{ t('common.loading') }}</div>
 
     <!-- Create Token Dialog -->
-    <Dialog :open="createOpen" class="relative z-50" @close="closeCreate">
-      <div class="fixed inset-0 bg-foreground/30" aria-hidden="true" />
-      <div class="fixed inset-y-0 right-0 flex">
-        <DialogPanel class="w-screen max-w-md bg-surface border-l border-border shadow-2xl flex flex-col">
-          <div class="flex items-center justify-between px-6 py-4 border-b border-border">
-            <DialogTitle class="text-lg font-semibold">{{ t('settings.tokens.create') }}</DialogTitle>
-            <button
-              type="button"
-              class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-              :aria-label="t('common.close')"
-              @click="closeCreate"
-            >
-              <XMarkIcon class="w-5 h-5" aria-hidden="true" />
-            </button>
+    <AdminDialog :open="createOpen" drawer :title="t('settings.tokens.create')" @close="closeCreate">
+      <form id="create-token-form" class="space-y-6" @submit.prevent="submitCreate">
+        <div>
+          <label for="token-label" class="text-caption font-semibold text-muted block mb-2">
+            {{ t('settings.tokens.label') }}
+          </label>
+          <input
+            id="token-label"
+            v-model="newToken.label"
+            type="text"
+            required
+            :placeholder="t('settings.tokens.labelPlaceholder')"
+            class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
+          />
+        </div>
+
+        <div>
+          <span class="text-caption font-semibold text-muted block mb-2">
+            {{ t('settings.tokens.kind') }}
+          </span>
+          <div class="p-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground">
+            {{ t('settings.tokens.accessToken') }}
           </div>
-
-          <form id="create-token-form" class="flex-1 overflow-y-auto px-6 py-6 space-y-6" @submit.prevent="submitCreate">
-            <div>
-              <label for="token-label" class="text-[11px] font-semibold text-muted block mb-2">
-                {{ t('settings.tokens.label') }}
-              </label>
-              <input
-                id="token-label"
-                v-model="newToken.label"
-                type="text"
-                required
-                :placeholder="t('settings.tokens.labelPlaceholder')"
-                class="w-full h-10 px-3 rounded-lg bg-surface-hover/40 border border-border text-foreground placeholder-muted focus:outline-none focus:ring-2 focus:ring-primary focus:border-transparent transition-colors"
-              />
-            </div>
-
-            <div>
-              <span class="text-[11px] font-semibold text-muted block mb-2">
-                {{ t('settings.tokens.kind') }}
-              </span>
-              <div class="p-3 rounded-lg bg-surface-hover/40 border border-border text-sm text-foreground">
-                {{ t('settings.tokens.accessToken') }}
-              </div>
-            </div>
-          </form>
-
-          <div class="flex items-center gap-3 px-6 py-4 border-t border-border">
-            <button
-              type="button"
-              class="flex-1 px-4 py-2 text-sm font-medium rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors"
-              @click="closeCreate"
-            >
-              {{ t('common.cancel') }}
-            </button>
-            <button
-              type="submit"
-              form="create-token-form"
-              :disabled="creating"
-              class="flex-1 px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-            >
-              {{ t('common.create') }}
-            </button>
-          </div>
-        </DialogPanel>
-      </div>
-    </Dialog>
+        </div>
+      </form>
+      <template #footer>
+        <AppButton variant="secondary" @click="closeCreate">
+          {{ t('common.cancel') }}
+        </AppButton>
+        <AppButton variant="primary" type="submit" form="create-token-form" :loading="creating">
+          {{ t('common.create') }}
+        </AppButton>
+      </template>
+    </AdminDialog>
 
     <!-- Token Reveal Dialog -->
-    <Dialog :open="revealed !== null" class="relative z-50" @close="revealed = null">
-      <div class="fixed inset-0 bg-foreground/30" aria-hidden="true" />
-      <div class="fixed inset-0 flex items-center justify-center p-4">
-        <DialogPanel class="bg-surface border border-border rounded-lg p-6 w-full max-w-md space-y-4">
-          <DialogTitle class="text-lg font-semibold">{{ t('settings.tokens.create') }}</DialogTitle>
-          <p class="text-sm text-warning">{{ t('admin.tokens.reveal') }}</p>
-          <div class="bg-surface-hover rounded-lg p-3 font-mono text-xs break-all text-foreground flex items-start gap-3">
-            <span class="flex-1">{{ revealed?.token }}</span>
-            <button
-              type="button"
-              class="flex-shrink-0 p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover/60 transition-colors"
-              :aria-label="t('common.copy')"
-              :title="t('common.copy')"
-              @click="copyToken"
-            >
-              <ClipboardDocumentIcon class="w-4 h-4" aria-hidden="true" />
-            </button>
-          </div>
-          <div class="flex justify-end">
-            <button
-              type="button"
-              class="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-              @click="revealed = null"
-            >
-              {{ t('common.close') }}
-            </button>
-          </div>
-        </DialogPanel>
+    <AdminDialog :open="revealed !== null" :title="t('settings.tokens.create')" @close="revealed = null">
+      <div class="space-y-4">
+        <p class="text-sm text-warning">{{ t('admin.tokens.reveal') }}</p>
+        <div class="bg-surface-hover rounded-lg p-3 font-mono text-xs break-all text-foreground flex items-start gap-3">
+          <span class="flex-1">{{ revealed?.token }}</span>
+          <button
+            type="button"
+            class="flex-shrink-0 p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover/60 transition-colors"
+            :aria-label="t('common.copy')"
+            :title="t('common.copy')"
+            @click="copyToken"
+          >
+            <ClipboardDocumentIcon class="w-4 h-4" aria-hidden="true" />
+          </button>
+        </div>
       </div>
-    </Dialog>
+      <template #footer>
+        <AppButton variant="primary" @click="revealed = null">
+          {{ t('common.close') }}
+        </AppButton>
+      </template>
+    </AdminDialog>
   </div>
 </template>
 
 <script setup lang="ts">
+import AppButton from '../../components/AppButton.vue'
 import { formatDate } from '../../lib/datetime'
 import { ref, onMounted } from 'vue'
-import { Dialog, DialogPanel, DialogTitle } from '@headlessui/vue'
+import AdminDialog from '../../components/AdminDialog.vue'
 import { listMyTokens, createMyToken, revokeMyToken, type ApiToken, type CreatedToken } from '../../api/tokens'
 import EmptyState from '../../components/EmptyState.vue'
 import { useToastStore } from '../../stores/toast'
@@ -188,7 +150,6 @@ import { t } from '../../i18n/en'
 import {
   PlusIcon,
   TrashIcon,
-  XMarkIcon,
   ClipboardDocumentIcon,
 } from '@heroicons/vue/24/outline'
 

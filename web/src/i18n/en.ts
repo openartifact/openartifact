@@ -225,6 +225,7 @@ const base = {
   // Command palette
   'palette.placeholder': 'Type a command, search packages or repositories...',
   'palette.noResults': 'No matches',
+  'palette.esc': 'Esc',
   'palette.group.commands': 'Commands',
   'palette.group.packages': 'Packages',
   'palette.group.repositories': 'Repositories',
