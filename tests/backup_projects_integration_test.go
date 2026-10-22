@@ -182,3 +182,161 @@ func TestBackupRestore_ProjectsRealDB(t *testing.T) {
 	got, newOwner := assertRealProjectPolicy(t, dst, seed)
 	assertRealProjectAccess(t, dst, got, newOwner, seed)
 }
+
+type aclSeed struct {
+	user   *models.User
+	group  *models.Group
+	target *models.PermissionTarget
+	repo   *models.Repository
+}
+
+func seedACL(t *testing.T, src *database.PostgresDB) aclSeed {
+	t.Helper()
+
+	ctx := context.Background()
+
+	user, err := src.CreateUser(ctx, &models.User{Username: "bk-acl-user"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	group, err := src.CreateGroup(ctx, &models.Group{Name: "bk-acl-group"})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	target, err := src.CreatePermissionTarget(ctx, &models.PermissionTarget{Name: "bk-deploy", RepositoryFilter: "bk-*", PathPattern: "**", Actions: []string{"read", "write"}})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for _, p := range [][2]string{{"user", user.ID}, {"group", group.ID}} {
+		if err := src.GetOrCreatePermissionAssignment(ctx, target.ID, p[0], p[1]); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if err := src.AddUserToGroup(ctx, user.ID, group.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	sysProject := models.SystemProjectID
+	repo := &models.Repository{Name: "bk-acl-repo", Format: "raw", RepoType: "hosted", ProjectID: &sysProject}
+
+	if err := src.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := src.GetOrCreateStorageQuota(ctx, repo.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := src.UpdateStorageQuota(ctx, &models.StorageQuota{RepositoryID: repo.ID, MaxSizeBytes: 2048, MaxArtifactCount: 3, WarnThresholdPercent: 60}); err != nil {
+		t.Fatal(err)
+	}
+
+	return aclSeed{user: user, group: group, target: target, repo: repo}
+}
+
+func assertTargetsKeptOnce(t *testing.T, dst *database.PostgresDB) *models.PermissionTarget {
+	t.Helper()
+
+	ctx := context.Background()
+
+	targets, err := dst.ListPermissionTargets(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	seen := map[string]int{}
+	for _, tg := range targets {
+		seen[tg.Name]++
+	}
+
+	if seen["bk-deploy"] != 1 || seen["admin-all"] != 1 || seen["anonymous-read"] != 1 {
+		t.Fatalf("targets after restore = %v, want each of bk-deploy/admin-all/anonymous-read once", seen)
+	}
+
+	newTarget, err := dst.GetPermissionTargetByName(ctx, "bk-deploy")
+	if err != nil || newTarget == nil {
+		t.Fatalf("bk-deploy missing: %v", err)
+	}
+
+	return newTarget
+}
+
+func assertGrantsAndMemberships(t *testing.T, dst *database.PostgresDB, newTarget *models.PermissionTarget) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	newUser, err := dst.GetUserByUsername(ctx, "bk-acl-user")
+	if err != nil || newUser == nil {
+		t.Fatalf("user missing: %v", err)
+	}
+
+	assigns, err := dst.ListPermissionAssignments(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var userGrant, groupGrant bool
+
+	for _, a := range assigns {
+		if a.PermissionTargetID != newTarget.ID {
+			continue
+		}
+
+		userGrant = userGrant || (a.PrincipalType == "user" && a.PrincipalID == newUser.ID)
+		groupGrant = groupGrant || a.PrincipalType == "group"
+	}
+
+	if !userGrant || !groupGrant {
+		t.Fatalf("assignments for bk-deploy = %+v, want a user and a group grant", assigns)
+	}
+
+	members, err := dst.ListUserGroupMemberships(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.ContainsFunc(members, func(m *models.UserGroup) bool { return m.UserID == newUser.ID }) {
+		t.Fatalf("memberships = %+v, want bk-acl-user in its group", members)
+	}
+}
+
+func assertRestoredQuota(t *testing.T, dst *database.PostgresDB) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	newRepo, err := dst.GetRepositoryByName(ctx, "bk-acl-repo")
+	if err != nil || newRepo == nil {
+		t.Fatalf("repository missing: %v", err)
+	}
+
+	quotas, err := dst.ListStorageQuotas(ctx)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !slices.ContainsFunc(quotas, func(q *models.StorageQuota) bool {
+		return q.RepositoryID == newRepo.ID && q.MaxSizeBytes == 2048 && q.MaxArtifactCount == 3 && q.WarnThresholdPercent == 60
+	}) {
+		t.Fatalf("quotas = %+v, want 2048/3/60 on the restored repository", quotas)
+	}
+}
+
+// TestBackupRestore_AccessControlAndQuotasRealDB restores permission targets,
+// assignments, memberships and quota limits on a real database, next to the
+// seeded built-in targets that must not be duplicated.
+func TestBackupRestore_AccessControlAndQuotasRealDB(t *testing.T) {
+	src := freshPostgres(t, 5)
+	dst := freshPostgres(t, 5)
+
+	seedACL(t, src)
+	backupAndRestore(t, src, dst)
+
+	assertGrantsAndMemberships(t, dst, assertTargetsKeptOnce(t, dst))
+	assertRestoredQuota(t, dst)
+}

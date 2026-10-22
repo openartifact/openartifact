@@ -140,7 +140,7 @@ cp openartifact.example.yaml openartifact.yaml   # edit database.*, baseUrl, sto
 ./openartifact -config openartifact.yaml
 ```
 
-The example file ships `database.password: CHANGE_ME`, `sslMode: require` and a placeholder `corsOrigins` entry; adjust all three. The defaults `storage.path: /var/lib/artifacts` and `backup.backupDir: /var/lib/openartifact/backups` must exist or be creatable by the process user (the filesystem store creates its directory). Migrations run at startup; the first start creates the `admin` user (see [First login](#first-login)). Options and environment variables: [configuration](configuration.md).
+The example file ships `database.password: CHANGE_ME`, `sslMode: require` and a placeholder `corsOrigins` entry; adjust all three (the server refuses to start while the database password is still `CHANGE_ME`). The defaults `storage.path: /var/lib/artifacts` and `backup.backupDir: /var/lib/openartifact/backups` must exist or be creatable by the process user (the filesystem store creates its directory). Migrations run at startup; the first start creates the `admin` user (see [First login](#first-login)). Options and environment variables: [configuration](configuration.md).
 
 ### Build from source
 

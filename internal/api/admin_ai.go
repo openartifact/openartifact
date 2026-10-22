@@ -341,6 +341,12 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 		stored := ""
 
 		if *body.APIKey != "" {
+			if err := crypto.CheckPlaintext(*body.APIKey); err != nil {
+				writeError(w, http.StatusBadRequest, "validation_failed", "api_key must be the plaintext key")
+
+				return
+			}
+
 			enc, err := crypto.Encrypt(*body.APIKey)
 			if err != nil {
 				h.log.Errorw("admin ai: encrypt api key failed", "error", err)

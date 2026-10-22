@@ -96,7 +96,9 @@ func (m *Migrator) acquireLock(ctx context.Context, conn *sql.Conn) error {
 }
 
 func (m *Migrator) releaseLock(ctx context.Context, conn *sql.Conn) {
-	_, _ = conn.ExecContext(ctx, `SELECT pg_advisory_unlock(`+advisoryLockKey+`)`)
+	// A cancelled ctx (shutdown mid-migration) must not skip the unlock: the
+	// session lock would otherwise outlive this attempt on a pooled connection.
+	_, _ = conn.ExecContext(context.WithoutCancel(ctx), `SELECT pg_advisory_unlock(`+advisoryLockKey+`)`)
 }
 
 func (m *Migrator) loadApplied(ctx context.Context, conn *sql.Conn) (map[string]string, error) {

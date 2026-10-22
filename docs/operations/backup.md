@@ -37,18 +37,18 @@ Soft-deleted data ([trash](trash.md): trashed repositories and package rows) is 
 
 Tables exported:
 
-- Global: repositories, repository group members (member order is kept), users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, projects (with their policy settings), members and group grants, webhooks. Project tokens (and their service accounts) are left out: mint them again after a restore. Repositories keep their project on restore. Archives from older versions with `organizations` and `organization_members` are still accepted.
+- Global: repositories, repository group members (member order is kept), users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, projects (with their policy settings), members and group grants, webhooks, permission targets and their assignments ([RBAC](../security/rbac.md)), user-group memberships, and storage quota limits. Project tokens (and their service accounts) are left out: mint them again after a restore. Repositories keep their project on restore. Archives from older versions with `organizations` and `organization_members` are still accepted.
 - Per format: Debian distributions, components and architectures with deb packages; rpm, Helm, PyPI, NuGet, Cargo, RubyGems, Conan, Ivy, sbt, raw, Docker (blobs, manifests, tags), npm (packages, versions, dist-tags), Maven, Conda and Go module records.
 - Per repository: cleanup policies, SBOM, license, secret and vulnerability scan results, AI analyses.
 
-Not included: permission targets and group membership ([RBAC](../security/rbac.md)), quota limits, artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed list call for any exported table (or an unreadable blob that is not simply missing) fails the job instead of producing an archive with silent gaps; the job's `error_message` names the table. A blob that disappeared between listing and reading is skipped. Blobs are enumerated in pages, so memory use does not grow with the blob count. The archive is flushed and closed before the job is marked `completed`; a failed write marks the job `failed` and removes the partial file.
+Not included: artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed list call for any exported table (or an unreadable blob that is not simply missing) fails the job instead of producing an archive with silent gaps; the job's `error_message` names the table. A blob that disappeared between listing and reading is skipped. Blobs are enumerated in pages, so memory use does not grow with the blob count. The archive is flushed and closed before the job is marked `completed`; a failed write marks the job `failed` and removes the partial file.
 
 ### Secrets in the archive
 
 - `users` and `tokens` carry the password hashes and API token hashes: treat the archive as sensitive and store it encrypted.
 - Webhook signing secrets are removed, so restored webhooks have no secret; set them again. See [webhooks](webhooks.md).
 - SSO OIDC `client_secret` and storage backend credential keys (anything containing secret, key, password or token) are dropped; re-enter them.
-- A proxy repository's upstream password is exported as stored: ciphertext when `OPENARTIFACT_SECRET_KEY` is set. Use the same key on the restore target (see [storage](storage.md#stored-secrets)).
+- A proxy repository's upstream password is not exported (only the URL and username): set it again after a restore. Archives written by older versions still carry the stored value, and restoring one keeps it; use the same `OPENARTIFACT_SECRET_KEY` on the target then (see [storage](storage.md#stored-secrets)).
 
 ## Create a backup
 
@@ -107,10 +107,12 @@ The UI restore dialog does the same and asks for a confirmation phrase. The uplo
 Behaviour:
 
 - The response only confirms the upload. The outcome is in the server log: `restore completed successfully`, or `restore completed with failures` with a count, or `restore failed`.
-- Records go through the normal create paths. IDs of repositories, users, Debian distributions and components, pipelines, bundles, projects and npm packages are regenerated and rows that point at them are remapped. A name that already exists (a repository, or the bootstrap `admin` user of a fresh server) is skipped with a warning, and rows depending on a skipped parent are skipped too. Restore into an empty instance for a clean result.
+- Records go through the normal create paths. IDs of repositories, users, Debian distributions and components, pipelines, bundles, projects and npm packages are regenerated and rows that point at them are remapped. A name that already exists (a repository, or the bootstrap `admin` user of a fresh server) is skipped with a warning, and rows depending on a skipped parent are skipped too. Restore into an empty instance for a clean result. A repository whose name is reserved (it would shadow a UI page or an internal route) is skipped with a warning, like an API create would be refused. A JSON `null` element in a table is ignored.
 - Blobs are checked against the SHA-256 in their entry name, then written to the configured blob store.
-- When the restore finishes, the repositories' [storage quota](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct) usage counters are recounted from the restored packages, so quotas set afterwards start from the real usage. Quota limits are not part of the archive.
+- When the restore finishes, the repositories' [storage quota](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct) usage counters are recounted from the restored packages, so quotas set afterwards start from the real usage. 
 - Group repositories get their members back (remapped to the new repository ids). The generated metadata of hosted rpm, deb and maven repositories (repodata, `dists/`, `maven-metadata.xml`) is not in the archive; the restore queues its regeneration, so it is served shortly after the restore finishes.
+- Permission targets keep their name: a target that already exists on the instance (the built-in `admin-all` and `anonymous-read`) is kept as it is and the archive's assignments are attached to it. Assignments and group memberships are remapped to the new user, group and target ids. Memberships that an SSO provider manages are not restored; the next SSO login derives them. Quota limits (size, artifact count, warning threshold) are restored per repository.
+- Only one restore runs at a time, and a backup cannot run while a restore does: a second upload gets `409` and a backup job started during a restore ends as `failed`. A blob entry larger than 64 GiB is refused.
 - Entries a newer version wrote that this version does not know are ignored.
 
 Procedure for a new instance:

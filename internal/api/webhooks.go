@@ -201,6 +201,10 @@ func encryptWebhookSecret(secret string) (string, error) {
 		return "", validationError("secret is too long")
 	}
 
+	if err := crypto.CheckPlaintext(secret); err != nil {
+		return "", validationError("secret must be the plaintext secret")
+	}
+
 	enc, err := crypto.Encrypt(secret)
 	if err != nil {
 		return "", err //nolint:wrapcheck // internal, logged by caller

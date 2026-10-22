@@ -1732,7 +1732,9 @@ func (p *PostgresDB) ArtifactExistsBySHA256(ctx context.Context, sha256 string) 
 // that stores a blob_id FK into the global blobs table, referencing the blob
 // identified by sha256. A count of 0 means the blob is safe to delete from
 // storage (see SafeDeleteBlob in internal/storage/refcount.go). A blob that
-// does not exist in the blobs table at all is treated as unreferenced (0).
+// does not exist in the blobs table is still checked against the tables that
+// reference storage objects by sha256 alone (generated metadata, deltas,
+// release bundles, proxy cache).
 func (p *PostgresDB) BlobReferenceCount(ctx context.Context, sha256 string) (int, error) {
 	return blobRefCount(ctx, p.db, sha256)
 }
@@ -1762,6 +1764,10 @@ var blobRefSpecs = []struct{ table, cond string }{ //nolint:gochecknoglobals // 
 	{"release_bundle_items", "sha256 = b.sha256"},
 	{"proxy_cache_entries", "blob_key = b.sha256"},
 	{"sbom_results", "blob_id = b.id"},
+	// Generated metadata (maven-metadata.xml, Packages, ...) lives in the same
+	// content-addressed key space but has no blobs row; a blobs row created for
+	// byte-identical content must not let its object be deleted.
+	{"repository_metadata", "blob_sha256 = b.sha256"},
 	{"package_deltas", "delta_sha256 = b.sha256"},
 }
 
@@ -1793,7 +1799,7 @@ func blobRefCount(ctx context.Context, q rowQuerier, sha256 string) (int, error)
 	err := q.QueryRowContext(ctx,
 		`SELECT
 			`+blobRefSumExpr+`
-		 FROM blobs b WHERE b.sha256 = $1`,
+		 FROM (SELECT $1::text AS sha256, (SELECT id FROM blobs WHERE sha256 = $1::text) AS id) b`,
 		sha256,
 	).Scan(&count)
 	if errors.Is(err, sql.ErrNoRows) {

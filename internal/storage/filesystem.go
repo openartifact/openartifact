@@ -140,16 +140,80 @@ func (fs *FilesystemStore) Put(ctx context.Context, data io.Reader, metadata map
 		return "", fmt.Errorf("failed to move blob to final path: %w", err)
 	}
 
-	if metadata != nil {
-		metaPath := blobPath + ".meta"
+	// The rename is only durable once the directory entry is flushed; without
+	// this a crash can lose a blob the database already references.
+	if err := syncDir(dir); err != nil {
+		return "", fmt.Errorf("failed to sync blob directory: %w", err)
+	}
 
+	if metadata != nil {
 		metaData, err := json.Marshal(metadata)
-		if err == nil {
-			_ = os.WriteFile(metaPath, metaData, 0600)
+		if err != nil {
+			return "", fmt.Errorf("failed to encode blob metadata: %w", err)
+		}
+
+		if err := writeFileAtomic(dir, blobPath+".meta", metaData); err != nil {
+			return "", fmt.Errorf("failed to write blob metadata: %w", err)
 		}
 	}
 
 	return id, nil
+}
+
+// syncDir flushes a directory's entries to disk.
+func syncDir(dir string) error {
+	d, err := os.Open(dir)
+	if err != nil {
+		return fmt.Errorf("open directory: %w", err)
+	}
+
+	if err := d.Sync(); err != nil {
+		_ = d.Close()
+
+		return fmt.Errorf("sync directory: %w", err)
+	}
+
+	return d.Close()
+}
+
+// writeFileAtomic writes data to a temp file in dir and renames it over path,
+// so a reader never sees a partial file. The temp name matches the pattern
+// listings skip.
+func writeFileAtomic(dir, path string, data []byte) error {
+	tmp, err := os.CreateTemp(dir, "blob-upload-meta-*.tmp")
+	if err != nil {
+		return fmt.Errorf("create temp file: %w", err)
+	}
+
+	tmpPath := tmp.Name()
+
+	if _, err := tmp.Write(data); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+
+		return fmt.Errorf("write: %w", err)
+	}
+
+	if err := tmp.Chmod(0o600); err != nil {
+		_ = tmp.Close()
+		_ = os.Remove(tmpPath)
+
+		return fmt.Errorf("chmod: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		_ = os.Remove(tmpPath)
+
+		return fmt.Errorf("close: %w", err)
+	}
+
+	if err := os.Rename(tmpPath, path); err != nil {
+		_ = os.Remove(tmpPath)
+
+		return fmt.Errorf("rename: %w", err)
+	}
+
+	return nil
 }
 
 // Get retrieves a blob by its identifier.

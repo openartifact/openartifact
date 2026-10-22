@@ -288,6 +288,10 @@ type Database interface {
 	UpdatePermissionTarget(ctx context.Context, target *models.PermissionTarget) error
 	DeletePermissionTarget(ctx context.Context, id string) error
 	ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error)
+	// ListPermissionAssignments returns every permission assignment (backup export).
+	ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error)
+	// ListUserGroupMemberships returns every user-to-group membership (backup export).
+	ListUserGroupMemberships(ctx context.Context) ([]*models.UserGroup, error)
 	CreatePermissionAssignment(ctx context.Context, assignment *models.PermissionAssignment) error
 	DeletePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
@@ -464,6 +468,8 @@ type Database interface {
 	GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error)
 	GetOrCreateStorageQuota(ctx context.Context, repoID string) (*models.StorageQuota, error)
 	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
+	// ListStorageQuotas returns the limits of every repository quota row (backup export).
+	ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error)
 	IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	// ReserveStorageUsage atomically adds usage if it fits the quota; false,nil when exceeded.

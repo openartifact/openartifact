@@ -44,6 +44,8 @@ type Group struct {
 type UserGroup struct {
 	UserID  string
 	GroupID string
+	// SSOManaged marks memberships an SSO login derives from IdP claims.
+	SSOManaged bool
 }
 
 type Session struct {

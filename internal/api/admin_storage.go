@@ -137,6 +137,10 @@ func prepareStorageConfig(kind string, raw, existing []byte) ([]byte, error) {
 			}
 
 			if s != "" {
+				if err := crypto.CheckPlaintext(s); err != nil {
+					return nil, validationError("config." + field + " must be the plaintext secret")
+				}
+
 				enc, err := crypto.Encrypt(s)
 				if err != nil {
 					return nil, validationError("failed to protect config." + field)

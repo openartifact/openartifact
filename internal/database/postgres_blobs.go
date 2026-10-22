@@ -70,7 +70,15 @@ func (p *PostgresDB) WithBlobLocks(ctx context.Context, shas []string, fn func(c
 		return err
 	}
 
-	return tx.Commit()
+	// The lock transaction writes nothing; fn has already committed its own
+	// work. If the session was killed meanwhile (idle_in_transaction_session_timeout
+	// on a long upload), failing here would make the caller delete a blob a
+	// committed row now references, so report it instead of returning an error.
+	if err := tx.Commit(); err != nil {
+		p.log.Warnw("blob lock transaction ended before fn returned; the lock may have been lost", "error", err)
+	}
+
+	return nil
 }
 
 // DeleteBlobIfUnreferenced atomically removes the blobs row for sha256 and

@@ -219,3 +219,15 @@ func TestBackupEngine_RunRestore_InvalidVersion(t *testing.T) {
 }
 
 func (b *backupMockDB) ListAllProjects(context.Context) ([]*models.Project, error) { return nil, nil }
+
+func (b *backupMockDB) ListPermissionAssignments(context.Context) ([]*models.PermissionAssignment, error) {
+	return nil, nil
+}
+
+func (b *backupMockDB) ListUserGroupMemberships(context.Context) ([]*models.UserGroup, error) {
+	return nil, nil
+}
+
+func (b *backupMockDB) ListStorageQuotas(context.Context) ([]*models.StorageQuota, error) {
+	return nil, nil
+}

@@ -42,3 +42,37 @@ func TestNoKey(t *testing.T) {
 		t.Fatal("short key must fail")
 	}
 }
+
+func TestEncryptAlwaysSeals(t *testing.T) {
+	if err := Init("0123456789abcdef-test-key"); err != nil {
+		t.Fatal(err)
+	}
+	defer Init("")
+	first, err := Encrypt("s3cret")
+	if err != nil {
+		t.Fatal(err)
+	}
+	second, err := Encrypt(first)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if second == first {
+		t.Fatal("Encrypt must not pass enc:v1: input through")
+	}
+	p, err := Decrypt(second)
+	if err != nil || p != first {
+		t.Fatalf("double-sealed value must decrypt to the original ciphertext, got %q %v", p, err)
+	}
+}
+
+func TestCheckPlaintext(t *testing.T) {
+	if err := CheckPlaintext("hunter2"); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPlaintext(""); err != nil {
+		t.Fatal(err)
+	}
+	if err := CheckPlaintext("enc:v1:AAAA"); !errors.Is(err, ErrEncryptedInput) {
+		t.Fatalf("want ErrEncryptedInput got %v", err)
+	}
+}

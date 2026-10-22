@@ -491,6 +491,15 @@ func (m *BaseMockDB) UpdatePermissionTarget(ctx context.Context, target *models.
 func (m *BaseMockDB) DeletePermissionTarget(ctx context.Context, id string) error {
 	return errNotImpl("DeletePermissionTarget")
 }
+func (m *BaseMockDB) ListPermissionAssignments(ctx context.Context) ([]*models.PermissionAssignment, error) {
+	return nil, errNotImpl("ListPermissionAssignments")
+}
+func (m *BaseMockDB) ListUserGroupMemberships(ctx context.Context) ([]*models.UserGroup, error) {
+	return nil, errNotImpl("ListUserGroupMemberships")
+}
+func (m *BaseMockDB) ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error) {
+	return nil, errNotImpl("ListStorageQuotas")
+}
 func (m *BaseMockDB) ListPermissionTargets(ctx context.Context) ([]*models.PermissionTarget, error) {
 	return nil, errNotImpl("ListPermissionTargets")
 }

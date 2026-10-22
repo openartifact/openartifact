@@ -64,6 +64,12 @@ services:
       STORAGE_PATH: /var/lib/artifacts
       # Required for OIDC/SAML login state to survive restarts. Set in docker/.env.
       AUTH_HMAC_KEY: ${AUTH_HMAC_KEY:-}
+      # Encrypts upstream passwords, webhook secrets and other stored credentials
+      # at rest. Empty means they are stored in plaintext. Keep it stable: a
+      # changed key cannot decrypt what the old one sealed. Set in docker/.env.
+      OPENARTIFACT_SECRET_KEY: ${OPENARTIFACT_SECRET_KEY:-}
+      # Public URL clients and SSO callbacks use (e.g. https://artifacts.example.com).
+      BASE_URL: ${BASE_URL:-}
       OPENARTIFACT_BACKUP_DIR: /var/lib/openartifact/backups
       LOG_LEVEL: info
       LOG_FORMAT: json

@@ -21,6 +21,10 @@ import (
 	"go.yaml.in/yaml/v3"
 )
 
+// placeholderPassword is the value the example files ship for secrets; a server
+// started with it as the database password is a copied-and-forgotten config.
+const placeholderPassword = "CHANGE_ME"
+
 var (
 	errInvalidPort        = errors.New("invalid server port")
 	errMalformedKeyValue  = errors.New("expected key=value")
@@ -33,6 +37,8 @@ var (
 	errNegativeDockerGCGrace    = errors.New("workers.dockerGcGracePeriod must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
+	errPlaceholderDBPassword    = errors.New("database.password is still the CHANGE_ME placeholder from the example files: set a real password")
+	errMaxOpenConnsTooSmall     = errors.New("database.maxOpenConns must be 0 (driver default) or at least 2: a blob-lock transaction pins one connection and its callback needs another")
 
 	errPresignEndpoint   = errors.New("storage.presignEndpoint must be an absolute http(s) URL without query or fragment")
 	errPresignMinSize    = errors.New("storage.presignMinSize must not be negative")
@@ -533,6 +539,14 @@ func (c *Config) Validate() error {
 
 	if c.Trash.RetentionDays < 0 {
 		return errNegativeTrashRetention
+	}
+
+	if c.Database.MaxOpenConns < 0 || c.Database.MaxOpenConns == 1 {
+		return errMaxOpenConnsTooSmall
+	}
+
+	if c.Database.Password == placeholderPassword {
+		return errPlaceholderDBPassword
 	}
 
 	if _, err := netutil.ParseNetworks(c.Server.IPAllowlist); err != nil {

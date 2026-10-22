@@ -16,8 +16,10 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"reflect"
 	"slices"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -46,6 +48,11 @@ const maxManifestSize = 16 << 20
 
 // maxTableSize bounds a single JSON table entry decoded from an archive.
 const maxTableSize = 2 << 30
+
+// maxBlobEntrySize bounds one blob entry spooled to disk from an untrusted
+// archive (the tar header size is attacker-chosen; the content only has to
+// hash to its own name).
+const maxBlobEntrySize = 64 << 30
 
 // ErrRestoreIncomplete is returned when a restore finished but some records
 // or blobs could not be restored.
@@ -110,8 +117,16 @@ type Engine struct {
 	log       *logger.Logger
 	backupDir string
 
+	// opMu serializes restores against each other and against backups: a
+	// restore holds it exclusively, a backup shares it with other backups.
+	opMu sync.RWMutex
+	// restoring is set while a restore holds opMu, so callers can reject a
+	// second one before they spool its archive (RestoreInProgress).
+	restoring atomic.Bool
+
 	// restoreFailures counts records skipped or failed during the current
 	// restore so RunRestore can report partial failure instead of success.
+	// Only the restore holding opMu touches it.
 	restoreFailures atomic.Int64
 
 	// regen schedules metadata regeneration for restored repositories; optional.
@@ -146,7 +161,15 @@ type BackupManifest struct {
 	TableCounts map[string]int `json:"table_counts"`
 }
 
-// RunBackup executes a backup job.
+// ErrRestoreInProgress is returned when a restore is already running (a second
+// restore, or a backup, would interleave with it).
+var ErrRestoreInProgress = errors.New("a restore is already in progress")
+
+// RestoreInProgress reports whether a restore is running right now.
+func (e *Engine) RestoreInProgress() bool { return e.restoring.Load() }
+
+// RunBackup executes a backup job. It fails the job with ErrRestoreInProgress
+// while a restore is running: the archive would capture a half-restored state.
 func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error {
 	// Get the job
 	job, err := e.db.GetBackupJob(ctx, jobID)
@@ -158,6 +181,15 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	if job == nil {
 		return fmt.Errorf("backup job not found: %s", jobID) //nolint:err113 // dynamic error with runtime context
 	}
+
+	if !e.opMu.TryRLock() {
+		job.Status = "failed"
+		job.ErrorMessage = ErrRestoreInProgress.Error()
+		_ = e.db.UpdateBackupJob(ctx, job)
+
+		return ErrRestoreInProgress
+	}
+	defer e.opMu.RUnlock()
 
 	// Update job status to running
 	now := time.Now()
@@ -415,7 +447,7 @@ func (e *Engine) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *B
 		return fmt.Errorf("failed to list repositories: %w", err)
 	}
 
-	if err := e.writeTable(tw, manifest, "repositories", repos, len(repos)); err != nil {
+	if err := e.writeTable(tw, manifest, "repositories", redactRepositorySecrets(repos), len(repos)); err != nil {
 		return err
 	}
 
@@ -438,6 +470,10 @@ func (e *Engine) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *B
 	}
 
 	if err := e.exportGroupMembers(ctx, tw, manifest, repos); err != nil {
+		return err
+	}
+
+	if err := e.exportAccessControl(ctx, tw, manifest); err != nil {
 		return err
 	}
 
@@ -1047,6 +1083,7 @@ type restoreState struct {
 	bundleIDMap     map[string]string    // old release_bundles id -> new
 	projectIDMap    map[string]string    // old projects (organizations) id -> new
 	groupIDMap      map[string]string    // old groups id -> new
+	targetIDMap     map[string]string    // old permission_targets id -> new (or the existing same-named target)
 	npmPackageIDMap map[string]string    // old npm_packages id -> new
 	hostedRepos     []*models.Repository // restored non-proxy, non-group repos (new ids)
 	failures        int                  // records skipped/failed outside Engine methods
@@ -1077,6 +1114,7 @@ func newRestoreState() *restoreState {
 		bundleIDMap:      map[string]string{},
 		projectIDMap:     map[string]string{},
 		groupIDMap:       map[string]string{},
+		targetIDMap:      map[string]string{},
 		legacyMemberRole: map[string]string{},
 		npmPackageIDMap:  map[string]string{},
 	}
@@ -1092,8 +1130,55 @@ func (e *Engine) reconcileQuotaUsage(ctx context.Context) {
 	}
 }
 
-// RunRestore restores a backup from an archive.
+// readManifest scans the archive for manifest.json (it is written last) and
+// decodes it.
+func readManifest(tarReader *tar.Reader) (BackupManifest, error) {
+	var manifest BackupManifest
+
+	for {
+		header, err := tarReader.Next()
+		if err == io.EOF {
+			return manifest, nil
+		}
+
+		if err != nil {
+			return manifest, fmt.Errorf("failed to read tar header: %w", err)
+		}
+
+		if header.Name != "manifest.json" {
+			continue
+		}
+
+		if header.Size < 0 || header.Size > maxManifestSize {
+			return manifest, fmt.Errorf("manifest too large: %d bytes: %w", header.Size, ErrInvalidBlobEntry)
+		}
+
+		manifestData := make([]byte, header.Size)
+		if _, err := io.ReadFull(tarReader, manifestData); err != nil {
+			return manifest, fmt.Errorf("failed to read manifest: %w", err)
+		}
+
+		if err := json.Unmarshal(manifestData, &manifest); err != nil {
+			return manifest, fmt.Errorf("failed to unmarshal manifest: %w", err)
+		}
+
+		return manifest, nil
+	}
+}
+
+// RunRestore restores a backup from an archive. Only one restore runs at a
+// time (ErrRestoreInProgress otherwise): restores create rows with server-side
+// ids and keep per-run state, so two interleaved runs would corrupt each
+// other's remaps and failure accounting.
 func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
+	if !e.opMu.TryLock() {
+		return ErrRestoreInProgress
+	}
+	defer e.opMu.Unlock()
+
+	e.restoring.Store(true)
+	defer e.restoring.Store(false)
+
 	// Open the archive
 	file, err := os.Open(backupPath)
 	if err != nil {
@@ -1111,35 +1196,9 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 	// Create tar reader
 	tarReader := tar.NewReader(gzipReader)
 
-	// Read manifest first
-	var manifest BackupManifest
-
-	for {
-		header, err := tarReader.Next()
-		if err == io.EOF {
-			break
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to read tar header: %w", err)
-		}
-
-		if header.Name == "manifest.json" {
-			if header.Size < 0 || header.Size > maxManifestSize {
-				return fmt.Errorf("manifest too large: %d bytes: %w", header.Size, ErrInvalidBlobEntry)
-			}
-
-			manifestData := make([]byte, header.Size)
-			if _, err := io.ReadFull(tarReader, manifestData); err != nil {
-				return fmt.Errorf("failed to read manifest: %w", err)
-			}
-
-			if err := json.Unmarshal(manifestData, &manifest); err != nil {
-				return fmt.Errorf("failed to unmarshal manifest: %w", err)
-			}
-
-			break
-		}
+	manifest, err := readManifest(tarReader)
+	if err != nil {
+		return err
 	}
 
 	// Validate manifest version
@@ -1213,6 +1272,10 @@ func (e *Engine) restoreBlob(ctx context.Context, r io.Reader, header *tar.Heade
 		return fmt.Errorf("%w: %q: %w", ErrInvalidBlobEntry, header.Name, err)
 	}
 
+	if header.Size < 0 || header.Size > maxBlobEntrySize {
+		return fmt.Errorf("%w: %q: size %d exceeds %d bytes", ErrInvalidBlobEntry, header.Name, header.Size, int64(maxBlobEntrySize))
+	}
+
 	// Spool to disk (never into memory) while hashing so the content can be
 	// verified against its content-addressed name before it is stored.
 	spool, err := os.CreateTemp("", "restore-blob-*.tmp")
@@ -1226,7 +1289,7 @@ func (e *Engine) restoreBlob(ctx context.Context, r io.Reader, header *tar.Heade
 	}()
 
 	hasher := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(spool, hasher), r); err != nil {
+	if _, err := io.Copy(io.MultiWriter(spool, hasher), io.LimitReader(r, header.Size)); err != nil {
 		return fmt.Errorf("failed to read blob %s: %w", blobID, err)
 	}
 
@@ -1258,6 +1321,14 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 		return e.restoreGroups(ctx, r, st)
 	case "repository_group_members.jsonl":
 		return e.restoreGroupMembers(ctx, r, st)
+	case "permission_targets.jsonl":
+		return e.restorePermissionTargets(ctx, r, st)
+	case "permission_assignments.jsonl":
+		return e.restorePermissionAssignments(ctx, r, st)
+	case "user_groups.jsonl":
+		return e.restoreUserGroups(ctx, r, st)
+	case "storage_quotas.jsonl":
+		return e.restoreStorageQuotas(ctx, r, st)
 	case "debian_distributions.jsonl":
 		return e.restoreDebianDistributions(ctx, r, st)
 	case "debian_components.jsonl":
@@ -1425,14 +1496,21 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 	}
 }
 
-// decodeSlice reads a JSON array of T from r.
+// decodeSlice reads a JSON array of T from r. A JSON null element decodes to a
+// nil pointer for pointer element types; those are dropped here so no restore
+// step dereferences one (a tampered or truncated archive must not panic the
+// restore half-applied).
 func decodeSlice[T any](r io.Reader) ([]T, error) {
 	var items []T
 	if err := json.NewDecoder(io.LimitReader(r, maxTableSize)).Decode(&items); err != nil {
 		return nil, fmt.Errorf("failed to decode: %w", err)
 	}
 
-	return items, nil
+	return slices.DeleteFunc(items, func(item T) bool {
+		v := reflect.ValueOf(item)
+
+		return v.Kind() == reflect.Pointer && v.IsNil()
+	}), nil
 }
 
 // restoreRepoScoped decodes a slice of *T and, for every item, remaps its
@@ -1498,6 +1576,12 @@ func (e *Engine) restoreRepositories(ctx context.Context, r io.Reader, st *resto
 	for _, ar := range archived {
 		repo := &ar.Repository
 		oldID := repo.ID
+
+		// These names shadow the SPA pages and the isolated /repos/<marker>/ routes.
+		if models.IsReservedRepoName(repo.Name) {
+			e.restoreWarn("skipping repository with a reserved name", "name", repo.Name)
+			continue
+		}
 
 		if repo.ProjectID == nil {
 			repo.ProjectID = ar.LegacyOrgID

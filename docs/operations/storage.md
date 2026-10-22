@@ -340,6 +340,7 @@ Encrypted fields:
 Rules:
 
 - Without the key the server starts but stores these values as plaintext and logs a warning (`OPENARTIFACT_SECRET_KEY not set ...`). A key shorter than 16 bytes aborts startup.
+- The API rejects a credential that itself starts with `enc:v1:` (`400 validation_failed`): a submitted value is always plaintext and is always sealed, so a stored ciphertext cannot be replayed through a create or update to read it back.
 - Values without the `enc:v1:` prefix are read as legacy plaintext, so enabling the key later keeps old rows working; they are re-encrypted when saved again.
 - Changing or losing the key makes existing ciphertexts unreadable. Restore the old key, or re-enter the secrets.
 - Set the same key on every replica.

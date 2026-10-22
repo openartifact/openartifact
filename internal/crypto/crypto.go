@@ -48,6 +48,21 @@ var (
 // ErrNoKey is returned by Decrypt when ciphertext is present but no key is configured.
 var ErrNoKey = errors.New("crypto: encrypted value present but " + EnvKey + " is not set")
 
+// ErrEncryptedInput is returned by CheckPlaintext for values that already carry
+// the ciphertext prefix.
+var ErrEncryptedInput = errors.New("crypto: value must be plaintext, not an encrypted value")
+
+// CheckPlaintext rejects user-supplied secret input that looks like a
+// ciphertext produced by Encrypt. Call it at every API boundary that accepts a
+// secret to be stored encrypted.
+func CheckPlaintext(s string) error {
+	if IsEncrypted(s) {
+		return ErrEncryptedInput
+	}
+
+	return nil
+}
+
 // Init configures the package-level key. An empty key disables encryption.
 func Init(key string) error {
 	if key == "" {
@@ -87,10 +102,14 @@ func Enabled() bool {
 // IsEncrypted reports whether s is an encrypted value produced by Encrypt.
 func IsEncrypted(s string) bool { return strings.HasPrefix(s, prefix) }
 
-// Encrypt seals plaintext. Empty input and already-encrypted input are returned
-// unchanged; without a configured key the plaintext is returned unchanged.
+// Encrypt seals plaintext. Empty input is returned unchanged; without a
+// configured key the plaintext is returned unchanged. Input is always sealed,
+// even when it already carries the "enc:v1:" prefix: passing such input
+// through would let a caller smuggle a ciphertext into a field that is later
+// decrypted and used (a decryption oracle). API boundaries must additionally
+// reject prefixed input with ErrEncryptedInput.
 func Encrypt(plaintext string) (string, error) {
-	if plaintext == "" || IsEncrypted(plaintext) {
+	if plaintext == "" {
 		return plaintext, nil
 	}
 	mu.RLock()

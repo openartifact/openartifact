@@ -3443,6 +3443,10 @@ export type PostApiV1AdminRestoreErrors = {
      * Invalid backup file
      */
     400: unknown;
+    /**
+     * A restore is already in progress
+     */
+    409: unknown;
 };
 
 export type PostApiV1AdminRestoreResponses = {

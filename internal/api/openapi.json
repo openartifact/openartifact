@@ -6779,6 +6779,9 @@
           },
           "400": {
             "description": "Invalid backup file"
+          },
+          "409": {
+            "description": "A restore is already in progress"
           }
         }
       }

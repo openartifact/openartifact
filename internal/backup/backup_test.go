@@ -46,6 +46,7 @@ type fakeDB struct {
 	npmDistTags     map[string][]*models.NPMDistTag     // keyed by package id
 	dockerManifests map[string][]*models.DockerManifest // keyed by repository id
 	extra           *r2State
+	access          *accessState
 }
 
 func newFakeDB(salt string) *fakeDB {
@@ -666,7 +667,7 @@ func TestRestoreBlob_RejectsTraversalAndDigestMismatch(t *testing.T) {
 	sha := hex.EncodeToString(sum[:])
 
 	for _, name := range []string{"blobs/../../evil", "blobs/ab", "blobs/" + sha + "/../x", "blobs/" + strings.Repeat("0", 64)} {
-		err := eng.restoreBlob(ctx, strings.NewReader(content), &tar.Header{Name: name})
+		err := eng.restoreBlob(ctx, strings.NewReader(content), &tar.Header{Name: name, Size: int64(len(content))})
 		if err == nil {
 			t.Errorf("restoreBlob(%q) succeeded, want error", name)
 		}
@@ -676,7 +677,7 @@ func TestRestoreBlob_RejectsTraversalAndDigestMismatch(t *testing.T) {
 		t.Error("mismatched-digest blob was stored")
 	}
 
-	if err := eng.restoreBlob(ctx, strings.NewReader(content), &tar.Header{Name: "blobs/" + sha}); err != nil {
+	if err := eng.restoreBlob(ctx, strings.NewReader(content), &tar.Header{Name: "blobs/" + sha, Size: int64(len(content))}); err != nil {
 		t.Fatalf("valid blob rejected: %v", err)
 	}
 

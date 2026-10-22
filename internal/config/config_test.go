@@ -259,6 +259,43 @@ func TestValidate_Valid(t *testing.T) {
 	})
 }
 
+func TestValidate_MaxOpenConns(t *testing.T) {
+	for _, tc := range []struct {
+		conns int
+		ok    bool
+	}{{-1, false}, {0, true}, {1, false}, {2, true}, {25, true}} {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cfg.Database.MaxOpenConns = tc.conns
+
+		if got := cfg.Validate() == nil; got != tc.ok {
+			t.Errorf("maxOpenConns=%d: valid=%v, want %v", tc.conns, got, tc.ok)
+		}
+	}
+}
+
+func TestValidate_RejectsPlaceholderDBPassword(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	cfg.Database.Password = "CHANGE_ME"
+
+	if err := cfg.Validate(); !errors.Is(err, errPlaceholderDBPassword) {
+		t.Fatalf("Validate() = %v, want errPlaceholderDBPassword", err)
+	}
+
+	cfg.Database.Password = "a-real-password"
+
+	if err := cfg.Validate(); err != nil {
+		t.Fatalf("Validate() with a real password: %v", err)
+	}
+}
+
 func TestValidate_InvalidPort(t *testing.T) {
 	t.Run("invalid port", func(t *testing.T) {
 		cfg, err := Load("")

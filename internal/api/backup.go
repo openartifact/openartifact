@@ -237,6 +237,13 @@ func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Refuse before spooling the archive; RunRestore still guards the race
+	// between this check and the start of the goroutine.
+	if h.backupEngine.RestoreInProgress() {
+		writeError(w, http.StatusConflict, "conflict", "a restore is already in progress")
+		return
+	}
+
 	// Stream the multipart body straight to disk with a hard size cap
 	// instead of buffering/parsing the whole form.
 	r.Body = http.MaxBytesReader(w, r.Body, maxRestoreUploadBytes)

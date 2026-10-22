@@ -564,3 +564,38 @@ func TestAzurePutRejectsDigestMismatchWithoutRequest(t *testing.T) {
 		t.Fatalf("%d PUT requests reached the server, want 0", puts)
 	}
 }
+
+// The metadata sidecar is written whole (temp + rename): it is complete, 0600
+// and leaves no temp file behind.
+func TestFilesystem_PutWritesSidecarAtomically(t *testing.T) {
+	store := newTestFilesystemStore(t)
+
+	id, err := store.Put(context.Background(), strings.NewReader("sidecar content"), map[string]string{"content_type": "text/plain"})
+	if err != nil {
+		t.Fatalf("Put: %v", err)
+	}
+
+	blobPath, err := store.getBlobPath(id)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	raw, err := os.ReadFile(blobPath + ".meta")
+	if err != nil {
+		t.Fatalf("sidecar missing: %v", err)
+	}
+
+	var meta map[string]string
+	if err := json.Unmarshal(raw, &meta); err != nil || meta["content_type"] != "text/plain" || meta["_sha256"] != id {
+		t.Fatalf("sidecar = %s (%v), want the content type and digest", raw, err)
+	}
+
+	if st, err := os.Stat(blobPath + ".meta"); err != nil || st.Mode().Perm() != 0o600 {
+		t.Fatalf("sidecar mode = %v (%v), want 0600", st.Mode().Perm(), err)
+	}
+
+	tmps, _ := filepath.Glob(filepath.Join(filepath.Dir(blobPath), "blob-upload-*"))
+	if len(tmps) != 0 {
+		t.Fatalf("temp files left behind: %v", tmps)
+	}
+}

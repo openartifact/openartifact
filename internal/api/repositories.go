@@ -41,19 +41,6 @@ import (
 
 var repoNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
-// isReservedRepoName reports names that can never be repository names: they collide with Vue
-// router pages (/repos/new, /repos/settings, /repos/trash) or with the
-// isolated /repos/<marker>/{name} format namespaces (raw, maven, sbt, ivy),
-// which would make the repository's own pages and native URLs unreachable.
-func isReservedRepoName(name string) bool {
-	switch strings.ToLower(name) {
-	case "new", "settings", "trash", "raw", "maven", "sbt", "ivy":
-		return true
-	}
-
-	return false
-}
-
 // validFormats mirrors the chk_repo_format CHECK constraint in the schema.
 //
 //nolint:gochecknoglobals // immutable lookup table
@@ -493,6 +480,10 @@ func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, reader *a
 
 // encryptUpstreamPassword encrypts a proxy upstream password for storage.
 func encryptUpstreamPassword(plain string) (string, error) {
+	if err := crypto.CheckPlaintext(plain); err != nil {
+		return "", validationError("upstream_password must be the plaintext password")
+	}
+
 	enc, err := crypto.Encrypt(plain)
 	if err != nil {
 		return "", fmt.Errorf("encrypt upstream password: %w", err)
@@ -573,7 +564,7 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if isReservedRepoName(body.Name) {
+	if models.IsReservedRepoName(body.Name) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "name is reserved; choose a different repository name")
 		return
 	}
@@ -654,6 +645,12 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 
 		encPassword, err := encryptUpstreamPassword(body.UpstreamPassword)
 		if err != nil {
+			if ve, ok := errors.AsType[validationError](err); ok {
+				writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
+
+				return
+			}
+
 			h.log.Errorw("create repository: encrypt upstream password", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
 
@@ -858,6 +855,12 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	if body.UpstreamPassword != nil {
 		enc, err := encryptUpstreamPassword(*body.UpstreamPassword)
 		if err != nil {
+			if ve, ok := errors.AsType[validationError](err); ok {
+				writeError(w, http.StatusBadRequest, "validation_failed", ve.Error())
+
+				return
+			}
+
 			h.log.Errorw("update repository: encrypt upstream password", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to protect upstream credentials")
 
