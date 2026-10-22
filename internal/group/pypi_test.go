@@ -348,3 +348,43 @@ func TestPyPIGroup_ReadOnlyAndOtherPaths(t *testing.T) {
 		t.Errorf("json/foo: status %d", w.Code)
 	}
 }
+
+// A path-scoped grant on a member must see the path a direct request to that
+// member is authorized with: files/<filename> for hosted, files/<project>/<filename>
+// for proxy members.
+func TestPyPIGroup_FileAuthorizedWithMemberPath(t *testing.T) {
+	g := newPypiGroup(t)
+	g.members.files["hosted files/foo-1.0.tar.gz"] = "payload"
+
+	authorized := map[string]string{}
+	be := g.members.backend()
+	be.Authorize = func(_ *http.Request, m *models.Repository, relPath string) bool {
+		authorized[m.Name] = relPath
+		return true
+	}
+
+	req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	g.h.Serve(w, req, g.grp, "files/foo/foo-1.0.tar.gz", be)
+
+	if w.Code != http.StatusOK || w.Body.String() != "payload" {
+		t.Fatalf("status %d body %q", w.Code, w.Body.String())
+	}
+
+	want := map[string]string{"hosted": "files/foo-1.0.tar.gz", "upstream": "files/foo/foo-1.0.tar.gz"}
+	for name, p := range want {
+		if authorized[name] != p {
+			t.Errorf("member %s authorized with %q, want %q", name, authorized[name], p)
+		}
+	}
+
+	// Non-file paths are unchanged.
+	clear(authorized)
+	g.h.Serve(httptest.NewRecorder(), req, g.grp, "simple/foo/", be)
+
+	for name := range want {
+		if authorized[name] != "simple/foo/" {
+			t.Errorf("member %s authorized with %q for a project page", name, authorized[name])
+		}
+	}
+}

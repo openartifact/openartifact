@@ -20,6 +20,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/format/base"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -409,5 +410,38 @@ func TestNPMProxy_CredentialsOnlyGoToTheConfiguredUpstream(t *testing.T) {
 
 	if len(cdn.auths) != 1 || cdn.auths[0] != "" {
 		t.Errorf("credentials sent to a host a packument points at: %q", cdn.auths)
+	}
+}
+
+// Rendering a packument holds one of the bounded in-memory slots: with every
+// slot taken the request waits (and gives up with its context) instead of
+// reading yet another whole document.
+func TestNPMProxy_PackumentRenderWaitsForASlot(t *testing.T) {
+	f, _ := npmFixture(t)
+
+	if w := f.do(http.MethodGet, "lib"); w.Code != http.StatusOK {
+		t.Fatalf("priming: status %d", w.Code)
+	}
+
+	f.svc.packuments = base.NewGate(1)
+	if err := f.svc.packuments.Acquire(t.Context()); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	req := httptest.NewRequestWithContext(ctx, http.MethodGet, "/", nil)
+	w := httptest.NewRecorder()
+	f.svc.Serve(w, req, f.repo, "lib")
+
+	if w.Body.Len() != 0 {
+		t.Errorf("rendered %d bytes with every slot taken", w.Body.Len())
+	}
+
+	f.svc.packuments.Release()
+
+	if w := f.do(http.MethodGet, "lib"); w.Code != http.StatusOK {
+		t.Errorf("after release: status %d", w.Code)
 	}
 }

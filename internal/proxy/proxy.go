@@ -100,6 +100,10 @@ type Service struct {
 
 	nuget nugetIndexCache // parsed NuGet upstream service indexes
 
+	// packuments bounds the npm packuments held in memory for rewriting at
+	// once: each is read whole and re-encoded per request.
+	packuments base.Gate
+
 	// maxBody caps a single upstream response; DefaultMaxBody unless a test
 	// lowers it.
 	maxBody int64
@@ -112,12 +116,13 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 	client := netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout)
 
 	return &Service{
-		log:       log,
-		db:        db,
-		blobStore: blobStore,
-		client:    client,
-		maxBody:   DefaultMaxBody,
-		sumdb:     newSumDB(os.Getenv("GOSUMDB"), client, log),
+		log:        log,
+		db:         db,
+		blobStore:  blobStore,
+		client:     client,
+		maxBody:    DefaultMaxBody,
+		packuments: base.NewGate(maxConcurrentPackuments),
+		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
 	}
 }
 
@@ -449,11 +454,23 @@ type fetchOpts struct {
 	verify func(spool io.ReadSeeker) error
 }
 
+// outboundError classifies a failed outbound URL check. A host that does not
+// resolve is an unreachable upstream (a resolver or network outage), so a
+// stale cached copy may stand in; every other rejection (blocked address,
+// scheme, malformed URL) is a refusal that must not be papered over.
+func outboundError(err error) error {
+	if errors.Is(err, netutil.ErrCannotResolve) {
+		return errUpstreamDown
+	}
+
+	return errUpstream
+}
+
 // fetchURL is fetch for an explicit target URL.
 func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, target string, o fetchOpts) (*models.ProxyCacheEntry, error) {
 	if verr := netutil.ValidateOutboundURLContext(ctx, target); verr != nil {
 		s.log.Warnw("proxy upstream rejected by outbound URL policy", "repo", repo.Name, "error", verr)
-		return nil, errUpstream
+		return nil, outboundError(verr)
 	}
 
 	req, err := s.newUpstreamRequest(ctx, repo, target, o)

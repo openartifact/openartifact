@@ -40,6 +40,9 @@ import (
 // packages' full packuments reach tens of megabytes.
 const maxPackumentBytes = 256 << 20
 
+// maxConcurrentPackuments bounds the packuments rewritten in memory at once.
+const maxConcurrentPackuments = 8
+
 // packumentMaxAge is how long shared caches may reuse a public repository's
 // packument before revalidating (as for hosted npm repositories).
 const packumentMaxAge = 60
@@ -173,9 +176,12 @@ func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo
 		return
 	}
 
-	body, err := s.readNPMPackument(r.Context(), res.entry)
-	if err == nil {
-		body, err = renderNPM(body, p, tarballBase)
+	body, err := s.renderCachedPackument(r.Context(), res.entry, p, tarballBase)
+	if errors.Is(err, context.Canceled) {
+		h.Del("ETag")
+		h.Del("Cache-Control")
+
+		return
 	}
 
 	switch {
@@ -209,6 +215,23 @@ func (s *Service) serveNPMPackument(w http.ResponseWriter, r *http.Request, repo
 }
 
 var errNoVersion = errors.New("version not found")
+
+// renderCachedPackument reads the cached packument and renders it for the
+// client, holding one of the bounded packument slots while the whole document
+// is in memory.
+func (s *Service) renderCachedPackument(ctx context.Context, entry *models.ProxyCacheEntry, p pkgnpm.Path, tarballBase string) ([]byte, error) {
+	if err := s.packuments.Acquire(ctx); err != nil {
+		return nil, err //nolint:wrapcheck // caller checks for cancellation
+	}
+	defer s.packuments.Release()
+
+	body, err := s.readNPMPackument(ctx, entry)
+	if err != nil {
+		return nil, err
+	}
+
+	return renderNPM(body, p, tarballBase)
+}
 
 // renderNPM points the packument's tarball URLs at this repository and, for a
 // version path, cuts that version's manifest out.

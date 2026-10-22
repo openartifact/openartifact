@@ -47,19 +47,24 @@ func (h *Handler) servePyPI(w http.ResponseWriter, r *http.Request, grp *models.
 	case pypisimple.PathProject:
 		h.servePyPIProject(w, r, grp, members, project, be)
 	case pypisimple.PathFile:
-		// Proxy members key files by project; hosted members by filename.
 		h.serveFirstHitAs(w, r, members, func(m *models.Repository) string {
-			if m.RepoType == repotype.Proxy {
-				return "files/" + project + "/" + filename
-			}
-
-			return "files/" + filename
+			return pypiFilePath(m, project, filename)
 		}, be)
 	case pypisimple.PathOther:
 		return false
 	}
 
 	return true
+}
+
+// pypiFilePath is the path of a distribution file inside member m: proxy
+// members key files by project, hosted members by filename.
+func pypiFilePath(m *models.Repository, project, filename string) string {
+	if m.RepoType == repotype.Proxy {
+		return "files/" + project + "/" + filename
+	}
+
+	return "files/" + filename
 }
 
 // memberPages asks every member for the simple page at path and returns the

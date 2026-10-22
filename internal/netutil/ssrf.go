@@ -26,6 +26,11 @@ const EnvAllowPrivate = "OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS"
 
 func allowPrivate() bool { return strings.EqualFold(os.Getenv(EnvAllowPrivate), "true") }
 
+// ErrCannotResolve is returned when the host name does not resolve. Unlike
+// ErrBlockedAddress it says nothing about the destination, only that the
+// resolver or the network is not answering.
+var ErrCannotResolve = errors.New("cannot resolve host")
+
 // ErrBlockedAddress is returned when a destination address is not permitted.
 var ErrBlockedAddress = errors.New("destination address is not allowed")
 
@@ -101,7 +106,6 @@ func isCGNAT(ip netip.Addr) bool {
 var (
 	errSchemeNotAllowed = errors.New("URL scheme must be http or https")
 	errHostRequired     = errors.New("URL host is required")
-	errCannotResolve    = errors.New("cannot resolve host")
 	errTooManyRedirects = errors.New("too many redirects")
 	errRedirectScheme   = errors.New("redirect to unsupported scheme")
 )
@@ -134,7 +138,7 @@ func ValidateOutboundURLContext(ctx context.Context, raw string) error {
 	}
 	ips, err := (&net.Resolver{}).LookupIPAddr(ctx, host)
 	if err != nil {
-		return fmt.Errorf("%w %q", errCannotResolve, host)
+		return fmt.Errorf("%w %q", ErrCannotResolve, host)
 	}
 	for _, ipAddr := range ips {
 		if a, ok := netip.AddrFromSlice(ipAddr.IP); ok && blockedIP(a) {

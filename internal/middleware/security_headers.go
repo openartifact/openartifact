@@ -25,7 +25,7 @@ func SecurityHeadersMiddleware(hsts bool) func(http.Handler) http.Handler {
 			// Browser page loads of SPA routes under /repos/ are answered by the
 			// SPA (see RBACMiddleware), not by an artifact handler: they need
 			// scripts and must render, so they keep the baseline CSP.
-			if strings.HasPrefix(r.URL.Path, "/repos/") && !isSPANavigation(r) {
+			if isArtifactPath(r) {
 				// Artifact bytes are uploader-controlled and served from the
 				// app origin: sandbox them (opaque origin, no scripts, no
 				// cookies/API access) and force a download for any type a
@@ -39,6 +39,19 @@ func SecurityHeadersMiddleware(hsts bool) func(http.Handler) http.Handler {
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// isArtifactPath reports whether r addresses artifact bytes: everything under
+// /repos/ except SPA page loads, and the OCI registry API under /v2/, which has
+// no SPA pages and serves manifests and listings whose types and bodies come
+// from uploaders or proxied upstreams.
+func isArtifactPath(r *http.Request) bool {
+	p := r.URL.Path
+	if p == "/v2" || strings.HasPrefix(p, "/v2/") {
+		return true
+	}
+
+	return strings.HasPrefix(p, "/repos/") && !isSPANavigation(r)
 }
 
 // inlineSafeTypes are the media types a browser displays without executing

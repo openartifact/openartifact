@@ -24,6 +24,9 @@ const maxPackumentBytes = 256 << 20
 // packument before revalidating (as for hosted npm repositories).
 const packumentMaxAge = 60
 
+// maxConcurrentMerges bounds the packument merges held in memory at once.
+const maxConcurrentMerges = 8
+
 // SetBaseURL sets the server base URL the merged packuments' tarball URLs
 // point at (the same value hosted npm repositories use).
 func (h *Handler) SetBaseURL(baseURL string) { h.baseURL = strings.TrimRight(baseURL, "/") }
@@ -53,6 +56,13 @@ func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.R
 	}
 
 	memberPath := strings.Replace(p.Package, "/", "%2f", 1)
+
+	// Every member's packument is held whole until merged: bound how many
+	// merges run at once.
+	if h.packuments.Acquire(r.Context()) != nil {
+		return true
+	}
+	defer h.packuments.Release()
 
 	var (
 		docs   [][]byte

@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -36,11 +37,14 @@ type Handler struct {
 	log     *logger.Logger
 	db      database.Database
 	baseURL string
+
+	// packuments bounds concurrent npm packument merges.
+	packuments base.Gate
 }
 
 // NewHandler creates the group handler.
 func NewHandler(log *logger.Logger, db database.Database) *Handler {
-	return &Handler{log: log, db: db}
+	return &Handler{log: log, db: db, packuments: base.NewGate(maxConcurrentMerges)}
 }
 
 // Serve answers a request for relPath (below the repository root) of group
@@ -64,7 +68,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 	readable := make([]*models.Repository, 0, len(members))
 
 	for _, m := range members {
-		if be.Authorize(r, m, relPath) {
+		if be.Authorize(r, m, authPath(grp.Format, m, relPath)) {
 			readable = append(readable, m)
 		}
 	}
@@ -101,6 +105,21 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 	}
 
 	h.serveFirstHit(w, r, readable, relPath, be)
+}
+
+// authPath is the path the caller is authorized against for member m: the one a
+// direct request to m would be authorized with, so a path-scoped grant on the
+// member means the same thing inside and outside the group.
+func authPath(format string, m *models.Repository, relPath string) string {
+	if format != "pypi" {
+		return relPath
+	}
+
+	if kind, project, filename := pypisimple.ParsePath(relPath); kind == pypisimple.PathFile {
+		return pypiFilePath(m, project, filename)
+	}
+
+	return relPath
 }
 
 // members returns grp's members in priority order. Members that cannot be

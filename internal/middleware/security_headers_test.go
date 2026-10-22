@@ -99,3 +99,43 @@ func TestSecurityHeadersSPANavigationNotSandboxed(t *testing.T) {
 		t.Errorf("raw html download not sandboxed: %v", w.Header())
 	}
 }
+
+// The OCI registry API has no SPA pages and serves manifests and listings
+// whose types come from uploaders or upstreams: /v2/ is sandboxed and forced
+// to download like /repos/ artifacts, even for a browser navigation.
+func TestSecurityHeadersRegistryAPISandboxedAndAttached(t *testing.T) {
+	serve := func(path, ct string, nav bool) *httptest.ResponseRecorder {
+		h := SecurityHeadersMiddleware(false)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+			w.Header().Set("Content-Type", ct)
+			_, _ = w.Write([]byte("<script>alert(1)</script>"))
+		}))
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+
+		if nav {
+			r.Header.Set("Accept", "text/html")
+			r.Header.Set("Sec-Fetch-Mode", "navigate")
+		}
+
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		return w
+	}
+
+	for _, path := range []string{"/v2/repo/img/manifests/latest", "/v2/repo/img/referrers/sha256:abc", "/v2/"} {
+		for _, nav := range []bool{false, true} {
+			w := serve(path, "text/html", nav)
+			if got := w.Header().Get("Content-Disposition"); got != "attachment" {
+				t.Errorf("%s (nav=%v): Content-Disposition=%q, want attachment", path, nav, got)
+			}
+
+			if csp := w.Header().Get("Content-Security-Policy"); !strings.Contains(csp, "sandbox") {
+				t.Errorf("%s (nav=%v): CSP=%q lacks sandbox", path, nav, csp)
+			}
+		}
+	}
+
+	if got := serve("/v2x/other", "text/html", false).Header().Get("Content-Disposition"); got != "" {
+		t.Errorf("/v2x/ is not the registry API, got Content-Disposition %q", got)
+	}
+}

@@ -230,7 +230,7 @@ func (s *Service) ociDo(ctx context.Context, repo *models.Repository, up ociUpst
 func (s *Service) ociRequest(ctx context.Context, repo *models.Repository, method, target, accept, authz string) (*http.Response, error) {
 	if err := netutil.ValidateOutboundURLContext(ctx, target); err != nil {
 		s.log.Warnw("docker proxy upstream rejected by outbound URL policy", "repo", repo.Name, "error", err)
-		return nil, errUpstream
+		return nil, outboundError(err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, method, target, nil)
@@ -391,7 +391,7 @@ func (s *Service) fetchToken(ctx context.Context, repo *models.Repository, targe
 func (s *Service) ociRequestBasic(ctx context.Context, repo *models.Repository, target string, withCreds bool) (*http.Response, error) {
 	if err := netutil.ValidateOutboundURLContext(ctx, target); err != nil {
 		s.log.Warnw("docker proxy token endpoint rejected by outbound URL policy", "repo", repo.Name, "error", err)
-		return nil, errUpstream
+		return nil, outboundError(err)
 	}
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)

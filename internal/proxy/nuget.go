@@ -708,7 +708,7 @@ func verifyNupkg(spool io.ReadSeeker, digest pkgnuget.Digest) error {
 func (s *Service) fetchNuGetDocument(ctx context.Context, repo *models.Repository, target string) ([]byte, error) {
 	if verr := netutil.ValidateOutboundURLContext(ctx, target); verr != nil {
 		s.log.Warnw("proxy upstream rejected by outbound URL policy", "repo", repo.Name, "error", verr)
-		return nil, errUpstream
+		return nil, outboundError(verr)
 	}
 
 	req, err := s.newUpstreamRequest(ctx, repo, target, fetchOpts{

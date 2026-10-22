@@ -122,9 +122,10 @@ func (s *Service) serveOCIReferrers(w http.ResponseWriter, r *http.Request, repo
 		w.Header().Set("Oci-Filters-Applied", f)
 	}
 
-	ct := hdr.Get("Content-Type")
-	if ct == "" {
-		ct = "application/vnd.oci.image.index.v1+json"
+	// The listing is an image index; an upstream-chosen type is never echoed.
+	ct := "application/vnd.oci.image.index.v1+json"
+	if mt, ok := ocipath.SafeMediaType(hdr.Get("Content-Type")); ok {
+		ct = mt
 	}
 
 	writeList(w, r, ct, body)

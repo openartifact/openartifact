@@ -368,7 +368,7 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 	}
 	defer func() { _ = content.Close() }()
 
-	w.Header().Set("Content-Type", manifest.MediaType)
+	w.Header().Set("Content-Type", ocipath.ServedMediaType(manifest.MediaType))
 	w.Header().Set("Docker-Content-Digest", manifest.Digest)
 	w.Header().Set("Content-Length", strconv.FormatInt(manifest.Size, 10))
 	w.WriteHeader(http.StatusOK)
@@ -862,7 +862,7 @@ func (h *HTTPHandler) handleHeadManifest(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	w.Header().Set("Content-Type", manifest.MediaType)
+	w.Header().Set("Content-Type", ocipath.ServedMediaType(manifest.MediaType))
 	w.Header().Set("Docker-Content-Digest", manifest.Digest)
 	w.Header().Set("Content-Length", strconv.FormatInt(manifest.Size, 10))
 	w.WriteHeader(http.StatusOK)

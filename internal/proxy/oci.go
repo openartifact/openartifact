@@ -15,7 +15,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"mime"
 	"net/http"
 	"os"
 	"regexp"
@@ -232,9 +231,11 @@ func writeOCIEntry(w http.ResponseWriter, req ocipath.Request, res *resolution, 
 		digest = "sha256:" + entry.BlobKey
 	}
 
-	ct := entry.ContentType
-	if req.Kind == ocipath.KindBlob || ct == "" {
-		ct = blobContentType
+	// The cached type is re-checked on every read: rows written before the
+	// media-type allowlist may hold an upstream-chosen type.
+	ct := blobContentType
+	if req.Kind != ocipath.KindBlob {
+		ct = ocipath.ServedMediaType(entry.ContentType)
 	}
 
 	h.Set("Content-Type", ct)
@@ -502,13 +503,14 @@ func manifestType(header string, body io.Reader) (string, error) {
 		return "", fmt.Errorf("%w: %w", errBadManifest, err)
 	}
 
-	if mt, _, perr := mime.ParseMediaType(header); perr == nil &&
-		(strings.HasPrefix(mt, "application/vnd.") || strings.Contains(mt, "json")) && mt != "application/json" {
+	// Both candidates are upstream controlled: only registry JSON types may be
+	// served (and cached) under the application origin.
+	if mt, ok := ocipath.SafeMediaType(header); ok && mt != "application/json" {
 		return mt, nil
 	}
 
-	if doc.MediaType != "" {
-		return doc.MediaType, nil
+	if mt, ok := ocipath.SafeMediaType(doc.MediaType); ok {
+		return mt, nil
 	}
 
 	return defaultManifestType, nil

@@ -10,6 +10,7 @@ import (
 	"encoding/hex"
 	"encoding/json"
 	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"net/url"
@@ -52,6 +53,8 @@ type fakeOCIRegistry struct {
 	status       int      // when non-zero, every /v2 request answers it
 	deny         bool     // authenticated requests are answered 401
 	realm        string   // token endpoint named by the challenge; the registry itself when empty
+	manifestCT   string   // Content-Type of manifest answers; ociManifestType when empty
+	referrersCT  string   // Content-Type of the referrers answer
 }
 
 func newFakeOCIRegistry(t *testing.T) *fakeOCIRegistry {
@@ -139,7 +142,12 @@ func (g *fakeOCIRegistry) serveV2(w http.ResponseWriter, r *http.Request) {
 			dg = o
 		}
 
-		w.Header().Set("Content-Type", ociManifestType)
+		ct := ociManifestType
+		if g.manifestCT != "" {
+			ct = g.manifestCT
+		}
+
+		w.Header().Set("Content-Type", ct)
 		w.Header().Set("Docker-Content-Digest", dg)
 		w.Header().Set("Content-Length", strconv.Itoa(len(body)))
 
@@ -168,7 +176,10 @@ func (g *fakeOCIRegistry) serveV2(w http.ResponseWriter, r *http.Request) {
 		}
 
 		_ = json.NewEncoder(w).Encode(map[string]any{"name": req.Name, "tags": tags})
-	case ocipath.KindUnknown, ocipath.KindUploadStart, ocipath.KindUpload, ocipath.KindReferrers:
+	case ocipath.KindReferrers:
+		w.Header().Set("Content-Type", g.referrersCT)
+		_, _ = io.WriteString(w, `{"schemaVersion":2,"manifests":[]}`)
+	case ocipath.KindUnknown, ocipath.KindUploadStart, ocipath.KindUpload:
 		http.NotFound(w, r)
 	}
 }
@@ -872,6 +883,67 @@ func TestParseChallenge(t *testing.T) {
 			if params[k] != v {
 				t.Errorf("parseChallenge(%q)[%s] = %q, want %q", tt.in, k, params[k], v)
 			}
+		}
+	}
+}
+
+// The type a manifest or listing is served under must be a registry JSON type:
+// /v2/ responses come from the application origin, so an upstream must not be
+// able to choose text/html (or smuggle one in the manifest body).
+func TestOCI_UpstreamChosenContentTypeIsNeverEchoed(t *testing.T) {
+	const htmlManifest = `{"schemaVersion":2,"mediaType":"text/html","note":"<script>alert(1)</script>"}`
+
+	tests := []struct {
+		name   string
+		header string
+		body   string
+		want   string
+	}{
+		{"html header, html mediaType", "text/html", htmlManifest, "application/vnd.docker.distribution.manifest.v2+json"},
+		{"svg header", "image/svg+xml", alpineManifest, ociManifestType},
+		{"html header with body type", "text/html", `{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`, "application/vnd.docker.distribution.manifest.v2+json"},
+		{"registry header kept", "application/vnd.docker.distribution.manifest.v2+json; charset=utf-8", alpineManifest, "application/vnd.docker.distribution.manifest.v2+json"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f := newOCIFixture(t)
+			f.reg.manifestCT = tc.header
+			f.reg.addManifest("library/alpine", "3.20", tc.body)
+
+			for range 2 { // miss, then cache hit
+				w := f.do(http.MethodGet, "hub/library/alpine/manifests/3.20")
+				if w.Code != http.StatusOK {
+					t.Fatalf("status %d: %s", w.Code, w.Body.String())
+				}
+
+				if got := w.Header().Get("Content-Type"); got != tc.want {
+					t.Errorf("Content-Type = %q, want %q", got, tc.want)
+				}
+			}
+		})
+	}
+}
+
+func TestOCI_ReferrersContentTypeIsRestricted(t *testing.T) {
+	dg := digestOf("subject")
+
+	for in, want := range map[string]string{
+		"text/html": "application/vnd.oci.image.index.v1+json",
+		"":          "application/vnd.oci.image.index.v1+json",
+		"application/vnd.oci.image.index.v1+json": "application/vnd.oci.image.index.v1+json",
+		"application/json":                        "application/json",
+	} {
+		f := newOCIFixture(t)
+		f.reg.referrersCT = in
+
+		w := f.do(http.MethodGet, "hub/library/alpine/referrers/"+dg)
+		if w.Code != http.StatusOK {
+			t.Fatalf("%q: status %d: %s", in, w.Code, w.Body.String())
+		}
+
+		if got := w.Header().Get("Content-Type"); got != want {
+			t.Errorf("upstream %q: Content-Type = %q, want %q", in, got, want)
 		}
 	}
 }

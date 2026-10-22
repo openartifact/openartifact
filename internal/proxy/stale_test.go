@@ -117,6 +117,37 @@ func TestServe_StaleOnUnreachableUpstream(t *testing.T) {
 	}
 }
 
+// A host that does not resolve is an unreachable upstream (resolver outage):
+// the stale copy stands in. A blocked address is a refusal and must not be
+// masked by one.
+func TestServe_StaleOnDNSFailureButNotOnBlockedAddress(t *testing.T) {
+	tests := []struct {
+		name     string
+		upstream string
+		want     int
+	}{
+		{"unresolvable host", "http://oa-unresolvable.invalid/", http.StatusOK},
+		{"blocked address", "http://169.254.169.254/", http.StatusBadGateway},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			sf := newStaleFixture(t)
+			sf.db.expire("repo-1", metaKey)
+			sf.repo.UpstreamURL = tc.upstream
+
+			w := sf.do(http.MethodGet, metaKey)
+			if w.Code != tc.want {
+				t.Fatalf("status %d, want %d", w.Code, tc.want)
+			}
+
+			if stale := w.Header().Get("Warning") == staleValue; stale != (tc.want == http.StatusOK) {
+				t.Errorf("Warning = %q", w.Header().Get("Warning"))
+			}
+		})
+	}
+}
+
 func TestServe_StaleHeadHasNoBody(t *testing.T) {
 	sf := newStaleFixture(t)
 	sf.db.expire("repo-1", metaKey)

@@ -333,3 +333,43 @@ func TestHandleDeleteManifest_ReclaimsUnreferencedBlob(t *testing.T) {
 		t.Fatal("expected the now-unreferenced manifest blob to be reclaimed from storage")
 	}
 }
+
+// The manifest media type is whatever the pusher sent; /v2/ responses come
+// from the application origin, so only registry JSON types may be echoed.
+func TestManifestContentTypeIsRestrictedOnRead(t *testing.T) {
+	for in, want := range map[string]string{
+		"text/html":     "application/octet-stream",
+		"image/svg+xml": "application/octet-stream",
+		"application/vnd.oci.image.manifest.v1+json": "application/vnd.oci.image.manifest.v1+json",
+	} {
+		db := newManifestFakeDB("repo-1")
+		h, _ := newTestHandler(t, db)
+
+		body := []byte(`{"schemaVersion":2,"mediaType":"application/vnd.oci.image.manifest.v1+json"}`)
+		put := withChiVars(
+			httptest.NewRequestWithContext(context.Background(), http.MethodPut, "/v2/myrepo/manifests/latest", bytes.NewReader(body)),
+			map[string]string{"name": "myrepo", "reference": "latest"},
+		)
+		put.Header.Set("Content-Type", in)
+
+		rec := httptest.NewRecorder()
+		h.handlePutManifest(rec, put)
+
+		if rec.Code != http.StatusCreated {
+			t.Fatalf("%q: PUT status = %d: %s", in, rec.Code, rec.Body.String())
+		}
+
+		for name, serve := range map[string]func(http.ResponseWriter, *http.Request){"GET": h.handleGetManifest, "HEAD": h.handleHeadManifest} {
+			req := withChiVars(
+				httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/v2/myrepo/manifests/latest", nil),
+				map[string]string{"name": "myrepo", "reference": "latest"},
+			)
+			w := httptest.NewRecorder()
+			serve(w, req)
+
+			if got := w.Header().Get("Content-Type"); got != want {
+				t.Errorf("%s after pushing %q: Content-Type = %q, want %q", name, in, got, want)
+			}
+		}
+	}
+}
