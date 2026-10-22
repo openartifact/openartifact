@@ -697,10 +697,11 @@ func run(args []string) error {
 	// Proxy and group repositories are served by the dispatcher in front of the
 	// per-format routes; hosted repositories fall through to them. Groups read
 	// their hosted members through in-memory routers of the same handlers.
-	mavenHosted, rawHosted, npmHosted, dockerHosted := chi.NewRouter(), chi.NewRouter(), chi.NewRouter(), chi.NewRouter()
+	mavenHosted, rawHosted, npmHosted, dockerHosted, nugetHosted := chi.NewRouter(), chi.NewRouter(), chi.NewRouter(), chi.NewRouter(), chi.NewRouter()
 	mavenHTTP.RegisterRepoRoutes(mavenHosted)
 	rawHTTP.RegisterRepoRoutes(rawHosted)
 	npmHTTP.RegisterRepoRoutes(npmHosted)
+	nugetHTTP.RegisterRepoRoutes(nugetHosted)
 
 	cargoHosted := chi.NewRouter()
 	cargoHTTP.RegisterRepoRoutes(cargoHosted)
@@ -727,6 +728,7 @@ func run(args []string) error {
 		"npm":    npmHosted,
 		"cargo":  cargoHosted,
 		"go":     goHosted,
+		"nuget":  nugetHosted,
 		"docker": dockerHosted,
 		"helm":   helmHosted,
 	}).WithBaseURL(cfg.BaseURL)

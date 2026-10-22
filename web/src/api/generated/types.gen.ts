@@ -1104,11 +1104,11 @@ export type PostApiV1RepositoriesData = {
         description?: string;
         public?: boolean;
         /**
-         * hosted (default), proxy or group. Proxy repositories are supported for maven, deb, rpm, docker, go, npm, pypi, cargo, helm and raw; group repositories for maven, docker, go, npm, pypi, cargo, helm and raw (deb/rpm groups cannot merge repository metadata). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
+         * hosted (default), proxy or group. Proxy repositories are supported for maven, deb, rpm, docker, go, npm, nuget, pypi, cargo, helm and raw; group repositories for maven, docker, go, npm, nuget, pypi, cargo, helm and raw (deb/rpm groups cannot merge repository metadata). Docker proxies and groups are served under /v2/ only. Other combinations are rejected with 400 validation_failed. Proxy and group repositories are read-only.
          */
         repo_type?: 'hosted' | 'proxy' | 'group';
         /**
-         * Required for proxy repos, except docker (defaults to https://registry-1.docker.io), pypi (defaults to https://pypi.org/simple) and cargo (defaults to https://index.crates.io). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
+         * Required for proxy repos, except docker (defaults to https://registry-1.docker.io), nuget (defaults to the service index https://api.nuget.org/v3/index.json), pypi (defaults to https://pypi.org/simple) cargo (defaults to https://index.crates.io) and go (defaults to https://proxy.golang.org). Plain http(s) base URL without credentials, query or fragment; validated against the outbound (SSRF) policy.
          */
         upstream_url?: string;
         upstream_username?: string;

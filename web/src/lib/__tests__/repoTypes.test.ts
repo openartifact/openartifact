@@ -17,11 +17,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to cargo, deb, docker, go, helm, maven, npm, pypi, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'gomod', 'raw'])
+  it('restricts proxy to cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw, rpm in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'gomod', 'raw'])
   })
-  it('restricts group to cargo, docker, go, helm, maven, npm, pypi and raw', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'gomod', 'raw'])
+  it('restricts group to cargo, docker, go, helm, maven, npm, nuget, pypi and raw', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'nuget', 'gomod', 'raw'])
     expect(isFormatAllowed('group', 'deb')).toBe(false)
     expect(isFormatAllowed('group', 'rpm')).toBe(false)
   })
@@ -37,7 +37,7 @@ describe('coerceFormat', () => {
     expect(coerceFormat('hosted', 'docker')).toBe('docker')
   })
   it('falls back to the first allowed format when unsupported', () => {
-    expect(coerceFormat('proxy', 'nuget')).toBe(allowedFormats('proxy')[0])
+    expect(coerceFormat('proxy', 'conda')).toBe(allowedFormats('proxy')[0])
     expect(coerceFormat('group', 'deb')).toBe(allowedFormats('group')[0])
   })
   it('keeps docker for proxy and group', () => {
@@ -47,16 +47,18 @@ describe('coerceFormat', () => {
 })
 
 describe('upstream URL', () => {
-  it('is optional only for docker, pypi, cargo and go (well-known defaults)', () => {
+  it('is optional only for docker, pypi, cargo, go and nuget (well-known defaults)', () => {
     expect(upstreamUrlRequired('docker')).toBe(false)
     expect(upstreamUrlRequired('pypi')).toBe(false)
     expect(upstreamUrlRequired('cargo')).toBe(false)
     expect(upstreamUrlRequired('gomod')).toBe(false)
+    expect(upstreamUrlRequired('nuget')).toBe(false)
     expect(upstreamUrlRequired('maven')).toBe(true)
     expect(upstreamUrlPlaceholder('gomod')).toBe('https://proxy.golang.org')
     expect(upstreamUrlPlaceholder('docker')).toBe('https://registry-1.docker.io')
     expect(upstreamUrlPlaceholder('pypi')).toBe('https://pypi.org/simple')
     expect(upstreamUrlPlaceholder('cargo')).toBe('https://index.crates.io')
+    expect(upstreamUrlPlaceholder('nuget')).toBe('https://api.nuget.org/v3/index.json')
   })
 })
 

@@ -6,12 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # NuGet
 
-Hosted NuGet v3 feed: service index, registration, package download, search, autocomplete, push and delete.
+NuGet v3 feed: service index, registration, package download, search, autocomplete, push and delete; also as a proxy of an upstream feed (nuget.org) and as a group.
 
 | | |
 |---|---|
 | Repo URL | `HOST/repos/REPO/v3/index.json` |
-| Repository types | hosted only. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
+| Repository types | hosted, proxy, group. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
 
 ## Client setup
 
@@ -71,3 +71,21 @@ Version lists, registration pages and search results order versions by SemVer 2.
 The registration index (`@id`, `count`, `items`) holds pages of at most 64 versions in ascending order. Each page has `@id`, `lower`, `upper`, `count`, `parent` and `items`; each item has an `@id` (its leaf URL, `.../v3/registration/<id>/<version>.json`), `packageContent`, `registration` and a `catalogEntry` with `@id`, id, version, description, authors, title, summary, tags, projectUrl, licenseUrl, iconUrl, `listed` (always `true`), `published` (push time), dependency groups (per target framework) and the `packageContent` download URL. The leaf document returned by the leaf URL has `@id`, `catalogEntry` (the entry URL), `listed`, `packageContent`, `published` and `registration`.
 
 Search returns one entry per package: `totalHits` counts packages, and each entry carries the latest version's metadata (the highest stable version, or the highest prerelease when there is no stable one), `totalDownloads` over all versions and a `versions` array of `{"@id", "version", "downloads"}`. `skip` and `take` count packages. Autocomplete lists each package id once.
+
+## Proxy and group repositories
+
+A proxy (`repo_type: proxy`, `upstream_url` the upstream **service index**, default `https://api.nuget.org/v3/index.json`) and a group (`repo_type: group`) use the same source URL as a hosted repository, `HOST/repos/REPO/v3/index.json`, and the same `/v3/...` routes (read-only; `dotnet nuget push` is `405`):
+
+```sh
+dotnet nuget add source HOST/repos/REPO/v3/index.json --name REPO
+dotnet restore
+```
+
+Over plain `http://` NuGet needs `allowInsecureConnections="true"` on the source (or `--allow-insecure-connections`).
+
+- **Proxy.** The service index, flat container (version list, `.nupkg`, `.nuspec`) and registrations (inline or paged, gzip decoded) are fetched from the upstream's own service index and rewritten so that every resource and `packageContent` URL points at the proxy (`BASE_URL` must be the externally visible URL). `.nupkg` files are verified against the catalog `packageHash`/`packageSize` when the upstream publishes them, else against being a zip with a root `.nuspec`, then cached forever; metadata follows `cache_ttl_seconds` and is served stale when the upstream is down, so a restore of anything already fetched works offline. Search and autocomplete pass through uncached.
+- **Group.** The service index is the group's (registrations and flat container, no search). Version lists are united, registrations merged per version (earliest member wins) into inline pages, and package files come from the first member that has them. Members are hosted nuget and nuget proxy repositories.
+
+Details and limits: [NuGet proxies and groups](../repositories/hosted-proxy-group.md#nuget-proxies).
+
+Limits: the catalog (`Catalog/3.0.0`) and publishing resources are not proxied. Credentials are sent only to the origin of `upstream_url`, so a feed whose resources are on another origin than its service index is read anonymously there. Search on a group is not offered.

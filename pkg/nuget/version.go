@@ -2,6 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
+// Package nuget holds NuGet protocol helpers shared by the hosted format
+// handler and the proxy/group services: version parsing, ordering and
+// normalization, and v3 registration/flat-container document handling.
 package nuget
 
 import (
@@ -13,17 +16,17 @@ import (
 
 var errInvalidVersion = errors.New("invalid nuget version")
 
-// version is a parsed NuGet version: up to four numeric parts, optional
+// Version is a parsed NuGet version: up to four numeric parts, optional
 // release labels (the "-beta.1" part) and, which is not kept, build metadata.
-type version struct {
+type Version struct {
 	parts   [4]uint32
 	release []string // lower-cased dot-separated labels, empty for a stable version
 }
 
-// parseVersion parses a NuGet version string such as "1.0", "1.0.0.0",
+// ParseVersion parses a NuGet version string such as "1.0", "1.0.0.0",
 // "01.2.3-Beta.1+build5".
-func parseVersion(s string) (version, error) {
-	var v version
+func ParseVersion(s string) (Version, error) {
+	var v Version
 
 	s = strings.TrimSpace(s)
 
@@ -90,7 +93,7 @@ func validLabels(s string) bool {
 // String returns the normalized, lower-case form used in PackageBaseAddress
 // URLs and stored in the database: three numeric parts (a fourth only when not
 // zero), release labels lower-cased, build metadata dropped.
-func (v version) String() string {
+func (v Version) String() string {
 	var b strings.Builder
 
 	b.WriteString(strconv.FormatUint(uint64(v.parts[0]), 10))
@@ -112,13 +115,14 @@ func (v version) String() string {
 	return b.String()
 }
 
-func (v version) isPrerelease() bool { return len(v.release) > 0 }
+// IsPrerelease reports whether v carries release labels.
+func (v Version) IsPrerelease() bool { return len(v.release) > 0 }
 
-// compare orders versions per SemVer 2.0 extended with NuGet's fourth part:
+// Compare orders versions per SemVer 2.0 extended with NuGet's fourth part:
 // numeric parts first, then a version without release labels sorts after one
 // with them, then labels pairwise (numeric labels numerically and before
 // alphanumeric ones, alphanumeric labels in ordinal order).
-func (v version) compare(o version) int {
+func (v Version) Compare(o Version) int {
 	if c := slices.Compare(v.parts[:], o.parts[:]); c != 0 {
 		return c
 	}
@@ -162,11 +166,11 @@ func compareLabel(a, b string) int {
 	}
 }
 
-// normalizeVersion returns the normalized lower-case form of a NuGet version
+// Normalize returns the normalized lower-case form of a NuGet version
 // string. An unparsable string is returned lower-cased and trimmed with ok
 // false: it cannot match any stored (normalized) version.
-func normalizeVersion(s string) (string, bool) {
-	v, err := parseVersion(s)
+func Normalize(s string) (string, bool) {
+	v, err := ParseVersion(s)
 	if err != nil {
 		return strings.ToLower(strings.TrimSpace(s)), false
 	}
@@ -174,11 +178,11 @@ func normalizeVersion(s string) (string, bool) {
 	return v.String(), true
 }
 
-// compareVersionStrings orders two version strings; unparsable ones sort
+// CompareStrings orders two version strings; unparsable ones sort
 // first, in string order.
-func compareVersionStrings(a, b string) int {
-	va, errA := parseVersion(a)
-	vb, errB := parseVersion(b)
+func CompareStrings(a, b string) int {
+	va, errA := ParseVersion(a)
+	vb, errB := ParseVersion(b)
 
 	switch {
 	case errA != nil && errB != nil:
@@ -189,5 +193,5 @@ func compareVersionStrings(a, b string) int {
 		return 1
 	}
 
-	return va.compare(vb)
+	return va.Compare(vb)
 }

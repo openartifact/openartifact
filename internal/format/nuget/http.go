@@ -33,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
+	pkgnuget "github.com/openartifact/openartifact/pkg/nuget"
 )
 
 // registrationPageSize is the number of versions per registration page.
@@ -183,7 +184,7 @@ func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) 
 
 // pushedPackage builds the database record for a pushed .nupkg from its
 // nuspec metadata. The id is lower-cased and the version normalized (see
-// normalizeVersion), the form clients request. It returns an error for a
+// pkgnuget.Normalize), the form clients request. It returns an error for a
 // package without a usable id or version.
 func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models.NuGetPackage, error) {
 	id, _ := metadata["id"].(string)
@@ -193,7 +194,7 @@ func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models
 
 	rawVersion, _ := metadata["version"].(string)
 
-	version, ok := normalizeVersion(rawVersion)
+	version, ok := pkgnuget.Normalize(rawVersion)
 	if !ok {
 		return nil, fmt.Errorf("invalid package version %q", rawVersion) //nolint:err113 // reported to the log only
 	}
@@ -338,7 +339,7 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	packageID := strings.ToLower(vars["id"])
-	version, _ := normalizeVersion(vars["version"])
+	version, _ := pkgnuget.Normalize(vars["version"])
 
 	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
@@ -413,7 +414,7 @@ func (h *HTTPHandler) handleDeletePackage(w http.ResponseWriter, r *http.Request
 func sortedVersions(pkgs []*models.NuGetPackage) []*models.NuGetPackage {
 	out := slices.Clone(pkgs)
 	slices.SortStableFunc(out, func(a, b *models.NuGetPackage) int {
-		return compareVersionStrings(a.Version, b.Version)
+		return pkgnuget.CompareStrings(a.Version, b.Version)
 	})
 
 	return out
@@ -425,7 +426,7 @@ func latestVersion(pkgs []*models.NuGetPackage) *models.NuGetPackage {
 	sorted := sortedVersions(pkgs)
 
 	for _, p := range slices.Backward(sorted) {
-		if v, err := parseVersion(p.Version); err == nil && !v.isPrerelease() {
+		if v, err := pkgnuget.ParseVersion(p.Version); err == nil && !v.IsPrerelease() {
 			return p
 		}
 	}
@@ -492,7 +493,7 @@ func classifyPackageFile(filename, packageID, rawVersion, version string) packag
 func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	packageID := strings.ToLower(vars["id"])
-	version, _ := normalizeVersion(vars["version"])
+	version, _ := pkgnuget.Normalize(vars["version"])
 
 	kind := classifyPackageFile(vars["filename"], packageID, vars["version"], version)
 	if kind == fileUnknown {
@@ -680,7 +681,7 @@ func (h *HTTPHandler) handleRegistrationLeaf(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	version, _ := normalizeVersion(rawVersion)
+	version, _ := pkgnuget.Normalize(rawVersion)
 
 	repoID := h.resolveRepo(w, r)
 	if repoID == "" {

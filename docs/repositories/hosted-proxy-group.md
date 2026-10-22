@@ -16,13 +16,15 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 | npm | yes | yes | yes |
 | raw | yes | yes | yes |
 | pypi | yes | yes | yes |
+| nuget | yes | yes | yes |
 | deb | yes | yes | no |
 | rpm | yes | yes | no |
 | docker | yes | yes | yes |
 | cargo | yes | yes | yes |
 | go | yes | yes | yes |
 | helm | yes | yes | yes |
-| nuget, rubygems, conda, conan, ivy, sbt | yes | no | no |
+| nuget | yes | yes | yes |
+| rubygems, conda, conan, ivy, sbt | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Deb and RPM groups are rejected because their `Packages`/`Release`/`repodata` metadata is generated per repository and cannot be merged across members. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -55,7 +57,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 |---|---|---|
 | `name`, `format`, `description`, `public` | all | `public` grants anonymous read ([see below](#public-repositories-and-rbac)). |
 | `repo_type` | all | `hosted` (default), `proxy`, `group`. Any other value: `400`. |
-| `upstream_url` | proxy (required, except docker, pypi, cargo and go) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`), cargo (defaults to `https://index.crates.io`) and go (defaults to `https://proxy.golang.org`). |
+| `upstream_url` | proxy (required, except docker, pypi, cargo, go and nuget) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`), cargo (defaults to `https://index.crates.io`), go (defaults to `https://proxy.golang.org`) and nuget (defaults to the nuget.org service index, `https://api.nuget.org/v3/index.json`). |
 | `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream (for docker: sent to the registry's token service). Stored encrypted, never returned. |
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
@@ -89,7 +91,7 @@ Requests are mirrored by path from `upstream_url` (npm, cargo and Helm proxies a
 ### Cache TTLs
 
 - `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, Helm `index.yaml` and `.prov` files, Go `@v/list`, `@latest` and branch-query `.info` files, and everything in raw repositories.
-- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`), npm tarballs, cargo crate files, Helm chart archives and Go `.info`/`.mod`/`.zip` of a canonical version are immutable once cached and never revalidated.
+- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`), npm tarballs, cargo crate files, Helm chart archives, Go `.info`/`.mod`/`.zip` of a canonical version and NuGet `.nupkg`/`.nuspec` files are immutable once cached and never revalidated.
 - An upstream 404/410 is cached for `negative_cache_ttl_seconds` and drops any cached copy of the file (it is never served stale).
 
 ### Upstream failures and serve-stale
@@ -157,6 +159,19 @@ registry = "sparse+HOST/repos/REPO/index/"
 - **Writes:** `cargo publish`, `yank` and `unyank` against a proxy answer `405` (`Allow: GET, HEAD`); `cargo search` is not proxied (`404`).
 - With the upstream down, builds keep working from the cache: cached crates are always served, an index file is served stale (`Warning: 110`) for up to `max_stale_seconds` past its expiry, and a crate never requested before answers `502`.
 
+### NuGet proxies
+
+A nuget proxy is a v3 feed, not a path mirror. `upstream_url` is the upstream **service index** (default `https://api.nuget.org/v3/index.json`); clients use `HOST/repos/REPO/v3/index.json` as their package source exactly as with a hosted nuget repository ([client setup](../formats/nuget.md#client-setup)). Only the resources the proxy serves are advertised, all pointing at `BASE_URL/repos/REPO/v3/...`: the registrations base, the flat container (`PackageBaseAddress`) and, when the upstream has them, search and autocomplete.
+
+- **Service index** (`/v3/index.json`) is fetched from `upstream_url`, cached with the repository TTL and rewritten. The upstream resource URLs it names (flat container, registrations) are where the other requests go.
+- **Registrations** (`/v3/registration/<id>/index.json`, pages, leaves) are cached as received (gzip from `registration5-gz-*` is decoded) and rewritten: `@id`, `parent`, `registration` and `packageContent` point at this repository; paged (non-inline) registrations are served through `/v3/registration/<id>/page/<lower>/<upper>.json`, and a page the index does not list is `404` and never fetched. Catalog URLs (`catalogEntry`) are left unchanged.
+- **Flat container** (`/v3/package/<id>/index.json` version list, `<version>/<id>.<version>.nupkg`, `<id>.nuspec`) is fetched from the upstream's `PackageBaseAddress`. Ids and versions are matched in normalized form (lower case, `1.0` is `1.0.0`), so every spelling shares one cache entry.
+- **Packages** (`.nupkg`) are checked before they are cached: against the SHA-512 (or SHA-256) `packageHash` and `packageSize` of the package's catalog entry, found through its registration leaf, and, when the upstream publishes none (a hosted OpenArtifact upstream, or a catalog entry that is gone), against being a zip with a root `.nuspec`. A mismatching download answers `502` and is not stored. `.nupkg` and `.nuspec` files are immutable once cached.
+- **Search and autocomplete** (`/v3/query`, `/v3/autocomplete`) pass through uncached with their result URLs rewritten; `404` when the upstream service index has none.
+- **Writes:** `dotnet nuget push`/`delete` against a proxy answer `405` (`Allow: GET, HEAD`).
+- With the upstream down, restores keep working from the cache: cached packages are always served, and the service index, version lists and registrations are served stale (`Warning: 110`) for up to `max_stale_seconds` past their expiry; a package never requested before answers `502`.
+- Upstream credentials are sent only to the origin of `upstream_url`. A feed whose resources live on another origin (Azure Artifacts' `pkgs.dev.azure.com` → `feeds.dev.azure.com`, nuget.org's search host) is reachable, but those requests are anonymous.
+
 ### Upstream URL, SSRF and credentials
 
 `upstream_url` must be a plain `http(s)` base URL (no credentials, query or fragment); credentials go in `upstream_username`/`upstream_password`. It passes the same SSRF validation as webhooks, at configuration time and on every fetch and redirect: loopback, private and link-local addresses are refused. Set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` only for internal upstreams; the cloud metadata range (169.254.x) stays blocked. See [`../../.env.example`](../../.env.example).
@@ -180,8 +195,9 @@ A group is an ordered list of hosted and proxy members of the same format. Group
 - A Helm group merges `GET /index.yaml` across readable hosted and Helm proxy members: a chart name and version is listed once, from the earliest member that has it (the first member's entry, digest included, wins), and every chart URL is rewritten to `BASE_URL/repos/GROUP/charts/<file>`. Chart downloads (and `.prov` files) are resolved first-hit in member order. A member failing or serving an unreadable index while another contributes is ignored; with no contributor the group answers `404`, or `502` if a member failed. Only `index.yaml` and `charts/<file>` are served: a hosted member's chart listing (`GET /charts`) is not exposed.
 - A cargo group generates its own `config.json` (`dl`/`api` point at the group) and merges each crate's index file across readable hosted and cargo proxy members: the union of versions (build metadata ignored when comparing), the earliest member winning a version both list, and every other line untouched. Crate downloads are resolved first-hit in member order, so a crate comes from the member whose index entry won the merge. A member failing while another contributes is ignored; with no contributor the group answers `404`, or `502` if a member failed or served something that is not an index file. Clients use `sparse+HOST/repos/GROUP/index/`.
 - A go group answers `<module>/@v/list` with the union of the versions of all readable hosted and go proxy members (SemVer order, highest first, one line per version, failing members ignored while another answers); everything else (`.info`, `.mod`, `.zip`, `@latest`) is first-hit in member order.
+- A nuget group serves its own service index (registrations and flat container of the group; no search, `/v3/query` and `/v3/autocomplete` are `404`), unites `GET /v3/package/<id>/index.json` version lists, and merges `GET /v3/registration/<id>/index.json` across readable hosted and nuget proxy members: one item per version (the earliest member wins), ordered by version, in inline pages of 64; the pages a member does not inline are fetched from it, and a member that fails to deliver its registration whole is left out. Registration leaves and pages come from the first member that has them and `.nupkg`/`.nuspec` downloads are first-hit; every URL points at the group. A member failing while another contributes is ignored; with no contributor the group answers `404`, or `502` if a member failed.
 - Docker groups resolve manifests and blobs from the first readable member that has them and merge the `tags/list` of all readable members (sorted, de-duplicated, paginated with `n`/`last`).
-- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `GOPROXY=HOST/repos/GROUP` for Go, `HOST/repos/GROUP` for Helm, `HOSTPORT/GROUP/<image>:<tag>` for docker.
+- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `GOPROXY=HOST/repos/GROUP` for Go, `HOST/repos/GROUP` for Helm, `HOST/repos/GROUP/v3/index.json` for NuGet, `HOSTPORT/GROUP/<image>:<tag>` for docker.
 
 ## Public repositories and RBAC
 

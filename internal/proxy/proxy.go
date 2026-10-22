@@ -98,6 +98,8 @@ type Service struct {
 	// (GOSUMDB=off) verifies their structure only.
 	sumdb *sumDB
 
+	nuget nugetIndexCache // parsed NuGet upstream service indexes
+
 	// maxBody caps a single upstream response; DefaultMaxBody unless a test
 	// lowers it.
 	maxBody int64
@@ -156,6 +158,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	if repo.Format == "go" {
 		s.serveGo(w, r, repo, relPath)
+		return
+	}
+
+	if repo.Format == "nuget" {
+		s.serveNuGet(w, r, repo, relPath)
 		return
 	}
 
@@ -685,6 +692,9 @@ func Immutable(format, key string) bool {
 	case "go":
 		// .info/.mod/.zip of a canonical version, not list/@latest/queries.
 		return goImmutable(key)
+	case "nuget":
+		// Flat container package files, not version lists or registrations.
+		return strings.HasPrefix(key, "v3/package/") && (strings.HasSuffix(name, ".nupkg") || strings.HasSuffix(name, ".nuspec"))
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)

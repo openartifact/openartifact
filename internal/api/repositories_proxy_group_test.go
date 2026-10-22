@@ -55,9 +55,9 @@ func newProxyGroupDB() *proxyGroupMockDB {
 
 func TestCreateProxyAndGroupRejectsUnsupportedFormats(t *testing.T) {
 	cases := []struct{ name, body, wantInMsg string }{
-		{"proxy nuget", `{"name":"p","format":"nuget","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
+		{"proxy conda", `{"name":"p","format":"conda","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
 		{"proxy ivy", `{"name":"p","format":"ivy","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
-		{"group nuget", `{"name":"g","format":"nuget","repo_type":"group"}`, "not supported for format"},
+		{"group conda", `{"name":"g","format":"conda","repo_type":"group"}`, "not supported for format"},
 		{"group deb", `{"name":"g","format":"deb","repo_type":"group"}`, "cannot be merged"},
 		{"group rpm", `{"name":"g","format":"rpm","repo_type":"group"}`, "cannot be merged"},
 	}
@@ -98,7 +98,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "go", "helm", "nuget"} {
 		db := newProxyGroupDB()
 		rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy","upstream_url":"https://93.184.216.34/repo/","upstream_username":"u","upstream_password":"p"}`)
 
@@ -136,6 +136,12 @@ func TestCreateProxyDefaultUpstream(t *testing.T) {
 	if rw := createRepo(t, db, `{"name":"p","format":"go","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
 		db.created == nil || db.created.UpstreamURL != "https://proxy.golang.org" {
 		t.Errorf("go proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
+	}
+
+	db = newProxyGroupDB()
+	if rw := createRepo(t, db, `{"name":"p","format":"nuget","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
+		db.created == nil || db.created.UpstreamURL != "https://api.nuget.org/v3/index.json" {
+		t.Errorf("nuget proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
 	}
 
 	// Formats without a well-known public upstream still require one.

@@ -31,20 +31,20 @@ func TestNormalizeVersion(t *testing.T) {
 		"10.0.0-preview.1.24080": "10.0.0-preview.1.24080",
 	}
 
-	if got, ok := normalizeVersion(" \t1.0.0 "); !ok || got != "1.0.0" {
-		t.Errorf("surrounding whitespace: normalizeVersion = %q, %v", got, ok)
+	if got, ok := Normalize(" \t1.0.0 "); !ok || got != "1.0.0" {
+		t.Errorf("surrounding whitespace: Normalize = %q, %v", got, ok)
 	}
 
 	for in, want := range valid {
-		got, ok := normalizeVersion(in)
+		got, ok := Normalize(in)
 		if !ok || got != want {
-			t.Errorf("normalizeVersion(%q) = %q, %v; want %q", in, got, ok, want)
+			t.Errorf("Normalize(%q) = %q, %v; want %q", in, got, ok, want)
 		}
 	}
 
 	for _, in := range []string{"", "a", "1.a", "1..0", "1.0.0.0.0", "1.0.0-", "1.0.0-be ta", "-1.0.0", "1.0.0-a..b", "1.0.0+", "99999999999.0.0"} {
-		if got, ok := normalizeVersion(in); ok {
-			t.Errorf("normalizeVersion(%q) = %q, want rejection", in, got)
+		if got, ok := Normalize(in); ok {
+			t.Errorf("Normalize(%q) = %q, want rejection", in, got)
 		}
 	}
 }
@@ -52,11 +52,11 @@ func TestNormalizeVersion(t *testing.T) {
 // The normalized form is a fixed point and equal for every spelling of a version.
 func TestNormalizeVersionIdempotent(t *testing.T) {
 	for _, in := range []string{"1.0", "1.0.0.0", "01.0.0", "1.0.0+x", "1.0.0-Beta.01"} {
-		a, _ := normalizeVersion(in)
+		a, _ := Normalize(in)
 
-		b, ok := normalizeVersion(a)
+		b, ok := Normalize(a)
 		if !ok || a != b {
-			t.Errorf("normalizeVersion(%q) = %q, again = %q", in, a, b)
+			t.Errorf("Normalize(%q) = %q, again = %q", in, a, b)
 		}
 	}
 }
@@ -82,7 +82,7 @@ func TestCompareVersionStrings(t *testing.T) {
 
 	for i, a := range ordered {
 		for j, b := range ordered {
-			got := compareVersionStrings(a, b)
+			got := CompareStrings(a, b)
 
 			want := 0
 			if i < j {
@@ -92,15 +92,15 @@ func TestCompareVersionStrings(t *testing.T) {
 			}
 
 			if got != want {
-				t.Errorf("compareVersionStrings(%q, %q) = %d, want %d", a, b, got, want)
+				t.Errorf("CompareStrings(%q, %q) = %d, want %d", a, b, got, want)
 			}
 		}
 	}
 
 	// Case, leading zeros, a zero fourth part and build metadata do not matter.
 	for _, pair := range [][2]string{{"1.0.0", "1.0"}, {"1.0.0", "1.0.0.0"}, {"1.0.0-RC1", "1.0.0-rc1"}, {"1.0.0+a", "1.0.0+b"}, {"01.0.0", "1.0.0"}} {
-		if got := compareVersionStrings(pair[0], pair[1]); got != 0 {
-			t.Errorf("compareVersionStrings(%q, %q) = %d, want 0", pair[0], pair[1], got)
+		if got := CompareStrings(pair[0], pair[1]); got != 0 {
+			t.Errorf("CompareStrings(%q, %q) = %d, want 0", pair[0], pair[1], got)
 		}
 	}
 }
@@ -110,7 +110,7 @@ func TestSortedVersionsOrder(t *testing.T) {
 	want := []string{"1.0.0-beta", "1.0.0", "1.2.0", "1.10.0", "2.0.0"}
 
 	sorted := slices.Clone(in)
-	slices.SortFunc(sorted, compareVersionStrings)
+	slices.SortFunc(sorted, CompareStrings)
 
 	if !slices.Equal(sorted, want) {
 		t.Errorf("sorted = %v, want %v", sorted, want)

@@ -23,11 +23,7 @@ func IsProxyBlobPath(format, relPath string) bool {
 	case "deb":
 		return strings.HasPrefix(relPath, "pool/")
 	case "rpm":
-		if relPath == "repodata" || strings.HasPrefix(relPath, "repodata/") || strings.Contains(relPath, "/repodata/") {
-			return false
-		}
-
-		return strings.HasSuffix(base, ".rpm") || strings.HasSuffix(base, ".drpm")
+		return isRPMBlob(relPath, base)
 	case "npm":
 		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
 	case "helm":
@@ -37,6 +33,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasPrefix(relPath, "api/v1/crates/") && base == "download"
 	case "go":
 		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
+	case "nuget":
+		return strings.HasPrefix(relPath, "v3/package/") && strings.HasSuffix(base, ".nupkg")
 	case "raw":
 		return true
 	case "pypi":
@@ -46,6 +44,14 @@ func IsProxyBlobPath(format, relPath string) bool {
 	default:
 		return false
 	}
+}
+
+func isRPMBlob(relPath, base string) bool {
+	if relPath == "repodata" || strings.HasPrefix(relPath, "repodata/") || strings.Contains(relPath, "/repodata/") {
+		return false
+	}
+
+	return strings.HasSuffix(base, ".rpm") || strings.HasSuffix(base, ".drpm")
 }
 
 func isMavenMetadata(relPath, base string) bool {
