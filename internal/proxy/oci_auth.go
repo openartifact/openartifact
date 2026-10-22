@@ -6,9 +6,7 @@ package proxy
 
 import (
 	"context"
-	"crypto/sha256"
 	"encoding/base64"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -138,12 +136,10 @@ func (c *tokenCache) drop(key string) {
 
 // tokenKey identifies the credentials context of a token: a token is only
 // reused for the same repository, upstream, account, password and image. The
-// password enters as a hash of its stored (encrypted) form, so rotating it
-// retires every token fetched with the old one.
+// password enters in its stored (encrypted) form, so rotating it retires every
+// token fetched with the old one. The key lives only in this process's memory.
 func tokenKey(repo *models.Repository, up ociUpstream) string {
-	pw := sha256.Sum256([]byte(repo.UpstreamPasswordEnc))
-
-	return strings.Join([]string{repo.ID, up.base, repo.UpstreamUsername, hex.EncodeToString(pw[:]), up.name}, "\x00")
+	return strings.Join([]string{repo.ID, up.base, repo.UpstreamUsername, repo.UpstreamPasswordEnc, up.name}, "\x00")
 }
 
 // origin is the scheme, lower-cased host name and effective port of a URL.
