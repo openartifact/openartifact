@@ -37,7 +37,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               class="relative w-full bg-surface border-border shadow-2xl shadow-black/30 flex flex-col transform transition-all"
               :class="
                 drawer
-                  ? `${widthClass} border-l min-h-screen`
+                  ? `${widthClass} border-l h-screen`
                   : `${widthClass} rounded-xl border max-h-[90vh]`
               "
             >
