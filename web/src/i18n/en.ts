@@ -360,7 +360,7 @@ const base = {
   'browser.selectAll': 'Select all on page',
 
   // Dependency Graph
-  'graph.title': 'Dependency Graph',
+  'graph.title': 'Dependency graph',
   'graph.sbomList': 'Select SBOM',
   'graph.selectSbom': '— choose a SBOM —',
   'graph.artifactLabel': 'Artifact (name@version)',

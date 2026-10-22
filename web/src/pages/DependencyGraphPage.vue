@@ -6,8 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <PageHeader :title="t('graph.title')" :description="t('graph.subtitle').replace('{repo}', repoName)">
-      <template #actions>
+    <RepoHeader :name="repoName" :repo="repoInfo" active="graph" />
+
+    <div class="!mt-0 flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm text-muted">{{ t('graph.subtitle').replace('{repo}', repoName) }}</p>
+      <div class="flex flex-wrap items-center gap-2">
         <!-- SBOM selector -->
         <div class="relative">
           <select
@@ -32,8 +35,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('graph.exportSvg') }}
         </AppButton>
-      </template>
-    </PageHeader>
+      </div>
+    </div>
 
     <!-- Main grid: graph + sidebar -->
     <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
@@ -244,7 +247,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import AppButton from '../components/AppButton.vue'
 import AppToggle from '../components/AppToggle.vue'
-import PageHeader from '../components/PageHeader.vue'
+import RepoHeader from '../components/RepoHeader.vue'
+import { getRepository, type Repository } from '../api/repositories'
 import { formatDate } from '../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -532,12 +536,29 @@ watch(showVulnerableOnly, () => {
 
 // ─── Lifecycle ─────────────────────────────────────────────────────────────────
 
-onMounted(loadSboms)
+const repoInfo = ref<Repository | null>(null)
+
+async function loadRepo(): Promise<void> {
+  const name = repoName.value
+  try {
+    const r = await getRepository(name)
+    if (name === repoName.value) repoInfo.value = r
+  } catch {
+    // the SBOM list reports access problems; the header falls back to the bare name
+  }
+}
+
+onMounted(() => {
+  void loadRepo()
+  void loadSboms()
+})
 
 watch(repoName, () => {
+  repoInfo.value = null
   selectedSbomId.value = ''
   allPackages.value = []
   selectedNodeId.value = null
+  void loadRepo()
   void loadSboms()
 })
 </script>

@@ -6,17 +6,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
-    <PageHeader :title="repoName" :crumbs="crumbs">
-      <template v-if="repo" #meta>
-        <FormatBadge :format="repo.format" />
-        <span class="text-xs text-muted">{{ repo.repo_type || 'hosted' }}</span>
-        <span class="text-xs text-muted" aria-hidden="true">·</span>
-        <span class="inline-flex items-center gap-1 text-xs text-muted">
-          <EyeIcon v-if="repo.public" class="w-3.5 h-3.5" aria-hidden="true" />
-          <EyeSlashIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
-          {{ repo.public ? t('repos.public') : t('repos.private') }}
-        </span>
-      </template>
+    <RepoHeader
+      :name="repoName"
+      :repo="repo"
+      :active="activeTab === defaultTab ? 'main' : (activeTab as RepoSection)"
+      :count="repo?.repo_type === 'group' ? members.length : totalPackages"
+      :crumbs="crumbs"
+    >
       <template v-if="repo" #actions>
         <AppButton
           v-if="canUpload"
@@ -27,21 +23,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('repoDetail.upload') }}
         </AppButton>
-        <AppButton variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/browse`">
-          {{ t('browser.title') }}
-        </AppButton>
         <AppButton v-if="session.isAdmin" variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/edit`">
           <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('common.edit') }}
-        </AppButton>
-        <AppButton v-if="canViewTrash" variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/trash`">
-          {{ t('trash.title') }}
         </AppButton>
         <AppButton v-if="canDelete" variant="danger-outline" :loading="deleting" @click="showDeleteDialog = true">
           {{ deleting ? t('repoDetail.deleting') : t('common.delete') }}
         </AppButton>
       </template>
-    </PageHeader>
+    </RepoHeader>
 
     <!-- Loading State -->
     <div v-if="loading" class="text-muted">{{ t('common.loading') }}</div>
@@ -56,9 +46,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- Main Content -->
     <template v-else-if="repo">
-      <div class="rounded-xl border border-border bg-surface overflow-hidden">
-        <!-- Header -->
-        <div class="px-4 sm:px-6 pt-5 pb-4 border-b border-border">
+      <div v-if="activeTab === defaultTab" class="rounded-xl border border-border bg-surface overflow-hidden mb-6">
+        <div class="px-4 sm:px-6 py-4">
           <p v-if="repo.description" class="text-sm text-muted max-w-2xl">{{ repo.description }}</p>
           <p v-else class="text-sm text-muted italic max-w-2xl">{{ t('repos.noDescription') }}</p>
 
@@ -95,67 +84,27 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </dd>
           </dl>
         </div>
-
-        <!-- Tabs -->
-        <div
-          role="tablist"
-          :aria-label="t('repoDetail.tabs')"
-          class="flex items-center gap-1 px-3 overflow-x-auto"
-          @keydown="onTabKeydown"
-        >
-          <button
-            v-for="tab in tabs"
-            :id="`repo-tab-${tab.id}`"
-            :key="tab.id"
-            type="button"
-            role="tab"
-            :aria-selected="activeTab === tab.id"
-            :aria-controls="`repo-tabpanel-${tab.id}`"
-            :tabindex="activeTab === tab.id ? 0 : -1"
-            class="relative h-11 px-3 text-sm font-medium transition-colors cursor-pointer shrink-0"
-            :class="activeTab === tab.id ? 'text-foreground' : 'text-muted hover:text-foreground'"
-            @click="selectTab(tab.id)"
-          >
-            <span class="flex items-center gap-1.5">
-              {{ tab.label }}
-              <span
-                v-if="tab.count !== undefined"
-                class="text-micro font-mono px-1.5 py-0.5 rounded"
-                :class="activeTab === tab.id
-                  ? 'bg-primary-soft text-primary'
-                  : 'bg-surface-hover text-muted'
-                "
-              >
-                {{ tab.count }}
-              </span>
-            </span>
-            <span
-              v-if="activeTab === tab.id"
-              class="absolute left-2 right-2 -bottom-px h-[2px] bg-primary rounded-full"
-            />
-          </button>
-        </div>
       </div>
 
-      <div v-if="canUpload && showUpload && !(activeTab === 'packages' && packages.length === 0)" class="mt-6">
+      <div v-if="canUpload && showUpload && !(activeTab === 'packages' && packages.length === 0)" class="mb-6">
         <PackageUploadZone :repo="repo.name" :format="repo.format" @uploaded="load(true)" />
       </div>
 
       <!-- Tab Content -->
-      <div v-if="activeTab === 'cleanup' && session.isAdmin" :id="'repo-tabpanel-cleanup'" role="tabpanel" aria-labelledby="repo-tab-cleanup" class="mt-6">
+      <div v-if="activeTab === 'cleanup' && session.isAdmin">
         <RepoCleanupTab :repo-name="repoName" />
       </div>
-      <div v-else-if="activeTab === 'configuration' && session.isAdmin" :id="'repo-tabpanel-configuration'" role="tabpanel" aria-labelledby="repo-tab-configuration" class="mt-6">
+      <div v-else-if="activeTab === 'configuration' && session.isAdmin">
         <RepoSettingsTab :repo="repo" @saved="(r) => (repo = r)" />
       </div>
-      <div v-else-if="activeTab === 'members'" :id="'repo-tabpanel-members'" role="tabpanel" aria-labelledby="repo-tab-members" class="mt-6">
+      <div v-else-if="activeTab === 'members'">
         <p v-if="membersError" class="text-sm text-danger">{{ membersError }}</p>
         <EmptyState
           v-else-if="members.length === 0"
           :title="t('repoDetail.group.emptyTitle')"
           :description="t('repoDetail.group.emptyHint')"
         />
-        <section v-else class="rounded-lg border border-border bg-surface">
+        <section v-else class="rounded-xl border border-border bg-surface overflow-hidden">
           <div class="px-4 py-3 border-b border-border">
             <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.group.title') }}</h2>
             <p class="text-xs text-muted mt-0.5">{{ t('repoDetail.group.hint') }}</p>
@@ -163,24 +112,22 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="overflow-x-auto">
             <table class="w-full">
               <thead>
-                <tr class="border-b border-border">
-                  <th class="w-24 text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repoDetail.group.position') }}</th>
-                  <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repos.column.name') }}</th>
-                  <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repos.column.format') }}</th>
-                  <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('repos.column.type') }}</th>
+                <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
+                  <th class="w-24 text-left px-4 py-2.5">{{ t('repoDetail.group.position') }}</th>
+                  <th class="text-left px-4 py-2.5">{{ t('repos.column.name') }}</th>
+                  <th class="text-left px-4 py-2.5">{{ t('repos.column.type') }}</th>
                 </tr>
               </thead>
               <tbody>
-                <tr v-for="(m, i) in members" :key="m.id" class="border-t border-border hover:bg-surface-hover transition-colors">
-                  <td class="px-4 py-3 text-xs font-mono text-muted">{{ i + 1 }}</td>
-                  <td class="px-4 py-3 text-sm font-medium">
+                <tr v-for="(m, i) in members" :key="m.id" class="border-t border-border first:border-t-0 hover:bg-surface-hover transition-colors">
+                  <td class="px-4 py-2.5 text-xs font-mono text-muted">{{ i + 1 }}</td>
+                  <td class="px-4 py-2.5 text-sm font-medium">
                     <router-link
                       :to="`/repos/${encodeURIComponent(m.name)}`"
                       class="font-mono text-foreground hover:text-primary transition-colors"
                     >{{ m.name }}</router-link>
                   </td>
-                  <td class="px-4 py-3 text-sm"><FormatBadge :format="m.format" /></td>
-                  <td class="px-4 py-3">
+                  <td class="px-4 py-2.5">
                     <span class="inline-flex items-center rounded border border-border px-1.5 py-0.5 text-xs text-muted">
                       {{ m.repo_type === 'proxy' ? t('repos.new.type.proxy') : t('repos.new.type.hosted') }}
                     </span>
@@ -191,7 +138,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </section>
       </div>
-      <div v-else-if="activeTab === 'packages'" :id="'repo-tabpanel-packages'" role="tabpanel" aria-labelledby="repo-tab-packages" class="mt-6">
+      <div v-else-if="activeTab === 'packages'">
         <p v-if="repo.repo_type === 'proxy' && packages.length > 0" class="mb-3 text-xs text-muted">
           {{ t('repoDetail.proxy.cachedHint') }}
         </p>
@@ -205,11 +152,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ConnectClientPanel :format="repo.format" :repo="repo.name" />
           <PackageUploadZone v-if="canUpload" :repo="repo.name" :format="repo.format" @uploaded="load(true)" />
         </div>
-        <div v-else class="overflow-x-auto">
+        <div v-else class="overflow-x-auto rounded-xl border border-border bg-surface">
           <table class="w-full">
             <thead>
-              <tr class="border-b border-border">
-                <th v-if="canDeletePackages" class="w-7 px-4 py-3 text-sm font-medium text-muted">
+              <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
+                <th v-if="canDeletePackages" class="w-7 px-4 py-2.5">
                   <input
                     type="checkbox"
                     :checked="allPkgsSelected"
@@ -219,22 +166,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     @change="toggleAllPkgs"
                   />
                 </th>
-                <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('packages.column.name') }}</th>
-                <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('packages.column.version') }}</th>
-                <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('packages.column.format') }}</th>
-                <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('packages.column.size') }}</th>
-                <th class="text-left px-4 py-3 text-sm font-medium text-muted">{{ t('packages.column.uploaded') }}</th>
-                <th class="text-right px-4 py-3 text-sm font-medium text-muted"></th>
+                <th class="text-left px-4 py-2.5">{{ t('packages.column.name') }}</th>
+                <th class="text-left px-4 py-2.5">{{ t('packages.column.version') }}</th>
+                <th class="text-right px-4 py-2.5">{{ t('packages.column.size') }}</th>
+                <th class="text-left px-4 py-2.5">{{ t('packages.column.uploaded') }}</th>
+                <th class="text-right px-4 py-2.5"><span class="sr-only">{{ t('common.actions') }}</span></th>
               </tr>
             </thead>
             <tbody>
               <tr
                 v-for="pkg in packages"
                 :key="pkg.id"
-                class="border-t border-border hover:bg-surface-hover transition-colors cursor-pointer group"
+                class="border-t border-border first:border-t-0 hover:bg-surface-hover transition-colors group"
                 :class="{ 'bg-primary-soft/40': selectedIds.has(itemKey(pkg)) }"
               >
-                <td v-if="canDeletePackages" class="w-7 px-4 py-3" @click.stop>
+                <td v-if="canDeletePackages" class="w-7 px-4 py-2.5">
                   <input
                     type="checkbox"
                     :checked="selectedIds.has(itemKey(pkg))"
@@ -244,20 +190,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     @change="togglePkg(pkg)"
                   />
                 </td>
-                <td class="px-4 py-3 text-sm font-medium">
+                <td class="px-4 py-2.5 text-sm font-medium">
                   <router-link
-                    :to="`/repos/${repo!.name}/packages/${encodeURIComponent(pkg.format)}/${encodeURIComponent(pkg.name)}`"
+                    :to="`/repos/${encodeURIComponent(repo!.name)}/packages/${encodeURIComponent(pkg.format)}/${encodeURIComponent(pkg.name)}`"
                     class="text-foreground hover:text-primary transition-colors"
-                    @click.stop
                   >{{ pkg.name }}</router-link>
                 </td>
-                <td class="px-4 py-3 text-xs font-mono text-muted">{{ pkg.version || '—' }}</td>
-                <td class="px-4 py-3 text-sm">
-                  <FormatBadge :format="pkg.format" />
-                </td>
-                <td class="px-4 py-3 text-sm text-muted">{{ formatSize(pkg.size) }}</td>
-                <td class="px-4 py-3 text-sm text-muted">{{ formatDate(pkg.created_at) }}</td>
-                <td class="px-4 py-3 text-right" @click.stop>
+                <td class="px-4 py-2.5 text-xs font-mono text-muted">{{ pkg.version || '—' }}</td>
+                <td class="px-4 py-2.5 text-xs font-mono tabular-nums text-muted text-right">{{ formatSize(pkg.size) }}</td>
+                <td class="px-4 py-2.5 text-xs text-muted">{{ formatDate(pkg.created_at) }}</td>
+                <td class="px-4 py-2.5 text-right">
                   <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
                     <button
                       class="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
@@ -340,9 +282,8 @@ import type { Repository, RepositoryMember, PackageItem } from '../api/repositor
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import EmptyState from '../components/EmptyState.vue'
-import PageHeader from '../components/PageHeader.vue'
+import RepoHeader, { type RepoSection } from '../components/RepoHeader.vue'
 import { resolveCrumbs, type Crumb } from '../lib/crumbs'
-import FormatBadge from '../components/FormatBadge.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
 import ConnectClientPanel from '../components/ConnectClientPanel.vue'
 import PackageUploadZone from '../components/PackageUploadZone.vue'
@@ -361,8 +302,6 @@ import {
   ArrowUpTrayIcon,
   ClipboardIcon,
   Cog6ToothIcon,
-  EyeIcon,
-  EyeSlashIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
 
@@ -385,8 +324,6 @@ const membersError = ref('')
 const repoName = computed(() => route.params.name as string)
 const isProxy = computed(() => repo.value?.repo_type === 'proxy')
 const canDelete = computed(() => session.isAdmin)
-// Repo-scoped permissions come from the server, so non-admin principals with a delete grant also see the trash.
-const canViewTrash = computed(() => !!repo.value?.permissions?.delete)
 // Web upload is implemented by the deb and rpm handlers only; other formats
 // are published with their native client tooling. Proxy and group
 // repositories are read-only.
@@ -481,28 +418,6 @@ const activeTab = computed(() => {
   const wanted = typeof route.query.tab === 'string' ? route.query.tab : ''
   return tabs.value.some((tb) => tb.id === wanted) ? wanted : defaultTab.value
 })
-
-function selectTab(id: string): void {
-  if (id === activeTab.value) return
-  const query = { ...route.query }
-  if (id === defaultTab.value) delete query.tab
-  else query.tab = id
-  void router.push({ query })
-}
-
-function onTabKeydown(e: KeyboardEvent): void {
-  const ids = tabs.value.map((tb) => tb.id)
-  const i = ids.indexOf(activeTab.value)
-  let next = -1
-  if (e.key === 'ArrowRight') next = (i + 1) % ids.length
-  else if (e.key === 'ArrowLeft') next = (i - 1 + ids.length) % ids.length
-  else if (e.key === 'Home') next = 0
-  else if (e.key === 'End') next = ids.length - 1
-  if (next < 0) return
-  e.preventDefault()
-  selectTab(ids[next])
-  document.getElementById(`repo-tab-${ids[next]}`)?.focus()
-}
 
 // Breadcrumb trail: Repositories › repo, plus the tab when it is not the default.
 const crumbs = computed<Crumb[]>(() => {

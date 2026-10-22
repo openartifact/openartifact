@@ -32,7 +32,7 @@ describe('route crumb trails', () => {
   it.each([
     ['/repos/demo/edit', ['Repositories', 'demo', 'Edit']],
     ['/repos/demo/browse', ['Repositories', 'demo', 'Browse']],
-    ['/repos/demo/graph', ['Repositories', 'demo', 'Dependency Graph']],
+    ['/repos/demo/graph', ['Repositories', 'demo', 'Dependency graph']],
     ['/repos/demo/trash', ['Repositories', 'demo', 'Trash']],
     ['/repos/demo/packages/npm/left-pad', ['Repositories', 'demo', 'left-pad']],
     ['/search', ['Search']],

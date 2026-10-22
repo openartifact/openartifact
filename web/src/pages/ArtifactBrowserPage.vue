@@ -6,25 +6,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
-    <PageHeader :title="t('browser.title')" :description="repoName" />
+    <RepoHeader :name="repoName" :repo="repo" active="browse" />
 
     <!-- Toolbar -->
-    <div class="flex flex-wrap items-center gap-3 mb-4">
-      <div class="ml-auto flex flex-wrap items-center gap-2">
-        <!-- Filter input -->
-        <div class="relative">
-          <MagnifyingGlassIcon
-            class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none"
-            aria-hidden="true"
-          />
-          <input
-            v-model="searchQuery"
-            type="search"
-            :placeholder="t('browser.filterPlaceholder')"
-            class="h-8 w-56 pl-7 pr-2 rounded-md text-xs bg-surface-hover/60 border border-border-strong text-foreground placeholder:text-muted focus:ring-2 focus:ring-primary"
-          />
-        </div>
-
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div class="relative">
+        <MagnifyingGlassIcon
+          class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none"
+          aria-hidden="true"
+        />
+        <input
+          v-model="searchQuery"
+          type="search"
+          :placeholder="t('browser.filterPlaceholder')"
+          :aria-label="t('browser.filterPlaceholder')"
+          class="h-8 w-64 pl-7 pr-2 rounded-md text-xs bg-surface border border-border-strong text-foreground placeholder:text-muted focus:ring-2 focus:ring-primary"
+        />
+      </div>
+      <div class="flex flex-wrap items-center gap-2">
         <!-- Grid/List toggle -->
         <div class="rounded-md border border-border p-0.5 bg-surface flex items-center">
           <button
@@ -104,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="checkbox"
             :checked="allPageSelected"
             :indeterminate="somePageSelected && !allPageSelected"
-            class="w-4 h-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer"
+            class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer"
             :aria-label="t('browser.selectAll')"
             @change="toggleAll"
           />
@@ -129,7 +128,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <input
               type="checkbox"
               :checked="selectedIds.has(itemKey(item))"
-              class="w-4 h-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+              class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
               :class="{ 'opacity-100': selectedIds.has(itemKey(item)) }"
               :aria-label="t('browser.selectItem').replace('{name}', item.name)"
               @change="toggleItem(item)"
@@ -144,7 +143,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             >
               <ArchiveBoxIcon class="w-4 h-4" aria-hidden="true" />
             </div>
-            <FormatBadge :format="item.format" class="shrink-0" />
             <router-link
               :to="`/repos/${repoName}/packages/${encodeURIComponent(item.format)}/${encodeURIComponent(item.name)}`"
               class="text-sm font-medium text-foreground hover:text-primary transition-colors truncate"
@@ -210,7 +208,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <input
             type="checkbox"
             :checked="selectedIds.has(itemKey(item))"
-            class="w-4 h-4 rounded border-border-strong text-primary focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
+            class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
             :class="{ 'opacity-100': selectedIds.has(itemKey(item)) }"
             @click.stop
             @change="toggleItem(item)"
@@ -224,7 +222,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="mt-1 font-mono text-xs text-muted truncate">
           {{ item.version || '—' }}
         </div>
-        <FormatBadge :format="item.format" class="mt-2" />
         <div class="mt-3 flex items-center justify-between text-xs text-muted">
           <span class="font-mono tabular-nums">{{ formatBytes(item.size) }}</span>
           <span>{{ formatDate(item.created_at) }}</span>
@@ -244,7 +241,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../components/PageHeader.vue'
+import RepoHeader from '../components/RepoHeader.vue'
 import { formatDate } from '../lib/datetime'
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
@@ -254,7 +251,6 @@ import AppButton from '../components/AppButton.vue'
 import EmptyState from '../components/EmptyState.vue'
 import Pagination from '../components/Pagination.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
-import FormatBadge from '../components/FormatBadge.vue'
 import { useToastStore } from '../stores/toast'
 import {
   MagnifyingGlassIcon,

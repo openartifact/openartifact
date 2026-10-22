@@ -8,6 +8,8 @@
 @config "../tailwind.config.js";
 
 :root {
+  /* Native controls (checkboxes, selects, scrollbars) follow the app theme, not the OS. */
+  color-scheme: light;
   --color-bg: 249 250 251;
   --color-surface: 255 255 255;
   --color-surface-hover: 243 244 246;
@@ -36,6 +38,7 @@
 }
 
 .dark {
+  color-scheme: dark;
   --color-bg: 9 11 19;
   --color-surface: 17 20 32;
   --color-surface-hover: 26 31 48;

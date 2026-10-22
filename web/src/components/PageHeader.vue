@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <header class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div class="min-w-0">
-      <nav v-if="trail.length > 0" :aria-label="t('shell.breadcrumbs')" class="mb-1">
+      <nav v-if="trail.length > 1" :aria-label="t('shell.breadcrumbs')" class="mb-1">
         <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
           <li
             v-for="(crumb, i) in trail"

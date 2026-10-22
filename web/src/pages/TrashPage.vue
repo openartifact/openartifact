@@ -6,10 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <PageHeader
-      :title="t('trash.title')"
-      :description="repo ? t('trash.descriptionRepo') : t('trash.description')"
-    />
+    <div v-if="repo">
+      <RepoHeader :name="repo" :repo="repoInfo" active="trash" />
+      <p class="-mt-2 text-sm text-muted">{{ t('trash.descriptionRepo') }}</p>
+    </div>
+    <PageHeader v-else :title="t('trash.title')" :description="t('trash.description')" />
 
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
@@ -52,7 +53,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else class="overflow-x-auto">
         <table class="w-full text-left">
           <thead>
-            <tr class="border-b border-border text-xs text-muted">
+            <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
               <th class="px-4 py-2 font-medium">{{ t('trash.column.type') }}</th>
               <th class="px-4 py-2 font-medium">{{ t('trash.column.name') }}</th>
               <th class="px-4 py-2 font-medium">{{ t('trash.column.version') }}</th>
@@ -142,6 +143,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
+import RepoHeader from '../components/RepoHeader.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { ArrowUturnLeftIcon, TrashIcon } from '@heroicons/vue/24/outline'
@@ -150,7 +152,7 @@ import ConfirmDialog from '../components/ConfirmDialog.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import Pagination from '../components/Pagination.vue'
 import { ApiError } from '../api/client'
-import { getRepository } from '../api/repositories'
+import { getRepository, type Repository } from '../api/repositories'
 import { emptyRepoTrash, listTrash, purgeTrash, restoreTrash, type TrashItem, type TrashKind } from '../api/trash'
 import { formatDateTime } from '../lib/datetime'
 import { emptyTrashResultText, purgeInText, trashCapabilities, type RepoPermissions } from '../lib/trash'
@@ -179,6 +181,7 @@ const busyKey = ref('')
 const purgeTarget = ref<TrashItem | null>(null)
 const emptyOpen = ref(false)
 const permissions = ref<Partial<RepoPermissions> | null>(null)
+const repoInfo = ref<Repository | null>(null)
 
 const caps = computed(() => trashCapabilities(repo.value ? 'repo' : 'global', session.isAdmin, permissions.value))
 // Repositories are only restorable through the global admin endpoint.
@@ -205,7 +208,10 @@ async function loadPermissions(): Promise<void> {
   if (!name) return
   try {
     const r = await getRepository(name)
-    if (name === repo.value) permissions.value = r.permissions ?? null
+    if (name === repo.value) {
+      repoInfo.value = r
+      permissions.value = r.permissions ?? null
+    }
   } catch {
     // the list request reports access problems; actions stay hidden without permissions
   }
