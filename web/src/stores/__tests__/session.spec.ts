@@ -72,6 +72,36 @@ describe('useSessionStore', () => {
     expect(store.isAuthenticated).toBe(true)
   })
 
+  it('keeps the caller\'s project roles from /auth/me', async () => {
+    const store = useSessionStore()
+    expect(store.projects).toEqual([])
+
+    const projects = [
+      { name: 'alpha', role: 'owner' },
+      { name: 'beta', role: 'viewer' },
+    ]
+    fetchMock.mockResolvedValueOnce(mk({
+      status: 200,
+      ok: true,
+      json: async () => ({ id: '1', username: 'ann', projects }),
+    }) as unknown as Response)
+
+    await store.fetchMe()
+
+    expect(store.projects).toEqual(projects)
+  })
+
+  it('has no projects when /auth/me omits them or the session is cleared', async () => {
+    const store = useSessionStore()
+    store.user = { id: '1', username: 'ann' } as User
+    expect(store.projects).toEqual([])
+
+    store.user = { id: '1', username: 'ann', projects: [{ name: 'alpha', role: 'developer' }] } as User
+    expect(store.projects).toHaveLength(1)
+    store.clearSession()
+    expect(store.projects).toEqual([])
+  })
+
   it('fetchMe() sends correct headers and credentials', async () => {
     const store = useSessionStore()
 

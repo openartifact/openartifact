@@ -29,6 +29,39 @@ func (q *Queries) AddProjectMember(ctx context.Context, arg AddProjectMemberPara
 	return created_at, err
 }
 
+const countRepositoriesByProjects = `-- name: CountRepositoriesByProjects :many
+SELECT project_id, COUNT(*)::bigint AS repositories
+FROM repositories
+WHERE project_id = ANY($1::uuid[]) AND deleted_at IS NULL
+GROUP BY project_id
+`
+
+type CountRepositoriesByProjectsRow struct {
+	ProjectID    string `db:"project_id" json:"project_id"`
+	Repositories int64  `db:"repositories" json:"repositories"`
+}
+
+// Live (not trashed) repositories per project.
+func (q *Queries) CountRepositoriesByProjects(ctx context.Context, dollar_1 []string) ([]CountRepositoriesByProjectsRow, error) {
+	rows, err := q.db.Query(ctx, countRepositoriesByProjects, dollar_1)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []CountRepositoriesByProjectsRow{}
+	for rows.Next() {
+		var i CountRepositoriesByProjectsRow
+		if err := rows.Scan(&i.ProjectID, &i.Repositories); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const createProject = `-- name: CreateProject :one
 INSERT INTO projects (id, name, slug, display_name, description, owner_id,
                       allowed_formats, allowed_repo_types, repo_name_prefix, allow_public_repos, max_repositories, token_max_ttl_days)
@@ -173,8 +206,9 @@ func (q *Queries) GetProjectGroup(ctx context.Context, arg GetProjectGroupParams
 }
 
 const getProjectMember = `-- name: GetProjectMember :one
-SELECT (project_id::text || ':' || user_id::text) AS id, project_id, user_id, role, created_at
-FROM project_members WHERE project_id = $1 AND user_id = $2
+SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
+FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
+WHERE pm.project_id = $1 AND pm.user_id = $2
 `
 
 type GetProjectMemberParams struct {
@@ -186,6 +220,7 @@ type GetProjectMemberRow struct {
 	ID        interface{} `db:"id" json:"id"`
 	ProjectID string      `db:"project_id" json:"project_id"`
 	UserID    string      `db:"user_id" json:"user_id"`
+	Username  string      `db:"username" json:"username"`
 	Role      string      `db:"role" json:"role"`
 	CreatedAt time.Time   `db:"created_at" json:"created_at"`
 }
@@ -197,6 +232,7 @@ func (q *Queries) GetProjectMember(ctx context.Context, arg GetProjectMemberPara
 		&i.ID,
 		&i.ProjectID,
 		&i.UserID,
+		&i.Username,
 		&i.Role,
 		&i.CreatedAt,
 	)
@@ -326,14 +362,16 @@ func (q *Queries) ListProjectGroups(ctx context.Context, projectID string) ([]Li
 }
 
 const listProjectMembers = `-- name: ListProjectMembers :many
-SELECT (project_id::text || ':' || user_id::text) AS id, project_id, user_id, role, created_at
-FROM project_members WHERE project_id = $1 ORDER BY created_at ASC
+SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
+FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
+WHERE pm.project_id = $1 ORDER BY pm.created_at ASC, u.username
 `
 
 type ListProjectMembersRow struct {
 	ID        interface{} `db:"id" json:"id"`
 	ProjectID string      `db:"project_id" json:"project_id"`
 	UserID    string      `db:"user_id" json:"user_id"`
+	Username  string      `db:"username" json:"username"`
 	Role      string      `db:"role" json:"role"`
 	CreatedAt time.Time   `db:"created_at" json:"created_at"`
 }
@@ -351,6 +389,7 @@ func (q *Queries) ListProjectMembers(ctx context.Context, projectID string) ([]L
 			&i.ID,
 			&i.ProjectID,
 			&i.UserID,
+			&i.Username,
 			&i.Role,
 			&i.CreatedAt,
 		); err != nil {
@@ -410,34 +449,6 @@ func (q *Queries) ListProjectsByUser(ctx context.Context, ownerID *string) ([]Pr
 	return items, nil
 }
 
-const removeProjectGroup = `-- name: RemoveProjectGroup :exec
-DELETE FROM project_groups WHERE project_id = $1 AND group_id = $2
-`
-
-type RemoveProjectGroupParams struct {
-	ProjectID string `db:"project_id" json:"project_id"`
-	GroupID   string `db:"group_id" json:"group_id"`
-}
-
-func (q *Queries) RemoveProjectGroup(ctx context.Context, arg RemoveProjectGroupParams) error {
-	_, err := q.db.Exec(ctx, removeProjectGroup, arg.ProjectID, arg.GroupID)
-	return err
-}
-
-const removeProjectMember = `-- name: RemoveProjectMember :exec
-DELETE FROM project_members WHERE project_id = $1 AND user_id = $2
-`
-
-type RemoveProjectMemberParams struct {
-	ProjectID string `db:"project_id" json:"project_id"`
-	UserID    string `db:"user_id" json:"user_id"`
-}
-
-func (q *Queries) RemoveProjectMember(ctx context.Context, arg RemoveProjectMemberParams) error {
-	_, err := q.db.Exec(ctx, removeProjectMember, arg.ProjectID, arg.UserID)
-	return err
-}
-
 const setProjectGroup = `-- name: SetProjectGroup :exec
 INSERT INTO project_groups (project_id, group_id, role, created_by)
 VALUES ($1, $2, $3, $4)
@@ -494,20 +505,5 @@ func (q *Queries) UpdateProject(ctx context.Context, arg UpdateProjectParams) er
 		arg.TokenMaxTtlDays,
 		arg.ID,
 	)
-	return err
-}
-
-const updateProjectMemberRole = `-- name: UpdateProjectMemberRole :exec
-UPDATE project_members SET role = $1 WHERE project_id = $2 AND user_id = $3
-`
-
-type UpdateProjectMemberRoleParams struct {
-	Role      string `db:"role" json:"role"`
-	ProjectID string `db:"project_id" json:"project_id"`
-	UserID    string `db:"user_id" json:"user_id"`
-}
-
-func (q *Queries) UpdateProjectMemberRole(ctx context.Context, arg UpdateProjectMemberRoleParams) error {
-	_, err := q.db.Exec(ctx, updateProjectMemberRole, arg.Role, arg.ProjectID, arg.UserID)
 	return err
 }

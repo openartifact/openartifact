@@ -25,7 +25,7 @@ Details, token kinds and SSO are in [authentication](../security/authentication.
 - **API token:** `Authorization: Bearer <TOKEN>`. No CSRF header needed. Tokens are `access` (management API, per the owner's permissions) or `deploy` (repository credentials; never granted `manage`, so no `/api/v1` management calls).
 - **Session cookie:** `POST /api/v1/auth/login` (`{"username","password"}`) sets `oa_session` (HttpOnly, SameSite=Lax) and a readable `oa_csrf` cookie. State-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) on a session must echo it in `X-CSRF-Token`, otherwise `403 {"error":"csrf_protection",...}`. Login is rate limited (`429 rate_limited` with `Retry-After`).
 - **Self-service limits:** an API token cannot create or revoke tokens, change a password, or edit its own user profile; those need a login session. An account flagged `must_change_password` gets `403 password_change_required` everywhere except `change-password` and `logout`.
-- **Gate:** every `/api/v1/*` route requires the global `manage` permission, except `GET /repositories` and `GET /search` (any authenticated user; results are filtered per repository), `GET /repository/{name}` (`read` on that repository), `/repositories/{name}/{packages,debs,comps}` and `/repositories/{name}/trash...` (`read`/`write`/`delete`, or `delete`, on that repository; `DELETE .../trash` needs `manage` on it). Anonymous callers can only read public repositories (or what `allowAnonymousRead` exposes).
+- **Gate:** every `/api/v1/*` route requires the global `manage` permission, except `GET /repositories` and `GET /search` (any authenticated user; results are filtered per repository), `/projects/**` (decided by the caller's [project role](../security/projects.md); unlisted sub-paths still need `manage`), `GET /repository/{name}` (`read` on that repository), `/repositories/{name}/{packages,debs,comps}` and `/repositories/{name}/trash...` (`read`/`write`/`delete`, or `delete`, on that repository; `DELETE .../trash` needs `manage` on it). Anonymous callers can only read public repositories (or what `allowAnonymousRead` exposes).
 
 ### Example: token and repository
 
@@ -153,7 +153,8 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas |
 | `/repositories/{name}/ai-analysis` | [AI analysis](ai-analysis.md) |
 | `/search` | search packages and repositories |
-| `/users`, `/groups`, `/projects` (with `/members` and `/groups`), `/permission-targets` | identity and [RBAC](../security/rbac.md) objects |
+| `/users`, `/groups`, `/permission-targets` | identity and [RBAC](../security/rbac.md) objects |
+| `/projects` (with `/repositories`, `/members` and `/groups`) | [projects](../security/projects.md): open to every authenticated user and decided per project role, not by global `manage` (`404` for non-members, `403` for members lacking the role). Updates use `PATCH` for the project and for a member's role |
 | `/webhooks` | global webhooks, test, deliveries |
 | `/bundles`, `/pipelines` | [release bundles](../repositories/release-bundles.md) and promotion pipelines |
 | `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log, GPG keys (`/admin/gpg/keys` is a stub: empty list, 501 on write; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |

@@ -51,7 +51,17 @@ type Config struct {
 	MCP      MCPConfig               `yaml:"mcp"`
 	Workers  WorkersConfig           `yaml:"workers"`
 	Trash    TrashConfig             `yaml:"trash"`
+	Projects ProjectsConfig          `yaml:"projects"`
 	BaseURL  string                  `yaml:"baseUrl"`
+}
+
+// ProjectsConfig tunes project self-service (see docs/security/projects.md).
+type ProjectsConfig struct {
+	// SelfCreate lets any authenticated human user create a project and become
+	// its owner. Off by default: only global admins create projects. An
+	// administrator can change it at runtime (system setting projects.self_create),
+	// which then takes precedence over this default.
+	SelfCreate bool `yaml:"selfCreate"`
 }
 
 // WorkersConfig contains background worker tuning.
@@ -424,6 +434,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.AI.MaxTokens, "AI_MAX_TOKENS")
 	overrideInt(&cfg.AI.TimeoutSecs, "AI_TIMEOUT_SECS")
 	overrideString(&cfg.AI.SystemPrompt, "AI_SYSTEM_PROMPT")
+
+	// Projects config
+	overrideBool(&cfg.Projects.SelfCreate, "OPENARTIFACT_PROJECTS_SELF_CREATE")
 
 	// MCP config
 	overrideBool(&cfg.MCP.Enabled, "MCP_ENABLED")

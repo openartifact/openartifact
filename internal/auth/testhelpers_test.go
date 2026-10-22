@@ -736,14 +736,12 @@ func (m *tokenMockDB) ListProjects(_ context.Context, _ string) ([]*models.Proje
 	return nil, nil
 }
 func (m *tokenMockDB) AddProjectMember(_ context.Context, _, _, _ string) error { return nil }
-func (m *tokenMockDB) RemoveProjectMember(_ context.Context, _, _ string) error { return nil }
 func (m *tokenMockDB) ListProjectMembers(_ context.Context, _ string) ([]*models.ProjectMember, error) {
 	return nil, nil
 }
 func (m *tokenMockDB) GetProjectMember(_ context.Context, _, _ string) (*models.ProjectMember, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) UpdateProjectMemberRole(_ context.Context, _, _, _ string) error { return nil }
 
 // System settings methods
 func (m *tokenMockDB) GetSystemSetting(_ context.Context, _ string) (string, error) { return "", nil }

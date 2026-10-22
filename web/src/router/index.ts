@@ -10,6 +10,9 @@ import type { TranslationKey } from '../i18n/en'
 const reposTrail: CrumbSpec[] = [{ key: 'nav.repositories', to: '/repos' }]
 const repoTrail: CrumbSpec[] = [...reposTrail, { param: 'name', to: '/repos/:name' }]
 
+const projectsTrail: CrumbSpec[] = [{ key: 'nav.projects', to: '/projects' }]
+const projectTrail: CrumbSpec[] = [...projectsTrail, { param: 'project', to: '/projects/:project' }]
+
 function adminTrail(key: TranslationKey): CrumbSpec[] {
   return [{ key: 'sidebar.admin', to: '/admin/users' }, { key }]
 }
@@ -97,6 +100,18 @@ const routes: RouteRecordRaw[] = [
     name: 'package-detail',
     component: () => import('../pages/PackageDetailPage.vue'),
     meta: { crumbs: [...repoTrail, { param: 'pkg' }], requiresAuth: true },
+  },
+  {
+    path: '/projects',
+    name: 'projects',
+    component: () => import('../pages/ProjectListPage.vue'),
+    meta: { crumbs: projectsTrail, requiresAuth: true },
+  },
+  {
+    path: '/projects/:project',
+    name: 'project-detail',
+    component: () => import('../pages/ProjectHomePage.vue'),
+    meta: { crumbs: projectTrail, requiresAuth: true },
   },
   {
     path: '/search',

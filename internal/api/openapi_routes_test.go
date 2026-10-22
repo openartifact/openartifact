@@ -61,7 +61,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewAdminStorageHandler(nil, nil, nil).Register(r)
 	NewAdminGPGHandler(nil, nil, nil).Register(r)
 	NewAdminAIHandler(nil, nil, nil).Register(r)
-	NewProjectsHandler(nil, nil, nil).RegisterRoutes(r)
+	NewProjectsHandler(nil, nil, nil, nil).RegisterRoutes(r)
 	NewRepositoriesHandler(nil, nil, nil).RegisterAuthed(r)
 	NewCleanupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	NewDockerGCHandler(nil, nil, nil, nil).RegisterAuthed(r)

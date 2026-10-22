@@ -180,16 +180,21 @@ func TestProjectAuthz_MembershipLifecycle(t *testing.T) {
 
 	f.expect(t, "viewer", f.alice, "r")
 
+	// The recorded owner needs an owner row so that alice is not the last owner.
+	if err := f.pg.ChangeProjectMember(ctx, f.project.ID, f.owner.ID, models.ProjectRoleOwner, nil); err != nil {
+		t.Fatalf("owner membership: %v", err)
+	}
+
 	for _, s := range steps[1:] {
-		if err := f.pg.UpdateProjectMemberRole(ctx, f.project.ID, f.alice.ID, s.role); err != nil {
-			t.Fatalf("UpdateProjectMemberRole(%s): %v", s.role, err)
+		if err := f.pg.ChangeProjectMember(ctx, f.project.ID, f.alice.ID, s.role, nil); err != nil {
+			t.Fatalf("ChangeProjectMember(%s): %v", s.role, err)
 		}
 
 		f.expect(t, "role "+s.role, f.alice, s.want)
 	}
 
-	if err := f.pg.RemoveProjectMember(ctx, f.project.ID, f.alice.ID); err != nil {
-		t.Fatalf("RemoveProjectMember: %v", err)
+	if err := f.pg.ChangeProjectMember(ctx, f.project.ID, f.alice.ID, "", nil); err != nil {
+		t.Fatalf("remove member: %v", err)
 	}
 
 	f.expect(t, "removed member", f.alice, "")
@@ -400,8 +405,8 @@ func TestProjectAuthz_GroupMaxRoleWins(t *testing.T) {
 		f.attach(t, g, tt.group)
 		f.expect(t, name, f.alice, tt.want)
 
-		if err := f.pg.RemoveProjectMember(ctx, f.project.ID, f.alice.ID); err != nil {
-			t.Fatalf("%s: RemoveProjectMember: %v", name, err)
+		if err := f.pg.ChangeProjectMember(ctx, f.project.ID, f.alice.ID, "", nil); err != nil {
+			t.Fatalf("%s: remove member: %v", name, err)
 		}
 
 		// The group alone is still in force after the direct membership goes.
@@ -421,7 +426,7 @@ func TestProjectAuthz_GroupRevocation(t *testing.T) {
 		name   string
 		revoke func(g *models.Group) error
 	}{
-		{"detach group from project", func(g *models.Group) error { return f.pg.RemoveProjectGroup(ctx, f.project.ID, g.ID) }},
+		{"detach group from project", func(g *models.Group) error { return f.pg.ChangeProjectGroup(ctx, f.project.ID, g.ID, "", nil, nil) }},
 		{"remove user from group", func(g *models.Group) error { return f.pg.RemoveUserFromGroup(ctx, f.alice.ID, g.ID) }},
 		{"delete group", func(g *models.Group) error { return f.pg.DeleteGroup(ctx, g.ID) }},
 	}
@@ -513,11 +518,13 @@ func TestProjectAuthz_CreateProjectOverHTTP(t *testing.T) {
 	}
 
 	router := chi.NewRouter()
-	api.NewProjectsHandler(f.pg, log, f.eval).RegisterRoutes(router)
+	api.NewProjectsHandler(f.pg, log, f.eval, auth.NewProjectSettings(f.pg, true)).RegisterRoutes(router)
 
 	post := func(body string) int {
 		req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/projects", strings.NewReader(body))
+		// Policy fields (max_repositories) are admin-only; the legacy key is a global admin.
 		p := f.principal(f.owner)
+		p.IsLegacy = true
 		req = req.WithContext(middleware.WithPrincipal(req.Context(), &p))
 
 		rw := httptest.NewRecorder()

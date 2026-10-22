@@ -44,6 +44,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | [Authentication](security/authentication.md) | Local login, sessions, CSRF, API tokens, legacy key, anonymous access, IP and rate limits |
 | [Single sign-on](security/sso.md) | OIDC and SAML providers, provisioning, group mapping |
 | [RBAC](security/rbac.md) | Users, groups, permission targets, request-to-action mapping, projects (repository ownership, member and group access) |
+| [Projects](security/projects.md) | Project roles, member and group self-service, who may create projects, audit events, API |
 | [Scanning](security/scanning.md) | Vulnerability, secret and license scans, SBOM, quarantine |
 | [Signing](security/signing.md) | GPG signing of APT/RPM metadata; verifying release archives and images |
 

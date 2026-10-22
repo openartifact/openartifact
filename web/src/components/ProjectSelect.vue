@@ -42,7 +42,7 @@ onMounted(async () => {
   try {
     // Creating or moving a repository is admin-only in this release, so the
     // picker offers every project.
-    projects.value = (await listProjects({ all: true })).filter((p) => p.name !== SYSTEM_PROJECT_NAME)
+    projects.value = (await listProjects({ all: true })).projects.filter((p) => p.name !== SYSTEM_PROJECT_NAME)
   } catch {
     projects.value = []
   }

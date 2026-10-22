@@ -6,9 +6,11 @@ import { defineStore } from 'pinia'
 import { ref, computed } from 'vue'
 import { request, ApiError } from '../api/client'
 import { ErrorCodes } from '../api/error-codes'
-import type { UserExtended as User } from '../api/generated/types.gen'
+import type { UserExtended } from '../api/generated/types.gen'
+import type { ProjectMembership } from '../api/projects'
 
-export type { User }
+/** The signed-in user as `/auth/me` returns it, with the caller's project roles. */
+export type User = UserExtended & { projects?: ProjectMembership[] }
 
 export const useSessionStore = defineStore('session', () => {
   const ready = ref(false)
@@ -24,6 +26,9 @@ export const useSessionStore = defineStore('session', () => {
     if (user.value.groups?.some((g) => g.name === 'admin')) return true
     return false
   })
+
+  /** Projects the caller holds a role in (no implicit admin entries). */
+  const projects = computed<ProjectMembership[]>(() => user.value?.projects ?? [])
 
   async function fetchMe(): Promise<void> {
     try {
@@ -49,5 +54,5 @@ export const useSessionStore = defineStore('session', () => {
     user.value = null
   }
 
-  return { user, ready, isAuthenticated, isAdmin, mustChangePassword, fetchMe, clearSession }
+  return { user, ready, isAuthenticated, isAdmin, mustChangePassword, projects, fetchMe, clearSession }
 })

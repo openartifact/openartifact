@@ -5459,20 +5459,6 @@ func (p *PostgresDB) AddProjectMember(ctx context.Context, projectID, userID, ro
 	return nil
 }
 
-func (p *PostgresDB) RemoveProjectMember(ctx context.Context, projectID, userID string) error {
-	defer p.authCache.invalidate()
-
-	err := p.q.RemoveProjectMember(ctx, dbsqlc.RemoveProjectMemberParams{
-		ProjectID: projectID,
-		UserID:    userID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to remove project member: %w", err)
-	}
-
-	return nil
-}
-
 func (p *PostgresDB) ListProjectMembers(ctx context.Context, projectID string) ([]*models.ProjectMember, error) {
 	rows, err := p.q.ListProjectMembers(ctx, projectID)
 	if err != nil {
@@ -5486,6 +5472,7 @@ func (p *PostgresDB) ListProjectMembers(ctx context.Context, projectID string) (
 			ID:        idString(row.ID),
 			ProjectID: row.ProjectID,
 			UserID:    row.UserID,
+			Username:  row.Username,
 			Role:      row.Role,
 			CreatedAt: row.CreatedAt,
 		})
@@ -5511,24 +5498,10 @@ func (p *PostgresDB) GetProjectMember(ctx context.Context, projectID, userID str
 		ID:        idString(row.ID),
 		ProjectID: row.ProjectID,
 		UserID:    row.UserID,
+		Username:  row.Username,
 		Role:      row.Role,
 		CreatedAt: row.CreatedAt,
 	}, nil
-}
-
-func (p *PostgresDB) UpdateProjectMemberRole(ctx context.Context, projectID, userID, role string) error {
-	defer p.authCache.invalidate()
-
-	err := p.q.UpdateProjectMemberRole(ctx, dbsqlc.UpdateProjectMemberRoleParams{
-		Role:      role,
-		ProjectID: projectID,
-		UserID:    userID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to update project member role: %w", err)
-	}
-
-	return nil
 }
 
 func (p *PostgresDB) ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error) {
@@ -5586,17 +5559,6 @@ func (p *PostgresDB) SetProjectGroup(ctx context.Context, projectID, groupID, ro
 	})
 	if err != nil {
 		return fmt.Errorf("failed to set project group: %w", err)
-	}
-
-	return nil
-}
-
-func (p *PostgresDB) RemoveProjectGroup(ctx context.Context, projectID, groupID string) error {
-	defer p.authCache.invalidate()
-
-	err := p.q.RemoveProjectGroup(ctx, dbsqlc.RemoveProjectGroupParams{ProjectID: projectID, GroupID: groupID})
-	if err != nil {
-		return fmt.Errorf("failed to remove project group: %w", err)
 	}
 
 	return nil

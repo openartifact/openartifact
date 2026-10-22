@@ -1728,17 +1728,23 @@ func (m *MockDatabase) ListProjects(ctx context.Context, userID string) ([]*mode
 func (m *MockDatabase) AddProjectMember(ctx context.Context, orgID, userID, role string) error {
 	return nil
 }
-func (m *MockDatabase) RemoveProjectMember(ctx context.Context, orgID, userID string) error {
-	return nil
-}
 func (m *MockDatabase) ListProjectMembers(ctx context.Context, orgID string) ([]*models.ProjectMember, error) {
 	return nil, nil
 }
 func (m *MockDatabase) GetProjectMember(ctx context.Context, orgID, userID string) (*models.ProjectMember, error) {
 	return nil, nil
 }
-func (m *MockDatabase) UpdateProjectMemberRole(ctx context.Context, orgID, userID, role string) error {
+func (m *MockDatabase) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard database.ProjectRoleGuard) error {
 	return nil
+}
+func (m *MockDatabase) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard database.ProjectRoleGuard) error {
+	return nil
+}
+func (m *MockDatabase) ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error) {
+	return nil, 0, nil
+}
+func (m *MockDatabase) CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error) {
+	return nil, nil
 }
 
 // System settings methods

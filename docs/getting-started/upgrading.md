@@ -102,9 +102,10 @@ Breaking changes:
 
 | Area | Change |
 |---|---|
-| API | `/api/v1/orgs*` is replaced by `/api/v1/projects*` (members and new `groups` routes included); the list key is `projects`. Management stays global-admin only. |
+| API | `/api/v1/orgs*` is replaced by `/api/v1/projects*` (members and new `groups` routes included); the list key is `projects`. The project API is no longer global-admin only: project owners and maintainers manage their own project, see [Projects](../security/projects.md). |
+| API | **Verb change:** updating a project is `PATCH /api/v1/projects/{project}` and changing a member's role is `PATCH /api/v1/projects/{project}/members/{user_id}`; `PUT` on those two routes is no longer accepted, so clients written against the earlier projects API (including pre-release builds) must switch. Adding a member accepts `username` as well as `user_id`; `PUT`/`DELETE …/groups/{group}` takes a group id or exact name. A caller who is not a member of a project gets `404` on its routes, the same as for an unknown project. `GET /api/v1/projects` returns `my_role` per project and `can_create`, and a new setting `projects.self_create` (`OPENARTIFACT_PROJECTS_SELF_CREATE`, default off) lets any user create projects. |
 | Repositories | The `org` field of repository responses and of `POST`/`PATCH` bodies is now `project`. |
-| CLI | `oa org` is now `oa project` (new `groups`, `add-group`, `rm-group`; `add-member --role` takes `viewer\|developer\|maintainer\|owner`, default `viewer`). |
+| CLI | `oa org` is now `oa project` (new `groups`, `add-group`, `rm-group`; `add-member --role` takes `viewer\|developer\|maintainer\|owner`, default `viewer`; `add-member` also takes `--username`; new `update` and `set-role`, both sending `PATCH`). |
 | Audit log | The `org_id` column/field is `project_id`. |
 
 Backup archives written by older versions still restore: the old table names `organizations` and `organization_members` are accepted.

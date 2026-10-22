@@ -34,6 +34,7 @@ function makeRouter() {
       { path: '/', name: 'dashboard', component: { template: '<div/>' } },
       { path: '/login', name: 'login', component: { template: '<div/>' } },
       { path: '/repos', name: 'repos', component: { template: '<div/>' } },
+      { path: '/projects', name: 'projects', component: { template: '<div/>' } },
       { path: '/search', name: 'search', component: { template: '<div/>' } },
       { path: '/stats', name: 'stats', component: { template: '<div/>' } },
       { path: '/admin/users', name: 'admin-users', component: { template: '<div/>' } },
@@ -86,6 +87,15 @@ describe('AppSidebar', () => {
     expect(text).toContain('Repositories')
     expect(text).toContain('Search')
     expect(text).not.toContain('Statistics')
+  })
+
+  it('links Projects for every authenticated user, not only admins', () => {
+    session.user = makeUser({ is_admin: false })
+    const { wrapper } = mountSidebar()
+    expect(wrapper.text()).toContain('Projects')
+    expect(wrapper.find('a[href="/projects"]').exists()).toBe(true)
+    // The admin area keeps its own entry, hidden for non-admins.
+    expect(wrapper.html()).not.toContain('/admin/projects')
   })
 
   it('renders Security section links', () => {

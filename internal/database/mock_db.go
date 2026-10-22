@@ -903,17 +903,23 @@ func (m *BaseMockDB) GetProjectGroup(ctx context.Context, projectID, groupID str
 func (m *BaseMockDB) SetProjectGroup(ctx context.Context, projectID, groupID, role string, createdBy *string) error {
 	return errNotImpl("SetProjectGroup")
 }
-func (m *BaseMockDB) RemoveProjectGroup(ctx context.Context, projectID, groupID string) error {
-	return errNotImpl("RemoveProjectGroup")
+func (m *BaseMockDB) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard ProjectRoleGuard) error {
+	return errNotImpl("ChangeProjectGroup")
+}
+func (m *BaseMockDB) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard ProjectRoleGuard) error {
+	return errNotImpl("ChangeProjectMember")
+}
+func (m *BaseMockDB) ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error) {
+	return nil, 0, errNotImpl("ListProjectRepositories")
+}
+func (m *BaseMockDB) CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error) {
+	return nil, errNotImpl("CountRepositoriesByProject")
 }
 func (m *BaseMockDB) ListProjects(ctx context.Context, userID string) ([]*models.Project, error) {
 	return nil, errNotImpl("ListProjects")
 }
 func (m *BaseMockDB) AddProjectMember(ctx context.Context, projectID, userID, role string) error {
 	return errNotImpl("AddProjectMember")
-}
-func (m *BaseMockDB) RemoveProjectMember(ctx context.Context, projectID, userID string) error {
-	return errNotImpl("RemoveProjectMember")
 }
 func (m *BaseMockDB) ListProjectMembers(ctx context.Context, projectID string) ([]*models.ProjectMember, error) {
 	return nil, errNotImpl("ListProjectMembers")
@@ -926,9 +932,6 @@ func (m *BaseMockDB) GetProjectMember(ctx context.Context, projectID, userID str
 // every request a permission target did not already allow.
 func (m *BaseMockDB) ListProjectGrantsByUser(ctx context.Context, userID string) ([]*models.ProjectGrant, error) {
 	return nil, nil
-}
-func (m *BaseMockDB) UpdateProjectMemberRole(ctx context.Context, projectID, userID, role string) error {
-	return errNotImpl("UpdateProjectMemberRole")
 }
 func (m *BaseMockDB) GetSystemSetting(ctx context.Context, key string) (string, error) {
 	return "", errNotImpl("GetSystemSetting")

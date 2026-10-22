@@ -56,7 +56,7 @@ func realRouter() chi.Router {
 	api.NewAdminAuditHandler(nil, nil, nil).Register(r)
 	api.NewAdminStorageHandler(nil, nil, nil).Register(r)
 	api.NewAdminGPGHandler(nil, nil, nil).Register(r)
-	api.NewProjectsHandler(nil, nil, nil).RegisterRoutes(r)
+	api.NewProjectsHandler(nil, nil, nil, nil).RegisterRoutes(r)
 	api.NewRepositoriesHandler(nil, nil, nil).RegisterAuthed(r)
 	api.NewCleanupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewSBOMHandler(nil, nil, nil, nil, nil).RegisterAuthed(r)
@@ -539,9 +539,38 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 		{
 			name:    "project list",
 			args:    []string{"project", "list"},
-			replies: map[string]reply{"GET /api/v1/projects": ok(`{"projects":[{"name":"acme","display_name":"Acme"}]}`)},
+			replies: map[string]reply{"GET /api/v1/projects": ok(`{"projects":[{"name":"acme","display_name":"Acme","my_role":"maintainer","repository_count":3}],"can_create":true}`)},
 			calls:   []call{{method: "GET", pattern: "/api/v1/projects"}},
-			out:     "Acme",
+			out:     "maintainer",
+		},
+		{
+			name:    "project show prints my_role",
+			args:    []string{"project", "show", "acme"},
+			replies: map[string]reply{"GET /api/v1/projects/{project}": ok(`{"name":"acme","my_role":"owner"}`)},
+			calls:   []call{{method: "GET", pattern: "/api/v1/projects/{project}"}},
+			out:     "my_role",
+		},
+		{
+			name:    "project update uses PATCH and sends only set flags",
+			args:    []string{"project", "update", "acme", "--display-name", "Acme Corp"},
+			replies: map[string]reply{"PATCH /api/v1/projects/{project}": ok(`{}`)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/projects/{project}", body: m{"display_name": "Acme Corp"}}},
+		},
+		{
+			name:    "project update policy flags",
+			args:    []string{"project", "update", "acme", "--allowed-formats", "npm,deb", "--allow-public-repos=false", "--max-repositories", "10"},
+			replies: map[string]reply{"PATCH /api/v1/projects/{project}": ok(`{}`)},
+			calls: []call{{method: "PATCH", pattern: "/api/v1/projects/{project}",
+				body: m{"allowed_formats": []any{"npm", "deb"}, "allow_public_repos": false, "max_repositories": float64(10)}}},
+		},
+		{
+			name: "project update with nothing fails", args: []string{"project", "update", "acme"}, fail: "nothing to update",
+		},
+		{
+			name:    "project create with owner",
+			args:    []string{"project", "create", "acme", "--owner", "bob"},
+			replies: map[string]reply{"POST /api/v1/projects": {status: 201, body: `{}`}},
+			calls:   []call{{method: "POST", pattern: "/api/v1/projects", body: m{"name": "acme", "display_name": "", "description": "", "owner": "bob"}}},
 		},
 		{
 			name:    "project create",
@@ -563,6 +592,21 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 			calls:   []call{{method: "POST", pattern: "/api/v1/projects/{project}/members", body: m{"user_id": "u1", "role": "owner"}}},
 		},
 		{
+			name:    "project add-member by username",
+			args:    []string{"project", "add-member", "acme", "--username", "bob", "--role", "developer"},
+			replies: map[string]reply{"POST /api/v1/projects/{project}/members": {status: 201, body: `{}`}},
+			calls:   []call{{method: "POST", pattern: "/api/v1/projects/{project}/members", body: m{"username": "bob", "role": "developer"}}},
+		},
+		{
+			name: "project add-member needs an id or a username", args: []string{"project", "add-member", "acme"}, fail: "Usage",
+		},
+		{
+			name:    "project set-role uses PATCH",
+			args:    []string{"project", "set-role", "acme", "u1", "maintainer"},
+			replies: map[string]reply{"PATCH /api/v1/projects/{project}/members/{user_id}": ok(`{}`)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/projects/{project}/members/{user_id}", body: m{"role": "maintainer"}}},
+		},
+		{
 			name:    "project groups",
 			args:    []string{"project", "groups", "acme"},
 			replies: map[string]reply{"GET /api/v1/projects/{project}/groups": ok(`{"groups":[{"group_id":"g1","group_name":"devs","role":"developer"}]}`)},
@@ -572,14 +616,20 @@ func TestContractUserGroupOrgToken(t *testing.T) {
 		{
 			name:    "project add-group",
 			args:    []string{"project", "add-group", "acme", "g1", "--role", "developer"},
-			replies: map[string]reply{"PUT /api/v1/projects/{project}/groups/{group_id}": ok(`{}`)},
-			calls:   []call{{method: "PUT", pattern: "/api/v1/projects/{project}/groups/{group_id}", body: m{"role": "developer"}}},
+			replies: map[string]reply{"PUT /api/v1/projects/{project}/groups/{group}": ok(`{}`)},
+			calls:   []call{{method: "PUT", pattern: "/api/v1/projects/{project}/groups/{group}", body: m{"role": "developer"}}},
+		},
+		{
+			name:    "project add-group by name",
+			args:    []string{"project", "add-group", "acme", "dev team"},
+			replies: map[string]reply{"PUT /api/v1/projects/{project}/groups/{group}": ok(`{}`)},
+			calls:   []call{{method: "PUT", pattern: "/api/v1/projects/{project}/groups/{group}", body: m{"role": "viewer"}}},
 		},
 		{
 			name:    "project rm-group",
 			args:    []string{"project", "rm-group", "acme", "g1"},
-			replies: map[string]reply{"DELETE /api/v1/projects/{project}/groups/{group_id}": {status: 204}},
-			calls:   []call{{method: "DELETE", pattern: "/api/v1/projects/{project}/groups/{group_id}"}},
+			replies: map[string]reply{"DELETE /api/v1/projects/{project}/groups/{group}": {status: 204}},
+			calls:   []call{{method: "DELETE", pattern: "/api/v1/projects/{project}/groups/{group}"}},
 		},
 		{
 			name:    "admin token list",

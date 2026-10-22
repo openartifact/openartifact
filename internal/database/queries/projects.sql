@@ -40,19 +40,15 @@ INSERT INTO project_members (project_id, user_id, role)
 VALUES ($1, $2, $3)
 RETURNING created_at;
 
--- name: RemoveProjectMember :exec
-DELETE FROM project_members WHERE project_id = $1 AND user_id = $2;
-
 -- name: ListProjectMembers :many
-SELECT (project_id::text || ':' || user_id::text) AS id, project_id, user_id, role, created_at
-FROM project_members WHERE project_id = $1 ORDER BY created_at ASC;
+SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
+FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
+WHERE pm.project_id = $1 ORDER BY pm.created_at ASC, u.username;
 
 -- name: GetProjectMember :one
-SELECT (project_id::text || ':' || user_id::text) AS id, project_id, user_id, role, created_at
-FROM project_members WHERE project_id = $1 AND user_id = $2;
-
--- name: UpdateProjectMemberRole :exec
-UPDATE project_members SET role = $1 WHERE project_id = $2 AND user_id = $3;
+SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
+FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
+WHERE pm.project_id = $1 AND pm.user_id = $2;
 
 -- name: ListProjectGroups :many
 SELECT pg.project_id, pg.group_id, g.name AS group_name, pg.role, pg.created_by, pg.created_at
@@ -69,9 +65,6 @@ INSERT INTO project_groups (project_id, group_id, role, created_by)
 VALUES ($1, $2, $3, $4)
 ON CONFLICT (project_id, group_id) DO UPDATE SET role = EXCLUDED.role;
 
--- name: RemoveProjectGroup :exec
-DELETE FROM project_groups WHERE project_id = $1 AND group_id = $2;
-
 -- name: ListProjectGrantsByUser :many
 -- Every project role the user holds, one row per source: the recorded owner
 -- (always owner), a membership row, or a group attached to the project.
@@ -85,3 +78,10 @@ UNION ALL
 SELECT pg.project_id, pg.role::text
 FROM project_groups pg JOIN auth_user_groups ug ON ug.group_id = pg.group_id
 WHERE ug.user_id = $1;
+
+-- name: CountRepositoriesByProjects :many
+-- Live (not trashed) repositories per project.
+SELECT project_id, COUNT(*)::bigint AS repositories
+FROM repositories
+WHERE project_id = ANY($1::uuid[]) AND deleted_at IS NULL
+GROUP BY project_id;

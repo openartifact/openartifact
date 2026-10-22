@@ -31,34 +31,41 @@ const (
 )
 
 // ProjectsHandler serves /api/v1/projects: projects, their members and the
-// groups attached to them. The RBAC middleware currently gates every route on
-// the global "manage" action; the project-role checks below are a second layer
-// that also holds when a route is reached by a project member.
+// groups attached to them. The RBAC middleware is the first gate (project
+// scope, 404 for non-members, 403 below the required role); the handler
+// re-checks the same decision from the evaluator, so a route reached any other
+// way is still protected, and adds the escalation guards the middleware cannot
+// know (which role is granted to whom).
 type ProjectsHandler struct {
 	db        database.Database
 	log       *logger.Logger
 	evaluator *auth.Evaluator
+	settings  *auth.ProjectSettings
 }
 
-// NewProjectsHandler returns the projects handler. evaluator decides who is a
-// global admin (implicit owner of every project); nil means nobody is.
-func NewProjectsHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *ProjectsHandler {
-	return &ProjectsHandler{db: db, log: log, evaluator: evaluator}
+// NewProjectsHandler returns the projects handler. evaluator decides roles and
+// who is a global admin (implicit owner of every project); settings holds the
+// projects.self_create switch.
+func NewProjectsHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, settings *auth.ProjectSettings) *ProjectsHandler {
+	return &ProjectsHandler{db: db, log: log, evaluator: evaluator, settings: settings}
 }
 
 func (h *ProjectsHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/api/v1/projects", h.handleCreate)
 	r.Get("/api/v1/projects", h.handleList)
 	r.Get("/api/v1/projects/{project}", h.handleGet)
-	r.Put("/api/v1/projects/{project}", h.handleUpdate)
+	r.Patch("/api/v1/projects/{project}", h.handleUpdate)
 	r.Delete("/api/v1/projects/{project}", h.handleDelete)
+	r.Get("/api/v1/projects/{project}/repositories", h.handleListRepositories)
 	r.Get("/api/v1/projects/{project}/members", h.handleListMembers)
 	r.Post("/api/v1/projects/{project}/members", h.handleAddMember)
-	r.Put("/api/v1/projects/{project}/members/{user_id}", h.handleUpdateMember)
+	r.Patch("/api/v1/projects/{project}/members/{user_id}", h.handleUpdateMember)
 	r.Delete("/api/v1/projects/{project}/members/{user_id}", h.handleRemoveMember)
 	r.Get("/api/v1/projects/{project}/groups", h.handleListGroups)
-	r.Put("/api/v1/projects/{project}/groups/{group_id}", h.handleSetGroup)
-	r.Delete("/api/v1/projects/{project}/groups/{group_id}", h.handleRemoveGroup)
+	r.Put("/api/v1/projects/{project}/groups/{group}", h.handleSetGroup)
+	r.Delete("/api/v1/projects/{project}/groups/{group}", h.handleRemoveGroup)
+	r.Get("/api/v1/admin/projects/settings", h.handleGetSettings)
+	r.Put("/api/v1/admin/projects/settings", h.handlePutSettings)
 }
 
 func validProjectRole(role string) bool {
@@ -152,6 +159,27 @@ func (pp *projectPolicy) apply(project *models.Project) {
 	}
 }
 
+// policyChanges names the policy fields whose value differs between two
+// states of a project.
+func policyChanges(before, after *models.Project) []string {
+	var changed []string
+
+	add := func(differs bool, name string) {
+		if differs {
+			changed = append(changed, name)
+		}
+	}
+
+	add(!slices.Equal(before.AllowedFormats, after.AllowedFormats), "allowed_formats")
+	add(!slices.Equal(before.AllowedRepoTypes, after.AllowedRepoTypes), "allowed_repo_types")
+	add(before.RepoNamePrefix != after.RepoNamePrefix, "repo_name_prefix")
+	add(before.AllowPublicRepos != after.AllowPublicRepos, "allow_public_repos")
+	add(before.MaxRepositories != after.MaxRepositories, "max_repositories")
+	add(before.TokenMaxTTLDays != after.TokenMaxTTLDays, "token_max_ttl_days")
+
+	return changed
+}
+
 func dedupe(in []string) []string {
 	out := make([]string, 0, len(in))
 
@@ -164,42 +192,52 @@ func dedupe(in []string) []string {
 	return out
 }
 
-// projectAccess describes what the calling user may do in a project.
+// projectAccess describes what the calling principal may do in a project.
 type projectAccess struct {
-	project *models.Project
-	userID  string
+	project   *models.Project
+	principal *auth.Principal
 	// admin: global admin, an implicit owner of every project.
 	admin bool
-	// role is the caller's membership role ("" for a non-member).
+	// role is the caller's own role ("" for a non-member).
 	role string
-	// isRecordedOwner: the project's owner_id.
-	isRecordedOwner bool
 }
 
-func (a *projectAccess) rank() int {
-	switch {
-	case a.admin || a.isRecordedOwner:
-		return models.ProjectRoleRank(models.ProjectRoleOwner)
-	default:
-		return models.ProjectRoleRank(a.role)
+// effectiveRole is the role the caller acts with: owner for a global admin.
+func (a *projectAccess) effectiveRole() string {
+	if a.admin {
+		return models.ProjectRoleOwner
 	}
+
+	return a.role
 }
 
-func (a *projectAccess) isMember() bool { return a.admin || a.rank() > 0 }
+func (a *projectAccess) rank() int { return models.ProjectRoleRank(a.effectiveRole()) }
 
 func (a *projectAccess) isOwner() bool {
 	return a.rank() >= models.ProjectRoleRank(models.ProjectRoleOwner)
 }
 
-// isManager: maintainer or owner.
-func (a *projectAccess) isManager() bool {
-	return a.rank() >= models.ProjectRoleRank(models.ProjectRoleMaintainer)
+// canGrant reports whether the caller may give, change or take away role:
+// owners any role, maintainers only roles below maintainer.
+func (a *projectAccess) canGrant(role string) bool {
+	return a.isOwner() ||
+		(a.rank() >= models.ProjectRoleRank(models.ProjectRoleMaintainer) &&
+			models.ProjectRoleRank(role) < models.ProjectRoleRank(models.ProjectRoleMaintainer))
 }
 
-// canGrant reports whether the caller may give (or take away) role: owners any
-// role, maintainers only roles below maintainer.
-func (a *projectAccess) canGrant(role string) bool {
-	return a.isOwner() || (a.isManager() && models.ProjectRoleRank(role) < models.ProjectRoleRank(models.ProjectRoleMaintainer))
+// userID is the caller's user ID, nil for the legacy admin key.
+func (a *projectAccess) userID() *string { return a.principal.UserID }
+
+// caller returns the authenticated principal; it writes 401 and returns false
+// for anonymous requests.
+func (h *ProjectsHandler) caller(w http.ResponseWriter, r *http.Request) (*auth.Principal, bool) {
+	p := currentPrincipal(r)
+	if p == nil || p.IsAnonymous {
+		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+		return nil, false
+	}
+
+	return p, true
 }
 
 func (h *ProjectsHandler) isAdmin(r *http.Request, p *auth.Principal) bool {
@@ -216,21 +254,24 @@ func (h *ProjectsHandler) isAdmin(r *http.Request, p *auth.Principal) bool {
 	return ok
 }
 
+func (h *ProjectsHandler) dbError(w http.ResponseWriter, msg string, err error) {
+	h.log.Errorw(msg+": db error", "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+}
+
 // loadAccess authenticates the caller, loads the project named in the URL and
-// resolves the caller's role. It writes the error response and returns false on
-// failure.
-func (h *ProjectsHandler) loadAccess(w http.ResponseWriter, r *http.Request) (*projectAccess, bool) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+// applies the project decision for action: not found and non-member callers
+// get 404, members below the required role 403. It writes the error response
+// and returns false on failure.
+func (h *ProjectsHandler) loadAccess(w http.ResponseWriter, r *http.Request, action auth.ProjectAction) (*projectAccess, bool) {
+	p, ok := h.caller(w, r)
+	if !ok {
 		return nil, false
 	}
 
 	project, err := h.db.GetProjectByName(r.Context(), urlparams.Vars(r)["project"])
 	if err != nil {
-		h.log.Errorw("get project: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "get project", err)
 		return nil, false
 	}
 
@@ -239,97 +280,129 @@ func (h *ProjectsHandler) loadAccess(w http.ResponseWriter, r *http.Request) (*p
 		return nil, false
 	}
 
-	member, err := h.db.GetProjectMember(r.Context(), project.ID, *p.UserID)
+	role, admin, err := h.evaluator.ProjectRole(r.Context(), *p, project.ID)
 	if err != nil {
-		h.log.Errorw("get project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "resolve project role", err)
 		return nil, false
 	}
 
-	access := &projectAccess{project: project, userID: *p.UserID, admin: h.isAdmin(r, p)}
-	access.isRecordedOwner = project.OwnerID != nil && *project.OwnerID == *p.UserID
-
-	if member != nil {
-		access.role = member.Role
-	}
-
-	return access, true
-}
-
-func (h *ProjectsHandler) requireMember(w http.ResponseWriter, r *http.Request) (*projectAccess, bool) {
-	access, ok := h.loadAccess(w, r)
-	if !ok {
-		return nil, false
-	}
-
-	if !access.isMember() {
+	switch auth.ProjectDecisionFor(role, admin, action) {
+	case auth.ProjectAllow:
+		return &projectAccess{project: project, principal: p, admin: admin, role: role}, true
+	case auth.ProjectForbidden:
 		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return nil, false
+	default:
+		writeError(w, http.StatusNotFound, "not_found", "project not found")
 	}
 
-	return access, true
+	return nil, false
 }
 
-func (h *ProjectsHandler) requireManager(w http.ResponseWriter, r *http.Request) (*projectAccess, bool) {
-	access, ok := h.loadAccess(w, r)
-	if !ok {
-		return nil, false
+// canCreate reports whether the principal may create a project: a global
+// admin always, any human user while projects.self_create is on.
+func (h *ProjectsHandler) canCreate(r *http.Request, p *auth.Principal, admin bool) (bool, error) {
+	if admin {
+		return true, nil
 	}
 
-	if !access.isManager() {
-		writeError(w, http.StatusForbidden, "forbidden", "access denied")
-		return nil, false
+	if p.UserID == nil || p.IsLegacy || len(p.TokenScopes) > 0 || p.TokenKind == auth.TokenKindDeploy {
+		return false, nil
 	}
 
-	return access, true
+	return h.settings.SelfCreate(r.Context())
 }
 
-// countOwners returns the number of members holding the owner role.
-func (h *ProjectsHandler) countOwners(r *http.Request, projectID string) (int, error) {
-	members, err := h.db.ListProjectMembers(r.Context(), projectID)
+// Defaults of a new project's policy (the migration gives existing projects the
+// same values).
+const (
+	defaultProjectMaxRepositories = 50
+	defaultProjectTokenMaxTTLDays = 365
+)
+
+type createProjectRequest struct {
+	projectPolicy
+
+	Name        string `json:"name"`
+	DisplayName string `json:"display_name"`
+	Description string `json:"description"`
+	// Owner is a username; only a global admin may name an owner other than
+	// themselves.
+	Owner string `json:"owner"`
+}
+
+func (req *createProjectRequest) validate() string {
+	if !projectNameRe.MatchString(req.Name) {
+		return "project name must be 1-100 alphanumeric characters, hyphens, or underscores"
+	}
+
+	slug := models.ProjectSlug(req.Name)
+	if slug == "" || len(slug) > models.MaxProjectSlugLen {
+		return "project name must yield a URL slug of 1-64 lowercase letters, digits and hyphens"
+	}
+
+	return req.projectPolicy.validate()
+}
+
+// resolveOwner returns the new project's owner: the caller, or for an admin
+// the user named in the request. It writes the error response on failure.
+func (h *ProjectsHandler) resolveOwner(w http.ResponseWriter, r *http.Request, p *auth.Principal, req *createProjectRequest) (*models.User, bool) {
+	var (
+		user *models.User
+		err  error
+	)
+
+	switch {
+	case req.Owner != "":
+		user, err = h.db.GetUserByUsername(r.Context(), req.Owner)
+	case p.UserID != nil:
+		user, err = h.db.GetUserByID(r.Context(), *p.UserID)
+	default:
+		writeError(w, http.StatusBadRequest, "validation_failed", "owner is required")
+		return nil, false
+	}
+
 	if err != nil {
-		return 0, err //nolint:wrapcheck // logged by caller
+		h.dbError(w, "get project owner", err)
+		return nil, false
 	}
 
-	n := 0
-
-	for _, m := range members {
-		if m.Role == models.ProjectRoleOwner {
-			n++
-		}
+	if user == nil {
+		writeError(w, http.StatusNotFound, "not_found", "owner user not found")
+		return nil, false
 	}
 
-	return n, nil
+	return user, true
 }
 
 func (h *ProjectsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
+	p, ok := h.caller(w, r)
+	if !ok {
 		return
 	}
 
-	var req struct {
-		projectPolicy
+	admin := h.isAdmin(r, p)
 
-		Name        string `json:"name"`
-		DisplayName string `json:"display_name"`
-		Description string `json:"description"`
+	allowed, err := h.canCreate(r, p, admin)
+	if err != nil {
+		h.dbError(w, "read projects.self_create", err)
+		return
 	}
+
+	if !allowed {
+		writeError(w, http.StatusForbidden, "forbidden", "creating projects is not allowed")
+		return
+	}
+
+	var req createProjectRequest
 	if err := decodeJSON(r, &req); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
 		return
 	}
 
-	if !projectNameRe.MatchString(req.Name) {
-		writeError(w, http.StatusBadRequest, "validation_failed", "project name must be 1-100 alphanumeric characters, hyphens, or underscores")
-		return
-	}
-
-	slug := models.ProjectSlug(req.Name)
-	if slug == "" || len(slug) > models.MaxProjectSlugLen {
-		writeError(w, http.StatusBadRequest, "validation_failed", "project name must yield a URL slug of 1-64 lowercase letters, digits and hyphens")
+	// Policy decides what self-service users may do, and only admins may
+	// create on behalf of someone else.
+	if !admin && (req.set() || req.Owner != "") {
+		writeError(w, http.StatusForbidden, "forbidden", "only a global admin can set the project policy or owner")
 		return
 	}
 
@@ -338,21 +411,12 @@ func (h *ProjectsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	now := time.Now()
-	project := &models.Project{
-		Name:             req.Name,
-		DisplayName:      &req.DisplayName,
-		Description:      &req.Description,
-		OwnerID:          p.UserID,
-		Slug:             slug,
-		AllowedRepoTypes: []string{models.ProjectRepoTypeHosted},
-		RepoNamePrefix:   slug + "-",
-		MaxRepositories:  defaultProjectMaxRepositories,
-		TokenMaxTTLDays:  defaultProjectTokenMaxTTLDays,
-		CreatedAt:        now,
-		UpdatedAt:        now,
+	owner, ok := h.resolveOwner(w, r, p, &req)
+	if !ok {
+		return
 	}
-	req.apply(project)
+
+	project := h.newProject(&req, owner.ID)
 
 	// The unique constraints are authoritative: no check-then-insert race.
 	if err := h.db.CreateProject(r.Context(), project); err != nil {
@@ -361,13 +425,12 @@ func (h *ProjectsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.log.Errorw("create project: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "create project", err)
 
 		return
 	}
 
-	if err := h.db.AddProjectMember(r.Context(), project.ID, *p.UserID, models.ProjectRoleOwner); err != nil {
+	if err := h.db.AddProjectMember(r.Context(), project.ID, owner.ID, models.ProjectRoleOwner); err != nil {
 		h.log.Errorw("add project owner member: db error", "error", err)
 
 		// Do not leave a project with no owner membership behind.
@@ -380,67 +443,137 @@ func (h *ProjectsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusCreated, projectToResponse(project))
+	h.emit(r, projectEvent{
+		action: "project.created", projectID: &project.ID, resourceID: project.ID,
+		message: "project " + project.Name + " created, owner " + owner.Username,
+	})
+
+	writeJSON(w, http.StatusCreated, projectToResponse(project, models.ProjectRoleOwner, 0))
 }
 
-// Defaults of a new project's policy (the migration gives existing projects the
-// same values).
-const (
-	defaultProjectMaxRepositories = 50
-	defaultProjectTokenMaxTTLDays = 365
-)
+func (h *ProjectsHandler) newProject(req *createProjectRequest, ownerID string) *models.Project {
+	slug := models.ProjectSlug(req.Name)
+	now := time.Now()
+	project := &models.Project{
+		Name:             req.Name,
+		DisplayName:      &req.DisplayName,
+		Description:      &req.Description,
+		OwnerID:          &ownerID,
+		Slug:             slug,
+		AllowedRepoTypes: []string{models.ProjectRepoTypeHosted},
+		RepoNamePrefix:   slug + "-",
+		MaxRepositories:  defaultProjectMaxRepositories,
+		TokenMaxTTLDays:  defaultProjectTokenMaxTTLDays,
+		CreatedAt:        now,
+		UpdatedAt:        now,
+	}
+	req.apply(project)
+
+	return project
+}
 
 func (h *ProjectsHandler) handleList(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-	if p == nil || p.IsAnonymous || p.UserID == nil {
-		writeError(w, http.StatusUnauthorized, "unauthorized", "authentication required")
-		return
-	}
-
-	var (
-		projects []*models.Project
-		err      error
-	)
-
-	if r.URL.Query().Get("all") == "true" {
-		if !h.isAdmin(r, p) {
-			writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-			return
-		}
-
-		projects, err = h.db.ListAllProjects(r.Context())
-	} else {
-		projects, err = h.db.ListProjects(r.Context(), *p.UserID)
-	}
-
-	if err != nil {
-		h.log.Errorw("list projects: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	result := make([]responses.ProjectResponse, 0, len(projects))
-	for _, project := range projects {
-		result = append(result, projectToResponse(project))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"projects": result,
-	})
-}
-
-func (h *ProjectsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireMember(w, r)
+	p, ok := h.caller(w, r)
 	if !ok {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, projectToResponse(access.project))
+	admin := h.isAdmin(r, p)
+	if r.URL.Query().Get("all") == "true" && !admin {
+		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+		return
+	}
+
+	roles, err := h.evaluator.ProjectRoles(r.Context(), *p)
+	if err != nil {
+		h.dbError(w, "list project roles", err)
+		return
+	}
+
+	projects, err := h.visibleProjects(r, p, roles)
+	if err != nil {
+		h.dbError(w, "list projects", err)
+		return
+	}
+
+	ids := make([]string, len(projects))
+	for i, project := range projects {
+		ids[i] = project.ID
+	}
+
+	counts, err := h.db.CountRepositoriesByProject(r.Context(), ids)
+	if err != nil {
+		h.dbError(w, "count project repositories", err)
+		return
+	}
+
+	result := make([]responses.ProjectResponse, 0, len(projects))
+
+	for _, project := range projects {
+		role := roles[project.ID]
+		if admin {
+			role = models.ProjectRoleOwner
+		}
+
+		result = append(result, projectToResponse(project, role, counts[project.ID]))
+	}
+
+	canCreate, err := h.canCreate(r, p, admin)
+	if err != nil {
+		h.dbError(w, "read projects.self_create", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"projects": result, "can_create": canCreate})
+}
+
+// visibleProjects returns the projects listed to the caller: with ?all=true
+// (admins only, checked by the caller) every project, otherwise the ones the
+// caller holds a role in.
+func (h *ProjectsHandler) visibleProjects(r *http.Request, p *auth.Principal, roles map[string]string) ([]*models.Project, error) {
+	if r.URL.Query().Get("all") == "true" {
+		return h.db.ListAllProjects(r.Context()) //nolint:wrapcheck // logged by caller
+	}
+
+	if p.UserID == nil || len(roles) == 0 {
+		return []*models.Project{}, nil
+	}
+
+	mine, err := h.db.ListProjects(r.Context(), *p.UserID)
+	if err != nil {
+		return nil, err //nolint:wrapcheck // logged by caller
+	}
+
+	// The role map is authoritative: it leaves out the system project and, for
+	// scoped tokens, everything.
+	visible := make([]*models.Project, 0, len(mine))
+
+	for _, project := range mine {
+		if roles[project.ID] != "" {
+			visible = append(visible, project)
+		}
+	}
+
+	return visible, nil
+}
+
+func (h *ProjectsHandler) handleGet(w http.ResponseWriter, r *http.Request) {
+	access, ok := h.loadAccess(w, r, auth.ProjectActionRead)
+	if !ok {
+		return
+	}
+
+	counts, err := h.db.CountRepositoriesByProject(r.Context(), []string{access.project.ID})
+	if err != nil {
+		h.dbError(w, "count project repositories", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, projectToResponse(access.project, access.effectiveRole(), counts[access.project.ID]))
 }
 
 func (h *ProjectsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireManager(w, r)
+	access, ok := h.loadAccess(w, r, auth.ProjectActionUpdate)
 	if !ok {
 		return
 	}
@@ -469,6 +602,7 @@ func (h *ProjectsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	project := access.project
+	before := *project
 
 	if req.DisplayName != nil {
 		project.DisplayName = req.DisplayName
@@ -483,24 +617,29 @@ func (h *ProjectsHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	project.UpdatedAt = time.Now()
 
 	if err := h.db.UpdateProject(r.Context(), project); err != nil {
-		h.log.Errorw("update project: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+		h.dbError(w, "update project", err)
 		return
 	}
 
-	writeJSON(w, http.StatusOK, projectToResponse(project))
+	h.emitProjectUpdate(r, &before, project)
+
+	counts, err := h.db.CountRepositoriesByProject(r.Context(), []string{project.ID})
+	if err != nil {
+		h.dbError(w, "count project repositories", err)
+		return
+	}
+
+	writeJSON(w, http.StatusOK, projectToResponse(project, access.effectiveRole(), counts[project.ID]))
 }
 
 func (h *ProjectsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.loadAccess(w, r)
+	access, ok := h.loadAccess(w, r, auth.ProjectActionDelete)
 	if !ok {
 		return
 	}
 
-	// Only the project's recorded owner (or a global admin) may delete it.
-	if !access.admin && !access.isRecordedOwner {
-		writeError(w, http.StatusForbidden, "forbidden", "only the project owner can delete")
+	if access.project.ID == models.SystemProjectID {
+		writeError(w, http.StatusConflict, "conflict", "the system project cannot be deleted")
 		return
 	}
 
@@ -510,359 +649,24 @@ func (h *ProjectsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		h.log.Errorw("delete project: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		h.dbError(w, "delete project", err)
 
 		return
 	}
 
-	writeNoContent(w)
-}
-
-func (h *ProjectsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireMember(w, r)
-	if !ok {
-		return
-	}
-
-	members, err := h.db.ListProjectMembers(r.Context(), access.project.ID)
-	if err != nil {
-		h.log.Errorw("list project members: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	result := make([]responses.ProjectMemberResponse, 0, len(members))
-	for _, m := range members {
-		result = append(result, memberToResponse(m))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"members": result,
+	// The audit row cannot reference the deleted project (project_id would
+	// dangle), so the project ID travels as the resource ID.
+	h.emit(r, projectEvent{
+		action: "project.deleted", resourceID: access.project.ID,
+		message: "project " + access.project.Name + " deleted",
 	})
-}
-
-func (h *ProjectsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireManager(w, r)
-	if !ok {
-		return
-	}
-
-	var req struct {
-		UserID string `json:"user_id"`
-		Role   string `json:"role"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
-		return
-	}
-
-	if req.Role == "" {
-		req.Role = models.ProjectRoleViewer
-	}
-
-	if !validProjectRole(req.Role) {
-		writeError(w, http.StatusBadRequest, "validation_failed", projectRoleMessage)
-		return
-	}
-
-	// Escalation guard: owners grant any role, maintainers only below maintainer.
-	if !access.canGrant(req.Role) {
-		writeError(w, http.StatusForbidden, "forbidden", "not allowed to grant this role")
-		return
-	}
-
-	user, err := h.db.GetUserByID(r.Context(), req.UserID)
-	if err != nil {
-		h.log.Errorw("get user: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if user == nil {
-		writeError(w, http.StatusNotFound, "not_found", "user not found")
-		return
-	}
-
-	existing, err := h.db.GetProjectMember(r.Context(), access.project.ID, req.UserID)
-	if err != nil {
-		h.log.Errorw("get project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if existing != nil {
-		writeError(w, http.StatusConflict, "conflict", "user is already a member")
-		return
-	}
-
-	if err := h.db.AddProjectMember(r.Context(), access.project.ID, req.UserID, req.Role); err != nil {
-		if database.IsUniqueViolation(err) {
-			writeError(w, http.StatusConflict, "conflict", "user is already a member")
-			return
-		}
-
-		h.log.Errorw("add project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	newMember, err := h.db.GetProjectMember(r.Context(), access.project.ID, req.UserID)
-	if err != nil {
-		h.log.Errorw("get project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	writeJSON(w, http.StatusCreated, memberToResponse(newMember))
-}
-
-// guardMemberChange enforces the protection rules for changing or removing
-// target (whose new role is newRole, or "" when removing). It writes the error
-// response and returns false when the change is not allowed.
-func (h *ProjectsHandler) guardMemberChange(w http.ResponseWriter, r *http.Request, access *projectAccess, target *models.ProjectMember, newRole string) bool {
-	if newRole == target.Role {
-		return true
-	}
-
-	if access.project.OwnerID != nil && *access.project.OwnerID == target.UserID {
-		writeError(w, http.StatusConflict, "conflict", "the project owner cannot be demoted or removed")
-		return false
-	}
-
-	// Touching a maintainer or owner, or granting one of those roles, takes an owner.
-	if !access.canGrant(target.Role) || (newRole != "" && !access.canGrant(newRole)) {
-		writeError(w, http.StatusForbidden, "forbidden", "not allowed to change this member")
-		return false
-	}
-
-	if target.Role == models.ProjectRoleOwner {
-		owners, err := h.countOwners(r, access.project.ID)
-		if err != nil {
-			h.log.Errorw("count project owners: db error", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-			return false
-		}
-
-		if owners <= 1 {
-			writeError(w, http.StatusConflict, "conflict", "cannot remove or demote the last owner")
-			return false
-		}
-	}
-
-	return true
-}
-
-func (h *ProjectsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireManager(w, r)
-	if !ok {
-		return
-	}
-
-	userID := urlparams.Vars(r)["user_id"]
-
-	var req struct {
-		Role string `json:"role"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
-		return
-	}
-
-	if !validProjectRole(req.Role) {
-		writeError(w, http.StatusBadRequest, "validation_failed", projectRoleMessage)
-		return
-	}
-
-	targetMember, err := h.db.GetProjectMember(r.Context(), access.project.ID, userID)
-	if err != nil {
-		h.log.Errorw("get project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if targetMember == nil {
-		writeError(w, http.StatusNotFound, "not_found", "member not found")
-		return
-	}
-
-	if !h.guardMemberChange(w, r, access, targetMember, req.Role) {
-		return
-	}
-
-	if err := h.db.UpdateProjectMemberRole(r.Context(), access.project.ID, userID, req.Role); err != nil {
-		h.log.Errorw("update project member role: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	updatedMember, err := h.db.GetProjectMember(r.Context(), access.project.ID, userID)
-	if err != nil {
-		h.log.Errorw("get project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	writeJSON(w, http.StatusOK, memberToResponse(updatedMember))
-}
-
-func (h *ProjectsHandler) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireManager(w, r)
-	if !ok {
-		return
-	}
-
-	userID := urlparams.Vars(r)["user_id"]
-
-	targetMember, err := h.db.GetProjectMember(r.Context(), access.project.ID, userID)
-	if err != nil {
-		h.log.Errorw("get project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if targetMember == nil {
-		writeError(w, http.StatusNotFound, "not_found", "member not found")
-		return
-	}
-
-	if !h.guardMemberChange(w, r, access, targetMember, "") {
-		return
-	}
-
-	if err := h.db.RemoveProjectMember(r.Context(), access.project.ID, userID); err != nil {
-		h.log.Errorw("remove project member: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	writeNoContent(w)
-}
-
-func (h *ProjectsHandler) handleListGroups(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireMember(w, r)
-	if !ok {
-		return
-	}
-
-	groups, err := h.db.ListProjectGroups(r.Context(), access.project.ID)
-	if err != nil {
-		h.log.Errorw("list project groups: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	result := make([]responses.ProjectGroupResponse, 0, len(groups))
-	for _, g := range groups {
-		result = append(result, projectGroupToResponse(g))
-	}
-
-	writeJSON(w, http.StatusOK, map[string]any{
-		"groups": result,
-	})
-}
-
-func (h *ProjectsHandler) handleSetGroup(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireManager(w, r)
-	if !ok {
-		return
-	}
-
-	groupID := urlparams.Vars(r)["group_id"]
-
-	var req struct {
-		Role string `json:"role"`
-	}
-	if err := decodeJSON(r, &req); err != nil {
-		writeError(w, http.StatusBadRequest, "bad_request", "invalid request body")
-		return
-	}
-
-	if !validProjectGroupRole(req.Role) {
-		writeError(w, http.StatusBadRequest, "validation_failed", projectGroupRoleMessage)
-		return
-	}
-
-	group, err := h.db.GetGroupByID(r.Context(), groupID)
-	if err != nil {
-		h.log.Errorw("get group: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if group == nil {
-		writeError(w, http.StatusNotFound, "not_found", "group not found")
-		return
-	}
-
-	if err := h.db.SetProjectGroup(r.Context(), access.project.ID, group.ID, req.Role, &access.userID); err != nil {
-		h.log.Errorw("set project group: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	attached, err := h.db.GetProjectGroup(r.Context(), access.project.ID, group.ID)
-	if err != nil || attached == nil {
-		if err != nil {
-			h.log.Errorw("get project group: db error", "error", err)
-		}
-
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	writeJSON(w, http.StatusOK, projectGroupToResponse(attached))
-}
-
-func (h *ProjectsHandler) handleRemoveGroup(w http.ResponseWriter, r *http.Request) {
-	access, ok := h.requireManager(w, r)
-	if !ok {
-		return
-	}
-
-	groupID := urlparams.Vars(r)["group_id"]
-
-	existing, err := h.db.GetProjectGroup(r.Context(), access.project.ID, groupID)
-	if err != nil {
-		h.log.Errorw("get project group: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if existing == nil {
-		writeError(w, http.StatusNotFound, "not_found", "group is not attached to the project")
-		return
-	}
-
-	if err := h.db.RemoveProjectGroup(r.Context(), access.project.ID, groupID); err != nil {
-		h.log.Errorw("remove project group: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
 
 	writeNoContent(w)
 }
 
 // Helper functions
 
-func projectToResponse(project *models.Project) responses.ProjectResponse {
+func projectToResponse(project *models.Project, myRole string, repositories int) responses.ProjectResponse {
 	return responses.ProjectResponse{
 		ID:               project.ID,
 		Name:             project.Name,
@@ -878,25 +682,8 @@ func projectToResponse(project *models.Project) responses.ProjectResponse {
 		TokenMaxTTLDays:  project.TokenMaxTTLDays,
 		CreatedAt:        formatTime(project.CreatedAt),
 		UpdatedAt:        formatTime(project.UpdatedAt),
-	}
-}
-
-func memberToResponse(member *models.ProjectMember) responses.ProjectMemberResponse {
-	return responses.ProjectMemberResponse{
-		ID:        member.ID,
-		ProjectID: member.ProjectID,
-		UserID:    member.UserID,
-		Role:      member.Role,
-		CreatedAt: formatTime(member.CreatedAt),
-	}
-}
-
-func projectGroupToResponse(g *models.ProjectGroup) responses.ProjectGroupResponse {
-	return responses.ProjectGroupResponse{
-		ProjectID: g.ProjectID,
-		GroupID:   g.GroupID,
-		GroupName: g.GroupName,
-		Role:      g.Role,
-		CreatedAt: formatTime(g.CreatedAt),
+		MyRole:           myRole,
+		RepositoryCount:  repositories,
+		IsSystem:         project.ID == models.SystemProjectID,
 	}
 }

@@ -29,9 +29,12 @@ type UserMeResponse struct {
 	MustChangePassword bool     `json:"must_change_password"`
 	IsAdmin            bool     `json:"is_admin"`
 	Groups             []string `json:"groups"`
-	LastLoginAt        *string  `json:"last_login_at"`
-	CreatedAt          string   `json:"created_at"`
-	UpdatedAt          string   `json:"updated_at"`
+	// Projects are the caller's project roles (global admins are implicit
+	// owners everywhere and are not listed unless they hold a role).
+	Projects    []ProjectRoleResponse `json:"projects"`
+	LastLoginAt *string               `json:"last_login_at"`
+	CreatedAt   string                `json:"created_at"`
+	UpdatedAt   string                `json:"updated_at"`
 }
 
 // GroupResponse represents a group in API responses.
@@ -187,6 +190,14 @@ type ProjectResponse struct {
 	TokenMaxTTLDays  int      `json:"token_max_ttl_days"`
 	CreatedAt        string   `json:"created_at"`
 	UpdatedAt        string   `json:"updated_at"`
+	// MyRole is the caller's effective role in the project (viewer, developer,
+	// maintainer or owner); a global admin who holds no role is an implicit owner.
+	MyRole string `json:"my_role"`
+	// RepositoryCount is the number of live (not trashed) repositories.
+	RepositoryCount int `json:"repository_count"`
+	// IsSystem marks the built-in system project ("unassigned"): it grants
+	// nothing and cannot be deleted.
+	IsSystem bool `json:"is_system"`
 }
 
 // ProjectMemberResponse represents a project member in API responses.
@@ -194,8 +205,15 @@ type ProjectMemberResponse struct {
 	ID        string `json:"id"`
 	ProjectID string `json:"project_id"`
 	UserID    string `json:"user_id"`
+	Username  string `json:"username"`
 	Role      string `json:"role"`
 	CreatedAt string `json:"created_at"`
+}
+
+// ProjectRoleResponse is one project role of the caller (GET /api/v1/auth/me).
+type ProjectRoleResponse struct {
+	Name string `json:"name"`
+	Role string `json:"role"`
 }
 
 // ProjectGroupResponse represents a group attached to a project.

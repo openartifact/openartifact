@@ -15,6 +15,7 @@ function makeRouter() {
     routes: [
       { path: '/', name: 'dashboard', component: { template: '<div />' } },
       { path: '/repos', name: 'repos', component: { template: '<div />' } },
+      { path: '/projects', name: 'projects', component: { template: '<div />' } },
       { path: '/search', name: 'search', component: { template: '<div />' } },
       { path: '/login', name: 'login', component: { template: '<div />' } },
       { path: '/settings/profile', name: 'settings-profile', component: { template: '<div />' } },

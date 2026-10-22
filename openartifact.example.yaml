@@ -117,6 +117,11 @@ gpg:
 backup:
   backupDir: "/var/lib/openartifact/backups"
 
+projects:
+  # Let any authenticated user create a project and become its owner. Off: only global
+  # admins create projects. A value saved by an admin in the UI takes precedence.
+  selfCreate: false
+
 ai:
   enabled: false
   autoAnalyze: false   # analyse every upload automatically; off = only on request (UI/API/MCP)

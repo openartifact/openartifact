@@ -485,15 +485,22 @@ type Database interface {
 	ListProjects(ctx context.Context, userID string) ([]*models.Project, error)
 	ListAllProjects(ctx context.Context) ([]*models.Project, error)
 	AddProjectMember(ctx context.Context, projectID, userID, role string) error
-	RemoveProjectMember(ctx context.Context, projectID, userID string) error
 	ListProjectMembers(ctx context.Context, projectID string) ([]*models.ProjectMember, error)
 	GetProjectMember(ctx context.Context, projectID, userID string) (*models.ProjectMember, error)
-	UpdateProjectMemberRole(ctx context.Context, projectID, userID, role string) error
+	// ChangeProjectMember sets, adds or removes (newRole "") a member's role
+	// under the project row lock; guard vetoes the change (see ProjectRoleGuard).
+	ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard ProjectRoleGuard) error
+	// ChangeProjectGroup attaches, changes or detaches (newRole "") a group the same way.
+	ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard ProjectRoleGuard) error
+	// ListProjectRepositories returns one page of the project's live repositories and their total.
+	ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error)
+	// CountRepositoriesByProject returns the live repository count per project ID.
+	CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error)
 	ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error)
 	GetProjectGroup(ctx context.Context, projectID, groupID string) (*models.ProjectGroup, error)
-	// SetProjectGroup attaches a group with role, or changes an existing role.
+	// SetProjectGroup attaches a group with role, or changes an existing role,
+	// without any guard (backup restore); API changes use ChangeProjectGroup.
 	SetProjectGroup(ctx context.Context, projectID, groupID, role string, createdBy *string) error
-	RemoveProjectGroup(ctx context.Context, projectID, groupID string) error
 	// ListProjectGrantsByUser returns every project role the user holds:
 	// recorded owner, membership rows and group attachments, one grant per
 	// source (cached like the other per-request auth lookups).

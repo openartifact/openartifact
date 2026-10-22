@@ -799,14 +799,12 @@ func (m *provMockDB) ListProjects(_ context.Context, _ string) ([]*models.Projec
 	return nil, nil
 }
 func (m *provMockDB) AddProjectMember(_ context.Context, _, _, _ string) error { return nil }
-func (m *provMockDB) RemoveProjectMember(_ context.Context, _, _ string) error { return nil }
 func (m *provMockDB) ListProjectMembers(_ context.Context, _ string) ([]*models.ProjectMember, error) {
 	return nil, nil
 }
 func (m *provMockDB) GetProjectMember(_ context.Context, _, _ string) (*models.ProjectMember, error) {
 	return nil, nil
 }
-func (m *provMockDB) UpdateProjectMemberRole(_ context.Context, _, _, _ string) error { return nil }
 
 // System settings methods
 func (m *provMockDB) GetSystemSetting(_ context.Context, _ string) (string, error) { return "", nil }

@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"math"
 	"net/http"
 	"strconv"
@@ -459,12 +460,42 @@ func (h *AuthHandler) handleMe(w http.ResponseWriter, r *http.Request) {
 		MustChangePassword: user.MustChangePassword,
 		IsAdmin:            isAdmin,
 		Groups:             groupNames,
+		Projects:           h.projectRoles(ctx, p, user.ID),
 		LastLoginAt:        formatTimePtr(user.LastLoginAt),
 		CreatedAt:          formatTime(user.CreatedAt),
 		UpdatedAt:          formatTime(user.UpdatedAt),
 	}
 
 	writeJSON(w, http.StatusOK, resp)
+}
+
+// projectRoles lists the caller's project roles for the session store. A
+// failure leaves the list empty: /auth/me must keep working.
+func (h *AuthHandler) projectRoles(ctx context.Context, p *auth.Principal, userID string) []responses.ProjectRoleResponse {
+	roles, err := h.evaluator.ProjectRoles(ctx, *p)
+	if err != nil || len(roles) == 0 {
+		if err != nil {
+			h.log.Errorw("me: project roles", "error", err)
+		}
+
+		return []responses.ProjectRoleResponse{}
+	}
+
+	projects, err := h.db.ListProjects(ctx, userID)
+	if err != nil {
+		h.log.Errorw("me: list projects", "error", err)
+		return []responses.ProjectRoleResponse{}
+	}
+
+	out := make([]responses.ProjectRoleResponse, 0, len(roles))
+
+	for _, project := range projects {
+		if role := roles[project.ID]; role != "" {
+			out = append(out, responses.ProjectRoleResponse{Name: project.Name, Role: role})
+		}
+	}
+
+	return out
 }
 
 func (h *AuthHandler) handleChangePassword(w http.ResponseWriter, r *http.Request) {

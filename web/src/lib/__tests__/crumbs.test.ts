@@ -29,6 +29,14 @@ describe('route crumb trails', () => {
     ])
   })
 
+  it('lists projects and resolves the project param, encoded in links, raw in labels', () => {
+    expect(trail('/projects')).toEqual([{ label: 'Projects', to: '/projects' }])
+    expect(trail('/projects/my%20project')).toEqual([
+      { label: 'Projects', to: '/projects' },
+      { label: 'my project', to: '/projects/my%20project' },
+    ])
+  })
+
   it.each([
     ['/repos/demo/edit', ['Repositories', 'demo', 'Edit']],
     ['/repos/demo/browse', ['Repositories', 'demo', 'Browse']],

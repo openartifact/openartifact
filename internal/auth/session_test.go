@@ -578,14 +578,12 @@ func (m *sessionMockDB) ListProjects(_ context.Context, _ string) ([]*models.Pro
 	return nil, nil
 }
 func (m *sessionMockDB) AddProjectMember(_ context.Context, _, _, _ string) error { return nil }
-func (m *sessionMockDB) RemoveProjectMember(_ context.Context, _, _ string) error { return nil }
 func (m *sessionMockDB) ListProjectMembers(_ context.Context, _ string) ([]*models.ProjectMember, error) {
 	return nil, nil
 }
 func (m *sessionMockDB) GetProjectMember(_ context.Context, _, _ string) (*models.ProjectMember, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) UpdateProjectMemberRole(_ context.Context, _, _, _ string) error { return nil }
 
 // System settings methods
 func (m *sessionMockDB) GetSystemSetting(_ context.Context, _ string) (string, error) { return "", nil }

@@ -65,6 +65,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <SidebarLink to="/" :icon="HomeIcon" :label="t('nav.dashboard')" :collapsed="collapsed" />
       <SidebarLink to="/repos" :icon="CubeIcon" :label="t('nav.repositories')" :collapsed="collapsed" />
+      <SidebarLink to="/projects" :icon="FolderIcon" :label="t('nav.projects')" :collapsed="collapsed" />
       <SidebarLink to="/search" :icon="MagnifyingGlassIcon" :label="t('nav.search')" :collapsed="collapsed" />
 
       <!-- SECURITY -->
@@ -161,6 +162,7 @@ import { logout as apiLogout } from '../api/auth'
 import {
   HomeIcon,
   CubeIcon,
+  FolderIcon,
   MagnifyingGlassIcon,
   ChevronDownIcon,
   UsersIcon,

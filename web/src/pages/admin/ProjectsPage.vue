@@ -16,6 +16,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
     </PageHeader>
 
+    <!-- Self-service creation -->
+    <div class="bg-surface rounded-xl border border-border p-4 flex items-start justify-between gap-4" data-testid="self-create">
+      <div class="min-w-0">
+        <p id="self-create-label" class="text-sm font-semibold text-foreground">{{ t('adm.projects.selfCreate.title') }}</p>
+        <p class="text-xs text-muted mt-0.5">{{ t('adm.projects.selfCreate.hint') }}</p>
+        <p v-if="selfCreateError" class="text-xs text-danger mt-1" role="alert">{{ selfCreateError }}</p>
+      </div>
+      <AppToggle
+        v-model="selfCreate"
+        labelledby="self-create-label"
+        :disabled="selfCreateLoading || selfCreateSaving"
+        @update:model-value="saveSelfCreate"
+      />
+    </div>
+
     <!-- What project roles grant -->
     <div class="bg-surface rounded-xl border border-border p-4 text-xs text-muted space-y-1.5" data-testid="project-effect">
       <p class="font-semibold text-foreground">{{ t('adm.projects.effect.title') }}</p>
@@ -551,6 +566,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import AppButton from '../../components/AppButton.vue'
+import AppToggle from '../../components/AppToggle.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDate } from '../../lib/datetime'
@@ -564,6 +580,7 @@ import {
   addProjectMember,
   createProject,
   deleteProject,
+  getProjectSettings,
   listProjectGroups,
   listProjectMembers,
   listProjects,
@@ -572,6 +589,7 @@ import {
   setProjectGroup,
   updateProject,
   updateProjectMember,
+  updateProjectSettings,
   type Project,
   type ProjectGroup,
   type ProjectGroupRole,
@@ -668,16 +686,15 @@ const availableGroups = computed(() => {
   return allGroups.value.filter((g) => g.id && !attached.has(g.id))
 })
 
-// The member payload carries only user_id; resolve the username from the user list.
 function memberName(member: ProjectMember): string {
-  return users.value.find((u) => u.id === member.user_id)?.username ?? member.user_id ?? ''
+  return member.username || (users.value.find((u) => u.id === member.user_id)?.username ?? member.user_id ?? '')
 }
 
 async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    const [list, usersRes, groupsRes] = await Promise.all([
+    const [{ projects: list }, usersRes, groupsRes] = await Promise.all([
       listProjects({ all: true }),
       // Names fall back to ids when the user or group list cannot be read.
       listAllUsers().catch(() => ({ total: 0, items: [] as UserItem[] })),
@@ -947,5 +964,39 @@ async function confirmDelete(): Promise<void> {
   }
 }
 
-onMounted(load)
+// Self-service project creation (global setting)
+const selfCreate = ref(false)
+const selfCreateLoading = ref(true)
+const selfCreateSaving = ref(false)
+const selfCreateError = ref('')
+
+async function loadSelfCreate(): Promise<void> {
+  try {
+    selfCreate.value = (await getProjectSettings()).self_create === true
+  } catch {
+    selfCreateError.value = t('adm.projects.selfCreate.loadFailed')
+  } finally {
+    selfCreateLoading.value = false
+  }
+}
+
+async function saveSelfCreate(value: boolean): Promise<void> {
+  selfCreateSaving.value = true
+  selfCreateError.value = ''
+  try {
+    selfCreate.value = (await updateProjectSettings({ self_create: value })).self_create === true
+    toasts.success(t('adm.projects.selfCreate.saved'))
+  } catch {
+    // Show what the server still holds.
+    selfCreate.value = !value
+    selfCreateError.value = t('adm.projects.selfCreate.saveFailed')
+  } finally {
+    selfCreateSaving.value = false
+  }
+}
+
+onMounted(() => {
+  void load()
+  void loadSelfCreate()
+})
 </script>

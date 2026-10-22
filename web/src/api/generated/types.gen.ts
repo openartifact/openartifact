@@ -73,6 +73,10 @@ export type User = {
 export type UserExtended = User & {
     is_admin?: boolean;
     groups?: Array<Group>;
+    /**
+     * The caller's project roles; global admins are implicit owners everywhere and are listed only for roles they hold.
+     */
+    projects?: Array<ProjectRole>;
 };
 
 export type Group = {
@@ -431,14 +435,42 @@ export type Project = {
     token_max_ttl_days?: number;
     created_at?: string;
     updated_at?: string;
+    /**
+     * The caller's effective role in the project; a global admin without a role is an implicit owner.
+     */
+    my_role?: 'owner' | 'maintainer' | 'developer' | 'viewer';
+    /**
+     * Number of live (not trashed) repositories.
+     */
+    repository_count?: number;
+    /**
+     * The built-in system project: it grants nothing and cannot be deleted.
+     */
+    is_system?: boolean;
 };
 
 export type ProjectMember = {
     id?: string;
     project_id?: string;
     user_id?: string;
+    username?: string;
     role?: 'owner' | 'maintainer' | 'developer' | 'viewer';
     created_at?: string;
+};
+
+/**
+ * One project role of the caller.
+ */
+export type ProjectRole = {
+    name?: string;
+    role?: 'owner' | 'maintainer' | 'developer' | 'viewer';
+};
+
+export type ProjectSettings = {
+    /**
+     * Whether any human user may create a project (and become its owner).
+     */
+    self_create: boolean;
 };
 
 export type ProjectGroup = {
@@ -477,6 +509,10 @@ export type ProjectCreateRequest = {
      * Maximum lifetime in days of tokens scoped to this project. 0 means no cap.
      */
     token_max_ttl_days?: number;
+    /**
+     * Username of the owner. Global admins only; defaults to the caller.
+     */
+    owner?: string;
 };
 
 /**
@@ -511,8 +547,15 @@ export type ProjectUpdateRequest = {
     token_max_ttl_days?: number;
 };
 
+/**
+ * Exactly one of user_id and username.
+ */
 export type ProjectMemberCreateRequest = {
-    user_id: string;
+    user_id?: string;
+    /**
+     * Alternative to user_id; exactly one of the two is required.
+     */
+    username?: string;
     role?: 'owner' | 'maintainer' | 'developer' | 'viewer';
 };
 
@@ -3851,6 +3894,7 @@ export type GetApiV1ProjectsResponses = {
      */
     200: {
         projects?: Array<Project>;
+        can_create?: boolean;
     };
 };
 
@@ -3868,6 +3912,14 @@ export type PostApiV1ProjectsErrors = {
      * Invalid name, slug or policy field
      */
     400: unknown;
+    /**
+     * Self-service project creation is off, the caller is not a human user, or a non-admin sent policy fields or an owner
+     */
+    403: unknown;
+    /**
+     * Owner user not found
+     */
+    404: unknown;
     /**
      * Project name or slug already taken
      */
@@ -3894,11 +3946,15 @@ export type DeleteApiV1ProjectsByProjectData = {
 
 export type DeleteApiV1ProjectsByProjectErrors = {
     /**
-     * Project not found
+     * Not an owner
+     */
+    403: unknown;
+    /**
+     * Project not found or the caller is not a member
      */
     404: unknown;
     /**
-     * Project still owns repositories
+     * Project still owns repositories, or it is the system project
      */
     409: unknown;
 };
@@ -3923,7 +3979,7 @@ export type GetApiV1ProjectsByProjectData = {
 
 export type GetApiV1ProjectsByProjectErrors = {
     /**
-     * Project not found
+     * Project not found or the caller is not a member
      */
     404: unknown;
 };
@@ -3937,7 +3993,7 @@ export type GetApiV1ProjectsByProjectResponses = {
 
 export type GetApiV1ProjectsByProjectResponse = GetApiV1ProjectsByProjectResponses[keyof GetApiV1ProjectsByProjectResponses];
 
-export type PutApiV1ProjectsByProjectData = {
+export type PatchApiV1ProjectsByProjectData = {
     body: ProjectUpdateRequest;
     path: {
         project: string;
@@ -3946,25 +4002,62 @@ export type PutApiV1ProjectsByProjectData = {
     url: '/api/v1/projects/{project}';
 };
 
-export type PutApiV1ProjectsByProjectErrors = {
+export type PatchApiV1ProjectsByProjectErrors = {
     /**
      * Invalid policy field
      */
     400: unknown;
     /**
-     * Project not found
+     * Not an owner, or a policy field sent by a non-admin
+     */
+    403: unknown;
+    /**
+     * Project not found or the caller is not a member
      */
     404: unknown;
 };
 
-export type PutApiV1ProjectsByProjectResponses = {
+export type PatchApiV1ProjectsByProjectResponses = {
     /**
      * Project updated
      */
     200: Project;
 };
 
-export type PutApiV1ProjectsByProjectResponse = PutApiV1ProjectsByProjectResponses[keyof PutApiV1ProjectsByProjectResponses];
+export type PatchApiV1ProjectsByProjectResponse = PatchApiV1ProjectsByProjectResponses[keyof PatchApiV1ProjectsByProjectResponses];
+
+export type GetApiV1ProjectsByProjectRepositoriesData = {
+    body?: never;
+    path: {
+        project: string;
+    };
+    query?: {
+        page?: number;
+        limit?: number;
+    };
+    url: '/api/v1/projects/{project}/repositories';
+};
+
+export type GetApiV1ProjectsByProjectRepositoriesErrors = {
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type GetApiV1ProjectsByProjectRepositoriesResponses = {
+    /**
+     * A page of repositories
+     */
+    200: {
+        repositories?: Array<Repository>;
+        total?: number;
+        page?: number;
+        limit?: number;
+    };
+};
+
+export type GetApiV1ProjectsByProjectRepositoriesResponse = GetApiV1ProjectsByProjectRepositoriesResponses[keyof GetApiV1ProjectsByProjectRepositoriesResponses];
 
 export type GetApiV1ProjectsByProjectMembersData = {
     body?: never;
@@ -3977,7 +4070,7 @@ export type GetApiV1ProjectsByProjectMembersData = {
 
 export type GetApiV1ProjectsByProjectMembersErrors = {
     /**
-     * Project not found
+     * Project not found or the caller is not a member
      */
     404: unknown;
 };
@@ -4008,9 +4101,17 @@ export type PostApiV1ProjectsByProjectMembersErrors = {
      */
     400: unknown;
     /**
+     * Not allowed to grant this role
+     */
+    403: unknown;
+    /**
      * Project or user not found
      */
     404: unknown;
+    /**
+     * User is already a member
+     */
+    409: unknown;
 };
 
 export type PostApiV1ProjectsByProjectMembersResponses = {
@@ -4034,9 +4135,17 @@ export type DeleteApiV1ProjectsByProjectMembersByUserIdData = {
 
 export type DeleteApiV1ProjectsByProjectMembersByUserIdErrors = {
     /**
+     * Not allowed to change this role
+     */
+    403: unknown;
+    /**
      * Member not found
      */
     404: unknown;
+    /**
+     * Would remove or demote the recorded or last owner
+     */
+    409: unknown;
 };
 
 export type DeleteApiV1ProjectsByProjectMembersByUserIdResponses = {
@@ -4048,7 +4157,7 @@ export type DeleteApiV1ProjectsByProjectMembersByUserIdResponses = {
 
 export type DeleteApiV1ProjectsByProjectMembersByUserIdResponse = DeleteApiV1ProjectsByProjectMembersByUserIdResponses[keyof DeleteApiV1ProjectsByProjectMembersByUserIdResponses];
 
-export type PutApiV1ProjectsByProjectMembersByUserIdData = {
+export type PatchApiV1ProjectsByProjectMembersByUserIdData = {
     body: ProjectMemberUpdateRequest;
     path: {
         project: string;
@@ -4058,25 +4167,33 @@ export type PutApiV1ProjectsByProjectMembersByUserIdData = {
     url: '/api/v1/projects/{project}/members/{user_id}';
 };
 
-export type PutApiV1ProjectsByProjectMembersByUserIdErrors = {
+export type PatchApiV1ProjectsByProjectMembersByUserIdErrors = {
     /**
      * Invalid role
      */
     400: unknown;
     /**
-     * Member not found
+     * Not allowed to change this role
+     */
+    403: unknown;
+    /**
+     * Project or member not found
      */
     404: unknown;
+    /**
+     * Would remove or demote the recorded or last owner
+     */
+    409: unknown;
 };
 
-export type PutApiV1ProjectsByProjectMembersByUserIdResponses = {
+export type PatchApiV1ProjectsByProjectMembersByUserIdResponses = {
     /**
      * Member updated
      */
     200: ProjectMember;
 };
 
-export type PutApiV1ProjectsByProjectMembersByUserIdResponse = PutApiV1ProjectsByProjectMembersByUserIdResponses[keyof PutApiV1ProjectsByProjectMembersByUserIdResponses];
+export type PatchApiV1ProjectsByProjectMembersByUserIdResponse = PatchApiV1ProjectsByProjectMembersByUserIdResponses[keyof PatchApiV1ProjectsByProjectMembersByUserIdResponses];
 
 export type GetApiV1ProjectsByProjectGroupsData = {
     body?: never;
@@ -4105,61 +4222,121 @@ export type GetApiV1ProjectsByProjectGroupsResponses = {
 
 export type GetApiV1ProjectsByProjectGroupsResponse = GetApiV1ProjectsByProjectGroupsResponses[keyof GetApiV1ProjectsByProjectGroupsResponses];
 
-export type DeleteApiV1ProjectsByProjectGroupsByGroupIdData = {
+export type DeleteApiV1ProjectsByProjectGroupsByGroupData = {
     body?: never;
     path: {
         project: string;
-        group_id: string;
+        /**
+         * Group ID or exact group name
+         */
+        group: string;
     };
     query?: never;
-    url: '/api/v1/projects/{project}/groups/{group_id}';
+    url: '/api/v1/projects/{project}/groups/{group}';
 };
 
-export type DeleteApiV1ProjectsByProjectGroupsByGroupIdErrors = {
+export type DeleteApiV1ProjectsByProjectGroupsByGroupErrors = {
+    /**
+     * Not allowed to grant or change this role
+     */
+    403: unknown;
     /**
      * Group not attached
      */
     404: unknown;
 };
 
-export type DeleteApiV1ProjectsByProjectGroupsByGroupIdResponses = {
+export type DeleteApiV1ProjectsByProjectGroupsByGroupResponses = {
     /**
      * Group detached
      */
     204: void;
 };
 
-export type DeleteApiV1ProjectsByProjectGroupsByGroupIdResponse = DeleteApiV1ProjectsByProjectGroupsByGroupIdResponses[keyof DeleteApiV1ProjectsByProjectGroupsByGroupIdResponses];
+export type DeleteApiV1ProjectsByProjectGroupsByGroupResponse = DeleteApiV1ProjectsByProjectGroupsByGroupResponses[keyof DeleteApiV1ProjectsByProjectGroupsByGroupResponses];
 
-export type PutApiV1ProjectsByProjectGroupsByGroupIdData = {
+export type PutApiV1ProjectsByProjectGroupsByGroupData = {
     body: ProjectGroupUpdateRequest;
     path: {
         project: string;
-        group_id: string;
+        /**
+         * Group ID or exact group name
+         */
+        group: string;
     };
     query?: never;
-    url: '/api/v1/projects/{project}/groups/{group_id}';
+    url: '/api/v1/projects/{project}/groups/{group}';
 };
 
-export type PutApiV1ProjectsByProjectGroupsByGroupIdErrors = {
+export type PutApiV1ProjectsByProjectGroupsByGroupErrors = {
     /**
      * Invalid role
      */
     400: unknown;
+    /**
+     * Not allowed to grant or change this role
+     */
+    403: unknown;
     /**
      * Project or group not found
      */
     404: unknown;
 };
 
-export type PutApiV1ProjectsByProjectGroupsByGroupIdResponses = {
+export type PutApiV1ProjectsByProjectGroupsByGroupResponses = {
     /**
      * Group attached or updated
      */
     200: ProjectGroup;
 };
 
-export type PutApiV1ProjectsByProjectGroupsByGroupIdResponse = PutApiV1ProjectsByProjectGroupsByGroupIdResponses[keyof PutApiV1ProjectsByProjectGroupsByGroupIdResponses];
+export type PutApiV1ProjectsByProjectGroupsByGroupResponse = PutApiV1ProjectsByProjectGroupsByGroupResponses[keyof PutApiV1ProjectsByProjectGroupsByGroupResponses];
+
+export type GetApiV1AdminProjectsSettingsData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/projects/settings';
+};
+
+export type GetApiV1AdminProjectsSettingsErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminProjectsSettingsResponses = {
+    /**
+     * Project settings
+     */
+    200: ProjectSettings;
+};
+
+export type GetApiV1AdminProjectsSettingsResponse = GetApiV1AdminProjectsSettingsResponses[keyof GetApiV1AdminProjectsSettingsResponses];
+
+export type PutApiV1AdminProjectsSettingsData = {
+    body: ProjectSettings;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/projects/settings';
+};
+
+export type PutApiV1AdminProjectsSettingsErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type PutApiV1AdminProjectsSettingsResponses = {
+    /**
+     * Settings saved
+     */
+    200: ProjectSettings;
+};
+
+export type PutApiV1AdminProjectsSettingsResponse = PutApiV1AdminProjectsSettingsResponses[keyof PutApiV1AdminProjectsSettingsResponses];
 
 export type GetApiV1OpenapiJsonData = {
     body?: never;

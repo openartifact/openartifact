@@ -195,6 +195,13 @@
                 "items": {
                   "$ref": "#/components/schemas/Group"
                 }
+              },
+              "projects": {
+                "type": "array",
+                "description": "The caller's project roles; global admins are implicit owners everywhere and are listed only for roles they hold.",
+                "items": {
+                  "$ref": "#/components/schemas/ProjectRole"
+                }
               }
             }
           }
@@ -1029,6 +1036,24 @@
             "updated_at": {
               "type": "string",
               "format": "date-time"
+            },
+            "my_role": {
+              "type": "string",
+              "enum": [
+                "owner",
+                "maintainer",
+                "developer",
+                "viewer"
+              ],
+              "description": "The caller's effective role in the project; a global admin without a role is an implicit owner."
+            },
+            "repository_count": {
+              "type": "integer",
+              "description": "Number of live (not trashed) repositories."
+            },
+            "is_system": {
+              "type": "boolean",
+              "description": "The built-in system project: it grants nothing and cannot be deleted."
             }
           }
         },
@@ -1047,6 +1072,9 @@
               "type": "string",
               "format": "uuid"
             },
+            "username": {
+              "type": "string"
+            },
             "role": {
               "type": "string",
               "enum": [
@@ -1061,6 +1089,36 @@
               "format": "date-time"
             }
           }
+        },
+        "ProjectRole": {
+          "type": "object",
+          "description": "One project role of the caller.",
+          "properties": {
+            "name": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "owner",
+                "maintainer",
+                "developer",
+                "viewer"
+              ]
+            }
+          }
+        },
+        "ProjectSettings": {
+          "type": "object",
+          "properties": {
+            "self_create": {
+              "type": "boolean",
+              "description": "Whether any human user may create a project (and become its owner)."
+            }
+          },
+          "required": [
+            "self_create"
+          ]
         },
         "ProjectGroup": {
           "type": "object",
@@ -1139,6 +1197,10 @@
               "type": "integer",
               "minimum": 0,
               "description": "Maximum lifetime in days of tokens scoped to this project. 0 means no cap."
+            },
+            "owner": {
+              "type": "string",
+              "description": "Username of the owner. Global admins only; defaults to the caller."
             }
           },
           "required": [
@@ -1202,6 +1264,10 @@
               "type": "string",
               "format": "uuid"
             },
+            "username": {
+              "type": "string",
+              "description": "Alternative to user_id; exactly one of the two is required."
+            },
             "role": {
               "type": "string",
               "enum": [
@@ -1213,9 +1279,7 @@
               "default": "viewer"
             }
           },
-          "required": [
-            "user_id"
-          ]
+          "description": "Exactly one of user_id and username."
         },
         "ProjectMemberUpdateRequest": {
           "type": "object",
@@ -7280,498 +7344,665 @@
         }
       }
     },
-      "/api/v1/projects": {
-        "get": {
-          "summary": "List projects",
-          "description": "List the projects the caller belongs to; with all=true, every project (global administrators only, others get 403). Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "all",
-              "in": "query",
-              "required": false,
-              "description": "List every project instead of only the caller's own. Global administrators only.",
-              "schema": {
-                "type": "boolean",
-                "default": false
-              }
+    "/api/v1/projects": {
+      "get": {
+        "summary": "List projects",
+        "description": "List the projects the caller holds a role in, each with my_role and repository_count; with all=true, every project (global administrators only, others get 403). can_create tells whether the caller may create a project (global admin, or any human user while the projects.self_create setting is on).",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "all",
+            "in": "query",
+            "required": false,
+            "description": "List every project instead of only the caller's own. Global administrators only.",
+            "schema": {
+              "type": "boolean",
+              "default": false
             }
-          ],
-          "responses": {
-            "200": {
-              "description": "List of projects",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "type": "object",
-                    "properties": {
-                      "projects": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/Project"
-                        }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of projects",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "projects": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Project"
                       }
+                    },
+                    "can_create": {
+                      "type": "boolean"
                     }
                   }
                 }
               }
             }
           }
+        }
+      },
+      "post": {
+        "summary": "Create project",
+        "description": "Create a project. Global admins always may and can set the owner and the policy fields; any other human user may only while projects.self_create is on, becomes the owner, and gets the default policy (policy fields or owner in the body give 403). Tokens with scopes and deploy tokens cannot create projects.",
+        "tags": [
+          "Projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectCreateRequest"
+              }
+            }
+          }
         },
-        "post": {
-          "summary": "Create project",
-          "description": "Create a new project. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "requestBody": {
-            "required": true,
+        "responses": {
+          "201": {
+            "description": "Project created",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectCreateRequest"
+                  "$ref": "#/components/schemas/Project"
                 }
               }
             }
           },
-          "responses": {
-            "201": {
-              "description": "Project created",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/Project"
-                  }
-                }
-              }
-            },
-            "400": {
-              "description": "Invalid name, slug or policy field"
-            },
-            "409": {
-              "description": "Project name or slug already taken"
-            }
+          "400": {
+            "description": "Invalid name, slug or policy field"
+          },
+          "403": {
+            "description": "Self-service project creation is off, the caller is not a human user, or a non-admin sent policy fields or an owner"
+          },
+          "404": {
+            "description": "Owner user not found"
+          },
+          "409": {
+            "description": "Project name or slug already taken"
           }
         }
-      },
-      "/api/v1/projects/{project}": {
-        "get": {
-          "summary": "Get project",
-          "description": "Get details of a specific project. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string"
-              }
-            }
-          ],
-          "responses": {
-            "200": {
-              "description": "Project details",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/Project"
-                  }
-                }
-              }
-            },
-            "404": {
-              "description": "Project not found"
+      }
+    },
+    "/api/v1/projects/{project}": {
+      "get": {
+        "summary": "Get project",
+        "description": "Get details of a specific project. Requires a role in the project (viewer or above) or global admin; a non-member gets 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
           }
-        },
-        "put": {
-          "summary": "Update project",
-          "description": "Partially update a project: only the fields present in the body change. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string"
-              }
-            }
-          ],
-          "requestBody": {
-            "required": true,
+        ],
+        "responses": {
+          "200": {
+            "description": "Project details",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectUpdateRequest"
+                  "$ref": "#/components/schemas/Project"
                 }
               }
             }
           },
-          "responses": {
-            "200": {
-              "description": "Project updated",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/Project"
-                  }
-                }
-              }
-            },
-            "400": {
-              "description": "Invalid policy field"
-            },
-            "404": {
-              "description": "Project not found"
-            }
-          }
-        },
-        "delete": {
-          "summary": "Delete project",
-          "description": "Delete a project. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string"
-              }
-            }
-          ],
-          "responses": {
-            "204": {
-              "description": "Project deleted"
-            },
-            "404": {
-              "description": "Project not found"
-            },
-            "409": {
-              "description": "Project still owns repositories"
-            }
+          "404": {
+            "description": "Project not found or the caller is not a member"
           }
         }
       },
-      "/api/v1/projects/{project}/members": {
-        "get": {
-          "summary": "List project members",
-          "description": "List members of a project. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
+      "patch": {
+        "summary": "Update project",
+        "description": "Partially update a project: only the fields present in the body change. display_name and description need the owner role or global admin; the policy fields need global admin (403 otherwise).",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
               "schema": {
-                "type": "string"
+                "$ref": "#/components/schemas/ProjectUpdateRequest"
               }
             }
-          ],
-          "responses": {
-            "200": {
-              "description": "List of project members",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "type": "object",
-                    "properties": {
-                      "members": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/ProjectMember"
-                        }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Project updated",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Project"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid policy field"
+          },
+          "403": {
+            "description": "Not an owner, or a policy field sent by a non-admin"
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete project",
+        "description": "Delete a project. Requires the owner role or global admin.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Project deleted"
+          },
+          "403": {
+            "description": "Not an owner"
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          },
+          "409": {
+            "description": "Project still owns repositories, or it is the system project"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/repositories": {
+      "get": {
+        "summary": "List project repositories",
+        "description": "List the live (not trashed) repositories of a project, newest first. Requires a role in the project (viewer or above) or global admin; a non-member gets 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "page",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "default": 1
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100,
+              "default": 25
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "A page of repositories",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "repositories": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/Repository"
+                      }
+                    },
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/members": {
+      "get": {
+        "summary": "List project members",
+        "description": "List members of a project. Requires a role in the project (viewer or above) or global admin; a non-member gets 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of project members",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "members": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectMember"
                       }
                     }
                   }
                 }
               }
-            },
-            "404": {
-              "description": "Project not found"
+            }
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      },
+      "post": {
+        "summary": "Add project member",
+        "description": "Add a user (by user_id or username, exactly one) to a project; the role defaults to viewer. Requires the owner or maintainer role or global admin (maintainers may only touch roles below maintainer); a viewer or developer gets 403, a non-member 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectMemberCreateRequest"
+              }
             }
           }
         },
-        "post": {
-          "summary": "Add project member",
-          "description": "Add a user to a project. The role defaults to viewer. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string"
-              }
-            }
-          ],
-          "requestBody": {
-            "required": true,
+        "responses": {
+          "201": {
+            "description": "Member added",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectMemberCreateRequest"
+                  "$ref": "#/components/schemas/ProjectMember"
                 }
               }
             }
           },
-          "responses": {
-            "201": {
-              "description": "Member added",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/ProjectMember"
-                  }
-                }
-              }
-            },
-            "400": {
-              "description": "Invalid role"
-            },
-            "404": {
-              "description": "Project or user not found"
-            }
+          "400": {
+            "description": "Invalid role"
+          },
+          "403": {
+            "description": "Not allowed to grant this role"
+          },
+          "404": {
+            "description": "Project or user not found"
+          },
+          "409": {
+            "description": "User is already a member"
           }
         }
-      },
-      "/api/v1/projects/{project}/members/{user_id}": {
-        "put": {
-          "summary": "Update project member",
-          "description": "Change a member's role in a project. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
+      }
+    },
+    "/api/v1/projects/{project}/members/{user_id}": {
+      "patch": {
+        "summary": "Update project member",
+        "description": "Change a member's role. Requires the owner or maintainer role or global admin (maintainers may only touch roles below maintainer); a viewer or developer gets 403, a non-member 404. The recorded project owner cannot be demoted and the last owner cannot be demoted or removed (409).",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
               "schema": {
-                "type": "string"
-              }
-            },
-            {
-              "name": "user_id",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "format": "uuid"
+                "$ref": "#/components/schemas/ProjectMemberUpdateRequest"
               }
             }
-          ],
-          "requestBody": {
-            "required": true,
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Member updated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectMemberUpdateRequest"
+                  "$ref": "#/components/schemas/ProjectMember"
                 }
               }
             }
           },
-          "responses": {
-            "200": {
-              "description": "Member updated",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/ProjectMember"
-                  }
-                }
-              }
-            },
-            "400": {
-              "description": "Invalid role"
-            },
-            "404": {
-              "description": "Member not found"
-            }
-          }
-        },
-        "delete": {
-          "summary": "Remove project member",
-          "description": "Remove a member from a project. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string"
-              }
-            },
-            {
-              "name": "user_id",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
-          ],
-          "responses": {
-            "204": {
-              "description": "Member removed"
-            },
-            "404": {
-              "description": "Member not found"
-            }
+          "400": {
+            "description": "Invalid role"
+          },
+          "403": {
+            "description": "Not allowed to change this role"
+          },
+          "404": {
+            "description": "Project or member not found"
+          },
+          "409": {
+            "description": "Would remove or demote the recorded or last owner"
           }
         }
       },
-      "/api/v1/projects/{project}/groups": {
-        "get": {
-          "summary": "List project groups",
-          "description": "List groups attached to a project, with the role each group's members get. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string"
-              }
+      "delete": {
+        "summary": "Remove project member",
+        "description": "Remove a member. Requires the owner or maintainer role or global admin (maintainers may only touch roles below maintainer); a viewer or developer gets 403, a non-member 404. The recorded project owner and the last owner cannot be removed (409).",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
             }
-          ],
-          "responses": {
-            "200": {
-              "description": "List of project groups",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "type": "object",
-                    "properties": {
-                      "groups": {
-                        "type": "array",
-                        "items": {
-                          "$ref": "#/components/schemas/ProjectGroup"
-                        }
+          },
+          {
+            "name": "user_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Member removed"
+          },
+          "403": {
+            "description": "Not allowed to change this role"
+          },
+          "404": {
+            "description": "Member not found"
+          },
+          "409": {
+            "description": "Would remove or demote the recorded or last owner"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/groups": {
+      "get": {
+        "summary": "List project groups",
+        "description": "List groups attached to a project, with the role each group's members get. Requires a role in the project (viewer or above) or global admin; a non-member gets 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "List of project groups",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "groups": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectGroup"
                       }
                     }
                   }
                 }
               }
-            },
-            "404": {
-              "description": "Project not found"
             }
+          },
+          "404": {
+            "description": "Project not found"
           }
         }
-      },
-      "/api/v1/projects/{project}/groups/{group_id}": {
-        "put": {
-          "summary": "Attach or update project group",
-          "description": "Attach a group to a project with a role, or change the role of an attached group. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
+      }
+    },
+    "/api/v1/projects/{project}/groups/{group}": {
+      "put": {
+        "summary": "Attach or update project group",
+        "description": "Attach a group with a role, or change the role of an attached group. Requires the owner or maintainer role or global admin (maintainers may only touch roles below maintainer); a viewer or developer gets 403, a non-member 404. Granting or changing the maintainer role needs the owner role.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "description": "Group ID or exact group name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
               "schema": {
-                "type": "string"
-              }
-            },
-            {
-              "name": "group_id",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "format": "uuid"
+                "$ref": "#/components/schemas/ProjectGroupUpdateRequest"
               }
             }
-          ],
-          "requestBody": {
-            "required": true,
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Group attached or updated",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/ProjectGroupUpdateRequest"
+                  "$ref": "#/components/schemas/ProjectGroup"
                 }
               }
             }
           },
-          "responses": {
-            "200": {
-              "description": "Group attached or updated",
-              "content": {
-                "application/json": {
-                  "schema": {
-                    "$ref": "#/components/schemas/ProjectGroup"
-                  }
-                }
-              }
-            },
-            "400": {
-              "description": "Invalid role"
-            },
-            "404": {
-              "description": "Project or group not found"
-            }
-          }
-        },
-        "delete": {
-          "summary": "Detach project group",
-          "description": "Detach a group from a project. Requires the global manage permission (administrators); project roles do not open this API.",
-          "tags": [
-            "Projects"
-          ],
-          "parameters": [
-            {
-              "name": "project",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string"
-              }
-            },
-            {
-              "name": "group_id",
-              "in": "path",
-              "required": true,
-              "schema": {
-                "type": "string",
-                "format": "uuid"
-              }
-            }
-          ],
-          "responses": {
-            "204": {
-              "description": "Group detached"
-            },
-            "404": {
-              "description": "Group not attached"
-            }
+          "400": {
+            "description": "Invalid role"
+          },
+          "403": {
+            "description": "Not allowed to grant or change this role"
+          },
+          "404": {
+            "description": "Project or group not found"
           }
         }
       },
+      "delete": {
+        "summary": "Detach project group",
+        "description": "Detach a group. Requires the owner or maintainer role or global admin (maintainers may only touch roles below maintainer); a viewer or developer gets 403, a non-member 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "group",
+            "in": "path",
+            "required": true,
+            "description": "Group ID or exact group name",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Group detached"
+          },
+          "403": {
+            "description": "Not allowed to grant or change this role"
+          },
+          "404": {
+            "description": "Group not attached"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/projects/settings": {
+      "get": {
+        "summary": "Get project settings",
+        "description": "Global admins only. self_create is the effective projects.self_create value: the stored setting, else the OPENARTIFACT_PROJECTS_SELF_CREATE / projects.selfCreate default.",
+        "tags": [
+          "Projects"
+        ],
+        "responses": {
+          "200": {
+            "description": "Project settings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update project settings",
+        "description": "Global admins only. Turning self_create on lets any human user create projects (and become their owner).",
+        "tags": [
+          "Projects"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Settings saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectSettings"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
     "/api/v1/openapi.json": {
       "get": {
         "summary": "OpenAPI specification",

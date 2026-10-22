@@ -48,6 +48,9 @@ type RBACConfig struct {
 	// BaseURL is the public URL of the server; cargo's WWW-Authenticate
 	// challenge points its login_url at it.
 	BaseURL string
+	// ProjectSettings decides whether non-admin users may create projects
+	// (POST /api/v1/projects); nil means only global admins may.
+	ProjectSettings *auth.ProjectSettings
 }
 
 // routeScope is what the permission evaluator is asked about for a request.
@@ -59,6 +62,13 @@ type routeScope struct {
 	// result per repository itself; RBAC only requires a real (non-anonymous)
 	// principal for them.
 	anyAuthenticated bool
+	// project and projectAction mark a control-plane route of one project
+	// (/api/v1/projects/{project}/...): the caller needs a project role that
+	// allows the action (a global admin always does). projectsRoot marks
+	// GET/POST /api/v1/projects, whose handlers filter or check per caller.
+	project       string
+	projectAction auth.ProjectAction
+	projectsRoot  bool
 }
 
 func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evaluator, log *logger.Logger) func(http.Handler) http.Handler {
@@ -110,6 +120,14 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 			}
 
 			scope := classifyRoute(r)
+
+			if scope.isProjectRoute() {
+				if authorizeProjectRoute(w, r, cfg, evaluator, log, principal, credential, scope, db) {
+					next.ServeHTTP(w, r)
+				}
+
+				return
+			}
 
 			if (scope.anyAuthenticated || isDockerPing(r)) && !principal.IsAnonymous {
 				next.ServeHTTP(w, r)
@@ -569,6 +587,10 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		// (Purging one item and the global /api/v1/trash routes stay administrative;
 		// emptying the whole trash is the separate manage route above.)
 		return routeScope{action: "delete", repoName: segs[1]}
+	case segs[0] == "projects":
+		if scope, ok := classifyProjectRoute(method, segs); ok {
+			return scope
+		}
 	}
 
 	return manage

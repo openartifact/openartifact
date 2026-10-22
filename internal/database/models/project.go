@@ -80,6 +80,7 @@ type ProjectMember struct {
 	ID        string
 	ProjectID string
 	UserID    string
+	Username  string // read-only: filled by reads, ignored on writes
 	Role      string // viewer, developer, maintainer, owner
 	CreatedAt time.Time
 }

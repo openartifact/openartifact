@@ -119,18 +119,30 @@ Limits:
 
 ### How repositories get a project
 
-`POST /api/v1/repositories` accepts an optional `project` (project name); without it the repository is created in the `system` project. An unknown name returns 404. A global admin can move a repository with `PATCH /api/v1/repository/{name}` and `{"project":"<name>"}` (use `"system"` to move it back); access changes immediately. Repository responses carry the project name in `project`. Repository names are unique across projects. A project that still owns repositories cannot be deleted (409).
+`POST /api/v1/repositories` accepts an optional `project` (project name); without it the repository is created in the `system` project. An unknown name returns 404. A global admin can move a repository with `PATCH /api/v1/repository/{name}` and `{"project":"<name>"}` (use `"system"` to move it back); access changes immediately. Repository responses carry the project name in `project`. Repository names are unique across projects. Creating and moving repositories stays an admin operation; a project owner cannot yet create repositories. A project that still owns repositories cannot be deleted (409).
 
 ### Managing projects
 
-Management is admin-only in this release: every endpoint below sits behind `/api/v1/*` and needs the global `manage` permission. Project roles do not open this API to non-admins.
+The project routes under `/api/v1/projects/**` are project-scoped: the RBAC middleware decides them from the caller's role in `{project}` (`routeScope.project`, evaluated by `EvaluateProject`), not from the global `manage` permission. A global admin is an implicit owner of every project. Project roles still never grant `manage` for any other route.
+
+Gate rules:
+
+- `GET /api/v1/projects` is open to every authenticated user (the list is the caller's projects; `?all=true` is admin-only). `POST /api/v1/projects` needs an admin, or any human user while the `projects.self_create` setting is on.
+- `/api/v1/projects/{project}` and its documented sub-routes need the minimum role listed below. A caller with no role in the project gets `404`, the same answer as for an unknown project; a member whose role is too low gets `403`. Anonymous callers and `deploy` tokens are denied; scoped tokens have no project role.
+- Any other sub-path or method under `/api/v1/projects/**` is not project-scoped and falls back to global `manage` (deny by default).
+- Maintainers may only add, change or remove members and groups below `maintainer`; changes involving `maintainer` or `owner` need an owner. The recorded owner and the last owner cannot be demoted or removed (`409`). Member and group changes are serialized under a project lock.
+- Policy fields (`allowed_formats`, `allowed_repo_types`, `repo_name_prefix`, `allow_public_repos`, `max_repositories`, `token_max_ttl_days`) can only be set by a global admin; an owner sending one gets `403`.
+
+Roles, creation rules, audit events and the full route list: [Projects](projects.md).
 
 | Endpoint | Notes |
 |---|---|
-| `POST/GET /api/v1/projects` | create (name `^[a-zA-Z0-9_-]{1,100}$`, `display_name`, `description`, optional policy fields; the response carries a `slug` derived from the name: lowercased, every run of characters other than letters and digits becomes one hyphen, so `Acme_Team` is `acme-team`; a name or slug collision, such as `Acme-Corp` after `acme-corp`, returns 409, and a name with no letter or digit or a slug over 64 characters returns 400) / list projects (`{"projects":[…]}`) |
-| `GET/PUT/DELETE /api/v1/projects/{project}` | `PUT` is a partial update (`display_name`, `description`, `allowed_formats`, `allowed_repo_types`, `repo_name_prefix`, `allow_public_repos`, `max_repositories`, `token_max_ttl_days`); delete returns 204, or 409 while repositories are still owned |
-| `GET/POST /api/v1/projects/{project}/members`, `PUT/DELETE /api/v1/projects/{project}/members/{user_id}` | roles `viewer` (default), `developer`, `maintainer`, `owner` |
-| `GET /api/v1/projects/{project}/groups`, `PUT/DELETE /api/v1/projects/{project}/groups/{group_id}` | group grants; `PUT` body `{"role":"viewer\|developer\|maintainer"}` |
+| `POST/GET /api/v1/projects` | create (admin, or any user with self-create on, who becomes the owner and may send only `name`, `display_name` and `description`; name `^[a-zA-Z0-9_-]{1,100}$`; admins may also send `owner` (username) and policy fields; the response carries a `slug` derived from the name: lowercased, every run of characters other than letters and digits becomes one hyphen, so `Acme_Team` is `acme-team`; a name or slug collision, such as `Acme-Corp` after `acme-corp`, returns 409, and a name with no letter or digit or a slug over 64 characters returns 400) / list the caller's projects with `my_role` (`{"projects":[…],"can_create":bool}`; `?all=true` for admins) |
+| `GET/PATCH/DELETE /api/v1/projects/{project}` | `GET` viewer+; `PATCH` (owner; was `PUT`) is a partial update of `display_name` and `description`, plus the policy fields for admins; `DELETE` (owner) returns 204, or 409 while repositories are still owned and for the `system` project |
+| `GET /api/v1/projects/{project}/repositories` | viewer+; paginated (`page`, `limit`) |
+| `GET/POST /api/v1/projects/{project}/members`, `PATCH/DELETE /api/v1/projects/{project}/members/{user_id}` | list viewer+, changes maintainer+ (see escalation rules); `POST` takes `user_id` or an exact `username`; `PATCH` (was `PUT`) body `{"role"}`; roles `viewer` (default), `developer`, `maintainer`, `owner` |
+| `GET /api/v1/projects/{project}/groups`, `PUT/DELETE /api/v1/projects/{project}/groups/{group}` | group grants; `{group}` is a group id or its exact name; `PUT` body `{"role":"viewer\|developer\|maintainer"}`; changes maintainer+ |
+| `GET/PUT /api/v1/admin/projects/settings` | admin; `{"self_create": bool}` |
 
 ### Caching
 

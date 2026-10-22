@@ -455,7 +455,9 @@ func run(args []string) error {
 
 	evaluator := auth.NewEvaluator(db, log, cfg.Auth.AllowAnonymousRead)
 	trash.SetEvaluator(evaluator)
+	projectSettings := auth.NewProjectSettings(db, cfg.Projects.SelfCreate)
 	rbacCfg := middleware.RBACConfig{
+		ProjectSettings:     projectSettings,
 		LegacyAPIKey:        cfg.Server.APIKey,
 		LegacyAPIKeyEnabled: cfg.Auth.LegacyAPIKeyEnabled,
 		AllowAnonymousRead:  cfg.Auth.AllowAnonymousRead,
@@ -654,7 +656,7 @@ func run(args []string) error {
 
 	api.NewAdminAIHandler(db, log, evaluator).WithRuntime(aiWorker, envAI).Register(authedAPI)
 
-	api.NewProjectsHandler(db, log, evaluator).RegisterRoutes(authedAPI)
+	api.NewProjectsHandler(db, log, evaluator, projectSettings).RegisterRoutes(authedAPI)
 
 	searchHandler := search.NewHandler(db.GetDB(), evaluator, log)
 	authedAPI.Get("/api/v1/search", searchHandler.ServeHTTP)
