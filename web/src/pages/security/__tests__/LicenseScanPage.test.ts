@@ -21,9 +21,12 @@ const QUARANTINED = { ...base, id: 'q-scan', artifact_id: 'art-1', licenses: ['G
 const OK = { ...base, id: 'ok-scan', artifact_id: 'art-2', licenses: ['MIT'], quarantined: false, quarantine_approved: false }
 const APPROVED = { ...base, id: 'a-scan', artifact_id: 'art-3', licenses: ['GPL-3.0'], quarantined: false, quarantine_approved: true }
 
+// PageHeader reads the router; the page tests only need its action slot.
+const PageHeaderStub = { template: '<div><slot name="actions" /></div>' }
+
 async function mountPage(extra?: Parameters<typeof mockSecurityApi>[2]) {
   const calls = mockSecurityApi(`/api/v1/repositories/${REPO}/license/scans`, [QUARANTINED, OK, APPROVED], extra)
-  const wrapper = mount(LicenseScanPage, { global: { plugins: [createPinia()], stubs: { RouterLink: true } } })
+  const wrapper = mount(LicenseScanPage, { global: { plugins: [createPinia()], stubs: { RouterLink: true, PageHeader: PageHeaderStub } } })
   await selectRepo(wrapper)
   return { wrapper, calls }
 }

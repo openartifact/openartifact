@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 .PHONY: help build run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
-        docker-build docker-run docker-stop migrate web-build web-dev build-cli generate bench bench-load
+        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate bench bench-load
 
 # Variables
 BINARY_NAME=openartifact
@@ -14,10 +14,12 @@ DOCKER_CONTAINER=openartifact
 
 # Build version metadata injected via -ldflags at link time.
 # The release version comes from the top-level VERSION file; override with
-# CI_VERSION / CI_COMMIT for custom builds.
+# CI_VERSION / CI_COMMIT for custom builds. Formats are the same in every
+# build path (Makefile, docker/Dockerfile, .goreleaser.yml): COMMIT is the
+# 7-character short SHA, BUILD_TIME is RFC 3339 in UTC with second precision.
 # Example: make build CI_VERSION=1.2.3 CI_COMMIT=abc1234
 VERSION   ?= $(if $(CI_VERSION),$(CI_VERSION),$(shell cat VERSION 2>/dev/null || echo dev))
-COMMIT    ?= $(if $(CI_COMMIT),$(CI_COMMIT),$(shell git rev-parse --short HEAD 2>/dev/null || echo unknown))
+COMMIT    ?= $(if $(CI_COMMIT),$(CI_COMMIT),$(shell git rev-parse --short=7 HEAD 2>/dev/null || echo unknown))
 BUILD_TIME ?= $(shell date -u +%Y-%m-%dT%H:%M:%SZ)
 LDFLAGS   = -ldflags "-X main.version=$(VERSION) -X main.commit=$(COMMIT) -X main.buildTime=$(BUILD_TIME)"
 
@@ -43,6 +45,7 @@ help:
 	@echo "  docker-build    - Build Docker image"
 	@echo "  docker-run      - Run Docker container"
 	@echo "  docker-stop     - Stop Docker container"
+	@echo "  docker-up       - Build and start the compose stack with version/commit/build time stamped"
 	@echo "  migrate         - Run migrations (go run ./cmd/server -migrate)"
 	@echo "  help            - Show this help message"
 
@@ -135,7 +138,7 @@ deps:
 
 docker-build:
 	@echo "Building Docker image: $(DOCKER_IMAGE)"
-	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$$(git rev-parse --short HEAD 2>/dev/null || echo unknown) --build-arg BUILD_TIME=$$(date -u +%Y-%m-%dT%H:%M:%SZ) -t $(DOCKER_IMAGE) -f docker/Dockerfile .
+	docker build --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t $(DOCKER_IMAGE) -f docker/Dockerfile .
 	@echo "Docker image built: $(DOCKER_IMAGE)"
 
 docker-run: docker-build
@@ -155,6 +158,13 @@ docker-run: docker-build
 		-e LOG_LEVEL=info \
 		$(DOCKER_IMAGE)
 	@echo "Container running: $(DOCKER_CONTAINER)"
+
+# docker compose cannot read the VERSION file or run git, so the build metadata
+# is handed over through the OPENARTIFACT_* variables docker-compose.yml expects.
+docker-up:
+	@test -f docker/.env || (echo "docker/.env not found — copy docker/.env.example to docker/.env and set real credentials first" && exit 1)
+	OPENARTIFACT_VERSION=$(VERSION) OPENARTIFACT_COMMIT=$(COMMIT) OPENARTIFACT_BUILD_TIME=$(BUILD_TIME) \
+		docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
 
 docker-stop:
 	@echo "Stopping Docker container: $(DOCKER_CONTAINER)"

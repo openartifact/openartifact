@@ -6,10 +6,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
-    <h1 class="text-2xl font-semibold text-foreground">{{ t('search.title') }}</h1>
+    <PageHeader :title="t('search.title')" />
 
     <!-- Search Input -->
-    <div class="w-full mt-4 flex items-center gap-3 px-5 py-3 rounded-full bg-surface border border-border focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
+    <div class="w-full flex items-center gap-3 px-5 py-3 rounded-full bg-surface border border-border focus-within:border-primary/50 focus-within:ring-2 focus-within:ring-primary/20 transition-all">
       <MagnifyingGlassIcon class="w-5 h-5 text-muted flex-shrink-0" aria-hidden="true" />
       <input
         v-model="query"
@@ -95,6 +95,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { useSearch } from '../composables/useSearch'
 import FormatBadge from '../components/FormatBadge.vue'
 import { t } from '../i18n/en'

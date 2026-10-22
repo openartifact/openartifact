@@ -164,6 +164,8 @@ export const enAdmin = {
   // System
   'adm.system.loadFailed': 'Failed to load system information',
   'adm.system.description': 'Server health and configuration overview',
+  'adm.system.notStamped': 'Not recorded',
+  'adm.system.notStampedHint': 'This build was not stamped with version metadata (build with make build or make docker-up)',
   'adm.system.osArch': 'OS / Arch',
   'adm.system.commit': 'Commit',
   'adm.system.buildTime': 'Build time',

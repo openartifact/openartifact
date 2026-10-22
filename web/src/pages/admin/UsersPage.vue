@@ -7,26 +7,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.users') }}</span>
+    <PageHeader :title="t('admin.users.title')" :description="t('adm.users.description')">
+      <template #actions>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="openCreate"
+            class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
+          >
+            {{ t('admin.users.create') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.users.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.users.description') }}</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          @click="openCreate"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
-        >
-          {{ t('admin.users.create') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- StatRow -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -243,7 +236,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../../lib/datetime'
+import PageHeader from '../../components/PageHeader.vue'
+import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import {
   listAllUsers,
@@ -259,7 +253,6 @@ type UserItem = User & { id: string }
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import {
-  ChevronRightIcon,
   UsersIcon,
   CheckIcon,
   NoSymbolIcon,
@@ -302,14 +295,6 @@ const total = computed(() => users.value.length)
 const activeCount = computed(() => users.value.filter((u) => !u.disabled).length)
 const disabledCount = computed(() => users.value.filter((u) => u.disabled).length)
 
-function formatDate(date?: string): string {
-  if (!date) return '—'
-  return new Date(date).toLocaleDateString(FORMAT_LOCALE, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-}
 
 async function load(): Promise<void> {
   loading.value = true

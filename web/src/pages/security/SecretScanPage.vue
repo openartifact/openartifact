@@ -7,26 +7,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- Header -->
-    <div class="flex items-start justify-between gap-4 flex-wrap">
-      <div>
-        <div class="flex items-center gap-1.5 text-[11px] text-muted font-mono">
-          <span>{{ t('sec.common.breadcrumb') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('sec.secret.breadcrumb') }}</span>
-        </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('sec.secret.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('sec.secret.description') }}</p>
-      </div>
-      <button
-        type="button"
-        class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-        :disabled="!selectedRepo"
-        @click="openDrawer"
-      >
-        <ArrowPathIcon class="w-4 h-4" aria-hidden="true" />
-        {{ t('sec.secret.trigger') }}
-      </button>
-    </div>
+    <PageHeader :title="t('sec.secret.title')" :description="t('sec.secret.description')">
+      <template #actions>
+        <button
+          type="button"
+          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
+          :disabled="!selectedRepo"
+          @click="openDrawer"
+        >
+          <ArrowPathIcon class="w-4 h-4" aria-hidden="true" />
+          {{ t('sec.secret.trigger') }}
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Repo selector -->
     <div class="flex items-center gap-3">
@@ -165,7 +158,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </li>
                 </ul>
               </td>
-              <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(scan.scanned_at || scan.created_at) }}</td>
+              <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDateTime(scan.scanned_at || scan.created_at) }}</td>
               <td class="px-4 py-3">
                 <button
                   type="button"
@@ -238,9 +231,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../../components/PageHeader.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch } from 'vue'
-import { ChevronRightIcon, ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import EmptyState from '../../components/EmptyState.vue'
 import FormatBadge from '../../components/FormatBadge.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
@@ -296,11 +290,6 @@ function statusLabel(status: string): string {
   return status === 'flagged' || status === 'clean' ? tDynamic(`sec.secret.${status}`) : status
 }
 
-function formatDate(ts?: string | null): string {
-  if (!ts) return '—'
-  const d = new Date(ts)
-  return Number.isNaN(d.getTime()) ? ts : formatDateTime(d)
-}
 
 async function loadScans(): Promise<void> {
   const repo = selectedRepo.value

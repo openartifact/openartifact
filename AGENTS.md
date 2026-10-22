@@ -53,7 +53,7 @@ make bench            # Go micro-benchmarks (-benchmem)
 make bench-load       # bench/run.sh: seed a running instance and run HTTP load scenarios (OA_URL, OA_USER, OA_PASS, OA_PID)
 cd web && bun install && bun run typecheck && bun test && bun run build
 cd web && bun run generate-api   # regenerate src/api/generated from internal/api/openapi.json
-docker compose -f docker/docker-compose.yml up -d --build   # needs docker/.env (copy from .env.example)
+make docker-up   # compose up -d --build with VERSION/commit/build time stamped; needs docker/.env (copy from .env.example)
 ```
 
 DB/S3-backed tests (behind `-tags=integration`) skip unless `TEST_DATABASE_URL` / `TEST_S3_ENDPOINT` (+ `TEST_S3_BUCKET`, `TEST_S3_ACCESS_KEY`, `TEST_S3_SECRET_KEY`, `TEST_S3_REGION`) are set; with any non-empty `CI` a missing variable fails instead of skipping. The S3 test backend is Garage (`dxflrs/garage`, region `garage`; MinIO no longer ships images) — see the `integration` job in `.github/workflows/ci.yml` for the bootstrap. `make test-integration` runs them; testcontainers under podman needs `DOCKER_HOST=unix://$XDG_RUNTIME_DIR/podman/podman.sock TESTCONTAINERS_RYUK_DISABLED=true`.

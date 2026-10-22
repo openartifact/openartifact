@@ -45,8 +45,14 @@ ARG COMMIT=unknown
 ARG BUILD_TIME=unknown
 ARG TARGETOS=linux
 ARG TARGETARCH
-RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
-    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT} -X main.buildTime=${BUILD_TIME}" \
+# The binary reports the 7-character short SHA and an RFC 3339 UTC build time
+# (second precision), whatever form the caller passed; the OCI revision/created
+# labels below keep the values exactly as given.
+RUN COMMIT_SHORT="$(printf '%.7s' "${COMMIT}")"; \
+    BUILD_TIME_RFC3339="${BUILD_TIME}"; \
+    case "${BUILD_TIME}" in [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]T[0-9][0-9]:[0-9][0-9]:[0-9][0-9]*Z) BUILD_TIME_RFC3339="$(printf '%.19sZ' "${BUILD_TIME}")" ;; esac; \
+    CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
+    -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_SHORT} -X main.buildTime=${BUILD_TIME_RFC3339}" \
     -o openartifact ./cmd/server
 
 # Runtime stage

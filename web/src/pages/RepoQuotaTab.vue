@@ -103,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 min="1"
                 step="1"
                 :placeholder="t('quota.placeholder')"
-                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
               />
               <div class="inline-flex p-0.5 rounded-lg bg-surface-hover border border-border shrink-0">
                 <button
@@ -165,7 +165,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             min="1"
             step="1"
             :placeholder="t('quota.placeholder')"
-            class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+            class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
           />
           <div class="inline-flex p-0.5 rounded-lg bg-surface-hover border border-border shrink-0">
             <button
@@ -231,7 +231,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <button
               type="button"
               :disabled="removing"
-              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
               @click="removeQuota"
             >
               <ArrowPathIcon v-if="removing" class="w-4 h-4 animate-spin" />

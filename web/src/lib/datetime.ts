@@ -27,6 +27,12 @@ export function formatDateTime(value: DateInput, fallback = '—'): string {
   return d ? d.toLocaleString(FORMAT_LOCALE, { dateStyle: 'medium', timeStyle: 'short' }) : fallback
 }
 
+/** Full timestamp with seconds, for audit trails where ordering within a minute matters. */
+export function formatTimestamp(value: DateInput, fallback = '—'): string {
+  const d = toDate(value)
+  return d ? d.toLocaleString(FORMAT_LOCALE, { dateStyle: 'medium', timeStyle: 'medium' }) : fallback
+}
+
 export function formatTime(value: DateInput, fallback = '—'): string {
   const d = toDate(value)
   return d ? d.toLocaleTimeString(FORMAT_LOCALE) : fallback

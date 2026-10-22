@@ -7,36 +7,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" />
-          <span class="text-foreground/70">{{ t('nav.storage') }}</span>
+    <PageHeader :title="t('admin.storage.title')" :description="t('adm.storage.description')">
+      <template #actions>
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            :disabled="testingAll || items.length === 0"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            @click="testAll"
+          >
+            <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': testingAll }" />
+            {{ t('adm.storage.testAll') }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
+            @click="openCreate"
+          >
+            <PlusIcon class="w-4 h-4" />
+            {{ t('adm.storage.addTitle') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.storage.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.storage.description') }}</p>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <button
-          type="button"
-          :disabled="testingAll || items.length === 0"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          @click="testAll"
-        >
-          <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': testingAll }" />
-          {{ t('adm.storage.testAll') }}
-        </button>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          @click="openCreate"
-        >
-          <PlusIcon class="w-4 h-4" />
-          {{ t('adm.storage.addTitle') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- ─── Stat Tiles ──────────────────────────────────────────────────────── -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
@@ -280,7 +273,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 type="text"
                 :disabled="drawerMode === 'edit'"
                 placeholder="e.g. primary-storage"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary disabled:opacity-60 disabled:cursor-not-allowed transition-colors"
               />
               <p v-if="drawerMode === 'edit'" class="text-[11px] text-muted mt-1 font-mono">
                 Name cannot be changed after creation.
@@ -393,7 +386,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         v-model="(form.config[field.key] as string)"
                         :placeholder="field.placeholder"
                         :rows="field.rows ?? 4"
-                        class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors"
+                        class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors"
                         :class="field.mono ? 'font-mono text-[12px]' : ''"
                       />
                       <p v-if="field.hint" class="text-[11px] text-muted mt-1">{{ field.hint }}</p>
@@ -413,7 +406,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                             : 'text'"
                           :placeholder="field.type === 'secret' && form.config['has_' + field.key] ? t('adm.storage.secretStored') : field.placeholder"
                           :aria-label="field.label"
-                          class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                          class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                           :class="[
                             field.mono ? 'font-mono text-[12px]' : '',
                             field.type === 'secret' ? 'pr-12' : '',
@@ -569,7 +562,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="deleteConfirmName"
                 type="text"
                 :placeholder="deleteTarget.name"
-                class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 transition-colors border-border focus:ring-danger"
+                class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 transition-colors border-border focus:ring-danger"
               />
             </div>
           </div>
@@ -584,7 +577,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <button
               type="button"
               :disabled="!deleteTarget || deleteConfirmName !== deleteTarget.name || deleting"
-              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
               @click="confirmDelete"
             >
               <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" aria-hidden="true" />
@@ -597,6 +590,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../../components/PageHeader.vue'
 import { ref, computed, onMounted, reactive } from 'vue'
 import type { Component } from 'vue'
 import {
@@ -621,7 +615,6 @@ import {
   PlusIcon,
   ArrowPathIcon,
   ExclamationCircleIcon,
-  ChevronRightIcon,
 } from '@heroicons/vue/24/outline'
 
 // ─── Types ─────────────────────────────────────────────────────────────────────

@@ -7,25 +7,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('adm.orgs.title') }}</span>
-        </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('adm.orgs.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.orgs.description') }}</p>
-      </div>
-      <button
-        type="button"
-        class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-        @click="openCreate"
-      >
-        <PlusIcon class="w-4 h-4" aria-hidden="true" />
-        {{ t('adm.orgs.new') }}
-      </button>
-    </div>
+    <PageHeader :title="t('adm.orgs.title')" :description="t('adm.orgs.description')">
+      <template #actions>
+        <button
+          type="button"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
+          @click="openCreate"
+        >
+          <PlusIcon class="w-4 h-4" aria-hidden="true" />
+          {{ t('adm.orgs.new') }}
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- What organization roles grant -->
     <div class="bg-surface rounded-xl border border-border p-4 text-xs text-muted space-y-1.5" data-testid="org-effect">
@@ -196,7 +189,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             type="text"
             required
             placeholder="my-org"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
           />
           <p class="text-[11px] text-muted mt-1 font-mono">{{ t('adm.orgs.field.nameHint') }}</p>
         </div>
@@ -206,7 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             id="org-display-name"
             v-model="orgForm.display_name"
             type="text"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
           />
         </div>
         <div>
@@ -226,7 +219,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             id="org-description"
             v-model="orgForm.description"
             rows="3"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors"
           />
         </div>
       </form>
@@ -381,7 +374,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="deleteConfirmName"
             type="text"
             :placeholder="deleteTarget.name"
-            class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 transition-colors border-border focus:ring-danger"
+            class="w-full px-3 py-2 rounded-lg border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 transition-colors border-border focus:ring-danger"
           />
         </div>
       </div>
@@ -396,7 +389,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           :disabled="!deleteTarget || deleteConfirmName !== deleteTarget.name || deleting"
-          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
           @click="confirmDelete"
         >
           <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" aria-hidden="true" />
@@ -409,7 +402,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../../lib/datetime'
+import PageHeader from '../../components/PageHeader.vue'
+import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import { request } from '../../api/client'
 import { listAllUsers, type UserItem } from '../../api/admin'
@@ -423,7 +417,6 @@ import {
   PencilIcon,
   TrashIcon,
   ArrowPathIcon,
-  ChevronRightIcon,
   ExclamationCircleIcon,
 } from '@heroicons/vue/24/outline'
 
@@ -487,10 +480,6 @@ const availableUsers = computed(() => {
   return users.value.filter((u) => u.id && !memberIds.has(u.id) && !u.disabled)
 })
 
-function formatDate(iso?: string): string {
-  if (!iso) return '—'
-  return new Date(iso).toLocaleDateString(FORMAT_LOCALE, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 
 // The member payload carries only user_id; resolve the username from the user list.
 function memberName(member: OrgMember): string {

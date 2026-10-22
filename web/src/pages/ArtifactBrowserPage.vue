@@ -6,19 +6,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
+    <PageHeader :title="t('browser.title')" :description="repoName" />
+
     <!-- Toolbar -->
     <div class="flex flex-wrap items-center gap-3 mb-4">
-      <!-- Breadcrumbs -->
-      <nav class="flex items-center gap-1 text-sm min-w-0" aria-label="Breadcrumb">
-        <router-link to="/repos" class="flex items-center gap-1 text-muted hover:text-primary transition-colors shrink-0">
-          <CubeIcon class="w-4 h-4" aria-hidden="true" />
-          <span class="font-medium">{{ repoName }}</span>
-        </router-link>
-        <ChevronRightIcon class="w-3 h-3 text-muted shrink-0" aria-hidden="true" />
-        <span class="text-foreground font-medium truncate font-mono">{{ t('browser.title') }}</span>
-      </nav>
-
-      <div class="ml-auto flex items-center gap-2">
+      <div class="ml-auto flex flex-wrap items-center gap-2">
         <!-- Filter input -->
         <div class="relative">
           <MagnifyingGlassIcon
@@ -257,7 +249,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../lib/datetime'
+import PageHeader from '../components/PageHeader.vue'
+import { formatDate } from '../lib/datetime'
 import { ref, computed, watch } from 'vue'
 import { useRoute } from 'vue-router'
 import { listComponents, getRepository } from '../api/repositories'
@@ -271,12 +264,10 @@ import {
   MagnifyingGlassIcon,
   ArchiveBoxIcon,
   ArrowPathIcon,
-  ChevronRightIcon,
   ExclamationTriangleIcon,
   Bars3Icon,
   Squares2X2Icon,
   ArrowsUpDownIcon,
-  CubeIcon,
 } from '@heroicons/vue/24/outline'
 import { t } from '../i18n/en'
 
@@ -410,18 +401,6 @@ function formatBytes(bytes?: number): string {
   return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
 }
 
-function formatDate(ts?: string): string {
-  if (!ts) return '—'
-  try {
-    return new Date(ts).toLocaleDateString(FORMAT_LOCALE, {
-      year: 'numeric',
-      month: 'short',
-      day: 'numeric',
-    })
-  } catch {
-    return ts
-  }
-}
 
 let loadGeneration = 0
 

@@ -20,7 +20,7 @@ Checklist:
 - The `VERSION` file at the repository root is the release version. Releases are cut from tags `vX.Y.Z`; the release workflow fails unless `VERSION` equals the tag without the `v`. A tag containing a `-` (for example `v1.0.0-rc.1`) is a pre-release.
 - Images are published to `ghcr.io/openartifact/openartifact` for `linux/amd64` and `linux/arm64` with tags `X.Y.Z` (no `v`) and `X.Y`; `latest` is only moved by tags without a pre-release suffix. Pin an exact `X.Y.Z` in production.
 - Release archives (`openartifact_<version>_<os>_<arch>.tar.gz`, `oa_...`) and `SHA256SUMS` are attached to the GitHub release; see [installation](installation.md#release-archives) and [signing](../security/signing.md) to verify them.
-- A binary built without `-ldflags` reports version `dev`. The compose file builds from the checkout and passes `OPENARTIFACT_VERSION` (default `dev`) as the version, so set it (for example `OPENARTIFACT_VERSION=$(cat VERSION)`) to see the real version in `/health`.
+- A binary built without `-ldflags` reports version `dev`. The compose file builds from the checkout and takes the version, commit and build time from `OPENARTIFACT_VERSION`, `OPENARTIFACT_COMMIT` and `OPENARTIFACT_BUILD_TIME` (defaults `dev`, `unknown`, `unknown`); `make docker-up` fills them from the `VERSION` file and git. `openartifact-server -version` prints what a binary was stamped with.
 
 ## Database migrations
 
@@ -47,7 +47,7 @@ From the checkout of the new version:
 
 ```sh
 git fetch --tags && git checkout vX.Y.Z
-docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
+make docker-up    # same as docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build, plus build metadata
 ```
 
 This rebuilds the `openartifact` image and recreates the container; the named volumes (`postgres_data`, `artifacts_data`, `backups_data`) are kept. `docker compose down -v` deletes them, do not use it for an upgrade. Migrations run when the new container starts. To run a released image instead, point the service at `ghcr.io/openartifact/openartifact:<version>` and use `docker compose pull && docker compose up -d`. The compose file pins the PostgreSQL major version (`postgres:18-alpine`); it is not changed by an OpenArtifact upgrade.

@@ -71,7 +71,7 @@ Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 
 ```sh
 cp docker/.env.example docker/.env      # set POSTGRES_PASSWORD
-docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
+make docker-up    # docker compose up -d --build with version/commit/build time stamped
 ```
 
 The UI and API are on <http://localhost:8080>. The first start creates user

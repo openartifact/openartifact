@@ -7,35 +7,28 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- Page Head -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('adm.backup.title') }}</span>
+    <PageHeader :title="t('adm.backup.title')" :description="t('adm.backup.description')">
+      <template #actions>
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border text-foreground hover:bg-surface-hover transition-colors"
+            @click="openRestoreModal"
+          >
+            <ArrowUpTrayIcon class="w-4 h-4" aria-hidden="true" />
+            {{ t('adm.backup.restoreFromArchive') }}
+          </button>
+          <button
+            type="button"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
+            @click="openCreateModal"
+          >
+            <PlusIcon class="w-4 h-4" aria-hidden="true" />
+            {{ t('adm.backup.create') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('adm.backup.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.backup.description') }}</p>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border text-foreground hover:bg-surface-hover transition-colors"
-          @click="openRestoreModal"
-        >
-          <ArrowUpTrayIcon class="w-4 h-4" aria-hidden="true" />
-          {{ t('adm.backup.restoreFromArchive') }}
-        </button>
-        <button
-          type="button"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-          @click="openCreateModal"
-        >
-          <PlusIcon class="w-4 h-4" aria-hidden="true" />
-          {{ t('adm.backup.create') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Stat Tiles -->
     <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -240,7 +233,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="restoreConfirmInput"
             type="text"
             :placeholder="RESTORE_PHRASE"
-            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-danger transition-colors"
+            class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-danger transition-colors"
           />
         </div>
       </div>
@@ -251,7 +244,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <button
           type="button"
           :disabled="!restoreFile || restoreConfirmInput !== RESTORE_PHRASE || restoring"
-          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
           @click="confirmRestore"
         >
           <ArrowPathIcon class="w-4 h-4" :class="restoring ? 'animate-spin' : ''" aria-hidden="true" />
@@ -263,7 +256,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../../lib/datetime'
+import PageHeader from '../../components/PageHeader.vue'
+import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
 import { request } from '../../api/client'
 import { useToastStore } from '../../stores/toast'
@@ -279,7 +273,6 @@ import {
   ServerStackIcon,
   CircleStackIcon,
   ExclamationCircleIcon,
-  ChevronRightIcon,
 } from '@heroicons/vue/24/outline'
 
 interface BackupJob {
@@ -389,11 +382,6 @@ function formatBytes(bytes: number): string {
   return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
 }
 
-function formatDate(iso: string): string {
-  const d = new Date(iso)
-  if (Number.isNaN(d.getTime())) return iso
-  return d.toLocaleDateString(FORMAT_LOCALE, { year: 'numeric', month: 'short', day: 'numeric' })
-}
 
 function timeAgo(iso: string): string {
   const diff = Date.now() - new Date(iso).getTime()

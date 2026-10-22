@@ -6,8 +6,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="h-screen bg-bg text-foreground flex overflow-hidden">
-    <!-- Sidebar first (left) -->
+    <!-- Sidebar first (left); off-canvas drawer below md -->
     <AppSidebar v-if="showShell" />
+    <div
+      v-if="showShell && ui.mobileNavOpen"
+      class="fixed inset-0 z-30 bg-black/50 md:hidden"
+      aria-hidden="true"
+      @click="ui.closeMobileNav()"
+    />
 
     <!-- Main area: header + scrollable content -->
     <div class="flex-1 flex flex-col min-w-0">
@@ -17,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         id="main-content"
         tabindex="-1"
       >
-        <div v-if="session.ready" class="mx-auto max-w-[1400px] px-8 py-7">
+        <div v-if="session.ready" class="mx-auto max-w-[1400px] px-4 py-5 md:px-8 md:py-7">
           <Suspense>
             <router-view :key="route.path" />
             <template #fallback>
@@ -34,7 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount } from 'vue'
+import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import { useEventListener } from '@vueuse/core'
 import AppHeader from './components/AppHeader.vue'
@@ -56,6 +62,12 @@ const theme = useThemeStore()
 const session = useSessionStore()
 
 const showShell = computed(() => route.meta.layout !== 'blank')
+
+// The mobile drawer closes on navigation and on Escape.
+watch(() => route.fullPath, () => ui.closeMobileNav())
+useEventListener('keydown', (e: KeyboardEvent) => {
+  if (e.key === 'Escape' && ui.mobileNavOpen) ui.closeMobileNav()
+})
 
 // Global Ctrl/Cmd+K toggles the command palette. Esc is handled by the
 // Headless UI Dialog itself.

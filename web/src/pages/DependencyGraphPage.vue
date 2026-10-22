@@ -6,57 +6,38 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <!-- Back + Header row -->
-    <div>
-      <button
-        class="flex items-center gap-1 text-sm text-muted hover:text-foreground transition-colors mb-4 cursor-pointer"
-        @click="router.push(`/repos/${repoName}`)"
-      >
-        <ChevronLeftIcon class="w-4 h-4" />
-        {{ t('graph.backToRepo') }}
-      </button>
-
-      <div class="flex items-start justify-between flex-wrap gap-3">
-        <div>
-          <h1 class="text-2xl font-bold tracking-tight">{{ t('graph.title') }}</h1>
-          <p class="text-sm text-muted mt-1">
-            Visualize package dependencies for
-            <span class="font-medium font-mono">{{ repoName }}</span>
-          </p>
-        </div>
-
-        <div class="flex items-center gap-2 shrink-0 flex-wrap">
-          <!-- SBOM selector -->
-          <div class="relative">
-            <select
-              v-model="selectedSbomId"
-              :disabled="loadingSboms || sboms.length === 0"
-              class="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-border bg-surface text-sm text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
-              @change="onSbomChange"
-            >
-              <option value="">
-                {{ sboms.length === 0 ? 'No SBOMs available' : t('graph.selectSbom') }}
-              </option>
-              <option v-for="sbom in sboms" :key="sbom.id" :value="sbom.id">
-                {{ sbomLabel(sbom) }}
-              </option>
-            </select>
-            <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
-          </div>
-
-          <!-- Export SVG -->
-          <button
-            type="button"
-            :disabled="visibleNodes.length === 0"
-            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-            @click="exportSvg"
+    <PageHeader :title="t('graph.title')" :description="t('graph.subtitle').replace('{repo}', repoName)">
+      <template #actions>
+        <!-- SBOM selector -->
+        <div class="relative">
+          <select
+            v-model="selectedSbomId"
+            :disabled="loadingSboms || sboms.length === 0"
+            class="appearance-none pl-3 pr-8 py-1.5 rounded-lg border border-border bg-surface text-sm text-foreground font-medium focus:outline-none focus:ring-2 focus:ring-primary transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+            @change="onSbomChange"
           >
-            <ArrowDownTrayIcon class="w-4 h-4" />
-            {{ t('graph.exportSvg') }}
-          </button>
+            <option value="">
+              {{ sboms.length === 0 ? t('graph.noSboms') : t('graph.selectSbom') }}
+            </option>
+            <option v-for="sbom in sboms" :key="sbom.id" :value="sbom.id">
+              {{ sbomLabel(sbom) }}
+            </option>
+          </select>
+          <ChevronDownIcon class="pointer-events-none absolute right-2.5 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" />
         </div>
-      </div>
-    </div>
+
+        <!-- Export SVG -->
+        <button
+          type="button"
+          :disabled="visibleNodes.length === 0"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+          @click="exportSvg"
+        >
+          <ArrowDownTrayIcon class="w-4 h-4" />
+          {{ t('graph.exportSvg') }}
+        </button>
+      </template>
+    </PageHeader>
 
     <!-- Main grid: graph + sidebar -->
     <div class="grid grid-cols-1 lg:grid-cols-[1fr_300px] gap-4">
@@ -197,7 +178,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Click hint -->
         <p
           v-if="visibleNodes.length > 0 && !loadingGraph"
-          class="absolute bottom-3 left-0 right-0 text-center text-[11px] text-muted/60 pointer-events-none"
+          class="absolute bottom-3 left-0 right-0 text-center text-[11px] text-muted pointer-events-none"
         >
           {{ t('graph.clickHint') }}
         </p>
@@ -282,14 +263,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { formatDate } from '../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRoute } from 'vue-router'
 import { request } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 import {
-  ChevronLeftIcon,
   ChevronDownIcon,
   ShareIcon,
   ArrowDownTrayIcon,
@@ -373,7 +354,6 @@ const SVG_H = 540
 // ─── Route & Router ────────────────────────────────────────────────────────────
 
 const route = useRoute()
-const router = useRouter()
 const repoName = computed(() => route.params.name as string)
 const toasts = useToastStore()
 

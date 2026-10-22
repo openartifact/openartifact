@@ -53,10 +53,13 @@ function rowOf(wrapper: ReturnType<typeof mount>, pkg: string) {
   return wrapper.findAll('tbody tr').find((r) => r.text().includes(pkg))!
 }
 
+// PageHeader reads the router; the page tests only need its action slot.
+const PageHeaderStub = { template: '<div><slot name="actions" /></div>' }
+
 async function mountPage() {
   const calls = mockSecurityApi(`/api/v1/repositories/${REPO}/vuln/scans`, [FAILED, PARTIAL, CLEAN])
   const wrapper = mount(VulnScanPage, {
-    global: { plugins: [createPinia()], stubs: { RouterLink: true } },
+    global: { plugins: [createPinia()], stubs: { RouterLink: true, PageHeader: PageHeaderStub } },
     attachTo: document.body,
   })
   await selectRepo(wrapper)

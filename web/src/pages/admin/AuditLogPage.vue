@@ -7,17 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.audit') }}</span>
-        </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.audit.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.audit.description') }}</p>
-      </div>
-    </div>
+    <PageHeader :title="t('admin.audit.title')" :description="t('adm.audit.description')" />
 
     <!-- Filter Panel (the server filters by actor and action) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -51,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
       <div v-else-if="entries.length === 0" class="px-4 py-8 text-center text-muted">{{ t('adm.audit.empty') }}</div>
-      <div v-else class="overflow-x-auto">
+      <div v-else class="relative overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
             <tr class="text-[11px] font-semibold text-muted bg-surface-hover/30">
@@ -145,7 +135,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../../lib/datetime'
+import PageHeader from '../../components/PageHeader.vue'
+import { formatTimestamp } from '../../lib/datetime'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { listAudit, type AuditEntry } from '../../api/audit'
 import { ChevronRightIcon } from '@heroicons/vue/24/outline'
@@ -176,19 +167,6 @@ function toggleExpand(id: string | undefined): void {
   expanded.value = s
 }
 
-function formatTimestamp(ts: string | undefined): string {
-  if (!ts) return '—'
-  const d = new Date(ts)
-  if (Number.isNaN(d.getTime())) return ts
-  return d.toLocaleString(FORMAT_LOCALE, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-    hour: '2-digit',
-    minute: '2-digit',
-    second: '2-digit',
-  })
-}
 
 function getActionPillClass(entryAction?: string): string {
   if (!entryAction) return 'bg-surface-hover/40 text-muted'

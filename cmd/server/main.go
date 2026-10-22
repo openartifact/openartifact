@@ -14,6 +14,7 @@ import (
 	"net/http"
 	"os"
 	"os/signal"
+	"runtime"
 	"strconv"
 	"strings"
 	"sync"
@@ -74,6 +75,13 @@ var (
 	buildTime = "unknown"
 )
 
+// versionLine renders the build metadata stamped via -ldflags in the form
+// "<version> <commit> <build time> <go>/<os>/<arch>"; unstamped builds print
+// the "dev"/"unknown" defaults.
+func versionLine() string {
+	return fmt.Sprintf("%s %s %s %s/%s/%s", version, commit, buildTime, runtime.Version(), runtime.GOOS, runtime.GOARCH)
+}
+
 func main() {
 	if err := run(os.Args[1:]); err != nil {
 		if _, reported := errors.AsType[reportedError](err); !reported {
@@ -100,6 +108,7 @@ func run(args []string) error {
 
 	flags := flag.NewFlagSet("openartifact-server", flag.ContinueOnError)
 	migrateFlag := flags.Bool("migrate", false, "run migrations and exit")
+	versionFlag := flags.Bool("version", false, "print version, commit, build time and Go runtime, then exit")
 	configFile := flags.String("config", os.Getenv("OPENARTIFACT_CONFIG"), "path to YAML config file")
 
 	if err := flags.Parse(args); err != nil {
@@ -109,6 +118,12 @@ func run(args []string) error {
 
 		// The FlagSet already printed the problem and the usage text.
 		return reportedError{err}
+	}
+
+	if *versionFlag {
+		fmt.Println(versionLine())
+
+		return nil
 	}
 
 	// Handle 'verify' subcommand: openartifact-server verify config.yaml

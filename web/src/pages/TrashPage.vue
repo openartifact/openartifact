@@ -6,15 +6,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <div>
-      <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-        <span>{{ repo ? repo : t('nav.admin') }}</span>
-        <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-        <span class="text-foreground/70">{{ t('trash.title') }}</span>
-      </div>
-      <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('trash.title') }}</h1>
-      <p class="mt-1 text-sm text-muted">{{ repo ? t('trash.descriptionRepo') : t('trash.description') }}</p>
-    </div>
+    <PageHeader
+      :title="t('trash.title')"
+      :description="repo ? t('trash.descriptionRepo') : t('trash.description')"
+    />
 
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
@@ -128,7 +123,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         >{{ t('common.cancel') }}</button>
         <button
           type="button"
-          class="px-4 py-2 text-sm rounded-md bg-danger text-white hover:opacity-90 disabled:opacity-50"
+          class="px-4 py-2 text-sm rounded-md bg-danger text-danger-contrast hover:opacity-90 disabled:opacity-50"
           :disabled="busyKey !== ''"
           @click="doPurge"
         >{{ t('trash.purge') }}</button>
@@ -147,7 +142,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         >{{ t('common.cancel') }}</button>
         <button
           type="button"
-          class="px-4 py-2 text-sm rounded-md bg-danger text-white hover:opacity-90 disabled:opacity-50"
+          class="px-4 py-2 text-sm rounded-md bg-danger text-danger-contrast hover:opacity-90 disabled:opacity-50"
           :disabled="busyKey !== ''"
           @click="doEmpty"
         >{{ t('trash.emptyTrash') }}</button>
@@ -157,9 +152,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { ArrowUturnLeftIcon, ChevronRightIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { ArrowUturnLeftIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import AdminDialog from '../components/AdminDialog.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import Pagination from '../components/Pagination.vue'

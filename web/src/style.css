@@ -12,7 +12,8 @@
   --color-surface: 255 255 255;
   --color-surface-hover: 243 244 246;
   --color-foreground: 17 24 39;
-  --color-muted: 107 114 128;
+  /* Muted text must hold 4.5:1 on bg, surface, surface-hover and the *-soft fills (WCAG 1.4.3). */
+  --color-muted: 92 100 115;
   --color-border: 229 231 235;
 
   --color-primary: 79 70 229;
@@ -24,6 +25,7 @@
   --color-warning: 133 77 14;
   --color-warning-soft: 254 249 195;
   --color-danger: 153 27 27;
+  --color-danger-contrast: 255 255 255;
   --color-danger-soft: 254 226 226;
 }
 
@@ -37,14 +39,15 @@
 
   --color-primary: 129 140 248;
   --color-primary-contrast: 17 24 39;
-  --color-primary-soft: 55 48 163;
+  --color-primary-soft: 36 32 100;
 
   --color-success: 134 239 172;
   --color-success-soft: 6 78 59;
   --color-warning: 250 204 21;
   --color-warning-soft: 113 63 18;
   --color-danger: 248 113 113;
-  --color-danger-soft: 127 29 29;
+  --color-danger-contrast: 17 24 39;
+  --color-danger-soft: 91 20 20;
 }
 
 html,

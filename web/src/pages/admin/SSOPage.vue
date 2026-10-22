@@ -7,25 +7,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.sso') }}</span>
-        </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.sso.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('admin.sso.description') }}</p>
-      </div>
-      <button
-        type="button"
-        @click="openAddDrawer"
-        class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-contrast rounded-lg hover:opacity-90 transition-opacity font-medium text-sm"
-      >
-        <PlusIcon class="w-4 h-4" aria-hidden="true" />
-        {{ t('admin.sso.add') }}
-      </button>
-    </div>
+    <PageHeader :title="t('admin.sso.title')" :description="t('admin.sso.description')">
+      <template #actions>
+        <button
+          type="button"
+          @click="openAddDrawer"
+          class="inline-flex items-center gap-2 px-3 py-1.5 bg-primary text-primary-contrast rounded-lg hover:opacity-90 transition-opacity font-medium text-sm"
+        >
+          <PlusIcon class="w-4 h-4" aria-hidden="true" />
+          {{ t('admin.sso.add') }}
+        </button>
+      </template>
+    </PageHeader>
 
     <div v-if="loading" class="text-muted">{{ t('common.loading') }}</div>
 
@@ -309,8 +302,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../../components/PageHeader.vue'
 import { ref, onMounted } from 'vue'
-import { ChevronRightIcon } from '@heroicons/vue/20/solid'
 import {
   BoltIcon,
   PencilIcon,

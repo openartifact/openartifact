@@ -7,17 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.system') }}</span>
-        </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.system.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.system.description') }}</p>
-      </div>
-    </div>
+    <PageHeader :title="t('admin.system.title')" :description="t('adm.system.description')" />
 
     <div v-if="loading" class="text-muted" role="status">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="bg-surface rounded-xl border border-border py-12 text-center" role="alert">
@@ -40,7 +30,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :class="['flex items-center justify-between py-2', i < buildRows.length - 1 ? 'border-b border-border' : '']"
             >
               <dt class="text-sm text-muted">{{ row.label }}</dt>
-              <dd class="text-sm font-mono text-foreground">{{ row.value }}</dd>
+              <dd v-if="row.value" class="text-sm font-mono text-foreground" :title="row.title">{{ row.value }}</dd>
+              <dd v-else class="text-sm text-muted" :title="t('adm.system.notStampedHint')">{{ t('adm.system.notStamped') }}</dd>
             </div>
           </dl>
         </div>
@@ -82,25 +73,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import { getAdminSystemInfo, type AdminSystemInfo } from '../../api/admin'
 import UnavailableStub from '../../components/UnavailableStub.vue'
+import { formatBuildTime, formatCommit } from '../../lib/buildInfo'
+import { formatVersion } from '../../composables/useAppVersion'
 import { t } from '../../i18n/en'
-import { ChevronRightIcon } from '@heroicons/vue/24/outline'
 
 const sysInfo = ref<AdminSystemInfo | null>(null)
 const loading = ref(false)
 const loadError = ref('')
 
-const buildRows = computed(() => [
-  { label: t('admin.system.version'), value: sysInfo.value?.version || '—' },
-  { label: t('admin.system.uptime'), value: sysInfo.value?.uptime || '—' },
-  { label: t('adm.system.commit'), value: sysInfo.value?.commit || '—' },
-  { label: t('adm.system.buildTime'), value: sysInfo.value?.build_time || '—' },
-  { label: t('admin.system.go'), value: sysInfo.value?.go_version || '—' },
-  { label: t('adm.system.os'), value: sysInfo.value?.os || '—' },
-  { label: t('adm.system.arch'), value: sysInfo.value?.arch || '—' },
-])
+interface BuildRow {
+  label: string
+  /** Display value; null renders the "not stamped" label. */
+  value: string | null
+  /** Tooltip with the raw value when the display form is abbreviated. */
+  title?: string
+}
+
+// Version, commit and build time are stamped at build time; an unstamped build
+// reports "unknown" (or "dev" for the version), which is labelled, not shown as data.
+const buildRows = computed<BuildRow[]>(() => {
+  const info = sysInfo.value
+  const commit = formatCommit(info?.commit)
+  const buildTime = formatBuildTime(info?.build_time)
+  return [
+    { label: t('admin.system.version'), value: info?.version ? formatVersion(info.version) : null },
+    { label: t('admin.system.uptime'), value: info?.uptime || null },
+    { label: t('adm.system.commit'), value: commit, title: commit && info?.commit !== commit ? info?.commit : undefined },
+    { label: t('adm.system.buildTime'), value: buildTime, title: buildTime ? info?.build_time : undefined },
+    { label: t('admin.system.go'), value: info?.go_version || null },
+    { label: t('adm.system.os'), value: info?.os || null },
+    { label: t('adm.system.arch'), value: info?.arch || null },
+  ]
+})
 
 const dbHealthy = computed(() => sysInfo.value?.db_status === 'ok')
 const storageHealthy = computed(() => sysInfo.value?.storage_status === 'ok')

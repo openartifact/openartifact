@@ -7,11 +7,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-4">
     <!-- Header -->
-    <div class="flex items-center justify-between gap-4 flex-wrap">
-      <h1 class="text-lg font-semibold">{{ t('dashboard.title') }}</h1>
-      <div class="flex items-center gap-2">
+    <PageHeader :title="t('dashboard.title')">
+      <template #actions>
         <button
-          class="inline-flex items-center gap-1.5 h-8 px-3 text-sm font-medium text-foreground bg-surface border border-border rounded-md hover:bg-surface-hover transition-colors disabled:opacity-50"
+          class="inline-flex items-center gap-1.5 h-9 px-3 text-sm font-medium text-foreground bg-surface border border-border rounded-lg hover:bg-surface-hover transition-colors disabled:opacity-50"
           :disabled="syncing"
           @click="syncNow"
         >
@@ -21,12 +20,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <router-link
           v-if="session.isAdmin"
           to="/repos/new"
-          class="inline-flex items-center h-8 px-3 text-sm font-medium text-primary-contrast bg-primary rounded-md hover:bg-primary/90 transition-colors"
+          class="inline-flex items-center h-9 px-3 text-sm font-medium text-primary-contrast bg-primary rounded-lg hover:bg-primary/90 transition-colors"
         >
           {{ t('repos.new') }}
         </router-link>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- KPI strip -->
     <section
@@ -136,6 +135,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import { listAllRepositories } from '../api/repositories'

@@ -7,28 +7,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- Header -->
-    <div class="flex items-start justify-between gap-4 flex-wrap">
-      <div>
-        <div class="flex items-center gap-1.5 text-[11px] text-muted font-mono">
-          <span>{{ t('sec.common.breadcrumb') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('sec.vuln.breadcrumb') }}</span>
+    <PageHeader :title="t('sec.vuln.title')" :description="t('sec.vuln.description')">
+      <template #actions>
+        <div class="flex items-center gap-3 flex-wrap">
+          <button
+            type="button"
+            class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
+            :disabled="!selectedRepo"
+            @click="openDrawer"
+          >
+            <ShieldCheckIcon class="w-4 h-4" aria-hidden="true" />
+            {{ t('sec.vuln.scanPackage') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('sec.vuln.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('sec.vuln.description') }}</p>
-      </div>
-      <div class="flex items-center gap-3 flex-wrap">
-        <button
-          type="button"
-          class="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
-          :disabled="!selectedRepo"
-          @click="openDrawer"
-        >
-          <ShieldCheckIcon class="w-4 h-4" aria-hidden="true" />
-          {{ t('sec.vuln.scanPackage') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Repo selector + refresh -->
     <div class="flex items-center gap-3">
@@ -206,7 +199,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <VulnScanStatus :status="scan.scan_status" :scan-error="scan.scan_error" :failed-scanners="scan.failed_scanners" />
                 </div>
               </td>
-              <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(scan.scanned_at || scan.created_at) }}</td>
+              <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDateTime(scan.scanned_at || scan.created_at) }}</td>
               <td class="px-4 py-3">
                 <button
                   type="button"
@@ -299,9 +292,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../../components/PageHeader.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { ChevronRightIcon, ArrowPathIcon, MagnifyingGlassIcon, ShieldCheckIcon } from '@heroicons/vue/24/outline'
+import { ArrowPathIcon, MagnifyingGlassIcon, ShieldCheckIcon } from '@heroicons/vue/24/outline'
 import EmptyState from '../../components/EmptyState.vue'
 import FormatBadge from '../../components/FormatBadge.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
@@ -384,11 +378,6 @@ const filteredScans = computed(() => {
   return result
 })
 
-function formatDate(ts?: string | null): string {
-  if (!ts) return '—'
-  const d = new Date(ts)
-  return Number.isNaN(d.getTime()) ? ts : formatDateTime(d)
-}
 
 let pollTimer: ReturnType<typeof setTimeout> | undefined
 let loadSeq = 0

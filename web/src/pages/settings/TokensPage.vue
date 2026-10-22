@@ -7,14 +7,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div>
     <!-- Page Head -->
-    <div class="flex items-start justify-between">
-      <div>
-        <h1 class="text-2xl font-bold tracking-tight">{{ t('settings.tokens') }}</h1>
-        <p class="text-sm text-muted mt-1">{{ t('settings.tokens.subtitle') }}</p>
-      </div>
+    <div class="flex flex-wrap items-center justify-between gap-3">
+      <p class="text-sm text-muted">{{ t('settings.tokens.subtitle') }}</p>
       <button
         type="button"
-        class="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity flex items-center gap-2"
+        class="px-4 py-2 text-sm font-medium rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity flex items-center gap-2 shrink-0"
         @click="createOpen = true"
       >
         <PlusIcon class="w-4 h-4" aria-hidden="true" />

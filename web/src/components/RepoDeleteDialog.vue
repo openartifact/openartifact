@@ -30,7 +30,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >{{ t('common.cancel') }}</button>
       <button
         type="button"
-        class="px-4 py-2 text-sm rounded-md bg-danger text-white hover:opacity-90 disabled:opacity-50"
+        class="px-4 py-2 text-sm rounded-md bg-danger text-danger-contrast hover:opacity-90 disabled:opacity-50"
         :disabled="busy || !matches"
         @click="emit('confirm')"
       >{{ busy ? t('repoDetail.deleting') : t('common.delete') }}</button>

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { formatDate, formatDateTime } from '../datetime'
+import { formatDate, formatDateTime, formatTimestamp } from '../datetime'
 import { formatTtl } from '../repoTypes'
 
 describe('datetime', () => {
@@ -34,5 +34,14 @@ describe('formatting locale', () => {
       if (orig) Object.defineProperty(globalThis, 'navigator', orig)
       else delete (globalThis as { navigator?: unknown }).navigator
     }
+  })
+})
+
+describe('formatTimestamp', () => {
+  it('includes seconds and falls back like the other formatters', () => {
+    const iso = '2026-10-21T13:45:12Z'
+    expect(formatTimestamp(iso)).toBe(new Date(iso).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'medium' }))
+    expect(formatTimestamp(null)).toBe('—')
+    expect(formatTimestamp('garbage', 'x')).toBe('x')
   })
 })

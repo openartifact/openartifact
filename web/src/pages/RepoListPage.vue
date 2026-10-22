@@ -5,33 +5,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="p-6">
-    <!-- Header Row -->
-    <div class="flex items-center justify-between mb-6">
-      <h1 class="text-2xl font-bold tracking-tight">{{ t('repos.title') }}</h1>
-      <div class="flex items-center gap-2">
-        <div class="relative">
-          <MagnifyingGlassIcon class="absolute left-2 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
+  <div>
+    <PageHeader :title="t('repos.title')">
+      <template #actions>
+        <div class="relative w-full sm:w-auto">
+          <MagnifyingGlassIcon class="absolute left-2.5 top-1/2 -translate-y-1/2 w-3.5 h-3.5 text-muted pointer-events-none" aria-hidden="true" />
           <input
             v-model="searchQuery"
             type="search"
             :placeholder="t('repos.search')"
             :aria-label="t('repos.search')"
-            class="h-8 w-52 pl-7 pr-2 rounded-md text-xs bg-surface-hover/60 border border-border text-foreground placeholder:text-muted focus:outline-none focus:ring-1 focus:ring-primary"
+            class="h-9 w-full sm:w-56 pl-8 pr-2 rounded-lg text-sm bg-surface-hover/60 border border-border text-foreground placeholder:text-muted focus:border-primary"
           />
         </div>
         <button
           v-if="session.isAdmin"
-          class="bg-primary text-primary-contrast rounded-lg px-4 py-2 text-sm font-medium hover:bg-primary/90 active:scale-[0.97] transition inline-flex items-center gap-1.5"
+          class="bg-primary text-primary-contrast rounded-lg h-9 px-4 text-sm font-medium hover:bg-primary/90 active:scale-[0.97] transition inline-flex items-center gap-1.5"
           @click="showNewModal = true"
         >
           {{ t('repos.new') }}
         </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Format Filter Pills + View Toggle -->
-    <div class="flex items-center justify-between gap-4 mt-4">
+    <div class="flex flex-wrap items-center justify-between gap-4">
       <div class="flex flex-wrap gap-2">
         <button
           :aria-pressed="activeFormat === null"
@@ -291,7 +289,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 @click="closeConfirm"
               >{{ t('common.cancel') }}</button>
               <button
-                class="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+                class="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
                 :disabled="bulkBusy"
                 @click="doBulkDelete"
               >
@@ -308,6 +306,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import { Dialog, DialogPanel, DialogTitle, TransitionRoot } from '@headlessui/vue'
 import {

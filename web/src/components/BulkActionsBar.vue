@@ -120,7 +120,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ t('common.cancel') }}
             </button>
             <button
-              class="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-50"
+              class="flex items-center gap-2 px-4 py-2 text-sm rounded-md bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-50"
               :disabled="busy"
               @click="doDelete"
             >

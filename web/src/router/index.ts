@@ -4,6 +4,23 @@
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import type { CrumbSpec } from '../lib/crumbs'
+import type { TranslationKey } from '../i18n/en'
+
+const reposTrail: CrumbSpec[] = [{ key: 'nav.repositories', to: '/repos' }]
+const repoTrail: CrumbSpec[] = [...reposTrail, { param: 'name', to: '/repos/:name' }]
+
+function adminTrail(key: TranslationKey): CrumbSpec[] {
+  return [{ key: 'sidebar.admin', to: '/admin/users' }, { key }]
+}
+
+function settingsTrail(key: TranslationKey): CrumbSpec[] {
+  return [{ key: 'nav.settings', to: '/settings/profile' }, { key }]
+}
+
+function securityTrail(key: TranslationKey): CrumbSpec[] {
+  return [{ key: 'nav.security', to: '/security/vulns' }, { key }]
+}
 
 const routes: RouteRecordRaw[] = [
   {
@@ -28,19 +45,19 @@ const routes: RouteRecordRaw[] = [
     path: '/repos',
     name: 'repos',
     component: () => import('../pages/RepoListPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: reposTrail, requiresAuth: true },
   },
   {
     path: '/repos/new',
     name: 'repo-new',
     component: () => import('../pages/RepoWizardPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [...reposTrail, { key: 'repos.new' }], requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/repos/:name/edit',
     name: 'repo-edit',
     component: () => import('../pages/RepoWizardPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [...repoTrail, { key: 'common.edit' }], requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/repos/:name/settings',
@@ -55,37 +72,37 @@ const routes: RouteRecordRaw[] = [
     path: '/repos/:name/browse',
     name: 'repo-browse',
     component: () => import('../pages/ArtifactBrowserPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: [...repoTrail, { key: 'browser.title' }], requiresAuth: true },
   },
   {
     path: '/repos/:name/graph',
     name: 'repo-graph',
     component: () => import('../pages/DependencyGraphPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: [...repoTrail, { key: 'graph.title' }], requiresAuth: true },
   },
   {
     path: '/repos/:name/trash',
     name: 'repo-trash',
     component: () => import('../pages/TrashPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [...repoTrail, { key: 'trash.title' }], requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/repos/:name',
     name: 'repo-detail',
     component: () => import('../pages/RepoDetailPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: repoTrail, requiresAuth: true },
   },
   {
     path: '/repos/:name/packages/:format/:pkg',
     name: 'package-detail',
     component: () => import('../pages/PackageDetailPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: [...repoTrail, { param: 'pkg' }], requiresAuth: true },
   },
   {
     path: '/search',
     name: 'search',
     component: () => import('../pages/SearchPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: [{ key: 'nav.search' }], requiresAuth: true },
   },
   {
     path: '/stats',
@@ -97,85 +114,85 @@ const routes: RouteRecordRaw[] = [
     path: '/admin/users',
     name: 'admin-users',
     component: () => import('../pages/admin/UsersPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.users'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/groups',
     name: 'admin-groups',
     component: () => import('../pages/admin/GroupsPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.groups'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/permissions',
     name: 'admin-permissions',
     component: () => import('../pages/admin/PermissionsPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.permissions'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/sso',
     name: 'admin-sso',
     component: () => import('../pages/admin/SSOPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.sso'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/system',
     name: 'admin-system',
     component: () => import('../pages/admin/SystemPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.system'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/gpg',
     name: 'admin-gpg',
     component: () => import('../pages/admin/GpgKeysPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.gpg'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/tokens',
     name: 'admin-tokens',
     component: () => import('../pages/admin/TokensPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.tokens'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/trash',
     name: 'admin-trash',
     component: () => import('../pages/TrashPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.trash'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/audit',
     name: 'admin-audit',
     component: () => import('../pages/admin/AuditLogPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.audit'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/storage',
     name: 'admin-storage',
     component: () => import('../pages/admin/StorageBackendsPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.storage'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/orgs',
     name: 'admin-orgs',
     component: () => import('../pages/admin/OrgsPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('adm.orgs.title'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/webhooks',
     name: 'admin-webhooks',
     component: () => import('../pages/admin/WebhooksPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('nav.webhooks'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/backup',
     name: 'admin-backup',
     component: () => import('../pages/admin/BackupPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('adm.backup.title'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/admin/ai',
     name: 'admin-ai',
     component: () => import('../pages/admin/AISettingsPage.vue'),
-    meta: { requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: adminTrail('adm.ai.title'), requiresAuth: true, requiresAdmin: true },
   },
 
   // Security
@@ -183,25 +200,25 @@ const routes: RouteRecordRaw[] = [
     path: '/security/vulns',
     name: 'security-vulns',
     component: () => import('../pages/security/VulnScanPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.vuln.breadcrumb'), requiresAuth: true },
   },
   {
     path: '/security/licenses',
     name: 'security-licenses',
     component: () => import('../pages/security/LicenseScanPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.license.breadcrumb'), requiresAuth: true },
   },
   {
     path: '/security/secrets',
     name: 'security-secrets',
     component: () => import('../pages/security/SecretScanPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.secret.breadcrumb'), requiresAuth: true },
   },
   {
     path: '/security/ai-analysis',
     name: 'security-ai-analysis',
     component: () => import('../pages/security/AIAnalysisPage.vue'),
-    meta: { requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.ai.breadcrumb'), requiresAuth: true },
   },
 
   // Settings
@@ -215,16 +232,19 @@ const routes: RouteRecordRaw[] = [
         path: 'profile',
         name: 'settings-profile',
         component: () => import('../pages/settings/ProfilePage.vue'),
+        meta: { crumbs: settingsTrail('settings.profile') },
       },
       {
         path: 'password',
         name: 'settings-password',
         component: () => import('../pages/settings/PasswordPage.vue'),
+        meta: { crumbs: settingsTrail('settings.password') },
       },
       {
         path: 'tokens',
         name: 'settings-tokens',
         component: () => import('../pages/settings/TokensPage.vue'),
+        meta: { crumbs: settingsTrail('settings.tokens') },
       },
     ],
   },

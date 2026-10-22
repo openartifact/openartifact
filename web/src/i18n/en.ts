@@ -70,6 +70,8 @@ const base = {
   'sidebar.settings': 'Settings',
   'sidebar.collapse': 'Collapse sidebar',
   'sidebar.expand': 'Expand sidebar',
+  'sidebar.open': 'Open navigation',
+  'sidebar.close': 'Close navigation',
 
   // Theme
   'theme.toggle': 'Toggle theme',
@@ -246,9 +248,6 @@ const base = {
   'status.database': 'Database',
   'status.version': 'Version',
   'status.unknown': 'Unknown',
-
-  // Breadcrumbs
-  'breadcrumbs.home': 'Home',
 
   // Admin
   'admin.users.title': 'Users',

@@ -6,6 +6,59 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
+    <PageHeader :title="repoName" :crumbs="crumbs">
+      <template v-if="repo" #meta>
+        <FormatBadge :format="repo.format" />
+        <span class="text-xs text-muted">{{ repo.repo_type || 'hosted' }}</span>
+        <span class="text-xs text-muted" aria-hidden="true">·</span>
+        <span class="inline-flex items-center gap-1 text-xs text-muted">
+          <EyeIcon v-if="repo.public" class="w-3.5 h-3.5" aria-hidden="true" />
+          <EyeSlashIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
+          {{ repo.public ? t('repos.public') : t('repos.private') }}
+        </span>
+      </template>
+      <template v-if="repo" #actions>
+        <button
+          v-if="canUpload"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
+          :aria-expanded="showUpload"
+          @click="showUpload = !showUpload"
+        >
+          <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+          {{ t('repoDetail.upload') }}
+        </button>
+        <router-link
+          :to="`/repos/${repo.name}/browse`"
+          class="inline-flex items-center px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
+        >
+          {{ t('browser.title') }}
+        </router-link>
+        <router-link
+          v-if="session.isAdmin"
+          :to="`/repos/${repo.name}/edit`"
+          class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
+        >
+          <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+          {{ t('common.edit') }}
+        </router-link>
+        <router-link
+          v-if="canDelete"
+          :to="`/repos/${encodeURIComponent(repo.name)}/trash`"
+          class="inline-flex items-center px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover"
+        >
+          {{ t('trash.title') }}
+        </router-link>
+        <button
+          v-if="canDelete"
+          :disabled="deleting"
+          class="px-3 py-1.5 text-sm rounded-lg border border-danger/40 text-danger hover:bg-danger/10 disabled:opacity-50"
+          @click="showDeleteDialog = true"
+        >
+          {{ deleting ? t('repoDetail.deleting') : t('common.delete') }}
+        </button>
+      </template>
+    </PageHeader>
+
     <!-- Loading State -->
     <div v-if="loading" class="text-muted">{{ t('common.loading') }}</div>
 
@@ -24,67 +77,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <template v-else-if="repo">
       <div class="rounded-xl border border-border bg-surface overflow-hidden">
         <!-- Header -->
-        <div class="px-6 pt-5 pb-4 border-b border-border">
-          <div class="flex items-start justify-between gap-4 flex-wrap">
-            <div class="min-w-0">
-              <div class="flex items-center gap-2.5 flex-wrap">
-                <h1 class="text-xl font-semibold font-mono text-foreground break-all">{{ repo.name }}</h1>
-                <FormatBadge :format="repo.format" />
-                <span class="text-xs text-muted">{{ repo.repo_type || 'hosted' }}</span>
-                <span class="text-xs text-muted">·</span>
-                <span class="inline-flex items-center gap-1 text-xs text-muted">
-                  <EyeIcon v-if="repo.public" class="w-3.5 h-3.5" aria-hidden="true" />
-                  <EyeSlashIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
-                  {{ repo.public ? t('repos.public') : t('repos.private') }}
-                </span>
-              </div>
-              <p v-if="repo.description" class="text-sm text-muted max-w-2xl mt-1.5">{{ repo.description }}</p>
-            </div>
-
-            <div class="flex items-center gap-2 shrink-0">
-              <button
-                v-if="canUpload"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
-                :aria-expanded="showUpload"
-                @click="showUpload = !showUpload"
-              >
-                <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                {{ t('repoDetail.upload') }}
-              </button>
-              <router-link
-                :to="`/repos/${repo.name}/browse`"
-                class="inline-flex items-center px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
-              >
-                {{ t('browser.title') }}
-              </router-link>
-              <router-link
-                v-if="session.isAdmin"
-                :to="`/repos/${repo.name}/edit`"
-                class="inline-flex items-center gap-1.5 px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
-              >
-                <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                {{ t('common.edit') }}
-              </router-link>
-              <router-link
-                v-if="canDelete"
-                :to="`/repos/${encodeURIComponent(repo.name)}/trash`"
-                class="inline-flex items-center px-3 py-1.5 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
-              >
-                {{ t('trash.title') }}
-              </router-link>
-              <button
-                v-if="canDelete"
-                :disabled="deleting"
-                class="px-3 py-1.5 text-sm rounded-md border border-danger/40 text-danger hover:bg-danger/10 disabled:opacity-50"
-                @click="showDeleteDialog = true"
-              >
-                {{ deleting ? t('repoDetail.deleting') : t('common.delete') }}
-              </button>
-            </div>
-          </div>
+        <div class="px-4 sm:px-6 pt-5 pb-4 border-b border-border">
+          <p v-if="repo.description" class="text-sm text-muted max-w-2xl">{{ repo.description }}</p>
 
           <!-- Registry URL -->
-          <div class="mt-4 flex items-center gap-2 flex-wrap">
+          <div class="mt-4 first:mt-0 flex items-center gap-2 flex-wrap">
             <span class="text-xs text-muted shrink-0">{{ t('repoDetail.registryUrl') }}</span>
             <code class="flex-1 min-w-0 rounded-md border border-border bg-surface-hover px-2.5 py-1 text-xs font-mono text-foreground break-all">{{ repoUrl }}</code>
             <button
@@ -121,13 +118,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
 
         <!-- Tabs -->
-        <div class="flex items-center gap-1 px-3 overflow-x-auto">
+        <div
+          role="tablist"
+          :aria-label="t('repoDetail.tabs')"
+          class="flex items-center gap-1 px-3 overflow-x-auto"
+          @keydown="onTabKeydown"
+        >
           <button
             v-for="tab in tabs"
+            :id="`repo-tab-${tab.id}`"
             :key="tab.id"
+            type="button"
+            role="tab"
+            :aria-selected="activeTab === tab.id"
+            :aria-controls="`repo-tabpanel-${tab.id}`"
+            :tabindex="activeTab === tab.id ? 0 : -1"
             class="relative h-11 px-3 text-sm font-medium transition-colors cursor-pointer shrink-0"
             :class="activeTab === tab.id ? 'text-foreground' : 'text-muted hover:text-foreground'"
-            @click="activeTab = tab.id"
+            @click="selectTab(tab.id)"
           >
             <span class="flex items-center gap-1.5">
               {{ tab.label }}
@@ -155,13 +163,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <!-- Tab Content -->
-      <div v-if="activeTab === 'cleanup' && session.isAdmin" class="mt-6">
+      <div v-if="activeTab === 'cleanup' && session.isAdmin" :id="'repo-tabpanel-cleanup'" role="tabpanel" aria-labelledby="repo-tab-cleanup" class="mt-6">
         <RepoCleanupTab :repo-name="repoName" />
       </div>
-      <div v-else-if="activeTab === 'configuration' && session.isAdmin" class="mt-6">
+      <div v-else-if="activeTab === 'configuration' && session.isAdmin" :id="'repo-tabpanel-configuration'" role="tabpanel" aria-labelledby="repo-tab-configuration" class="mt-6">
         <RepoSettingsTab :repo="repo" @saved="(r) => (repo = r)" />
       </div>
-      <div v-else-if="activeTab === 'members'" class="mt-6">
+      <div v-else-if="activeTab === 'members'" :id="'repo-tabpanel-members'" role="tabpanel" aria-labelledby="repo-tab-members" class="mt-6">
         <p v-if="membersError" class="text-sm text-danger">{{ membersError }}</p>
         <EmptyState
           v-else-if="members.length === 0"
@@ -204,7 +212,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </section>
       </div>
-      <div v-else-if="activeTab === 'packages'" class="mt-6">
+      <div v-else-if="activeTab === 'packages'" :id="'repo-tabpanel-packages'" role="tabpanel" aria-labelledby="repo-tab-packages" class="mt-6">
         <p v-if="repo.repo_type === 'proxy' && packages.length > 0" class="mb-3 text-xs text-muted">
           {{ t('repoDetail.proxy.cachedHint') }}
         </p>
@@ -341,6 +349,8 @@ import {
 } from '../api/repositories'
 import type { Repository, RepositoryMember, PackageItem } from '../api/repositories'
 import EmptyState from '../components/EmptyState.vue'
+import PageHeader from '../components/PageHeader.vue'
+import { resolveCrumbs, type Crumb } from '../lib/crumbs'
 import FormatBadge from '../components/FormatBadge.vue'
 import BulkActionsBar from '../components/BulkActionsBar.vue'
 import ConnectClientPanel from '../components/ConnectClientPanel.vue'
@@ -378,7 +388,6 @@ const loading = ref(true)
 const loadError = ref('')
 const showUpload = ref(false)
 const deleting = ref(false)
-const activeTab = ref('packages')
 const members = ref<RepositoryMember[]>([])
 const membersError = ref('')
 
@@ -451,6 +460,8 @@ function onDeleted(ids: string[]): void {
   clearSelection()
 }
 
+const defaultTab = computed(() => (repo.value?.repo_type === 'group' ? 'members' : 'packages'))
+
 const tabs = computed(() => {
   const list: Array<{ id: string; label: string; count?: number }> = []
   if (repo.value?.repo_type === 'group') {
@@ -469,6 +480,43 @@ const tabs = computed(() => {
     )
   }
   return list
+})
+
+// The active tab lives in the URL (?tab=) so it is deep-linkable and back-button
+// safe. Unknown or not-permitted values fall back to the repo's default tab.
+const activeTab = computed(() => {
+  const wanted = typeof route.query.tab === 'string' ? route.query.tab : ''
+  return tabs.value.some((tb) => tb.id === wanted) ? wanted : defaultTab.value
+})
+
+function selectTab(id: string): void {
+  if (id === activeTab.value) return
+  const query = { ...route.query }
+  if (id === defaultTab.value) delete query.tab
+  else query.tab = id
+  void router.push({ query })
+}
+
+function onTabKeydown(e: KeyboardEvent): void {
+  const ids = tabs.value.map((tb) => tb.id)
+  const i = ids.indexOf(activeTab.value)
+  let next = -1
+  if (e.key === 'ArrowRight') next = (i + 1) % ids.length
+  else if (e.key === 'ArrowLeft') next = (i - 1 + ids.length) % ids.length
+  else if (e.key === 'Home') next = 0
+  else if (e.key === 'End') next = ids.length - 1
+  if (next < 0) return
+  e.preventDefault()
+  selectTab(ids[next])
+  document.getElementById(`repo-tab-${ids[next]}`)?.focus()
+}
+
+// Breadcrumb trail: Repositories › repo, plus the tab when it is not the default.
+const crumbs = computed<Crumb[]>(() => {
+  const base = resolveCrumbs(route)
+  const tab = tabs.value.find((tb) => tb.id === activeTab.value)
+  if (!repo.value || !tab || tab.id === defaultTab.value) return base
+  return [...base, { label: tab.label }]
 })
 
 function formatSize(bytes?: number): string {
@@ -564,14 +612,6 @@ async function load(silent = false): Promise<void> {
       totalPackages.value = pkgRes.total || 0
     }
     repo.value = repoRes
-    if (!silent) {
-      const wanted = typeof route.query.tab === 'string' ? route.query.tab : ''
-      activeTab.value = tabs.value.some((tb) => tb.id === wanted)
-        ? wanted
-        : repoRes.repo_type === 'group'
-          ? 'members'
-          : 'packages'
-    }
   } catch (err) {
     if (generation !== loadGeneration) return
     if (!silent) repo.value = null
@@ -593,7 +633,6 @@ watch(
   repoName,
   () => {
     page.value = 1
-    activeTab.value = 'packages'
     showUpload.value = false
     clearSelection()
     void load()

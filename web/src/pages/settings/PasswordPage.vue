@@ -44,7 +44,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div class="text-[11px] font-semibold text-muted mb-0.5">
               {{ t('auth.newPassword') }}
             </div>
-            <div class="text-xs text-muted/70">{{ t('auth.passwordMin') }}</div>
+            <div class="text-xs text-muted">{{ t('auth.passwordMin') }}</div>
           </div>
           <div class="flex-1">
             <input

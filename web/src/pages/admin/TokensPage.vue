@@ -7,17 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.tokens') }}</span>
-        </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.tokens.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.tokens.description') }}</p>
-      </div>
-    </div>
+    <PageHeader :title="t('admin.tokens.title')" :description="t('adm.tokens.description')" />
 
     <!-- StatRow -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -53,11 +43,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <span class="text-xs text-muted font-mono">{{ formatDate(value as string) }}</span>
           </template>
           <template #cell-last_used_at="{ value }">
-            <span class="text-xs text-muted font-mono">{{ formatDate(value as string) || t('admin.tokens.never') }}</span>
+            <span class="text-xs text-muted font-mono">{{ formatDate(value as string, '') || t('admin.tokens.never') }}</span>
           </template>
           <template #cell-expires_at="{ value }">
             <span :class="['text-xs font-mono', isExpired(value as string) ? 'text-danger' : 'text-muted']">
-              {{ formatDate(value as string) || t('admin.tokens.never') }}
+              {{ formatDate(value as string, '') || t('admin.tokens.never') }}
             </span>
           </template>
           <template #cell-actions="{ row }">
@@ -101,14 +91,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../../lib/datetime'
+import PageHeader from '../../components/PageHeader.vue'
+import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
 import DataTable, { type Column } from '../../components/DataTable.vue'
 import { listTokens, revokeToken, type AdminToken } from '../../api/tokens'
 import { listAllUsers, type UserItem } from '../../api/admin'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
-import { ChevronRightIcon, KeyIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { KeyIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 type ApiToken = AdminToken & { id: string }
 
@@ -139,12 +130,6 @@ function ownerName(userId?: string): string {
   return users.value.find((u) => u.id === userId)?.username ?? userId
 }
 
-function formatDate(date?: string): string {
-  if (!date) return ''
-  const d = new Date(date)
-  if (Number.isNaN(d.getTime())) return date
-  return d.toLocaleDateString(FORMAT_LOCALE, { year: 'numeric', month: '2-digit', day: '2-digit' })
-}
 
 function isExpired(date?: string): boolean {
   if (!date) return false

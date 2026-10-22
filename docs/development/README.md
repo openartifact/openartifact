@@ -53,7 +53,7 @@ bun version and golangci-lint version are not tracked by Dependabot; bump them b
 | `make migrate` | `go run ./cmd/server -migrate` (apply migrations and exit) |
 | `make bench`, `make bench-load` | Benchmarks, see [performance](../operations/performance.md) |
 | `make docker-build` | Builds `openartifact:latest` from `docker/Dockerfile` |
-| `docker compose -f docker/docker-compose.yml up -d --build` | Full stack; needs `docker/.env` copied from [`docker/.env.example`](../../docker/.env.example) |
+| `make docker-up` | Full stack via `docker compose -f docker/docker-compose.yml up -d --build` with `VERSION`, short SHA and RFC 3339 build time passed as build args; needs `docker/.env` copied from [`docker/.env.example`](../../docker/.env.example) |
 
 Web UI (run in `web/`):
 

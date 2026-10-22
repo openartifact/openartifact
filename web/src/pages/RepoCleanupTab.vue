@@ -140,7 +140,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <span v-if="policy.last_run_at" class="text-sm text-muted font-mono">
                 {{ timeAgo(policy.last_run_at) }}
               </span>
-              <span v-else class="text-sm text-muted/50">{{ t('cleanup.never') }}</span>
+              <span v-else class="text-sm text-muted">{{ t('cleanup.never') }}</span>
             </td>
 
             <!-- Actions -->
@@ -221,7 +221,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="form.name"
                 type="text"
                 :placeholder="t('cleanup.namePlaceholder')"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
               />
             </div>
 
@@ -268,7 +268,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   min="1"
                   max="9999"
                   placeholder="10"
-                  class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                  class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 />
                 <span class="text-sm text-muted">{{ t('cleanup.perPackage') }}</span>
               </div>
@@ -285,7 +285,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   min="1"
                   max="3650"
                   placeholder="30"
-                  class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                  class="w-28 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 />
                 <span class="text-sm text-muted">{{ t('cleanup.days') }}</span>
               </div>
@@ -367,7 +367,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <button
               type="button"
               :disabled="deleting"
-              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-white hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
+              class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-danger text-danger-contrast hover:opacity-90 transition-opacity disabled:opacity-40 disabled:cursor-not-allowed"
               @click="confirmDelete"
             >
               <ArrowPathIcon v-if="deleting" class="w-4 h-4 animate-spin" />

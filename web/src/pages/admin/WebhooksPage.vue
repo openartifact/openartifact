@@ -7,27 +7,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.webhooks') }}</span>
+    <PageHeader :title="t('adm.webhooks.title')" :description="t('adm.webhooks.description')">
+      <template #actions>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="openCreate"
+            class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
+          >
+            <PlusIcon class="w-4 h-4" aria-hidden="true" />
+            {{ t('adm.webhooks.add') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('adm.webhooks.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.webhooks.description') }}</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          @click="openCreate"
-          class="inline-flex items-center gap-2 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
-        >
-          <PlusIcon class="w-4 h-4" aria-hidden="true" />
-          {{ t('adm.webhooks.add') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Stat tiles (derived from the loaded list only) -->
     <div class="grid grid-cols-2 gap-3">
@@ -269,13 +262,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../../lib/datetime'
+import PageHeader from '../../components/PageHeader.vue'
+import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import { request } from '../../api/client'
 import { useToastStore } from '../../stores/toast'
 import { t, tDynamic } from '../../i18n/en'
 import {
-  ChevronRightIcon,
   PlusIcon,
   BellAlertIcon,
   PaperAirplaneIcon,
@@ -333,14 +326,6 @@ const canSave = computed(
   () => !saving.value && !!form.value.name.trim() && !!form.value.url.trim() && form.value.events.length > 0,
 )
 
-function formatDate(date?: string): string {
-  if (!date) return '—'
-  return new Date(date).toLocaleDateString(FORMAT_LOCALE, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-}
 
 function toggleEvent(value: WebhookEvent): void {
   const idx = form.value.events.indexOf(value)

@@ -7,38 +7,31 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- Page Header -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('adm.ai.title') }}</span>
+    <PageHeader :title="t('adm.ai.title')" :description="t('adm.ai.description')">
+      <template #actions>
+        <div class="flex items-center gap-2 shrink-0">
+          <button
+            type="button"
+            :disabled="testing || loading"
+            class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+            @click="testConnection"
+          >
+            <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': testing }" aria-hidden="true" />
+            {{ t('adm.ai.testConnection') }}
+          </button>
+          <button
+            type="button"
+            :disabled="saving || loading"
+            class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
+            @click="save"
+          >
+            <ArrowPathIcon v-if="saving" class="w-4 h-4 animate-spin" aria-hidden="true" />
+            <CheckIcon v-else class="w-4 h-4" aria-hidden="true" />
+            {{ saving ? t('common.saving') : t('adm.ai.saveChanges') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('adm.ai.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.ai.description') }}</p>
-      </div>
-      <div class="flex items-center gap-2 shrink-0">
-        <button
-          type="button"
-          :disabled="testing || loading"
-          class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium border border-border bg-surface text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
-          @click="testConnection"
-        >
-          <ArrowPathIcon class="w-4 h-4" :class="{ 'animate-spin': testing }" aria-hidden="true" />
-          {{ t('adm.ai.testConnection') }}
-        </button>
-        <button
-          type="button"
-          :disabled="saving || loading"
-          class="inline-flex items-center gap-1.5 px-4 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity disabled:opacity-50 disabled:cursor-not-allowed"
-          @click="save"
-        >
-          <ArrowPathIcon v-if="saving" class="w-4 h-4 animate-spin" aria-hidden="true" />
-          <CheckIcon v-else class="w-4 h-4" aria-hidden="true" />
-          {{ saving ? t('common.saving') : t('adm.ai.saveChanges') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- Loading state -->
     <div v-if="loading" class="bg-surface rounded-xl border border-border p-12 flex flex-col items-center gap-3 text-muted" role="status">
@@ -144,7 +137,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="form.base_url"
                 type="text"
                 placeholder="https://api.openai.com/v1"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
               />
               <p class="text-[11px] text-muted mt-1">{{ t('adm.ai.baseUrlHint') }}</p>
             </div>
@@ -158,7 +151,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   :type="apiKeyRevealed ? 'text' : 'password'"
                   autocomplete="off"
                   placeholder="••••••••"
-                  class="w-full px-3 py-2 pr-14 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                  class="w-full px-3 py-2 pr-14 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 />
                 <button
                   type="button"
@@ -182,7 +175,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     type="text"
                     list="model-suggestions"
                     :placeholder="PROVIDERS[form.provider]?.defaultModels?.[0] ?? 'gpt-4o'"
-                    class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                    class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                   />
                   <datalist id="model-suggestions">
                     <option v-for="m in modelSuggestions" :key="m" :value="m" />
@@ -214,7 +207,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 min="128"
                 max="128000"
                 step="128"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
               />
               <p class="text-[11px] text-muted mt-1">{{ t('adm.ai.maxTokensHint') }}</p>
             </div>
@@ -228,7 +221,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 min="5"
                 max="300"
                 step="5"
-                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="w-full px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
               />
               <p class="text-[11px] text-muted mt-1">{{ t('adm.ai.timeoutHint') }}</p>
             </div>
@@ -256,7 +249,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             v-model="form.system_prompt"
             rows="6"
             :placeholder="t('adm.ai.systemPromptPlaceholder')"
-            class="w-full px-3 py-2.5 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/40 focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors leading-relaxed"
+            class="w-full px-3 py-2.5 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary resize-none transition-colors leading-relaxed"
           />
         </div>
       </div>
@@ -320,10 +313,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../../components/PageHeader.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import type { Component } from 'vue'
 import {
-  ChevronRightIcon,
   ArrowPathIcon,
   CheckIcon,
   CheckCircleIcon,

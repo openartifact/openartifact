@@ -6,14 +6,42 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
-    <!-- Back Button -->
-    <button
-      @click="router.back()"
-      class="flex items-center gap-1 text-sm text-muted hover:text-foreground transition-colors mb-4 cursor-pointer"
-    >
-      <ChevronLeftIcon class="w-4 h-4" aria-hidden="true" />
-      {{ t('pkg.back') }}
-    </button>
+    <PageHeader :title="pkgName">
+      <template v-if="currentPkg" #meta>
+        <FormatBadge :format="format" />
+        <span v-if="currentPkg.version" class="font-mono text-xs bg-surface-hover rounded-md px-2 py-0.5 border border-border text-muted">
+          {{ currentPkg.version }}
+        </span>
+        <span
+          v-if="packages.length > 0 && currentPkg?.version === packages[0]?.version"
+          class="text-[10px] font-medium px-2 py-0.5 rounded-full border border-success/30 text-success bg-success-soft"
+        >
+          {{ t('pkg.latest') }}
+        </span>
+      </template>
+      <template v-if="currentPkg" #actions>
+        <!-- Action group -->
+        <div class="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0 shadow-sm">
+          <button
+            class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
+            @click="copyUrl"
+          >
+            <ClipboardDocumentIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+            {{ t('repoDetail.copyUrl') }}
+          </button>
+          <template v-if="session.isAdmin">
+            <div class="w-px h-6 bg-border" />
+            <button
+              class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
+              @click="router.push(`/repos/${repoName}/edit`)"
+            >
+              <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
+              {{ t('nav.settings') }}
+            </button>
+          </template>
+        </div>
+      </template>
+    </PageHeader>
 
     <div v-if="loading" class="text-muted text-sm">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="rounded-xl border border-danger/30 bg-surface p-8 text-center">
@@ -33,55 +61,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <!-- Top section -->
         <div class="relative px-6 py-5 border-b border-border">
           <div class="relative">
-            <!-- Title row + actions -->
-            <div class="flex items-start justify-between gap-4 flex-wrap">
-              <div class="flex items-center gap-2.5 flex-wrap">
-                <h1 class="text-2xl font-bold tracking-tight text-foreground">{{ pkgName }}</h1>
-                <FormatBadge :format="format" />
-                <span class="font-mono text-xs bg-surface-hover rounded-md px-2 py-0.5 border border-border text-muted">
-                  {{ currentPkg.version }}
-                </span>
-                <span
-                  v-if="packages.length > 0 && currentPkg?.version === packages[0]?.version"
-                  class="text-[10px] font-medium px-2 py-0.5 rounded-full border border-green-500/30 text-green-600 dark:text-green-400 bg-green-500/10"
-                >
-                  latest
-                </span>
-              </div>
-
-              <!-- Action group -->
-              <div class="inline-flex items-center rounded-lg border border-border bg-surface overflow-hidden shrink-0 shadow-sm">
-                <button
-                  class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
-                  @click="copyUrl"
-                >
-                  <ClipboardDocumentIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                  {{ t('repoDetail.copyUrl') }}
-                </button>
-                <template v-if="session.isAdmin">
-                  <div class="w-px h-6 bg-border" />
-                  <button
-                    class="inline-flex items-center gap-1.5 px-3 h-9 text-sm text-foreground/80 hover:bg-surface-hover transition-colors"
-                    @click="router.push(`/repos/${repoName}/edit`)"
-                  >
-                    <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                    {{ t('nav.settings') }}
-                  </button>
-                </template>
-              </div>
-            </div>
-
             <!-- Description -->
-            <p class="text-sm text-muted max-w-2xl leading-relaxed mt-2">
+            <p class="text-sm text-muted max-w-2xl leading-relaxed">
               {{ repo?.description || repoName }}
             </p>
 
             <!-- Stats row -->
             <div class="flex items-center gap-5 flex-wrap mt-3.5">
-              <div class="leading-tight">
-                <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.format') }}</div>
-                <div class="mt-0.5"><FormatBadge :format="format" /></div>
-              </div>
               <div v-if="currentPkg.size" class="leading-tight">
                 <div class="text-[10px] text-muted font-semibold">{{ t('packages.column.size') }}</div>
                 <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ formatSize(currentPkg.size) }}</div>
@@ -126,7 +112,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <!-- Pull Command -->
-      <div class="bg-[#0d1117] rounded-lg border border-border/50 p-3 mt-4 flex items-center gap-2">
+      <div class="bg-surface-hover rounded-lg border border-border p-3 mt-4 flex items-center gap-2">
         <span class="w-2 h-2 rounded-full bg-green-500 flex-shrink-0" />
         <code class="font-mono text-xs text-foreground/90 flex-1 truncate">{{ pullCommand }}</code>
         <button
@@ -143,25 +129,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="activeTab === 'overview'" class="mt-6">
         <div class="bg-surface rounded-lg border border-border p-6">
           <div class="space-y-0">
-            <div class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">{{ t('packages.column.name') }}</span>
-              <span class="text-sm text-foreground font-mono">{{ currentPkg.name }}</span>
+            <div class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
+              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.name') }}</span>
+              <span class="min-w-0 break-all text-right text-sm text-foreground font-mono">{{ currentPkg.name }}</span>
             </div>
-            <div class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">{{ t('packages.column.version') }}</span>
-              <span class="text-sm text-foreground font-mono">{{ currentPkg.version }}</span>
+            <div class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
+              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.version') }}</span>
+              <span class="min-w-0 break-all text-right text-sm text-foreground font-mono">{{ currentPkg.version }}</span>
             </div>
-            <div class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">{{ t('packages.column.format') }}</span>
+            <div class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
+              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.format') }}</span>
               <FormatBadge :format="format" />
             </div>
-            <div v-if="currentPkg.size" class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">{{ t('packages.column.size') }}</span>
+            <div v-if="currentPkg.size" class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
+              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.size') }}</span>
               <span class="text-sm text-foreground font-mono">{{ formatSize(currentPkg.size) }}</span>
             </div>
-            <div v-if="currentPkg.sha256" class="flex items-center justify-between py-2.5 border-b border-border">
-              <span class="text-sm text-muted">{{ t('packages.column.sha') }}</span>
-              <span class="text-sm text-foreground font-mono">{{ currentPkg.sha256 }}</span>
+            <div v-if="currentPkg.sha256" class="flex items-center justify-between gap-4 py-2.5 border-b border-border">
+              <span class="shrink-0 text-sm text-muted">{{ t('packages.column.sha') }}</span>
+              <span class="min-w-0 break-all text-right text-sm text-foreground font-mono">{{ currentPkg.sha256 }}</span>
             </div>
             <div v-if="currentPkg.created_at" class="flex items-center justify-between py-2.5">
               <span class="text-sm text-muted">{{ t('repoDetail.created') }}</span>
@@ -238,7 +224,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="newPropKey"
                 type="text"
                 :placeholder="t('pkg.props.key')"
-                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 @keydown.enter="saveNewProp"
                 @keydown.escape="cancelAddProp"
               />
@@ -246,7 +232,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-model="newPropValue"
                 type="text"
                 :placeholder="t('pkg.props.value')"
-                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted/50 focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
+                class="flex-1 px-3 py-2 rounded-lg border border-border bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:outline-none focus:ring-2 focus:ring-primary transition-colors"
                 @keydown.enter="saveNewProp"
                 @keydown.escape="cancelAddProp"
               />
@@ -410,11 +396,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../components/PageHeader.vue'
 import { formatDate, formatDateTime } from '../lib/datetime'
 import { ref, computed, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import {
-  ChevronLeftIcon,
   ClipboardDocumentIcon,
   ShieldCheckIcon,
   Cog6ToothIcon,

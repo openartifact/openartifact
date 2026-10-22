@@ -189,3 +189,27 @@ func TestCleanExitsStayZero(t *testing.T) {
 		t.Errorf("-h: exit %d, want 0\n%s", code, out)
 	}
 }
+
+// TestVersionFlag checks that -version prints the build metadata and exits 0
+// without touching the configuration or the database (the DB is unreachable here).
+func TestVersionFlag(t *testing.T) {
+	env := unreachableDBEnv(filepath.Join(t.TempDir(), "version.log"))
+
+	code, out := execServer(t, env, "-version")
+	if code != 0 {
+		t.Fatalf("-version: exit %d, want 0\n%s", code, out)
+	}
+
+	fields := strings.Fields(out)
+	if len(fields) != 4 {
+		t.Fatalf("-version output %q: want 4 fields (version commit build-time go/os/arch)", out)
+	}
+
+	if fields[0] != version || fields[1] != commit || fields[2] != buildTime {
+		t.Errorf("-version output %q does not match the stamped metadata %s %s %s", out, version, commit, buildTime)
+	}
+
+	if !strings.HasPrefix(fields[3], "go") || strings.Count(fields[3], "/") != 2 {
+		t.Errorf("-version runtime field %q: want go<ver>/<os>/<arch>", fields[3])
+	}
+}

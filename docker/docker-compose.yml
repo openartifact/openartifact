@@ -37,7 +37,10 @@ services:
       context: ..
       dockerfile: docker/Dockerfile
       args:
+        # Stamped by `make docker-up`; compose cannot read the VERSION file or run git.
         VERSION: ${OPENARTIFACT_VERSION:-dev}
+        COMMIT: ${OPENARTIFACT_COMMIT:-unknown}
+        BUILD_TIME: ${OPENARTIFACT_BUILD_TIME:-unknown}
     container_name: openartifact
     depends_on:
       postgres:

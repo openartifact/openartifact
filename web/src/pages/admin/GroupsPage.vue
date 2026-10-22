@@ -7,26 +7,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.groups') }}</span>
+    <PageHeader :title="t('admin.groups.title')" :description="t('adm.groups.description')">
+      <template #actions>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            @click="openCreate"
+            class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
+          >
+            {{ t('admin.groups.create') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.groups.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('adm.groups.description') }}</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          @click="openCreate"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
-        >
-          {{ t('admin.groups.create') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <!-- StatRow -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -228,7 +221,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { FORMAT_LOCALE } from '../../lib/datetime'
+import PageHeader from '../../components/PageHeader.vue'
+import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import {
   listGroups,
@@ -245,7 +239,6 @@ import AdminDialog from '../../components/AdminDialog.vue'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import {
-  ChevronRightIcon,
   FolderIcon,
   UsersIcon,
   TrashIcon,
@@ -284,14 +277,6 @@ const filteredAvailableUsers = computed(() => {
   )
 })
 
-function formatDate(date?: string): string {
-  if (!date) return '—'
-  return new Date(date).toLocaleDateString(FORMAT_LOCALE, {
-    year: 'numeric',
-    month: '2-digit',
-    day: '2-digit',
-  })
-}
 
 async function load(): Promise<void> {
   loading.value = true

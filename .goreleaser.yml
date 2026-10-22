@@ -18,8 +18,8 @@ builds:
     ldflags:
       - -s -w
       - -X main.version={{.Version}}
-      - -X main.commit={{.ShortCommit}}
-      - -X main.buildTime={{.CommitDate}}
+      - -X main.commit={{ slice .FullCommit 0 7 }}
+      - -X main.buildTime={{ .Date }}
     goos: [linux]
     goarch: [amd64, arm64]
   - id: resetpw

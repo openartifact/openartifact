@@ -35,6 +35,7 @@ export default {
         },
         danger: {
           DEFAULT: 'rgb(var(--color-danger) / <alpha-value>)',
+          contrast: 'rgb(var(--color-danger-contrast) / <alpha-value>)',
           soft: 'rgb(var(--color-danger-soft) / <alpha-value>)',
         },
       },

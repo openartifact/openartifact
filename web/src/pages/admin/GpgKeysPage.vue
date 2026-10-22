@@ -7,33 +7,26 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <div class="flex items-start justify-between flex-wrap gap-3">
-      <div>
-        <div class="flex items-center gap-2 text-[11px] text-muted font-mono">
-          <span>{{ t('nav.admin') }}</span>
-          <ChevronRightIcon class="w-3 h-3" aria-hidden="true" />
-          <span class="text-foreground/70">{{ t('nav.gpg') }}</span>
+    <PageHeader :title="t('admin.gpg.title')" :description="t('admin.gpg.description')">
+      <template #actions>
+        <div class="flex items-center gap-2">
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors font-medium"
+            @click="importOpen = true"
+          >
+            {{ t('admin.gpg.import') }}
+          </button>
+          <button
+            type="button"
+            class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
+            @click="generateOpen = true"
+          >
+            {{ t('admin.gpg.generate') }}
+          </button>
         </div>
-        <h1 class="mt-1 text-2xl font-bold tracking-tight">{{ t('admin.gpg.title') }}</h1>
-        <p class="mt-1 text-sm text-muted">{{ t('admin.gpg.description') }}</p>
-      </div>
-      <div class="flex items-center gap-2">
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm rounded-lg border border-border text-foreground hover:bg-surface-hover transition-colors font-medium"
-          @click="importOpen = true"
-        >
-          {{ t('admin.gpg.import') }}
-        </button>
-        <button
-          type="button"
-          class="px-3 py-1.5 text-sm rounded-lg bg-primary text-primary-contrast hover:opacity-90 transition-opacity font-medium"
-          @click="generateOpen = true"
-        >
-          {{ t('admin.gpg.generate') }}
-        </button>
-      </div>
-    </div>
+      </template>
+    </PageHeader>
 
     <div v-if="unavailable" class="rounded-lg border border-warning/30 bg-warning-soft px-4 py-3 text-sm text-warning" role="status">
       {{ t('adm.gpg.unavailable') }}
@@ -133,8 +126,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import PageHeader from '../../components/PageHeader.vue'
 import { ref, onMounted } from 'vue'
-import { ChevronRightIcon } from '@heroicons/vue/20/solid'
 import { listGpgKeys, importGpgKey, generateGpgKey, revokeGpgKey, type GpgKey } from '../../api/gpg'
 import { ApiError } from '../../api/client'
 import DataTable from '../../components/DataTable.vue'

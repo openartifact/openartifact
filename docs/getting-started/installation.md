@@ -20,8 +20,10 @@ OpenArtifact is one Go binary with the web UI embedded. It needs PostgreSQL (the
 
 ```sh
 cp docker/.env.example docker/.env      # set POSTGRES_PASSWORD
-docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build
+make docker-up                          # build and start; stamps version, commit and build time
 ```
+
+`make docker-up` runs `docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build` with the build metadata exported (see the table below). Running that `docker compose` command directly works too, but compose cannot read the `VERSION` file or run `git`, so the image then reports version `dev` and commit/build time `unknown` (the System page labels them "Not recorded").
 
 The UI and API are on <http://localhost:8080>. The port is bound to `127.0.0.1` (change with `OPENARTIFACT_BIND`, e.g. `0.0.0.0`; put a TLS reverse proxy in front for anything else). PostgreSQL is not published to the host. Compose refuses to start while `POSTGRES_PASSWORD` is unset.
 
@@ -38,7 +40,9 @@ Compose also substitutes these variables from `docker/.env` (they are not listed
 |---|---|---|
 | `AUTH_HMAC_KEY` | empty (random key per boot) | Signs OIDC/SAML login state; set it for SSO that survives restarts |
 | `OPENARTIFACT_BIND` | `127.0.0.1` | Host address the port 8080 mapping binds to |
-| `OPENARTIFACT_VERSION` | `dev` | Build argument; the version reported by `/health` and the log |
+| `OPENARTIFACT_VERSION` | `dev` | Build argument; the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
+| `OPENARTIFACT_COMMIT` | `unknown` | Build argument; commit reported by the System page. `make docker-up` sets the 7-character short SHA |
+| `OPENARTIFACT_BUILD_TIME` | `unknown` | Build argument; build time, RFC 3339 in UTC. `make docker-up` sets it |
 
 The `openartifact` service passes only the variables listed in its `environment:` block. Anything else (`BASE_URL`, `OPENARTIFACT_SECRET_KEY`, `METRICS_AUTH_TOKEN`, `OPENARTIFACT_TRUSTED_PROXIES`, ...) must be added there, or via a compose override file, before it reaches the server. The service runs as uid 10001 with a read-only root filesystem; data lives in the named volumes `postgres_data`, `artifacts_data` (`/var/lib/artifacts`) and `backups_data` (`/var/lib/openartifact/backups`).
 
@@ -146,7 +150,7 @@ make run          # build, then run ./bin/openartifact
 make help         # list all targets
 ```
 
-The version comes from the `VERSION` file and is injected with `-ldflags "-X main.version=… -X main.commit=… -X main.buildTime=…"`. Override with `make build CI_VERSION=1.2.3 CI_COMMIT=abc1234`. A plain `go build ./cmd/server` reports version `dev`. Useful targets: `make migrate` (runs `go run ./cmd/server -migrate`), `make docker-build` (image `openartifact:latest`), `make docker-run` (that image against an external PostgreSQL from `docker/.env`). Development targets are in [development](../development/README.md).
+The version comes from the `VERSION` file and is injected with `-ldflags "-X main.version=… -X main.commit=… -X main.buildTime=…"`. Override with `make build CI_VERSION=1.2.3 CI_COMMIT=abc1234`. A plain `go build ./cmd/server` reports version `dev`. The commit is always the 7-character short SHA and the build time RFC 3339 in UTC, in the Makefile, the Dockerfile and GoReleaser alike. `openartifact-server -version` prints `<version> <commit> <build time> <go>/<os>/<arch>`. Useful targets: `make migrate` (runs `go run ./cmd/server -migrate`), `make docker-build` (image `openartifact:latest`), `make docker-run` (that image against an external PostgreSQL from `docker/.env`). Development targets are in [development](../development/README.md).
 
 ## Behind a reverse proxy and TLS
 
