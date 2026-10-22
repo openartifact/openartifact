@@ -158,10 +158,18 @@ func (h *AdminTokensHandler) handleAdminList(w http.ResponseWriter, r *http.Requ
 
 	data := make([]any, 0, len(tokens))
 	for _, t := range tokens {
-		data = append(data, responses.AdminTokenResponse{
+		item := responses.AdminTokenResponse{
 			TokenResponse: tokenToResponse(t),
 			UserID:        t.UserID,
-		})
+			ProjectRole:   t.ProjectRole,
+		}
+
+		if t.ProjectID != nil {
+			item.Project = &t.ProjectName
+			item.CreatedBy = nonEmptyString(t.CreatedByName)
+		}
+
+		data = append(data, item)
 	}
 
 	writeJSON(w, http.StatusOK, map[string]any{
@@ -359,4 +367,12 @@ func tokenToResponse(t *models.Token) responses.TokenResponse {
 		LastUsedAt: formatTimePtr(t.LastUsedAt),
 		CreatedAt:  formatTime(t.CreatedAt),
 	}
+}
+
+func nonEmptyString(s string) *string {
+	if s == "" {
+		return nil
+	}
+
+	return &s
 }

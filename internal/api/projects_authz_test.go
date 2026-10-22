@@ -91,6 +91,8 @@ type projectsMockDB struct {
 	repo      *models.Repository
 	updRepo   *models.Repository
 	deleteErr error
+
+	tokenStore tokenStore
 }
 
 var _ database.Database = (*projectsMockDB)(nil)

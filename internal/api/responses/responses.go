@@ -69,6 +69,11 @@ type AdminTokenResponse struct {
 	TokenResponse
 
 	UserID string `json:"user_id"`
+	// Project, ProjectRole and CreatedBy are set for project tokens (CreatedBy
+	// is the minting user's name); null for personal tokens.
+	Project     *string `json:"project"`
+	ProjectRole *string `json:"project_role"`
+	CreatedBy   *string `json:"created_by"`
 }
 
 // RepositoryResponse represents a repository in API responses.
@@ -424,4 +429,26 @@ type SSOProviderPublicResponse struct {
 	Kind        string `json:"kind"`
 	DisplayName string `json:"display_name"`
 	Enabled     bool   `json:"enabled"`
+}
+
+// ProjectTokenResponse represents a project token in API responses.
+type ProjectTokenResponse struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Project string `json:"project"`
+	// Role is viewer or developer.
+	Role       string  `json:"role"`
+	ExpiresAt  *string `json:"expires_at"`
+	LastUsedAt *string `json:"last_used_at"`
+	CreatedAt  string  `json:"created_at"`
+	// CreatedBy is the ID of the user who minted the token.
+	CreatedBy         string `json:"created_by"`
+	CreatedByUsername string `json:"created_by_username"`
+}
+
+// ProjectTokenCreateResponse includes the clear-text token on creation.
+type ProjectTokenCreateResponse struct {
+	ProjectTokenResponse
+
+	Token string `json:"token"`
 }

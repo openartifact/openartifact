@@ -62,20 +62,20 @@ func withManageTarget(db *actionsMockDB) *actionsMockDB {
 
 func allProjectActions() []ProjectAction {
 	return []ProjectAction{
-		ProjectActionRead, ProjectActionMembersManage, ProjectActionUpdate, ProjectActionDelete,
+		ProjectActionRead, ProjectActionMembersManage, ProjectActionTokens, ProjectActionUpdate, ProjectActionDelete,
 		ProjectActionRepoCreate, ProjectActionRepoAdmin, ProjectActionRepoTransfer,
 	}
 }
 
 func TestProjectActionMatrix(t *testing.T) {
 	want := map[string][]bool{
-		// read, members.manage, update, delete, repo.create, repo.admin, repo.transfer
-		"":                           {false, false, false, false, false, false, false},
-		"bogus":                      {false, false, false, false, false, false, false},
-		models.ProjectRoleViewer:     {true, false, false, false, false, false, false},
-		models.ProjectRoleDeveloper:  {true, false, false, false, false, false, false},
-		models.ProjectRoleMaintainer: {true, true, false, false, true, true, false},
-		models.ProjectRoleOwner:      {true, true, true, true, true, true, true},
+		// read, members.manage, tokens.create, update, delete, repo.create, repo.admin, repo.transfer
+		"":                           {false, false, false, false, false, false, false, false},
+		"bogus":                      {false, false, false, false, false, false, false, false},
+		models.ProjectRoleViewer:     {true, false, true, false, false, false, false, false},
+		models.ProjectRoleDeveloper:  {true, false, true, false, false, false, false, false},
+		models.ProjectRoleMaintainer: {true, true, true, false, false, true, true, false},
+		models.ProjectRoleOwner:      {true, true, true, true, true, true, true, true},
 	}
 
 	for role, exp := range want {

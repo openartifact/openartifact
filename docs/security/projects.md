@@ -97,6 +97,21 @@ A self-created project:
 
 `GET /api/v1/projects` returns `can_create` (admin, or self-creation on) so clients can show or hide the create action.
 
+## Project tokens
+
+A project token is a CI credential that belongs to one project. Each token is a deploy token of its own **service account** (a hidden user that cannot log in, is never listed with users or members, and holds exactly the token's role in the project):
+
+- `viewer` tokens read the project's repositories, `developer` tokens also write. Other projects, permission targets and the whole management API (`/api/v1/**`, including `/auth/me`) are unreachable with them: the same token against another project's repository gets `403`.
+- Minting needs a **session** (an API token cannot mint tokens). The role may not exceed the creator's own role and is capped at `developer`; global admins count as owners.
+- The expiry is required when the project limits token lifetime (`token_max_ttl_days`) and may not exceed it.
+- A project has at most 100 active tokens, and active names are unique per project (`409` otherwise). A revoked token's name can be reused.
+- Maintainers, owners and admins list and revoke every token of the project; other members only their own. Revocation is immediate on every replica that shares the database (the auth cache is invalidated with the write).
+- When a token's creator is removed from the project, disabled or deleted, all their tokens in that project are revoked in the same transaction. Access a creator holds through a group stays a membership, so remove the group grant too.
+- Expired and revoked tokens and their service accounts are purged by the auth purge worker.
+- Project tokens are **not included in backups**: after a restore, mint them again.
+
+`project.token_created` and `project.token_revoked` are audited with the token as the resource. The admin token list (`GET /api/v1/admin/tokens`) shows `project`, `project_role` and `created_by` for project tokens.
+
 ## Audit events
 
 Every project mutation writes an audit entry with the project in `project_id`:
@@ -107,6 +122,7 @@ Every project mutation writes an audit entry with the project in `project_id`:
 | `project.policy_changed` | a policy field changed (admin) |
 | `project.member_added`, `project.member_removed`, `project.member_role_changed` | membership changes |
 | `project.group_added`, `project.group_removed`, `project.group_role_changed` | group grants |
+| `project.token_created`, `project.token_revoked` | project tokens |
 
 `project.deleted` carries the project ID as the resource ID instead of `project_id`: the audit row's project reference is cleared when the project goes away. Changing the self-creation setting is recorded as `system.setting_changed`. Read the log with [`GET /api/v1/admin/audit`](../integrations/api.md) or `oa audit list`.
 
@@ -131,6 +147,9 @@ All paths are under `/api/v1`, JSON is snake_case, errors are `{"error": message
 | `GET /projects/{project}/groups` | viewer | |
 | `PUT /projects/{project}/groups/{group}` | maintainer | `{group}` is a group id or its exact name; body `{role}` (`viewer`, `developer`, `maintainer`) |
 | `DELETE /projects/{project}/groups/{group}` | maintainer | id or name |
+| `GET /projects/{project}/tokens` | viewer | maintainers see all tokens, others their own; `{tokens}` without secrets |
+| `POST /projects/{project}/tokens` | viewer | session only; body `name`, `role` (`viewer`, `developer`, at most your own), `expires_at`; 201 with the secret in `token`, shown once; 409 on duplicate name or 100 active tokens |
+| `DELETE /projects/{project}/tokens/{token_id}` | viewer | maintainer for tokens of others; 204 |
 | `GET`, `PUT /admin/projects/settings` | admin | `{self_create: bool}` |
 
 `GET /api/v1/auth/me` lists the caller's own roles in `projects: [{name, role}]` (admins get no implicit entries there).

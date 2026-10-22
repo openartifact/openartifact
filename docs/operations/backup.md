@@ -37,7 +37,7 @@ Soft-deleted data ([trash](trash.md): trashed repositories and package rows) is 
 
 Tables exported:
 
-- Global: repositories, repository group members (member order is kept), users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, projects (with their policy settings), members and group grants, webhooks. Repositories keep their project on restore. Archives from older versions with `organizations` and `organization_members` are still accepted.
+- Global: repositories, repository group members (member order is kept), users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, projects (with their policy settings), members and group grants, webhooks. Project tokens (and their service accounts) are left out: mint them again after a restore. Repositories keep their project on restore. Archives from older versions with `organizations` and `organization_members` are still accepted.
 - Per format: Debian distributions, components and architectures with deb packages; rpm, Helm, PyPI, NuGet, Cargo, RubyGems, Conan, Ivy, sbt, raw, Docker (blobs, manifests, tags), npm (packages, versions, dist-tags), Maven, Conda and Go module records.
 - Per repository: cleanup policies, SBOM, license, secret and vulnerability scan results, AI analyses.
 

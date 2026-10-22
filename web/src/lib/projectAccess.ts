@@ -50,12 +50,12 @@ export function canModifyEntry(myRole: string | undefined, current: string | und
   return myRole === 'owner' || rank(current) < RANK.maintainer
 }
 
-export type ProjectTab = 'overview' | 'repositories' | 'members' | 'settings'
+export type ProjectTab = 'overview' | 'repositories' | 'members' | 'tokens' | 'settings'
 
-/** Tabs a caller with `myRole` sees. Members and settings need at least viewer. */
+/** Tabs a caller with `myRole` sees. Members, tokens and settings need at least viewer. */
 export function visibleProjectTabs(myRole: string | undefined): ProjectTab[] {
   const tabs: ProjectTab[] = ['overview']
-  if (atLeast(myRole, 'viewer')) tabs.push('repositories', 'members', 'settings')
+  if (atLeast(myRole, 'viewer')) tabs.push('repositories', 'members', 'tokens', 'settings')
   return tabs
 }
 

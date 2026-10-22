@@ -53,6 +53,7 @@ export const enProjects = {
   'projects.tab.overview': 'Overview',
   'projects.tab.repositories': 'Repositories',
   'projects.tab.members': 'Members',
+  'projects.tab.tokens': 'Tokens',
   'projects.tab.settings': 'Settings',
 
   // Overview
@@ -162,6 +163,32 @@ export const enProjects = {
   'adm.projects.selfCreate.title': 'Allow users to create projects',
   'adm.projects.selfCreate.hint':
     'When on, any signed-in user can create a project and becomes its owner. Policy fields stay admin-only.',
+  // Tokens tab
+  'projects.tokens.hint':
+    'Project tokens are CI credentials for this project only: viewer tokens read, developer tokens read and write its repositories. They never reach the management API and stop working when their creator leaves the project.',
+  'projects.tokens.create': 'New project token',
+  'projects.tokens.empty': 'No project tokens',
+  'projects.tokens.emptyHint': 'Create a token to let CI publish to this project.',
+  'projects.tokens.loadFailed': 'Failed to load project tokens',
+  'projects.tokens.column.name': 'Name',
+  'projects.tokens.column.role': 'Role',
+  'projects.tokens.column.createdBy': 'Created by',
+  'projects.tokens.column.lastUsed': 'Last used',
+  'projects.tokens.column.expires': 'Expires',
+  'projects.tokens.never': 'Never',
+  'projects.tokens.name': 'Name',
+  'projects.tokens.namePlaceholder': 'e.g. github-actions',
+  'projects.tokens.role': 'Role',
+  'projects.tokens.roleHint': 'Viewer reads, developer reads and writes. You cannot grant more than your own role.',
+  'projects.tokens.expiresInDays': 'Expires in (days)',
+  'projects.tokens.expiresCap': 'This project limits token lifetime to at most',
+  'projects.tokens.expiresOptional': 'Leave empty for a token that does not expire.',
+  'projects.tokens.createFailed': 'Failed to create the token',
+  'projects.tokens.revoke': 'Revoke token',
+  'projects.tokens.confirmRevoke': 'Revoke this token? CI jobs using it stop working immediately.',
+  'projects.tokens.revoked': 'Token revoked',
+  'projects.tokens.revokeFailed': 'Failed to revoke the token',
+
   'adm.projects.selfCreate.saved': 'Project creation setting saved',
   'adm.projects.selfCreate.saveFailed': 'Failed to save the project creation setting',
   'adm.projects.selfCreate.loadFailed': 'Failed to load the project creation setting',

@@ -20,7 +20,18 @@ type User struct {
 	ExternalID         *string
 	ProviderSlug       *string
 	SSOManagedGroups   bool
+	// Kind is UserKindHuman or UserKindService. A service user is the account
+	// behind one project token: no password, no login, one project.
+	Kind string
+	// ProjectID is the service user's project (nil for humans).
+	ProjectID *string
 }
+
+// User kinds.
+const (
+	UserKindHuman   = "human"
+	UserKindService = "service"
+)
 
 type Group struct {
 	ID          string
@@ -57,6 +68,15 @@ type Token struct {
 	LastUsedAt *time.Time
 	CreatedAt  time.Time
 	RevokedAt  *time.Time
+
+	// Project tokens (service accounts): the project, the user who minted the
+	// token and its role (viewer or developer). All nil for personal tokens.
+	ProjectID   *string
+	CreatedBy   *string
+	ProjectRole *string
+	// ProjectName and CreatedByName are read-only: filled by reads.
+	ProjectName   string
+	CreatedByName string
 }
 
 type PermissionTarget struct {
@@ -76,3 +96,6 @@ type PermissionAssignment struct {
 	PrincipalID        string
 	CreatedAt          time.Time
 }
+
+// IsService reports whether the user is a project-token service account.
+func (u *User) IsService() bool { return u.Kind == UserKindService }

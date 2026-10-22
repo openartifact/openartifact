@@ -15,7 +15,7 @@ import (
 )
 
 // AuthPurgeWorker periodically deletes expired sessions, long-expired or
-// revoked API tokens and finished webhook deliveries so those tables do not
+// revoked API tokens (and the service accounts of project tokens) and finished webhook deliveries so those tables do not
 // grow without bound.
 type AuthPurgeWorker struct {
 	db       database.Database
@@ -105,6 +105,17 @@ func (w *AuthPurgeWorker) purgeSafely() {
 		w.log.Errorw("failed to purge expired tokens", "error", err)
 	} else if n, _ := res.RowsAffected(); n > 0 {
 		w.log.Infow("purged expired tokens", "count", n)
+	}
+
+	// Service accounts whose tokens are all gone (revoked or expired, then purged above).
+	res, err = sqlDB.ExecContext(ctx, `
+		DELETE FROM auth_users u
+		WHERE u.kind = 'service'
+		  AND NOT EXISTS (SELECT 1 FROM auth_tokens t WHERE t.user_id = u.id)`)
+	if err != nil {
+		w.log.Errorw("failed to purge project token service accounts", "error", err)
+	} else if n, _ := res.RowsAffected(); n > 0 {
+		w.log.Infow("purged project token service accounts", "count", n)
 	}
 
 	w.purgeWebhookDeliveries(ctx, sqlDB)

@@ -96,6 +96,8 @@ Schema:
 
 Role mapping of existing members: `admin` -> `maintainer`, `member` -> the project's old `member_role` (`read` -> `viewer`, `write` -> `developer`, `admin` -> `maintainer`). `owner` is unchanged. Where this raises access (a plain member whose old `member_role` was `admin` becomes `maintainer`, which can also delete) it is safe, because organizations could only be managed by global admins, so memberships were created by admins. `member_role` is removed from the API.
 
+Project tokens (migration `026`): `auth_users` gains `kind` and `project_id`, `auth_tokens` gains `project_id`, `created_by` and `project_role`. Project tokens are not part of backups; reissue them after a restore.
+
 Defaults for existing projects: hosted repositories only, all formats, repository name prefix `<slug>-`, at most 50 repositories, token TTL 365 days. These policies are stored now and enforced in later releases.
 
 Breaking changes:

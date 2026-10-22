@@ -509,6 +509,13 @@ type Database interface {
 	ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error)
 	// CountRepositoriesByProject returns the live repository count per project ID.
 	CountRepositoriesByProject(ctx context.Context, projectIDs []string) (map[string]int, error)
+	// CreateProjectToken mints a project token: service user, membership and
+	// deploy token in one transaction (ErrProjectTokenLimit, ErrProjectTokenName).
+	CreateProjectToken(ctx context.Context, spec ProjectTokenSpec) (*models.Token, error)
+	// ListProjectTokens returns the project's active tokens; createdBy limits them to one creator.
+	ListProjectTokens(ctx context.Context, projectID string, createdBy *string) ([]*models.Token, error)
+	// RevokeProjectToken revokes a token of the project and disables its service user; false when there is none.
+	RevokeProjectToken(ctx context.Context, projectID, tokenID string) (bool, error)
 	ListProjectGroups(ctx context.Context, projectID string) ([]*models.ProjectGroup, error)
 	GetProjectGroup(ctx context.Context, projectID, groupID string) (*models.ProjectGroup, error)
 	// SetProjectGroup attaches a group with role, or changes an existing role,

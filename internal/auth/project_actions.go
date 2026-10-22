@@ -23,6 +23,10 @@ const (
 	// below the maintainer role (maintainer). Granting or changing maintainer
 	// and owner roles takes an owner; the handler enforces that per target.
 	ProjectActionMembersManage ProjectAction = "members.manage"
+	// ProjectActionTokens: list, mint and revoke project tokens (viewer). A
+	// viewer only sees and revokes the tokens it minted itself; maintainers
+	// see and revoke all of them (the handler enforces that per token).
+	ProjectActionTokens ProjectAction = "tokens.create"
 	// ProjectActionUpdate: edit display name and description (owner).
 	ProjectActionUpdate ProjectAction = "project.update"
 	// ProjectActionDelete: delete the project (owner).
@@ -44,6 +48,7 @@ const (
 var projectActionMinRole = map[ProjectAction]string{
 	ProjectActionRead:          models.ProjectRoleViewer,
 	ProjectActionMembersManage: models.ProjectRoleMaintainer,
+	ProjectActionTokens:        models.ProjectRoleViewer,
 	ProjectActionUpdate:        models.ProjectRoleOwner,
 	ProjectActionDelete:        models.ProjectRoleOwner,
 	ProjectActionRepoCreate:    models.ProjectRoleMaintainer,

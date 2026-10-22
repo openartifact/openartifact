@@ -47,6 +47,10 @@ type Principal struct {
 	// when non-empty the token may only use those targets of its owner.
 	TokenKind   string
 	TokenScopes []string
+	// ServiceProjectID is set for a project token's service account: the only
+	// project the principal belongs to. Such a principal ignores permission
+	// targets and holds only the role of its own project.
+	ServiceProjectID string
 }
 
 // IsToken reports whether the request was authenticated with an API token.
@@ -155,7 +159,7 @@ func (e *Evaluator) Evaluate(ctx context.Context, principal Principal, repoName,
 // the scoped targets: its effective rights are the intersection of the
 // owner's rights and the scopes.
 func (e *Evaluator) principalTargets(ctx context.Context, principal Principal) ([]*models.PermissionTarget, error) {
-	if principal.UserID == nil {
+	if principal.UserID == nil || principal.ServiceProjectID != "" {
 		return nil, nil
 	}
 

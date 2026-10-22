@@ -208,7 +208,7 @@ func (q *Queries) GetProjectGroup(ctx context.Context, arg GetProjectGroupParams
 const getProjectMember = `-- name: GetProjectMember :one
 SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
 FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
-WHERE pm.project_id = $1 AND pm.user_id = $2
+WHERE pm.project_id = $1 AND pm.user_id = $2 AND u.kind = 'human'
 `
 
 type GetProjectMemberParams struct {
@@ -364,7 +364,7 @@ func (q *Queries) ListProjectGroups(ctx context.Context, projectID string) ([]Li
 const listProjectMembers = `-- name: ListProjectMembers :many
 SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
 FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
-WHERE pm.project_id = $1 ORDER BY pm.created_at ASC, u.username
+WHERE pm.project_id = $1 AND u.kind = 'human' ORDER BY pm.created_at ASC, u.username
 `
 
 type ListProjectMembersRow struct {

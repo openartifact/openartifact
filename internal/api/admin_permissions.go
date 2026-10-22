@@ -318,7 +318,7 @@ func (h *AdminPermissionsHandler) principalAndTargetExist(w http.ResponseWriter,
 			return false
 		}
 
-		if user == nil {
+		if user == nil || user.IsService() {
 			writeError(w, http.StatusNotFound, "not_found", "user not found")
 			return false
 		}

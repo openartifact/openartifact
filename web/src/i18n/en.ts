@@ -312,6 +312,8 @@ const base = {
   'admin.tokens.column.label': 'Label',
   'admin.tokens.column.principal': 'Principal',
   'admin.tokens.column.created': 'Created',
+  'admin.tokens.column.project': 'Project',
+  'admin.tokens.column.createdBy': 'Created by',
   'admin.tokens.column.lastUsed': 'Last used',
   'admin.tokens.reveal': 'This token will only be shown once. Copy it now.',
 

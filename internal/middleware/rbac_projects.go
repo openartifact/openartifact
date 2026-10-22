@@ -86,6 +86,8 @@ func projectCollectionAction(method, collection string) (auth.ProjectAction, boo
 		return auth.ProjectActionMembersManage, true
 	case method == http.MethodPost && collection == "repositories":
 		return auth.ProjectActionRepoCreate, true
+	case collection == "tokens" && (method == http.MethodGet || method == http.MethodPost):
+		return auth.ProjectActionTokens, true
 	}
 
 	return "", false
@@ -102,6 +104,8 @@ func projectMemberAction(method, collection, id string) (auth.ProjectAction, boo
 		return auth.ProjectActionMembersManage, true
 	case collection == "groups" && (method == http.MethodPut || method == http.MethodDelete):
 		return auth.ProjectActionMembersManage, true
+	case collection == "tokens" && method == http.MethodDelete:
+		return auth.ProjectActionTokens, true
 	}
 
 	return "", false

@@ -141,7 +141,7 @@ func (h *AdminUsersHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if user == nil {
+	if user == nil || user.IsService() {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
@@ -177,7 +177,7 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if user == nil {
+	if user == nil || user.IsService() {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
@@ -297,7 +297,7 @@ func (h *AdminUsersHandler) handleDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	if user == nil {
+	if user == nil || user.IsService() {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}

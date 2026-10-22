@@ -112,29 +112,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
     </AdminDialog>
 
-    <!-- Token Reveal Dialog -->
-    <AdminDialog :open="revealed !== null" :title="t('settings.tokens.create')" @close="revealed = null">
-      <div class="space-y-4">
-        <p class="text-sm text-warning">{{ t('admin.tokens.reveal') }}</p>
-        <div class="bg-surface-hover rounded-lg p-3 font-mono text-xs break-all text-foreground flex items-start gap-3">
-          <span class="flex-1">{{ revealed?.token }}</span>
-          <button
-            type="button"
-            class="flex-shrink-0 p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover/60 transition-colors"
-            :aria-label="t('common.copy')"
-            :title="t('common.copy')"
-            @click="copyToken"
-          >
-            <ClipboardDocumentIcon class="w-4 h-4" aria-hidden="true" />
-          </button>
-        </div>
-      </div>
-      <template #footer>
-        <AppButton variant="primary" @click="revealed = null">
-          {{ t('common.close') }}
-        </AppButton>
-      </template>
-    </AdminDialog>
+    <TokenSecretDialog
+      :title="t('settings.tokens.create')"
+      :token="revealed?.token ?? null"
+      @close="revealed = null"
+    />
   </div>
 </template>
 
@@ -145,13 +127,10 @@ import { ref, onMounted } from 'vue'
 import AdminDialog from '../../components/AdminDialog.vue'
 import { listMyTokens, createMyToken, revokeMyToken, type ApiToken, type CreatedToken } from '../../api/tokens'
 import EmptyState from '../../components/EmptyState.vue'
+import TokenSecretDialog from '../../components/TokenSecretDialog.vue'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
-import {
-  PlusIcon,
-  TrashIcon,
-  ClipboardDocumentIcon,
-} from '@heroicons/vue/24/outline'
+import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 const tokens = ref<ApiToken[]>([])
 const loading = ref(false)
@@ -205,16 +184,6 @@ async function revoke(id: string | undefined): Promise<void> {
     await load()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('settings.tokens.revokeFailed'))
-  }
-}
-
-async function copyToken(): Promise<void> {
-  if (!revealed.value) return
-  try {
-    await navigator.clipboard.writeText(revealed.value.token ?? '')
-    toasts.success(t('settings.tokens.copied'))
-  } catch {
-    toasts.error(t('settings.tokens.copyFailed'))
   }
 }
 

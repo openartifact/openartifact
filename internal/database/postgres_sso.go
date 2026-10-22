@@ -297,7 +297,7 @@ func (p *PostgresDB) GetUserByExternalID(ctx context.Context, externalID, provid
 	return u, nil
 }
 
-func (p *PostgresDB) GetUserByEmail(ctx context.Context, email string) (*models.User, error) { //nolint:dupl // identical user scan, different WHERE
+func (p *PostgresDB) GetUserByEmail(ctx context.Context, email string) (*models.User, error) {
 	u := &models.User{}
 
 	var (

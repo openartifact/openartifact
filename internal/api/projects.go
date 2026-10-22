@@ -64,6 +64,9 @@ func (h *ProjectsHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/api/v1/projects/{project}/groups", h.handleListGroups)
 	r.Put("/api/v1/projects/{project}/groups/{group}", h.handleSetGroup)
 	r.Delete("/api/v1/projects/{project}/groups/{group}", h.handleRemoveGroup)
+	r.Get("/api/v1/projects/{project}/tokens", h.handleListTokens)
+	r.Post("/api/v1/projects/{project}/tokens", h.handleCreateToken)
+	r.Delete("/api/v1/projects/{project}/tokens/{token_id}", h.handleRevokeToken)
 	r.Get("/api/v1/admin/projects/settings", h.handleGetSettings)
 	r.Put("/api/v1/admin/projects/settings", h.handlePutSettings)
 }
@@ -366,7 +369,7 @@ func (h *ProjectsHandler) resolveOwner(w http.ResponseWriter, r *http.Request, p
 		return nil, false
 	}
 
-	if user == nil {
+	if user == nil || user.IsService() {
 		writeError(w, http.StatusNotFound, "not_found", "owner user not found")
 		return nil, false
 	}

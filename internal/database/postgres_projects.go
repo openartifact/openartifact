@@ -76,6 +76,13 @@ func (p *PostgresDB) ChangeProjectMember(ctx context.Context, projectID, userID,
 		return err
 	}
 
+	// Project tokens die with their creator's membership, in the same transaction.
+	if current != "" && newRole == "" {
+		if err := revokeProjectTokensOf(ctx, tx, userID, projectID); err != nil {
+			return err
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("commit project member change: %w", err)
 	}

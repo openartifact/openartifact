@@ -127,6 +127,12 @@ type AuthToken struct {
 	LastUsedAt *time.Time      `db:"last_used_at" json:"last_used_at"`
 	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
 	RevokedAt  *time.Time      `db:"revoked_at" json:"revoked_at"`
+	// Set for project tokens: the project the token belongs to.
+	ProjectID *string `db:"project_id" json:"project_id"`
+	// Project tokens: the user who minted the token; the token dies with that user's membership.
+	CreatedBy *string `db:"created_by" json:"created_by"`
+	// Project tokens: viewer or developer.
+	ProjectRole *string `db:"project_role" json:"project_role"`
 }
 
 // User accounts for authentication and authorization
@@ -144,6 +150,10 @@ type AuthUser struct {
 	ExternalID         *string    `db:"external_id" json:"external_id"`
 	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
 	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
+	// human: a person; service: the account behind one project token.
+	Kind string `db:"kind" json:"kind"`
+	// The only project a service user belongs to.
+	ProjectID *string `db:"project_id" json:"project_id"`
 }
 
 // Many-to-many membership between users and groups

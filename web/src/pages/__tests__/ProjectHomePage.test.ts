@@ -91,7 +91,7 @@ describe('ProjectHomePage', () => {
 
   it('lists every section for a viewer, with the tab kept in ?tab=', async () => {
     const { wrapper } = await mountPage({ role: 'viewer' })
-    expect(tabLabels(wrapper)).toEqual(['Overview', 'Repositories', 'Members', 'Settings'])
+    expect(tabLabels(wrapper)).toEqual(['Overview', 'Repositories', 'Members', 'Tokens', 'Settings'])
   })
 
   it('shows the repositories tab as a paginated table linking to /repos/:name', async () => {

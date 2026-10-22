@@ -16,6 +16,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"sync/atomic"
 	"time"
@@ -777,6 +778,10 @@ func (e *Engine) exportGlobalTables(ctx context.Context, tw *tar.Writer, manifes
 	}
 
 	tokens, _, err := e.db.ListAllTokens(ctx, 1, bulkListLimit)
+	// Project tokens belong to service accounts that are not part of the
+	// archive (users are exported without them); they are reissued after a restore.
+	tokens = slices.DeleteFunc(tokens, func(t *models.Token) bool { return t.ProjectID != nil })
+
 	if err := writeListedTable(e, tw, manifest, "tokens", tokens, err); err != nil {
 		return err
 	}

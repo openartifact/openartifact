@@ -633,6 +633,24 @@
               "user_id": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "project": {
+                "type": "string",
+                "nullable": true,
+                "description": "Project of a project token"
+              },
+              "project_role": {
+                "type": "string",
+                "enum": [
+                  "viewer",
+                  "developer"
+                ],
+                "nullable": true
+              },
+              "created_by": {
+                "type": "string",
+                "nullable": true,
+                "description": "Username that minted a project token"
               }
             }
           }
@@ -1055,6 +1073,89 @@
             "is_system": {
               "type": "boolean",
               "description": "The built-in system project: it grants nothing and cannot be deleted."
+            }
+          }
+        },
+        "ProjectToken": {
+          "type": "object",
+          "properties": {
+            "id": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "name": {
+              "type": "string"
+            },
+            "project": {
+              "type": "string"
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "viewer",
+                "developer"
+              ]
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "last_used_at": {
+              "type": "string",
+              "format": "date-time",
+              "nullable": true
+            },
+            "created_at": {
+              "type": "string",
+              "format": "date-time"
+            },
+            "created_by": {
+              "type": "string",
+              "format": "uuid"
+            },
+            "created_by_username": {
+              "type": "string"
+            }
+          }
+        },
+        "ProjectTokenCreateResponse": {
+          "allOf": [
+            {
+              "$ref": "#/components/schemas/ProjectToken"
+            },
+            {
+              "type": "object",
+              "properties": {
+                "token": {
+                  "type": "string",
+                  "description": "Clear-text token, shown once"
+                }
+              }
+            }
+          ]
+        },
+        "ProjectTokenCreateRequest": {
+          "type": "object",
+          "required": [
+            "name",
+            "role"
+          ],
+          "properties": {
+            "name": {
+              "type": "string",
+              "maxLength": 100
+            },
+            "role": {
+              "type": "string",
+              "enum": [
+                "viewer",
+                "developer"
+              ]
+            },
+            "expires_at": {
+              "type": "string",
+              "format": "date-time"
             }
           }
         },
@@ -7885,6 +7986,138 @@
           },
           "409": {
             "description": "Would remove or demote the recorded or last owner"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/tokens": {
+      "get": {
+        "summary": "List project tokens",
+        "description": "List the active tokens of a project. Maintainers, owners and global admins see all tokens; other members only the ones they minted. A non-member gets 404.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Project tokens",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "tokens": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ProjectToken"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      },
+      "post": {
+        "summary": "Create project token",
+        "description": "Mint a deploy token for CI. It belongs to a service account of the project: it can only use the repositories of this project (viewer: read, developer: read and write), never /api/v1/**, and is revoked when its creator leaves the project, is disabled or deleted. Requires a session (API tokens cannot mint). The role may not exceed the caller's own role. expires_at is required when the project limits token lifetime (token_max_ttl_days) and may not exceed it. At most 100 active tokens per project; names are unique among them. The secret is returned once.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/ProjectTokenCreateRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Token created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectTokenCreateResponse"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid name, role or expiry"
+          },
+          "403": {
+            "description": "Not a session, or the role exceeds the caller's own role"
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          },
+          "409": {
+            "description": "Name already in use, or the project has 100 active tokens"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/tokens/{token_id}": {
+      "delete": {
+        "summary": "Revoke project token",
+        "description": "Revoke a project token; it stops working immediately. Maintainers, owners and global admins may revoke any token of the project, other members only their own (403 otherwise).",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "token_id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Token revoked"
+          },
+          "403": {
+            "description": "Not allowed to revoke this token"
+          },
+          "404": {
+            "description": "Project or token not found"
           }
         }
       }

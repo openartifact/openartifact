@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -151,7 +152,10 @@ func TestRBACProjectRouteMatrix(t *testing.T) {
 		{http.MethodDelete, "/api/v1/projects/acme/groups/g1", members},
 		// Unknown shapes are global manage: only admins pass, a plain 403
 		// even for owners (no project existence is leaked either).
-		{http.MethodGet, "/api/v1/projects/acme/tokens", expect{deny, deny, deny, deny, deny, ok}},
+		{http.MethodGet, "/api/v1/projects/acme/tokens", read},
+		{http.MethodPost, "/api/v1/projects/acme/tokens", read},
+		{http.MethodDelete, "/api/v1/projects/acme/tokens/t1", read},
+		{http.MethodPut, "/api/v1/projects/acme/tokens", expect{deny, deny, deny, deny, deny, ok}},
 		{http.MethodPut, "/api/v1/projects/acme", expect{deny, deny, deny, deny, deny, ok}},
 		{http.MethodGet, "/api/v1/projects/a%2Fb", expect{deny, deny, deny, deny, deny, ok}},
 	}
@@ -312,4 +316,15 @@ func TestIsSelfServiceRequestRejectsProjectRoutes(t *testing.T) {
 			}
 		}
 	}
+}
+
+func (d *projectRBACDB) CreateProjectToken(_ context.Context, spec database.ProjectTokenSpec) (*models.Token, error) {
+	return &models.Token{
+		ID: "ptok-1", UserID: "svc-1", Name: spec.Name, Kind: auth.TokenKindDeploy, TokenHash: spec.TokenHash,
+		ProjectID: &spec.ProjectID, ProjectRole: &spec.Role,
+	}, nil
+}
+
+func ptSpec(projectID string) database.ProjectTokenSpec {
+	return database.ProjectTokenSpec{ProjectID: projectID, Name: "ci", Role: models.ProjectRoleDeveloper, CreatedBy: "user-1"}
 }

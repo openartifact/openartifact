@@ -497,9 +497,22 @@ SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, cr
 FROM auth_tokens WHERE token_hash = $1
 `
 
-func (q *Queries) GetTokenByHash(ctx context.Context, tokenHash string) (AuthToken, error) {
+type GetTokenByHashRow struct {
+	ID         string          `db:"id" json:"id"`
+	UserID     string          `db:"user_id" json:"user_id"`
+	Name       string          `db:"name" json:"name"`
+	Kind       string          `db:"kind" json:"kind"`
+	TokenHash  string          `db:"token_hash" json:"token_hash"`
+	Scopes     json.RawMessage `db:"scopes" json:"scopes"`
+	ExpiresAt  *time.Time      `db:"expires_at" json:"expires_at"`
+	LastUsedAt *time.Time      `db:"last_used_at" json:"last_used_at"`
+	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
+	RevokedAt  *time.Time      `db:"revoked_at" json:"revoked_at"`
+}
+
+func (q *Queries) GetTokenByHash(ctx context.Context, tokenHash string) (GetTokenByHashRow, error) {
 	row := q.db.QueryRow(ctx, getTokenByHash, tokenHash)
-	var i AuthToken
+	var i GetTokenByHashRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -520,9 +533,22 @@ SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, cr
 FROM auth_tokens WHERE id = $1
 `
 
-func (q *Queries) GetTokenByID(ctx context.Context, id string) (AuthToken, error) {
+type GetTokenByIDRow struct {
+	ID         string          `db:"id" json:"id"`
+	UserID     string          `db:"user_id" json:"user_id"`
+	Name       string          `db:"name" json:"name"`
+	Kind       string          `db:"kind" json:"kind"`
+	TokenHash  string          `db:"token_hash" json:"token_hash"`
+	Scopes     json.RawMessage `db:"scopes" json:"scopes"`
+	ExpiresAt  *time.Time      `db:"expires_at" json:"expires_at"`
+	LastUsedAt *time.Time      `db:"last_used_at" json:"last_used_at"`
+	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
+	RevokedAt  *time.Time      `db:"revoked_at" json:"revoked_at"`
+}
+
+func (q *Queries) GetTokenByID(ctx context.Context, id string) (GetTokenByIDRow, error) {
 	row := q.db.QueryRow(ctx, getTokenByID, id)
-	var i AuthToken
+	var i GetTokenByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.UserID,
@@ -543,9 +569,25 @@ SELECT id, username, email, password_hash, full_name, disabled, must_change_pass
 FROM auth_users WHERE email = $1
 `
 
-func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (AuthUser, error) {
+type GetUserByEmailRow struct {
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updated_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
+}
+
+func (q *Queries) GetUserByEmail(ctx context.Context, email *string) (GetUserByEmailRow, error) {
 	row := q.db.QueryRow(ctx, getUserByEmail, email)
-	var i AuthUser
+	var i GetUserByEmailRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -574,9 +616,25 @@ type GetUserByExternalIDParams struct {
 	ProviderSlug *string `db:"provider_slug" json:"provider_slug"`
 }
 
-func (q *Queries) GetUserByExternalID(ctx context.Context, arg GetUserByExternalIDParams) (AuthUser, error) {
+type GetUserByExternalIDRow struct {
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updated_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
+}
+
+func (q *Queries) GetUserByExternalID(ctx context.Context, arg GetUserByExternalIDParams) (GetUserByExternalIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByExternalID, arg.ExternalID, arg.ProviderSlug)
-	var i AuthUser
+	var i GetUserByExternalIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -600,9 +658,25 @@ SELECT id, username, email, password_hash, full_name, disabled, must_change_pass
 FROM auth_users WHERE id = $1
 `
 
-func (q *Queries) GetUserByID(ctx context.Context, id string) (AuthUser, error) {
+type GetUserByIDRow struct {
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updated_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
+}
+
+func (q *Queries) GetUserByID(ctx context.Context, id string) (GetUserByIDRow, error) {
 	row := q.db.QueryRow(ctx, getUserByID, id)
-	var i AuthUser
+	var i GetUserByIDRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -626,9 +700,25 @@ SELECT id, username, email, password_hash, full_name, disabled, must_change_pass
 FROM auth_users WHERE username = $1
 `
 
-func (q *Queries) GetUserByUsername(ctx context.Context, username string) (AuthUser, error) {
+type GetUserByUsernameRow struct {
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updated_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
+}
+
+func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUserByUsernameRow, error) {
 	row := q.db.QueryRow(ctx, getUserByUsername, username)
-	var i AuthUser
+	var i GetUserByUsernameRow
 	err := row.Scan(
 		&i.ID,
 		&i.Username,
@@ -657,15 +747,28 @@ type ListAllActiveTokensParams struct {
 	Offset int32 `db:"offset" json:"offset"`
 }
 
-func (q *Queries) ListAllActiveTokens(ctx context.Context, arg ListAllActiveTokensParams) ([]AuthToken, error) {
+type ListAllActiveTokensRow struct {
+	ID         string          `db:"id" json:"id"`
+	UserID     string          `db:"user_id" json:"user_id"`
+	Name       string          `db:"name" json:"name"`
+	Kind       string          `db:"kind" json:"kind"`
+	TokenHash  string          `db:"token_hash" json:"token_hash"`
+	Scopes     json.RawMessage `db:"scopes" json:"scopes"`
+	ExpiresAt  *time.Time      `db:"expires_at" json:"expires_at"`
+	LastUsedAt *time.Time      `db:"last_used_at" json:"last_used_at"`
+	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
+	RevokedAt  *time.Time      `db:"revoked_at" json:"revoked_at"`
+}
+
+func (q *Queries) ListAllActiveTokens(ctx context.Context, arg ListAllActiveTokensParams) ([]ListAllActiveTokensRow, error) {
 	rows, err := q.db.Query(ctx, listAllActiveTokens, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuthToken{}
+	items := []ListAllActiveTokensRow{}
 	for rows.Next() {
-		var i AuthToken
+		var i ListAllActiveTokensRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -816,15 +919,28 @@ SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, cr
 FROM auth_tokens WHERE user_id = $1 ORDER BY created_at DESC
 `
 
-func (q *Queries) ListTokensByUser(ctx context.Context, userID string) ([]AuthToken, error) {
+type ListTokensByUserRow struct {
+	ID         string          `db:"id" json:"id"`
+	UserID     string          `db:"user_id" json:"user_id"`
+	Name       string          `db:"name" json:"name"`
+	Kind       string          `db:"kind" json:"kind"`
+	TokenHash  string          `db:"token_hash" json:"token_hash"`
+	Scopes     json.RawMessage `db:"scopes" json:"scopes"`
+	ExpiresAt  *time.Time      `db:"expires_at" json:"expires_at"`
+	LastUsedAt *time.Time      `db:"last_used_at" json:"last_used_at"`
+	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
+	RevokedAt  *time.Time      `db:"revoked_at" json:"revoked_at"`
+}
+
+func (q *Queries) ListTokensByUser(ctx context.Context, userID string) ([]ListTokensByUserRow, error) {
 	rows, err := q.db.Query(ctx, listTokensByUser, userID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuthToken{}
+	items := []ListTokensByUserRow{}
 	for rows.Next() {
-		var i AuthToken
+		var i ListTokensByUserRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.UserID,
@@ -859,15 +975,31 @@ type ListUsersParams struct {
 	Offset int32 `db:"offset" json:"offset"`
 }
 
-func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]AuthUser, error) {
+type ListUsersRow struct {
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updated_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
+}
+
+func (q *Queries) ListUsers(ctx context.Context, arg ListUsersParams) ([]ListUsersRow, error) {
 	rows, err := q.db.Query(ctx, listUsers, arg.Limit, arg.Offset)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuthUser{}
+	items := []ListUsersRow{}
 	for rows.Next() {
-		var i AuthUser
+		var i ListUsersRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Username,
@@ -901,15 +1033,31 @@ WHERE ug.group_id = $1
 ORDER BY u.username ASC
 `
 
-func (q *Queries) ListUsersByGroup(ctx context.Context, groupID string) ([]AuthUser, error) {
+type ListUsersByGroupRow struct {
+	ID                 string     `db:"id" json:"id"`
+	Username           string     `db:"username" json:"username"`
+	Email              *string    `db:"email" json:"email"`
+	PasswordHash       *string    `db:"password_hash" json:"password_hash"`
+	FullName           *string    `db:"full_name" json:"full_name"`
+	Disabled           bool       `db:"disabled" json:"disabled"`
+	MustChangePassword bool       `db:"must_change_password" json:"must_change_password"`
+	LastLoginAt        *time.Time `db:"last_login_at" json:"last_login_at"`
+	CreatedAt          time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt          time.Time  `db:"updated_at" json:"updated_at"`
+	ExternalID         *string    `db:"external_id" json:"external_id"`
+	ProviderSlug       *string    `db:"provider_slug" json:"provider_slug"`
+	SsoManagedGroups   bool       `db:"sso_managed_groups" json:"sso_managed_groups"`
+}
+
+func (q *Queries) ListUsersByGroup(ctx context.Context, groupID string) ([]ListUsersByGroupRow, error) {
 	rows, err := q.db.Query(ctx, listUsersByGroup, groupID)
 	if err != nil {
 		return nil, err
 	}
 	defer rows.Close()
-	items := []AuthUser{}
+	items := []ListUsersByGroupRow{}
 	for rows.Next() {
-		var i AuthUser
+		var i ListUsersByGroupRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Username,

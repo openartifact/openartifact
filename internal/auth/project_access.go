@@ -51,6 +51,11 @@ func (e *Evaluator) projectRoles(ctx context.Context, principal Principal) (map[
 			continue
 		}
 
+		// A service account belongs to one project only.
+		if principal.ServiceProjectID != "" && g.ProjectID != principal.ServiceProjectID {
+			continue
+		}
+
 		roles[g.ProjectID] = maxProjectRole(roles[g.ProjectID], g.Role)
 	}
 

@@ -39,6 +39,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <template #cell-user_id="{ value }">
             <span class="text-sm text-muted font-mono">{{ ownerName(value as string | undefined) }}</span>
           </template>
+          <template #cell-project="{ value }">
+            <span class="text-sm font-mono text-muted">{{ value || '—' }}</span>
+          </template>
+          <template #cell-created_by="{ value }">
+            <span class="text-sm font-mono text-muted">{{ value || '—' }}</span>
+          </template>
           <template #cell-created_at="{ value }">
             <span class="text-xs text-muted font-mono">{{ formatDate(value as string) }}</span>
           </template>
@@ -108,6 +114,8 @@ type ApiToken = AdminToken & { id: string }
 const columns: Column[] = [
   { key: 'name', label: t('admin.tokens.column.label') },
   { key: 'user_id', label: t('admin.tokens.column.owner') },
+  { key: 'project', label: t('admin.tokens.column.project') },
+  { key: 'created_by', label: t('admin.tokens.column.createdBy') },
   { key: 'created_at', label: t('admin.tokens.column.created') },
   { key: 'last_used_at', label: t('admin.tokens.column.lastUsed') },
   { key: 'expires_at', label: t('admin.tokens.column.expires') },

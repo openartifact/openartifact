@@ -278,6 +278,15 @@ export type TokenCreateResponse = Token & {
 
 export type AdminToken = Token & {
     user_id?: string;
+    /**
+     * Project of a project token
+     */
+    project?: string | null;
+    project_role?: 'viewer' | 'developer';
+    /**
+     * Username that minted a project token
+     */
+    created_by?: string | null;
 };
 
 export type Backup = {
@@ -451,6 +460,31 @@ export type Project = {
      * The built-in system project: it grants nothing and cannot be deleted.
      */
     is_system?: boolean;
+};
+
+export type ProjectToken = {
+    id?: string;
+    name?: string;
+    project?: string;
+    role?: 'viewer' | 'developer';
+    expires_at?: string | null;
+    last_used_at?: string | null;
+    created_at?: string;
+    created_by?: string;
+    created_by_username?: string;
+};
+
+export type ProjectTokenCreateResponse = ProjectToken & {
+    /**
+     * Clear-text token, shown once
+     */
+    token?: string;
+};
+
+export type ProjectTokenCreateRequest = {
+    name: string;
+    role: 'viewer' | 'developer';
+    expires_at?: string;
 };
 
 export type ProjectMember = {
@@ -4291,6 +4325,100 @@ export type PatchApiV1ProjectsByProjectMembersByUserIdResponses = {
 };
 
 export type PatchApiV1ProjectsByProjectMembersByUserIdResponse = PatchApiV1ProjectsByProjectMembersByUserIdResponses[keyof PatchApiV1ProjectsByProjectMembersByUserIdResponses];
+
+export type GetApiV1ProjectsByProjectTokensData = {
+    body?: never;
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/tokens';
+};
+
+export type GetApiV1ProjectsByProjectTokensErrors = {
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type GetApiV1ProjectsByProjectTokensResponses = {
+    /**
+     * Project tokens
+     */
+    200: {
+        tokens?: Array<ProjectToken>;
+    };
+};
+
+export type GetApiV1ProjectsByProjectTokensResponse = GetApiV1ProjectsByProjectTokensResponses[keyof GetApiV1ProjectsByProjectTokensResponses];
+
+export type PostApiV1ProjectsByProjectTokensData = {
+    body: ProjectTokenCreateRequest;
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/tokens';
+};
+
+export type PostApiV1ProjectsByProjectTokensErrors = {
+    /**
+     * Invalid name, role or expiry
+     */
+    400: unknown;
+    /**
+     * Not a session, or the role exceeds the caller's own role
+     */
+    403: unknown;
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+    /**
+     * Name already in use, or the project has 100 active tokens
+     */
+    409: unknown;
+};
+
+export type PostApiV1ProjectsByProjectTokensResponses = {
+    /**
+     * Token created
+     */
+    201: ProjectTokenCreateResponse;
+};
+
+export type PostApiV1ProjectsByProjectTokensResponse = PostApiV1ProjectsByProjectTokensResponses[keyof PostApiV1ProjectsByProjectTokensResponses];
+
+export type DeleteApiV1ProjectsByProjectTokensByTokenIdData = {
+    body?: never;
+    path: {
+        project: string;
+        token_id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/tokens/{token_id}';
+};
+
+export type DeleteApiV1ProjectsByProjectTokensByTokenIdErrors = {
+    /**
+     * Not allowed to revoke this token
+     */
+    403: unknown;
+    /**
+     * Project or token not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1ProjectsByProjectTokensByTokenIdResponses = {
+    /**
+     * Token revoked
+     */
+    204: void;
+};
+
+export type DeleteApiV1ProjectsByProjectTokensByTokenIdResponse = DeleteApiV1ProjectsByProjectTokensByTokenIdResponses[keyof DeleteApiV1ProjectsByProjectTokensByTokenIdResponses];
 
 export type GetApiV1ProjectsByProjectGroupsData = {
     body?: never;

@@ -37,28 +37,33 @@ func lookupDigest(body string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-func CreateToken(ctx context.Context, db database.Database, kind, name, userID string, scopes []string, expiresAt *time.Time) (string, *models.Token, error) {
+// NewTokenSecret generates a token of the given kind. It returns the secret to
+// hand to the user once and the lookup digest to store.
+func NewTokenSecret(kind string) (string, string, error) {
 	if kind != TokenKindAccess && kind != TokenKindDeploy {
-		return "", nil, fmt.Errorf("invalid token kind: %s", kind) //nolint:err113 // dynamic error with runtime context
+		return "", "", fmt.Errorf("invalid token kind: %s", kind) //nolint:err113 // dynamic error with runtime context
 	}
 
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return "", nil, fmt.Errorf("generate token bytes: %w", err)
+		return "", "", fmt.Errorf("generate token bytes: %w", err)
 	}
 
 	body := hex.EncodeToString(raw)
 
-	var prefix string
+	prefix := TokenPrefixDeploy
 	if kind == TokenKindAccess {
 		prefix = TokenPrefixAccess
-	} else {
-		prefix = TokenPrefixDeploy
 	}
 
-	tokenString := prefix + body
+	return prefix + body, lookupDigest(body), nil
+}
 
-	tokenHash := lookupDigest(body)
+func CreateToken(ctx context.Context, db database.Database, kind, name, userID string, scopes []string, expiresAt *time.Time) (string, *models.Token, error) {
+	tokenString, tokenHash, err := NewTokenSecret(kind)
+	if err != nil {
+		return "", nil, err
+	}
 
 	if scopes == nil {
 		scopes = []string{}
@@ -77,6 +82,24 @@ func CreateToken(ctx context.Context, db database.Database, kind, name, userID s
 	saved, err := db.CreateToken(ctx, token)
 	if err != nil {
 		return "", nil, fmt.Errorf("create token: %w", err)
+	}
+
+	return tokenString, saved, nil
+}
+
+// CreateProjectToken mints a deploy token for a new service account of the
+// project (see database.ProjectTokenSpec); spec.TokenHash is filled here.
+func CreateProjectToken(ctx context.Context, db database.Database, spec database.ProjectTokenSpec) (string, *models.Token, error) {
+	tokenString, tokenHash, err := NewTokenSecret(TokenKindDeploy)
+	if err != nil {
+		return "", nil, err
+	}
+
+	spec.TokenHash = tokenHash
+
+	saved, err := db.CreateProjectToken(ctx, spec)
+	if err != nil {
+		return "", nil, err //nolint:wrapcheck // sentinel errors are matched by callers
 	}
 
 	return tokenString, saved, nil

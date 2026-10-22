@@ -134,7 +134,9 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 				return
 			}
 
-			if (scope.anyAuthenticated || isDockerPing(r)) && !principal.IsAnonymous {
+			// A project token's service account is a repository credential
+			// only: it gets no /api/v1 list endpoint, not even a filtered one.
+			if ((scope.anyAuthenticated && principal.ServiceProjectID == "") || isDockerPing(r)) && !principal.IsAnonymous {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -360,6 +362,7 @@ func principalForUser(ctx context.Context, db database.Database, log *logger.Log
 		Username:           user.username,
 		GroupIDs:           groupIDs,
 		MustChangePassword: user.mustChangePassword,
+		ServiceProjectID:   user.serviceProject,
 	}
 }
 
@@ -367,6 +370,8 @@ type principalUser struct {
 	id                 string
 	username           string
 	mustChangePassword bool
+	// serviceProject is the project of a service account ("" for humans).
+	serviceProject string
 }
 
 // resolvePrincipal authenticates the request. Credential precedence: session
@@ -426,7 +431,8 @@ func sessionPrincipal(ctx context.Context, r *http.Request, db database.Database
 	}
 
 	user, err := db.GetUserByID(ctx, session.UserID)
-	if err != nil || user == nil || user.Disabled {
+	// Service accounts have no session; never accept one.
+	if err != nil || user == nil || user.Disabled || user.IsService() {
 		return nil
 	}
 
@@ -459,7 +465,19 @@ func tokenPrincipal(ctx context.Context, tokenValue, kind string, db database.Da
 		return nil
 	}
 
-	p := principalForUser(ctx, db, log, principalUser{id: user.ID, username: user.Username, mustChangePassword: user.MustChangePassword})
+	pu := principalUser{id: user.ID, username: user.Username, mustChangePassword: user.MustChangePassword}
+
+	if user.IsService() {
+		// A project token carries its project; anything else is inconsistent
+		// and gets no access.
+		if user.ProjectID == nil || token.ProjectID == nil || *user.ProjectID != *token.ProjectID || token.Kind != auth.TokenKindDeploy {
+			return nil
+		}
+
+		pu.serviceProject = *user.ProjectID
+	}
+
+	p := principalForUser(ctx, db, log, pu)
 	p.Credential = kind
 	p.TokenKind = token.Kind
 	p.TokenScopes = token.Scopes
@@ -506,7 +524,9 @@ func extractLegacyKey(r *http.Request, bearer, basicSecret string) string {
 // an interactive session: API tokens must not be able to mint further tokens
 // or change passwords, and the legacy key has no account at all.
 func isSelfServiceRequest(r *http.Request, principal *auth.Principal) bool {
-	if principal.IsAnonymous {
+	// A service account has no profile; it falls through to the evaluator and
+	// is refused on every /api/v1 route.
+	if principal.IsAnonymous || principal.ServiceProjectID != "" {
 		return false
 	}
 

@@ -912,6 +912,18 @@ func (m *BaseMockDB) SetProjectGroup(ctx context.Context, projectID, groupID, ro
 func (m *BaseMockDB) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard ProjectRoleGuard) error {
 	return errNotImpl("ChangeProjectGroup")
 }
+func (m *BaseMockDB) CreateProjectToken(ctx context.Context, spec ProjectTokenSpec) (*models.Token, error) {
+	return nil, errNotImpl("CreateProjectToken")
+}
+
+func (m *BaseMockDB) ListProjectTokens(ctx context.Context, projectID string, createdBy *string) ([]*models.Token, error) {
+	return nil, errNotImpl("ListProjectTokens")
+}
+
+func (m *BaseMockDB) RevokeProjectToken(ctx context.Context, projectID, tokenID string) (bool, error) {
+	return false, errNotImpl("RevokeProjectToken")
+}
+
 func (m *BaseMockDB) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard ProjectRoleGuard) error {
 	return errNotImpl("ChangeProjectMember")
 }

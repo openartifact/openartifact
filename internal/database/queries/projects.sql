@@ -43,12 +43,12 @@ RETURNING created_at;
 -- name: ListProjectMembers :many
 SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
 FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
-WHERE pm.project_id = $1 ORDER BY pm.created_at ASC, u.username;
+WHERE pm.project_id = $1 AND u.kind = 'human' ORDER BY pm.created_at ASC, u.username;
 
 -- name: GetProjectMember :one
 SELECT (pm.project_id::text || ':' || pm.user_id::text) AS id, pm.project_id, pm.user_id, u.username, pm.role, pm.created_at
 FROM project_members pm JOIN auth_users u ON u.id = pm.user_id
-WHERE pm.project_id = $1 AND pm.user_id = $2;
+WHERE pm.project_id = $1 AND pm.user_id = $2 AND u.kind = 'human';
 
 -- name: ListProjectGroups :many
 SELECT pg.project_id, pg.group_id, g.name AS group_name, pg.role, pg.created_by, pg.created_at

@@ -138,7 +138,8 @@ func (h *ProjectsHandler) handleAddMember(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	if user == nil {
+	// Service accounts are not people: they cannot be added by hand.
+	if user == nil || user.IsService() {
 		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}

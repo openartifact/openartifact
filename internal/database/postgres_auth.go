@@ -38,13 +38,14 @@ func (p *PostgresDB) GetUserByIDUncached(ctx context.Context, id string) (*model
 	var (
 		email, passwordHash, fullName, externalID, providerSlug sql.NullString
 		lastLoginAt                                             sql.NullTime
+		userProject                                             sql.NullString
 	)
 
 	err := p.db.QueryRowContext(ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
+		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
 		FROM auth_users WHERE id = $1`,
 		id,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups)
+	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
@@ -77,6 +78,10 @@ func (p *PostgresDB) GetUserByIDUncached(ctx context.Context, id string) (*model
 		u.ProviderSlug = &providerSlug.String
 	}
 
+	if userProject.Valid {
+		u.ProjectID = &userProject.String
+	}
+
 	return u, nil
 }
 
@@ -87,13 +92,14 @@ func (p *PostgresDB) GetUserByUsername(ctx context.Context, username string) (*m
 	var (
 		email, passwordHash, fullName, externalID, providerSlug sql.NullString
 		lastLoginAt                                             sql.NullTime
+		userProject                                             sql.NullString
 	)
 
 	err := p.db.QueryRowContext(ctx,
-		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
+		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups, kind, project_id
 		FROM auth_users WHERE username = $1`,
 		username,
-	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups)
+	).Scan(&u.ID, &u.Username, &email, &passwordHash, &fullName, &u.Disabled, &u.MustChangePassword, &lastLoginAt, &u.CreatedAt, &u.UpdatedAt, &externalID, &providerSlug, &u.SSOManagedGroups, &u.Kind, &userProject)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
@@ -126,6 +132,10 @@ func (p *PostgresDB) GetUserByUsername(ctx context.Context, username string) (*m
 		u.ProviderSlug = &providerSlug.String
 	}
 
+	if userProject.Valid {
+		u.ProjectID = &userProject.String
+	}
+
 	return u, nil
 }
 
@@ -133,13 +143,31 @@ func (p *PostgresDB) UpdateUser(ctx context.Context, user *models.User) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	_, err := p.db.ExecContext(ctx,
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	_, err = tx.ExecContext(ctx,
 		`UPDATE auth_users SET username=$2, email=$3, password_hash=$4, full_name=$5, disabled=$6, must_change_password=$7, last_login_at=$8, external_id=$9, provider_slug=$10, sso_managed_groups=$11
 		WHERE id=$1`,
 		user.ID, user.Username, user.Email, user.PasswordHash, user.FullName, user.Disabled, user.MustChangePassword, user.LastLoginAt,
 		user.ExternalID, user.ProviderSlug, user.SSOManagedGroups,
 	)
 	if err != nil {
+		return fmt.Errorf("failed to update user: %w", err)
+	}
+
+	// A disabled creator loses the project tokens it minted, in the same transaction.
+	if user.Disabled {
+		if err := revokeProjectTokensOf(ctx, tx, user.ID, ""); err != nil {
+			return err
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to update user: %w", err)
 	}
 
@@ -169,13 +197,13 @@ func (p *PostgresDB) ListUsers(ctx context.Context, page, perPage int) ([]*model
 	offset := (page - 1) * perPage
 
 	var total int
-	if err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_users`).Scan(&total); err != nil {
+	if err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_users WHERE kind = 'human'`).Scan(&total); err != nil {
 		return nil, 0, fmt.Errorf("failed to count users: %w", err)
 	}
 
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT id, username, email, password_hash, full_name, disabled, must_change_password, last_login_at, created_at, updated_at, external_id, provider_slug, sso_managed_groups
-		FROM auth_users ORDER BY created_at ASC, id LIMIT $1 OFFSET $2`,
+		FROM auth_users WHERE kind = 'human' ORDER BY created_at ASC, id LIMIT $1 OFFSET $2`,
 		perPage, offset,
 	)
 	if err != nil {
@@ -232,7 +260,7 @@ func (p *PostgresDB) ListUsers(ctx context.Context, page, perPage int) ([]*model
 
 func (p *PostgresDB) CountUsers(ctx context.Context) (int, error) {
 	var count int
-	if err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_users`).Scan(&count); err != nil {
+	if err := p.db.QueryRowContext(ctx, `SELECT COUNT(*) FROM auth_users WHERE kind = 'human'`).Scan(&count); err != nil {
 		return 0, fmt.Errorf("failed to count users: %w", err)
 	}
 
@@ -566,18 +594,7 @@ func (p *PostgresDB) CreateToken(ctx context.Context, token *models.Token) (*mod
 }
 
 func (p *PostgresDB) GetTokenByHashUncached(ctx context.Context, hash string) (*models.Token, error) {
-	t := &models.Token{}
-
-	var (
-		scopesJSON                       []byte
-		expiresAt, lastUsedAt, revokedAt sql.NullTime
-	)
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
-		FROM auth_tokens WHERE token_hash = $1`,
-		hash,
-	).Scan(&t.ID, &t.UserID, &t.Name, &t.Kind, &t.TokenHash, &scopesJSON, &expiresAt, &lastUsedAt, &t.CreatedAt, &revokedAt)
+	t, err := scanToken(p.db.QueryRowContext(ctx, `SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.token_hash = $1`, hash))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
@@ -586,60 +603,17 @@ func (p *PostgresDB) GetTokenByHashUncached(ctx context.Context, hash string) (*
 		return nil, fmt.Errorf("failed to get token by hash: %w", err)
 	}
 
-	if err := json.Unmarshal(scopesJSON, &t.Scopes); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal token scopes: %w", err)
-	}
-
-	if expiresAt.Valid {
-		t.ExpiresAt = &expiresAt.Time
-	}
-
-	if lastUsedAt.Valid {
-		t.LastUsedAt = &lastUsedAt.Time
-	}
-
-	if revokedAt.Valid {
-		t.RevokedAt = &revokedAt.Time
-	}
-
 	return t, nil
 }
 
 func (p *PostgresDB) GetTokenByID(ctx context.Context, tokenID string) (*models.Token, error) {
-	t := &models.Token{}
-
-	var (
-		scopesJSON                       []byte
-		expiresAt, lastUsedAt, revokedAt sql.NullTime
-	)
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
-		FROM auth_tokens WHERE id = $1`,
-		tokenID,
-	).Scan(&t.ID, &t.UserID, &t.Name, &t.Kind, &t.TokenHash, &scopesJSON, &expiresAt, &lastUsedAt, &t.CreatedAt, &revokedAt)
+	t, err := scanToken(p.db.QueryRowContext(ctx, `SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.id = $1`, tokenID))
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
 	}
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get token by id: %w", err)
-	}
-
-	if err := json.Unmarshal(scopesJSON, &t.Scopes); err != nil {
-		return nil, fmt.Errorf("failed to unmarshal token scopes: %w", err)
-	}
-
-	if expiresAt.Valid {
-		t.ExpiresAt = &expiresAt.Time
-	}
-
-	if lastUsedAt.Valid {
-		t.LastUsedAt = &lastUsedAt.Time
-	}
-
-	if revokedAt.Valid {
-		t.RevokedAt = &revokedAt.Time
 	}
 
 	return t, nil
@@ -650,7 +624,8 @@ func (p *PostgresDB) RevokeToken(ctx context.Context, tokenID string) error {
 	defer p.authCache.invalidate()
 
 	_, err := p.db.ExecContext(ctx,
-		`UPDATE auth_tokens SET revoked_at=now() WHERE id=$1`,
+		`WITH r AS (UPDATE auth_tokens SET revoked_at=now() WHERE id=$1 RETURNING user_id)
+		UPDATE auth_users SET disabled = true WHERE kind = 'service' AND id IN (SELECT user_id FROM r)`,
 		tokenID,
 	)
 	if err != nil {
@@ -674,8 +649,7 @@ func (p *PostgresDB) UpdateTokenLastUsed(ctx context.Context, tokenID string) er
 
 func (p *PostgresDB) ListTokensByUser(ctx context.Context, userID string) ([]*models.Token, error) {
 	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
-		FROM auth_tokens WHERE user_id=$1 ORDER BY created_at DESC`,
+		`SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.user_id=$1 ORDER BY t.created_at DESC`,
 		userID,
 	)
 	if err != nil {
@@ -686,30 +660,9 @@ func (p *PostgresDB) ListTokensByUser(ctx context.Context, userID string) ([]*mo
 	var tokens []*models.Token
 
 	for rows.Next() {
-		t := &models.Token{}
-
-		var (
-			scopesJSON                       []byte
-			expiresAt, lastUsedAt, revokedAt sql.NullTime
-		)
-		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Kind, &t.TokenHash, &scopesJSON, &expiresAt, &lastUsedAt, &t.CreatedAt, &revokedAt); err != nil {
+		t, err := scanToken(rows)
+		if err != nil {
 			return nil, fmt.Errorf("failed to scan token: %w", err)
-		}
-
-		if err := json.Unmarshal(scopesJSON, &t.Scopes); err != nil {
-			return nil, fmt.Errorf("failed to unmarshal token scopes: %w", err)
-		}
-
-		if expiresAt.Valid {
-			t.ExpiresAt = &expiresAt.Time
-		}
-
-		if lastUsedAt.Valid {
-			t.LastUsedAt = &lastUsedAt.Time
-		}
-
-		if revokedAt.Valid {
-			t.RevokedAt = &revokedAt.Time
 		}
 
 		tokens = append(tokens, t)

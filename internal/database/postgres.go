@@ -2771,8 +2771,7 @@ func (p *PostgresDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*m
 	}
 
 	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
-		FROM auth_tokens WHERE revoked_at IS NULL ORDER BY created_at DESC, id LIMIT $1 OFFSET $2`,
+		`SELECT `+tokenColumns+` FROM `+tokenFrom+` WHERE t.revoked_at IS NULL ORDER BY t.created_at DESC, t.id LIMIT $1 OFFSET $2`,
 		perPage, (page-1)*perPage,
 	)
 	if err != nil {
@@ -2783,30 +2782,9 @@ func (p *PostgresDB) ListAllTokens(ctx context.Context, page, perPage int) ([]*m
 	var tokens []*models.Token
 
 	for rows.Next() {
-		t := &models.Token{}
-
-		var (
-			scopesJSON                       []byte
-			expiresAt, lastUsedAt, revokedAt sql.NullTime
-		)
-		if err := rows.Scan(&t.ID, &t.UserID, &t.Name, &t.Kind, &t.TokenHash, &scopesJSON, &expiresAt, &lastUsedAt, &t.CreatedAt, &revokedAt); err != nil {
+		t, err := scanToken(rows)
+		if err != nil {
 			return nil, 0, fmt.Errorf("scan token: %w", err)
-		}
-
-		if err := json.Unmarshal(scopesJSON, &t.Scopes); err != nil {
-			return nil, 0, fmt.Errorf("unmarshal token scopes: %w", err)
-		}
-
-		if expiresAt.Valid {
-			t.ExpiresAt = &expiresAt.Time
-		}
-
-		if lastUsedAt.Valid {
-			t.LastUsedAt = &lastUsedAt.Time
-		}
-
-		if revokedAt.Valid {
-			t.RevokedAt = &revokedAt.Time
 		}
 
 		tokens = append(tokens, t)

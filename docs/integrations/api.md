@@ -154,7 +154,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/repositories/{name}/ai-analysis` | [AI analysis](ai-analysis.md) |
 | `/search` | search packages and repositories |
 | `/users`, `/groups`, `/permission-targets` | identity and [RBAC](../security/rbac.md) objects |
-| `/projects` (with `/repositories`, `/members` and `/groups`) | [projects](../security/projects.md): open to every authenticated user and decided per project role, not by global `manage` (`404` for non-members, `403` for members lacking the role). Updates use `PATCH` for the project and for a member's role |
+| `/projects` (with `/repositories`, `/members`, `/groups` and `/tokens`) | [projects](../security/projects.md): open to every authenticated user and decided per project role, not by global `manage` (`404` for non-members, `403` for members lacking the role). Updates use `PATCH` for the project and for a member's role |
 | `/webhooks` | global webhooks, test, deliveries |
 | `/bundles`, `/pipelines` | [release bundles](../repositories/release-bundles.md) and promotion pipelines |
 | `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log, GPG keys (`/admin/gpg/keys` is a stub: empty list, 501 on write; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |
