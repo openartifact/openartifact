@@ -539,14 +539,24 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete:
 			return routeScope{action: actionForMethod(method), repoName: segs[1]}
 		}
+	case isRepoTrashEmptyRoute(method, segs):
+		// Emptying a repository's trash destroys data for good: repo `manage`.
+		return routeScope{action: "manage", repoName: segs[1]}
 	case isRepoTrashRoute(method, segs):
 		// Viewing and restoring a repository's trash is part of managing its
 		// deletions: the repo-scoped `delete` permission, whatever the method.
-		// (Purging and the global /api/v1/trash routes stay administrative.)
+		// (Purging one item and the global /api/v1/trash routes stay administrative;
+		// emptying the whole trash is the separate manage route above.)
 		return routeScope{action: "delete", repoName: segs[1]}
 	}
 
 	return manage
+}
+
+// isRepoTrashEmptyRoute reports whether segs is DELETE repositories/{name}/trash
+// (empty a repository's trash).
+func isRepoTrashEmptyRoute(method string, segs []string) bool {
+	return method == http.MethodDelete && len(segs) == 3 && segs[0] == "repositories" && isPlainName(segs[1]) && segs[2] == "trash"
 }
 
 // isRepoTrashRoute reports whether segs (of an /api/v1/ path) is one of the

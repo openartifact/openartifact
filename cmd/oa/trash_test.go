@@ -25,6 +25,7 @@ func registerTrashRoutes(r chi.Router) {
 	r.Delete("/api/v1/trash/{kind}/{id}", noop)
 	r.Get("/api/v1/repositories/{name}/trash", noop)
 	r.Post("/api/v1/repositories/{name}/trash/{kind}/{id}/restore", noop)
+	r.Delete("/api/v1/repositories/{name}/trash", noop)
 }
 
 func TestContractTrash(t *testing.T) {
@@ -75,6 +76,22 @@ func TestContractTrash(t *testing.T) {
 		},
 		{
 			name: "purge without yes fails non-interactively", args: []string{"trash", "purge", "docker_tag", "id3"}, fail: "--yes",
+		},
+		{
+			name:    "empty a repository's trash",
+			args:    []string{"trash", "purge", "--repo", "r", "--all", "--yes"},
+			replies: map[string]reply{"DELETE /api/v1/repositories/{name}/trash": ok(`{"purged":3,"remaining":0}`)},
+			calls:   []call{{method: "DELETE", pattern: "/api/v1/repositories/{name}/trash"}},
+			out:     "Purged 3 trashed items of r",
+		},
+		{
+			name: "empty trash without yes fails non-interactively", args: []string{"trash", "purge", "--repo", "r", "--all"}, fail: "--yes",
+		},
+		{
+			name: "all requires repo", args: []string{"trash", "purge", "--all", "--yes"}, fail: "--all requires --repo",
+		},
+		{
+			name: "repo without all is refused", args: []string{"trash", "purge", "--repo", "r", "--yes"}, fail: "--all requires --repo",
 		},
 		{
 			name: "restore needs kind and id", args: []string{"trash", "restore", "repository"}, fail: "Usage: oa trash restore",

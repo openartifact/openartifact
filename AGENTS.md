@@ -64,7 +64,7 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint ar
 
 ## Conventions and invariants
 
-- **Migrations are forward-only.** Never edit an applied file (`001_initial_schema.sql`); the migrator aborts on checksum drift. Add `00N_<topic>.sql`.
+- **Migrations are forward-only.** Never edit an applied file (`001_initial_schema.sql`); the migrator aborts on checksum drift. Add `00N_<topic>.sql`. Keep transactional files short on large tables (metadata-only `ADD COLUMN`, `ADD CONSTRAINT … NOT VALID`, `SET LOCAL lock_timeout`); put index builds and `VALIDATE CONSTRAINT` in a following `00N_<topic>.no_tx.sql`, which the migrator splits and runs one statement at a time (so `CREATE INDEX CONCURRENTLY` works) and which must be re-runnable (`IF [NOT] EXISTS`, drop invalid indexes first), see `018_trash_indexes.no_tx.sql`.
 - **sqlc:** edit `queries/*.sql`, run `make generate`; never hand-edit `dbsqlc/`.
 - **Blobs are content-addressed by sha256.** Every `BlobStore.Put` must pass `{"sha256": <hex>}` metadata (S3/Azure/OCI require it). Blob IDs must be 64 lowercase hex — never pass user input or `blobs.id` UUIDs as storage keys. Delete blobs only via `storage.SafeDeleteBlob` (blobs are deduplicated across repos).
 - **Repo scoping:** any handler that loads an entity by ID must check it belongs to the repo in the URL.

@@ -31,3 +31,11 @@ type TrashListResponse struct {
 	Page  int                 `json:"page"`
 	Limit int                 `json:"limit"`
 }
+
+// TrashEmptyResponse is the result of emptying a repository's trash.
+type TrashEmptyResponse struct {
+	// Purged is how many items this request destroyed.
+	Purged int `json:"purged"`
+	// Remaining is how many trashed items are left (the request purges a capped number).
+	Remaining int `json:"remaining"`
+}

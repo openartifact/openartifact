@@ -71,6 +71,8 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{http.MethodGet, "/api/v1/repositories/app/trash", routeScope{action: "delete", repoName: "app"}, "repo trash list needs repo delete"},
 		{http.MethodPost, "/api/v1/repositories/app/trash/maven_artifact/0b1c2d3e-0000-4000-8000-000000000001/restore", routeScope{action: "delete", repoName: "app"}, "repo trash restore needs repo delete"},
 		{http.MethodDelete, "/api/v1/repositories/app/trash/maven_artifact/0b1c2d3e-0000-4000-8000-000000000001", routeScope{action: "manage"}, "purge is never repo scoped"},
+		{http.MethodDelete, "/api/v1/repositories/app/trash", routeScope{action: "manage", repoName: "app"}, "empty trash needs repo manage"},
+		{http.MethodDelete, "/api/v1/repositories/a%2Fb/trash", routeScope{action: "manage"}, "escaped repo name on empty trash falls back to global manage"},
 		{http.MethodPost, "/api/v1/repositories/app/trash", routeScope{action: "manage"}, "unknown method on trash list"},
 		{http.MethodPost, "/api/v1/repositories/app/trash/maven_artifact/restore", routeScope{action: "manage"}, "odd trash shape"},
 		{http.MethodGet, "/api/v1/repositories/a%2Fb/trash", routeScope{action: "manage"}, "escaped repo name falls back to manage"},

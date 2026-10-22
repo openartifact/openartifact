@@ -1737,6 +1737,23 @@
           "purge_at"
         ]
       },
+      "TrashEmpty": {
+        "type": "object",
+        "properties": {
+          "purged": {
+            "type": "integer",
+            "description": "Items destroyed by this request."
+          },
+          "remaining": {
+            "type": "integer",
+            "description": "Trashed items left (a request purges at most 1000)."
+          }
+        },
+        "required": [
+          "purged",
+          "remaining"
+        ]
+      },
       "TrashList": {
         "type": "object",
         "properties": {
@@ -8985,6 +9002,15 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "description": "Administrators only: `true` overwrites an existing file of a repository with `immutable_releases`. Ignored for everyone else.",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "responses": {
@@ -9028,7 +9054,7 @@
             "description": "Repository or upload not found (or expired and swept)"
           },
           "409": {
-            "description": "Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_changed: the staged object was overwritten during verification; the upload was discarded",
+            "description": "Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_changed: the staged object was overwritten during verification; the upload was discarded. Code immutable_release: the path already exists in a repository with `immutable_releases`; nothing was recorded and the upload stays pending (retry with `force=true` as an administrator)",
             "content": {
               "application/json": {
                 "schema": {
@@ -9221,7 +9247,7 @@
             }
           },
           "409": {
-            "description": "trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.",
+            "description": "trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first.",
             "content": {
               "application/json": {
                 "schema": {
@@ -9396,6 +9422,41 @@
             "description": "Repository not found"
           }
         }
+      },
+      "delete": {
+        "summary": "Empty a repository's trash",
+        "description": "Permanently purges the trashed items of one repository now (blobs freed, quota released, audit artifact.purged and webhook events as for a single purge). Items only: neither the repository nor a trashed repository row is touched. Requires the repository-scoped manage permission (global administrators have it). At most 1000 items are purged per request; `remaining` says how many are left, so repeat the call until it is 0.",
+        "tags": [
+          "Trash"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Items purged by this request and items still in the trash",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/TrashEmpty"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Manage permission on the repository required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
       }
     },
     "/api/v1/repositories/{name}/trash/{kind}/{id}/restore": {
@@ -9476,7 +9537,7 @@
             }
           },
           "409": {
-            "description": "trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.",
+            "description": "trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first.",
             "content": {
               "application/json": {
                 "schema": {

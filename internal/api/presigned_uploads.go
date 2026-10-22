@@ -25,6 +25,7 @@ import (
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -493,7 +494,9 @@ func (h *PresignedUploadHandler) handleComplete(w http.ResponseWriter, r *http.R
 	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), presignedCompleteTimeout)
 	defer cancel()
 
-	resp, fail := h.complete(ctx, repo, up)
+	// Commit reads the principal and ?force from the request; keep both while
+	// running on the detached context.
+	resp, fail := h.complete(r.WithContext(ctx), repo, up)
 	if fail != nil {
 		writeError(w, fail.status, fail.code, fail.message)
 		return
@@ -542,13 +545,19 @@ func failChanged() *completeFailure {
 	return &completeFailure{http.StatusConflict, "upload_changed", "the uploaded object changed while it was being verified; start a new upload"}
 }
 
+func failImmutable(path string) *completeFailure {
+	return &completeFailure{http.StatusConflict, "immutable_release", "repository has immutable releases: cannot overwrite " + path}
+}
+
 func failMissing() *completeFailure {
 	return &completeFailure{http.StatusConflict, "upload_missing", "no object has been uploaded to the upload URL yet"}
 }
 
-// complete verifies and commits a claimed upload. ctx is detached from the
-// request.
-func (h *PresignedUploadHandler) complete(ctx context.Context, repo *models.Repository, up *models.PresignedUpload) (CompletePresignedUploadResponse, *completeFailure) {
+// complete verifies and commits a claimed upload. req carries the caller's
+// principal and query but a context detached from the HTTP request.
+func (h *PresignedUploadHandler) complete(req *http.Request, repo *models.Repository, up *models.PresignedUpload) (CompletePresignedUploadResponse, *completeFailure) {
+	ctx := req.Context()
+
 	verified, err := h.verifyStaged(ctx, up)
 
 	switch {
@@ -578,7 +587,7 @@ func (h *PresignedUploadHandler) complete(ctx context.Context, repo *models.Repo
 		Metadata:     make(map[string]any),
 	}
 
-	previous, err := formatraw.Commit(ctx, h.Handler, repo.Name, artifact, func(ctx context.Context) error {
+	previous, err := formatraw.Commit(req, h.Handler, repo.Name, artifact, func(ctx context.Context) error {
 		return h.staging.PromoteStaging(ctx, up.ID, up.SHA256, verified.version, map[string]string{
 			"sha256": up.SHA256,
 			"format": "raw",
@@ -589,6 +598,16 @@ func (h *PresignedUploadHandler) complete(ctx context.Context, repo *models.Repo
 	switch {
 	case errors.Is(err, storage.ErrStagingChanged):
 		return CompletePresignedUploadResponse{}, h.reject(repo, up, err, failChanged())
+	case errors.Is(err, trash.ErrImmutableRelease):
+		// Nothing was promoted or recorded. The upload stays pending (not
+		// completed), so a retry runs the guard again instead of replaying a
+		// result, and an admin can complete it with ?force=true; the cleanup
+		// worker removes the staging object after expiry otherwise.
+		h.Log.Infow("presigned upload refused: immutable release", "repo", repo.Name, "path", up.Path, "upload_id", up.ID)
+		h.countUpload("rejected")
+		h.release(ctx, up.ID)
+
+		return CompletePresignedUploadResponse{}, failImmutable(up.Path)
 	case err != nil:
 		h.Log.Errorw("presigned upload: failed to record artifact", "repo", repo.Name, "path", up.Path, "error", err)
 		h.countUpload("failure")

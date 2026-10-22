@@ -265,7 +265,14 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request, repoI
 	}
 
 	if guardErr := trash.GuardReleaseByName(r, h.DB, repoNameOf(r), "ivy", revision); guardErr != nil {
-		http.Error(w, "released versions are immutable in this repository", http.StatusConflict)
+		if errors.Is(guardErr, trash.ErrImmutableRelease) {
+			http.Error(w, "released versions are immutable in this repository", http.StatusConflict)
+			return
+		}
+
+		h.Log.Errorw("failed to check release immutability", "path", filePath, "error", guardErr)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
 		return
 	}
 

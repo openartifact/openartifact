@@ -340,7 +340,7 @@ func (h *OrgsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 	if err := h.db.DeleteOrganization(r.Context(), access.org.ID); err != nil {
 		if database.IsForeignKeyViolation(err) {
-			writeError(w, http.StatusConflict, "conflict", "organization still owns repositories")
+			writeError(w, http.StatusConflict, "conflict", "organization still owns repositories (including repositories in the trash, which must be purged or restored first)")
 			return
 		}
 

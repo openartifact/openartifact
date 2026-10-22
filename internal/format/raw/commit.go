@@ -7,10 +7,12 @@ package raw
 import (
 	"context"
 	"fmt"
+	"net/http"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -23,11 +25,25 @@ import (
 // overwrite keeps the previous row's id (see StoredID).
 //
 // It is the single write path shared by the streaming PUT and the presigned
-// upload completion, so both behave identically after the bytes are in place.
-func Commit(ctx context.Context, h *base.Handler, repoName string, a *models.RawArtifact, putBlob func(ctx context.Context) error) (*models.RawArtifact, error) {
+// upload completion, so both behave identically after the bytes are in place,
+// and both enforce immutable_releases: overwriting an existing path of such a
+// repository fails with trash.ErrImmutableRelease, before putBlob runs, unless
+// req carries an admin's ?force=true. req supplies the principal and the force
+// flag; its context is used for every operation, so a caller that must outlive
+// the HTTP request passes a request carrying a detached context.
+func Commit(req *http.Request, h *base.Handler, repoName string, a *models.RawArtifact, putBlob func(ctx context.Context) error) (*models.RawArtifact, error) {
+	ctx := req.Context()
+
 	previous, err := h.DB.GetRawArtifact(ctx, a.RepositoryID, a.Path)
 	if err != nil {
 		return nil, fmt.Errorf("look up existing artifact: %w", err)
+	}
+
+	// Every raw file is a release: only an overwrite is guarded.
+	if previous != nil {
+		if err := trash.GuardReleaseByName(req, h.DB, repoName, "raw", ""); err != nil {
+			return nil, err
+		}
 	}
 
 	if err := storage.WithBlobLock(ctx, h.DB, a.SHA256, func(ctx context.Context) error {

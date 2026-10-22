@@ -12,6 +12,18 @@
 -- purges it. Blob reference counting (storage.SafeDeleteBlob) counts trashed
 -- rows, so a blob is only freed by the purge; storage_quotas usage likewise
 -- keeps counting trashed bytes until then.
+--
+-- This file only does what is cheap, so it holds its ACCESS EXCLUSIVE locks for
+-- a moment even on a large database: new nullable columns (metadata only) and
+-- the audit constraint added NOT VALID. The expensive part, swapping every
+-- unique constraint for a partial unique index over live rows, builds the
+-- indexes CONCURRENTLY and lives in 018_trash_indexes.no_tx.sql, which also
+-- validates the audit constraint.
+
+-- A lock that cannot be taken within 10 s aborts (and rolls back) the migration
+-- instead of queueing every query on the table behind a long-running one; the
+-- next start retries.
+SET LOCAL lock_timeout = '10s';
 
 -- Repositories ---------------------------------------------------------------
 
@@ -30,97 +42,35 @@ COMMENT ON COLUMN repositories.trash_retention_days IS 'Days a deleted item stay
 COMMENT ON COLUMN repositories.immutable_releases IS 'When true, released (non-snapshot, non-prerelease) versions cannot be deleted or overwritten without admin force.';
 
 -- Per-format package tables ---------------------------------------------------
--- The unique key of every table becomes a partial unique index over live rows,
--- so a path can be re-published while an older copy sits in the trash. Restoring
--- the older copy then fails with a unique violation, which the API maps to 409.
+-- Columns only. Uniqueness moves to partial unique indexes over live rows (a path
+-- can be re-published while an older copy sits in the trash; restoring the older
+-- copy then fails with a unique violation, which the API maps to 409), built
+-- concurrently by 018_trash_indexes.no_tx.sql. Until that runs, the old
+-- constraints still hold for every row, trashed or not.
 
 ALTER TABLE maven_artifacts ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE maven_artifacts DROP CONSTRAINT maven_artifacts_repository_id_repo_path_key;
-CREATE UNIQUE INDEX maven_artifacts_live_repo_path_key ON maven_artifacts (repository_id, repo_path) WHERE deleted_at IS NULL;
-CREATE INDEX idx_maven_artifacts_deleted ON maven_artifacts (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE ivy_artifacts ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE ivy_artifacts DROP CONSTRAINT ivy_artifacts_repo_id_organisation_module_revision_artifact_key;
-CREATE UNIQUE INDEX ivy_artifacts_live_coords_key ON ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_ext) WHERE deleted_at IS NULL;
-CREATE INDEX idx_ivy_artifacts_deleted ON ivy_artifacts (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE sbt_artifacts ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE sbt_artifacts DROP CONSTRAINT sbt_artifacts_repo_id_group_id_artifact_id_version_filename_key;
-CREATE UNIQUE INDEX sbt_artifacts_live_coords_key ON sbt_artifacts (repository_id, group_id, artifact_id, version, filename) WHERE deleted_at IS NULL;
-CREATE INDEX idx_sbt_artifacts_deleted ON sbt_artifacts (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE npm_versions ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE npm_versions DROP CONSTRAINT npm_versions_package_id_version_key;
-CREATE UNIQUE INDEX npm_versions_live_pkg_version_key ON npm_versions (package_id, version) WHERE deleted_at IS NULL;
-CREATE INDEX idx_npm_versions_deleted ON npm_versions (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE pypi_packages ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE pypi_packages DROP CONSTRAINT pypi_packages_repo_id_name_version_filename_key;
-CREATE UNIQUE INDEX pypi_packages_live_coords_key ON pypi_packages (repository_id, name, version, filename) WHERE deleted_at IS NULL;
-CREATE INDEX idx_pypi_packages_deleted ON pypi_packages (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE nuget_packages ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE nuget_packages DROP CONSTRAINT nuget_packages_repo_id_package_id_version_key;
-CREATE UNIQUE INDEX nuget_packages_live_coords_key ON nuget_packages (repository_id, package_id, version) WHERE deleted_at IS NULL;
-CREATE INDEX idx_nuget_packages_deleted ON nuget_packages (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE gomod_modules ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE gomod_modules DROP CONSTRAINT gomod_modules_repo_id_module_path_version_key;
-CREATE UNIQUE INDEX gomod_modules_live_coords_key ON gomod_modules (repository_id, module_path, version) WHERE deleted_at IS NULL;
-CREATE INDEX idx_gomod_modules_deleted ON gomod_modules (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE cargo_crates ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE cargo_crates DROP CONSTRAINT cargo_crates_repo_id_name_version_key;
-CREATE UNIQUE INDEX cargo_crates_live_coords_key ON cargo_crates (repository_id, name, version) WHERE deleted_at IS NULL;
-CREATE INDEX idx_cargo_crates_deleted ON cargo_crates (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE rubygems_gems ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE rubygems_gems DROP CONSTRAINT rubygems_gems_repo_id_name_version_platform_key;
-CREATE UNIQUE INDEX rubygems_gems_live_coords_key ON rubygems_gems (repository_id, name, version, platform) WHERE deleted_at IS NULL;
-CREATE INDEX idx_rubygems_gems_deleted ON rubygems_gems (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE conda_packages ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE conda_packages DROP CONSTRAINT conda_packages_repo_id_name_version_build_string_platform_key;
-CREATE UNIQUE INDEX conda_packages_live_coords_key ON conda_packages (repository_id, name, version, build_string, platform) WHERE deleted_at IS NULL;
-CREATE INDEX idx_conda_packages_deleted ON conda_packages (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE conan_packages ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE conan_packages DROP CONSTRAINT conan_packages_repo_id_name_version_user_channel_recipe_rev_key;
-CREATE UNIQUE INDEX conan_packages_live_coords_key ON conan_packages (repository_id, name, version, user_channel, recipe_revision) WHERE deleted_at IS NULL;
-CREATE INDEX idx_conan_packages_deleted ON conan_packages (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE helm_charts ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE helm_charts DROP CONSTRAINT helm_charts_repo_id_name_version_key;
-CREATE UNIQUE INDEX helm_charts_live_coords_key ON helm_charts (repository_id, name, version) WHERE deleted_at IS NULL;
-CREATE INDEX idx_helm_charts_deleted ON helm_charts (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE raw_artifacts ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE raw_artifacts DROP CONSTRAINT raw_artifacts_repo_id_path_key;
-CREATE UNIQUE INDEX raw_artifacts_live_path_key ON raw_artifacts (repository_id, path) WHERE deleted_at IS NULL;
-CREATE INDEX idx_raw_artifacts_deleted ON raw_artifacts (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE docker_manifests ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE docker_manifests DROP CONSTRAINT docker_manifests_repository_id_image_digest_key;
-CREATE UNIQUE INDEX docker_manifests_live_digest_key ON docker_manifests (repository_id, image, digest) WHERE deleted_at IS NULL;
-CREATE INDEX idx_docker_manifests_deleted ON docker_manifests (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE docker_tags ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE docker_tags DROP CONSTRAINT docker_tags_repository_id_image_name_key;
-CREATE UNIQUE INDEX docker_tags_live_name_key ON docker_tags (repository_id, image, name) WHERE deleted_at IS NULL;
-CREATE INDEX idx_docker_tags_deleted ON docker_tags (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE rpm_packages ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE rpm_packages DROP CONSTRAINT rpm_packages_repository_id_name_version_release_epoch_arch_key;
-CREATE UNIQUE INDEX rpm_packages_live_coords_key ON rpm_packages (repository_id, name, version, release, epoch, arch) WHERE deleted_at IS NULL;
-CREATE INDEX idx_rpm_packages_deleted ON rpm_packages (deleted_at) WHERE deleted_at IS NOT NULL;
-
 ALTER TABLE deb_packages ADD COLUMN deleted_at timestamp with time zone, ADD COLUMN deleted_by text;
-ALTER TABLE deb_packages DROP CONSTRAINT deb_packages_repository_id_name_version_arch_component_id_key;
-CREATE UNIQUE INDEX deb_packages_live_coords_key ON deb_packages (repository_id, name, version, arch, component_id) WHERE deleted_at IS NULL;
-CREATE INDEX idx_deb_packages_deleted ON deb_packages (deleted_at) WHERE deleted_at IS NOT NULL;
 
 -- Audit actions ---------------------------------------------------------------
 
+-- Added NOT VALID: new rows are checked at once, existing rows (all written under
+-- the previous, narrower list) are checked by VALIDATE CONSTRAINT in 018, which
+-- does not block writes, instead of scanning audit_logs under ACCESS EXCLUSIVE.
 ALTER TABLE audit_logs DROP CONSTRAINT chk_audit_action;
 ALTER TABLE audit_logs ADD CONSTRAINT chk_audit_action CHECK (action IN (
     -- Artifact lifecycle
@@ -149,4 +99,4 @@ ALTER TABLE audit_logs ADD CONSTRAINT chk_audit_action CHECK (action IN (
     'bundle.created', 'bundle.sealed', 'bundle.archived', 'bundle.promoted',
     -- HTTP audit (middleware logs method:path for generic request auditing)
     'http.request'
-));
+)) NOT VALID;

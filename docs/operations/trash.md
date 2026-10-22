@@ -114,6 +114,7 @@ A list is `{"items":[...],"total":N,"page":P,"limit":L}` (`page` from 1).
 | `POST /api/v1/trash/{kind}/{id}/restore` | admin | Restore any item or a repository; `200` with the item |
 | `POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore` | `delete` on the repository | Restore an item of that repository (not for kind `repository`) |
 | `DELETE /api/v1/trash/{kind}/{id}` | admin | Purge now, permanently; `204` |
+| `DELETE /api/v1/repositories/{name}/trash` | `manage` on the repository (or admin) | Empty the repository's trash: purge all its trashed items now. `200` `{"purged": N, "remaining": M}` |
 
 ```sh
 HOST=http://localhost:8080
@@ -149,6 +150,7 @@ oa trash list --repo releases --kind maven_artifact
 oa trash restore maven_artifact <id> --repo releases
 oa trash restore repository <id>                 # admin
 oa trash purge docker_tag <id> --yes             # admin; prompts without --yes
+oa trash purge --repo releases --all --yes       # empty a repository's trash (repository manage permission)
 oa repo delete old-repo --confirm old-repo
 ```
 
@@ -171,6 +173,8 @@ What happens next:
 - The repository is hidden at once: its native URLs, listings, search results, group memberships and API routes answer `404`. Its packages are not touched individually; they stay as they are and are hidden along with the repository.
 - Its **name stays reserved** while it is in the trash. Creating a repository with the same name is `409`, until the old one is purged or restored.
 - An admin can restore it from the trash (`kind` `repository`) within the retention period; everything comes back as it was, including its packages and settings. After the retention (or immediately when the repository's `trash_retention_days` is `0`) the purge removes the repository, its packages and its quota counters.
+- Items that were trashed individually before the repository keep the retention window they had left at that moment: a restore shifts their deletion time by the time the repository spent in the trash.
+- An organization cannot be deleted (`409`) while it owns repositories, repositories in the trash included; purge or restore them first.
 - The existing guard still applies: the delete is `409` while a release bundle or promotion references the repository.
 
 ## Restore
@@ -181,16 +185,23 @@ A restore can conflict:
 
 - **The path or version was published again meanwhile.** Because uniqueness only applies to live rows, you may re-publish the same coordinates while the old copy is in the trash. Restoring the old copy then answers `409 trash_conflict`. Delete or move the new one first, or purge the old one.
 - **The repository is in the trash** (`409 repository_in_trash`): restore the repository first.
+- **A docker tag's manifest is in the trash** (`409 manifest_in_trash`): restore the manifest first. Restoring a manifest also restores the tags that were trashed with it.
+
+**Docker blobs of trashed images.** Layers and config blobs are served by digest from the repository's blob record, independent of manifests. While an image is in the trash its manifest and tags are `404`, but its layers can still be fetched by anyone who knows the digest and can read the repository; they disappear only once the manifest is purged and garbage collection runs. See [Docker](../formats/docker.md#garbage-collection).
 
 ## Purge
 
 The purge worker runs every `OPENARTIFACT_TRASH_PURGE_INTERVAL` (default `15m`) and permanently deletes items whose retention has expired, repositories included. An admin can purge any item immediately with `DELETE /api/v1/trash/{kind}/{id}` (UI: Purge now; CLI: `oa trash purge`).
 
+### Empty a repository's trash
+
+`DELETE /api/v1/repositories/{name}/trash` purges every trashed item of one repository now (UI: Empty trash on the repository's trash page; CLI: `oa trash purge --repo NAME --all`). It takes the same steps as a single purge for each item: the record is removed, blobs are freed through the reference-counted path, the [quota](#quota) is released, an `artifact.purged` audit entry is written and the webhook event is emitted. It needs the repository-scoped `manage` permission (global admins have it everywhere), because it is destructive in bulk. Only items are purged: the repository itself, and a repository that is itself in the trash (`404`), are not touched. A request purges at most 1000 items and answers `{"purged": N, "remaining": M}`; repeat it while `remaining` is above 0 (the CLI does this itself).
+
 Purging removes the record, releases the repository's [quota](#quota) (for npm it also prunes dist-tags and packages left with no versions), and frees blobs through the usual reference-counted path. Blobs are content-addressed and deduplicated: a blob is removed from storage only when no other row references it, including rows of other repositories and other formats, and including other items still in the trash. Purging one copy of a shared file therefore frees nothing.
 
 ## Quota
 
-Soft-deleted bytes keep counting against the repository's [quota](../repositories/cleanup-and-quotas.md#trash-and-quotas) until purge: the delete does not release the reservation, and the quota reconcile counts trashed rows. The purge releases it. If you delete to make room, either purge the items or set the repository's `trash_retention_days` to `0`. Restoring needs no new reservation.
+Soft-deleted bytes keep counting against the repository's [quota](../repositories/cleanup-and-quotas.md#trash-and-quotas) until purge: the delete does not release the reservation, and the quota reconcile counts trashed rows. The purge releases it. Quota errors say so: uploads refused over quota answer `507` with `repository storage quota exceeded (bytes of trashed items count until purged; see the repository trash)`. If you delete to make room, either [empty the repository's trash](#empty-a-repositorys-trash), purge the items or set the repository's `trash_retention_days` to `0`. Restoring needs no new reservation.
 
 ## Immutable releases
 
@@ -221,6 +232,8 @@ curl -X DELETE -H "Authorization: Bearer <TOKEN>" "$HOST/repos/maven/releases/co
 curl -X DELETE -H "Authorization: Bearer <ADMIN_TOKEN>" "$HOST/repos/maven/releases/com/acme/app/1.4.0/app-1.4.0.jar?force=true"
 ```
 
+A raw file uploaded through a presigned URL is guarded when the upload is **completed**, not when it is created: `POST /api/v1/repositories/{name}/uploads/{id}/complete` over an existing path answers `409` with code `immutable_release` and records nothing. The upload stays pending (the cleanup worker removes it after it expires), so an administrator can complete it with `?force=true`; a plain retry is refused again.
+
 ## Audit and webhook events
 
 | Event | Audit | Webhook | When |
@@ -242,4 +255,4 @@ Payloads keep the existing shapes: the artifact events carry the artifact payloa
 
 - [Cleanup policies and quotas](../repositories/cleanup-and-quotas.md): policies move versions to the trash; quota accounting.
 - [Docker garbage collection](../formats/docker.md#garbage-collection): trashed manifests and their layers are not collected.
-- [Upgrading](../getting-started/upgrading.md#050-unreleased): behavior changes and migration `017`.
+- [Upgrading](../getting-started/upgrading.md#050-unreleased): behavior changes and migrations `017`/`018` (locking, index builds).

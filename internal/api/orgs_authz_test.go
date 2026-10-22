@@ -28,7 +28,10 @@ type orgAuthzMockDB struct {
 	updated    *models.Organization
 	repo       *models.Repository
 	updRepo    *models.Repository
+	deleteErr  error
 }
+
+func (db *orgAuthzMockDB) DeleteOrganization(context.Context, string) error { return db.deleteErr }
 
 func (db *orgAuthzMockDB) GetOrganizationByName(_ context.Context, name string) (*models.Organization, error) {
 	return db.orgs[name], nil
@@ -234,5 +237,24 @@ func TestOrgsCreateSlug(t *testing.T) {
 				t.Errorf("slug = %v, want %s", body["slug"], tt.wantSlug)
 			}
 		})
+	}
+}
+
+func TestOrgsDeleteStillOwnsRepositories(t *testing.T) {
+	db := newOrgAuthzMock()
+	owner := "admin-1"
+	db.orgs["acme"].OwnerID = &owner
+	db.deleteErr = &pgconn.PgError{Code: "23503"}
+
+	router := chi.NewRouter()
+	NewOrgsHandler(db, newFixTestLogger(t)).RegisterRoutes(router)
+
+	code, body := orgJSON(t, router, http.MethodDelete, "/api/v1/orgs/acme", "")
+	if code != http.StatusConflict || body["code"] != "conflict" {
+		t.Fatalf("status/body = %d/%v, want 409/conflict", code, body)
+	}
+
+	if msg, _ := body["error"].(string); !strings.Contains(msg, "in the trash") {
+		t.Errorf("message %q does not mention repositories in the trash", msg)
 	}
 }

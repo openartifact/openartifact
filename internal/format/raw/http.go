@@ -146,19 +146,7 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: importmeta.CreatedAt(r.Context()),
 	}
 
-	existing, err := h.DB.GetRawArtifact(r.Context(), repoID, path)
-	if err != nil {
-		h.Log.Errorw("failed to look up existing artifact", "path", path, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if h.guardOverwrite(w, r, repoName, path, existing) {
-		return
-	}
-
-	previous, err := Commit(r.Context(), h.Handler, repoName, artifact, func(ctx context.Context) error {
+	previous, err := Commit(r, h.Handler, repoName, artifact, func(ctx context.Context) error {
 		blobID, err := h.BlobStore.Put(ctx, io.NewSectionReader(tmp, 0, size), map[string]string{
 			"sha256": sha256Hex,
 			"format": "raw",
@@ -173,6 +161,11 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if err != nil {
+		if errors.Is(err, trash.ErrImmutableRelease) {
+			h.writeGuardError(w, err, "overwrite", path)
+			return
+		}
+
 		h.Log.Errorw("failed to store raw artifact", "path", path, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
@@ -428,23 +421,6 @@ func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	}))
 
 	w.WriteHeader(http.StatusNoContent)
-}
-
-// guardOverwrite refuses to replace an existing file of a repository with
-// immutable releases (every raw file is a release). It reports whether it
-// answered the request.
-func (h *HTTPHandler) guardOverwrite(w http.ResponseWriter, r *http.Request, repoName, path string, previous *models.RawArtifact) bool {
-	if previous == nil {
-		return false
-	}
-
-	if err := trash.GuardReleaseByName(r, h.DB, repoName, "raw", ""); err != nil {
-		h.writeGuardError(w, err, "overwrite", path)
-
-		return true
-	}
-
-	return false
 }
 
 // writeGuardError answers a failed immutable-release guard.

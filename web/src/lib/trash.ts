@@ -36,3 +36,9 @@ export function parseRetentionInput(raw: string | number | null | undefined): nu
   if (!/^\d+$/.test(s)) return undefined
   return Number(s)
 }
+
+/** Toast text for an "empty trash" result: how many were purged and, when capped, how many are left. */
+export function emptyTrashResultText(purged: number, remaining: number): string {
+  const base = t('trash.emptiedCount').replace('{n}', String(purged))
+  return remaining > 0 ? `${base} ${t('trash.emptiedRemaining').replace('{n}', String(remaining))}` : base
+}

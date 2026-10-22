@@ -11,6 +11,7 @@ import (
 	"database/sql"
 	"io/fs"
 	"os"
+	"strings"
 	"sync"
 	"testing"
 	"testing/fstest"
@@ -201,6 +202,72 @@ func TestNoTxDetection(t *testing.T) {
 	}
 
 	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_f`)
+}
+
+// A no_tx file with several statements, a dollar-quoted body holding semicolons
+// and CREATE INDEX CONCURRENTLY: each statement must reach the server as its own
+// query, since a multi-statement query runs in one implicit transaction.
+func TestNoTxRunsStatementsSeparately(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_h`)
+
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS migration_test_h`) })
+
+	fsys := makeFakeFS(map[string]string{
+		"001_multi.no_tx.sql": `-- comment; with a semicolon
+CREATE TABLE migration_test_h (id int, v int);
+CREATE INDEX CONCURRENTLY migration_test_h_v ON migration_test_h (v);
+DO $$ BEGIN PERFORM 1; PERFORM 2; END $$;
+CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS migration_test_h_id ON migration_test_h (id) WHERE v IS NULL;
+INSERT INTO migration_test_h VALUES (1, NULL), (1, 2)`,
+	})
+
+	if err := database.NewMigratorWithFS(db, fsys).Apply(ctx); err != nil {
+		t.Fatalf("Apply multi-statement no_tx file: %v", err)
+	}
+
+	var indexes int
+
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM pg_indexes WHERE tablename = 'migration_test_h' AND indexname LIKE 'migration_test_h_%'`).Scan(&indexes)
+	if indexes != 2 {
+		t.Errorf("created %d indexes, want 2", indexes)
+	}
+
+	var rows int
+
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM migration_test_h`).Scan(&rows)
+	if rows != 2 {
+		t.Errorf("last statement inserted %d rows, want 2", rows)
+	}
+}
+
+// A failing statement of a no_tx file stops the file, names the statement and
+// leaves the version unrecorded so the next start retries it.
+func TestNoTxFailureIsNotRecorded(t *testing.T) {
+	db := setupTestDB(t)
+	ctx := context.Background()
+
+	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_i`)
+
+	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS migration_test_i`) })
+
+	fsys := makeFakeFS(map[string]string{
+		"001_fail.no_tx.sql": `CREATE TABLE migration_test_i (id int); SELECT * FROM migration_test_missing; CREATE INDEX CONCURRENTLY migration_test_i_id ON migration_test_i (id)`,
+	})
+
+	err := database.NewMigratorWithFS(db, fsys).Apply(ctx)
+	if err == nil || !strings.Contains(err.Error(), "statement 2") {
+		t.Fatalf("Apply = %v, want an error naming statement 2", err)
+	}
+
+	var count int
+
+	_ = db.QueryRowContext(ctx, `SELECT count(*) FROM schema_migrations WHERE version = '001_fail.no_tx.sql'`).Scan(&count)
+	if count != 0 {
+		t.Errorf("failed no_tx migration recorded %d times", count)
+	}
 }
 
 func TestAdvisoryLockConcurrent(t *testing.T) {

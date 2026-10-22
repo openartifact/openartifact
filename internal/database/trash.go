@@ -23,6 +23,10 @@ var (
 	ErrTrashConflict = errors.New("a live item with the same identity already exists")
 	// ErrTrashRepoTrashed means the item's repository is itself in the trash.
 	ErrTrashRepoTrashed = errors.New("the item's repository is in the trash")
+	// ErrTrashManifestInTrash means a docker tag cannot be restored because the
+	// manifest it points at is itself in the trash (restore the manifest, which
+	// brings its tags back).
+	ErrTrashManifestInTrash = errors.New("the tag's manifest is in the trash")
 	// ErrTrashUnknownKind means the kind is not a registered trash kind.
 	ErrTrashUnknownKind = errors.New("unknown trash kind")
 )
@@ -437,6 +441,12 @@ func (p *PostgresDB) RestoreTrash(ctx context.Context, kind models.TrashKind, id
 		return nil, ErrTrashRepoTrashed
 	}
 
+	if kind == models.TrashKindDockerTag {
+		if err := ensureTagManifestLive(ctx, tx, id); err != nil {
+			return nil, err
+		}
+	}
+
 	// Companions (docker tags deleted with their manifest) go first: they are
 	// matched on the manifest's still-set deleted_at.
 	for _, stmt := range spec.restoreCascade() {
@@ -462,6 +472,27 @@ func (p *PostgresDB) RestoreTrash(ctx context.Context, kind models.TrashKind, id
 	return item, nil
 }
 
+// ensureTagManifestLive returns ErrTrashManifestInTrash when the trashed tag
+// id points at a manifest (same repository, image and digest) that is not live.
+func ensureTagManifestLive(ctx context.Context, tx *sql.Tx, tagID string) error {
+	var live bool
+
+	err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM docker_manifests m
+			WHERE m.repository_id = dt.repository_id AND m.image = dt.image
+			  AND m.digest = dt.manifest_digest AND m.deleted_at IS NULL)
+		 FROM docker_tags dt WHERE dt.id = $1::uuid`, tagID).Scan(&live)
+	if err != nil {
+		return fmt.Errorf("check docker tag manifest: %w", err)
+	}
+
+	if !live {
+		return ErrTrashManifestInTrash
+	}
+
+	return nil
+}
+
 func (p *PostgresDB) restoreRepository(ctx context.Context, id string) (*models.TrashItem, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
@@ -471,14 +502,46 @@ func (p *PostgresDB) restoreRepository(ctx context.Context, id string) (*models.
 		return nil, err
 	}
 
-	res, err := p.db.ExecContext(ctx,
-		`UPDATE repositories SET deleted_at = NULL, deleted_by = NULL WHERE id = $1::uuid AND deleted_at IS NOT NULL`, id)
+	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
+		return nil, fmt.Errorf("begin restore transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	// One captured delta shifts every row identically, so docker manifest/tag
+	// cascade pairs (matched on equal deleted_at) stay equal.
+	var delta string
+
+	err = tx.QueryRowContext(ctx,
+		`SELECT (now() - deleted_at)::text FROM repositories
+		 WHERE id = $1::uuid AND deleted_at IS NOT NULL FOR UPDATE`, id).Scan(&delta)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, ErrTrashNotFound
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("lock trashed repository: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx,
+		`UPDATE repositories SET deleted_at = NULL, deleted_by = NULL WHERE id = $1::uuid`, id); err != nil {
 		return nil, fmt.Errorf("restore repository: %w", err)
 	}
 
-	if n, _ := res.RowsAffected(); n == 0 {
-		return nil, ErrTrashNotFound
+	// Items trashed before the repository keep the window they had left when it
+	// was trashed.
+	for _, s := range trashSpecs {
+		//nolint:gosec // G202: table and repoID are constants of the kind registry; the id is a bound argument
+		if _, err := tx.ExecContext(ctx,
+			`UPDATE `+s.table+` t SET deleted_at = t.deleted_at + $2::interval
+			 WHERE `+s.repoID+` = $1::uuid AND t.deleted_at IS NOT NULL`, id, delta); err != nil {
+			return nil, fmt.Errorf("shift trashed %s: %w", s.kind, err)
+		}
+	}
+
+	if err := tx.Commit(); err != nil {
+		return nil, fmt.Errorf("commit restore transaction: %w", err)
 	}
 
 	return item, nil

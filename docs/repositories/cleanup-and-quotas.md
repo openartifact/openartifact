@@ -88,7 +88,7 @@ On upload the server atomically reserves the artifact's size and one artifact sl
 The refusal is `507 Insufficient Storage`:
 
 ```json
-{"error":"repository storage quota exceeded","code":"quota_exceeded"}
+{"error":"repository storage quota exceeded (bytes of trashed items count until purged; see the repository trash)","code":"quota_exceeded"}
 ```
 
 Usage is the sum, over the repository's packages, of each package's blob size, plus one artifact per package. It is given back when a package is **permanently** deleted through the format or upload API (retention `0`, or when the [trash](#trash-and-quotas) purge worker removes it), when an upload is replaced (Maven snapshot overwrite) and when a [cleanup policy](#cleanup-policies) permanently deletes it. A blob that is shared by several packages (blobs are deduplicated) counts once per package, the same way the upload reserved it. A repository in the trash keeps its counters until it is purged, which removes them with it.
@@ -97,7 +97,7 @@ Quotas are enforced on upload paths of these formats only: **Maven** (`/repos/ma
 
 ### Trash and quotas
 
-Soft-deleted bytes keep counting against the quota until purge: moving a package to the trash does not release its reservation, so deleting to make room does not work while the retention is greater than 0. Reconciliation counts trashed rows too. The purge worker (or an admin's manual purge) releases the usage when the row is finally deleted; restoring a package needs no new reservation. To free quota immediately, purge the item from the trash (`DELETE /api/v1/trash/{kind}/{id}`, admin) or set `trash_retention_days` to `0` on the repository. Details: [Trash](../operations/trash.md#quota).
+Soft-deleted bytes keep counting against the quota until purge: moving a package to the trash does not release its reservation, so deleting to make room does not work while the retention is greater than 0. Reconciliation counts trashed rows too. The purge worker (or an admin's manual purge) releases the usage when the row is finally deleted; restoring a package needs no new reservation. To free quota immediately, empty the repository trash (`DELETE /api/v1/repositories/{name}/trash`, repository `manage` or admin; `oa trash purge --repo NAME --all`), purge a single item from the trash (`DELETE /api/v1/trash/{kind}/{id}`, admin) or set `trash_retention_days` to `0` on the repository. Details: [Trash](../operations/trash.md#quota).
 
 ### Keeping the counters correct
 

@@ -25,7 +25,7 @@ Details, token kinds and SSO are in [authentication](../security/authentication.
 - **API token:** `Authorization: Bearer <TOKEN>`. No CSRF header needed. Tokens are `access` (management API, per the owner's permissions) or `deploy` (repository credentials; never granted `manage`, so no `/api/v1` management calls).
 - **Session cookie:** `POST /api/v1/auth/login` (`{"username","password"}`) sets `oa_session` (HttpOnly, SameSite=Lax) and a readable `oa_csrf` cookie. State-changing requests (`POST`, `PUT`, `PATCH`, `DELETE`) on a session must echo it in `X-CSRF-Token`, otherwise `403 {"error":"csrf_protection",...}`. Login is rate limited (`429 rate_limited` with `Retry-After`).
 - **Self-service limits:** an API token cannot create or revoke tokens, change a password, or edit its own user profile; those need a login session. An account flagged `must_change_password` gets `403 password_change_required` everywhere except `change-password` and `logout`.
-- **Gate:** every `/api/v1/*` route requires the global `manage` permission, except `GET /repositories` and `GET /search` (any authenticated user; results are filtered per repository), `GET /repository/{name}` (`read` on that repository), `/repositories/{name}/{packages,debs,comps}` and `/repositories/{name}/trash...` (`read`/`write`/`delete`, or `delete`, on that repository). Anonymous callers can only read public repositories (or what `allowAnonymousRead` exposes).
+- **Gate:** every `/api/v1/*` route requires the global `manage` permission, except `GET /repositories` and `GET /search` (any authenticated user; results are filtered per repository), `GET /repository/{name}` (`read` on that repository), `/repositories/{name}/{packages,debs,comps}` and `/repositories/{name}/trash...` (`read`/`write`/`delete`, or `delete`, on that repository; `DELETE .../trash` needs `manage` on it). Anonymous callers can only read public repositories (or what `allowAnonymousRead` exposes).
 
 ### Example: token and repository
 
@@ -130,6 +130,7 @@ The repository then moves to the trash for its retention period (unless that is 
 | `POST /api/v1/trash/{kind}/{id}/restore` | admin | Restore an item or a repository; `200` with the item |
 | `POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore` | `delete` on the repository | Restore an item of that repository (not for kind `repository`) |
 | `DELETE /api/v1/trash/{kind}/{id}` | admin | Purge now (permanent); `204` |
+| `DELETE /api/v1/repositories/{name}/trash` | `manage` on the repository (or admin) | Empty that repository's trash (items only; at most 1000 per call); `200` `{"purged":N,"remaining":M}` |
 
 An item is `{"id","kind","repository_id","repository","format","name","version","size_bytes","deleted_at","deleted_by","purge_at"}`; a list is `{"items":[...],"total":N,"page":P,"limit":L}`. Restore conflicts are `409` (`trash_conflict`, `repository_in_trash`). Kinds, examples and semantics: [Trash](../operations/trash.md#api).
 

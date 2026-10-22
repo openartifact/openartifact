@@ -684,6 +684,17 @@ export type TrashItem = {
     purge_at: string;
 };
 
+export type TrashEmpty = {
+    /**
+     * Items destroyed by this request.
+     */
+    purged: number;
+    /**
+     * Trashed items left (a request purges at most 1000).
+     */
+    remaining: number;
+};
+
 export type TrashList = {
     items: Array<TrashItem>;
     total: number;
@@ -5029,7 +5040,12 @@ export type PostApiV1RepositoriesByNameUploadsByIdCompleteData = {
         name: string;
         id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Administrators only: `true` overwrites an existing file of a repository with `immutable_releases`. Ignored for everyone else.
+         */
+        force?: boolean;
+    };
     url: '/api/v1/repositories/{name}/uploads/{id}/complete';
 };
 
@@ -5051,7 +5067,7 @@ export type PostApiV1RepositoriesByNameUploadsByIdCompleteErrors = {
      */
     404: unknown;
     /**
-     * Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_changed: the staged object was overwritten during verification; the upload was discarded
+     * Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_changed: the staged object was overwritten during verification; the upload was discarded. Code immutable_release: the path already exists in a repository with `immutable_releases`; nothing was recorded and the upload stays pending (retry with `force=true` as an administrator)
      */
     409: Error;
     /**
@@ -5149,7 +5165,7 @@ export type PostApiV1TrashByKindByIdRestoreErrors = {
      */
     404: Error;
     /**
-     * trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.
+     * trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first.
      */
     409: Error;
 };
@@ -5206,6 +5222,35 @@ export type DeleteApiV1TrashByKindByIdResponses = {
 };
 
 export type DeleteApiV1TrashByKindByIdResponse = DeleteApiV1TrashByKindByIdResponses[keyof DeleteApiV1TrashByKindByIdResponses];
+
+export type DeleteApiV1RepositoriesByNameTrashData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/trash';
+};
+
+export type DeleteApiV1RepositoriesByNameTrashErrors = {
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1RepositoriesByNameTrashResponses = {
+    /**
+     * Items purged by this request and items still in the trash
+     */
+    200: TrashEmpty;
+};
+
+export type DeleteApiV1RepositoriesByNameTrashResponse = DeleteApiV1RepositoriesByNameTrashResponses[keyof DeleteApiV1RepositoriesByNameTrashResponses];
 
 export type GetApiV1RepositoriesByNameTrashData = {
     body?: never;
@@ -5276,7 +5321,7 @@ export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreErrors = {
      */
     404: Error;
     /**
-     * trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first.
+     * trash_conflict: an item with the same name/version was published after the delete; delete or rename it first. repository_in_trash: the item's repository is in the trash; restore the repository first. manifest_in_trash: a docker tag's manifest is in the trash; restore the manifest first.
      */
     409: Error;
 };

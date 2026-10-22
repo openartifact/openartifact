@@ -87,7 +87,7 @@ func stderrPrompt(s string) { fmt.Fprint(os.Stderr, s) }
 
 func handleTrash(args []string, client *Client, outFmt string) {
 	if len(args) < 1 {
-		dief("Usage: oa trash <list|restore|purge>")
+		dief("Usage: oa trash <list|restore|purge>\n  oa trash purge <kind> <id> [--yes]            purge one item (admin)\n  oa trash purge --repo NAME --all [--yes]      empty a repository's trash (repository manage permission)")
 	}
 
 	switch args[0] {
@@ -97,7 +97,13 @@ func handleTrash(args []string, client *Client, outFmt string) {
 		needArgs(args, 3, "Usage: oa trash restore <kind> <id> [--repo NAME]")
 		trashRestore(client, args[1], args[2], args[3:], outFmt)
 	case "purge":
-		needArgs(args, 3, "Usage: oa trash purge <kind> <id> [--yes]")
+		const purgeUsage = "Usage: oa trash purge <kind> <id> [--yes]  |  oa trash purge --repo NAME --all [--yes]"
+		if len(args) > 1 && strings.HasPrefix(args[1], "-") {
+			trashEmpty(client, args[1:], outFmt)
+			return
+		}
+
+		needArgs(args, 3, purgeUsage)
 		trashPurge(client, args[1], args[2], args[3:])
 	default:
 		dief("Unknown trash subcommand: %s", args[0])
@@ -161,4 +167,47 @@ func trashPurge(client *Client, kind, id string, args []string) {
 	}
 
 	deleteResource(client, "/api/v1/trash/"+escape(kind)+"/"+escape(id), fmt.Sprintf("Purged %s %s.", kind, id))
+}
+
+// trashEmpty purges every trashed item of one repository
+// (DELETE /api/v1/repositories/{name}/trash, repository manage permission).
+// The server purges a capped number per request; the call is repeated until
+// nothing remains.
+func trashEmpty(client *Client, args []string, outFmt string) {
+	fs := flag.NewFlagSet("trash purge", flag.ExitOnError)
+	repo := fs.String("repo", "", "Repository whose trash to empty")
+	all := fs.Bool("all", false, "Purge every trashed item of --repo")
+	yes := fs.Bool("yes", false, "Do not ask for confirmation")
+	_ = fs.Parse(args)
+
+	if !*all || *repo == "" {
+		dief("Usage: oa trash purge --repo NAME --all [--yes] (--all requires --repo)")
+	}
+
+	if err := confirmPurge("all trashed items of repository", *repo, *yes, stdinIsTerminal(), stdinReader, stderrPrompt); err != nil {
+		dief("%v", err)
+	}
+
+	path := "/api/v1/repositories/" + escape(*repo) + "/trash"
+	total := 0
+
+	for {
+		result := sendJSON(client, http.MethodDelete, path, nil, http.StatusOK)
+
+		purged, _ := result["purged"].(float64)
+		remaining, _ := result["remaining"].(float64)
+		total += int(purged)
+
+		// No progress means nothing more can be purged this way.
+		if remaining <= 0 || purged <= 0 {
+			if outFmt == "json" {
+				printJSON(map[string]any{"purged": total, "remaining": int(remaining)})
+				return
+			}
+
+			fmt.Printf("Purged %d trashed items of %s (%d remaining).\n", total, *repo, int(remaining))
+
+			return
+		}
+	}
 }

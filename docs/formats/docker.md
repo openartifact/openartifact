@@ -74,6 +74,8 @@ Deleting a tag, or pushing a new image to an existing tag, leaves the old manife
 
 **Trash.** Manifests in the [trash](../operations/trash.md) are not collected by garbage collection, and neither are the layers they reference: they stay in storage until the manifest is purged (or restored). Garbage collection only sees live manifests, so a trashed tagged image never turns into an "untagged" candidate. Once the purge worker has removed a manifest, its layers become collectable by the normal rules.
 
+**Limitation:** blob lookups (`GET`/`HEAD /v2/<name>/blobs/<digest>`) are by repository and digest and do not look at manifests, so a layer or config blob of a trashed image can still be fetched by digest while it sits in the trash (the manifest and its tags answer `404`). Hiding it would need the same check on every blob lookup, which is also used by uploads, cross-repository mounts and manifest validation, and could break pushes of images that reuse the layer; it is therefore not done. Restoring a tag whose manifest is in the trash answers `409 manifest_in_trash`; restore the manifest instead.
+
 **What is kept.** A manifest is deleted only when it is older than the grace period (its last push or re-push) and none of these holds:
 
 - a tag of the same image points at it;

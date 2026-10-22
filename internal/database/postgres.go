@@ -1704,13 +1704,29 @@ func (p *PostgresDB) GetPackageDelta(ctx context.Context, repoID, fromSHA256, to
 	return &d, nil
 }
 
+// ListPackageDeltas returns the deltas that target toSHA256. A delta whose
+// source package is in the trash is hidden (it would reveal the trashed file's
+// sha256 and name) and reappears when the source is restored; a source that
+// still has a live row (same blob in another row) keeps its deltas visible.
 func (p *PostgresDB) ListPackageDeltas(ctx context.Context, repoID, toSHA256 string) ([]*models.PackageDelta, error) {
 	rows, err := p.db.QueryContext(ctx, `
-		SELECT id, repository_id, from_sha256, from_filename, to_sha256, to_filename,
-		       delta_sha256, delta_size, format, created_at
-		FROM package_deltas
-		WHERE repository_id = $1 AND to_sha256 = $2
-		ORDER BY created_at DESC`,
+		SELECT d.id, d.repository_id, d.from_sha256, d.from_filename, d.to_sha256, d.to_filename,
+		       d.delta_sha256, d.delta_size, d.format, d.created_at
+		FROM package_deltas d
+		WHERE d.repository_id = $1 AND d.to_sha256 = $2
+		  AND (
+		    EXISTS (SELECT 1 FROM rpm_packages s JOIN blobs b ON b.id = s.blob_id
+		            WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NULL)
+		    OR EXISTS (SELECT 1 FROM deb_packages s JOIN blobs b ON b.id = s.blob_id
+		               WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NULL)
+		    OR NOT (
+		      EXISTS (SELECT 1 FROM rpm_packages s JOIN blobs b ON b.id = s.blob_id
+		              WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NOT NULL)
+		      OR EXISTS (SELECT 1 FROM deb_packages s JOIN blobs b ON b.id = s.blob_id
+		                 WHERE s.repository_id = d.repository_id AND b.sha256 = d.from_sha256 AND s.deleted_at IS NOT NULL)
+		    )
+		  )
+		ORDER BY d.created_at DESC`,
 		repoID, toSHA256,
 	)
 	if err != nil {

@@ -3,9 +3,9 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { request } from './client'
-import type { TrashItem } from './generated/types.gen'
+import type { TrashEmpty, TrashItem } from './generated/types.gen'
 
-export type { TrashItem }
+export type { TrashEmpty, TrashItem }
 export type TrashKind = TrashItem['kind']
 
 export interface TrashPage {
@@ -49,4 +49,12 @@ export function restoreTrash(item: Pick<TrashItem, 'kind' | 'id'>, repo?: string
 /** Permanently destroys a trashed item (admin only). */
 export function purgeTrash(item: Pick<TrashItem, 'kind' | 'id'>): Promise<void> {
   return request<void>(`/api/v1/trash/${enc(item.kind)}/${enc(item.id)}`, { method: 'DELETE' })
+}
+
+/**
+ * Permanently destroys every trashed item of a repository (repository manage
+ * permission). The server purges a capped number per call; `remaining` says how many are left.
+ */
+export function emptyRepoTrash(repo: string): Promise<TrashEmpty> {
+  return request<TrashEmpty>(`/api/v1/repositories/${enc(repo)}/trash`, { method: 'DELETE' })
 }

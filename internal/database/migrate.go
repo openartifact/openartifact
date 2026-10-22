@@ -110,8 +110,12 @@ func (m *Migrator) loadApplied(ctx context.Context, conn *sql.Conn) (map[string]
 func (m *Migrator) applyFile(ctx context.Context, conn *sql.Conn, version string, data []byte, noTx bool) error {
 	sum := migratorChecksum(data)
 	if noTx {
-		if _, err := conn.ExecContext(ctx, string(data)); err != nil {
-			return fmt.Errorf("apply %s: %w", version, err)
+		// One statement per query: a multi-statement simple query runs inside a
+		// single implicit transaction, which CREATE INDEX CONCURRENTLY refuses.
+		for i, stmt := range splitStatements(string(data)) {
+			if _, err := conn.ExecContext(ctx, stmt); err != nil {
+				return fmt.Errorf("apply %s statement %d: %w", version, i+1, err)
+			}
 		}
 
 		if _, err := conn.ExecContext(ctx,

@@ -67,7 +67,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 |---|---|
 | `auth` | `login [--server URL] [--username U] [--password-stdin]`, `logout`, `whoami`, `passwd [--password-stdin]` (stdin: current password, then new, one per line), `token list`, `token create --name N [--kind access\|deploy] [--username U] [--password-stdin]`, `token revoke <id> [--username U] [--password-stdin]` |
 | `repo` | `list`, `create <name> [--format FMT] [--description D] [--public] [--trash-retention-days N] [--immutable-releases]` (default format `npm`), `show <name>`, `update <name> [--description D] [--public[=false]] [--trash-retention-days N\|default] [--immutable-releases[=false]]` (only the flags you pass are sent), `delete <name> --confirm <name>` (see [Deleting a repository](#deleting-a-repository)), `packages <name>`, `members <name>` (the member repositories of a group repository) |
-| `trash` | `list [--repo NAME] [--kind K]`, `restore <kind> <id> [--repo NAME]`, `purge <kind> <id> [--yes]` (see [Trash](#trash)) |
+| `trash` | `list [--repo NAME] [--kind K]`, `restore <kind> <id> [--repo NAME]`, `purge <kind> <id> [--yes]`, `purge --repo NAME --all [--yes]` (see [Trash](#trash)) |
 | `artifact` | `list <repo>`, `upload <repo> <file>`, `delete <repo> <id>` (moved to the [trash](../operations/trash.md) unless the repository retention is 0) |
 | `search` | `[--repo R] [--fmt F] [--limit N] <query>` (default limit 50; put flags before the query) |
 | `user` *admin* | `list`, `create --username U --email E [--password-stdin] [--full-name N]`, `show <id>`, `update <id> [--email E] [--full-name N] [--disabled[=false]]`, `delete <id>` |
@@ -116,11 +116,13 @@ oa trash list --repo my-repo --kind maven_artifact
 oa trash restore raw_artifact <id> --repo my-repo
 oa trash restore repository <id>               # admin
 oa trash purge docker_tag <id>                 # asks "Type 'yes' to confirm"; --yes skips the prompt (admin)
+oa trash purge --repo my-repo --all --yes      # empty that repository's trash (repository manage permission)
 ```
 
 - `list` prints `ID`, `KIND`, `REPOSITORY`, `NAME`, `VERSION`, `SIZE`, `DELETED_AT`, `DELETED_BY` and `PURGE_AT` (all fields with `--format json`). Without `--repo` it uses the admin endpoint; with `--repo` it uses the repository endpoint, which needs only the delete permission on that repository. `--kind` filters by kind (`repository`, `maven_artifact`, `npm_version`, `docker_manifest`, ...; the full list is in [Trash](../operations/trash.md#kinds)).
 - `restore <kind> <id>` restores one item and prints it with `--format json`. A conflict (the path or version was re-published meanwhile, or the repository is itself in the trash) exits 1 with the server's `409` message. Restoring a repository needs the admin endpoint (no `--repo`).
 - `purge <kind> <id>` deletes the item permanently now. Without `--yes` it asks for confirmation on a terminal and refuses to run when stdin is not one.
+- `purge --repo NAME --all` purges every trashed item of the repository (`DELETE /api/v1/repositories/{name}/trash`) and needs the repository `manage` permission instead of admin; `--all` requires `--repo`, and it asks for the same confirmation (`--yes` skips it). The server purges at most 1000 items per request; the CLI repeats until none remain and prints the totals.
 - `oa repo create|update --trash-retention-days N` sets the per-repository retention (`0` deletes immediately, `default` on `update` goes back to the server-wide setting); `--immutable-releases[=false]` blocks deleting or overwriting released versions. See [immutable releases](../operations/trash.md#immutable-releases).
 
 ### Transfers

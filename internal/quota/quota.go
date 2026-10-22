@@ -17,7 +17,12 @@ import (
 
 // ErrExceeded is returned by Enforce when storing the artifact would exceed the
 // repository's size or artifact-count limit.
-var ErrExceeded = errors.New("repository storage quota exceeded")
+var ErrExceeded = errors.New(Message)
+
+// Message is the text every format answers with when the quota is exceeded. It
+// tells the client that trashed items still count, so the way out is purging
+// the repository trash.
+const Message = "repository storage quota exceeded (bytes of trashed items count until purged; see the repository trash)"
 
 // Enforce atomically reserves size bytes and one artifact slot in the
 // repository's storage quota. It returns ErrExceeded when the reservation does
@@ -77,5 +82,5 @@ func ReleaseN(ctx context.Context, db database.Database, repoID string, size int
 func WriteExceeded(w http.ResponseWriter) {
 	w.Header().Set("Content-Type", "application/json")
 	w.WriteHeader(http.StatusInsufficientStorage)
-	_, _ = w.Write([]byte(`{"error":"repository storage quota exceeded","code":"quota_exceeded"}` + "\n"))
+	_, _ = w.Write([]byte(`{"error":"` + Message + `","code":"quota_exceeded"}` + "\n"))
 }

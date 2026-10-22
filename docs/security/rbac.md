@@ -41,6 +41,7 @@ Two targets are seeded by the first migration:
 | `GET/HEAD /api/v1/repository/{name}` | `read` | `{name}` |
 | `/api/v1/repositories/{name}/debs…`, `…/packages…`, `…/comps…` (Debian/RPM upload), `…/uploads…` (presigned raw upload: create and complete) | GET/HEAD `read`, POST/PUT `write`, DELETE `delete` | `{name}`, empty path |
 | `GET /api/v1/repositories/{name}/trash`, `POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore` | `delete` | `{name}`, empty path |
+| `DELETE /api/v1/repositories/{name}/trash` (empty the repository trash) | `manage` | `{name}`, empty path |
 | `GET /api/v1/trash`, `POST /api/v1/trash/{kind}/{id}/restore`, `DELETE /api/v1/trash/{kind}/{id}` | `manage` | global |
 | everything else (package data) | GET/HEAD/OPTIONS `read`, DELETE `delete`, other methods `write` | see below |
 

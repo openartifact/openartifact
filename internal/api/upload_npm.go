@@ -812,6 +812,14 @@ func (h *NPMUploadHandler) removeNPMVersions(ctx context.Context, repo *models.R
 func (h *NPMUploadHandler) hardDeleteNPMVersions(ctx context.Context, repo *models.Repository, pkg *models.NPMPackage, versions []*models.NPMVersion, sizes []int64) error {
 	removed := make(map[string]bool, len(versions))
 
+	// Read the tags while the versions are still live: GetNPMDistTags only
+	// returns tags of live versions, so after the delete the tags of the
+	// removed ones would be invisible and stay behind.
+	tags, err := h.db.GetNPMDistTags(ctx, pkg.ID)
+	if err != nil {
+		return err
+	}
+
 	for i, v := range versions {
 		size := sizes[i]
 
@@ -832,11 +840,6 @@ func (h *NPMUploadHandler) hardDeleteNPMVersions(ctx context.Context, repo *mode
 		if delErr := storage.SafeDeleteBlob(ctx, h.db, h.blobStore, v.BlobSHA256); delErr != nil {
 			h.log.Warnw("failed to clean up blob after unpublish", "sha256", v.BlobSHA256, "error", delErr)
 		}
-	}
-
-	tags, err := h.db.GetNPMDistTags(ctx, pkg.ID)
-	if err != nil {
-		return err
 	}
 
 	for tag, ver := range tags {

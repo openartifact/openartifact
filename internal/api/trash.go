@@ -27,6 +27,11 @@ import (
 const (
 	defaultTrashListLimit = 50
 	maxTrashListLimit     = 200
+
+	// maxEmptyTrashItems caps how many items one "empty trash" request purges;
+	// the response reports what is left so the caller can repeat.
+	maxEmptyTrashItems = 1000
+	emptyTrashBatch    = 100
 )
 
 // TrashHandler serves the trash API: listing, restoring and purging soft-deleted
@@ -34,7 +39,8 @@ const (
 //
 // The global routes (/api/v1/trash...) are admin only. The repository routes
 // (/api/v1/repositories/{name}/trash...) need the repository-scoped `delete`
-// permission and only ever touch items of that repository.
+// permission and only ever touch items of that repository; emptying a
+// repository's trash needs the repository-scoped `manage` permission.
 type TrashHandler struct {
 	db        database.Database
 	log       *logger.Logger
@@ -81,6 +87,7 @@ func (h *TrashHandler) RegisterAuthed(r chi.Router) {
 	r.Delete("/api/v1/trash/{kind}/{id}", h.handlePurge)
 	r.Get("/api/v1/repositories/{name}/trash", h.handleListRepo)
 	r.Post("/api/v1/repositories/{name}/trash/{kind}/{id}/restore", h.handleRestoreRepo)
+	r.Delete("/api/v1/repositories/{name}/trash", h.handleEmptyRepo)
 }
 
 func trashItemResponse(it *models.TrashItem) responses.TrashItemResponse {
@@ -202,6 +209,11 @@ func (h *TrashHandler) writeList(ctx context.Context, w http.ResponseWriter, sto
 // at the gate; this keeps the handler safe on its own) and the repository must
 // be live. It writes the error response and returns false otherwise.
 func (h *TrashHandler) repoForDelete(w http.ResponseWriter, r *http.Request) (*models.Repository, bool) {
+	return h.repoFor(w, r, "delete")
+}
+
+// repoFor is repoForDelete for an arbitrary repository-scoped action.
+func (h *TrashHandler) repoFor(w http.ResponseWriter, r *http.Request, action string) (*models.Repository, bool) {
 	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
 
@@ -211,7 +223,7 @@ func (h *TrashHandler) repoForDelete(w http.ResponseWriter, r *http.Request) (*m
 		return nil, false
 	}
 
-	allowed, err := h.evaluator.Evaluate(ctx, *p, name, "", "delete")
+	allowed, err := h.evaluator.Evaluate(ctx, *p, name, "", action)
 	if err != nil {
 		h.log.Errorw("trash: auth evaluation failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
@@ -363,6 +375,9 @@ func (h *TrashHandler) writeTrashError(w http.ResponseWriter, op string, err err
 	case errors.Is(err, database.ErrTrashRepoTrashed):
 		writeError(w, http.StatusConflict, "repository_in_trash",
 			"the item's repository is in the trash; restore the repository first")
+	case errors.Is(err, database.ErrTrashManifestInTrash):
+		writeError(w, http.StatusConflict, "manifest_in_trash",
+			"the tag's manifest is in the trash; restore the manifest first")
 	case database.IsForeignKeyViolation(err):
 		writeError(w, http.StatusConflict, "conflict",
 			"the repository is still referenced (for example by a release bundle or promotion); remove the reference first")
@@ -403,6 +418,88 @@ func (h *TrashHandler) handlePurge(w http.ResponseWriter, r *http.Request) {
 	h.emitPurged(ctx, res)
 
 	writeNoContent(w)
+}
+
+// handleEmptyRepo purges every trashed item of the repository {name} now:
+// items only, never the repository itself. It needs the repository-scoped
+// `manage` permission (global administrators hold it everywhere) and purges at
+// most maxEmptyTrashItems per request.
+//
+//	DELETE /api/v1/repositories/{name}/trash
+func (h *TrashHandler) handleEmptyRepo(w http.ResponseWriter, r *http.Request) {
+	repo, ok := h.repoFor(w, r, "manage")
+	if !ok {
+		return
+	}
+
+	store, ok := h.store(w)
+	if !ok {
+		return
+	}
+
+	ctx := r.Context()
+	filter := models.TrashFilter{RepositoryID: repo.ID, Page: 1, Limit: emptyTrashBatch}
+	purged := 0
+
+	for purged < maxEmptyTrashItems && ctx.Err() == nil {
+		filter.Limit = min(emptyTrashBatch, maxEmptyTrashItems-purged)
+
+		items, _, err := store.ListTrash(ctx, filter)
+		if err != nil {
+			h.log.Errorw("empty trash: list failed", "repository", repo.Name, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return
+		}
+
+		if len(items) == 0 {
+			break
+		}
+
+		n, err := h.purgeBatch(ctx, store, items)
+		purged += n
+
+		if err != nil {
+			h.writeTrashError(w, "empty trash", err)
+			return
+		}
+	}
+
+	_, remaining, err := store.ListTrash(ctx, models.TrashFilter{RepositoryID: repo.ID, Page: 1, Limit: 1})
+	if err != nil {
+		h.log.Errorw("empty trash: count failed", "repository", repo.Name, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	writeJSON(w, http.StatusOK, responses.TrashEmptyResponse{Purged: purged, Remaining: remaining})
+}
+
+// purgeBatch purges items one by one (blobs, quota, audit, events like the
+// single purge). An item that vanished meanwhile is skipped; any other failure
+// stops the batch and is returned with the number purged so far.
+func (h *TrashHandler) purgeBatch(ctx context.Context, store database.TrashStore, items []*models.TrashItem) (int, error) {
+	purged := 0
+
+	for _, it := range items {
+		res, err := store.PurgeTrash(ctx, it.Kind, it.ID)
+		if errors.Is(err, database.ErrTrashNotFound) {
+			continue
+		}
+
+		if err != nil {
+			return purged, err
+		}
+
+		h.afterPurge(ctx, res)
+		trash.AuditPurged(ctx, res, "manual")
+		h.emitPurged(ctx, res)
+
+		purged++
+	}
+
+	return purged, nil
 }
 
 // afterPurge does the cleanup the database could not: free the blobs (a

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -110,5 +111,13 @@ func TestWriteExceeded(t *testing.T) {
 
 	if rec.Code != http.StatusInsufficientStorage {
 		t.Errorf("status = %d, want 507", rec.Code)
+	}
+
+	if body := rec.Body.String(); !strings.Contains(body, "trashed items count until purged") || !strings.Contains(body, `"code":"quota_exceeded"`) {
+		t.Errorf("body = %q, want the trash hint and quota_exceeded code", body)
+	}
+
+	if !strings.Contains(ErrExceeded.Error(), "see the repository trash") {
+		t.Errorf("ErrExceeded = %q, want the trash hint", ErrExceeded)
 	}
 }

@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { confirmNameMatches, daysUntilPurge, parseRetentionInput, purgeInText } from '../trash'
+import { confirmNameMatches, daysUntilPurge, emptyTrashResultText, parseRetentionInput, purgeInText } from '../trash'
 
 const now = Date.parse('2026-10-22T12:00:00Z')
 
@@ -43,5 +43,14 @@ describe('parseRetentionInput', () => {
     expect(parseRetentionInput(30)).toBe(30)
     expect(parseRetentionInput('-1')).toBeUndefined()
     expect(parseRetentionInput('1.5')).toBeUndefined()
+  })
+})
+
+describe('emptyTrashResultText', () => {
+  it('reports the purged count', () => {
+    expect(emptyTrashResultText(3, 0)).toBe('Purged 3 items from the trash.')
+  })
+  it('mentions what is left when the request was capped', () => {
+    expect(emptyTrashResultText(1000, 250)).toBe('Purged 1000 items from the trash. 250 items remain; empty the trash again.')
   })
 })

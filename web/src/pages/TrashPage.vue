@@ -29,7 +29,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <option v-for="k in kindOptions" :key="k" :value="k">{{ kindLabel(k) }}</option>
           </select>
         </label>
-        <span class="text-[11px] font-mono text-muted">{{ total }} {{ t('adm.common.total') }}</span>
+        <div class="flex items-center gap-3">
+          <span class="text-[11px] font-mono text-muted">{{ total }} {{ t('adm.common.total') }}</span>
+          <button
+            v-if="repo && session.isAdmin && total > 0"
+            type="button"
+            class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-danger border border-danger/40 hover:bg-danger/10 disabled:opacity-50"
+            :disabled="busyKey !== ''"
+            @click="emptyOpen = true"
+          >
+            <TrashIcon class="w-3.5 h-3.5" aria-hidden="true" />
+            {{ t('trash.emptyTrash') }}
+          </button>
+        </div>
       </div>
 
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
@@ -122,6 +134,25 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         >{{ t('trash.purge') }}</button>
       </template>
     </AdminDialog>
+
+    <AdminDialog :open="emptyOpen" :title="t('trash.emptyTitle')" @close="emptyOpen = false">
+      <p class="text-sm text-foreground">
+        {{ t('trash.emptyBody').replace('{n}', String(total)).replace('{name}', repo) }}
+      </p>
+      <template #footer>
+        <button
+          type="button"
+          class="px-4 py-2 text-sm rounded-md border border-border text-foreground hover:bg-surface-hover"
+          @click="emptyOpen = false"
+        >{{ t('common.cancel') }}</button>
+        <button
+          type="button"
+          class="px-4 py-2 text-sm rounded-md bg-danger text-white hover:opacity-90 disabled:opacity-50"
+          :disabled="busyKey !== ''"
+          @click="doEmpty"
+        >{{ t('trash.emptyTrash') }}</button>
+      </template>
+    </AdminDialog>
   </div>
 </template>
 
@@ -132,9 +163,9 @@ import { ArrowUturnLeftIcon, ChevronRightIcon, TrashIcon } from '@heroicons/vue/
 import AdminDialog from '../components/AdminDialog.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import Pagination from '../components/Pagination.vue'
-import { listTrash, purgeTrash, restoreTrash, type TrashItem, type TrashKind } from '../api/trash'
+import { emptyRepoTrash, listTrash, purgeTrash, restoreTrash, type TrashItem, type TrashKind } from '../api/trash'
 import { formatDateTime } from '../lib/datetime'
-import { purgeInText } from '../lib/trash'
+import { emptyTrashResultText, purgeInText } from '../lib/trash'
 import { useSessionStore } from '../stores/session'
 import { useToastStore } from '../stores/toast'
 import { t, tDynamic } from '../i18n/en'
@@ -156,6 +187,7 @@ const loading = ref(false)
 const loadError = ref('')
 const busyKey = ref('')
 const purgeTarget = ref<TrashItem | null>(null)
+const emptyOpen = ref(false)
 
 const ALL_KINDS: TrashKind[] = [
   'repository', 'maven_artifact', 'ivy_artifact', 'sbt_artifact', 'npm_version', 'pypi_package',
@@ -220,6 +252,21 @@ async function doPurge(): Promise<void> {
     await load()
   } catch (err) {
     toasts.error(t('trash.purgeFailed'), err instanceof Error ? err.message : undefined)
+  } finally {
+    busyKey.value = ''
+  }
+}
+
+async function doEmpty(): Promise<void> {
+  if (!repo.value) return
+  busyKey.value = 'empty'
+  try {
+    const res = await emptyRepoTrash(repo.value)
+    toasts.success(emptyTrashResultText(res.purged, res.remaining))
+    emptyOpen.value = false
+    await load()
+  } catch (err) {
+    toasts.error(t('trash.emptyFailed'), err instanceof Error ? err.message : undefined)
   } finally {
     busyKey.value = ''
   }

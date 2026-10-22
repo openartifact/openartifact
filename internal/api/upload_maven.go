@@ -464,6 +464,10 @@ func (h *MavenUploadHandler) enforcePomLicenses(w http.ResponseWriter, r *http.R
 	return true
 }
 
+// errMavenImmutableRelease is the client-facing 409 text for a delete of a
+// release artifact of an immutable repository (trash.ErrImmutableRelease).
+const errMavenImmutableRelease = "released versions are immutable in this repository; an admin may override with force"
+
 func writeMavenConflict(w http.ResponseWriter, msg string) {
 	body, err := json.Marshal(map[string]string{"error": msg})
 	if err != nil {
@@ -549,7 +553,14 @@ func (h *MavenUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request
 	}
 
 	if err := trash.GuardReleaseByName(r, h.db, repoName, "maven", art.Version); err != nil {
-		writeMavenConflict(w, err.Error())
+		if errors.Is(err, trash.ErrImmutableRelease) {
+			writeMavenConflict(w, errMavenImmutableRelease)
+			return
+		}
+
+		h.log.Errorw("failed to check release immutability", "repo", repoName, "path", artPath, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
 		return
 	}
 

@@ -17,6 +17,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/jackc/pgx/v5/pgconn"
+	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -50,6 +51,8 @@ type fakeTrashDB struct {
 	listFilter     models.TrashFilter
 	listItems      []*models.TrashItem
 	listTotal      int
+	purgeCalls     int
+	statefulList   bool // ListTrash hides the items PurgeTrash already removed
 	regenA, regenB string
 
 	// Observations.
@@ -130,6 +133,13 @@ func (db *fakeTrashDB) TrashRepository(_ context.Context, _, by string) (bool, e
 
 func (db *fakeTrashDB) ListTrash(_ context.Context, f models.TrashFilter) ([]*models.TrashItem, int, error) {
 	db.listFilter = f
+
+	if db.statefulList {
+		left := db.listItems[min(db.purgeCalls, len(db.listItems)):]
+
+		return left[:min(f.Limit, len(left))], len(left), nil
+	}
+
 	return db.listItems, db.listTotal, nil
 }
 
@@ -156,6 +166,7 @@ func (db *fakeTrashDB) RestoreTrash(_ context.Context, kind models.TrashKind, id
 }
 
 func (db *fakeTrashDB) PurgeTrash(context.Context, models.TrashKind, string) (*models.TrashPurgeResult, error) {
+	db.purgeCalls++
 	return db.purgeRes, db.purgeErr
 }
 
@@ -396,6 +407,7 @@ func TestTrashRestoreErrorMapping(t *testing.T) {
 		{"not found", database.ErrTrashNotFound, http.StatusNotFound, "not_found"},
 		{"conflict", database.ErrTrashConflict, http.StatusConflict, "trash_conflict"},
 		{"repo trashed", database.ErrTrashRepoTrashed, http.StatusConflict, "repository_in_trash"},
+		{"manifest trashed", database.ErrTrashManifestInTrash, http.StatusConflict, "manifest_in_trash"},
 		{"unknown kind", database.ErrTrashUnknownKind, http.StatusBadRequest, "validation_failed"},
 		{"other", errors.New("boom: secret detail"), http.StatusInternalServerError, "internal_error"},
 	} {
@@ -834,4 +846,96 @@ func (c *captureUpdateDB) UpdateRepository(_ context.Context, repo *models.Repos
 
 func (c *captureUpdateDB) GetOrganizationByID(context.Context, string) (*models.Organization, error) {
 	return nil, nil
+}
+
+func TestTrashEmptyRepo(t *testing.T) {
+	setup := func(targets []*models.PermissionTarget) (*fakeTrashDB, *pubRecorder, chi.Router) {
+		db, _, pub, r := newTrashFixture(t, targets)
+		db.statefulList = true
+		db.listItems = []*models.TrashItem{mavenItem(trashRepoID, "app"), mavenItem(trashRepoID, "app"), mavenItem(trashRepoID, "app")}
+		db.purgeRes = &models.TrashPurgeResult{
+			Kind: models.TrashKindMaven, ID: trashItemID, RepositoryID: trashRepoID, RepositoryName: "app",
+			Format: "maven", Name: trashPkgName, Version: "1.0", SizeBytes: 42, QuotaArtifacts: 1, QuotaBytes: 42,
+		}
+
+		return db, pub, r
+	}
+
+	t.Run("repo manage purges everything", func(t *testing.T) {
+		manageApp := []*models.PermissionTarget{{RepositoryFilter: `^app$`, PathPattern: `.*`, Actions: []string{"manage"}}}
+		db, pub, r := setup(manageApp)
+
+		rw := serve(r, trashRequest(http.MethodDelete, "/api/v1/repositories/app/trash", ""))
+		if rw.Code != http.StatusOK {
+			t.Fatalf("status = %d; body = %s", rw.Code, rw.Body.String())
+		}
+
+		var body responses.TrashEmptyResponse
+		if err := json.Unmarshal(rw.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+
+		if body.Purged != 3 || body.Remaining != 0 {
+			t.Errorf("body = %+v, want purged 3 remaining 0", body)
+		}
+
+		if db.listFilter.RepositoryID != trashRepoID || db.listFilter.IncludeRepositories {
+			t.Errorf("list filter = %+v, want items of the repository only", db.listFilter)
+		}
+
+		if len(db.decrements) != 3 {
+			t.Errorf("quota decrements = %v, want 3", db.decrements)
+		}
+
+		if got := pub.names(); len(got) != 3 || got[0] != "artifact.purged" {
+			t.Errorf("events = %v, want 3x artifact.purged", got)
+		}
+	})
+
+	t.Run("admin purges everything", func(t *testing.T) {
+		db, _, r := setup(adminOnlyTargets())
+
+		rw := serve(r, trashRequest(http.MethodDelete, "/api/v1/repositories/app/trash", ""))
+		if rw.Code != http.StatusOK || db.purgeCalls != 3 {
+			t.Fatalf("status = %d purgeCalls = %d; body = %s", rw.Code, db.purgeCalls, rw.Body.String())
+		}
+	})
+
+	t.Run("repo delete permission is not enough", func(t *testing.T) {
+		db, _, r := setup(deleteOnAppTargets())
+
+		rw := serve(r, trashRequest(http.MethodDelete, "/api/v1/repositories/app/trash", ""))
+		if rw.Code != http.StatusForbidden || db.purgeCalls != 0 {
+			t.Fatalf("status = %d purgeCalls = %d", rw.Code, db.purgeCalls)
+		}
+	})
+
+	t.Run("manage on another repo is forbidden", func(t *testing.T) {
+		manageOther := []*models.PermissionTarget{{RepositoryFilter: `^other$`, PathPattern: `.*`, Actions: []string{"manage"}}}
+		db, _, r := setup(manageOther)
+
+		rw := serve(r, trashRequest(http.MethodDelete, "/api/v1/repositories/app/trash", ""))
+		if rw.Code != http.StatusForbidden || db.purgeCalls != 0 {
+			t.Fatalf("status = %d purgeCalls = %d", rw.Code, db.purgeCalls)
+		}
+	})
+
+	t.Run("anonymous is forbidden", func(t *testing.T) {
+		db, _, r := setup(adminOnlyTargets())
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodDelete, "/api/v1/repositories/app/trash", nil)
+
+		rw := serve(r, req)
+		if rw.Code != http.StatusForbidden || db.purgeCalls != 0 {
+			t.Fatalf("status = %d purgeCalls = %d", rw.Code, db.purgeCalls)
+		}
+	})
+
+	t.Run("unknown repository is 404", func(t *testing.T) {
+		_, _, r := setup(adminOnlyTargets())
+
+		rw := serve(r, trashRequest(http.MethodDelete, "/api/v1/repositories/nope/trash", ""))
+		if rw.Code != http.StatusNotFound {
+			t.Fatalf("status = %d", rw.Code)
+		}
+	})
 }
