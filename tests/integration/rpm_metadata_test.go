@@ -200,6 +200,14 @@ func TestRPMMetadataRegeneration_SupersededCleanedUp(t *testing.T) {
 		}
 	}
 
+	// primary.xml carries each package's upload time (<time file=>); the two
+	// uploads can straddle a second boundary, so pin them to one instant.
+	if _, err := harness.DB.ExecContext(ctx,
+		`UPDATE rpm_packages SET created_at = date_trunc('second', now()) WHERE repository_id IN ($1, $2)`,
+		repoX.ID, repoY.ID); err != nil {
+		t.Fatalf("pin upload time: %v", err)
+	}
+
 	if err := harness.Database.UpsertRepoMetadata(ctx, &models.RepoMetadata{
 		RepositoryID: repoX.ID, Path: "comps.xml", BlobSHA256: strings.Repeat("c", 64), BlobSize: 8,
 	}); err != nil {
