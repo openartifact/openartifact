@@ -56,7 +56,6 @@ import {
   UserCircleIcon,
   LockClosedIcon,
   KeyIcon,
-  BellIcon,
 } from '@heroicons/vue/24/outline'
 
 const route = useRoute()
@@ -65,7 +64,6 @@ const entries = [
   { to: '/settings/profile',       label: t('settings.profile'),       icon: UserCircleIcon },
   { to: '/settings/password',      label: t('settings.password'),      icon: LockClosedIcon },
   { to: '/settings/tokens',        label: t('settings.tokens'),        icon: KeyIcon },
-  { to: '/settings/notifications', label: t('settings.notifications'), icon: BellIcon },
 ]
 
 const activeLabel = computed(() => {

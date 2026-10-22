@@ -40,6 +40,19 @@ import (
 
 var repoNameRe = regexp.MustCompile(`^[a-zA-Z0-9_-]{1,100}$`)
 
+// isReservedRepoName reports names that can never be repository names: they collide with Vue
+// router pages (/repos/new, /repos/settings, /repos/trash) or with the
+// isolated /repos/<marker>/{name} format namespaces (raw, maven, sbt, ivy),
+// which would make the repository's own pages and native URLs unreachable.
+func isReservedRepoName(name string) bool {
+	switch strings.ToLower(name) {
+	case "new", "settings", "trash", "raw", "maven", "sbt", "ivy":
+		return true
+	}
+
+	return false
+}
+
 // validFormats mirrors the chk_repo_format CHECK constraint in the schema.
 //
 //nolint:gochecknoglobals // immutable lookup table
@@ -478,6 +491,11 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 	if !repoNameRe.MatchString(body.Name) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-100 alphanumeric/hyphen/underscore characters")
+		return
+	}
+
+	if isReservedRepoName(body.Name) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "name is reserved; choose a different repository name")
 		return
 	}
 
@@ -1008,6 +1026,23 @@ func collectOrphansAsync(wg *sync.WaitGroup, db database.Database, store storage
 	})
 }
 
+var errNameFilterUnsupported = errors.New("package_name filter is not supported by this store")
+
+// listComponents lists a repository's packages, restricted to one exact
+// listed name when nameFilter is non-empty.
+func (h *RepositoriesHandler) listComponents(ctx context.Context, repoID, formatFilter, nameFilter string, page, limit int) ([]*models.Component, int, error) {
+	if nameFilter == "" {
+		return h.db.ListComponentsByRepo(ctx, repoID, formatFilter, page, limit)
+	}
+
+	lister, ok := h.db.(database.ComponentNameLister)
+	if !ok {
+		return nil, 0, errNameFilterUnsupported
+	}
+
+	return lister.ListComponentsByRepoName(ctx, repoID, formatFilter, nameFilter, page, limit)
+}
+
 func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	q := r.URL.Query()
@@ -1039,7 +1074,7 @@ func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	components, total, err := h.db.ListComponentsByRepo(ctx, repo.ID, formatFilter, page, limit)
+	components, total, err := h.listComponents(ctx, repo.ID, formatFilter, q.Get("package_name"), page, limit)
 	if err != nil {
 		h.log.Errorw("packages: db error listing components", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")

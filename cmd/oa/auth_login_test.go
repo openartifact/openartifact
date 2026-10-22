@@ -70,7 +70,7 @@ func fakeAuthServer(t *testing.T, mustChange bool) *httptest.Server {
 			http.Error(w, `{"error":"kind must be 'access' or 'deploy'"}`, http.StatusBadRequest)
 		default:
 			w.WriteHeader(http.StatusCreated)
-			_, _ = w.Write([]byte(`{"token":"oa_tok_123"}`))
+			_, _ = w.Write([]byte(`{"token":"oa_tok_123","id":"tok-1"}`))
 		}
 	})
 
@@ -92,7 +92,7 @@ func withStdin(t *testing.T, input string) {
 func TestSessionLoginTokenPlain(t *testing.T) {
 	srv := fakeAuthServer(t, false)
 
-	got := sessionLoginToken(newClient(srv.URL, ""), "admin", "bootstrap-pw", true)
+	got, _ := sessionLoginToken(newClient(srv.URL, ""), "admin", "bootstrap-pw", true)
 	if got != "oa_tok_123" {
 		t.Fatalf("token = %q", got)
 	}
@@ -102,8 +102,38 @@ func TestSessionLoginTokenForcedPasswordChange(t *testing.T) {
 	srv := fakeAuthServer(t, true)
 	withStdin(t, "brand-new-password\n")
 
-	got := sessionLoginToken(newClient(srv.URL, ""), "admin", "bootstrap-pw", true)
+	got, _ := sessionLoginToken(newClient(srv.URL, ""), "admin", "bootstrap-pw", true)
 	if got != "oa_tok_123" {
 		t.Fatalf("token = %q", got)
+	}
+}
+
+func TestSessionLoginTokenReturnsID(t *testing.T) {
+	srv := fakeAuthServer(t, false)
+
+	_, id := sessionLoginToken(newClient(srv.URL, ""), "admin", "bootstrap-pw", true)
+	if id != "tok-1" {
+		t.Fatalf("token id = %q", id)
+	}
+}
+
+func TestTolerantOfBadConfig(t *testing.T) {
+	cases := map[string]bool{
+		"auth login":                   true,
+		"--server http://x auth login": true,
+		"auth login --username a":      true,
+		"help":                         true,
+		"version":                      true,
+		"--help":                       true,
+		"":                             true,
+		"repo list":                    false,
+		"auth logout":                  false,
+		"--token t webhook list":       false,
+	}
+
+	for in, want := range cases {
+		if got := tolerantOfBadConfig(strings.Fields(in)); got != want {
+			t.Errorf("tolerantOfBadConfig(%q) = %v, want %v", in, got, want)
+		}
 	}
 }

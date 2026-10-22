@@ -8,7 +8,6 @@ import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 
 const PAGE_SIZE = 100
-const MAX_PAGES = 10
 
 /**
  * Repository + package selection shared by the security pages. A package's
@@ -38,7 +37,7 @@ export function useRepoPackages() {
     }
     try {
       const all: PackageItem[] = []
-      for (let page = 1; page <= MAX_PAGES; page++) {
+      for (let page = 1; ; page++) {
         const res = await listPackages(repo, { page, limit: PAGE_SIZE })
         all.push(...(res.packages ?? []))
         if (all.length >= res.total || (res.packages ?? []).length < PAGE_SIZE) break

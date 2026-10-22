@@ -30,6 +30,9 @@ var version = "dev"
 type Config struct {
 	Server string `json:"server"`
 	Token  string `json:"token"`
+	// TokenID is the server-side id of the token minted by `auth login`, so
+	// `auth logout --revoke` can revoke it.
+	TokenID string `json:"token_id,omitempty"`
 }
 
 func configPath() string {
@@ -200,7 +203,13 @@ func newTabWriter() *tabwriter.Writer {
 func main() {
 	cfg, err := loadConfig()
 	if err != nil {
-		dief("loading config: %v", err)
+		// A corrupt config must not block the commands that repair or do not
+		// need it: `auth login` rewrites it; help and version never read it.
+		if !tolerantOfBadConfig(os.Args[1:]) {
+			dief("loading config: %v (fix or delete %s; `oa auth login` rewrites it)", err, configPath())
+		}
+
+		cfg = &Config{Server: "http://localhost:8080"}
 	}
 
 	if len(os.Args) < 2 {
@@ -333,10 +342,44 @@ func main() {
 	}
 }
 
+// tolerantOfBadConfig reports whether args name a command that can run with an
+// unreadable config file: help, version, and `auth login`.
+func tolerantOfBadConfig(args []string) bool {
+	var words []string
+
+	for i := 0; i < len(args) && len(words) < 2; i++ {
+		if strings.HasPrefix(args[i], "-") {
+			if args[i] == "-h" || args[i] == "--help" {
+				return true
+			}
+
+			// Global flags that take a value as a separate argument.
+			if (args[i] == "--server" || args[i] == "--token" || args[i] == "--format") && i+1 < len(args) {
+				i++
+			}
+
+			continue
+		}
+
+		words = append(words, args[i])
+	}
+
+	switch {
+	case len(words) == 0:
+		return true
+	case words[0] == "help" || words[0] == "version":
+		return true
+	case len(words) == 2 && words[0] == "auth" && words[1] == "login":
+		return true
+	}
+
+	return false
+}
+
 // ─── Usage ────────────────────────────────────────────────────────────────────
 
 func printUsage() {
-	fmt.Fprintf(os.Stderr, "OpenArtifact CLI v%s\n\nUsage:\n  oa [--server URL] [--token TOKEN] [--format table|json] <command> [args]\n\nGlobal flags:\n  --server    Server URL  (default: http://localhost:8080, env: OA_SERVER)\n  --token     API token   (env: OA_TOKEN)\n  --format    Output format: table|json  (default: table)\n\nAuth:\n  auth login [--server URL] [--username U] [--password-stdin]\n                                     Login with username/password (prompted without echo) or token\n  auth logout                        Clear saved credentials\n  auth whoami                        Show current user\n  auth passwd [--password-stdin]     Change your password (stdin: current, then new, one per line)\n  auth token list                    List your personal API tokens\n  auth token create --name N [--kind access|deploy] [--username U] [--password-stdin]\n                                     Create a personal API token (signs in with your password)\n  auth token revoke <id> [--username U] [--password-stdin]\n                                     Revoke a personal API token (signs in with your password)\n\nRepositories:\n  repo list                          List repositories\n  repo create <name> --format <fmt> [--description D] [--public] [--trash-retention-days N] [--immutable-releases]\n                                     Create repository\n  repo show <name>                   Show repository details\n  repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]]\n                                     Update repository\n  repo delete <name> --confirm <name>  Delete repository (moved to the trash; prompts for the name on a terminal)\n  repo packages <name>               List packages in repository\n  repo members <name>                List the member repositories of a group repository\n\nTrash:\n  trash list [--repo NAME] [--kind K]  List trashed items (all: admin; --repo: repository delete permission)\n  trash restore <kind> <id> [--repo NAME]  Restore a trashed item or repository\n  trash purge <kind> <id> [--yes]    Permanently delete a trashed item now (admin)\n\nArtifacts:\n  artifact list <repo>               List packages in repository\n  artifact upload <repo> <file>      Upload artifact (auto-detects deb/rpm)\n  artifact upload --presigned [--path P] [--content-type T] <repo> <file>\n                                     Upload a raw artifact straight to the object store (presigned PUT)\n  artifact delete <repo> <id>        Delete artifact by ID\n\nSearch:\n  search <query> [--repo R] [--fmt F]  Search artifacts\n\nUsers (admin):\n  user list                          List users\n  user create --username U --email E [--password-stdin]  Create user (password prompted without echo)\n  show <id>                     Show user\n  update <id> [--email E] [--full-name N] [--disabled[=false]]  Update user\n  delete <id>                   Delete user\n\nGroups (admin):\n  group list                         List groups\n  group create <name>                Create group\n  show <id>                    Show group\n  delete <id>                  Delete group\n  members <id>                 List group members\n  group add-member <id> <user-id>    Add member to group\n  rm-member <id> <user-id>     Remove member from group\n\nOrganizations:\n  org list                           List organizations\n  org create <name>                  Create organization\n  org show <name>                    Show organization\n  org delete <name>                  Delete organization\n  org members <name>                 List org members\n  org add-member <name> <user-id>    Add member to org\n  rm-member <name> <user-id>     Remove member from org\n\nTokens (admin):\n  token list                         List all tokens\n  token revoke <id>                  Revoke any token\n\nGPG keys (admin):\n  gpg list                           List GPG keys\n  gpg import --key <file>            Import GPG key\n  gpg generate --name N --email E    Generate GPG key\n  gpg delete <fingerprint>           Delete GPG key\n\nStorage backends (admin):\n  storage list                       List storage backends\n  storage create --name N [--type T] [--config-file F|-] [--default]\n                                     Create storage backend (credentials via --config-file, - = stdin)\n  storage show <name>                Show storage backend\n  storage update <name> [--config-file F|-] [--default[=false]]  Update storage backend\n  storage delete <name>              Delete storage backend\n  storage test <name>                Test storage backend\n\nBackup & restore (admin):\n  backup list                        List backups\n  backup create [--type full|metadata-only]  Create backup\n  show <id>                   Show backup\n  download <id> <dest>        Download backup\n  restore <archive-file>      Restore from a downloaded backup archive\n\nAudit log (admin):\n  audit list [--limit N] [--action A] [--actor A]  List audit entries\n\nWebhooks:\n  webhook list                       List global webhooks\n  webhook create --name N --url U --events E,E [--secret S] [--active=false]  Create webhook\n  show <id>                  Show webhook\n  update <id> [--name N] [--url U] [--events E,E] [--active[=false]]  Update webhook\n  delete <id>                Delete webhook\n  test <id>                  Test webhook\n  deliveries <id>            List webhook deliveries\n  webhook repo list <repo>           List repo webhooks\n  webhook repo create <repo> --name N --url U --events E,E [--secret S]  Create repo webhook\n\nSBOM:\n  sbom list <repo>                   List SBOMs for repository\n  sbom generate <repo> --artifact-id ID [--format cyclonedx|spdx]  Generate an SBOM for one artifact\n  sbom show <repo> <id>              Show SBOM\n  sbom download <repo> <id> <dest>   Download SBOM\n  sbom delete <repo> <id>            Delete SBOM\n\nVulnerability scanning:\n  vuln scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv|trivy|grype]\n                                     Scan one package for vulnerabilities\n  vuln list <repo>                   List vulnerability scans\n  vuln show <repo> <id>              Show vulnerability scan\n  vuln quarantine <repo> <id>        Quarantine vulnerable package\n  vuln delete <repo> <id>            Delete vulnerability scan\n\nLicense scanning:\n  license scan <repo> --artifact-id ID  Scan one artifact for license issues\n  license list <repo>                List license scans\n  license show <repo> <id>           Show license scan\n\nSecret scanning:\n  secret scan <repo> --artifact-id ID [--content-file F|-]  Scan one artifact (and optional content) for secrets\n  secret list <repo>                 List secret scans\n  secret show <repo> <id>            Show secret scan\n  secret quarantine <repo> <id>      Quarantine secret\n  delete <repo> <id>          Delete secret scan\n\nCleanup policies:\n  cleanup list <repo>                List cleanup policies\n  cleanup create <repo> --name N [--keep-count N] [--keep-days N] [--name-pattern RE] [--schedule CRON] [--enabled=false]\n                                     Create cleanup policy (needs --keep-count or --keep-days)\n  cleanup show <repo> <id>           Show cleanup policy\n  cleanup update <repo> <id> [same flags]  Update cleanup policy\n  cleanup delete <repo> <id>         Delete cleanup policy\n  cleanup run <repo> <id>            Run cleanup policy now\n\nStorage quotas:\n  quota show <repo>                  Show repository quota\n  set <repo> [--limit N --unit MB|GB|TB] [--max-artifacts N] [--warn-percent P]  Set quota\n  delete <repo>                Remove quota\n\nArtifact properties:\n  props list <repo> <artifact-id>    List artifact properties\n  props set <repo> <artifact-id> <key> <value>  Set property\n  props delete <repo> <artifact-id> <key>       Delete property\n  props search <repo> <key> <value>  Search artifacts by property\n\nMigration:\n  import nexus|artifactory --source-url URL --repo SRC[:DST]... [--dry-run] [--create-repos]\n                                     [--concurrency N] [--state-file F]  Import from Nexus / Artifactory\n\nPackage deltas:\n  delta list <repo> <pkg-id>         List available deltas for package\n  delta get <repo> <pkg-id> --from <sha256> <dest>  Download delta patch\n\nSystem:\n  system info                        Show system information\n\n  version                            Show CLI version\n  help                               Show this help\n\n", version)
+	fmt.Fprintf(os.Stderr, "OpenArtifact CLI v%s\n\nUsage:\n  oa [--server URL] [--token TOKEN] [--format table|json] <command> [args]\n\nGlobal flags:\n  --server    Server URL  (default: http://localhost:8080, env: OA_SERVER)\n  --token     API token   (env: OA_TOKEN)\n  --format    Output format: table|json  (default: table)\n\nAuth:\n  auth login [--server URL] [--username U] [--password-stdin]\n                                     Login with username/password (prompted without echo) or token\n  auth logout [--revoke --username U --password-stdin]\n                                     Clear saved credentials (--revoke also revokes the server-side token)\n  auth whoami                        Show current user\n  auth passwd [--password-stdin]     Change your password (stdin: current, then new, one per line)\n  auth token list                    List your personal API tokens\n  auth token create --name N [--kind access|deploy] [--username U] [--password-stdin]\n                                     Create a personal API token (signs in with your password)\n  auth token revoke <id> [--username U] [--password-stdin]\n                                     Revoke a personal API token (signs in with your password)\n\nRepositories:\n  repo list                          List repositories\n  repo create <name> --format <fmt> [--description D] [--public] [--trash-retention-days N] [--immutable-releases]\n                                     Create repository\n  repo show <name>                   Show repository details\n  repo update <name> [--description D] [--public[=false]] [--trash-retention-days N|default] [--immutable-releases[=false]]\n                                     Update repository\n  repo delete <name> --confirm <name>  Delete repository (moved to the trash; prompts for the name on a terminal)\n  repo packages <name>               List packages in repository\n  repo members <name>                List the member repositories of a group repository\n\nTrash:\n  trash list [--repo NAME] [--kind K]  List trashed items (all: admin; --repo: repository delete permission)\n  trash restore <kind> <id> [--repo NAME]  Restore a trashed item or repository\n  trash purge <kind> <id> [--yes]    Permanently delete a trashed item now (admin)\n\nArtifacts:\n  artifact list <repo>               List packages in repository\n  artifact upload <repo> <file>      Upload artifact (auto-detects deb/rpm)\n  artifact upload --presigned [--path P] [--content-type T] <repo> <file>\n                                     Upload a raw artifact straight to the object store (presigned PUT)\n  artifact delete <repo> <id>        Delete artifact by ID\n\nSearch:\n  search <query> [--repo R] [--fmt F]  Search artifacts\n\nUsers (admin):\n  user list                          List users\n  user create --username U --email E [--password-stdin]  Create user (password prompted without echo)\n  show <id>                     Show user\n  update <id> [--email E] [--full-name N] [--disabled[=false]]  Update user\n  delete <id>                   Delete user\n\nGroups (admin):\n  group list                         List groups\n  group create <name>                Create group\n  show <id>                    Show group\n  delete <id>                  Delete group\n  members <id>                 List group members\n  group add-member <id> <user-id>    Add member to group\n  rm-member <id> <user-id>     Remove member from group\n\nOrganizations:\n  org list                           List organizations\n  org create <name>                  Create organization\n  org show <name>                    Show organization\n  org delete <name>                  Delete organization\n  org members <name>                 List org members\n  org add-member <name> <user-id>    Add member to org\n  rm-member <name> <user-id>     Remove member from org\n\nTokens (admin):\n  token list                         List all tokens\n  token revoke <id>                  Revoke any token\n\nGPG keys (admin):\n  gpg list                           List GPG keys\n  gpg import --key <file>            Import GPG key\n  gpg generate --name N --email E    Generate GPG key\n  gpg delete <fingerprint>           Delete GPG key\n\nStorage backends (admin):\n  storage list                       List storage backends\n  storage create --name N [--type T] [--config-file F|-] [--default]\n                                     Create storage backend (credentials via --config-file, - = stdin)\n  storage show <name>                Show storage backend\n  storage update <name> [--config-file F|-] [--default[=false]]  Update storage backend\n  storage delete <name>              Delete storage backend\n  storage test <name>                Test storage backend\n\nBackup & restore (admin):\n  backup list                        List backups\n  backup create [--type full|metadata-only]  Create backup\n  show <id>                   Show backup\n  download <id> <dest>        Download backup\n  restore <archive-file>      Restore from a downloaded backup archive\n\nAudit log (admin):\n  audit list [--limit N] [--action A] [--actor A]  List audit entries\n\nWebhooks:\n  webhook list                       List global webhooks\n  webhook create --name N --url U --events E,E [--secret S] [--active=false]  Create webhook\n  show <id>                  Show webhook\n  update <id> [--name N] [--url U] [--events E,E] [--active[=false]]  Update webhook\n  delete <id>                Delete webhook\n  test <id>                  Test webhook\n  deliveries <id>            List webhook deliveries\n  webhook repo list <repo>           List repo webhooks\n  webhook repo create <repo> --name N --url U --events E,E [--secret S]  Create repo webhook\n\nSBOM:\n  sbom list <repo>                   List SBOMs for repository\n  sbom generate <repo> --artifact-id ID [--format cyclonedx|spdx]  Generate an SBOM for one artifact\n  sbom show <repo> <id>              Show SBOM\n  sbom download <repo> <id> <dest>   Download SBOM\n  sbom delete <repo> <id>            Delete SBOM\n\nVulnerability scanning:\n  vuln scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv|trivy|grype]\n                                     Scan one package for vulnerabilities\n  vuln list <repo>                   List vulnerability scans\n  vuln show <repo> <id>              Show vulnerability scan\n  vuln quarantine <repo> <id>        Quarantine vulnerable package\n  vuln delete <repo> <id>            Delete vulnerability scan\n\nLicense scanning:\n  license scan <repo> --artifact-id ID  Scan one artifact for license issues\n  license list <repo>                List license scans\n  license show <repo> <id>           Show license scan\n\nSecret scanning:\n  secret scan <repo> --artifact-id ID [--content-file F|-]  Scan one artifact (and optional content) for secrets\n  secret list <repo>                 List secret scans\n  secret show <repo> <id>            Show secret scan\n  secret quarantine <repo> <id>      Quarantine secret\n  delete <repo> <id>          Delete secret scan\n\nCleanup policies:\n  cleanup list <repo>                List cleanup policies\n  cleanup create <repo> --name N [--keep-count N] [--keep-days N] [--name-pattern RE] [--schedule CRON] [--enabled=false]\n                                     Create cleanup policy (needs --keep-count or --keep-days)\n  cleanup show <repo> <id>           Show cleanup policy\n  cleanup update <repo> <id> [same flags]  Update cleanup policy\n  cleanup delete <repo> <id>         Delete cleanup policy\n  cleanup run <repo> <id>            Run cleanup policy now\n\nStorage quotas:\n  quota show <repo>                  Show repository quota\n  set <repo> [--limit N --unit MB|GB|TB] [--max-artifacts N] [--warn-percent P]  Set quota\n  delete <repo>                Remove quota\n\nArtifact properties:\n  props list <repo> <artifact-id>    List artifact properties\n  props set <repo> <artifact-id> <key> <value>  Set property\n  props delete <repo> <artifact-id> <key>       Delete property\n  props search <repo> <key> <value>  Search artifacts by property\n\nMigration:\n  import nexus|artifactory --source-url URL --repo SRC[:DST]... [--dry-run] [--create-repos]\n                                     [--concurrency N] [--state-file F]  Import from Nexus / Artifactory\n\nPackage deltas:\n  delta list <repo> <pkg-id>         List available deltas for package\n  delta get <repo> <pkg-id> --from <sha256> <dest>  Download delta patch\n\nSystem:\n  system info                        Show system information\n\n  version                            Show CLI version\n  help                               Show this help\n\n", version)
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -356,7 +399,7 @@ func handleAuth(args []string, client *Client, cfg *Config, outFmt string) {
 		loginCfg.Server = client.baseURL
 		authLogin(args[1:], &loginCfg)
 	case "logout":
-		authLogout(cfg)
+		authLogout(args[1:], cfg)
 	case "whoami":
 		authWhoami(client, outFmt)
 	case "passwd":
@@ -391,7 +434,7 @@ func authLogin(args []string, cfg *Config) {
 		username = promptLine("Username (leave blank to use token): ")
 	}
 
-	var savedToken string
+	var savedToken, savedTokenID string
 
 	if username == "" {
 		savedToken = readPassword("API token: ")
@@ -402,10 +445,10 @@ func authLogin(args []string, cfg *Config) {
 		} else {
 			password = readPassword("Password: ")
 		}
-		savedToken = sessionLoginToken(newClient(*serverURL, ""), username, password, *passwordStdin)
+		savedToken, savedTokenID = sessionLoginToken(newClient(*serverURL, ""), username, password, *passwordStdin)
 	}
 
-	newCfg := &Config{Server: *serverURL, Token: savedToken}
+	newCfg := &Config{Server: *serverURL, Token: savedToken, TokenID: savedTokenID}
 	if err := saveConfig(newCfg); err != nil {
 		dief("saving config: %v", err)
 	}
@@ -418,14 +461,15 @@ func authLogin(args []string, cfg *Config) {
 // authenticates with afterwards. A bootstrap/reset account must change its
 // password first; the server refuses to mint tokens until then, so the new
 // password is collected here (second stdin line with --password-stdin).
-func sessionLoginToken(c *Client, username, password string, fromStdin bool) string {
-	jar, err := cookiejar.New(nil)
-	if err != nil {
-		dief("%v", err)
-	}
+func sessionLoginToken(c *Client, username, password string, fromStdin bool) (string, string) {
+	c.httpClient.Jar = newCookieJar()
 
-	c.httpClient.Jar = jar
+	sessionSignIn(c, username, password, fromStdin)
 
+	return mintCLIToken(c)
+}
+
+func sessionSignIn(c *Client, username, password string, fromStdin bool) {
 	resp, err := c.doJSON("POST", "/api/v1/auth/login", map[string]string{
 		"username": username,
 		"password": password,
@@ -466,7 +510,11 @@ func sessionLoginToken(c *Client, username, password string, fromStdin bool) str
 
 		checkOK(again, http.StatusOK)
 	}
+}
 
+// mintCLIToken creates the long-lived "oa-cli" access token on the signed-in
+// session and returns its secret and server-side id.
+func mintCLIToken(c *Client) (string, string) {
 	tokResp := sessionDo(c, http.MethodPost, "/api/v1/auth/tokens", map[string]string{
 		"name": "oa-cli",
 		"kind": "access",
@@ -476,6 +524,7 @@ func sessionLoginToken(c *Client, username, password string, fromStdin bool) str
 
 	var result struct {
 		Token string `json:"token"`
+		ID    string `json:"id"`
 	}
 	decodeJSON(tokResp, &result)
 
@@ -483,7 +532,7 @@ func sessionLoginToken(c *Client, username, password string, fromStdin bool) str
 		dief("server did not return a token")
 	}
 
-	return result.Token
+	return result.Token, result.ID
 }
 
 func readNewPassword(fromStdin bool) string {
@@ -544,13 +593,55 @@ func sessionDo(c *Client, method, path string, body any, ok ...int) *http.Respon
 	return resp
 }
 
-func authLogout(cfg *Config) {
+// authLogout clears the saved credentials. The server-side access token minted
+// by `auth login` does not expire and API tokens cannot revoke tokens, so a
+// real revocation needs a session: with --revoke the CLI signs in with
+// --username/--password-stdin and revokes the saved token id.
+func authLogout(args []string, cfg *Config) {
+	fs := flag.NewFlagSet("auth logout", flag.ExitOnError)
+	revoke := fs.Bool("revoke", false, "Also revoke the saved token on the server (needs --username and --password-stdin)")
+	usernameFlag := fs.String("username", "", "Username (with --revoke)")
+	passwordStdin := fs.Bool("password-stdin", false, "Read the password from stdin (with --revoke)")
+	_ = fs.Parse(args)
+
+	tokenID := cfg.TokenID
+	revoked := false
+
+	if *revoke {
+		if tokenID == "" || *usernameFlag == "" || !*passwordStdin {
+			dief("--revoke needs a login saved by this version of oa, --username and --password-stdin")
+		}
+
+		c := newClient(cfg.Server, "")
+		c.httpClient.Jar = newCookieJar()
+		sessionSignIn(c, *usernameFlag, readPasswordStdin(), true)
+
+		resp := sessionDo(c, http.MethodDelete, "/api/v1/auth/tokens/"+escape(tokenID), nil, http.StatusNoContent, http.StatusOK)
+		_ = resp.Body.Close()
+		revoked = true
+	}
+
 	cfg.Token = ""
+	cfg.TokenID = ""
+
 	if err := saveConfig(cfg); err != nil {
 		dief("clearing credentials: %v", err)
 	}
 
 	fmt.Println("Logged out.")
+
+	if !revoked && tokenID != "" {
+		fmt.Printf("The access token (id %s) is still valid on the server; revoke it in the web UI, or run `oa auth logout --revoke --username U --password-stdin` before logging out.\n", tokenID)
+	}
+}
+
+func newCookieJar() *cookiejar.Jar {
+	jar, err := cookiejar.New(nil)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	return jar
 }
 
 func authWhoami(client *Client, outFmt string) {

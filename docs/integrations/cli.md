@@ -42,6 +42,7 @@ Output: `--format json` prints indented JSON; anything else prints aligned table
 oa auth login --server http://localhost:8080      # prompts for username and password (no echo)
 oa auth whoami
 oa auth logout                                    # clears the saved token locally
+printf '%s\n' "$PW" | oa auth logout --revoke --username alice --password-stdin   # also revokes it on the server
 ```
 
 Passwords are never accepted on the command line (`--password` is rejected). Non-interactive:
@@ -57,7 +58,11 @@ How it works:
 3. If the account must change its password (bootstrap `admin`, reset account), the CLI asks for a new one first (with `--password-stdin`: the second stdin line) and signs in again.
 4. It creates an `access` API token named `oa-cli` (`POST /api/v1/auth/tokens`), and saves server and token to the config file.
 
-`oa auth logout` only clears the local token; it does not revoke the `oa-cli` token on the server (revoke it in the UI under Settings, Tokens). For CI, skip login: create a token in the UI and set `OA_SERVER` / `OA_TOKEN`. See [authentication](../security/authentication.md) for token kinds and scopes.
+`oa auth logout` clears the local token and prints the server-side token id. API tokens cannot revoke tokens, so the `oa-cli` token stays valid unless you pass `--revoke --username U --password-stdin` (which signs in and revokes it) or revoke it in the UI under Settings, Tokens. `--revoke` needs a login saved by this version of `oa`. A corrupt `~/.config/oa/config.json` no longer blocks `oa auth login`, `help` and `version`; `oa auth login` rewrites it.
+
+Webhook secrets are read from `--secret-file FILE` (`-` for stdin) or `OA_WEBHOOK_SECRET`, never from argv.
+
+For CI, skip login: create a token in the UI and set `OA_SERVER` / `OA_TOKEN`. See [authentication](../security/authentication.md) for token kinds and scopes.
 
 ## Commands
 
@@ -78,7 +83,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `storage` *admin* | `list`, `create --name N [--type filesystem\|s3\|gcs\|azure\|garage\|seaweedfs\|oci] [--config JSON \| --config-file FILE\|-] [--default]`, `show <name>`, `update <name> [--config JSON \| --config-file FILE\|-] [--default[=false]]`, `delete <name>`, `test <name>` (exits 1 when the backend check fails) |
 | `backup` *admin* | `list`, `create [--type full\|metadata-only]`, `show <id>`, `download <id> <dest>`, `restore <archive-file>` (uploads an archive written by `backup download`) |
 | `audit` *admin* | `list [--limit N] [--action A] [--actor A]` (default limit 50; pages through the server's 100-row pages) |
-| `webhook` | `list`, `create --name N --url U --events E,E [--secret S] [--active=false]`, `show <id>`, `update <id> [--name N] [--url U] [--events E,E] [--active[=false]]`, `delete <id>`, `test <id>`, `deliveries <id>`, `repo list <repo>`, `repo create <repo> --name N --url U --events E,E [--secret S]` |
+| `webhook` | `list`, `create --name N --url U --events E,E [--secret-file F\|-] [--active=false]`, `show <id>`, `update <id> [--name N] [--url U] [--events E,E] [--active[=false]]`, `delete <id>`, `test <id>`, `deliveries <id>`, `repo list <repo>`, `repo create <repo> --name N --url U --events E,E [--secret-file F\|-]` |
 | `sbom` | `list <repo>`, `generate <repo> --artifact-id ID [--format cyclonedx\|spdx]`, `show <repo> <id>`, `download <repo> <id> <dest>`, `delete <repo> <id>` |
 | `vuln` | `scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv\|trivy\|grype]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
 | `license` | `scan <repo> --artifact-id ID`, `list <repo>`, `show <repo> <id>` |
@@ -148,4 +153,3 @@ There are no top-level `oa upload` / `oa download` commands.
 | Command | Problem |
 |---|---|
 | `gpg list`, `import`, `generate`, `delete` | the server endpoints are stubs: `list` always returns an empty list, the other three return `501 not_implemented` |
-| `webhook create --secret` | the secret is a command-line argument and is visible in the process list |

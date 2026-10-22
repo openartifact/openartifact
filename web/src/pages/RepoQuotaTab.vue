@@ -23,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <p class="text-sm font-semibold text-foreground">{{ t('quota.none') }}</p>
       <p class="text-xs text-muted mt-1 mb-4 max-w-xs mx-auto">
-        This repository has no storage limit. Set a quota to control how much space it can use.
+        {{ t('quota.noneHint') }}
       </p>
       <button
         type="button"
@@ -68,10 +68,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <div class="flex items-center justify-between mt-1.5">
           <span class="text-[11px] text-muted font-mono tabular-nums">
-            {{ usagePercent.toFixed(1) }}% used
+            {{ t('quota.percentUsed').replace('{n}', usagePercent.toFixed(1)) }}
           </span>
           <span class="text-[11px] text-muted font-mono tabular-nums">
-            {{ formatBytes(quota.max_size_bytes - quota.current_size_bytes) }} free
+            {{ t('quota.free').replace('{size}', formatBytes(quota.max_size_bytes - quota.current_size_bytes)) }}
           </span>
         </div>
       </div>
@@ -94,7 +94,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <!-- Max size input -->
           <div>
             <label class="block text-xs font-semibold text-foreground mb-1.5">
-              Maximum size <span class="text-danger ml-0.5">*</span>
+              {{ t('quota.maxSize') }} <span class="text-danger ml-0.5">*</span>
             </label>
             <div class="flex items-center gap-2">
               <input
@@ -156,7 +156,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Max size input -->
       <div>
         <label class="block text-xs font-semibold text-foreground mb-1.5">
-          Maximum size <span class="text-danger ml-0.5">*</span>
+          {{ t('quota.maxSize') }} <span class="text-danger ml-0.5">*</span>
         </label>
         <div class="flex items-center gap-2">
           <input
@@ -216,9 +216,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       >
         <div class="absolute inset-0 bg-black/50" @click="removeModal = false" />
         <div class="relative bg-surface border border-border rounded-xl shadow-2xl w-full max-w-sm p-6">
-          <h2 class="text-base font-bold text-foreground tracking-tight">Remove quota limit?</h2>
+          <h2 class="text-base font-bold text-foreground tracking-tight">{{ t('quota.removeTitle') }}</h2>
           <p class="text-sm text-muted mt-1 mb-5">
-            The repository will have no storage limit. This can be configured again at any time.
+            {{ t('quota.removeBody') }}
           </p>
           <div class="flex items-center gap-2 justify-end">
             <button

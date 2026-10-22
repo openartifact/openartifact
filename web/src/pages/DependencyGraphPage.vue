@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         @click="router.push(`/repos/${repoName}`)"
       >
         <ChevronLeftIcon class="w-4 h-4" />
-        Back to repository
+        {{ t('graph.backToRepo') }}
       </button>
 
       <div class="flex items-start justify-between flex-wrap gap-3">
@@ -75,8 +75,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="w-16 h-16 rounded-full bg-surface-hover flex items-center justify-center mx-auto mb-4">
             <ShareIcon class="w-8 h-8 text-muted" />
           </div>
-          <p class="text-base font-semibold text-foreground">No SBOMs available</p>
-          <p class="text-sm text-muted mt-1 mb-4">Generate a SBOM first to visualize dependencies.</p>
+          <p class="text-base font-semibold text-foreground">{{ t('graph.noSboms') }}</p>
+          <p class="text-sm text-muted mt-1 mb-4">{{ t('graph.noSbomsHint') }}</p>
           <router-link
             :to="`/repos/${repoName}`"
             class="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-sm font-medium bg-primary text-primary-contrast hover:opacity-90 transition-opacity"
@@ -99,9 +99,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="w-16 h-16 rounded-full bg-surface-hover flex items-center justify-center mx-auto mb-4">
             <ShareIcon class="w-8 h-8 text-muted" />
           </div>
-          <p class="text-base font-semibold text-foreground">No packages found</p>
+          <p class="text-base font-semibold text-foreground">{{ t('graph.noPackages') }}</p>
           <p class="text-sm text-muted mt-1">
-            {{ showVulnerableOnly ? 'No vulnerable packages in this SBOM.' : 'This SBOM has no packages.' }}
+            {{ showVulnerableOnly ? t('graph.noVulnerable') : t('graph.noPackagesHint') }}
           </p>
         </div>
 
@@ -208,7 +208,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Stats -->
         <div>
-          <h3 class="text-xs font-semibold text-muted mb-3">Graph Stats</h3>
+          <h3 class="text-xs font-semibold text-muted mb-3">{{ t('graph.stats') }}</h3>
           <div class="space-y-2">
             <div class="flex items-center justify-between text-sm">
               <span class="text-muted">{{ t('graph.nodes') }}</span>
@@ -219,7 +219,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <span class="font-mono font-medium text-foreground tabular-nums">{{ links.length }}</span>
             </div>
             <div v-if="vulnerableCount > 0" class="flex items-center justify-between text-sm">
-              <span class="text-muted">Vulnerable</span>
+              <span class="text-muted">{{ t('graph.vulnerable') }}</span>
               <span class="font-mono font-medium text-danger tabular-nums">{{ vulnerableCount }}</span>
             </div>
           </div>
@@ -227,16 +227,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Selected node info -->
         <div v-if="selectedNodeId" class="rounded-lg border border-primary/30 bg-primary/5 p-3">
-          <p class="text-[10px] font-mono font-semibold text-primary mb-1">Selected</p>
+          <p class="text-[10px] font-mono font-semibold text-primary mb-1">{{ t('graph.selected') }}</p>
           <p class="text-xs font-mono font-medium text-foreground break-all">{{ selectedNodeId }}</p>
           <div class="mt-2 space-y-1">
             <p class="text-[11px] text-muted">
               <span class="font-semibold text-foreground">{{ outgoingEdges(selectedNodeId).length }}</span>
-              outgoing deps
+              {{ t('graph.outgoing') }}
             </p>
             <p class="text-[11px] text-muted">
               <span class="font-semibold text-foreground">{{ incomingEdges(selectedNodeId).length }}</span>
-              dependents
+              {{ t('graph.dependents') }}
             </p>
           </div>
         </div>
@@ -247,11 +247,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="space-y-2">
             <div class="flex items-center gap-2 text-sm">
               <span class="w-3 h-3 rounded-full bg-[#6366f1]" />
-              <span class="text-muted">Package</span>
+              <span class="text-muted">{{ t('graph.package') }}</span>
             </div>
             <div v-if="vulnerableCount > 0" class="flex items-center gap-2 text-sm">
               <span class="w-3 h-3 rounded-full bg-danger" />
-              <span class="text-muted">Vulnerable</span>
+              <span class="text-muted">{{ t('graph.vulnerable') }}</span>
             </div>
           </div>
         </div>
@@ -273,7 +273,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 :class="showVulnerableOnly ? 'translate-x-4' : 'translate-x-0.5'"
               />
             </button>
-            <span class="text-sm text-foreground">Show vulnerable only</span>
+            <span class="text-sm text-foreground">{{ t('graph.showVulnerableOnly') }}</span>
           </label>
         </div>
       </div>

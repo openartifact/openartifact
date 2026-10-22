@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <div class="flex items-center gap-3">
           <span class="text-[11px] font-mono text-muted">{{ total }} {{ t('adm.common.total') }}</span>
           <button
-            v-if="repo && session.isAdmin && total > 0"
+            v-if="repo && session.isAdmin && repoTotal > 0"
             type="button"
             class="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-md text-xs font-medium text-danger border border-danger/40 hover:bg-danger/10 disabled:opacity-50"
             :disabled="busyKey !== ''"
@@ -137,7 +137,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <AdminDialog :open="emptyOpen" :title="t('trash.emptyTitle')" @close="emptyOpen = false">
       <p class="text-sm text-foreground">
-        {{ t('trash.emptyBody').replace('{n}', String(total)).replace('{name}', repo) }}
+        {{ t('trash.emptyBody').replace('{n}', String(repoTotal)).replace('{name}', repo) }}
       </p>
       <template #footer>
         <button
@@ -181,6 +181,8 @@ const repo = computed(() => (route.params.name ? String(route.params.name) : '')
 
 const items = ref<TrashItem[]>([])
 const total = ref(0)
+// Items in the whole repository trash, ignoring the kind filter.
+const repoTotal = ref(0)
 const page = ref(1)
 const kind = ref('')
 const loading = ref(false)
@@ -211,19 +213,31 @@ function formatSize(bytes?: number): string {
   return i === 0 ? `${size} B` : `${size.toFixed(1)} ${units[i]}`
 }
 
+// Guards against an older, slower response overwriting a newer one.
+let loadSeq = 0
+
 async function load(): Promise<void> {
+  const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
   try {
     const res = await listTrash({ page: page.value, limit: PAGE_SIZE, kind: kind.value }, repo.value || undefined)
+    // "Empty trash" purges every kind, so its count must ignore the kind filter.
+    let everything = res.total ?? 0
+    if (repo.value && kind.value) {
+      everything = (await listTrash({ page: 1, limit: 1 }, repo.value)).total ?? 0
+    }
+    if (seq !== loadSeq) return
     items.value = res.items ?? []
     total.value = res.total ?? 0
+    repoTotal.value = everything
     // Last item of a page was removed: step back instead of showing an empty page.
     if (items.value.length === 0 && page.value > 1) page.value--
   } catch (err) {
+    if (seq !== loadSeq) return
     loadError.value = err instanceof Error ? err.message : t('trash.loadFailed')
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 

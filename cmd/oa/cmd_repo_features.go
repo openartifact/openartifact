@@ -35,7 +35,8 @@ func handleWebhook(args []string, client *Client, outFmt string) {
 		fs := flag.NewFlagSet("webhook create", flag.ExitOnError)
 		name := fs.String("name", "", "Webhook name")
 		whURL := fs.String("url", "", "Webhook URL")
-		secret := fs.String("secret", "", "Webhook secret")
+		secretFile := fs.String("secret-file", "", webhookSecretUsage)
+		legacySecret := fs.String("secret", "", "removed; use --secret-file")
 		events := fs.String("events", "", "Comma-separated event types, e.g. artifact.uploaded (required)")
 		active := fs.Bool("active", true, "Enabled")
 		_ = fs.Parse(args[1:])
@@ -44,7 +45,9 @@ func handleWebhook(args []string, client *Client, outFmt string) {
 			dief("--name, --url and --events are required")
 		}
 
-		sendJSON(client, "POST", "/api/v1/webhooks", webhookBody(*name, *whURL, *secret, *events, *active), http.StatusCreated)
+		secret := resolveWebhookSecret(*secretFile, *legacySecret)
+
+		sendJSON(client, "POST", "/api/v1/webhooks", webhookBody(*name, *whURL, secret, *events, *active), http.StatusCreated)
 		fmt.Println("Webhook created.")
 	case "show":
 		if len(args) < 2 {
@@ -86,6 +89,38 @@ func handleWebhook(args []string, client *Client, outFmt string) {
 }
 
 // webhookBody is the create payload: the server reads "enabled", not "active".
+const (
+	envWebhookSecret   = "OA_WEBHOOK_SECRET" //nolint:gosec // env var name, not a credential
+	webhookSecretUsage = "file holding the webhook secret, '-' for stdin (or " + envWebhookSecret + ")"
+)
+
+// resolveWebhookSecret reads the secret from --secret-file ('-' = stdin) or
+// OA_WEBHOOK_SECRET, never from argv where ps and shell history expose it.
+func resolveWebhookSecret(file, legacy string) string {
+	if legacy != "" {
+		dief("--secret was removed because argv is visible in the process list; use --secret-file FILE (or '-' for stdin), or set %s", envWebhookSecret)
+	}
+
+	switch file {
+	case "":
+		return strings.TrimSpace(os.Getenv(envWebhookSecret))
+	case "-":
+		line, err := readLine(stdinReader)
+		if err != nil {
+			dief("reading webhook secret from stdin: %v", err)
+		}
+
+		return strings.TrimSpace(line)
+	}
+
+	raw, err := os.ReadFile(file)
+	if err != nil {
+		dief("reading webhook secret file: %v", err)
+	}
+
+	return strings.TrimSpace(string(raw))
+}
+
 func webhookBody(name, whURL, secret, events string, enabled bool) map[string]any {
 	body := map[string]any{"name": name, "url": whURL, "enabled": enabled}
 	if events != "" {
@@ -149,7 +184,8 @@ func webhookRepo(args []string, client *Client, outFmt string) {
 		fs := flag.NewFlagSet("webhook repo create", flag.ExitOnError)
 		name := fs.String("name", "", "Webhook name")
 		whURL := fs.String("url", "", "Webhook URL")
-		secret := fs.String("secret", "", "Secret")
+		secretFile := fs.String("secret-file", "", webhookSecretUsage)
+		legacySecret := fs.String("secret", "", "removed; use --secret-file")
 		events := fs.String("events", "", "Comma-separated event types, e.g. artifact.uploaded (required)")
 		_ = fs.Parse(args[2:])
 
@@ -157,7 +193,9 @@ func webhookRepo(args []string, client *Client, outFmt string) {
 			dief("--name, --url and --events are required")
 		}
 
-		sendJSON(client, "POST", path, webhookBody(*name, *whURL, *secret, *events, true), http.StatusCreated)
+		secret := resolveWebhookSecret(*secretFile, *legacySecret)
+
+		sendJSON(client, "POST", path, webhookBody(*name, *whURL, secret, *events, true), http.StatusCreated)
 		fmt.Println("Repo webhook created.")
 	default:
 		dief("Unknown webhook repo subcommand: %s", args[0])

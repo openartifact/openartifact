@@ -461,3 +461,46 @@ func TestImportPathPrefixLimitsAssets(t *testing.T) {
 		t.Fatalf("report = %+v", rep)
 	}
 }
+
+// noSHA256Source wraps a source and hides the SHA-256 (and SHA-1) from its
+// listing, like old Nexus/Artifactory assets.
+type noSHA256Source struct{ importSource }
+
+func (s noSHA256Source) Assets(ctx context.Context, repo sourceRepo) ([]sourceAsset, error) {
+	assets, err := s.importSource.Assets(ctx, repo)
+	for i := range assets {
+		assets[i].SHA256, assets[i].SHA1 = "", ""
+	}
+
+	return assets, err
+}
+
+func TestImportResumesWithoutSourceSHA256(t *testing.T) {
+	nexus := newFakeNexus(t, fakeSourceRepo{name: "rel", format: "maven2", kind: "hosted", files: mavenRepoFiles()})
+	oa := newFakeOA(t, map[string]*fakeRepo{"mvn": {format: "maven", repoType: "hosted"}})
+	state := filepath.Join(t.TempDir(), "state.jsonl")
+	cfg := parseCfg(t, "nexus", "--source-url", nexus.URL, "--repo", "rel:mvn", "--state-file", state)
+
+	run := func() *importReport {
+		imp, err := newImporter(cfg, noSHA256Source{newImportSource(cfg, nexus.Client())}, &importTarget{c: oa.client()}, io.Discard)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		defer imp.state.close()
+
+		return imp.run(context.Background())
+	}
+
+	if rep := run(); rep.Uploaded != 2 {
+		t.Fatalf("first run uploaded %d (failures %+v)", rep.Uploaded, rep.Failures)
+	}
+
+	oa.repos["mvn"].items = nil
+	writes := oa.writes
+
+	rep := run()
+	if rep.Resumed != 2 || rep.Uploaded != 0 || oa.writes != writes {
+		t.Fatalf("resumed=%d uploaded=%d writes+=%d, want resume only", rep.Resumed, rep.Uploaded, oa.writes-writes)
+	}
+}

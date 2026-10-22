@@ -342,9 +342,16 @@ func (p *PostgresDB) DeleteRepository(ctx context.Context, id string) error {
 // format (see ListRepoComponents in queries/components.sql for the per-format
 // mapping). formatFilter, when non-empty, restricts the result to one format.
 func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFilter string, page, limit int) ([]*models.Component, int, error) {
+	return p.ListComponentsByRepoName(ctx, repoID, formatFilter, "", page, limit)
+}
+
+// ListComponentsByRepoName is ListComponentsByRepo restricted to rows whose
+// listed name equals nameFilter exactly (empty = no name restriction).
+func (p *PostgresDB) ListComponentsByRepoName(ctx context.Context, repoID, formatFilter, nameFilter string, page, limit int) ([]*models.Component, int, error) {
 	total, err := p.q.CountRepoComponents(ctx, dbsqlc.CountRepoComponentsParams{
 		RepoID:       repoID,
 		FormatFilter: formatFilter,
+		NameFilter:   nameFilter,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count packages: %w", err)
@@ -353,6 +360,7 @@ func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFil
 	rows, err := p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
 		RepoID:       repoID,
 		FormatFilter: formatFilter,
+		NameFilter:   nameFilter,
 		PageLimit:    toInt32(limit),
 		PageOffset:   toInt32((page - 1) * limit),
 	})

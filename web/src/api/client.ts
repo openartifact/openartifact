@@ -86,11 +86,11 @@ async function apiError(res: Response): Promise<ApiError> {
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await send(path, init)
 
+  if (!res.ok) throw await apiError(res)
+
   if (res.status === 204 || res.headers.get('content-length') === '0') {
     return undefined as T
   }
-
-  if (!res.ok) throw await apiError(res)
 
   const text = await res.text()
   if (!text) return undefined as T

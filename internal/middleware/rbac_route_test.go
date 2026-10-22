@@ -7,6 +7,8 @@ package middleware
 import (
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"regexp"
 	"strings"
 	"testing"
 )
@@ -82,7 +84,10 @@ func TestIsSPARepoPathAndBypass(t *testing.T) {
 		{"repo browse", "/repos/myrepo/browse", true},
 		{"repo graph", "/repos/myrepo/graph", true},
 		{"repo trash", "/repos/myrepo/trash", true},
+		{"repo settings", "/repos/myrepo/settings", true},
 		{"package detail", "/repos/myrepo/packages/npm/lodash", true},
+		{"package detail scoped npm", "/repos/myrepo/packages/npm/@scope%2Fpkg", true},
+		{"package detail docker", "/repos/myrepo/packages/docker/org%2Fapp", true},
 
 		// Real format-handler endpoints that must NOT be treated as pages.
 		{"npm packument", "/repos/myrepo/lodash", false},
@@ -177,6 +182,39 @@ func TestMethodToActionDockerPaths(t *testing.T) {
 	for _, tc := range tests {
 		if got := methodToAction(tc.method, tc.path); got != tc.want {
 			t.Errorf("methodToAction(%q, %q) = %q, want %q", tc.method, tc.path, got, tc.want)
+		}
+	}
+}
+
+// TestVueRepoRoutesAreServedAsSPA keeps the server's hand-written SPA matcher
+// in sync with web/src/router/index.ts: every /repos/... vue-router path must
+// deep-load as a page navigation.
+func TestVueRepoRoutesAreServedAsSPA(t *testing.T) {
+	src, err := os.ReadFile("../../web/src/router/index.ts")
+	if err != nil {
+		t.Fatalf("read router: %v", err)
+	}
+
+	paramRe := regexp.MustCompile(`:(\w+)`)
+	routeRe := regexp.MustCompile(`path:\s*'(/repos[^']*)'`)
+
+	matches := routeRe.FindAllStringSubmatch(string(src), -1)
+	if len(matches) == 0 {
+		t.Fatal("no /repos routes found in router/index.ts")
+	}
+
+	for _, m := range matches {
+		path := paramRe.ReplaceAllString(m[1], "sample")
+		if path == "/repos" {
+			continue
+		}
+
+		req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+		req.Header.Set("Accept", "text/html")
+		req.Header.Set("Sec-Fetch-Mode", "navigate")
+
+		if !isSPANavigation(req) {
+			t.Errorf("vue route %q (%q) is not recognised as an SPA navigation", m[1], path)
 		}
 	}
 }

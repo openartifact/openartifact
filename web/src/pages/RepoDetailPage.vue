@@ -222,7 +222,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <table class="w-full">
             <thead>
               <tr class="border-b border-border">
-                <th v-if="!isProxy" class="w-7 px-4 py-3 text-sm font-medium text-muted">
+                <th v-if="canDeletePackages" class="w-7 px-4 py-3 text-sm font-medium text-muted">
                   <input
                     type="checkbox"
                     :checked="allPkgsSelected"
@@ -247,7 +247,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 class="border-t border-border hover:bg-surface-hover transition-colors cursor-pointer group"
                 :class="{ 'bg-primary-soft/40': selectedIds.has(itemKey(pkg)) }"
               >
-                <td v-if="!isProxy" class="w-7 px-4 py-3" @click.stop>
+                <td v-if="canDeletePackages" class="w-7 px-4 py-3" @click.stop>
                   <input
                     type="checkbox"
                     :checked="selectedIds.has(itemKey(pkg))"
@@ -281,7 +281,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       <ArrowDownTrayIcon class="w-3.5 h-3.5" aria-hidden="true" />
                     </button>
                     <button
-                      v-if="session.isAdmin && !isProxy"
+                      v-if="canDeletePackages"
                       class="w-7 h-7 flex items-center justify-center rounded border border-border text-muted hover:text-foreground hover:bg-surface-hover transition-colors text-danger"
                       :title="`${t('common.delete')} ${pkg.name}`"
                       :aria-label="`${t('common.delete')} ${pkg.name}`"
@@ -306,7 +306,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Bulk actions bar -->
         <BulkActionsBar
-          v-if="session.isAdmin && !isProxy"
+          v-if="canDeletePackages"
           :selected-items="selectedItemKeys"
           :repo-name="repoName"
           @clear="clearSelection"
@@ -394,6 +394,10 @@ const canUpload = computed(
     (repo.value?.repo_type ?? 'hosted') === 'hosted' &&
     (repo.value?.format === 'deb' || repo.value?.format === 'rpm'),
 )
+
+// Deleting a package row by id is implemented server-side for deb and rpm only
+// (other formats answer 400 UNSUPPORTED_FORMAT), so offer it only there.
+const canDeletePackages = computed(() => canUpload.value)
 
 // ── Selection state ────────────────────────────────────────────────────────
 const selectedIds = ref<Set<string>>(new Set())
@@ -560,7 +564,14 @@ async function load(silent = false): Promise<void> {
       totalPackages.value = pkgRes.total || 0
     }
     repo.value = repoRes
-    if (!silent) activeTab.value = repoRes.repo_type === 'group' ? 'members' : 'packages'
+    if (!silent) {
+      const wanted = typeof route.query.tab === 'string' ? route.query.tab : ''
+      activeTab.value = tabs.value.some((tb) => tb.id === wanted)
+        ? wanted
+        : repoRes.repo_type === 'group'
+          ? 'members'
+          : 'packages'
+    }
   } catch (err) {
     if (generation !== loadGeneration) return
     if (!silent) repo.value = null

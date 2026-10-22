@@ -59,7 +59,6 @@ const labelMap: Record<string, string> = {
   'settings-password': t('settings.password'),
   'settings-tokens': t('settings.tokens'),
   'settings-theme': t('settings.theme'),
-  'settings-notifications': t('settings.notifications'),
 }
 
 const segments = computed<Segment[]>(() => {

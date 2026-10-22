@@ -55,14 +55,6 @@ export async function listTokens(params?: { page?: number; limit?: number; princ
   }
 }
 
-export async function createTokenFor(principal: string, body: { name: string; kind?: 'access' | 'deploy'; expires_at?: string }): Promise<CreatedToken> {
-  return request<CreatedToken>('/api/v1/admin/tokens', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ kind: 'access', ...body, principal }),
-  })
-}
-
 export async function revokeToken(id: string | number): Promise<void> {
   return request<void>(`/api/v1/admin/tokens/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
 }

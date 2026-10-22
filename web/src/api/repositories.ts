@@ -27,11 +27,12 @@ interface ListPackagesResult {
   packages: PackageItem[]
 }
 
-export function listRepositories(params?: { page?: number; limit?: number; format?: string }): Promise<ListRepositoriesResult> {
+export function listRepositories(params?: { page?: number; limit?: number; format?: string; packageName?: string }): Promise<ListRepositoriesResult> {
   const qs = new URLSearchParams()
   if (params?.page != null) qs.set('page', String(params.page))
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.format) qs.set('format', params.format)
+  if (params?.packageName) qs.set('package_name', params.packageName)
   const query = qs.toString() ? `?${qs}` : ''
   return request<ListRepositoriesResult>(`/api/v1/repositories${query}`)
 }
@@ -97,11 +98,12 @@ export function deleteRepository(name: string): Promise<void> {
   })
 }
 
-export function listPackages(name: string, params?: { page?: number; limit?: number; format?: string }): Promise<ListPackagesResult> {
+export function listPackages(name: string, params?: { page?: number; limit?: number; format?: string; packageName?: string }): Promise<ListPackagesResult> {
   const qs = new URLSearchParams()
   if (params?.page != null) qs.set('page', String(params.page))
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.format) qs.set('format', params.format)
+  if (params?.packageName) qs.set('package_name', params.packageName)
   const query = qs.toString() ? `?${qs}` : ''
   return request<ListPackagesResult>(`/api/v1/repositories/${encodeURIComponent(name)}/packages${query}`)
 }
@@ -187,6 +189,26 @@ export function deletePackage(repoName: string, id: string): Promise<void> {
     `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(id)}`,
     { method: 'DELETE' },
   )
+}
+
+/**
+ * Every row (all versions) of one package, looked up server-side by its exact
+ * listed name, so repositories of any size resolve without walking the whole
+ * listing.
+ */
+export async function listPackageVersions(
+  repoName: string,
+  packageName: string,
+  format?: string,
+): Promise<PackageItem[]> {
+  const items: PackageItem[] = []
+  for (let page = 1; ; page++) {
+    const res = await listPackages(repoName, { page, limit: COMPONENT_PAGE_SIZE, format, packageName })
+    const rows = res.packages ?? []
+    items.push(...rows)
+    if (items.length >= (res.total ?? 0) || rows.length === 0) break
+  }
+  return items
 }
 
 // ── Components ────────────────────────────────────────────────────────────────

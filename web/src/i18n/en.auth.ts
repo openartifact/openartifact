@@ -48,8 +48,6 @@ export const enAuth = {
   'settings.profile.roleUser': 'User',
 
   // Settings: notifications
-  'settings.notifications.loadFailed': 'Failed to load notification settings',
-  'settings.notifications.saveFailed': 'Failed to save notification settings',
 
   // Settings: tokens
   'settings.tokens.yourTokens': 'Your tokens',

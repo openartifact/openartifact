@@ -21,6 +21,7 @@ import (
 	"net/url"
 	"os"
 	"os/signal"
+	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -566,7 +567,7 @@ func (im *importer) handle(ctx context.Context, j importJob) {
 	a := j.asset
 	key := stateKey(j.repo.Name, j.dst, a.Path)
 
-	if a.SHA256 != "" && im.state.isDone(key, a.SHA256) {
+	if marker := resumeMarker(a); marker != "" && im.state.isDone(key, marker) {
 		im.rep.add(func(r *importReport) { r.Resumed++ })
 		return
 	}
@@ -627,9 +628,27 @@ func (im *importer) finishPresent(ctx context.Context, j importJob, key string, 
 		return
 	}
 
-	im.complete(key, a.SHA256)
+	im.complete(key, resumeMarker(a))
 	im.rep.add(func(r *importReport) { r.Present++ })
 	im.rep.logf("present  %s/%s", j.repo.Name, a.Path)
+}
+
+// resumeMarker is what the state file records for a finished asset and what a
+// resumed run compares against the source listing: the source SHA-256, else
+// its SHA-1, else its size. Listings without a SHA-256 (old Nexus or
+// Artifactory assets) therefore resume instead of re-uploading everything. It
+// is empty only when the source reports none of the three.
+func resumeMarker(a sourceAsset) string {
+	switch {
+	case a.SHA256 != "":
+		return a.SHA256
+	case a.SHA1 != "":
+		return "sha1:" + a.SHA1
+	case a.Size > 0:
+		return "size:" + strconv.FormatInt(a.Size, 10)
+	}
+
+	return ""
 }
 
 func (im *importer) complete(key, sha string) {
@@ -732,12 +751,7 @@ func (im *importer) transfer(ctx context.Context, j importJob, key string) error
 		return err
 	}
 
-	sha := a.SHA256
-	if sha == "" {
-		sha = got.sha256
-	}
-
-	im.complete(key, sha)
+	im.complete(key, resumeMarker(a))
 	im.rep.add(func(r *importReport) { r.Uploaded++; r.Bytes += got.n })
 	im.rep.logf("uploaded %s/%s -> %s, %s", j.repo.Name, a.Path, j.dst, humanBytes(got.n))
 

@@ -156,8 +156,11 @@ func isStaticPath(urlPath string, cfg RBACConfig) bool {
 // navigation signals so a package-manager request for a package that happens
 // to be called "edit"/"browse"/"graph" is never treated as a page load.
 func isSPANavigation(r *http.Request) bool {
-	if !strings.HasPrefix(r.URL.Path, "/repos/") ||
-		!isSPARepoPath(strings.Split(strings.Trim(r.URL.Path, "/"), "/")) {
+	// Segment on the escaped path: package names containing "/" (scoped npm,
+	// docker, go modules) arrive as %2F and must stay one segment.
+	escaped := r.URL.EscapedPath()
+	if !strings.HasPrefix(escaped, "/repos/") ||
+		!isSPARepoPath(strings.Split(strings.Trim(escaped, "/"), "/")) {
 		return false
 	}
 
@@ -605,9 +608,9 @@ func isSPARepoPath(segments []string) bool {
 	switch len(segments) {
 	case 2: // /repos/{name}, /repos/new
 		return true
-	case 3: // /repos/{name}/edit|browse|graph|trash
+	case 3: // /repos/{name}/edit|settings|browse|graph|trash
 		switch segments[2] {
-		case "edit", "browse", "graph", "trash":
+		case "edit", "settings", "browse", "graph", "trash":
 			return true
 		}
 

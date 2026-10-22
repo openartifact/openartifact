@@ -2442,6 +2442,22 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "Only list packages of this format",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package_name",
+            "in": "query",
+            "description": "Only list rows whose listed package name equals this value exactly (all versions of one package)",
+            "schema": {
+              "type": "string"
+            }
           }
         ],
         "responses": {

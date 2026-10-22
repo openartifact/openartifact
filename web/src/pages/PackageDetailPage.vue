@@ -425,7 +425,7 @@ import {
   TagIcon,
   ArrowPathIcon,
 } from '@heroicons/vue/24/outline'
-import { getRepository, listComponents } from '../api/repositories'
+import { getRepository, listPackageVersions } from '../api/repositories'
 import type { Repository, PackageItem } from '../api/repositories'
 import { pullCommand as buildPullCommand, repoBaseUrl } from '../lib/installCommands'
 import { useSessionStore } from '../stores/session'
@@ -477,10 +477,10 @@ async function loadProperties(): Promise<void> {
   if (!artifactId.value) return
   propsLoading.value = true
   try {
-    const res = await request<{ properties: Record<string, string> }>(
+    const res = await request<Record<string, string>>(
       `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties`,
     )
-    properties.value = res?.properties ?? {}
+    properties.value = res ?? {}
   } catch (err) {
     if (!(err instanceof ApiError && (err.status === 404 || err.status === 501))) {
       toasts.error(t('pkg.props.loadFailed'))
@@ -678,10 +678,13 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    const [repoRes, all] = await Promise.all([getRepository(repoName.value), listComponents(repoName.value)])
+    const [repoRes, versions] = await Promise.all([
+      getRepository(repoName.value),
+      listPackageVersions(repoName.value, pkgName.value),
+    ])
     if (generation !== loadGeneration) return
     repo.value = repoRes
-    packages.value = all.items
+    packages.value = versions
       .filter((p) => p.name === pkgName.value)
       .sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
   } catch (err) {

@@ -195,3 +195,18 @@ func TestUploadsAndDeletesToProxyAndGroupAreRefused(t *testing.T) {
 		t.Errorf("deb upload = %d, want 405; body %s", rw.Code, rw.Body.String())
 	}
 }
+
+func TestCreateRejectsReservedRepoNames(t *testing.T) {
+	for _, name := range []string{"new", "settings", "trash", "raw", "maven", "sbt", "ivy", "New"} {
+		db := newProxyGroupDB()
+		rw := createRepo(t, db, `{"name":"`+name+`","format":"npm"}`)
+
+		if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), "reserved") {
+			t.Errorf("%s: status %d body %s", name, rw.Code, rw.Body.String())
+		}
+
+		if db.created != nil {
+			t.Errorf("%s: repository was created", name)
+		}
+	}
+}

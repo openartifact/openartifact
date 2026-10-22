@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
-import { deletePackage, downloadPackage, listComponents, listRepoMembers, presignModeOf, presignValueOf, updateRepository } from '../repositories'
+import { deletePackage, downloadPackage, listComponents, listPackageVersions, listRepoMembers, presignModeOf, presignValueOf, updateRepository } from '../repositories'
 import { ApiError, attachmentFilename } from '../client'
 
 function stubFetch(responses: unknown[]): { urls: string[]; methods: string[] } {
@@ -124,5 +124,19 @@ describe('repositories api', () => {
     }) as never)
     await updateRepository('r', { presign_downloads: presignValueOf('inherit') })
     expect(JSON.parse(sent)).toEqual({ presign_downloads: null })
+  })
+})
+
+describe('listPackageVersions', () => {
+  beforeEach(() => {
+    setActivePinia(createPinia())
+  })
+
+  it('looks a package up by exact name server-side instead of walking the repository', async () => {
+    const seen = stubFetch([{ total: 1, packages: [{ id: '1', name: '@a/b', version: '1.0.0', format: 'npm' }] }])
+    const rows = await listPackageVersions('r', '@a/b')
+    expect(rows).toHaveLength(1)
+    expect(seen.urls).toHaveLength(1)
+    expect(seen.urls[0]).toContain('package_name=%40a%2Fb')
   })
 })

@@ -579,3 +579,11 @@ type DatabaseConfig struct {
 	// replicas observe a change after at most this long. 0 disables the cache.
 	AuthCacheTTLMillis int `yaml:"authCacheTtlMs"`
 }
+
+// ComponentNameLister is implemented by stores that can list a repository's
+// packages restricted to one exact listed name (GET
+// /api/v1/repositories/{name}/packages?name=…). Kept separate from the main
+// interface so only the real store has to provide it.
+type ComponentNameLister interface {
+	ListComponentsByRepoName(ctx context.Context, repoID, formatFilter, nameFilter string, page, limit int) ([]*models.Component, int, error)
+}

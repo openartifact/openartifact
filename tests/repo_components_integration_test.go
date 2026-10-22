@@ -415,3 +415,25 @@ func TestDownloadPackage_NpmAndRaw(t *testing.T) {
 		})
 	}
 }
+
+// TestListComponentsByRepoName_ExactName covers the server-side package lookup
+// behind the package detail page: an exact listed name (scoped npm included)
+// returns every version of that package and nothing else.
+func TestListComponentsByRepoName_ExactName(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	f := seedNpmAndRaw(t, pg)
+	ctx := context.Background()
+
+	got, total, err := pg.ListComponentsByRepoName(ctx, f.npmRepo, "", "@acme/widget", 1, 100)
+	if err != nil || total != 2 || len(got) != 2 {
+		t.Fatalf("npm @acme/widget: total=%d len=%d err=%v, want 2/2", total, len(got), err)
+	}
+
+	if got, total, err = pg.ListComponentsByRepoName(ctx, f.npmRepo, "", "widget", 1, 100); err != nil || total != 0 || len(got) != 0 {
+		t.Fatalf("partial name must not match: total=%d len=%d err=%v", total, len(got), err)
+	}
+
+	if got, total, err = pg.ListComponentsByRepoName(ctx, f.rawRepo, "raw", "dir/a.txt", 1, 100); err != nil || total != 1 || len(got) != 1 {
+		t.Fatalf("raw dir/a.txt: total=%d len=%d err=%v, want 1/1", total, len(got), err)
+	}
+}

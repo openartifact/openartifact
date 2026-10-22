@@ -43,6 +43,15 @@ const routes: RouteRecordRaw[] = [
     meta: { requiresAuth: true, requiresAdmin: true },
   },
   {
+    path: '/repos/:name/settings',
+    name: 'repo-settings',
+    redirect: (to) => ({
+      name: 'repo-detail',
+      params: { name: to.params.name },
+      query: { tab: 'configuration' },
+    }),
+  },
+  {
     path: '/repos/:name/browse',
     name: 'repo-browse',
     component: () => import('../pages/ArtifactBrowserPage.vue'),
@@ -216,11 +225,6 @@ const routes: RouteRecordRaw[] = [
         path: 'tokens',
         name: 'settings-tokens',
         component: () => import('../pages/settings/TokensPage.vue'),
-      },
-      {
-        path: 'notifications',
-        name: 'settings-notifications',
-        component: () => import('../pages/settings/NotificationsPage.vue'),
       },
     ],
   },

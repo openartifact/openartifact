@@ -335,7 +335,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
             <!-- Dynamic config fields -->
             <div v-if="form.kind && BACKEND_TYPES[form.kind]">
-              <label class="block text-xs font-semibold text-foreground mb-3">Configuration</label>
+              <label class="block text-xs font-semibold text-foreground mb-3">{{ t('storage.configuration') }}</label>
               <div class="grid grid-cols-2 gap-x-3 gap-y-4">
                 <template v-for="field in visibleFields" :key="field.key">
                   <div :class="field.half ? 'col-span-1' : 'col-span-2'">
@@ -453,9 +453,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 />
               </button>
               <div>
-                <p class="text-xs font-semibold text-foreground">Set as default backend</p>
+                <p class="text-xs font-semibold text-foreground">{{ t('storage.setDefault') }}</p>
                 <p class="text-[11px] text-muted mt-0.5 leading-relaxed">
-                  New repositories without an explicit backend will use the default.
+                  {{ t('storage.setDefaultHint') }}
                   Only one backend can be default at a time.
                 </p>
               </div>

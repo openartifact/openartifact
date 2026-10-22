@@ -30,6 +30,28 @@ describe('API client', () => {
     setActivePinia(createPinia())
   })
 
+  it('rejects an error response with an empty body instead of treating it as success', async () => {
+    spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 403, headers: { 'content-length': '0' } }),
+    )
+
+    let caught: unknown
+    try {
+      await request('/api/v1/x', { method: 'DELETE' })
+    } catch (err) {
+      caught = err
+    }
+    expect(caught).toBeInstanceOf(ApiError)
+    expect((caught as ApiError).status).toBe(403)
+  })
+
+  it('still resolves undefined for a successful empty body', async () => {
+    spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(null, { status: 200, headers: { 'content-length': '0' } }),
+    )
+    expect(await request('/api/v1/x', { method: 'DELETE' })).toBeUndefined()
+  })
+
   it('sets X-Requested-With and credentials on every request', async () => {
     const mockFetch = spyOn(globalThis, 'fetch').mockResolvedValue({
       status: 200,

@@ -1088,6 +1088,14 @@ export type GetApiV1RepositoriesByNamePackagesData = {
          * Search query
          */
         q?: string;
+        /**
+         * Only list packages of this format
+         */
+        format?: string;
+        /**
+         * Only list rows whose listed package name equals this value exactly (all versions of one package)
+         */
+        package_name?: string;
     };
     url: '/api/v1/repositories/{name}/packages';
 };
