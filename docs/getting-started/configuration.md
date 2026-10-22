@@ -188,6 +188,14 @@ Signs APT and RPM metadata; see [signing](../security/signing.md).
 |---|---|---|---|
 | `OPENARTIFACT_BACKUP_DIR` | `backupDir` | `/var/lib/openartifact/backups` | Directory for backup files; see [backup](../operations/backup.md) |
 
+### Projects (`projects`)
+
+See [Projects](../security/projects.md). An administrator can change `selfCreate` in the UI (Admin > Projects) or through `PUT /api/v1/admin/projects/settings`; once saved, the stored value takes precedence over this default and applies immediately.
+
+| Env | YAML | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_PROJECTS_SELF_CREATE` | `selfCreate` | `false` | Any authenticated user may create a project and becomes its owner; policy fields stay at their defaults until a global admin changes them |
+
 ### AI analysis (`ai`)
 
 Optional and off by default; see [AI analysis](../integrations/ai-analysis.md). Once an administrator has saved the `ai.enabled` setting through the UI/API, the stored settings decide whether analysis runs and the values below only fill fields left empty there. Saved changes apply immediately without a restart; changes to these environment variables need one.
