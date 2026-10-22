@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -157,7 +158,7 @@ func (h *ProjectsHandler) handleCreateToken(w http.ResponseWriter, r *http.Reque
 	record.CreatedByName = p.Username
 
 	h.emit(r, projectEvent{
-		action: "project.token_created", projectID: &access.project.ID, resourceType: "project_token", resourceID: record.ID,
+		action: audit.ActionProjectTokenCreated, projectID: &access.project.ID, resourceType: "project_token", resourceID: record.ID,
 		message: "token " + record.Name + " created in project " + access.project.Name + " (role " + body.Role + ", expires " + expiryLabel(record.ExpiresAt) + ")",
 	})
 
@@ -209,7 +210,7 @@ func (h *ProjectsHandler) handleRevokeToken(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.emit(r, projectEvent{
-		action: "project.token_revoked", projectID: &access.project.ID, resourceType: "project_token", resourceID: tokenID,
+		action: audit.ActionProjectTokenRevoked, projectID: &access.project.ID, resourceType: "project_token", resourceID: tokenID,
 		message: "token " + token.Name + " revoked in project " + access.project.Name,
 	})
 

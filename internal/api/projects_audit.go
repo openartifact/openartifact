@@ -65,14 +65,14 @@ func (h *ProjectsHandler) emit(r *http.Request, ev projectEvent) {
 func (h *ProjectsHandler) emitProjectUpdate(r *http.Request, before, after *models.Project) {
 	if derefString(before.DisplayName) != derefString(after.DisplayName) || derefString(before.Description) != derefString(after.Description) {
 		h.emit(r, projectEvent{
-			action: "project.updated", projectID: &after.ID, resourceID: after.ID,
+			action: audit.ActionProjectUpdated, projectID: &after.ID, resourceID: after.ID,
 			message: "project " + after.Name + " updated",
 		})
 	}
 
 	if changed := policyChanges(before, after); len(changed) > 0 {
 		h.emit(r, projectEvent{
-			action: "project.policy_changed", projectID: &after.ID, resourceID: after.ID,
+			action: audit.ActionProjectPolicyChanged, projectID: &after.ID, resourceID: after.ID,
 			message: "project " + after.Name + " policy changed: " + strings.Join(changed, ", "),
 		})
 	}

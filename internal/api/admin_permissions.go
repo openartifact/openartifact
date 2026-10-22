@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -95,7 +96,7 @@ func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	auditAdmin(r, "permission_target.created", "permission_target", saved.ID, "permission target "+saved.Name+" created")
+	auditAdmin(r, audit.ActionPermissionTargetObjCreated, "permission_target", saved.ID, "permission target "+saved.Name+" created")
 
 	writeJSON(w, http.StatusCreated, permTargetToResponse(saved))
 }
@@ -220,7 +221,7 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	auditAdmin(r, "permission_target.updated", "permission_target", merged.ID, "permission target "+merged.Name+" updated")
+	auditAdmin(r, audit.ActionPermissionTargetObjUpdated, "permission_target", merged.ID, "permission target "+merged.Name+" updated")
 
 	writeJSON(w, http.StatusOK, permTargetToResponse(&merged))
 }
@@ -236,7 +237,7 @@ func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	auditAdmin(r, "permission_target.deleted", "permission_target", id, "permission target deleted")
+	auditAdmin(r, audit.ActionPermissionTargetObjDeleted, "permission_target", id, "permission target deleted")
 
 	writeNoContent(w)
 }
@@ -283,7 +284,7 @@ func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	auditAdmin(r, "permission_target.assigned", "permission_target", id, "assigned to "+body.PrincipalType+" "+body.PrincipalID)
+	auditAdmin(r, audit.ActionPermissionTargetObjAssigned, "permission_target", id, "assigned to "+body.PrincipalType+" "+body.PrincipalID)
 
 	writeNoContent(w)
 }
@@ -312,7 +313,7 @@ func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.
 		return
 	}
 
-	auditAdmin(r, "permission_target.unassigned", "permission_target", id, "unassigned from "+principalType+" "+principalID)
+	auditAdmin(r, audit.ActionPermissionTargetObjUnassigned, "permission_target", id, "unassigned from "+principalType+" "+principalID)
 
 	writeNoContent(w)
 }

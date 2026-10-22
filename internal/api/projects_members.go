@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -150,7 +151,7 @@ func (h *ProjectsHandler) handleAddMember(w http.ResponseWriter, r *http.Request
 	}
 
 	h.emit(r, projectEvent{
-		action: "project.member_added", projectID: &access.project.ID, resourceType: "project_member", resourceID: user.ID,
+		action: audit.ActionProjectMemberAdded, projectID: &access.project.ID, resourceType: "project_member", resourceID: user.ID,
 		message: "user " + user.Username + " added to project " + access.project.Name + " as " + req.Role,
 	})
 
@@ -236,7 +237,7 @@ func (h *ProjectsHandler) handleUpdateMember(w http.ResponseWriter, r *http.Requ
 
 	if previous != req.Role {
 		h.emit(r, projectEvent{
-			action: "project.member_role_changed", projectID: &access.project.ID, resourceType: "project_member", resourceID: userID,
+			action: audit.ActionProjectMemberRoleChanged, projectID: &access.project.ID, resourceType: "project_member", resourceID: userID,
 			message: "user " + target.Username + " in project " + access.project.Name + ": " + previous + " -> " + req.Role,
 		})
 	}
@@ -283,7 +284,7 @@ func (h *ProjectsHandler) handleRemoveMember(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.emit(r, projectEvent{
-		action: "project.member_removed", projectID: &access.project.ID, resourceType: "project_member", resourceID: userID,
+		action: audit.ActionProjectMemberRemoved, projectID: &access.project.ID, resourceType: "project_member", resourceID: userID,
 		message: "user " + target.Username + " removed from project " + access.project.Name + " (was " + target.Role + ")",
 	})
 

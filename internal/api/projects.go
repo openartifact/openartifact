@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -454,7 +455,7 @@ func (h *ProjectsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.emit(r, projectEvent{
-		action: "project.created", projectID: &project.ID, resourceID: project.ID,
+		action: audit.ActionProjectCreated, projectID: &project.ID, resourceID: project.ID,
 		message: "project " + project.Name + " created, owner " + owner.Username,
 	})
 
@@ -667,7 +668,7 @@ func (h *ProjectsHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 	// The audit row cannot reference the deleted project (project_id would
 	// dangle), so the project ID travels as the resource ID.
 	h.emit(r, projectEvent{
-		action: "project.deleted", resourceID: access.project.ID,
+		action: audit.ActionProjectDeleted, resourceID: access.project.ID,
 		message: "project " + access.project.Name + " deleted",
 	})
 

@@ -12,6 +12,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -83,7 +84,7 @@ func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	auditAdmin(r, "group.created", "group", saved.ID, "group "+saved.Name+" created")
+	auditAdmin(r, audit.ActionGroupCreated, "group", saved.ID, "group "+saved.Name+" created")
 
 	writeJSON(w, http.StatusCreated, groupToResponse(saved))
 }
@@ -181,7 +182,7 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	auditAdmin(r, "group.updated", "group", group.ID, "group "+group.Name+" updated")
+	auditAdmin(r, audit.ActionGroupUpdated, "group", group.ID, "group "+group.Name+" updated")
 
 	writeJSON(w, http.StatusOK, groupToResponse(group))
 }
@@ -197,7 +198,7 @@ func (h *AdminGroupsHandler) handleDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	auditAdmin(r, "group.deleted", "group", id, "group deleted")
+	auditAdmin(r, audit.ActionGroupDeleted, "group", id, "group deleted")
 
 	writeNoContent(w)
 }
@@ -219,7 +220,7 @@ func (h *AdminGroupsHandler) handleAddMember(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	auditAdmin(r, "group.member_added", "group", vars["id"], "user "+vars["userId"]+" added to group")
+	auditAdmin(r, audit.ActionGroupMemberAdded, "group", vars["id"], "user "+vars["userId"]+" added to group")
 
 	writeNoContent(w)
 }
@@ -235,7 +236,7 @@ func (h *AdminGroupsHandler) handleRemoveMember(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	auditAdmin(r, "group.member_removed", "group", vars["id"], "user "+vars["userId"]+" removed from group")
+	auditAdmin(r, audit.ActionGroupMemberRemoved, "group", vars["id"], "user "+vars["userId"]+" removed from group")
 
 	writeNoContent(w)
 }
@@ -337,7 +338,7 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 		}
 	}
 
-	auditAdmin(r, "group.members_set", "group", id, "group membership replaced: "+strconv.Itoa(len(desiredSet))+" members")
+	auditAdmin(r, audit.ActionGroupMembersSet, "group", id, "group membership replaced: "+strconv.Itoa(len(desiredSet))+" members")
 
 	writeNoContent(w)
 }

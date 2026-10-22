@@ -25,6 +25,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
@@ -776,7 +777,7 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
 	if project != nil {
-		h.emitProjectRepoEvent(r, "project.repository_created", project.ID, &repo.ID, "repository "+repo.Name+" created in project "+project.Name)
+		h.emitProjectRepoEvent(r, audit.ActionProjectRepositoryCreated, project.ID, &repo.ID, "repository "+repo.Name+" created in project "+project.Name)
 	}
 
 	writeJSON(w, http.StatusCreated, h.repositoryResponse(r.Context(), repo, map[string]string{}))
@@ -1118,7 +1119,7 @@ func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 		webhook.RepositoryPayload(webhook.EventRepoDeleted, repo.Name, repo.Format, repo.RepoType))
 
 	if repo.ProjectID != nil && *repo.ProjectID != models.SystemProjectID {
-		h.emitProjectRepoEvent(r, "project.repository_deleted", *repo.ProjectID, nil, "repository "+repo.Name+" deleted")
+		h.emitProjectRepoEvent(r, audit.ActionProjectRepositoryDeleted, *repo.ProjectID, nil, "repository "+repo.Name+" deleted")
 	}
 
 	if !soft {

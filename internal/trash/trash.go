@@ -144,7 +144,7 @@ func Delete(ctx context.Context, db database.Database, req Request, hard func() 
 		verb = "moved to trash"
 	}
 
-	auditEvent(ctx, "artifact.deleted", req.RepoID, string(req.Kind), firstOrEmpty(req.IDs), verb+": "+req.Resource)
+	auditEvent(ctx, audit.ActionArtifactDeleted, req.RepoID, string(req.Kind), firstOrEmpty(req.IDs), verb+": "+req.Resource)
 
 	return nil
 }
@@ -159,9 +159,9 @@ func firstOrEmpty(ids []string) string {
 
 // AuditRestored records that item left the trash.
 func AuditRestored(ctx context.Context, item *models.TrashItem) {
-	action := "artifact.restored"
+	action := audit.ActionArtifactRestored
 	if item.Kind == models.TrashKindRepository {
-		action = "repository.restored"
+		action = audit.ActionRepositoryRestored
 	}
 
 	auditEvent(ctx, action, item.RepositoryID, string(item.Kind), item.ID, "restored: "+Describe(item))
@@ -171,9 +171,9 @@ func AuditRestored(ctx context.Context, item *models.TrashItem) {
 // carry no principal (the retention purge): the event is then attributed to
 // the system.
 func AuditPurged(ctx context.Context, res *models.TrashPurgeResult, reason string) {
-	action := "artifact.purged"
+	action := audit.ActionArtifactPurged
 	if res.Kind == models.TrashKindRepository {
-		action = "repository.purged"
+		action = audit.ActionRepositoryPurged
 	}
 
 	desc := res.Name

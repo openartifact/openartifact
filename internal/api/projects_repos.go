@@ -8,6 +8,7 @@ import (
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 )
 
@@ -101,7 +102,7 @@ func (h *ProjectsHandler) handlePutSettings(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.emit(r, projectEvent{
-		action: "system.setting_changed", resourceType: "system_setting", resourceID: auth.SettingProjectsSelfCreate,
+		action: audit.ActionSystemSettingChanged, resourceType: "system_setting", resourceID: auth.SettingProjectsSelfCreate,
 		message: "projects.self_create set " + state,
 	})
 

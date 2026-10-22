@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
@@ -323,7 +324,7 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditAdmin(r, "sso_provider.created", "sso_provider", body.ID, "sso provider "+body.Slug+" created")
+	auditAdmin(r, audit.ActionSSOProviderCreated, "sso_provider", body.ID, "sso provider "+body.Slug+" created")
 
 	writeJSON(w, http.StatusCreated, ssoProviderToResponse(&body))
 }
@@ -529,7 +530,7 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditAdmin(r, "sso_provider.updated", "sso_provider", existing.ID, "sso provider "+existing.Slug+" updated")
+	auditAdmin(r, audit.ActionSSOProviderUpdated, "sso_provider", existing.ID, "sso provider "+existing.Slug+" updated")
 
 	writeJSON(w, http.StatusOK, ssoProviderToResponse(existing))
 }
@@ -651,7 +652,7 @@ func (h *AdminSSOHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	auditAdmin(r, "sso_provider.deleted", "sso_provider", existing.ID, "sso provider "+existing.Slug+" deleted")
+	auditAdmin(r, audit.ActionSSOProviderDeleted, "sso_provider", existing.ID, "sso provider "+existing.Slug+" deleted")
 
 	writeNoContent(w)
 }

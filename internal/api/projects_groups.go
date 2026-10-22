@@ -9,6 +9,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -119,12 +120,12 @@ func (h *ProjectsHandler) emitGroupSet(r *http.Request, access *projectAccess, g
 	case role:
 	case "":
 		h.emit(r, projectEvent{
-			action: "project.group_added", projectID: &access.project.ID, resourceType: "project_group", resourceID: group.ID,
+			action: audit.ActionProjectGroupAdded, projectID: &access.project.ID, resourceType: "project_group", resourceID: group.ID,
 			message: "group " + group.Name + " attached to project " + access.project.Name + " as " + role,
 		})
 	default:
 		h.emit(r, projectEvent{
-			action: "project.group_role_changed", projectID: &access.project.ID, resourceType: "project_group", resourceID: group.ID,
+			action: audit.ActionProjectGroupRoleChanged, projectID: &access.project.ID, resourceType: "project_group", resourceID: group.ID,
 			message: "group " + group.Name + " in project " + access.project.Name + ": " + previous + " -> " + role,
 		})
 	}
@@ -154,7 +155,7 @@ func (h *ProjectsHandler) handleRemoveGroup(w http.ResponseWriter, r *http.Reque
 	}
 
 	h.emit(r, projectEvent{
-		action: "project.group_removed", projectID: &access.project.ID, resourceType: "project_group", resourceID: group.ID,
+		action: audit.ActionProjectGroupRemoved, projectID: &access.project.ID, resourceType: "project_group", resourceID: group.ID,
 		message: "group " + group.Name + " detached from project " + access.project.Name + " (was " + previous + ")",
 	})
 

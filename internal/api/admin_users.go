@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -104,7 +105,7 @@ func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	auditAdmin(r, "user.created", "user", saved.ID, "user "+saved.Username+" created")
+	auditAdmin(r, audit.ActionUserCreated, "user", saved.ID, "user "+saved.Username+" created")
 
 	writeJSON(w, http.StatusCreated, userToResponse(saved))
 }
@@ -287,7 +288,7 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	auditAdmin(r, "user.updated", "user", user.ID, "user "+user.Username+" updated: "+strings.Join(changed, ", "))
+	auditAdmin(r, audit.ActionUserUpdated, "user", user.ID, "user "+user.Username+" updated: "+strings.Join(changed, ", "))
 
 	// A password reset or a disable must cut off whoever still holds a
 	// session. Failing to do so fails the request: the caller must know the
@@ -338,7 +339,7 @@ func (h *AdminUsersHandler) handleDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	auditAdmin(r, "user.disabled", "user", user.ID, "user "+user.Username+" deleted (disabled)")
+	auditAdmin(r, audit.ActionUserDisabled, "user", user.ID, "user "+user.Username+" deleted (disabled)")
 
 	if err := auth.RevokeAllSessions(ctx, h.db, user.ID); err != nil {
 		h.log.Errorw("admin delete user: revoke sessions", "error", err, "user", user.ID)

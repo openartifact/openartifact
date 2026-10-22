@@ -52,7 +52,7 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 			// refused for a missing confirmation did not); a rejected request
 			// did not.
 			if action == "" || ((strings.HasPrefix(action, "auth.") || action == "repository.deleted") && wrapped.statusCode >= http.StatusBadRequest) {
-				action = "http.request"
+				action = audit.ActionHTTPRequest
 			}
 			clientIP := ClientIP(r, proxies)
 
@@ -74,19 +74,19 @@ func AuditMiddleware(auditLogger *audit.Logger, trusted ...*TrustedProxies) func
 func routeToAction(method, routeTemplate string) string {
 	switch {
 	case method == "POST" && routeTemplate == "/api/v1/repositories":
-		return "repository.created"
+		return audit.ActionRepositoryCreated
 	case method == "DELETE" && routeTemplate == "/api/v1/repository/{name}":
-		return "repository.deleted"
+		return audit.ActionRepositoryDeleted
 	case method == "POST" && routeTemplate == "/api/v1/repositories/{name}/debs":
-		return "artifact.uploaded"
+		return audit.ActionArtifactUploaded
 	case method == "PUT" && routeTemplate == "/repos/{repo}/{pkg:.*}":
-		return "artifact.uploaded"
+		return audit.ActionArtifactUploaded
 	case method == "POST" && routeTemplate == "/api/v1/auth/change-password":
-		return "auth.password_changed"
+		return audit.ActionAuthPasswordChanged
 	case method == "POST" && (routeTemplate == "/api/v1/auth/tokens" || routeTemplate == "/api/v1/users/{id}/tokens"):
-		return "auth.token_created"
+		return audit.ActionAuthTokenCreated
 	case method == "DELETE" && (routeTemplate == "/api/v1/auth/tokens/{id}" || routeTemplate == "/api/v1/users/{id}/tokens/{tokenId}"):
-		return "auth.token_revoked"
+		return audit.ActionAuthTokenRevoked
 	}
 	return ""
 }
@@ -169,10 +169,10 @@ func AuthAuditMiddleware(auditLogger *audit.Logger, db database.Database, truste
 			case authEndpointLogin:
 				if newSession != "" {
 					setActor(&ev, actorFromSession(r.Context(), db, newSession), "user")
-					ev.Action = "auth.login"
+					ev.Action = audit.ActionAuthLogin
 					ev.Details = "login succeeded"
 				} else {
-					ev.Action = "auth.login_failed"
+					ev.Action = audit.ActionAuthLoginFailed
 					ev.Actor = attempted
 					ev.Details = fmt.Sprintf("login failed (status %d)", wrapped.statusCode)
 				}
@@ -182,15 +182,15 @@ func AuthAuditMiddleware(auditLogger *audit.Logger, db database.Database, truste
 				}
 
 				setActor(&ev, logoutBy, "user")
-				ev.Action = "auth.logout"
+				ev.Action = audit.ActionAuthLogout
 				ev.Details = "logout"
 			case authEndpointSSO:
 				if newSession != "" {
 					setActor(&ev, actorFromSession(r.Context(), db, newSession), "sso")
-					ev.Action = "auth.sso_login"
+					ev.Action = audit.ActionAuthSSOLogin
 					ev.Details = "sso login succeeded"
 				} else {
-					ev.Action = "auth.login_failed"
+					ev.Action = audit.ActionAuthLoginFailed
 					ev.ActorType = "sso"
 					ev.Details = fmt.Sprintf("sso callback failed (status %d)", wrapped.statusCode)
 				}

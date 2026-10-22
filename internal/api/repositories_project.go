@@ -240,7 +240,7 @@ func (h *RepositoriesHandler) handleTransfer(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	h.emitProjectRepoEvent(r, "project.repository_transferred", to.ID, &repo.ID,
+	h.emitProjectRepoEvent(r, audit.ActionProjectRepositoryTransferred, to.ID, &repo.ID,
 		"repository "+repo.Name+" transferred from project "+from.Name+" to "+to.Name)
 
 	repo.ProjectID = &to.ID

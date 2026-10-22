@@ -9,6 +9,7 @@ import (
 	"net/http"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -158,7 +159,7 @@ func (h *ProjectsHandler) handlePutQuota(w http.ResponseWriter, r *http.Request)
 	}
 
 	h.emit(r, projectEvent{
-		action: "project.quota_changed", projectID: &access.project.ID, resourceID: access.project.ID,
+		action: audit.ActionProjectQuotaChanged, projectID: &access.project.ID, resourceID: access.project.ID,
 		message: fmt.Sprintf("project %s quota changed: max_size_bytes %d -> %d, max_artifact_count %d -> %d",
 			access.project.Name, before.MaxSizeBytes, saved.MaxSizeBytes, before.MaxArtifactCount, saved.MaxArtifactCount),
 	})

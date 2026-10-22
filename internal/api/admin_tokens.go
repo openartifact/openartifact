@@ -13,6 +13,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -363,7 +364,7 @@ func issueToken(w http.ResponseWriter, r *http.Request, db database.Database, lo
 	}
 
 	if p.UserID == nil || *p.UserID != ownerID {
-		auditAdmin(r, "token.created_for_user", "user", ownerID, "token "+record.Name+" created for user "+ownerID)
+		auditAdmin(r, audit.ActionTokenCreatedForUser, "user", ownerID, "token "+record.Name+" created for user "+ownerID)
 	}
 
 	writeJSON(w, http.StatusCreated, responses.TokenCreateResponse{

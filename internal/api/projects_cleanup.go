@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -23,7 +24,7 @@ import (
 // emitCleanupPolicy records project.cleanup_policy_changed.
 func (h *ProjectsHandler) emitCleanupPolicy(r *http.Request, project *models.Project, policyID, verb, name string) {
 	h.emit(r, projectEvent{
-		action: "project.cleanup_policy_changed", projectID: &project.ID,
+		action: audit.ActionProjectCleanupPolicyChanged, projectID: &project.ID,
 		resourceType: "cleanup_policy", resourceID: policyID,
 		message: "project " + project.Name + " cleanup policy " + name + " " + verb,
 	})
