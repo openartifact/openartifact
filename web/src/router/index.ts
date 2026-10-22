@@ -54,13 +54,13 @@ const routes: RouteRecordRaw[] = [
     path: '/repos/new',
     name: 'repo-new',
     component: () => import('../pages/RepoWizardPage.vue'),
-    meta: { crumbs: [...reposTrail, { key: 'repos.new' }], requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [...reposTrail, { key: 'repos.new' }], requiresAuth: true, requiresRepoCreate: true },
   },
   {
     path: '/repos/:name/edit',
     name: 'repo-edit',
     component: () => import('../pages/RepoWizardPage.vue'),
-    meta: { crumbs: [...repoTrail, { key: 'common.edit' }], requiresAuth: true, requiresAdmin: true },
+    meta: { crumbs: [...repoTrail, { key: 'common.edit' }], requiresAuth: true },
   },
   {
     path: '/repos/:name/settings',
@@ -318,6 +318,12 @@ router.beforeEach(async (to) => {
   }
 
   if (to.meta.requiresAdmin && !session.isAdmin) {
+    return { name: 'dashboard' }
+  }
+
+  // Creating a repository needs admin or maintainer in some project; the server
+  // still checks the chosen project.
+  if (to.meta.requiresRepoCreate && !session.canCreateRepo) {
     return { name: 'dashboard' }
   }
 })

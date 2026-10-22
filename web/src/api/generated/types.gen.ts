@@ -168,6 +168,10 @@ export type Repository = {
          * Allows emptying the repository's trash.
          */
         manage: boolean;
+        /**
+         * Allows configuring and deleting the repository and managing its cleanup policies and quota: global administrators and maintainers or owners of the repository's project.
+         */
+        admin: boolean;
     };
     /**
      * Per-repository override of storage.presignDownloads: true always redirects eligible blob downloads to a presigned object-store URL, false always streams, null inherits the global setting. Metadata and manifests are never redirected.
@@ -4058,6 +4062,99 @@ export type GetApiV1ProjectsByProjectRepositoriesResponses = {
 };
 
 export type GetApiV1ProjectsByProjectRepositoriesResponse = GetApiV1ProjectsByProjectRepositoriesResponses[keyof GetApiV1ProjectsByProjectRepositoriesResponses];
+
+export type PostApiV1ProjectsByProjectRepositoriesData = {
+    body: {
+        name: string;
+        format: string;
+        description?: string;
+        public?: boolean;
+        repo_type?: 'hosted' | 'proxy' | 'group';
+        upstream_url?: string;
+        upstream_username?: string;
+        upstream_password?: string;
+        cache_ttl_seconds?: number;
+        negative_cache_ttl_seconds?: number;
+        max_stale_seconds?: number;
+        member_repos?: Array<string>;
+        presign_downloads?: boolean | null;
+        trash_retention_days?: number | null;
+        immutable_releases?: boolean;
+    };
+    path: {
+        project: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/repositories';
+};
+
+export type PostApiV1ProjectsByProjectRepositoriesErrors = {
+    /**
+     * Invalid request or a project policy violation (format, type, name prefix)
+     */
+    400: unknown;
+    /**
+     * Role below maintainer, public repository not allowed, or a member repository the caller cannot read
+     */
+    403: unknown;
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+    /**
+     * Name already taken, or the project reached max_repositories (project_repository_limit)
+     */
+    409: unknown;
+};
+
+export type PostApiV1ProjectsByProjectRepositoriesResponses = {
+    /**
+     * Repository created
+     */
+    201: Repository;
+};
+
+export type PostApiV1ProjectsByProjectRepositoriesResponse = PostApiV1ProjectsByProjectRepositoriesResponses[keyof PostApiV1ProjectsByProjectRepositoriesResponses];
+
+export type PostApiV1ProjectsByProjectRepositoriesByNameTransferData = {
+    body: {
+        to_project: string;
+    };
+    path: {
+        project: string;
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/repositories/{name}/transfer';
+};
+
+export type PostApiV1ProjectsByProjectRepositoriesByNameTransferErrors = {
+    /**
+     * Missing to_project, same project, or a target policy violation
+     */
+    400: unknown;
+    /**
+     * Not an owner of the source or the target project, or the target forbids public repositories
+     */
+    403: unknown;
+    /**
+     * Project or repository not found, or the caller has no role in a project
+     */
+    404: unknown;
+    /**
+     * The target project reached max_repositories
+     */
+    409: unknown;
+};
+
+export type PostApiV1ProjectsByProjectRepositoriesByNameTransferResponses = {
+    /**
+     * Repository transferred
+     */
+    200: Repository;
+};
+
+export type PostApiV1ProjectsByProjectRepositoriesByNameTransferResponse = PostApiV1ProjectsByProjectRepositoriesByNameTransferResponses[keyof PostApiV1ProjectsByProjectRepositoriesByNameTransferResponses];
 
 export type GetApiV1ProjectsByProjectMembersData = {
     body?: never;

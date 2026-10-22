@@ -831,6 +831,12 @@ func (m *BaseMockDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string
 func (m *BaseMockDB) CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
 	return errNotImpl("CreateRepositoryWithMembers")
 }
+func (m *BaseMockDB) CreateProjectRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
+	return errNotImpl("CreateProjectRepository")
+}
+func (m *BaseMockDB) MoveRepositoryToProject(ctx context.Context, repoID, toProjectID string, maxRepositories int) error {
+	return errNotImpl("MoveRepositoryToProject")
+}
 func (m *BaseMockDB) CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error {
 	return errNotImpl("CreateStorageBackend")
 }

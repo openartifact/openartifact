@@ -80,6 +80,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <!-- Repositories -->
       <template v-else-if="activeTab === 'repositories'">
+        <div v-if="canCreateRepo" class="mb-4 flex justify-end">
+          <AppButton :to="{ path: '/repos/new', query: { project: projectName } }" data-testid="new-repo">{{ t('repos.new') }}</AppButton>
+        </div>
         <p v-if="reposError" class="text-sm text-danger" role="alert">{{ reposError }}</p>
         <EmptyState
           v-else-if="repoTotal === 0"
@@ -158,7 +161,7 @@ import {
 import type { Repository } from '../api/repositories'
 import { resolveCrumbs, type Crumb } from '../lib/crumbs'
 import { formatDate } from '../lib/datetime'
-import { errorStatus, visibleProjectTabs, type ProjectTab } from '../lib/projectAccess'
+import { atLeast, errorStatus, visibleProjectTabs, type ProjectTab } from '../lib/projectAccess'
 import { t } from '../i18n/en'
 
 const PAGE_SIZE = 20
@@ -178,6 +181,8 @@ const reposError = ref('')
 const members = ref<ProjectMember[]>([])
 const groups = ref<ProjectGroup[]>([])
 
+// Maintainers and owners create repositories in the project (admins reach it as owner).
+const canCreateRepo = computed(() => atLeast(project.value?.my_role, 'maintainer'))
 const projectName = computed(() => route.params.project as string)
 const base = computed(() => `/projects/${encodeURIComponent(projectName.value)}`)
 

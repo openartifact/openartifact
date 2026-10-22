@@ -20,6 +20,9 @@ Roles rank `viewer` < `developer` < `maintainer` < `owner`. A user's effective r
 | Read artifacts in the project's repositories | x | x | x | x | |
 | Write artifacts | | x | x | x | |
 | Delete artifacts, list and restore repository trash | | | x | x | |
+| Create repositories in the project (policy applies) | | | x | x | |
+| Update, delete and configure the project's repositories (cleanup policies, quota, trash emptying) | | | x | x | |
+| Move a repository to another project (owner of both) | | | | x | |
 | Add, change and remove members and groups below `maintainer` | | | x | x | |
 | Grant, change or remove `maintainer` and `owner` | | | | x | |
 | Edit `display_name` and `description` | | | | x | |
@@ -27,7 +30,23 @@ Roles rank `viewer` < `developer` < `maintainer` < `owner`. A user's effective r
 | Create a project with a chosen `owner` or policy fields | | | | | x |
 | Change policy fields (`allowed_formats`, `allowed_repo_types`, `repo_name_prefix`, `allow_public_repos`, `max_repositories`, `token_max_ttl_days`) | | | | | x |
 
-Project roles never grant the global `manage` permission: users, groups, permission targets, settings and every other `/api/v1/*` route outside `/api/v1/projects/**` stay admin-only.
+Project roles never grant the global `manage` permission: users, groups, permission targets, settings and every other `/api/v1/*` route outside `/api/v1/projects/**` stay admin-only. The one exception is the **delegated repository administration** of the table above: for a repository owned by a (non-system) project, a maintainer or owner of that project passes the checks of `PATCH` and `DELETE /repository/{name}`, `/repositories/{name}/cleanup-policies[...]`, `GET`, `PUT`, `DELETE /repositories/{name}/quota` and `DELETE /repositories/{name}/trash`. This is a separate check (`repo.admin`): it is never satisfied by a repository-scoped `manage` permission target, and it is never granted by a scoped, deploy or anonymous credential. A caller who cannot even read the repository gets `404`. Webhooks, quota reconcile, group-member management and every other repository sub-route stay admin-only. Repository responses report the caller's `permissions.admin`.
+
+### Repository self-service
+
+`POST /projects/{project}/repositories` takes the body of `POST /repositories` (`project` is ignored; the path decides) and creates the repository in the project, with the creator needing no permission target: the project roles give access. For non-admins the project policy is enforced:
+
+| Policy field | Violation |
+|---|---|
+| `repo_name_prefix` | name must start with it: 400 |
+| `allowed_formats`, `allowed_repo_types` | 400 |
+| `allow_public_repos` false | `public: true` is 403 |
+| `max_repositories` | 409 `project_repository_limit` (checked under a lock on the project row, so concurrent creates cannot overshoot) |
+| group `member_repos` | each member must be readable by the caller: 403 |
+
+Global admins bypass the policy, on both routes. A non-admin `PATCH /repository/{name}` may change `description`, retention, immutability and the upstream settings but not `project`, `blocked` or `presign_downloads`, and may not make the repository public unless the project allows it (403).
+
+`POST /projects/{project}/repositories/{name}/transfer` with `{"to_project": "<name>"}` moves a repository between projects. The caller must be owner of both (admins always); a caller with no role in the target gets 404, a lower role 403. A non-admin transfer must also satisfy the target's policy (prefix, format, type, visibility, `max_repositories`). Storage usage counters are not moved.
 
 Group grants take `viewer`, `developer` or `maintainer`; `owner` is personal and cannot be given to a group. The built-in `system` project grants nothing and cannot be deleted (409).
 
@@ -74,7 +93,7 @@ A self-created project:
 
 - is owned by the creator, who is added as `owner`;
 - accepts only `name`, `display_name` and `description`; a request with `owner` or any policy field is answered with 403;
-- starts with the default policy: hosted repositories only, all formats, repository name prefix `<slug>-`, no public repositories, at most 50 repositories, token TTL cap of 365 days. The owner cannot change these; a global admin can. The policy fields are stored and returned today; their enforcement on repository creation comes with the repository self-service release.
+- starts with the default policy: hosted repositories only, all formats, repository name prefix `<slug>-`, no public repositories, at most 50 repositories, token TTL cap of 365 days. The owner cannot change these; a global admin can. The policy is enforced when non-admins [create or transfer repositories](#repository-self-service).
 
 `GET /api/v1/projects` returns `can_create` (admin, or self-creation on) so clients can show or hide the create action.
 
@@ -103,6 +122,8 @@ All paths are under `/api/v1`, JSON is snake_case, errors are `{"error": message
 | `PATCH /projects/{project}` | owner | `display_name`, `description`; policy fields need an admin (403 for an owner) |
 | `DELETE /projects/{project}` | owner | 204; 409 while it owns repositories and for the `system` project |
 | `GET /projects/{project}/repositories?page=&limit=` | viewer | `{repositories, total, page, limit}`, live repositories, newest first |
+| `POST /projects/{project}/repositories` | maintainer | body of `POST /repositories`; 201; policy errors 400/403, 409 `project_repository_limit` |
+| `POST /projects/{project}/repositories/{name}/transfer` | owner (and owner of the target) | body `{to_project}`; 404 for a repository of another project |
 | `GET /projects/{project}/members` | viewer | each member has `user_id`, `username`, `role` |
 | `POST /projects/{project}/members` | maintainer | body `user_id` or `username` (exact), plus `role` (default `viewer`); 201 |
 | `PATCH /projects/{project}/members/{user_id}` | maintainer | body `{role}` |

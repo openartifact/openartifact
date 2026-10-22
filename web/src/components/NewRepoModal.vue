@@ -46,7 +46,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       :key="ty.value"
                       type="button"
                       :aria-pressed="type === ty.value"
-                      :class="['p-3 rounded-md border text-left transition-all',
+                      :disabled="!policyAllowsType(policy, ty.value)"
+                      :title="policyAllowsType(policy, ty.value) ? undefined : t('repos.project.typeBlocked')"
+                      :class="['p-3 disabled:opacity-50 rounded-md border text-left transition-all',
                         type === ty.value ? 'border-primary bg-primary-soft' : 'border-border bg-surface hover:bg-surface-hover']"
                       @click="type = ty.value"
                     >
@@ -99,11 +101,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   </div>
                 </fieldset>
   
-                <ProjectSelect id="new-repo-project" v-model="project" />
+                <ProjectSelect id="new-repo-project" v-model="project" @select="selectedProject = $event" />
+                <p v-if="prefix" class="-mt-2 text-xs text-muted">{{ t('repos.project.prefix') }} <span class="font-mono text-foreground">{{ prefix }}</span></p>
   
                 <label class="flex items-center gap-2 pt-1 text-sm">
-                  <input v-model="isPublic" type="checkbox" class="accent-[rgb(var(--color-primary))]" />
+                  <input v-model="isPublic" type="checkbox" :disabled="!publicAllowed" class="accent-[rgb(var(--color-primary))]" />
                   <span>{{ t('repos.new.public') }}</span>
+                  <span v-if="!publicAllowed" class="text-xs text-muted">{{ t('repos.project.publicBlocked') }}</span>
                 </label>
               </form>
     <template #footer>
@@ -120,6 +124,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { createRepository, listRepositories } from '../api/repositories'
+import { createProjectRepository } from '../api/projects'
+import type { Project } from '../api/projects'
+import { policyAllowsPublic, policyAllowsType, policyFormats, policyPrefix } from '../lib/projectPolicy'
+import { useSessionStore } from '../stores/session'
 import type { Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
 import { CheckIcon } from '@heroicons/vue/24/outline'
@@ -136,6 +144,7 @@ const emit = defineEmits<{ created: [name: string] }>()
 
 const router = useRouter()
 const toast = useToastStore()
+const session = useSessionStore()
 
 const name = ref('')
 const format = ref<FormatId>('docker')
@@ -149,7 +158,12 @@ const members = ref<string[]>([])
 const existing = ref<Repository[]>([])
 const creating = ref(false)
 
-const formats = computed(() => allowedFormats(type.value))
+// The project policy narrows the choices for non-admins; admins bypass it.
+const selectedProject = ref<Project | null>(null)
+const policy = computed(() => (session.isAdmin ? null : selectedProject.value))
+const prefix = computed(() => policyPrefix(policy.value))
+const publicAllowed = computed(() => policyAllowsPublic(policy.value))
+const formats = computed(() => policyFormats(policy.value, allowedFormats(type.value)))
 
 const types = [
   { value: 'hosted', label: t('repos.new.type.hosted'), desc: t('repos.new.type.hostedDesc') },
@@ -158,7 +172,7 @@ const types = [
 ] as const
 
 // Mirrors the backend's repository-name rule.
-const nameValid = computed(() => /^[a-zA-Z0-9_-]{1,100}$/.test(name.value.trim()))
+const nameValid = computed(() => /^[a-zA-Z0-9_-]{1,100}$/.test(name.value.trim()) && name.value.trim().startsWith(prefix.value))
 const canSubmit = computed(() => {
   if (!nameValid.value) return false
   if (type.value === 'proxy') return !upstreamUrlRequired(format.value) || upstreamUrl.value.trim() !== ''
@@ -178,6 +192,15 @@ watch(format, () => {
 // the new type cannot serve.
 watch(type, (next) => {
   format.value = coerceFormat(next, format.value)
+})
+
+// A project change can rule out the chosen format or visibility.
+watch(policy, () => {
+  if (!policyAllowsType(policy.value, type.value)) {
+    type.value = types.find((ty) => policyAllowsType(policy.value, ty.value))?.value ?? 'hosted'
+  }
+  if (!formats.value.includes(format.value) && formats.value.length > 0) format.value = formats.value[0]
+  if (!publicAllowed.value) isPublic.value = false
 })
 
 watch(open, async (isOpen) => {
@@ -206,13 +229,16 @@ async function handleCreate(): Promise<void> {
   creating.value = true
   const repoName = name.value.trim()
   try {
-    await createRepository({
+    const create = project.value && !session.isAdmin
+      ? (body: Parameters<typeof createRepository>[0]) => createProjectRepository(project.value, body)
+      : createRepository
+    await create({
       name: repoName,
       format: format.value,
       public: isPublic.value,
       description: '',
       repo_type: type.value,
-      ...(project.value ? { project: project.value } : {}),
+      ...(project.value && session.isAdmin ? { project: project.value } : {}),
       ...(type.value === 'proxy'
         ? {
             upstream_url: upstreamUrl.value.trim() || undefined,

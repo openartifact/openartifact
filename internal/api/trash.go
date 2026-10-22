@@ -231,6 +231,18 @@ func (h *TrashHandler) repoFor(w http.ResponseWriter, r *http.Request, action st
 		return nil, false
 	}
 
+	if !allowed && action == "manage" {
+		// Emptying a repository's trash is also open to the maintainers and
+		// owners of its project.
+		allowed, err = h.evaluator.EvaluateRepoAdmin(ctx, *p, name)
+		if err != nil {
+			h.log.Errorw("trash: auth evaluation failed", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+
+			return nil, false
+		}
+	}
+
 	if !allowed {
 		writeError(w, http.StatusForbidden, "forbidden", "access denied")
 		return nil, false

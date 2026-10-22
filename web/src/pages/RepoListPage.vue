@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             class="h-9 w-full sm:w-56 pl-8 pr-2 rounded-lg text-sm bg-surface-hover/60 border border-border-strong text-foreground placeholder:text-muted focus:border-primary"
           />
         </div>
-        <AppButton v-if="session.isAdmin" @click="showNewModal = true">
+        <AppButton v-if="session.canCreateRepo" @click="showNewModal = true">
           {{ t('repos.new') }}
         </AppButton>
       </template>

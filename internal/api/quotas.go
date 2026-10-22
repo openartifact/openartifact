@@ -26,20 +26,15 @@ func NewQuotasHandler(log *logger.Logger, db database.Database, evaluator *auth.
 	return &QuotasHandler{db: db, log: log, evaluator: evaluator}
 }
 
-// requireAdmin gates quota writes: limits are an administrative control.
+// requireRepoAdmin gates the quota limit writes on {name}: a global admin or a
+// maintainer/owner of the repository's project may set them; the usage
+// reconcile stays admin-only (requireAdmin).
+func (h *QuotasHandler) requireRepoAdmin(w http.ResponseWriter, r *http.Request) bool {
+	return requireRepoAdmin(w, r, h.evaluator, urlparams.Vars(r)["name"])
+}
+
 func (h *QuotasHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bool {
-	isAdmin, err := principalIsAdmin(r.Context(), currentPrincipal(r), h.evaluator)
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
-		return false
-	}
-
-	if !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return false
-	}
-
-	return true
+	return requireAdmin(w, r, h.evaluator)
 }
 
 func (h *QuotasHandler) RegisterRoutes(r chi.Router, pathPrefix string) {
@@ -89,7 +84,7 @@ func (h *QuotasHandler) handleGetQuota(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !h.requireRepoAdmin(w, r) {
 		return
 	}
 
@@ -161,7 +156,7 @@ func (h *QuotasHandler) handleUpdateQuota(w http.ResponseWriter, r *http.Request
 }
 
 func (h *QuotasHandler) handleDeleteQuota(w http.ResponseWriter, r *http.Request) {
-	if !h.requireAdmin(w, r) {
+	if !h.requireRepoAdmin(w, r) {
 		return
 	}
 

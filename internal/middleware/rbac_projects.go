@@ -49,32 +49,59 @@ func classifyProjectRoute(method string, segs []string) (routeScope, bool) {
 func projectActionFor(method string, rest []string) (auth.ProjectAction, bool) {
 	switch len(rest) {
 	case 0:
-		switch method {
-		case http.MethodGet:
-			return auth.ProjectActionRead, true
-		case http.MethodPatch:
-			return auth.ProjectActionUpdate, true
-		case http.MethodDelete:
-			return auth.ProjectActionDelete, true
-		}
+		return projectItemAction(method)
 	case 1:
-		switch {
-		case method == http.MethodGet && (rest[0] == "repositories" || rest[0] == "members" || rest[0] == "groups"):
-			return auth.ProjectActionRead, true
-		case method == http.MethodPost && rest[0] == "members":
-			return auth.ProjectActionMembersManage, true
-		}
+		return projectCollectionAction(method, rest[0])
 	case 2:
-		if !isSingleSegment(rest[1]) {
-			return "", false
+		return projectMemberAction(method, rest[0], rest[1])
+	case 3:
+		if method == http.MethodPost && rest[0] == "repositories" && isSingleSegment(rest[1]) && rest[2] == "transfer" {
+			return auth.ProjectActionRepoTransfer, true
 		}
+	}
 
-		switch {
-		case rest[0] == "members" && (method == http.MethodPatch || method == http.MethodDelete):
-			return auth.ProjectActionMembersManage, true
-		case rest[0] == "groups" && (method == http.MethodPut || method == http.MethodDelete):
-			return auth.ProjectActionMembersManage, true
-		}
+	return "", false
+}
+
+// projectItemAction is the action for the project itself.
+func projectItemAction(method string) (auth.ProjectAction, bool) {
+	switch method {
+	case http.MethodGet:
+		return auth.ProjectActionRead, true
+	case http.MethodPatch:
+		return auth.ProjectActionUpdate, true
+	case http.MethodDelete:
+		return auth.ProjectActionDelete, true
+	}
+
+	return "", false
+}
+
+// projectCollectionAction is the action for /projects/{project}/{collection}.
+func projectCollectionAction(method, collection string) (auth.ProjectAction, bool) {
+	switch {
+	case method == http.MethodGet && (collection == "repositories" || collection == "members" || collection == "groups"):
+		return auth.ProjectActionRead, true
+	case method == http.MethodPost && collection == "members":
+		return auth.ProjectActionMembersManage, true
+	case method == http.MethodPost && collection == "repositories":
+		return auth.ProjectActionRepoCreate, true
+	}
+
+	return "", false
+}
+
+// projectMemberAction is the action for /projects/{project}/{members|groups}/{id}.
+func projectMemberAction(method, collection, id string) (auth.ProjectAction, bool) {
+	if !isSingleSegment(id) {
+		return "", false
+	}
+
+	switch {
+	case collection == "members" && (method == http.MethodPatch || method == http.MethodDelete):
+		return auth.ProjectActionMembersManage, true
+	case collection == "groups" && (method == http.MethodPut || method == http.MethodDelete):
+		return auth.ProjectActionMembersManage, true
 	}
 
 	return "", false

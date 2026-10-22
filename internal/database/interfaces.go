@@ -21,6 +21,13 @@ import (
 // INSERT wins and the losers observe ErrDuplicate.
 var ErrDuplicate = errors.New("artifact already exists")
 
+// ErrProjectRepoLimit is returned when creating or moving a repository would
+// exceed the project's max_repositories.
+var ErrProjectRepoLimit = errors.New("project repository limit reached")
+
+// ErrRepositoryNotFound is returned when a repository to modify does not exist (or is trashed).
+var ErrRepositoryNotFound = errors.New("repository not found")
+
 // Database defines the interface for database operations.
 type Database interface {
 	// GetDB returns the underlying sql.DB connection
@@ -185,6 +192,12 @@ type Database interface {
 	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
 	// CreateRepositoryWithMembers creates a repository and its group members in one transaction.
 	CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error
+	// CreateProjectRepository is CreateRepositoryWithMembers under the project's
+	// max_repositories cap (ErrProjectRepoLimit), checked with the project row locked.
+	CreateProjectRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error
+	// MoveRepositoryToProject reassigns a live repository to another project
+	// under the target's cap when maxRepositories > 0 (ErrProjectRepoLimit).
+	MoveRepositoryToProject(ctx context.Context, repoID, toProjectID string, maxRepositories int) error
 	GetProxyCacheEntry(ctx context.Context, repoID, cacheKey string) (*models.ProxyCacheEntry, error)
 	UpsertProxyCacheEntry(ctx context.Context, entry *models.ProxyCacheEntry) error
 	DeleteProxyCacheEntry(ctx context.Context, repoID, cacheKey string) error

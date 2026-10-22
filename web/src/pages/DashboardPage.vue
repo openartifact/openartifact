@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArrowPathIcon v-if="!syncing" class="w-4 h-4" aria-hidden="true" />
           {{ t('dashboard.refresh') }}
         </AppButton>
-        <AppButton v-if="session.isAdmin" to="/repos/new">
+        <AppButton v-if="session.canCreateRepo" to="/repos/new">
           {{ t('repos.new') }}
         </AppButton>
       </template>

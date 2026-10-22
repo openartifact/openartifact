@@ -43,12 +43,90 @@ func IsForeignKeyViolation(err error) bool {
 // ordered member list in a single transaction, so a failing member insert
 // cannot leave a half-created group behind.
 func (p *PostgresDB) CreateRepositoryWithMembers(ctx context.Context, repo *models.Repository, memberIDs []string) error {
+	return p.createRepository(ctx, repo, memberIDs, 0)
+}
+
+// CreateProjectRepository is CreateRepositoryWithMembers under the project's
+// repository cap: with the project row locked it refuses (ErrProjectRepoLimit)
+// when the project already holds maxRepositories live repositories, so
+// concurrent creations cannot overshoot the cap.
+func (p *PostgresDB) CreateProjectRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
+	return p.createRepository(ctx, repo, memberIDs, maxRepositories)
+}
+
+// MoveRepositoryToProject reassigns a repository to another project, under the
+// target's repository cap when maxRepositories > 0 (ErrProjectRepoLimit).
+func (p *PostgresDB) MoveRepositoryToProject(ctx context.Context, repoID, toProjectID string, maxRepositories int) error {
+	// Cached repository lookups carry the project; they must not outlive this write.
+	defer p.authCache.invalidate()
+
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)
 	}
 
 	defer func() { _ = tx.Rollback() }()
+
+	if err := lockProjectCap(ctx, tx, toProjectID, maxRepositories); err != nil {
+		return err
+	}
+
+	res, err := tx.ExecContext(ctx, `UPDATE repositories SET project_id = $2, updated_at = now() WHERE id = $1 AND deleted_at IS NULL`, repoID, toProjectID)
+	if err != nil {
+		return fmt.Errorf("failed to move repository: %w", err)
+	}
+
+	if n, err := res.RowsAffected(); err != nil || n != 1 {
+		return ErrRepositoryNotFound
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit repository move: %w", err)
+	}
+
+	return nil
+}
+
+// lockProjectCap locks the project row and fails with ErrProjectRepoLimit when
+// it already holds maxRepositories live repositories (0 = no check).
+func lockProjectCap(ctx context.Context, tx *sql.Tx, projectID string, maxRepositories int) error {
+	if maxRepositories <= 0 {
+		return nil
+	}
+
+	// Lock first, count second: a count in the same statement would use the
+	// snapshot taken before the lock was granted and miss a concurrent insert.
+	var locked string
+	if err := tx.QueryRowContext(ctx, `SELECT id FROM projects WHERE id = $1 FOR UPDATE`, projectID).Scan(&locked); err != nil {
+		return fmt.Errorf("failed to lock project: %w", err)
+	}
+
+	var count int
+	if err := tx.QueryRowContext(ctx,
+		`SELECT COUNT(*) FROM repositories WHERE project_id = $1 AND deleted_at IS NULL`, projectID).Scan(&count); err != nil {
+		return fmt.Errorf("failed to count project repositories: %w", err)
+	}
+
+	if count >= maxRepositories {
+		return ErrProjectRepoLimit
+	}
+
+	return nil
+}
+
+func (p *PostgresDB) createRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin transaction: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if repo.ProjectID != nil {
+		if err := lockProjectCap(ctx, tx, *repo.ProjectID, maxRepositories); err != nil {
+			return err
+		}
+	}
 
 	repoType := repo.RepoType
 	if repoType == "" {

@@ -63,18 +63,19 @@ func withManageTarget(db *actionsMockDB) *actionsMockDB {
 func allProjectActions() []ProjectAction {
 	return []ProjectAction{
 		ProjectActionRead, ProjectActionMembersManage, ProjectActionUpdate, ProjectActionDelete,
+		ProjectActionRepoCreate, ProjectActionRepoAdmin, ProjectActionRepoTransfer,
 	}
 }
 
 func TestProjectActionMatrix(t *testing.T) {
 	want := map[string][]bool{
-		// read, members.manage, update, delete
-		"":                           {false, false, false, false},
-		"bogus":                      {false, false, false, false},
-		models.ProjectRoleViewer:     {true, false, false, false},
-		models.ProjectRoleDeveloper:  {true, false, false, false},
-		models.ProjectRoleMaintainer: {true, true, false, false},
-		models.ProjectRoleOwner:      {true, true, true, true},
+		// read, members.manage, update, delete, repo.create, repo.admin, repo.transfer
+		"":                           {false, false, false, false, false, false, false},
+		"bogus":                      {false, false, false, false, false, false, false},
+		models.ProjectRoleViewer:     {true, false, false, false, false, false, false},
+		models.ProjectRoleDeveloper:  {true, false, false, false, false, false, false},
+		models.ProjectRoleMaintainer: {true, true, false, false, true, true, false},
+		models.ProjectRoleOwner:      {true, true, true, true, true, true, true},
 	}
 
 	for role, exp := range want {
@@ -269,5 +270,81 @@ func TestProjectRoles_StoreErrorPropagates(t *testing.T) {
 
 	if _, err := e.DecideProject(ctx, projUser(), "a", ProjectActionRead); !errors.Is(err, errProjectDB) {
 		t.Fatalf("DecideProject err = %v", err)
+	}
+}
+
+func TestEvaluateRepoAdmin(t *testing.T) {
+	scoped := projUser()
+	scoped.TokenScopes = []string{"t"}
+
+	deploy := projUser()
+	deploy.TokenKind = TokenKindDeploy
+
+	scopedManage := &models.PermissionTarget{
+		ID: "scoped", Name: "scoped", RepositoryFilter: "^in-a$", PathPattern: ".*", Actions: []string{"read", "manage"},
+	}
+
+	tests := []struct {
+		name      string
+		grants    []*models.ProjectGrant
+		targets   []*models.PermissionTarget
+		principal Principal
+		repo      string
+		want      bool
+	}{
+		{"maintainer of the repo's project", []*models.ProjectGrant{g(projA, models.ProjectRoleMaintainer)}, nil, projUser(), "in-a", true},
+		{"owner of the repo's project", []*models.ProjectGrant{g(projA, models.ProjectRoleOwner)}, nil, projUser(), "in-a", true},
+		{"developer is not enough", []*models.ProjectGrant{g(projA, models.ProjectRoleDeveloper)}, nil, projUser(), "in-a", false},
+		{"maintainer of another project", []*models.ProjectGrant{g(projB, models.ProjectRoleMaintainer)}, nil, projUser(), "in-a", false},
+		{"system project repo is never delegated", []*models.ProjectGrant{g(models.SystemProjectID, models.ProjectRoleOwner)}, nil, projUser(), "in-sys", false},
+		{"repo without a project", []*models.ProjectGrant{g(projA, models.ProjectRoleOwner)}, nil, projUser(), "no-project", false},
+		{"unknown repo", []*models.ProjectGrant{g(projA, models.ProjectRoleOwner)}, nil, projUser(), "ghost", false},
+		{"global admin", nil, []*models.PermissionTarget{{ID: "m", RepositoryFilter: ".*", PathPattern: ".*", Actions: []string{"manage"}}}, adminUser(), "in-a", true},
+		{"repo-scoped manage target does not qualify", nil, []*models.PermissionTarget{scopedManage}, projUser(), "in-a", false},
+		{"scoped token", []*models.ProjectGrant{g(projA, models.ProjectRoleOwner)}, nil, scoped, "in-a", false},
+		{"deploy token", []*models.ProjectGrant{g(projA, models.ProjectRoleOwner)}, nil, deploy, "in-a", false},
+		{"anonymous", []*models.ProjectGrant{g(projA, models.ProjectRoleOwner)}, nil, Principal{IsAnonymous: true}, "in-a", false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			db := newActionsDB(tt.grants...)
+			db.targets = tt.targets
+
+			got, err := NewEvaluator(db, nil, false).EvaluateRepoAdmin(context.Background(), tt.principal, tt.repo)
+			if err != nil || got != tt.want {
+				t.Fatalf("EvaluateRepoAdmin = %v, %v; want %v", got, err, tt.want)
+			}
+		})
+	}
+}
+
+// A project role is never a global manage right, and a repo-scoped manage
+// target keeps exactly the rights it had.
+func TestProjectMaintainerIsNotManage(t *testing.T) {
+	db := newActionsDB(g(projA, models.ProjectRoleOwner))
+	e := NewEvaluator(db, nil, false)
+
+	for _, repo := range []string{"", "in-a"} {
+		ok, err := e.Evaluate(context.Background(), projUser(), repo, "", "manage")
+		if err != nil || ok {
+			t.Fatalf("Evaluate(manage, %q) for a project owner = %v, %v; want false", repo, ok, err)
+		}
+	}
+
+	db.targets = []*models.PermissionTarget{{ID: "s", RepositoryFilter: "^in-a$", PathPattern: ".*", Actions: []string{"manage"}}}
+	db.grants = nil
+
+	if ok, err := e.Evaluate(context.Background(), projUser(), "in-a", "", "manage"); err != nil || !ok {
+		t.Fatalf("repo-scoped manage target lost its own right: %v, %v", ok, err)
+	}
+}
+
+func TestEvaluateRepoAdminStoreError(t *testing.T) {
+	db := newActionsDB(g(projA, models.ProjectRoleOwner))
+	db.grantsErr = errProjectDB
+
+	if _, err := NewEvaluator(db, nil, false).EvaluateRepoAdmin(context.Background(), projUser(), "in-a"); !errors.Is(err, errProjectDB) {
+		t.Fatalf("err = %v", err)
 	}
 }

@@ -23,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('repoDetail.upload') }}
         </AppButton>
-        <AppButton v-if="session.isAdmin" variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/edit`">
+        <AppButton v-if="repoAdmin" variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/edit`">
           <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('common.edit') }}
         </AppButton>
@@ -91,10 +91,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
 
       <!-- Tab Content -->
-      <div v-if="activeTab === 'cleanup' && session.isAdmin">
+      <div v-if="activeTab === 'cleanup' && repoAdmin">
         <RepoCleanupTab :repo-name="repoName" />
       </div>
-      <div v-else-if="activeTab === 'configuration' && session.isAdmin">
+      <div v-else-if="activeTab === 'configuration' && repoAdmin">
         <RepoSettingsTab :repo="repo" @saved="(r) => (repo = r)" />
       </div>
       <div v-else-if="activeTab === 'members'">
@@ -323,7 +323,9 @@ const membersError = ref('')
 
 const repoName = computed(() => route.params.name as string)
 const isProxy = computed(() => repo.value?.repo_type === 'proxy')
-const canDelete = computed(() => session.isAdmin)
+// Global admins and maintainers/owners of the repository's project (repo.admin).
+const repoAdmin = computed(() => session.isAdmin || repo.value?.permissions?.admin === true)
+const canDelete = computed(() => repoAdmin.value)
 // Web upload is implemented by the deb and rpm handlers only; other formats
 // are published with their native client tooling. Proxy and group
 // repositories are read-only.
@@ -403,7 +405,7 @@ const tabs = computed(() => {
       count: totalPackages.value,
     })
   }
-  if (session.isAdmin) {
+  if (repoAdmin.value) {
     list.push(
       { id: 'configuration', label: t('repoDetail.tab.configuration') },
       { id: 'cleanup', label: t('repoDetail.tab.cleanup') },

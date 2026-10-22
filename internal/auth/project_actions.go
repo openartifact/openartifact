@@ -27,6 +27,14 @@ const (
 	ProjectActionUpdate ProjectAction = "project.update"
 	// ProjectActionDelete: delete the project (owner).
 	ProjectActionDelete ProjectAction = "project.delete"
+	// ProjectActionRepoCreate: create a repository in the project (maintainer).
+	ProjectActionRepoCreate ProjectAction = "repo.create"
+	// ProjectActionRepoAdmin: update, delete and run the cleanup, quota and trash
+	// of a repository of the project (maintainer); see EvaluateRepoAdmin.
+	ProjectActionRepoAdmin ProjectAction = "repo.admin"
+	// ProjectActionRepoTransfer: move a repository out of the project (owner;
+	// the handler also needs ownership of the target project).
+	ProjectActionRepoTransfer ProjectAction = "repo.transfer"
 )
 
 // projectActionMinRole is the single table of the lowest role allowed to
@@ -38,6 +46,9 @@ var projectActionMinRole = map[ProjectAction]string{
 	ProjectActionMembersManage: models.ProjectRoleMaintainer,
 	ProjectActionUpdate:        models.ProjectRoleOwner,
 	ProjectActionDelete:        models.ProjectRoleOwner,
+	ProjectActionRepoCreate:    models.ProjectRoleMaintainer,
+	ProjectActionRepoAdmin:     models.ProjectRoleMaintainer,
+	ProjectActionRepoTransfer:  models.ProjectRoleOwner,
 }
 
 // ProjectDecision is the outcome of a project control-plane check.
@@ -161,4 +172,35 @@ func (e *Evaluator) EvaluateProject(ctx context.Context, principal Principal, pr
 	decision, err := e.DecideProject(ctx, principal, projectName, action)
 
 	return decision == ProjectAllow, err
+}
+
+// EvaluateRepoAdmin reports whether the principal may administer the named
+// repository: configure or delete it, manage its cleanup policies and quota,
+// empty its trash. A global admin may, and so may a maintainer or owner of the
+// repository's project. A repository-scoped "manage" permission target does
+// not qualify (it only covers what it always did), and neither does a project
+// role pass Evaluate(..., "manage"). Anonymous callers, deploy tokens, scoped
+// tokens and repositories of the system project never qualify except for a
+// global admin; an unknown repository is never administrable.
+func (e *Evaluator) EvaluateRepoAdmin(ctx context.Context, principal Principal, repoName string) (bool, error) {
+	if controlPlaneBlocked(principal) {
+		return false, nil
+	}
+
+	admin, err := e.Evaluate(ctx, principal, "", "", "manage")
+	if err != nil || admin {
+		return admin, err
+	}
+
+	roles, err := e.projectRoles(ctx, principal)
+	if err != nil || len(roles) == 0 {
+		return false, err
+	}
+
+	repo, err := e.db.GetRepositoryByName(ctx, repoName)
+	if err != nil || repo == nil || repo.ProjectID == nil {
+		return false, err //nolint:wrapcheck // database error, logged by callers
+	}
+
+	return ProjectRoleAllows(roles[*repo.ProjectID], false, ProjectActionRepoAdmin), nil
 }

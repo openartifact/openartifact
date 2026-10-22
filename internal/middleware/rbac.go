@@ -69,6 +69,11 @@ type routeScope struct {
 	project       string
 	projectAction auth.ProjectAction
 	projectsRoot  bool
+	// delegateRepo names a repository whose administration is delegated to the
+	// maintainers and owners of its project (auth.EvaluateRepoAdmin): the route
+	// passes for a caller who satisfies the scope above (global manage, or the
+	// repo-scoped one when repoName is set) or administers that repository.
+	delegateRepo string
 }
 
 func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evaluator, log *logger.Logger) func(http.Handler) http.Handler {
@@ -134,7 +139,11 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 				return
 			}
 
-			allowed, err := evaluator.Evaluate(ctx, *principal, scope.repoName, scope.artifactPath, scope.action)
+			allowed, err := evaluateRepoScope(ctx, evaluator, principal, scope)
+			if err == nil && !allowed && scope.delegateRepo != "" && writeDelegatedHidden(w, r, evaluator, principal, scope.delegateRepo) {
+				return
+			}
+
 			if err != nil {
 				log.Errorw("auth evaluation error",
 					"error", err,
@@ -155,6 +164,36 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// evaluateRepoScope runs the regular check of scope, then, for a delegated
+// repository route, the project-delegated repo.admin check.
+func evaluateRepoScope(ctx context.Context, evaluator *auth.Evaluator, principal *auth.Principal, scope routeScope) (bool, error) {
+	allowed, err := evaluator.Evaluate(ctx, *principal, scope.repoName, scope.artifactPath, scope.action)
+	if err != nil || allowed || scope.delegateRepo == "" {
+		return allowed, err
+	}
+
+	return evaluator.EvaluateRepoAdmin(ctx, *principal, scope.delegateRepo)
+}
+
+// writeDelegatedHidden answers a denied delegated repository route with 404 when
+// the caller cannot even read the repository (it looks like an unknown one, so
+// a maintainer of another project learns nothing); a caller who can read it
+// gets the regular 403 from the caller. It reports whether it wrote.
+func writeDelegatedHidden(w http.ResponseWriter, r *http.Request, evaluator *auth.Evaluator, principal *auth.Principal, repoName string) bool {
+	if principal.IsAnonymous {
+		return false
+	}
+
+	canRead, err := evaluator.Evaluate(r.Context(), *principal, repoName, "", "read")
+	if err != nil || canRead {
+		return false
+	}
+
+	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "code": "not_found"})
+
+	return true
 }
 
 // isDockerPing reports whether r is the distribution API version check
@@ -579,8 +618,11 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 			return routeScope{action: actionForMethod(method), repoName: segs[1]}
 		}
 	case isRepoTrashEmptyRoute(method, segs):
-		// Emptying a repository's trash destroys data for good: repo `manage`.
-		return routeScope{action: "manage", repoName: segs[1]}
+		// Emptying a repository's trash destroys data for good: repo `manage`,
+		// or the repository's project maintainers and owners.
+		return routeScope{action: "manage", repoName: segs[1], delegateRepo: segs[1]}
+	case delegatedRepoName(method, segs) != "":
+		return routeScope{action: "manage", delegateRepo: delegatedRepoName(method, segs)}
 	case isRepoTrashRoute(method, segs):
 		// Viewing and restoring a repository's trash is part of managing its
 		// deletions: the repo-scoped `delete` permission, whatever the method.
@@ -594,6 +636,31 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 	}
 
 	return manage
+}
+
+// delegatedRepoName returns the repository of a route whose administration is
+// delegated to project maintainers and owners (global manage still passes):
+// PATCH/DELETE repository/{name}, the cleanup-policy routes and the quota
+// routes of the repository, or "" for any other route. The one exception in the
+// quota family, POST .../quota/reconcile, stays administrative.
+func delegatedRepoName(method string, segs []string) string {
+	switch {
+	case len(segs) == 2 && segs[0] == "repository" && (method == http.MethodPatch || method == http.MethodDelete):
+	case len(segs) >= 3 && len(segs) <= 5 && segs[0] == "repositories" && segs[2] == "cleanup-policies":
+	case len(segs) == 3 && segs[0] == "repositories" && segs[2] == "quota" && method != http.MethodPost:
+	default:
+		return ""
+	}
+
+	if !isPlainName(segs[1]) {
+		return ""
+	}
+
+	if slices.Contains(segs[2:], "") {
+		return ""
+	}
+
+	return segs[1]
 }
 
 // isRepoTrashEmptyRoute reports whether segs is DELETE repositories/{name}/trash

@@ -69,7 +69,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <p class="text-xs mt-1" :class="form.name && !nameValid ? 'text-danger' : 'text-muted'">{{ t('repos.new.nameHint') }}</p>
               </div>
 
-              <ProjectSelect id="repo-project" v-model="form.project" />
+              <ProjectSelect v-if="!isEdit || session.isAdmin" id="repo-project" v-model="form.project" @select="selectedProject = $event" />
+              <p v-if="prefix && !isEdit" class="-mt-2 text-xs text-muted" data-testid="name-prefix">
+                {{ t('repos.project.prefix') }} <span class="font-mono text-foreground">{{ prefix }}</span>
+              </p>
 
               <!-- Visibility Toggle -->
               <div>
@@ -96,6 +99,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                         ? 'border-primary bg-primary-soft/40'
                         : 'border-border bg-surface hover:border-border/60'
                     "
+                    :disabled="!publicAllowed"
+                    :title="publicAllowed ? undefined : t('repos.project.publicBlocked')"
                     @click="form.public = true"
                   >
                     <div class="text-sm font-medium">{{ t('repos.public') }}</div>
@@ -139,7 +144,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 v-for="ty in types"
                 :key="ty.value"
                 type="button"
-                :disabled="isEdit"
+                :disabled="isEdit || !policyAllowsType(policy, ty.value)"
+                :title="policyAllowsType(policy, ty.value) ? undefined : t('repos.project.typeBlocked')"
                 :aria-pressed="form.type === ty.value"
                 class="p-4 rounded-lg border-2 transition-all text-left disabled:opacity-60"
                 :class="
@@ -328,7 +334,10 @@ import { parseRetentionInput } from '../lib/trash'
 import type { Repository } from '../api/repositories'
 import FormatBadge from '../components/FormatBadge.vue'
 import ProjectSelect from '../components/ProjectSelect.vue'
-import { SYSTEM_PROJECT_NAME } from '../api/projects'
+import { createProjectRepository, SYSTEM_PROJECT_NAME } from '../api/projects'
+import type { Project } from '../api/projects'
+import { policyAllowsPublic, policyAllowsType, policyFormats, policyPrefix } from '../lib/projectPolicy'
+import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import type { FormatId } from '../lib/formats'
@@ -337,6 +346,7 @@ import { allowedFormats, coerceFormat, upstreamUrlPlaceholder, upstreamUrlRequir
 const route = useRoute()
 const router = useRouter()
 const toasts = useToastStore()
+const session = useSessionStore()
 
 const types: { value: 'hosted' | 'proxy' | 'group'; icon: unknown; title: string; description: string }[] = [
   {
@@ -383,9 +393,16 @@ const loadedProject = ref('')
 const loadError = ref('')
 const existing = ref<Repository[]>([])
 
-const formats = computed(() => allowedFormats(form.value.type))
+// The project policy narrows the choices for non-admins; admins bypass it.
+const selectedProject = ref<Project | null>(null)
+const policy = computed(() => (session.isAdmin || isEdit.value ? null : selectedProject.value))
+const prefix = computed(() => policyPrefix(policy.value))
+const publicAllowed = computed(() => policyAllowsPublic(policy.value))
+const formats = computed(() => policyFormats(policy.value, allowedFormats(form.value.type)))
 
-const nameValid = computed(() => /^[a-zA-Z0-9_-]{1,100}$/.test(form.value.name.trim()))
+const nameValid = computed(
+  () => /^[a-zA-Z0-9_-]{1,100}$/.test(form.value.name.trim()) && (isEdit.value || form.value.name.trim().startsWith(prefix.value)),
+)
 const candidateMembers = computed(() =>
   existing.value.filter((r) => r.format === form.value.format && r.repo_type !== 'group' && r.name !== form.value.name),
 )
@@ -438,6 +455,7 @@ onMounted(async () => {
       loadError.value = err instanceof Error ? err.message : t('repoDetail.loadFailed')
     }
   } else {
+    if (typeof route.query.project === 'string') form.value.project = route.query.project
     try {
       existing.value = (await listRepositories({ limit: 100 })).repositories || []
     } catch {
@@ -462,6 +480,16 @@ watch(
   },
 )
 
+// A project change can rule out the chosen format, type or visibility.
+watch(policy, () => {
+  if (isEdit.value) return
+  if (!policyAllowsType(policy.value, form.value.type)) {
+    form.value.type = types.find((ty) => policyAllowsType(policy.value, ty.value))?.value ?? 'hosted'
+  }
+  if (!formats.value.includes(form.value.format) && formats.value.length > 0) form.value.format = formats.value[0]
+  if (!publicAllowed.value) form.value.public = false
+})
+
 async function submit(): Promise<void> {
   if (submitting.value || !allValid.value) return
   submitting.value = true
@@ -477,7 +505,10 @@ async function submit(): Promise<void> {
         ...(form.value.type === 'proxy' ? { upstream_url: form.value.upstreamUrl.trim() } : {}),
       })
     } else {
-      await createRepository({
+      const create = form.value.project && !session.isAdmin
+        ? (body: Parameters<typeof createRepository>[0]) => createProjectRepository(form.value.project, body)
+        : createRepository
+      await create({
         name,
         format: form.value.format,
         public: form.value.public,
@@ -485,7 +516,7 @@ async function submit(): Promise<void> {
         trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
         immutable_releases: form.value.immutableReleases,
         repo_type: form.value.type,
-        ...(form.value.project ? { project: form.value.project } : {}),
+        ...(form.value.project && session.isAdmin ? { project: form.value.project } : {}),
         ...(form.value.type === 'proxy'
           ? {
               upstream_url: form.value.upstreamUrl.trim() || undefined,

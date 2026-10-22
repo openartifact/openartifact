@@ -346,9 +346,10 @@
             "properties": {
               "write": { "type": "boolean" },
               "delete": { "type": "boolean", "description": "Allows the repository's trash tab (list and restore)." },
-              "manage": { "type": "boolean", "description": "Allows emptying the repository's trash." }
+              "manage": { "type": "boolean", "description": "Allows emptying the repository's trash." },
+              "admin": { "type": "boolean", "description": "Allows configuring and deleting the repository and managing its cleanup policies and quota: global administrators and maintainers or owners of the repository's project." }
             },
-            "required": ["write", "delete", "manage"]
+            "required": ["write", "delete", "manage", "admin"]
           },
           "presign_downloads": {
             "type": "boolean",
@@ -3205,7 +3206,7 @@
     "/api/v1/repositories/{name}/cleanup-policies": {
       "get": {
         "summary": "List cleanup policies",
-        "description": "List cleanup policies for a repository",
+        "description": "List cleanup policies for a repository. Requires global admin, or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).",
         "tags": [
           "Cleanup"
         ],
@@ -3242,7 +3243,7 @@
       },
       "post": {
         "summary": "Create cleanup policy",
-        "description": "Create a new cleanup policy for a repository",
+        "description": "Create a new cleanup policy for a repository. Requires global admin, or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).",
         "tags": [
           "Cleanup"
         ],
@@ -4481,7 +4482,7 @@
       },
       "put": {
         "summary": "Set repository quota",
-        "description": "Set quota configuration for a repository",
+        "description": "Set quota configuration for a repository. Requires global admin, or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).",
         "tags": [
           "Repositories"
         ],
@@ -4513,7 +4514,7 @@
       },
       "delete": {
         "summary": "Delete repository quota",
-        "description": "Remove quota configuration for a repository",
+        "description": "Remove quota configuration for a repository. Requires global admin, or the maintainer or owner role in the repository's project (a caller who cannot read the repository gets 404).",
         "tags": [
           "Repositories"
         ],
@@ -7612,6 +7613,85 @@
             "description": "Project not found or the caller is not a member"
           }
         }
+      },
+      "post": {
+        "summary": "Create a repository in a project",
+        "description": "Create a repository owned by the project. Requires the maintainer or owner role in the project, or global admin; a non-member gets 404. The body is the one of POST /api/v1/repositories without `project` (the URL names it). For a caller who is not a global admin the project policy applies: format in allowed_formats (when set), repo_type in allowed_repo_types, name starting with repo_name_prefix (400 validation_failed), `public` only when allow_public_repos (403), member_repos readable by the caller (403) and the project below max_repositories (409 project_repository_limit).",
+        "tags": ["Projects"],
+        "parameters": [
+          { "name": "project", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["name", "format"],
+                "properties": {
+                  "name": { "type": "string" },
+                  "format": { "type": "string" },
+                  "description": { "type": "string" },
+                  "public": { "type": "boolean" },
+                  "repo_type": { "type": "string", "enum": ["hosted", "proxy", "group"] },
+                  "upstream_url": { "type": "string" },
+                  "upstream_username": { "type": "string" },
+                  "upstream_password": { "type": "string" },
+                  "cache_ttl_seconds": { "type": "integer" },
+                  "negative_cache_ttl_seconds": { "type": "integer" },
+                  "max_stale_seconds": { "type": "integer" },
+                  "member_repos": { "type": "array", "items": { "type": "string" } },
+                  "presign_downloads": { "type": "boolean", "nullable": true },
+                  "trash_retention_days": { "type": "integer", "nullable": true },
+                  "immutable_releases": { "type": "boolean" }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "201": {
+            "description": "Repository created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Repository" } } }
+          },
+          "400": { "description": "Invalid request or a project policy violation (format, type, name prefix)" },
+          "403": { "description": "Role below maintainer, public repository not allowed, or a member repository the caller cannot read" },
+          "404": { "description": "Project not found or the caller is not a member" },
+          "409": { "description": "Name already taken, or the project reached max_repositories (project_repository_limit)" }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/repositories/{name}/transfer": {
+      "post": {
+        "summary": "Transfer a repository to another project",
+        "description": "Move a repository of {project} to the project named in the body. Requires the owner role in both projects (global admin holds both); a caller with no role in one of them gets 404 for it, a lower role 403. For a caller who is not a global admin the target project's policy applies as at creation (format, type, name prefix, public) and its max_repositories (409). Access of both projects' members changes immediately.",
+        "tags": ["Projects"],
+        "parameters": [
+          { "name": "project", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": ["to_project"],
+                "properties": { "to_project": { "type": "string" } }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Repository transferred",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Repository" } } }
+          },
+          "400": { "description": "Missing to_project, same project, or a target policy violation" },
+          "403": { "description": "Not an owner of the source or the target project, or the target forbids public repositories" },
+          "404": { "description": "Project or repository not found, or the caller has no role in a project" },
+          "409": { "description": "The target project reached max_repositories" }
+        }
       }
     },
     "/api/v1/projects/{project}/members": {
@@ -8168,7 +8248,7 @@
       },
       "patch": {
         "summary": "Update repository",
-        "description": "Update repository configuration (admin only)",
+        "description": "Update repository configuration. Requires global admin, or the maintainer or owner role in the repository's project; a caller with neither and no read access gets 404. A project maintainer may not send project (use the transfer route), blocked or presign_downloads, nor make the repository public unless the project allows public repositories (403); member_repos must be readable by the caller (403).",
         "tags": [
           "Repositories"
         ],
@@ -8272,7 +8352,7 @@
       },
       "delete": {
         "summary": "Delete repository (to the trash)",
-        "description": "Delete a repository (admin only). The request must confirm the repository name, as the `confirm` query parameter or a JSON body {\"confirm\": \"<name>\"}; otherwise 400 confirmation_required. When the repository's trash retention is above 0 the repository is moved to the trash (hidden everywhere, its name stays reserved, restorable and purged after the retention window); with retention 0 it is deleted permanently, contents included.",
+        "description": "Delete a repository (global admin, or maintainer or owner of its project). The request must confirm the repository name, as the `confirm` query parameter or a JSON body {\"confirm\": \"<name>\"}; otherwise 400 confirmation_required. When the repository's trash retention is above 0 the repository is moved to the trash (hidden everywhere, its name stays reserved, restorable and purged after the retention window); with retention 0 it is deleted permanently, contents included.",
         "tags": [
           "Repositories"
         ],
@@ -10415,7 +10495,7 @@
       },
       "delete": {
         "summary": "Empty a repository's trash",
-        "description": "Permanently purges the trashed items of one repository now (blobs freed, quota released, audit artifact.purged and webhook events as for a single purge). Items only: neither the repository nor a trashed repository row is touched. Requires the repository-scoped manage permission (global administrators have it). At most 1000 items are purged per request; `remaining` says how many are left, so repeat the call until it is 0.",
+        "description": "Permanently purges the trashed items of one repository now (blobs freed, quota released, audit artifact.purged and webhook events as for a single purge). Items only: neither the repository nor a trashed repository row is touched. Requires the repository-scoped manage permission (global administrators have it) or the maintainer or owner role in the repository's project. At most 1000 items are purged per request; `remaining` says how many are left, so repeat the call until it is 0.",
         "tags": [
           "Trash"
         ],

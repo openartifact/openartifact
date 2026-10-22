@@ -56,6 +56,31 @@ func requireAdmin(w http.ResponseWriter, r *http.Request, evaluator *auth.Evalua
 	return true
 }
 
+// requireRepoAdmin writes a 500/403 and returns false unless the principal is a
+// global admin or a maintainer/owner of the project that owns repoName
+// (auth.EvaluateRepoAdmin). The RBAC middleware gates the delegated routes the
+// same way; this keeps each handler safe on its own.
+func requireRepoAdmin(w http.ResponseWriter, r *http.Request, evaluator *auth.Evaluator, repoName string) bool {
+	p := currentPrincipal(r)
+	if p == nil || p.IsAnonymous {
+		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+		return false
+	}
+
+	ok, err := evaluator.EvaluateRepoAdmin(r.Context(), *p, repoName)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+		return false
+	}
+
+	if !ok {
+		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+		return false
+	}
+
+	return true
+}
+
 // checkPasswordPolicy validates plain against the shared password policy
 // (auth.ValidatePassword) and writes a 400 invalid_request carrying the
 // sentinel's message when it fails. It returns true when the password is

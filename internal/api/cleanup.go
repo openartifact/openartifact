@@ -47,7 +47,6 @@ func (h *CleanupHandler) RegisterAuthed(r chi.Router) {
 	r.Post("/api/v1/repositories/{name}/cleanup-policies/{id}/run", h.handleRun)
 }
 
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
@@ -65,11 +64,7 @@ func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
 		return
 	}
 
@@ -112,11 +107,7 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
 		return
 	}
 
@@ -185,11 +176,7 @@ func (h *CleanupHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
 		return
 	}
 
@@ -279,11 +266,7 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
 		return
 	}
 
@@ -345,11 +328,7 @@ func (h *CleanupHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
 		return
 	}
 
@@ -394,11 +373,7 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
 		return
 	}
 

@@ -114,6 +114,10 @@ type RepositoryPermissions struct {
 	Write  bool `json:"write"`
 	Delete bool `json:"delete"`
 	Manage bool `json:"manage"`
+	// Admin: the caller may configure and delete the repository and run its
+	// cleanup policies, quota and trash: a global admin, or a maintainer or
+	// owner of its project (a repository-scoped manage target does not count).
+	Admin bool `json:"admin"`
 }
 
 // PackageItem represents a package in list responses.

@@ -281,4 +281,21 @@ describe('useSessionStore', () => {
 
     expect(store.user).toBeNull()
   })
+
+  it('canCreateRepo needs admin or maintainer in some project', () => {
+    const store = useSessionStore()
+    expect(store.canCreateRepo).toBe(false)
+
+    store.user = { id: '1', username: 'ann', projects: [{ name: 'a', role: 'developer' }, { name: 'b', role: 'viewer' }] } as User
+    expect(store.canCreateRepo).toBe(false)
+
+    store.user = { id: '1', username: 'ann', projects: [{ name: 'a', role: 'developer' }, { name: 'b', role: 'maintainer' }] } as User
+    expect(store.canCreateRepo).toBe(true)
+
+    store.user = { id: '1', username: 'ann', projects: [{ name: 'a', role: 'owner' }] } as User
+    expect(store.canCreateRepo).toBe(true)
+
+    store.user = { id: '1', username: 'root', is_admin: true } as User
+    expect(store.canCreateRepo).toBe(true)
+  })
 })

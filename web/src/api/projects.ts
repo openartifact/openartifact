@@ -104,6 +104,17 @@ export const updateProject = (project: string, body: ProjectUpdateRequest) =>
 /** Owners only; 409 while the project owns repositories and for the system project. */
 export const deleteProject = (project: string) => request<void>(base(project), { method: 'DELETE' })
 
+/**
+ * Creates a repository owned by the project (maintainers and owners). The
+ * project policy applies: name prefix, formats, types, public, repository cap.
+ */
+export const createProjectRepository = (project: string, body: Partial<Repository> & { upstream_password?: string }) =>
+  send<Repository>(`${base(project)}/repositories`, 'POST', body)
+
+/** Moves a repository to another project; the caller must own both. */
+export const transferProjectRepository = (project: string, name: string, toProject: string) =>
+  send<Repository>(`${base(project)}/repositories/${enc(name)}/transfer`, 'POST', { to_project: toProject })
+
 /** Live repositories of the project, newest first. */
 export async function listProjectRepositories(
   project: string,

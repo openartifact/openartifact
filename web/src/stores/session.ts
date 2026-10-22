@@ -8,6 +8,7 @@ import { request, ApiError } from '../api/client'
 import { ErrorCodes } from '../api/error-codes'
 import type { UserExtended } from '../api/generated/types.gen'
 import type { ProjectMembership } from '../api/projects'
+import { atLeast } from '../lib/projectAccess'
 
 /** The signed-in user as `/auth/me` returns it, with the caller's project roles. */
 export type User = UserExtended & { projects?: ProjectMembership[] }
@@ -29,6 +30,11 @@ export const useSessionStore = defineStore('session', () => {
 
   /** Projects the caller holds a role in (no implicit admin entries). */
   const projects = computed<ProjectMembership[]>(() => user.value?.projects ?? [])
+
+  /** Admins, and members holding maintainer or owner in some project, may create repositories. */
+  const canCreateRepo = computed(
+    () => isAdmin.value || projects.value.some((p) => atLeast(p.role, 'maintainer')),
+  )
 
   async function fetchMe(): Promise<void> {
     try {
@@ -54,5 +60,5 @@ export const useSessionStore = defineStore('session', () => {
     user.value = null
   }
 
-  return { user, ready, isAuthenticated, isAdmin, mustChangePassword, projects, fetchMe, clearSession }
+  return { user, ready, isAuthenticated, isAdmin, canCreateRepo, mustChangePassword, projects, fetchMe, clearSession }
 })

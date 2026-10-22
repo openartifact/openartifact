@@ -275,7 +275,11 @@ func assertProjectGroupsAndAudit(t *testing.T, db *sql.DB, s projectsSeed) {
 	// Deleting a project with repositories stays blocked; one without is fine
 	// and detaches its audit rows.
 	_, err = db.ExecContext(ctx, `DELETE FROM projects WHERE id = $1`, s.orgs["owner-org"])
-	wantPgCode(t, err, "23001", "deleting a project that owns a repository")
+	// ON DELETE RESTRICT reports restrict_violation (23001) on PostgreSQL 18 and
+	// foreign_key_violation (23503) on 17 and older; both mean "blocked".
+	if !IsForeignKeyViolation(err) {
+		t.Errorf("deleting a project that owns a repository: err = %v, want a foreign key or restrict violation", err)
+	}
 
 	mustExec(t, db, `DELETE FROM projects WHERE id = $1`, s.orgs["write-org"])
 }

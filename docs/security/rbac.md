@@ -119,7 +119,7 @@ Limits:
 
 ### How repositories get a project
 
-`POST /api/v1/repositories` accepts an optional `project` (project name); without it the repository is created in the `system` project. An unknown name returns 404. A global admin can move a repository with `PATCH /api/v1/repository/{name}` and `{"project":"<name>"}` (use `"system"` to move it back); access changes immediately. Repository responses carry the project name in `project`. Repository names are unique across projects. Creating and moving repositories stays an admin operation; a project owner cannot yet create repositories. A project that still owns repositories cannot be deleted (409).
+`POST /api/v1/repositories` accepts an optional `project` (project name); without it the repository is created in the `system` project. An unknown name returns 404. A global admin can move a repository with `PATCH /api/v1/repository/{name}` and `{"project":"<name>"}` (use `"system"` to move it back); access changes immediately. Repository responses carry the project name in `project`. Repository names are unique across projects. Maintainers and owners of a project create repositories in it with `POST /api/v1/projects/{project}/repositories`, subject to the project's policy, and administer them (update, delete, cleanup policies, quota, trash emptying) through the delegated `repo.admin` check; owners of two projects can transfer a repository between them. See [projects](projects.md#repository-self-service). `POST /api/v1/repositories` and changing a repository's `project` through `PATCH` stay admin-only. A project that still owns repositories cannot be deleted (409).
 
 ### Managing projects
 

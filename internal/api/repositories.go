@@ -142,6 +142,8 @@ func (h *RepositoriesHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/repository/{name}", h.handleGet)
 	r.Patch("/api/v1/repository/{name}", h.handleUpdate)
 	r.Delete("/api/v1/repository/{name}", h.handleDelete)
+	r.Post("/api/v1/projects/{project}/repositories", h.handleCreateInProject)
+	r.Post("/api/v1/projects/{project}/repositories/{name}/transfer", h.handleTransfer)
 	r.Get("/api/v1/repositories/{name}/packages", h.handlePackages)
 	r.Get("/api/v1/repositories/{name}/packages/{id}/download", h.handleDownloadPackage)
 	r.Get("/api/v1/repositories/{name}/members", h.handleGetMembers)
@@ -279,7 +281,7 @@ func (h *RepositoriesHandler) handleGet(w http.ResponseWriter, r *http.Request) 
 	writeJSON(w, http.StatusOK, resp)
 }
 
-// repositoryPermissions evaluates the write, delete and manage actions of p on repoName.
+// repositoryPermissions evaluates the write, delete, manage and admin actions of p on repoName.
 func (h *RepositoriesHandler) repositoryPermissions(ctx context.Context, p auth.Principal, repoName string) (*responses.RepositoryPermissions, error) {
 	var perms responses.RepositoryPermissions
 
@@ -291,6 +293,13 @@ func (h *RepositoriesHandler) repositoryPermissions(ctx context.Context, p auth.
 
 		*dst = ok
 	}
+
+	admin, err := h.evaluator.EvaluateRepoAdmin(ctx, p, repoName)
+	if err != nil {
+		return nil, err
+	}
+
+	perms.Admin = admin
 
 	return &perms, nil
 }
@@ -423,7 +432,9 @@ func normalizeMaxStale(v *int) (int, error) {
 
 // resolveGroupMembers validates a member list for a group repository and
 // returns the member repository IDs in priority order.
-func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, groupName, groupFormat string, names []string) ([]string, int, string, string) {
+// A non-nil reader must be able to read every member (403 otherwise): a group
+// serves its members' content to whoever reads the group.
+func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, reader *auth.Principal, groupName, groupFormat string, names []string) ([]string, int, string, string) {
 	if len(names) > maxGroupMembers {
 		return nil, http.StatusBadRequest, "validation_failed", fmt.Sprintf("a group may have at most %d members", maxGroupMembers)
 	}
@@ -462,6 +473,18 @@ func (h *RepositoriesHandler) resolveGroupMembers(ctx context.Context, groupName
 				fmt.Sprintf("member repository %q has format %q, group format is %q", memberName, member.Format, groupFormat)
 		}
 
+		if reader != nil {
+			ok, err := h.evaluator.Evaluate(ctx, *reader, memberName, "", "read")
+			if err != nil {
+				h.log.Errorw("group members: read check failed", "name", memberName, "error", err)
+				return nil, http.StatusInternalServerError, "internal_error", "auth evaluation failed"
+			}
+
+			if !ok {
+				return nil, http.StatusForbidden, "forbidden", "no read access to member repository: " + memberName
+			}
+		}
+
 		ids = append(ids, member.ID)
 	}
 
@@ -478,7 +501,32 @@ func encryptUpstreamPassword(plain string) (string, error) {
 	return enc, nil
 }
 
-//nolint:gocyclo,cyclop // validation-heavy request handler
+// createRepositoryBody is the body of POST /api/v1/repositories and of
+// POST /api/v1/projects/{project}/repositories.
+type createRepositoryBody struct {
+	Name                    string   `json:"name"`
+	Format                  string   `json:"format"`
+	Description             string   `json:"description"`
+	Public                  bool     `json:"public"`
+	RepoType                string   `json:"repo_type"`
+	UpstreamURL             string   `json:"upstream_url"`
+	UpstreamUsername        string   `json:"upstream_username"`
+	UpstreamPassword        string   `json:"upstream_password"`
+	CacheTTLSeconds         int      `json:"cache_ttl_seconds"`
+	NegativeCacheTTLSeconds int      `json:"negative_cache_ttl_seconds"`
+	MaxStaleSeconds         *int     `json:"max_stale_seconds"`
+	MemberRepos             []string `json:"member_repos"`
+	// PresignDownloads overrides storage.presignDownloads (null/absent inherits).
+	PresignDownloads *bool `json:"presign_downloads"`
+	// Project is the owning project's name; empty means the built-in system
+	// project. The project route takes it from the URL and ignores the field.
+	Project string `json:"project"`
+	// TrashRetentionDays: null/absent = server default, 0 = no trash.
+	TrashRetentionDays *int `json:"trash_retention_days"`
+	ImmutableReleases  bool `json:"immutable_releases"`
+}
+
+// handleCreate is the admin-only POST /api/v1/repositories.
 func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	p := currentPrincipal(r)
 
@@ -488,32 +536,32 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	var body struct {
-		Name                    string   `json:"name"`
-		Format                  string   `json:"format"`
-		Description             string   `json:"description"`
-		Public                  bool     `json:"public"`
-		RepoType                string   `json:"repo_type"`
-		UpstreamURL             string   `json:"upstream_url"`
-		UpstreamUsername        string   `json:"upstream_username"`
-		UpstreamPassword        string   `json:"upstream_password"`
-		CacheTTLSeconds         int      `json:"cache_ttl_seconds"`
-		NegativeCacheTTLSeconds int      `json:"negative_cache_ttl_seconds"`
-		MaxStaleSeconds         *int     `json:"max_stale_seconds"`
-		MemberRepos             []string `json:"member_repos"`
-		// PresignDownloads overrides storage.presignDownloads (null/absent inherits).
-		PresignDownloads *bool `json:"presign_downloads"`
-		// Project is the owning project's name; empty means the built-in
-		// system project.
-		Project string `json:"project"`
-		// TrashRetentionDays: null/absent = server default, 0 = no trash.
-		TrashRetentionDays *int `json:"trash_retention_days"`
-		ImmutableReleases  bool `json:"immutable_releases"`
-	}
+	var body createRepositoryBody
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
 	}
+
+	var project *models.Project
+
+	if body.Project != "" {
+		if project = h.resolveProject(r.Context(), w, body.Project); project == nil {
+			return
+		}
+	}
+
+	h.createRepository(w, r, &body, project, nil)
+}
+
+// createRepository validates body and creates the repository in project (nil =
+// the built-in system project). It is shared by the admin route and the project
+// route. A non-nil actor applies the project's self-service policy (formats,
+// types, name prefix, public, repository cap, readable group members) as that
+// non-admin caller; the admin route passes nil.
+//
+//nolint:gocyclo,cyclop // validation-heavy request handler
+func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Request, bodyPtr *createRepositoryBody, project *models.Project, actor *auth.Principal) {
+	body := *bodyPtr
 
 	if err := validateTrashRetention(body.TrashRetentionDays); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
@@ -548,6 +596,13 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	if msg := unsupportedRepoTypeMessage(repoType, body.Format); msg != "" {
 		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
+	}
+
+	if actor != nil {
+		if status, code, msg := checkProjectRepoPolicy(project, body.Name, body.Format, repoType, body.Public); status != 0 {
+			writeError(w, status, code, msg)
+			return
+		}
 	}
 
 	repo := &models.Repository{
@@ -626,7 +681,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 
 	switch {
 	case repoType == "group":
-		ids, status, code, msg := h.resolveGroupMembers(r.Context(), body.Name, body.Format, body.MemberRepos)
+		ids, status, code, msg := h.resolveGroupMembers(r.Context(), actor, body.Name, body.Format, body.MemberRepos)
 		if status != 0 {
 			writeError(w, status, code, msg)
 			return
@@ -639,13 +694,7 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	}
 
 	projectID := models.SystemProjectID
-
-	if body.Project != "" {
-		project := h.resolveProject(r.Context(), w, body.Project)
-		if project == nil {
-			return
-		}
-
+	if project != nil {
 		projectID = project.ID
 	}
 
@@ -655,7 +704,19 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	repo.CreatedAt = now
 	repo.UpdatedAt = now
 
-	if err := h.db.CreateRepositoryWithMembers(r.Context(), repo, memberIDs); err != nil {
+	var err error
+	if actor != nil && project != nil && project.MaxRepositories > 0 {
+		err = h.db.CreateProjectRepository(r.Context(), repo, memberIDs, project.MaxRepositories)
+	} else {
+		err = h.db.CreateRepositoryWithMembers(r.Context(), repo, memberIDs)
+	}
+
+	if err != nil {
+		if errors.Is(err, database.ErrProjectRepoLimit) {
+			writeError(w, http.StatusConflict, "project_repository_limit", "the project has reached its repository limit")
+			return
+		}
+
 		if database.IsUniqueViolation(err) {
 			h.writeNameConflict(r.Context(), w, repo.Name)
 			return
@@ -670,21 +731,21 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventRepoCreated,
 		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
+	if project != nil {
+		h.emitProjectRepoEvent(r, "project.repository_created", project.ID, &repo.ID, "repository "+repo.Name+" created in project "+project.Name)
+	}
+
 	writeJSON(w, http.StatusCreated, h.repositoryResponse(r.Context(), repo, map[string]string{}))
 }
 
 //nolint:gocyclo,cyclop // validation-heavy request handler
 func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
 	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
+
+	if !requireRepoAdmin(w, r, h.evaluator, name) {
+		return
+	}
 
 	repo, err := h.db.GetRepositoryByName(ctx, name)
 	if err != nil {
@@ -696,6 +757,15 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 
 	if repo == nil {
 		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return
+	}
+
+	// A project maintainer is a delegated, not a global, administrator.
+	actor, err := h.delegatedActor(ctx, currentPrincipal(r))
+	if err != nil {
+		h.log.Errorw("update repository: auth evaluation failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+
 		return
 	}
 
@@ -725,6 +795,13 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
+	}
+
+	if actor != nil {
+		if msg := h.delegatedUpdateViolation(ctx, repo, body.Blocked != nil, body.PresignDownloads != nil, body.Project != nil, body.Public); msg != "" {
+			writeError(w, http.StatusForbidden, "forbidden", msg)
+			return
+		}
 	}
 
 	if body.TrashRetentionDays.Set {
@@ -846,7 +923,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	var memberIDs []string
 
 	if body.MemberRepos != nil {
-		ids, status, code, msg := h.resolveGroupMembers(ctx, repo.Name, repo.Format, *body.MemberRepos)
+		ids, status, code, msg := h.resolveGroupMembers(ctx, actor, repo.Name, repo.Format, *body.MemberRepos)
 		if status != 0 {
 			writeError(w, status, code, msg)
 			return
@@ -877,16 +954,12 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 }
 
 func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(r.Context(), p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
 	name := urlparams.Vars(r)["name"]
 	ctx := r.Context()
+
+	if !requireRepoAdmin(w, r, h.evaluator, name) {
+		return
+	}
 
 	// Deleting a repository is the one irreversible-looking click: the caller
 	// must type the name back (query parameter or JSON body).
@@ -929,6 +1002,10 @@ func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 
 	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventRepoDeleted,
 		webhook.RepositoryPayload(webhook.EventRepoDeleted, repo.Name, repo.Format, repo.RepoType))
+
+	if repo.ProjectID != nil && *repo.ProjectID != models.SystemProjectID {
+		h.emitProjectRepoEvent(r, "project.repository_deleted", *repo.ProjectID, nil, "repository "+repo.Name+" deleted")
+	}
 
 	if !soft {
 		// The delete cascaded the repository's package rows away; reclaim the
@@ -1392,7 +1469,7 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 		return
 	}
 
-	memberIDs, status, code, msg := h.resolveGroupMembers(ctx, repo.Name, repo.Format, body.MemberRepos)
+	memberIDs, status, code, msg := h.resolveGroupMembers(ctx, nil, repo.Name, repo.Format, body.MemberRepos)
 	if status != 0 {
 		writeError(w, status, code, msg)
 		return

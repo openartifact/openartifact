@@ -76,7 +76,7 @@ const sections = computed(() => {
   if (props.repo?.permissions?.delete) {
     list.push({ id: 'trash', label: t('trash.title'), to: `${base}/trash` })
   }
-  if (session.isAdmin) {
+  if (session.isAdmin || props.repo?.permissions?.admin) {
     list.push(
       { id: 'configuration', label: t('repoDetail.tab.configuration'), to: { path: base, query: { tab: 'configuration' } } },
       { id: 'cleanup', label: t('repoDetail.tab.cleanup'), to: { path: base, query: { tab: 'cleanup' } } },
