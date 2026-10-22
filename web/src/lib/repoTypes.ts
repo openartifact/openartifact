@@ -11,8 +11,8 @@ import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
-const PROXY_FORMATS: readonly FormatId[] = ['deb', 'docker', 'maven', 'npm', 'pypi', 'raw', 'rpm']
-const GROUP_FORMATS: readonly FormatId[] = ['docker', 'maven', 'npm', 'pypi', 'raw']
+const PROXY_FORMATS: readonly FormatId[] = ['deb', 'docker', 'helm', 'maven', 'npm', 'pypi', 'raw', 'rpm']
+const GROUP_FORMATS: readonly FormatId[] = ['docker', 'helm', 'maven', 'npm', 'pypi', 'raw']
 
 /** Docker and pypi proxies default to Docker Hub / pypi.org; every other proxy needs an upstream URL. */
 export function upstreamUrlRequired(format: FormatId): boolean {

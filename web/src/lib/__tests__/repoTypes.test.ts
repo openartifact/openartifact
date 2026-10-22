@@ -17,11 +17,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to deb, docker, maven, npm, pypi, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'deb', 'rpm', 'raw'])
+  it('restricts proxy to deb, docker, helm, maven, npm, pypi, raw, rpm in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'deb', 'rpm', 'raw'])
   })
-  it('restricts group to docker, maven, npm, pypi and raw', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'raw'])
+  it('restricts group to docker, helm, maven, npm, pypi and raw', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'raw'])
     expect(isFormatAllowed('group', 'deb')).toBe(false)
     expect(isFormatAllowed('group', 'rpm')).toBe(false)
   })
@@ -37,7 +37,7 @@ describe('coerceFormat', () => {
     expect(coerceFormat('hosted', 'docker')).toBe('docker')
   })
   it('falls back to the first allowed format when unsupported', () => {
-    expect(coerceFormat('proxy', 'helm')).toBe(allowedFormats('proxy')[0])
+    expect(coerceFormat('proxy', 'nuget')).toBe(allowedFormats('proxy')[0])
     expect(coerceFormat('group', 'deb')).toBe(allowedFormats('group')[0])
   })
   it('keeps docker for proxy and group', () => {

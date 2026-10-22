@@ -37,7 +37,10 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"npm", "@babel/core/-/core-7.0.0.tgz", true},
 		{"npm", "left-pad", false},
 		{"npm", "-/install-v1/left-pad", false},
-		{"helm", "charts/x-1.0.0.tgz", false},
+		{"helm", "charts/x-1.0.0.tgz", true},
+		{"helm", "charts/x-1.0.0.tgz.prov", false},
+		{"helm", "index.yaml", false},
+		{"nuget", "charts/x-1.0.0.tgz", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}

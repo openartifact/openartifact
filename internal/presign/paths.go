@@ -30,6 +30,9 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasSuffix(base, ".rpm") || strings.HasSuffix(base, ".drpm")
 	case "npm":
 		return strings.HasSuffix(base, ".tgz") && strings.Contains(relPath, "/-/")
+	case "helm":
+		// Chart archives only; index.yaml and .prov files are streamed.
+		return strings.HasPrefix(relPath, "charts/") && !strings.HasSuffix(base, ".prov")
 	case "raw":
 		return true
 	case "pypi":

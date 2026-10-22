@@ -773,6 +773,9 @@ func run(args []string) error {
 	pypiHosted := chi.NewRouter()
 	pypiHTTP.RegisterRepoRoutes(pypiHosted)
 
+	helmHosted := chi.NewRouter()
+	helmHTTP.RegisterRepoRoutes(helmHosted)
+
 	dockerHTTP := formatdocker.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
 	dockerHTTP.SetUploadDir(dockerUploadDir(cfg))
 	dockerHTTP.SetAuthorizer(evaluator)
@@ -784,6 +787,7 @@ func run(args []string) error {
 		"raw":    rawHosted,
 		"npm":    npmHosted,
 		"docker": dockerHosted,
+		"helm":   helmHosted,
 	}).WithBaseURL(cfg.BaseURL)
 
 	authedAPI.Route("/repos/{name}", func(r chi.Router) {

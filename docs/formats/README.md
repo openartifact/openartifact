@@ -30,7 +30,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
 | Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted, proxy, group | `docker push` | [docker](docker.md) |
-| Helm | `helm` | `HOST/repos/REPO/` (`index.yaml`, `charts/`) | hosted | `POST /charts` (raw chart `.tgz`) | [helm](helm.md) |
+| Helm | `helm` | `HOST/repos/REPO/` (`index.yaml`, `charts/`) | hosted, proxy, group | `POST /charts` (raw chart `.tgz`) | [helm](helm.md) |
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
 | RPM (YUM/DNF) | `rpm` | `HOST/repos/REPO/` (`repodata/repomd.xml`, `Packages/`) | hosted, proxy | `POST /api/v1/repositories/REPO/packages` (multipart) | [rpm](rpm.md) |
 | Go modules | `go` | `GOPROXY=HOST/repos/REPO` | hosted | `PUT <module>/@v/<version>` (module zip) | [go](go.md) |

@@ -137,6 +137,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
+	if repo.Format == "helm" {
+		s.serveHelm(w, r, repo, relPath)
+		return
+	}
+
 	key, ok := CleanPath(relPath)
 	if !ok {
 		http.NotFound(w, r)
@@ -654,6 +659,9 @@ func Immutable(format, key string) bool {
 	case "npm":
 		// Tarballs (<pkg>/-/<file>), not packuments.
 		return strings.HasSuffix(name, ".tgz") && strings.Contains(key, "/-/")
+	case "helm":
+		// Chart archives (charts/<file>), not index.yaml or provenance files.
+		return strings.HasPrefix(key, helmChartsDir) && !strings.HasSuffix(name, helmProvExt)
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
