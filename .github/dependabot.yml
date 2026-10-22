@@ -11,6 +11,13 @@
 # version in the workflows, GO_VERSION in the workflows, and the
 # dxflrs/garage + postgres images used by the `integration` job in ci.yml.
 version: 2
+registries:
+  # Docker Hardened Images base of docker/Dockerfile (needs a Docker ID + PAT).
+  dhi:
+    type: docker-registry
+    url: dhi.io
+    username: ${{secrets.DHI_USERNAME}}
+    password: ${{secrets.DHI_TOKEN}}
 updates:
   - package-ecosystem: github-actions
     directory: /
@@ -64,6 +71,7 @@ updates:
   # Dockerfile base images (FROM tag@sha256).
   - package-ecosystem: docker
     directory: /docker
+    registries: [dhi]
     schedule:
       interval: weekly
     cooldown:

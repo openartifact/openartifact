@@ -41,6 +41,8 @@ services:
         VERSION: ${OPENARTIFACT_VERSION:-dev}
         COMMIT: ${OPENARTIFACT_COMMIT:-unknown}
         BUILD_TIME: ${OPENARTIFACT_BUILD_TIME:-unknown}
+        # dhi needs `docker login dhi.io`; set OPENARTIFACT_RUNTIME=distroless otherwise.
+        RUNTIME: ${OPENARTIFACT_RUNTIME:-dhi}
     container_name: openartifact
     depends_on:
       postgres:
@@ -83,16 +85,9 @@ services:
       - artifact-repo-network
     healthcheck:
       test:
-        [
-          "CMD",
-          "wget",
-          "--no-verbose",
-          "--tries=1",
-          "--spider",
-          "http://localhost:8080/health",
-        ]
+        ["CMD", "/app/openartifact", "-healthcheck"]
       interval: 30s
-      timeout: 3s
+      timeout: 5s
       retries: 3
       start_period: 5s
 

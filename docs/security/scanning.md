@@ -38,7 +38,7 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 - `POST` returns at once with `scan_status: "scanning"`; the scan runs in the background (120 s limit). Poll `GET …/vuln/scans/{id}` until the status is `completed`, `partial` or `failed`. At most 4 scans run at a time per server; further requests get 429 `too_many_scans` with `Retry-After: 10`.
 - A result carries `vulnerabilities` (id, summary, severity, CVSS, fixed-in version, references, published date), the counts `vuln_count`, `critical_count`, `high_count`, `medium_count`, `low_count`, the `scanner` that ran (several are stored sorted and comma-joined, for example `osv,trivy`) and `failed_scanners`.
 - `ecosystem` uses these names: `npm`, `pypi`, `maven`, `cargo`, `gomod`, `rubygems`, `nuget`, `deb`, `rpm`, `helm` (OSV); the other backends support a subset: Trivy `npm`, `pypi`, `maven`, `cargo`, `gomod`, `rubygems`, `nuget`; Grype `npm`, `pypi`, `maven`, `cargo`, `rubygems`, `nuget`, `deb`, `rpm`, `gomod`.
-- `osv` needs outbound HTTPS to `api.osv.dev`. `trivy` and `grype` run the CLI found on the server's `PATH`; the project's `docker/Dockerfile` does not install them.
+- `osv` needs outbound HTTPS to `api.osv.dev`. `trivy` and `grype` run the CLI found on the server's `PATH`; the release image is shell-less and does not contain them; build a derived image that copies the static binaries in.
 
 ### Scanner failures
 

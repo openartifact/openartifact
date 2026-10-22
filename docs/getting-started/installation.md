@@ -43,8 +43,11 @@ Compose also substitutes these variables from `docker/.env` (they are not listed
 | `OPENARTIFACT_VERSION` | `dev` | Build argument; the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
 | `OPENARTIFACT_COMMIT` | `unknown` | Build argument; commit reported by the System page. `make docker-up` sets the 7-character short SHA |
 | `OPENARTIFACT_BUILD_TIME` | `unknown` | Build argument; build time, RFC 3339 in UTC. `make docker-up` sets it |
+| `OPENARTIFACT_RUNTIME` | `dhi` | Build argument `RUNTIME`: runtime base image. `dhi` is Docker Hardened Images (`dhi.io/static`) and needs `docker login dhi.io` with a Docker ID; set `OPENARTIFACT_RUNTIME=distroless` to use the anonymous `gcr.io/distroless/static-debian13` instead (same layout, also shell-less) |
 
 The `openartifact` service passes only the variables listed in its `environment:` block. Anything else (`BASE_URL`, `OPENARTIFACT_SECRET_KEY`, `METRICS_AUTH_TOKEN`, `OPENARTIFACT_TRUSTED_PROXIES`, ...) must be added there, or via a compose override file, before it reaches the server. The service runs as uid 10001 with a read-only root filesystem; data lives in the named volumes `postgres_data`, `artifacts_data` (`/var/lib/artifacts`) and `backups_data` (`/var/lib/openartifact/backups`).
+
+The image has no shell, `wget` or `nc`; its health check is `openartifact-server -healthcheck`, and the server waits for PostgreSQL itself (`DB_CONNECT_TIMEOUT`, default 60s). See the [0.5.0 upgrade notes](upgrading.md#050-unreleased) for debugging and custom CAs.
 
 Released images are published to `ghcr.io/openartifact/openartifact` (`linux/amd64`, `linux/arm64`; tags in [upgrading](upgrading.md#versions-and-image-tags)). To run one instead of building, replace the `build:` block of the `openartifact` service with `image: ghcr.io/openartifact/openartifact:<version>`. Verify signatures as described in [signing](../security/signing.md).
 

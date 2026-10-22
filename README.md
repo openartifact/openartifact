@@ -72,6 +72,7 @@ Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 ```sh
 cp docker/.env.example docker/.env      # set POSTGRES_PASSWORD
 make docker-up    # docker compose up -d --build with version/commit/build time stamped
+                  # (no dhi.io access? OPENARTIFACT_RUNTIME=distroless make docker-up)
 ```
 
 The UI and API are on <http://localhost:8080>. The first start creates user

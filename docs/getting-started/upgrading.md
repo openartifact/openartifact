@@ -103,6 +103,12 @@ Migrations `017` and `018` run at first start: `017` adds the soft-delete column
 
 | Area | Change |
 |---|---|
+| Image base | The runtime image is now a shell-less hardened base (`dhi.io/static`, Debian 13): it has no `sh`, `wget`, `nc` or `apk`. It still runs as uid/gid 10001 with the binary at `/app/openartifact`; the health check is `openartifact-server -healthcheck` (a `GET` on `127.0.0.1:<configured port>/health`, exit 0 on 200). |
+| Troubleshooting | Use `kubectl debug -it <pod> --image=busybox --target=openartifact` (an ephemeral container sharing the process namespace) or `docker run --rm -it --network container:openartifact busybox`; `exec` into the container no longer works. |
+| Custom CAs | Mount the CA bundle into the container and point `SSL_CERT_FILE` (one file) or `SSL_CERT_DIR` (a directory) at it; `update-ca-certificates` cannot run in the image. |
+| trivy / grype | The `trivy` and `grype` vulnerability scanner backends need those static binaries on the server's `PATH`; build a derived image `FROM` the release image that copies them in, or use the default `osv` scanner. |
+| Helm chart | Chart `<= 0.1.4` runs a wait-for-database init container that needs `sh` and `nc` from this image and fails with the new image. Upgrade the chart, or set `database.waitForDatabase=false`: the server now waits itself, retrying the initial database connection with capped backoff for `DB_CONNECT_TIMEOUT` (`database.connectTimeout`, default `60s`, `0` fails immediately). |
+| Database startup | New `DB_CONNECT_TIMEOUT` / `database.connectTimeout`: the server retries the first database connection for up to this long (each wait is logged at info level) instead of exiting at once. |
 | Security (Go) | Go module zips are served only when their blob has a real sha256 (`404` otherwise), and every blob upsert (all formats) rejects a sha256 that is not 64 lowercase hex characters. Versions published on 0.4.1 and earlier are repaired automatically at start, or with `openartifact-server -repair-gomod`; see the security note above. |
 | Config | `database.options` and `storage.options` now have env overrides, `DB_OPTIONS` and `STORAGE_OPTIONS` (comma-separated `key=value` pairs merged over YAML); `STORAGE_TYPE` is listed in `.env.example`. |
 | Security (login) | The failed-login lockout is now per (username, client IP) instead of per username, so an attacker can no longer lock the real user out from another address. |

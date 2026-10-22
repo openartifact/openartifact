@@ -238,6 +238,26 @@ jobs:
 
       - uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4.4.1
 
+      # Fork PRs cannot read secrets: they build on the anonymous distroless base.
+      - name: Select runtime base
+        id: runtime
+        env:
+          DHI_USERNAME: ${{ secrets.DHI_USERNAME }}
+        run: |
+          if [ -n "$DHI_USERNAME" ]; then
+            echo "runtime=dhi" >> "$GITHUB_OUTPUT"
+          else
+            echo "runtime=distroless" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Log in to dhi.io
+        if: ${{ steps.runtime.outputs.runtime == 'dhi' }}
+        uses: docker/login-action@dbcb813823bdd20940b903addbd779551569679f # v4.6.0
+        with:
+          registry: dhi.io
+          username: ${{ secrets.DHI_USERNAME }}
+          password: ${{ secrets.DHI_TOKEN }}
+
       - name: Build image (loaded into the local daemon)
         uses: docker/build-push-action@c3c9e263c25d99ce0380d002d59b67737d91b0dc # v7.4.0
         with:
@@ -247,6 +267,7 @@ jobs:
           push: false
           provenance: false
           sbom: false
+          build-args: RUNTIME=${{ steps.runtime.outputs.runtime }}
           tags: ${{ env.IMAGE_TAG }}
           cache-from: type=gha,scope=security
           cache-to: type=gha,scope=security,mode=max
