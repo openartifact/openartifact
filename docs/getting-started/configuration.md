@@ -20,6 +20,7 @@ Full annotated references: [`openartifact.example.yaml`](../../openartifact.exam
 openartifact verify openartifact.yaml    # validate a config file (path optional if -config / OPENARTIFACT_CONFIG is set)
 openartifact -config openartifact.yaml   # start with a config file
 openartifact -migrate                    # apply database migrations and exit
+openartifact -repair-gomod               # relink Go module zips damaged on <= 0.4.1, then exit (see upgrading)
 ```
 
 - `verify` loads the file with the current environment applied and checks: port 1-65535, non-empty database driver, storage type and log level, TLS cert/key present when TLS is enabled, and `mcp.transport` equal to `http`. The YAML is parsed non-strictly: **unknown or misspelled keys are ignored**, so `verify` does not catch typos.

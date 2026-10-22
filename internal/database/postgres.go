@@ -1674,6 +1674,10 @@ func (p *PostgresDB) ListNPMVersionsByRepo(ctx context.Context, repoID string) (
 // UpsertBlob inserts a blob row keyed by sha256 and returns its id, using ON
 // CONFLICT to handle concurrent uploads safely.
 func (p *PostgresDB) UpsertBlob(ctx context.Context, sha256, blobKey string, sizeBytes int64) (string, error) {
+	if err := validateBlobSHA256(sha256); err != nil {
+		return "", err
+	}
+
 	var blobID string
 	err := p.db.QueryRowContext(ctx,
 		`INSERT INTO blobs (sha256, size_bytes, blob_key)

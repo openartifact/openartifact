@@ -46,6 +46,10 @@ func (p *PostgresDB) CreateDockerBlob(ctx context.Context, blob *models.DockerBl
 // needed by docker blobs (layers/configs have a real content type, unlike
 // the generic default used elsewhere).
 func (p *PostgresDB) upsertBlobWithMediaType(ctx context.Context, sha256, blobKey, mediaType string, sizeBytes int64) (string, error) {
+	if err := validateBlobSHA256(sha256); err != nil {
+		return "", err
+	}
+
 	var blobID string
 
 	err := p.db.QueryRowContext(ctx,

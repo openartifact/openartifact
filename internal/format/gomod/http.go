@@ -351,6 +351,17 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Fail closed: versions published by <= 0.4.1 may reference a shared
+	// blobs row with an empty sha256 whose object is some other module's zip.
+	// Never serve (or presign) anything that is not addressed by a real digest.
+	if !database.IsValidBlobSHA256(mod.ZipHash) {
+		h.Log.Warnw("refusing to serve go module zip: its blob has no valid sha256; re-upload the version or run the gomod repair (openartifact-server -repair-gomod)",
+			"repo", repoName, "module", modulePath, "version", version, "zip_hash", mod.ZipHash)
+		http.NotFound(w, r)
+
+		return
+	}
+
 	if h.TryPresign(w, r, presign.Blob{SHA256: mod.ZipBlobKey, Size: mod.ZipSizeBytes, ContentType: "application/zip"}) {
 		return
 	}

@@ -93,6 +93,11 @@ func main() {
 	}
 }
 
+var (
+	errGomodRepairBusy       = errors.New("gomod repair: another instance is already running it")
+	errGomodRepairUnrepaired = errors.New("go module versions could not be repaired and must be re-uploaded")
+)
+
 var errVerifyUsage = errors.New("usage: openartifact-server verify <config.yaml>")
 
 // reportedError marks a failure the operator has already seen (structured log
@@ -109,6 +114,7 @@ func run(args []string) error {
 
 	flags := flag.NewFlagSet("openartifact-server", flag.ContinueOnError)
 	migrateFlag := flags.Bool("migrate", false, "run migrations and exit")
+	repairGomodFlag := flags.Bool("repair-gomod", false, "relink Go module zips damaged by the <=0.4.1 shared-blob bug, then exit")
 	versionFlag := flags.Bool("version", false, "print version, commit, build time and Go runtime, then exit")
 	configFile := flags.String("config", os.Getenv("OPENARTIFACT_CONFIG"), "path to YAML config file")
 
@@ -242,6 +248,18 @@ func run(args []string) error {
 	blobStore := storage.NewMetricsBlobStore(rawBlobStore, reg)
 
 	log.Infow("Storage initialized", "type", cfg.Storage.Type, "path", cfg.Storage.Path)
+
+	if *repairGomodFlag {
+		return runGomodRepair(context.Background(), db, blobStore, log)
+	}
+
+	// Repair Go module zips left behind by the <=0.4.1 shared-blob bug. A no-op
+	// (one cheap query) when nothing is affected; one replica at a time.
+	go func() {
+		if _, err := formatgomod.RepairZipBlobs(context.Background(), db, blobStore, log); err != nil {
+			log.Errorw("gomod repair failed; run `openartifact-server -repair-gomod` to retry", "error", err)
+		}
+	}()
 
 	// servedStore is what the download paths (format handlers, proxy cache)
 	// read from: the same store, plus 307 redirects to presigned URLs for
@@ -924,6 +942,37 @@ func run(args []string) error {
 	}
 
 	log.Infow("Server stopped successfully")
+
+	return nil
+}
+
+// runGomodRepair is the -repair-gomod subcommand: one repair pass in the
+// foreground, with a summary on stdout and a non-zero exit when anything
+// could not be relinked.
+func runGomodRepair(ctx context.Context, db *database.PostgresDB, store storage.BlobStore, log *logger.Logger) error {
+	res, err := formatgomod.RepairZipBlobs(ctx, db, store, log)
+	if err != nil {
+		return fmt.Errorf("gomod repair: %w", err)
+	}
+
+	if res.LockBusy {
+		return errGomodRepairBusy
+	}
+
+	fmt.Printf("gomod repair: %d affected, %d repaired, %d unrepairable, %d invalid blob row(s) removed\n",
+		res.Affected, res.Repaired, len(res.Unrepairable), res.BlobRowsDeleted)
+
+	for _, i := range res.Unrepairable {
+		fmt.Printf("  unrepairable: %s\n", i)
+	}
+
+	if res.ListUnsupported {
+		fmt.Println("  the storage backend cannot list objects: only the shared blob's own zip could be recovered")
+	}
+
+	if len(res.Unrepairable) > 0 {
+		return reportedError{fmt.Errorf("%w: %d", errGomodRepairUnrepaired, len(res.Unrepairable))}
+	}
 
 	return nil
 }

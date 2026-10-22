@@ -1320,7 +1320,7 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 		return restoreRepoScoped(ctx, r, st, e.log, "go module",
 			func(c *models.GoModule) string { return c.RepositoryID },
 			func(c *models.GoModule, id string) { c.RepositoryID = id },
-			false, e.db.CreateGoModule)
+			false, e.restoreGoModule)
 	case "webhooks.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "webhook",
 			func(c *models.Webhook) string { return c.RepositoryID },
@@ -1789,6 +1789,22 @@ func (e *Engine) restoreDockerManifest(ctx context.Context, m *models.DockerMani
 	m.BlobID = blobID
 
 	return e.db.CreateDockerManifest(ctx, m)
+}
+
+// restoreGoModule restores one Go module version. Backups taken on <= 0.4.1
+// carry an empty ZipHash and, in ZipBlobKey, the key of the one zip every
+// version shared: neither identifies this version's zip, so the row cannot be
+// restored (relinking it by key would serve another module's zip). It is
+// skipped and counted as a restore failure; re-upload the version.
+func (e *Engine) restoreGoModule(ctx context.Context, m *models.GoModule) error {
+	if !database.IsValidBlobSHA256(m.ZipHash) {
+		e.restoreWarn("skipping go module: its backup has no valid zip sha256 (taken on <= 0.4.1); re-upload this version",
+			"module", m.ModulePath, "version", m.Version, "repo_id", m.RepositoryID)
+
+		return nil
+	}
+
+	return e.db.CreateGoModule(ctx, m)
 }
 
 // restoreMavenArtifact re-derives the artifact's blob via UpsertBlob (the

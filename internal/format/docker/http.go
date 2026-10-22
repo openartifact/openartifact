@@ -451,15 +451,16 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	// the blob in between. Both the store and the insert are idempotent, so a
 	// re-push of the same manifest is a refresh.
 	if err := storage.WithBlobLock(r.Context(), h.db, digestHex, func(ctx context.Context) error {
-		blobKey, err := h.blobStore.Put(ctx, bytes.NewReader(body), map[string]string{
+		if _, err := h.blobStore.Put(ctx, bytes.NewReader(body), map[string]string{
 			"sha256":       digestHex,
 			"content-type": contentType,
-		})
-		if err != nil {
+		}); err != nil {
 			return fmt.Errorf("store manifest blob: %w", err)
 		}
 
-		blobID, err := h.db.EnsureBlob(ctx, blobKey, contentType, int64(len(body)))
+		// The blobs row is keyed by the sha256 computed above from the pushed
+		// bytes, never by a value the store or client reports.
+		blobID, err := h.db.EnsureBlob(ctx, digestHex, contentType, int64(len(body)))
 		if err != nil {
 			return fmt.Errorf("ensure manifest blob row: %w", err)
 		}
@@ -1450,15 +1451,16 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 			return nil
 		}
 
-		blobSHA256, err := h.blobStore.Put(ctx, f, map[string]string{
+		if _, err := h.blobStore.Put(ctx, f, map[string]string{
 			"sha256": computedDigestHex,
 			"digest": digest,
-		})
-		if err != nil {
+		}); err != nil {
 			return fmt.Errorf("store blob: %w", err)
 		}
 
-		blob.BlobSHA256 = blobSHA256
+		// Keyed by the sha256 computed from the spooled bytes, never by a
+		// value the store or client reports.
+		blob.BlobSHA256 = computedDigestHex
 
 		if err := h.db.CreateDockerBlob(ctx, blob); err != nil {
 			return fmt.Errorf("create blob record: %w", err)

@@ -198,10 +198,43 @@ func TestEachVersionServesItsOwnZip(t *testing.T) {
 	}
 }
 
+// A row whose zip blob has no real sha256 (published by <= 0.4.1, when every
+// zip shared one blobs row keyed by "") must never be served: the object behind
+// it belongs to another module, possibly in another organization.
+func TestZipWithInvalidHashFailsClosed(t *testing.T) {
+	validHash := strings.Repeat("a", 64)
+
+	for name, hash := range map[string]string{
+		"empty":     "",
+		"prefixed":  "sha256:" + validHash,
+		"uppercase": strings.ToUpper(validHash),
+		"short":     "abc",
+	} {
+		t.Run(name, func(t *testing.T) {
+			router, db, bs, _ := newTestRouter(t)
+			db.mods = []*models.GoModule{{
+				ModulePath: testModule, Version: "v1.0.0", ZipBlobKey: validHash, ZipHash: hash,
+				ZipSizeBytes: 14, GoModContent: "module x",
+			}}
+			bs.Blobs[validHash] = []byte("ANOTHER ORG ZIP")
+
+			w := serve(router, http.MethodGet, "/repos/myrepo/"+testModule+"/@v/v1.0.0.zip", nil)
+			if w.Code != http.StatusNotFound {
+				t.Fatalf("status = %d, want 404", w.Code)
+			}
+
+			if bytes.Contains(w.Body.Bytes(), []byte("ANOTHER")) {
+				t.Fatalf("leaked bytes: %q", w.Body.String())
+			}
+		})
+	}
+}
+
 func TestZipQuarantine(t *testing.T) {
 	router, db, bs, _ := newTestRouter(t)
-	db.mods = []*models.GoModule{{ModulePath: testModule, Version: "v1.0.0", ZipBlobKey: "abc", ZipSizeBytes: 3, GoModContent: "module x"}}
-	bs.Blobs["abc"] = []byte("xyz")
+	zipKey := strings.Repeat("ab", 32)
+	db.mods = []*models.GoModule{{ModulePath: testModule, Version: "v1.0.0", ZipBlobKey: zipKey, ZipHash: zipKey, ZipSizeBytes: 3, GoModContent: "module x"}}
+	bs.Blobs[zipKey] = []byte("xyz")
 
 	url := "/repos/myrepo/" + testModule + "/@v/v1.0.0.zip"
 

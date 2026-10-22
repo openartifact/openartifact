@@ -7,6 +7,7 @@ package backup
 import (
 	"context"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 
@@ -168,7 +169,7 @@ func TestBackupRestore_GoModulesRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r2(src).goModules[repo.ID] = []*models.GoModule{{RepositoryID: repo.ID, ModulePath: "example.com/m", Version: "v1.0.0", GoModContent: "module example.com/m"}}
+	r2(src).goModules[repo.ID] = []*models.GoModule{{RepositoryID: repo.ID, ModulePath: "example.com/m", Version: "v1.0.0", GoModContent: "module example.com/m", ZipHash: strings.Repeat("c", 64), ZipBlobKey: strings.Repeat("c", 64)}}
 
 	dst := backupAndRestore(t, src, nil)
 

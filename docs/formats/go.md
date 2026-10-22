@@ -62,6 +62,12 @@ curl -X PUT -H "Authorization: Bearer <TOKEN>" --data-binary @v1.0.0.zip \
 
 Versions stored before the case-encoding fix under their encoded form (an uppercase version uploaded as `v1.0.0-!r!c1` was stored with the `!`) are no longer reachable; upload them again under the same URL, which now stores the decoded `v1.0.0-RC1`.
 
-Each version's zip is stored under its own sha256. Before this was fixed every upload registered its zip without a digest, so the zips of all versions on an instance collapsed onto the first one stored (`go get` failed with `zip for ...@vX has unexpected file ...@vY/go.mod`). Such versions have to be deleted and uploaded again.
+Each version's zip is stored under its own sha256. Up to 0.4.1 every upload registered its zip without a digest, so the zips of all versions on an instance collapsed onto the first one stored: every Go repository served that one zip (`go get` failed with `zip for ...@vX has unexpected file ...@vY/go.mod`), a cross-repository and cross-organization source disclosure. Now:
+
+- A zip whose blob has no valid sha256 is never served (or redirected to a presigned URL): the download answers `404` and the server logs a warning naming the repository, module and version.
+- At every start a background repair relinks such versions (trashed ones included) to their real zip, which it finds in the blob store by content, and drops the shared database record without deleting any stored object. It runs on one replica at a time and exits at once when nothing is affected. Run it by hand with `openartifact-server -repair-gomod`; it prints what it repaired and every `repository: module@version` it could not.
+- A version that cannot be matched to exactly one stored zip stays `404`: delete it and upload it again. On the `oci` storage backend, which cannot list objects, only the zip of the shared record itself can be recovered.
+
+See the security note in [upgrading](../getting-started/upgrading.md#050-unreleased).
 
 Related: [storage](../operations/storage.md).
