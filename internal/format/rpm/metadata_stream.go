@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net/url"
 	"strconv"
 	"unicode/utf8"
 
@@ -262,7 +263,13 @@ func writePrimaryPackage(o *xmlOut, rf *requiresFilter, p *rpm.Package) {
 
 	o.open("    ", "time")
 	o.raw(` file="`)
-	o.i64(p.BuildTime)
+
+	if p.FileTime > 0 {
+		o.i64(p.FileTime)
+	} else {
+		o.i64(p.BuildTime)
+	}
+
 	o.raw(`" build="`)
 	o.i64(p.BuildTime)
 	o.raw(`"`)
@@ -281,7 +288,7 @@ func writePrimaryPackage(o *xmlOut, rf *requiresFilter, p *rpm.Package) {
 	// The element name is capitalised: that is what the reflection-based
 	// encoder derived from the field name and clients are served today.
 	o.open("    ", "Location")
-	o.attr("href", "Packages/"+p.Name+"-"+p.Version+"-"+p.Release+"."+p.Arch+".rpm")
+	o.attr("href", "Packages/"+url.PathEscape(p.Name+"-"+p.Version+"-"+p.Release+"."+p.Arch+".rpm"))
 	o.emptyClose("Location")
 
 	writePrimaryFormat(o, rf, p)

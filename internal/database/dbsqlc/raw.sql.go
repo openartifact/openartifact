@@ -71,6 +71,40 @@ func (q *Queries) GetRawArtifact(ctx context.Context, arg GetRawArtifactParams) 
 	return i, err
 }
 
+const insertRawArtifactIfAbsent = `-- name: InsertRawArtifactIfAbsent :execrows
+INSERT INTO raw_artifacts (id, repository_id, path, content_type, blob_id, metadata, created_at, updated_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+ON CONFLICT (repository_id, path) WHERE deleted_at IS NULL DO NOTHING
+`
+
+type InsertRawArtifactIfAbsentParams struct {
+	ID           string          `db:"id" json:"id"`
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Path         string          `db:"path" json:"path"`
+	ContentType  string          `db:"content_type" json:"content_type"`
+	BlobID       string          `db:"blob_id" json:"blob_id"`
+	Metadata     json.RawMessage `db:"metadata" json:"metadata"`
+	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+}
+
+func (q *Queries) InsertRawArtifactIfAbsent(ctx context.Context, arg InsertRawArtifactIfAbsentParams) (int64, error) {
+	result, err := q.db.Exec(ctx, insertRawArtifactIfAbsent,
+		arg.ID,
+		arg.RepositoryID,
+		arg.Path,
+		arg.ContentType,
+		arg.BlobID,
+		arg.Metadata,
+		arg.CreatedAt,
+		arg.UpdatedAt,
+	)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
+}
+
 const listRawArtifacts = `-- name: ListRawArtifacts :many
 SELECT ra.id, ra.repository_id, ra.path, ra.content_type, ra.blob_id,
        b.size_bytes, b.sha256, b.blob_key, ra.metadata, ra.created_at, ra.updated_at

@@ -290,6 +290,7 @@ FROM rubygems_gems rg
 JOIN blobs b ON b.id = rg.blob_id
 WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND (rg.name ILIKE $2 OR rg.description ILIKE $2 OR rg.summary ILIKE $2)
 ORDER BY rg.name ASC, rg.version DESC
+LIMIT 1000
 `
 
 type SearchRubyGemsParams struct {
@@ -360,7 +361,7 @@ func (q *Queries) SearchRubyGems(ctx context.Context, arg SearchRubyGemsParams) 
 }
 
 const yankRubyGem = `-- name: YankRubyGem :exec
-UPDATE rubygems_gems SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND deleted_at IS NULL
+UPDATE rubygems_gems SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND ($5::text = '' OR platform = $5) AND deleted_at IS NULL
 `
 
 type YankRubyGemParams struct {
@@ -368,6 +369,7 @@ type YankRubyGemParams struct {
 	RepositoryID string `db:"repository_id" json:"repository_id"`
 	Name         string `db:"name" json:"name"`
 	Version      string `db:"version" json:"version"`
+	Column5      string `db:"column_5" json:"column_5"`
 }
 
 func (q *Queries) YankRubyGem(ctx context.Context, arg YankRubyGemParams) error {
@@ -376,6 +378,7 @@ func (q *Queries) YankRubyGem(ctx context.Context, arg YankRubyGemParams) error 
 		arg.RepositoryID,
 		arg.Name,
 		arg.Version,
+		arg.Column5,
 	)
 	return err
 }

@@ -6,6 +6,7 @@ package raw
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"net/http"
 
@@ -15,6 +16,12 @@ import (
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
+
+// ifAbsentInserter is implemented by databases that can insert a raw artifact
+// only when its path is free, atomically.
+type ifAbsentInserter interface {
+	InsertRawArtifactIfAbsent(ctx context.Context, artifact *models.RawArtifact) (bool, error)
+}
 
 // Commit records a raw artifact: it runs putBlob (which must make the blob
 // a.SHA256 present in the blob store and set a.BlobKey) and upserts the
@@ -39,16 +46,37 @@ func Commit(req *http.Request, h *base.Handler, repoName string, a *models.RawAr
 		return nil, fmt.Errorf("look up existing artifact: %w", err)
 	}
 
-	// Every raw file is a release: only an overwrite is guarded.
-	if previous != nil {
-		if err := trash.GuardReleaseByName(req, h.DB, repoName, "raw", ""); err != nil {
-			return nil, err
-		}
+	// Every raw file is a release: an overwrite of an immutable repository is
+	// refused. The check below only fails fast; two concurrent first PUTs both
+	// see no previous row, so the write itself must be conditional.
+	guardErr := trash.GuardReleaseByName(req, h.DB, repoName, "raw", "")
+	if guardErr != nil && !errors.Is(guardErr, trash.ErrImmutableRelease) {
+		return nil, guardErr
 	}
+
+	if previous != nil && guardErr != nil {
+		return nil, guardErr
+	}
+
+	inserter, atomic := h.DB.(ifAbsentInserter)
+	atomic = atomic && guardErr != nil
 
 	if err := storage.WithBlobLock(ctx, h.DB, a.SHA256, func(ctx context.Context) error {
 		if err := putBlob(ctx); err != nil {
 			return err
+		}
+
+		if atomic {
+			inserted, err := inserter.InsertRawArtifactIfAbsent(ctx, a)
+			if err != nil {
+				return fmt.Errorf("insert artifact: %w", err)
+			}
+
+			if !inserted {
+				return trash.ErrImmutableRelease
+			}
+
+			return nil
 		}
 
 		if err := h.DB.UpsertRawArtifact(ctx, a); err != nil {

@@ -625,8 +625,15 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 		releases[pkg.Version] = append(releases[pkg.Version], fileInfo)
 	}
 
-	// Use first version as info
+	// info describes the highest version by PEP 440 order; the query orders
+	// versions as strings, where 9.0.0 sorts above 10.0.0.
 	firstPkg := versions[0]
+
+	for _, pkg := range versions[1:] {
+		if comparePEP440(pkg.Version, firstPkg.Version) > 0 {
+			firstPkg = pkg
+		}
+	}
 
 	info := map[string]any{
 		"name":    firstPkg.Name,

@@ -182,6 +182,12 @@ Migrations `017` and `018` run at first start: `017` adds the soft-delete column
 | ivy and sbt probes | `HEAD` on a file is answered (status, `Content-Length`, no body); it was `405`, so resolvers that probe with `HEAD` before fetching could not see the file. |
 | ivy and sbt publish | Publishing a file that exists replaces it (same bytes: idempotent `201`) instead of failing with `500`. With `immutable_releases` on, a different upload over a release version is `409`; `-SNAPSHOT` versions stay mutable. |
 | ivy and sbt layout | Maven-style paths with a multi-segment group (`com/example/lib/1.0/lib-1.0.jar`) are stored as group `com.example`, module `lib`, version `1.0` (they were split as org `com`, module `example`, revision `lib`, so the immutable-release check saw the wrong version). A dotted first segment (`com.example/...`) is the same group. Files published earlier under the mis-split coordinates are still served and deletable at their URL; publish them again to move them to the right coordinates ([Ivy and sbt](../formats/ivy-sbt.md#routes-and-layout)). |
+| PyPI | `info.version` in `/pypi/<pkg>/json` is the highest version by PEP 440 order, not by string order (`10.0.0` above `9.0.0`). |
+| Raw | Concurrent first uploads to one path of an `immutable_releases` repository: the loser now gets `409` instead of silently overwriting. |
+| Cargo | A private repository's `401` carries `WWW-Authenticate: Cargo login_url="<baseUrl>/login"`, so cargo sends its token for the index and downloads. |
+| RubyGems | `gem yank --platform` yanks only that platform; `/api/v1/search` with an empty or `*` query lists all gems (capped at 1000). |
+| Debian | Pool downloads accept percent-encoded file names (`libstdc%2b%2b6_...deb`). |
+| RPM | `primary.xml` `<time file=>` is the upload time (`build=` stays the RPM build time) and `<location href>` is percent-encoded. Uploading another epoch of an N-V-R.A already stored (same file name) is rejected with `409`. |
 
 There is deliberately no `OPENARTIFACT_REPO_DELETE_DELAY`: the trash window is the deletion delay.
 

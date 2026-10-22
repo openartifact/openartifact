@@ -1546,7 +1546,7 @@ func (m *MockDatabase) ListRubyGemVersions(ctx context.Context, repoID, name str
 func (m *MockDatabase) SearchRubyGems(ctx context.Context, repoID, query string) ([]*models.RubyGem, error) {
 	return nil, nil
 }
-func (m *MockDatabase) YankRubyGem(ctx context.Context, repoID, name, version string, yanked bool) error {
+func (m *MockDatabase) YankRubyGem(ctx context.Context, repoID, name, version, platform string, yanked bool) error {
 	return nil
 }
 

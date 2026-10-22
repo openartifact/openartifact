@@ -616,7 +616,7 @@ func (m *tokenMockDB) ListRubyGemVersions(_ context.Context, _, _ string) ([]*mo
 func (m *tokenMockDB) SearchRubyGems(_ context.Context, _, _ string) ([]*models.RubyGem, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) YankRubyGem(_ context.Context, _, _, _ string, _ bool) error { return nil }
+func (m *tokenMockDB) YankRubyGem(_ context.Context, _, _, _, _ string, _ bool) error { return nil }
 
 // Raw artifact methods
 func (m *tokenMockDB) UpsertRawArtifact(_ context.Context, _ *models.RawArtifact) error { return nil }

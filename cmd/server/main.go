@@ -505,6 +505,7 @@ func run(args []string) error {
 		AllowAnonymousRead:  cfg.Auth.AllowAnonymousRead,
 		MCPPath:             cfg.MCP.HTTPPath,
 		SPAHandler:          spaHandler,
+		BaseURL:             cfg.BaseURL,
 	}
 	if mcpServer != nil {
 		mcpServer.SetAuthorizer(func(ctx context.Context, repoName, action string) bool {

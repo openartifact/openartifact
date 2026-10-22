@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -198,7 +199,12 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 	}
 
 	repoID := repo.ID
-	filename := vars["filename"]
+	// chi hands out the raw path; primary.xml hrefs are percent-encoded.
+	filename, err := url.PathUnescape(vars["filename"])
+	if err != nil || filename == "" || strings.ContainsAny(filename, "/\\") {
+		http.NotFound(w, r)
+		return
+	}
 
 	comp, err := h.db.GetComponentByFilename(r.Context(), repoID, filename)
 	if err != nil {

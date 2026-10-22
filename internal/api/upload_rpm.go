@@ -351,14 +351,26 @@ func rpmVersionRelease(version, release string) string {
 	return version + "-" + release
 }
 
-// isDuplicateUpload reports whether the same NEVRA is already stored in the repository.
+// isDuplicateUpload reports whether the same NEVRA, or another epoch of the same
+// N-V-R.A (same file name), is already stored in the repository.
 func (h *RPMUploadHandler) isDuplicateUpload(ctx context.Context, repoID string, pkg *pkgrpm.Package) (bool, error) {
 	nevraExists, err := h.db.RpmPackageExists(ctx, repoID, pkg.Name, pkg.Version, pkg.Release, int(pkg.Epoch), pkg.Arch)
 	if err != nil {
 		return false, fmt.Errorf("failed to check package existence: %w", err)
 	}
 
-	return nevraExists, nil
+	if nevraExists {
+		return true, nil
+	}
+
+	// The file name carries no epoch, so another epoch of the same N-V-R.A
+	// would share it and the download could not tell the two apart.
+	sameFile, err := h.db.GetComponentByFilename(ctx, repoID, rpmFilename(pkg))
+	if err != nil {
+		return false, fmt.Errorf("failed to check file name: %w", err)
+	}
+
+	return sameFile != nil, nil
 }
 
 // releaseQuota returns a reservation made by quota.Enforce.

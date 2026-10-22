@@ -681,7 +681,7 @@ func (m *provMockDB) ListRubyGemVersions(_ context.Context, _, _ string) ([]*mod
 func (m *provMockDB) SearchRubyGems(_ context.Context, _, _ string) ([]*models.RubyGem, error) {
 	return nil, nil
 }
-func (m *provMockDB) YankRubyGem(_ context.Context, _, _, _ string, _ bool) error { return nil }
+func (m *provMockDB) YankRubyGem(_ context.Context, _, _, _, _ string, _ bool) error { return nil }
 
 // Raw artifact methods
 func (m *provMockDB) UpsertRawArtifact(_ context.Context, _ *models.RawArtifact) error { return nil }

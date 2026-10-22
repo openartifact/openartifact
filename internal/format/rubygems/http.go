@@ -629,6 +629,7 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 
 	gemName := form.Get("gem_name")
 	version := form.Get("version")
+	platform := form.Get("platform")
 
 	if gemName == "" || version == "" {
 		http.Error(w, "gem_name and version are required", http.StatusBadRequest)
@@ -648,7 +649,7 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 	var yanked []*models.RubyGem
 
 	for _, g := range versions {
-		if g.Version == version && !g.Yanked {
+		if g.Version == version && !g.Yanked && (platform == "" || g.Platform == platform) {
 			yanked = append(yanked, g)
 		}
 	}
@@ -658,7 +659,7 @@ func (h *HTTPHandler) handleYankGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.DB.YankRubyGem(r.Context(), repoID, gemName, version, true); err != nil {
+	if err := h.DB.YankRubyGem(r.Context(), repoID, gemName, version, platform, true); err != nil {
 		h.Log.Errorw("failed to yank gem", "name", gemName, "version", version, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
@@ -770,9 +771,10 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// An empty query or the "*" wildcard lists every gem.
 	query := r.URL.Query().Get("query")
-	if query == "" {
-		query = "*"
+	if query == "*" {
+		query = ""
 	}
 
 	gems, err := h.DB.SearchRubyGems(r.Context(), repoID, query)

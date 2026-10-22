@@ -45,6 +45,9 @@ type RBACConfig struct {
 	// any non-navigation request. When nil, those paths get full RBAC
 	// evaluation like every other /repos/ path.
 	SPAHandler http.Handler
+	// BaseURL is the public URL of the server; cargo's WWW-Authenticate
+	// challenge points its login_url at it.
+	BaseURL string
 }
 
 // routeScope is what the permission evaluator is asked about for a request.
@@ -126,7 +129,7 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 			}
 
 			if !allowed {
-				writeAccessDenied(w, r, log, principal, credential, scope)
+				writeAccessDenied(w, r, cfg, db, log, principal, credential, scope)
 
 				return
 			}
@@ -230,7 +233,7 @@ func passwordChangeBlocked(r *http.Request, principal *auth.Principal) bool {
 		(r.URL.Path != "/api/v1/auth/change-password" && r.URL.Path != "/api/v1/auth/logout")
 }
 
-func writeAccessDenied(w http.ResponseWriter, r *http.Request, log *logger.Logger, principal *auth.Principal, credential string, scope routeScope) {
+func writeAccessDenied(w http.ResponseWriter, r *http.Request, cfg RBACConfig, db database.Database, log *logger.Logger, principal *auth.Principal, credential string, scope routeScope) {
 	principalName := "anonymous"
 	if principal.Username != "" {
 		principalName = principal.Username
@@ -258,6 +261,14 @@ func writeAccessDenied(w http.ResponseWriter, r *http.Request, log *logger.Logge
 		// would pop a native login dialog over the SPA on every expired session.
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
 			w.Header().Add("WWW-Authenticate", `Basic realm="openartifact"`)
+		}
+
+		// Cargo only sends its token after a challenge naming its login page
+		// (RFC 3139 auth-required flow).
+		if scope.repoName != "" && cfg.BaseURL != "" {
+			if repo, err := db.GetRepositoryByName(r.Context(), scope.repoName); err == nil && repo != nil && repo.Format == "cargo" {
+				w.Header().Add("WWW-Authenticate", `Cargo login_url="`+strings.TrimRight(cfg.BaseURL, "/")+`/login"`)
+			}
 		}
 
 		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})

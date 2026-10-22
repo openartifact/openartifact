@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"net/url"
 	"strings"
 
 	"github.com/go-chi/chi/v5"
@@ -278,8 +279,14 @@ func (h *HTTPHandler) handlePackagesXz(w http.ResponseWriter, r *http.Request) {
 
 func (h *HTTPHandler) handlePoolFile(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
-	filename := vars["filename"]
 	name := vars["name"]
+
+	// chi hands out the raw path, so "libstdc%2b%2b6_1.deb" arrives encoded.
+	filename, err := url.PathUnescape(vars["filename"])
+	if err != nil || filename == "" || strings.ContainsAny(filename, "/\\") {
+		http.NotFound(w, r)
+		return
+	}
 
 	repoID, err := h.resolveRepoID(r.Context(), name)
 	if err != nil {

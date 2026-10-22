@@ -369,7 +369,7 @@ type Database interface {
 	ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error)
 	ListRubyGemVersions(ctx context.Context, repoID, name string) ([]*models.RubyGem, error)
 	SearchRubyGems(ctx context.Context, repoID, query string) ([]*models.RubyGem, error)
-	YankRubyGem(ctx context.Context, repoID, name, version string, yanked bool) error
+	YankRubyGem(ctx context.Context, repoID, name, version, platform string, yanked bool) error
 
 	// Raw artifact methods
 	UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error

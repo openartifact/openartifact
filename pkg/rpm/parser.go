@@ -34,21 +34,24 @@ type ChangelogEntry struct {
 }
 
 type Package struct {
-	Name          string
-	Version       string
-	Release       string
-	Epoch         uint32
-	Arch          string
-	Summary       string
-	Description   string
-	License       string
-	URL           string
-	Vendor        string
-	Group         string
-	Packager      string
-	SourceRPM     string
-	BuildHost     string
-	BuildTime     int64
+	Name        string
+	Version     string
+	Release     string
+	Epoch       uint32
+	Arch        string
+	Summary     string
+	Description string
+	License     string
+	URL         string
+	Vendor      string
+	Group       string
+	Packager    string
+	SourceRPM   string
+	BuildHost   string
+	BuildTime   int64
+	// FileTime is when the file entered the repository (the <time file=>
+	// value of primary.xml); zero falls back to BuildTime.
+	FileTime      int64
 	PackageSize   int64
 	InstalledSize int64
 	ArchiveSize   int64

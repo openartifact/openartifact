@@ -682,7 +682,7 @@ func (m *BaseMockDB) ListRubyGemVersions(ctx context.Context, repoID, name strin
 func (m *BaseMockDB) SearchRubyGems(ctx context.Context, repoID, query string) ([]*models.RubyGem, error) {
 	return nil, errNotImpl("SearchRubyGems")
 }
-func (m *BaseMockDB) YankRubyGem(ctx context.Context, repoID, name, version string, yanked bool) error {
+func (m *BaseMockDB) YankRubyGem(ctx context.Context, repoID, name, version, platform string, yanked bool) error {
 	return errNotImpl("YankRubyGem")
 }
 func (m *BaseMockDB) UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error {

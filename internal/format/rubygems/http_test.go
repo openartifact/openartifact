@@ -80,7 +80,7 @@ func (d *gemsDB) ListRubyGemVersions(_ context.Context, _, name string) ([]*mode
 	return out, nil
 }
 
-func (d *gemsDB) YankRubyGem(_ context.Context, _, name, version string, yanked bool) error {
+func (d *gemsDB) YankRubyGem(_ context.Context, _, name, version, _ string, yanked bool) error {
 	for _, g := range d.gems {
 		if g.Name == name && g.Version == version {
 			g.Yanked = yanked

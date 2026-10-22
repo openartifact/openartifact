@@ -29,7 +29,8 @@ SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description
 FROM rubygems_gems rg
 JOIN blobs b ON b.id = rg.blob_id
 WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND (rg.name ILIKE $2 OR rg.description ILIKE $2 OR rg.summary ILIKE $2)
-ORDER BY rg.name ASC, rg.version DESC;
+ORDER BY rg.name ASC, rg.version DESC
+LIMIT 1000;
 
 -- name: YankRubyGem :exec
-UPDATE rubygems_gems SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND deleted_at IS NULL;
+UPDATE rubygems_gems SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND ($5::text = '' OR platform = $5) AND deleted_at IS NULL;

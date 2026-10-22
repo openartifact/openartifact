@@ -4078,11 +4078,12 @@ func (p *PostgresDB) SearchRubyGems(ctx context.Context, repoID, query string) (
 	return gems, nil
 }
 
-func (p *PostgresDB) YankRubyGem(ctx context.Context, repoID, name, version string, yanked bool) error {
+func (p *PostgresDB) YankRubyGem(ctx context.Context, repoID, name, version, platform string, yanked bool) error {
 	err := p.q.YankRubyGem(ctx, dbsqlc.YankRubyGemParams{
 		RepositoryID: repoID,
 		Name:         name,
 		Version:      version,
+		Column5:      platform,
 		Yanked:       yanked,
 	})
 	if err != nil {
@@ -4094,14 +4095,27 @@ func (p *PostgresDB) YankRubyGem(ctx context.Context, repoID, name, version stri
 
 // UpsertRawArtifact inserts or updates a raw artifact.
 func (p *PostgresDB) UpsertRawArtifact(ctx context.Context, artifact *models.RawArtifact) error {
+	_, err := p.writeRawArtifact(ctx, artifact, false)
+
+	return err
+}
+
+// InsertRawArtifactIfAbsent inserts a raw artifact only when no live row
+// exists at its path, in one atomic statement. It reports whether the row was
+// inserted; false means the path is taken and nothing was changed.
+func (p *PostgresDB) InsertRawArtifactIfAbsent(ctx context.Context, artifact *models.RawArtifact) (bool, error) {
+	return p.writeRawArtifact(ctx, artifact, true)
+}
+
+func (p *PostgresDB) writeRawArtifact(ctx context.Context, artifact *models.RawArtifact, ifAbsent bool) (bool, error) {
 	metadataJSON, err := json.Marshal(artifact.Metadata)
 	if err != nil {
-		return fmt.Errorf("failed to marshal metadata: %w", err)
+		return false, fmt.Errorf("failed to marshal metadata: %w", err)
 	}
 
 	blobID, err := p.upsertBlobWithMediaType(ctx, artifact.SHA256, artifact.BlobKey, artifact.ContentType, artifact.SizeBytes)
 	if err != nil {
-		return fmt.Errorf("failed to upsert blob for raw artifact: %w", err)
+		return false, fmt.Errorf("failed to upsert blob for raw artifact: %w", err)
 	}
 
 	// Callers (the raw PUT handler) leave the timestamps unset; storing the
@@ -4110,11 +4124,30 @@ func (p *PostgresDB) UpsertRawArtifact(ctx context.Context, artifact *models.Raw
 	if artifact.CreatedAt.IsZero() {
 		artifact.CreatedAt = now
 	}
+
 	if artifact.UpdatedAt.IsZero() {
 		artifact.UpdatedAt = now
 	}
 
-	if err := p.q.UpsertRawArtifact(ctx, dbsqlc.UpsertRawArtifactParams{
+	inserted := true
+
+	if ifAbsent {
+		n, err := p.q.InsertRawArtifactIfAbsent(ctx, dbsqlc.InsertRawArtifactIfAbsentParams{
+			ID:           artifact.ID,
+			RepositoryID: artifact.RepositoryID,
+			Path:         artifact.Path,
+			ContentType:  artifact.ContentType,
+			BlobID:       blobID,
+			Metadata:     json.RawMessage(metadataJSON),
+			CreatedAt:    artifact.CreatedAt,
+			UpdatedAt:    artifact.UpdatedAt,
+		})
+		if err != nil {
+			return false, fmt.Errorf("failed to insert raw artifact: %w", err)
+		}
+
+		inserted = n > 0
+	} else if err := p.q.UpsertRawArtifact(ctx, dbsqlc.UpsertRawArtifactParams{
 		ID:           artifact.ID,
 		RepositoryID: artifact.RepositoryID,
 		Path:         artifact.Path,
@@ -4124,12 +4157,12 @@ func (p *PostgresDB) UpsertRawArtifact(ctx context.Context, artifact *models.Raw
 		CreatedAt:    artifact.CreatedAt,
 		UpdatedAt:    artifact.UpdatedAt,
 	}); err != nil {
-		return fmt.Errorf("failed to upsert raw artifact: %w", err)
+		return false, fmt.Errorf("failed to upsert raw artifact: %w", err)
 	}
 
 	artifact.BlobID = blobID
 
-	return nil
+	return inserted, nil
 }
 
 // GetRawArtifact retrieves a raw artifact by repo ID and path.

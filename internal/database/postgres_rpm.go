@@ -44,6 +44,7 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 		       COALESCE(rp.url, ''), COALESCE(rp.vendor, ''), COALESCE(rp.group_name, ''),
 		       COALESCE(rp.packager, ''), COALESCE(rp.source_rpm, ''), COALESCE(rp.build_host, ''),
 		       COALESCE(EXTRACT(EPOCH FROM rp.build_time)::bigint, 0),
+		       EXTRACT(EPOCH FROM rp.created_at)::bigint,
 		       COALESCE(rp.package_size, 0), COALESCE(rp.installed_size, 0), COALESCE(rp.archive_size, 0),
 		       b.sha256, rp.header_start, rp.header_end, rp.rpm_extra
 		FROM rpm_packages rp
@@ -67,7 +68,7 @@ func (p *PostgresDB) ListRpmPackagesForMetadata(ctx context.Context, repoID stri
 			&pkg.Name, &pkg.Version, &pkg.Release, &pkg.Epoch, &pkg.Arch,
 			&pkg.Summary, &pkg.Description, &pkg.License, &pkg.URL,
 			&pkg.Vendor, &pkg.Group, &pkg.Packager, &pkg.SourceRPM, &pkg.BuildHost,
-			&pkg.BuildTime, &pkg.PackageSize, &pkg.InstalledSize, &pkg.ArchiveSize,
+			&pkg.BuildTime, &pkg.FileTime, &pkg.PackageSize, &pkg.InstalledSize, &pkg.ArchiveSize,
 			&pkg.SHA256, &pkg.HeaderStart, &pkg.HeaderEnd, &extra,
 		); err != nil {
 			return nil, fmt.Errorf("scan rpm package: %w", err)
