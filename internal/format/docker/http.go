@@ -427,7 +427,7 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 	// manifest so registry GC can tell what is still in use.
 	refs := ocimanifest.ParseRefs(body)
 
-	if !h.blobsExist(w, r, repo.ID, refs.Blobs) {
+	if !h.blobsExist(w, r, repo.ID, ocimanifest.PushedBlobs(body)) {
 		return
 	}
 

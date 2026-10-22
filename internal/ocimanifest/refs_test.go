@@ -53,3 +53,20 @@ func TestParseRefs(t *testing.T) {
 		})
 	}
 }
+
+func TestPushedBlobsSkipsForeignLayers(t *testing.T) {
+	body := `{"config":{"digest":"sha256:cfg"},"layers":[
+		{"digest":"sha256:a","mediaType":"application/vnd.oci.image.layer.v1.tar+gzip"},
+		{"digest":"sha256:f1","mediaType":"application/vnd.docker.image.rootfs.foreign.diff.tar.gzip"},
+		{"digest":"sha256:f2","mediaType":"application/vnd.oci.image.layer.nondistributable.v1.tar+gzip"},
+		{"digest":"sha256:f3","urls":["https://example.com/l"]}]}`
+
+	got := PushedBlobs([]byte(body))
+	if len(got) != 2 || got[0] != "sha256:cfg" || got[1] != "sha256:a" {
+		t.Fatalf("PushedBlobs = %v, want [sha256:cfg sha256:a]", got)
+	}
+
+	if refs := ParseRefs([]byte(body)); len(refs.Blobs) != 5 {
+		t.Fatalf("ParseRefs must still record every blob for GC, got %v", refs.Blobs)
+	}
+}

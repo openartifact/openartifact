@@ -8,12 +8,55 @@ package ocimanifest
 
 import (
 	"encoding/json"
+	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type descriptor struct {
-	Digest string `json:"digest"`
+	Digest    string   `json:"digest"`
+	MediaType string   `json:"mediaType"` //nolint:tagliatelle // OCI/Docker wire format is camelCase
+	URLs      []string `json:"urls"`
+}
+
+// foreign reports whether the layer's bytes live elsewhere (Windows base
+// layers and other non-distributable content): they are never pushed to the
+// registry, so the registry cannot be expected to store them.
+func (d descriptor) foreign() bool {
+	return len(d.URLs) > 0 ||
+		d.MediaType == "application/vnd.docker.image.rootfs.foreign.diff.tar.gzip" ||
+		strings.Contains(d.MediaType, ".nondistributable.")
+}
+
+// PushedBlobs returns the digests of the config and layer blobs a manifest
+// references whose bytes a client must push, i.e. excluding foreign and
+// non-distributable layers. Unparseable bodies yield none.
+func PushedBlobs(body []byte) []string {
+	var m manifestBody
+
+	if err := json.Unmarshal(body, &m); err != nil {
+		return nil
+	}
+
+	out := newSet()
+
+	if m.Config != nil {
+		out.add(m.Config.Digest)
+	}
+
+	for _, group := range [][]descriptor{m.Layers, m.Blobs} {
+		for _, d := range group {
+			if !d.foreign() {
+				out.add(d.Digest)
+			}
+		}
+	}
+
+	for _, l := range m.FSLayers {
+		out.add(l.BlobSum)
+	}
+
+	return out.list
 }
 
 // manifestBody is the union of the manifest shapes this registry stores:
