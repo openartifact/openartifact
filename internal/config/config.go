@@ -235,6 +235,7 @@ func defaultConfig() *Config {
 			MaxIdleConns:           5,
 			ConnMaxLifetimeMinutes: 30,
 			AuthCacheTTLMillis:     2000,
+			ConnectTimeout:         60 * time.Second,
 		},
 		Storage: storage.StorageConfig{
 			Type:                     "filesystem",
@@ -354,6 +355,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Database.MaxOpenConns, "DB_MAX_OPEN_CONNS")
 	overrideInt(&cfg.Database.MaxIdleConns, "DB_MAX_IDLE_CONNS")
 	overrideInt(&cfg.Database.ConnMaxLifetimeMinutes, "DB_CONN_MAX_LIFETIME_MINUTES")
+	overrideDuration(&cfg.Database.ConnectTimeout, "DB_CONNECT_TIMEOUT")
 	overrideInt(&cfg.Database.AuthCacheTTLMillis, "DB_AUTH_CACHE_TTL_MS")
 	overrideKeyValues(&cfg.Database.Options, "DB_OPTIONS")
 

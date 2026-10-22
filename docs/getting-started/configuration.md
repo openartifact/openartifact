@@ -93,6 +93,7 @@ PostgreSQL is the only supported database.
 | `DB_MAX_OPEN_CONNS` | `maxOpenConns` | `25` | Connection pool size |
 | `DB_MAX_IDLE_CONNS` | `maxIdleConns` | `5` | Warm connections kept by the pgx pool |
 | `DB_CONN_MAX_LIFETIME_MINUTES` | `connMaxLifetimeMinutes` | `30` | Maximum connection lifetime |
+| `DB_CONNECT_TIMEOUT` | `connectTimeout` | `60s` | How long startup retries the initial database connection (capped backoff, each wait logged at info) before exiting; `0` fails at the first error. Replaces the Helm chart's wait-for-database init container |
 | `DB_AUTH_CACHE_TTL_MS` | `authCacheTtlMs` | `2000` | In-memory cache of per-request auth lookups; changes made on this instance apply at once, other replicas see them within this time; `0` disables |
 | `DB_OPTIONS` | `options` | none | Extra libpq connection parameters; env form is comma-separated `key=value` pairs (`DB_OPTIONS=connect_timeout=5,application_name=oa`), merged over YAML keys |
 

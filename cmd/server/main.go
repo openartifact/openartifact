@@ -116,6 +116,7 @@ func run(args []string) error {
 	migrateFlag := flags.Bool("migrate", false, "run migrations and exit")
 	repairGomodFlag := flags.Bool("repair-gomod", false, "relink Go module zips damaged by the <=0.4.1 shared-blob bug, then exit")
 	versionFlag := flags.Bool("version", false, "print version, commit, build time and Go runtime, then exit")
+	healthcheckFlag := flags.Bool("healthcheck", false, "GET /health on 127.0.0.1 at the configured port and exit 0 on 200, 1 otherwise")
 	configFile := flags.String("config", os.Getenv("OPENARTIFACT_CONFIG"), "path to YAML config file")
 
 	if err := flags.Parse(args); err != nil {
@@ -131,6 +132,10 @@ func run(args []string) error {
 		fmt.Println(versionLine())
 
 		return nil
+	}
+
+	if *healthcheckFlag {
+		return runHealthcheck(*configFile)
 	}
 
 	// Handle 'verify' subcommand: openartifact-server verify config.yaml

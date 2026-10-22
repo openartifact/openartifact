@@ -90,7 +90,7 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 
 	configureSQLPool(db, cfg)
 
-	if err := db.PingContext(context.Background()); err != nil {
+	if err := waitForDatabase(context.Background(), cfg.ConnectTimeout, db.PingContext, sleepContext, log); err != nil {
 		_ = db.Close()
 
 		return nil, fmt.Errorf("failed to ping database: %w", err)

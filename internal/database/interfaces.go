@@ -621,6 +621,10 @@ type DatabaseConfig struct {
 	// memory. Writes through this process invalidate immediately; other
 	// replicas observe a change after at most this long. 0 disables the cache.
 	AuthCacheTTLMillis int `yaml:"authCacheTtlMs"`
+	// ConnectTimeout is how long startup keeps retrying the initial database
+	// connection (capped exponential backoff) before giving up. 0 fails at the
+	// first error.
+	ConnectTimeout time.Duration `yaml:"connectTimeout"`
 }
 
 // ComponentNameLister is implemented by stores that can list a repository's

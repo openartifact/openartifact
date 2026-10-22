@@ -34,6 +34,7 @@ func unreachableDBEnv(logPath string) []string {
 		"DB_HOST=127.0.0.1",
 		"DB_PORT=1",
 		"DB_SSLMODE=disable",
+		"DB_CONNECT_TIMEOUT=0",
 		"LOG_FORMAT=json",
 		"LOG_OUTPUT=" + logPath,
 		"OPENARTIFACT_SECRET_KEY=",

@@ -48,6 +48,10 @@ database:
   maxOpenConns: 25
   maxIdleConns: 5
   connMaxLifetimeMinutes: 30
+  # How long startup keeps retrying the initial database connection (capped
+  # exponential backoff) before exiting; 0 fails immediately
+  # (env: DB_CONNECT_TIMEOUT, e.g. 60s).
+  connectTimeout: 60s
   # In-memory cache for per-request auth lookups (token, user, groups,
   # permission targets, repository by name). Changes made through this
   # instance take effect immediately; other replicas see them after at most
