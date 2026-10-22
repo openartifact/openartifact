@@ -62,13 +62,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import AppButton from '../components/AppButton.vue'
 import { ref } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { changePassword, logout } from '../api/auth'
 import { useSessionStore } from '../stores/session'
+import { safeNextPath } from '../lib/safeNext'
 import FormField from '../components/FormField.vue'
 import { t } from '../i18n/en'
 
 const router = useRouter()
+const route = useRoute()
 const session = useSessionStore()
 
 const form = ref({ current_password: '', new_password: '', confirm_password: '' })
@@ -107,7 +109,7 @@ async function handleSubmit(): Promise<void> {
       await router.replace({ name: 'login' })
       return
     }
-    await router.replace('/')
+    await router.replace(safeNextPath(route.query.next))
   } catch (err: unknown) {
     errorMsg.value = err instanceof Error ? err.message : t('auth.passwordChangeFailed')
   } finally {

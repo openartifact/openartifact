@@ -376,13 +376,14 @@ function schedulePoll(): void {
 async function loadScans(silent = false): Promise<void> {
   const repo = selectedRepo.value
   clearTimeout(pollTimer)
+  const seq = ++loadSeq
+  if (!silent) loadingScans.value = true
   if (!repo) {
     scans.value = []
     loadError.value = ''
+    loadingScans.value = false
     return
   }
-  const seq = ++loadSeq
-  if (!silent) loadingScans.value = true
   try {
     const result = await listVulnScans(repo)
     if (seq !== loadSeq) return
@@ -449,7 +450,10 @@ async function toggleQuarantine(scan: VulnScan): Promise<void> {
   }
 }
 
-watch(selectedRepo, () => void loadScans())
+watch(selectedRepo, () => {
+  form.value = { artifactId: '', ecosystem: '' }
+  void loadScans()
+})
 onBeforeUnmount(() => {
   clearTimeout(pollTimer)
   loadSeq++

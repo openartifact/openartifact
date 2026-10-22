@@ -277,12 +277,13 @@ function statusLabel(status: string): string {
 
 async function loadScans(): Promise<void> {
   const repo = selectedRepo.value
+  const seq = ++loadSeq
   if (!repo) {
     scans.value = []
     loadError.value = ''
+    loadingScans.value = false
     return
   }
-  const seq = ++loadSeq
   loadingScans.value = true
   try {
     const result = await listSecretScans(repo)

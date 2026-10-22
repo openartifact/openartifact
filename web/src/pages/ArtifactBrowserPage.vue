@@ -64,6 +64,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
 
+    <!-- Truncation notice: listComponents caps at COMPONENT_MAX_PAGES pages -->
+    <div
+      v-if="truncated"
+      class="mb-4 flex items-center gap-2 px-3 py-2 rounded-md border border-warning/40 bg-warning-soft text-warning text-sm"
+      role="status"
+    >
+      <ExclamationTriangleIcon class="w-4 h-4 shrink-0" aria-hidden="true" />
+      <span>{{ t('browser.truncated').replace('{n}', String(items.length)).replace('{total}', String(total)) }}</span>
+    </div>
+
     <!-- Loading state -->
     <div v-if="loading && items.length === 0" class="py-16 flex flex-col items-center gap-3 text-muted">
       <ArrowPathIcon class="w-6 h-6 animate-spin" aria-hidden="true" />
@@ -269,6 +279,7 @@ const toasts = useToastStore()
 
 const repo = ref<Repository | null>(null)
 const items = ref<ComponentItem[]>([])
+const total = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const searchQuery = ref('')
@@ -344,7 +355,12 @@ function onDeleted(ids: string[]): void {
   const deleted = new Set(ids)
   items.value = items.value.filter((i) => !deleted.has(itemKey(i)))
   clearSelection()
+  if (ids.length === 0) return
   toasts.success(t('bulk.deleteSuccess').replace('{n}', String(ids.length)))
+  // After deleting the last rows of the last page, the current page may now be
+  // empty; step back to the last populated page.
+  const maxPage = Math.max(1, Math.ceil(items.value.length / limit))
+  if (page.value > maxPage) page.value = maxPage
 }
 
 function onBulkError(msg: string): void {
@@ -369,6 +385,8 @@ const filteredItems = computed(() => {
 })
 
 const sortKey = ref<'name' | 'created'>('name')
+
+const truncated = computed(() => total.value > items.value.length)
 
 const sortedItems = computed(() => {
   const list = [...filteredItems.value]
@@ -408,6 +426,7 @@ async function load(): Promise<void> {
     if (generation !== loadGeneration) return
     repo.value = repoData
     items.value = componentsData.items
+    total.value = componentsData.total
     selectedIds.value = new Set()
     page.value = 1
   } catch (err) {

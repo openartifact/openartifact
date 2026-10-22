@@ -32,6 +32,10 @@ const NO_REDIRECT_401 = new Set([
   '/api/v1/auth/me',
 ])
 
+// Concurrent 401s (e.g. a poll and a user action) must not each `router.push`
+// to login; they all await the same redirect.
+let redirecting: Promise<unknown> | null = null
+
 /**
  * Sends a same-origin API call with the standard headers (CSRF, XHR marker,
  * cookies) and handles an expired session: a 401 outside the auth probes
@@ -59,10 +63,13 @@ async function send(path: string, init: RequestInit): Promise<Response> {
     session.clearSession()
 
     const currentPath = window.location.pathname + window.location.search
-    if (currentPath !== '/login') {
+    if (currentPath !== '/login' && !redirecting) {
       const { default: router } = await import('../router')
-      await router.push({ name: 'login', query: { next: currentPath } })
+      redirecting = router.push({ name: 'login', query: { next: currentPath } }).finally(() => {
+        redirecting = null
+      })
     }
+    if (redirecting) await redirecting
 
     throw new ApiError('Session expired', 401, 'unauthorized')
   }
@@ -95,33 +102,4 @@ export async function request<T>(path: string, init: RequestInit = {}): Promise<
   const text = await res.text()
   if (!text) return undefined as T
   return JSON.parse(text) as T
-}
-
-/** Extracts the attachment filename from a Content-Disposition header value. */
-export function attachmentFilename(header: string | null): string | undefined {
-  if (!header) return undefined
-
-  const extended = /filename\*\s*=\s*(?:UTF-8|utf-8)''([^;]+)/.exec(header)
-  if (extended?.[1]) {
-    try {
-      return decodeURIComponent(extended[1].trim())
-    } catch {
-      // malformed escape: fall through to the plain filename
-    }
-  }
-
-  const plain = /filename\s*=\s*(?:"((?:[^"\\]|\\.)*)"|([^;]+))/.exec(header)
-  const value = plain?.[1] !== undefined ? plain[1].replace(/\\(.)/g, '$1') : plain?.[2]?.trim()
-  return value || undefined
-}
-
-/**
- * Fetches a binary response (file download). Errors surface as ApiError just
- * like request(); filename comes from the Content-Disposition header.
- */
-export async function requestBlob(path: string, init: RequestInit = {}): Promise<{ blob: Blob; filename?: string }> {
-  const res = await send(path, init)
-  if (!res.ok) throw await apiError(res)
-
-  return { blob: await res.blob(), filename: attachmentFilename(res.headers.get('content-disposition')) }
 }

@@ -474,12 +474,8 @@ async function deleteRepo() {
   }
 }
 
-async function download(pkg: PackageItem): Promise<void> {
-  try {
-    await downloadPackage(repoName.value, pkg)
-  } catch (err) {
-    toasts.error(t('repoDetail.downloadFailed'), err instanceof Error ? err.message : undefined)
-  }
+function download(pkg: PackageItem): void {
+  downloadPackage(repoName.value, pkg)
 }
 
 async function deletePkg(pkg: PackageItem): Promise<void> {

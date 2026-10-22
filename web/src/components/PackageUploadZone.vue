@@ -62,7 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import AppButton from './AppButton.vue'
 import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { useUpload, type UploadEntry, type UploadStatus } from '../composables/useUpload'
@@ -144,4 +144,8 @@ async function startFor(file: File): Promise<void> {
     }
   }
 }
+
+// Leaving the page aborts any in-flight uploads so they cannot keep running
+// (and toast) against a detached component.
+onBeforeUnmount(() => upload.reset())
 </script>

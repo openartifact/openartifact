@@ -425,12 +425,47 @@ const vulnerableCount = computed(() => allNodes.value.filter((n) => n.vulnerable
 
 // ─── Highlight Helpers ─────────────────────────────────────────────────────────
 
+// Precompute adjacency once per graph instead of scanning `links` per node on
+// every render (the old helpers were O(N·L) while highlighting).
+const outgoingByNode = computed(() => {
+  const m = new Map<string, GraphLink[]>()
+  for (const l of links.value) {
+    const arr = m.get(l.source)
+    if (arr) arr.push(l)
+    else m.set(l.source, [l])
+  }
+  return m
+})
+
+const incomingByNode = computed(() => {
+  const m = new Map<string, GraphLink[]>()
+  for (const l of links.value) {
+    const arr = m.get(l.target)
+    if (arr) arr.push(l)
+    else m.set(l.target, [l])
+  }
+  return m
+})
+
+const neighborsByNode = computed(() => {
+  const m = new Map<string, Set<string>>()
+  for (const l of links.value) {
+    let s = m.get(l.source)
+    if (!s) m.set(l.source, (s = new Set()))
+    s.add(l.target)
+    let t = m.get(l.target)
+    if (!t) m.set(l.target, (t = new Set()))
+    t.add(l.source)
+  }
+  return m
+})
+
 function outgoingEdges(nodeId: string): GraphLink[] {
-  return links.value.filter((l) => l.source === nodeId)
+  return outgoingByNode.value.get(nodeId) ?? []
 }
 
 function incomingEdges(nodeId: string): GraphLink[] {
-  return links.value.filter((l) => l.target === nodeId)
+  return incomingByNode.value.get(nodeId) ?? []
 }
 
 function isEdgeHighlighted(link: GraphLink): boolean {
@@ -441,11 +476,7 @@ function isEdgeHighlighted(link: GraphLink): boolean {
 function isNodeHighlighted(nodeId: string): boolean {
   if (!selectedNodeId.value) return true
   if (nodeId === selectedNodeId.value) return true
-  return links.value.some(
-    (l) =>
-      (l.source === selectedNodeId.value && l.target === nodeId) ||
-      (l.target === selectedNodeId.value && l.source === nodeId),
-  )
+  return neighborsByNode.value.get(selectedNodeId.value)?.has(nodeId) ?? false
 }
 
 function toggleNode(nodeId: string): void {
@@ -502,6 +533,7 @@ function onSbomChange(): void {
   if (selectedSbomId.value) {
     loadSbomDetail(selectedSbomId.value)
   } else {
+    detailGeneration++
     allPackages.value = []
     selectedNodeId.value = null
   }
@@ -525,7 +557,9 @@ function exportSvg(): void {
   link.href = url
   link.download = `${repoName.value}-dependency-graph.svg`
   link.click()
-  URL.revokeObjectURL(url)
+  // Some browsers (Safari, older Firefox) cancel the download when the blob URL
+  // is revoked in the same tick; defer it past the click.
+  setTimeout(() => URL.revokeObjectURL(url), 10_000)
 }
 
 // ─── Watchers ──────────────────────────────────────────────────────────────────

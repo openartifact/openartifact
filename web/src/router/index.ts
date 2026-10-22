@@ -4,6 +4,7 @@
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import { safeNextPath } from '../lib/safeNext'
 import type { CrumbSpec } from '../lib/crumbs'
 import type { TranslationKey } from '../i18n/en'
 
@@ -215,25 +216,25 @@ const routes: RouteRecordRaw[] = [
     path: '/security/vulns',
     name: 'security-vulns',
     component: () => import('../pages/security/VulnScanPage.vue'),
-    meta: { crumbs: securityTrail('sec.vuln.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.vuln.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/security/licenses',
     name: 'security-licenses',
     component: () => import('../pages/security/LicenseScanPage.vue'),
-    meta: { crumbs: securityTrail('sec.license.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.license.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/security/secrets',
     name: 'security-secrets',
     component: () => import('../pages/security/SecretScanPage.vue'),
-    meta: { crumbs: securityTrail('sec.secret.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.secret.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/security/ai-analysis',
     name: 'security-ai-analysis',
     component: () => import('../pages/security/AIAnalysisPage.vue'),
-    meta: { crumbs: securityTrail('sec.ai.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.ai.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
 
   // Settings
@@ -284,16 +285,35 @@ const router = createRouter({
   routes,
 })
 
-let sessionInitialized = false
+let initPromise: Promise<void> | null = null
 
 router.beforeEach(async (to) => {
   const session = useSessionStore()
 
-  if (!sessionInitialized) {
-    sessionInitialized = true
-    if (!session.isAuthenticated) {
-      await session.fetchMe()
+  // Initialise the session exactly once: a second navigation that arrives while
+  // the first probe is still in flight waits on the same promise instead of
+  // reading `isAuthenticated === false` and bouncing to login.
+  if (!initPromise) {
+    initPromise = session.fetchMe().catch(() => {
+      // Transient probe failure: let the next navigation retry rather than pinning
+      // the session to "signed out" forever.
+      initPromise = null
+    })
+  }
+  if (!session.ready) {
+    try {
+      await initPromise
+    } catch {
+      // Transient probe failure surfaced below: the guard redirects to login and
+      // the next navigation retries.
     }
+  }
+
+  // Signed-in users should not see the login form; send them to their intended
+  // destination (or the dashboard).
+  if (to.name === 'login' && session.isAuthenticated) {
+    const next = safeNextPath(to.query.next, '/')
+    return { path: next }
   }
 
   if (to.meta.requiresAuth && !session.isAuthenticated) {
@@ -308,7 +328,7 @@ router.beforeEach(async (to) => {
     to.name !== 'change-password' &&
     to.name !== 'login'
   ) {
-    return { name: 'change-password' }
+    return { name: 'change-password', query: { next: to.fullPath } }
   }
 
   // Already past the gate: don't let the change-password page show for users

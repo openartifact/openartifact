@@ -25,6 +25,16 @@ function hostOf(origin: string): string {
   }
 }
 
+/** Single-quotes a token so uploader-controlled names cannot inject shell syntax. */
+function shq(token: string): string {
+  return `'${token.replace(/'/g, `'\\''`)}'`
+}
+
+/** Encodes each path segment of a raw package path, preserving `/` separators. */
+function encodePath(pkg: string): string {
+  return pkg.split('/').map((segment) => encodeURIComponent(segment)).join('/')
+}
+
 /** Install/pull command for a package version, built from the real server origin. */
 export function pullCommand(
   format: string,
@@ -37,33 +47,33 @@ export function pullCommand(
   switch (format) {
     case 'docker':
       // The registry resolves the whole image name to a repository.
-      return `docker pull ${hostOf(origin)}/${repo}:${version}`
+      return `docker pull ${shq(`${hostOf(origin)}/${repo}`)}:${shq(version)}`
     case 'npm':
-      return `npm install ${pkg}@${version} --registry=${base}/`
+      return `npm install ${shq(pkg)}@${shq(version)} --registry=${base}/`
     case 'pypi':
-      return `pip install ${pkg}==${version} --index-url ${base}/simple/`
+      return `pip install ${shq(pkg)}==${shq(version)} --index-url ${base}/simple/`
     case 'maven':
-      return `mvn dependency:get -Dartifact=${pkg}:${version} -DremoteRepositories=${base}`
+      return `mvn dependency:get -Dartifact=${shq(`${pkg}:${version}`)} -DremoteRepositories=${base}`
     case 'helm':
-      return `helm pull ${pkg} --repo ${base} --version ${version}`
+      return `helm pull ${shq(pkg)} --repo ${base} --version ${shq(version)}`
     case 'cargo':
-      return `cargo install ${pkg} --version ${version} --index sparse+${base}/index/`
+      return `cargo install ${shq(pkg)} --version ${shq(version)} --index sparse+${base}/index/`
     case 'nuget':
-      return `dotnet add package ${pkg} --version ${version} --source ${base}/v3/index.json`
+      return `dotnet add package ${shq(pkg)} --version ${shq(version)} --source ${base}/v3/index.json`
     case 'go':
-      return `GOPROXY=${base} go get ${pkg}@${version}`
+      return `GOPROXY=${base} go get ${shq(pkg)}@${shq(version)}`
     case 'rubygems':
-      return `gem install ${pkg} -v ${version} --source ${base}/`
+      return `gem install ${shq(pkg)} -v ${shq(version)} --source ${base}/`
     case 'conda':
-      return `conda install -c ${base} ${pkg}=${version}`
+      return `conda install -c ${base} ${shq(pkg)}=${shq(version)}`
     case 'conan':
-      return `conan install --requires=${pkg}/${version} -r ${repo}`
+      return `conan install --requires=${shq(`${pkg}/${version}`)} -r ${shq(repo)}`
     case 'deb':
-      return `apt install ${pkg}=${version}`
+      return `apt install ${shq(pkg)}=${shq(version)}`
     case 'rpm':
-      return `dnf install ${pkg}-${version}`
+      return `dnf install ${shq(`${pkg}-${version}`)}`
     case 'raw':
-      return `curl -fO ${base}/${pkg}`
+      return `curl -fO ${base}/${encodePath(pkg)}`
     case 'sbt':
       return `resolvers += "${repo}" at "${base}"`
     case 'ivy':

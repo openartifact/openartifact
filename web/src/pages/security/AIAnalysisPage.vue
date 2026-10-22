@@ -456,13 +456,14 @@ async function fetchAll(repo: string): Promise<AIAnalysis[]> {
 async function loadAnalyses(silent = false): Promise<void> {
   const repo = selectedRepo.value
   clearTimeout(pollTimer)
+  const seq = ++loadSeq
+  if (!silent) loadingAnalyses.value = true
   if (!repo) {
     analyses.value = []
     loadError.value = ''
+    loadingAnalyses.value = false
     return
   }
-  const seq = ++loadSeq
-  if (!silent) loadingAnalyses.value = true
   try {
     const result = await fetchAll(repo)
     if (seq !== loadSeq) return

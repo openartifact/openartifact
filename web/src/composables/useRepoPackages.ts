@@ -30,9 +30,9 @@ export function useRepoPackages() {
 
   async function loadPackages(): Promise<void> {
     const mySeq = ++seq
+    packages.value = []
     const repo = selectedRepo.value
     if (!repo) {
-      packages.value = []
       return
     }
     try {

@@ -371,7 +371,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
 import { formatDate, formatDateTime } from '../lib/datetime'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ClipboardDocumentIcon,
@@ -525,8 +525,8 @@ async function deleteProp(key: string): Promise<void> {
   }
 }
 
-watch(activeTab, (tab) => {
-  if (tab === 'properties' && !propsLoading.value && artifactId.value) {
+watch([activeTab, artifactId], ([tab, id]) => {
+  if (tab === 'properties' && !propsLoading.value && id) {
     void loadProperties()
   }
 })
@@ -626,17 +626,22 @@ async function copySha(sha: string): Promise<void> {
   }
 }
 
+let copyTimer: ReturnType<typeof setTimeout> | undefined
+
 async function copyCommand(): Promise<void> {
   try {
     await navigator.clipboard.writeText(pullCommand.value)
     copied.value = true
-    setTimeout(() => {
+    clearTimeout(copyTimer)
+    copyTimer = setTimeout(() => {
       copied.value = false
     }, 1500)
   } catch {
     // best-effort
   }
 }
+
+onBeforeUnmount(() => clearTimeout(copyTimer))
 
 let loadGeneration = 0
 

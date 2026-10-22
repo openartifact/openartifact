@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, requestBlob } from './client'
+import { request } from './client'
 import type { Repository, RepositoryMember } from './generated/types.gen'
 
 export type { Repository, RepositoryMember }
@@ -109,22 +109,19 @@ export function listPackages(name: string, params?: { page?: number; limit?: num
 }
 
 /**
- * Downloads a listed package (any format) through the authenticated API and
- * hands it to the browser as a file. Rejects with ApiError on 4xx/5xx.
+ * Downloads a listed package (any format) by navigating the browser straight to
+ * the cookie-authenticated download URL. The server streams the blob with a
+ * `Content-Disposition: attachment` header, so large artifacts are never buffered
+ * in memory as a `Blob`.
  */
-export async function downloadPackage(repoName: string, pkg: Pick<PackageItem, 'id' | 'name' | 'version'>): Promise<void> {
-  const { blob, filename } = await requestBlob(
-    `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(pkg.id)}/download`,
-  )
+export function downloadPackage(repoName: string, pkg: Pick<PackageItem, 'id' | 'name' | 'version'>): void {
+  const href = `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(pkg.id)}/download`
 
-  const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
-  link.href = url
-  link.download = filename ?? (pkg.version ? `${pkg.name}-${pkg.version}` : pkg.name)
+  link.href = href
   document.body.appendChild(link)
   link.click()
   link.remove()
-  URL.revokeObjectURL(url)
 }
 
 export interface ComponentItem {

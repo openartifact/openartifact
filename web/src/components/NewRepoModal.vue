@@ -123,7 +123,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import { createRepository, listRepositories } from '../api/repositories'
+import { createRepository, listAllRepositories } from '../api/repositories'
 import { createProjectRepository } from '../api/projects'
 import type { Project } from '../api/projects'
 import { policyAllowsPublic, policyAllowsType, policyFormats, policyPrefix } from '../lib/projectPolicy'
@@ -214,7 +214,7 @@ watch(open, async (isOpen) => {
   upstreamPassword.value = ''
   members.value = []
   try {
-    existing.value = (await listRepositories({ limit: 100 })).repositories || []
+    existing.value = await listAllRepositories()
   } catch {
     existing.value = []
   }

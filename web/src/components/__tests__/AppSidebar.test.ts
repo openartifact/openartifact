@@ -98,11 +98,20 @@ describe('AppSidebar', () => {
     expect(wrapper.html()).not.toContain('/admin/projects')
   })
 
-  it('renders Security section links', () => {
+  it('renders Security section links for admins', () => {
+    session.user = makeUser({ is_admin: true })
     const { wrapper } = mountSidebar()
     expect(wrapper.text()).toContain('Vulnerabilities')
     expect(wrapper.text()).toContain('Licenses')
     expect(wrapper.text()).toContain('Secrets')
+  })
+
+  it('hides Security section for non-admins', () => {
+    session.user = makeUser({ is_admin: false })
+    const { wrapper } = mountSidebar()
+    expect(wrapper.text()).not.toContain('Vulnerabilities')
+    expect(wrapper.text()).not.toContain('Licenses')
+    expect(wrapper.text()).not.toContain('Secrets')
   })
 
   it('renders Settings section link', () => {

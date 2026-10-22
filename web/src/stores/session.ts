@@ -9,11 +9,13 @@ import { ErrorCodes } from '../api/error-codes'
 import type { UserExtended } from '../api/generated/types.gen'
 import type { ProjectMembership } from '../api/projects'
 import { atLeast } from '../lib/projectAccess'
+import { useToastStore } from './toast'
 
 /** The signed-in user as `/auth/me` returns it, with the caller's project roles. */
 export type User = UserExtended & { projects?: ProjectMembership[] }
 
 export const useSessionStore = defineStore('session', () => {
+  // `ready` is true once /auth/me has given a definitive answer (signed in or out).
   const ready = ref(false)
   const user = ref<User | null>(null)
 
@@ -36,9 +38,15 @@ export const useSessionStore = defineStore('session', () => {
     () => isAdmin.value || projects.value.some((p) => atLeast(p.role, 'maintainer')),
   )
 
+  /**
+   * Probes `/auth/me`. Only a definitive 401/403 signs the caller out. Transient
+   * failures (network, 5xx) rethrow and keep the current user, so the caller can
+   * retry instead of being treated as signed out.
+   */
   async function fetchMe(): Promise<void> {
     try {
       user.value = await request<User>('/api/v1/auth/me')
+      ready.value = true
     } catch (err) {
       if (
         err instanceof ApiError &&
@@ -48,16 +56,22 @@ export const useSessionStore = defineStore('session', () => {
         // RBAC middleware blocks all routes when must_change_password is set,
         // including /auth/me. Treat that as "authenticated but locked".
         user.value = { id: '', username: '', must_change_password: true }
-      } else {
-        user.value = null
+        ready.value = true
+        return
       }
-    } finally {
-      ready.value = true
+      if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
+        user.value = null
+        ready.value = true
+        return
+      }
+      throw err
     }
   }
 
+  /** Drops the signed-in user and every per-session UI state that would leak into the next login. */
   function clearSession(): void {
     user.value = null
+    useToastStore().clear()
   }
 
   return { user, ready, isAuthenticated, isAdmin, canCreateRepo, mustChangePassword, projects, fetchMe, clearSession }

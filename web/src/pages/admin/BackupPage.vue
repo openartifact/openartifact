@@ -275,6 +275,7 @@ const loadError = ref('')
 const polling = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
 let inFlight = false
+let unmounted = false
 
 const createModalOpen = ref(false)
 const creating = ref(false)
@@ -384,6 +385,7 @@ async function load(): Promise<void> {
     inFlight = false
   }
 
+  if (unmounted) return
   if (hasActiveJobs.value) startPolling()
   else stopPolling()
 }
@@ -464,5 +466,8 @@ async function confirmRestore(): Promise<void> {
 }
 
 onMounted(load)
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  unmounted = true
+  stopPolling()
+})
 </script>

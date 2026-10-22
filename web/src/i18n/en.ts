@@ -361,6 +361,7 @@ const base = {
   'browser.noMatchHint': 'Try a different search term.',
   'browser.selected': 'selected',
   'browser.selectAll': 'Select all on page',
+  'browser.truncated': 'Showing {n} of {total} artifacts — this repository has more than the first {n}, so search and totals past this point are incomplete.',
 
   // Dependency Graph
   'graph.title': 'Dependency graph',

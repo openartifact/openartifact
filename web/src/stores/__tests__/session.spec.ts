@@ -258,18 +258,18 @@ describe('useSessionStore', () => {
     expect(store.user).toBeNull()
   })
 
-  it('fetchMe() handles fetch errors gracefully', async () => {
+  it('fetchMe() rethrows on fetch errors and keeps the current user', async () => {
     const store = useSessionStore()
     store.user = { id: '1', username: 'testuser' } as User
 
     fetchMock.mockRejectedValueOnce(new Error('Network error'))
 
-    await store.fetchMe()
+    await expect(store.fetchMe()).rejects.toThrow('Network error')
 
-    expect(store.user).toBeNull()
+    expect(store.user).toEqual({ id: '1', username: 'testuser' })
   })
 
-  it('fetchMe() ignores non-2xx responses that are not 401 or 403', async () => {
+  it('fetchMe() rethrows non-2xx responses that are not 401 or 403', async () => {
     const store = useSessionStore()
 
     fetchMock.mockResolvedValueOnce(mk({
@@ -277,7 +277,7 @@ describe('useSessionStore', () => {
       ok: false,
     }) as unknown as Response)
 
-    await store.fetchMe()
+    await expect(store.fetchMe()).rejects.toBeInstanceOf(Error)
 
     expect(store.user).toBeNull()
   })

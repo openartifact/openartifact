@@ -231,10 +231,19 @@ async function handleSubmit(): Promise<void> {
     const user = await login(form.value)
     session.user = user
     // Fetch full profile (includes is_admin) before navigating so the
-    // sidebar admin section is visible immediately without a reload.
-    await session.fetchMe()
+    // sidebar admin section is visible immediately without a reload. A
+    // transient failure here must not bounce the just-authenticated user:
+    // the user object from `login` is already authoritative for the guard.
+    try {
+      await session.fetchMe()
+    } catch {
+      // profile probe failed transiently; the next navigation re-probes.
+    }
     if (session.mustChangePassword) {
-      await router.push({ name: 'change-password' })
+      await router.push({
+        name: 'change-password',
+        query: typeof route.query.next === 'string' ? { next: route.query.next } : {},
+      })
       return
     }
     const next = typeof route.query.next === 'string' ? route.query.next : '/'

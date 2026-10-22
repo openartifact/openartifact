@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ref } from 'vue'
+import { ref, onScopeDispose, getCurrentScope } from 'vue'
 import { search } from '../api/search'
 import type { SearchPackageHit, SearchRepoHit } from '../api/search'
 
@@ -58,6 +58,14 @@ export function useSearch() {
     searched.value = false
     clearTimeout(debounceTimer)
     debounceTimer = undefined
+  }
+
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
+      requestId++
+      clearTimeout(debounceTimer)
+      debounceTimer = undefined
+    })
   }
 
   return { query, repoResults, packageResults, loading, searched, error, scheduleSearch, execute, clear }

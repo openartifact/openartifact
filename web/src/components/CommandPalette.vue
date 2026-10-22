@@ -133,7 +133,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Dialog,
@@ -240,4 +240,6 @@ async function onSelect(key: string | null): Promise<void> {
     await router.push(`/repos/${encodeURIComponent(repo.name)}`)
   }
 }
+
+onBeforeUnmount(() => resetPending())
 </script>

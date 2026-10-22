@@ -132,6 +132,8 @@ const loadError = ref('')
 const page = ref(1)
 const toasts = useToastStore()
 
+let loadSeq = 0
+
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 
 // The token payload carries only the owner's user id; show the username when known.
@@ -148,17 +150,20 @@ function isExpired(date?: string): boolean {
 }
 
 async function load(): Promise<void> {
+  const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
   try {
     const res = await listTokens({ page: page.value, limit: PAGE_SIZE })
+    if (seq !== loadSeq) return
     tokens.value = res.items as ApiToken[]
     total.value = res.total
   } catch (err) {
+    if (seq !== loadSeq) return
     loadError.value = err instanceof Error ? err.message : t('adm.tokens.loadFailed')
     toasts.error(loadError.value)
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 
@@ -174,6 +179,8 @@ async function confirmRevoke(): Promise<void> {
     toasts.success(t('adm.tokens.revoked'))
     revokeTarget.value = null
     await load()
+    // If the last row of the last page was just revoked, step back a page.
+    if (page.value > pageCount.value) page.value = pageCount.value
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.tokens.revokeFailed'))
   } finally {
