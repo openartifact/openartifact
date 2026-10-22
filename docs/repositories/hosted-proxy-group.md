@@ -14,9 +14,10 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 |---|---|---|---|
 | maven | yes | yes | yes |
 | raw | yes | yes | yes |
+| pypi | yes | yes | yes |
 | deb | yes | yes | no |
 | rpm | yes | yes | no |
-| npm, docker, helm, pypi, nuget, go, cargo, rubygems, conda, conan, ivy, sbt | yes | no | no |
+| npm, docker, helm, nuget, go, cargo, rubygems, conda, conan, ivy, sbt | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Deb and RPM groups are rejected because their `Packages`/`Release`/`repodata` metadata is generated per repository and cannot be merged across members. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -49,7 +50,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 |---|---|---|
 | `name`, `format`, `description`, `public` | all | `public` grants anonymous read ([see below](#public-repositories-and-rbac)). |
 | `repo_type` | all | `hosted` (default), `proxy`, `group`. Any other value: `400`. |
-| `upstream_url` | proxy (required) | Plain `http(s)` base URL. |
+| `upstream_url` | proxy (required; pypi defaults to `https://pypi.org/simple`) | Plain `http(s)` base URL. |
 | `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream. Stored encrypted, never returned. |
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
@@ -82,8 +83,8 @@ Requests are mirrored by path from `upstream_url`. A file is fetched on first re
 
 ### Cache TTLs
 
-- `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, and everything in raw repositories.
-- Released Maven artifacts and `.deb`/`.udeb`/`.rpm` files are immutable once cached and never revalidated.
+- `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, and everything in raw repositories.
+- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`) are immutable once cached and never revalidated.
 - An upstream 404/410 is cached for `negative_cache_ttl_seconds` and drops any cached copy of the file (it is never served stale).
 
 ### Upstream failures and serve-stale
@@ -100,6 +101,17 @@ The proxy cache worker runs every 5 minutes and deletes entries expired by more 
 - Cache hits do not update `hit_count` or `last_hit_at`: that would add a database write to every download.
 - Quarantined files answer `403` (`ARTIFACT_QUARANTINED`) like hosted ones.
 
+### PyPI proxies
+
+A pypi proxy is not a path mirror. `upstream_url` is the simple index (default `https://pypi.org/simple`); clients use `pip install --index-url HOST/repos/PROXY/simple/ <package>`.
+
+- `GET /simple/` and `GET /simple/<project>/` are fetched from the upstream (PEP 691 JSON preferred, HTML accepted), cached under `cache_ttl_seconds`, and served stale when the upstream is down (see above). Names are normalized per PEP 503 before the upstream is asked; names that are not plain `[a-z0-9-]` are `404`.
+- The client gets HTML or PEP 691 JSON by `Accept` negotiation (HTML when no preference, `406` when neither is acceptable), independent of what the upstream spoke. The page cache holds the upstream document; pages are re-rendered per request, so `Vary: Accept` and a per-serialization `ETag` apply.
+- Every file link is rewritten to `/repos/PROXY/files/<project>/<filename>`. `#sha256=…`, `data-requires-python`, `data-core-metadata` / `data-dist-info-metadata` (and the JSON equivalents), yanked state, size and upload time are preserved; the real upstream URL is never exposed and never taken from the request. The OpenArtifact download resolves the filename in the cached project page, so only files the upstream lists can be fetched. Files with unsafe names are dropped from the page. GPG signatures (`.asc`) are not mirrored.
+- A distribution is fetched on first download, hashed while spooling and compared with the sha256 the index advertises (and `.metadata` with the metadata hash); a mismatch is `502`, nothing is stored. A file with no sha256 in the index is cached unverified. Cached files are immutable, so a second install works with the upstream down.
+- The upstream's Basic credentials go only to the upstream's own origin: files hosted on another origin (for example `files.pythonhosted.org`) are fetched without them.
+- Uploads (`twine upload` to `/legacy/`) are `405`.
+
 ### Upstream URL, SSRF and credentials
 
 `upstream_url` must be a plain `http(s)` base URL (no credentials, query or fragment); credentials go in `upstream_username`/`upstream_password`. It passes the same SSRF validation as webhooks, at configuration time and on every fetch and redirect: loopback, private and link-local addresses are refused. Set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` only for internal upstreams; the cloud metadata range (169.254.x) stays blocked. See [`../../.env.example`](../../.env.example).
@@ -111,7 +123,8 @@ A group is an ordered list of hosted and proxy members of the same format. Group
 - The first member that has the requested file answers. A member answering 404 is passed over, as is one failing with 5xx; when no member has the file the group answers `404`, or `502` if a member failed (so a client does not cache "does not exist" for a file a broken member might have).
 - Each member is authorized for the caller as if requested directly (action `read`). A member the caller cannot read behaves like one without the file, so a public group never exposes a private member's files.
 - Maven `maven-metadata.xml` (and its `.md5/.sha1/.sha256/.sha512` checksums) is merged across all readable members: versions are united and ordered, `latest`/`release`/`lastUpdated` recomputed. With one contributing member its document is served unchanged; an erroring member is ignored while another contributes.
-- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw.
+- A pypi group merges `GET /simple/` (union of project names) and `GET /simple/<project>/` across readable hosted and pypi proxy members: the file list is the union by filename, and when several members list the same filename the earliest member wins. Links are rewritten to `/repos/GROUP/files/<project>/<filename>`, and a download is resolved first-hit in member order, so it comes from the member whose entry was listed. A member failing while another contributes is ignored, but the partial page is served with `Cache-Control: no-store`; with no contributor the group answers `404`, or `502` if a member failed. The group answers HTML or PEP 691 JSON by `Accept`, like a proxy.
+- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI.
 
 ## Public repositories and RBAC
 

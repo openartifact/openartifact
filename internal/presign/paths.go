@@ -30,6 +30,10 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasSuffix(base, ".rpm") || strings.HasSuffix(base, ".drpm")
 	case "raw":
 		return true
+	case "pypi":
+		// Distribution files only; the PEP 658 .metadata siblings and the
+		// simple index pages are streamed.
+		return strings.HasPrefix(relPath, "files/") && !strings.HasSuffix(base, ".metadata")
 	default:
 		return false
 	}

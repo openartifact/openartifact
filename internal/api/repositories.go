@@ -566,6 +566,10 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 	switch repoType {
 	case "proxy":
 		if body.UpstreamURL == "" {
+			body.UpstreamURL = repotype.DefaultUpstreamURL(body.Format)
+		}
+
+		if body.UpstreamURL == "" {
 			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_url is required for proxy repositories")
 			return
 		}

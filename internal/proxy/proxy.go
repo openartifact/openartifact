@@ -11,6 +11,7 @@
 package proxy
 
 import (
+	"cmp"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -70,6 +71,11 @@ var (
 	// broke the transfer. Refusals that signal misconfiguration (401/403, an
 	// oversized file, a blocked address) are plain errUpstream.
 	errUpstreamDown = fmt.Errorf("%w: unavailable", errUpstream)
+
+	// errVerify is an upstream body that failed its integrity check (checksum
+	// or format): the upstream answered, wrongly, so no stale copy is served
+	// in its place.
+	errVerify = fmt.Errorf("%w: integrity check failed", errUpstream)
 )
 
 // staleWarning marks a response served from an expired cache entry
@@ -117,6 +123,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
+	if repo.Format == "pypi" {
+		s.servePyPI(w, r, repo, relPath)
+		return
+	}
+
 	key, ok := CleanPath(relPath)
 	if !ok {
 		http.NotFound(w, r)
@@ -129,6 +140,15 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
+	s.serveResolved(w, r, repo, key, res, func() (*resolution, error) {
+		return s.resolve(r.Context(), repo, key)
+	})
+}
+
+// serveResolved streams the cached file of res to the client after the
+// quarantine check. refetch resolves key again; it is used once when the cache
+// row outlived its blob.
+func (s *Service) serveResolved(w http.ResponseWriter, r *http.Request, repo *models.Repository, key string, res *resolution, refetch func() (*resolution, error)) {
 	entry, fromCache := res.entry, res.fromCache
 
 	if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID)...) {
@@ -160,7 +180,7 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 			s.log.Errorw("failed to drop stale proxy cache entry", "repo", repo.Name, "path", key, "error", derr)
 		}
 
-		res, err = s.resolve(r.Context(), repo, key)
+		res, err = refetch()
 		if err != nil {
 			s.writeResolveError(w, r, err)
 			return
@@ -249,6 +269,17 @@ type resolution struct {
 // it is within the repository's max-stale window. errNotFound is returned for
 // an upstream 404 (negatively cached).
 func (s *Service) resolve(ctx context.Context, repo *models.Repository, key string) (*resolution, error) {
+	return s.resolveWith(ctx, repo, key, func(fctx context.Context) (*models.ProxyCacheEntry, error) {
+		return s.fetch(fctx, repo, key)
+	})
+}
+
+// fetchFunc downloads and caches one key; ctx is the flight's context.
+type fetchFunc func(ctx context.Context) (*models.ProxyCacheEntry, error)
+
+// resolveWith is resolve with a custom upstream fetch (formats whose upstream
+// URL is not simply the repository URL plus key).
+func (s *Service) resolveWith(ctx context.Context, repo *models.Repository, key string, fetch fetchFunc) (*resolution, error) {
 	fresh, _, err := s.lookup(ctx, repo, key)
 	if err != nil {
 		return nil, err
@@ -275,7 +306,7 @@ func (s *Service) resolve(ctx context.Context, repo *models.Repository, key stri
 			return &resolution{entry: fresh, fromCache: true}, nil
 		}
 
-		entry, ferr := s.fetch(fctx, repo, key)
+		entry, ferr := fetch(fctx)
 		if ferr == nil {
 			return &resolution{entry: entry}, nil
 		}
@@ -353,12 +384,33 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 		return nil, errInternal
 	}
 
+	return s.fetchURL(ctx, repo, key, target, fetchOpts{})
+}
+
+// fetchOpts tunes one upstream fetch.
+type fetchOpts struct {
+	// accept overrides the Accept request header (default "*/*").
+	accept string
+	// noAuth withholds the repository's upstream credentials, for targets
+	// outside the configured upstream host.
+	noAuth bool
+	// wantSHA256, when set, is the lowercase hex digest the body must have;
+	// a different body is refused and not cached.
+	wantSHA256 string
+	// verify, when set, inspects the spooled body before it is stored; an
+	// error refuses the body. The spool may be read freely: it is rewound
+	// afterwards.
+	verify func(spool io.ReadSeeker) error
+}
+
+// fetchURL is fetch for an explicit target URL.
+func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, target string, o fetchOpts) (*models.ProxyCacheEntry, error) {
 	if verr := netutil.ValidateOutboundURLContext(ctx, target); verr != nil {
 		s.log.Warnw("proxy upstream rejected by outbound URL policy", "repo", repo.Name, "error", verr)
 		return nil, errUpstream
 	}
 
-	req, err := s.newUpstreamRequest(ctx, repo, target)
+	req, err := s.newUpstreamRequest(ctx, repo, target, o)
 	if err != nil {
 		return nil, err
 	}
@@ -382,10 +434,10 @@ func (s *Service) fetch(ctx context.Context, repo *models.Repository, key string
 		return nil, errUpstream
 	}
 
-	return s.store(ctx, repo, key, resp)
+	return s.store(ctx, repo, key, resp, o)
 }
 
-func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repository, target string) (*http.Request, error) {
+func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repository, target string, o fetchOpts) (*http.Request, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	if err != nil {
 		s.log.Errorw("failed to build proxy upstream request", "repo", repo.Name, "error", err)
@@ -393,11 +445,11 @@ func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repositor
 	}
 
 	req.Header.Set("User-Agent", "OpenArtifact-Proxy")
-	req.Header.Set("Accept", "*/*")
+	req.Header.Set("Accept", cmp.Or(o.accept, "*/*"))
 	// Mirror bytes exactly: never let the transport transparently decompress.
 	req.Header.Set("Accept-Encoding", "identity")
 
-	if repo.UpstreamUsername != "" {
+	if repo.UpstreamUsername != "" && !o.noAuth {
 		password := ""
 
 		if repo.UpstreamPasswordEnc != "" {
@@ -416,7 +468,7 @@ func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repositor
 
 // store spools the response, enforcing the size limit, then writes the blob
 // and cache entry under the blob lock.
-func (s *Service) store(ctx context.Context, repo *models.Repository, key string, resp *http.Response) (*models.ProxyCacheEntry, error) {
+func (s *Service) store(ctx context.Context, repo *models.Repository, key string, resp *http.Response, o fetchOpts) (*models.ProxyCacheEntry, error) {
 	if resp.ContentLength > s.maxBody {
 		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
 		return nil, errUpstream
@@ -455,6 +507,25 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 	}
 
 	sum := hex.EncodeToString(hasher.Sum(nil))
+
+	if o.wantSHA256 != "" && !strings.EqualFold(o.wantSHA256, sum) {
+		s.log.Warnw("proxy upstream file does not match its published checksum, refusing",
+			"repo", repo.Name, "path", key, "want_sha256", o.wantSHA256, "got_sha256", sum)
+
+		return nil, errVerify
+	}
+
+	if o.verify != nil {
+		if _, err := spool.Seek(0, io.SeekStart); err != nil {
+			s.log.Errorw("failed to rewind proxy spool file", "error", err)
+			return nil, errInternal
+		}
+
+		if verr := o.verify(spool); verr != nil {
+			s.log.Warnw("proxy upstream file failed verification, refusing", "repo", repo.Name, "path", key, "error", verr)
+			return nil, errVerify
+		}
+	}
 
 	if _, err := spool.Seek(0, io.SeekStart); err != nil {
 		s.log.Errorw("failed to rewind proxy spool file", "error", err)
@@ -568,6 +639,9 @@ func Immutable(format, key string) bool {
 		return strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb")
 	case "rpm":
 		return strings.HasSuffix(name, ".rpm")
+	case "pypi":
+		// Distribution files (and their PEP 658 metadata), not the index pages.
+		return strings.HasPrefix(key, "files/")
 	}
 
 	return false

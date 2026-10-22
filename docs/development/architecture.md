@@ -24,6 +24,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/worker` | Background workers: per-format metadata regeneration, cleanup, Docker registry GC, proxy cache, auth purge, AI analysis |
 | `internal/repodispatch` | Chi middleware that serves proxy and group repositories in front of the per-format routes |
 | `internal/proxy`, `internal/group` | Proxy-repository fetch/cache service; group (ordered, read-only merge of members) service |
+| `internal/pypisimple` | PyPI simple API (PEP 503/691) parsing, rendering, content negotiation and path/name rules shared by the pypi proxy and group |
 | `internal/repotype` | Which formats may be proxy or group repositories (shared by repo creation and dispatch) |
 | `internal/ocipath` | Parses `/v2/<name>/...` paths; shared by RBAC and the docker handler so both agree on the repository |
 | `internal/importmeta` | Admin-only `X-OA-Import-Created-At` header that preserves origin timestamps during migrations |
@@ -74,8 +75,8 @@ RBAC is the authorization gate: `/api/v1/*` maps to the `manage` action, `/repos
 Every repo-scoped format handler registers **relative** routes on the single `/repos/{name}` subrouter in `cmd/server/main.go` (`RegisterRepoRoutes(r)`). Never register an absolute `/repos/{name}/...` route on `authedAPI`: the subrouter mount shadows it (404) or the route hijacks the subrouter.
 
 - Routes that need the same pattern are dispatched explicitly. `PUT /*` is shared by npm publish and GOPROXY upload: the catch-all calls `gomodHTTP.HandlePut` when `formatgomod.IsUploadPath` matches the tail, `npmUpload.HandlePublish` otherwise.
-- Formats whose wildcard paths would shadow others are mounted on isolated prefixes: `/repos/raw/{name}`, `/repos/maven/{name}`, `/repos/sbt/{name}`, `/repos/ivy/{name}`. All `/repos/...` mounts except sbt and Ivy sit behind `repodispatch`. Proxy repositories are supported for maven, deb, rpm and raw; groups for maven and raw (`internal/repotype`). sbt and Ivy are hosted-only.
-- Group repositories read hosted members through in-memory routers of the same Maven and raw handlers.
+- Formats whose wildcard paths would shadow others are mounted on isolated prefixes: `/repos/raw/{name}`, `/repos/maven/{name}`, `/repos/sbt/{name}`, `/repos/ivy/{name}`. All `/repos/...` mounts except sbt and Ivy sit behind `repodispatch`. Proxy repositories are supported for maven, deb, rpm, pypi and raw; groups for maven, pypi and raw (`internal/repotype`). sbt and Ivy are hosted-only.
+- Group repositories read hosted members through in-memory routers of the same Maven, PyPI and raw handlers.
 - `cmd/server/routes_test.go` guards the registration order against chi `Mount()` panics.
 
 ## Storage and database

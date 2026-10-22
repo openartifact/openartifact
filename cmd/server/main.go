@@ -769,8 +769,12 @@ func run(args []string) error {
 	mavenHTTP.RegisterRepoRoutes(mavenHosted)
 	rawHTTP.RegisterRepoRoutes(rawHosted)
 
+	pypiHosted := chi.NewRouter()
+	pypiHTTP.RegisterRepoRoutes(pypiHosted)
+
 	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore), evaluator, map[string]http.Handler{
 		"maven": mavenHosted,
+		"pypi":  pypiHosted,
 		"raw":   rawHosted,
 	})
 

@@ -98,7 +98,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi"} {
 		db := newProxyGroupDB()
 		rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy","upstream_url":"https://93.184.216.34/repo/","upstream_username":"u","upstream_password":"p"}`)
 
@@ -114,6 +114,22 @@ func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
 		if !strings.Contains(rw.Body.String(), `"upstream_url":"https://93.184.216.34/repo/"`) {
 			t.Errorf("%s: response lacks upstream_url: %s", format, rw.Body.String())
 		}
+	}
+}
+
+func TestCreateProxyDefaultUpstream(t *testing.T) {
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "")
+
+	db := newProxyGroupDB()
+	if rw := createRepo(t, db, `{"name":"p","format":"pypi","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
+		db.created == nil || db.created.UpstreamURL != "https://pypi.org/simple" {
+		t.Errorf("pypi proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
+	}
+
+	// Formats without a well-known public upstream still require one.
+	db = newProxyGroupDB()
+	if rw := createRepo(t, db, `{"name":"p","format":"maven","repo_type":"proxy"}`); rw.Code != http.StatusBadRequest || db.created != nil {
+		t.Errorf("maven proxy without upstream_url: status %d body %s", rw.Code, rw.Body.String())
 	}
 }
 

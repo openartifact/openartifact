@@ -74,6 +74,10 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 		}
 	}
 
+	if grp.Format == "pypi" && h.servePyPI(w, r, grp, readable, relPath, be) {
+		return
+	}
+
 	h.serveFirstHit(w, r, readable, relPath, be)
 }
 
@@ -109,11 +113,17 @@ func (h *Handler) members(r *http.Request, grp *models.Repository) ([]*models.Re
 // answers 404, or 502 if a member failed (so a client does not cache "does not
 // exist" for a file a broken member might have).
 func (h *Handler) serveFirstHit(w http.ResponseWriter, r *http.Request, members []*models.Repository, relPath string, be Backend) {
+	h.serveFirstHitAs(w, r, members, func(*models.Repository) string { return relPath }, be)
+}
+
+// serveFirstHitAs is serveFirstHit for formats whose member paths differ by
+// member type: pathFor returns the path to ask each member for.
+func (h *Handler) serveFirstHitAs(w http.ResponseWriter, r *http.Request, members []*models.Repository, pathFor func(*models.Repository) string, be Backend) {
 	memberFailed := false
 
 	for _, m := range members {
 		pw := newProbeWriter(w)
-		be.ServeMember(pw, r, m, relPath)
+		be.ServeMember(pw, r, m, pathFor(m))
 
 		switch {
 		case pw.committed:

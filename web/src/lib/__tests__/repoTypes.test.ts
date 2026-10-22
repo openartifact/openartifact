@@ -10,11 +10,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to deb, maven, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['maven', 'deb', 'rpm', 'raw'])
+  it('restricts proxy to deb, maven, pypi, raw, rpm in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['pypi', 'maven', 'deb', 'rpm', 'raw'])
   })
-  it('restricts group to maven and raw', () => {
-    expect(allowedFormats('group')).toEqual(['maven', 'raw'])
+  it('restricts group to maven, pypi and raw', () => {
+    expect(allowedFormats('group')).toEqual(['pypi', 'maven', 'raw'])
     expect(isFormatAllowed('group', 'deb')).toBe(false)
     expect(isFormatAllowed('group', 'rpm')).toBe(false)
   })
@@ -30,8 +30,8 @@ describe('coerceFormat', () => {
     expect(coerceFormat('hosted', 'docker')).toBe('docker')
   })
   it('falls back to the first allowed format when unsupported', () => {
-    expect(coerceFormat('proxy', 'docker')).toBe('maven')
-    expect(coerceFormat('group', 'deb')).toBe('maven')
+    expect(coerceFormat('proxy', 'docker')).toBe(allowedFormats('proxy')[0])
+    expect(coerceFormat('group', 'deb')).toBe(allowedFormats('group')[0])
   })
 })
 

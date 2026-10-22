@@ -13,7 +13,7 @@ Hosted Python package index: PEP 503 simple index for `pip`, legacy upload API f
 | Format id | `pypi` |
 | Index URL | `HOST/repos/REPO/simple/` |
 | Upload URL | `HOST/repos/REPO/legacy/` |
-| Repository types | hosted only ([details](../repositories/hosted-proxy-group.md)) |
+| Repository types | hosted, proxy, group ([details](../repositories/hosted-proxy-group.md)) |
 
 ## Client setup
 
@@ -67,6 +67,13 @@ Package names are normalized (lowercase, each `_` and `.` becomes `-`) on upload
 - A file name that already exists in the repository is `409 file already exists`: distributions are immutable, bump the version instead.
 - The uploaded file is read fully into memory to compute its SHA-256 and there is no explicit size cap on the upload; storage quotas are not enforced for PyPI.
 - Downloads of quarantined files are refused.
+
+## Proxy and group
+
+- **Proxy:** `pip install --index-url HOST/repos/PROXY/simple/ <package>` fetches the simple pages from `upstream_url` (default `https://pypi.org/simple`), rewrites every file link to `HOST/repos/PROXY/files/<project>/<filename>` keeping the hash, `requires-python`, metadata and yanked data, and caches pages (for `cache_ttl_seconds`, served stale when the upstream is down) and distribution files (immutable, verified against the index sha256). HTML and PEP 691 JSON are both served, chosen by `Accept`. Uploads are `405`.
+- **Group:** an ordered list of hosted and proxy pypi members. `simple/` and `simple/<project>/` are merged across members (union by filename, the first member wins a duplicate) and linked to the group; files are served from the first member that has them. Use `--index-url HOST/repos/GROUP/simple/`.
+
+Details, including failure behavior and credentials: [hosted, proxy, group](../repositories/hosted-proxy-group.md#pypi-proxies).
 
 ## Signing
 
