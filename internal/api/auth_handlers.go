@@ -158,13 +158,11 @@ func (l *slidingWindowLimiter) recordLocked(key string, now time.Time) {
 	l.sweep(now)
 
 	hits := l.live(key, now)
-	if hits == nil && len(l.events) >= l.maxKeys {
-		// Still full after sweeping expired keys: evict an arbitrary
-		// entry (map order is random) rather than grow without bound.
-		for victim := range l.events {
-			delete(l.events, victim)
-			break
-		}
+	if hits == nil && len(l.events) >= l.maxKeys && !l.evictUnlockedLocked() {
+		// Full of keys that are all at their limit (locked out): never evict
+		// those, or an attacker could flush a victim's lockout. Not tracking
+		// the new key is the lesser evil.
+		return
 	}
 
 	hits = append(hits, now)
@@ -175,6 +173,33 @@ func (l *slidingWindowLimiter) recordLocked(key string, now time.Time) {
 	}
 
 	l.events[key] = hits
+}
+
+// evictUnlockedLocked removes the key below its limit whose latest event is
+// oldest, reporting whether room was made. Keys at their limit (locked out)
+// are never evicted.
+func (l *slidingWindowLimiter) evictUnlockedLocked() bool {
+	var (
+		victim string
+		oldest time.Time
+		found  bool
+	)
+
+	for key, hits := range l.events {
+		if len(hits) >= l.limit {
+			continue
+		}
+
+		if last := hits[len(hits)-1]; !found || last.Before(oldest) {
+			victim, oldest, found = key, last, true
+		}
+	}
+
+	if found {
+		delete(l.events, victim)
+	}
+
+	return found
 }
 
 // take counts one event for key and reports whether it fit in the budget. On
@@ -229,6 +254,7 @@ type AuthHandler struct {
 	loginPairLimiter  *slidingWindowLimiter
 	loginAnyIPLimiter *slidingWindowLimiter
 	trustedProxies    *middleware.TrustedProxies
+	baseURL           string
 
 	proxyWarnOnce sync.Once
 }
@@ -244,6 +270,13 @@ func NewAuthHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		loginAnyIPLimiter: newSlidingWindowLimiter(loginDistributedFailureLimit, loginUserFailureWindow),
 		trustedProxies:    trustedProxies,
 	}
+}
+
+// WithBaseURL sets the public base URL; an https value forces Secure cookies.
+func (h *AuthHandler) WithBaseURL(baseURL string) *AuthHandler {
+	h.baseURL = baseURL
+
+	return h
 }
 
 // warnIfBehindUnconfiguredProxy logs, once per process, that forwarding headers
@@ -282,18 +315,11 @@ func writeRateLimited(w http.ResponseWriter, wait time.Duration, message string)
 	writeError(w, http.StatusTooManyRequests, "rate_limited", message)
 }
 
-// readLoginCredentials extracts username/password from a form or JSON body.
+// readLoginCredentials extracts username/password from a JSON body. Form
+// encodings are refused: they are the only bodies a cross-site <form> can send
+// without a CORS preflight, which would enable login CSRF.
 func readLoginCredentials(w http.ResponseWriter, r *http.Request) (string, string, bool) {
 	r.Body = http.MaxBytesReader(w, r.Body, maxRequestBodyBytes)
-
-	if strings.HasPrefix(r.Header.Get("Content-Type"), "application/x-www-form-urlencoded") {
-		if err := r.ParseForm(); err != nil {
-			writeError(w, http.StatusBadRequest, "bad_request", "failed to parse form")
-			return "", "", false
-		}
-
-		return r.PostFormValue("username"), r.PostFormValue("password"), true
-	}
 
 	var body struct {
 		Username string `json:"username"`
@@ -308,9 +334,14 @@ func readLoginCredentials(w http.ResponseWriter, r *http.Request) (string, strin
 }
 
 func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
+	if !requireJSONSameOrigin(w, r) {
+		return
+	}
+
 	// Real client IP, honoring X-Forwarded-For/X-Real-IP only from a
 	// configured trusted proxy — never trust it from the client directly.
-	ip := middleware.ClientIP(r, h.trustedProxies)
+	clientIP := middleware.ClientIP(r, h.trustedProxies)
+	ip := middleware.LimiterKey(clientIP)
 
 	h.warnIfBehindUnconfiguredProxy(r)
 
@@ -388,7 +419,7 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, ip, r.UserAgent())
+	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, clientIP, r.UserAgent())
 	if err != nil {
 		h.log.Errorw("login: create session", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
@@ -396,8 +427,9 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookie(w, r, cookieValue)
-	setCSRFCookie(w, r, csrfToken)
+	secure := isSecureContext(r, h.baseURL)
+	setSessionCookie(w, secure, cookieValue)
+	setCSRFCookie(w, secure, csrfToken)
 
 	now := time.Now()
 	user.LastLoginAt = &now
@@ -407,12 +439,17 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *AuthHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
+	if !requireSameOrigin(w, r) {
+		return
+	}
+
 	if value := sessionCookieValue(r); value != "" {
 		_ = auth.DeleteSession(r.Context(), h.db, value)
 	}
 
-	clearSessionCookie(w, r)
-	clearCSRFCookie(w, r)
+	secure := isSecureContext(r, h.baseURL)
+	clearSessionCookie(w, secure)
+	clearCSRFCookie(w, secure)
 	writeNoContent(w)
 }
 

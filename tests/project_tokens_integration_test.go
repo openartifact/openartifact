@@ -222,6 +222,88 @@ func TestProjectTokenCreatorLeaves(t *testing.T) {
 	}
 }
 
+func TestProjectTokenCreatorDemotedOrDetached(t *testing.T) {
+	ctx := context.Background()
+
+	t.Run("demotion below the token role revokes", func(t *testing.T) {
+		f := newTokenFixture(t)
+
+		secret, _, err := f.mint(t, f.dev.ID, "dev-ci", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := f.db.ChangeProjectMember(ctx, f.project.ID, f.dev.ID, models.ProjectRoleViewer, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		if f.alive(t, secret) {
+			t.Fatal("developer token survived its creator's demotion to viewer")
+		}
+	})
+
+	t.Run("demotion keeping the token role keeps it", func(t *testing.T) {
+		f := newTokenFixture(t)
+
+		if err := f.db.ChangeProjectMember(ctx, f.project.ID, f.dev.ID, models.ProjectRoleMaintainer, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		secret, _, err := f.mint(t, f.dev.ID, "dev-ci", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := f.db.ChangeProjectMember(ctx, f.project.ID, f.dev.ID, models.ProjectRoleDeveloper, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		if !f.alive(t, secret) {
+			t.Fatal("token revoked although the creator still holds its role")
+		}
+	})
+
+	t.Run("group detachment revokes", func(t *testing.T) {
+		f := newTokenFixture(t)
+
+		grp, err := f.db.GetOrCreateGroup(ctx, "tk-devs")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := f.db.AddUserToGroup(ctx, f.dev.ID, grp.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		// The direct membership goes away: only the group grants access now.
+		if err := f.db.ChangeProjectGroup(ctx, f.project.ID, grp.ID, models.ProjectRoleDeveloper, nil, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		secret, _, err := f.mint(t, f.dev.ID, "dev-ci", 0)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := f.db.RemoveUserFromGroup(ctx, f.dev.ID, grp.ID); err != nil {
+			t.Fatal(err)
+		}
+
+		// Direct developer membership still covers the token.
+		if !f.alive(t, secret) {
+			t.Fatal("token revoked although a direct membership still grants its role")
+		}
+
+		if err := f.db.ChangeProjectMember(ctx, f.project.ID, f.dev.ID, models.ProjectRoleViewer, nil); err != nil {
+			t.Fatal(err)
+		}
+
+		if f.alive(t, secret) {
+			t.Fatal("token survived once no grant covers its role")
+		}
+	})
+}
+
 func TestProjectTokenAdminList(t *testing.T) {
 	f := newTokenFixture(t)
 

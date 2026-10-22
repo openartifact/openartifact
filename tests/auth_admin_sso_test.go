@@ -46,7 +46,7 @@ func setupAdminSSORouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Prin
 
 	uid := adminUser.ID
 	if err := db.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        uid,
 	}); err != nil {

@@ -78,11 +78,7 @@
           },
           "instance_id": {
             "type": "string",
-            "description": "Instance identifier"
-          },
-          "uptime": {
-            "type": "string",
-            "description": "Uptime duration"
+            "description": "Operator-configured instance name; omitted when OPENARTIFACT_INSTANCE_ID is empty"
           },
           "components": {
             "type": "object",

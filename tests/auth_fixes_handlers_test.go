@@ -184,7 +184,7 @@ func TestAdminHandlers_RejectNonAdminSession(t *testing.T) {
 	usersRouter, _ := setupUsersRouter(t, db)
 	groupsRouter, _ := setupGroupsRouter(t, db)
 	permsRouter, _ := setupPermissionsRouter(t, db)
-	_, normal := plainUser(t, db, "plain-1", "plainone")
+	_, normal := plainUser(t, db, "7a4dbbc3-3291-5713-8acd-d8de34f3e7a7", "plainone")
 
 	cases := []struct {
 		router http.Handler
@@ -193,16 +193,16 @@ func TestAdminHandlers_RejectNonAdminSession(t *testing.T) {
 		body   string
 	}{
 		{usersRouter, "GET", "/api/v1/users", ""},
-		{usersRouter, "GET", "/api/v1/users/someone", ""},
+		{usersRouter, "GET", "/api/v1/users/b31a7242-236f-5087-9a6b-e7998cc1846c", ""},
 		{usersRouter, "POST", "/api/v1/users", `{"username":"intruder","password":"intruder-password-1"}`},
-		{usersRouter, "DELETE", "/api/v1/users/someone", ""},
+		{usersRouter, "DELETE", "/api/v1/users/b31a7242-236f-5087-9a6b-e7998cc1846c", ""},
 		{groupsRouter, "GET", "/api/v1/groups", ""},
 		{groupsRouter, "POST", "/api/v1/groups", `{"name":"evil"}`},
-		{groupsRouter, "POST", "/api/v1/groups/g1/members/plain-1", ""},
-		{groupsRouter, "PUT", "/api/v1/groups/g1/members", `{"members":["plain-1"]}`},
+		{groupsRouter, "POST", "/api/v1/groups/67073eed-f57d-56d9-8782-704cd33325ea/members/7a4dbbc3-3291-5713-8acd-d8de34f3e7a7", ""},
+		{groupsRouter, "PUT", "/api/v1/groups/67073eed-f57d-56d9-8782-704cd33325ea/members", `{"members":["7a4dbbc3-3291-5713-8acd-d8de34f3e7a7"]}`},
 		{permsRouter, "GET", "/api/v1/permission-targets", ""},
 		{permsRouter, "POST", "/api/v1/permission-targets", `{"name":"x","repository_filter":"*","path_pattern":"*","actions":["manage"]}`},
-		{permsRouter, "POST", "/api/v1/permission-targets/seed-admin-all/assignments", `{"principal_type":"user","principal_id":"plain-1"}`},
+		{permsRouter, "POST", "/api/v1/permission-targets/981948bd-de8f-5c65-b90b-23d72cf37aab/assignments", `{"principal_type":"user","principal_id":"7a4dbbc3-3291-5713-8acd-d8de34f3e7a7"}`},
 	}
 
 	for _, tc := range cases {
@@ -220,8 +220,8 @@ func TestAdminHandlers_RejectNonAdminSession(t *testing.T) {
 func TestAdminUsers_SelfPatchIsLimitedToProfileFields(t *testing.T) {
 	db := newMockDatabase()
 	router, _ := setupUsersRouter(t, db)
-	user, p := plainUser(t, db, "self-1", "selfone")
-	_, other := plainUser(t, db, "self-2", "selftwo")
+	user, p := plainUser(t, db, "a3096ebc-f671-500c-8e9e-160e4015b545", "selfone")
+	_, other := plainUser(t, db, "b232c7d3-226b-586c-b100-4d1fdf75055a", "selftwo")
 
 	rw := doJSON(router, "PATCH", "/api/v1/users/"+user.ID, `{"full_name":"Self One"}`, p)
 	if rw.Code != http.StatusOK {
@@ -341,26 +341,26 @@ func TestAdminPermissions_AssignChecksExistence(t *testing.T) {
 	db := newMockDatabase()
 	router, _ := setupPermissionsRouter(t, db)
 
-	rw := doJSON(router, "POST", "/api/v1/permission-targets/seed-admin-all/assignments",
-		`{"principal_type":"user","principal_id":"ghost-user"}`, nil)
+	rw := doJSON(router, "POST", "/api/v1/permission-targets/981948bd-de8f-5c65-b90b-23d72cf37aab/assignments",
+		`{"principal_type":"user","principal_id":"fce32c79-9d88-5887-85ae-70cbd3c8ec02"}`, nil)
 	if rw.Code != http.StatusNotFound {
 		t.Errorf("unknown user: expected 404, got %d", rw.Code)
 	}
 
-	rw = doJSON(router, "POST", "/api/v1/permission-targets/seed-admin-all/assignments",
-		`{"principal_type":"group","principal_id":"ghost-group"}`, nil)
+	rw = doJSON(router, "POST", "/api/v1/permission-targets/981948bd-de8f-5c65-b90b-23d72cf37aab/assignments",
+		`{"principal_type":"group","principal_id":"d3c7b2ac-a1d3-516f-ba44-f5aabc17d5a2"}`, nil)
 	if rw.Code != http.StatusNotFound {
 		t.Errorf("unknown group: expected 404, got %d", rw.Code)
 	}
 
-	rw = doJSON(router, "POST", "/api/v1/permission-targets/no-such-target/assignments",
-		`{"principal_type":"user","principal_id":"admin-perms-1"}`, nil)
+	rw = doJSON(router, "POST", "/api/v1/permission-targets/790201a0-c7e6-58d2-9cf7-4802241e1e6d/assignments",
+		`{"principal_type":"user","principal_id":"92c8b2f5-9766-576b-931c-5213c062f3aa"}`, nil)
 	if rw.Code != http.StatusNotFound {
 		t.Errorf("unknown target: expected 404, got %d", rw.Code)
 	}
 
-	rw = doJSON(router, "POST", "/api/v1/permission-targets/seed-admin-all/assignments",
-		`{"principal_type":"robot","principal_id":"admin-perms-1"}`, nil)
+	rw = doJSON(router, "POST", "/api/v1/permission-targets/981948bd-de8f-5c65-b90b-23d72cf37aab/assignments",
+		`{"principal_type":"robot","principal_id":"92c8b2f5-9766-576b-931c-5213c062f3aa"}`, nil)
 	if rw.Code != http.StatusBadRequest {
 		t.Errorf("bad principal type: expected 400, got %d", rw.Code)
 	}
@@ -478,7 +478,7 @@ func TestSelfTokens_TokenPrincipalCannotMint(t *testing.T) {
 func TestAdminTokens_TokenPrincipalCannotMintOrManageOwnerTokens(t *testing.T) {
 	db := newMockDatabase()
 	router, adminP := setupAdminTokensRouter(t, db)
-	user, userP := plainUser(t, db, "owner-1", "ownerone")
+	user, userP := plainUser(t, db, "3faaa366-b247-5b93-9e09-9a11b6012ce5", "ownerone")
 
 	tokenP := *userP
 	tokenP.TokenKind = auth.TokenKindDeploy
@@ -508,8 +508,8 @@ func TestAdminTokens_TokenPrincipalCannotMintOrManageOwnerTokens(t *testing.T) {
 func TestAdminTokens_OwnershipChecks(t *testing.T) {
 	db := newMockDatabase()
 	router, adminP := setupAdminTokensRouter(t, db)
-	alice, aliceP := plainUser(t, db, "alice-1", "alice")
-	bob, bobP := plainUser(t, db, "bob-1", "bob")
+	alice, aliceP := plainUser(t, db, "d01c2c10-2502-5f56-9cee-04175514bdbe", "alice")
+	bob, bobP := plainUser(t, db, "b74083aa-6c16-5dd7-ac67-a7c548675d57", "bob")
 
 	rw := doJSON(router, "POST", "/api/v1/users/"+alice.ID+"/tokens", `{"name":"mine","kind":"access"}`, aliceP)
 	if rw.Code != http.StatusCreated {
@@ -556,7 +556,7 @@ func TestTokens_ScopeAndInputValidation(t *testing.T) {
 		body string
 		want int
 	}{
-		"scope not held":       {`{"name":"t","kind":"access","scopes":["seed-admin-all"]}`, http.StatusForbidden},
+		"scope not held":       {`{"name":"t","kind":"access","scopes":["981948bd-de8f-5c65-b90b-23d72cf37aab"]}`, http.StatusForbidden},
 		"empty name":           {`{"name":"  ","kind":"access"}`, http.StatusBadRequest},
 		"long name":            {`{"name":"` + strings.Repeat("x", 101) + `","kind":"access"}`, http.StatusBadRequest},
 		"bad kind":             {`{"name":"t","kind":"root"}`, http.StatusBadRequest},
@@ -576,14 +576,14 @@ func TestTokens_ScopeAndInputValidation(t *testing.T) {
 
 	// A held target is an acceptable scope.
 	if err := db.CreatePermissionAssignment(context.Background(), &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        *principal.UserID,
 	}); err != nil {
 		t.Fatalf("assign: %v", err)
 	}
 
-	rw := doJSON(router, "POST", "/api/v1/auth/tokens", `{"name":"scoped","kind":"access","scopes":["seed-admin-all"]}`, principal)
+	rw := doJSON(router, "POST", "/api/v1/auth/tokens", `{"name":"scoped","kind":"access","scopes":["981948bd-de8f-5c65-b90b-23d72cf37aab"]}`, principal)
 	if rw.Code != http.StatusCreated {
 		t.Errorf("held scope: expected 201, got %d (%s)", rw.Code, rw.Body.String())
 	}
@@ -592,7 +592,7 @@ func TestTokens_ScopeAndInputValidation(t *testing.T) {
 	adminDB := newMockDatabase()
 	adminRouter, adminP := setupAdminTokensRouter(t, adminDB)
 
-	rw = doJSON(adminRouter, "POST", "/api/v1/users/"+*adminP.UserID+"/tokens", `{"name":"t","kind":"access","scopes":["no-such-target"]}`, adminP)
+	rw = doJSON(adminRouter, "POST", "/api/v1/users/"+*adminP.UserID+"/tokens", `{"name":"t","kind":"access","scopes":["790201a0-c7e6-58d2-9cf7-4802241e1e6d"]}`, adminP)
 	if rw.Code != http.StatusBadRequest {
 		t.Errorf("admin unknown scope: expected 400, got %d (%s)", rw.Code, rw.Body.String())
 	}

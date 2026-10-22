@@ -240,6 +240,10 @@ type Database interface {
 	// UpdateUserLastLogin sets only last_login_at, so a login finishing from a
 	// stale snapshot cannot undo a concurrent disable or password reset.
 	UpdateUserLastLogin(ctx context.Context, id string, at time.Time) error
+	// UpdateUserSSOProfile sets only email (when non-nil), full_name (when
+	// non-nil) and last_login_at, so an SSO login finishing from a stale
+	// snapshot cannot undo a concurrent disable or password reset.
+	UpdateUserSSOProfile(ctx context.Context, id string, email, fullName *string, lastLogin time.Time) error
 	// UpdateUserPassword sets only password_hash and must_change_password.
 	UpdateUserPassword(ctx context.Context, id, passwordHash string, mustChange bool) error
 	ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error)

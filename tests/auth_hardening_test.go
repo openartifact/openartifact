@@ -441,7 +441,7 @@ func TestCSRF_AppliesToSessionsButNotTokenHeaders(t *testing.T) {
 	}
 
 	rbac := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))
-	handler := rbac(middleware.CSRFMiddleware(noopHandler(http.StatusOK)))
+	handler := rbac(middleware.CSRFMiddleware("")(noopHandler(http.StatusOK)))
 
 	withCookie := func(r *http.Request) { r.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: cookie}) }
 
@@ -475,7 +475,7 @@ func TestCSRF_AppliesToSessionsButNotTokenHeaders(t *testing.T) {
 func TestRBAC_LegacyKeySkipsCSRFButNeedsEnabling(t *testing.T) {
 	db := newMockDatabase()
 	cfg := middleware.RBACConfig{LegacyAPIKey: "legacy-secret-key", LegacyAPIKeyEnabled: true}
-	handler := newRBACMiddleware(db, cfg, newMWLogger(t))(middleware.CSRFMiddleware(noopHandler(http.StatusOK)))
+	handler := newRBACMiddleware(db, cfg, newMWLogger(t))(middleware.CSRFMiddleware("")(noopHandler(http.StatusOK)))
 
 	if rw := serve(handler, http.MethodPost, "/api/v1/repositories", func(r *http.Request) {
 		r.Header.Set("X-Api-Key", "legacy-secret-key")

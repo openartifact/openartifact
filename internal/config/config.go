@@ -287,7 +287,7 @@ func defaultConfig() *Config {
 		},
 		Auth: AuthConfig{
 			AllowAnonymousRead:   false,
-			LegacyAPIKeyEnabled:  true,
+			LegacyAPIKeyEnabled:  false,
 			SessionDurationHours: 24,
 			HMACKey:              "",
 			SAMLSPCertPEM:        "",

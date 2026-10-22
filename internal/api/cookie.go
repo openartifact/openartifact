@@ -5,6 +5,7 @@
 package api
 
 import (
+	"mime"
 	"net/http"
 	"net/url"
 	"strings"
@@ -37,13 +38,13 @@ func isSecureRequest(r *http.Request) bool {
 // setSessionCookie issues the session cookie: HttpOnly (never readable by
 // script), Secure whenever the request arrived over TLS, SameSite=Lax and
 // scoped to the whole site.
-func setSessionCookie(w http.ResponseWriter, r *http.Request, value string) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme so plain-HTTP dev setups still work
+func setSessionCookie(w http.ResponseWriter, secure bool, value string) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme or https base URL so plain-HTTP dev setups still work
 		Name:     auth.SessionCookieName,
 		Value:    value,
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   isSecureRequest(r),
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		// Absolute lifetime: the sliding idle expiry is enforced server-side.
 		MaxAge: int(auth.SessionAbsoluteLifetime().Seconds()),
@@ -52,35 +53,35 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, value string) {
 
 // clearSessionCookie expires the session cookie using the same attributes it
 // was set with, so browsers match and drop it.
-func clearSessionCookie(w http.ResponseWriter, r *http.Request) {
-	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme so plain-HTTP dev setups still work
+func clearSessionCookie(w http.ResponseWriter, secure bool) {
+	http.SetCookie(w, &http.Cookie{ //nolint:gosec // G124: HttpOnly and SameSite=Lax are set; Secure is derived from the request scheme or https base URL so plain-HTTP dev setups still work
 		Name:     auth.SessionCookieName,
 		Value:    "",
 		Path:     "/",
 		HttpOnly: true,
-		Secure:   isSecureRequest(r),
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
 }
 
-func setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
+func setCSRFCookie(w http.ResponseWriter, secure bool, token string) {
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset
 		Name:     middleware.CSRFTokenCookieName,
 		Value:    token,
 		Path:     "/",
-		Secure:   isSecureRequest(r),
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   int(auth.SessionAbsoluteLifetime().Seconds()),
 	})
 }
 
-func clearCSRFCookie(w http.ResponseWriter, r *http.Request) {
+func clearCSRFCookie(w http.ResponseWriter, secure bool) {
 	http.SetCookie(w, &http.Cookie{ //nolint:gosec // CSRF double-submit cookie must be readable by JS, so HttpOnly is deliberately unset
 		Name:     middleware.CSRFTokenCookieName,
 		Value:    "",
 		Path:     "/",
-		Secure:   isSecureRequest(r),
+		Secure:   secure,
 		SameSite: http.SameSiteLaxMode,
 		MaxAge:   -1,
 	})
@@ -142,4 +143,41 @@ func safeRedirectPath(p string) string {
 
 	// Rebuild from path components only, so nothing host-bearing survives.
 	return (&url.URL{Path: u.Path, RawPath: u.RawPath, RawQuery: u.RawQuery, Fragment: u.Fragment}).String()
+}
+
+// requireSameOrigin rejects browser-initiated cross-site requests to the
+// unauthenticated session endpoints (login CSRF). Non-browser clients send
+// neither Sec-Fetch-Site nor Origin and pass.
+func requireSameOrigin(w http.ResponseWriter, r *http.Request) bool {
+	cross := r.Header.Get("Sec-Fetch-Site") == "cross-site"
+
+	if origin := r.Header.Get("Origin"); origin != "" && origin != "null" {
+		u, err := url.Parse(origin)
+		cross = cross || err != nil || !strings.EqualFold(u.Host, r.Host)
+	} else if origin == "null" {
+		cross = true
+	}
+
+	if cross {
+		writeError(w, http.StatusForbidden, "csrf_protection", "cross-site request rejected")
+		return false
+	}
+
+	return true
+}
+
+// requireJSONSameOrigin additionally demands a JSON content type, which a
+// cross-site HTML form cannot produce without a CORS preflight.
+func requireJSONSameOrigin(w http.ResponseWriter, r *http.Request) bool {
+	if !requireSameOrigin(w, r) {
+		return false
+	}
+
+	mt, _, err := mime.ParseMediaType(r.Header.Get("Content-Type"))
+	if err != nil || mt != "application/json" {
+		writeError(w, http.StatusUnsupportedMediaType, "unsupported_media_type", "Content-Type must be application/json")
+		return false
+	}
+
+	return true
 }

@@ -7,9 +7,11 @@ package auth
 import (
 	"context"
 	"crypto/rand"
+	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"regexp"
 	"strings"
 	"time"
 
@@ -54,6 +56,8 @@ var ErrIdentityConflict = errors.New("account is already linked to a different s
 
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (p *Provisioner) Provision(ctx context.Context, provider *models.SSOProvider, claims SSOClaims) (*models.User, error) {
+	claims.Email = sanitizeSSOEmail(claims.Email)
+
 	user, err := p.db.GetUserByExternalID(ctx, claims.ExternalID, claims.ProviderSlug)
 	if err != nil {
 		return nil, fmt.Errorf("sso provision get by external id: %w", err)
@@ -108,19 +112,7 @@ func (p *Provisioner) Provision(ctx context.Context, provider *models.SSOProvide
 			return nil, ErrUserNotProvisioned
 		}
 
-		username := claims.Username
-		if username == "" && claims.Email != "" {
-			// Fall back to email local-part when IdP doesn't provide preferred_username
-			if at := strings.Index(claims.Email, "@"); at > 0 {
-				username = claims.Email[:at]
-			} else {
-				username = claims.Email
-			}
-		}
-
-		if username == "" {
-			username = claims.ExternalID // last resort: use sub claim
-		}
+		username := ssoUsername(claims)
 
 		newUser := &models.User{
 			Username:           username,
@@ -149,17 +141,30 @@ func (p *Provisioner) Provision(ctx context.Context, provider *models.SSOProvide
 		return nil, ErrAccountDisabled
 	}
 
-	if err := p.applyVerifiedEmail(ctx, user, claims); err != nil {
+	emailUpdate, err := p.verifiedEmailUpdate(ctx, user, claims)
+	if err != nil {
 		return nil, err
 	}
 
+	var fullNameUpdate *string
 	if claims.FullName != "" {
-		user.FullName = ptrIfNonEmpty(claims.FullName)
+		fullNameUpdate = &claims.FullName
 	}
 
-	user.LastLoginAt = ptrTimeNow()
-	if err := p.db.UpdateUser(ctx, user); err != nil {
+	// Narrow write: a full-row UPDATE from this snapshot could resurrect a
+	// user an admin disabled (or restore an old password hash) mid-login.
+	now := time.Now()
+	if err := p.db.UpdateUserSSOProfile(ctx, user.ID, emailUpdate, fullNameUpdate, now); err != nil {
 		return nil, fmt.Errorf("sso provision update user: %w", err)
+	}
+
+	user.LastLoginAt = &now
+	if emailUpdate != nil {
+		user.Email = emailUpdate
+	}
+
+	if fullNameUpdate != nil {
+		user.FullName = fullNameUpdate
 	}
 
 	// Group sync failure is non-fatal: a transient error must not block an otherwise valid login.
@@ -228,32 +233,31 @@ func hasSSOIdentity(u *models.User) bool {
 	return (u.ExternalID != nil && *u.ExternalID != "") || (u.ProviderSlug != nil && *u.ProviderSlug != "")
 }
 
-// applyVerifiedEmail copies the IdP email onto user only when the IdP verified
-// it and no other account already owns that address.
-func (p *Provisioner) applyVerifiedEmail(ctx context.Context, user *models.User, claims SSOClaims) error {
+// verifiedEmailUpdate returns the IdP email when it must be written onto user:
+// the IdP verified it, it differs from the current one and no other account
+// already owns that address. It returns nil otherwise.
+func (p *Provisioner) verifiedEmailUpdate(ctx context.Context, user *models.User, claims SSOClaims) (*string, error) {
 	if claims.Email == "" || !claims.EmailVerified {
-		return nil
+		return nil, nil //nolint:nilnil // nil means "no update"
 	}
 
 	if user.Email != nil && *user.Email == claims.Email {
-		return nil
+		return nil, nil //nolint:nilnil // nil means "no update"
 	}
 
 	other, err := p.db.GetUserByEmail(ctx, claims.Email)
 	if err != nil {
-		return fmt.Errorf("sso provision email ownership check: %w", err)
+		return nil, fmt.Errorf("sso provision email ownership check: %w", err)
 	}
 
 	if other != nil && other.ID != user.ID {
 		p.log.Warnw("sso email update skipped: address belongs to another account",
 			"user_id", user.ID, "provider_slug", claims.ProviderSlug)
 
-		return nil
+		return nil, nil //nolint:nilnil // nil means "no update"
 	}
 
-	user.Email = ptrIfNonEmpty(claims.Email)
-
-	return nil
+	return &claims.Email, nil
 }
 
 func (p *Provisioner) SyncSSOGroupsFromClaims(ctx context.Context, userID string, provider *models.SSOProvider, idpGroups []string) error {
@@ -324,15 +328,74 @@ func (p *Provisioner) SyncSSOPermissionsFromGroups(ctx context.Context, provider
 	return nil
 }
 
+const (
+	minSSOUsernameLen = 3
+	maxSSOUsernameLen = 64
+	maxSSOEmailLen    = 254
+)
+
+var ssoUsernameInvalidRe = regexp.MustCompile(`[^a-zA-Z0-9_-]+`)
+
+// sanitizeSSOEmail drops values that are not plausibly an email address
+// (no '@', control characters, oversized): they would otherwise reach the
+// database verbatim.
+func sanitizeSSOEmail(email string) string {
+	email = strings.TrimSpace(email)
+	if len(email) > maxSSOEmailLen || !strings.Contains(email, "@") {
+		return ""
+	}
+
+	for _, c := range email {
+		if c < 0x21 || c == 0x7f {
+			return ""
+		}
+	}
+
+	return email
+}
+
+// sanitizeSSOUsername maps an IdP-supplied name onto the local username
+// alphabet ([a-zA-Z0-9_-], 3-64 chars) so IdP users can neither carry control
+// characters nor impersonate system principals such as "system/legacy-api-key"
+// in audit rows. It returns "" when nothing usable remains.
+func sanitizeSSOUsername(name string) string {
+	name = strings.Trim(ssoUsernameInvalidRe.ReplaceAllString(strings.TrimSpace(name), "-"), "-")
+	if len(name) > maxSSOUsernameLen {
+		name = strings.Trim(name[:maxSSOUsernameLen], "-")
+	}
+
+	if len(name) < minSSOUsernameLen {
+		return ""
+	}
+
+	return name
+}
+
+// ssoUsername derives the local username for a new SSO user: the IdP username,
+// else the email local part, else the subject, else a hash of the subject.
+func ssoUsername(claims SSOClaims) string {
+	candidates := []string{claims.Username}
+	if local, _, ok := strings.Cut(claims.Email, "@"); ok {
+		candidates = append(candidates, local)
+	}
+
+	candidates = append(candidates, claims.ExternalID)
+
+	for _, c := range candidates {
+		if u := sanitizeSSOUsername(c); u != "" {
+			return u
+		}
+	}
+
+	sum := sha256.Sum256([]byte(claims.ProviderSlug + "|" + claims.ExternalID))
+
+	return "sso-" + hex.EncodeToString(sum[:6])
+}
+
 func ptrIfNonEmpty(s string) *string {
 	if s == "" {
 		return nil
 	}
 
 	return &s
-}
-
-func ptrTimeNow() *time.Time {
-	t := time.Now().UTC()
-	return &t
 }

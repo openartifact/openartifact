@@ -257,8 +257,9 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookie(w, r, cookieValue)
-	setCSRFCookie(w, r, csrfToken)
+	secure := isSecureContext(r, h.baseURL)
+	setSessionCookie(w, secure, cookieValue)
+	setCSRFCookie(w, secure, csrfToken)
 
 	for _, name := range []string{"oa_oidc_pkce_" + slug, "oa_oidc_state_" + slug, "oa_oidc_nonce_" + slug} {
 		clearSSOStateCookie(w, r, h.baseURL, name)
@@ -293,8 +294,9 @@ func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 		_ = auth.DeleteSession(ctx, h.db, cookie.Value)
 	}
 
-	clearSessionCookie(w, r)
-	clearCSRFCookie(w, r)
+	secure := isSecureContext(r, h.baseURL)
+	clearSessionCookie(w, secure)
+	clearCSRFCookie(w, secure)
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {

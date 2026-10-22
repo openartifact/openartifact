@@ -81,6 +81,11 @@ func (p *PostgresDB) ChangeProjectMember(ctx context.Context, projectID, userID,
 		if err := revokeProjectTokensOf(ctx, tx, userID, projectID); err != nil {
 			return err
 		}
+	} else if current != "" && newRole != current {
+		// A demotion also strips tokens that now outrank their creator.
+		if err := revokeExcessProjectTokens(ctx, tx, projectID); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -198,6 +203,13 @@ func (p *PostgresDB) ChangeProjectGroup(ctx context.Context, projectID, groupID,
 
 	if err != nil {
 		return fmt.Errorf("write project group: %w", err)
+	}
+
+	// Detaching or demoting a group lowers its members' project roles.
+	if current != "" && newRole != current {
+		if err := revokeExcessProjectTokens(ctx, tx, projectID); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {

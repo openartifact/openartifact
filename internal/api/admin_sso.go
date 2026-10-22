@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
+	"net/netip"
+	"net/url"
 	"regexp"
 	"strings"
 	"time"
@@ -77,11 +79,40 @@ const (
 	maxSSOFieldLen       = 512
 )
 
+var errIdentityURLNotHTTPS = errors.New("URL must use https (http is only allowed for a loopback host)")
+
+// requireHTTPSIdentityURL rejects plain-http IdP trust-root URLs: discovery
+// documents, JWKS and SAML metadata carry the signing keys, so a network
+// attacker able to alter them could forge identities. http is tolerated only
+// for loopback hosts (local development IdPs).
+func requireHTTPSIdentityURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+
+	switch u.Scheme {
+	case "https":
+		return nil
+	case "http":
+		host := u.Hostname()
+		if ip, perr := netip.ParseAddr(host); perr == nil && ip.IsLoopback() || host == "localhost" {
+			return nil
+		}
+	}
+
+	return errIdentityURLNotHTTPS
+}
+
 // validateOIDCConfig applies the create-time rules to a (plaintext-secret)
 // OIDC config: required fields, outbound-URL safety, and sane claim names.
 func validateOIDCConfig(cfg *models.OIDCConfig) error {
 	if cfg.Issuer == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
 		return errors.New("oidc_config requires issuer, client_id, and client_secret") //nolint:err113 // validation message surfaced to the admin
+	}
+
+	if err := requireHTTPSIdentityURL(cfg.Issuer); err != nil {
+		return fmt.Errorf("oidc_config.issuer: %w", err)
 	}
 
 	if err := netutil.ValidateOutboundURL(cfg.Issuer); err != nil {
@@ -117,6 +148,10 @@ func validateSAMLConfig(cfg *models.SAMLConfig) error {
 	}
 
 	if cfg.IDPMetadataURL != "" {
+		if err := requireHTTPSIdentityURL(cfg.IDPMetadataURL); err != nil {
+			return fmt.Errorf("saml_config.idp_metadata_url: %w", err)
+		}
+
 		if err := netutil.ValidateOutboundURL(cfg.IDPMetadataURL); err != nil {
 			return fmt.Errorf("saml_config.idp_metadata_url: %w", err)
 		}
@@ -287,6 +322,8 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	auditAdmin(r, "sso_provider.created", "sso_provider", body.ID, "sso provider "+body.Slug+" created")
 
 	writeJSON(w, http.StatusCreated, ssoProviderToResponse(&body))
 }
@@ -492,6 +529,8 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	auditAdmin(r, "sso_provider.updated", "sso_provider", existing.ID, "sso provider "+existing.Slug+" updated")
+
 	writeJSON(w, http.StatusOK, ssoProviderToResponse(existing))
 }
 
@@ -611,6 +650,8 @@ func (h *AdminSSOHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
 
 		return
 	}
+
+	auditAdmin(r, "sso_provider.deleted", "sso_provider", existing.ID, "sso provider "+existing.Slug+" deleted")
 
 	writeNoContent(w)
 }

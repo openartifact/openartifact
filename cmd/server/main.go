@@ -109,8 +109,6 @@ func (e reportedError) Unwrap() error { return e.error }
 // for -migrate, verify and -h) and an error for every startup or runtime
 // failure, so the process never exits 0 while the service is not running.
 func run(args []string) error {
-	startTime := time.Now()
-
 	flags := flag.NewFlagSet("openartifact-server", flag.ContinueOnError)
 	migrateFlag := flags.Bool("migrate", false, "run migrations and exit")
 	repairGomodFlag := flags.Bool("repair-gomod", false, "relink Go module zips damaged by the <=0.4.1 shared-blob bug, then exit")
@@ -424,7 +422,7 @@ func run(args []string) error {
 	}
 
 	server.AddMiddleware(middleware.MaxBodyMiddleware(cfg.Server.MaxBodyBytes))
-	server.AddMiddleware(middleware.SecurityHeadersMiddleware(cfg.Server.TLSEnabled))
+	server.AddMiddleware(middleware.SecurityHeadersMiddleware(cfg.Server.TLSEnabled || strings.HasPrefix(strings.ToLower(cfg.BaseURL), "https://")))
 	server.AddMiddleware(middleware.RecoveryMiddleware(log))
 	server.AddMiddleware(middleware.RequestIDMiddleware)
 	server.AddMiddleware(middleware.TracingMiddleware)
@@ -494,6 +492,11 @@ func run(args []string) error {
 		legacyAuthMode = "enabled"
 	}
 
+	if cfg.Server.APIKey != "" && !cfg.Auth.LegacyAPIKeyEnabled {
+		log.Warnw("API_KEY is set but ignored: the legacy shared key is disabled by default; " +
+			"set LEGACY_API_KEY_ENABLED=true to keep using it, or migrate to API tokens")
+	}
+
 	log.Infow("RBAC middleware enabled",
 		"allow_anonymous_read", cfg.Auth.AllowAnonymousRead,
 		"legacy_auth", legacyAuthMode,
@@ -510,8 +513,7 @@ func run(args []string) error {
 		type healthResponse struct {
 			Status     string                     `json:"status"`
 			Version    string                     `json:"version"`
-			InstanceID string                     `json:"instance_id"`
-			Uptime     string                     `json:"uptime"`
+			InstanceID string                     `json:"instance_id,omitempty"`
 			Components map[string]componentStatus `json:"components"`
 		}
 
@@ -550,19 +552,12 @@ func run(args []string) error {
 			}
 		}
 
-		// Get instance ID
-		instanceID := cfg.Server.InstanceID
-		if instanceID == "" {
-			if hostname, err := os.Hostname(); err == nil {
-				instanceID = hostname
-			}
-		}
-
 		resp := healthResponse{
-			Status:     overallStatus,
-			Version:    version,
-			InstanceID: instanceID,
-			Uptime:     time.Since(startTime).String(),
+			Status:  overallStatus,
+			Version: version,
+			// Only an operator-chosen name: the hostname and uptime are not
+			// disclosed on this unauthenticated endpoint.
+			InstanceID: cfg.Server.InstanceID,
 			Components: components,
 		}
 
@@ -611,7 +606,7 @@ func run(args []string) error {
 		_, _ = w.Write([]byte(`{"status":"ready"}`))
 	})
 
-	authHandler := api.NewAuthHandler(db, log, evaluator, trustedProxies)
+	authHandler := api.NewAuthHandler(db, log, evaluator, trustedProxies).WithBaseURL(cfg.BaseURL)
 	authHandler.RegisterPublic(router)
 
 	hmacKey := []byte(cfg.Auth.HMACKey)
@@ -632,7 +627,7 @@ func run(args []string) error {
 	authedAPI.Use(rbacMiddleware)
 	// Admin-only origin timestamps for migrations (X-OA-Import-Created-At).
 	authedAPI.Use(importmeta.Middleware(evaluator))
-	authedAPI.Use(middleware.CSRFMiddleware)
+	authedAPI.Use(middleware.CSRFMiddleware(cfg.BaseURL))
 	authedAPI.Use(middleware.AuditMiddleware(auditLogger, trustedProxies))
 
 	authHandler.RegisterAuthed(authedAPI)

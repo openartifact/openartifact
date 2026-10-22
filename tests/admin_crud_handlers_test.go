@@ -50,14 +50,14 @@ func setupUsersRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Princip
 	h := api.NewAdminUsersHandler(db, log, eval)
 
 	router := chi.NewRouter()
-	router.Use(defaultPrincipalMiddleware("admin-users-1", "adminusers"))
+	router.Use(defaultPrincipalMiddleware("36d86ead-884f-5ded-9408-ffc1c86bdbfa", "adminusers"))
 	h.Register(router)
 
 	ctx := context.Background()
 	now := time.Now()
 
 	adminUser := &models.User{
-		ID:        "admin-users-1",
+		ID:        "36d86ead-884f-5ded-9408-ffc1c86bdbfa",
 		Username:  "adminusers",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -68,7 +68,7 @@ func setupUsersRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Princip
 
 	uid := adminUser.ID
 	if err := db.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        uid,
 	}); err != nil {
@@ -378,14 +378,14 @@ func setupGroupsRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Princi
 	h := api.NewAdminGroupsHandler(db, log, eval)
 
 	router := chi.NewRouter()
-	router.Use(defaultPrincipalMiddleware("admin-groups-1", "admingroups"))
+	router.Use(defaultPrincipalMiddleware("2f99d2db-e55e-5763-b044-8ede7ce71cf5", "admingroups"))
 	h.Register(router)
 
 	ctx := context.Background()
 	now := time.Now()
 
 	adminUser := &models.User{
-		ID:        "admin-groups-1",
+		ID:        "2f99d2db-e55e-5763-b044-8ede7ce71cf5",
 		Username:  "admingroups",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -396,7 +396,7 @@ func setupGroupsRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Princi
 
 	uid := adminUser.ID
 	if err := db.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        uid,
 	}); err != nil {
@@ -626,7 +626,7 @@ func TestAdminGroups_AddMember(t *testing.T) {
 	now := time.Now()
 
 	user := &models.User{
-		ID:        "member-user-1",
+		ID:        "2fe9ecf2-653b-593a-91d1-b6c0e8955a90",
 		Username:  "memberuser",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -674,7 +674,7 @@ func TestAdminGroups_RemoveMember(t *testing.T) {
 	now := time.Now()
 
 	user := &models.User{
-		ID:        "remove-user-1",
+		ID:        "60a9cdc5-43ce-5826-8213-c9b308c9083a",
 		Username:  "removeuser",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -726,13 +726,13 @@ func TestAdminGroups_ListMembers(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	user1 := &models.User{
-		ID:        "list-user-1",
+		ID:        "1956100b-02f8-562d-ab40-74f707a32d6a",
 		Username:  "listuser1",
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	user2 := &models.User{
-		ID:        "list-user-2",
+		ID:        "8e32a481-3323-5112-bc4b-021894820e59",
 		Username:  "listuser2",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -807,13 +807,13 @@ func TestAdminGroups_SetMembers(t *testing.T) {
 	ctx := context.Background()
 	now := time.Now()
 	user1 := &models.User{
-		ID:        "set-user-1",
+		ID:        "1e68c38e-690c-53a5-8e2e-1ca72a571fbf",
 		Username:  "setuser1",
 		CreatedAt: now,
 		UpdatedAt: now,
 	}
 	user2 := &models.User{
-		ID:        "set-user-2",
+		ID:        "a7d38fb1-22d9-5b02-a929-6132f297a2b9",
 		Username:  "setuser2",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -848,7 +848,7 @@ func TestAdminGroups_SetMembers(t *testing.T) {
 	groupID := groupIDVal
 
 	// Set members
-	setBody := `{"members":["set-user-1","set-user-2"]}`
+	setBody := `{"members":["1e68c38e-690c-53a5-8e2e-1ca72a571fbf","a7d38fb1-22d9-5b02-a929-6132f297a2b9"]}`
 	req = httptest.NewRequestWithContext(context.Background(), "PUT", "/api/v1/groups/"+groupID+"/members", bytes.NewReader([]byte(setBody)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -890,14 +890,14 @@ func setupPermissionsRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.P
 	h := api.NewAdminPermissionsHandler(db, log, eval)
 
 	router := chi.NewRouter()
-	router.Use(defaultPrincipalMiddleware("admin-perms-1", "adminperms"))
+	router.Use(defaultPrincipalMiddleware("92c8b2f5-9766-576b-931c-5213c062f3aa", "adminperms"))
 	h.Register(router)
 
 	ctx := context.Background()
 	now := time.Now()
 
 	adminUser := &models.User{
-		ID:        "admin-perms-1",
+		ID:        "92c8b2f5-9766-576b-931c-5213c062f3aa",
 		Username:  "adminperms",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -908,7 +908,7 @@ func setupPermissionsRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.P
 
 	uid := adminUser.ID
 	if err := db.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        uid,
 	}); err != nil {
@@ -1107,7 +1107,7 @@ func TestAdminPermissions_Assign(t *testing.T) {
 	now := time.Now()
 
 	user := &models.User{
-		ID:        "assign-user-1",
+		ID:        "4ae7c3eb-3f1a-5b39-b85b-357a37b629bd",
 		Username:  "assignuser",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -1135,7 +1135,7 @@ func TestAdminPermissions_Assign(t *testing.T) {
 	}
 
 	// Assign permission
-	assignBody := `{"principal_type":"user","principal_id":"assign-user-1"}`
+	assignBody := `{"principal_type":"user","principal_id":"4ae7c3eb-3f1a-5b39-b85b-357a37b629bd"}`
 	req = httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/permission-targets/"+permID+"/assignments", bytes.NewReader([]byte(assignBody)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -1156,7 +1156,7 @@ func TestAdminPermissions_Unassign(t *testing.T) {
 	now := time.Now()
 
 	user := &models.User{
-		ID:        "unassign-user-1",
+		ID:        "da845ce7-5094-5807-b647-f162cf591f0e",
 		Username:  "unassignuser",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -1184,7 +1184,7 @@ func TestAdminPermissions_Unassign(t *testing.T) {
 	}
 
 	// Assign permission
-	assignBody := `{"principal_type":"user","principal_id":"unassign-user-1"}`
+	assignBody := `{"principal_type":"user","principal_id":"da845ce7-5094-5807-b647-f162cf591f0e"}`
 	req = httptest.NewRequestWithContext(context.Background(), "POST", "/api/v1/permission-targets/"+permID+"/assignments", bytes.NewReader([]byte(assignBody)))
 	req.Header.Set("Content-Type", "application/json")
 
@@ -1192,7 +1192,7 @@ func TestAdminPermissions_Unassign(t *testing.T) {
 	router.ServeHTTP(rw, req)
 
 	// Unassign permission
-	req = httptest.NewRequestWithContext(context.Background(), "DELETE", "/api/v1/permission-targets/"+permID+"/assignments?principal_type=user&principal_id=unassign-user-1", nil)
+	req = httptest.NewRequestWithContext(context.Background(), "DELETE", "/api/v1/permission-targets/"+permID+"/assignments?principal_type=user&principal_id=da845ce7-5094-5807-b647-f162cf591f0e", nil)
 	rw = httptest.NewRecorder()
 	router.ServeHTTP(rw, req)
 

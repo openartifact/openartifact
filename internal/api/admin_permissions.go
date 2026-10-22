@@ -37,11 +37,11 @@ func NewAdminPermissionsHandler(db database.Database, log *logger.Logger, evalua
 func (h *AdminPermissionsHandler) Register(r chi.Router) {
 	r.Post("/api/v1/permission-targets", h.handleCreate)
 	r.Get("/api/v1/permission-targets", h.handleList)
-	r.Get("/api/v1/permission-targets/{id}", h.handleGet)
-	r.Patch("/api/v1/permission-targets/{id}", h.handlePatch)
-	r.Delete("/api/v1/permission-targets/{id}", h.handleDelete)
-	r.Post("/api/v1/permission-targets/{id}/assignments", h.handleAssign)
-	r.Delete("/api/v1/permission-targets/{id}/assignments", h.handleUnassign)
+	r.With(requireUUIDParams("id")).Get("/api/v1/permission-targets/{id}", h.handleGet)
+	r.With(requireUUIDParams("id")).Patch("/api/v1/permission-targets/{id}", h.handlePatch)
+	r.With(requireUUIDParams("id")).Delete("/api/v1/permission-targets/{id}", h.handleDelete)
+	r.With(requireUUIDParams("id")).Post("/api/v1/permission-targets/{id}/assignments", h.handleAssign)
+	r.With(requireUUIDParams("id")).Delete("/api/v1/permission-targets/{id}/assignments", h.handleUnassign)
 }
 
 func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -85,9 +85,17 @@ func (h *AdminPermissionsHandler) handleCreate(w http.ResponseWriter, r *http.Re
 
 	saved, err := h.db.CreatePermissionTarget(r.Context(), target)
 	if err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a permission target with this name already exists")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
 		return
 	}
+
+	auditAdmin(r, "permission_target.created", "permission_target", saved.ID, "permission target "+saved.Name+" created")
 
 	writeJSON(w, http.StatusCreated, permTargetToResponse(saved))
 }
@@ -202,9 +210,17 @@ func (h *AdminPermissionsHandler) handlePatch(w http.ResponseWriter, r *http.Req
 
 	merged.UpdatedAt = time.Now()
 	if err := h.db.UpdatePermissionTarget(ctx, &merged); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a permission target with this name already exists")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
 		return
 	}
+
+	auditAdmin(r, "permission_target.updated", "permission_target", merged.ID, "permission target "+merged.Name+" updated")
 
 	writeJSON(w, http.StatusOK, permTargetToResponse(&merged))
 }
@@ -219,6 +235,8 @@ func (h *AdminPermissionsHandler) handleDelete(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
+
+	auditAdmin(r, "permission_target.deleted", "permission_target", id, "permission target deleted")
 
 	writeNoContent(w)
 }
@@ -244,8 +262,8 @@ func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if body.PrincipalID == "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", "principal_id is required")
+	if !isUUIDString(body.PrincipalID) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "principal_id must be a user or group id")
 		return
 	}
 
@@ -265,6 +283,8 @@ func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	auditAdmin(r, "permission_target.assigned", "permission_target", id, "assigned to "+body.PrincipalType+" "+body.PrincipalID)
+
 	writeNoContent(w)
 }
 
@@ -282,8 +302,8 @@ func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.
 		return
 	}
 
-	if principalID == "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", "principal_id is required")
+	if !isUUIDString(principalID) {
+		writeError(w, http.StatusBadRequest, "validation_failed", "principal_id must be a user or group id")
 		return
 	}
 
@@ -291,6 +311,8 @@ func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
+
+	auditAdmin(r, "permission_target.unassigned", "permission_target", id, "unassigned from "+principalType+" "+principalID)
 
 	writeNoContent(w)
 }

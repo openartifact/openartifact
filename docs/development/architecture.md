@@ -104,4 +104,4 @@ Workers that take Postgres advisory locks hold them on a pinned connection (`int
 
 ## Web UI
 
-`web/` is built with bun/Vite into `web/dist`, embedded with `go:embed` in `web/embed.go`, and served by the `authedAPI` NotFound handler (client-side routing). Unmatched `/api/` paths return a JSON 404, non-GET/HEAD requests return 405. With `OPENARTIFACT_DEV` set the server proxies the UI to the Vite dev server (`http://localhost:5173`); see [README](README.md).
+`web/` is built with bun/Vite into `web/dist`, embedded with `go:embed` in `web/embed.go`, and served by the `authedAPI` NotFound handler (client-side routing). Unmatched `/api/` paths return a JSON 404, non-GET/HEAD requests return 405. In binaries built with `-tags dev`, setting `OPENARTIFACT_DEV` makes the server proxy the UI to the Vite dev server (`http://localhost:5173`); see [README](README.md).

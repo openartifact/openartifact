@@ -47,7 +47,7 @@ Providers are created enabled; `PATCH` can toggle `enabled`. Mappings accept at 
 
 | Field | Default |
 |---|---|
-| `issuer` (validated against SSRF rules) | required |
+| `issuer` (must be `https://`; `http://` only for a loopback host; validated against SSRF rules) | required |
 | `client_id`, `client_secret` | required. The secret is never returned (`has_secret` is); an empty value in a `PATCH` keeps the stored one |
 | `scopes` | `openid profile email groups` (`openid` is always added) |
 | `username_claim` / `email_claim` / `name_claim` / `groups_claim` | `preferred_username` / `email` / `name` / `groups` |
@@ -64,7 +64,7 @@ Register the redirect URI `BASE_URL/api/v1/auth/sso/oidc/{slug}/callback` with t
 
 | Field | Default |
 |---|---|
-| `idp_metadata_url` or `idp_metadata_xml` (one required; URL is SSRF-checked, capped at 1 MiB, and on a private or loopback network needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`; XML is validated) | |
+| `idp_metadata_url` or `idp_metadata_xml` (one required; URL must be `https://` (`http://` only for a loopback host), is SSRF-checked, capped at 1 MiB, and on a private or loopback network needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`; XML is validated) | |
 | `username_attribute` | `uid` |
 | `email_attribute` | `mail` |
 | `name_attribute` | `displayName` |
@@ -144,9 +144,9 @@ The default scopes already include `groups`, and the default claims (`preferred_
 2. Unknown user and `link_by_email` on and the email is IdP-verified: an existing unlinked local user with that email is linked. If that account is already bound to another identity: 409 `identity_conflict`.
 3. Email already in use but unverified, or `link_by_email` off: 409 `email_already_in_use`.
 4. Unknown user and `auto_provision_users` off: 403 `user_not_provisioned`. Disabled account: 403 `account_disabled`.
-5. Otherwise a user is created (username from the username claim, else the email local part, else the subject) with no password and SSO-managed groups.
+5. Otherwise a user is created (username from the username claim, else the email local part, else the subject; reduced to `[a-zA-Z0-9_-]`, 3 to 64 characters, so it cannot contain `/` or control characters; a hash of the subject is used when nothing usable remains. An email without `@`, with whitespace or over 254 characters is ignored) with no password and SSO-managed groups.
 
-Email verification: for OIDC `email_verified` must be `true`, and a custom `email_claim` counts as never verified; for SAML the email is treated as verified unless an `email_verified` attribute says otherwise. **Warning:** with `link_by_email` on, a SAML IdP that lets users edit their own mail attribute allows linking to an arbitrary local account; enable `link_by_email` for SAML only when the IdP controls that attribute.
+Email verification: for OIDC `email_verified` must be `true`, and a custom `email_claim` counts as never verified; for SAML the email counts as verified only when the assertion carries an `email_verified` attribute equal to `true`; without it the email is never used to link or overwrite an account. Configure the IdP to release `email_verified=true` for a SAML provider that should use `link_by_email`, and only when the IdP controls the mail attribute.
 
 ### Groups and permissions
 

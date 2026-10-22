@@ -38,7 +38,7 @@ const (
 	passwordEnv     = "OPENARTIFACT_RESET_PASSWORD"
 	usernameEnv     = "OPENARTIFACT_RESET_USERNAME"
 	defaultUsername = "admin"
-	defaultSSLMode  = "prefer"
+	defaultSSLMode  = "require" // same default as the server (DB_SSLMODE); "prefer" silently falls back to cleartext
 	resetTimeout    = 30 * time.Second
 	maxPasswordLine = 4096
 )

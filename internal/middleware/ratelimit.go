@@ -55,7 +55,7 @@ func RateLimitMiddleware(limit int, window time.Duration, trusted *TrustedProxie
 
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-			clientIP := ClientIP(r, trusted)
+			clientIP := LimiterKey(ClientIP(r, trusted))
 
 			mu.Lock()
 

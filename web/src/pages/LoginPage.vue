@@ -200,6 +200,7 @@ import { ssoBrandIcon } from '../lib/brandIcons'
 import { ALL_FORMATS } from '../lib/formats'
 import { useAppVersion, formatVersion } from '../composables/useAppVersion'
 import { ssoProviderColor } from '../lib/brandColors'
+import { safeNextPath } from '../lib/safeRedirect'
 import AppButton from '../components/AppButton.vue'
 import AppLogo from '../components/AppLogo.vue'
 
@@ -237,8 +238,7 @@ async function handleSubmit(): Promise<void> {
       await router.push({ name: 'change-password' })
       return
     }
-    const next = typeof route.query.next === 'string' ? route.query.next : '/'
-    await router.push(next)
+    await router.push(safeNextPath(route.query.next))
   } catch (err: unknown) {
     errorMsg.value = err instanceof Error ? err.message : t('auth.loginFailed')
   } finally {

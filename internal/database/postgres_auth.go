@@ -182,6 +182,20 @@ func (p *PostgresDB) UpdateUserLastLogin(ctx context.Context, id string, at time
 	return nil
 }
 
+func (p *PostgresDB) UpdateUserSSOProfile(ctx context.Context, id string, email, fullName *string, lastLogin time.Time) error {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
+	if _, err := p.db.ExecContext(ctx,
+		`UPDATE auth_users SET email=COALESCE($2, email), full_name=COALESCE($3, full_name), last_login_at=$4 WHERE id=$1`,
+		id, email, fullName, lastLogin,
+	); err != nil {
+		return fmt.Errorf("failed to update user sso profile: %w", err)
+	}
+
+	return nil
+}
+
 func (p *PostgresDB) UpdateUserPassword(ctx context.Context, id, passwordHash string, mustChange bool) error {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
@@ -341,6 +355,10 @@ func (p *PostgresDB) DeleteGroup(ctx context.Context, id string) error {
 		return fmt.Errorf("failed to delete group: %w", err)
 	}
 
+	if err := revokeExcessProjectTokens(ctx, tx, ""); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit delete group: %w", err)
 	}
@@ -400,12 +418,27 @@ func (p *PostgresDB) RemoveUserFromGroup(ctx context.Context, userID, groupID st
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	_, err := p.db.ExecContext(ctx,
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return fmt.Errorf("failed to begin remove user from group: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	if _, err := tx.ExecContext(ctx,
 		`DELETE FROM auth_user_groups WHERE user_id=$1 AND group_id=$2`,
 		userID, groupID,
-	)
-	if err != nil {
+	); err != nil {
 		return fmt.Errorf("failed to remove user from group: %w", err)
+	}
+
+	// Project roles granted through the group go with the membership.
+	if err := revokeExcessProjectTokens(ctx, tx, ""); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(); err != nil {
+		return fmt.Errorf("failed to commit remove user from group: %w", err)
 	}
 
 	return nil

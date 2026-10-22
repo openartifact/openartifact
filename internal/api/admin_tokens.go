@@ -31,9 +31,9 @@ func NewAdminTokensHandler(db database.Database, log *logger.Logger, evaluator *
 }
 
 func (h *AdminTokensHandler) Register(r chi.Router) {
-	r.Post("/api/v1/users/{id}/tokens", h.handleCreate)
-	r.Get("/api/v1/users/{id}/tokens", h.handleList)
-	r.Delete("/api/v1/users/{id}/tokens/{tokenId}", h.handleRevoke)
+	r.With(requireUUIDParams("id")).Post("/api/v1/users/{id}/tokens", h.handleCreate)
+	r.With(requireUUIDParams("id")).Get("/api/v1/users/{id}/tokens", h.handleList)
+	r.With(requireUUIDParams("id", "tokenId")).Delete("/api/v1/users/{id}/tokens/{tokenId}", h.handleRevoke)
 	r.Get("/api/v1/admin/tokens", h.handleAdminList)
 	r.Delete("/api/v1/admin/tokens/{tokenId}", h.handleAdminRevoke)
 }
@@ -65,6 +65,17 @@ func (h *AdminTokensHandler) handleCreate(w http.ResponseWriter, r *http.Request
 
 	if !ok {
 		writeError(w, http.StatusForbidden, "forbidden", "insufficient permissions")
+		return
+	}
+
+	target, err := h.db.GetUserByID(r.Context(), targetUserID)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	if target == nil || target.IsService() {
+		writeError(w, http.StatusNotFound, "not_found", "user not found")
 		return
 	}
 
@@ -349,6 +360,10 @@ func issueToken(w http.ResponseWriter, r *http.Request, db database.Database, lo
 		writeError(w, http.StatusInternalServerError, "internal_error", "token creation failed")
 
 		return
+	}
+
+	if p.UserID == nil || *p.UserID != ownerID {
+		auditAdmin(r, "token.created_for_user", "user", ownerID, "token "+record.Name+" created for user "+ownerID)
 	}
 
 	writeJSON(w, http.StatusCreated, responses.TokenCreateResponse{

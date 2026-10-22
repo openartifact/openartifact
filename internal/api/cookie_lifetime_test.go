@@ -21,9 +21,8 @@ func TestSessionCookiesUseAbsoluteLifetime(t *testing.T) {
 	}
 
 	rec := httptest.NewRecorder()
-	req := httptest.NewRequestWithContext(t.Context(), "POST", "/api/v1/auth/login", nil)
-	setSessionCookie(rec, req, "v")
-	setCSRFCookie(rec, req, "t")
+	setSessionCookie(rec, false, "v")
+	setCSRFCookie(rec, false, "t")
 
 	cookies := rec.Result().Cookies()
 	if len(cookies) != 2 {

@@ -18,6 +18,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/rpm"
@@ -68,7 +69,7 @@ type MockDatabase struct {
 func newMockDatabase() *MockDatabase {
 	now := time.Now()
 	adminAllTarget := &models.PermissionTarget{
-		ID:               "seed-admin-all",
+		ID:               "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		Name:             "admin-all",
 		RepositoryFilter: ".*",
 		PathPattern:      ".*",
@@ -671,7 +672,7 @@ func (m *MockDatabase) UpdateNPMPackageLatestVersion(ctx context.Context, packag
 
 func (m *MockDatabase) CreateUser(ctx context.Context, user *models.User) (*models.User, error) {
 	if user.ID == "" {
-		user.ID = fmt.Sprintf("user-%d", len(m.authUsers)+1)
+		user.ID = uuid.NewString()
 	}
 
 	m.authUsers[user.ID] = user
@@ -695,6 +696,22 @@ func (m *MockDatabase) UpdateUser(ctx context.Context, user *models.User) error 
 
 	m.authUsers[user.ID] = user
 	m.authUsersByName[user.Username] = user
+
+	return nil
+}
+
+func (m *MockDatabase) UpdateUserSSOProfile(ctx context.Context, id string, email, fullName *string, at time.Time) error {
+	if u, ok := m.authUsers[id]; ok {
+		if email != nil {
+			u.Email = email
+		}
+
+		if fullName != nil {
+			u.FullName = fullName
+		}
+
+		u.LastLoginAt = &at
+	}
 
 	return nil
 }
@@ -740,7 +757,7 @@ func (m *MockDatabase) CountUsers(ctx context.Context) (int, error) {
 
 func (m *MockDatabase) CreateGroup(ctx context.Context, group *models.Group) (*models.Group, error) {
 	if group.ID == "" {
-		group.ID = fmt.Sprintf("group-%d", len(m.authGroups)+1)
+		group.ID = uuid.NewString()
 	}
 
 	m.authGroups[group.ID] = group
@@ -867,7 +884,7 @@ func (m *MockDatabase) UpdateSessionLastSeen(ctx context.Context, sessionID stri
 
 func (m *MockDatabase) CreateToken(ctx context.Context, token *models.Token) (*models.Token, error) {
 	if token.ID == "" {
-		token.ID = fmt.Sprintf("token-%d", len(m.authTokensByID)+1)
+		token.ID = uuid.NewString()
 	}
 
 	m.authTokens[token.TokenHash] = token
@@ -916,7 +933,7 @@ func (m *MockDatabase) ListTokensByUser(ctx context.Context, userID string) ([]*
 
 func (m *MockDatabase) CreatePermissionTarget(ctx context.Context, target *models.PermissionTarget) (*models.PermissionTarget, error) {
 	if target.ID == "" {
-		target.ID = fmt.Sprintf("pt-%d", len(m.permissionTargets)+1)
+		target.ID = uuid.NewString()
 	}
 
 	m.permissionTargets[target.ID] = target

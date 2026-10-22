@@ -322,7 +322,10 @@ func fetchIDPMetadata(ctx context.Context, cfg models.SAMLConfig, log *logger.Lo
 	return nil, errors.New("no idp metadata source configured") //nolint:err113 // static error
 }
 
-const maxIDPMetadataBytes = 1 << 20
+const (
+	maxIDPMetadataBytes = 1 << 20
+	maxStaleIDPMetadata = 24 * time.Hour
+)
 
 var errIDPMetadataTooLarge = errors.New("idp metadata exceeds size limit")
 
@@ -382,7 +385,9 @@ func fallbackCachedMetadata(metadataURL string, fetchErr error, log *logger.Logg
 			log.Warnw("SAML IdP metadata URL unreachable; using cached copy", "url", metadataURL, "error", fetchErr)
 		}
 
-		if cm, ok := cached.(*cachedMetadata); ok {
+		// A stale copy is served only for a bounded time, so a revoked IdP
+		// certificate is eventually dropped when the URL stays unreachable.
+		if cm, ok := cached.(*cachedMetadata); ok && time.Since(cm.fetchedAt) < maxStaleIDPMetadata {
 			return cm.descriptor, nil
 		}
 	}

@@ -7,11 +7,7 @@ package web
 import (
 	"embed"
 	"io/fs"
-	"log"
 	"net/http"
-	"net/http/httputil"
-	"net/url"
-	"os"
 	"path"
 	"strings"
 )
@@ -42,13 +38,12 @@ func notFound(w http.ResponseWriter, apiPath bool) {
 	http.Error(w, "not found", http.StatusNotFound)
 }
 
-// Handler serves the embedded SPA. Set OPENARTIFACT_DEV to proxy to the Vite
-// dev server instead (development only).
+// Handler serves the embedded SPA. In binaries built with the "dev" tag,
+// setting OPENARTIFACT_DEV proxies to the Vite dev server instead (see
+// devHandler); release binaries never honour it.
 func Handler() http.Handler {
-	if os.Getenv("OPENARTIFACT_DEV") != "" {
-		log.Printf("web: OPENARTIFACT_DEV is set; proxying UI to http://localhost:5173 (development only)")
-		target, _ := url.Parse("http://localhost:5173")
-		return httputil.NewSingleHostReverseProxy(target)
+	if h := devHandler(); h != nil {
+		return h
 	}
 
 	sub, err := fs.Sub(distFS, "dist")

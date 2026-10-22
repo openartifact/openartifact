@@ -57,7 +57,7 @@ func setupAdminAuditRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Pr
 
 	uid := adminUser.ID
 	if err := db.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        uid,
 	}); err != nil {
@@ -288,7 +288,7 @@ func setupGPGRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.Principal
 
 	uid := adminUser.ID
 	if err := db.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        uid,
 	}); err != nil {
@@ -679,7 +679,7 @@ func setupAdminTokensRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.P
 	now := time.Now()
 
 	adminUser := &models.User{
-		ID:        "admin-token-admin-1",
+		ID:        "2fd45323-03fd-5344-aef6-4001343fcf52",
 		Username:  "admintokenadmin",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -690,7 +690,7 @@ func setupAdminTokensRouter(t *testing.T, db *MockDatabase) (chi.Router, *auth.P
 
 	uid := adminUser.ID
 	if err := db.CreatePermissionAssignment(ctx, &models.PermissionAssignment{
-		PermissionTargetID: "seed-admin-all",
+		PermissionTargetID: "981948bd-de8f-5c65-b90b-23d72cf37aab",
 		PrincipalType:      "user",
 		PrincipalID:        uid,
 	}); err != nil {
@@ -715,7 +715,7 @@ func TestAdminTokens_ListAll(t *testing.T) {
 
 	// Create a user and a token for them
 	user := &models.User{
-		ID:        "admin-token-user-1",
+		ID:        "473dff23-a847-5abe-a91e-0306a99a2da8",
 		Username:  "tokenuser",
 		CreatedAt: now,
 		UpdatedAt: now,
@@ -777,7 +777,7 @@ func TestAdminTokens_AdminRevoke(t *testing.T) {
 
 	// Create a user and a token for them
 	user := &models.User{
-		ID:        "admin-token-user-2",
+		ID:        "208b961c-2e65-574e-a9b8-3a38f728c085",
 		Username:  "tokenuser2",
 		CreatedAt: now,
 		UpdatedAt: now,

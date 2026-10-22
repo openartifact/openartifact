@@ -66,7 +66,7 @@ bun run build          # → web/dist, embedded into the server binary
 bun run generate-api   # regenerate src/api/generated from internal/api/openapi.json
 ```
 
-Start the server on `:8080` for the dev server to talk to. Setting `OPENARTIFACT_DEV=1` on the server makes it proxy UI requests to `http://localhost:5173` instead of serving the embedded build.
+Start the server on `:8080` for the dev server to talk to. Build the server with `-tags dev` and set `OPENARTIFACT_DEV=1` to make it proxy UI requests to `http://localhost:5173` instead of serving the embedded build (release binaries ignore the variable).
 
 If you change the HTTP API, update `internal/api/openapi.json` and run `bun run generate-api`; CI fails when `web/src/api/generated` drifts.
 

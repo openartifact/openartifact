@@ -28,6 +28,7 @@ type provMockDB struct {
 	groupsByID     map[string]*models.Group
 	createUserFn   func(*models.User) (*models.User, error)
 	updateUserFn   func(*models.User) error
+	fullRowUpdates int
 	updateSSOFn    func(userID, extID, slug string) error
 	syncGroupsFn   func(userID string, groupIDs []string) error
 	syncGroupsErr  error
@@ -96,12 +97,41 @@ func (m *provMockDB) CreateUser(_ context.Context, u *models.User) (*models.User
 }
 
 func (m *provMockDB) UpdateUser(_ context.Context, u *models.User) error {
+	m.fullRowUpdates++
+
 	if m.updateUserFn != nil {
 		return m.updateUserFn(u)
 	}
 
 	m.usersByID[u.ID] = u
 	m.updatedUsers = append(m.updatedUsers, u)
+
+	return nil
+}
+
+func (m *provMockDB) UpdateUserSSOProfile(_ context.Context, id string, email, fullName *string, at time.Time) error {
+	u := m.usersByID[id]
+	if u == nil {
+		return nil
+	}
+
+	updated := *u
+	if email != nil {
+		updated.Email = email
+	}
+
+	if fullName != nil {
+		updated.FullName = fullName
+	}
+
+	updated.LastLoginAt = &at
+
+	if m.updateUserFn != nil {
+		return m.updateUserFn(&updated)
+	}
+
+	m.usersByID[id] = &updated
+	m.updatedUsers = append(m.updatedUsers, &updated)
 
 	return nil
 }
@@ -1003,6 +1033,30 @@ func TestProvisioner_EmailUpdatedOnReLogin(t *testing.T) {
 	updated := db.updatedUsers[len(db.updatedUsers)-1]
 	if updated.Email == nil || *updated.Email != "new@example.com" {
 		t.Errorf("expected email=new@example.com, got %v", updated.Email)
+	}
+}
+
+// A login must never write the whole auth_users row from its stale snapshot:
+// that would resurrect a user an admin disabled (or restore a replaced
+// password hash) between the lookup and the write.
+func TestProvisioner_ReLoginUsesNarrowUpdate(t *testing.T) {
+	db := newProvMockDB()
+	extID := "sub|narrow"
+	slug := "okta"
+	db.addUser(&models.User{ID: "user-narrow", Username: "narrow", ExternalID: &extID, ProviderSlug: &slug})
+
+	p := newTestProvisioner(db)
+
+	if _, err := p.Provision(context.Background(), testProvider(true, false, nil), testClaims("sub|narrow", "n@example.com", "narrow", nil)); err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+
+	if db.fullRowUpdates != 0 {
+		t.Fatalf("Provision wrote the full user row %d time(s)", db.fullRowUpdates)
+	}
+
+	if len(db.updatedUsers) == 0 {
+		t.Fatal("expected the narrow profile update")
 	}
 }
 

@@ -228,9 +228,11 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		Username:     username,
 		Email:        email,
 		// The assertion is signed by the configured IdP, which is the authority
-		// for the mail attribute. SAML has no standard verification flag, so an
-		// explicit "email_verified" attribute is honoured when the IdP sends one.
-		EmailVerified: emailVerifiedAttr == "" || strings.EqualFold(emailVerifiedAttr, "true"),
+		// for the attributes, but SAML has no standard verification flag, so the
+		// email counts as verified only when the IdP explicitly sends
+		// email_verified=true (a missing attribute must not enable link_by_email
+		// takeover of a local account).
+		EmailVerified: samlEmailVerified(emailVerifiedAttr),
 		FullName:      fullName,
 		Groups:        groups,
 	}
@@ -289,8 +291,9 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	setSessionCookie(w, r, cookieValue)
-	setCSRFCookie(w, r, csrfToken)
+	secure := isSecureContext(r, h.baseURL)
+	setSessionCookie(w, secure, cookieValue)
+	setCSRFCookie(w, secure, csrfToken)
 
 	//nolint:gosec // G710: redirect is a same-origin relative path (safeRedirectPath)
 	http.Redirect(w, r, safeRedirectPath(redirect), http.StatusFound)
@@ -324,4 +327,12 @@ func (h *SAMLHandler) handleMetadata(w http.ResponseWriter, r *http.Request) {
 	w.WriteHeader(http.StatusOK)
 	//nolint:gosec // G705: XML response to SAML SP, not HTML output
 	_, _ = w.Write(xmlBytes)
+}
+
+// samlEmailVerified reports whether the IdP explicitly asserted a verified
+// email. SAML has no standard flag, so a missing or any other value is treated
+// as unverified: defaulting to verified would let an IdP user who controls
+// their own mail attribute take over a local account through link_by_email.
+func samlEmailVerified(attr string) bool {
+	return strings.EqualFold(strings.TrimSpace(attr), "true")
 }

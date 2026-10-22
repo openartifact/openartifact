@@ -33,8 +33,20 @@ func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 			}
 
 			statusStr := strconv.Itoa(wrapped.statusCode)
-			reg.HTTPRequestsTotal.WithLabelValues(r.Method, path, statusStr).Inc()
-			reg.HTTPRequestDurationSeconds.WithLabelValues(r.Method, path).Observe(duration.Seconds())
+			reg.HTTPRequestsTotal.WithLabelValues(methodLabel(r.Method), path, statusStr).Inc()
+			reg.HTTPRequestDurationSeconds.WithLabelValues(methodLabel(r.Method), path).Observe(duration.Seconds())
 		})
 	}
+}
+
+// methodLabel bounds the method label cardinality: net/http accepts any RFC
+// token as a method, so unknown methods collapse into "OTHER".
+func methodLabel(m string) string {
+	switch m {
+	case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut,
+		http.MethodPatch, http.MethodDelete, http.MethodOptions:
+		return m
+	}
+
+	return "OTHER"
 }

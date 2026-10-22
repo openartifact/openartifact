@@ -29,13 +29,9 @@ export type HealthResponse = {
      */
     version?: string;
     /**
-     * Instance identifier
+     * Operator-configured instance name; omitted when OPENARTIFACT_INSTANCE_ID is empty
      */
     instance_id?: string;
-    /**
-     * Uptime duration
-     */
-    uptime?: string;
     components?: {
         [key: string]: {
             status?: 'ok' | 'error';

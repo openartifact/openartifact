@@ -80,7 +80,7 @@ Next: create a repository, then an API token for clients ([authentication](../se
 |---|---|
 | `OPENARTIFACT_RESET_PASSWORD` | New password. If unset, one line is read from stdin; an interactive terminal is refused (input would echo) |
 | `-username NAME` / `OPENARTIFACT_RESET_USERNAME` | User to reset (default `admin`) |
-| `-sslmode MODE` / `DB_SSLMODE` | `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full` (default `prefer`, unlike the server's `require`) |
+| `-sslmode MODE` / `DB_SSLMODE` | `disable`, `allow`, `prefer`, `require`, `verify-ca` or `verify-full` (default `require`, like the server) |
 | `DB_HOST`, `DB_PORT`, `DB_USER`, `DB_PASSWORD`, `DB_NAME` | Connection settings; defaults `localhost`, `5432`, `postgres`, empty, `artifact_repo`. Read from the environment only, not from the YAML file |
 
 ```sh

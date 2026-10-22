@@ -43,15 +43,15 @@ curl -sS -c jar -X POST HOST/api/v1/auth/login \
 
 | Endpoint | Notes |
 |---|---|
-| `POST /api/v1/auth/login` | JSON or form body `username`, `password`; CSRF-exempt |
-| `POST /api/v1/auth/logout` | ends the session |
+| `POST /api/v1/auth/login` | JSON body `username`, `password` (`Content-Type: application/json` is required; form bodies get 415). Browser requests from another origin (`Origin` / `Sec-Fetch-Site: cross-site`) get 403, which closes login CSRF |
+| `POST /api/v1/auth/logout` | ends the session; cross-origin browser requests get 403 |
 | `GET /api/v1/auth/me` | current user, `is_admin`, `groups`; works with any credential |
 | `POST /api/v1/auth/change-password` | `{current_password,new_password}`; session only (tokens get 403); revokes the user's other sessions; wrong guesses count against the login failure budget |
 
-- Login sets `oa_session` (HttpOnly, SameSite=Lax, `Secure` over TLS or when `X-Forwarded-Proto: https`) and `oa_csrf` (readable by JS).
+- Login sets `oa_session` (HttpOnly, SameSite=Lax, `Secure` over TLS, when `X-Forwarded-Proto: https`, or when `BASE_URL` is `https://`; HSTS is sent under the same condition as `server.tls.enabled` or an `https://` `BASE_URL`) and `oa_csrf` (readable by JS).
 - The server stores only the SHA-256 of the 32-byte random session id.
 - Expiry is sliding: `auth.sessionDurationHours` / `SESSION_DURATION_HOURS` (default 24), extended at most once a minute. A session also ends 30 days after login regardless of activity (fixed, not configurable).
-- Throttling: 10 login requests per minute per client IP and 10 failures per 15 minutes per username; both answer 429 with `Retry-After`.
+- Throttling: 10 login requests per minute per client IP and 10 failures per 15 minutes per username; both answer 429 with `Retry-After`. IPv6 clients are counted per /64 network, and a limiter at capacity never evicts an entry that is currently locked out.
 - Disabling a user revokes the user's sessions; disabled users are rejected on every credential type.
 
 Session cookies (`oa_session`, `oa_csrf`) carry `Max-Age` equal to the absolute session lifetime; the sliding idle expiry is enforced server-side, so an active user is no longer logged out by the browser after the idle window.
@@ -107,7 +107,7 @@ Per-format client configuration is under [formats](../formats/README.md).
 
 ## Legacy API key
 
-`API_KEY` / `server.apiKey` sets a single shared key; `LEGACY_API_KEY_ENABLED` / `auth.legacyApiKeyEnabled` (default `true`) switches the mechanism. It is active only when the key is non-empty and enabled, and is read from `X-Api-Key`, else the Bearer value, else the Basic password (constant-time compare).
+`API_KEY` / `server.apiKey` sets a single shared key; `LEGACY_API_KEY_ENABLED` / `auth.legacyApiKeyEnabled` (default `false`; set it to `true` to keep using `API_KEY`) switches the mechanism. It is active only when the key is non-empty and enabled, and is read from `X-Api-Key`, else the Bearer value, else the Basic password (constant-time compare).
 
 It maps to the principal `system/legacy-api-key`, which is **full admin for every action**, not write-only, and bypasses CSRF. Every use logs a `legacy_api_key_used` deprecation warning. Leave `API_KEY` unset and use API tokens instead. An empty key does not disable authentication: RBAC is always enforced.
 
@@ -128,7 +128,7 @@ A denied anonymous request gets 401 with `WWW-Authenticate` (`Bearer realm="open
 |---|---|---|
 | `server.ipAllowlist` | `OPENARTIFACT_IP_ALLOWLIST` (comma-separated CIDRs) | other client IPs get 403 `IP not allowed`. Empty = allow all. Entries may be CIDRs or bare IPs; an entry that parses as neither stops startup (it never silently disables the allowlist) |
 | `server.rateLimitRps` | `OPENARTIFACT_RATE_LIMIT_RPS` | per-client-IP token bucket per second, 0 = off; 429 `rate limit exceeded` with `Retry-After: 1`. In-process, so each replica counts separately |
-| `server.trustedProxies` | `OPENARTIFACT_TRUSTED_PROXIES` (comma-separated CIDRs) | only a peer inside these CIDRs may set `X-Forwarded-For` (the rightmost entry that is not itself a trusted proxy) or `X-Real-IP` |
+| `server.trustedProxies` | `OPENARTIFACT_TRUSTED_PROXIES` (comma-separated CIDRs) | only a peer inside these CIDRs may set `X-Forwarded-For` (the rightmost entry that is not itself a trusted proxy, reading every `X-Forwarded-For` header line from the last to the first; an unparseable entry falls back to the peer) or `X-Real-IP` |
 
 The resolved client IP feeds the allowlist, rate limit, login throttle, audit log and sessions. Behind a reverse proxy set `trustedProxies`, otherwise every client appears as the proxy (a warning is logged once when forwarding headers arrive from an untrusted peer). Entries must be CIDRs (`10.0.0.1/32`, not `10.0.0.1`); invalid entries are skipped silently, and an allowlist with no valid entry allows everyone.
 

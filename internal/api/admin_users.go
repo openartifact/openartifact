@@ -34,9 +34,9 @@ func NewAdminUsersHandler(db database.Database, log *logger.Logger, evaluator *a
 func (h *AdminUsersHandler) Register(r chi.Router) {
 	r.Post("/api/v1/users", h.handleCreate)
 	r.Get("/api/v1/users", h.handleList)
-	r.Get("/api/v1/users/{id}", h.handleGet)
-	r.Patch("/api/v1/users/{id}", h.handlePatch)
-	r.Delete("/api/v1/users/{id}", h.handleDelete)
+	r.With(requireUUIDParams("id")).Get("/api/v1/users/{id}", h.handleGet)
+	r.With(requireUUIDParams("id")).Patch("/api/v1/users/{id}", h.handlePatch)
+	r.With(requireUUIDParams("id")).Delete("/api/v1/users/{id}", h.handleDelete)
 }
 
 func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -94,9 +94,17 @@ func (h *AdminUsersHandler) handleCreate(w http.ResponseWriter, r *http.Request)
 
 	saved, err := h.db.CreateUser(r.Context(), user)
 	if err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a user with this username or email already exists")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
 		return
 	}
+
+	auditAdmin(r, "user.created", "user", saved.ID, "user "+saved.Username+" created")
 
 	writeJSON(w, http.StatusCreated, userToResponse(saved))
 }
@@ -220,6 +228,8 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 
 	revokeSessions := false
 
+	var changed []string
+
 	if body.Email != nil {
 		if *body.Email != "" && !strings.Contains(*body.Email, "@") {
 			writeError(w, http.StatusBadRequest, "validation_failed", "invalid email format")
@@ -227,20 +237,28 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 		}
 
 		user.Email = body.Email
+
+		changed = append(changed, "email")
 	}
 
 	if body.FullName != nil {
 		user.FullName = body.FullName
+
+		changed = append(changed, "full_name")
 	}
 
 	if isAdmin {
 		if body.Disabled != nil {
 			user.Disabled = *body.Disabled
 			revokeSessions = revokeSessions || *body.Disabled
+
+			changed = append(changed, "disabled="+strconv.FormatBool(*body.Disabled))
 		}
 
 		if body.MustChangePassword != nil {
 			user.MustChangePassword = *body.MustChangePassword
+
+			changed = append(changed, "must_change_password")
 		}
 
 		if body.Password != nil {
@@ -252,14 +270,24 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 
 			user.PasswordHash = &newHash
 			revokeSessions = true
+
+			changed = append(changed, "password_reset")
 		}
 	}
 
 	user.UpdatedAt = time.Now()
 	if err := h.db.UpdateUser(ctx, user); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a user with this email already exists")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
 		return
 	}
+
+	auditAdmin(r, "user.updated", "user", user.ID, "user "+user.Username+" updated: "+strings.Join(changed, ", "))
 
 	// A password reset or a disable must cut off whoever still holds a
 	// session. Failing to do so fails the request: the caller must know the
@@ -309,6 +337,8 @@ func (h *AdminUsersHandler) handleDelete(w http.ResponseWriter, r *http.Request)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
+
+	auditAdmin(r, "user.disabled", "user", user.ID, "user "+user.Username+" deleted (disabled)")
 
 	if err := auth.RevokeAllSessions(ctx, h.db, user.ID); err != nil {
 		h.log.Errorw("admin delete user: revoke sessions", "error", err, "user", user.ID)

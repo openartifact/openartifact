@@ -91,18 +91,22 @@ func ClientIP(r *http.Request, trusted *TrustedProxies) string {
 		return peer
 	}
 
-	// Walk X-Forwarded-For right to left: each trusted proxy appends the peer
-	// it saw, so the rightmost hop that is not itself a trusted proxy is the
-	// real client. Anything further left is client-supplied and spoofable.
-	for _, xff := range r.Header.Values("X-Forwarded-For") {
+	// Walk X-Forwarded-For right to left across ALL header lines (a proxy may
+	// append its own line instead of extending the existing one): each trusted
+	// proxy appends the peer it saw, so the rightmost hop that is not itself a
+	// trusted proxy is the real client. Anything further left is
+	// client-supplied and spoofable.
+	lines := r.Header.Values("X-Forwarded-For")
+	for _, xff := range slices.Backward(lines) {
 		hops := strings.Split(xff, ",")
 		for _, h := range slices.Backward(hops) {
 			hop := strings.TrimSpace(h)
 			ip := net.ParseIP(hop)
 
 			if ip == nil {
-				// Unparseable hop: stop; it cannot be attributed.
-				break
+				// Unparseable hop cannot be attributed; do not trust anything
+				// to its left.
+				return peer
 			}
 
 			if !trusted.trusts(ip) {
@@ -118,4 +122,21 @@ func ClientIP(r *http.Request, trusted *TrustedProxies) string {
 	}
 
 	return peer
+}
+
+// LimiterKey normalizes a client IP string into a rate-limiter key: IPv4-mapped
+// IPv6 addresses collapse to IPv4 and IPv6 addresses collapse to their /64, so
+// a single subscriber cannot mint 2^64 distinct keys. Unparseable input is
+// returned unchanged.
+func LimiterKey(ip string) string {
+	parsed := net.ParseIP(ip)
+	if parsed == nil {
+		return ip
+	}
+
+	if v4 := parsed.To4(); v4 != nil {
+		return v4.String()
+	}
+
+	return parsed.Mask(net.CIDRMask(64, 128)).String() + "/64"
 }

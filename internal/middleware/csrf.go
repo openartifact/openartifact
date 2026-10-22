@@ -68,7 +68,17 @@ func crossSiteBasic(r *http.Request) bool {
 	return false
 }
 
-func CSRFMiddleware(next http.Handler) http.Handler {
+// CSRFMiddleware enforces the double-submit CSRF token. baseURL is the public
+// base URL: an https value forces Secure on the seeded cookie.
+func CSRFMiddleware(baseURL string) func(http.Handler) http.Handler {
+	httpsBase := strings.HasPrefix(strings.ToLower(baseURL), "https://")
+
+	return func(next http.Handler) http.Handler {
+		return csrfHandler(next, httpsBase)
+	}
+}
+
+func csrfHandler(next http.Handler, httpsBase bool) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if !strings.HasPrefix(r.URL.Path, "/api/v1/") {
 			next.ServeHTTP(w, r)
@@ -84,7 +94,7 @@ func CSRFMiddleware(next http.Handler) http.Handler {
 						Name:     CSRFTokenCookieName,
 						Value:    token,
 						Path:     "/",
-						Secure:   r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
+						Secure:   httpsBase || r.TLS != nil || r.Header.Get("X-Forwarded-Proto") == "https",
 						SameSite: http.SameSiteLaxMode,
 					})
 				}

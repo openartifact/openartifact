@@ -210,3 +210,39 @@ func revokeProjectTokensOf(ctx context.Context, tx *sql.Tx, creatorID, projectID
 
 	return nil
 }
+
+// revokeExcessProjectTokens revokes the live project tokens whose role outranks
+// what their creator still holds in that project (recorded owner, membership,
+// or group attachment), and disables the service accounts behind them. It
+// runs in the caller's transaction after any change that can lower a user's
+// project role: demotion, group detachment, group membership removal. An empty
+// projectID checks every project.
+func revokeExcessProjectTokens(ctx context.Context, tx *sql.Tx, projectID string) error {
+	// Role ranks mirror models.ProjectRoleRank (viewer 1 .. owner 4).
+	_, err := tx.ExecContext(ctx,
+		`WITH held AS (
+			SELECT p.id AS project_id, p.owner_id AS user_id, 4 AS r
+			FROM projects p WHERE p.owner_id IS NOT NULL
+			UNION ALL
+			SELECT pm.project_id, pm.user_id,
+			       CASE pm.role WHEN 'viewer' THEN 1 WHEN 'developer' THEN 2 WHEN 'maintainer' THEN 3 WHEN 'owner' THEN 4 ELSE 0 END
+			FROM project_members pm
+			UNION ALL
+			SELECT pg.project_id, ug.user_id,
+			       CASE pg.role WHEN 'viewer' THEN 1 WHEN 'developer' THEN 2 WHEN 'maintainer' THEN 3 WHEN 'owner' THEN 4 ELSE 0 END
+			FROM project_groups pg JOIN auth_user_groups ug ON ug.group_id = pg.group_id
+		), revoked AS (
+			UPDATE auth_tokens t SET revoked_at = now()
+			WHERE t.project_id IS NOT NULL AND t.revoked_at IS NULL AND t.created_by IS NOT NULL
+			  AND ($1 = '' OR t.project_id = $1::uuid)
+			  AND CASE t.project_role WHEN 'viewer' THEN 1 WHEN 'developer' THEN 2 WHEN 'maintainer' THEN 3 WHEN 'owner' THEN 4 ELSE 0 END
+			      > COALESCE((SELECT max(h.r) FROM held h WHERE h.project_id = t.project_id AND h.user_id = t.created_by), 0)
+			RETURNING user_id)
+		UPDATE auth_users SET disabled = true WHERE id IN (SELECT user_id FROM revoked) AND kind = 'service'`,
+		projectID)
+	if err != nil {
+		return fmt.Errorf("revoke project tokens above creator role: %w", err)
+	}
+
+	return nil
+}

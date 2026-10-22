@@ -242,6 +242,10 @@ func (p *PostgresDB) SyncSSOGroups(ctx context.Context, userID string, groupIDs 
 		}
 	}
 
+	if err := revokeExcessProjectTokens(ctx, tx, ""); err != nil {
+		return err
+	}
+
 	if err := tx.Commit(); err != nil {
 		return fmt.Errorf("failed to commit sso group sync: %w", err)
 	}

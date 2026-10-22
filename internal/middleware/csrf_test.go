@@ -28,7 +28,7 @@ func TestCSRFMiddlewareAllowsMatchingToken(t *testing.T) {
 	r.Header.Set("X-Csrf-Token", "token")
 	w := httptest.NewRecorder()
 
-	CSRFMiddleware(csrfNext(&called)).ServeHTTP(w, r)
+	CSRFMiddleware("")(csrfNext(&called)).ServeHTTP(w, r)
 
 	if !called || w.Code != http.StatusNoContent {
 		t.Fatalf("expected matching token to reach handler, got called=%v status=%d", called, w.Code)
@@ -55,7 +55,7 @@ func TestCSRFMiddlewareRejectsMissingOrMismatchedToken(t *testing.T) {
 			}
 			w := httptest.NewRecorder()
 
-			CSRFMiddleware(csrfNext(&called)).ServeHTTP(w, r)
+			CSRFMiddleware("")(csrfNext(&called)).ServeHTTP(w, r)
 
 			if called || w.Code != http.StatusForbidden {
 				t.Fatalf("expected rejection, got called=%v status=%d", called, w.Code)
@@ -77,7 +77,7 @@ func TestCSRFMiddlewareSeedsCookieOnSafeMethod(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/repositories", nil)
 
-	CSRFMiddleware(csrfNext(&called)).ServeHTTP(w, r)
+	CSRFMiddleware("")(csrfNext(&called)).ServeHTTP(w, r)
 
 	if !called || w.Code != http.StatusNoContent {
 		t.Fatalf("expected safe method to reach handler, got called=%v status=%d", called, w.Code)
@@ -102,7 +102,7 @@ func TestCSRFMiddlewareAllowsSafeMethods(t *testing.T) {
 			w := httptest.NewRecorder()
 			r := httptest.NewRequestWithContext(context.Background(), method, "/api/v1/repositories", nil)
 
-			CSRFMiddleware(csrfNext(&called)).ServeHTTP(w, r)
+			CSRFMiddleware("")(csrfNext(&called)).ServeHTTP(w, r)
 
 			if !called || w.Code != http.StatusNoContent {
 				t.Fatalf("expected safe method to reach handler, got called=%v status=%d", called, w.Code)
@@ -116,7 +116,7 @@ func TestCSRFMiddlewareAllowsSAMLACS(t *testing.T) {
 	w := httptest.NewRecorder()
 	r := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/auth/sso/saml/example/acs", nil)
 
-	CSRFMiddleware(csrfNext(&called)).ServeHTTP(w, r)
+	CSRFMiddleware("")(csrfNext(&called)).ServeHTTP(w, r)
 
 	if !called || w.Code != http.StatusNoContent {
 		t.Fatalf("expected SAML ACS to reach handler, got called=%v status=%d", called, w.Code)
@@ -146,11 +146,24 @@ func TestCSRFMiddlewareBasicCrossSiteRejected(t *testing.T) {
 			}
 
 			r = r.WithContext(WithPrincipal(r.Context(), &auth.Principal{Credential: auth.CredentialBasicToken}))
-			CSRFMiddleware(csrfNext(&called)).ServeHTTP(httptest.NewRecorder(), r)
+			CSRFMiddleware("")(csrfNext(&called)).ServeHTTP(httptest.NewRecorder(), r)
 
 			if called != tc.want {
 				t.Fatalf("called=%v want %v", called, tc.want)
 			}
 		})
+	}
+}
+
+func TestCSRFMiddlewareSeededCookieSecureForHTTPSBaseURL(t *testing.T) {
+	var called bool
+
+	r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/repositories", nil)
+	w := httptest.NewRecorder()
+	CSRFMiddleware("https://oa.example.com")(csrfNext(&called)).ServeHTTP(w, r)
+
+	cookies := w.Result().Cookies()
+	if len(cookies) != 1 || !cookies[0].Secure {
+		t.Fatalf("seeded CSRF cookie must be Secure behind an https base URL, got %+v", cookies)
 	}
 }

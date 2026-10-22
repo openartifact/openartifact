@@ -7,6 +7,7 @@ package api
 import (
 	"net/http"
 	"regexp"
+	"strconv"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -33,14 +34,14 @@ func NewAdminGroupsHandler(db database.Database, log *logger.Logger, evaluator *
 func (h *AdminGroupsHandler) Register(r chi.Router) {
 	r.Post("/api/v1/groups", h.handleCreate)
 	r.Get("/api/v1/groups", h.handleList)
-	r.Get("/api/v1/groups/{id}", h.handleGet)
-	r.Patch("/api/v1/groups/{id}", h.handlePatch)
-	r.Delete("/api/v1/groups/{id}", h.handleDelete)
-	r.Post("/api/v1/groups/{id}/members/{userId}", h.handleAddMember)
-	r.Delete("/api/v1/groups/{id}/members/{userId}", h.handleRemoveMember)
-	r.Get("/api/v1/groups/{id}/members", h.handleListMembers)
-	r.Put("/api/v1/groups/{id}/members", h.handleSetMembers)
-	r.Get("/api/v1/users/{id}/groups", h.handleListUserGroups)
+	r.With(requireUUIDParams("id")).Get("/api/v1/groups/{id}", h.handleGet)
+	r.With(requireUUIDParams("id")).Patch("/api/v1/groups/{id}", h.handlePatch)
+	r.With(requireUUIDParams("id")).Delete("/api/v1/groups/{id}", h.handleDelete)
+	r.With(requireUUIDParams("id", "userId")).Post("/api/v1/groups/{id}/members/{userId}", h.handleAddMember)
+	r.With(requireUUIDParams("id", "userId")).Delete("/api/v1/groups/{id}/members/{userId}", h.handleRemoveMember)
+	r.With(requireUUIDParams("id")).Get("/api/v1/groups/{id}/members", h.handleListMembers)
+	r.With(requireUUIDParams("id")).Put("/api/v1/groups/{id}/members", h.handleSetMembers)
+	r.With(requireUUIDParams("id")).Get("/api/v1/users/{id}/groups", h.handleListUserGroups)
 }
 
 func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
@@ -72,9 +73,17 @@ func (h *AdminGroupsHandler) handleCreate(w http.ResponseWriter, r *http.Request
 
 	saved, err := h.db.CreateGroup(r.Context(), group)
 	if err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a group with this name already exists")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
 		return
 	}
+
+	auditAdmin(r, "group.created", "group", saved.ID, "group "+saved.Name+" created")
 
 	writeJSON(w, http.StatusCreated, groupToResponse(saved))
 }
@@ -162,9 +171,17 @@ func (h *AdminGroupsHandler) handlePatch(w http.ResponseWriter, r *http.Request)
 
 	group.UpdatedAt = time.Now()
 	if err := h.db.UpdateGroup(ctx, group); err != nil {
+		if database.IsUniqueViolation(err) {
+			writeError(w, http.StatusConflict, "conflict", "a group with this name already exists")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
 		return
 	}
+
+	auditAdmin(r, "group.updated", "group", group.ID, "group "+group.Name+" updated")
 
 	writeJSON(w, http.StatusOK, groupToResponse(group))
 }
@@ -180,6 +197,8 @@ func (h *AdminGroupsHandler) handleDelete(w http.ResponseWriter, r *http.Request
 		return
 	}
 
+	auditAdmin(r, "group.deleted", "group", id, "group deleted")
+
 	writeNoContent(w)
 }
 
@@ -190,9 +209,17 @@ func (h *AdminGroupsHandler) handleAddMember(w http.ResponseWriter, r *http.Requ
 
 	vars := urlparams.Vars(r)
 	if err := h.db.AddUserToGroup(r.Context(), vars["userId"], vars["id"]); err != nil {
+		if database.IsForeignKeyViolation(err) {
+			writeError(w, http.StatusNotFound, "not_found", "user or group not found")
+			return
+		}
+
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
 		return
 	}
+
+	auditAdmin(r, "group.member_added", "group", vars["id"], "user "+vars["userId"]+" added to group")
 
 	writeNoContent(w)
 }
@@ -207,6 +234,8 @@ func (h *AdminGroupsHandler) handleRemoveMember(w http.ResponseWriter, r *http.R
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 		return
 	}
+
+	auditAdmin(r, "group.member_removed", "group", vars["id"], "user "+vars["userId"]+" removed from group")
 
 	writeNoContent(w)
 }
@@ -259,6 +288,13 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	for _, m := range body.Members {
+		if !isUUIDString(m) {
+			writeError(w, http.StatusBadRequest, "validation_failed", "members must be user ids")
+			return
+		}
+	}
+
 	// Get current members
 	currentUsers, err := h.db.ListUsersByGroup(ctx, id)
 	if err != nil {
@@ -300,6 +336,8 @@ func (h *AdminGroupsHandler) handleSetMembers(w http.ResponseWriter, r *http.Req
 			}
 		}
 	}
+
+	auditAdmin(r, "group.members_set", "group", id, "group membership replaced: "+strconv.Itoa(len(desiredSet))+" members")
 
 	writeNoContent(w)
 }

@@ -72,7 +72,7 @@ YAML keys are nested under the section named in each heading. Secret values (mar
 | `SERVER_TLS_CERT` | `tlsCert` | empty | TLS certificate file (PEM) |
 | `SERVER_TLS_KEY` | `tlsKey` | empty | TLS private key file (PEM) |
 | `CORS_ORIGINS` | `corsOrigins` | none | Allowed browser origins |
-| `OPENARTIFACT_INSTANCE_ID` | `instanceId` | empty | Instance name reported by `/health` (hostname when empty) |
+| `OPENARTIFACT_INSTANCE_ID` | `instanceId` | empty | Instance name reported by `/health` (omitted when empty; the hostname is never disclosed) |
 | `OPENARTIFACT_IP_ALLOWLIST` | `ipAllowlist` | empty (allow all) | CIDRs allowed to connect |
 | `OPENARTIFACT_RATE_LIMIT_RPS` | `rateLimitRps` | `0` (off) | Requests per second per client IP |
 | `OPENARTIFACT_TRUSTED_PROXIES` | `trustedProxies` | none | CIDRs of reverse proxies whose `X-Forwarded-For`/`X-Real-IP` are honored |
@@ -156,7 +156,7 @@ See [authentication](../security/authentication.md) and [RBAC](../security/rbac.
 |---|---|---|---|
 | `ALLOW_ANONYMOUS_READ` | `allowAnonymousRead` | `false` | Anonymous read of private repositories (repositories flagged public are always anonymously readable, never writable) |
 | `API_KEY` | `server.apiKey` | empty | Deprecated static write key; authenticates as `system/legacy-api-key` and logs a warning on each use |
-| `LEGACY_API_KEY_ENABLED` | `legacyApiKeyEnabled` | `true` | Accept `API_KEY` at all |
+| `LEGACY_API_KEY_ENABLED` | `legacyApiKeyEnabled` | `false` | Accept `API_KEY` at all |
 | `SESSION_DURATION_HOURS` | `sessionDurationHours` | `24` | Web session lifetime |
 | `AUTH_HMAC_KEY` | `hmacKey` | random per start | Signs OIDC/SAML login state; set for restart- and replica-safe SSO (**secret**) |
 | `OPENARTIFACT_SAML_SP_CERT` | `samlSpCert` | empty | PEM certificate of the SAML service provider |

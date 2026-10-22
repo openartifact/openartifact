@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -58,7 +59,7 @@ func createLoginUser(t *testing.T, db *MockDatabase, username, password string, 
 
 	now := time.Now()
 	user := &models.User{
-		ID:           "handler-user-" + username,
+		ID:           uuid.NewSHA1(uuid.NameSpaceDNS, []byte("handler-user-"+username)).String(),
 		Username:     username,
 		PasswordHash: &hash,
 		Disabled:     disabled,
