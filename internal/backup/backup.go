@@ -957,6 +957,7 @@ var ErrBlobListingUnsupported = errors.New("storage backend cannot list blobs; a
 func (e *Engine) exportBlobs(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	blobCount := 0
 	token := ""
+	seen := newBlobDeduper(e.blobStore)
 
 	for {
 		blobs, next, err := e.blobStore.List(ctx, token, blobPageSize)
@@ -969,6 +970,10 @@ func (e *Engine) exportBlobs(ctx context.Context, tw *tar.Writer, manifest *Back
 		}
 
 		for _, blobID := range blobs {
+			if !seen.first(blobID) {
+				continue
+			}
+
 			exported, err := e.exportOneBlob(ctx, tw, blobID)
 			if err != nil {
 				return err
@@ -989,6 +994,39 @@ func (e *Engine) exportBlobs(ctx context.Context, tw *tar.Writer, manifest *Back
 	manifest.TableCounts["blobs"] = blobCount
 
 	return nil
+}
+
+// blobDeduper remembers the blobs a listing already returned, for stores whose
+// List can repeat an id (see storage.RepeatingLister): a blob caught mid-move
+// sits on two tiers, and exporting it twice would write duplicate tar entries
+// and inflate the blob count. Ids are kept as 32-byte digests. For any other
+// store it is a no-op that costs nothing.
+type blobDeduper struct {
+	seen map[[sha256.Size]byte]struct{}
+}
+
+func newBlobDeduper(store storage.BlobStore) *blobDeduper {
+	if r, ok := store.(storage.RepeatingLister); ok && r.ListMayRepeat() {
+		return &blobDeduper{seen: map[[sha256.Size]byte]struct{}{}}
+	}
+
+	return &blobDeduper{}
+}
+
+// first reports whether id has not been seen before, and records it.
+func (d *blobDeduper) first(id string) bool {
+	if d.seen == nil {
+		return true
+	}
+
+	key := sha256.Sum256([]byte(id))
+	if _, dup := d.seen[key]; dup {
+		return false
+	}
+
+	d.seen[key] = struct{}{}
+
+	return true
 }
 
 // exportOneBlob copies one blob into the archive. It reports false when the

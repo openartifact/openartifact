@@ -38,34 +38,12 @@ func (q *Queries) BeginStorageTierMove(ctx context.Context, arg BeginStorageTier
 	return result.RowsAffected(), nil
 }
 
-const countStoragePoliciesForTier = `-- name: CountStoragePoliciesForTier :one
-SELECT COUNT(*) FROM storage_policies WHERE target_tier_id = $1 OR from_tier_id = $1
-`
-
-func (q *Queries) CountStoragePoliciesForTier(ctx context.Context, targetTierID string) (int64, error) {
-	row := q.db.QueryRow(ctx, countStoragePoliciesForTier, targetTierID)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const countStorageTierMoves = `-- name: CountStorageTierMoves :one
 SELECT COUNT(*) FROM storage_tier_moves
 `
 
 func (q *Queries) CountStorageTierMoves(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countStorageTierMoves)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
-const countStorageTierMovesForBackend = `-- name: CountStorageTierMovesForBackend :one
-SELECT COUNT(*) FROM storage_tier_moves WHERE from_backend_id = $1 OR to_backend_id = $1
-`
-
-func (q *Queries) CountStorageTierMovesForBackend(ctx context.Context, fromBackendID *string) (int64, error) {
-	row := q.db.QueryRow(ctx, countStorageTierMovesForBackend, fromBackendID)
 	var count int64
 	err := row.Scan(&count)
 	return count, err
@@ -145,18 +123,6 @@ DELETE FROM storage_policies WHERE id = $1
 
 func (q *Queries) DeleteStoragePolicy(ctx context.Context, id string) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteStoragePolicy, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
-const deleteStorageTier = `-- name: DeleteStorageTier :execrows
-DELETE FROM storage_tiers WHERE id = $1 AND backend_id IS NOT NULL
-`
-
-func (q *Queries) DeleteStorageTier(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteStorageTier, id)
 	if err != nil {
 		return 0, err
 	}

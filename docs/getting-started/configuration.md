@@ -91,7 +91,7 @@ PostgreSQL is the only supported database.
 | `DB_PASSWORD` | `password` | empty | Password (**secret**) |
 | `DB_NAME` | `database` | `artifact_repo` | Database name |
 | `DB_SSLMODE` | `sslMode` | `require` | PostgreSQL `sslmode`; `disable` only for local development |
-| `DB_MAX_OPEN_CONNS` | `maxOpenConns` | `25` | Connection pool size; `0` or at least `2` (a blob-lock transaction pins one connection and its callback needs another) |
+| `DB_MAX_OPEN_CONNS` | `maxOpenConns` | `25` | Connection pool size; `0` or at least `2` (a blob-lock transaction pins one connection and its callback needs another), and at least `4` while `tiering.enabled` is true (the mover pins one more for its pass lock) |
 | `DB_MAX_IDLE_CONNS` | `maxIdleConns` | `5` | Warm connections kept by the pgx pool |
 | `DB_CONN_MAX_LIFETIME_MINUTES` | `connMaxLifetimeMinutes` | `30` | Maximum connection lifetime |
 | `DB_CONNECT_TIMEOUT` | `connectTimeout` | `60s` | How long startup retries the initial database connection (capped backoff, each wait logged at info) before exiting; `0` fails at the first error. Replaces the Helm chart's wait-for-database init container |

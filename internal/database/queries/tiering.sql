@@ -23,15 +23,6 @@ VALUES ($1, $2, sqlc.narg('backend_id'), $3, $4);
 -- name: UpdateStorageTier :exec
 UPDATE storage_tiers SET name = $1, rank = $2, promote_on_read = $3 WHERE id = $4;
 
--- name: DeleteStorageTier :execrows
-DELETE FROM storage_tiers WHERE id = $1 AND backend_id IS NOT NULL;
-
--- name: CountStoragePoliciesForTier :one
-SELECT COUNT(*) FROM storage_policies WHERE target_tier_id = $1 OR from_tier_id = $1;
-
--- name: CountStorageTierMovesForBackend :one
-SELECT COUNT(*) FROM storage_tier_moves WHERE from_backend_id = $1 OR to_backend_id = $1;
-
 -- name: ListStoragePolicies :many
 SELECT p.id, p.name, p.enabled, p.position, p.target_tier_id, p.from_tier_id,
        p.min_age_seconds, p.min_idle_seconds, p.min_size_bytes, p.max_size_bytes,

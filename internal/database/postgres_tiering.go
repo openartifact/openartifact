@@ -95,24 +95,90 @@ func (p *PostgresDB) UpdateStorageTier(ctx context.Context, t *models.StorageTie
 	})
 }
 
-// DeleteStorageTier deletes a non-primary tier; it reports whether a row was removed.
-func (p *PostgresDB) DeleteStorageTier(ctx context.Context, id string) (bool, error) {
-	n, err := p.q.DeleteStorageTier(ctx, id)
+// DeleteStorageTierIfUnused deletes a non-primary tier unless something still
+// depends on it, atomically: the tier and its backend row are locked FOR UPDATE
+// for the whole check-and-delete, so a concurrent move (whose journal and
+// blobs.storage_backend_id writes take a key-share lock on the backend row)
+// either commits before the check and is seen, or waits until the delete is
+// done. It returns "" when the tier was deleted (or was already gone) and the
+// human-readable reason otherwise.
+func (p *PostgresDB) DeleteStorageTierIfUnused(ctx context.Context, tierID string) (string, error) {
+	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
-		return false, fmt.Errorf("delete storage tier: %w", err)
+		return "", fmt.Errorf("begin delete storage tier tx: %w", err)
 	}
 
-	return n > 0, nil
+	defer func() { _ = tx.Rollback() }()
+
+	var backendID sql.NullString
+	if err := tx.QueryRowContext(ctx, `SELECT backend_id FROM storage_tiers WHERE id = $1 FOR UPDATE`, tierID).Scan(&backendID); err != nil {
+		if errors.Is(err, sql.ErrNoRows) {
+			return "", nil
+		}
+
+		return "", fmt.Errorf("lock storage tier: %w", err)
+	}
+
+	if !backendID.Valid {
+		return "the primary storage tier cannot be deleted", nil
+	}
+
+	if _, err := tx.ExecContext(ctx, `SELECT 1 FROM storage_backends WHERE id = $1 FOR UPDATE`, backendID.String); err != nil {
+		return "", fmt.Errorf("lock storage backend: %w", err)
+	}
+
+	var policies bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS(SELECT 1 FROM storage_policies WHERE target_tier_id = $1 OR from_tier_id = $1)`, tierID).Scan(&policies); err != nil {
+		return "", fmt.Errorf("check storage tier policies: %w", err)
+	}
+
+	if policies {
+		return "storage tier is still referenced by a policy", nil
+	}
+
+	if reason, err := storageBackendBusy(ctx, tx, backendID.String, false); err != nil || reason != "" {
+		return reason, err
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM storage_tiers WHERE id = $1 AND backend_id IS NOT NULL`, tierID); err != nil {
+		return "", fmt.Errorf("delete storage tier: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return "", fmt.Errorf("commit delete storage tier: %w", err)
+	}
+
+	return "", nil
 }
 
-// CountStoragePoliciesForTier counts the policies that target or select the tier.
-func (p *PostgresDB) CountStoragePoliciesForTier(ctx context.Context, tierID string) (int64, error) {
-	return p.q.CountStoragePoliciesForTier(ctx, tierID)
+// StorageBackendBusyReason reports why a backend's kind or config must not
+// change (or the backend not be deleted): it holds blobs, is served by a tier
+// or is named by a move journal row. "" means it is idle.
+func (p *PostgresDB) StorageBackendBusyReason(ctx context.Context, backendID string) (string, error) {
+	return storageBackendBusy(ctx, p.db, backendID, true)
 }
 
-// CountStorageTierMovesForBackend counts journal rows that reference the backend.
-func (p *PostgresDB) CountStorageTierMovesForBackend(ctx context.Context, backendID string) (int64, error) {
-	return p.q.CountStorageTierMovesForBackend(ctx, &backendID)
+func storageBackendBusy(ctx context.Context, q rowQuerier, backendID string, includeTier bool) (string, error) {
+	var blobs, moves, tier bool
+
+	err := q.QueryRowContext(ctx, `SELECT
+		EXISTS(SELECT 1 FROM blobs WHERE storage_backend_id = $1),
+		EXISTS(SELECT 1 FROM storage_tier_moves WHERE from_backend_id = $1 OR to_backend_id = $1),
+		$2::boolean AND EXISTS(SELECT 1 FROM storage_tiers WHERE backend_id = $1)`, backendID, includeTier).Scan(&blobs, &moves, &tier)
+	if err != nil {
+		return "", fmt.Errorf("check storage backend usage: %w", err)
+	}
+
+	switch {
+	case blobs:
+		return "storage backend still holds blobs; move them to another tier first", nil
+	case moves:
+		return "storage backend is named by a tier move (in progress or journaled)", nil
+	case tier:
+		return "storage backend is used by a storage tier", nil
+	}
+
+	return "", nil
 }
 
 func policyFromRow(r dbsqlc.StoragePolicy) *models.StoragePolicy {
@@ -369,25 +435,45 @@ func (p *PostgresDB) FlipBlobPlacement(ctx context.Context, sha256, from, to str
 
 // TouchBlobAccess raises blobs.last_accessed_at for the given blobs in one
 // statement. A blob whose recorded access is already within resolution of the
-// new time is left alone, so repeated downloads of a hot blob cost no write.
+// new time is left alone, so repeated downloads of a hot blob cost no write. The
+// exception is a blob whose recorded access is not newer than its last tier
+// change: its first read on the new tier is always written, or promote-on-read
+// would miss it for up to resolution after a demotion.
+//
+// Rows are locked in sha256 order (FOR UPDATE under ORDER BY) so two replicas
+// flushing overlapping sets cannot deadlock each other. Every write here is a
+// non-HOT update (last_accessed_at is in the promotion index predicate), which
+// the access resolution bounds to one per blob per resolution window.
 func (p *PostgresDB) TouchBlobAccess(ctx context.Context, accessed map[string]time.Time, resolution time.Duration) (int64, error) {
 	if len(accessed) == 0 {
 		return 0, nil
 	}
 
 	shas := make([]string, 0, len(accessed))
-	times := make([]time.Time, 0, len(accessed))
-
-	for sha, at := range accessed {
+	for sha := range accessed {
 		shas = append(shas, sha)
-		times = append(times, at)
+	}
+
+	slices.Sort(shas)
+
+	times := make([]time.Time, len(shas))
+	for i, sha := range shas {
+		times[i] = accessed[sha]
 	}
 
 	res, err := p.db.ExecContext(ctx,
-		`UPDATE blobs b SET last_accessed_at = v.at
-		 FROM unnest($1::text[], $2::timestamptz[]) AS v(sha, at)
-		 WHERE b.sha256 = v.sha
-		   AND (b.last_accessed_at IS NULL OR b.last_accessed_at < v.at - make_interval(secs => $3::double precision))`,
+		`WITH due AS (
+		     SELECT b.sha256, v.at
+		     FROM blobs b
+		     JOIN unnest($1::text[], $2::timestamptz[]) AS v(sha, at) ON b.sha256 = v.sha
+		     WHERE b.last_accessed_at IS NULL
+		        OR b.last_accessed_at < v.at - make_interval(secs => $3::double precision)
+		        OR (b.tier_changed_at IS NOT NULL AND b.last_accessed_at <= b.tier_changed_at AND v.at > b.tier_changed_at)
+		     ORDER BY b.sha256
+		     FOR UPDATE OF b
+		 )
+		 UPDATE blobs b SET last_accessed_at = due.at
+		 FROM due WHERE b.sha256 = due.sha256`,
 		shas, times, resolution.Seconds())
 	if err != nil {
 		return 0, fmt.Errorf("touch blob access: %w", err)
@@ -546,6 +632,19 @@ func scanBlobFacts(rows *sql.Rows) ([]models.BlobFacts, error) {
 	return out, nil
 }
 
+// promotionCandidatesQuery lists promote-on-read candidates. The first three
+// conditions repeat the predicate of idx_blobs_tier_promote verbatim, so the
+// planner can walk that small index in sha256 order.
+const promotionCandidatesQuery = `SELECT b.sha256, b.size_bytes, b.created_at, b.last_accessed_at, b.storage_backend_id, b.tier_changed_at
+	 FROM blobs b
+	 WHERE b.storage_backend_id IS NOT NULL AND b.last_accessed_at IS NOT NULL
+	   AND (b.tier_changed_at IS NULL OR b.last_accessed_at > b.tier_changed_at)
+	   AND b.storage_backend_id = ANY($1::text[]::uuid[])
+	   AND b.sha256 > $2
+	   AND NOT EXISTS (SELECT 1 FROM storage_tier_moves m WHERE m.sha256 = b.sha256)
+	 ORDER BY b.sha256
+	 LIMIT $3`
+
 // ListPromotionCandidates returns blobs placed on one of backendIDs that were
 // read after they arrived there (last_accessed_at > tier_changed_at), ordered
 // by sha256 after the cursor, skipping blobs with a move in flight.
@@ -554,15 +653,7 @@ func (p *PostgresDB) ListPromotionCandidates(ctx context.Context, backendIDs []s
 		return nil, nil
 	}
 
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT b.sha256, b.size_bytes, b.created_at, b.last_accessed_at, b.storage_backend_id, b.tier_changed_at
-		 FROM blobs b
-		 WHERE b.storage_backend_id = ANY($1::text[]::uuid[]) AND b.last_accessed_at IS NOT NULL
-		   AND (b.tier_changed_at IS NULL OR b.last_accessed_at > b.tier_changed_at)
-		   AND b.sha256 > $2
-		   AND NOT EXISTS (SELECT 1 FROM storage_tier_moves m WHERE m.sha256 = b.sha256)
-		 ORDER BY b.sha256
-		 LIMIT $3`, backendIDs, after, limit)
+	rows, err := p.db.QueryContext(ctx, promotionCandidatesQuery, backendIDs, after, limit)
 	if err != nil {
 		return nil, fmt.Errorf("list promotion candidates: %w", err)
 	}

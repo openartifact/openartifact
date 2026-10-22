@@ -26,12 +26,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <div v-if="loading" class="px-5 py-6"><div class="h-4 w-48 rounded skel" /></div>
 
-    <div v-else-if="loadError" class="px-5 py-6 text-sm text-danger flex items-center gap-3" role="alert">
+    <div v-else-if="loadError && !status" class="px-5 py-6 text-sm text-danger flex items-center gap-3" role="alert">
       <span>{{ loadError }}</span>
       <AppButton variant="secondary" size="xs" @click="load">{{ t('common.refresh') }}</AppButton>
     </div>
 
     <div v-else-if="status" class="px-5 py-4 space-y-4">
+      <div v-if="loadError" class="text-sm text-danger flex items-center gap-3" role="alert" data-testid="mover-poll-error">
+        <span>{{ loadError }}</span>
+        <AppButton variant="secondary" size="xs" @click="refresh">{{ t('common.refresh') }}</AppButton>
+      </div>
       <div class="flex flex-wrap items-center gap-2">
         <StatusBadge
           :label="status.enabled ? t('tiering.mover.enabled') : t('tiering.mover.disabled')"
@@ -114,9 +118,10 @@ import { formatDateTime } from '../lib/datetime'
 import { formatBytes } from '../lib/quota'
 import { formatCount, formatDuration } from '../lib/tiering'
 
-const props = withDefaults(defineProps<{ pollIntervalMs?: number; maxPolls?: number }>(), {
+const props = withDefaults(defineProps<{ pollIntervalMs?: number; maxPolls?: number; maxFailures?: number }>(), {
   pollIntervalMs: 3000,
-  maxPolls: 40,
+  maxPolls: 20,
+  maxFailures: 3,
 })
 const emit = defineEmits<{ (e: 'pass-finished'): void }>()
 
@@ -130,6 +135,7 @@ const polling = ref(false)
 
 let timer: ReturnType<typeof setTimeout> | undefined
 let disposed = false
+let epoch = 0
 
 const pass = computed(() => status.value?.last_pass ?? null)
 const pending = computed(() => status.value?.pending ?? [])
@@ -153,58 +159,90 @@ const counters = computed(() => {
   ]
 })
 
-/** `reportError` only for the initial load: a failed poll keeps the last known status on screen. */
-async function fetchStatus(reportError = false): Promise<TierMoverStatus | null> {
+/** Reports failures only when asked; a failed poll keeps the last known status on screen. */
+async function fetchStatus(): Promise<TierMoverStatus | null> {
   try {
     const res = await getMoverStatus()
     if (!disposed) status.value = res
     return res
   } catch (err) {
-    if (reportError && !disposed) loadError.value = err instanceof Error ? err.message : t('tiering.mover.loadFailed')
+    lastError = err instanceof Error ? err.message : t('tiering.mover.loadFailed')
     return null
   }
 }
 
+let lastError = ''
+
 async function load(): Promise<void> {
+  stopPolling()
   loading.value = true
   loadError.value = ''
-  await fetchStatus(true)
+  const res = await fetchStatus()
   if (disposed) return
+  if (!res) loadError.value = lastError
   loading.value = false
-  if (status.value?.running) poll(status.value.last_pass?.finished_at)
+  if (res?.running) poll(res.last_pass?.finished_at)
+}
+
+/** Re-reads the status now (page-level Refresh); the initial skeleton is not shown again. */
+async function refresh(): Promise<void> {
+  stopPolling()
+  const res = await fetchStatus()
+  if (disposed) return
+  loadError.value = res ? '' : lastError
+  if (res?.running) poll(res.last_pass?.finished_at)
 }
 
 function stopPolling(): void {
   clearTimeout(timer)
   timer = undefined
   polling.value = false
+  epoch++
 }
 
 /**
- * Re-reads the status every `pollIntervalMs` until the pass that was running
- * (or just requested) has a newer `finished_at` than `baseline`, at most
- * `maxPolls` times; never an endless timer.
+ * Re-reads the status until the pass that was running (or just requested)
+ * has a newer `finished_at` than `baseline`. While the mover reports
+ * `running` it keeps polling with a growing delay; it gives up after
+ * `maxFailures` consecutive failed reads (showing an error with Refresh) or
+ * `maxPolls` consecutive idle reads where no pass ever started.
  */
 function poll(baseline: string | undefined): void {
+  if (disposed) return
   stopPolling()
   polling.value = true
-  let left = props.maxPolls
+  loadError.value = ''
+  const mine = epoch
+  let idle = 0
+  let failures = 0
+  let delay = props.pollIntervalMs
 
   const tick = async (): Promise<void> => {
     const res = await fetchStatus()
-    if (disposed) return
-    const finished = !!res && !res.running && res.last_pass?.finished_at !== baseline
-    left--
-    if (finished) {
-      stopPolling()
-      emit('pass-finished')
-    } else if (left <= 0 || !res) {
-      stopPolling()
+    if (disposed || mine !== epoch) return
+    if (!res) {
+      if (++failures >= props.maxFailures) {
+        stopPolling()
+        loadError.value = lastError
+        return
+      }
     } else {
-      timer = setTimeout(tick, props.pollIntervalMs)
+      failures = 0
+      if (!res.running && res.last_pass?.finished_at !== baseline) {
+        stopPolling()
+        emit('pass-finished')
+        return
+      }
+      idle = res.running ? 0 : idle + 1
+      if (idle >= props.maxPolls) {
+        stopPolling()
+        return
+      }
     }
+    delay = Math.min(delay * 2, props.pollIntervalMs * 8)
+    timer = setTimeout(tick, delay)
   }
-  timer = setTimeout(tick, props.pollIntervalMs)
+  timer = setTimeout(tick, delay)
 }
 
 async function runNow(): Promise<void> {
@@ -212,6 +250,7 @@ async function runNow(): Promise<void> {
   const baseline = status.value?.last_pass?.finished_at
   try {
     const res = await runMover()
+    if (disposed) return
     toasts.info(res.started ? t('tiering.mover.started') : t('tiering.mover.alreadyRunning'))
     poll(baseline)
   } catch (err) {
@@ -220,6 +259,8 @@ async function runNow(): Promise<void> {
     starting.value = false
   }
 }
+
+defineExpose({ refresh })
 
 onMounted(load)
 onUnmounted(() => {

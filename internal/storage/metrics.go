@@ -109,6 +109,12 @@ func (m *MetricsBlobStore) PresignGet(ctx context.Context, sha256 string, ttl ti
 	return p.PresignGet(ctx, sha256, ttl, opts)
 }
 
+// ListMayRepeat forwards the wrapped store's RepeatingLister capability.
+func (m *MetricsBlobStore) ListMayRepeat() bool {
+	r, ok := m.inner.(RepeatingLister)
+	return ok && r.ListMayRepeat()
+}
+
 // StagingSupported reports whether the wrapped store has a staging area.
 func (m *MetricsBlobStore) StagingSupported() bool {
 	s, ok := m.inner.(StagingStore)

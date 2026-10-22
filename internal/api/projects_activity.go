@@ -19,7 +19,7 @@ const (
 )
 
 // handleListActivity returns the audit events of the project and of the
-// repositories it owns to any member, newest first. Keyset paging only
+// repositories it owns to any member, newest first (project.token_* events only to maintainers and above). Keyset paging only
 // (`cursor`, `next_cursor`, `has_more`): no row is ever counted. Client
 // addresses are left out.
 //
@@ -38,6 +38,8 @@ func (h *ProjectsHandler) handleListActivity(w http.ResponseWriter, r *http.Requ
 		Action:    r.URL.Query().Get("action"),
 		Limit:     perPage,
 		NoTotal:   true,
+		// Token events name tokens and their roles: maintainers and above only.
+		HideProjectTokenEvents: !access.isMaintainer(),
 	}
 
 	if raw := r.URL.Query().Get("cursor"); raw != "" {

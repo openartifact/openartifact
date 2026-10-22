@@ -25,8 +25,9 @@ var ErrInvalidGlob = errors.New("invalid glob")
 // CompileGlob translates a policy glob into an anchored regular expression:
 // `*` matches any run of characters except '/', `**` matches anything
 // (including '/'; a `**/` prefix also matches the empty path prefix), `?`
-// matches one character except '/'. Everything else is literal. The result is
-// an RE2 expression, so matching is linear in the input.
+// matches one character except '/'. Everything else is literal; newlines count
+// as ordinary characters. The result is an RE2 expression, so matching is
+// linear in the input.
 func CompileGlob(pattern string) (*regexp.Regexp, error) {
 	if len(pattern) > MaxGlobLength {
 		return nil, fmt.Errorf("%w: longer than %d characters", ErrInvalidGlob, MaxGlobLength)
@@ -34,7 +35,7 @@ func CompileGlob(pattern string) (*regexp.Regexp, error) {
 
 	var b strings.Builder
 
-	b.WriteString(`^`)
+	b.WriteString(`(?s)^`) // (?s): `.` also matches a newline, so `**` spans any path
 
 	for i := 0; i < len(pattern); i++ {
 		switch c := pattern[i]; {

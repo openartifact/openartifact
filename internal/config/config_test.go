@@ -269,10 +269,35 @@ func TestValidate_MaxOpenConns(t *testing.T) {
 			t.Fatal(err)
 		}
 
+		cfg.Tiering.Enabled = false // the tier mover has its own, larger minimum
 		cfg.Database.MaxOpenConns = tc.conns
 
 		if got := cfg.Validate() == nil; got != tc.ok {
 			t.Errorf("maxOpenConns=%d: valid=%v, want %v", tc.conns, got, tc.ok)
+		}
+	}
+}
+
+func TestValidate_TieringNeedsRoomInThePool(t *testing.T) {
+	for _, tc := range []struct {
+		enabled bool
+		conns   int
+		ok      bool
+	}{{true, 0, true}, {true, 2, false}, {true, 3, false}, {true, 4, true}, {true, 25, true}, {false, 2, true}} {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		cfg.Tiering.Enabled, cfg.Database.MaxOpenConns = tc.enabled, tc.conns
+
+		err = cfg.Validate()
+		if got := err == nil; got != tc.ok {
+			t.Errorf("tiering.enabled=%v maxOpenConns=%d: err=%v, want ok=%v", tc.enabled, tc.conns, err, tc.ok)
+		}
+
+		if !tc.ok && !errors.Is(err, errTieringPoolSize) {
+			t.Errorf("tiering.enabled=%v maxOpenConns=%d: err=%v, want errTieringPoolSize", tc.enabled, tc.conns, err)
 		}
 	}
 }

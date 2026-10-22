@@ -522,6 +522,8 @@ type Database interface {
 	UpdateStorageBackend(ctx context.Context, backend *models.StorageBackend) error
 	DeleteStorageBackend(ctx context.Context, id string) error
 	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
+	// StorageBackendBusyReason says why a backend must not change kind/config ("" = idle).
+	StorageBackendBusyReason(ctx context.Context, backendID string) (string, error)
 	UpdateStorageBackendStatus(ctx context.Context, id, status string, message *string) error
 
 	// Artifact properties methods

@@ -172,6 +172,10 @@ func (m *MockDatabase) CountBlobsOnStorageBackend(_ context.Context, _ string) (
 	return 0, nil
 }
 
+func (m *MockDatabase) StorageBackendBusyReason(_ context.Context, _ string) (string, error) {
+	return "", nil
+}
+
 func (m *MockDatabase) ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error) {
 	var result []*models.Repository
 

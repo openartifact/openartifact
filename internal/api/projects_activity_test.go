@@ -135,3 +135,16 @@ func TestProjectsActivityEmptyFeedIsAnEmptyList(t *testing.T) {
 		t.Errorf("data = %#v, want []", body["data"])
 	}
 }
+
+func TestProjectsActivityHidesTokenEventsBelowMaintainer(t *testing.T) {
+	for user, hidden := range map[string]bool{uView1: true, uDev1: true, uMaint1: false, uOwner1: false} {
+		db := activityMock(false)
+		if code, body := projectJSON(t, newProjectsRouter(t, db), user, http.MethodGet, "/api/v1/projects/acme/activity", ""); code != http.StatusOK {
+			t.Fatalf("%s: status = %d, body = %v", user, code, body)
+		}
+
+		if db.listParams.HideProjectTokenEvents != hidden {
+			t.Errorf("%s: HideProjectTokenEvents = %v, want %v", user, db.listParams.HideProjectTokenEvents, hidden)
+		}
+	}
+}

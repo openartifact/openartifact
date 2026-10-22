@@ -39,6 +39,7 @@ var (
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
 	errTieringBatch             = errors.New("tiering.batch and tiering.concurrency must be at least 1")
 	errTieringNegative          = errors.New("tiering.maxBytesPerSecond, accessFlushInterval and refreshInterval must not be negative")
+	errTieringPoolSize          = errors.New("database.maxOpenConns must be 0 (driver default) or at least 4 while tiering.enabled is true: a mover pass pins one connection for its cluster lock, and blob-lock transactions need two each")
 	errPlaceholderDBPassword    = errors.New("database.password is still the CHANGE_ME placeholder from the example files: set a real password")
 	errMaxOpenConnsTooSmall     = errors.New("database.maxOpenConns must be 0 (driver default) or at least 2: a blob-lock transaction pins one connection and its callback needs another")
 
@@ -611,6 +612,11 @@ func (c *Config) Validate() error {
 	return c.validatePresign()
 }
 
+// minTieringOpenConns is the smallest explicit database pool a tier mover can
+// share with the server: one pinned connection for the pass lock, plus a
+// blob-lock transaction and the query its callback runs.
+const minTieringOpenConns = 4
+
 // validateTiering checks the storage tiering settings.
 func (c *Config) validateTiering() error {
 	t := c.Tiering
@@ -621,6 +627,12 @@ func (c *Config) validateTiering() error {
 
 	if t.MaxBytesPerSecond < 0 || t.AccessFlushInterval < 0 || t.RefreshInterval < 0 {
 		return errTieringNegative
+	}
+
+	// A pass holds one pooled connection for up to two hours (the cluster
+	// advisory lock) that database.maxOpenConns does not account for.
+	if t.Enabled && c.Database.MaxOpenConns > 0 && c.Database.MaxOpenConns < minTieringOpenConns {
+		return errTieringPoolSize
 	}
 
 	return nil

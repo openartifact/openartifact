@@ -40,7 +40,10 @@ type AuditListParams struct {
 	// ProjectID, when set, restricts the listing to entries of that project:
 	// those carrying its project_id plus those of any repository it owns now.
 	ProjectID string
-	Limit     int
+	// HideProjectTokenEvents drops project.token_* entries (token mint and
+	// revoke), which only maintainers may see.
+	HideProjectTokenEvents bool
+	Limit                  int
 	// Offset skips that many entries. Ignored when After is set.
 	Offset int
 	// After, when set, returns only entries strictly after this position

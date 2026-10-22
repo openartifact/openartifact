@@ -96,31 +96,22 @@ func (f *fakeTieringDB) UpdateStorageTier(_ context.Context, t *models.StorageTi
 	return nil
 }
 
-func (f *fakeTieringDB) DeleteStorageTier(_ context.Context, id string) (bool, error) {
-	n := len(f.tiers)
-	f.tiers = slices.DeleteFunc(f.tiers, func(t *models.StorageTier) bool { return t.ID == id })
-
-	return len(f.tiers) < n, nil
-}
-
-func (f *fakeTieringDB) CountStoragePoliciesForTier(_ context.Context, tierID string) (int64, error) {
-	var n int64
-
+func (f *fakeTieringDB) DeleteStorageTierIfUnused(_ context.Context, id string) (string, error) {
 	for _, p := range f.policies {
-		if p.TargetTierID == tierID || p.FromTierID == tierID {
-			n++
+		if p.TargetTierID == id || p.FromTierID == id {
+			return "storage tier is still referenced by a policy", nil
 		}
 	}
 
-	return n, nil
-}
+	for _, t := range f.tiers {
+		if t.ID == id && f.blobsOn[t.BackendID] > 0 {
+			return "storage tier still holds blobs", nil
+		}
+	}
 
-func (f *fakeTieringDB) CountStorageTierMovesForBackend(context.Context, string) (int64, error) {
-	return 0, nil
-}
+	f.tiers = slices.DeleteFunc(f.tiers, func(t *models.StorageTier) bool { return t.ID == id })
 
-func (f *fakeTieringDB) CountBlobsOnStorageBackend(_ context.Context, id string) (int64, error) {
-	return f.blobsOn[id], nil
+	return "", nil
 }
 
 func (f *fakeTieringDB) GetStorageBackend(_ context.Context, name string) (*models.StorageBackend, error) {
@@ -354,6 +345,7 @@ func TestTieringCreateAndDeleteTier(t *testing.T) {
 		{"create bad rank", http.MethodPost, "/tiers", `{"name":"a","backend":"s3-b","rank":-1}`, nil, http.StatusBadRequest, "validation_failed"},
 		{"create duplicate backend", http.MethodPost, "/tiers", `{"name":"again","backend":"hdd"}`, nil, http.StatusConflict, "conflict"},
 		{"create duplicate name", http.MethodPost, "/tiers", `{"name":"cold","backend":"s3-b"}`, nil, http.StatusConflict, "conflict"},
+		{"create name over 64 chars", http.MethodPost, "/tiers", `{"name":"` + strings.Repeat("a", 65) + `","backend":"s3-b"}`, nil, http.StatusBadRequest, "validation_failed"},
 		{"create bad json", http.MethodPost, "/tiers", `{`, nil, http.StatusBadRequest, "bad_request"},
 		{"delete primary", http.MethodDelete, "/tiers/hot", "", nil, http.StatusBadRequest, "cannot_delete_primary"},
 		{"delete unknown", http.MethodDelete, "/tiers/ghost", "", nil, http.StatusNotFound, "not_found"},

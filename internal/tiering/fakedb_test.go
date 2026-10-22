@@ -34,6 +34,11 @@ type fakeDB struct {
 	moves    map[string]*models.StorageTierMove
 	touched  map[string]time.Time
 
+	// placementErr, when set, fails GetBlobPlacement (a database outage).
+	placementErr error
+	// usageCalls counts StorageTierUsage calls (the whole-table aggregate).
+	usageCalls int
+
 	lockMu sync.Mutex
 	locks  map[string]*sync.Mutex
 }
@@ -86,6 +91,8 @@ func (f *fakeDB) StorageTierUsage(context.Context) ([]models.TierUsage, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
 
+	f.usageCalls++
+
 	byBackend := map[string]*models.TierUsage{}
 
 	for _, b := range f.blobs {
@@ -110,6 +117,10 @@ func (f *fakeDB) StorageTierUsage(context.Context) ([]models.TierUsage, error) {
 func (f *fakeDB) GetBlobPlacement(_ context.Context, sha string) (string, int64, bool, error) {
 	f.mu.Lock()
 	defer f.mu.Unlock()
+
+	if f.placementErr != nil {
+		return "", 0, false, f.placementErr
+	}
 
 	b, ok := f.blobs[sha]
 	if !ok {

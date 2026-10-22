@@ -3760,6 +3760,10 @@ export type PatchApiV1AdminStorageByNameErrors = {
      * Storage backend not found
      */
     404: unknown;
+    /**
+     * The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move
+     */
+    409: unknown;
 };
 
 export type PatchApiV1AdminStorageByNameResponses = {

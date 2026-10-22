@@ -5,12 +5,14 @@
 package api
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
 	"fmt"
 	"net/http"
 	"os"
 	"path/filepath"
+	"reflect"
 	"regexp"
 	"slices"
 	"strings"
@@ -385,6 +387,8 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	origKind, origConfig := backend.Kind, backend.Config
+
 	var patch struct {
 		Name      *string          `json:"name"`
 		Kind      *string          `json:"kind"`
@@ -434,6 +438,24 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// Blobs are located through the backend's kind and location config (credentials excluded, so they can rotate): re-pointing a
+	// backend that holds blobs, or that a tier or move journal row names, would
+	// orphan them.
+	if backend.Kind != origKind || !storageLocationEqual(config, origConfig) {
+		reason, err := h.db.StorageBackendBusyReason(r.Context(), backend.ID)
+		if err != nil {
+			h.log.Errorw("failed to check storage backend usage", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to update storage backend")
+
+			return
+		}
+
+		if reason != "" {
+			writeError(w, http.StatusConflict, "conflict", "cannot change kind or config: "+reason)
+			return
+		}
+	}
+
 	backend.Config = config
 	backend.UpdatedAt = time.Now()
 
@@ -443,6 +465,40 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 	}
 
 	writeJSON(w, http.StatusOK, storageBackendToResponse(backend))
+}
+
+// storageLocationEqual compares two backend configs by where the blobs live
+// (path, endpoint, bucket, region, prefix, account, container, OCI repo, ...):
+// every key except the credentials (storageSecretFields, whose ciphertext
+// changes on every write, and username), so rotating a secret is never a
+// location change. Documents are compared structurally.
+func storageLocationEqual(a, b []byte) bool {
+	x, okA := storageLocation(a)
+	y, okB := storageLocation(b)
+
+	if !okA || !okB {
+		return bytes.Equal(a, b)
+	}
+
+	return reflect.DeepEqual(x, y)
+}
+
+func storageLocation(raw []byte) (map[string]any, bool) {
+	cfg := map[string]any{}
+
+	if len(raw) > 0 {
+		if err := json.Unmarshal(raw, &cfg); err != nil {
+			return nil, false
+		}
+	}
+
+	for _, f := range storageSecretFields {
+		delete(cfg, f)
+	}
+
+	delete(cfg, "username")
+
+	return cfg, true
 }
 
 func (h *AdminStorageHandler) handleDelete(w http.ResponseWriter, r *http.Request) {

@@ -150,9 +150,9 @@ A pass is bounded to two hours and honors shutdown: an interrupted pass leaves j
 
 ### Transparent reads
 
-All blob access goes through a tiered store that wraps the primary store. A read first tries the tier where the blob is believed to be (a one-minute in-memory cache of recent placements, otherwise the primary store). When that tier reports the object missing, the store asks the database for the placement and reads from there, and finally tries the remaining tiers. Only "not found" moves on to the next tier; any other error is returned, so a broken cold tier is not masked. A flip that happens while a download starts is therefore invisible. The source copy is deleted only after the placement flips; a download that opened the source just before cleanup keeps reading on a filesystem tier (the open file survives the unlink), and on an object-store tier a download that loses that race fails like any interrupted transfer and succeeds on retry.
+All blob access goes through a tiered store that wraps the primary store. A read first tries the tier where the blob is believed to be (a one-minute in-memory cache of recent placements, otherwise the primary store). When that tier reports the object missing, the store asks the database for the placement and reads from there, and finally tries the remaining tiers. Only "not found" moves on to the next tier; any other error (a database failure while looking up the placement, a tier that this server cannot open, a backend error) is returned instead of being reported as a missing blob, so a broken cold tier answers `500`/`503`, never `404`. `Exists` follows the same rule. A flip that happens while a download starts is therefore invisible. The source copy is deleted only after the placement flips; a download that opened the source just before cleanup keeps reading on a filesystem tier (the open file survives the unlink), and on an object-store tier a download that loses that race fails like any interrupted transfer and succeeds on retry.
 
-Uploads always write to the primary store. Deleting a blob removes it from every tier that has a copy. Listing and existence checks look at all tiers.
+Uploads always write to the primary store. Deleting a blob removes it from every tier that has a copy; when the blob's placement points at a tier this server cannot resolve, the delete fails and keeps the row rather than orphaning the bytes. Listing and existence checks look at all tiers.
 
 ### Promote-on-read
 
@@ -160,7 +160,7 @@ Setting `promote_on_read` on a cold tier makes the mover pull a blob back to the
 
 ### Access tracking
 
-Idle-based policies and promotion need to know when a blob was last downloaded. Only `GET` and `HEAD` requests to the native repository protocols (`/repos/...` and `/v2/...`) count; API calls, replication and the mover's own reads do not. The tracker coalesces downloads in memory and writes them in one batch every `tiering.accessFlushInterval` (30 seconds), and only advances `blobs.last_accessed_at` when the recorded time is more than an hour old, so a hot blob costs at most one database write per hour. A crash loses at most the unflushed seconds of access times, which only makes a blob look slightly idler.
+Idle-based policies and promotion need to know when a blob was last downloaded. Tracking is active only while at least one tier besides the primary exists: with a single store nothing is recorded and no usage statistics are aggregated, so a plain installation pays nothing. History starts when the first cold tier is added, and until a blob has been read after that, an idle policy treats it as idle since creation. Only `GET` and `HEAD` requests to the native repository protocols (`/repos/...` and `/v2/...`) count; API calls, replication and the mover's own reads do not. The tracker coalesces downloads in memory and writes them in one batch every `tiering.accessFlushInterval` (30 seconds), and only advances `blobs.last_accessed_at` when the recorded time is more than an hour old, so a hot blob costs at most one database write per hour. A blob is also written when its recorded access is not newer than its last placement change and it has been read since, so the first read after a move is never lost. The batch is sorted and row-locked in that order, so concurrent flushes from several replicas cannot deadlock. `last_accessed_at` is part of the partial index that finds promotion candidates (`idx_blobs_tier_promote`, migration `034`), which makes those updates non-HOT: each one writes a new row version and index entries. The one-hour resolution bounds this to at most one such update per blob per hour, and only for blobs that are read. A crash loses at most the unflushed seconds of access times, which only makes a blob look slightly idler.
 
 ## Admin API
 
@@ -169,16 +169,16 @@ All endpoints are under `/api/v1/admin/tiering`, admin only (`manage`). JSON is 
 | Method and path | Purpose |
 |---|---|
 | `GET /tiers` | Tiers with placement stats: `blob_count` and `total_bytes` per tier, `available` (false when this server cannot open the tier's backend), `promote_on_read`, `rank`. |
-| `POST /tiers` | Create a tier: `{"name", "backend", "rank", "promote_on_read"}`. `backend` is a registered storage backend name. `400 validation_failed` for an unknown backend or bad name, `409 conflict` when the name or backend is already a tier. |
+| `POST /tiers` | Create a tier: `{"name", "backend", "rank", "promote_on_read"}`. `backend` is a registered storage backend name. `400 validation_failed` for an unknown backend or a bad name (1-64 characters: letters, digits, `.`, `_`, `-`), `409 conflict` when the name or backend is already a tier. |
 | `PATCH /tiers/{name}` | Change `rank` and `promote_on_read`. The primary tier cannot promote. |
-| `DELETE /tiers/{name}` | Delete a tier. `400 cannot_delete_primary` for `hot`; `409 conflict` while blobs are placed on it, a policy names it or a move involves it. |
+| `DELETE /tiers/{name}` | Delete a tier. `400 cannot_delete_primary` for `hot`; `409 conflict` while blobs are placed on it, a policy names it or a move involves it. The check and the delete run in one transaction that locks the tier and its backend row. |
 | `GET /policies`, `POST /policies` | List, create. |
 | `GET`, `PUT`, `DELETE /policies/{id}` | Read, replace (full replacement: omitted conditions are cleared) and delete. |
 | `POST /dry-run` | `{"policy": {...}, "sample_limit": 20}`; both optional. Without `policy` the saved policies are simulated. Response: `scanned`, `truncated`, `would_move {count, bytes}`, `routes`, `policies`, `sample`. |
 | `POST /run` | Ask the mover to start a pass now: `202 {"started": true}`. `409` when the mover is disabled in the configuration. A pass that cannot take the cluster lock because another replica is running one is skipped. |
 | `GET /status` | `enabled`, `running`, `interval_seconds`, the last pass (`moved`, `promoted`, `recovered`, `failed`, `skipped`, `bytes`, `scanned`, `aborted`) and the pending journal rows. |
 
-Deleting a storage backend that is a tier, or is the source or target of an in-flight move, is refused by `DELETE /api/v1/admin/storage/{name}` with `409 conflict`.
+Deleting a storage backend that is a tier, or is the source or target of an in-flight move, is refused by `DELETE /api/v1/admin/storage/{name}` with `409 conflict`. `blobs.storage_backend_id` is a `RESTRICT` foreign key, so the database refuses to delete a backend that still holds blobs. `PATCH /api/v1/admin/storage/{name}` likewise answers `409 conflict` when it would change the `kind` or `config` of a backend that holds blobs, serves a tier or is named by a move; renaming and `is_default` stay allowed.
 
 Example, end to end:
 
@@ -229,7 +229,15 @@ Settings live under `tiering:` in the YAML file or in the environment ([configur
 
 In a multi-replica deployment every replica must be able to reach every tier's backend. A replica that cannot open a tier marks it unavailable (visible in the tier list) and falls back to its other tiers; the mover only moves to and from tiers it can open.
 
-A filesystem tier must use its own directory: a tier whose path equals the primary store's path, or another tier's path, is marked unavailable, because two tiers over one directory would make a copy a no-op and the cleanup step delete the only copy.
+Every tier must have its own storage. Two tiers that resolve to the same place would make a "copy" a no-op and the cleanup step delete the only copy, so a tier that aliases the primary store or another tier is marked unavailable (the tier list shows `available: false` and the server logs the reason once). Identity is compared on the canonical location, per backend kind:
+
+  - filesystem: the real path after resolving symlinks, `.` and `..`; equal paths, a path inside another tier's directory, a directory containing another tier's, and two paths that are the same inode all conflict;
+  - S3-compatible (S3, Garage, SeaweedFS): endpoint (scheme, case and trailing slash ignored) plus bucket;
+  - GCS: bucket; Azure: account plus container; OCI: endpoint plus repository.
+
+  Different prefixes inside one bucket are not distinguished: use separate buckets. The check runs before the backend is opened, so no directory is created under an aliasing path, and the mover re-checks it before it journals a move. A backend that fails to open (for example a mount that is not there yet) is retried on every refresh and recovers by itself.
+
+With `tiering.enabled` the mover holds one pooled database connection for the duration of a pass (the cluster lock, up to two hours) and each blob-lock transaction needs two more, so `database.maxOpenConns` must be `0` (driver default) or at least `4`; smaller values are rejected at startup.
 
 ## Metrics
 
@@ -237,12 +245,14 @@ Labels are tier names and fixed result strings, so cardinality is bounded by the
 
 | Metric | Type | Labels | Notes |
 |---|---|---|---|
-| `openartifact_storage_tier_blobs` | gauge | `tier` | Blobs placed on the tier, refreshed after every pass. |
+| `openartifact_storage_tier_blobs` | gauge | `tier` | Blobs placed on the tier. |
 | `openartifact_storage_tier_bytes` | gauge | `tier` | Bytes placed on the tier. |
 | `openartifact_storage_tier_reads_total` | counter | `tier` | Blob reads served by the tier. |
 | `openartifact_storage_tier_moves_total` | counter | `from`, `to`, `result` | `result` is `moved`, `skipped` or `failed`. |
 | `openartifact_storage_tier_moved_bytes_total` | counter | `from`, `to` | Bytes moved. |
 | `openartifact_storage_tier_moves_pending` | gauge | | Journal rows awaiting recovery. Should return to 0; a value that stays above 0 means a move keeps failing (the server log has a `storage tier move failed` warning with the error, and `storage_tier_moves.last_error` holds the latest one). |
+
+The usage gauges come from a whole-table aggregate that is cached: it is recomputed after a pass that moved or promoted blobs, when a tier appears, and at most every 30 minutes otherwise, so an idle installation does not scan `blobs` on every pass. Series are updated in place (they do not vanish between refreshes) and removed when their tier is. The gauges and the pending-moves gauge are published by the replica that runs a pass, so they are leader-only: scrape every replica and take the latest value (for example `max by (tier)`), not the sum. With no cold tier no usage gauges are published.
 
 ## Limitations
 
@@ -251,6 +261,6 @@ Labels are tier names and fixed result strings, so cardinality is bounded by the
 - **Stats are computed live** (`GROUP BY storage_backend_id`) when you open the tier list; on very large installations that is a scan of the blobs table.
 - **Access tracking is for native protocol downloads only**, at one-hour resolution; blobs read only through the admin API or by presigned URL are not counted as accessed. Presigned and redirect downloads that go straight to a cold backend work only when that backend supports presigning; otherwise the server streams the object.
 - **Moves are one blob at a time.** Large blobs hold their copy slot for as long as the throttle allows; raise `tiering.concurrency` and `tiering.maxBytesPerSecond` together when moving many large blobs.
-- **Listing during a move.** A blob mid-move can appear on two tiers for the duration of the copy; the tiered `List` may report it twice.
+- **Listing during a move.** A blob mid-move can appear on two tiers for the duration of the copy; the tiered `List` may report it twice. Backups remove such repeats from their export, but a listing walks tiers one after another, so a blob that moves from a tier already walked to one not yet walked can still be missed. Run full backups while the mover is idle (for example set `tiering.interval` to `0` around the backup window) when a complete archive matters.
 - **`POST /run` lands on one replica.** It is skipped when another replica already holds the mover lock; the scheduled passes continue as usual.
 - **Backends are configured once.** Tier changes made on one replica reach the others within `tiering.refreshInterval`.

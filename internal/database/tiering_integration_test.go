@@ -11,6 +11,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
+	"strings"
 	"testing"
 	"time"
 
@@ -75,8 +76,14 @@ func TestTieringMigrationSeedsPrimaryTier(t *testing.T) {
 
 	var n int
 	if err := pg.GetDB().QueryRowContext(context.Background(),
-		`SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_blobs_tier_reads' AND indexdef NOT LIKE '%INVALID%'`).Scan(&n); err != nil || n != 1 {
-		t.Errorf("idx_blobs_tier_reads present = %d (%v)", n, err)
+		`SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_blobs_tier_promote'`).Scan(&n); err != nil || n != 1 {
+		t.Errorf("idx_blobs_tier_promote present = %d (%v)", n, err)
+	}
+
+	// The superseded index of migration 032 is gone.
+	if err := pg.GetDB().QueryRowContext(context.Background(),
+		`SELECT count(*) FROM pg_indexes WHERE indexname = 'idx_blobs_tier_reads'`).Scan(&n); err != nil || n != 0 {
+		t.Errorf("idx_blobs_tier_reads present = %d (%v), want it dropped by migration 034", n, err)
 	}
 }
 
@@ -113,21 +120,60 @@ func TestTieringTierAndPolicyConstraints(t *testing.T) {
 		t.Fatalf("policy round trip = %+v, %v", got, err)
 	}
 
-	if n, _ := f.pg.CountStoragePoliciesForTier(ctx, cold.ID); n != 1 {
-		t.Errorf("CountStoragePoliciesForTier = %d, want 1", n)
-	}
-
 	// A tier named by a policy cannot be deleted either.
-	if _, err := f.pg.DeleteStorageTier(ctx, cold.ID); !IsForeignKeyViolation(err) {
-		t.Errorf("DeleteStorageTier(in use) = %v, want a foreign-key violation", err)
+	if reason, err := f.pg.DeleteStorageTierIfUnused(ctx, cold.ID); err != nil || !strings.Contains(reason, "policy") {
+		t.Errorf("DeleteStorageTierIfUnused(policy) = %q, %v, want the policy reason", reason, err)
 	}
 
 	if ok, err := f.pg.DeleteStoragePolicy(ctx, pol.ID); err != nil || !ok {
 		t.Fatalf("DeleteStoragePolicy = %v, %v", ok, err)
 	}
 
-	if ok, err := f.pg.DeleteStorageTier(ctx, cold.ID); err != nil || !ok {
-		t.Errorf("DeleteStorageTier = %v, %v", ok, err)
+	if reason, err := f.pg.DeleteStorageTierIfUnused(ctx, cold.ID); err != nil || reason != "" {
+		t.Errorf("DeleteStorageTierIfUnused = %q, %v", reason, err)
+	}
+
+	if got, _ := f.pg.GetStorageTierByName(ctx, "cold"); got != nil {
+		t.Errorf("tier still present after delete: %+v", got)
+	}
+}
+
+// TestDeleteStorageTierIfUnusedRefusesBlobsAndMoves covers the blob and journal
+// guards; the blobs foreign key is RESTRICT, so a backend holding blobs can
+// never be deleted out from under them either.
+func TestDeleteStorageTierIfUnusedRefusesBlobsAndMoves(t *testing.T) {
+	f := newTierFixture(t)
+	ctx := context.Background()
+	sha := f.addBlob(t, "held", 10, time.Hour)
+
+	if _, _, err := f.pg.BeginStorageTierMove(ctx, &models.StorageTierMove{SHA256: sha, FromBackendID: "", ToBackendID: f.cold, SizeBytes: 10, Reason: "t"}); err != nil {
+		t.Fatalf("BeginStorageTierMove: %v", err)
+	}
+
+	cold, _ := f.pg.GetStorageTierByName(ctx, "cold")
+	if reason, err := f.pg.DeleteStorageTierIfUnused(ctx, cold.ID); err != nil || !strings.Contains(reason, "move") {
+		t.Fatalf("with a journaled move = %q, %v", reason, err)
+	}
+
+	if _, err := f.pg.GetDB().ExecContext(ctx, `DELETE FROM storage_tier_moves`); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := f.pg.GetDB().ExecContext(ctx, `UPDATE blobs SET storage_backend_id = $1 WHERE sha256 = $2`, f.cold, sha); err != nil {
+		t.Fatal(err)
+	}
+
+	if reason, err := f.pg.DeleteStorageTierIfUnused(ctx, cold.ID); err != nil || !strings.Contains(reason, "blobs") {
+		t.Fatalf("with blobs = %q, %v", reason, err)
+	}
+
+	if reason, err := f.pg.StorageBackendBusyReason(ctx, f.cold); err != nil || reason == "" {
+		t.Errorf("StorageBackendBusyReason = %q, %v, want busy", reason, err)
+	}
+
+	// RESTRICT: deleting the backend must fail while blobs sit on it.
+	if err := f.pg.DeleteStorageBackend(ctx, f.cold); !IsForeignKeyViolation(err) {
+		t.Errorf("DeleteStorageBackend(holding blobs) = %v, want a foreign-key violation", err)
 	}
 }
 

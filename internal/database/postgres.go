@@ -2787,16 +2787,26 @@ var ErrInvalidAuditLimit = errors.New("audit page limit must be positive")
 
 // auditFilterWhere builds the project/actor/action predicate shared by the page
 // and count queries. Placeholders start at $1.
-func auditFilterWhere(projectID, actor, action string) (string, []any) {
+func auditFilterWhere(params models.AuditListParams) (string, []any) {
+	projectID, actor, action := params.ProjectID, params.Actor, params.Action
+
 	where := "WHERE 1=1"
 	args := []any{}
 
 	// A project's activity is every entry naming the project plus every entry
 	// of a repository it owns now (repository events carry no project_id).
-	// Both branches are served by partial indexes.
+	// The repository branch is written as = ANY(ARRAY(subquery)): the owned
+	// repository ids are evaluated once into an array, which lets the planner
+	// BitmapOr the project_id and repository_id indexes (an IN (subquery)
+	// becomes a semi-join and forces a scan of the whole table).
 	if projectID != "" {
 		args = append(args, projectID)
-		where += fmt.Sprintf(" AND (project_id = $%[1]d::uuid OR repository_id IN (SELECT id FROM repositories WHERE project_id = $%[1]d::uuid))", len(args))
+		where += fmt.Sprintf(" AND (project_id = $%[1]d::uuid OR repository_id = ANY(ARRAY(SELECT id FROM repositories WHERE project_id = $%[1]d::uuid)))", len(args))
+	}
+
+	// Project token mint/revoke events are for maintainers and above only.
+	if params.HideProjectTokenEvents {
+		where += ` AND action NOT LIKE 'project.token\_%'`
 	}
 
 	if action != "" {
@@ -2823,7 +2833,7 @@ func (p *PostgresDB) ListAuditLogs(ctx context.Context, params models.AuditListP
 		return nil, fmt.Errorf("list audit logs: %w, got %d", ErrInvalidAuditLimit, params.Limit)
 	}
 
-	where, args := auditFilterWhere(params.ProjectID, params.Actor, params.Action)
+	where, args := auditFilterWhere(params)
 	filtered := len(args) > 0
 	offset := params.Offset
 

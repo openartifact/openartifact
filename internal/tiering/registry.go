@@ -11,7 +11,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"path/filepath"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -48,6 +47,10 @@ type Tier struct {
 	Store storage.BlobStore
 	// Err is why the tier's backend could not be opened ("" when it opened).
 	Err error
+
+	// identity is the canonical location of the tier's objects (see location),
+	// "" when unknown. Two tiers with the same identity share their objects.
+	identity string
 }
 
 // Primary reports whether the tier is the primary (hot) store.
@@ -108,25 +111,28 @@ func newSnapshot(tiers []*Tier) *Snapshot {
 	return s
 }
 
+// cachedStore is an opened backend store, reused while the backend row is
+// unchanged. Only successful opens are cached: a failed one (a mount that was
+// late, a credential rotated) is retried on every refresh.
 type cachedStore struct {
 	fingerprint string
 	store       storage.BlobStore
-	err         error
 }
 
 // Registry keeps the tier list and the opened backend stores. The list is
 // reloaded from the database periodically (and on demand), so a tier created
 // through one replica becomes usable on the others within the refresh interval.
 type Registry struct {
-	db          DB
-	primary     storage.BlobStore
-	primaryPath string
-	log         *logger.Logger
+	db         DB
+	primary    storage.BlobStore
+	primaryLoc location
+	log        *logger.Logger
 
 	snap atomic.Pointer[Snapshot]
 
-	mu     sync.Mutex // serializes Refresh and guards stores
+	mu     sync.Mutex // serializes Refresh and guards stores and warned
 	stores map[string]cachedStore
+	warned map[string]string // backend id -> last open failure logged
 
 	stop     chan struct{}
 	done     chan struct{}
@@ -136,21 +142,25 @@ type Registry struct {
 
 // NewRegistry creates a registry whose only tier, until the first Refresh, is
 // the primary store. primaryCfg is the server's storage configuration; it is
-// used to refuse a filesystem tier that points at the primary directory.
+// used to refuse a tier that aliases the primary store (same directory, bucket,
+// container or repository).
 func NewRegistry(db DB, primary storage.BlobStore, primaryCfg storage.StorageConfig, log *logger.Logger) *Registry {
 	r := &Registry{
 		db: db, primary: primary, log: log,
 		stores: map[string]cachedStore{},
+		warned: map[string]string{},
 		stop:   make(chan struct{}), done: make(chan struct{}),
 	}
 
-	if primaryCfg.Type == "filesystem" || primaryCfg.Type == "" {
-		r.primaryPath = absClean(primaryCfg.Path)
-	}
+	r.primaryLoc = locate(primaryCfg)
 
-	r.snap.Store(newSnapshot([]*Tier{{ID: "", Name: DefaultPrimaryTierName, Store: primary}}))
+	r.snap.Store(newSnapshot([]*Tier{r.primaryTier()}))
 
 	return r
+}
+
+func (r *Registry) primaryTier() *Tier {
+	return &Tier{ID: "", Name: DefaultPrimaryTierName, Store: r.primary, identity: r.primaryLoc.id()}
 }
 
 // Snapshot returns the current tier view.
@@ -158,14 +168,6 @@ func (r *Registry) Snapshot() *Snapshot { return r.snap.Load() }
 
 // Primary returns the primary store.
 func (r *Registry) Primary() storage.BlobStore { return r.primary }
-
-func absClean(p string) string {
-	if abs, err := filepath.Abs(p); err == nil {
-		return abs
-	}
-
-	return filepath.Clean(p)
-}
 
 // Refresh reloads tiers and backends from the database. On a database error the
 // previous snapshot stays in effect.
@@ -189,8 +191,11 @@ func (r *Registry) Refresh(ctx context.Context) error {
 	}
 
 	tiers := make([]*Tier, 0, len(rows)+1)
-	livePaths := map[string]string{} // abs filesystem path -> backend id
+	cl := newClaims()
 	live := map[string]bool{}
+
+	_ = cl.claim("", r.primaryLoc) // the first claim cannot conflict
+
 	hasPrimary := false
 
 	for _, row := range rows {
@@ -198,10 +203,10 @@ func (r *Registry) Refresh(ctx context.Context) error {
 
 		if t.Primary() {
 			hasPrimary = true
-			t.Store = r.primary
+			t.Store, t.identity = r.primary, r.primaryLoc.id()
 		} else {
 			live[t.BackendID] = true
-			r.openBackend(t, byID[t.BackendID], livePaths)
+			r.openBackend(t, byID[t.BackendID], cl)
 		}
 
 		tiers = append(tiers, t)
@@ -209,7 +214,7 @@ func (r *Registry) Refresh(ctx context.Context) error {
 
 	if !hasPrimary {
 		// Pre-migration or hand-edited database: keep the primary store reachable.
-		tiers = append([]*Tier{{ID: "", Name: DefaultPrimaryTierName, Store: r.primary}}, tiers...)
+		tiers = append([]*Tier{r.primaryTier()}, tiers...)
 	}
 
 	for id := range r.stores {
@@ -218,14 +223,22 @@ func (r *Registry) Refresh(ctx context.Context) error {
 		}
 	}
 
+	for id := range r.warned {
+		if !live[id] {
+			delete(r.warned, id)
+		}
+	}
+
 	r.snap.Store(newSnapshot(tiers))
 
 	return nil
 }
 
-// openBackend resolves t's store from its backend row, reusing the opened store
-// while the row is unchanged.
-func (r *Registry) openBackend(t *Tier, b *models.StorageBackend, paths map[string]string) {
+// openBackend resolves t's store from its backend row. The backend's location
+// is claimed first, so a backend aliasing the primary store or an earlier tier
+// is refused before anything is created at it; the opened store is reused while
+// the row is unchanged.
+func (r *Registry) openBackend(t *Tier, b *models.StorageBackend, cl *claims) {
 	if b == nil {
 		t.Err = fmt.Errorf("%w: backend of tier %q is missing", ErrTierUnavailable, t.Name)
 
@@ -234,68 +247,55 @@ func (r *Registry) openBackend(t *Tier, b *models.StorageBackend, paths map[stri
 
 	t.BackendName, t.Kind = b.Name, b.Kind
 
+	store, loc, err := r.resolveStore(b, cl)
+	if err != nil {
+		err = fmt.Errorf("%w: %s: %w", ErrTierUnavailable, t.Name, err)
+		if msg := err.Error(); r.warned[b.ID] != msg {
+			r.warned[b.ID] = msg
+
+			if r.log != nil {
+				r.log.Warnw("storage tier backend unavailable", "tier", t.Name, "backend", b.Name, "error", err)
+			}
+		}
+
+		t.Err = err
+
+		return
+	}
+
+	delete(r.warned, b.ID)
+
+	t.Store, t.identity = store, loc.id()
+}
+
+func (r *Registry) resolveStore(b *models.StorageBackend, cl *claims) (storage.BlobStore, location, error) {
+	cfg, err := ConfigFromBackend(b.Kind, b.Config)
+	if err != nil {
+		return nil, location{}, err
+	}
+
+	loc := locate(cfg)
+	if err := cl.claim(b.ID, loc); err != nil {
+		return nil, loc, err
+	}
+
 	sum := sha256.Sum256(append([]byte(b.Kind+"\x00"), b.Config...))
 	fp := hex.EncodeToString(sum[:])
 
 	if c, ok := r.stores[b.ID]; ok && c.fingerprint == fp {
-		t.Store, t.Err = c.store, c.err
-		r.claimPath(t, b, paths)
-
-		return
+		return c.store, loc, nil
 	}
 
-	cfg, err := ConfigFromBackend(b.Kind, b.Config)
-	if err == nil {
-		err = r.checkPath(b, cfg, paths)
-	}
-
-	var store storage.BlobStore
-
-	if err == nil {
-		store, err = storage.NewBlobStore(cfg)
-	}
-
+	store, err := storage.NewBlobStore(cfg)
 	if err != nil {
-		err = fmt.Errorf("%w: %s: %w", ErrTierUnavailable, t.Name, err)
-		if r.log != nil {
-			r.log.Warnw("storage tier backend unavailable", "tier", t.Name, "backend", b.Name, "error", err)
-		}
+		delete(r.stores, b.ID)
+
+		return nil, loc, err
 	}
 
-	r.stores[b.ID] = cachedStore{fingerprint: fp, store: store, err: err}
-	t.Store, t.Err = store, err
-}
+	r.stores[b.ID] = cachedStore{fingerprint: fp, store: store}
 
-// checkPath refuses a filesystem backend that aliases the primary store or
-// another tier: two tiers on one directory would make "move" a self-copy.
-func (r *Registry) checkPath(b *models.StorageBackend, cfg storage.StorageConfig, paths map[string]string) error {
-	if cfg.Type != "filesystem" {
-		return nil
-	}
-
-	abs := absClean(cfg.Path)
-	if r.primaryPath != "" && abs == r.primaryPath {
-		return fmt.Errorf("%w: filesystem path equals the primary storage path", errBackendConfig)
-	}
-
-	if other, dup := paths[abs]; dup && other != b.ID {
-		return fmt.Errorf("%w: filesystem path is used by another tier", errBackendConfig)
-	}
-
-	paths[abs] = b.ID
-
-	return nil
-}
-
-// claimPath records a cached filesystem store's path for the duplicate check.
-func (r *Registry) claimPath(t *Tier, b *models.StorageBackend, paths map[string]string) {
-	if t.Err != nil {
-		return
-	}
-
-	if cfg, err := ConfigFromBackend(b.Kind, b.Config); err == nil && cfg.Type == "filesystem" {
-		paths[absClean(cfg.Path)] = b.ID
-	}
+	return store, loc, nil
 }
 
 // Start reloads the registry every interval until Stop. It does an initial

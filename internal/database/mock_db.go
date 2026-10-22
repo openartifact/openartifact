@@ -844,6 +844,9 @@ func (m *BaseMockDB) IncrementStorageUsage(ctx context.Context, repoID string, s
 func (m *BaseMockDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	return errNotImpl("DecrementStorageUsage")
 }
+func (m *BaseMockDB) StorageBackendBusyReason(ctx context.Context, backendID string) (string, error) {
+	return "", errNotImpl("StorageBackendBusyReason")
+}
 func (m *BaseMockDB) CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error) {
 	return 0, errNotImpl("CountBlobsOnStorageBackend")
 }

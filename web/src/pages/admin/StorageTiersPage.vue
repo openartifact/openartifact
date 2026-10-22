@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <template v-else>
       <TierPlacementTable :tiers="tiers" @changed="reload" />
-      <TierMoverStatus @pass-finished="reload" />
+      <TierMoverStatus ref="mover" @pass-finished="reload" />
       <TierPolicyTable :policies="policies" :tiers="tiers" @changed="reload" />
       <TierSimulatePanel />
     </template>
@@ -62,11 +62,13 @@ const loaded = ref(false)
 const toasts = useToastStore()
 
 let latest = 0
+const mover = ref<InstanceType<typeof TierMoverStatus> | null>(null)
 
 /** Loads tiers and policies together; later reloads keep the current content on screen. */
 async function reload(): Promise<void> {
   const id = ++latest
   refreshing.value = true
+  void mover.value?.refresh()
   try {
     const [tierList, policyList] = await Promise.all([listTiers(), listPolicies()])
     if (id !== latest) return

@@ -6,6 +6,9 @@ package api
 
 import (
 	"encoding/base64"
+	"errors"
+	"math"
+	"strconv"
 	"testing"
 	"time"
 
@@ -60,5 +63,16 @@ func TestDecodeAuditCursorRejectsGarbage(t *testing.T) {
 				t.Errorf("decodeAuditCursor(%q) = %+v, want error", tt.in, c)
 			}
 		})
+	}
+}
+
+func TestDecodeAuditCursorRejectsOutOfRangeTimestamp(t *testing.T) {
+	const id = "33333333-3333-4333-8333-333333333333"
+
+	for _, us := range []int64{maxAuditCursorMicros + 1, minAuditCursorMicros - 1, math.MaxInt64, math.MinInt64} {
+		tok := base64.RawURLEncoding.EncodeToString([]byte(strconv.FormatInt(us, 10) + ":" + id))
+		if _, err := decodeAuditCursor(tok); !errors.Is(err, errInvalidAuditCursor) {
+			t.Errorf("micros %d: err = %v", us, err)
+		}
 	}
 }

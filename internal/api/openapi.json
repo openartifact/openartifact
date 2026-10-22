@@ -7394,7 +7394,7 @@
       },
       "patch": {
         "summary": "Update storage backend",
-        "description": "Update a storage backend (admin only)",
+        "description": "Update a storage backend (admin only). Changing kind or config is refused with 409 while the backend holds blobs, serves a tier or is named by a tier move",
         "tags": [
           "Admin",
           "Storage"
@@ -7440,6 +7440,9 @@
           },
           "404": {
             "description": "Storage backend not found"
+          },
+          "409": {
+            "description": "The kind or config cannot change while the backend holds blobs, serves a tier or is named by a tier move"
           }
         }
       },
@@ -9348,7 +9351,7 @@
     "/api/v1/projects/{project}/usage": {
       "get": {
         "summary": "Project usage",
-        "description": "Storage usage of a project: the sum of its repositories' counters, the project quota and one line per live repository, largest first. Every repository of a hosted type is metered (quota_enforced); proxy and group repositories hold no uploaded packages. Any member; a non-member gets 404.",
+        "description": "Storage usage of a project: the sum of its repositories' counters, the project quota and one line per live repository, largest first. Every repository of a hosted type is metered (quota_enforced); proxy and group repositories hold no uploaded packages. Any member; a non-member gets 404. project.token_created and project.token_revoked events are returned to maintainers and above only.",
         "tags": [
           "Projects"
         ],

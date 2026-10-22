@@ -4,30 +4,23 @@
 
 import { request } from './client'
 import { pagedResponse, type PagedResult } from './transform'
-import type { StoragePolicy, StoragePolicyInput, StorageTier, TierDryRun, TierMoverStatus } from './generated/types.gen'
+import type {
+  PatchApiV1AdminTieringTiersByNameData,
+  PostApiV1AdminTieringDryRunData,
+  PostApiV1AdminTieringRunResponse,
+  PostApiV1AdminTieringTiersData,
+  StoragePolicy,
+  StoragePolicyInput,
+  StorageTier,
+  TierDryRun,
+  TierMoverStatus,
+} from './generated/types.gen'
 
 export type { StoragePolicy, StoragePolicyInput, StorageTier, TierDryRun, TierMoverStatus }
 
-export interface TierCreateInput {
-  name: string
-  /** Name of an existing storage backend. */
-  backend: string
-  rank?: number
-  promote_on_read?: boolean
-}
-
-export interface TierUpdateInput {
-  name?: string
-  rank?: number
-  promote_on_read?: boolean
-}
-
-export interface DryRunInput {
-  /** Simulate only this draft; omitted simulates every enabled saved policy. */
-  policy?: StoragePolicyInput
-  /** 0..200 */
-  sample_limit?: number
-}
+export type TierCreateInput = PostApiV1AdminTieringTiersData['body']
+export type TierUpdateInput = PatchApiV1AdminTieringTiersByNameData['body']
+export type DryRunInput = PostApiV1AdminTieringDryRunData['body']
 
 const BASE = '/api/v1/admin/tiering'
 const JSON_HEADERS = { 'Content-Type': 'application/json' }
@@ -80,8 +73,8 @@ export function dryRun(body: DryRunInput = {}): Promise<TierDryRun> {
 }
 
 /** Asks the mover for a pass now; `started: false` when one is already running. */
-export function runMover(): Promise<{ started: boolean }> {
-  return request<{ started: boolean }>(`${BASE}/run`, { method: 'POST' })
+export function runMover(): Promise<PostApiV1AdminTieringRunResponse> {
+  return request<PostApiV1AdminTieringRunResponse>(`${BASE}/run`, { method: 'POST' })
 }
 
 export function getMoverStatus(): Promise<TierMoverStatus> {

@@ -33,7 +33,11 @@ const (
 	tieringOpTimeout   = 2 * time.Minute
 )
 
+const tierNameMsg = "name must be 1-64 characters: letters, digits, '.', '_' or '-'"
+
 var (
+	// storage_tiers.name is varchar(64).
+	tierNameRe      = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,63}$`)
 	storageFormatRe = regexp.MustCompile(`^[a-z][a-z0-9_-]{0,31}$`)
 
 	errTierValidation = errors.New("tier validation")
@@ -45,10 +49,9 @@ type TieringAdminDB interface {
 	GetStorageTierByName(ctx context.Context, name string) (*models.StorageTier, error)
 	CreateStorageTier(ctx context.Context, t *models.StorageTier) error
 	UpdateStorageTier(ctx context.Context, t *models.StorageTier) error
-	DeleteStorageTier(ctx context.Context, id string) (bool, error)
-	CountStoragePoliciesForTier(ctx context.Context, tierID string) (int64, error)
-	CountStorageTierMovesForBackend(ctx context.Context, backendID string) (int64, error)
-	CountBlobsOnStorageBackend(ctx context.Context, backendID string) (int64, error)
+	// DeleteStorageTierIfUnused checks and deletes atomically; it returns the
+	// reason the tier is still in use, or "" once it is deleted.
+	DeleteStorageTierIfUnused(ctx context.Context, id string) (string, error)
 	GetStorageBackend(ctx context.Context, name string) (*models.StorageBackend, error)
 
 	ListStoragePolicies(ctx context.Context) ([]*models.StoragePolicy, error)
@@ -215,8 +218,8 @@ func (h *AdminTieringHandler) handleCreateTier(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if !storageBackendNameRe.MatchString(body.Name) {
-		writeError(w, http.StatusBadRequest, "validation_failed", "name must be 1-128 characters: letters, digits, '.', '_' or '-'")
+	if !tierNameRe.MatchString(body.Name) {
+		writeError(w, http.StatusBadRequest, "validation_failed", tierNameMsg)
 		return
 	}
 
@@ -332,8 +335,8 @@ func (h *AdminTieringHandler) handleUpdateTier(w http.ResponseWriter, r *http.Re
 // for an invalid one.
 func applyTierPatch(t *models.StorageTier, name *string, rank *int, promote *bool) string {
 	if name != nil {
-		if !storageBackendNameRe.MatchString(*name) {
-			return "name must be 1-128 characters: letters, digits, '.', '_' or '-'"
+		if !tierNameRe.MatchString(*name) {
+			return tierNameMsg
 		}
 
 		t.Name = *name
@@ -379,22 +382,17 @@ func (h *AdminTieringHandler) handleDeleteTier(w http.ResponseWriter, r *http.Re
 		return
 	}
 
-	if msg, err := h.tierInUse(r.Context(), t); err != nil {
-		h.internalError(w, "failed to delete storage tier", err)
-		return
-	} else if msg != "" {
-		writeError(w, http.StatusConflict, "conflict", msg)
-		return
-	}
-
-	if _, err := h.db.DeleteStorageTier(r.Context(), t.ID); err != nil {
+	if msg, err := h.db.DeleteStorageTierIfUnused(r.Context(), t.ID); err != nil {
 		if database.IsForeignKeyViolation(err) {
-			writeError(w, http.StatusConflict, "conflict", "storage tier is still referenced by a policy")
+			writeError(w, http.StatusConflict, "conflict", "storage tier is still referenced")
 			return
 		}
 
 		h.internalError(w, "failed to delete storage tier", err)
 
+		return
+	} else if msg != "" {
+		writeError(w, http.StatusConflict, "conflict", msg)
 		return
 	}
 
@@ -402,38 +400,6 @@ func (h *AdminTieringHandler) handleDeleteTier(w http.ResponseWriter, r *http.Re
 	h.refreshRegistry(r.Context())
 
 	writeNoContent(w)
-}
-
-// tierInUse returns why the tier cannot be deleted ("" when it can).
-func (h *AdminTieringHandler) tierInUse(ctx context.Context, t *models.StorageTier) (string, error) {
-	policies, err := h.db.CountStoragePoliciesForTier(ctx, t.ID)
-	if err != nil {
-		return "", err //nolint:wrapcheck // logged by the caller
-	}
-
-	if policies > 0 {
-		return "storage tier is still referenced by a policy", nil
-	}
-
-	blobs, err := h.db.CountBlobsOnStorageBackend(ctx, t.BackendID)
-	if err != nil {
-		return "", err //nolint:wrapcheck // logged by the caller
-	}
-
-	if blobs > 0 {
-		return "storage tier still holds blobs; move them to another tier first", nil
-	}
-
-	moves, err := h.db.CountStorageTierMovesForBackend(ctx, t.BackendID)
-	if err != nil {
-		return "", err //nolint:wrapcheck // logged by the caller
-	}
-
-	if moves > 0 {
-		return "storage tier has moves in progress", nil
-	}
-
-	return "", nil
 }
 
 // ---- policies ----

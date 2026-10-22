@@ -49,6 +49,7 @@ var (
 	errCopyChecksum = errors.New("copied blob does not match its sha256")
 	errCopySize     = errors.New("copied blob size differs from the recorded size")
 	errSourceGone   = errors.New("source copy is missing")
+	errSameStorage  = errors.New("source and target tiers share their storage")
 )
 
 // MoverConfig tunes the mover.
@@ -128,6 +129,13 @@ func (m *Mover) Move(ctx context.Context, sha, to, reason string) (Outcome, erro
 
 	if from == to {
 		return OutcomeSkipped, nil
+	}
+
+	// Nothing may be journaled for a move that cannot run: an unopenable tier
+	// would otherwise leave one failing journal row per blob and burn the
+	// recovery budget.
+	if _, _, err := m.tiers(from, to); err != nil {
+		return OutcomeSkipped, err
 	}
 
 	row, created, err := m.db.BeginStorageTierMove(ctx, &models.StorageTierMove{
@@ -268,6 +276,12 @@ func (m *Mover) tiers(from, to string) (*Tier, *Tier, error) {
 		return nil, nil, fmt.Errorf("%w: target backend %q", ErrTierUnavailable, to)
 	}
 
+	// The registry refuses aliased backends; this is the last line before a
+	// "copy" of a blob onto itself is followed by deleting the source.
+	if src.identity != "" && src.identity == dst.identity {
+		return nil, nil, fmt.Errorf("%w: %w (%s)", ErrTierUnavailable, errSameStorage, src.identity)
+	}
+
 	return src, dst, nil
 }
 
@@ -402,9 +416,12 @@ func (m *Mover) abandon(ctx context.Context, row *models.StorageTierMove, dst *T
 // removeOldCopy deletes the source copy of a move whose flip committed. It runs
 // under the per-blob lock and re-reads the placement: the old copy is removed
 // only while the placement is still the move's target, so a blob that was moved
-// again (or deleted) is never stripped of its authoritative copy.
+// again (or deleted) is never stripped of its authoritative copy. While the
+// blob still exists it also re-confirms the target copy under the lock, so the
+// source is never deleted unless the bytes it would leave behind are really
+// there (a target that vanished, or turns out to be the source itself).
 func (m *Mover) removeOldCopy(ctx context.Context, row *models.StorageTierMove) error {
-	src, _, err := m.tiers(row.FromBackendID, row.ToBackendID)
+	src, dst, err := m.tiers(row.FromBackendID, row.ToBackendID)
 	if err != nil {
 		return err
 	}
@@ -418,6 +435,12 @@ func (m *Mover) removeOldCopy(ctx context.Context, row *models.StorageTierMove) 
 		if found && cur != row.ToBackendID {
 			// Placement moved on again; the source may be authoritative. Leave it.
 			return nil
+		}
+
+		if found {
+			if cerr := m.confirmCopy(ctx, row.SHA256, row.SizeBytes, dst.Store); cerr != nil {
+				return fmt.Errorf("keeping the old copy: %w", cerr)
+			}
 		}
 
 		if derr := src.Store.Delete(ctx, row.SHA256); derr != nil && !errors.Is(derr, storage.ErrBlobNotFound) {

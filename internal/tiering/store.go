@@ -65,9 +65,10 @@ type placementEntry struct {
 }
 
 var (
-	_ storage.BlobStore    = (*Store)(nil)
-	_ storage.Presigner    = (*Store)(nil)
-	_ storage.StagingStore = (*Store)(nil)
+	_ storage.BlobStore       = (*Store)(nil)
+	_ storage.Presigner       = (*Store)(nil)
+	_ storage.StagingStore    = (*Store)(nil)
+	_ storage.RepeatingLister = (*Store)(nil)
 )
 
 // NewStore creates the tiered store. tracker and reg may be nil.
@@ -144,8 +145,39 @@ func (s *Store) countRead(t *Tier) {
 	}
 }
 
+// sweepTiers runs fn against every usable tier not yet tried. ok reports a
+// success (and caches the placement); otherwise err is the first failure that
+// was not "not found", or nil when every tier said not found.
+func sweepTiers[T any](s *Store, id string, snap *Snapshot, tried map[string]bool, fn func(st storage.BlobStore) (T, error)) (T, *Tier, bool, error) {
+	var (
+		zero   T
+		failed error
+	)
+
+	for _, t := range snap.Tiers {
+		if tried[t.BackendID] || t.Store == nil {
+			continue
+		}
+
+		got, err := fn(t.Store)
+		if err == nil {
+			s.cachePut(id, t.BackendID)
+
+			return got, t, true, nil
+		}
+
+		if failed == nil && !errors.Is(err, storage.ErrBlobNotFound) {
+			failed = fmt.Errorf("tier %s: %w", t.Name, err)
+		}
+	}
+
+	return zero, nil, false, failed
+}
+
 func (s *Store) touch(ctx context.Context, sha string) {
-	if s.tracker != nil && storage.AccessTracked(ctx) {
+	// Access times only feed idle-based policies and promote-on-read, which
+	// need a cold tier to act on; without one reads stay free of bookkeeping.
+	if s.tracker != nil && storage.AccessTracked(ctx) && s.reg.Snapshot().HasCold() {
 		s.tracker.Touch(sha)
 	}
 }
@@ -154,6 +186,11 @@ func (s *Store) touch(ctx context.Context, sha string) {
 // tries, in order: the cached (or primary) tier, the authoritative placement
 // from the database, then every other tier, moving on only for
 // storage.ErrBlobNotFound. The tier that answered is returned.
+//
+// "Not found" is only reported when every tier that could be asked said so: a
+// placement on a tier this server cannot open is ErrTierUnavailable, and a
+// database or backend failure met along the way is returned instead of being
+// masked as a missing blob (which clients would take as a 404).
 func onTiers[T any](ctx context.Context, s *Store, id string, fn func(st storage.BlobStore) (T, error)) (T, *Tier, error) {
 	var zero T
 
@@ -179,37 +216,47 @@ func onTiers[T any](ctx context.Context, s *Store, id string, fn func(st storage
 	notFound := err
 	tried := map[string]bool{first.BackendID: true}
 
-	if backend, _, found, perr := s.db.GetBlobPlacement(ctx, id); perr == nil && found && !tried[backend] {
+	var firstErr error // the first failure that is not "not found"
+
+	backend, _, found, perr := s.db.GetBlobPlacement(ctx, id)
+	if perr != nil {
+		firstErr = fmt.Errorf("read blob placement: %w", perr)
+	}
+
+	if perr == nil && found && !tried[backend] {
 		t, cur := s.resolveTier(ctx, snap, backend)
 		snap = cur
 
-		if t != nil && t.Store != nil {
-			tried[backend] = true
+		if t == nil || t.Store == nil {
+			return zero, first, fmt.Errorf("%w: blob %s is placed on a tier this server cannot open", ErrTierUnavailable, id)
+		}
 
-			if v, err = fn(t.Store); err == nil {
-				s.cachePut(id, backend)
+		tried[backend] = true
 
-				return v, t, nil
-			}
+		if v, err = fn(t.Store); err == nil {
+			s.cachePut(id, backend)
 
-			if !errors.Is(err, storage.ErrBlobNotFound) {
-				return zero, t, err
-			}
+			return v, t, nil
+		}
+
+		if !errors.Is(err, storage.ErrBlobNotFound) {
+			return zero, t, err
 		}
 	}
 
 	// The placement may have just flipped (or the database was unreachable):
 	// the bytes can still be on any tier.
-	for _, t := range snap.Tiers {
-		if tried[t.BackendID] || t.Store == nil {
-			continue
-		}
+	v, t, ok, sweepErr := sweepTiers(s, id, snap, tried, fn)
+	if ok {
+		return v, t, nil
+	}
 
-		if v, err = fn(t.Store); err == nil {
-			s.cachePut(id, t.BackendID)
+	if firstErr == nil {
+		firstErr = sweepErr
+	}
 
-			return v, t, nil
-		}
+	if firstErr != nil {
+		return zero, first, firstErr
 	}
 
 	return zero, first, notFound
@@ -377,6 +424,18 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	placed, _, found, perr := s.db.GetBlobPlacement(ctx, id)
 	s.forget(id)
 
+	if perr == nil && found && placed != "" {
+		// A tier created on another replica may not be in this snapshot yet.
+		// Deleting without touching it would orphan the bytes (the caller
+		// removes the row on success), so resolve it or keep the row.
+		t, cur := s.resolveTier(ctx, snap, placed)
+		if t == nil {
+			return fmt.Errorf("%w: blob %s is placed on a tier this server does not know", ErrTierUnavailable, id)
+		}
+
+		snap = cur
+	}
+
 	var errs []error
 
 	for _, t := range snap.Tiers {
@@ -406,6 +465,13 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 
 	return errors.Join(errs...)
 }
+
+// ListMayRepeat reports that List can return the same id more than once (a blob
+// mid-move, or a stray copy left behind by a flip, is on two tiers). Callers
+// that must see each blob once, such as the full backup, deduplicate when it is
+// true. A blob moved while the walk is in progress can also be missed; run full
+// backups while the mover is idle (see docs/operations/storage-tiering.md).
+func (s *Store) ListMayRepeat() bool { return s.reg.Snapshot().HasCold() }
 
 // List implements storage.BlobStore: it walks the tiers in order, primary first.
 // A blob mid-move can appear once per tier. Tiers that cannot list are skipped,

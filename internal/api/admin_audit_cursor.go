@@ -15,6 +15,12 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// Cursor timestamps must fall in years 0001..9999, well inside timestamptz.
+const (
+	minAuditCursorMicros = -62135596800 * 1_000_000
+	maxAuditCursorMicros = 253402300799 * 1_000_000
+)
+
 var errInvalidAuditCursor = errors.New("invalid audit cursor")
 
 // encodeAuditCursor renders a keyset position as an opaque URL-safe token:
@@ -40,6 +46,12 @@ func decodeAuditCursor(s string) (*models.AuditCursor, error) {
 
 	us, err := strconv.ParseInt(micros, 10, 64)
 	if err != nil {
+		return nil, errInvalidAuditCursor
+	}
+
+	// time.UnixMicro silently wraps outside Postgres's timestamptz range; a
+	// forged cursor must be a 400, not a 500 from the query.
+	if us < minAuditCursorMicros || us > maxAuditCursorMicros {
 		return nil, errInvalidAuditCursor
 	}
 

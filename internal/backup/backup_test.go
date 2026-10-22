@@ -571,6 +571,61 @@ func TestExportBlobs_PaginatesUntilExhausted(t *testing.T) {
 	}
 }
 
+// repeatingBlobStore lists every blob twice, the way a tiered store lists a
+// blob caught mid-move on two tiers.
+type repeatingBlobStore struct {
+	*fakeBlobStore
+
+	mayRepeat bool
+}
+
+func (r *repeatingBlobStore) ListMayRepeat() bool { return r.mayRepeat }
+
+func (r *repeatingBlobStore) List(_ context.Context, token string, _ int) ([]string, string, error) {
+	if token != "" {
+		return nil, "", nil
+	}
+
+	return append(append([]string{}, r.keys...), r.keys...), "", nil
+}
+
+// TestExportBlobs_DeduplicatesRepeatingStores proves a full backup writes each
+// blob once when the store may list an id twice (a tiered store, where a blob
+// mid-move is on two tiers), instead of duplicate tar entries and an inflated
+// blob count.
+func TestExportBlobs_DeduplicatesRepeatingStores(t *testing.T) {
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatalf("failed to create logger: %v", err)
+	}
+
+	store := &repeatingBlobStore{fakeBlobStore: newFakeBlobStore(3), mayRepeat: true}
+	e := NewEngine(nil, store, log, t.TempDir())
+
+	var buf bytes.Buffer
+
+	tw := tar.NewWriter(&buf)
+	manifest := &BackupManifest{TableCounts: map[string]int{}}
+
+	if err := e.exportBlobs(context.Background(), tw, manifest); err != nil {
+		t.Fatalf("exportBlobs failed: %v", err)
+	}
+
+	_ = tw.Close()
+
+	entries := 0
+
+	for tr := tar.NewReader(&buf); ; entries++ {
+		if _, err := tr.Next(); err != nil {
+			break
+		}
+	}
+
+	if manifest.TableCounts["blobs"] != 3 || entries != 3 {
+		t.Errorf("blob count = %d, tar entries = %d, want 3 each", manifest.TableCounts["blobs"], entries)
+	}
+}
+
 // fakeBlobStore is a minimal in-memory storage.BlobStore used only to prove
 // exportBlobs' pagination loop; every method exportBlobs doesn't call
 // returns an error if invoked.

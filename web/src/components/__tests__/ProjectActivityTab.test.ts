@@ -61,4 +61,61 @@ describe('ProjectActivityTab', () => {
     expect(wrapper.find('[role="alert"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="activity-row"]').exists()).toBe(false)
   })
+
+  /** Fetch whose responses are released manually, to force out-of-order arrival. */
+  function deferredFetch() {
+    const pending = new Map<string, (r: Response) => void>()
+    spy = spyOn(globalThis, 'fetch').mockImplementation(
+      (input) => new Promise<Response>((resolve) => pending.set(String(input), resolve)),
+    )
+    return pending
+  }
+
+  it('drops a slow response for the previous project after a project switch', async () => {
+    const pending = deferredFetch()
+    const wrapper = mount(ProjectActivityTab, { props: { project: 'old' } })
+    await flushPromises()
+    await wrapper.setProps({ project: 'new' })
+    await flushPromises()
+
+    pending.get('/api/v1/projects/new/activity?per_page=25')!(
+      json({ data: [entry('n1', 'project.created', 'from-new')], per_page: 25, has_more: false }),
+    )
+    await flushPromises()
+    pending.get('/api/v1/projects/old/activity?per_page=25')!(
+      json({ data: [entry('o1', 'project.created', 'from-old')], per_page: 25, has_more: false }),
+    )
+    await flushPromises()
+
+    const rows = wrapper.findAll('[data-testid="activity-row"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.text()).toContain('from-new')
+  })
+
+  it('drops a load-more response that lands after the project changed', async () => {
+    const pending = deferredFetch()
+    const wrapper = mount(ProjectActivityTab, { props: { project: 'old' } })
+    await flushPromises()
+    pending.get('/api/v1/projects/old/activity?per_page=25')!(
+      json({ data: [entry('o1', 'project.created', 'old-1')], per_page: 25, has_more: true, next_cursor: 'c2' }),
+    )
+    await flushPromises()
+    await wrapper.find('[data-testid="activity-more"]').trigger('click')
+    await flushPromises()
+
+    await wrapper.setProps({ project: 'new' })
+    await flushPromises()
+    pending.get('/api/v1/projects/new/activity?per_page=25')!(
+      json({ data: [entry('n1', 'project.created', 'new-1')], per_page: 25, has_more: false }),
+    )
+    await flushPromises()
+    pending.get('/api/v1/projects/old/activity?cursor=c2&per_page=25')!(
+      json({ data: [entry('o2', 'project.member_added', 'old-2')], per_page: 25, has_more: false }),
+    )
+    await flushPromises()
+
+    const rows = wrapper.findAll('[data-testid="activity-row"]')
+    expect(rows.map((r) => r.text())).toEqual([expect.stringContaining('new-1')])
+    expect(wrapper.find('[data-testid="activity-more"]').exists()).toBe(false)
+  })
 })

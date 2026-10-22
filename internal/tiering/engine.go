@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"runtime/debug"
 	"slices"
 	"sync"
 	"time"
@@ -16,6 +17,11 @@ import (
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
+
+// metricsUsageTTL bounds how stale the per-tier blob and byte gauges get when
+// no move changed them. The usage query aggregates the whole blobs table, so it
+// does not run on every pass.
+const metricsUsageTTL = 30 * time.Minute
 
 // PromotionPolicyName labels promote-on-read moves in plans and journal rows.
 const PromotionPolicyName = "promote-on-read"
@@ -119,6 +125,12 @@ type Engine struct {
 	mu           sync.Mutex
 	policyCursor string
 	promoCursor  string
+
+	// Metrics state, guarded by mu: the usage last read from the database, when
+	// it was read, and the tier names whose gauges currently exist.
+	usage     map[string]models.TierUsage
+	usageAt   time.Time
+	published map[string]struct{}
 }
 
 // NewEngine creates an engine. m and log may be nil.
@@ -166,12 +178,23 @@ func (e *Engine) loadPolicies(ctx context.Context, snap *Snapshot) ([]*Policy, e
 	return usablePolicies(snap, out), nil
 }
 
-// usablePolicies drops policies targeting a tier that is missing or cannot be opened.
+// usablePolicies drops policies targeting a tier that is missing or cannot be
+// opened, and policies restricted to a source tier this server does not know
+// (a tier created on another replica a moment ago).
 func usablePolicies(snap *Snapshot, policies []*Policy) []*Policy {
 	return slices.DeleteFunc(slices.Clone(policies), func(p *Policy) bool {
 		t, ok := snap.ByID(p.TargetTierID)
+		if !ok || t.Store == nil {
+			return true
+		}
 
-		return !ok || t.Store == nil
+		if p.FromTierID != "" {
+			if _, known := snap.ByID(p.FromTierID); !known {
+				return true
+			}
+		}
+
+		return false
 	})
 }
 
@@ -206,8 +229,8 @@ func (e *Engine) facts(ctx context.Context, snap *Snapshot, policies []*Policy, 
 
 	for _, b := range blobs {
 		t, ok := snap.ByBackend(b.BackendID)
-		if !ok {
-			continue // placed on a tier this server does not know: leave it alone
+		if !ok || t.Store == nil {
+			continue // placed on a tier this server does not know or cannot open: leave it alone
 		}
 
 		out = append(out, &Facts{
@@ -258,11 +281,7 @@ func (e *Engine) scanPolicies(ctx context.Context, snap *Snapshot, policies []*P
 	scanned := 0
 
 	now := e.now()
-	backendOf := func(tierID string) string {
-		t, _ := snap.ByID(tierID)
-
-		return t.BackendID
-	}
+	backendOf := func(tierID string) string { return backendOfTier(snap, tierID) }
 
 	clauses := make([]models.TierScanClause, len(policies))
 	for i, p := range policies {
@@ -405,7 +424,9 @@ func (e *Engine) runPass(ctx context.Context) (PassStats, error) {
 
 	snap := e.reg.Snapshot()
 	if !snap.HasCold() {
-		e.RefreshMetrics(ctx)
+		// Nothing to move between, and no usage worth aggregating over the
+		// whole blobs table every interval.
+		e.refreshMetrics(ctx, snap, false)
 
 		return st, nil
 	}
@@ -422,7 +443,7 @@ func (e *Engine) runPass(ctx context.Context) (PassStats, error) {
 		err = e.applyPolicies(ctx, snap, &st, &budget)
 	}
 
-	e.RefreshMetrics(ctx)
+	e.refreshMetrics(ctx, snap, st.Recovered+st.Promoted+st.Moved > 0)
 
 	if err != nil {
 		st.Aborted = true
@@ -430,6 +451,8 @@ func (e *Engine) runPass(ctx context.Context) (PassStats, error) {
 
 	return st, err
 }
+
+var errMovePanic = errors.New("tier move panicked")
 
 type job struct {
 	d      decision
@@ -448,7 +471,7 @@ func (e *Engine) execute(ctx context.Context, jobs []job, st *PassStats, recover
 	for range min(e.cfg.Concurrency, max(len(jobs), 1)) {
 		wg.Go(func() {
 			for j := range ch {
-				out, err := e.runJob(ctx, j)
+				out, err := e.safeRunJob(ctx, j)
 
 				mu.Lock()
 				e.fold(st, j, out, err, recovery)
@@ -468,6 +491,30 @@ feed:
 
 	close(ch)
 	wg.Wait()
+}
+
+// safeRunJob runs one job and turns a panic into a failed outcome: a bug that
+// trips on one blob must not take the whole server down from a worker goroutine
+// (nothing above it recovers) nor abort the rest of the pass.
+func (e *Engine) safeRunJob(ctx context.Context, j job) (Outcome, error) {
+	var res struct {
+		out Outcome
+		err error
+	}
+
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				res.out, res.err = OutcomeSkipped, fmt.Errorf("%w: %v", errMovePanic, r)
+
+				e.warn("storage tier move panicked", "blob", j.d.facts.SHA256, "panic", fmt.Sprint(r), "stack", string(debug.Stack()))
+			}
+		}()
+
+		res.out, res.err = e.runJob(ctx, j)
+	}()
+
+	return res.out, res.err
 }
 
 func (e *Engine) runJob(ctx context.Context, j job) (Outcome, error) {
@@ -587,34 +634,84 @@ func (e *Engine) visit(ctx context.Context, st *PassStats, budget *int) func(ds 
 	}
 }
 
-// RefreshMetrics republishes the per-tier gauges from the database.
-func (e *Engine) RefreshMetrics(ctx context.Context) {
+// refreshMetrics republishes the per-tier gauges. The blob and byte counts come
+// from an aggregate over the whole blobs table, so they are re-read only when
+// the pass moved something, a tier appeared or metricsUsageTTL passed; the
+// cheap journal count is read every time. Gauges are updated in place (a scrape
+// never sees them missing) and only the replica that ran a pass publishes them:
+// they are a leader view, see docs/operations/storage-tiering.md. With no cold
+// tier there is nothing to report and any gauges left from one are dropped.
+func (e *Engine) refreshMetrics(ctx context.Context, snap *Snapshot, changed bool) {
 	if e.metrics == nil {
 		return
 	}
 
-	usage, err := e.db.StorageTierUsage(ctx)
-	if err != nil {
-		e.warn("storage tier usage unavailable for metrics", "error", err)
+	e.mu.Lock()
+	defer e.mu.Unlock()
+
+	if !snap.HasCold() {
+		e.dropGauges(nil)
 
 		return
 	}
 
-	byBackend := make(map[string]models.TierUsage, len(usage))
-	for _, u := range usage {
-		byBackend[u.BackendID] = u
+	if e.needsUsage(snap, changed) {
+		usage, err := e.db.StorageTierUsage(ctx)
+		if err != nil {
+			e.warn("storage tier usage unavailable for metrics", "error", err)
+
+			return
+		}
+
+		e.usage = make(map[string]models.TierUsage, len(usage))
+		for _, u := range usage {
+			e.usage[u.BackendID] = u
+		}
+
+		e.usageAt = e.now()
 	}
 
-	e.metrics.TierBlobs.Reset()
-	e.metrics.TierBytes.Reset()
+	names := make(map[string]struct{}, len(snap.Tiers))
 
-	for _, t := range e.reg.Snapshot().Tiers {
-		u := byBackend[t.BackendID]
+	for _, t := range snap.Tiers {
+		u := e.usage[t.BackendID]
 		e.metrics.TierBlobs.WithLabelValues(t.Name).Set(float64(u.Blobs))
 		e.metrics.TierBytes.WithLabelValues(t.Name).Set(float64(u.Bytes))
+
+		names[t.Name] = struct{}{}
 	}
+
+	e.dropGauges(names)
 
 	if n, err := e.db.CountStorageTierMoves(ctx); err == nil {
 		e.metrics.TierMovesPending.Set(float64(n))
 	}
+}
+
+// needsUsage reports whether the cached usage is stale. e.mu is held.
+func (e *Engine) needsUsage(snap *Snapshot, changed bool) bool {
+	if changed || e.usage == nil || e.now().Sub(e.usageAt) > metricsUsageTTL {
+		return true
+	}
+
+	for _, t := range snap.Tiers {
+		if _, ok := e.published[t.Name]; !ok {
+			return true
+		}
+	}
+
+	return false
+}
+
+// dropGauges removes the gauges of tiers that are no longer in keep and records
+// keep as the published set. e.mu is held.
+func (e *Engine) dropGauges(keep map[string]struct{}) {
+	for name := range e.published {
+		if _, ok := keep[name]; !ok {
+			e.metrics.TierBlobs.DeleteLabelValues(name)
+			e.metrics.TierBytes.DeleteLabelValues(name)
+		}
+	}
+
+	e.published = keep
 }

@@ -41,6 +41,9 @@ func TestCompileGlob(t *testing.T) {
 		{"**.jar", "a/b/c.jar", true},
 		{"caf\u00e9/*", "caf\u00e9/x", true},
 		{"caf\u00e9/*", "cafe/x", false},
+		{"**", "a\nb", true},
+		{"a/**", "a/b\nc/d", true},
+		{"**/c.jar", "x\ny/c.jar", true},
 	} {
 		re, err := CompileGlob(tc.pattern)
 		if err != nil {
