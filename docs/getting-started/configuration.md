@@ -104,6 +104,7 @@ PostgreSQL is the only supported database.
 | `OPENARTIFACT_DOCKER_GC_GRACE_PERIOD` | `workers.dockerGcGracePeriod` | `24h` | How long an untagged manifest or an unreferenced blob must sit idle before GC may delete it; keep it longer than your slowest push and any digest-pinned reference to an untagged image. Must not be negative |
 | `OPENARTIFACT_DOCKER_UPLOAD_TTL` | `workers.dockerUploadTtl` | `24h` | Age after which an unfinished Docker blob upload session and its staged file are removed; `0` disables the sweep. Must not be negative |
 | `OPENARTIFACT_DOCKER_UPLOAD_DIR` | `workers.dockerUploadDir` | `/tmp/openartifact/docker-uploads` | Directory where in-progress Docker blob uploads are staged; use a persistent volume that all replicas handling one upload share |
+| `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` | `workers.webhookDeliveryRetentionDays` | `30` | Days finished (success or failed) webhook delivery records are kept; the hourly purge deletes older ones. `0` keeps them forever. Must not be negative |
 
 ### Trash (`trash`)
 

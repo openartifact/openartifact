@@ -28,7 +28,7 @@ The directory is created with mode `0755`; archives are written `0600` as `backu
 
 Backup types, passed as `type`:
 
-- `full`: records and all blobs.
+- `full`: records and all blobs. Needs a backend that can list its blobs: filesystem, S3, GCS and Azure can; the OCI backend cannot, and a `full` backup on it fails with a clear error (use `metadata-only` plus your registry's own backup).
 - `metadata-only`: records only. Restoring it needs the blobs to be present in the target store already.
 
 There is no incremental backup: every archive is complete for its type, and any other `type` (including `incremental`) is refused with 400.
@@ -37,11 +37,11 @@ Soft-deleted data ([trash](trash.md): trashed repositories and package rows) is 
 
 Tables exported:
 
-- Global: repositories, users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, organizations (with their `member_role`) and members, webhooks. Repositories keep their organization on restore.
+- Global: repositories, repository group members (member order is kept), users, groups, tokens, SSO providers, storage backend records, promotion pipelines, release bundles with their items and promotions, organizations (with their `member_role`) and members, webhooks. Repositories keep their organization on restore.
 - Per format: Debian distributions, components and architectures with deb packages; rpm, Helm, PyPI, NuGet, Cargo, RubyGems, Conan, Ivy, sbt, raw, Docker (blobs, manifests, tags), npm (packages, versions, dist-tags), Maven, Conda and Go module records.
 - Per repository: cleanup policies, SBOM, license, secret and vulnerability scan results, AI analyses.
 
-Not included: permission targets and group membership ([RBAC](../security/rbac.md)), quota limits, artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed list call for one table is logged and skipped rather than aborting the backup.
+Not included: permission targets and group membership ([RBAC](../security/rbac.md)), quota limits, artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed list call for any exported table (or an unreadable blob that is not simply missing) fails the job instead of producing an archive with silent gaps; the job's `error_message` names the table. A blob that disappeared between listing and reading is skipped. Blobs are enumerated in pages, so memory use does not grow with the blob count. The archive is flushed and closed before the job is marked `completed`; a failed write marks the job `failed` and removes the partial file.
 
 ### Secrets in the archive
 
@@ -110,6 +110,7 @@ Behaviour:
 - Records go through the normal create paths. IDs of repositories, users, Debian distributions and components, pipelines, bundles, organizations and npm packages are regenerated and rows that point at them are remapped. A name that already exists (a repository, or the bootstrap `admin` user of a fresh server) is skipped with a warning, and rows depending on a skipped parent are skipped too. Restore into an empty instance for a clean result.
 - Blobs are checked against the SHA-256 in their entry name, then written to the configured blob store.
 - When the restore finishes, the repositories' [storage quota](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct) usage counters are recounted from the restored packages, so quotas set afterwards start from the real usage. Quota limits are not part of the archive.
+- Group repositories get their members back (remapped to the new repository ids). The generated metadata of hosted rpm, deb and maven repositories (repodata, `dists/`, `maven-metadata.xml`) is not in the archive; the restore queues its regeneration, so it is served shortly after the restore finishes.
 - Entries a newer version wrote that this version does not know are ignored.
 
 Procedure for a new instance:

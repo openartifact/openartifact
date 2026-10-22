@@ -102,7 +102,7 @@ The check runs again at delivery time on the address actually dialed, so a name 
 | `PUT /api/v1/webhooks/{id}` | update; omitted fields stay unchanged |
 | `DELETE /api/v1/webhooks/{id}` | delete (`204`), including its delivery log |
 | `POST /api/v1/webhooks/{id}/test` | queue a `webhook.test` delivery (`202`), regardless of subscriptions and the `enabled` flag |
-| `GET /api/v1/webhooks/{id}/deliveries` | delivery log; `limit` 1 to 500, default 50 |
+| `GET /api/v1/webhooks/{id}/deliveries` | delivery log; `limit` 1 to 500, default 50. Finished (`success`/`failed`) entries older than `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` (default 30; `0` keeps them) are deleted hourly |
 
 A repository webhook fires only for events in its repository; a global one fires for all repositories. Bodies are limited to 64 KiB.
 
