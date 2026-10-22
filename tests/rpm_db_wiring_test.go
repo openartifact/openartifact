@@ -355,6 +355,9 @@ func (m *MockDatabase) DeleteComponent(ctx context.Context, componentID string) 
 }
 
 func (m *MockDatabase) GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	if meta, ok := m.repoMetadata[repositoryID]; ok {
 		if metadata, ok := meta[path]; ok {
 			return metadata, nil
@@ -365,6 +368,9 @@ func (m *MockDatabase) GetRepoMetadataByPath(ctx context.Context, repositoryID s
 }
 
 func (m *MockDatabase) GetRepoMetadataByRepo(ctx context.Context, repositoryID string) ([]models.RepoMetadata, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	var result []models.RepoMetadata
 
 	if meta, ok := m.repoMetadata[repositoryID]; ok {
