@@ -40,3 +40,10 @@ path = ["pkg/rpm/testdata/sizes-v4.rpm", "pkg/rpm/testdata/sizes-v6.rpm"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Agent skills vendored unmodified from samber/cc-skills-golang (see .agents/skills/README.md).
+[[annotations]]
+path = [".agents/skills/golang-*/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2026 Samuel Berthe"
+SPDX-License-Identifier = "MIT"

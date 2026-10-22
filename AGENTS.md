@@ -99,6 +99,10 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint ar
 - Go: `make lint` (gocyclo limit 20 applies to tests too; prefer table-driven subtests) and `make test`.
 - End to end: rebuild with `docker compose -f docker/docker-compose.yml up -d --build openartifact`, log in (`POST /api/v1/auth/login`) and create a token via `POST /api/v1/auth/tokens` (`{"name":…,"kind":"access"}`) with the session cookie and `X-CSRF-Token` (tokens cannot mint tokens; see `docs/integrations/api.md`), and publish with the real client (`npm publish`, `curl -T` for raw, …) before claiming a format works.
 
+## Review skills
+
+`.agents/skills/` vendors four Go skills from [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) (MIT, pinned commit in `.agents/skills/README.md`): `golang-security`, `golang-safety`, `golang-concurrency`, `golang-context`. Load them for **reviews** of security-sensitive code (proxies and groups, auth/RBAC/projects, upload and format handlers, anything serving upstream- or uploader-controlled bytes) and of workers, locks and goroutines; skip them for routine implementation. Use their review mode only, not their sub-agent fan-out. This file wins on conflict: errors go through `writeError` (no `samber/oops`), DB access through sqlc/pgx, and the repo's own conventions above.
+
 ## CI and releases
 
 `.github/workflows/ci.yml` runs on PRs, `main` and tags; treat every job as a required check: `go` (build, vet, `go mod tidy -diff`, govulncheck, race tests), `integration` (Postgres + Garage + testcontainers), `lint` (golangci-lint), `reuse`, `sqlc` (generate drift), `web` (typecheck, generated API client drift, tests, build, bundle size), `security` (Trivy image/fs/config gates on HIGH/CRITICAL, SARIF uploaded), `workflow-lint` (actionlint + zizmor, config in `.github/zizmor.yml`), `dependency-review` (PRs). `codeql.yml` (push, PRs, weekly), `scheduled-scan.yml` (weekly Trivy on the `latest` and newest stable image tags) and `scorecard.yml` run separately.
