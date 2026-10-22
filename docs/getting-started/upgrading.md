@@ -85,6 +85,19 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Next release: groups hide proxy versions of hosted package names
+
+Migration `029` adds `repositories.merge_proxy_versions` (`boolean NOT NULL DEFAULT false`).
+
+**Existing groups get the new default (hosted members win), which changes what merged views show.** For a package name that a readable hosted member holds, the versions, metadata entries and files that proxy members offer under that name disappear from the group (npm, pypi, go, cargo, nuget, maven, helm, docker; raw is unchanged). Names no hosted member holds are unaffected. This closes a dependency-confusion path: a public package with the same name as an internal one could previously add a higher version to the group. To restore the union for a group, an administrator sets `merge_proxy_versions=true` (`PATCH /api/v1/repository/{name}`, or the repository's settings page); see [hosted members win](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name).
+
+Proxy repositories:
+
+- Changing a proxy's `upstream_url` origin (scheme, host, port) or `upstream_username` in a `PATCH` clears the stored `upstream_password` unless the same request sends a new `upstream_password`. Update credentials together with such changes.
+- The `Authorization` header is dropped on any redirect that changes scheme or host, and the outbound (SSRF) block list now also covers NAT64, 6to4, Teredo and reserved IPv4 ranges.
+- Concurrent upstream fetches are bounded (16 at a time per server), and the upstream documents the proxy and group parse in memory (pypi, helm, nuget, cargo, OCI tag lists) share one concurrency gate.
+- Maven, deb and rpm files without a published digest are no longer cached "forever" everywhere: `archetype-catalog.xml`, `.deb`/`.udeb` outside a `pool/` directory and `.rpm` outside a `Packages/` directory use `cache_ttl_seconds`, and an HTML `200` answer for a package path is refused with `502`. Already cached files keep their old expiry until evicted.
+
 ### Next release: organizations become projects
 
 **Requires a Recreate upgrade.** Stop all old replicas before starting the new version; do not use a rolling upgrade. The migration renames tables the old binaries still query, so old and new replicas cannot run side by side.

@@ -120,17 +120,26 @@ func (s *Service) resolveHelmIndex(ctx context.Context, repo *models.Repository)
 	})
 }
 
-// loadHelmIndex resolves the index and reads its body. When the cache row
-// outlived its blob the row is dropped and the index refetched once.
-func (s *Service) loadHelmIndex(ctx context.Context, repo *models.Repository, res *resolution) (*resolution, []byte, error) {
+// loadHelmIndex reads the body of the resolved index, holding one of the
+// bounded in-memory document slots; the caller must call release once it is
+// done parsing and rendering the body (release is nil when err != nil). When
+// the cache row outlived its blob the row is dropped and the index refetched
+// once, with the slot given up for the duration of the network fetch.
+func (s *Service) loadHelmIndex(ctx context.Context, repo *models.Repository, res *resolution) (*resolution, []byte, func(), error) {
+	if err := s.packuments.Acquire(ctx); err != nil {
+		return nil, nil, nil, err //nolint:wrapcheck // caller checks for cancellation
+	}
+
 	body, err := s.readHelmIndexBlob(ctx, res.entry.BlobKey)
 	if err == nil {
-		return res, body, nil
+		return res, body, s.packuments.Release, nil
 	}
+
+	s.packuments.Release()
 
 	if !res.fromCache {
 		s.log.Errorw("failed to read fetched helm index", "repo", repo.Name, "error", err)
-		return nil, nil, errInternal
+		return nil, nil, nil, errInternal
 	}
 
 	s.log.Warnw("proxy cache blob missing, refetching", "repo", repo.Name, "path", helmIndexKey, "error", err)
@@ -141,16 +150,22 @@ func (s *Service) loadHelmIndex(ctx context.Context, repo *models.Repository, re
 
 	res, err = s.resolveHelmIndex(ctx, repo)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return nil, nil, nil, aerr //nolint:wrapcheck // caller checks for cancellation
 	}
 
 	body, err = s.readHelmIndexBlob(ctx, res.entry.BlobKey)
 	if err != nil {
+		s.packuments.Release()
 		s.log.Errorw("failed to read fetched helm index", "repo", repo.Name, "error", err)
-		return nil, nil, errInternal
+
+		return nil, nil, nil, errInternal
 	}
 
-	return res, body, nil
+	return res, body, s.packuments.Release, nil
 }
 
 func (s *Service) readHelmIndexBlob(ctx context.Context, blobKey string) ([]byte, error) {
@@ -196,7 +211,7 @@ func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *m
 		return
 	}
 
-	loaded, body, err := s.loadHelmIndex(r.Context(), repo, res)
+	loaded, body, release, err := s.loadHelmIndex(r.Context(), repo, res)
 	if err != nil {
 		s.failHelmIndex(w, r, err)
 		return
@@ -209,6 +224,8 @@ func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *m
 	}
 
 	out, err := s.renderHelmIndex(repo, body)
+	release()
+
 	if err != nil {
 		if errors.Is(err, errNotHelmIndex) {
 			// Do not keep serving a body that does not parse until its TTL ends.
@@ -354,12 +371,13 @@ func (s *Service) fetchHelmChart(ctx context.Context, repo *models.Repository, f
 		return nil, err
 	}
 
-	_, body, err := s.loadHelmIndex(ctx, repo, res)
+	_, body, release, err := s.loadHelmIndex(ctx, repo, res)
 	if err != nil {
 		return nil, err
 	}
 
 	ix, err := pkghelm.ParseIndex(body)
+	release()
 	if err != nil {
 		s.log.Warnw("unreadable upstream helm index", "repo", repo.Name, "error", err)
 		return nil, errUpstream

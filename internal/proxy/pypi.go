@@ -143,17 +143,26 @@ func (s *Service) fetchPage(ctx context.Context, repo *models.Repository, key, t
 	})
 }
 
-// readPage loads a cached page body. When the cache row outlived its blob the
-// row is dropped and the page refetched once.
-func (s *Service) readPage(ctx context.Context, repo *models.Repository, key, target string, res *resolution) (*resolution, []byte, error) {
+// readPage loads a cached page body, holding one of the bounded in-memory
+// document slots; the caller must call release once it is done parsing and
+// rendering the body (release is nil when err != nil). When the cache row
+// outlived its blob the row is dropped and the page refetched once, with the
+// slot given up for the duration of the network fetch.
+func (s *Service) readPage(ctx context.Context, repo *models.Repository, key, target string, res *resolution) (*resolution, []byte, func(), error) {
+	if err := s.packuments.Acquire(ctx); err != nil {
+		return nil, nil, nil, err //nolint:wrapcheck // caller checks for cancellation
+	}
+
 	body, err := s.readBlob(ctx, res.entry.BlobKey)
 	if err == nil {
-		return res, body, nil
+		return res, body, s.packuments.Release, nil
 	}
+
+	s.packuments.Release()
 
 	if !res.fromCache {
 		s.log.Errorw("failed to read fetched simple page", "repo", repo.Name, "path", key, "error", err)
-		return nil, nil, errInternal
+		return nil, nil, nil, errInternal
 	}
 
 	s.log.Warnw("proxy cache blob missing, refetching", "repo", repo.Name, "path", key, "error", err)
@@ -164,16 +173,22 @@ func (s *Service) readPage(ctx context.Context, repo *models.Repository, key, ta
 
 	res, err = s.fetchPage(ctx, repo, key, target)
 	if err != nil {
-		return nil, nil, err
+		return nil, nil, nil, err
+	}
+
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return nil, nil, nil, aerr //nolint:wrapcheck // caller checks for cancellation
 	}
 
 	body, err = s.readBlob(ctx, res.entry.BlobKey)
 	if err != nil {
+		s.packuments.Release()
 		s.log.Errorw("failed to read fetched simple page", "repo", repo.Name, "path", key, "error", err)
-		return nil, nil, errInternal
+
+		return nil, nil, nil, errInternal
 	}
 
-	return res, body, nil
+	return res, body, s.packuments.Release, nil
 }
 
 func (s *Service) readBlob(ctx context.Context, blobKey string) ([]byte, error) {
@@ -215,13 +230,17 @@ func (s *Service) servePyPIPage(w http.ResponseWriter, r *http.Request, repo *mo
 		return
 	}
 
-	res, body, err := s.readPage(r.Context(), repo, pr.key, pr.target, res)
+	res, body, release, err := s.readPage(r.Context(), repo, pr.key, pr.target, res)
 	if err != nil {
-		s.failPyPIPage(w, r, err)
+		if r.Context().Err() == nil {
+			s.failPyPIPage(w, r, err)
+		}
+
 		return
 	}
 
 	out, err := pr.render(body, res.entry.ContentType)
+	release()
 	if err != nil {
 		if errors.Is(err, errBadPage) {
 			// Do not keep serving a body that does not parse until its TTL ends.
@@ -289,12 +308,13 @@ func (s *Service) loadPyPIProject(ctx context.Context, repo *models.Repository, 
 		return nil, err
 	}
 
-	res, body, err := s.readPage(ctx, repo, key, target, res)
+	res, body, release, err := s.readPage(ctx, repo, key, target, res)
 	if err != nil {
 		return nil, err
 	}
 
 	files, err := pypisimple.ParseProject(body, res.entry.ContentType)
+	release()
 	if err != nil {
 		s.log.Warnw("upstream simple page unparsable", "repo", repo.Name, "path", key, "error", err)
 

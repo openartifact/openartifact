@@ -255,6 +255,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 </div>
                 <p class="mt-1 text-xs text-muted">{{ t('repos.settings.immutableReleasesHint') }}</p>
               </div>
+
+              <!-- Merge proxy versions (groups, admins only) -->
+              <div v-if="form.type === 'group' && session.isAdmin">
+                <div class="flex items-center gap-3">
+                  <input id="repo-merge-proxy" v-model="form.mergeProxyVersions" type="checkbox" class="rounded accent-[rgb(var(--color-primary))]" />
+                  <label for="repo-merge-proxy" class="text-sm font-medium text-foreground">
+                    {{ t('repos.settings.mergeProxyVersions') }}
+                  </label>
+                </div>
+                <p class="mt-1 text-xs text-muted">{{ t('repos.settings.mergeProxyVersionsHint') }}</p>
+              </div>
             </div>
           </template>
 
@@ -387,6 +398,7 @@ const form = ref({
   members: [] as string[],
   trashRetention: '',
   immutableReleases: false,
+  mergeProxyVersions: false,
 })
 // Project the repository had when loaded (edit mode); '' is the system project.
 const loadedProject = ref('')
@@ -449,6 +461,7 @@ onMounted(async () => {
         upstreamUrl: repo.upstream_url || '',
         trashRetention: repo.trash_retention_days == null ? '' : String(repo.trash_retention_days),
         immutableReleases: repo.immutable_releases ?? false,
+        mergeProxyVersions: repo.merge_proxy_versions ?? false,
       }
       loadedProject.value = form.value.project
     } catch (err) {
@@ -501,6 +514,7 @@ async function submit(): Promise<void> {
         public: form.value.public,
         trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
         immutable_releases: form.value.immutableReleases,
+        ...(form.value.type === 'group' && session.isAdmin ? { merge_proxy_versions: form.value.mergeProxyVersions } : {}),
         ...(form.value.project !== loadedProject.value ? { project: form.value.project || SYSTEM_PROJECT_NAME } : {}),
         ...(form.value.type === 'proxy' ? { upstream_url: form.value.upstreamUrl.trim() } : {}),
       })
@@ -515,6 +529,7 @@ async function submit(): Promise<void> {
         description: form.value.description,
         trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
         immutable_releases: form.value.immutableReleases,
+        ...(form.value.type === 'group' && session.isAdmin ? { merge_proxy_versions: form.value.mergeProxyVersions } : {}),
         repo_type: form.value.type,
         ...(form.value.project && session.isAdmin ? { project: form.value.project } : {}),
         ...(form.value.type === 'proxy'

@@ -64,6 +64,13 @@ func newDockerEnv(t *testing.T, authz Authorizer) *dockerEnv {
 		return &models.Repository{ID: id, Name: name, Format: "docker", RepoType: typ, CacheTTLSeconds: 60, NegativeCacheTTLSeconds: 60}
 	}
 
+	// This group merges its members; the default (hosted members win a
+	// name) is covered in internal/group.
+	mergingGroup := func(g *models.Repository) *models.Repository {
+		g.MergeProxyVersions = true
+		return g
+	}
+
 	prox := repo("2", "dprox", "proxy")
 	prox.UpstreamURL = upstream.URL
 
@@ -71,7 +78,7 @@ func newDockerEnv(t *testing.T, authz Authorizer) *dockerEnv {
 		repos: map[string]*models.Repository{
 			"dhost": repo("1", "dhost", "hosted"),
 			"dprox": prox,
-			"dgrp":  repo("3", "dgrp", "group"),
+			"dgrp":  mergingGroup(repo("3", "dgrp", "group")),
 		},
 		links:   map[string][]*models.RepositoryGroupMember{"3": {{MemberRepoID: "1", Priority: 0}, {MemberRepoID: "2", Priority: 1}}},
 		entries: map[string]*models.ProxyCacheEntry{},

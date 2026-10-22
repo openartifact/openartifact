@@ -29,9 +29,21 @@ const maxMemberTagPages = 1000
 // <ref>"): the group is a read-only view, so only pulls are served. A manifest
 // or blob comes from the first member that has it (members the caller cannot
 // read behave as if they did not); a tag listing is the union of every readable
-// member's tags.
+// member's tags. A blocked group answers 403 DENIED.
+//
+// Hosted wins (unless grp.MergeProxyVersions): an image that a readable hosted
+// member holds (it answers <image>/tags/list with 200) is served from the
+// hosted members only — its tag list is theirs alone and a manifest or blob
+// they lack is unknown, never a proxy's. Images no hosted member holds are
+// served by the proxies; if a hosted member could not say, the request is
+// refused with UNAVAILABLE rather than risk serving the proxy's image.
 func (h *Handler) ServeOCI(w http.ResponseWriter, r *http.Request, grp *models.Repository, req ocipath.Request, relPath string, be Backend) {
 	if ocipath.RejectNonPull(w, r, req.Kind) {
+		return
+	}
+
+	if grp.Blocked {
+		ocipath.WriteError(w, http.StatusForbidden, "DENIED", "repository is blocked")
 		return
 	}
 
@@ -51,23 +63,19 @@ func (h *Handler) ServeOCI(w http.ResponseWriter, r *http.Request, grp *models.R
 		}
 	}
 
+	readable, done := h.applyHostedWinsOCI(w, r, grp, readable, req, relPath, be)
+	if done {
+		return
+	}
+
 	if req.Kind == ocipath.KindTags {
 		h.serveTags(w, r, readable, req, relPath, be)
 		return
 	}
 
-	memberFailed := false
-
-	for _, m := range readable {
-		pw := newProbeWriter(w)
-		be.ServeMember(pw, r, m, relPath)
-
-		switch {
-		case pw.committed:
-			return
-		case pw.failed:
-			memberFailed = true
-		}
+	served, memberFailed := firstHit(w, r, readable, func(*models.Repository) string { return relPath }, be)
+	if served {
+		return
 	}
 
 	if memberFailed {

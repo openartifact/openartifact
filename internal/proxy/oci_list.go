@@ -14,6 +14,7 @@ import (
 	"regexp"
 	"strconv"
 	"strings"
+	"sync"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
@@ -61,10 +62,12 @@ func (s *Service) serveOCITags(w http.ResponseWriter, r *http.Request, repo *mod
 		target += "?" + q.Encode()
 	}
 
-	hdr, body, ok := s.fetchList(w, r, repo, up, target)
+	hdr, body, release, ok := s.fetchList(w, r, repo, up, target)
 	if !ok {
 		return
 	}
+
+	defer release()
 
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(body, &doc); err != nil {
@@ -87,6 +90,8 @@ func (s *Service) serveOCITags(w http.ResponseWriter, r *http.Request, repo *mod
 		ocipath.WriteError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
+
+	release()
 
 	if next := rewriteNextLink(hdr.Get("Link"), req.Name); next != "" {
 		w.Header().Set("Link", next)
@@ -113,10 +118,12 @@ func (s *Service) serveOCIReferrers(w http.ResponseWriter, r *http.Request, repo
 		target += "?" + url.Values{"artifactType": {at}}.Encode()
 	}
 
-	hdr, body, ok := s.fetchList(w, r, repo, up, target)
+	hdr, body, release, ok := s.fetchList(w, r, repo, up, target)
 	if !ok {
 		return
 	}
+
+	defer release()
 
 	if f := hdr.Get("Oci-Filters-Applied"); f != "" {
 		w.Header().Set("Oci-Filters-Applied", f)
@@ -128,16 +135,22 @@ func (s *Service) serveOCIReferrers(w http.ResponseWriter, r *http.Request, repo
 		ct = mt
 	}
 
-	writeList(w, r, ct, body)
+	// The body is not parsed: nothing but the slot-free write remains.
+	out := body
+	release()
+
+	writeList(w, r, ct, out)
 }
 
-// fetchList GETs a listing from the upstream and returns its headers and whole body. It writes the
-// error response and returns ok=false when there is no usable listing.
-func (s *Service) fetchList(w http.ResponseWriter, r *http.Request, repo *models.Repository, up ociUpstream, target string) (http.Header, []byte, bool) {
+// fetchList GETs a listing from the upstream and returns its headers and whole body, holding one of
+// the bounded in-memory document slots until the returned release is called (idempotent; release is
+// non-nil whenever ok). It writes the error response and returns ok=false when there is no usable
+// listing.
+func (s *Service) fetchList(w http.ResponseWriter, r *http.Request, repo *models.Repository, up ociUpstream, target string) (http.Header, []byte, func(), bool) {
 	resp, err := s.ociDo(r.Context(), repo, up, http.MethodGet, target, "application/json")
 	if err != nil {
 		s.writeListError(w, err)
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 
 	defer func() { base.CloseLog(resp.Body, s.log) }()
@@ -146,23 +159,31 @@ func (s *Service) fetchList(w http.ResponseWriter, r *http.Request, repo *models
 	case http.StatusOK:
 	case http.StatusNotFound, http.StatusUnauthorized, http.StatusForbidden:
 		ocipath.WriteError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
-		return nil, nil, false
+		return nil, nil, nil, false
 	default:
 		s.log.Warnw("docker proxy upstream listing failed", "repo", repo.Name, "status", resp.StatusCode)
 		ocipath.WriteError(w, http.StatusBadGateway, "UNAVAILABLE", "upstream registry error")
 
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
+
+	if err := s.packuments.Acquire(r.Context()); err != nil {
+		return nil, nil, nil, false // client went away; nothing to write
+	}
+
+	release := sync.OnceFunc(s.packuments.Release)
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxListBody+1))
 	if err != nil || len(body) > maxListBody {
+		release()
+
 		s.log.Warnw("docker proxy upstream listing unreadable", "repo", repo.Name, "error", errors.Join(err, errListTooLarge))
 		ocipath.WriteError(w, http.StatusBadGateway, "UNAVAILABLE", "upstream registry error")
 
-		return nil, nil, false
+		return nil, nil, nil, false
 	}
 
-	return resp.Header, body, true
+	return resp.Header, body, release, true
 }
 
 func (s *Service) writeListError(w http.ResponseWriter, err error) {

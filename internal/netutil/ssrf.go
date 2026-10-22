@@ -35,22 +35,104 @@ var ErrCannotResolve = errors.New("cannot resolve host")
 var ErrBlockedAddress = errors.New("destination address is not allowed")
 
 func blockedIP(ip netip.Addr) bool {
-	ip = ip.Unmap()
+	ip = ip.Unmap().WithZone("")
+	if blockedAddr(ip) {
+		return true
+	}
+
+	// Transition mechanisms smuggle an IPv4 address through an IPv6 one; the
+	// embedded address gets the same verdict it would get on its own.
+	if emb, ok := embeddedIPv4(ip); ok {
+		return blockedIP(emb)
+	}
+
+	return false
+}
+
+// blockedAddr applies the policy to ip itself, without looking inside
+// IPv6 transition addresses.
+func blockedAddr(ip netip.Addr) bool {
 	if ip.IsUnspecified() || ip.IsMulticast() || ip.IsLinkLocalUnicast() || ip.IsLinkLocalMulticast() {
 		return true // includes 169.254.169.254 metadata
 	}
-	if ip.Is6() && ip.As16()[0] == 0xfd && ip.As16()[1] == 0x00 && ip.As16()[2] == 0x0e && ip.As16()[3] == 0xc2 {
+
+	if ip.Is4() {
+		if alwaysBlocked[ip] || prefixesContain(alwaysBlockedV4, ip) {
+			return true
+		}
+	} else if prefixesContain(alwaysBlockedV6, ip) {
 		return true
 	}
-	// Cloud metadata endpoints outside link-local: always blocked, even with
-	// allowPrivate (which re-allows CGNAT, where Alibaba's lives).
-	if ip.Is4() && (ip.As4()[0] == 0 || alwaysBlocked[ip]) {
-		return true // 0.0.0.0/8 "this network"
-	}
+
 	if allowPrivate() {
 		return false
 	}
+
 	return ip.IsLoopback() || ip.IsPrivate() || isCGNAT(ip)
+}
+
+func prefixesContain(ps []netip.Prefix, ip netip.Addr) bool {
+	for _, p := range ps {
+		if p.Contains(ip) {
+			return true
+		}
+	}
+
+	return false
+}
+
+//nolint:gochecknoglobals // read-only tables
+var (
+	// Blocked even with private upstreams allowed (which re-allows CGNAT,
+	// where Alibaba's metadata endpoint lives).
+	alwaysBlockedV4 = mustPrefixes(
+		"0.0.0.0/8",     // "this network"
+		"192.0.0.0/24",  // IETF protocol assignments
+		"198.18.0.0/15", // benchmarking
+		"240.0.0.0/4",   // reserved, incl. 255.255.255.255
+	)
+	alwaysBlockedV6 = mustPrefixes(
+		"fd00:ec2::/32", // AWS IMDS over IPv6
+		"100::/64",      // discard-only
+		"2001::/32",     // Teredo: embedded addresses are obfuscated
+	)
+
+	nat64      = netip.MustParsePrefix("64:ff9b::/96")
+	nat64Local = netip.MustParsePrefix("64:ff9b:1::/48")
+	sixToFour  = netip.MustParsePrefix("2002::/16")
+	v4Compat   = netip.MustParsePrefix("::/96")
+	v6Loopback = netip.MustParseAddr("::1")
+)
+
+func mustPrefixes(ss ...string) []netip.Prefix {
+	out := make([]netip.Prefix, len(ss))
+	for i, s := range ss {
+		out[i] = netip.MustParsePrefix(s)
+	}
+
+	return out
+}
+
+// embeddedIPv4 extracts the IPv4 address carried by an IPv6 NAT64, 6to4 or
+// IPv4-compatible address.
+func embeddedIPv4(ip netip.Addr) (netip.Addr, bool) {
+	if !ip.Is6() {
+		return netip.Addr{}, false
+	}
+
+	b := ip.As16()
+
+	switch {
+	case nat64.Contains(ip), v4Compat.Contains(ip) && ip != v6Loopback:
+		return netip.AddrFrom4([4]byte{b[12], b[13], b[14], b[15]}), true
+	case nat64Local.Contains(ip):
+		// RFC 6052 /48 layout: bits 48-63 and 72-87 (byte 8 is reserved).
+		return netip.AddrFrom4([4]byte{b[6], b[7], b[9], b[10]}), true
+	case sixToFour.Contains(ip):
+		return netip.AddrFrom4([4]byte{b[2], b[3], b[4], b[5]}), true
+	}
+
+	return netip.Addr{}, false
 }
 
 var errBadNetwork = errors.New("invalid IP or CIDR")
@@ -148,6 +230,21 @@ func ValidateOutboundURLContext(ctx context.Context, raw string) error {
 	return nil
 }
 
+func sameOrigin(a, b *url.URL) bool {
+	return a.Scheme == b.Scheme && a.Host == b.Host
+}
+
+// stripCredentials removes the headers that authenticate the caller. Go's own
+// client forwards the initial request's headers on redirects and only drops
+// sensitive ones on a cross-domain hop, so a scheme downgrade on the same host
+// would otherwise leak them.
+func stripCredentials(h http.Header) {
+	h.Del("Authorization")
+	h.Del("Proxy-Authorization")
+	h.Del("Cookie")
+	h.Del("Cookie2")
+}
+
 // SafeHTTPClient returns a client that refuses to connect to blocked
 // addresses (checked at dial time, defeating DNS rebinding) and caps and
 // re-validates redirects, dropping credentials on cross-host redirects.
@@ -191,8 +288,12 @@ func SafeHTTPClientWithHeaderTimeout(timeout, responseHeaderTimeout time.Duratio
 			if req.URL.Scheme != "http" && req.URL.Scheme != "https" {
 				return errRedirectScheme
 			}
-			if req.URL.Host != via[0].URL.Host {
-				req.Header.Del("Authorization")
+			// Go re-copies the initial request's headers on every hop, so the
+			// origin is compared with both the first and the previous hop: a
+			// credential dropped once is never sent again (https://a ->
+			// https://b -> https://a), and a scheme change drops it too.
+			if !sameOrigin(req.URL, via[0].URL) || !sameOrigin(req.URL, via[len(via)-1].URL) {
+				stripCredentials(req.Header)
 			}
 			return nil
 		},

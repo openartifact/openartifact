@@ -38,6 +38,11 @@ const nugetMetaMaxAge = 60
 //   - A registration leaf comes from the first member that has it.
 //
 // Every URL a member returns is rewritten to point at the group.
+//
+// Hosted wins: for an id a hosted member holds (and unless the group merges
+// proxy versions) members is narrowed to the hosted ones by applyHostedWins
+// before any of this runs, so registrations and version lists of that id carry
+// no proxy versions and its package files are never fetched from a proxy.
 func (h *Handler) serveNuGet(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
 	segs := strings.Split(strings.Trim(relPath, "/"), "/")
 	if len(segs) < 2 || segs[0] != "v3" {
@@ -53,7 +58,13 @@ func (h *Handler) serveNuGet(w http.ResponseWriter, r *http.Request, grp *models
 	mr.Header.Del("If-Modified-Since")
 	mr.Header.Set("Accept", "application/json")
 
-	nr := &nugetRequest{h: h, grp: grp, members: members, be: be, mr: mr, groupV3: groupV3}
+	// Member documents are held whole until merged: one gate slot per request,
+	// taken when a member starts delivering and freed before the answer is
+	// written.
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
+	nr := &nugetRequest{h: h, grp: grp, members: members, be: be, mr: mr, groupV3: groupV3, sess: sess}
 
 	switch {
 	case len(segs) == 2 && segs[1] == "index.json":
@@ -86,6 +97,7 @@ type nugetRequest struct {
 	be      Backend
 	mr      *http.Request
 	groupV3 string // ".../repos/<group>/v3/"
+	sess    *mergeSession
 }
 
 // memberDoc is what asking one member for a path yielded.
@@ -98,7 +110,7 @@ type memberDoc struct {
 // ask requests relPath from member m and returns its document with every
 // URL of the member rewritten to point at the group.
 func (n *nugetRequest) ask(m *models.Repository, relPath string) memberDoc {
-	cw := newCaptureWriter(maxNuGetDocBytes)
+	cw := n.sess.capture(maxNuGetDocBytes)
 	n.be.ServeMember(cw, n.mr, m, relPath)
 
 	switch {
@@ -124,6 +136,9 @@ func (n *nugetRequest) ask(m *models.Repository, relPath string) memberDoc {
 // when a member failed meanwhile) or, when there is none, with 404 or, if a
 // member failed, 502.
 func (n *nugetRequest) write(w http.ResponseWriter, r *http.Request, body []byte, failed bool) {
+	// Everything held for the merge is in body by now.
+	n.sess.release()
+
 	if body == nil {
 		if failed {
 			http.Error(w, "member repository error", http.StatusBadGateway)

@@ -195,13 +195,21 @@ func (s *Service) fetchCargoCrate(ctx context.Context, repo *models.Repository, 
 		return nil, err
 	}
 
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return nil, aerr //nolint:wrapcheck // caller checks for cancellation
+	}
+
 	doc, err := s.readCargoBlob(ctx, res.entry, pkgcargo.MaxIndexBytes)
 	if err != nil {
+		s.packuments.Release()
 		s.log.Errorw("failed to read cached cargo index", "repo", repo.Name, "crate", p.Crate, "error", err)
+
 		return nil, errInternal
 	}
 
 	entry, found, err := pkgcargo.FindVersion(doc, p.Version)
+	s.packuments.Release()
+
 	if err != nil {
 		s.log.Warnw("unreadable upstream cargo index", "repo", repo.Name, "crate", p.Crate, "error", err)
 		return nil, errUpstream

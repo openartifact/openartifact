@@ -73,4 +73,4 @@ Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` to sign `InRelease` 
 
 ## Proxy
 
-A Debian proxy repository mirrors `dists/` and `pool/` from `upstream_url`. `.deb` and `.udeb` files are immutable once cached; everything else (indexes, `Release`) is served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. The upstream's signed `InRelease` is passed through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+A Debian proxy repository mirrors `dists/` and `pool/` from `upstream_url`. `.deb` and `.udeb` files below a `pool/` directory (the Debian archive layout, where a file name is never reused) are immutable once cached; the same files in a flat repository, and everything else (indexes, `Release`) is served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. The upstream's signed `InRelease` is passed through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).

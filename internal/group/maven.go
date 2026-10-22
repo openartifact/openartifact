@@ -39,7 +39,9 @@ func mavenMetadataPath(relPath string) (string, string, bool) {
 // merging the document of every member that has one. With a single
 // contributing member its bytes are served unchanged. A member that errors is
 // ignored as long as another contributed; with no contributor the group
-// answers 404, or 502 if a member failed.
+// answers 404, or 502 if a member failed. Hosted wins: members is already
+// narrowed by applyHostedWins, so a metadata document a hosted member holds is
+// never merged with the proxies' (unless the group merges proxy versions).
 func (h *Handler) serveMavenMetadata(w http.ResponseWriter, r *http.Request, members []*models.Repository, doc, suffix string, be Backend) {
 	var (
 		docs   [][]byte
@@ -53,8 +55,11 @@ func (h *Handler) serveMavenMetadata(w http.ResponseWriter, r *http.Request, mem
 	mr.Header.Del("If-None-Match")
 	mr.Header.Del("If-Modified-Since")
 
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
 	for _, m := range members {
-		cw := newCaptureWriter(maxMetadataBytes)
+		cw := sess.capture(maxMetadataBytes)
 		be.ServeMember(cw, mr, m, doc)
 
 		switch {
@@ -78,6 +83,9 @@ func (h *Handler) serveMavenMetadata(w http.ResponseWriter, r *http.Request, mem
 	}
 
 	merged, err := mergeDocuments(docs)
+
+	sess.release()
+
 	if err != nil {
 		h.log.Errorw("failed to merge maven metadata", "path", doc, "error", err)
 		http.Error(w, "member repository error", http.StatusBadGateway)
@@ -181,12 +189,20 @@ func checksumOf(body []byte, suffix string) (string, error) {
 }
 
 // captureWriter buffers one member's response in memory, up to limit bytes.
+// Created through a mergeSession it also takes the session's gate slot when a
+// 2xx response starts (so the gate is never held while the member is still
+// waiting on its upstream) and counts its bytes against the request budget. A
+// capture that could not get the slot or exceeded a budget is overflow: the
+// member counts as failed.
 type captureWriter struct {
 	header   http.Header
 	body     bytes.Buffer
 	status   int
 	limit    int
 	overflow bool
+
+	sess *mergeSession
+	err  error // gate wait aborted (request context done)
 }
 
 func newCaptureWriter(limit int) *captureWriter {
@@ -198,15 +214,34 @@ func (c *captureWriter) Header() http.Header { return c.header }
 func (c *captureWriter) WriteHeader(code int) {
 	if c.status == 0 {
 		c.status = code
+		c.begin()
+	}
+}
+
+// begin takes the session's gate slot as a 2xx body starts arriving.
+func (c *captureWriter) begin() {
+	if c.sess == nil || c.status < http.StatusOK || c.status >= http.StatusMultipleChoices {
+		return
+	}
+
+	if err := c.sess.acquire(); err != nil {
+		c.err = err
+		c.overflow = true
 	}
 }
 
 func (c *captureWriter) Write(b []byte) (int, error) {
 	if c.status == 0 {
 		c.status = http.StatusOK
+		c.begin()
 	}
 
-	if c.body.Len()+len(b) > c.limit {
+	if c.err != nil {
+		// Aborts the member's handler: the request is gone.
+		return 0, c.err
+	}
+
+	if c.body.Len()+len(b) > c.limit || (c.sess != nil && !c.sess.reserve(len(b))) {
 		c.overflow = true
 		return len(b), nil
 	}

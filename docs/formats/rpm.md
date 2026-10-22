@@ -69,4 +69,4 @@ Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` ([signing](../securi
 
 ## Proxy
 
-An RPM proxy repository mirrors `repodata/` and `Packages/` from `upstream_url`. `.rpm` files are immutable once cached; `repodata/` is served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. Upstream metadata and signatures pass through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+An RPM proxy repository mirrors `repodata/` and `Packages/` from `upstream_url`. `.rpm` files below a `Packages/` directory are immutable once cached; `.rpm` files elsewhere (flat layouts) and `repodata/` are served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. Upstream metadata and signatures pass through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).

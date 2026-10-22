@@ -27,7 +27,6 @@ import (
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
-	"github.com/openartifact/openartifact/internal/storage"
 )
 
 const (
@@ -339,8 +338,16 @@ func (s *Service) fetchOCIBlob(ctx context.Context, repo *models.Repository, up 
 	return s.getOCI(ctx, repo, up, target, key, "", ociSpec{digest: digest, limit: s.maxBody})
 }
 
-// getOCI GETs target and caches the verified body under key.
+// getOCI GETs target and caches the verified body under key. It holds a slot
+// of the upstream-download gate (see Service.acquireFetch) from the request to
+// the end of the store; the tag-revalidation HEAD before it carries no body and
+// is not counted.
 func (s *Service) getOCI(ctx context.Context, repo *models.Repository, up ociUpstream, target, key, accept string, spec ociSpec) (*models.ProxyCacheEntry, error) {
+	if aerr := s.acquireFetch(ctx, repo, key); aerr != nil {
+		return nil, aerr
+	}
+	defer s.fetches.Release()
+
 	resp, err := s.ociDo(ctx, repo, up, http.MethodGet, target, accept)
 	if err != nil {
 		return nil, err
@@ -458,28 +465,9 @@ func (s *Service) storeOCI(ctx context.Context, repo *models.Repository, key str
 		UpdatedAt:    now,
 	}
 
-	err = storage.WithBlobLock(ctx, s.db, sum, func(ctx context.Context) error {
-		blobID, perr := s.blobStore.Put(ctx, spool, map[string]string{"sha256": sum, "content-type": contentType})
-		if perr != nil {
-			return fmt.Errorf("store blob: %w", perr)
-		}
-
-		if blobID != sum {
-			return fmt.Errorf("%w: blob store returned id %q for sha256 %s", errInternal, blobID, sum)
-		}
-
-		if _, eerr := s.db.EnsureBlob(ctx, sum, contentType, size); eerr != nil {
-			return fmt.Errorf("record blob: %w", eerr)
-		}
-
-		if uerr := s.db.UpsertProxyCacheEntry(ctx, entry); uerr != nil {
-			return fmt.Errorf("record cache entry: %w", uerr)
-		}
-
-		return nil
-	})
-	if err != nil {
-		s.log.Errorw("failed to cache proxied file", "repo", repo.Name, "path", key, "sha256", sum, "error", err)
+	// Upload first, lock only the database work: see Service.persist.
+	if perr := s.persist(ctx, spool, sum, contentType, entry); perr != nil {
+		s.log.Errorw("failed to cache proxied file", "repo", repo.Name, "path", key, "sha256", sum, "error", perr)
 		return nil, errInternal
 	}
 

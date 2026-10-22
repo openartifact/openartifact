@@ -38,6 +38,11 @@ const (
 // filename, the earliest member winning a duplicate, every link rewritten to
 // the group. Files are resolved first-hit in member order, which picks the
 // member whose page entry won the merge.
+//
+// Hosted wins: for a project a hosted member holds (and unless the group
+// merges proxy versions) members is already narrowed to the hosted ones by
+// applyHostedWins, so the page lists only hosted files and a proxy-only file of
+// that project is 404. The index lists names only and is merged as is.
 func (h *Handler) servePyPI(w http.ResponseWriter, r *http.Request, grp *models.Repository, members []*models.Repository, relPath string, be Backend) bool {
 	kind, project, filename := pypisimple.ParsePath(relPath)
 
@@ -70,7 +75,7 @@ func pypiFilePath(m *models.Repository, project, filename string) string {
 // memberPages asks every member for the simple page at path and returns the
 // bodies (with their content types) of those that have one. failed reports
 // that a member errored out, in which case the result may be incomplete.
-func (h *Handler) memberPages(r *http.Request, members []*models.Repository, path string, be Backend) ([]memberPage, bool) {
+func (h *Handler) memberPages(r *http.Request, sess *mergeSession, members []*models.Repository, path string, be Backend) ([]memberPage, bool) {
 	// Members are asked for the page itself, always with GET and without the
 	// client's conditional headers.
 	mr := r.Clone(r.Context())
@@ -85,7 +90,7 @@ func (h *Handler) memberPages(r *http.Request, members []*models.Repository, pat
 	)
 
 	for _, m := range members {
-		cw := newCaptureWriter(maxPyPIPageBytes)
+		cw := sess.capture(maxPyPIPageBytes)
 		be.ServeMember(cw, mr, m, path)
 
 		switch {
@@ -115,7 +120,12 @@ func (h *Handler) servePyPIIndex(w http.ResponseWriter, r *http.Request, grp *mo
 		return
 	}
 
-	pages, failed := h.memberPages(r, members, "simple/", be)
+	// The pages are held whole until merged: one gate slot per request, taken
+	// when a member starts delivering and freed before the answer is written.
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
+	pages, failed := h.memberPages(r, sess, members, "simple/", be)
 	if len(pages) == 0 && failed {
 		http.Error(w, "member repository error", http.StatusBadGateway)
 		return
@@ -147,6 +157,9 @@ func (h *Handler) servePyPIIndex(w http.ResponseWriter, r *http.Request, grp *mo
 	out, err := pypisimple.RenderIndex(offer.Format, names, func(name string) string {
 		return pypisimple.ProjectURL(grp.Name, name)
 	})
+
+	sess.release()
+
 	if err != nil {
 		h.log.Errorw("failed to render group simple index", "group", grp.Name, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -164,7 +177,10 @@ func (h *Handler) servePyPIProject(w http.ResponseWriter, r *http.Request, grp *
 		return
 	}
 
-	pages, failed := h.memberPages(r, members, "simple/"+project+"/", be)
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
+	pages, failed := h.memberPages(r, sess, members, "simple/"+project+"/", be)
 
 	lists := make([][]pypisimple.File, 0, len(pages))
 
@@ -197,6 +213,9 @@ func (h *Handler) servePyPIProject(w http.ResponseWriter, r *http.Request, grp *
 	out, err := pypisimple.RenderProject(offer.Format, project, merged, func(f *pypisimple.File) string {
 		return pypisimple.FileURL(grp.Name, project, f.Filename)
 	})
+
+	sess.release()
+
 	if err != nil {
 		h.log.Errorw("failed to render group simple page", "group", grp.Name, "project", project, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)

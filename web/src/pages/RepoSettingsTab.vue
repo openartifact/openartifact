@@ -59,6 +59,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <p class="text-xs text-muted">{{ t('repos.settings.immutableReleasesHint') }}</p>
       </div>
+      <div v-if="repo.repo_type === 'group'" class="space-y-1">
+        <div class="flex items-center gap-3">
+          <input
+            id="repo-merge-proxy"
+            v-model="form.mergeProxyVersions"
+            type="checkbox"
+            :disabled="!session.isAdmin"
+            class="rounded accent-[rgb(var(--color-primary))]"
+          />
+          <label for="repo-merge-proxy" class="text-sm font-medium text-foreground">{{ t('repos.settings.mergeProxyVersions') }}</label>
+        </div>
+        <p class="text-xs text-muted">{{ t('repos.settings.mergeProxyVersionsHint') }}</p>
+        <p v-if="!session.isAdmin" class="text-xs text-muted">{{ t('repos.settings.mergeProxyVersionsAdminOnly') }}</p>
+      </div>
       <AppButton type="submit" :disabled="!!retentionError" :loading="loading">
         {{ loading ? t('common.saving') : t('common.save') }}
       </AppButton>
@@ -82,8 +96,10 @@ import FormField from '../components/FormField.vue'
 import RepoQuotaTab from './RepoQuotaTab.vue'
 import { useToastStore } from '../stores/toast'
 import { parseRetentionInput } from '../lib/trash'
+import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 
+const session = useSessionStore()
 const props = defineProps<{ repo: Repository }>()
 const emit = defineEmits<{ saved: [repo: Repository] }>()
 
@@ -93,6 +109,7 @@ interface SettingsForm {
   presign: PresignMode
   trashRetention: string
   immutableReleases: boolean
+  mergeProxyVersions: boolean
 }
 
 function formFrom(r: Repository): SettingsForm {
@@ -102,6 +119,7 @@ function formFrom(r: Repository): SettingsForm {
     presign: presignModeOf(r),
     trashRetention: r.trash_retention_days == null ? '' : String(r.trash_retention_days),
     immutableReleases: r.immutable_releases ?? false,
+    mergeProxyVersions: r.merge_proxy_versions ?? false,
   }
 }
 
@@ -129,6 +147,8 @@ async function handleSave(): Promise<void> {
       // Explicit null resets to the server default.
       trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
       immutable_releases: form.value.immutableReleases,
+      // The API answers 403 to non-admins that send the field, so only admins send it.
+      ...(props.repo.repo_type === 'group' && session.isAdmin ? { merge_proxy_versions: form.value.mergeProxyVersions } : {}),
     })
     toasts.success(t('common.save'))
     emit('saved', updated)

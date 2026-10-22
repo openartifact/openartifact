@@ -31,6 +31,10 @@ const (
 // config.json is generated (dl and api point at the group). An index file is
 // the union of the members' files by version, the first member that lists a
 // version providing its entry. Paths that are not registry paths are 404.
+// Hosted wins: when a hosted member has the crate's index file (and the group
+// does not merge proxy versions) only the hosted members are asked (see
+// applyHostedWins), so the index lists only hosted versions and a download of
+// any other version is 404.
 func (h *Handler) serveCargo(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
 	p, err := pkgcargo.ParsePath(relPath)
 	if err != nil {
@@ -67,8 +71,11 @@ func (h *Handler) serveCargoIndex(w http.ResponseWriter, r *http.Request, grp *m
 		failed bool
 	)
 
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
 	for _, m := range members {
-		cw := newCaptureWriter(pkgcargo.MaxIndexBytes)
+		cw := sess.capture(pkgcargo.MaxIndexBytes)
 		be.ServeMember(cw, mr, m, "index/"+p.IndexPath)
 
 		switch {
@@ -91,6 +98,9 @@ func (h *Handler) serveCargoIndex(w http.ResponseWriter, r *http.Request, grp *m
 	}
 
 	body, err := pkgcargo.MergeIndex(docs)
+
+	sess.release()
+
 	if err != nil {
 		h.log.Errorw("failed to merge cargo index files", "group", grp.Name, "crate", p.Crate, "error", err)
 		http.Error(w, "member repository error", http.StatusBadGateway)

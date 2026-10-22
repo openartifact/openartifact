@@ -35,7 +35,10 @@ func (h *Handler) SetBaseURL(baseURL string) { h.baseURL = strings.TrimRight(bas
 // members' packuments; it reports false for every other path (tarballs), which
 // the caller resolves by first hit. Versions are the union of the members'
 // (the first member with a version wins), each dist-tag comes from the first
-// member that has it, and every tarball URL points back at the group.
+// member that has it, and every tarball URL points back at the group. members
+// are already narrowed by applyHostedWins: for a package a hosted member holds
+// (and unless the group merges proxy versions) only the hosted members are
+// left, so a proxy's versions of that name never reach the merged packument.
 func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
 	p, err := pkgnpm.ParsePath(relPath)
 	if err != nil || p.Kind == pkgnpm.KindTarball {
@@ -58,11 +61,11 @@ func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.R
 	memberPath := strings.Replace(p.Package, "/", "%2f", 1)
 
 	// Every member's packument is held whole until merged: bound how many
-	// merges run at once.
-	if h.packuments.Acquire(r.Context()) != nil {
-		return true
-	}
-	defer h.packuments.Release()
+	// merges run at once. The slot is taken only once a member starts
+	// delivering (not while it waits on its upstream) and freed before the
+	// merged document is written to the client.
+	sess := h.newSession(r.Context())
+	defer sess.release()
 
 	var (
 		docs   [][]byte
@@ -70,7 +73,7 @@ func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.R
 	)
 
 	for _, m := range members {
-		cw := newCaptureWriter(maxPackumentBytes)
+		cw := sess.capture(maxPackumentBytes)
 		be.ServeMember(cw, mr, m, memberPath)
 
 		switch {
@@ -93,6 +96,9 @@ func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.R
 	}
 
 	body, err := mergePackuments(h.baseURL+"/repos/"+grp.Name, p, docs)
+
+	sess.release()
+
 	if errors.Is(err, errNoVersion) {
 		http.NotFound(w, r)
 		return true

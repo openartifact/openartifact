@@ -350,6 +350,12 @@ func TestContractRepo(t *testing.T) {
 			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"trash_retention_days": float64(14), "immutable_releases": false}}},
 		},
 		{
+			name:    "update merge proxy versions",
+			args:    []string{"repo", "update", "g", "--merge-proxy-versions"},
+			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},
+			calls:   []call{{method: "PATCH", pattern: "/api/v1/repository/{name}", body: m{"merge_proxy_versions": true}}},
+		},
+		{
 			name:    "update retention back to default sends null",
 			args:    []string{"repo", "update", "r", "--trash-retention-days", "default"},
 			replies: map[string]reply{"PATCH /api/v1/repository/{name}": ok(one)},

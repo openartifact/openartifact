@@ -132,7 +132,7 @@ func TestGoProxyAndGroupThroughDispatch(t *testing.T) {
 		{"proxy mod", http.MethodGet, "/repos/mirror/example.com/remote/@v/v1.1.0.mod", 200, "module example.com/remote\n"},
 		{"proxy unknown module", http.MethodGet, "/repos/mirror/example.com/nope/@v/list", 404, ""},
 		{"proxy refuses uploads", http.MethodPut, "/repos/mirror/example.com/remote/@v/v1.2.0.zip", 405, ""},
-		{"group list unites hosted and proxy members", http.MethodGet, "/repos/all/example.com/!shared/@v/list", 200, "v2.0.0\nv1.0.0"},
+		{"group list of a shared module is the hosted member's alone", http.MethodGet, "/repos/all/example.com/!shared/@v/list", 200, "v1.0.0"},
 		{"group list of a proxy-only module", http.MethodGet, "/repos/all/example.com/remote/@v/list", 200, "v1.1.0\nv1.0.0"},
 		{"group list of a hosted-only module", http.MethodGet, "/repos/all/example.com/local/@v/list", 200, "v0.1.0"},
 		{"group mod from the hosted member", http.MethodGet, "/repos/all/example.com/local/@v/v0.1.0.mod", 200, "module example.com/local\n"},

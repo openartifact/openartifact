@@ -127,7 +127,7 @@ func repoShow(client *Client, name, outFmt string) {
 
 	w := newTabWriter()
 
-	for _, k := range []string{"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days", "immutable_releases", "created_at", "updated_at"} {
+	for _, k := range []string{"name", "format", "repo_type", "description", "public", "upstream_url", "trash_retention_days", "immutable_releases", "merge_proxy_versions", "created_at", "updated_at"} {
 		if v, ok := result[k]; ok {
 			_, _ = fmt.Fprintf(w, "%s\t%s\n", k, cell(v))
 		}
@@ -144,6 +144,7 @@ func repoUpdate(client *Client, name string, args []string) {
 	public := fs.Bool("public", false, "Public (--public=false to make private)")
 	retention := fs.String("trash-retention-days", "", "Days deleted items stay in the trash (0 = delete immediately, default = server setting)")
 	immutable := fs.Bool("immutable-releases", false, "Block deleting or overwriting released versions (--immutable-releases=false to allow)")
+	mergeProxy := fs.Bool("merge-proxy-versions", false, "Group repositories, administrators only: merge proxy members' versions of names a hosted member holds (--merge-proxy-versions=false restores hosted-wins)")
 	_ = fs.Parse(args)
 
 	set := setFlags(fs)
@@ -170,8 +171,12 @@ func repoUpdate(client *Client, name string, args []string) {
 		body["immutable_releases"] = *immutable
 	}
 
+	if set["merge-proxy-versions"] {
+		body["merge_proxy_versions"] = *mergeProxy
+	}
+
 	if len(body) == 0 {
-		dief("nothing to update: pass --description, --public[=false], --trash-retention-days or --immutable-releases[=false]")
+		dief("nothing to update: pass --description, --public[=false], --trash-retention-days, --immutable-releases[=false] or --merge-proxy-versions[=false]")
 	}
 
 	sendJSON(client, "PATCH", "/api/v1/repository/"+escape(name), body, http.StatusOK)

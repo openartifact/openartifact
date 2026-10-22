@@ -53,6 +53,13 @@ const (
 	// fetchTimeout.
 	responseHeaderTimeout = 30 * time.Second
 
+	// maxConcurrentFetches bounds the upstream downloads in flight at once
+	// across every repository. Each holds an upstream connection and a spool
+	// file of up to maxBody bytes; singleflight only collapses requests for
+	// the same key, so a burst of distinct keys (a cold CI cache, a crawler)
+	// would otherwise open one connection and one temp file per key.
+	maxConcurrentFetches = 16
+
 	// immutableTTL is how long immutable files (released Maven artifacts,
 	// deb/rpm package files) stay cached: effectively until evicted by an
 	// admin or repository delete.
@@ -100,9 +107,16 @@ type Service struct {
 
 	nuget nugetIndexCache // parsed NuGet upstream service indexes
 
-	// packuments bounds the npm packuments held in memory for rewriting at
-	// once: each is read whole and re-encoded per request.
+	// packuments bounds every upstream document held in memory at once (npm
+	// packuments, PyPI pages, Helm indexes, NuGet/OCI documents, cargo
+	// indexes): each is read whole and parsed or re-encoded per request.
 	packuments base.Gate
+
+	// fetches bounds the upstream downloads (request, body spool, blob
+	// store) running at once. It is held only around that network section,
+	// never across a nested resolve, so a fetch that needs another cached
+	// file cannot starve itself of a slot.
+	fetches base.Gate
 
 	// maxBody caps a single upstream response; DefaultMaxBody unless a test
 	// lowers it.
@@ -122,6 +136,7 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 		client:     client,
 		maxBody:    DefaultMaxBody,
 		packuments: base.NewGate(maxConcurrentPackuments),
+		fetches:    base.NewGate(maxConcurrentFetches),
 		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
 	}
 }
@@ -478,6 +493,11 @@ func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, ta
 		return nil, err
 	}
 
+	if aerr := s.acquireFetch(ctx, repo, key); aerr != nil {
+		return nil, aerr
+	}
+	defer s.fetches.Release()
+
 	resp, err := s.client.Do(req)
 	if err != nil {
 		s.log.Warnw("proxy upstream request failed", "repo", repo.Name, "path", key, "error", err)
@@ -498,6 +518,26 @@ func (s *Service) fetchURL(ctx context.Context, repo *models.Repository, key, ta
 	}
 
 	return s.store(ctx, repo, key, resp, o)
+}
+
+// acquireFetch takes a slot of the upstream-download gate; the caller releases
+// it with s.fetches.Release when its body has been spooled and stored. Only the
+// flight leader of a key gets here (waiters of the same key wait on the flight,
+// holding nothing), and callers invoke it right before the network request and
+// after any nested resolve, so no holder ever waits for another slot.
+//
+// A wait that ends with the context (the flight's fetchTimeout) is reported
+// like any other transport failure of the upstream, errUpstreamDown: the
+// upstream could not be served in time, a stale copy may stand in, and the
+// client gets the 502 it gets for an unreachable upstream rather than a
+// silent empty answer.
+func (s *Service) acquireFetch(ctx context.Context, repo *models.Repository, key string) error {
+	if err := s.fetches.Acquire(ctx); err != nil {
+		s.log.Warnw("proxy upstream fetch queue wait ended", "repo", repo.Name, "path", key, "error", err)
+		return errUpstreamDown
+	}
+
+	return nil
 }
 
 func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repository, target string, o fetchOpts) (*http.Request, error) {
@@ -535,6 +575,13 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 	if resp.ContentLength > s.maxBody {
 		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
 		return nil, errUpstream
+	}
+
+	if isHTMLForPackage(repo.Format, key, resp) {
+		s.log.Warnw("proxy upstream answered a package path with an HTML page, refusing",
+			"repo", repo.Name, "path", key, "content_type", resp.Header.Get("Content-Type"))
+
+		return nil, errVerify
 	}
 
 	spool, err := os.CreateTemp("", "openartifact-proxy-*")
@@ -615,18 +662,58 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 		mediaType = "application/octet-stream"
 	}
 
-	err = storage.WithBlobLock(ctx, s.db, sum, func(ctx context.Context) error {
-		blobID, perr := s.blobStore.Put(ctx, spool, map[string]string{"sha256": sum, "content-type": mediaType})
-		if perr != nil {
-			return fmt.Errorf("store blob: %w", perr)
-		}
+	if perr := s.persist(ctx, spool, sum, mediaType, entry); perr != nil {
+		s.log.Errorw("failed to cache proxied file", "repo", repo.Name, "path", key, "sha256", sum, "error", perr)
+		return nil, errInternal
+	}
 
-		if blobID != sum {
-			return fmt.Errorf("%w: blob store returned id %q for sha256 %s", errInternal, blobID, sum)
-		}
+	return entry, nil
+}
 
-		if _, eerr := s.db.EnsureBlob(ctx, sum, mediaType, size); eerr != nil {
+// persist stores the spooled body (rewound, hashing to sum) in the blob store
+// and records the blobs row and cache entry.
+//
+// The object-store upload runs OUTSIDE the per-blob lock. The lock is a
+// database transaction holding a pooled connection and one of the bounded lock
+// slots (postgres lockSlots) until it ends; held across an upload of up to
+// maxBody bytes it would let a handful of slow transfers exhaust the slots and
+// stall every upload, delete and cache fill. The blob is content-addressed and
+// Put is idempotent (the same bytes under the same id), so storing it first is
+// safe by itself.
+//
+// What the lock must still guarantee is that the blob is in the store when the
+// referencing row is committed, because the only remover racing with us is
+// storage.SafeDeleteBlob / DeleteBlobIfUnreferenced (also used by the orphan
+// collector), which delete the object under this same lock when no row
+// references the sha. The collector never sees an object without a blobs row,
+// and a fresh row is protected by storage.OrphanMinAge, but a blob whose
+// previous references were just removed (a deleted hosted package with
+// identical bytes, an orphan older than the grace) can be deleted between our
+// Put and the lock. So the existence of the object is re-checked under the
+// lock, after EnsureBlob and before the cache entry (a reference) is written;
+// if it vanished it is stored again, now under the lock, which is rare and
+// keeps the delete from ever leaving a cache row without its blob.
+func (s *Service) persist(ctx context.Context, spool *os.File, sum, mediaType string, entry *models.ProxyCacheEntry) error {
+	meta := map[string]string{"sha256": sum, "content-type": mediaType}
+
+	if perr := s.putBlob(ctx, spool, sum, meta); perr != nil {
+		return perr
+	}
+
+	return storage.WithBlobLock(ctx, s.db, sum, func(ctx context.Context) error {
+		if _, eerr := s.db.EnsureBlob(ctx, sum, mediaType, entry.SizeBytes); eerr != nil {
 			return fmt.Errorf("record blob: %w", eerr)
+		}
+
+		present, xerr := s.blobStore.Exists(ctx, sum)
+		if xerr != nil {
+			return fmt.Errorf("check blob: %w", xerr)
+		}
+
+		if !present {
+			if perr := s.putBlob(ctx, spool, sum, meta); perr != nil {
+				return perr
+			}
 		}
 
 		if uerr := s.db.UpsertProxyCacheEntry(ctx, entry); uerr != nil {
@@ -635,12 +722,24 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 
 		return nil
 	})
-	if err != nil {
-		s.log.Errorw("failed to cache proxied file", "repo", repo.Name, "path", key, "sha256", sum, "error", err)
-		return nil, errInternal
+}
+
+// putBlob uploads the spool (from its start) as the blob sum.
+func (s *Service) putBlob(ctx context.Context, spool io.ReadSeeker, sum string, meta map[string]string) error {
+	if _, err := spool.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("rewind spool: %w", err)
 	}
 
-	return entry, nil
+	blobID, err := s.blobStore.Put(ctx, spool, meta)
+	if err != nil {
+		return fmt.Errorf("store blob: %w", err)
+	}
+
+	if blobID != sum {
+		return fmt.Errorf("%w: blob store returned id %q for sha256 %s", errInternal, blobID, sum)
+	}
+
+	return nil
 }
 
 func (s *Service) recordNegative(ctx context.Context, repo *models.Repository, key string) {
@@ -698,18 +797,33 @@ func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
 }
 
 // Immutable reports whether the file at key never changes once published, so a
-// cached copy never needs revalidation: released Maven artifacts (not
-// maven-metadata.xml, not -SNAPSHOT files) and deb/rpm package files.
+// cached copy never needs revalidation. Formats whose bodies are verified
+// against a published digest (see fetchOpts) pin by name alone; the three that
+// have no such check here (Maven, deb, rpm) pin only under layouts whose file
+// names are never reused, and everything else is cached for the repository TTL
+// so a wrong copy is replaced on revalidation:
+//   - maven: released artifacts, not maven-metadata*.xml, archetype-catalog.xml
+//     (both are regenerated in place) or -SNAPSHOT files; a checksum or
+//     signature file (.md5 .sha1 .sha256 .sha512 .asc) is as immutable as the
+//     file it belongs to.
+//   - deb: .deb/.udeb below a pool/ directory (the Debian archive layout, where
+//     a file name is never reused); the same names in a flat repository, where
+//     a publisher may overwrite a package, use the repository TTL.
+//   - rpm: .rpm below a Packages/ directory (the layout of Fedora, CentOS, RHEL
+//     and most vendor repositories, whose NEVRA-named files are not rebuilt in
+//     place); flat or other layouts use the repository TTL. No cheap integrity
+//     signal (the repodata checksums are not checked by this proxy) exists to
+//     pin the rest.
 func Immutable(format, key string) bool {
 	name := key[strings.LastIndexByte(key, '/')+1:]
 
 	switch format {
 	case "maven":
-		return !strings.HasPrefix(name, "maven-metadata.xml") && !strings.Contains(key, "-SNAPSHOT")
+		return mavenImmutable(key)
 	case "deb":
-		return strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb")
+		return inDir(key, "pool") && (strings.HasSuffix(name, ".deb") || strings.HasSuffix(name, ".udeb"))
 	case "rpm":
-		return strings.HasSuffix(name, ".rpm")
+		return inDir(key, "Packages") && strings.HasSuffix(name, ".rpm")
 	case "pypi":
 		// Distribution files (and their PEP 658 metadata), not the index pages.
 		return strings.HasPrefix(key, "files/")
@@ -734,6 +848,54 @@ func Immutable(format, key string) bool {
 	}
 
 	return false
+}
+
+// mavenSidecarExts are the checksum and signature files published next to a
+// Maven file; each is immutable exactly when the file it belongs to is.
+var mavenSidecarExts = []string{".md5", ".sha1", ".sha256", ".sha512", ".asc"} //nolint:gochecknoglobals // read-only table
+
+// mavenImmutable reports whether key is a released, never-rewritten Maven file.
+func mavenImmutable(key string) bool {
+	for _, ext := range mavenSidecarExts {
+		if owner, ok := strings.CutSuffix(key, ext); ok {
+			return mavenImmutable(owner)
+		}
+	}
+
+	name := key[strings.LastIndexByte(key, '/')+1:]
+
+	return name != "" &&
+		!strings.HasPrefix(name, "maven-metadata") &&
+		name != "archetype-catalog.xml" &&
+		!strings.Contains(key, "-SNAPSHOT")
+}
+
+// inDir reports whether key lies below a directory named dir, at the root of
+// the upstream or deeper (an upstream URL may already include a path prefix).
+func inDir(key, dir string) bool {
+	return strings.HasPrefix(key, dir+"/") || strings.Contains(key, "/"+dir+"/")
+}
+
+// packageExts lists, for the formats whose files are not checked against a
+// digest, the file extensions that name a binary package.
+var packageExts = map[string][]string{ //nolint:gochecknoglobals // read-only table
+	"maven": {".jar", ".pom", ".zip", ".war", ".ear", ".aar", ".module", ".gz"},
+	"deb":   {".deb", ".udeb"},
+	"rpm":   {".rpm"},
+}
+
+// isHTMLForPackage reports whether the upstream answered a package file's path
+// with an HTML page: a captive portal, WAF challenge or proxy error page
+// returned as 200. For the formats in packageExts nothing else would catch it,
+// and caching it as the release would pin the page forever (and serve it to
+// every client), so the body is refused instead.
+func isHTMLForPackage(format, key string, resp *http.Response) bool {
+	ct := strings.ToLower(strings.TrimSpace(resp.Header.Get("Content-Type")))
+	if !strings.HasPrefix(ct, "text/html") && !strings.HasPrefix(ct, "application/xhtml+xml") {
+		return false
+	}
+
+	return slices.ContainsFunc(packageExts[format], func(ext string) bool { return strings.HasSuffix(key, ext) })
 }
 
 // CleanPath validates a client-supplied repository-relative path and returns

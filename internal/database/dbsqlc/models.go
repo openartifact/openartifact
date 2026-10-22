@@ -853,6 +853,8 @@ type Repository struct {
 	TrashRetentionDays *int32 `db:"trash_retention_days" json:"trash_retention_days"`
 	// When true, released (non-snapshot, non-prerelease) versions cannot be deleted or overwritten without admin force.
 	ImmutableReleases bool `db:"immutable_releases" json:"immutable_releases"`
+	// Groups only. false (default): when a hosted member holds a package name, proxy members' versions and files of that name are hidden. true: versions of all members are merged.
+	MergeProxyVersions bool `db:"merge_proxy_versions" json:"merge_proxy_versions"`
 }
 
 type RepositoryGroupMember struct {

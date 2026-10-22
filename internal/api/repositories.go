@@ -373,6 +373,34 @@ func validateUpstreamURL(raw string) error {
 	return nil
 }
 
+// sameUpstreamOrigin reports whether two upstream URLs share scheme, host and
+// port, i.e. whether credentials valid for one are sent to the same server by
+// the other. Unparsable input counts as a different origin.
+func sameUpstreamOrigin(a, b string) bool {
+	ua, errA := url.Parse(a)
+	ub, errB := url.Parse(b)
+
+	if errA != nil || errB != nil {
+		return false
+	}
+
+	return strings.EqualFold(ua.Scheme, ub.Scheme) &&
+		strings.EqualFold(ua.Hostname(), ub.Hostname()) &&
+		upstreamPort(ua) == upstreamPort(ub)
+}
+
+func upstreamPort(u *url.URL) string {
+	if p := u.Port(); p != "" {
+		return p
+	}
+
+	if strings.EqualFold(u.Scheme, "https") {
+		return "443"
+	}
+
+	return "80"
+}
+
 // rejectNonHosted answers 405 and returns true when repo is a proxy or group:
 // those are read-only views and take no uploads or package deletions.
 func rejectNonHosted(w http.ResponseWriter, repo *models.Repository) bool {
@@ -400,6 +428,11 @@ func unsupportedRepoTypeMessage(repoType, format string) string {
 
 	return ""
 }
+
+// errMergeProxyVersionsAdmin explains why a project maintainer may not touch
+// merge_proxy_versions: it switches the dependency-confusion protection of a
+// group off.
+const errMergeProxyVersionsAdmin = "only an administrator can change merge_proxy_versions"
 
 var errUpstreamURLShape = errors.New("upstream_url must be a plain base URL without credentials, query or fragment")
 
@@ -524,6 +557,9 @@ type createRepositoryBody struct {
 	// TrashRetentionDays: null/absent = server default, 0 = no trash.
 	TrashRetentionDays *int `json:"trash_retention_days"`
 	ImmutableReleases  bool `json:"immutable_releases"`
+	// MergeProxyVersions (groups only, administrators only) turns the
+	// hosted-members-win rule off: versions of every member are merged.
+	MergeProxyVersions bool `json:"merge_proxy_versions"`
 }
 
 // handleCreate is the admin-only POST /api/v1/repositories.
@@ -598,7 +634,17 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if body.MergeProxyVersions && repoType != "group" {
+		writeError(w, http.StatusBadRequest, "validation_failed", "merge_proxy_versions is only valid for group repositories")
+		return
+	}
+
 	if actor != nil {
+		if body.MergeProxyVersions {
+			writeError(w, http.StatusForbidden, "forbidden", errMergeProxyVersionsAdmin)
+			return
+		}
+
 		if status, code, msg := checkProjectRepoPolicy(project, body.Name, body.Format, repoType, body.Public); status != 0 {
 			writeError(w, status, code, msg)
 			return
@@ -614,6 +660,7 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 
 		TrashRetentionDays: body.TrashRetentionDays,
 		ImmutableReleases:  body.ImmutableReleases,
+		MergeProxyVersions: body.MergeProxyVersions,
 	}
 
 	hasUpstream := body.UpstreamURL != "" || body.UpstreamUsername != "" || body.UpstreamPassword != ""
@@ -791,10 +838,26 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		// the server default, a number sets it (0 = no trash).
 		TrashRetentionDays nullableInt `json:"trash_retention_days"`
 		ImmutableReleases  *bool       `json:"immutable_releases"`
+		// MergeProxyVersions: groups only, administrators only.
+		MergeProxyVersions *bool `json:"merge_proxy_versions"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
+	}
+
+	if actor != nil && body.MergeProxyVersions != nil {
+		writeError(w, http.StatusForbidden, "forbidden", errMergeProxyVersionsAdmin)
+		return
+	}
+
+	if body.MergeProxyVersions != nil {
+		if repo.RepoType != "group" {
+			writeError(w, http.StatusBadRequest, "validation_failed", "merge_proxy_versions is only valid for group repositories")
+			return
+		}
+
+		repo.MergeProxyVersions = *body.MergeProxyVersions
 	}
 
 	if actor != nil {
@@ -837,6 +900,8 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		repo.Public = *body.Public
 	}
 
+	credsRetarget := false
+
 	if body.UpstreamURL != nil {
 		if *body.UpstreamURL == "" {
 			writeError(w, http.StatusBadRequest, "validation_failed", "upstream_url cannot be empty for a proxy repository")
@@ -848,11 +913,26 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
+		if !sameUpstreamOrigin(repo.UpstreamURL, *body.UpstreamURL) {
+			credsRetarget = true
+		}
+
 		repo.UpstreamURL = *body.UpstreamURL
 	}
 
 	if body.UpstreamUsername != nil {
+		if repo.UpstreamUsername != *body.UpstreamUsername {
+			credsRetarget = true
+		}
+
 		repo.UpstreamUsername = *body.UpstreamUsername
+	}
+
+	// The stored password was set for the previous origin/username; sending it
+	// to a new origin (or as another user) would hand it to whoever may edit
+	// the upstream settings. It is dropped unless the request re-enters it.
+	if credsRetarget && body.UpstreamPassword == nil {
+		repo.UpstreamPasswordEnc = ""
 	}
 
 	if body.UpstreamPassword != nil {
@@ -1542,6 +1622,7 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		PresignDownloads:   r.PresignDownloads,
 		TrashRetentionDays: r.TrashRetentionDays,
 		ImmutableReleases:  r.ImmutableReleases,
+		MergeProxyVersions: r.MergeProxyVersions,
 	}
 
 	if r.RepoType == repotype.Proxy {

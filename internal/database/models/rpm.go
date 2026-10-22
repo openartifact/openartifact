@@ -31,6 +31,10 @@ type Repository struct {
 	// ImmutableReleases forbids deleting or overwriting released versions
 	// without an admin's force.
 	ImmutableReleases bool
+	// MergeProxyVersions is a group-only setting. false (the default) makes a
+	// hosted member win a package name: proxy members' versions and files of
+	// a name any hosted member holds are hidden. true merges all members.
+	MergeProxyVersions bool
 	// DeletedAt/DeletedBy are set while the repository is in the trash. Every
 	// lookup except the trash API hides such a repository.
 	DeletedAt *time.Time

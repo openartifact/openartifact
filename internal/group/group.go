@@ -48,12 +48,27 @@ func NewHandler(log *logger.Logger, db database.Database) *Handler {
 }
 
 // Serve answers a request for relPath (below the repository root) of group
-// grp. Groups are read-only: anything but GET/HEAD is refused.
+// grp. Groups are read-only: anything but GET/HEAD is refused, and a blocked
+// group answers 403 whatever its members hold.
+//
+// Hosted wins (dependency confusion): unless grp.MergeProxyVersions is set, a
+// package name that any readable hosted member holds is served from the hosted
+// members only — proxy members' versions, metadata entries and files of that
+// name are hidden (see applyHostedWins and hostedwins.go for how each format
+// recognizes a name and for the fail-closed rules). Names no readable hosted
+// member holds are served by the proxies as before. A hosted member the caller
+// cannot read counts as absent. Raw groups merge nothing: the first member in
+// order wins.
 func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, be Backend) {
 	if r.Method != http.MethodGet && r.Method != http.MethodHead {
 		w.Header().Set("Allow", "GET, HEAD")
 		http.Error(w, "group repositories are read-only", http.StatusMethodNotAllowed)
 
+		return
+	}
+
+	if grp.Blocked {
+		http.Error(w, "repository is blocked", http.StatusForbidden)
 		return
 	}
 
@@ -73,38 +88,45 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 		}
 	}
 
-	if grp.Format == "maven" {
-		if base, suffix, ok := mavenMetadataPath(relPath); ok {
-			h.serveMavenMetadata(w, r, readable, base, suffix, be)
-			return
-		}
-	}
-
-	if grp.Format == "pypi" && h.servePyPI(w, r, grp, readable, relPath, be) {
+	readable, done := h.applyHostedWins(w, r, grp, readable, relPath, be)
+	if done {
 		return
 	}
 
-	if grp.Format == "npm" && h.serveNPM(w, r, grp, relPath, readable, be) {
-		return
-	}
-
-	if grp.Format == "helm" && h.serveHelm(w, r, grp, relPath, readable, be) {
-		return
-	}
-
-	if grp.Format == "cargo" && h.serveCargo(w, r, grp, relPath, readable, be) {
-		return
-	}
-
-	if grp.Format == "go" && h.serveGo(w, r, grp, relPath, readable, be) {
-		return
-	}
-
-	if grp.Format == "nuget" && h.serveNuGet(w, r, grp, relPath, readable, be) {
+	if h.serveMerged(w, r, grp, readable, relPath, be) {
 		return
 	}
 
 	h.serveFirstHit(w, r, readable, relPath, be)
+}
+
+// serveMerged answers the requests a group of a version-merging format
+// (maven, pypi, npm, helm, cargo, go, nuget) merges over its members; false
+// means the request is a plain first-hit one.
+func (h *Handler) serveMerged(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, relPath string, be Backend) bool {
+	switch grp.Format {
+	case "maven":
+		base, suffix, ok := mavenMetadataPath(relPath)
+		if ok {
+			h.serveMavenMetadata(w, r, readable, base, suffix, be)
+		}
+
+		return ok
+	case "pypi":
+		return h.servePyPI(w, r, grp, readable, relPath, be)
+	case "npm":
+		return h.serveNPM(w, r, grp, relPath, readable, be)
+	case "helm":
+		return h.serveHelm(w, r, grp, relPath, readable, be)
+	case "cargo":
+		return h.serveCargo(w, r, grp, relPath, readable, be)
+	case "go":
+		return h.serveGo(w, r, grp, relPath, readable, be)
+	case "nuget":
+		return h.serveNuGet(w, r, grp, relPath, readable, be)
+	}
+
+	return false
 }
 
 // authPath is the path the caller is authorized against for member m: the one a
@@ -160,6 +182,22 @@ func (h *Handler) serveFirstHit(w http.ResponseWriter, r *http.Request, members 
 // serveFirstHitAs is serveFirstHit for formats whose member paths differ by
 // member type: pathFor returns the path to ask each member for.
 func (h *Handler) serveFirstHitAs(w http.ResponseWriter, r *http.Request, members []*models.Repository, pathFor func(*models.Repository) string, be Backend) {
+	served, memberFailed := firstHit(w, r, members, pathFor, be)
+
+	switch {
+	case served:
+	case memberFailed:
+		http.Error(w, "member repository error", http.StatusBadGateway)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// firstHit asks members in order and streams the first answer that is neither
+// 404 nor a 5xx to w; served reports that one did. memberFailed reports that a
+// member answered with a 5xx on the way (so a missing file may still exist).
+// It writes nothing when served is false.
+func firstHit(w http.ResponseWriter, r *http.Request, members []*models.Repository, pathFor func(*models.Repository) string, be Backend) (bool, bool) {
 	memberFailed := false
 
 	for _, m := range members {
@@ -168,18 +206,13 @@ func (h *Handler) serveFirstHitAs(w http.ResponseWriter, r *http.Request, member
 
 		switch {
 		case pw.committed:
-			return
+			return true, memberFailed
 		case pw.failed:
 			memberFailed = true
 		}
 	}
 
-	if memberFailed {
-		http.Error(w, "member repository error", http.StatusBadGateway)
-		return
-	}
-
-	http.NotFound(w, r)
+	return false, memberFailed
 }
 
 // probeWriter wraps the real ResponseWriter for one member attempt. It

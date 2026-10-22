@@ -106,6 +106,11 @@ type RepositoryResponse struct {
 	TrashRetentionDays *int `json:"trash_retention_days"`
 	ImmutableReleases  bool `json:"immutable_releases"`
 
+	// MergeProxyVersions (groups only): false means hosted members win a
+	// package name and proxy members' versions of it are hidden; true merges
+	// every member's versions.
+	MergeProxyVersions bool `json:"merge_proxy_versions"`
+
 	// Proxy repositories only. The upstream password is never returned.
 	UpstreamURL             string `json:"upstream_url,omitempty"`
 	UpstreamUsername        string `json:"upstream_username,omitempty"`

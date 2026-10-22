@@ -281,13 +281,21 @@ func (s *Service) resolveNuGetIndex(ctx context.Context, repo *models.Repository
 		return res, idx, nil
 	}
 
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return nil, nil, aerr //nolint:wrapcheck // caller checks for cancellation
+	}
+
 	doc, err := s.readNuGetDoc(ctx, res.entry)
 	if err != nil {
+		s.packuments.Release()
 		s.log.Errorw("failed to read cached nuget service index", "repo", repo.Name, "error", err)
+
 		return nil, nil, errInternal
 	}
 
 	idx, err := pkgnuget.ParseServiceIndex(doc)
+	s.packuments.Release()
+
 	if err != nil {
 		s.log.Warnw("unusable upstream nuget service index", "repo", repo.Name, "error", err)
 		return nil, nil, errUpstream
@@ -522,13 +530,21 @@ func (s *Service) nugetPageURL(ctx context.Context, repo *models.Repository, idx
 		return "", err
 	}
 
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return "", aerr //nolint:wrapcheck // caller checks for cancellation
+	}
+
 	doc, err := s.readNuGetDoc(ctx, res.entry)
 	if err != nil {
+		s.packuments.Release()
 		s.log.Errorw("failed to read cached nuget registration", "repo", repo.Name, "package", p.id, "error", err)
+
 		return "", errInternal
 	}
 
 	pages, err := pkgnuget.ParsePages(doc)
+	s.packuments.Release()
+
 	if err != nil {
 		s.log.Warnw("unreadable upstream nuget registration", "repo", repo.Name, "package", p.id, "error", err)
 		return "", errUpstream
@@ -567,10 +583,16 @@ func (s *Service) serveNuGetDoc(w http.ResponseWriter, r *http.Request, repo *mo
 		return
 	}
 
+	if aerr := s.packuments.Acquire(r.Context()); aerr != nil {
+		return
+	}
+
 	doc, err := s.readNuGetDoc(r.Context(), docRes.entry)
 	if err == nil {
 		doc, err = renderNuGetDoc(doc, p, idx, repoURL)
 	}
+
+	s.packuments.Release()
 
 	if err != nil {
 		s.failNuGetDoc(w, repo, p.key(), err)
@@ -658,13 +680,21 @@ func (s *Service) nugetDigest(ctx context.Context, repo *models.Repository, idx 
 		return pkgnuget.Digest{}, err
 	}
 
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return pkgnuget.Digest{}, aerr //nolint:wrapcheck // caller checks for cancellation
+	}
+
 	leaf, err := s.readNuGetDoc(ctx, res.entry)
 	if err != nil {
+		s.packuments.Release()
 		s.log.Errorw("failed to read cached nuget registration leaf", "repo", repo.Name, "path", leafPath.key(), "error", err)
+
 		return pkgnuget.Digest{}, errInternal
 	}
 
 	catalog := pkgnuget.CatalogEntryURL(leaf)
+	s.packuments.Release()
+
 	if catalog == "" || catalog == nugetDocURL(idx, leafPath) {
 		return pkgnuget.Digest{}, nil
 	}
@@ -736,6 +766,11 @@ func (s *Service) fetchNuGetDocument(ctx context.Context, repo *models.Repositor
 		s.log.Warnw("proxy upstream returned an error", "repo", repo.Name, "status", resp.StatusCode)
 		return nil, errUpstream
 	}
+
+	if aerr := s.packuments.Acquire(ctx); aerr != nil {
+		return nil, aerr //nolint:wrapcheck // caller checks for cancellation
+	}
+	defer s.packuments.Release()
 
 	body, err := io.ReadAll(io.LimitReader(resp.Body, maxNuGetDocBytes+1))
 	if err != nil || (resp.ContentLength >= 0 && int64(len(body)) != resp.ContentLength) {

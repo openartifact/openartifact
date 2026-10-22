@@ -110,6 +110,7 @@ Out-of-range values are clamped rather than rejected. The trash lists (`/trash`,
 |---|---|---|
 | `trash_retention_days` | integer >= 0, or `null` | Days deleted items of this repository stay restorable. `null` uses the server default (`OPENARTIFACT_TRASH_RETENTION`, 7); `0` deletes permanently and immediately. Negative values are `400` |
 | `immutable_releases` | bool | When `true`, deleting or overwriting a released version answers `409` unless an admin passes `?force=true` ([per-format definition](../operations/trash.md#immutable-releases)) |
+| `merge_proxy_versions` | bool | Group repositories only, default `false`; global admins only (`403` for others). By default hosted members win a package name and proxy versions of the same name are hidden; `true` merges them ([semantics](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name)) |
 
 `DELETE /api/v1/repository/{name}` requires the repository name as confirmation, either as a query parameter or a JSON body; without it the answer is `400 confirmation_required`:
 

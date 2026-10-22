@@ -65,8 +65,10 @@ func newFixture(t *testing.T, format string, members ...*models.Repository) *fix
 	}
 
 	return &fixture{
-		h:       NewHandler(log, db),
-		grp:     &models.Repository{ID: "grp", Name: "all", Format: format, RepoType: "group"},
+		h: NewHandler(log, db),
+		// The merge tests predate hosted wins and pin the union behavior;
+		// hostedwins_test.go turns it off.
+		grp:     &models.Repository{ID: "grp", Name: "all", Format: format, RepoType: "group", MergeProxyVersions: true},
 		replies: map[string]map[string]memberReply{},
 		denied:  map[string]bool{},
 	}

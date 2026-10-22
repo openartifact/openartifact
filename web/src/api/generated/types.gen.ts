@@ -185,6 +185,10 @@ export type Repository = {
      * When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true.
      */
     immutable_releases?: boolean;
+    /**
+     * Group repositories only. false (default): for a package name held by a readable hosted member, proxy members' versions of that name are hidden (hosted members win, dependency-confusion protection). true: merge proxy versions with the hosted ones. Only administrators can set it.
+     */
+    merge_proxy_versions?: boolean;
 };
 
 export type RepositoryMember = {
@@ -1364,6 +1368,10 @@ export type PostApiV1RepositoriesData = {
          * When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true.
          */
         immutable_releases?: boolean;
+        /**
+         * Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group.
+         */
+        merge_proxy_versions?: boolean;
     };
     path?: never;
     query?: never;
@@ -4154,6 +4162,10 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
         presign_downloads?: boolean | null;
         trash_retention_days?: number | null;
         immutable_releases?: boolean;
+        /**
+         * Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group.
+         */
+        merge_proxy_versions?: boolean;
     };
     path: {
         project: string;
@@ -5036,6 +5048,10 @@ export type PatchApiV1RepositoryByNameData = {
          * When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true.
          */
         immutable_releases?: boolean;
+        /**
+         * Group repositories only, administrators only (403 otherwise). Absent leaves it unchanged.
+         */
+        merge_proxy_versions?: boolean;
     };
     path: {
         name: string;

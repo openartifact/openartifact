@@ -86,6 +86,7 @@ A response with a `2xx` status is a success. Everything else (other status, conn
 The URL must be `http` or `https` and its host must resolve (names are resolved when the webhook is saved). It is rejected if any resolved address is:
 
 - unspecified, multicast or link-local, which includes the cloud metadata address `169.254.169.254` and `fd00:ec2::/32`: always blocked;
+- reserved IPv4 ranges, and IPv6 forms that embed an IPv4 address (NAT64, 6to4, Teredo) pointing at a blocked IPv4 address: always blocked;
 - loopback, private (RFC 1918, `fc00::/7`) or carrier-grade NAT (`100.64.0.0/10`): blocked unless the server runs with `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. Set it when the receiver is an internal CI or chat bridge. The same switch relaxes proxy repository upstreams, see [hosted, proxy, group](../repositories/hosted-proxy-group.md).
 
 The check runs again at delivery time on the address actually dialed, so a name that later resolves to a blocked address (DNS rebinding) cannot be reached. Environment proxy settings are ignored. `ssl_verify=false` only disables TLS certificate verification; the address checks still apply.

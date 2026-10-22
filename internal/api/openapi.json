@@ -366,6 +366,10 @@
           "immutable_releases": {
             "type": "boolean",
             "description": "When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true."
+          },
+          "merge_proxy_versions": {
+            "type": "boolean",
+            "description": "Group repositories only. false (default): for a package name held by a readable hosted member, proxy members' versions of that name are hidden (hosted members win, dependency-confusion protection). true: merge proxy versions with the hosted ones. Only administrators can set it."
           }
         },
         "required": [
@@ -3074,6 +3078,10 @@
                   "immutable_releases": {
                     "type": "boolean",
                     "description": "When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true."
+                  },
+                  "merge_proxy_versions": {
+                    "type": "boolean",
+                    "description": "Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group."
                   }
                 },
                 "required": [
@@ -7845,7 +7853,11 @@
                   "member_repos": { "type": "array", "items": { "type": "string" } },
                   "presign_downloads": { "type": "boolean", "nullable": true },
                   "trash_retention_days": { "type": "integer", "nullable": true },
-                  "immutable_releases": { "type": "boolean" }
+                  "immutable_releases": { "type": "boolean" },
+                  "merge_proxy_versions": {
+                    "type": "boolean",
+                    "description": "Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group."
+                  }
                 }
               }
             }
@@ -9015,6 +9027,10 @@
                   "immutable_releases": {
                     "type": "boolean",
                     "description": "When true, deleting or overwriting a released version is refused with 409 (SNAPSHOT/pre-release versions stay mutable). An admin can override with ?force=true."
+                  },
+                  "merge_proxy_versions": {
+                    "type": "boolean",
+                    "description": "Group repositories only, administrators only (403 otherwise). Absent leaves it unchanged."
                   }
                 }
               }

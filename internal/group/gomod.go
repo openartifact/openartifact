@@ -29,7 +29,11 @@ const goListMaxAge = 60
 // reports false for every other GOPROXY path (.info, .mod, .zip, @latest),
 // which the caller resolves by first hit: the first member that has the
 // module version serves it, so a version published to an earlier (hosted)
-// member shadows the same version of a later (proxy) member.
+// member shadows the same version of a later (proxy) member. Hosted wins goes
+// further (see applyHostedWins): for a module a hosted member has versions of
+// (and unless the group merges proxy versions) the list is the hosted
+// members' only, and .info/.mod/.zip/@latest requests are never answered by a
+// proxy.
 func (h *Handler) serveGo(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
 	if mod, ok := strings.CutSuffix(relPath, "/@v/list"); !ok || mod == "" {
 		return false
@@ -48,8 +52,11 @@ func (h *Handler) serveGo(w http.ResponseWriter, r *http.Request, grp *models.Re
 		failed   bool
 	)
 
+	sess := h.newSession(r.Context())
+	defer sess.release()
+
 	for _, m := range members {
-		cw := newCaptureWriter(maxGoListBytes)
+		cw := sess.capture(maxGoListBytes)
 		be.ServeMember(cw, mr, m, relPath)
 
 		switch {
@@ -76,6 +83,9 @@ func (h *Handler) serveGo(w http.ResponseWriter, r *http.Request, grp *models.Re
 	}
 
 	body := mergeGoVersions(versions)
+
+	sess.release()
+
 	sum := sha256.Sum256(body)
 
 	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, goListMaxAge, failed) {

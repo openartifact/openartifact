@@ -47,7 +47,7 @@ Project roles never grant the global `manage` permission: users, groups, permiss
 | `max_repositories` | 409 `project_repository_limit` (checked under a lock on the project row, so concurrent creates cannot overshoot) |
 | group `member_repos` | each member must be readable by the caller: 403 |
 
-Global admins bypass the policy, on both routes. A non-admin `PATCH /repository/{name}` may change `description`, retention, immutability and the upstream settings but not `project`, `blocked` or `presign_downloads`, and may not make the repository public unless the project allows it (403).
+Global admins bypass the policy, on both routes. A non-admin `PATCH /repository/{name}` may change `description`, retention, immutability and the upstream settings but not `project`, `blocked`, `presign_downloads` or a group's `merge_proxy_versions` (dependency-confusion protection, global admins only). Changing a proxy's `upstream_url` origin or `upstream_username` clears the stored upstream password unless a new `upstream_password` is sent in the same request. A non-admin may not make the repository public unless the project allows it (403).
 
 `POST /projects/{project}/repositories/{name}/transfer` with `{"to_project": "<name>"}` moves a repository between projects. The caller must be owner of both (admins always); a caller with no role in the target gets 404, a lower role 403. A non-admin transfer must also satisfy the target's policy (prefix, format, type, visibility, `max_repositories`). The repository's storage usage moves with it: it is subtracted from the source project's counters and added to the target's, and the transfer fails with `409 project_quota_exceeded` when the target's [project quota](#storage-quota-and-cleanup-defaults) cannot take it.
 
