@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"errors"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -17,6 +18,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/storage"
 )
 
 const registrationURL = "/repos/myrepo/v3/registration/contoso.lib/index.json"
@@ -175,5 +177,56 @@ func TestRegistrationIndexGzip(t *testing.T) {
 
 	if got, _ := io.ReadAll(zr); !bytes.Equal(got, plain.Body.Bytes()) {
 		t.Error("decompressed registration differs from the plain one")
+	}
+}
+
+// flakyStore fails every Get while down is set.
+type flakyStore struct {
+	storage.BlobStore
+
+	down atomic.Bool
+}
+
+func (f *flakyStore) Get(ctx context.Context, id string) (io.ReadCloser, error) {
+	if f.down.Load() {
+		return nil, errors.New("store unavailable")
+	}
+
+	return f.BlobStore.Get(ctx, id) //nolint:wrapcheck // test double
+}
+
+// A package whose groups are not stored yet is derived from its nupkg. When
+// that read fails, the response degrades to no groups for this one request: it
+// must neither be remembered by the render cache nor carry a validator a
+// client can later revalidate it with, or the missing groups would outlive the
+// outage until the package set changes.
+func TestRegistrationIndexDoesNotRememberDegradedRendering(t *testing.T) {
+	h, db, bs, _ := newV3Handler(t)
+
+	mustPush(t, h, "Contoso.Lib", "1.0.0")
+
+	for _, p := range db.pkgs {
+		p.DependencyGroups = nil // published before the column existed
+	}
+
+	store := &flakyStore{BlobStore: bs}
+	h.BlobStore = store
+	store.down.Store(true)
+
+	degraded := getRegistration(h, nil)
+	if degraded.Code != http.StatusOK || strings.Contains(degraded.Body.String(), "Other.Lib") {
+		t.Fatalf("outage response = %d %s", degraded.Code, degraded.Body.String())
+	}
+
+	store.down.Store(false)
+
+	header := map[string]string{}
+	if etag := degraded.Header().Get("ETag"); etag != "" {
+		header["If-None-Match"] = etag
+	}
+
+	recovered := getRegistration(h, header)
+	if recovered.Code != http.StatusOK || !strings.Contains(recovered.Body.String(), "Other.Lib") {
+		t.Fatalf("after the store recovered: %d (validator %q) %s", recovered.Code, header["If-None-Match"], recovered.Body.String())
 	}
 }

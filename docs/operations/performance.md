@@ -175,6 +175,24 @@ Text metadata (the documents above, PyPI simple pages and JSON, NuGet service in
 
 The NuGet registration index takes its ETag from the IDs and versions of the package's rows, which it lists anyway. It used to read every `.nupkg` of a package to list its dependency groups. They are now stored in `nuget_packages.dependency_groups` at push time. Packages pushed before the `nuget_dependency_groups` migration have no stored value; the server derives it from the package on first use and records it, so the first registration request after an upgrade still reads those packages once.
 
+#### What invalidates a cached document
+
+A cached document is served only while its validator is unchanged, so every change that alters a document must move its validator:
+
+| Document | Validator | Moves on |
+|---|---|---|
+| Helm `index.yaml`, conda `repodata.json` (per platform) | count and ID hash of the live rows | publish, delete, trash, restore (chart and package rows are immutable) |
+| RubyGems specs indexes | count and ID hash of the listed (not yanked) gems | publish, yank, unyank, delete, trash, restore |
+| Cargo sparse index entry | count and hash of ID plus `yanked` of the crate's live versions | publish, yank, unyank, delete, trash, restore (a download does not) |
+| NuGet registration index | repository, base URL, and ID and version of every live row | publish, delete, trash, restore |
+| npm packument (full and abbreviated) | `npm_packages.updated_at` | publish, unpublish, dist-tag change, deprecation, manifest edit, trash, restore |
+| `maven-metadata.xml` and checksums | SHA-256 of the metadata blob | regeneration that produces different bytes |
+| npm group merge | SHA-256 of the member documents it merges | any change of a member's document |
+
+The npm packument validator is bumped by the statements that write the data, not by their callers: creating, editing or deleting a version, setting or deleting a dist-tag, and trashing or restoring a version each update `npm_packages.updated_at` in the same statement or transaction, whichever code path runs them (upload handlers, trash, backup restore). `MarkPackumentStale` only schedules the `latest` denormalisation.
+
+Quarantine and repository blocking never change a listing. They are applied when an artifact is downloaded (403) and, for a blocked proxy or group member, when the request is served, so they need no invalidation. A rendering that is missing data because a part of its source could not be read (a NuGet package whose nuspec was unreadable, a group member that failed) is sent once with `Cache-Control: no-store` and no validator and is not kept in the cache, so it cannot outlive the failure.
+
 ### Audit log paging
 
 `GET /api/v1/admin/audit` avoids `COUNT(*)`: pass `cursor` (empty for the newest page) for keyset paging with `has_more` and `next_cursor`. In offset mode `total` is exact on small tables and on the last page, a planner estimate on large unfiltered tables, and a lower bound on large filtered ones; `total_exact` says which.

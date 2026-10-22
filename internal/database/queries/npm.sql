@@ -29,6 +29,13 @@ UPDATE npm_packages SET packument_stale = true, updated_at = NOW() WHERE id = $1
 UPDATE npm_packages SET latest_version = $2, packument_stale = false, updated_at = NOW() WHERE id = $1;
 
 -- name: CreateNPMVersion :one
+-- Every statement that changes what the packument shows also bumps
+-- npm_packages.updated_at (the packument's ETag and render-cache key) in the
+-- same statement, so no writer has to remember to MarkPackumentStale for the
+-- validator to move.
+WITH touch AS (
+    UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
+)
 INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename)
 VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
 RETURNING id, created_at;
@@ -55,12 +62,24 @@ FROM npm_versions
 WHERE package_id = $1 AND deleted_at IS NULL;
 
 -- name: UpdateNPMVersionManifest :exec
-UPDATE npm_versions SET manifest_json = $3::jsonb WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL;
+WITH changed AS (
+    UPDATE npm_versions SET manifest_json = $3::jsonb
+    WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+    RETURNING package_id
+)
+UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM changed);
 
 -- name: DeleteNPMVersion :exec
-DELETE FROM npm_versions WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL;
+WITH removed AS (
+    DELETE FROM npm_versions WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+    RETURNING package_id
+)
+UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM removed);
 
 -- name: UpsertNPMDistTag :one
+WITH touch AS (
+    UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
+)
 INSERT INTO npm_dist_tags (package_id, tag, version)
 VALUES ($1, $2, $3)
 ON CONFLICT (package_id, tag) DO UPDATE SET version = EXCLUDED.version, updated_at = NOW()
@@ -75,7 +94,11 @@ WHERE d.package_id = $1
               WHERE v.package_id = d.package_id AND v.version = d.version AND v.deleted_at IS NULL);
 
 -- name: DeleteNPMDistTag :exec
-DELETE FROM npm_dist_tags WHERE package_id = $1 AND tag = $2;
+WITH removed AS (
+    DELETE FROM npm_dist_tags WHERE package_id = $1 AND tag = $2
+    RETURNING package_id
+)
+UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM removed);
 
 -- name: ListAllNPMPackages :many
 SELECT id, repository_id,

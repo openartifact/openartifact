@@ -550,20 +550,23 @@ func (p *PostgresDB) restoreRepository(ctx context.Context, id string) (*models.
 	return item, nil
 }
 
-// restoreCascade returns the statements that revive the companions of a row;
-// $1 is the row id.
+// restoreCascade returns the statements that revive the companions of a row
+// (and move the validator of a derived document); $1 is the row id.
 func (s *trashSpec) restoreCascade() []string {
-	if s.kind != models.TrashKindDockerManifest {
-		return nil
-	}
-
-	return []string{`UPDATE docker_tags dt SET deleted_at = NULL, deleted_by = NULL
+	switch s.kind { //nolint:exhaustive // only two kinds have restore side effects
+	case models.TrashKindNPM:
+		return []string{npmTouchPackumentOnRestore}
+	case models.TrashKindDockerManifest:
+		return []string{`UPDATE docker_tags dt SET deleted_at = NULL, deleted_by = NULL
 		FROM docker_manifests m
 		WHERE m.id = $1::uuid AND dt.repository_id = m.repository_id AND dt.image = m.image
 		  AND dt.manifest_digest = m.digest AND dt.deleted_at = m.deleted_at
 		  AND NOT EXISTS (SELECT 1 FROM docker_tags l
 		      WHERE l.repository_id = dt.repository_id AND l.image = dt.image
 		        AND l.name = dt.name AND l.deleted_at IS NULL)`}
+	default:
+		return nil
+	}
 }
 
 // PurgeTrash implements TrashStore.

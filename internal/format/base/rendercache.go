@@ -37,6 +37,12 @@ type Rendered struct {
 	// and without Content-Encoding.
 	Opaque bool
 
+	// Transient marks a degraded rendering (a part of the source could not be
+	// read): it answers the requests sharing this render only. It is never
+	// cached and goes out as no-store without a validator, so neither this
+	// cache nor a client can keep serving it once the source recovers.
+	Transient bool
+
 	cache *RenderCache
 	key   string
 
@@ -74,6 +80,11 @@ func (r *Rendered) Serve(w http.ResponseWriter, req *http.Request) {
 	h.Set("Content-Type", r.ContentType)
 
 	body := r.Body
+
+	if r.Transient {
+		h.Del("ETag")
+		h.Set("Cache-Control", "no-store")
+	}
 
 	if !r.Opaque {
 		h.Add("Vary", "Accept-Encoding")
@@ -170,7 +181,9 @@ func (c *RenderCache) Do(ctx context.Context, key string, render func(ctx contex
 			return nil, err
 		}
 
-		c.put(key, r)
+		if !r.Transient {
+			c.put(key, r)
+		}
 
 		return r, nil
 	})

@@ -208,3 +208,41 @@ func TestRenderedServeNeverRecompressesOpaqueOrTinyBodies(t *testing.T) {
 		})
 	}
 }
+
+// A degraded rendering answers its request only: the cache does not keep it
+// and the response carries no validator.
+func TestRenderCacheDoesNotKeepTransientRenderings(t *testing.T) {
+	c := NewRenderCache(1 << 20)
+
+	var renders atomic.Int32
+
+	render := func(context.Context) (*Rendered, error) {
+		renders.Add(1)
+
+		d := doc(10)
+		d.Transient = true
+
+		return d, nil
+	}
+
+	var got *Rendered
+
+	for range 2 {
+		var err error
+		if got, err = c.Do(t.Context(), "k", render); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	if renders.Load() != 2 || c.Len() != 0 {
+		t.Fatalf("renders = %d, cached = %d; want 2 and 0", renders.Load(), c.Len())
+	}
+
+	rec := httptest.NewRecorder()
+	rec.Header().Set("ETag", `"v1"`)
+	got.Serve(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/", nil))
+
+	if rec.Header().Get("ETag") != "" || rec.Header().Get("Cache-Control") != "no-store" {
+		t.Errorf("headers = %v; want no ETag and no-store", rec.Header())
+	}
+}

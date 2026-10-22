@@ -681,8 +681,10 @@ func (h *HTTPHandler) serveNuspec(w http.ResponseWriter, r *http.Request, packag
 
 // catalogEntry is the registration "catalogEntry" object of one version. The
 // server keeps no catalog, so its @id is the version's registration leaf.
-func (h *HTTPHandler) catalogEntry(ctx context.Context, baseURL, packageID string, v *models.NuGetPackage) map[string]any {
+// complete is false when the dependency groups could not be determined.
+func (h *HTTPHandler) catalogEntry(ctx context.Context, baseURL, packageID string, v *models.NuGetPackage) (map[string]any, bool) {
 	leaf := registrationLeafURL(baseURL, packageID, v.Version)
+	groups, complete := h.dependencyGroups(ctx, packageID, v)
 
 	return map[string]any{
 		"@id":                      leaf,
@@ -701,8 +703,8 @@ func (h *HTTPHandler) catalogEntry(ctx context.Context, baseURL, packageID strin
 		"listed":                   true,
 		"published":                v.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		"packageContent":           packageContentURL(baseURL, packageID, v.Version),
-		"dependencyGroups":         h.dependencyGroups(ctx, packageID, v),
-	}
+		"dependencyGroups":         groups,
+	}, complete
 }
 
 // registrationMaxAge is how long shared caches may reuse a public repository's
@@ -778,13 +780,18 @@ func (h *HTTPHandler) renderRegistrationIndex(ctx context.Context, baseURL, pack
 
 	var pages []map[string]any
 
+	complete := true
+
 	for chunk := range slices.Chunk(versions, registrationPageSize) {
 		items := make([]map[string]any, len(chunk))
 		for i, v := range chunk {
+			entry, ok := h.catalogEntry(ctx, baseURL, packageID, v)
+			complete = complete && ok
+
 			items[i] = map[string]any{
 				"@id":            registrationLeafURL(baseURL, packageID, v.Version),
 				"@type":          "Package",
-				"catalogEntry":   h.catalogEntry(ctx, baseURL, packageID, v),
+				"catalogEntry":   entry,
 				"packageContent": packageContentURL(baseURL, packageID, v.Version),
 				"registration":   indexURL,
 			}
@@ -811,7 +818,8 @@ func (h *HTTPHandler) renderRegistrationIndex(ctx context.Context, baseURL, pack
 		return nil, fmt.Errorf("encode registration index: %w", err)
 	}
 
-	return &base.Rendered{Body: buf.Bytes(), ContentType: "application/json"}, nil
+	// A rendering missing dependency groups is served once, never remembered.
+	return &base.Rendered{Body: buf.Bytes(), ContentType: "application/json", Transient: !complete}, nil
 }
 
 // handleRegistrationLeaf serves GET {registration}/{id}/{version}.json.
@@ -1030,15 +1038,17 @@ func marshalDependencyGroups(groups []map[string]any) json.RawMessage {
 // version. It is stored with the row (written at publish time), so the common
 // case reads nothing but the row already in hand. A package without a stored
 // value (published before the column existed, or restored from a backup) is
-// derived from its nupkg once and the result is stored for next time.
-func (h *HTTPHandler) dependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) json.RawMessage {
+// derived from its nupkg once and the result is stored for next time. complete
+// is false when that derivation failed: the empty list returned then is a
+// degraded answer for this response only.
+func (h *HTTPHandler) dependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) (json.RawMessage, bool) {
 	if v.DependencyGroups != nil {
-		return v.DependencyGroups
+		return v.DependencyGroups, true
 	}
 
 	groups, ok := h.nuspecDependencyGroups(ctx, packageID, v)
 	if !ok {
-		return json.RawMessage("[]")
+		return json.RawMessage("[]"), false
 	}
 
 	// Best effort and never overwriting: the next request reads the column,
@@ -1047,7 +1057,7 @@ func (h *HTTPHandler) dependencyGroups(ctx context.Context, packageID string, v 
 		h.Log.Warnw("failed to store dependency groups", "id", packageID, "version", v.Version, "error", err)
 	}
 
-	return groups
+	return groups, true
 }
 
 // nuspecDependencyGroups derives the dependency groups of one package version

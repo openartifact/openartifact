@@ -10,6 +10,17 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
+// The packument's ETag and render-cache key are npm_packages.updated_at, so
+// trashing or restoring a version bumps it in the same transaction. $1 is the
+// version id; the trash cascade also binds the actor as $2, which the trash
+// variant has to reference.
+const (
+	npmTouchPackumentOnTrash = `UPDATE npm_packages SET updated_at = now()
+		WHERE id = (SELECT package_id FROM npm_versions WHERE id = $1::uuid) AND $2::text IS NOT NULL`
+	npmTouchPackumentOnRestore = `UPDATE npm_packages SET updated_at = now()
+		WHERE id = (SELECT package_id FROM npm_versions WHERE id = $1::uuid)`
+)
+
 // trashSpec describes one soft-deletable row kind: the table that holds it and
 // the SQL fragments the generic trash operations (soft delete, listing,
 // restore, purge) need. Every fragment is a compile-time constant of this file;
@@ -88,6 +99,8 @@ var trashSpecs = []*trashSpec{
 		name:     "(SELECT np.full_name FROM npm_packages np WHERE np.id = t.package_id)",
 		version:  "t.version",
 		blobCols: []string{"t.blob_id"},
+		// A trashed version leaves the packument: move its validator.
+		cascade: []string{npmTouchPackumentOnTrash},
 	},
 	{
 		kind: models.TrashKindPyPI, table: "pypi_packages", format: "pypi", quota: true,

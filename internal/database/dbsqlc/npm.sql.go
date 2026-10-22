@@ -48,6 +48,9 @@ func (q *Queries) CreateNPMPackage(ctx context.Context, arg CreateNPMPackagePara
 }
 
 const createNPMVersion = `-- name: CreateNPMVersion :one
+WITH touch AS (
+    UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
+)
 INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename)
 VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
 RETURNING id, created_at
@@ -68,6 +71,10 @@ type CreateNPMVersionRow struct {
 	CreatedAt time.Time `db:"created_at" json:"created_at"`
 }
 
+// Every statement that changes what the packument shows also bumps
+// npm_packages.updated_at (the packument's ETag and render-cache key) in the
+// same statement, so no writer has to remember to MarkPackumentStale for the
+// validator to move.
 func (q *Queries) CreateNPMVersion(ctx context.Context, arg CreateNPMVersionParams) (CreateNPMVersionRow, error) {
 	row := q.db.QueryRow(ctx, createNPMVersion,
 		arg.PackageID,
@@ -84,7 +91,11 @@ func (q *Queries) CreateNPMVersion(ctx context.Context, arg CreateNPMVersionPara
 }
 
 const deleteNPMDistTag = `-- name: DeleteNPMDistTag :exec
-DELETE FROM npm_dist_tags WHERE package_id = $1 AND tag = $2
+WITH removed AS (
+    DELETE FROM npm_dist_tags WHERE package_id = $1 AND tag = $2
+    RETURNING package_id
+)
+UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM removed)
 `
 
 type DeleteNPMDistTagParams struct {
@@ -111,7 +122,11 @@ func (q *Queries) DeleteNPMPackage(ctx context.Context, id string) error {
 }
 
 const deleteNPMVersion = `-- name: DeleteNPMVersion :exec
-DELETE FROM npm_versions WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+WITH removed AS (
+    DELETE FROM npm_versions WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+    RETURNING package_id
+)
+UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM removed)
 `
 
 type DeleteNPMVersionParams struct {
@@ -436,7 +451,12 @@ func (q *Queries) UpdateNPMPackageLatestVersion(ctx context.Context, arg UpdateN
 }
 
 const updateNPMVersionManifest = `-- name: UpdateNPMVersionManifest :exec
-UPDATE npm_versions SET manifest_json = $3::jsonb WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+WITH changed AS (
+    UPDATE npm_versions SET manifest_json = $3::jsonb
+    WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL
+    RETURNING package_id
+)
+UPDATE npm_packages SET updated_at = NOW() WHERE id IN (SELECT package_id FROM changed)
 `
 
 type UpdateNPMVersionManifestParams struct {
@@ -451,6 +471,9 @@ func (q *Queries) UpdateNPMVersionManifest(ctx context.Context, arg UpdateNPMVer
 }
 
 const upsertNPMDistTag = `-- name: UpsertNPMDistTag :one
+WITH touch AS (
+    UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
+)
 INSERT INTO npm_dist_tags (package_id, tag, version)
 VALUES ($1, $2, $3)
 ON CONFLICT (package_id, tag) DO UPDATE SET version = EXCLUDED.version, updated_at = NOW()
