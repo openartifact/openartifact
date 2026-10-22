@@ -56,7 +56,7 @@ func newProxyGroupDB() *proxyGroupMockDB {
 func TestCreateProxyAndGroupRejectsUnsupportedFormats(t *testing.T) {
 	cases := []struct{ name, body, wantInMsg string }{
 		{"proxy helm", `{"name":"p","format":"helm","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
-		{"proxy docker", `{"name":"p","format":"docker","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
+		{"proxy ivy", `{"name":"p","format":"ivy","repo_type":"proxy","upstream_url":"https://93.184.216.34/"}`, "not supported for format"},
 		{"group helm", `{"name":"g","format":"helm","repo_type":"group"}`, "not supported for format"},
 		{"group deb", `{"name":"g","format":"deb","repo_type":"group"}`, "cannot be merged"},
 		{"group rpm", `{"name":"g","format":"rpm","repo_type":"group"}`, "cannot be merged"},
@@ -98,7 +98,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker"} {
 		db := newProxyGroupDB()
 		rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy","upstream_url":"https://93.184.216.34/repo/","upstream_username":"u","upstream_password":"p"}`)
 
@@ -130,6 +130,30 @@ func TestCreateProxyDefaultUpstream(t *testing.T) {
 	db = newProxyGroupDB()
 	if rw := createRepo(t, db, `{"name":"p","format":"maven","repo_type":"proxy"}`); rw.Code != http.StatusBadRequest || db.created != nil {
 		t.Errorf("maven proxy without upstream_url: status %d body %s", rw.Code, rw.Body.String())
+	}
+}
+
+func TestCreateDockerProxyDefaultsToDockerHub(t *testing.T) {
+	db := newProxyGroupDB()
+
+	rw := createRepo(t, db, `{"name":"hub","format":"docker","repo_type":"proxy"}`)
+	if rw.Code != http.StatusCreated || db.created == nil || db.created.UpstreamURL != "https://registry-1.docker.io" {
+		t.Fatalf("status %d body %s", rw.Code, rw.Body.String())
+	}
+
+	// Other formats still require an explicit upstream.
+	db = newProxyGroupDB()
+	if rw := createRepo(t, db, `{"name":"m","format":"maven","repo_type":"proxy"}`); rw.Code != http.StatusBadRequest || db.created != nil {
+		t.Errorf("maven proxy without upstream_url: status %d", rw.Code)
+	}
+}
+
+func TestCreateDockerGroupIsAccepted(t *testing.T) {
+	db := newProxyGroupDB()
+
+	rw := createRepo(t, db, `{"name":"g","format":"docker","repo_type":"group"}`)
+	if rw.Code != http.StatusCreated || db.created == nil || db.created.RepoType != "group" {
+		t.Errorf("status %d body %s", rw.Code, rw.Body.String())
 	}
 }
 

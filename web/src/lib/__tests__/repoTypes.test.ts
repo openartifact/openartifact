@@ -4,17 +4,24 @@
 
 import { describe, expect, it } from 'bun:test'
 import { ALL_FORMATS } from '../formats'
-import { allowedFormats, coerceFormat, formatTtl, isFormatAllowed } from '../repoTypes'
+import {
+  allowedFormats,
+  coerceFormat,
+  formatTtl,
+  isFormatAllowed,
+  upstreamUrlPlaceholder,
+  upstreamUrlRequired,
+} from '../repoTypes'
 
 describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to deb, maven, npm, pypi, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['npm', 'pypi', 'maven', 'deb', 'rpm', 'raw'])
+  it('restricts proxy to deb, docker, maven, npm, pypi, raw, rpm in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'deb', 'rpm', 'raw'])
   })
-  it('restricts group to maven, npm, pypi and raw', () => {
-    expect(allowedFormats('group')).toEqual(['npm', 'pypi', 'maven', 'raw'])
+  it('restricts group to docker, maven, npm, pypi and raw', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'raw'])
     expect(isFormatAllowed('group', 'deb')).toBe(false)
     expect(isFormatAllowed('group', 'rpm')).toBe(false)
   })
@@ -30,8 +37,22 @@ describe('coerceFormat', () => {
     expect(coerceFormat('hosted', 'docker')).toBe('docker')
   })
   it('falls back to the first allowed format when unsupported', () => {
-    expect(coerceFormat('proxy', 'docker')).toBe(allowedFormats('proxy')[0])
+    expect(coerceFormat('proxy', 'helm')).toBe(allowedFormats('proxy')[0])
     expect(coerceFormat('group', 'deb')).toBe(allowedFormats('group')[0])
+  })
+  it('keeps docker for proxy and group', () => {
+    expect(coerceFormat('proxy', 'docker')).toBe('docker')
+    expect(coerceFormat('group', 'docker')).toBe('docker')
+  })
+})
+
+describe('upstream URL', () => {
+  it('is optional only for docker and pypi (well-known defaults)', () => {
+    expect(upstreamUrlRequired('docker')).toBe(false)
+    expect(upstreamUrlRequired('pypi')).toBe(false)
+    expect(upstreamUrlRequired('maven')).toBe(true)
+    expect(upstreamUrlPlaceholder('docker')).toBe('https://registry-1.docker.io')
+    expect(upstreamUrlPlaceholder('pypi')).toBe('https://pypi.org/simple')
   })
 })
 

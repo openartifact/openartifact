@@ -64,7 +64,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       id="new-repo-upstream"
                       v-model="upstreamUrl"
                       type="url"
-                      placeholder="https://registry.example.com"
+                      :placeholder="upstreamUrlPlaceholder(format)"
                       class="mt-1.5 w-full h-10 px-3 rounded-md bg-surface-hover/40 border border-border-strong focus:bg-surface focus:border-primary/50 focus:ring-2 focus:ring-primary/20 text-sm font-mono transition-colors"
                     />
                   </div>
@@ -124,7 +124,7 @@ import type { Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
 import { CheckIcon } from '@heroicons/vue/24/outline'
 import type { FormatId } from '../lib/formats'
-import { allowedFormats, coerceFormat } from '../lib/repoTypes'
+import { allowedFormats, coerceFormat, upstreamUrlPlaceholder, upstreamUrlRequired } from '../lib/repoTypes'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import FormatBadge from './FormatBadge.vue'
@@ -161,7 +161,7 @@ const types = [
 const nameValid = computed(() => /^[a-zA-Z0-9_-]{1,100}$/.test(name.value.trim()))
 const canSubmit = computed(() => {
   if (!nameValid.value) return false
-  if (type.value === 'proxy') return upstreamUrl.value.trim() !== ''
+  if (type.value === 'proxy') return !upstreamUrlRequired(format.value) || upstreamUrl.value.trim() !== ''
   return true
 })
 
@@ -215,7 +215,7 @@ async function handleCreate(): Promise<void> {
       ...(org.value ? { org: org.value } : {}),
       ...(type.value === 'proxy'
         ? {
-            upstream_url: upstreamUrl.value.trim(),
+            upstream_url: upstreamUrl.value.trim() || undefined,
             upstream_username: upstreamUsername.value || undefined,
             upstream_password: upstreamPassword.value || undefined,
           }

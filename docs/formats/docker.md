@@ -12,7 +12,7 @@ OCI Distribution registry at the host root (`/v2/`): push and pull images and OC
 |---|---|
 | Format id | `docker` |
 | Registry | `HOST/v2/` (image names `HOSTPORT/REPO[/image]:tag`) |
-| Repository types | hosted only ([details](../repositories/hosted-proxy-group.md)) |
+| Repository types | hosted, proxy, group ([details](../repositories/hosted-proxy-group.md)) |
 
 `HOSTPORT` below is the host and port without scheme (`localhost:8080`).
 
@@ -67,6 +67,24 @@ There is no `/v2/_catalog`. Errors use the registry JSON shape `{"errors":[{"cod
 - **Immutable releases:** in a repository with `immutable_releases` every tag is a release. Moving a tag to a different digest, deleting a tag and deleting a manifest answer `409` unless an admin sends `?force=true`; re-pushing the same digest is not a change. See [immutable releases](../operations/trash.md#immutable-releases).
 - **Quarantine:** manifest and blob reads of quarantined content are refused.
 - **Quota:** storage quotas are not enforced for Docker pushes, and Docker usage is not counted, so garbage collection does not touch the usage counters either ([quotas](../repositories/cleanup-and-quotas.md#storage-quotas)).
+
+## Proxy and group repositories
+
+A docker **proxy** pulls through from an upstream registry (default Docker Hub); a docker **group** serves the first member that has an image. Both are read-only and live under `/v2/` only.
+
+```sh
+curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" -H 'Content-Type: application/json' \
+  -d '{"name":"dockerhub","format":"docker","repo_type":"proxy"}'
+docker pull HOSTPORT/dockerhub/library/alpine:3.20
+docker pull HOSTPORT/dockerhub/alpine:3.20            # same image on Docker Hub
+```
+
+- **Upstream auth:** the proxy answers the upstream's `WWW-Authenticate` challenge itself: Bearer (anonymous token, or Basic `upstream_username`/`upstream_password` sent to the token service with the challenged `scope`) and Basic. Tokens are cached in memory per image until shortly before they expire. The token realm passes the same SSRF validation as the upstream URL.
+- **Verification:** every manifest and blob is spooled to disk and its sha256/sha512 checked against the requested digest and the upstream's `Docker-Content-Digest` before it is cached or served. A mismatch is `502 UNAVAILABLE` and nothing is cached.
+- **Caching:** manifests and blobs addressed by digest are immutable and never expire. A tag is served from cache for `cache_ttl_seconds`; afterwards it is revalidated with a `HEAD` and refetched only when the digest changed. When the upstream is unreachable, rate-limited (429) or answers 5xx, the expired tag is served stale for up to `max_stale_seconds` (`Warning: 110`), then `502`. An upstream 404 is cached for `negative_cache_ttl_seconds`; an upstream 401/403 after authentication is reported as `404` (Docker Hub answers 401 for missing repositories) and not cached. The client's `Accept` header is ignored: the proxy requests OCI and Docker v2 manifest and list types and serves what the upstream returns.
+- **Tags and referrers:** `tags/list` and `referrers` are passed through live, not cached. A group merges the tags of its readable members.
+- **Writes:** uploads, manifest push and deletes on a proxy or group are `405 UNSUPPORTED` (`Allow: GET, HEAD`).
+- **Storage:** cached content is a normal proxy cache (see [proxy repositories](../repositories/hosted-proxy-group.md#proxy-repositories)): it is listed in the package list, deduplicated by sha256 in the blob store and removed with the repository. Blobs are fully downloaded and verified before the first byte is sent, so a large first pull starts late. Digest-addressed entries have no eviction other than an admin purge. There is no `_catalog`.
 
 ## Garbage collection
 

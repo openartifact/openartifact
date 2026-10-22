@@ -29,7 +29,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Raw | `raw` | `HOST/repos/raw/REPO/<path>` | hosted, proxy, group | `PUT <path>` (`curl -T`) | [raw](raw.md) |
 | npm | `npm` | `HOST/repos/REPO/` | hosted, proxy, group | `npm publish` (`PUT /<pkg>`) | [npm](npm.md) |
 | PyPI | `pypi` | `HOST/repos/REPO/simple/` | hosted, proxy, group | `twine upload` to `HOST/repos/REPO/legacy/` | [pypi](pypi.md) |
-| Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted | `docker push` | [docker](docker.md) |
+| Docker / OCI | `docker` | `HOST/v2/` (image `HOST/REPO[/image]`) | hosted, proxy, group | `docker push` | [docker](docker.md) |
 | Helm | `helm` | `HOST/repos/REPO/` (`index.yaml`, `charts/`) | hosted | `POST /charts` (raw chart `.tgz`) | [helm](helm.md) |
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
 | RPM (YUM/DNF) | `rpm` | `HOST/repos/REPO/` (`repodata/repomd.xml`, `Packages/`) | hosted, proxy | `POST /api/v1/repositories/REPO/packages` (multipart) | [rpm](rpm.md) |
@@ -40,7 +40,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
 | Conan (v2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`) | hosted | `conan upload` | [conan](conan.md) |
 
-Proxy repositories exist for Maven, Debian, RPM and raw; group repositories for Maven and raw. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
+Proxy repositories exist for Maven, Debian, RPM, Docker and raw; group repositories for Maven, Docker and raw. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
 
 ## Authentication
 

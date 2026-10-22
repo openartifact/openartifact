@@ -18,7 +18,8 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 | pypi | yes | yes | yes |
 | deb | yes | yes | no |
 | rpm | yes | yes | no |
-| docker, helm, nuget, go, cargo, rubygems, conda, conan, ivy, sbt | yes | no | no |
+| docker | yes | yes | yes |
+| helm, nuget, go, cargo, rubygems, conda, conan, ivy, sbt | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Deb and RPM groups are rejected because their `Packages`/`Release`/`repodata` metadata is generated per repository and cannot be merged across members. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -51,8 +52,8 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 |---|---|---|
 | `name`, `format`, `description`, `public` | all | `public` grants anonymous read ([see below](#public-repositories-and-rbac)). |
 | `repo_type` | all | `hosted` (default), `proxy`, `group`. Any other value: `400`. |
-| `upstream_url` | proxy (required; pypi defaults to `https://pypi.org/simple`) | Plain `http(s)` base URL. |
-| `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream. Stored encrypted, never returned. |
+| `upstream_url` | proxy (required, except docker and pypi) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`) and pypi (defaults to `https://pypi.org/simple`). |
+| `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream (for docker: sent to the registry's token service). Stored encrypted, never returned. |
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
 | `max_stale_seconds` | proxy | Default 604800 (7 d), max 31536000 (365 d), `0` disables serve-stale. |
@@ -126,6 +127,10 @@ An npm proxy (`upstream_url` such as `https://registry.npmjs.org`) is a registry
 
 `upstream_url` must be a plain `http(s)` base URL (no credentials, query or fragment); credentials go in `upstream_username`/`upstream_password`. It passes the same SSRF validation as webhooks, at configuration time and on every fetch and redirect: loopback, private and link-local addresses are refused. Set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` only for internal upstreams; the cloud metadata range (169.254.x) stays blocked. See [`../../.env.example`](../../.env.example).
 
+### Docker / OCI proxies
+
+A docker proxy is a pull-through cache of an OCI registry and is served under `/v2/` like hosted docker repositories (it has no `/repos/{name}/...` file URLs). `docker pull HOSTPORT/REPO/library/alpine:3.20` fetches `library/alpine:3.20` from the upstream. On Docker Hub (`registry-1.docker.io`, the default) a single-segment image such as `HOSTPORT/REPO/alpine` is mapped to `library/alpine`. Only the scheme and host of `upstream_url` are used. See [Docker / OCI](../formats/docker.md#proxy-and-group-repositories) for client setup and behavior.
+
 ## Group repositories
 
 A group is an ordered list of hosted and proxy members of the same format. Groups cannot be nested, cannot contain themselves or duplicates, and hold at most 200 members; violations are `400 validation_failed`.
@@ -134,7 +139,8 @@ A group is an ordered list of hosted and proxy members of the same format. Group
 - Each member is authorized for the caller as if requested directly (action `read`). A member the caller cannot read behaves like one without the file, so a public group never exposes a private member's files.
 - Maven `maven-metadata.xml` (and its `.md5/.sha1/.sha256/.sha512` checksums) is merged across all readable members: versions are united and ordered, `latest`/`release`/`lastUpdated` recomputed. With one contributing member its document is served unchanged; an erroring member is ignored while another contributes.
 - A pypi group merges `GET /simple/` (union of project names) and `GET /simple/<project>/` across readable hosted and pypi proxy members: the file list is the union by filename, and when several members list the same filename the earliest member wins. Links are rewritten to `/repos/GROUP/files/<project>/<filename>`, and a download is resolved first-hit in member order, so it comes from the member whose entry was listed. A member failing while another contributes is ignored, but the partial page is served with `Cache-Control: no-store`; with no contributor the group answers `404`, or `502` if a member failed. The group answers HTML or PEP 691 JSON by `Accept`, like a proxy.
-- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI.
+- Docker groups resolve manifests and blobs from the first readable member that has them and merge the `tags/list` of all readable members (sorted, de-duplicated, paginated with `n`/`last`).
+- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `HOSTPORT/GROUP/<image>:<tag>` for docker.
 
 ## Public repositories and RBAC
 

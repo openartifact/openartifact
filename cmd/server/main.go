@@ -765,7 +765,7 @@ func run(args []string) error {
 	// Proxy and group repositories are served by the dispatcher in front of the
 	// per-format routes; hosted repositories fall through to them. Groups read
 	// their hosted members through in-memory routers of the same handlers.
-	mavenHosted, rawHosted, npmHosted := chi.NewRouter(), chi.NewRouter(), chi.NewRouter()
+	mavenHosted, rawHosted, npmHosted, dockerHosted := chi.NewRouter(), chi.NewRouter(), chi.NewRouter(), chi.NewRouter()
 	mavenHTTP.RegisterRepoRoutes(mavenHosted)
 	rawHTTP.RegisterRepoRoutes(rawHosted)
 	npmHTTP.RegisterRepoRoutes(npmHosted)
@@ -773,11 +773,17 @@ func run(args []string) error {
 	pypiHosted := chi.NewRouter()
 	pypiHTTP.RegisterRepoRoutes(pypiHosted)
 
+	dockerHTTP := formatdocker.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
+	dockerHTTP.SetUploadDir(dockerUploadDir(cfg))
+	dockerHTTP.SetAuthorizer(evaluator)
+	dockerHTTP.RegisterRoutes(dockerHosted)
+
 	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore), evaluator, map[string]http.Handler{
-		"maven": mavenHosted,
-		"pypi":  pypiHosted,
-		"raw":   rawHosted,
-		"npm":   npmHosted,
+		"maven":  mavenHosted,
+		"pypi":   pypiHosted,
+		"raw":    rawHosted,
+		"npm":    npmHosted,
+		"docker": dockerHosted,
 	}).WithBaseURL(cfg.BaseURL)
 
 	authedAPI.Route("/repos/{name}", func(r chi.Router) {
@@ -821,10 +827,12 @@ func run(args []string) error {
 	authedAPI.Route("/repos/sbt/{name}", func(r chi.Router) { sbtHTTP.RegisterRepoRoutes(r) })
 	authedAPI.Route("/repos/ivy/{name}", func(r chi.Router) { ivyHTTP.RegisterRepoRoutes(r) })
 	log.Infow("Maven/SBT/Ivy handlers registered (isolated prefixes)")
-	dockerHTTP := formatdocker.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
-	dockerHTTP.SetUploadDir(dockerUploadDir(cfg))
-	dockerHTTP.SetAuthorizer(evaluator)
-	dockerHTTP.RegisterRoutes(authedAPI)
+	// The registry (/v2/...) sits behind the dispatcher too: docker proxy and
+	// group repositories are served there, hosted ones by dockerHTTP.
+	authedAPI.Group(func(r chi.Router) {
+		r.Use(repoDispatch.OCIMiddleware)
+		dockerHTTP.RegisterRoutes(r)
+	})
 
 	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(blobStore).WithPublisher(webhookDispatcher)
 	repoHandler.RegisterAuthed(authedAPI)

@@ -169,7 +169,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   id="repo-upstream"
                   v-model="form.upstreamUrl"
                   type="url"
-                  placeholder="https://registry.example.com"
+                  :placeholder="upstreamUrlPlaceholder(form.format)"
                   class="w-full px-3 py-2 border border-border-strong rounded-md text-sm font-mono bg-bg text-foreground focus:ring-2 focus:ring-primary"
                 />
               </div>
@@ -332,7 +332,7 @@ import { SYSTEM_ORG_NAME } from '../api/orgs'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import type { FormatId } from '../lib/formats'
-import { allowedFormats, coerceFormat } from '../lib/repoTypes'
+import { allowedFormats, coerceFormat, upstreamUrlPlaceholder, upstreamUrlRequired } from '../lib/repoTypes'
 
 const route = useRoute()
 const router = useRouter()
@@ -390,15 +390,16 @@ const candidateMembers = computed(() =>
   existing.value.filter((r) => r.format === form.value.format && r.repo_type !== 'group' && r.name !== form.value.name),
 )
 const retentionInvalid = computed(() => parseRetentionInput(form.value.trashRetention) === undefined)
+const upstreamOk = computed(
+  () => form.value.type !== 'proxy' || !upstreamUrlRequired(form.value.format) || form.value.upstreamUrl.trim() !== '',
+)
 const stepValid = computed(() => {
   if (step.value === 3 && retentionInvalid.value) return false
   if (step.value === 0) return nameValid.value
-  if (step.value === 2 && form.value.type === 'proxy') return form.value.upstreamUrl.trim() !== ''
+  if (step.value === 2 && form.value.type === 'proxy') return upstreamOk.value
   return true
 })
-const allValid = computed(
-  () => nameValid.value && !retentionInvalid.value && (form.value.type !== 'proxy' || form.value.upstreamUrl.trim() !== ''),
-)
+const allValid = computed(() => nameValid.value && !retentionInvalid.value && upstreamOk.value)
 
 const steps = [
   { label: t('wizard.step.identity'), icon: TagIcon },
@@ -487,7 +488,7 @@ async function submit(): Promise<void> {
         ...(form.value.org ? { org: form.value.org } : {}),
         ...(form.value.type === 'proxy'
           ? {
-              upstream_url: form.value.upstreamUrl.trim(),
+              upstream_url: form.value.upstreamUrl.trim() || undefined,
               upstream_username: form.value.upstreamUsername || undefined,
               upstream_password: form.value.upstreamPassword || undefined,
             }

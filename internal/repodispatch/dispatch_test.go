@@ -116,6 +116,7 @@ func newEnv(t *testing.T, authz Authorizer) *env {
 			"mirror":  mirror,
 			"all":     repo("4", "all", "raw", "group"),
 			"dockerx": repo("5", "dockerx", "docker", "proxy"),
+			"ivyx":    repo("6", "ivyx", "ivy", "proxy"),
 		},
 		links: map[string][]*models.RepositoryGroupMember{
 			"4": {{MemberRepoID: "2", Priority: 0}, {MemberRepoID: "1", Priority: 1}, {MemberRepoID: "3", Priority: 2}},
@@ -219,7 +220,7 @@ func TestWritesToProxyAndGroupAreRefusedBeforeFormatHandler(t *testing.T) {
 func TestUnsupportedProxyFormatIs501(t *testing.T) {
 	e := newEnv(t, denyAuthorizer{})
 
-	if w := e.do(http.MethodGet, "/repos/raw/dockerx/f"); w.Code != http.StatusNotImplemented {
+	if w := e.do(http.MethodGet, "/repos/raw/ivyx/f"); w.Code != http.StatusNotImplemented {
 		t.Errorf("status = %d, want 501", w.Code)
 	}
 }

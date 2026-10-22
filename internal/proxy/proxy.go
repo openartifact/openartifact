@@ -89,6 +89,7 @@ type Service struct {
 	blobStore storage.BlobStore
 	client    *http.Client
 	flights   flightGroup
+	tokens    tokenCache // docker upstream bearer tokens
 
 	// baseURL is the server URL rewritten metadata points at (npm tarballs).
 	baseURL string
@@ -653,6 +654,9 @@ func Immutable(format, key string) bool {
 	case "npm":
 		// Tarballs (<pkg>/-/<file>), not packuments.
 		return strings.HasSuffix(name, ".tgz") && strings.Contains(key, "/-/")
+	case "docker":
+		// Blobs and manifests addressed by digest; tags move.
+		return digestRE.MatchString(name)
 	}
 
 	return false

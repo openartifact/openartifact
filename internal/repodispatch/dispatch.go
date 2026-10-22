@@ -11,6 +11,7 @@ package repodispatch
 import (
 	"context"
 	"net/http"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -18,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -85,6 +87,13 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 			return
 		}
 
+		// Docker proxies and groups speak the registry protocol under /v2/
+		// (OCIMiddleware); they have no /repos/{name}/... files.
+		if repo.Format == "docker" {
+			http.NotFound(w, r)
+			return
+		}
+
 		_, tail := middleware.RepoAndPath(r.URL.Path)
 
 		switch repo.RepoType {
@@ -111,6 +120,75 @@ func (d *Dispatcher) Middleware(next http.Handler) http.Handler {
 	})
 }
 
+// OCIMiddleware is Middleware for the registry routes (/v2/<name>/...): a
+// docker proxy or group repository addressed by the first segment of the
+// distribution name is served here; hosted repositories (and anything that is
+// not a repository path, such as GET /v2/) fall through to the registry.
+func (d *Dispatcher) OCIMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		rest, ok := strings.CutPrefix(r.URL.Path, "/v2/")
+		if !ok || rest == "" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		req := ocipath.Parse(rest)
+		name, _ := ocipath.SplitName(req.Name)
+
+		repo, err := d.db.GetRepositoryByName(r.Context(), name)
+		if err != nil {
+			d.log.Errorw("repository lookup failed", "repo", name, "error", err)
+			ocipath.WriteError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+			return
+		}
+
+		if repo == nil || repo.Format != "docker" {
+			next.ServeHTTP(w, r)
+			return
+		}
+
+		switch repo.RepoType {
+		case repotype.Proxy:
+			d.proxy.ServeOCI(w, r, repo, req)
+		case repotype.Group:
+			d.group.ServeOCI(w, r, repo, req, ocipath.Resource(rest, req.Name), group.Backend{
+				Authorize:   d.authorize,
+				ServeMember: d.serveMember,
+			})
+		default:
+			next.ServeHTTP(w, r)
+		}
+	})
+}
+
+// serveDockerMember serves relPath ("<image>/manifests/<ref>", …) of a docker
+// group member: a proxy member through the pull-through service, a hosted one
+// through the registry handler addressed as /v2/<member>/<relPath>.
+func (d *Dispatcher) serveDockerMember(w http.ResponseWriter, r *http.Request, member *models.Repository, relPath string) {
+	if member.RepoType == repotype.Proxy {
+		d.proxy.ServeOCI(w, r, member, ocipath.Parse(member.Name+"/"+relPath))
+		return
+	}
+
+	h, ok := d.hosted["docker"]
+	if !ok {
+		ocipath.WriteError(w, http.StatusNotFound, "NAME_UNKNOWN", "repository name not known to registry")
+		return
+	}
+
+	p := "/v2/" + member.Name + "/" + relPath
+
+	rctx := chi.NewRouteContext()
+	rctx.RoutePath = p
+
+	// Clone: the URL is rewritten, and the group's own request must keep its.
+	mr := r.Clone(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
+	mr.URL.Path, mr.URL.RawPath = p, ""
+
+	h.ServeHTTP(w, mr)
+}
+
 // authorize reports whether the caller may read relPath of member. Without an
 // authenticated-or-anonymous principal in the context it fails closed.
 func (d *Dispatcher) authorize(r *http.Request, member *models.Repository, relPath string) bool {
@@ -130,6 +208,11 @@ func (d *Dispatcher) authorize(r *http.Request, member *models.Repository, relPa
 
 // serveMember serves relPath from one group member.
 func (d *Dispatcher) serveMember(w http.ResponseWriter, r *http.Request, member *models.Repository, relPath string) {
+	if member.Format == "docker" {
+		d.serveDockerMember(w, r, member, relPath)
+		return
+	}
+
 	if member.RepoType == repotype.Proxy {
 		d.proxy.Serve(w, r, member, relPath)
 		return
