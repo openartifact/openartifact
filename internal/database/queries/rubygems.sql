@@ -34,3 +34,17 @@ LIMIT 1000;
 
 -- name: YankRubyGem :exec
 UPDATE rubygems_gems SET yanked = $1, updated_at = NOW() WHERE repository_id = $2 AND name = $3 AND version = $4 AND ($5::text = '' OR platform = $5) AND deleted_at IS NULL;
+
+-- name: RubyGemsSpecsStamp :one
+-- Fingerprint of the listed (not yanked) gems of a repository: every specs
+-- index is derived from exactly this set, and a yank removes a row from it.
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(rg.id::text, 0)), 0)::text)::text AS stamp
+FROM rubygems_gems rg
+WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked;
+
+-- name: ListRubyGemSpecs :many
+-- The three columns the specs indexes are built from, for listed gems only.
+SELECT rg.name, rg.version, rg.platform
+FROM rubygems_gems rg
+WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked
+ORDER BY rg.name ASC, rg.version DESC;

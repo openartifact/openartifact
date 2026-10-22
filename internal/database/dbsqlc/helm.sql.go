@@ -134,6 +134,24 @@ func (q *Queries) GetHelmChart(ctx context.Context, arg GetHelmChartParams) (Get
 	return i, err
 }
 
+const helmIndexStamp = `-- name: HelmIndexStamp :one
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(hc.id::text, 0)), 0)::text)::text AS stamp
+FROM helm_charts hc
+WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL
+`
+
+// Fingerprint of the live charts of a repository: their count and an
+// order-independent hash of their IDs. Chart rows are immutable (a republish
+// is a new row) and trash/restore changes membership, so the stamp changes
+// exactly when index.yaml would. It reads one narrow index range instead of
+// every chart joined to its blob.
+func (q *Queries) HelmIndexStamp(ctx context.Context, repositoryID string) (string, error) {
+	row := q.db.QueryRow(ctx, helmIndexStamp, repositoryID)
+	var stamp string
+	err := row.Scan(&stamp)
+	return stamp, err
+}
+
 const listHelmChartVersions = `-- name: ListHelmChartVersions :many
 SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
 FROM helm_charts hc

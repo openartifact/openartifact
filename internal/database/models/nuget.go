@@ -4,7 +4,10 @@
 
 package models
 
-import "time"
+import (
+	"encoding/json"
+	"time"
+)
 
 type NuGetPackage struct {
 	ID                       string
@@ -23,11 +26,15 @@ type NuGetPackage struct {
 	RequireLicenseAcceptance bool
 	IsPrerelease             bool
 	MinClientVersion         string
-	BlobKey                  string
-	PackageHash              string
-	PackageHashAlgorithm     string
-	PackageSize              int64
-	DownloadCount            int
-	CreatedAt                time.Time
-	UpdatedAt                time.Time
+	// DependencyGroups is the registration "dependencyGroups" JSON of the
+	// package. nil means not recorded yet (derive it from the nuspec); an empty
+	// array means the package has no dependencies.
+	DependencyGroups     json.RawMessage
+	BlobKey              string
+	PackageHash          string
+	PackageHashAlgorithm string
+	PackageSize          int64
+	DownloadCount        int
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }

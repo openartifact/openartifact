@@ -11,6 +11,8 @@ import (
 	"context"
 	"io"
 	"net/http"
+	"strconv"
+	"sync/atomic"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -31,7 +33,13 @@ type Handler struct {
 
 	// Publisher receives artifact.* events; nil disables event publishing.
 	Publisher webhook.Publisher
+
+	// renderNS keeps this handler's rendered-document keys apart from every
+	// other handler's in the shared render cache.
+	renderNS string
 }
+
+var handlerSeq atomic.Uint64 //nolint:gochecknoglobals // numbers handlers for their render cache namespace
 
 // New creates a new base handler with the common dependencies.
 func New(log *logger.Logger, db database.Database, blobStore storage.BlobStore, baseURL string) *Handler {
@@ -40,7 +48,15 @@ func New(log *logger.Logger, db database.Database, blobStore storage.BlobStore, 
 		DB:        db,
 		BlobStore: blobStore,
 		BaseURL:   baseURL,
+		renderNS:  strconv.FormatUint(handlerSeq.Add(1), 10) + "|",
 	}
+}
+
+// Rendered returns the metadata document cached under key, rendering it with
+// render on a miss (concurrent misses share one render). key must embed the
+// validator of the data the document is derived from; see RenderCache.
+func (h *Handler) Rendered(ctx context.Context, key string, render func(ctx context.Context) (*Rendered, error)) (*Rendered, error) {
+	return sharedRender.Do(ctx, h.renderNS+key, render)
 }
 
 // SetPublisher sets the webhook publisher used by Emit. It must be called

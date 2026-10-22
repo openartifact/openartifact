@@ -11,6 +11,26 @@ import (
 	"time"
 )
 
+const condaRepodataStamp = `-- name: CondaRepodataStamp :one
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(cp.id::text, 0)), 0)::text)::text AS stamp
+FROM conda_packages cp
+WHERE cp.repository_id = $1 AND cp.platform = $2 AND cp.deleted_at IS NULL
+`
+
+type CondaRepodataStampParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Platform     string `db:"platform" json:"platform"`
+}
+
+// Fingerprint of the live packages of one platform (see HelmIndexStamp):
+// package rows are immutable, so count plus an ID hash tracks repodata.json.
+func (q *Queries) CondaRepodataStamp(ctx context.Context, arg CondaRepodataStampParams) (string, error) {
+	row := q.db.QueryRow(ctx, condaRepodataStamp, arg.RepositoryID, arg.Platform)
+	var stamp string
+	err := row.Scan(&stamp)
+	return stamp, err
+}
+
 const createCondaPackage = `-- name: CreateCondaPackage :one
 INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)

@@ -370,6 +370,10 @@ func (m *BaseMockDB) GetNuGetPackage(ctx context.Context, repoID, packageID, ver
 func (m *BaseMockDB) DeleteNuGetPackage(ctx context.Context, repoID, packageID, version string) error {
 	return errNotImpl("DeleteNuGetPackage")
 }
+
+func (m *BaseMockDB) SetNuGetDependencyGroups(ctx context.Context, repoID, packageID, version string, groups []byte) error {
+	return errNotImpl("SetNuGetDependencyGroups")
+}
 func (m *BaseMockDB) ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error) {
 	return nil, errNotImpl("ListNuGetPackages")
 }
@@ -1146,4 +1150,28 @@ func (m *BaseMockDB) SetProjectQuota(ctx context.Context, projectID string, maxS
 }
 func (m *BaseMockDB) GetProjectUsage(ctx context.Context, projectID string) (*models.ProjectUsage, error) {
 	return nil, errNotImpl("GetProjectUsage")
+}
+
+func (m *BaseMockDB) HelmIndexStamp(ctx context.Context, repoID string) (string, error) {
+	return "", errNotImpl("HelmIndexStamp")
+}
+
+func (m *BaseMockDB) CargoIndexStamp(ctx context.Context, repoID, name string) (string, error) {
+	return "", errNotImpl("CargoIndexStamp")
+}
+
+func (m *BaseMockDB) ListCargoIndexVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
+	return nil, errNotImpl("ListCargoIndexVersions")
+}
+
+func (m *BaseMockDB) RubyGemsSpecsStamp(ctx context.Context, repoID string) (string, error) {
+	return "", errNotImpl("RubyGemsSpecsStamp")
+}
+
+func (m *BaseMockDB) ListRubyGemSpecs(ctx context.Context, repoID string) ([]*models.RubyGem, error) {
+	return nil, errNotImpl("ListRubyGemSpecs")
+}
+
+func (m *BaseMockDB) CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error) {
+	return "", errNotImpl("CondaRepodataStamp")
 }

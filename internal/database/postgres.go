@@ -2535,6 +2535,7 @@ func (p *PostgresDB) CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPa
 		IsPrerelease:             pkg.IsPrerelease,
 		MinClientVersion:         strPtr(pkg.MinClientVersion),
 		BlobID:                   blobID,
+		DependencyGroups:         pkg.DependencyGroups,
 	})
 	if errors.Is(err, sql.ErrNoRows) {
 		// ON CONFLICT DO NOTHING returned no row: the live (repo, id, version)
@@ -2577,6 +2578,22 @@ func (p *PostgresDB) DeleteNuGetPackage(ctx context.Context, repoID, packageID, 
 		Version:      version,
 	}); err != nil {
 		return fmt.Errorf("failed to delete nuget package: %w", err)
+	}
+
+	return nil
+}
+
+// SetNuGetDependencyGroups records the dependency groups of a package that has
+// none stored yet. A stored value is never overwritten and updated_at is not
+// touched.
+func (p *PostgresDB) SetNuGetDependencyGroups(ctx context.Context, repoID, packageID, version string, groups []byte) error {
+	if err := p.q.SetNuGetDependencyGroups(ctx, dbsqlc.SetNuGetDependencyGroupsParams{
+		DependencyGroups: groups,
+		RepositoryID:     repoID,
+		PackageID:        packageID,
+		Version:          version,
+	}); err != nil {
+		return fmt.Errorf("failed to set nuget dependency groups: %w", err)
 	}
 
 	return nil
@@ -3786,6 +3803,7 @@ func (p *PostgresDB) GetCargoCrate(ctx context.Context, repoID, name, version st
 		MetadataJSON:  row.MetadataJson,
 		BlobKey:       row.BlobKey,
 		Checksum:      row.Checksum,
+		SizeBytes:     row.SizeBytes,
 		Yanked:        row.Yanked,
 		DownloadCount: int(row.DownloadCount),
 		CreatedAt:     row.CreatedAt,
@@ -3981,6 +3999,7 @@ func nugetRowToModel(row dbsqlc.GetNuGetPackageRow) *models.NuGetPackage {
 		RequireLicenseAcceptance: row.RequireLicenseAcceptance,
 		IsPrerelease:             row.IsPrerelease,
 		MinClientVersion:         derefStr(row.MinClientVersion),
+		DependencyGroups:         row.DependencyGroups,
 		BlobKey:                  row.BlobKey,
 		PackageHash:              row.PackageHash,
 		PackageSize:              row.PackageSize,

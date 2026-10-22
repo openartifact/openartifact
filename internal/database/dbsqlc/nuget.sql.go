@@ -7,12 +7,13 @@ package dbsqlc
 
 import (
 	"context"
+	"encoding/json"
 	"time"
 )
 
 const createNuGetPackage = `-- name: CreateNuGetPackage :one
-INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id, dependency_groups)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
 ON CONFLICT (repository_id, package_id, version) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, created_at, updated_at
 `
@@ -34,6 +35,7 @@ type CreateNuGetPackageParams struct {
 	IsPrerelease             bool    `db:"is_prerelease" json:"is_prerelease"`
 	MinClientVersion         *string `db:"min_client_version" json:"min_client_version"`
 	BlobID                   string  `db:"blob_id" json:"blob_id"`
+	DependencyGroups         []byte  `db:"dependency_groups" json:"dependency_groups"`
 }
 
 type CreateNuGetPackageRow struct {
@@ -60,6 +62,7 @@ func (q *Queries) CreateNuGetPackage(ctx context.Context, arg CreateNuGetPackage
 		arg.IsPrerelease,
 		arg.MinClientVersion,
 		arg.BlobID,
+		arg.DependencyGroups,
 	)
 	var i CreateNuGetPackageRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -82,7 +85,7 @@ func (q *Queries) DeleteNuGetPackage(ctx context.Context, arg DeleteNuGetPackage
 }
 
 const getNuGetPackage = `-- name: GetNuGetPackage :one
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
+SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
 FROM nuget_packages np
 JOIN blobs b ON b.id = np.blob_id
 WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id = $2 AND np.version = $3
@@ -111,6 +114,7 @@ type GetNuGetPackageRow struct {
 	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
 	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
 	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
+	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
 	BlobKey                  string    `db:"blob_key" json:"blob_key"`
 	PackageHash              string    `db:"package_hash" json:"package_hash"`
 	PackageSize              int64     `db:"package_size" json:"package_size"`
@@ -139,6 +143,7 @@ func (q *Queries) GetNuGetPackage(ctx context.Context, arg GetNuGetPackageParams
 		&i.RequireLicenseAcceptance,
 		&i.IsPrerelease,
 		&i.MinClientVersion,
+		&i.DependencyGroups,
 		&i.BlobKey,
 		&i.PackageHash,
 		&i.PackageSize,
@@ -166,7 +171,7 @@ func (q *Queries) IncrementNuGetDownloadCount(ctx context.Context, arg Increment
 }
 
 const listNuGetPackageVersions = `-- name: ListNuGetPackageVersions :many
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
+SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
 FROM nuget_packages np
 JOIN blobs b ON b.id = np.blob_id
 WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id = $2
@@ -195,6 +200,7 @@ type ListNuGetPackageVersionsRow struct {
 	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
 	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
 	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
+	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
 	BlobKey                  string    `db:"blob_key" json:"blob_key"`
 	PackageHash              string    `db:"package_hash" json:"package_hash"`
 	PackageSize              int64     `db:"package_size" json:"package_size"`
@@ -229,6 +235,7 @@ func (q *Queries) ListNuGetPackageVersions(ctx context.Context, arg ListNuGetPac
 			&i.RequireLicenseAcceptance,
 			&i.IsPrerelease,
 			&i.MinClientVersion,
+			&i.DependencyGroups,
 			&i.BlobKey,
 			&i.PackageHash,
 			&i.PackageSize,
@@ -247,7 +254,7 @@ func (q *Queries) ListNuGetPackageVersions(ctx context.Context, arg ListNuGetPac
 }
 
 const listNuGetPackages = `-- name: ListNuGetPackages :many
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
+SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
 FROM nuget_packages np
 JOIN blobs b ON b.id = np.blob_id
 WHERE np.repository_id = $1 AND np.deleted_at IS NULL
@@ -271,6 +278,7 @@ type ListNuGetPackagesRow struct {
 	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
 	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
 	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
+	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
 	BlobKey                  string    `db:"blob_key" json:"blob_key"`
 	PackageHash              string    `db:"package_hash" json:"package_hash"`
 	PackageSize              int64     `db:"package_size" json:"package_size"`
@@ -305,6 +313,7 @@ func (q *Queries) ListNuGetPackages(ctx context.Context, repositoryID string) ([
 			&i.RequireLicenseAcceptance,
 			&i.IsPrerelease,
 			&i.MinClientVersion,
+			&i.DependencyGroups,
 			&i.BlobKey,
 			&i.PackageHash,
 			&i.PackageSize,
@@ -331,7 +340,7 @@ WITH matched AS (
     ORDER BY m.package_id
     OFFSET $3 LIMIT $4
 )
-SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
+SELECT np.id, np.repository_id, np.package_id, np.version, np.title, np.description, np.summary, np.authors, np.owners, np.tags, np.project_url, np.license_url, np.icon_url, np.require_license_acceptance, np.is_prerelease, np.min_client_version, np.dependency_groups, b.blob_key, b.sha256 AS package_hash, b.size_bytes AS package_size, np.download_count, np.created_at, np.updated_at
 FROM nuget_packages np
 JOIN blobs b ON b.id = np.blob_id
 WHERE np.repository_id = $1 AND np.deleted_at IS NULL AND np.package_id IN (SELECT package_id FROM matched)
@@ -362,6 +371,7 @@ type SearchNuGetPackagesRow struct {
 	RequireLicenseAcceptance bool      `db:"require_license_acceptance" json:"require_license_acceptance"`
 	IsPrerelease             bool      `db:"is_prerelease" json:"is_prerelease"`
 	MinClientVersion         *string   `db:"min_client_version" json:"min_client_version"`
+	DependencyGroups         []byte    `db:"dependency_groups" json:"dependency_groups"`
 	BlobKey                  string    `db:"blob_key" json:"blob_key"`
 	PackageHash              string    `db:"package_hash" json:"package_hash"`
 	PackageSize              int64     `db:"package_size" json:"package_size"`
@@ -403,6 +413,7 @@ func (q *Queries) SearchNuGetPackages(ctx context.Context, arg SearchNuGetPackag
 			&i.RequireLicenseAcceptance,
 			&i.IsPrerelease,
 			&i.MinClientVersion,
+			&i.DependencyGroups,
 			&i.BlobKey,
 			&i.PackageHash,
 			&i.PackageSize,
@@ -436,4 +447,29 @@ func (q *Queries) SearchNuGetPackagesCount(ctx context.Context, arg SearchNuGetP
 	var count int64
 	err := row.Scan(&count)
 	return count, err
+}
+
+const setNuGetDependencyGroups = `-- name: SetNuGetDependencyGroups :exec
+UPDATE nuget_packages SET dependency_groups = $1::jsonb
+WHERE repository_id = $2 AND package_id = $3 AND version = $4
+  AND deleted_at IS NULL AND dependency_groups IS NULL
+`
+
+type SetNuGetDependencyGroupsParams struct {
+	DependencyGroups json.RawMessage `db:"dependency_groups" json:"dependency_groups"`
+	RepositoryID     string          `db:"repository_id" json:"repository_id"`
+	PackageID        string          `db:"package_id" json:"package_id"`
+	Version          string          `db:"version" json:"version"`
+}
+
+// Backfills the dependency groups of a package published before they were
+// stored. It never overwrites a value and leaves updated_at alone.
+func (q *Queries) SetNuGetDependencyGroups(ctx context.Context, arg SetNuGetDependencyGroupsParams) error {
+	_, err := q.db.Exec(ctx, setNuGetDependencyGroups,
+		arg.DependencyGroups,
+		arg.RepositoryID,
+		arg.PackageID,
+		arg.Version,
+	)
+	return err
 }

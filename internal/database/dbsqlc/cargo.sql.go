@@ -11,6 +11,27 @@ import (
 	"time"
 )
 
+const cargoIndexStamp = `-- name: CargoIndexStamp :one
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(cc.id::text || cc.yanked::text, 0)), 0)::text)::text AS stamp
+FROM cargo_crates cc
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text)
+`
+
+type CargoIndexStampParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+}
+
+// Fingerprint of the sparse index entry of one crate: its live versions and
+// their yanked flags, the only mutable state the entry shows. (updated_at is
+// no validator: every download bumps it.)
+func (q *Queries) CargoIndexStamp(ctx context.Context, arg CargoIndexStampParams) (string, error) {
+	row := q.db.QueryRow(ctx, cargoIndexStamp, arg.RepositoryID, arg.Name)
+	var stamp string
+	err := row.Scan(&stamp)
+	return stamp, err
+}
+
 const createCargoCrate = `-- name: CreateCargoCrate :one
 INSERT INTO cargo_crates (repository_id, name, version, description, homepage, documentation, repository, license, keywords, categories, authors, readme, metadata_json, blob_id, yanked, download_count)
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
@@ -76,7 +97,7 @@ func (q *Queries) DeleteCargoCrate(ctx context.Context, id string) error {
 }
 
 const getCargoCrate = `-- name: GetCargoCrate :one
-SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
+SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, b.size_bytes, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc
 JOIN blobs b ON b.id = cc.blob_id
 WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text) AND cc.version = $3
@@ -107,6 +128,7 @@ type GetCargoCrateRow struct {
 	MetadataJson  json.RawMessage `db:"metadata_json" json:"metadata_json"`
 	BlobKey       string          `db:"blob_key" json:"blob_key"`
 	Checksum      string          `db:"checksum" json:"checksum"`
+	SizeBytes     int64           `db:"size_bytes" json:"size_bytes"`
 	Yanked        bool            `db:"yanked" json:"yanked"`
 	DownloadCount int64           `db:"download_count" json:"download_count"`
 	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
@@ -136,6 +158,7 @@ func (q *Queries) GetCargoCrate(ctx context.Context, arg GetCargoCrateParams) (G
 		&i.MetadataJson,
 		&i.BlobKey,
 		&i.Checksum,
+		&i.SizeBytes,
 		&i.Yanked,
 		&i.DownloadCount,
 		&i.CreatedAt,
@@ -226,6 +249,55 @@ func (q *Queries) ListCargoCrateVersions(ctx context.Context, arg ListCargoCrate
 			&i.DownloadCount,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listCargoIndexVersions = `-- name: ListCargoIndexVersions :many
+SELECT cc.name, cc.version, cc.metadata_json, b.sha256 AS checksum, cc.yanked
+FROM cargo_crates cc
+JOIN blobs b ON b.id = cc.blob_id
+WHERE cc.repository_id = $1 AND cc.deleted_at IS NULL AND lower(cc.name) = lower($2::text)
+ORDER BY cc.created_at, cc.id
+`
+
+type ListCargoIndexVersionsParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Name         string `db:"name" json:"name"`
+}
+
+type ListCargoIndexVersionsRow struct {
+	Name         string          `db:"name" json:"name"`
+	Version      string          `db:"version" json:"version"`
+	MetadataJson json.RawMessage `db:"metadata_json" json:"metadata_json"`
+	Checksum     string          `db:"checksum" json:"checksum"`
+	Yanked       bool            `db:"yanked" json:"yanked"`
+}
+
+// The columns a sparse index entry is built from (no readme, description or
+// authors).
+func (q *Queries) ListCargoIndexVersions(ctx context.Context, arg ListCargoIndexVersionsParams) ([]ListCargoIndexVersionsRow, error) {
+	rows, err := q.db.Query(ctx, listCargoIndexVersions, arg.RepositoryID, arg.Name)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListCargoIndexVersionsRow{}
+	for rows.Next() {
+		var i ListCargoIndexVersionsRow
+		if err := rows.Scan(
+			&i.Name,
+			&i.Version,
+			&i.MetadataJson,
+			&i.Checksum,
+			&i.Yanked,
 		); err != nil {
 			return nil, err
 		}

@@ -141,6 +141,40 @@ func (q *Queries) GetRubyGem(ctx context.Context, arg GetRubyGemParams) (GetRuby
 	return i, err
 }
 
+const listRubyGemSpecs = `-- name: ListRubyGemSpecs :many
+SELECT rg.name, rg.version, rg.platform
+FROM rubygems_gems rg
+WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked
+ORDER BY rg.name ASC, rg.version DESC
+`
+
+type ListRubyGemSpecsRow struct {
+	Name     string `db:"name" json:"name"`
+	Version  string `db:"version" json:"version"`
+	Platform string `db:"platform" json:"platform"`
+}
+
+// The three columns the specs indexes are built from, for listed gems only.
+func (q *Queries) ListRubyGemSpecs(ctx context.Context, repositoryID string) ([]ListRubyGemSpecsRow, error) {
+	rows, err := q.db.Query(ctx, listRubyGemSpecs, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListRubyGemSpecsRow{}
+	for rows.Next() {
+		var i ListRubyGemSpecsRow
+		if err := rows.Scan(&i.Name, &i.Version, &i.Platform); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listRubyGemVersions = `-- name: ListRubyGemVersions :many
 SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
 FROM rubygems_gems rg
@@ -282,6 +316,21 @@ func (q *Queries) ListRubyGems(ctx context.Context, repositoryID string) ([]List
 		return nil, err
 	}
 	return items, nil
+}
+
+const rubyGemsSpecsStamp = `-- name: RubyGemsSpecsStamp :one
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(rg.id::text, 0)), 0)::text)::text AS stamp
+FROM rubygems_gems rg
+WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND NOT rg.yanked
+`
+
+// Fingerprint of the listed (not yanked) gems of a repository: every specs
+// index is derived from exactly this set, and a yank removes a row from it.
+func (q *Queries) RubyGemsSpecsStamp(ctx context.Context, repositoryID string) (string, error) {
+	row := q.db.QueryRow(ctx, rubyGemsSpecsStamp, repositoryID)
+	var stamp string
+	err := row.Scan(&stamp)
+	return stamp, err
 }
 
 const searchRubyGems = `-- name: SearchRubyGems :many

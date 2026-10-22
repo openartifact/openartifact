@@ -24,3 +24,10 @@ SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.build_string, cp.platfor
 FROM conda_packages cp
 JOIN blobs b ON b.id = cp.blob_id
 WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.platform ASC, cp.build_string ASC, cp.extension ASC;
+
+-- name: CondaRepodataStamp :one
+-- Fingerprint of the live packages of one platform (see HelmIndexStamp):
+-- package rows are immutable, so count plus an ID hash tracks repodata.json.
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(cp.id::text, 0)), 0)::text)::text AS stamp
+FROM conda_packages cp
+WHERE cp.repository_id = $1 AND cp.platform = $2 AND cp.deleted_at IS NULL;

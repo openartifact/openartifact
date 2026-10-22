@@ -75,17 +75,17 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
-	r.Get("/v3/index.json", h.handleServiceIndex)
+	r.Get("/v3/index.json", base.Compress(h.handleServiceIndex))
 	r.Put("/v3/package", h.handlePushPackage)
 	r.Delete("/v3/package/{id}/{version}", h.handleDeletePackage)
-	r.Get("/v3/package/{id}/index.json", h.handleVersionIndex)
+	r.Get("/v3/package/{id}/index.json", base.Compress(h.handleVersionIndex))
 	r.Get("/v3/package/{id}/{version}/{filename}", h.handleDownloadPackage)
 	r.Get("/v3/registration/{id}/index.json", h.handleRegistrationIndex)
 	// {versionfile} is "<version>.json"; a chi parameter would stop at the
 	// first '.' of the version.
-	r.Get("/v3/registration/{id}/{versionfile}", h.handleRegistrationLeaf)
-	r.Get("/v3/query", h.handleSearch)
-	r.Get("/v3/autocomplete", h.handleAutocomplete)
+	r.Get("/v3/registration/{id}/{versionfile}", base.Compress(h.handleRegistrationLeaf))
+	r.Get("/v3/query", base.Compress(h.handleSearch))
+	r.Get("/v3/autocomplete", base.Compress(h.handleAutocomplete))
 }
 
 func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
@@ -114,6 +114,27 @@ func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request) string
 	}
 
 	return repoID
+}
+
+// resolveRepoInfo is resolveRepo for handlers that also need the repository's
+// visibility (to set cache headers). It writes the response and returns nil
+// when there is no repository.
+func (h *HTTPHandler) resolveRepoInfo(w http.ResponseWriter, r *http.Request) *models.Repository {
+	repoName := urlparams.Vars(r)["name"]
+
+	repo, err := h.ResolveRepo(r.Context(), repoName)
+	if err != nil {
+		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return nil
+	}
+
+	if repo == nil {
+		http.NotFound(w, r)
+	}
+
+	return repo
 }
 
 func (h *HTTPHandler) repoBaseURL(r *http.Request) string {
@@ -249,8 +270,17 @@ func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models
 	}
 	requireLicenseAcceptance, _ := metadata["requireLicenseAcceptance"].(bool)
 
+	// Record the dependency groups with the row so the registration index never
+	// has to open the package again. A package whose nuspec cannot be read
+	// again leaves the column empty; it is then derived on first use.
+	var depGroups json.RawMessage
+	if nuspec, err := parseNuspec(bytes.NewReader(data)); err == nil {
+		depGroups = marshalDependencyGroups(nuspec.Metadata.Dependencies.DependencyGroups())
+	}
+
 	return &models.NuGetPackage{
 		RepositoryID:             repoID,
+		DependencyGroups:         depGroups,
 		PackageID:                strings.ToLower(id),
 		Version:                  version,
 		Title:                    str("title"),
@@ -671,19 +701,43 @@ func (h *HTTPHandler) catalogEntry(ctx context.Context, baseURL, packageID strin
 		"listed":                   true,
 		"published":                v.CreatedAt.UTC().Format("2006-01-02T15:04:05Z"),
 		"packageContent":           packageContentURL(baseURL, packageID, v.Version),
-		"dependencyGroups":         h.nuspecDependencyGroups(ctx, packageID, v),
+		"dependencyGroups":         h.dependencyGroups(ctx, packageID, v),
 	}
 }
 
+// registrationMaxAge is how long shared caches may reuse a public repository's
+// registration index before revalidating.
+const registrationMaxAge = 60
+
+// registrationETag identifies the registration index of one package: it
+// changes when a version is added, removed or republished and never because of
+// download counters. Rows are immutable and a republish is a new row with a new
+// id, so the ids identify the content.
+func registrationETag(repoID, baseURL, packageID string, pkgs []*models.NuGetPackage) string {
+	buf := make([]byte, 0, 64+len(pkgs)*48)
+
+	for _, s := range []string{repoID, baseURL, packageID} {
+		buf = append(append(buf, s...), 0)
+	}
+
+	for _, v := range pkgs {
+		buf = append(append(append(append(buf, v.ID...), 0), v.Version...), 0)
+	}
+
+	sum := sha256.Sum256(buf)
+
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
+}
+
 func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Request) {
-	repoID := h.resolveRepo(w, r)
-	if repoID == "" {
+	repo := h.resolveRepoInfo(w, r)
+	if repo == nil {
 		return
 	}
 
 	packageID := strings.ToLower(urlparams.Vars(r)["id"])
 
-	pkgs, err := h.DB.ListNuGetPackageVersions(r.Context(), repoID, packageID)
+	pkgs, err := h.DB.ListNuGetPackageVersions(r.Context(), repo.ID, packageID)
 	if err != nil {
 		h.Log.Errorw("failed to list nuget versions", "id", packageID, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -697,6 +751,28 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 	}
 
 	baseURL := h.repoBaseURL(r)
+
+	// The validator comes from the rows already loaded, before any dependency
+	// groups are resolved or JSON is built.
+	etag := registrationETag(repo.ID, baseURL, packageID, pkgs)
+	if base.Revalidate(w, r, repo.Public, etag, registrationMaxAge) {
+		return
+	}
+
+	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+		return h.renderRegistrationIndex(ctx, baseURL, packageID, pkgs)
+	})
+	if err != nil {
+		h.Log.Errorw("failed to render nuget registration", "id", packageID, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	rendered.Serve(w, r)
+}
+
+func (h *HTTPHandler) renderRegistrationIndex(ctx context.Context, baseURL, packageID string, pkgs []*models.NuGetPackage) (*base.Rendered, error) {
 	indexURL := registrationIndexURL(baseURL, packageID)
 	versions := sortedVersions(pkgs)
 
@@ -708,7 +784,7 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 			items[i] = map[string]any{
 				"@id":            registrationLeafURL(baseURL, packageID, v.Version),
 				"@type":          "Package",
-				"catalogEntry":   h.catalogEntry(r.Context(), baseURL, packageID, v),
+				"catalogEntry":   h.catalogEntry(ctx, baseURL, packageID, v),
 				"packageContent": packageContentURL(baseURL, packageID, v.Version),
 				"registration":   indexURL,
 			}
@@ -726,11 +802,16 @@ func (h *HTTPHandler) handleRegistrationIndex(w http.ResponseWriter, r *http.Req
 		})
 	}
 
-	writeJSON(w, map[string]any{
+	var buf bytes.Buffer
+	if err := json.NewEncoder(&buf).Encode(map[string]any{
 		"@id":   indexURL,
 		"count": len(pages),
 		"items": pages,
-	})
+	}); err != nil {
+		return nil, fmt.Errorf("encode registration index: %w", err)
+	}
+
+	return &base.Rendered{Body: buf.Bytes(), ContentType: "application/json"}, nil
 }
 
 // handleRegistrationLeaf serves GET {registration}/{id}/{version}.json.
@@ -934,28 +1015,62 @@ func parseIntClamp(s string, defaultVal, minVal, maxVal int) int {
 	return v
 }
 
-// nuspecDependencyGroups fetches the .nupkg blob for one package version and
-// extracts its <dependencies> element, converted to the registration index
-// "dependencyGroups" shape. There is no dependency column on nuget_packages,
-// so the result is cached by blob digest (content-addressed, never stale) and
-// a miss reads the package behind nuspecGate, which bounds how many packages
-// are held in memory at once. Failures are logged, not cached, and degrade to
+// marshalDependencyGroups encodes dependency groups for storage. It returns nil
+// (not recorded) if encoding fails, which cannot happen for these plain values.
+func marshalDependencyGroups(groups []map[string]any) json.RawMessage {
+	data, err := json.Marshal(groups)
+	if err != nil {
+		return nil
+	}
+
+	return data
+}
+
+// dependencyGroups returns the registration "dependencyGroups" JSON of one
+// version. It is stored with the row (written at publish time), so the common
+// case reads nothing but the row already in hand. A package without a stored
+// value (published before the column existed, or restored from a backup) is
+// derived from its nupkg once and the result is stored for next time.
+func (h *HTTPHandler) dependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) json.RawMessage {
+	if v.DependencyGroups != nil {
+		return v.DependencyGroups
+	}
+
+	groups, ok := h.nuspecDependencyGroups(ctx, packageID, v)
+	if !ok {
+		return json.RawMessage("[]")
+	}
+
+	// Best effort and never overwriting: the next request reads the column,
+	// and a failure only means this package is derived again.
+	if err := h.DB.SetNuGetDependencyGroups(context.WithoutCancel(ctx), v.RepositoryID, v.PackageID, v.Version, groups); err != nil {
+		h.Log.Warnw("failed to store dependency groups", "id", packageID, "version", v.Version, "error", err)
+	}
+
+	return groups
+}
+
+// nuspecDependencyGroups derives the dependency groups of one package version
+// from its .nupkg blob, cached by blob digest (content-addressed, never stale).
+// A miss reads the package behind nuspecGate, which bounds how many packages
+// are held in memory at once. ok is false when the package could not be read
+// or parsed; the failure is logged and not cached, and the caller degrades to
 // no dependency groups rather than failing the whole response.
-func (h *HTTPHandler) nuspecDependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) []map[string]any {
+func (h *HTTPHandler) nuspecDependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) (json.RawMessage, bool) {
 	if groups, ok := h.deps.get(v.BlobKey); ok {
-		return groups
+		return groups, true
 	}
 
 	if err := h.nuspecGate.Acquire(ctx); err != nil {
 		h.Log.Warnw("dependency groups skipped", "id", packageID, "version", v.Version, "error", err)
 
-		return []map[string]any{}
+		return nil, false
 	}
 	defer h.nuspecGate.Release()
 
 	// Another request may have filled the entry while this one waited.
 	if groups, ok := h.deps.get(v.BlobKey); ok {
-		return groups
+		return groups, true
 	}
 
 	groups, ok := h.readDependencyGroups(ctx, packageID, v)
@@ -963,17 +1078,17 @@ func (h *HTTPHandler) nuspecDependencyGroups(ctx context.Context, packageID stri
 		h.deps.put(v.BlobKey, groups)
 	}
 
-	return groups
+	return groups, ok
 }
 
 // readDependencyGroups parses the stored package of one version. ok is false
 // when the package could not be read, so the caller does not cache the result.
-func (h *HTTPHandler) readDependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) ([]map[string]any, bool) {
+func (h *HTTPHandler) readDependencyGroups(ctx context.Context, packageID string, v *models.NuGetPackage) (json.RawMessage, bool) {
 	rc, err := h.BlobStore.Get(ctx, v.BlobKey)
 	if err != nil {
 		h.Log.Warnw("failed to fetch package blob for dependency groups", "id", packageID, "version", v.Version, "error", err)
 
-		return []map[string]any{}, false
+		return nil, false
 	}
 	defer func() { _ = rc.Close() }()
 
@@ -981,8 +1096,10 @@ func (h *HTTPHandler) readDependencyGroups(ctx context.Context, packageID string
 	if err != nil {
 		h.Log.Warnw("failed to parse nuspec for dependency groups", "id", packageID, "version", v.Version, "error", err)
 
-		return []map[string]any{}, false
+		return nil, false
 	}
 
-	return nuspec.Metadata.Dependencies.DependencyGroups(), true
+	groups := marshalDependencyGroups(nuspec.Metadata.Dependencies.DependencyGroups())
+
+	return groups, groups != nil
 }

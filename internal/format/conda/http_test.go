@@ -74,6 +74,18 @@ func (d *condaDB) ListCondaPackages(_ context.Context, _, platform string) ([]*m
 	return out, nil
 }
 
+func (d *condaDB) CondaRepodataStamp(_ context.Context, _, platform string) (string, error) {
+	var b strings.Builder
+
+	for _, p := range d.pkgs {
+		if p.Platform == platform {
+			b.WriteString(p.ID + p.Filename() + ";")
+		}
+	}
+
+	return b.String(), nil
+}
+
 func (d *condaDB) DeleteCondaPackage(_ context.Context, id string) error {
 	d.pkgs = slices.DeleteFunc(d.pkgs, func(p *models.CondaPackage) bool { return p.ID == id })
 

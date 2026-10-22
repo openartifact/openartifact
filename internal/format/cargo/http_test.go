@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/binary"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -159,6 +160,31 @@ func (d *cargoDB) ListCargoCrateVersions(_ context.Context, _, name string) ([]*
 	}
 
 	return out, nil
+}
+
+func (d *cargoDB) ListCargoIndexVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
+	return d.ListCargoCrateVersions(ctx, repoID, name)
+}
+
+// CargoIndexStamp mirrors the real stamp: live versions plus yanked flags.
+func (d *cargoDB) CargoIndexStamp(_ context.Context, _, name string) (string, error) {
+	var b strings.Builder
+
+	n := 0
+
+	for _, c := range d.crates {
+		if strings.EqualFold(c.Name, name) {
+			n++
+
+			fmt.Fprintf(&b, "%s@%s@%t;", c.Name, c.Version, c.Yanked)
+		}
+	}
+
+	if n == 0 {
+		return noIndexVersions, nil
+	}
+
+	return b.String(), nil
 }
 
 func (d *cargoDB) YankCargoCrate(_ context.Context, _, name, version string, yanked bool) error {

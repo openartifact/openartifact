@@ -208,6 +208,9 @@ type Database interface {
 	GetHelmChart(ctx context.Context, repoID, name, version string) (*models.HelmChart, error)
 	DeleteHelmChart(ctx context.Context, repoID, name, version string) error
 	ListHelmCharts(ctx context.Context, repoID string) ([]*models.HelmChart, error)
+	// HelmIndexStamp is a cheap validator of a repository's index.yaml: it
+	// changes exactly when a live chart is added or removed.
+	HelmIndexStamp(ctx context.Context, repoID string) (string, error)
 	ListHelmChartVersions(ctx context.Context, repoID, name string) ([]*models.HelmChart, error)
 
 	// PyPI methods
@@ -225,6 +228,9 @@ type Database interface {
 	CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPackage) error
 	GetNuGetPackage(ctx context.Context, repoID, packageID, version string) (*models.NuGetPackage, error)
 	DeleteNuGetPackage(ctx context.Context, repoID, packageID, version string) error
+	// SetNuGetDependencyGroups records the dependency groups JSON of a package
+	// that has none stored yet (published before they were persisted).
+	SetNuGetDependencyGroups(ctx context.Context, repoID, packageID, version string, groups []byte) error
 	ListNuGetPackages(ctx context.Context, repoID string) ([]*models.NuGetPackage, error)
 	ListNuGetPackageVersions(ctx context.Context, repoID, packageID string) ([]*models.NuGetPackage, error)
 	// SearchNuGetPackages pages over matching packages: skip/take count
@@ -384,6 +390,13 @@ type Database interface {
 	GetCargoCrate(ctx context.Context, repoID, name, version string) (*models.CargoCrate, error)
 	DeleteCargoCrate(ctx context.Context, id string) error
 	ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error)
+	// CargoIndexStamp is a cheap validator of one crate's sparse index entry:
+	// it changes when a live version is added, removed or (un)yanked.
+	CargoIndexStamp(ctx context.Context, repoID, name string) (string, error)
+	// ListCargoIndexVersions returns the live versions of a crate with only the
+	// columns the sparse index needs (Name, Version, MetadataJSON, Checksum,
+	// Yanked), oldest first.
+	ListCargoIndexVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error)
 	SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error)
 	// SearchCargoCrateSummaries matches crates by name or description and
 	// returns one summary per crate (at most limit, by name) together with the
@@ -397,6 +410,12 @@ type Database interface {
 	GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error)
 	DeleteRubyGem(ctx context.Context, id string) error
 	ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error)
+	// RubyGemsSpecsStamp is a cheap validator of every specs index of a
+	// repository: it changes when a listed gem is added, removed or yanked.
+	RubyGemsSpecsStamp(ctx context.Context, repoID string) (string, error)
+	// ListRubyGemSpecs returns the listed (not yanked) gems with only Name,
+	// Version and Platform set, by name then version descending.
+	ListRubyGemSpecs(ctx context.Context, repoID string) ([]*models.RubyGem, error)
 	ListRubyGemVersions(ctx context.Context, repoID, name string) ([]*models.RubyGem, error)
 	SearchRubyGems(ctx context.Context, repoID, query string) ([]*models.RubyGem, error)
 	YankRubyGem(ctx context.Context, repoID, name, version, platform string, yanked bool) error
@@ -559,6 +578,9 @@ type Database interface {
 	GetCondaPackageFile(ctx context.Context, repoID, name, version, buildString, platform, extension string) (*models.CondaPackage, error)
 	DeleteCondaPackage(ctx context.Context, id string) error
 	ListCondaPackages(ctx context.Context, repoID, platform string) ([]*models.CondaPackage, error)
+	// CondaRepodataStamp is a cheap validator of one platform's repodata.json:
+	// it changes exactly when a live package is added or removed.
+	CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error)
 
 	// ListAllCondaPackages is a bulk-list-by-repo method used only by backup
 	// export (no platform filter required).

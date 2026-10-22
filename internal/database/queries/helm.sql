@@ -25,3 +25,13 @@ FROM helm_charts hc
 JOIN blobs b ON b.id = hc.blob_id
 WHERE hc.repository_id = $1 AND hc.name = $2 AND hc.deleted_at IS NULL
 ORDER BY hc.version DESC;
+
+-- name: HelmIndexStamp :one
+-- Fingerprint of the live charts of a repository: their count and an
+-- order-independent hash of their IDs. Chart rows are immutable (a republish
+-- is a new row) and trash/restore changes membership, so the stamp changes
+-- exactly when index.yaml would. It reads one narrow index range instead of
+-- every chart joined to its blob.
+SELECT (count(*)::text || ':' || COALESCE(sum(hashtextextended(hc.id::text, 0)), 0)::text)::text AS stamp
+FROM helm_charts hc
+WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL;

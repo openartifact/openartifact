@@ -229,7 +229,7 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Filename: filename, ContentType: "application/x-rpm", Repository: repo}) {
+	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Size: comp.PackageSize, Filename: filename, ContentType: "application/x-rpm", Repository: repo}) {
 		return
 	}
 

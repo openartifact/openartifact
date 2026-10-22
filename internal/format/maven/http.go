@@ -86,7 +86,7 @@ func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: art.SHA256, Filename: filepath.Base(art.RepoPath), ContentType: contentType}) {
+	if h.TryPresign(w, r, presign.Blob{SHA256: art.SHA256, Size: art.BlobSizeBytes, Filename: filepath.Base(art.RepoPath), ContentType: contentType}) {
 		return
 	}
 
@@ -146,58 +146,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 					return
 				}
 
-				// The checksum is a pure function of the metadata blob, so the
-				// blob digest (plus the algorithm) is a complete validator and
-				// the blob is never read for a revalidation.
-				if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+suffix+`"`, metadataMaxAge) {
-					return
-				}
-
-				var hashVal string
-
-				switch suffix {
-				case ".sha256":
-					hashVal = meta.BlobSHA256
-				default:
-					rc, err := h.BlobStore.Get(r.Context(), meta.BlobSHA256)
-					if err != nil {
-						h.Log.Errorw("failed to read metadata blob for checksum", "sha256", meta.BlobSHA256, "error", err)
-						http.Error(w, "internal error", http.StatusInternalServerError)
-
-						return
-					}
-
-					data, readErr := io.ReadAll(rc)
-					_ = rc.Close()
-
-					if readErr != nil {
-						h.Log.Errorw("failed to read metadata blob for checksum", "sha256", meta.BlobSHA256, "error", readErr)
-						http.Error(w, "internal error", http.StatusInternalServerError)
-
-						return
-					}
-
-					md5Hex, sha1Hex, _, sha512Hex, checksumErr := pkgmaven.ComputeChecksums(bytes.NewReader(data))
-					if checksumErr != nil {
-						h.Log.Errorw("failed to compute metadata checksums", "path", underlyingPath, "error", checksumErr)
-						http.Error(w, "internal error", http.StatusInternalServerError)
-
-						return
-					}
-
-					switch suffix {
-					case ".md5":
-						hashVal = md5Hex
-					case ".sha1":
-						hashVal = sha1Hex
-					case ".sha512":
-						hashVal = sha512Hex
-					}
-				}
-
-				w.Header().Set("Content-Type", "text/plain")
-				//nolint:gosec // G705: Maven artifact content, not HTML output
-				_, _ = fmt.Fprintf(w, "%s  %s\n", hashVal, filepath.Base(underlyingPath))
+				h.serveMetadataChecksum(w, r, repo.Public, meta, suffix)
 
 				return
 			}
@@ -267,25 +216,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if base.Revalidate(w, r, repo.Public, `"`+meta.BlobSHA256+`"`, metadataMaxAge) {
-			return
-		}
-
-		rc, err := h.BlobStore.Get(r.Context(), meta.BlobSHA256)
-		if err != nil {
-			h.Log.Errorw("failed to read metadata blob", "sha256", meta.BlobSHA256, "error", err)
-			http.Error(w, "internal error", http.StatusInternalServerError)
-
-			return
-		}
-
-		defer func() { _ = rc.Close() }()
-
-		w.Header().Set("Content-Type", "application/xml")
-
-		if _, err := io.Copy(w, rc); err != nil {
-			h.Log.Errorw("failed to write metadata response", "path", artPath, "error", err)
-		}
+		h.serveMetadata(w, r, repo.Public, meta)
 
 		return
 	}
@@ -331,6 +262,83 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	}
 
 	h.serveArtifactBlob(w, r, repo.Public, art, ContentTypeForFile(filename))
+}
+
+// readMetadataBlob reads a maven-metadata.xml blob. The blob is content
+// addressed, so what it returns for one digest never changes.
+func (h *HTTPHandler) readMetadataBlob(ctx context.Context, sha256 string) ([]byte, error) {
+	rc, err := h.BlobStore.Get(ctx, sha256)
+	if err != nil {
+		return nil, fmt.Errorf("get metadata blob: %w", err)
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	data, err := io.ReadAll(rc)
+	if err != nil {
+		return nil, fmt.Errorf("read metadata blob: %w", err)
+	}
+
+	return data, nil
+}
+
+// serveMetadata serves maven-metadata.xml. Every build tool polls it, so the
+// rendering is cached by blob digest (no store round trip per poll) and sent
+// compressed to clients that accept it.
+func (h *HTTPHandler) serveMetadata(w http.ResponseWriter, r *http.Request, repoPublic bool, meta *models.RepoMetadata) {
+	if base.Revalidate(w, r, repoPublic, `"`+meta.BlobSHA256+`"`, metadataMaxAge) {
+		return
+	}
+
+	rendered, err := h.Rendered(r.Context(), "xml:"+meta.BlobSHA256, func(ctx context.Context) (*base.Rendered, error) {
+		data, err := h.readMetadataBlob(ctx, meta.BlobSHA256)
+		if err != nil {
+			return nil, err
+		}
+
+		return &base.Rendered{Body: data, ContentType: "application/xml"}, nil
+	})
+	if err != nil {
+		h.Log.Errorw("failed to read metadata blob", "sha256", meta.BlobSHA256, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	rendered.Serve(w, r)
+}
+
+// serveMetadataChecksum serves maven-metadata.xml.{md5,sha1,sha256,sha512}.
+// The checksum is a pure function of the metadata blob, so the blob digest
+// (plus the algorithm) is a complete validator: a revalidation never reads the
+// blob, and a cache miss hashes it with the one algorithm asked for.
+func (h *HTTPHandler) serveMetadataChecksum(w http.ResponseWriter, r *http.Request, repoPublic bool, meta *models.RepoMetadata, suffix string) {
+	if base.Revalidate(w, r, repoPublic, `"`+meta.BlobSHA256+suffix+`"`, metadataMaxAge) {
+		return
+	}
+
+	rendered, err := h.Rendered(r.Context(), "sum:"+meta.BlobSHA256+suffix, func(ctx context.Context) (*base.Rendered, error) {
+		hashVal := meta.BlobSHA256
+
+		if suffix != ".sha256" {
+			data, err := h.readMetadataBlob(ctx, meta.BlobSHA256)
+			if err != nil {
+				return nil, err
+			}
+
+			hashVal = pkgmaven.Checksum(suffix, data)
+		}
+
+		return &base.Rendered{Body: []byte(hashVal + "  maven-metadata.xml\n"), ContentType: "text/plain"}, nil
+	})
+	if err != nil {
+		h.Log.Errorw("failed to compute metadata checksum", "sha256", meta.BlobSHA256, "suffix", suffix, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	rendered.Serve(w, r)
 }
 
 // handleHead answers exactly what GET would (metadata, checksums, snapshots,

@@ -314,7 +314,7 @@ func (h *HTTPHandler) handlePoolFile(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Filename: filename, ContentType: "application/vnd.debian.binary-package", Repo: name}) {
+	if presign.Try(h.blobStore, w, r, presign.Blob{SHA256: comp.SHA256, Size: comp.PackageSize, Filename: filename, ContentType: "application/vnd.debian.binary-package", Repo: name}) {
 		return
 	}
 

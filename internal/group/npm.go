@@ -5,7 +5,9 @@
 package group
 
 import (
+	"context"
 	"crypto/sha256"
+	"encoding/binary"
 	"encoding/hex"
 	"errors"
 	"net/http"
@@ -13,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -95,7 +98,21 @@ func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.R
 		return true
 	}
 
-	body, err := mergePackuments(h.baseURL+"/repos/"+grp.Name, p, docs)
+	// The merge is a pure function of the members' documents, so its result is
+	// cached under a digest of them and serves as the validator: a poll that
+	// changes nothing neither parses nor rewrites a thousand-version packument
+	// again.
+	tarballBase := h.baseURL + "/repos/" + grp.Name
+	key := mergeKey(grp.ID, tarballBase, p, docs)
+
+	rendered, err := base.MergedRendered(r.Context(), key, func(context.Context) (*base.Rendered, error) {
+		body, err := mergePackuments(tarballBase, p, docs)
+		if err != nil {
+			return nil, err
+		}
+
+		return &base.Rendered{Body: body, ContentType: "application/json"}, nil
+	})
 
 	sess.release()
 
@@ -111,23 +128,42 @@ func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.R
 		return true
 	}
 
-	sum := sha256.Sum256(body)
-
 	w.Header().Add("Vary", "Accept")
 
-	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, packumentMaxAge, failed) {
+	if revalidateMerged(w, r, grp.Public, `"`+key[:32]+`"`, packumentMaxAge, failed) {
 		return true
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.Header().Set("Content-Length", strconv.Itoa(len(body)))
-	w.WriteHeader(http.StatusOK)
-
-	if r.Method != http.MethodHead {
-		_, _ = w.Write(body)
-	}
+	rendered.Serve(w, r)
 
 	return true
+}
+
+// mergeKey is the hex SHA-256 over everything a merged document is built from:
+// the group, where its tarball URLs point, what was asked for, and the bytes of
+// every member document in order.
+func mergeKey(groupID, tarballBase string, p pkgnpm.Path, docs [][]byte) string {
+	h := sha256.New()
+
+	var n [8]byte
+
+	field := func(b []byte) {
+		binary.BigEndian.PutUint64(n[:], uint64(len(b)))
+		h.Write(n[:])
+		h.Write(b)
+	}
+
+	field([]byte(groupID))
+	field([]byte(tarballBase))
+	field([]byte(strconv.Itoa(int(p.Kind))))
+	field([]byte(p.Package))
+	field([]byte(p.Version))
+
+	for _, d := range docs {
+		field(d)
+	}
+
+	return hex.EncodeToString(h.Sum(nil))
 }
 
 var errNoVersion = errors.New("version not found in merged packument")

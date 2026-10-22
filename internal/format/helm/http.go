@@ -66,20 +66,15 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 // index.yaml before revalidating.
 const indexMaxAge = 60
 
-// indexETag derives the validator of index.yaml from the chart rows instead of
-// the rendered body, which embeds a generation timestamp and so differs on
-// every request. Every field a published chart can change is covered by its ID,
-// blob digest and update time; the repository name and base URL shape the URLs.
-func indexETag(repoName, baseURL string, charts []*models.HelmChart) string {
-	sum := sha256.New()
+// indexETag derives the validator of index.yaml from the chart-set stamp
+// (HelmIndexStamp) instead of the rendered body, which embeds a generation
+// timestamp and so differs on every request. Chart rows are immutable, so the
+// stamp changes exactly when a chart is added or removed; the repository and
+// base URL shape the chart URLs.
+func indexETag(repoID, repoName, baseURL, stamp string) string {
+	sum := sha256.Sum256([]byte(repoID + "\x00" + repoName + "\x00" + baseURL + "\x00" + stamp))
 
-	fmt.Fprintf(sum, "%s\x00%s\x00", repoName, baseURL)
-
-	for _, c := range charts {
-		fmt.Fprintf(sum, "%s\x00%s\x00%d\x00", c.ID, c.Digest, c.UpdatedAt.UnixNano())
-	}
-
-	return `"` + hex.EncodeToString(sum.Sum(nil)[:16]) + `"`
+	return `"` + hex.EncodeToString(sum[:16]) + `"`
 }
 
 func (h *HTTPHandler) handleGetIndex(w http.ResponseWriter, r *http.Request) {
@@ -99,33 +94,50 @@ func (h *HTTPHandler) handleGetIndex(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	charts, err := h.DB.ListHelmCharts(r.Context(), repo.ID)
+	stamp, err := h.DB.HelmIndexStamp(r.Context(), repo.ID)
 	if err != nil {
-		h.Log.Errorw("failed to list helm charts", "repo", repoName, "error", err)
+		h.Log.Errorw("failed to stamp helm index", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// Revalidation is answered before the index is rendered and marshalled.
-	if base.Revalidate(w, r, repo.Public, indexETag(repoName, h.BaseURL, charts), indexMaxAge) {
+	// Revalidation is answered from the stamp alone: no chart is loaded and
+	// nothing is rendered.
+	etag := indexETag(repo.ID, repoName, h.BaseURL, stamp)
+	if base.Revalidate(w, r, repo.Public, etag, indexMaxAge) {
 		return
 	}
 
-	// Build index.yaml
-	index := buildHelmIndex(charts, repoName, h.BaseURL)
-
-	indexYAML, err := yaml.Marshal(index)
+	// The rendered index is cached under the stamp-derived ETag, so a changed
+	// chart set can never be served from an old rendering, and the charts are
+	// loaded and marshalled once per change instead of once per request.
+	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+		return h.renderIndex(ctx, repo.ID, repoName)
+	})
 	if err != nil {
-		h.Log.Errorw("failed to marshal index.yaml", "repo", repoName, "error", err)
+		h.Log.Errorw("failed to render index.yaml", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/yaml")
-	w.WriteHeader(http.StatusOK)
-	_, _ = w.Write(indexYAML)
+	rendered.Serve(w, r)
+}
+
+// renderIndex loads the live charts of a repository and renders index.yaml.
+func (h *HTTPHandler) renderIndex(ctx context.Context, repoID, repoName string) (*base.Rendered, error) {
+	charts, err := h.DB.ListHelmCharts(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list helm charts: %w", err)
+	}
+
+	indexYAML, err := yaml.Marshal(buildHelmIndex(charts, repoName, h.BaseURL))
+	if err != nil {
+		return nil, fmt.Errorf("marshal index.yaml: %w", err)
+	}
+
+	return &base.Rendered{Body: indexYAML, ContentType: "application/yaml"}, nil
 }
 
 func (h *HTTPHandler) handleDownloadChart(w http.ResponseWriter, r *http.Request) {

@@ -48,12 +48,12 @@ type fixture struct {
 	asked   []string                          // members asked, in order
 }
 
-func newFixture(t *testing.T, format string, members ...*models.Repository) *fixture {
-	t.Helper()
+func newFixture(tb testing.TB, format string, members ...*models.Repository) *fixture {
+	tb.Helper()
 
 	log, err := logger.New("error", "json", "stderr")
 	if err != nil {
-		t.Fatal(err)
+		tb.Fatal(err)
 	}
 
 	db := &groupDB{repos: map[string]*models.Repository{}}

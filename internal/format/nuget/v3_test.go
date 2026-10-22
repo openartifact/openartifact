@@ -36,6 +36,8 @@ type memDB struct {
 	// raceCreate makes GetNuGetPackage report "absent" even when the row
 	// exists, to exercise the unique-index backstop of a concurrent push.
 	raceCreate bool
+	// groupWrites counts SetNuGetDependencyGroups calls that stored a value.
+	groupWrites int
 }
 
 func (d *memDB) find(id, version string) *models.NuGetPackage {
@@ -66,6 +68,16 @@ func (d *memDB) GetNuGetPackage(_ context.Context, _, id, version string) (*mode
 	}
 
 	return d.find(id, version), nil
+}
+
+// SetNuGetDependencyGroups fills only a row that has none, like the real query.
+func (d *memDB) SetNuGetDependencyGroups(_ context.Context, _, id, version string, groups []byte) error {
+	if p := d.find(id, version); p != nil && p.DependencyGroups == nil {
+		p.DependencyGroups = groups
+		d.groupWrites++
+	}
+
+	return nil
 }
 
 func (d *memDB) DeleteNuGetPackage(_ context.Context, _, id, version string) error {

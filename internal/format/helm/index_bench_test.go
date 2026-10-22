@@ -99,6 +99,10 @@ func (d *benchHelmDB) ListHelmCharts(_ context.Context, _ string) ([]*models.Hel
 	return d.charts, nil
 }
 
+func (d *benchHelmDB) HelmIndexStamp(_ context.Context, _ string) (string, error) {
+	return strconv.Itoa(len(d.charts)), nil
+}
+
 type discardResponseWriter struct {
 	header http.Header
 	n      int

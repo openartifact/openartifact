@@ -597,12 +597,13 @@ type NugetPackage struct {
 	IsPrerelease             bool    `db:"is_prerelease" json:"is_prerelease"`
 	MinClientVersion         *string `db:"min_client_version" json:"min_client_version"`
 	// Total downloads; BIGINT to avoid overflow on popular packages
-	DownloadCount int64      `db:"download_count" json:"download_count"`
-	CreatedAt     time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID        string     `db:"blob_id" json:"blob_id"`
-	DeletedAt     *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy     *string    `db:"deleted_by" json:"deleted_by"`
+	DownloadCount    int64      `db:"download_count" json:"download_count"`
+	CreatedAt        time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt        time.Time  `db:"updated_at" json:"updated_at"`
+	BlobID           string     `db:"blob_id" json:"blob_id"`
+	DeletedAt        *time.Time `db:"deleted_at" json:"deleted_at"`
+	DeletedBy        *string    `db:"deleted_by" json:"deleted_by"`
+	DependencyGroups []byte     `db:"dependency_groups" json:"dependency_groups"`
 }
 
 // Pre-computed bsdiff patches between package versions for bandwidth-efficient updates

@@ -6,6 +6,7 @@ package rubygems
 
 import (
 	"bytes"
+	"cmp"
 	"compress/gzip"
 	"compress/zlib"
 	"context"
@@ -15,6 +16,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"mime"
 	"net/http"
 	"net/url"
@@ -69,131 +71,43 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("rubygems handler registered", "prefix", prefix)
 }
 
-// handleSpecsGz returns all gem specs as gzipped Marshal data.
+// specsMaxAge is how long shared caches may reuse a public repository's specs
+// indexes before revalidating.
+const specsMaxAge = 60
+
+// specsKind selects which listed gems a specs index carries.
+type specsKind int
+
+const (
+	specsReleased   specsKind = iota // specs.4.8.gz: every released version
+	specsLatest                      // latest_specs.4.8.gz: the newest released version per name and platform
+	specsPrerelease                  // prerelease_specs.4.8.gz: prereleases only
+)
+
+// handleSpecsGz returns all released gem specs as gzipped Marshal data.
 func (h *HTTPHandler) handleSpecsGz(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	gems, err := h.DB.ListRubyGems(r.Context(), repoID)
-	if err != nil {
-		h.Log.Errorw("failed to list gems", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	// specs.4.8 lists released versions only; prereleases live in
-	// prerelease_specs.4.8. Yanked gems are listed nowhere.
-	var activeGems []*models.RubyGem
-
-	for _, g := range gems {
-		if !g.Yanked && !isPrerelease(g.Version) {
-			activeGems = append(activeGems, g)
-		}
-	}
-
-	marshalData, err := marshalSpecsList(activeGems)
-	if err != nil {
-		h.Log.Errorw("failed to marshal gem specs", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-
-	gzw := gzip.NewWriter(w)
-	defer func() { _ = gzw.Close() }()
-
-	_, _ = gzw.Write(marshalData)
+	h.serveSpecs(w, r, specsReleased)
 }
 
 // handleLatestSpecsGz returns only latest versions as gzipped Marshal data.
 func (h *HTTPHandler) handleLatestSpecsGz(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
-	if err != nil {
-		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	if repoID == "" {
-		http.NotFound(w, r)
-		return
-	}
-
-	gems, err := h.DB.ListRubyGems(r.Context(), repoID)
-	if err != nil {
-		h.Log.Errorw("failed to list gems", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	// Latest released version per gem name and platform; prereleases are
-	// listed in prerelease_specs.4.8 only.
-	latestByName := make(map[string]*models.RubyGem)
-
-	for _, g := range gems {
-		if g.Yanked || isPrerelease(g.Version) {
-			continue
-		}
-
-		key := g.Name + ":" + g.Platform
-		if existing, ok := latestByName[key]; ok {
-			// Keep the one with higher version (assuming semantic versioning)
-			if compareVersions(g.Version, existing.Version) > 0 {
-				latestByName[key] = g
-			}
-		} else {
-			latestByName[key] = g
-		}
-	}
-
-	var latestGems []*models.RubyGem
-	for _, g := range latestByName {
-		latestGems = append(latestGems, g)
-	}
-
-	marshalData, err := marshalSpecsList(latestGems)
-	if err != nil {
-		h.Log.Errorw("failed to marshal gem specs", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-
-	gzw := gzip.NewWriter(w)
-	defer func() { _ = gzw.Close() }()
-
-	_, _ = gzw.Write(marshalData)
+	h.serveSpecs(w, r, specsLatest)
 }
 
 // handlePrereleaseSpecsGz returns prerelease gems as gzipped Marshal data.
 func (h *HTTPHandler) handlePrereleaseSpecsGz(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
+	h.serveSpecs(w, r, specsPrerelease)
+}
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+// serveSpecs answers one of the specs indexes. They are derived from the set of
+// listed (not yanked) gems alone, so a stamp of that set is the validator and
+// the cache key: an unchanged repository costs one cheap aggregate query, and
+// the marshalled, gzipped index is built once per change instead of once per
+// request.
+func (h *HTTPHandler) serveSpecs(w http.ResponseWriter, r *http.Request, kind specsKind) {
+	repoName := urlparams.Vars(r)["name"]
+
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -201,42 +115,95 @@ func (h *HTTPHandler) handlePrereleaseSpecsGz(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	gems, err := h.DB.ListRubyGems(r.Context(), repoID)
+	stamp, err := h.DB.RubyGemsSpecsStamp(r.Context(), repo.ID)
 	if err != nil {
-		h.Log.Errorw("failed to list gems", "repo", repoName, "error", err)
+		h.Log.Errorw("failed to stamp gem specs", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	// Filter to prerelease versions (contain alpha, beta, rc, etc.)
-	var prereleaseGems []*models.RubyGem
+	sum := sha256.Sum256([]byte(repo.ID + "\x00" + strconv.Itoa(int(kind)) + "\x00" + stamp))
 
-	for _, g := range gems {
-		if !g.Yanked && isPrerelease(g.Version) {
-			prereleaseGems = append(prereleaseGems, g)
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	if base.Revalidate(w, r, repo.Public, etag, specsMaxAge) {
+		return
+	}
+
+	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+		return h.renderSpecs(ctx, repo.ID, kind)
+	})
+	if err != nil {
+		h.Log.Errorw("failed to render gem specs", "repo", repoName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	rendered.Serve(w, r)
+}
+
+func (h *HTTPHandler) renderSpecs(ctx context.Context, repoID string, kind specsKind) (*base.Rendered, error) {
+	gems, err := h.DB.ListRubyGemSpecs(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list gem specs: %w", err)
+	}
+
+	data, err := marshalSpecsList(selectSpecs(gems, kind))
+	if err != nil {
+		return nil, err
+	}
+
+	var buf bytes.Buffer
+
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(data); err != nil {
+		return nil, fmt.Errorf("gzip gem specs: %w", err)
+	}
+
+	if err := zw.Close(); err != nil {
+		return nil, fmt.Errorf("gzip gem specs: %w", err)
+	}
+
+	return &base.Rendered{Body: buf.Bytes(), ContentType: "application/octet-stream", Opaque: true}, nil
+}
+
+// selectSpecs filters the listed gems for one specs index. Yanked gems are
+// listed nowhere; specs.4.8 lists released versions only, prereleases live in
+// prerelease_specs.4.8; latest_specs.4.8 keeps the highest released version per
+// name and platform, ordered by name then platform so equal data always
+// produces the same bytes.
+func selectSpecs(gems []*models.RubyGem, kind specsKind) []*models.RubyGem {
+	switch kind {
+	case specsPrerelease:
+		return slices.DeleteFunc(slices.Clone(gems), func(g *models.RubyGem) bool { return g.Yanked || !isPrerelease(g.Version) })
+	case specsLatest:
+		latest := make(map[string]*models.RubyGem)
+
+		for _, g := range gems {
+			if g.Yanked || isPrerelease(g.Version) {
+				continue
+			}
+
+			key := g.Name + ":" + g.Platform
+			if existing, ok := latest[key]; !ok || compareVersions(g.Version, existing.Version) > 0 {
+				latest[key] = g
+			}
 		}
+
+		out := slices.SortedFunc(maps.Values(latest), func(a, b *models.RubyGem) int {
+			return cmp.Or(strings.Compare(a.Name, b.Name), strings.Compare(a.Platform, b.Platform))
+		})
+
+		return out
+	default:
+		return slices.DeleteFunc(slices.Clone(gems), func(g *models.RubyGem) bool { return g.Yanked || isPrerelease(g.Version) })
 	}
-
-	marshalData, err := marshalSpecsList(prereleaseGems)
-	if err != nil {
-		h.Log.Errorw("failed to marshal gem specs", "repo", repoName, "error", err)
-		http.Error(w, "internal error", http.StatusInternalServerError)
-
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/octet-stream")
-
-	gzw := gzip.NewWriter(w)
-	defer func() { _ = gzw.Close() }()
-
-	_, _ = gzw.Write(marshalData)
 }
 
 // handleGemspec returns a zlib-compressed gemspec.

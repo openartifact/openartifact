@@ -42,6 +42,16 @@ func (d *cacheDB) ListHelmCharts(context.Context, string) ([]*models.HelmChart, 
 	return d.charts, nil
 }
 
+func (d *cacheDB) HelmIndexStamp(context.Context, string) (string, error) {
+	var b strings.Builder
+
+	for _, c := range d.charts {
+		b.WriteString(c.ID + c.Digest + ";")
+	}
+
+	return b.String(), nil
+}
+
 func (d *cacheDB) ListPyPIPackages(context.Context, string) ([]*models.PyPIPackage, error) {
 	return d.pypi, nil
 }

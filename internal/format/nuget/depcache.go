@@ -6,6 +6,7 @@ package nuget
 
 import (
 	"container/list"
+	"encoding/json"
 	"sync"
 )
 
@@ -17,8 +18,9 @@ const (
 	maxConcurrentNuspecReads = 2
 )
 
-// depCache is a bounded LRU of dependency groups keyed by package blob
-// digest. Blobs are content-addressed, so an entry never goes stale.
+// depCache is a bounded LRU of dependency groups JSON keyed by package blob
+// digest. Blobs are content-addressed, so an entry never goes stale. It is the
+// fallback for packages whose groups are not stored in the database yet.
 type depCache struct {
 	mu    sync.Mutex
 	max   int
@@ -28,14 +30,14 @@ type depCache struct {
 
 type depCacheEntry struct {
 	key    string
-	groups []map[string]any
+	groups json.RawMessage
 }
 
 func newDepCache(maxEntries int) *depCache {
 	return &depCache{max: max(maxEntries, 1), order: list.New(), items: make(map[string]*list.Element)}
 }
 
-func (c *depCache) get(key string) ([]map[string]any, bool) {
+func (c *depCache) get(key string) (json.RawMessage, bool) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 
@@ -51,7 +53,7 @@ func (c *depCache) get(key string) ([]map[string]any, bool) {
 	return entry.groups, true
 }
 
-func (c *depCache) put(key string, groups []map[string]any) {
+func (c *depCache) put(key string, groups json.RawMessage) {
 	c.mu.Lock()
 	defer c.mu.Unlock()
 

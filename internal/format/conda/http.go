@@ -118,23 +118,65 @@ func repodataEntry(pkg *models.CondaPackage, platform string) map[string]any {
 	return entry
 }
 
+// repodataMaxAge is how long shared caches may reuse a public repository's
+// repodata.json before revalidating.
+const repodataMaxAge = 60
+
 func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	platform := vars["platform"]
 
-	repoID := h.resolveRepo(w, r)
-	if repoID == "" {
-		return
-	}
-
-	// List all packages for this platform
-	packages, err := h.DB.ListCondaPackages(r.Context(), repoID, platform)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
-		h.Log.Errorw("failed to list conda packages", "repo", repoName, "platform", platform, "error", err)
+		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
+	}
+
+	if repo == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	// The validator is a stamp of the platform's package set, so a repodata
+	// poll that has not changed is answered without listing 10k packages and
+	// re-encoding 4 MB of JSON.
+	stamp, err := h.DB.CondaRepodataStamp(r.Context(), repo.ID, platform)
+	if err != nil {
+		h.Log.Errorw("failed to stamp conda repodata", "repo", repoName, "platform", platform, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	sum := sha256.Sum256([]byte(repo.ID + "\x00" + platform + "\x00" + stamp))
+
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	if base.Revalidate(w, r, repo.Public, etag, repodataMaxAge) {
+		return
+	}
+
+	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+		return h.renderRepodata(ctx, repo.ID, platform)
+	})
+	if err != nil {
+		h.Log.Errorw("failed to render conda repodata", "repo", repoName, "platform", platform, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	rendered.Serve(w, r)
+}
+
+// renderRepodata lists the live packages of one platform and encodes
+// repodata.json.
+func (h *HTTPHandler) renderRepodata(ctx context.Context, repoID, platform string) (*base.Rendered, error) {
+	packages, err := h.DB.ListCondaPackages(ctx, repoID, platform)
+	if err != nil {
+		return nil, fmt.Errorf("list conda packages: %w", err)
 	}
 
 	// .tar.bz2 files go under "packages", .conda files under "packages.conda".
@@ -149,20 +191,20 @@ func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	repodata := map[string]any{
+	var buf bytes.Buffer
+
+	err = json.NewEncoder(&buf).Encode(map[string]any{
 		"info": map[string]any{
 			"subdir": platform,
 		},
 		"packages":       tarBz2,
 		"packages.conda": conda,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("encode repodata: %w", err)
 	}
 
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(repodata); encErr != nil {
-		_ = encErr // response header already written
-	}
+	return &base.Rendered{Body: buf.Bytes(), ContentType: "application/json"}, nil
 }
 
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {

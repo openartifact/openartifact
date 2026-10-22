@@ -70,6 +70,31 @@ func (d *gemsDB) ListRubyGems(_ context.Context, _ string) ([]*models.RubyGem, e
 	return d.gems, nil
 }
 
+// ListRubyGemSpecs mirrors the real query: listed gems only.
+func (d *gemsDB) ListRubyGemSpecs(_ context.Context, _ string) ([]*models.RubyGem, error) {
+	var out []*models.RubyGem
+
+	for _, g := range d.gems {
+		if !g.Yanked {
+			out = append(out, g)
+		}
+	}
+
+	return out, nil
+}
+
+func (d *gemsDB) RubyGemsSpecsStamp(_ context.Context, _ string) (string, error) {
+	var b strings.Builder
+
+	for _, g := range d.gems {
+		if !g.Yanked {
+			b.WriteString(g.Name + "@" + g.Version + "@" + g.Platform + ";")
+		}
+	}
+
+	return b.String(), nil
+}
+
 func (d *gemsDB) ListRubyGemVersions(_ context.Context, _, name string) ([]*models.RubyGem, error) {
 	var out []*models.RubyGem
 

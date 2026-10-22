@@ -49,12 +49,12 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 }
 
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
-	r.Get("/simple/", h.handleSimpleIndex)
-	r.Get("/simple/{package}/", h.handlePackageIndex)
+	r.Get("/simple/", base.Compress(h.handleSimpleIndex))
+	r.Get("/simple/{package}/", base.Compress(h.handlePackageIndex))
 	r.Get("/files/{filename}", h.handleDownload)
 	r.Post("/legacy/", h.handleUpload)
 	r.Delete("/files/{filename}", h.handleDelete)
-	r.Get("/json/{package}", h.handleJSON)
+	r.Get("/json/{package}", base.Compress(h.handleJSON))
 }
 
 func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {

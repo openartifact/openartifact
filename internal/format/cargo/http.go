@@ -9,12 +9,14 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/binary"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"net/http"
 	"strconv"
+	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
@@ -52,7 +54,7 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Put("/api/v1/crates/new", h.handlePublish)
 	r.Delete("/api/v1/crates/{crate}/{version}/yank", h.handleYank)
 	r.Put("/api/v1/crates/{crate}/{version}/unyank", h.handleUnyank)
-	r.Get("/api/v1/crates", h.handleSearch)
+	r.Get("/api/v1/crates", base.Compress(h.handleSearch))
 }
 
 func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
@@ -99,12 +101,19 @@ func (h *HTTPHandler) handleConfig(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// indexMaxAge is how long shared caches may reuse a public repository's sparse
+// index entry before revalidating.
+const indexMaxAge = 60
+
+// noIndexVersions is the CargoIndexStamp of a crate with no live version.
+const noIndexVersions = "0:0"
+
 func (h *HTTPHandler) handleSparseIndex(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
 	crateName := vars["crate"]
 
-	repoID, err := h.ResolveRepoID(r.Context(), repoName)
+	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
 		h.Log.Errorw("failed to resolve repo", "name", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -112,53 +121,89 @@ func (h *HTTPHandler) handleSparseIndex(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if repoID == "" {
+	if repo == nil {
 		http.NotFound(w, r)
 		return
 	}
 
-	// Get all versions of the crate
-	versions, err := h.DB.ListCargoCrateVersions(r.Context(), repoID, crateName)
+	// The stamp covers the live versions and their yanked flags, the only
+	// mutable state of an entry, so cargo's per-dependency revalidation is a
+	// narrow aggregate query instead of loading every version with its publish
+	// metadata.
+	stamp, err := h.DB.CargoIndexStamp(r.Context(), repo.ID, crateName)
 	if err != nil {
-		h.Log.Errorw("failed to get cargo crate versions", "name", crateName, "error", err)
+		h.Log.Errorw("failed to stamp cargo index", "name", crateName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return
 	}
 
-	if len(versions) == 0 {
+	if stamp == noIndexVersions {
 		http.NotFound(w, r)
 		return
 	}
 
-	// Build sparse index response (newline-delimited JSON)
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
+	sum := sha256.Sum256([]byte(repo.ID + "\x00" + strings.ToLower(crateName) + "\x00" + stamp))
+
+	etag := `"` + hex.EncodeToString(sum[:16]) + `"`
+	if base.Revalidate(w, r, repo.Public, etag, indexMaxAge) {
+		return
+	}
+
+	rendered, err := h.Rendered(r.Context(), etag, func(ctx context.Context) (*base.Rendered, error) {
+		return h.renderSparseIndex(ctx, repo.ID, crateName)
+	})
+	if err != nil {
+		h.Log.Errorw("failed to render cargo index", "name", crateName, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	rendered.Serve(w, r)
+}
+
+// indexMetadata is the part of the publish metadata a sparse index entry
+// shows. Decoding into it skips the rest (readme, description, ...) without
+// building maps for it.
+type indexMetadata struct {
+	Deps     any `json:"deps"`
+	Features any `json:"features"`
+	Links    any `json:"links"`
+}
+
+// renderSparseIndex builds the newline-delimited JSON index of one crate.
+func (h *HTTPHandler) renderSparseIndex(ctx context.Context, repoID, crateName string) (*base.Rendered, error) {
+	versions, err := h.DB.ListCargoIndexVersions(ctx, repoID, crateName)
+	if err != nil {
+		return nil, fmt.Errorf("list cargo index versions: %w", err)
+	}
+
+	var buf bytes.Buffer
+
+	enc := json.NewEncoder(&buf)
 
 	for _, v := range versions {
-		// Parse metadata JSON to get deps and features
-		var metadata map[string]any
+		var metadata indexMetadata
 		if err := json.Unmarshal(v.MetadataJSON, &metadata); err != nil {
 			h.Log.Errorw("failed to parse metadata", "crate", crateName, "version", v.Version, "error", err)
 			continue
 		}
 
-		// Build index entry
-		entry := map[string]any{
+		if err := enc.Encode(map[string]any{
 			"name":     v.Name,
 			"vers":     v.Version,
-			"deps":     transformCargoIndexDeps(metadata["deps"]),
+			"deps":     transformCargoIndexDeps(metadata.Deps),
 			"cksum":    v.Checksum,
-			"features": metadata["features"],
+			"features": metadata.Features,
 			"yanked":   v.Yanked,
-			"links":    metadata["links"],
-		}
-
-		if err := json.NewEncoder(w).Encode(entry); err != nil {
-			h.Log.Errorw("failed to write index entry", "crate", crateName, "version", v.Version, "error", err)
-			return
+			"links":    metadata.Links,
+		}); err != nil {
+			return nil, fmt.Errorf("encode index entry %s: %w", v.Version, err)
 		}
 	}
+
+	return &base.Rendered{Body: buf.Bytes(), ContentType: "application/json"}, nil
 }
 
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
@@ -207,7 +252,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		h.Log.Errorw("failed to increment download count", "name", crateName, "version", version, "error", err)
 	}
 
-	if h.TryPresign(w, r, presign.Blob{SHA256: crate.BlobKey, Filename: crateName + "-" + version + ".crate", ContentType: "application/octet-stream"}) {
+	if h.TryPresign(w, r, presign.Blob{SHA256: crate.BlobKey, Size: crate.SizeBytes, Filename: crateName + "-" + version + ".crate", ContentType: "application/octet-stream"}) {
 		return
 	}
 

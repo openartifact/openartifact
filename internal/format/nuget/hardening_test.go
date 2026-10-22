@@ -134,35 +134,6 @@ func (c *countingStore) Get(ctx context.Context, id string) (io.ReadCloser, erro
 	return c.BlobStore.Get(ctx, id) //nolint:wrapcheck // test double
 }
 
-// The registration index reads each package once, then serves its dependency
-// groups from the cache.
-func TestRegistrationIndexCachesDependencyGroups(t *testing.T) {
-	h, _, bs, _ := newV3Handler(t)
-	cs := &countingStore{BlobStore: bs}
-	h.BlobStore = cs
-
-	for _, v := range []string{"1.0.0", "2.0.0", "3.0.0"} {
-		mustPush(t, h, "Contoso.Lib", v)
-	}
-
-	url := "/repos/myrepo/v3/registration/contoso.lib/index.json"
-
-	for range 3 {
-		w := formattest.Do(register(h), formattest.Request(http.MethodGet, url, nil))
-		if w.Code != http.StatusOK {
-			t.Fatalf("status = %d: %s", w.Code, w.Body.String())
-		}
-
-		if !strings.Contains(w.Body.String(), "Other.Lib") {
-			t.Fatalf("dependency groups missing: %s", w.Body.String())
-		}
-	}
-
-	if got := cs.gets.Load(); got != 3 {
-		t.Fatalf("blob reads = %d, want 3 (one per package, none on repeats)", got)
-	}
-}
-
 func TestDepCacheEvictsLeastRecentlyUsed(t *testing.T) {
 	c := newDepCache(2)
 	c.put("a", nil)
