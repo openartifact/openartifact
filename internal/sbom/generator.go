@@ -211,7 +211,7 @@ func generatePURL(format, name, version string) string {
 		purlType = "deb"
 	case "rpm":
 		purlType = "rpm"
-	case "gomod":
+	case "go":
 		purlType = "golang"
 	case "raw":
 		purlType = "generic"

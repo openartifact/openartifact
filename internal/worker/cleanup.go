@@ -389,7 +389,7 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 		return formatTable{"pypi_packages", "name", []string{"name"}, "version", []string{"blob_id"}, false, models.TrashKindPyPI}, true
 	case "nuget":
 		return formatTable{"nuget_packages", "package_id", []string{"package_id"}, "version", []string{"blob_id"}, false, models.TrashKindNuGet}, true
-	case "go": // repositories.format value is "go", not "gomod" (chk_repo_format)
+	case "go": // the format id is "go"; the table is gomod_modules (chk_repo_format)
 		return formatTable{"gomod_modules", "module_path", []string{"module_path"}, "version", []string{"zip_blob_id", "mod_blob_id"}, false, models.TrashKindGoMod}, true
 	default:
 		return formatTable{}, false

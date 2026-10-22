@@ -46,7 +46,7 @@ SELECT COUNT(*)::bigint FROM (
     UNION ALL
     -- gomod
     SELECT 1 FROM gomod_modules t
-    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'gomod') AND ($3::text = '' OR module_path = $3::text)
+    WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'go') AND ($3::text = '' OR module_path = $3::text)
     UNION ALL
     -- cargo
     SELECT 1 FROM cargo_crates t
@@ -315,7 +315,7 @@ FROM (
     FROM nuget_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
     UNION ALL
-    SELECT t.id::uuid, 'gomod'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text, t.module_path::text, t.version::text,
+    SELECT t.id::uuid, 'go'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text, t.module_path::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM gomod_modules t LEFT JOIN blobs b ON b.id = COALESCE(t.zip_blob_id, t.mod_blob_id)
     WHERE t.deleted_at IS NULL AND t.repository_id = $1::uuid AND t.id = $2::uuid
@@ -473,10 +473,10 @@ FROM (
     UNION ALL
     -- gomod: one row per module version; the zip blob is preferred, the .mod blob otherwise.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.module_path::text AS name, t.version::text AS version,
-           'gomod'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           'go'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
            0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
            t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text AS filename, COALESCE(t.zip_blob_id, t.mod_blob_id)::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT id, repository_id, module_path, version, go_mod_content, created_at, updated_at, zip_blob_id, mod_blob_id, deleted_at, deleted_by FROM gomod_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'gomod') AND ($3::text = '' OR module_path = $3::text) ORDER BY created_at DESC, id LIMIT ($4::int + $5::int)) t
+    FROM (SELECT id, repository_id, module_path, version, go_mod_content, created_at, updated_at, zip_blob_id, mod_blob_id, deleted_at, deleted_by FROM gomod_modules WHERE deleted_at IS NULL AND repository_id = $1::uuid AND ($2::text = '' OR $2::text = 'go') AND ($3::text = '' OR module_path = $3::text) ORDER BY created_at DESC, id LIMIT ($4::int + $5::int)) t
     UNION ALL
     -- cargo: one row per crate version (yanked included).
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,

@@ -13,6 +13,7 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"path"
 	"slices"
 	"strconv"
 	"strings"
@@ -31,9 +32,12 @@ import (
 //     BASE_URL/repos/<repo>/charts/<file>, so the cache stays upstream-shaped.
 //     Versions that only list URLs that cannot be mirrored (oci://) are left
 //     out: this server could not serve them.
-//   - Charts (GET /charts/<file>) are cached under "charts/<file>", immutable.
+//   - Charts (GET /charts/<file>) are cached under "charts/<file>", immutable
+//     (or for the repository TTL when the index lists no digest for them).
 //     The upstream URL and digest come from the cached index entry whose URL
-//     ends in <file>; bytes that do not match its digest are refused and never
+//     ends in <file>; when two entries list different URLs that end in the
+//     same file name, the later one is served as <name>-<hash of its URL>.<ext>
+//     (see helmFileNamer); bytes that do not match its digest are refused and never
 //     cached. GET /charts/<file>.prov (helm pull --verify) fetches the
 //     provenance file next to the chart.
 //
@@ -291,6 +295,8 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 
 	chartBase := s.baseURL + "/repos/" + repo.Name + "/" + helmChartsDir
 
+	var namer helmFileNamer
+
 	ix.RewriteURLs(func(cv pkghelm.ChartVersion) []string {
 		var out []string
 
@@ -300,7 +306,7 @@ func (s *Service) renderHelmIndex(repo *models.Repository, body []byte) ([]byte,
 				continue
 			}
 
-			file, ok := pkghelm.ChartFile(target)
+			file, ok := namer.name(target)
 			if !ok {
 				continue
 			}
@@ -381,6 +387,7 @@ func (s *Service) fetchHelmChart(ctx context.Context, repo *models.Repository, f
 		// an index points at.
 		noAuth:     !sameOrigin(target, upstream),
 		wantSHA256: want,
+		unverified: want == "",
 	})
 }
 
@@ -412,6 +419,8 @@ func locateHelmFile(ix *pkghelm.Index, upstream *url.URL, file string) (*url.URL
 // findHelmChart returns the URL and digest of the first index entry that lists
 // a chart URL ending in file.
 func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string) (*url.URL, string, bool) {
+	var namer helmFileNamer
+
 	for cv := range ix.Versions() {
 		for _, raw := range cv.URLs {
 			target, ok := resolveChartURL(upstream, raw)
@@ -419,13 +428,56 @@ func findHelmChart(ix *pkghelm.Index, upstream *url.URL, file string) (*url.URL,
 				continue
 			}
 
-			if f, ok := pkghelm.ChartFile(target); ok && f == file {
+			if f, ok := namer.name(target); ok && f == file {
 				return target, cv.Digest, true
 			}
 		}
 	}
 
 	return nil, "", false
+}
+
+// helmFileNamer assigns every chart URL of an index the file name it is served
+// under (charts/<file>). That is the last segment of the URL path, so the first
+// entry to claim a name keeps it; a later entry listing a different URL with
+// the same last segment (stable/foo-1.0.0.tgz and incubator/foo-1.0.0.tgz)
+// gets the name with a hash of its URL before the extension, instead of
+// resolving to the first one's bytes. Rendering and lookup walk the index in
+// the same document order, so they agree on every name.
+type helmFileNamer struct {
+	owner map[string]string // served file name -> URL that claimed it
+}
+
+// name returns the file name target is served under; false when the URL has no
+// usable file name or both candidate names belong to other URLs.
+func (n *helmFileNamer) name(target *url.URL) (string, bool) {
+	file, ok := pkghelm.ChartFile(target)
+	if !ok {
+		return "", false
+	}
+
+	raw := target.String()
+
+	if n.owner == nil {
+		n.owner = make(map[string]string)
+	}
+
+	sum := sha256.Sum256([]byte(raw))
+	ext := path.Ext(file)
+
+	for _, candidate := range []string{file, strings.TrimSuffix(file, ext) + "-" + hex.EncodeToString(sum[:4]) + ext} {
+		owner, taken := n.owner[candidate]
+		if !taken {
+			n.owner[candidate] = raw
+			return candidate, true
+		}
+
+		if owner == raw {
+			return candidate, true
+		}
+	}
+
+	return "", false
 }
 
 // helmDigest normalizes an index digest to lowercase SHA-256 hex. An absent

@@ -184,7 +184,10 @@ func (s *Service) resolveGo(r *http.Request, repo *models.Repository, req goRequ
 			return nil, errInternal
 		}
 
-		var o fetchOpts
+		var (
+			o       fetchOpts
+			vouched bool
+		)
 
 		switch req.kind {
 		case goList:
@@ -199,9 +202,9 @@ func (s *Service) resolveGo(r *http.Request, repo *models.Repository, req goRequ
 
 			o.verify = verifyGoInfo(want)
 		case goMod:
-			o.verify = s.verifyGoMod(req.module, req.version)
+			o.vouched, o.verify = &vouched, s.verifyGoMod(req.module, req.version, &vouched)
 		case goZip:
-			o.verify = s.verifyGoZip(req.module, req.version)
+			o.vouched, o.verify = &vouched, s.verifyGoZip(req.module, req.version, &vouched)
 		}
 
 		return s.fetchURL(fctx, repo, req.key, target, o)

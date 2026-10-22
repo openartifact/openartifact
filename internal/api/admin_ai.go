@@ -124,20 +124,11 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	cfg, err := h.loadConfigFromDB(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to load config")
-		return
-	}
-
-	enabled, _ := h.db.GetSystemSetting(r.Context(), ai.SettingEnabled)
-	enabledBool := false
-
-	if enabled != "" {
-		if b, err := strconv.ParseBool(enabled); err == nil {
-			enabledBool = b
-		}
-	}
+	// Report what the server runs with: stored settings layered over env/YAML,
+	// the same rules the worker applies (ai.LoadSettings), so a deployment that
+	// enables AI through env is not shown as disabled.
+	eff := ai.LoadSettings(r.Context(), h.db, h.envAI)
+	cfg := eff.Config
 
 	// Mask API key
 	apiKeyDisplay := ""
@@ -145,12 +136,9 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 		apiKeyDisplay = "••••••••" //nolint:gosec // This is a display mask, not a real credential
 	}
 
-	autoAnalyze, _ := h.db.GetSystemSetting(r.Context(), ai.SettingAutoAnalyze)
-	autoAnalyzeBool, _ := strconv.ParseBool(autoAnalyze)
-
 	response := map[string]any{
-		"enabled":       enabledBool,
-		"auto_analyze":  autoAnalyzeBool,
+		"enabled":       eff.Enabled,
+		"auto_analyze":  eff.AutoAnalyze,
 		"provider":      cfg.Provider,
 		"base_url":      cfg.BaseURL,
 		"api_key":       apiKeyDisplay,

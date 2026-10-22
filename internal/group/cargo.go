@@ -11,7 +11,6 @@ import (
 	"strconv"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
 )
 
@@ -52,7 +51,7 @@ func (h *Handler) serveCargo(w http.ResponseWriter, r *http.Request, grp *models
 }
 
 func (h *Handler) serveCargoConfig(w http.ResponseWriter, r *http.Request, grp *models.Repository) {
-	h.writeCargo(w, r, grp, pkgcargo.RenderConfig(h.baseURL, grp.Name, grp.Public), "application/json", cargoConfigMaxAge)
+	h.writeCargo(w, r, grp, pkgcargo.RenderConfig(h.baseURL, grp.Name, grp.Public), "application/json", cargoConfigMaxAge, false)
 }
 
 func (h *Handler) serveCargoIndex(w http.ResponseWriter, r *http.Request, grp *models.Repository, p pkgcargo.Path, members []*models.Repository, be Backend) {
@@ -99,15 +98,16 @@ func (h *Handler) serveCargoIndex(w http.ResponseWriter, r *http.Request, grp *m
 		return
 	}
 
-	h.writeCargo(w, r, grp, body, "text/plain; charset=utf-8", cargoIndexMaxAge)
+	h.writeCargo(w, r, grp, body, "text/plain; charset=utf-8", cargoIndexMaxAge, failed)
 }
 
 // writeCargo answers a generated document with a content ETag, honoring
-// If-None-Match.
-func (h *Handler) writeCargo(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, contentType string, maxAge int) {
+// If-None-Match; partial (a member failed while it was assembled) sends it
+// uncacheable and without validator.
+func (h *Handler) writeCargo(w http.ResponseWriter, r *http.Request, grp *models.Repository, body []byte, contentType string, maxAge int, partial bool) {
 	sum := sha256.Sum256(body)
 
-	if base.Revalidate(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, maxAge) {
+	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, maxAge, partial) {
 		return
 	}
 

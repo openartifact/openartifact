@@ -32,7 +32,7 @@
 		LEFT JOIN docker_manifests dm
 			ON dm.repository_id = dt.repository_id AND dm.digest = dt.manifest_digest
 	UNION ALL
-	SELECT gm.repository_id, 'gomod'::text, gm.module_path, gm.version, gm.created_at,
+	SELECT gm.repository_id, 'go'::text, gm.module_path, gm.version, gm.created_at,
 			''::text,
 			COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0),
 			NULL::text, CAST(NULL AS text), NULL::text

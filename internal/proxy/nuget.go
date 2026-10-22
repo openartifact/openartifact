@@ -316,9 +316,10 @@ func (s *Service) readNuGetDoc(ctx context.Context, entry *models.ProxyCacheEntr
 }
 
 // gunzipDoc returns b decompressed when it is gzip data, b itself otherwise.
+// A document over the limit is the upstream's doing (errUpstream).
 func gunzipDoc(b []byte) ([]byte, error) {
 	if len(b) > maxNuGetDocBytes {
-		return nil, errInternal
+		return nil, errUpstream
 	}
 
 	if len(b) < 2 || b[0] != 0x1f || b[1] != 0x8b {
@@ -336,7 +337,7 @@ func gunzipDoc(b []byte) ([]byte, error) {
 	}
 
 	if len(out) > maxNuGetDocBytes {
-		return nil, errInternal
+		return nil, errUpstream
 	}
 
 	return out, nil
@@ -632,6 +633,9 @@ func (s *Service) fetchNuGetPackageFile(ctx context.Context, repo *models.Reposi
 		}
 
 		o.verify = func(spool io.ReadSeeker) error { return verifyNupkg(spool, digest) }
+		// Without a published hash (leaf or catalog entry missing) only the
+		// structure is checked. A size alone does not vouch for the content.
+		o.unverified = len(digest.Hash) == 0
 	}
 
 	return s.fetchURL(ctx, repo, key, target, o)

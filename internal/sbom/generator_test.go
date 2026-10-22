@@ -125,7 +125,7 @@ func TestGenerateCycloneDX(t *testing.T) {
 			{"rubygems", "gem"},
 			{"nuget", "nuget"},
 			{"docker", "docker"},
-			{"gomod", "golang"},
+			{"go", "golang"},
 			{"helm", "helm"},
 			{"rpm", "rpm"},
 			{"deb", "deb"},

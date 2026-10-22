@@ -632,7 +632,7 @@ func (e *Engine) exportFormatTables(ctx context.Context, repo *models.Repository
 	case "conda":
 		v, err := e.db.ListAllCondaPackages(ctx, id)
 		collectRepoList(pkg, &pkg.condaPackages, "conda packages", id, v, err)
-	case "go", "gomod":
+	case "go":
 		v, err := e.db.ListGoModulesByRepo(ctx, id)
 		collectRepoList(pkg, &pkg.gomodModules, "gomod modules", id, v, err)
 	}

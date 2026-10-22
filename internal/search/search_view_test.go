@@ -21,7 +21,7 @@ func TestNarrowSearchView_NoBlobJoinEveryFormat(t *testing.T) {
 		}
 	}
 
-	formats := []string{"cargo", "conda", "conan", "docker", "gomod", "helm", "ivy", "maven", "npm", "nuget", "pypi", "raw", "rubygems", "sbt", "rpm", "deb"}
+	formats := []string{"cargo", "conda", "conan", "docker", "go", "helm", "ivy", "maven", "npm", "nuget", "pypi", "raw", "rubygems", "sbt", "rpm", "deb"}
 	if got, want := strings.Count(v, "UNION ALL")+1, len(formats); got != want {
 		t.Errorf("narrow view has %d branches, want %d", got, want)
 	}

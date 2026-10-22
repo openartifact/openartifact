@@ -287,3 +287,68 @@ func TestAITriggerWithoutManifestText(t *testing.T) {
 		})
 	}
 }
+
+// The admin GET shows what the worker runs with: AI enabled by the environment
+// (no saved ai.enabled) is enabled in the response, and a saved value wins.
+func TestAdminAIConfigGetReflectsEffectiveConfig(t *testing.T) {
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	env := ai.Settings{Enabled: true, AutoAnalyze: true, Config: ai.Config{Provider: "ollama", BaseURL: "http://ollama.local:11434", Model: "env-model"}}
+	db := newAIRuntimeDB()
+
+	r := chi.NewRouter()
+	NewAdminAIHandler(db, log, auth.NewEvaluator(db, log, false)).WithRuntime(nil, env).Register(r)
+
+	get := func() map[string]any {
+		req := httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/api/v1/admin/ai/config", nil)
+		req = req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{Username: "admin", IsLegacy: true}))
+
+		rw := httptest.NewRecorder()
+		r.ServeHTTP(rw, req)
+
+		var cfg map[string]any
+		if err := json.Unmarshal(rw.Body.Bytes(), &cfg); err != nil || rw.Code != http.StatusOK {
+			t.Fatalf("GET: %d %s (%v)", rw.Code, rw.Body.String(), err)
+		}
+
+		return cfg
+	}
+
+	cfg := get()
+	if cfg["enabled"] != true || cfg["auto_analyze"] != true || cfg["provider"] != "ollama" || cfg["model"] != "env-model" {
+		t.Errorf("env-configured AI reported as %v", cfg)
+	}
+
+	db.settings[ai.SettingEnabled] = "false"
+
+	if cfg := get(); cfg["enabled"] != false {
+		t.Errorf("saved ai.enabled=false reported as %v", cfg["enabled"])
+	}
+}
+
+func TestValidateAIArtifactIdentity(t *testing.T) {
+	long := strings.Repeat("x", aiMaxNameLen+1)
+
+	tests := []struct {
+		name, format, artName, version string
+		wantErr                        bool
+	}{
+		{"empty is fine", "", "", "", false},
+		{"go is the repository format id", "go", "example.com/m", "v1.0.0", false},
+		{"gomod is not a format id", "gomod", "", "", true},
+		{"unknown format", "rpmx", "", "", true},
+		{"name too long", "npm", long, "", true},
+		{"version too long", "npm", "", long, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := ValidateAIArtifactIdentity(tc.format, tc.artName, tc.version); (got != "") != tc.wantErr {
+				t.Errorf("ValidateAIArtifactIdentity = %q, wantErr %v", got, tc.wantErr)
+			}
+		})
+	}
+}

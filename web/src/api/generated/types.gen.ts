@@ -101,7 +101,7 @@ export type Repository = {
     /**
      * Package format
      */
-    format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'gomod' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
+    format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
     /**
      * Repository description
      */
@@ -1067,7 +1067,7 @@ export type GetApiV1RepositoriesData = {
         /**
          * Filter by package format
          */
-        format?: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'gomod' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
+        format?: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
         /**
          * Page number (default: 1)
          */
@@ -1100,7 +1100,7 @@ export type PostApiV1RepositoriesData = {
          * Repository name (1-100 alphanumeric/hyphen/underscore)
          */
         name: string;
-        format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'gomod' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
+        format: 'deb' | 'rpm' | 'maven' | 'npm' | 'docker' | 'helm' | 'pypi' | 'nuget' | 'go' | 'cargo' | 'rubygems' | 'raw' | 'conda' | 'conan' | 'ivy' | 'sbt';
         description?: string;
         public?: boolean;
         /**

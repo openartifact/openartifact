@@ -8,9 +8,11 @@ import (
 	"archive/zip"
 	"bytes"
 	"compress/gzip"
+	"context"
 	"crypto/sha512"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -672,5 +674,33 @@ func TestNuGetImmutable(t *testing.T) {
 		if got := Immutable("nuget", key); got != want {
 			t.Errorf("Immutable(nuget, %q) = %v, want %v", key, got, want)
 		}
+	}
+}
+
+// A gzip document that inflates past the limit is the upstream's doing: 502,
+// not a server error.
+func TestNuGetProxy_OversizedGzipDocumentIsAnUpstreamError(t *testing.T) {
+	var buf bytes.Buffer
+
+	zw := gzip.NewWriter(&buf)
+	if _, err := zw.Write(make([]byte, maxNuGetDocBytes+1)); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := zw.Close(); err != nil {
+		t.Fatal(err)
+	}
+
+	_, err := gunzipDoc(buf.Bytes())
+	if !errors.Is(err, errUpstream) {
+		t.Fatalf("gunzipDoc = %v, want errUpstream", err)
+	}
+
+	f := newFixture(t, http.NotFound)
+	w := httptest.NewRecorder()
+	f.svc.writeResolveError(w, httptest.NewRequestWithContext(context.Background(), http.MethodGet, "/", nil), err)
+
+	if w.Code != http.StatusBadGateway {
+		t.Errorf("status %d, want 502", w.Code)
 	}
 }

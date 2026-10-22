@@ -114,8 +114,8 @@ func unifiedSearchBranches() []string {
 			"\n\t\tFROM conan_packages co WHERE co.deleted_at IS NULL AND co.package_id = '' AND co.filename IN ('', 'conanmanifest.txt')",
 		searchBranch("docker", "dt.name", "''", "''", null, null, null, "dt.manifest_digest", "dt") +
 			"\n\t\tFROM docker_tags dt WHERE dt.deleted_at IS NULL",
-		// gomod: only the zip blob is reported (a module with just a .mod has none).
-		searchBranch("gomod", "gm.module_path", "gm.version", "''", null, null, "gm.zip_blob_id", null, "gm") +
+		// go: only the zip blob is reported (a module with just a .mod has none).
+		searchBranch("go", "gm.module_path", "gm.version", "''", null, null, "gm.zip_blob_id", null, "gm") +
 			"\n\t\tFROM gomod_modules gm WHERE gm.deleted_at IS NULL",
 		searchBranch("helm", "hc.name", "hc.version", "hc.name || '-' || hc.version || '.tgz'", null, null, "hc.blob_id", null, "hc") +
 			"\n\t\tFROM helm_charts hc WHERE hc.deleted_at IS NULL",

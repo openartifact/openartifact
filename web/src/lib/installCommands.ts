@@ -50,7 +50,7 @@ export function pullCommand(
       return `cargo install ${pkg} --version ${version} --index sparse+${base}/index/`
     case 'nuget':
       return `dotnet add package ${pkg} --version ${version} --source ${base}/v3/index.json`
-    case 'gomod':
+    case 'go':
       return `GOPROXY=${base} go get ${pkg}@${version}`
     case 'rubygems':
       return `gem install ${pkg} -v ${version} --source ${base}/`
@@ -165,7 +165,7 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
           publish: `cargo publish --registry ${repo}`,
         },
       ]
-    case 'gomod':
+    case 'go':
       return [
         {
           client: 'go',

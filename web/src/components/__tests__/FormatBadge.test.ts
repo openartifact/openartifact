@@ -75,8 +75,8 @@ describe('FormatBadge', () => {
     expect(wrapper.text()).toContain('NuGet')
   })
 
-  it('renders correct label for gomod', () => {
-    const wrapper = mount(FormatBadge, { props: { format: 'gomod' } })
+  it('renders correct label for go', () => {
+    const wrapper = mount(FormatBadge, { props: { format: 'go' } })
     expect(wrapper.text()).toContain('Go')
   })
 

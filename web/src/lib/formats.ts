@@ -38,7 +38,7 @@ export type FormatId =
   | 'deb'
   | 'rpm'
   | 'nuget'
-  | 'gomod'
+  | 'go'
   | 'raw'
   | 'conda'
   | 'conan'
@@ -78,7 +78,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
   deb: brand('Deb', siDebian),
   rpm: brand('RPM', siRedhat),
   nuget: brand('NuGet', siNuget),
-  gomod: brand('Go', siGo),
+  go: brand('Go', siGo),
   raw: { label: 'Raw', color: FALLBACK_COLOR, icon: RAW_ICON, evenodd: true },
   conda: brand('Conda', siAnaconda),
   conan: brand('Conan', siConan),
@@ -89,7 +89,7 @@ export const FORMAT_META: Record<FormatId, FormatMeta> = {
 /** Ordered format ids — drives the format pickers on repo-create screens. */
 export const ALL_FORMATS: FormatId[] = [
   'docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'rubygems', 'deb',
-  'rpm', 'nuget', 'gomod', 'raw', 'conda', 'conan', 'ivy', 'sbt',
+  'rpm', 'nuget', 'go', 'raw', 'conda', 'conan', 'ivy', 'sbt',
 ]
 
 const DEFAULT_VIEWBOX = '0 0 24 24'

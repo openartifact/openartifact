@@ -50,7 +50,7 @@ describe('clientSetup', () => {
   })
 
   it('uses /repos/{name} for other formats and never embeds real credentials', () => {
-    for (const f of ['pypi', 'helm', 'cargo', 'gomod', 'nuget', 'deb', 'rpm', 'conda']) {
+    for (const f of ['pypi', 'helm', 'cargo', 'go', 'nuget', 'deb', 'rpm', 'conda']) {
       const text = clientSetup(f, origin, 'r1').map((c) => c.configure).join('\n')
       expect(text).toContain(`${origin}/repos/r1`)
     }

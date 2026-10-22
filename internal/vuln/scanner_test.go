@@ -27,7 +27,7 @@ func TestMapEcosystem(t *testing.T) {
 	}{
 		{"npm", "npm"},
 		{"pypi", "PyPI"},
-		{"gomod", "Go"},
+		{"go", "Go"},
 		{"cargo", "crates.io"},
 		{"rubygems", "RubyGems"},
 		{"maven", "Maven"},
@@ -152,7 +152,7 @@ func TestMapEcosystem_CaseInsensitive(t *testing.T) {
 	}{
 		{"NPM", "npm"},
 		{"PyPI", "PyPI"},
-		{"GOMOD", "Go"},
+		{"GO", "Go"},
 		{"Cargo", "crates.io"},
 	}
 	for _, tt := range tests {

@@ -32,7 +32,7 @@ func TestRepoBaseURL(t *testing.T) {
 func allFormats() []string {
 	return []string{
 		"npm", "docker", "pypi", "maven", "helm", "deb", "rpm", "cargo",
-		"gomod", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy",
+		"go", "nuget", "rubygems", "raw", "conda", "conan", "sbt", "ivy",
 	}
 }
 

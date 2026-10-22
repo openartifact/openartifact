@@ -25,7 +25,7 @@ const jsonPost = (body: unknown): RequestInit => ({
 
 /** Ecosystems (= format ids) the vulnerability scanners can map to OSV. */
 export const VULN_ECOSYSTEMS = [
-  'npm', 'pypi', 'gomod', 'cargo', 'rubygems', 'maven', 'nuget', 'deb', 'rpm', 'helm',
+  'npm', 'pypi', 'go', 'cargo', 'rubygems', 'maven', 'nuget', 'deb', 'rpm', 'helm',
 ] as const
 
 export type VulnScanner = 'osv' | 'trivy' | 'grype'

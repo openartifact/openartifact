@@ -51,6 +51,7 @@ type fakeOCIRegistry struct {
 	tokenBasic   []string // "user:pass" seen at the token endpoint
 	status       int      // when non-zero, every /v2 request answers it
 	deny         bool     // authenticated requests are answered 401
+	realm        string   // token endpoint named by the challenge; the registry itself when empty
 }
 
 func newFakeOCIRegistry(t *testing.T) *fakeOCIRegistry {
@@ -105,7 +106,13 @@ func (g *fakeOCIRegistry) handle(w http.ResponseWriter, r *http.Request) {
 		}
 
 		req := ocipath.Parse(strings.TrimPrefix(r.URL.Path, "/v2/"))
-		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="%s",scope="repository:%s:pull"`, g.srv.URL, ociRealmService, req.Name))
+
+		realm := g.srv.URL
+		if g.realm != "" {
+			realm = g.realm
+		}
+
+		w.Header().Set("WWW-Authenticate", fmt.Sprintf(`Bearer realm="%s/token",service="%s",scope="repository:%s:pull"`, realm, ociRealmService, req.Name))
 		w.WriteHeader(http.StatusUnauthorized)
 
 		return
@@ -395,6 +402,103 @@ func TestOCI_StoredCredentialsAuthenticateTheTokenRequest(t *testing.T) {
 
 	if len(f.reg.tokenBasic) != 1 || f.reg.tokenBasic[0] != "robot:s3cret" {
 		t.Errorf("token endpoint credentials = %v, want robot:s3cret", f.reg.tokenBasic)
+	}
+}
+
+// A token realm on another origin is asked anonymously: the stored credentials
+// belong to the upstream, and the realm is named by the upstream's response.
+func TestOCI_ForeignTokenRealmGetsNoCredentials(t *testing.T) {
+	f := newOCIFixture(t)
+	f.repo.UpstreamUsername = "robot"
+	f.repo.UpstreamPasswordEnc = "s3cret"
+	f.reg.addManifest("team/app", "1", alpineManifest)
+
+	var (
+		mu   sync.Mutex
+		seen []string
+	)
+
+	other := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		defer mu.Unlock()
+
+		u, p, ok := r.BasicAuth()
+		seen = append(seen, fmt.Sprintf("%v:%s:%s", ok, u, p))
+
+		_ = json.NewEncoder(w).Encode(map[string]any{"token": "tok-1", "expires_in": 300})
+	}))
+	t.Cleanup(other.Close)
+
+	f.reg.set(func() { f.reg.realm = other.URL })
+
+	if w := f.do(http.MethodGet, "hub/team/app/manifests/1"); w.Code != http.StatusOK {
+		t.Fatalf("pull: %d %q", w.Code, w.Body.String())
+	}
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(seen) != 1 || seen[0] != "false::" {
+		t.Errorf("foreign token endpoint saw %v, want one anonymous request", seen)
+	}
+}
+
+func TestRealmMayReceiveCredentials(t *testing.T) {
+	tests := []struct {
+		name  string
+		base  string
+		realm string
+		want  bool
+	}{
+		{"same origin http", "http://127.0.0.1:5000", "http://127.0.0.1:5000/token", true},
+		{"same origin https default port", "https://reg.example.com", "https://reg.example.com:443/token", true},
+		{"other port same host http", "http://127.0.0.1:5000", "http://127.0.0.1:6000/token", false},
+		{"docker hub auth host", "https://registry-1.docker.io", "https://auth.docker.io/token", true},
+		{"same site plain http realm", "https://registry-1.docker.io", "http://auth.docker.io/token", false},
+		{"other site", "https://registry-1.docker.io", "https://auth.evil.example/token", false},
+		{"suffix lookalike", "https://registry-1.docker.io", "https://auth.docker.io.evil.example/token", false},
+		{"prefix lookalike", "https://registry-1.docker.io", "https://evildocker.io/token", false},
+		{"public suffix siblings", "https://a.github.io", "https://b.github.io/token", false},
+		{"different ip literals", "https://10.0.0.1", "https://20.0.0.1/token", false},
+		{"bare public suffix", "https://com", "https://org/token", false},
+		{"plain http upstream https sibling", "http://reg.example.com", "https://auth.example.com/token", true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			ru, err := url.Parse(tc.realm)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if got := realmMayReceiveCredentials(ociUpstream{base: tc.base}, ru); got != tc.want {
+				t.Errorf("realmMayReceiveCredentials(%q, %q) = %v, want %v", tc.base, tc.realm, got, tc.want)
+			}
+		})
+	}
+}
+
+// A token fetched with an old password is not reused after the password changes.
+func TestOCI_TokenCacheKeyIncludesPassword(t *testing.T) {
+	f := newOCIFixture(t)
+	f.repo.UpstreamUsername = "robot"
+	f.repo.UpstreamPasswordEnc = "old-pass"
+	f.reg.addManifest("team/app", "1", alpineManifest)
+	f.reg.addManifest("team/app", "2", alpineManifest+" ")
+
+	if w := f.do(http.MethodGet, "hub/team/app/manifests/1"); w.Code != http.StatusOK {
+		t.Fatalf("pull 1: %d %q", w.Code, w.Body.String())
+	}
+
+	f.repo.UpstreamPasswordEnc = "new-pass"
+
+	if w := f.do(http.MethodGet, "hub/team/app/manifests/2"); w.Code != http.StatusOK {
+		t.Fatalf("pull 2: %d %q", w.Code, w.Body.String())
+	}
+
+	want := []string{"robot:old-pass", "robot:new-pass"}
+	if len(f.reg.tokenBasic) != 2 || f.reg.tokenBasic[0] != want[0] || f.reg.tokenBasic[1] != want[1] {
+		t.Errorf("token endpoint credentials = %v, want %v", f.reg.tokenBasic, want)
 	}
 }
 

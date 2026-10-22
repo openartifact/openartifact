@@ -78,7 +78,10 @@ func (h *Handler) ServeOCI(w http.ResponseWriter, r *http.Request, grp *models.R
 // the union (n, last) the way a single registry would.
 func (h *Handler) serveTags(w http.ResponseWriter, r *http.Request, members []*models.Repository, req ocipath.Request, relPath string, be Backend) {
 	// Members are read in full; pagination applies to the merged list.
+	// Always with GET: a HEAD to a member carries no body to merge, and the
+	// group drops the body itself when answering HEAD.
 	mr := r.Clone(r.Context())
+	mr.Method = http.MethodGet
 	mr.URL.RawQuery = ""
 
 	var (

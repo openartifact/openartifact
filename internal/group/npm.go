@@ -13,7 +13,6 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -100,7 +99,7 @@ func (h *Handler) serveNPM(w http.ResponseWriter, r *http.Request, grp *models.R
 
 	w.Header().Add("Vary", "Accept")
 
-	if base.Revalidate(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, packumentMaxAge) {
+	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, packumentMaxAge, failed) {
 		return true
 	}
 

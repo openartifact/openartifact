@@ -133,10 +133,10 @@ FROM (
     UNION ALL
     -- gomod: one row per module version; the zip blob is preferred, the .mod blob otherwise.
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.module_path::text AS name, t.version::text AS version,
-           'gomod'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
+           'go'::text AS format, ''::text AS arch, ''::text::text AS release, 0::int::int AS epoch, 0::bigint::bigint AS build_time,
            0::bigint::bigint AS archive_size, NULL::bigint::bigint AS pref_size, NULL::bigint::bigint AS fb_size, 0::bigint::bigint AS installed_size,
            t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text AS filename, COALESCE(t.zip_blob_id, t.mod_blob_id)::uuid AS blob_id, NULL::text::text AS blob_key, t.created_at::timestamptz AS created_at, t.updated_at::timestamptz AS updated_at
-    FROM (SELECT * FROM gomod_modules WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'gomod') AND (sqlc.arg(name_filter)::text = '' OR module_path = sqlc.arg(name_filter)::text) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
+    FROM (SELECT * FROM gomod_modules WHERE deleted_at IS NULL AND repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'go') AND (sqlc.arg(name_filter)::text = '' OR module_path = sqlc.arg(name_filter)::text) ORDER BY created_at DESC, id LIMIT (sqlc.arg(page_limit)::int + sqlc.arg(page_offset)::int)) t
     UNION ALL
     -- cargo: one row per crate version (yanked included).
     SELECT t.id::uuid AS id, t.repository_id::uuid AS repository_id, t.name::text AS name, t.version::text AS version,
@@ -240,7 +240,7 @@ SELECT COUNT(*)::bigint FROM (
     UNION ALL
     -- gomod
     SELECT 1 FROM gomod_modules t
-    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'gomod') AND (sqlc.arg(name_filter)::text = '' OR module_path = sqlc.arg(name_filter)::text)
+    WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND (sqlc.arg(format_filter)::text = '' OR sqlc.arg(format_filter)::text = 'go') AND (sqlc.arg(name_filter)::text = '' OR module_path = sqlc.arg(name_filter)::text)
     UNION ALL
     -- cargo
     SELECT 1 FROM cargo_crates t
@@ -326,7 +326,7 @@ FROM (
     FROM nuget_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'gomod'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text, t.module_path::text, t.version::text,
+    SELECT t.id::uuid, 'go'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text, t.module_path::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM gomod_modules t LEFT JOIN blobs b ON b.id = COALESCE(t.zip_blob_id, t.mod_blob_id)
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid

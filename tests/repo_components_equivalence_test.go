@@ -179,7 +179,7 @@ func TestListRepoComponentsMatchesLegacyQuery(t *testing.T) {
 	pg := freshPostgres(t, 5)
 	repo := seedEquivalenceRepo(t, pg)
 
-	for _, format := range []string{"", "maven", "rpm", "rubygems", "conan", "docker", "raw", "npm", "gomod", "deb"} {
+	for _, format := range []string{"", "maven", "rpm", "rubygems", "conan", "docker", "raw", "npm", "go", "deb"} {
 		for _, limit := range []int{1, 7, 25, 1000} {
 			for page := 1; page <= 4; page++ {
 				name := fmt.Sprintf("format=%q/limit=%d/page=%d", format, limit, page)

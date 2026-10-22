@@ -696,3 +696,29 @@ func TestGetVulnerabilitiesRequiresManage(t *testing.T) {
 		t.Error("admin must be allowed")
 	}
 }
+
+// trigger_ai_analysis accepts the same artifact_format ids as the REST route:
+// the repository format ids ("go", not the old component id "gomod").
+func TestTriggerAIAnalysisValidatesFormat(t *testing.T) {
+	h := newHarness(t, fixtureDB())
+
+	args := func(format string) map[string]any {
+		return map[string]any{"repository_id": "r-npm", "artifact_id": "x", "artifact_format": format, "manifest_text": "m"}
+	}
+
+	for _, format := range []string{"gomod", "rpmx"} {
+		text, isErr := h.call(t, "trigger_ai_analysis", args(format))
+		if !isErr || !strings.Contains(text, "artifact_format must be one of") {
+			t.Errorf("format %q: got (%q, %v), want a format error", format, text, isErr)
+		}
+	}
+
+	// A valid format passes validation and reaches the next check (no AI
+	// worker is configured in this harness).
+	for _, format := range []string{"go", "npm"} {
+		text, isErr := h.call(t, "trigger_ai_analysis", args(format))
+		if !isErr || !strings.Contains(text, "not enabled") {
+			t.Errorf("format %q: got (%q, %v), want to reach the AI-enabled check", format, text, isErr)
+		}
+	}
+}

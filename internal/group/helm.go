@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 )
 
@@ -102,7 +101,7 @@ func (h *Handler) serveHelm(w http.ResponseWriter, r *http.Request, grp *models.
 
 	sum := sha256.Sum256(body)
 
-	if base.Revalidate(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, helmIndexMaxAge) {
+	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, helmIndexMaxAge, failed) {
 		return true
 	}
 

@@ -159,7 +159,7 @@ func repoByName(t *testing.T, d *fakeDB, name string) *models.Repository {
 }
 
 // BKP-3: go repositories were skipped because the export switch only knew
-// "gomod", while repositories.format stores "go".
+// "gomod", while repositories.format stores "go" (as do package listings).
 func TestBackupRestore_GoModulesRoundTrip(t *testing.T) {
 	ctx := context.Background()
 	src := newFakeDB("src")

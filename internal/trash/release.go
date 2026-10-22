@@ -30,7 +30,7 @@ func IsRelease(format, version string) bool {
 	switch strings.ToLower(format) {
 	case "maven", "ivy", "sbt":
 		return !strings.Contains(strings.ToUpper(version), "SNAPSHOT")
-	case "npm", "nuget", "cargo", "helm", "go", "gomod":
+	case "npm", "nuget", "cargo", "helm", "go":
 		return !semverPrerelease(version)
 	case "pypi":
 		return !pep440Prerelease(version)

@@ -11,12 +11,12 @@ import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
-const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'gomod', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
-const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'gomod', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']
+const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
+const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']
 
 /** Docker, pypi, cargo, go and nuget proxies default to Docker Hub / pypi.org / crates.io / proxy.golang.org / nuget.org; every other proxy needs an upstream URL. */
 export function upstreamUrlRequired(format: FormatId): boolean {
-  return format !== 'docker' && format !== 'pypi' && format !== 'cargo' && format !== 'gomod' && format !== 'nuget'
+  return format !== 'docker' && format !== 'pypi' && format !== 'cargo' && format !== 'go' && format !== 'nuget'
 }
 
 /** Placeholder for the upstream URL field. */
@@ -25,7 +25,7 @@ export function upstreamUrlPlaceholder(format: FormatId): string {
   if (format === 'nuget') return 'https://api.nuget.org/v3/index.json'
   if (format === 'pypi') return 'https://pypi.org/simple'
   if (format === 'cargo') return 'https://index.crates.io'
-  if (format === 'gomod') return 'https://proxy.golang.org'
+  if (format === 'go') return 'https://proxy.golang.org'
   return 'https://registry.example.com'
 }
 

@@ -235,7 +235,7 @@ func TestListComponentsByRepo_AllFormats(t *testing.T) {
 		{"nuget", "Acme.Lib", "8.0", "", "Acme.Lib.8.0.nupkg",
 			`INSERT INTO nuget_packages (repository_id, package_id, version, blob_id) VALUES ($1,'Acme.Lib','8.0',$2)`,
 			[]any{repo, blobID}},
-		{"gomod", "example.com/mod", "v9.0.0", "", "v9.0.0.zip",
+		{"go", "example.com/mod", "v9.0.0", "", "v9.0.0.zip",
 			`INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id) VALUES ($1,'example.com/mod','v9.0.0','module example.com/mod',$2)`,
 			[]any{repo, blobID}},
 		{"cargo", "crt", "10.0.0", "", "crt-10.0.0.crate",

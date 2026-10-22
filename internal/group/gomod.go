@@ -16,7 +16,6 @@ import (
 	"golang.org/x/mod/semver"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 )
 
 // maxGoListBytes bounds one member's version list held in memory.
@@ -79,7 +78,7 @@ func (h *Handler) serveGo(w http.ResponseWriter, r *http.Request, grp *models.Re
 	body := mergeGoVersions(versions)
 	sum := sha256.Sum256(body)
 
-	if base.Revalidate(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, goListMaxAge) {
+	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, goListMaxAge, failed) {
 		return true
 	}
 

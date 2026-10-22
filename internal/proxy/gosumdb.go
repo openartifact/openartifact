@@ -36,7 +36,9 @@ import (
 //   - The database does not know the module version (404/410): a private or
 //     not yet indexed module. Nothing can be checked against the database, so
 //     only the structure is verified (the zip must satisfy the rules the go
-//     command enforces when it unpacks it, a go.mod must declare a module).
+//     command enforces when it unpacks it, a go.mod must declare a module),
+//     and the file is cached for the repository TTL instead of as immutable,
+//     so it is fetched and checked again once the database has the record.
 //   - The database cannot be reached or misbehaves: the file is refused and
 //     not cached (fail closed); a cached copy keeps being served.
 //   - GOSUMDB=off disables the lookup (structure only), for deployments
@@ -265,24 +267,28 @@ func (o *sumdbOps) SecurityError(msg string) {
 }
 
 // check compares the h1: hash of one file of module@version (suffix "" for
-// the zip, "/go.mod" for the go.mod) with the database's record.
-func (d *sumDB) check(module, version, suffix, got string) error {
+// the zip, "/go.mod" for the go.mod) with the database's record. It reports
+// whether the record vouched for the file: false when the database does not
+// know the version, so the caller must not pin the file as immutable. With the
+// lookup switched off (GOSUMDB=off, d == nil) the operator accepts structure
+// checks alone and the file counts as vouched.
+func (d *sumDB) check(module, version, suffix, got string) (bool, error) {
 	if d == nil {
-		return nil
+		return true, nil
 	}
 
 	// The client returns only the record lines for the exact version asked
 	// for: the "/go.mod" form selects the go.mod hash.
 	lines, known, err := d.lookup(module, version+suffix)
 	if err != nil {
-		return err
+		return false, err
 	}
 
 	if !known {
 		d.log.Debugw("module version unknown to the checksum database, structure verified only",
 			"module", module, "version", version)
 
-		return nil
+		return false, nil
 	}
 
 	prefix := module + " " + version + suffix + " "
@@ -290,18 +296,19 @@ func (d *sumDB) check(module, version, suffix, got string) error {
 	for _, line := range lines {
 		if rest, ok := strings.CutPrefix(line, prefix); ok {
 			if rest != got {
-				return fmt.Errorf("%s@%s%s: %w", module, version, suffix, errSumdbMismatch)
+				return false, fmt.Errorf("%s@%s%s: %w", module, version, suffix, errSumdbMismatch)
 			}
 
-			return nil
+			return true, nil
 		}
 	}
 
-	return fmt.Errorf("%s@%s%s: %w", module, version, suffix, errSumdbMissing)
+	return false, fmt.Errorf("%s@%s%s: %w", module, version, suffix, errSumdbMissing)
 }
 
-// verifyGoMod returns the verify hook for a .mod body.
-func (s *Service) verifyGoMod(modulePath, version string) func(io.ReadSeeker) error {
+// verifyGoMod returns the verify hook for a .mod body; vouched is set when the
+// checksum database confirmed the hash.
+func (s *Service) verifyGoMod(modulePath, version string, vouched *bool) func(io.ReadSeeker) error {
 	return func(spool io.ReadSeeker) error {
 		data, err := io.ReadAll(io.LimitReader(spool, modzip.MaxGoMod+1))
 		if err != nil {
@@ -323,7 +330,10 @@ func (s *Service) verifyGoMod(modulePath, version string) func(io.ReadSeeker) er
 			return fmt.Errorf("hash go.mod: %w", err)
 		}
 
-		return s.sumdb.check(modulePath, version, "/go.mod", got)
+		ok, err := s.sumdb.check(modulePath, version, "/go.mod", got)
+		*vouched = ok
+
+		return err
 	}
 }
 
@@ -331,7 +341,7 @@ func (s *Service) verifyGoMod(modulePath, version string) func(io.ReadSeeker) er
 // checks the go command applies when unpacking it (all files below
 // <module>@<version>/, size limits, valid names, one root go.mod) and hash to
 // the checksum database's record.
-func (s *Service) verifyGoZip(modulePath, version string) func(io.ReadSeeker) error {
+func (s *Service) verifyGoZip(modulePath, version string, vouched *bool) func(io.ReadSeeker) error {
 	return func(spool io.ReadSeeker) error {
 		f, ok := spool.(interface{ Name() string })
 		if !ok {
@@ -352,6 +362,9 @@ func (s *Service) verifyGoZip(modulePath, version string) func(io.ReadSeeker) er
 			return fmt.Errorf("hash module zip: %w", err)
 		}
 
-		return s.sumdb.check(modulePath, version, "", got)
+		ok, cerr := s.sumdb.check(modulePath, version, "", got)
+		*vouched = ok
+
+		return cerr
 	}
 }

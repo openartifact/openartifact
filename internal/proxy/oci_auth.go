@@ -6,11 +6,14 @@ package proxy
 
 import (
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
 	"net/url"
 	"strings"
@@ -21,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"golang.org/x/net/publicsuffix"
 )
 
 const (
@@ -133,9 +137,67 @@ func (c *tokenCache) drop(key string) {
 }
 
 // tokenKey identifies the credentials context of a token: a token is only
-// reused for the same repository, upstream, account and image.
+// reused for the same repository, upstream, account, password and image. The
+// password enters as a hash of its stored (encrypted) form, so rotating it
+// retires every token fetched with the old one.
 func tokenKey(repo *models.Repository, up ociUpstream) string {
-	return strings.Join([]string{repo.ID, up.base, repo.UpstreamUsername, up.name}, "\x00")
+	pw := sha256.Sum256([]byte(repo.UpstreamPasswordEnc))
+
+	return strings.Join([]string{repo.ID, up.base, repo.UpstreamUsername, hex.EncodeToString(pw[:]), up.name}, "\x00")
+}
+
+// origin is the scheme, lower-cased host name and effective port of a URL.
+type origin struct{ scheme, host, port string }
+
+func originOf(u *url.URL) origin {
+	o := origin{scheme: strings.ToLower(u.Scheme), host: strings.ToLower(u.Hostname()), port: u.Port()}
+
+	if o.port == "" {
+		switch o.scheme {
+		case "https":
+			o.port = "443"
+		case "http":
+			o.port = "80"
+		}
+	}
+
+	return o
+}
+
+// realmMayReceiveCredentials reports whether the stored upstream credentials
+// may be sent to a token endpoint named by the upstream's WWW-Authenticate
+// challenge. The realm comes from the upstream's response, so a hostile or
+// compromised registry could otherwise name any host and collect them. They go
+// only to the upstream's own origin, or to an https endpoint that shares its
+// registrable domain (Docker Hub: registry-1.docker.io challenges with
+// auth.docker.io). Everything else is asked for a token anonymously.
+func realmMayReceiveCredentials(up ociUpstream, realm *url.URL) bool {
+	base, err := url.Parse(up.base)
+	if err != nil {
+		return false
+	}
+
+	ro, bo := originOf(realm), originOf(base)
+
+	if ro == bo {
+		return true
+	}
+
+	if ro.scheme != "https" || ro.host == "" || bo.host == "" || net.ParseIP(ro.host) != nil || net.ParseIP(bo.host) != nil {
+		return false
+	}
+
+	realmDomain, err := publicsuffix.EffectiveTLDPlusOne(ro.host)
+	if err != nil {
+		return false
+	}
+
+	baseDomain, err := publicsuffix.EffectiveTLDPlusOne(bo.host)
+	if err != nil {
+		return false
+	}
+
+	return realmDomain == baseDomain
 }
 
 // ociDo sends method to target on the upstream registry, answering the
@@ -263,7 +325,13 @@ func (s *Service) bearerToken(ctx context.Context, repo *models.Repository, up o
 	q.Set("scope", scope)
 	ru.RawQuery = q.Encode()
 
-	tok, err := s.fetchToken(ctx, repo, ru.String())
+	withCreds := realmMayReceiveCredentials(up, ru)
+	if !withCreds && repo.UpstreamUsername != "" {
+		s.log.Warnw("docker proxy token realm is not the upstream's own site; requesting the token anonymously",
+			"repo", repo.Name, "realm_host", ru.Hostname())
+	}
+
+	tok, err := s.fetchToken(ctx, repo, ru.String(), withCreds)
 	if err != nil {
 		return "", err
 	}
@@ -275,8 +343,8 @@ func (s *Service) bearerToken(ctx context.Context, repo *models.Repository, up o
 
 // fetchToken calls the token endpoint. The endpoint is outside the configured
 // upstream URL, so it passes the same outbound URL policy.
-func (s *Service) fetchToken(ctx context.Context, repo *models.Repository, target string) (cachedToken, error) {
-	resp, err := s.ociRequestBasic(ctx, repo, target)
+func (s *Service) fetchToken(ctx context.Context, repo *models.Repository, target string, withCreds bool) (cachedToken, error) {
+	resp, err := s.ociRequestBasic(ctx, repo, target, withCreds)
 	if err != nil {
 		return cachedToken{}, err
 	}
@@ -323,8 +391,8 @@ func (s *Service) fetchToken(ctx context.Context, repo *models.Repository, targe
 }
 
 // ociRequestBasic GETs a token endpoint, with the stored credentials as HTTP
-// Basic when the repository has any.
-func (s *Service) ociRequestBasic(ctx context.Context, repo *models.Repository, target string) (*http.Response, error) {
+// Basic when the repository has any and withCreds allows sending them.
+func (s *Service) ociRequestBasic(ctx context.Context, repo *models.Repository, target string, withCreds bool) (*http.Response, error) {
 	if err := netutil.ValidateOutboundURLContext(ctx, target); err != nil {
 		s.log.Warnw("docker proxy token endpoint rejected by outbound URL policy", "repo", repo.Name, "error", err)
 		return nil, errUpstream
@@ -337,7 +405,7 @@ func (s *Service) ociRequestBasic(ctx context.Context, repo *models.Repository, 
 
 	req.Header.Set("User-Agent", "OpenArtifact-Proxy")
 
-	if repo.UpstreamUsername != "" {
+	if withCreds && repo.UpstreamUsername != "" {
 		user, pass, derr := upstreamCredentials(repo)
 		if derr != nil {
 			s.log.Errorw("failed to decrypt proxy upstream password", "repo", repo.Name, "error", derr)

@@ -37,7 +37,7 @@ func NewGoModHandler() *GoModHandler {
 }
 
 func (h *GoModHandler) Name() string {
-	return "gomod"
+	return "go"
 }
 
 func (h *GoModHandler) GetContentType() string {

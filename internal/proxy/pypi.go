@@ -379,6 +379,7 @@ func (s *Service) fetchPyPIFile(ctx context.Context, repo *models.Repository, pr
 	return s.fetchURL(ctx, repo, key, target.String(), fetchOpts{
 		noAuth:     !sameOrigin(target, page.pageURL),
 		wantSHA256: want,
+		unverified: want == "",
 	})
 }
 

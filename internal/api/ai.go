@@ -133,6 +133,23 @@ func (h *AIHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, analysis)
 }
 
+// ValidateAIArtifactIdentity checks the artifact_format, artifact_name and
+// artifact_version a caller supplies when triggering an analysis (REST and MCP
+// share it) and returns a message for the first problem, "" when acceptable.
+// The format is one of the repository formats, which are also the ids package
+// listings report.
+func ValidateAIArtifactIdentity(format, name, version string) string {
+	if format != "" && !validFormats[format] {
+		return "artifact_format must be one of: " + validFormatList()
+	}
+
+	if len(name) > aiMaxNameLen || len(version) > aiMaxNameLen {
+		return "artifact_name/artifact_version too long"
+	}
+
+	return ""
+}
+
 func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	artifactID := urlparams.Vars(r)["artifactID"]
 
@@ -162,13 +179,8 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.ArtifactFormat != "" && !validFormats[body.ArtifactFormat] {
-		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_format must be one of: "+validFormatList())
-		return
-	}
-
-	if len(body.ArtifactName) > aiMaxNameLen || len(body.ArtifactVersion) > aiMaxNameLen {
-		writeError(w, http.StatusBadRequest, "validation_failed", "artifact_name/artifact_version too long")
+	if msg := ValidateAIArtifactIdentity(body.ArtifactFormat, body.ArtifactName, body.ArtifactVersion); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
 		return
 	}
 

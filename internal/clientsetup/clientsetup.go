@@ -104,7 +104,7 @@ func builderFor(format string) func(target) []Snippet {
 		return rpmSnippets
 	case "cargo":
 		return cargoSnippets
-	case "gomod":
+	case "go":
 		return gomodSnippets
 	case "nuget":
 		return nugetSnippets

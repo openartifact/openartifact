@@ -44,8 +44,8 @@ require (
 
 func TestGoModHandler_Meta(t *testing.T) {
 	h := NewGoModHandler()
-	if h.Name() != "gomod" {
-		t.Errorf("Name() = %q, want gomod", h.Name())
+	if h.Name() != "go" {
+		t.Errorf("Name() = %q, want go", h.Name())
 	}
 
 	if h.GetContentType() != "application/zip" {

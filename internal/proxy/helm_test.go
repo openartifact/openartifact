@@ -457,3 +457,53 @@ func TestHelmProxy_RejectsOtherPathsAndWrites(t *testing.T) {
 		t.Errorf("rejected paths reached the upstream %d times", f.hits.Load())
 	}
 }
+
+// Two entries whose URLs end in the same file name (different directories) are
+// two different charts: the index must hand out two different paths, and each
+// must serve its own bytes.
+func TestHelmProxy_SameBasenameDifferentURLsStayDistinct(t *testing.T) {
+	f, g := helmFixture(t)
+
+	g.files["stable/foo-1.0.0.tgz"] = []byte("stable foo")
+	g.files["incubator/foo-1.0.0.tgz"] = []byte("incubator foo")
+	g.index = fmt.Sprintf(`apiVersion: v1
+entries:
+  foo:
+  - name: foo
+    version: 1.0.0
+    digest: %s
+    urls:
+    - stable/foo-1.0.0.tgz
+  foo-inc:
+  - name: foo-inc
+    version: 1.0.0
+    digest: %s
+    urls:
+    - incubator/foo-1.0.0.tgz
+`, sha256Hex(g.files["stable/foo-1.0.0.tgz"]), sha256Hex(g.files["incubator/foo-1.0.0.tgz"]))
+
+	for range 2 { // the assignment is the same on every render
+		idx := parseIndexBody(t, f.do(http.MethodGet, "index.yaml").Body.String())
+
+		first, second := idx["foo"], idx["foo-inc"]
+		if len(first.URLs) != 1 || len(second.URLs) != 1 {
+			t.Fatalf("index entries lost their URLs: %+v %+v", first, second)
+		}
+
+		if first.URLs[0] == second.URLs[0] {
+			t.Fatalf("both charts are served under %s", first.URLs[0])
+		}
+
+		if want := oaBase + "/repos/charts/charts/foo-1.0.0.tgz"; first.URLs[0] != want {
+			t.Errorf("first claimant = %s, want the plain name %s", first.URLs[0], want)
+		}
+
+		for url, want := range map[string]string{first.URLs[0]: "stable foo", second.URLs[0]: "incubator foo"} {
+			p := strings.TrimPrefix(url, oaBase+"/repos/charts/")
+
+			if w := f.do(http.MethodGet, p); w.Code != http.StatusOK || w.Body.String() != want {
+				t.Errorf("GET %s = %d %q, want %q", p, w.Code, w.Body.String(), want)
+			}
+		}
+	}
+}

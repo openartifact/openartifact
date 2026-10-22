@@ -14,7 +14,6 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	pkgnuget "github.com/openartifact/openartifact/pkg/nuget"
 )
 
@@ -121,8 +120,9 @@ func (n *nugetRequest) ask(m *models.Repository, relPath string) memberDoc {
 	return memberDoc{body: body, found: true}
 }
 
-// write answers with body (a validator on its digest) or, when there is
-// none, with 404 or, if a member failed, 502.
+// write answers with body (a validator on its digest; none, and no-store,
+// when a member failed meanwhile) or, when there is none, with 404 or, if a
+// member failed, 502.
 func (n *nugetRequest) write(w http.ResponseWriter, r *http.Request, body []byte, failed bool) {
 	if body == nil {
 		if failed {
@@ -136,7 +136,7 @@ func (n *nugetRequest) write(w http.ResponseWriter, r *http.Request, body []byte
 
 	sum := sha256.Sum256(body)
 
-	if base.Revalidate(w, r, n.grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, nugetMetaMaxAge) {
+	if revalidateMerged(w, r, n.grp.Public, `"`+hex.EncodeToString(sum[:])+`"`, nugetMetaMaxAge, failed) {
 		return
 	}
 
@@ -177,7 +177,7 @@ func (n *nugetRequest) serveLeaf(w http.ResponseWriter, r *http.Request, relPath
 	for _, m := range n.members {
 		d := n.ask(m, relPath)
 		if d.found {
-			n.write(w, r, d.body, false)
+			n.write(w, r, d.body, failed)
 			return
 		}
 
@@ -215,7 +215,7 @@ func (n *nugetRequest) serveVersions(w http.ResponseWriter, r *http.Request, rel
 		return
 	}
 
-	n.write(w, r, body, false)
+	n.write(w, r, body, failed)
 }
 
 func (n *nugetRequest) serveRegistration(w http.ResponseWriter, r *http.Request, id string) {
@@ -248,7 +248,7 @@ func (n *nugetRequest) serveRegistration(w http.ResponseWriter, r *http.Request,
 		return
 	}
 
-	n.write(w, r, body, false)
+	n.write(w, r, body, failed)
 }
 
 // memberItems returns every package item of member m's registration of id,

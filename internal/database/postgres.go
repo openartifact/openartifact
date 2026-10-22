@@ -6040,6 +6040,12 @@ func (p *PostgresDB) ListSBTArtifacts(ctx context.Context, repoID string) ([]*mo
 // ArtifactName/ArtifactVersion live on ai_results (artifact_refs only tracks
 // repository_id/artifact_path/format). analysis.Status's "processing" value is
 // mapped onto scan_jobs' CHECK-constrained "running" (see aiStatusToJob/FromJob).
+//
+// Only a "completed" analysis overwrites the result columns (summary, tags,
+// license, security notes, model, token counts). A "processing", "pending" or
+// "failed" upsert keeps what the last completed run stored, so a re-trigger or
+// a failed re-analysis never wipes a good result; the status and error live on
+// scan_jobs and always follow the latest upsert.
 func (p *PostgresDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error {
 	tagsJSON, err := json.Marshal(analysis.Tags)
 	if err != nil {
@@ -6062,10 +6068,15 @@ func (p *PostgresDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAn
 		INSERT INTO ai_results (scan_job_id, summary, tags, license_status, license_name, security_notes, quarantine_recommended, model_used, prompt_tokens, completion_tokens, artifact_name, artifact_version)
 		SELECT job.id, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
-			summary = EXCLUDED.summary, tags = EXCLUDED.tags, license_status = EXCLUDED.license_status,
-			license_name = EXCLUDED.license_name, security_notes = EXCLUDED.security_notes,
-			quarantine_recommended = EXCLUDED.quarantine_recommended, model_used = EXCLUDED.model_used,
-			prompt_tokens = EXCLUDED.prompt_tokens, completion_tokens = EXCLUDED.completion_tokens,
+			summary = CASE WHEN $4::text = 'completed' THEN EXCLUDED.summary ELSE ai_results.summary END,
+			tags = CASE WHEN $4::text = 'completed' THEN EXCLUDED.tags ELSE ai_results.tags END,
+			license_status = CASE WHEN $4::text = 'completed' THEN EXCLUDED.license_status ELSE ai_results.license_status END,
+			license_name = CASE WHEN $4::text = 'completed' THEN EXCLUDED.license_name ELSE ai_results.license_name END,
+			security_notes = CASE WHEN $4::text = 'completed' THEN EXCLUDED.security_notes ELSE ai_results.security_notes END,
+			quarantine_recommended = CASE WHEN $4::text = 'completed' THEN EXCLUDED.quarantine_recommended ELSE ai_results.quarantine_recommended END,
+			model_used = CASE WHEN $4::text = 'completed' THEN EXCLUDED.model_used ELSE ai_results.model_used END,
+			prompt_tokens = CASE WHEN $4::text = 'completed' THEN EXCLUDED.prompt_tokens ELSE ai_results.prompt_tokens END,
+			completion_tokens = CASE WHEN $4::text = 'completed' THEN EXCLUDED.completion_tokens ELSE ai_results.completion_tokens END,
 			artifact_name = EXCLUDED.artifact_name, artifact_version = EXCLUDED.artifact_version`,
 		analysis.RepositoryID, analysis.ArtifactID, strPtr(analysis.ArtifactFormat), aiStatusToJob(analysis.Status), analysis.ErrorMessage,
 		analysis.Summary, tagsJSON, analysis.LicenseStatus, analysis.LicenseName, analysis.SecurityNotes,

@@ -277,16 +277,20 @@ func (s *Service) fetchNPMTarball(ctx context.Context, repo *models.Repository, 
 		return nil, errNotFound
 	}
 
+	var vouched bool
+
 	return s.fetchURL(ctx, repo, key, dist.Tarball, fetchOpts{
 		// Credentials go only to the configured upstream, never to a
 		// host a packument points at.
-		noAuth: !sameOriginStr(repo.UpstreamURL, dist.Tarball),
+		noAuth:  !sameOriginStr(repo.UpstreamURL, dist.Tarball),
+		vouched: &vouched,
 		verify: func(spool io.ReadSeeker) error {
 			if _, serr := spool.Seek(0, io.SeekStart); serr != nil {
 				return fmt.Errorf("rewind spool: %w", serr)
 			}
 
-			_, verr := pkgnpm.VerifyDist(spool, dist)
+			ok, verr := pkgnpm.VerifyDist(spool, dist)
+			vouched = ok
 
 			return verr //nolint:wrapcheck // logged by store
 		},

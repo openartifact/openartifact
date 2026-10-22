@@ -304,7 +304,7 @@ version = "0.1.0"
 
 		return os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(content), 0600)
 
-	case "gomod":
+	case "go":
 		content := fmt.Sprintf(`module scan-pkg
 
 go 1.21
@@ -468,7 +468,7 @@ var grypeEcosystemMap = map[string]string{
 	"nuget":    "dotnet",
 	"deb":      "deb",
 	"rpm":      "rpm",
-	"gomod":    "go",
+	"go":       "go",
 }
 
 // Scan runs grype on the given package.
@@ -579,7 +579,7 @@ func mapEcosystem(ecosystem string) string {
 	ecosystemMap := map[string]string{
 		"npm":      "npm",
 		"pypi":     "PyPI",
-		"gomod":    "Go",
+		"go":       "Go",
 		"cargo":    "crates.io",
 		"rubygems": "RubyGems",
 		"maven":    "Maven",

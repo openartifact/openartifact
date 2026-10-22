@@ -46,7 +46,7 @@ Admins can also configure AI at `/admin/ai` in the UI or with `PUT /api/v1/admin
 
 - Once `ai.enabled` has been saved there, the database decides `enabled`; every other field uses the stored value when non-empty and falls back to the env/YAML value otherwise. Without a saved setting, env/YAML apply.
 - Saving in the UI/API applies **immediately** in the running server: the model client and the auto-analysis switch are rebuilt, analyses already running finish on the old settings and every later one uses the new. Environment/YAML changes still need a restart. With several server replicas only the replica that handled the save changes; restart the others (or send the same `PUT` to each).
-- `GET /api/v1/admin/ai/config` returns only the database-stored values, not the env/YAML ones.
+- `GET /api/v1/admin/ai/config` returns the effective settings, resolved by the rules above, so AI enabled through env/YAML shows as enabled.
 - `auto_analyze` is stored as `ai.auto_analyze` and takes precedence over `AI_AUTO_ANALYZE` whenever it is saved, independently of `ai.enabled`.
 - Validation: `provider` in `openai|azure|ollama|custom`; `base_url` an absolute http(s) URL; `max_tokens` 0 to 200000; `timeout_secs` 0 to 600; `system_prompt` at most 16 KiB; `model`, `base_url`, `api_key` at most 2048 characters. Omitted fields are left unchanged; an empty string clears one.
 
@@ -91,7 +91,7 @@ The manifest is read from the stored blob, streaming and bounded (at most 64 KiB
 | helm | `Chart.yaml` and `requirements.yaml` |
 | deb | control fields (package, version, depends, description, ...) |
 | rpm | header summary: name, version, license, summary, requires/provides |
-| gomod | `go.mod` (`.mod` file, or inside the module `.zip`) |
+| go | `go.mod` (`.mod` file, or inside the module `.zip`) |
 | rubygems | `metadata.gz` of the gem |
 | conda | `info/index.json` and `info/about.json` (`.tar.bz2` and `.conda`) |
 | conan | the recipe's `conanfile.py` / `conandata.yml` (the binary package's `conaninfo.txt` is not used) |
@@ -108,7 +108,7 @@ Related MCP tools (per-repository `read`/`write` permission instead of global `m
 ## Processing
 
 1. A trigger is debounced for 2 s per repository and artifact (repeated triggers collapse into one), then put on an in-memory queue of 500 entries processed by a single worker. A full queue drops the request with a log warning, and queued work is lost on restart.
-2. The record becomes `processing`, then `completed` or `failed`. Each analysis has a 60 s overall limit.
+2. The record becomes `processing`, then `completed` or `failed`. Each analysis has a 60 s overall limit. A re-analysis that is `processing` or `failed` keeps the summary, tags and other result fields of the last `completed` run (the status and error message are the new ones); a new `completed` run replaces them.
 3. With AI disabled the trigger is refused (`503`); a request that was already queued when AI was switched off stays `pending` and nothing is sent anywhere.
 4. Provider or parse failures store a generic `failed` message (`ai analysis failed; see server logs`); details go to the server log only.
 

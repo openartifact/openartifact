@@ -435,6 +435,14 @@ type fetchOpts struct {
 	// wantSHA256, when set, is the lowercase hex digest the body must have;
 	// a different body is refused and not cached.
 	wantSHA256 string
+	// unverified marks a body that no published digest vouches for (the
+	// upstream lists none): it is cached for the repository TTL, never as
+	// immutable, so a wrong or tampered copy is replaced on revalidation.
+	unverified bool
+	// vouched, when set, receives whether verify checked the body against a
+	// published digest. A body it leaves false is cached for the repository
+	// TTL, like unverified. Only set it on files whose digest can be unknown.
+	vouched *bool
 	// verify, when set, inspects the spooled body before it is stored; an
 	// error refuses the body. The spool may be read freely: it is rewound
 	// afterwards.
@@ -580,7 +588,7 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 		ContentType:  contentType,
 		StatusCode:   http.StatusOK,
 		SizeBytes:    size,
-		ExpiresAt:    now.Add(ttlFor(repo, key, completeBody(resp))),
+		ExpiresAt:    now.Add(ttlFor(repo, key, o.pinnable(resp))),
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}
@@ -653,11 +661,19 @@ func completeBody(resp *http.Response) bool {
 	return resp.ContentLength >= 0 || slices.Contains(resp.TransferEncoding, "chunked")
 }
 
+// pinnable reports whether the response may be cached as immutable: its body is
+// known to be complete and the file was not accepted without a digest to check
+// it against (unverified) or with a digest that is not on record (vouched).
+func (o fetchOpts) pinnable(resp *http.Response) bool {
+	return completeBody(resp) && !o.unverified && (o.vouched == nil || *o.vouched)
+}
+
 // ttlFor picks the cache lifetime. Immutable files are cached (almost) forever
-// only when their body is known to be complete; otherwise the repository TTL
-// applies so a truncated copy is revalidated.
-func ttlFor(repo *models.Repository, key string, complete bool) time.Duration {
-	if complete && Immutable(repo.Format, key) {
+// only when their body is known to be complete and, where the upstream
+// publishes a digest, was checked against it; otherwise the repository TTL
+// applies so a truncated or unverified copy is revalidated.
+func ttlFor(repo *models.Repository, key string, pinnable bool) time.Duration {
+	if pinnable && Immutable(repo.Format, key) {
 		return immutableTTL
 	}
 

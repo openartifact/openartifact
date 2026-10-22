@@ -13,6 +13,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -236,4 +237,18 @@ func (p *probeWriter) Flush() {
 	if f, ok := p.real.(http.Flusher); ok && p.committed {
 		f.Flush()
 	}
+}
+
+// revalidateMerged is base.Revalidate for a document merged from members. A
+// document assembled while a member was failing (partial) lacks what that
+// member holds, so it must not be cached or revalidated into place: it is sent
+// with Cache-Control: no-store and no validator. It returns true when a 304
+// was written.
+func revalidateMerged(w http.ResponseWriter, r *http.Request, public bool, etag string, maxAge int, partial bool) bool {
+	if partial {
+		w.Header().Set("Cache-Control", "no-store")
+		return false
+	}
+
+	return base.Revalidate(w, r, public, etag, maxAge)
 }

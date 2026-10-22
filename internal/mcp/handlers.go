@@ -14,6 +14,7 @@ import (
 
 	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/openartifact/openartifact/internal/ai/manifest"
+	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/search"
@@ -161,6 +162,13 @@ func (s *Server) handleTriggerAIAnalysis(ctx context.Context, req mcp.CallToolRe
 		return mcp.NewToolResultError("manifest_text is too large"), nil
 	}
 
+	artifactName := req.GetString("artifact_name", "")
+	artifactVersion := req.GetString("artifact_version", "")
+
+	if msg := api.ValidateAIArtifactIdentity(format, artifactName, artifactVersion); msg != "" {
+		return mcp.NewToolResultError(msg), nil
+	}
+
 	if s.aiWorker == nil || !s.aiWorker.Enabled() {
 		return mcp.NewToolResultError("AI analysis is not enabled on this server"), nil
 	}
@@ -186,8 +194,8 @@ func (s *Server) handleTriggerAIAnalysis(ctx context.Context, req mcp.CallToolRe
 		RepositoryID:    repoID,
 		ArtifactID:      artifactID,
 		ArtifactFormat:  format,
-		ArtifactName:    req.GetString("artifact_name", ""),
-		ArtifactVersion: req.GetString("artifact_version", ""),
+		ArtifactName:    artifactName,
+		ArtifactVersion: artifactVersion,
 		ManifestText:    manifestText,
 	})
 

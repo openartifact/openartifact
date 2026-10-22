@@ -306,7 +306,7 @@ func ruleFor(format string) (formatRule, bool) {
 		return formatRule{nil, extractDeb}, true
 	case "rpm":
 		return formatRule{nil, extractRPM}, true
-	case "gomod":
+	case "go":
 		return formatRule{[]string{".mod", ".zip"}, extractGoMod}, true
 	case "rubygems":
 		return formatRule{[]string{".gem"}, extractGem}, true

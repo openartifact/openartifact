@@ -251,8 +251,8 @@ func TestExtractFormats(t *testing.T) {
 		{"deb", "deb", "demo_1.0_amd64.deb", debBytes(t, "Package: demo\nVersion: 1.0\nArchitecture: amd64\nDepends: libc6 (>= 2.31)\nDescription: a demo\n"),
 			[]string{"Package: demo", "Depends: libc6 (>= 2.31)", "Description: a demo"}, nil},
 		{"rpm", "rpm", "weakdeps.rpm", rpmData, []string{"Name: ", "Version: ", "Architecture: "}, nil},
-		{"gomod mod", "gomod", "v1.0.0.mod", []byte("module example.com/demo\n\ngo 1.22\n"), []string{"module example.com/demo"}, nil},
-		{"gomod zip", "gomod", "v1.0.0.zip", zipBytes(t, []file{
+		{"gomod mod", "go", "v1.0.0.mod", []byte("module example.com/demo\n\ngo 1.22\n"), []string{"module example.com/demo"}, nil},
+		{"gomod zip", "go", "v1.0.0.zip", zipBytes(t, []file{
 			{"example.com/demo@v1.0.0/main.go", "package main"},
 			{"example.com/demo@v1.0.0/go.mod", "module example.com/demo\n\nrequire golang.org/x/text v0.3.0\n"},
 		}), []string{"module example.com/demo", "golang.org/x/text"}, []string{"package main"}},
@@ -318,7 +318,7 @@ func TestExtractErrors(t *testing.T) {
 		{"maven metadata xml unsupported", memSource("maven", "maven-metadata.xml", []byte("<metadata/>")), ErrUnsupported},
 		{"npm without package.json", memSource("npm", "x.tgz", tarGz(t, []file{{"package/readme.md", "hi"}})), ErrNotFound},
 		{"nested package.json does not count", memSource("npm", "x.tgz", tarGz(t, []file{{"package/node_modules/y/package.json", "{}"}})), ErrNotFound},
-		{"empty manifest", memSource("gomod", "v1.mod", []byte("  \n")), ErrNotFound},
+		{"empty manifest", memSource("go", "v1.mod", []byte("  \n")), ErrNotFound},
 	}
 
 	for _, tc := range tests {

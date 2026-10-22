@@ -12,7 +12,6 @@ import (
 	"strconv"
 
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
 )
@@ -210,13 +209,9 @@ func writePyPIPage(w http.ResponseWriter, r *http.Request, grp *models.Repositor
 	h := w.Header()
 	h.Add("Vary", "Accept")
 
-	if partial {
-		h.Set("Cache-Control", "no-store")
-	} else {
-		sum := sha256.Sum256(append([]byte(offer.ContentType+"\x00"), body...))
-		if base.Revalidate(w, r, grp.Public, `"`+hex.EncodeToString(sum[:16])+`"`, pypiPageMaxAge) {
-			return
-		}
+	sum := sha256.Sum256(append([]byte(offer.ContentType+"\x00"), body...))
+	if revalidateMerged(w, r, grp.Public, `"`+hex.EncodeToString(sum[:16])+`"`, pypiPageMaxAge, partial) {
+		return
 	}
 
 	h.Set("Content-Type", offer.ContentType)

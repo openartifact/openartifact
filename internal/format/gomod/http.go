@@ -555,7 +555,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	h.Emit(r.Context(), repoID, webhook.EventArtifactUploaded, webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
 		Repository: repoName,
-		Format:     "gomod",
+		Format:     "go",
 		Name:       modulePath,
 		Version:    version,
 		Path:       modulePath + "/@v/" + version + ".zip",

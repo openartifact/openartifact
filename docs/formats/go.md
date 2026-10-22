@@ -102,7 +102,7 @@ Limits:
 
 - A mismatching file is refused, but there is no way to tell a compromised upstream from a stale checksum database entry; both give `502`.
 - The latest signed tree head is kept in memory only. After a restart the server trusts the database's current head again (the go command keeps it on disk).
-- Modules that are not in the checksum database are only structure-checked; the go client's own `GOSUMDB`/`GONOSUMDB`/`GOPRIVATE` settings still decide what it verifies. Checks protect the shared cache; they do not replace the client-side check, which must stay on (set neither `GONOSUMDB` nor `GOFLAGS=-insecure`).
+- Modules that are not in the checksum database are only structure-checked, and their files are cached for the repository TTL (`cache_ttl_seconds`) rather than as immutable, so a version published to the database later is verified when the entry expires; the go client's own `GOSUMDB`/`GONOSUMDB`/`GOPRIVATE` settings still decide what it verifies. Checks protect the shared cache; they do not replace the client-side check, which must stay on (set neither `GONOSUMDB` nor `GOFLAGS=-insecure`).
 - `GET /sumdb/<name>/...` is not proxied, so clients reach the checksum database directly; air-gapped clients need their own mirror.
 
 ### Group behavior
