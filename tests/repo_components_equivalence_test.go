@@ -10,6 +10,7 @@ import (
 	"context"
 	_ "embed"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 
@@ -212,5 +213,132 @@ func assertSameComponents(t *testing.T, want, got []*models.Component) {
 		if fmt.Sprintf("%+v", *got[i]) != fmt.Sprintf("%+v", *want[i]) {
 			t.Fatalf("row %d differs:\n got  %+v\n want %+v", i, *got[i], *want[i])
 		}
+	}
+}
+
+func componentIDs(list []*models.Component) []string {
+	ids := make([]string, len(list))
+	for i, c := range list {
+		ids[i] = c.ID
+	}
+
+	return ids
+}
+
+// TestSearchComponentsQueryMatchesEveryFormat: q keeps exactly the rows whose
+// listed name or version contains the text, case-insensitively, in every
+// format branch, and the total counts the same rows.
+func TestSearchComponentsQueryMatchesEveryFormat(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	repo := seedEquivalenceRepo(t, pg)
+	ctx := context.Background()
+
+	all, _, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Page: 1, Limit: 10000})
+	if err != nil {
+		t.Fatalf("list all: %v", err)
+	}
+
+	for _, q := range []string{"1", "Ab", "EXAMPLE.com", "dir/f1", "equivalence", "t3", "no-such-text", "v9.", "org.g1"} {
+		t.Run(q, func(t *testing.T) {
+			var want []string
+
+			for _, c := range all {
+				lq := strings.ToLower(q)
+				if strings.Contains(strings.ToLower(c.Name), lq) || strings.Contains(strings.ToLower(c.Version), lq) {
+					want = append(want, c.ID)
+				}
+			}
+
+			got, total, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Query: q, Page: 1, Limit: 10000})
+			if err != nil {
+				t.Fatalf("search: %v", err)
+			}
+
+			if total != len(want) {
+				t.Fatalf("total = %d, want %d", total, len(want))
+			}
+
+			if fmt.Sprint(componentIDs(got)) != fmt.Sprint(want) {
+				t.Fatalf("rows differ from the newest-first filter of the full list:\n got  %v\n want %v", componentIDs(got), want)
+			}
+		})
+	}
+
+	// "%" and "_" are literal characters, not LIKE wildcards.
+	if got, total, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Query: "%", Page: 1, Limit: 10}); err != nil || total != 0 || len(got) != 0 {
+		t.Fatalf("q=%%: total=%d len=%d err=%v, want no match", total, len(got), err)
+	}
+}
+
+// TestSearchComponentsSortByName: the by-name order is a total order over
+// every format (same rows as newest-first, no row lost or repeated across
+// pages) and sorted within a format.
+func TestSearchComponentsSortByName(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	repo := seedEquivalenceRepo(t, pg)
+	ctx := context.Background()
+
+	newest, newestTotal, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Page: 1, Limit: 10000})
+	if err != nil {
+		t.Fatalf("list newest: %v", err)
+	}
+
+	for _, format := range []string{"", "maven", "rpm", "docker", "raw", "npm", "go", "deb"} {
+		t.Run("pages/"+format, func(t *testing.T) {
+			base := database.ComponentListOptions{Format: format, SortByName: true}
+
+			one := base
+			one.Page, one.Limit = 1, 10000
+
+			whole, total, err := pg.SearchComponents(ctx, repo, one)
+			if err != nil {
+				t.Fatalf("by name: %v", err)
+			}
+
+			if format == "" && (total != newestTotal || len(whole) != len(newest)) {
+				t.Fatalf("by-name total/len = %d/%d, newest-first %d/%d", total, len(whole), newestTotal, len(newest))
+			}
+
+			var paged []*models.Component
+
+			for page := 1; page <= (total+6)/7; page++ {
+				opts := base
+				opts.Page, opts.Limit = page, 7
+
+				rows, pageTotal, err := pg.SearchComponents(ctx, repo, opts)
+				if err != nil || pageTotal != total {
+					t.Fatalf("page %d: total=%d err=%v, want total %d", page, pageTotal, err, total)
+				}
+
+				paged = append(paged, rows...)
+			}
+
+			if fmt.Sprint(componentIDs(paged)) != fmt.Sprint(componentIDs(whole)) {
+				t.Fatalf("pages of 7 do not add up to the whole listing:\n got  %v\n want %v", componentIDs(paged), componentIDs(whole))
+			}
+		})
+	}
+
+	// Within one format whose names are prefix+number, the order is name then version.
+	for _, format := range []string{"deb", "pypi", "cargo", "helm"} {
+		rows, _, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Format: format, SortByName: true, Page: 1, Limit: 100})
+		if err != nil || len(rows) == 0 {
+			t.Fatalf("%s by name: len=%d err=%v", format, len(rows), err)
+		}
+
+		names := make([]string, len(rows))
+		for i, c := range rows {
+			names[i] = c.Name
+		}
+
+		if !sort.StringsAreSorted(names) {
+			t.Fatalf("%s names not sorted: %v", format, names)
+		}
+	}
+
+	// The two orders can be combined with q.
+	rows, total, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Query: "py1", Format: "pypi", SortByName: true, Page: 1, Limit: 100})
+	if err != nil || total != len(rows) || len(rows) == 0 || rows[0].Name != "py1" {
+		t.Fatalf("q+sort: total=%d len=%d err=%v first=%v", total, len(rows), err, rows)
 	}
 }

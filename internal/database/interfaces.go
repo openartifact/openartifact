@@ -685,10 +685,25 @@ type DatabaseConfig struct {
 	ConnectTimeout time.Duration `yaml:"connectTimeout"`
 }
 
-// ComponentNameLister is implemented by stores that can list a repository's
-// packages restricted to one exact listed name (GET
-// /api/v1/repositories/{name}/packages?name=…). Kept separate from the main
-// interface so only the real store has to provide it.
-type ComponentNameLister interface {
-	ListComponentsByRepoName(ctx context.Context, repoID, formatFilter, nameFilter string, page, limit int) ([]*models.Component, int, error)
+// ComponentListOptions selects and orders a repository's package listing.
+type ComponentListOptions struct {
+	// Format restricts the listing to one package format ("" = all).
+	Format string
+	// Name restricts it to rows whose listed name equals Name exactly.
+	Name string
+	// Query keeps rows whose listed name or version contains Query, ignoring case.
+	Query string
+	// SortByName orders by (name, version) instead of newest first.
+	SortByName bool
+	Page       int
+	Limit      int
+}
+
+// ComponentSearcher is implemented by stores that can filter and order a
+// repository's package listing (GET /api/v1/repositories/{name}/packages with
+// package_name, q or sort). Kept separate from the main interface so only the
+// real store has to provide it. It returns the requested page and the total
+// number of matching rows.
+type ComponentSearcher interface {
+	SearchComponents(ctx context.Context, repoID string, opts ComponentListOptions) ([]*models.Component, int, error)
 }

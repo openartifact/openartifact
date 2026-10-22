@@ -39,6 +39,9 @@ const base = {
   'auth.signInWith': 'Or sign in with',
   'auth.logout': 'Logout',
   'auth.login': 'Login',
+  'auth.logoutFailed': 'Could not sign out',
+  'session.probeFailed': "Couldn't verify your session",
+  'session.probeFailedHint': 'The server did not answer. Navigating again retries the check.',
 
   // Navigation
   'nav.dashboard': 'Dashboard',

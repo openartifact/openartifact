@@ -206,11 +206,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <p class="text-xs font-mono font-medium text-foreground break-all">{{ selectedNodeId }}</p>
           <div class="mt-2 space-y-1">
             <p class="text-caption text-muted">
-              <span class="font-semibold text-foreground">{{ outgoingEdges(selectedNodeId).length }}</span>
+              <span class="font-semibold text-foreground">{{ selectedOutgoing }}</span>
               {{ t('graph.outgoing') }}
             </p>
             <p class="text-caption text-muted">
-              <span class="font-semibold text-foreground">{{ incomingEdges(selectedNodeId).length }}</span>
+              <span class="font-semibold text-foreground">{{ selectedIncoming }}</span>
               {{ t('graph.dependents') }}
             </p>
           </div>
@@ -364,6 +364,7 @@ const selectedNodeId = ref<string | null>(null)
 const svgEl = ref<SVGSVGElement | null>(null)
 const loadError = ref('')
 let detailGeneration = 0
+let sbomsGeneration = 0
 
 // ─── Derived Graph Data ─────────────────────────────────────────────────────────
 
@@ -425,13 +426,39 @@ const vulnerableCount = computed(() => allNodes.value.filter((n) => n.vulnerable
 
 // ─── Highlight Helpers ─────────────────────────────────────────────────────────
 
-function outgoingEdges(nodeId: string): GraphLink[] {
-  return links.value.filter((l) => l.source === nodeId)
-}
+// Adjacency is built once per graph, so selecting a node costs O(its degree)
+// instead of a scan of every edge per node and per render.
+const adjacency = computed(() => {
+  const outgoing = new Map<string, string[]>()
+  const incoming = new Map<string, string[]>()
+  for (const l of links.value) {
+    let out = outgoing.get(l.source)
+    if (!out) outgoing.set(l.source, (out = []))
+    out.push(l.target)
+    let inc = incoming.get(l.target)
+    if (!inc) incoming.set(l.target, (inc = []))
+    inc.push(l.source)
+  }
+  return { outgoing, incoming }
+})
 
-function incomingEdges(nodeId: string): GraphLink[] {
-  return links.value.filter((l) => l.target === nodeId)
-}
+const selectedOutgoing = computed(() =>
+  selectedNodeId.value ? (adjacency.value.outgoing.get(selectedNodeId.value)?.length ?? 0) : 0,
+)
+const selectedIncoming = computed(() =>
+  selectedNodeId.value ? (adjacency.value.incoming.get(selectedNodeId.value)?.length ?? 0) : 0,
+)
+
+// The selected node and its direct neighbours stay fully opaque.
+const highlightedNodeIds = computed<Set<string> | null>(() => {
+  const id = selectedNodeId.value
+  if (!id) return null
+  return new Set([
+    id,
+    ...(adjacency.value.outgoing.get(id) ?? []),
+    ...(adjacency.value.incoming.get(id) ?? []),
+  ])
+})
 
 function isEdgeHighlighted(link: GraphLink): boolean {
   if (!selectedNodeId.value) return false
@@ -439,13 +466,7 @@ function isEdgeHighlighted(link: GraphLink): boolean {
 }
 
 function isNodeHighlighted(nodeId: string): boolean {
-  if (!selectedNodeId.value) return true
-  if (nodeId === selectedNodeId.value) return true
-  return links.value.some(
-    (l) =>
-      (l.source === selectedNodeId.value && l.target === nodeId) ||
-      (l.target === selectedNodeId.value && l.source === nodeId),
-  )
+  return highlightedNodeIds.value?.has(nodeId) ?? true
 }
 
 function toggleNode(nodeId: string): void {
@@ -460,19 +481,22 @@ function nodeColor(node: GraphNode): string {
 // ─── Data Loading ──────────────────────────────────────────────────────────────
 
 async function loadSboms(): Promise<void> {
+  const generation = ++sbomsGeneration
   loadingSboms.value = true
   loadError.value = ''
   try {
     const res = await request<{ reports?: SbomItem[] }>(
       `/api/v1/repositories/${encodeURIComponent(repoName.value)}/sbom`,
     )
+    if (generation !== sbomsGeneration) return
     sboms.value = res?.reports ?? []
   } catch (err) {
+    if (generation !== sbomsGeneration) return
     sboms.value = []
     loadError.value = err instanceof Error ? err.message : t('graph.sbomsLoadFailed')
     toasts.error(loadError.value)
   } finally {
-    loadingSboms.value = false
+    if (generation === sbomsGeneration) loadingSboms.value = false
   }
 }
 
@@ -502,6 +526,10 @@ function onSbomChange(): void {
   if (selectedSbomId.value) {
     loadSbomDetail(selectedSbomId.value)
   } else {
+    // A detail request still in flight must not repaint the cleared graph.
+    detailGeneration++
+    loadingGraph.value = false
+    loadError.value = ''
     allPackages.value = []
     selectedNodeId.value = null
   }
@@ -525,7 +553,8 @@ function exportSvg(): void {
   link.href = url
   link.download = `${repoName.value}-dependency-graph.svg`
   link.click()
-  URL.revokeObjectURL(url)
+  // Revoking in the same tick can cancel the download in some browsers.
+  setTimeout(() => URL.revokeObjectURL(url), 1000)
 }
 
 // ─── Watchers ──────────────────────────────────────────────────────────────────
@@ -556,6 +585,8 @@ onMounted(() => {
 watch(repoName, () => {
   repoInfo.value = null
   selectedSbomId.value = ''
+  detailGeneration++
+  loadingGraph.value = false
   allPackages.value = []
   selectedNodeId.value = null
   void loadRepo()

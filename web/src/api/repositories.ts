@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, requestBlob } from './client'
+import { request, preflight } from './client'
 import type { Repository, RepositoryMember } from './generated/types.gen'
 
 export type { Repository, RepositoryMember }
@@ -98,44 +98,55 @@ export function deleteRepository(name: string): Promise<void> {
   })
 }
 
-export function listPackages(name: string, params?: { page?: number; limit?: number; format?: string; packageName?: string }): Promise<ListPackagesResult> {
+export type PackageSort = 'created' | 'name'
+
+export interface ListPackagesParams {
+  page?: number
+  limit?: number
+  format?: string
+  /** Exact listed package name (every version of one package). */
+  packageName?: string
+  /** Case-insensitive text the listed name or version must contain. */
+  q?: string
+  /** `created` (newest first, the default) or `name` (name, then version). */
+  sort?: PackageSort
+}
+
+export function listPackages(name: string, params?: ListPackagesParams): Promise<ListPackagesResult> {
   const qs = new URLSearchParams()
   if (params?.page != null) qs.set('page', String(params.page))
   if (params?.limit != null) qs.set('limit', String(params.limit))
   if (params?.format) qs.set('format', params.format)
   if (params?.packageName) qs.set('package_name', params.packageName)
+  if (params?.q) qs.set('q', params.q)
+  if (params?.sort) qs.set('sort', params.sort)
   const query = qs.toString() ? `?${qs}` : ''
   return request<ListPackagesResult>(`/api/v1/repositories/${encodeURIComponent(name)}/packages${query}`)
 }
 
+/** Path of the streaming download route of a listed package (any format). */
+export function packageDownloadUrl(repoName: string, packageId: string): string {
+  return `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(packageId)}/download`
+}
+
 /**
- * Downloads a listed package (any format) through the authenticated API and
- * hands it to the browser as a file. Rejects with ApiError on 4xx/5xx.
+ * Downloads a listed package (any format). A preflight request reports what
+ * the server would answer (quarantined, forbidden, gone) as an ApiError, then
+ * the browser fetches the file itself so it streams to disk instead of being
+ * buffered in memory. Rejects with ApiError on 4xx/5xx.
  */
 export async function downloadPackage(repoName: string, pkg: Pick<PackageItem, 'id' | 'name' | 'version'>): Promise<void> {
-  const { blob, filename } = await requestBlob(
-    `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(pkg.id)}/download`,
-  )
+  const url = packageDownloadUrl(repoName, pkg.id)
+  const { filename } = await preflight(url)
 
-  const url = URL.createObjectURL(blob)
   const link = document.createElement('a')
   link.href = url
+  // The attachment header names the file; the attribute keeps an error that
+  // appears after the preflight from replacing the app with a JSON page.
   link.download = filename ?? (pkg.version ? `${pkg.name}-${pkg.version}` : pkg.name)
   document.body.appendChild(link)
   link.click()
   link.remove()
-  URL.revokeObjectURL(url)
-}
-
-export interface ComponentItem {
-  id: string
-  name: string
-  version: string
-  format: string
-  size?: number
-  sha256?: string
-  created_at?: string
-  path?: string
 }
 
 // ── SBOM ──────────────────────────────────────────────────────────────────────
@@ -191,6 +202,8 @@ export function deletePackage(repoName: string, id: string): Promise<void> {
   )
 }
 
+const COMPONENT_PAGE_SIZE = 100 // backend clamps `limit` to 100
+
 /**
  * Every row (all versions) of one package, looked up server-side by its exact
  * listed name, so repositories of any size resolve without walking the whole
@@ -209,23 +222,4 @@ export async function listPackageVersions(
     if (items.length >= (res.total ?? 0) || rows.length === 0) break
   }
   return items
-}
-
-// ── Components ────────────────────────────────────────────────────────────────
-
-const COMPONENT_PAGE_SIZE = 100 // backend clamps `limit` to 100
-const COMPONENT_MAX_PAGES = 20
-
-// Collects every package of a repository by walking the paginated
-// /packages endpoint (there is no separate components route).
-export async function listComponents(name: string): Promise<{ total: number; items: ComponentItem[] }> {
-  const items: ComponentItem[] = []
-  let total = 0
-  for (let page = 1; page <= COMPONENT_MAX_PAGES; page++) {
-    const res = await listPackages(name, { page, limit: COMPONENT_PAGE_SIZE })
-    total = res.total
-    items.push(...res.packages)
-    if (items.length >= total || res.packages.length === 0) break
-  }
-  return { total, items }
 }

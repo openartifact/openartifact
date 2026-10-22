@@ -14,12 +14,15 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
 import * as authApi from '../../api/auth'
+import { ApiError } from '../../api/client'
+import { useToastStore } from '../../stores/toast'
 import { useSessionStore, type User } from '../../stores/session'
 import { useUIStore } from '../../stores/ui'
 import AppSidebar from '../AppSidebar.vue'
 
 let session: StoreGeneric
 let ui: StoreGeneric
+let toasts: StoreGeneric
 let mockLogout: Mock<typeof authApi.logout>
 let sessionActions: string[]
 
@@ -68,6 +71,7 @@ describe('AppSidebar', () => {
     setActivePinia(createPinia())
     session = useSessionStore()
     ui = useUIStore()
+    toasts = useToastStore()
     sessionActions = []
     session.$onAction(({ name }) => {
       sessionActions.push(name)
@@ -98,11 +102,20 @@ describe('AppSidebar', () => {
     expect(wrapper.html()).not.toContain('/admin/projects')
   })
 
-  it('renders Security section links', () => {
+  it('renders Security section links for admins', () => {
+    session.user = makeUser({ is_admin: true })
     const { wrapper } = mountSidebar()
     expect(wrapper.text()).toContain('Vulnerabilities')
     expect(wrapper.text()).toContain('Licenses')
     expect(wrapper.text()).toContain('Secrets')
+    expect(wrapper.find('a[href="/security/ai-analysis"]').exists()).toBe(true)
+  })
+
+  it('hides the Security section from non-admins (the scan APIs need manage rights)', () => {
+    session.user = makeUser({ is_admin: false })
+    const { wrapper } = mountSidebar()
+    expect(wrapper.text()).not.toContain('Vulnerabilities')
+    expect(wrapper.html()).not.toContain('/security/')
   })
 
   it('renders Settings section link', () => {
@@ -165,18 +178,29 @@ describe('AppSidebar', () => {
     await logoutBtn.trigger('click')
     await flushPromises()
     expect(mockLogout).toHaveBeenCalled()
-    expect(sessionActions).toContain('clearSession')
+    expect(sessionActions).toEqual(['logout'])
     expect(session.user).toBeNull()
     expect(router.currentRoute.value.path).toBe('/login')
   })
 
-  it('clears session and navigates even when apiLogout throws', async () => {
+  it('stays signed in and reports the failure when apiLogout throws', async () => {
     mockLogout.mockRejectedValueOnce(new Error('network fail'))
+    session.user = makeUser({ username: 'test' })
+    const { wrapper, router } = mountSidebar()
+    await router.push('/repos')
+    await wrapper.find('button[aria-label="Sign out"]').trigger('click')
+    await flushPromises()
+    expect(session.user).not.toBeNull()
+    expect(router.currentRoute.value.path).toBe('/repos')
+    expect(toasts.queue.map((x: { title: string }) => x.title)).toContain('Could not sign out')
+  })
+
+  it('signs out locally when the server says the session is already gone', async () => {
+    mockLogout.mockRejectedValueOnce(new ApiError('Unauthorized', 401))
     session.user = makeUser({ username: 'test' })
     const { wrapper, router } = mountSidebar()
     await wrapper.find('button[aria-label="Sign out"]').trigger('click')
     await flushPromises()
-    expect(sessionActions).toContain('clearSession')
     expect(session.user).toBeNull()
     expect(router.currentRoute.value.path).toBe('/login')
   })

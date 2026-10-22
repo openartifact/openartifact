@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { ALL_FORMATS } from '../formats'
-import { clientSetup, pullCommand, repoBaseUrl } from '../installCommands'
+import { clientSetup, pullCommand, repoBaseUrl, shellQuote } from '../installCommands'
 
 describe('installCommands', () => {
   it('produces a base URL and a command for every format', () => {
@@ -17,6 +17,51 @@ describe('installCommands', () => {
   it('uses the native route shape for npm and maven', () => {
     expect(repoBaseUrl('npm', 'https://oa.example', 'r1')).toBe('https://oa.example/repos/r1')
     expect(repoBaseUrl('maven', 'https://oa.example', 'r1')).toBe('https://oa.example/repos/maven/r1')
+  })
+})
+
+describe('pullCommand quoting', () => {
+  const origin = 'https://oa.example'
+
+  it('leaves ordinary names bare', () => {
+    expect(pullCommand('npm', origin, 'r1', '@acme/widget', '1.2.3-beta.1')).toBe(
+      'npm install @acme/widget@1.2.3-beta.1 --registry=https://oa.example/repos/r1/',
+    )
+    expect(pullCommand('pypi', origin, 'r1', 'requests', '2.31.0')).toBe(
+      'pip install requests==2.31.0 --index-url https://oa.example/repos/r1/simple/',
+    )
+    expect(pullCommand('go', origin, 'r1', 'example.com/m', 'v1.0.0')).toBe(
+      'GOPROXY=https://oa.example/repos/r1 go get example.com/m@v1.0.0',
+    )
+  })
+
+  it('quotes only the words that need it', () => {
+    expect(shellQuote('a-Z_0.9@x/y+z:w=v')).toBe('a-Z_0.9@x/y+z:w=v')
+    expect(shellQuote('a b')).toBe("'a b'")
+    expect(shellQuote('it\'s')).toBe("'it'\\''s'")
+    expect(pullCommand('pypi', origin, 'r1', 'pkg', '1.0; rm -rf ~')).toBe(
+      "pip install 'pkg==1.0; rm -rf ~' --index-url https://oa.example/repos/r1/simple/",
+    )
+    expect(pullCommand('deb', origin, 'r1', 'lib$(id)', '1:2')).toBe("apt install 'lib$(id)=1:2'")
+  })
+
+  it('keeps a quoted GOPROXY value a valid assignment', () => {
+    expect(pullCommand('go', origin, 'my repo', 'm', 'v1')).toBe(
+      "GOPROXY='https://oa.example/repos/my%20repo' go get m@v1",
+    )
+  })
+
+  it('encodes each raw path segment and keeps the slashes', () => {
+    expect(pullCommand('raw', origin, 'r1', 'dir/a file#1?.txt', '')).toBe(
+      "curl -fO 'https://oa.example/repos/raw/r1/dir/a%20file%231%3F.txt'",
+    )
+    expect(pullCommand('raw', origin, 'r1', 'dir/plain.txt', '')).toBe(
+      'curl -fO https://oa.example/repos/raw/r1/dir/plain.txt',
+    )
+  })
+
+  it('does not shell-quote the non-shell snippets', () => {
+    expect(pullCommand('sbt', origin, 'r1', 'p', 'v')).toBe('resolvers += "r1" at "https://oa.example/repos/sbt/r1"')
   })
 })
 

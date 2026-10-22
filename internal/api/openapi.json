@@ -3247,9 +3247,22 @@
           {
             "name": "q",
             "in": "query",
-            "description": "Search query",
+            "description": "Only list rows whose listed name or version contains this text (case-insensitive, at most 200 characters)",
             "schema": {
-              "type": "string"
+              "type": "string",
+              "maxLength": 200
+            }
+          },
+          {
+            "name": "sort",
+            "in": "query",
+            "description": "Row order: newest first (created, the default) or by name and version (name)",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "created",
+                "name"
+              ]
             }
           },
           {

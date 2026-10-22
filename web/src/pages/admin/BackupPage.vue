@@ -274,6 +274,8 @@ const loading = ref(true)
 const loadError = ref('')
 const polling = ref(false)
 let pollTimer: ReturnType<typeof setInterval> | null = null
+// A load still in flight when the page unmounts must not restart the poll timer.
+let unmounted = false
 let inFlight = false
 
 const createModalOpen = ref(false)
@@ -384,12 +386,13 @@ async function load(): Promise<void> {
     inFlight = false
   }
 
+  if (unmounted) return
   if (hasActiveJobs.value) startPolling()
   else stopPolling()
 }
 
 function startPolling(): void {
-  if (pollTimer) return
+  if (pollTimer || unmounted) return
   polling.value = true
   pollTimer = setInterval(() => void load(), POLL_INTERVAL_MS)
 }
@@ -464,5 +467,8 @@ async function confirmRestore(): Promise<void> {
 }
 
 onMounted(load)
-onUnmounted(stopPolling)
+onUnmounted(() => {
+  unmounted = true
+  stopPolling()
+})
 </script>

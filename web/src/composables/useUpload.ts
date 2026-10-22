@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { ref, computed } from 'vue'
-import { ApiError, csrfHeader } from '../api/client'
+import { ApiError, csrfHeader, expireSession } from '../api/client'
 
 // Mirrors request()'s error handling for XHR uploads: JSON `{error, code}`
 // bodies become the message instead of the raw response text.
@@ -18,17 +18,6 @@ function parseXhrError(xhr: XMLHttpRequest): ApiError {
     // non-JSON body: keep the HTTP status message
   }
   return new ApiError(message, xhr.status, code)
-}
-
-// Same 401 handling as request(): drop the session and go to /login.
-async function expireSession(): Promise<void> {
-  const { useSessionStore } = await import('../stores/session')
-  useSessionStore().clearSession()
-  const currentPath = window.location.pathname + window.location.search
-  if (currentPath !== '/login') {
-    const { default: router } = await import('../router')
-    await router.push({ name: 'login', query: { next: currentPath } })
-  }
 }
 
 export type UploadStatus = 'queued' | 'uploading' | 'complete' | 'failed' | 'cancelled'

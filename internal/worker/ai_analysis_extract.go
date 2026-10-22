@@ -224,7 +224,7 @@ func (w *AIAnalysisWorker) resolveUpload(ref UploadRef) {
 		return
 	}
 
-	lister, ok := w.db.(database.ComponentNameLister)
+	lister, ok := w.db.(database.ComponentSearcher)
 	if !ok {
 		return
 	}
@@ -232,7 +232,7 @@ func (w *AIAnalysisWorker) resolveUpload(ref UploadRef) {
 	ctx, cancel := context.WithTimeout(w.ctx, 30*time.Second)
 	defer cancel()
 
-	comps, _, err := lister.ListComponentsByRepoName(ctx, ref.RepositoryID, ref.Format, "", 1, uploadScanLimit)
+	comps, _, err := lister.SearchComponents(ctx, ref.RepositoryID, database.ComponentListOptions{Format: ref.Format, Page: 1, Limit: uploadScanLimit})
 	if err != nil {
 		w.log.Errorw("ai worker: listing packages for upload failed", "repo_id", ref.RepositoryID, "error", err)
 		return

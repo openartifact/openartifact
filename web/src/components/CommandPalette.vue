@@ -133,7 +133,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Dialog,
@@ -180,6 +180,8 @@ function resetPending(): void {
   debounceHandle = null
   searchGeneration++
 }
+
+onBeforeUnmount(resetPending)
 
 function onQueryChange(value: string): void {
   query.value = value

@@ -1401,9 +1401,13 @@ export type GetApiV1RepositoriesByNamePackagesData = {
         page?: number;
         limit?: number;
         /**
-         * Search query
+         * Only list rows whose listed name or version contains this text (case-insensitive, at most 200 characters)
          */
         q?: string;
+        /**
+         * Row order: newest first (created, the default) or by name and version (name)
+         */
+        sort?: 'created' | 'name';
         /**
          * Only list packages of this format
          */

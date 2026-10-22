@@ -87,7 +87,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- Empty state -->
     <EmptyState
-      v-else-if="!loading && filteredItems.length === 0"
+      v-else-if="!loading && total === 0"
       :title="searchQuery ? t('browser.noMatchTitle') : t('browser.emptyTitle')"
       :description="searchQuery ? t('browser.noMatchHint') : t('browser.emptyHint')"
     />
@@ -118,8 +118,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- List rows -->
       <div class="divide-y divide-border">
         <div
-          v-for="item in paginatedItems"
-          :key="`${item.name}:${item.version}:${item.format}`"
+          v-for="item in items"
+          :key="item.id"
           class="grid grid-cols-[28px_minmax(0,2fr)_minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)_120px] items-center gap-3 px-4 py-2.5 transition-colors group"
           :class="{ 'bg-primary-soft/40': selectedIds.has(itemKey(item)) }"
         >
@@ -176,21 +176,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </div>
       </div>
-
-      <Pagination
-        v-if="filteredItems.length > limit"
-        :total="filteredItems.length"
-        :page="page"
-        :limit="limit"
-        @change="page = $event"
-      />
     </div>
 
     <!-- Grid view -->
     <div v-else class="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-4 gap-3 p-4 bg-surface rounded-lg border border-border">
       <div
-        v-for="item in paginatedItems"
-        :key="`${item.name}:${item.version}:${item.format}`"
+        v-for="item in items"
+        :key="item.id"
         class="rounded-lg border p-4 transition-all cursor-pointer group"
         :class="selectedIds.has(itemKey(item))
           ? 'border-primary bg-primary-soft/40'
@@ -229,6 +221,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
 
+    <!-- Pagination (both views; the server pages the list) -->
+    <Pagination
+      v-if="!error && total > limit"
+      class="mt-3 rounded-lg border border-border"
+      :total="total"
+      :page="page"
+      :limit="limit"
+      @change="page = $event"
+    />
+
     <!-- Bulk actions bar -->
     <BulkActionsBar
       :selected-items="selectedItemKeys"
@@ -243,10 +245,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import RepoHeader from '../components/RepoHeader.vue'
 import { formatDate } from '../lib/datetime'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
-import { listComponents, getRepository } from '../api/repositories'
-import type { Repository, ComponentItem } from '../api/repositories'
+import { listPackages, getRepository } from '../api/repositories'
+import type { Repository, PackageItem, PackageSort } from '../api/repositories'
 import AppButton from '../components/AppButton.vue'
 import EmptyState from '../components/EmptyState.vue'
 import Pagination from '../components/Pagination.vue'
@@ -268,33 +270,39 @@ const repoName = computed(() => route.params.name as string)
 const toasts = useToastStore()
 
 const repo = ref<Repository | null>(null)
-const items = ref<ComponentItem[]>([])
+// The page of packages on screen; filtering, ordering and paging happen on the server.
+const items = ref<PackageItem[]>([])
+const total = ref(0)
 const loading = ref(false)
 const error = ref<string | null>(null)
 const searchQuery = ref('')
+// The search text the list was last requested with (searchQuery after a typing pause).
+const appliedQuery = ref('')
+const sortKey = ref<PackageSort>('name')
 const page = ref(1)
 const limit = 25
+const SEARCH_DEBOUNCE_MS = 300
 const viewMode = ref<'list' | 'grid'>('list')
 
 // ── Selection state ────────────────────────────────────────────────────────
 const selectedIds = ref<Set<string>>(new Set())
 
-function itemKey(item: ComponentItem): string {
+function itemKey(item: PackageItem): string {
   return item.id
 }
 
 const selectedItemKeys = computed(() => [...selectedIds.value])
 
 const allPageSelected = computed(() =>
-  paginatedItems.value.length > 0 &&
-  paginatedItems.value.every((i) => selectedIds.value.has(itemKey(i))),
+  items.value.length > 0 &&
+  items.value.every((i) => selectedIds.value.has(itemKey(i))),
 )
 
 const somePageSelected = computed(() =>
-  paginatedItems.value.some((i) => selectedIds.value.has(itemKey(i))),
+  items.value.some((i) => selectedIds.value.has(itemKey(i))),
 )
 
-function toggleItem(item: ComponentItem): void {
+function toggleItem(item: PackageItem): void {
   const key = itemKey(item)
   const next = new Set(selectedIds.value)
   if (next.has(key)) {
@@ -308,11 +316,11 @@ function toggleItem(item: ComponentItem): void {
 function toggleAll(): void {
   if (allPageSelected.value) {
     const next = new Set(selectedIds.value)
-    paginatedItems.value.forEach((i) => next.delete(itemKey(i)))
+    items.value.forEach((i) => next.delete(itemKey(i)))
     selectedIds.value = next
   } else {
     const next = new Set(selectedIds.value)
-    paginatedItems.value.forEach((i) => next.add(itemKey(i)))
+    items.value.forEach((i) => next.add(itemKey(i)))
     selectedIds.value = next
   }
 }
@@ -341,10 +349,10 @@ function fileTypeClasses(name: string): string {
 
 // ── Bulk action handlers ───────────────────────────────────────────────────
 function onDeleted(ids: string[]): void {
-  const deleted = new Set(ids)
-  items.value = items.value.filter((i) => !deleted.has(itemKey(i)))
   clearSelection()
-  toasts.success(t('bulk.deleteSuccess').replace('{n}', String(ids.length)))
+  // Nothing was deleted (every request failed): the error toast says so.
+  if (ids.length > 0) toasts.success(t('bulk.deleteSuccess').replace('{n}', String(ids.length)))
+  void load()
 }
 
 function onBulkError(msg: string): void {
@@ -352,38 +360,6 @@ function onBulkError(msg: string): void {
 }
 
 // ─────────────────────────────────────────────────────────────────────────
-
-watch(searchQuery, () => {
-  page.value = 1
-})
-
-const filteredItems = computed(() => {
-  const q = searchQuery.value.trim().toLowerCase()
-  if (!q) return items.value
-  return items.value.filter(
-    (i) =>
-      i.name.toLowerCase().includes(q) ||
-      (i.version ?? '').toLowerCase().includes(q) ||
-      i.format.toLowerCase().includes(q),
-  )
-})
-
-const sortKey = ref<'name' | 'created'>('name')
-
-const sortedItems = computed(() => {
-  const list = [...filteredItems.value]
-  if (sortKey.value === 'name') {
-    list.sort((a, b) => a.name.localeCompare(b.name) || a.version.localeCompare(b.version))
-  } else {
-    list.sort((a, b) => (b.created_at ?? '').localeCompare(a.created_at ?? ''))
-  }
-  return list
-})
-
-const paginatedItems = computed(() => {
-  const start = (page.value - 1) * limit
-  return sortedItems.value.slice(start, start + limit)
-})
 
 function formatBytes(bytes?: number): string {
   if (bytes == null || bytes === 0) return '—'
@@ -396,20 +372,35 @@ function formatBytes(bytes?: number): string {
 
 let loadGeneration = 0
 
+async function loadRepo(): Promise<void> {
+  try {
+    repo.value = await getRepository(repoName.value)
+  } catch (err) {
+    // The header is cosmetic; the package list reports its own failure.
+    repo.value = null
+    console.error('[browser] repository lookup failed', err)
+  }
+}
+
 async function load(): Promise<void> {
   const generation = ++loadGeneration
   loading.value = true
   error.value = null
   try {
-    const [repoData, componentsData] = await Promise.all([
-      getRepository(repoName.value),
-      listComponents(repoName.value),
-    ])
+    const res = await listPackages(repoName.value, {
+      page: page.value,
+      limit,
+      q: appliedQuery.value,
+      sort: sortKey.value,
+    })
     if (generation !== loadGeneration) return
-    repo.value = repoData
-    items.value = componentsData.items
-    selectedIds.value = new Set()
-    page.value = 1
+    // Rows were deleted from the last page: step back to the last page that exists.
+    if (res.packages.length === 0 && res.total > 0 && page.value > 1) {
+      page.value = Math.ceil(res.total / limit)
+      return
+    }
+    items.value = res.packages
+    total.value = res.total
   } catch (err) {
     if (generation !== loadGeneration) return
     error.value = err instanceof Error ? err.message : t('browser.loadFailed')
@@ -418,5 +409,20 @@ async function load(): Promise<void> {
   }
 }
 
-watch(repoName, load, { immediate: true })
+// Search runs on the server once typing pauses.
+let searchTimer: ReturnType<typeof setTimeout> | undefined
+watch(searchQuery, (value) => {
+  clearTimeout(searchTimer)
+  searchTimer = setTimeout(() => { appliedQuery.value = value.trim() }, SEARCH_DEBOUNCE_MS)
+})
+onBeforeUnmount(() => clearTimeout(searchTimer))
+
+// A new repository, search text or order starts over at page 1. Declared before
+// the loading watcher so both changes land in one load.
+watch([repoName, appliedQuery, sortKey], () => { page.value = 1 })
+watch(repoName, () => {
+  clearSelection()
+  void loadRepo()
+}, { immediate: true })
+watch([repoName, appliedQuery, sortKey, page], () => { void load() }, { immediate: true })
 </script>

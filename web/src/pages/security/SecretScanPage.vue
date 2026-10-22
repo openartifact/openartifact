@@ -277,12 +277,15 @@ function statusLabel(status: string): string {
 
 async function loadScans(): Promise<void> {
   const repo = selectedRepo.value
+  // Counted before the early return: a response still in flight for the
+  // previous repository must not land after the selection was cleared.
+  const seq = ++loadSeq
   if (!repo) {
     scans.value = []
     loadError.value = ''
+    loadingScans.value = false
     return
   }
-  const seq = ++loadSeq
   loadingScans.value = true
   try {
     const result = await listSecretScans(repo)
@@ -333,5 +336,9 @@ async function toggleQuarantine(scan: SecretScan): Promise<void> {
   }
 }
 
-watch(selectedRepo, () => void loadScans())
+watch(selectedRepo, () => {
+  // Another repository's scans must not stay on screen while this one loads.
+  scans.value = []
+  void loadScans()
+})
 </script>

@@ -119,6 +119,16 @@ Project quotas and cleanup defaults:
 | Cleanup | Projects can define default cleanup policies (`/api/v1/projects/{project}/cleanup-policies`), applied to hosted repositories without an enabled policy of their own. See [project default cleanup policies](../repositories/cleanup-and-quotas.md#project-default-cleanup-policies). |
 | Web UI | Project page: new **Usage** section for all members; **Settings** gains the project quota (admin-editable) and the cleanup defaults. |
 
+Web UI and package listing:
+
+| Area | Change |
+|---|---|
+| API | `GET /api/v1/repositories/{name}/packages` accepts `q` (case-insensitive substring of the package name or version, at most 200 characters; raw and proxy-cache repositories match the name only) and `sort` (`created`, the default, newest first, or `name`). Any other `sort` value is `400`. |
+| Web UI | The artifact browser pages, searches and sorts on the server, so repositories with more than 2000 packages are browsable in full (the grid view is paged too). |
+| Web UI | Package downloads stream to disk without buffering the file in the browser; a refused download (for example a quarantined artifact) shows an error message instead of replacing the page. |
+| Web UI | The Security pages and navigation are shown to administrators only (the scan endpoints already required the global `manage` permission). A failed session check no longer blanks the app: it opens the sign-in page with a notice and re-checks on the next navigation. Signing out keeps you signed in and shows an error when the server could not end the session. |
+| Web UI | Install commands quote a value only when it contains characters outside `A-Za-z0-9._@/+:=-`. |
+
 Backup archives written by older versions still restore: the old table names `organizations` and `organization_members` are accepted.
 
 ### 0.5.1

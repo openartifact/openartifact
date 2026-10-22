@@ -9,6 +9,10 @@ import { ErrorCodes } from '../api/error-codes'
 import type { UserExtended } from '../api/generated/types.gen'
 import type { ProjectMembership } from '../api/projects'
 import { atLeast } from '../lib/projectAccess'
+import { logout as apiLogout } from '../api/auth'
+import { useToastStore } from './toast'
+import { useUIStore } from './ui'
+import { t } from '../i18n/en'
 
 /** The signed-in user as `/auth/me` returns it, with the caller's project roles. */
 export type User = UserExtended & { projects?: ProjectMembership[] }
@@ -36,9 +40,17 @@ export const useSessionStore = defineStore('session', () => {
     () => isAdmin.value || projects.value.some((p) => atLeast(p.role, 'maintainer')),
   )
 
-  async function fetchMe(): Promise<void> {
+  // True when the last /auth/me probe failed for a reason other than "not
+  // signed in" (network error, 5xx, proxy 502). The session state is then
+  // unknown, not signed out: the router retries the probe on the next navigation.
+  const probeFailed = ref(false)
+
+  let inflight: Promise<void> | null = null
+
+  async function probe(): Promise<void> {
     try {
       user.value = await request<User>('/api/v1/auth/me')
+      probeFailed.value = false
     } catch (err) {
       if (
         err instanceof ApiError &&
@@ -48,17 +60,53 @@ export const useSessionStore = defineStore('session', () => {
         // RBAC middleware blocks all routes when must_change_password is set,
         // including /auth/me. Treat that as "authenticated but locked".
         user.value = { id: '', username: '', must_change_password: true }
-      } else {
+        probeFailed.value = false
+      } else if (err instanceof ApiError && (err.status === 401 || err.status === 403)) {
         user.value = null
+        probeFailed.value = false
+      } else {
+        // Transient failure: keep whatever user we already have (for example
+        // the one the login response just returned) and flag the probe.
+        if (!probeFailed.value) useToastStore().warning(t('session.probeFailed'), t('session.probeFailedHint'))
+        probeFailed.value = true
       }
     } finally {
       ready.value = true
     }
   }
 
-  function clearSession(): void {
-    user.value = null
+  /**
+   * Refreshes the signed-in user from /auth/me. Never throws: a transient
+   * failure sets `probeFailed` and still marks the session `ready` so the app
+   * renders. Concurrent callers share one request.
+   */
+  function fetchMe(): Promise<void> {
+    inflight ??= probe().finally(() => {
+      inflight = null
+    })
+    return inflight
   }
 
-  return { user, ready, isAuthenticated, isAdmin, canCreateRepo, mustChangePassword, projects, fetchMe, clearSession }
+  /** Drops the user and every other piece of per-user client state. */
+  function clearSession(): void {
+    user.value = null
+    probeFailed.value = false
+    useToastStore().clear()
+    const ui = useUIStore()
+    ui.closeMobileNav()
+    ui.closeCommandPalette()
+  }
+
+  /** Ends the server session, then clears the client state. Throws when the server could not be reached. */
+  async function logout(): Promise<void> {
+    try {
+      await apiLogout()
+    } catch (err) {
+      // 401: the session is already gone server-side.
+      if (!(err instanceof ApiError && err.status === 401)) throw err
+    }
+    clearSession()
+  }
+
+  return { user, ready, isAuthenticated, isAdmin, canCreateRepo, mustChangePassword, projects, probeFailed, fetchMe, clearSession, logout }
 })

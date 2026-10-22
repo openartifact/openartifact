@@ -62,7 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onBeforeUnmount } from 'vue'
 import AppButton from './AppButton.vue'
 import { ArrowUpTrayIcon } from '@heroicons/vue/24/outline'
 import { useUpload, type UploadEntry, type UploadStatus } from '../composables/useUpload'
@@ -77,6 +77,9 @@ const fileInput = ref<HTMLInputElement | null>(null)
 const upload = useUpload()
 const { entries } = upload
 const toasts = useToastStore()
+
+// Leaving the page aborts running uploads instead of letting them report into a dead component.
+onBeforeUnmount(() => upload.cancelAll())
 
 const formatHint = computed(() => {
   switch (props.format) {

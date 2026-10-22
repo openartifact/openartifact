@@ -30,7 +30,40 @@ const NO_REDIRECT_401 = new Set([
   '/api/v1/auth/login',
   '/api/v1/auth/change-password',
   '/api/v1/auth/me',
+  // Signing out an already expired session is not an error worth a redirect.
+  '/api/v1/auth/logout',
 ])
+
+/** `ApiError.code` of the error thrown for an expired session; the redirect to /login is already under way. */
+export const SESSION_EXPIRED = 'session_expired'
+
+/** True for the error `request()` throws after it redirected an expired session to /login. */
+export function isSessionExpired(err: unknown): boolean {
+  return err instanceof ApiError && err.code === SESSION_EXPIRED
+}
+
+let expiring: Promise<void> | null = null
+
+/**
+ * Drops the session and sends the user to /login with the current location as
+ * `next`. Concurrent expiries (several requests answered 401 at once) share
+ * one redirect.
+ */
+export function expireSession(): Promise<void> {
+  expiring ??= (async () => {
+    const { useSessionStore } = await import('../stores/session')
+    useSessionStore().clearSession()
+
+    const currentPath = window.location.pathname + window.location.search
+    if (currentPath !== '/login') {
+      const { default: router } = await import('../router')
+      await router.push({ name: 'login', query: { next: currentPath } })
+    }
+  })().finally(() => {
+    expiring = null
+  })
+  return expiring
+}
 
 /**
  * Sends a same-origin API call with the standard headers (CSRF, XHR marker,
@@ -54,17 +87,8 @@ async function send(path: string, init: RequestInit): Promise<Response> {
   const isAuthProbe = NO_REDIRECT_401.has(path)
 
   if (res.status === 401 && !isAuthProbe) {
-    const { useSessionStore } = await import('../stores/session')
-    const session = useSessionStore()
-    session.clearSession()
-
-    const currentPath = window.location.pathname + window.location.search
-    if (currentPath !== '/login') {
-      const { default: router } = await import('../router')
-      await router.push({ name: 'login', query: { next: currentPath } })
-    }
-
-    throw new ApiError('Session expired', 401, 'unauthorized')
+    await expireSession()
+    throw new ApiError('Session expired', 401, SESSION_EXPIRED)
   }
 
   return res
@@ -116,12 +140,19 @@ export function attachmentFilename(header: string | null): string | undefined {
 }
 
 /**
- * Fetches a binary response (file download). Errors surface as ApiError just
- * like request(); filename comes from the Content-Disposition header.
+ * Checks that a GET would succeed without downloading the body: resolves with
+ * the attachment filename once the response headers are in and the request is
+ * aborted, or throws the server's ApiError (quarantined, forbidden, missing).
+ * Lets the caller hand the actual transfer to the browser (streamed to disk,
+ * no Blob in memory) and still report failures in-app.
  */
-export async function requestBlob(path: string, init: RequestInit = {}): Promise<{ blob: Blob; filename?: string }> {
-  const res = await send(path, init)
-  if (!res.ok) throw await apiError(res)
-
-  return { blob: await res.blob(), filename: attachmentFilename(res.headers.get('content-disposition')) }
+export async function preflight(path: string): Promise<{ filename?: string }> {
+  const controller = new AbortController()
+  try {
+    const res = await send(path, { signal: controller.signal })
+    if (!res.ok) throw await apiError(res)
+    return { filename: attachmentFilename(res.headers.get('content-disposition')) }
+  } finally {
+    controller.abort()
+  }
 }

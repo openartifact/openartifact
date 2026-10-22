@@ -31,10 +31,9 @@ export function useRepoPackages() {
   async function loadPackages(): Promise<void> {
     const mySeq = ++seq
     const repo = selectedRepo.value
-    if (!repo) {
-      packages.value = []
-      return
-    }
+    // The previous repository's packages must not stay selectable while the new list loads.
+    packages.value = []
+    if (!repo) return
     try {
       const all: PackageItem[] = []
       for (let page = 1; ; page++) {

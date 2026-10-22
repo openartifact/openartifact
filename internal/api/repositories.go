@@ -1198,22 +1198,26 @@ func collectOrphansAsync(wg *sync.WaitGroup, db database.Database, store storage
 	})
 }
 
-var errNameFilterUnsupported = errors.New("package_name filter is not supported by this store")
+var errListFilterUnsupported = errors.New("package_name, q and sort are not supported by this store")
 
-// listComponents lists a repository's packages, restricted to one exact
-// listed name when nameFilter is non-empty.
-func (h *RepositoriesHandler) listComponents(ctx context.Context, repoID, formatFilter, nameFilter string, page, limit int) ([]*models.Component, int, error) {
-	if nameFilter == "" {
-		return h.db.ListComponentsByRepo(ctx, repoID, formatFilter, page, limit)
+// listComponents lists a repository's packages with the filters and ordering
+// of opts. The plain newest-first listing needs only the base store; any
+// filter or other order needs a database.ComponentSearcher.
+func (h *RepositoriesHandler) listComponents(ctx context.Context, repoID string, opts database.ComponentListOptions) ([]*models.Component, int, error) {
+	if opts.Name == "" && opts.Query == "" && !opts.SortByName {
+		return h.db.ListComponentsByRepo(ctx, repoID, opts.Format, opts.Page, opts.Limit)
 	}
 
-	lister, ok := h.db.(database.ComponentNameLister)
+	searcher, ok := h.db.(database.ComponentSearcher)
 	if !ok {
-		return nil, 0, errNameFilterUnsupported
+		return nil, 0, errListFilterUnsupported
 	}
 
-	return lister.ListComponentsByRepoName(ctx, repoID, formatFilter, nameFilter, page, limit)
+	return searcher.SearchComponents(ctx, repoID, opts)
 }
+
+// maxPackageQueryLen bounds the q search term of the package listing.
+const maxPackageQueryLen = 200
 
 func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
@@ -1221,6 +1225,18 @@ func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Requ
 	formatFilter := q.Get("format")
 	page := min(parseIntMin(q.Get("page"), 1, 1), maxListPage)
 	limit := parseIntClamp(q.Get("limit"), 25, 1, 100)
+
+	search := strings.TrimSpace(q.Get("q"))
+	if len(search) > maxPackageQueryLen {
+		writeError(w, http.StatusBadRequest, "bad_request", "q is too long")
+		return
+	}
+
+	sortKey := q.Get("sort")
+	if sortKey != "" && sortKey != "created" && sortKey != "name" {
+		writeError(w, http.StatusBadRequest, "bad_request", "sort must be created or name")
+		return
+	}
 
 	ctx := r.Context()
 
@@ -1246,7 +1262,14 @@ func (h *RepositoriesHandler) handlePackages(w http.ResponseWriter, r *http.Requ
 		}
 	}
 
-	components, total, err := h.listComponents(ctx, repo.ID, formatFilter, q.Get("package_name"), page, limit)
+	components, total, err := h.listComponents(ctx, repo.ID, database.ComponentListOptions{
+		Format:     formatFilter,
+		Name:       q.Get("package_name"),
+		Query:      search,
+		SortByName: sortKey == "name",
+		Page:       page,
+		Limit:      limit,
+	})
 	if err != nil {
 		h.log.Errorw("packages: db error listing components", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")

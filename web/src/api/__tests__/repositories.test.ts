@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia } from 'pinia'
-import { deletePackage, downloadPackage, listComponents, listPackageVersions, listRepoMembers, presignModeOf, presignValueOf, updateRepository } from '../repositories'
+import { deletePackage, downloadPackage, listPackages, listPackageVersions, listRepoMembers, presignModeOf, presignValueOf, updateRepository } from '../repositories'
 import { ApiError, attachmentFilename } from '../client'
 
 function stubFetch(responses: unknown[]): { urls: string[]; methods: string[] } {
@@ -29,61 +29,54 @@ describe('repositories api', () => {
     expect(seen.urls[0]).toBe('/api/v1/repositories/my%20repo/packages/abc-123')
   })
 
-  it('listComponents walks every page of /packages', async () => {
-    const page = (n: number, count: number) => ({
-      total: 3,
-      packages: Array.from({ length: count }, (_, k) => ({ id: `${n}-${k}`, name: 'p', version: '1', format: 'deb' })),
-    })
-    const seen = stubFetch([page(1, 2), page(2, 1)])
-    // Force small pages through the server's total.
-    const res = await listComponents('r')
-    expect(res.items.length).toBeGreaterThanOrEqual(2)
-    expect(seen.urls[0]).toContain('/api/v1/repositories/r/packages')
+  it('listPackages sends the page, search text and order to the server', async () => {
+    const seen = stubFetch([{ total: 0, packages: [] }])
+    await listPackages('my repo', { page: 3, limit: 25, q: 'wid get', sort: 'name' })
+    expect(seen.urls[0]).toBe('/api/v1/repositories/my%20repo/packages?page=3&limit=25&q=wid+get&sort=name')
+
+    await listPackages('r')
+    expect(seen.urls[1]).toBe('/api/v1/repositories/r/packages')
   })
 
-  it('downloadPackage fetches the id route and saves the blob under the server filename', async () => {
-    const urls: string[] = []
-    spyOn(globalThis, 'fetch').mockImplementation((async (url: string) => {
-      urls.push(String(url))
+  it('downloadPackage preflights without reading the body, then lets the browser stream the file', async () => {
+    const seen: { url: string; signal?: AbortSignal }[] = []
+    spyOn(globalThis, 'fetch').mockImplementation((async (url: string, init?: RequestInit) => {
+      seen.push({ url: String(url), signal: init?.signal ?? undefined })
       return new Response('tarball-bytes', {
         status: 200,
         headers: { 'Content-Disposition': 'attachment; filename=widget-1.0.0.tgz' },
       })
     }) as never)
-    const created: Blob[] = []
-    const createUrl = spyOn(URL, 'createObjectURL').mockImplementation(((b: Blob) => {
-      created.push(b)
-      return 'blob:x'
-    }) as never)
-    spyOn(URL, 'revokeObjectURL').mockImplementation((() => {}) as never)
-    const names: string[] = []
-    const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
-      names.push(this.download)
+    const createUrl = spyOn(URL, 'createObjectURL')
+    const clicked: { href: string; download: string }[] = []
+    spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.getAttribute('href') ?? '', download: this.download })
     })
 
     await downloadPackage('npm repo', { id: 'row/1', name: '@acme/widget', version: '1.0.0' })
 
-    expect(urls[0]).toBe('/api/v1/repositories/npm%20repo/packages/row%2F1/download')
-    expect(createUrl).toHaveBeenCalledTimes(1)
-    expect(await created[0].text()).toBe('tarball-bytes')
-    expect(click).toHaveBeenCalledTimes(1)
-    expect(names).toEqual(['widget-1.0.0.tgz'])
+    const url = '/api/v1/repositories/npm%20repo/packages/row%2F1/download'
+    expect(seen.map((r) => r.url)).toEqual([url])
+    expect(seen[0].signal?.aborted).toBe(true)
+    expect(createUrl).not.toHaveBeenCalled()
+    expect(clicked).toEqual([{ href: url, download: 'widget-1.0.0.tgz' }])
   })
 
-  it('downloadPackage rejects with the server error on 4xx so the page can toast it', async () => {
+  it('downloadPackage rejects with the server error on 4xx and starts no download', async () => {
     spyOn(globalThis, 'fetch').mockImplementation((async () =>
-      new Response(JSON.stringify({ error: 'package not found', code: 'not_found' }), {
-        status: 404,
+      new Response(JSON.stringify({ error: 'artifact quarantined', code: 'ARTIFACT_QUARANTINED' }), {
+        status: 403,
         headers: { 'Content-Type': 'application/json' },
       })) as never)
-    const createUrl = spyOn(URL, 'createObjectURL')
+    const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
 
     const err = await downloadPackage('r', { id: 'x', name: 'n', version: '' }).catch((e: unknown) => e)
 
     expect(err).toBeInstanceOf(ApiError)
-    expect((err as ApiError).status).toBe(404)
-    expect((err as ApiError).message).toBe('package not found')
-    expect(createUrl).not.toHaveBeenCalled()
+    expect((err as ApiError).status).toBe(403)
+    expect((err as ApiError).code).toBe('ARTIFACT_QUARANTINED')
+    expect((err as ApiError).message).toBe('artifact quarantined')
+    expect(click).not.toHaveBeenCalled()
   })
 
   it('listRepoMembers unwraps the ordered members envelope', async () => {

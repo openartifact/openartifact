@@ -4,6 +4,7 @@
 
 import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import { safeNextPath } from '../lib/safeRedirect'
 import type { CrumbSpec } from '../lib/crumbs'
 import type { TranslationKey } from '../i18n/en'
 
@@ -215,25 +216,25 @@ const routes: RouteRecordRaw[] = [
     path: '/security/vulns',
     name: 'security-vulns',
     component: () => import('../pages/security/VulnScanPage.vue'),
-    meta: { crumbs: securityTrail('sec.vuln.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.vuln.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/security/licenses',
     name: 'security-licenses',
     component: () => import('../pages/security/LicenseScanPage.vue'),
-    meta: { crumbs: securityTrail('sec.license.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.license.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/security/secrets',
     name: 'security-secrets',
     component: () => import('../pages/security/SecretScanPage.vue'),
-    meta: { crumbs: securityTrail('sec.secret.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.secret.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
   {
     path: '/security/ai-analysis',
     name: 'security-ai-analysis',
     component: () => import('../pages/security/AIAnalysisPage.vue'),
-    meta: { crumbs: securityTrail('sec.ai.breadcrumb'), requiresAuth: true },
+    meta: { crumbs: securityTrail('sec.ai.breadcrumb'), requiresAuth: true, requiresAdmin: true },
   },
 
   // Settings
@@ -284,16 +285,20 @@ const router = createRouter({
   routes,
 })
 
-let sessionInitialized = false
+/** Where to land after a gate (sign-in, password change): a safe in-app path that is not /login itself. */
+function landingPath(next: unknown): string {
+  const path = safeNextPath(next)
+  return router.resolve(path).name === 'login' ? '/' : path
+}
 
-router.beforeEach(async (to) => {
+router.beforeEach(async (to, from) => {
   const session = useSessionStore()
 
-  if (!sessionInitialized) {
-    sessionInitialized = true
-    if (!session.isAuthenticated) {
-      await session.fetchMe()
-    }
+  // Resolve the session before the first navigation settles, and retry the
+  // probe on every navigation after a transient failure. fetchMe() shares one
+  // request between concurrent navigations and never throws.
+  if (session.probeFailed || (!session.ready && !session.isAuthenticated)) {
+    await session.fetchMe()
   }
 
   if (to.meta.requiresAuth && !session.isAuthenticated) {
@@ -301,14 +306,34 @@ router.beforeEach(async (to) => {
   }
 
   // Force users with the must_change_password flag through the dedicated screen
-  // before any other authenticated route is allowed.
+  // before any other authenticated route is allowed, remembering where they were
+  // headed.
   if (
     session.isAuthenticated &&
     session.mustChangePassword &&
     to.name !== 'change-password' &&
     to.name !== 'login'
   ) {
-    return { name: 'change-password' }
+    const next = landingPath(to.fullPath)
+    return next === '/' ? { name: 'change-password' } : { name: 'change-password', query: { next } }
+  }
+
+  // The login form pushes straight to change-password: carry its ?next= along.
+  if (
+    to.name === 'change-password' &&
+    session.mustChangePassword &&
+    to.query.next === undefined &&
+    from.name === 'login'
+  ) {
+    const next = landingPath(from.query.next)
+    if (next !== '/') return { name: 'change-password', query: { next } }
+  }
+
+  // A signed-in user has no business on the login form: send them on to ?next=.
+  // (Users locked by must_change_password stay, they are on their way to the
+  // password screen.)
+  if (to.name === 'login' && session.isAuthenticated && !session.mustChangePassword) {
+    return landingPath(to.query.next)
   }
 
   // Already past the gate: don't let the change-password page show for users

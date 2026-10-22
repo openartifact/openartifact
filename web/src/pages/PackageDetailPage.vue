@@ -371,7 +371,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import PageHeader from '../components/PageHeader.vue'
 import { formatDate, formatDateTime } from '../lib/datetime'
-import { ref, computed, watch } from 'vue'
+import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import {
   ClipboardDocumentIcon,
@@ -431,21 +431,27 @@ const editingValue = ref('')
 
 const artifactId = computed(() => currentPkg.value?.id || '')
 
+let propsGeneration = 0
+
 async function loadProperties(): Promise<void> {
-  if (!artifactId.value) return
+  const id = artifactId.value
+  if (!id) return
+  const generation = ++propsGeneration
   propsLoading.value = true
   try {
     const res = await request<Record<string, string>>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties`,
+      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(id)}/properties`,
     )
+    if (generation !== propsGeneration) return
     properties.value = res ?? {}
   } catch (err) {
+    if (generation !== propsGeneration) return
     if (!(err instanceof ApiError && (err.status === 404 || err.status === 501))) {
       toasts.error(t('pkg.props.loadFailed'))
     }
     properties.value = {}
   } finally {
-    propsLoading.value = false
+    if (generation === propsGeneration) propsLoading.value = false
   }
 }
 
@@ -524,12 +530,6 @@ async function deleteProp(key: string): Promise<void> {
     toasts.error(err instanceof Error ? err.message : t('pkg.props.deleteFailed'))
   }
 }
-
-watch(activeTab, (tab) => {
-  if (tab === 'properties' && !propsLoading.value && artifactId.value) {
-    void loadProperties()
-  }
-})
 
 // Newest version first.
 const currentPkg = computed(() => packages.value[0] || null)
@@ -626,11 +626,15 @@ async function copySha(sha: string): Promise<void> {
   }
 }
 
+let copiedTimer: ReturnType<typeof setTimeout> | undefined
+onBeforeUnmount(() => clearTimeout(copiedTimer))
+
 async function copyCommand(): Promise<void> {
   try {
     await navigator.clipboard.writeText(pullCommand.value)
     copied.value = true
-    setTimeout(() => {
+    clearTimeout(copiedTimer)
+    copiedTimer = setTimeout(() => {
       copied.value = false
     }, 1500)
   } catch {
@@ -669,6 +673,8 @@ watch(
   () => [repoName.value, format.value, pkgName.value],
   () => {
     activeTab.value = 'overview'
+    propsGeneration++
+    propsLoading.value = false
     properties.value = {}
     scan.value = null
     void load()
@@ -676,7 +682,10 @@ watch(
   { immediate: true },
 )
 
-watch(activeTab, (tab) => {
+// The tab data loads when the tab opens and again once the package it belongs
+// to is known (the tab can be opened while the package list is still loading).
+watch([activeTab, artifactId], ([tab]) => {
+  if (tab === 'properties') void loadProperties()
   if (tab === 'security') void loadScan()
 })
 </script>

@@ -456,12 +456,15 @@ async function fetchAll(repo: string): Promise<AIAnalysis[]> {
 async function loadAnalyses(silent = false): Promise<void> {
   const repo = selectedRepo.value
   clearTimeout(pollTimer)
+  // Counted before the early return: a response still in flight for the
+  // previous repository must not land after the selection was cleared.
+  const seq = ++loadSeq
   if (!repo) {
     analyses.value = []
     loadError.value = ''
+    loadingAnalyses.value = false
     return
   }
-  const seq = ++loadSeq
   if (!silent) loadingAnalyses.value = true
   try {
     const result = await fetchAll(repo)
@@ -530,7 +533,12 @@ async function submitTrigger(): Promise<void> {
   }
 }
 
-watch(selectedRepo, () => void loadAnalyses())
+watch(selectedRepo, () => {
+  // Another repository's analyses must not stay on screen while this one loads.
+  analyses.value = []
+  selectedAnalysis.value = null
+  void loadAnalyses()
+})
 onBeforeUnmount(() => {
   clearTimeout(pollTimer)
   loadSeq++

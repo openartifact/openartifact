@@ -329,7 +329,7 @@ import {
   CheckCircleIcon,
   CheckIcon,
 } from '@heroicons/vue/24/outline'
-import { createRepository, getRepository, updateRepository, listRepositories } from '../api/repositories'
+import { createRepository, getRepository, updateRepository, listAllRepositories } from '../api/repositories'
 import { parseRetentionInput } from '../lib/trash'
 import type { Repository } from '../api/repositories'
 import FormatBadge from '../components/FormatBadge.vue'
@@ -457,7 +457,7 @@ onMounted(async () => {
   } else {
     if (typeof route.query.project === 'string') form.value.project = route.query.project
     try {
-      existing.value = (await listRepositories({ limit: 100 })).repositories || []
+      existing.value = await listAllRepositories()
     } catch {
       existing.value = []
     }

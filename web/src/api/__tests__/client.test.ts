@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
-import { request, ApiError } from '../client'
+import { request, preflight, isSessionExpired, ApiError, SESSION_EXPIRED } from '../client'
 import router from '../../router'
 import { useSessionStore, type User } from '../../stores/session'
 
@@ -162,5 +162,68 @@ describe('API client', () => {
       expect(apiErr.status).toBe(400)
       expect(apiErr.code).toBe('X')
     }
+  })
+
+  it('marks the error of an expired session so global handlers can stay quiet', async () => {
+    spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }))
+
+    const err = await request('/api/v1/protected').catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect((err as ApiError).code).toBe(SESSION_EXPIRED)
+    expect(isSessionExpired(err)).toBe(true)
+    expect(isSessionExpired(new ApiError('nope', 401, 'invalid_credentials'))).toBe(false)
+    expect(isSessionExpired(new Error('x'))).toBe(false)
+  })
+
+  it('redirects to login once when several requests expire together', async () => {
+    const session = useSessionStore()
+    const actions = trackActions(session)
+    const pushSpy = spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockImplementation((async () => new Response(null, { status: 401 })) as never)
+
+    const results = await Promise.allSettled([request('/api/v1/a'), request('/api/v1/b'), request('/api/v1/c')])
+
+    expect(results.every((r) => r.status === 'rejected')).toBe(true)
+    expect(actions.filter((a) => a === 'clearSession')).toHaveLength(1)
+    expect(pushSpy).toHaveBeenCalledTimes(1)
+  })
+
+  it('does not redirect when signing out an already expired session', async () => {
+    const pushSpy = spyOn(router, 'push').mockResolvedValue(undefined)
+    spyOn(globalThis, 'fetch').mockResolvedValue(new Response(null, { status: 401 }))
+
+    const err = await request('/api/v1/auth/logout', { method: 'POST' }).catch((e: unknown) => e)
+
+    expect((err as ApiError).status).toBe(401)
+    expect(isSessionExpired(err)).toBe(false)
+    expect(pushSpy).not.toHaveBeenCalled()
+  })
+
+  describe('preflight', () => {
+    it('returns the attachment filename and aborts the transfer without reading the body', async () => {
+      let signal: AbortSignal | undefined
+      spyOn(globalThis, 'fetch').mockImplementation((async (_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined
+        return new Response('large-body', { status: 200, headers: { 'Content-Disposition': 'attachment; filename="a b.tgz"' } })
+      }) as never)
+
+      const res = await preflight('/api/v1/repositories/r/packages/1/download')
+
+      expect(res.filename).toBe('a b.tgz')
+      expect(signal?.aborted).toBe(true)
+    })
+
+    it('throws the server error for a refused download', async () => {
+      spyOn(globalThis, 'fetch').mockResolvedValue(
+        new Response(JSON.stringify({ error: 'artifact quarantined', code: 'ARTIFACT_QUARANTINED' }), { status: 403 }),
+      )
+
+      const err = await preflight('/api/v1/x/download').catch((e: unknown) => e)
+
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).code).toBe('ARTIFACT_QUARANTINED')
+    })
   })
 })

@@ -74,7 +74,7 @@ func (d *aiFakeDB) UpsertAIAnalysis(_ context.Context, a *models.AIAnalysis) err
 	return nil
 }
 
-func (d *aiFakeDB) ListComponentsByRepoName(context.Context, string, string, string, int, int) ([]*models.Component, int, error) {
+func (d *aiFakeDB) SearchComponents(context.Context, string, database.ComponentListOptions) ([]*models.Component, int, error) {
 	return d.listing, len(d.listing), nil
 }
 

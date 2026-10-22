@@ -352,28 +352,23 @@ func (p *PostgresDB) DeleteRepository(ctx context.Context, id string) error {
 // format (see ListRepoComponents in queries/components.sql for the per-format
 // mapping). formatFilter, when non-empty, restricts the result to one format.
 func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFilter string, page, limit int) ([]*models.Component, int, error) {
-	return p.ListComponentsByRepoName(ctx, repoID, formatFilter, "", page, limit)
+	return p.SearchComponents(ctx, repoID, ComponentListOptions{Format: formatFilter, Page: page, Limit: limit})
 }
 
-// ListComponentsByRepoName is ListComponentsByRepo restricted to rows whose
-// listed name equals nameFilter exactly (empty = no name restriction).
-func (p *PostgresDB) ListComponentsByRepoName(ctx context.Context, repoID, formatFilter, nameFilter string, page, limit int) ([]*models.Component, int, error) {
+// SearchComponents is ListComponentsByRepo with the extra filters and the
+// ordering of ComponentListOptions.
+func (p *PostgresDB) SearchComponents(ctx context.Context, repoID string, opts ComponentListOptions) ([]*models.Component, int, error) {
 	total, err := p.q.CountRepoComponents(ctx, dbsqlc.CountRepoComponentsParams{
 		RepoID:       repoID,
-		FormatFilter: formatFilter,
-		NameFilter:   nameFilter,
+		FormatFilter: opts.Format,
+		NameFilter:   opts.Name,
+		Q:            opts.Query,
 	})
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to count packages: %w", err)
 	}
 
-	rows, err := p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
-		RepoID:       repoID,
-		FormatFilter: formatFilter,
-		NameFilter:   nameFilter,
-		PageLimit:    toInt32(limit),
-		PageOffset:   toInt32((page - 1) * limit),
-	})
+	rows, err := p.listComponentRows(ctx, repoID, opts)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list packages: %w", err)
 	}
@@ -401,6 +396,39 @@ func (p *PostgresDB) ListComponentsByRepoName(ctx context.Context, repoID, forma
 	}
 
 	return components, int(total), nil
+}
+
+// componentRow is the row shape shared by ListRepoComponents and
+// ListRepoComponentsByName.
+type componentRow = dbsqlc.ListRepoComponentsRow
+
+// listComponentRows runs the newest-first or the by-name variant of the
+// package listing query.
+func (p *PostgresDB) listComponentRows(ctx context.Context, repoID string, opts ComponentListOptions) ([]componentRow, error) {
+	limit := toInt32(opts.Limit)
+	offset := toInt32((opts.Page - 1) * opts.Limit)
+
+	if !opts.SortByName {
+		return p.q.ListRepoComponents(ctx, dbsqlc.ListRepoComponentsParams{
+			RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
+			PageLimit: limit, PageOffset: offset,
+		})
+	}
+
+	rows, err := p.q.ListRepoComponentsByName(ctx, dbsqlc.ListRepoComponentsByNameParams{
+		RepoID: repoID, FormatFilter: opts.Format, NameFilter: opts.Name, Q: opts.Query,
+		PageLimit: limit, PageOffset: offset,
+	})
+	if err != nil {
+		return nil, fmt.Errorf("list components by name: %w", err)
+	}
+
+	out := make([]componentRow, len(rows))
+	for i, r := range rows {
+		out[i] = componentRow(r)
+	}
+
+	return out, nil
 }
 
 func isUUID(s string) bool { return uuid.Validate(s) == nil }

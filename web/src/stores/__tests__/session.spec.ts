@@ -5,6 +5,8 @@
 import { describe, it, expect, beforeEach, spyOn, type Mock } from 'bun:test'
 import { setActivePinia, createPinia } from 'pinia'
 import { useSessionStore, type User } from '../session'
+import { useToastStore } from '../toast'
+import { useUIStore } from '../ui'
 
 // Adds the Response surface that request() reads (headers, text) to a partial mock.
 function mk(o: { status: number; ok: boolean; json?: () => Promise<unknown> }) {
@@ -258,7 +260,7 @@ describe('useSessionStore', () => {
     expect(store.user).toBeNull()
   })
 
-  it('fetchMe() handles fetch errors gracefully', async () => {
+  it('fetchMe() keeps the signed-in user and flags the probe when the network fails', async () => {
     const store = useSessionStore()
     store.user = { id: '1', username: 'testuser' } as User
 
@@ -266,10 +268,12 @@ describe('useSessionStore', () => {
 
     await store.fetchMe()
 
-    expect(store.user).toBeNull()
+    expect(store.user).not.toBeNull()
+    expect(store.probeFailed).toBe(true)
+    expect(store.ready).toBe(true)
   })
 
-  it('fetchMe() ignores non-2xx responses that are not 401 or 403', async () => {
+  it('fetchMe() marks the session ready on a 5xx so the app still renders', async () => {
     const store = useSessionStore()
 
     fetchMock.mockResolvedValueOnce(mk({
@@ -280,6 +284,92 @@ describe('useSessionStore', () => {
     await store.fetchMe()
 
     expect(store.user).toBeNull()
+    expect(store.ready).toBe(true)
+    expect(store.probeFailed).toBe(true)
+  })
+
+  it('fetchMe() clears the failed flag once a probe succeeds', async () => {
+    const store = useSessionStore()
+
+    fetchMock.mockRejectedValueOnce(new Error('down'))
+    await store.fetchMe()
+    expect(store.probeFailed).toBe(true)
+
+    fetchMock.mockResolvedValueOnce(mk({
+      status: 200,
+      ok: true,
+      json: async () => ({ id: '1', username: 'john' }),
+    }) as unknown as Response)
+    await store.fetchMe()
+
+    expect(store.probeFailed).toBe(false)
+    expect(store.user?.username).toBe('john')
+  })
+
+  it('fetchMe() shares one request between concurrent callers', async () => {
+    const store = useSessionStore()
+
+    fetchMock.mockResolvedValue(mk({
+      status: 200,
+      ok: true,
+      json: async () => ({ id: '1', username: 'john' }),
+    }) as unknown as Response)
+
+    await Promise.all([store.fetchMe(), store.fetchMe(), store.fetchMe()])
+
+    expect(fetchMock).toHaveBeenCalledTimes(1)
+  })
+
+  it('logout() ends the server session, then clears the user', async () => {
+    const store = useSessionStore()
+    store.user = { id: '1', username: 'testuser' } as User
+
+    fetchMock.mockResolvedValueOnce(mk({ status: 204, ok: true }) as unknown as Response)
+
+    await store.logout()
+
+    expect(fetchMock.mock.calls[0]?.[0]).toBe('/api/v1/auth/logout')
+    expect(store.user).toBeNull()
+  })
+
+  it('logout() treats 401 as already signed out', async () => {
+    const store = useSessionStore()
+    store.user = { id: '1', username: 'testuser' } as User
+
+    fetchMock.mockResolvedValueOnce(mk({ status: 401, ok: false }) as unknown as Response)
+
+    await store.logout()
+
+    expect(store.user).toBeNull()
+  })
+
+  it('logout() keeps the user and throws when the server cannot be reached', async () => {
+    const store = useSessionStore()
+    store.user = { id: '1', username: 'testuser' } as User
+
+    fetchMock.mockRejectedValueOnce(new Error('Network error'))
+
+    await expect(store.logout()).rejects.toThrow()
+    expect(store.user).not.toBeNull()
+  })
+
+  it('clearSession() also resets the probe flag, toasts and open overlays', async () => {
+    const store = useSessionStore()
+    const ui = useUIStore()
+    const toasts = useToastStore()
+    store.user = { id: '1', username: 'testuser' } as User
+    store.probeFailed = true
+    ui.commandPaletteOpen = true
+    ui.mobileNavOpen = true
+    toasts.info('left over from the previous user')
+
+    store.clearSession()
+
+    expect(store.user).toBeNull()
+    expect(store.probeFailed).toBe(false)
+    expect(ui.commandPaletteOpen).toBe(false)
+    expect(ui.mobileNavOpen).toBe(false)
+    expect(toasts.queue).toHaveLength(0)
   })
 
   it('canCreateRepo needs admin or maintainer in some project', () => {

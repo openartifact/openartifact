@@ -85,10 +85,23 @@ describe('router beforeEach guards', () => {
       signIn()
     })
 
-    it('/login stays on login page', async () => {
-      await push('/login')
-      expect(router.currentRoute.value.path).toBe('/login')
+    it('/login sends a signed-in user to the dashboard', async () => {
+      await push('/login?x=1')
+      expect(router.currentRoute.value.path).toBe('/')
     })
+
+    it('/login follows a safe ?next=', async () => {
+      await push('/login?next=/repos')
+      expect(router.currentRoute.value.path).toBe('/repos')
+    })
+
+    it.each(['//evil.example', 'https://evil.example', '/\\evil.example', '/login'])(
+      '/login ignores the unsafe ?next=%s',
+      async (next) => {
+        await push(`/login?next=${encodeURIComponent(next)}`)
+        expect(router.currentRoute.value.path).toBe('/')
+      },
+    )
 
     it('can access protected route', async () => {
       await push('/')
@@ -104,10 +117,75 @@ describe('router beforeEach guards', () => {
         await push('/change-password')
         expect(router.currentRoute.value.path).toBe('/change-password')
       })
+
+      it('another route is redirected to /change-password and remembers where the user was headed', async () => {
+        await push('/repos')
+        expect(router.currentRoute.value.path).toBe('/change-password')
+        expect(router.currentRoute.value.query.next).toBe('/repos')
+      })
+
+      it('the login form hands its ?next= on to /change-password', async () => {
+        await push('/login?next=/repos')
+        expect(router.currentRoute.value.path).toBe('/login')
+        await push('/change-password')
+        expect(router.currentRoute.value.query.next).toBe('/repos')
+      })
+
+      it('never carries an unsafe ?next= through /change-password', async () => {
+        await push('/login?next=//evil.example')
+        await push('/change-password')
+        expect(router.currentRoute.value.query.next).toBeUndefined()
+      })
+    })
+  })
+
+  describe('session probe', () => {
+    it('a failing /auth/me still lets the app render and is retried on the next navigation', async () => {
+      // A fresh session: the beforeEach navigation already resolved the previous one as signed out.
+      setActivePinia(createPinia())
+      session = useSessionStore()
+      const fetchSpy = spyOn(globalThis, 'fetch').mockRejectedValue(new Error('connection refused'))
+
+      await push('/repos')
+      expect(router.currentRoute.value.path).toBe('/login')
+      expect(session.ready).toBe(true)
+      expect(session.probeFailed).toBe(true)
+
+      fetchSpy.mockResolvedValue(
+        new Response(JSON.stringify({ id: 'u1', username: 'testuser' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
+      )
+      await push('/repos')
+      expect(router.currentRoute.value.path).toBe('/repos')
+      expect(session.probeFailed).toBe(false)
+    })
+
+    it('does not probe again once the server said the user is signed out', async () => {
+      setActivePinia(createPinia())
+      session = useSessionStore()
+      const fetchSpy = spyOn(globalThis, 'fetch')
+      fetchSpy.mockClear()
+      await push('/repos')
+      await push('/search')
+      expect(fetchSpy).toHaveBeenCalledTimes(1)
     })
   })
 
   describe('admin access', () => {
+    it.each(['/security/vulns', '/security/licenses', '/security/secrets', '/security/ai-analysis'])(
+      'non-admin cannot open %s',
+      async (path) => {
+        signIn({ is_admin: false })
+        await push(path)
+        expect(router.currentRoute.value.path).toBe('/')
+      },
+    )
+
+    it('admin can open the security pages', async () => {
+      signIn({ is_admin: true })
+      await push('/security/vulns')
+      expect(router.currentRoute.value.path).toBe('/security/vulns')
+    })
+
     it('non-admin cannot access /admin/users', async () => {
       signIn({ is_admin: false })
       await push('/admin/users')

@@ -52,7 +52,7 @@ import { useUIStore } from './stores/ui'
 import { useThemeStore } from './stores/theme'
 import { useSessionStore } from './stores/session'
 import { registerCommand, unregisterCommand } from './composables/useCommands'
-import { logout as apiLogout } from './api/auth'
+import { useSignOut } from './composables/useSignOut'
 import { t } from './i18n/en'
 
 const route = useRoute()
@@ -60,6 +60,7 @@ const router = useRouter()
 const ui = useUIStore()
 const theme = useThemeStore()
 const session = useSessionStore()
+const signOut = useSignOut()
 
 const showShell = computed(() => route.meta.layout !== 'blank')
 
@@ -149,15 +150,7 @@ onMounted(() => {
     id: 'auth.logout',
     title: t('palette.command.logout'),
     group: 'commands',
-    run: async () => {
-      try {
-        await apiLogout()
-      } catch {
-        // already logged out is fine
-      }
-      session.clearSession()
-      await router.push('/login')
-    },
+    run: signOut,
   })
 })
 

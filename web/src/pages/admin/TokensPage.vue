@@ -147,18 +147,29 @@ function isExpired(date?: string): boolean {
   return !Number.isNaN(d.getTime()) && d < new Date()
 }
 
+let loadSeq = 0
+
 async function load(): Promise<void> {
+  // Fast paging can finish out of order; only the latest request may apply.
+  const seq = ++loadSeq
   loading.value = true
   loadError.value = ''
   try {
     const res = await listTokens({ page: page.value, limit: PAGE_SIZE })
+    if (seq !== loadSeq) return
+    // The last token of the last page was revoked: step back to a page that exists.
+    if (res.items.length === 0 && res.total > 0 && page.value > 1) {
+      page.value = Math.max(1, Math.ceil(res.total / PAGE_SIZE))
+      return
+    }
     tokens.value = res.items as ApiToken[]
     total.value = res.total
   } catch (err) {
+    if (seq !== loadSeq) return
     loadError.value = err instanceof Error ? err.message : t('adm.tokens.loadFailed')
     toasts.error(loadError.value)
   } finally {
-    loading.value = false
+    if (seq === loadSeq) loading.value = false
   }
 }
 

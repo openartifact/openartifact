@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ref } from 'vue'
+import { getCurrentScope, onScopeDispose, ref } from 'vue'
 import { search } from '../api/search'
 import type { SearchPackageHit, SearchRepoHit } from '../api/search'
 
@@ -58,6 +58,15 @@ export function useSearch() {
     searched.value = false
     clearTimeout(debounceTimer)
     debounceTimer = undefined
+  }
+
+  // A page that unmounts mid-typing must not fire the pending search or apply
+  // an in-flight response afterwards.
+  if (getCurrentScope()) {
+    onScopeDispose(() => {
+      requestId++
+      clearTimeout(debounceTimer)
+    })
   }
 
   return { query, repoResults, packageResults, loading, searched, error, scheduleSearch, execute, clear }

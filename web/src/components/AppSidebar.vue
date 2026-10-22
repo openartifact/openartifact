@@ -68,16 +68,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <SidebarLink to="/projects" :icon="FolderIcon" :label="t('nav.projects')" :collapsed="collapsed" />
       <SidebarLink to="/search" :icon="MagnifyingGlassIcon" :label="t('nav.search')" :collapsed="collapsed" />
 
-      <!-- SECURITY -->
-      <p v-if="!collapsed" class="px-2 mt-4 mb-1 text-xs text-muted">
-        {{ t('nav.security') }}
-      </p>
-      <div v-else class="my-3 mx-auto w-6 h-px bg-border" />
+      <!-- SECURITY (admins only: the scan APIs need the manage permission) -->
+      <template v-if="session.isAdmin">
+        <p v-if="!collapsed" class="px-2 mt-4 mb-1 text-xs text-muted">
+          {{ t('nav.security') }}
+        </p>
+        <div v-else class="my-3 mx-auto w-6 h-px bg-border" />
 
-      <SidebarLink to="/security/vulns" :icon="ShieldExclamationIcon" :label="t('nav.vulns')" :collapsed="collapsed" />
-      <SidebarLink to="/security/licenses" :icon="DocumentTextIcon" :label="t('nav.licenses')" :collapsed="collapsed" />
-      <SidebarLink to="/security/secrets" :icon="EyeSlashIcon" :label="t('nav.secrets')" :collapsed="collapsed" />
-      <SidebarLink to="/security/ai-analysis" :icon="SparklesIcon" :label="t('shell.aiAnalysis')" :collapsed="collapsed" />
+        <SidebarLink to="/security/vulns" :icon="ShieldExclamationIcon" :label="t('nav.vulns')" :collapsed="collapsed" />
+        <SidebarLink to="/security/licenses" :icon="DocumentTextIcon" :label="t('nav.licenses')" :collapsed="collapsed" />
+        <SidebarLink to="/security/secrets" :icon="EyeSlashIcon" :label="t('nav.secrets')" :collapsed="collapsed" />
+        <SidebarLink to="/security/ai-analysis" :icon="SparklesIcon" :label="t('shell.aiAnalysis')" :collapsed="collapsed" />
+      </template>
 
       <!-- ADMINISTRATION (admins only, collapsible) -->
       <template v-if="session.isAdmin">
@@ -157,8 +159,8 @@ import { useSessionStore } from '../stores/session'
 import { useUIStore } from '../stores/ui'
 import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
-import { useRoute, useRouter } from 'vue-router'
-import { logout as apiLogout } from '../api/auth'
+import { useRoute } from 'vue-router'
+import { useSignOut } from '../composables/useSignOut'
 import {
   HomeIcon,
   CubeIcon,
@@ -195,7 +197,6 @@ import AppLogo from './AppLogo.vue'
 
 const session = useSessionStore()
 const ui = useUIStore()
-const router = useRouter()
 const version = useAppVersion()
 const route = useRoute()
 
@@ -235,13 +236,5 @@ watch(() => route.path, (path) => {
   if (path.startsWith('/admin')) adminOpen.value = true
 })
 
-async function handleLogout(): Promise<void> {
-  try {
-    await apiLogout()
-  } catch {
-    // already logged out — ignore
-  }
-  session.clearSession()
-  await router.push('/login')
-}
+const handleLogout = useSignOut()
 </script>
