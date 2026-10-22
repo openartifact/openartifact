@@ -19,11 +19,14 @@ permissions:
 
 env:
   GO_VERSION: "1.27.3"
-  # Dependabot does not track the two version inputs below (bun-version,
-  # golangci-lint version); bump them by hand. sqlc, govulncheck and actionlint
-  # live in tools/go.mod and are bumped by Dependabot (gomod, /tools).
-  BUN_VERSION: "1.4.3"
+  # Dependabot does not track the version inputs below (bun-version,
+  # golangci-lint version, Trivy binary version used by trivy-action); bump
+  # them by hand (TRIVY_VERSION also in release.yml and scheduled-scan.yml).
+  # sqlc, govulncheck and actionlint live in tools/go.mod and are bumped by
+  # Dependabot (gomod, /tools).
+  BUN_VERSION: "1.4.4"
   GOLANGCI_LINT_VERSION: "v2.15.0"
+  TRIVY_VERSION: "v0.76.1"
   IMAGE_TAG: openartifact:ci
 
 jobs:
@@ -75,7 +78,7 @@ jobs:
       TEST_S3_SECRET_KEY: 0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef
     services:
       postgres:
-        image: docker.io/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
+        image: docker.io/postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
         env:
           POSTGRES_PASSWORD: postgres
           POSTGRES_DB: openartifact_test
@@ -276,6 +279,7 @@ jobs:
       - name: Trivy image scan (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           image-ref: ${{ env.IMAGE_TAG }}
           scanners: vuln,secret
           severity: HIGH,CRITICAL
@@ -295,6 +299,7 @@ jobs:
       - name: Trivy image gate (fail on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           image-ref: ${{ env.IMAGE_TAG }}
           scanners: vuln,secret
           severity: HIGH,CRITICAL
@@ -307,6 +312,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret
@@ -329,6 +335,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           scan-type: fs
           scan-ref: .
           scanners: vuln,secret
@@ -343,6 +350,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           scan-type: config
           scan-ref: .
           severity: HIGH,CRITICAL
@@ -362,6 +370,7 @@ jobs:
         if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           scan-type: config
           scan-ref: .
           severity: HIGH,CRITICAL

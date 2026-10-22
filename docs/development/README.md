@@ -21,8 +21,9 @@ cd web && bun install && bun run dev
 | Tool | Version | Where it is pinned |
 |---|---|---|
 | Go | 1.27.x | `go.mod` (`go 1.27.0`); CI uses `GO_VERSION` (`1.27.3`) in `.github/workflows/*.yml` |
-| bun | 1.4.3 | `BUN_VERSION` in `ci.yml` / `release.yml`; used for the web UI and its tests |
+| bun | 1.4.4 | `BUN_VERSION` in `ci.yml` / `release.yml`; used for the web UI and its tests |
 | golangci-lint | v2.15.0 | `GOLANGCI_LINT_VERSION` in `ci.yml`; config in `.golangci.yaml` |
+| Trivy | v0.76.1 | `TRIVY_VERSION` in `ci.yml`, `release.yml`, `scheduled-scan.yml` (binary installed by `trivy-action`, which defaults to an older release) |
 | PostgreSQL | 18 | CI integration job (`postgres:18-alpine`); the `tests/integration` harness starts `postgres:16-alpine` itself |
 | sqlc, govulncheck, actionlint | see `tools/go.mod` | `tool` directives in `tools/go.mod` |
 
@@ -34,7 +35,7 @@ go tool -modfile=tools/go.mod govulncheck ./...
 go tool -modfile=tools/go.mod actionlint
 ```
 
-bun version and golangci-lint version are not tracked by Dependabot; bump them by hand in the workflows.
+bun, golangci-lint and Trivy versions are not tracked by Dependabot; bump them by hand in the workflows.
 
 ## Commands
 
@@ -107,7 +108,7 @@ The full list lives in [AGENTS.md](../../AGENTS.md); the ones that most often ma
 
 ## CI
 
-Workflows live in [`.github/workflows`](../../.github/workflows). All actions are pinned by commit SHA and all container images by `@sha256` digest; Dependabot ([`.github/dependabot.yml`](../../.github/dependabot.yml)) bumps them weekly (7-day cooldown, minor/patch grouped) for GitHub Actions, Go modules (`/` and `/tools`), web dependencies (bun, `/web`), Dockerfile and compose images (the `dhi.io` base needs the `DHI_USERNAME`/`DHI_TOKEN` Dependabot secrets). Image builds in CI and release log in to `dhi.io` with the `DHI_USERNAME`/`DHI_TOKEN` secrets; fork PRs, which cannot read secrets, build with `RUNTIME=distroless`. Not covered by Dependabot: `GO_VERSION`, `BUN_VERSION`, `GOLANGCI_LINT_VERSION`, and the Garage/Postgres images in the `integration` job.
+Workflows live in [`.github/workflows`](../../.github/workflows). All actions are pinned by commit SHA and all container images by `@sha256` digest; Dependabot ([`.github/dependabot.yml`](../../.github/dependabot.yml)) bumps them weekly (7-day cooldown, minor/patch grouped) for GitHub Actions, Go modules (`/` and `/tools`), web dependencies (bun, `/web`), Dockerfile and compose images (the `dhi.io` base needs the `DHI_USERNAME`/`DHI_TOKEN` Dependabot secrets). Image builds in CI and release log in to `dhi.io` with the `DHI_USERNAME`/`DHI_TOKEN` secrets; fork PRs, which cannot read secrets, build with `RUNTIME=distroless`. Not covered by Dependabot: `GO_VERSION`, `BUN_VERSION`, `GOLANGCI_LINT_VERSION`, `TRIVY_VERSION`, and the Garage/Postgres images in the `integration` job.
 
 ### `ci.yml` (push to `main`, tags `v*`, pull requests)
 

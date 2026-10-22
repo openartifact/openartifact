@@ -20,6 +20,7 @@ permissions:
 
 env:
   IMAGE: ghcr.io/${{ github.repository }}
+  TRIVY_VERSION: "v0.76.1"
 
 jobs:
   targets:
@@ -60,6 +61,7 @@ jobs:
       - name: Trivy scan (SARIF)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           image-ref: ${{ env.IMAGE }}:${{ matrix.tag }}
           scanners: vuln,secret
           severity: HIGH,CRITICAL
@@ -79,6 +81,7 @@ jobs:
       - name: Trivy gate (fail on fixable HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25 # v0.36.0
         with:
+          version: ${{ env.TRIVY_VERSION }}
           image-ref: ${{ env.IMAGE }}:${{ matrix.tag }}
           scanners: vuln,secret
           severity: HIGH,CRITICAL

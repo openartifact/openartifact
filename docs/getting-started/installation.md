@@ -144,7 +144,7 @@ The example file ships `database.password: CHANGE_ME`, `sslMode: require` and a 
 
 ### Build from source
 
-Requires Go 1.27 (`go.mod`: `go 1.27.0`; CI and releases use 1.27.3) and [bun](https://bun.sh) 1.4.3 (the web UI is embedded into the binary).
+Requires Go 1.27 (`go.mod`: `go 1.27.0`; CI and releases use 1.27.3) and [bun](https://bun.sh) 1.4.4 (the web UI is embedded into the binary).
 
 ```sh
 make build        # web UI + bin/openartifact

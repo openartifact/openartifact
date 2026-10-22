@@ -14,7 +14,7 @@ For security problems do **not** open an issue; see [SECURITY.md](SECURITY.md).
 
 ## Development setup
 
-Requirements: Go 1.27, [bun](https://bun.sh) 1.4.3, PostgreSQL 18 (or Docker
+Requirements: Go 1.27, [bun](https://bun.sh) 1.4.4, PostgreSQL 18 (or Docker
 for the integration tests), and optionally `golangci-lint` v2.15.0. `sqlc`,
 `govulncheck` and `actionlint` are pinned in `tools/go.mod` and run through
 `go tool -modfile=tools/go.mod <name>` (Dependabot keeps them current).
