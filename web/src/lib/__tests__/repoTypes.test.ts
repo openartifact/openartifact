@@ -18,10 +18,10 @@ describe('allowedFormats', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
   it('restricts proxy to cargo, deb, docker, helm, maven, npm, pypi, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'cargo', 'helm', 'deb', 'rpm', 'raw'])
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'raw'])
   })
   it('restricts group to cargo, docker, helm, maven, npm, pypi and raw', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'cargo', 'helm', 'raw'])
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'raw'])
     expect(isFormatAllowed('group', 'deb')).toBe(false)
     expect(isFormatAllowed('group', 'rpm')).toBe(false)
   })
