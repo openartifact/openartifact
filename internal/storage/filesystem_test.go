@@ -18,6 +18,7 @@ import (
 	"sort"
 	"strings"
 	"testing"
+	"time"
 )
 
 func newTestFilesystemStore(t *testing.T) *FilesystemStore {
@@ -439,5 +440,34 @@ func TestFilesystem_ListPagesByToken(t *testing.T) {
 
 	if !slices.Equal(got, want) {
 		t.Fatalf("paged list = %v, want %v", got, want)
+	}
+}
+
+func TestNewFilesystemStoreSweepsStaleUploadTemps(t *testing.T) {
+	dir := t.TempDir()
+	stale := filepath.Join(dir, "blob-upload-stale.tmp")
+	fresh := filepath.Join(dir, "blob-upload-fresh.tmp")
+
+	for _, f := range []string{stale, fresh} {
+		if err := os.WriteFile(f, []byte("x"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	old := time.Now().Add(-2 * time.Hour)
+	if err := os.Chtimes(stale, old, old); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := NewFilesystemStore(dir); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := os.Stat(stale); !os.IsNotExist(err) {
+		t.Errorf("stale temp file should be removed, stat err = %v", err)
+	}
+
+	if _, err := os.Stat(fresh); err != nil {
+		t.Errorf("fresh temp file must be kept: %v", err)
 	}
 }

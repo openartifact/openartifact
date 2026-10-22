@@ -29,6 +29,11 @@ A trashed item is not copied or renamed: it is the same record with a `deleted_a
 | Uniqueness | the path or version can be published again while the old copy is in the trash (see [restore conflicts](#restore)) |
 | Blobs | kept until purge; storage usage does not drop on delete |
 | Quota | trashed bytes keep counting ([below](#quota)) |
+| Authorization cache | see [below](#multiple-replicas-and-the-auth-cache) |
+
+### Multiple replicas and the auth cache
+
+Repository, organization and membership lookups made while authorizing a request are cached in memory for `DB_AUTH_CACHE_TTL_MS` (default 2000 ms). Trashing or restoring a repository through a replica invalidates that replica's cache at once, but the other replicas keep their cached copy until the TTL expires. For up to that long, another replica can still serve a just-trashed repository (and keep refusing a just-restored one). The same applies to changes made directly in the database. Lower the TTL, or set it to `0`, if that window is not acceptable; see also [RBAC](../security/rbac.md).
 
 ## Retention
 

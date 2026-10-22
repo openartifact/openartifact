@@ -5,8 +5,11 @@
 package storage
 
 import (
+	"bytes"
 	"context"
+	"crypto/sha256"
 	"encoding/base64"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"net/http/httptest"
@@ -120,5 +123,48 @@ func TestFilesystemGetMissingWrapsErrBlobNotFound(t *testing.T) {
 	_, err = fs.Get(context.Background(), strings.Repeat("c", 64))
 	if !errors.Is(err, ErrBlobNotFound) {
 		t.Fatalf("Get(missing) error = %v, want ErrBlobNotFound", err)
+	}
+}
+
+// STOR-2: every x-ms-* header sent must be signed, metadata names must be
+// valid Azure identifiers, and an empty blob must go out with Content-Length 0
+// rather than chunked.
+func TestAzurePutSignsMetadataAndEmptyBlob(t *testing.T) {
+	var gotAuth, gotCL, gotMeta string
+
+	var chunked bool
+
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotAuth = r.Header.Get("Authorization")
+		gotCL = r.Header.Get("Content-Length")
+		gotMeta = r.Header.Get("X-Ms-Meta-Content_type")
+		chunked = len(r.TransferEncoding) > 0
+
+		w.WriteHeader(http.StatusCreated)
+	}))
+	defer srv.Close()
+
+	s := azureTestStore(t, srv.URL)
+	sum := sha256.Sum256(nil)
+
+	if _, err := s.Put(context.Background(), bytes.NewReader(nil),
+		map[string]string{"sha256": hex.EncodeToString(sum[:]), "content-type": "text/x"}); err != nil {
+		t.Fatal(err)
+	}
+
+	if chunked || gotCL != "0" {
+		t.Errorf("empty blob: Content-Length=%q chunked=%v, want 0/false", gotCL, chunked)
+	}
+
+	if gotMeta != "text/x" {
+		t.Errorf("metadata header = %q, want sanitized x-ms-meta-content_type", gotMeta)
+	}
+
+	if gotAuth == "" {
+		t.Error("missing Authorization header")
+	}
+
+	if got := canonicalizedMSHeaders(map[string]string{"x-ms-b": "2", "X-Ms-A": " 1 ", "Content-Type": "x"}); got != "x-ms-a:1\nx-ms-b:2\n" {
+		t.Errorf("canonicalizedMSHeaders = %q", got)
 	}
 }

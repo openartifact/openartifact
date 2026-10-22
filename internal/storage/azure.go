@@ -86,27 +86,35 @@ func (a *AzureBlobStore) signRequest(method, blobPath string, headers map[string
 		return "", ErrAzureMSDateHeaderRequired
 	}
 
-	// Build the string to sign
+	// Build the string to sign. Every x-ms-* header that is sent MUST appear in
+	// the canonicalized headers, sorted by name.
+	canonHeaders := canonicalizedMSHeaders(headers)
+	resource := fmt.Sprintf("/%s/%s/%s", a.accountName, a.containerName, blobPath)
+
 	var stringToSign string
 
 	switch {
 	case method == "PUT":
-		// For PUT: include content length and type
 		contentType := headers["Content-Type"]
 		if contentType == "" {
 			contentType = "application/octet-stream"
 		}
 
-		stringToSign = fmt.Sprintf("%s\n\n\n%d\n\n%s\n\n\n\n\n\n\nx-ms-blob-type:BlockBlob\nx-ms-date:%s\nx-ms-version:2020-10-02\n/%s/%s/%s",
-			method, contentLength, contentType, date, a.accountName, a.containerName, blobPath)
+		// Azure (x-ms-version >= 2015-02-21) wants an empty Content-Length
+		// string to sign when the length is zero.
+		length := ""
+		if contentLength > 0 {
+			length = strconv.FormatInt(contentLength, 10)
+		}
+
+		stringToSign = fmt.Sprintf("%s\n\n\n%s\n\n%s\n\n\n\n\n\n\n%s%s",
+			method, length, contentType, canonHeaders, resource)
 	case strings.Contains(blobPath, "?restype=container"):
-		// For container health check
-		stringToSign = fmt.Sprintf("%s\n\n\n\n\n\n\n\n\n\n\n\nx-ms-date:%s\nx-ms-version:2020-10-02\n/%s/%s\nrestype:container",
-			method, date, a.accountName, a.containerName)
+		stringToSign = fmt.Sprintf("%s\n\n\n\n\n\n\n\n\n\n\n\n%s/%s/%s\nrestype:container",
+			method, canonHeaders, a.accountName, a.containerName)
 	default:
-		// For GET/HEAD/DELETE
-		stringToSign = fmt.Sprintf("%s\n\n\n\n\n\n\n\n\n\n\n\nx-ms-date:%s\nx-ms-version:2020-10-02\n/%s/%s/%s",
-			method, date, a.accountName, a.containerName, blobPath)
+		stringToSign = fmt.Sprintf("%s\n\n\n\n\n\n\n\n\n\n\n\n%s%s",
+			method, canonHeaders, resource)
 	}
 
 	// Sign with HMAC-SHA256
@@ -115,6 +123,47 @@ func (a *AzureBlobStore) signRequest(method, blobPath string, headers map[string
 	signature := base64.StdEncoding.EncodeToString(h.Sum(nil))
 
 	return fmt.Sprintf("SharedKey %s:%s", a.accountName, signature), nil
+}
+
+// canonicalizedMSHeaders renders the sorted, lowercased x-ms-* headers as
+// "name:value\n" lines for the Shared Key string to sign.
+func canonicalizedMSHeaders(headers map[string]string) string {
+	names := make([]string, 0, len(headers))
+	values := make(map[string]string, len(headers))
+
+	for k, v := range headers {
+		lk := strings.ToLower(k)
+		if strings.HasPrefix(lk, "x-ms-") {
+			names = append(names, lk)
+			values[lk] = strings.TrimSpace(v)
+		}
+	}
+
+	sort.Strings(names)
+
+	var sb strings.Builder
+	for _, n := range names {
+		sb.WriteString(n + ":" + values[n] + "\n")
+	}
+
+	return sb.String()
+}
+
+// azureMetaName maps an arbitrary metadata key to a valid Azure metadata name
+// (a C# identifier: letters, digits, underscore; not starting with a digit).
+func azureMetaName(key string) string {
+	b := []byte(strings.ToLower(key))
+	for i, c := range b {
+		if (c < 'a' || c > 'z') && (c < '0' || c > '9') && c != '_' {
+			b[i] = '_'
+		}
+	}
+
+	if len(b) == 0 || (b[0] >= '0' && b[0] <= '9') {
+		return "_" + string(b)
+	}
+
+	return string(b)
 }
 
 // Put stores a blob. The metadata map must contain a "sha256" key.
@@ -160,6 +209,12 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 		"Content-Type":   "application/octet-stream",
 	}
 
+	for key, value := range metadata {
+		if key != "sha256" {
+			headers["x-ms-meta-"+azureMetaName(key)] = value
+		}
+	}
+
 	// Sign the request
 	authHeader, err := a.signRequest("PUT", blobPath, headers, size)
 	if err != nil {
@@ -167,7 +222,14 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	}
 
 	// Create request
-	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, spool)
+	// A zero-length *os.File body would be sent chunked (unknown length),
+	// which Azure rejects; http.NoBody sends Content-Length: 0.
+	var body io.Reader = spool
+	if size == 0 {
+		body = http.NoBody
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodPut, url, body)
 	if err != nil {
 		return "", fmt.Errorf("azure: create request: %w", err)
 	}
@@ -189,9 +251,9 @@ func (a *AzureBlobStore) Put(ctx context.Context, data io.Reader, metadata map[s
 	req.Header.Set("Content-Length", strconv.FormatInt(size, 10))
 
 	// Add custom metadata headers
-	for key, value := range metadata {
-		if key != "sha256" {
-			req.Header.Set("x-ms-meta-"+key, value)
+	for k, v := range headers {
+		if strings.HasPrefix(k, "x-ms-meta-") {
+			req.Header.Set(k, v)
 		}
 	}
 

@@ -35,6 +35,24 @@ ON CONFLICT (repository_id, cache_key) DO UPDATE SET
     updated_at = now()
 RETURNING id, created_at, updated_at;
 
+-- name: UpsertNegativeProxyCacheEntry :exec
+-- Records a 404 for a missing upstream path, but never lets one repository hold
+-- more than $4 live negative rows: a public proxy would otherwise store one
+-- row per unique path a reader probes. An existing row is always refreshed.
+INSERT INTO proxy_cache_entries (repository_id, cache_key, status_code, size_bytes, hit_count, last_hit_at, expires_at)
+SELECT $1, $2, 404, 0, 0, now(), $3
+WHERE EXISTS (SELECT 1 FROM proxy_cache_entries WHERE repository_id = $1 AND cache_key = $2)
+   OR (SELECT count(*) FROM (SELECT 1 FROM proxy_cache_entries
+                             WHERE repository_id = $1 AND status_code = 404 AND expires_at > now()
+                             LIMIT $4) n) < $4
+ON CONFLICT (repository_id, cache_key) DO UPDATE SET
+    blob_key = NULL,
+    content_type = NULL,
+    status_code = 404,
+    size_bytes = 0,
+    expires_at = $3,
+    updated_at = now();
+
 -- name: DeleteProxyCacheEntry :exec
 DELETE FROM proxy_cache_entries WHERE repository_id = $1 AND cache_key = $2;
 

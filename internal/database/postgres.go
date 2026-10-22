@@ -11,6 +11,7 @@ import (
 	"errors"
 	"fmt"
 	"math"
+	"net/http"
 	"net/netip"
 	"strings"
 	"sync/atomic"
@@ -1941,7 +1942,24 @@ func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey st
 	}, nil
 }
 
+// maxNegativeProxyEntriesPerRepo bounds the live 404 rows one proxy repository
+// may hold; beyond it new missing paths are simply not negative-cached.
+const maxNegativeProxyEntriesPerRepo = 10000
+
 func (p *PostgresDB) UpsertProxyCacheEntry(ctx context.Context, entry *models.ProxyCacheEntry) error {
+	if entry.StatusCode == http.StatusNotFound && entry.BlobKey == "" {
+		if err := p.q.UpsertNegativeProxyCacheEntry(ctx, dbsqlc.UpsertNegativeProxyCacheEntryParams{
+			RepositoryID: entry.RepositoryID,
+			CacheKey:     entry.CacheKey,
+			ExpiresAt:    entry.ExpiresAt,
+			Limit:        maxNegativeProxyEntriesPerRepo,
+		}); err != nil {
+			return fmt.Errorf("failed to upsert negative proxy cache entry: %w", err)
+		}
+
+		return nil
+	}
+
 	row, err := p.q.UpsertProxyCacheEntry(ctx, dbsqlc.UpsertProxyCacheEntryParams{
 		RepositoryID: entry.RepositoryID,
 		CacheKey:     entry.CacheKey,

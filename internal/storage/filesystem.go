@@ -24,12 +24,35 @@ type FilesystemStore struct {
 	aliases  aliasIndex
 }
 
+// staleUploadTempAge is how old a blob-upload-*.tmp file must be before the
+// startup sweep removes it: anything younger may belong to a live Put.
+const staleUploadTempAge = time.Hour
+
+// sweepStaleUploadTemps removes temp files a crashed Put left in basePath.
+// Best effort: List skips them, so nothing else would ever reclaim them.
+func sweepStaleUploadTemps(basePath string, minAge time.Duration) {
+	matches, err := filepath.Glob(filepath.Join(basePath, "blob-upload-*.tmp"))
+	if err != nil {
+		return
+	}
+
+	cutoff := time.Now().Add(-minAge)
+
+	for _, m := range matches {
+		if info, err := os.Stat(m); err == nil && info.Mode().IsRegular() && info.ModTime().Before(cutoff) {
+			_ = os.Remove(m)
+		}
+	}
+}
+
 // NewFilesystemStore creates a new filesystem blob store.
 func NewFilesystemStore(basePath string) (*FilesystemStore, error) {
 	// Create base path if it doesn't exist
 	if err := os.MkdirAll(basePath, 0755); err != nil {
 		return nil, fmt.Errorf("failed to create base path: %w", err)
 	}
+
+	sweepStaleUploadTemps(basePath, staleUploadTempAge)
 
 	return &FilesystemStore{
 		basePath: basePath,

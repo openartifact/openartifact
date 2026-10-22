@@ -158,6 +158,42 @@ func (q *Queries) RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberPa
 	return err
 }
 
+const upsertNegativeProxyCacheEntry = `-- name: UpsertNegativeProxyCacheEntry :exec
+INSERT INTO proxy_cache_entries (repository_id, cache_key, status_code, size_bytes, hit_count, last_hit_at, expires_at)
+SELECT $1, $2, 404, 0, 0, now(), $3
+WHERE EXISTS (SELECT 1 FROM proxy_cache_entries WHERE repository_id = $1 AND cache_key = $2)
+   OR (SELECT count(*) FROM (SELECT 1 FROM proxy_cache_entries
+                             WHERE repository_id = $1 AND status_code = 404 AND expires_at > now()
+                             LIMIT $4) n) < $4
+ON CONFLICT (repository_id, cache_key) DO UPDATE SET
+    blob_key = NULL,
+    content_type = NULL,
+    status_code = 404,
+    size_bytes = 0,
+    expires_at = $3,
+    updated_at = now()
+`
+
+type UpsertNegativeProxyCacheEntryParams struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	CacheKey     string    `db:"cache_key" json:"cache_key"`
+	ExpiresAt    time.Time `db:"expires_at" json:"expires_at"`
+	Limit        int32     `db:"limit" json:"limit"`
+}
+
+// Records a 404 for a missing upstream path, but never lets one repository hold
+// more than $4 live negative rows: a public proxy would otherwise store one
+// row per unique path a reader probes. An existing row is always refreshed.
+func (q *Queries) UpsertNegativeProxyCacheEntry(ctx context.Context, arg UpsertNegativeProxyCacheEntryParams) error {
+	_, err := q.db.Exec(ctx, upsertNegativeProxyCacheEntry,
+		arg.RepositoryID,
+		arg.CacheKey,
+		arg.ExpiresAt,
+		arg.Limit,
+	)
+	return err
+}
+
 const upsertProxyCacheEntry = `-- name: UpsertProxyCacheEntry :one
 INSERT INTO proxy_cache_entries (repository_id, cache_key, blob_key, content_type, status_code, size_bytes, hit_count, last_hit_at, expires_at)
 VALUES ($1, $2, NULLIF($3, ''), NULLIF($4, ''), $5, $6, $7, $8, $9)

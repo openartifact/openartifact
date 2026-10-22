@@ -11,6 +11,8 @@ import (
 	"errors"
 	"testing"
 	"time"
+
+	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 )
 
 // FMTA-5: the snapshot file lookup filters on classifier and extension and
@@ -116,5 +118,36 @@ func TestDeleteStaleDockerUploads(t *testing.T) {
 	var n int
 	if err := pg.GetDB().QueryRowContext(ctx, `SELECT COUNT(*) FROM docker_uploads WHERE upload_uuid = 'fresh'`).Scan(&n); err != nil || n != 1 {
 		t.Fatalf("fresh session survived: %d, %v", n, err)
+	}
+}
+
+// STOR-10: a repository's negative proxy cache is bounded; refreshing an
+// existing entry still works at the cap.
+func TestNegativeProxyCacheEntryCap(t *testing.T) {
+	pg := newQuotaTestDB(t, 8)
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "stor10-proxy", "maven")
+	exp := time.Now().Add(time.Hour)
+
+	put := func(key string) {
+		t.Helper()
+
+		if err := pg.q.UpsertNegativeProxyCacheEntry(ctx, dbsqlc.UpsertNegativeProxyCacheEntryParams{
+			RepositoryID: s.repo, CacheKey: key, ExpiresAt: exp, Limit: 2,
+		}); err != nil {
+			t.Fatal(err)
+		}
+	}
+
+	put("a")
+	put("b")
+	put("c") // over the cap: dropped
+	put("a") // existing: refreshed
+
+	for key, want := range map[string]bool{"a": true, "b": true, "c": false} {
+		e, err := pg.GetProxyCacheEntry(ctx, s.repo, key)
+		if got := err == nil && e != nil; got != want {
+			t.Errorf("entry %q present = %v, want %v (err %v)", key, got, want, err)
+		}
 	}
 }
