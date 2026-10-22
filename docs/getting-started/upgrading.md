@@ -85,6 +85,25 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Next release: security hardening and configuration
+
+Migrations `028` (delta patch blob index), `029` and `031` (audit actions). Changes that can break an existing deployment or client:
+
+| Area | Change |
+|---|---|
+| Config | The server refuses to start when the database password is still the `CHANGE_ME` placeholder from the example files. With Docker Compose, set a real `POSTGRES_PASSWORD` in `docker/.env` **and** change it in PostgreSQL (`ALTER USER ... PASSWORD ...`) before upgrading. A `POSTGRES_PASSWORD` exported in the shell overrides `docker/.env`. |
+| Config | The legacy shared `API_KEY` is off by default; set `LEGACY_API_KEY_ENABLED=true` to keep using it (a warning is logged when `API_KEY` is set but disabled). `DB_MAX_OPEN_CONNS=1` (or negative) is rejected. `OPENARTIFACT_DEV` is ignored by release builds. |
+| Config | New `SERVER_MAX_BODY_BYTES` / `server.maxBodyBytes` (default 16 GiB, `0` disables) caps every request body (`413`); PyPI uploads are capped at 512 MiB, NuGet at 100 MiB, Maven POMs at 4 MiB. Docker Compose now passes `OPENARTIFACT_SECRET_KEY` and `BASE_URL` through. |
+| Login | `POST /api/v1/auth/login` accepts only a same-origin JSON body (form posts are gone); logout must be same-origin. The session cookie is `Secure` whenever `BASE_URL` is https. |
+| SSO | OIDC issuers and SAML metadata URLs must be https (http only on loopback). A SAML assertion without `email_verified` is treated as unverified. SSO usernames are restricted to `[A-Za-z0-9_-]{3,64}`. |
+| RBAC | `npm unpublish` (`PUT .../-rev/...`) needs the `delete` permission, not `write`. Delta downloads check quarantine of both components. Quarantine also applies to raw `HEAD`, Go module and Maven checksum requests. |
+| Proxies | `X-Forwarded-For` walks every header line; the login limiter keys IPv6 clients per /64. |
+| API | Unique-constraint conflicts are `409` (were `500`); unknown or non-UUID ids are `404`/`400`. Values beginning with `enc:` are refused (`400`) where a secret is accepted. `/health` no longer reports uptime or the hostname. |
+| Docker | Hosted Docker endpoints answer `404` on non-docker or non-hosted repositories. Re-uploading an existing Go module version or an ambiguous RubyGems/Helm/PyPI filename is `409`. |
+| Backups | Archives now carry permission targets and assignments, group membership and quota limits; restores are exclusive (`409` while one runs). Archives from 0.5.x restore without those. |
+| Audit | Admin changes to users, groups, permission targets, SSO providers and tokens issued for other users are audited (`user.*`, `group.*`, `permission_target.*`, `sso_provider.*`, `token.created_for_user`). |
+| `resetpw` | Defaults to `sslmode=require`. |
+
 ### Next release: database indexes and the `pg_trgm` extension
 
 Migration `030` needs the PostgreSQL `pg_trgm` extension (`CREATE EXTENSION IF NOT EXISTS pg_trgm`). It is a trusted extension since PostgreSQL 13, so the database owner can create it; it ships in the official `postgres` images and in the `postgresql-contrib` package of distributions that split it. On a managed service, allow-list it first, or run `CREATE EXTENSION pg_trgm` as an administrator before the upgrade. Without it the migration fails and the server exits at startup.
