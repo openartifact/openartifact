@@ -46,10 +46,21 @@ func SubscribableEvents() []string {
 // IsSubscribableEvent reports whether name is an event webhooks can subscribe to.
 func IsSubscribableEvent(name string) bool { return slices.Contains(SubscribableEvents(), name) }
 
+// newWebhookClient returns the SSRF-safe client for webhook delivery. Redirects
+// are never followed: 307/308 would replay the signed body and
+// X-Hub-Signature-256 to a host the owner never configured. A 3xx response is
+// recorded as a failed delivery.
+func newWebhookClient(timeout time.Duration) *http.Client {
+	c := netutil.SafeHTTPClient(timeout)
+	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
+
+	return c
+}
+
 // newInsecureClient returns the SSRF-safe client with TLS certificate
 // verification disabled, used for webhooks created with ssl_verify=false.
 func newInsecureClient(timeout time.Duration) *http.Client {
-	c := netutil.SafeHTTPClient(timeout)
+	c := newWebhookClient(timeout)
 	if tr, ok := c.Transport.(*http.Transport); ok {
 		tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true} //nolint:gosec // explicit per-webhook opt-out (ssl_verify=false)
 	}

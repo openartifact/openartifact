@@ -21,7 +21,6 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -81,7 +80,7 @@ func NewDispatcher(db database.Database, log *logger.Logger) *Dispatcher {
 	return &Dispatcher{
 		db:             db,
 		log:            log,
-		client:         netutil.SafeHTTPClient(30 * time.Second),
+		client:         newWebhookClient(30 * time.Second),
 		insecureClient: newInsecureClient(30 * time.Second),
 		queue:          make(chan *models.WebhookDelivery, 1000),
 		stopCh:         make(chan struct{}),

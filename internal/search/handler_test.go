@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -250,5 +251,25 @@ func TestHandlerRepositorySearchErrorIs500(t *testing.T) {
 
 	if w.Code != http.StatusInternalServerError {
 		t.Errorf("want 500, got %d", w.Code)
+	}
+}
+
+func TestHandlerRejectsUnboundedWork(t *testing.T) {
+	for name, target := range map[string]string{
+		"offset": "/search?q=a&offset=10001",
+		"repos":  "/search?q=a" + strings.Repeat("&repo=x", maxFilterValues+1),
+		"format": "/search?q=a" + strings.Repeat("&format=x", maxFilterValues+1),
+	} {
+		t.Run(name, func(t *testing.T) {
+			h, cleanup := newTestHandler(t, &mockSearcher{})
+			defer cleanup()
+
+			rec := httptest.NewRecorder()
+			h.ServeHTTP(rec, requestWithPrincipal(http.MethodGet, target, adminPrincipal()))
+
+			if rec.Code != http.StatusBadRequest {
+				t.Fatalf("status = %d, want 400", rec.Code)
+			}
+		})
 	}
 }

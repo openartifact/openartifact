@@ -31,9 +31,10 @@ type DockerUploadSweeper struct {
 	ttl   time.Duration
 	log   *logger.Logger
 
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	doneCh   chan struct{}
+	startOnce sync.Once
+	stopOnce  sync.Once
+	stopCh    chan struct{}
+	doneCh    chan struct{}
 }
 
 // NewDockerUploadSweeper builds the sweeper. A non-positive ttl, an empty dir
@@ -54,6 +55,10 @@ func NewDockerUploadSweeper(db database.Database, dir string, ttl time.Duration,
 
 // Start begins the periodic sweep.
 func (s *DockerUploadSweeper) Start() {
+	s.startOnce.Do(s.start)
+}
+
+func (s *DockerUploadSweeper) start() {
 	if s.ttl <= 0 || s.dir == "" || s.store == nil {
 		close(s.doneCh)
 		return
@@ -94,6 +99,10 @@ func (s *DockerUploadSweeper) Start() {
 // Stop ends the sweep loop and waits for it to exit.
 func (s *DockerUploadSweeper) Stop() {
 	s.stopOnce.Do(func() { close(s.stopCh) })
+
+	// Never started: nothing will close doneCh, and a later Start must not.
+	s.startOnce.Do(func() { close(s.doneCh) })
+
 	<-s.doneCh
 }
 

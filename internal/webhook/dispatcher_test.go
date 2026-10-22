@@ -13,6 +13,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -309,5 +310,38 @@ func TestProcessDropsDeliveriesOfDisabledWebhook(t *testing.T) {
 		if hits != tc.wantHits || db.delivery == nil || db.delivery.Status != tc.want {
 			t.Errorf("%s: hits=%d delivery=%+v, want hits=%d status=%s", tc.event, hits, db.delivery, tc.wantHits, tc.want)
 		}
+	}
+}
+
+func TestDeliveryDoesNotFollowRedirects(t *testing.T) {
+	t.Setenv("OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS", "true")
+
+	var hits atomic.Int32
+
+	target := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { hits.Add(1) }))
+	t.Cleanup(target.Close)
+
+	redirector := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		http.Redirect(w, r, target.URL, http.StatusTemporaryRedirect)
+	}))
+	t.Cleanup(redirector.Close)
+
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	db := &deliveryTestDB{BaseMockDB: &database.BaseMockDB{}}
+	delivery := &models.WebhookDelivery{Payload: map[string]any{"event": "test"}}
+	NewDispatcher(db, log).deliver(&models.Webhook{
+		ID: "webhook", URL: redirector.URL, ContentType: "application/json", MaxRetries: 1, TimeoutSeconds: 1,
+	}, delivery)
+
+	if hits.Load() != 0 {
+		t.Fatal("redirect target was contacted")
+	}
+
+	if delivery.ResponseStatus != http.StatusTemporaryRedirect {
+		t.Fatalf("status = %d, want 307", delivery.ResponseStatus)
 	}
 }

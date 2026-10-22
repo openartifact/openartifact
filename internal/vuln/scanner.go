@@ -223,6 +223,10 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
+	if !validPackageToken(packageName) || !validPackageToken(version) {
+		return nil, newScanError(s.Name(), FailureInternal, errInvalidPackage)
+	}
+
 	if err := s.writeManifest(tmpDir, packageName, version, ecosystem); err != nil {
 		if errors.Is(err, errUnsupportedEcosystem) {
 			return nil, newScanError(s.Name(), FailureUnsupported, err)
@@ -231,7 +235,7 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 		return nil, newScanError(s.Name(), FailureInternal, err)
 	}
 
-	stdout, stderr, err := runScanner(ctx, "trivy", "fs", "--scanners", "vuln", "--format", "json", "--quiet", tmpDir)
+	stdout, stderr, err := runScanner(ctx, "trivy", "fs", "--scanners", "vuln", "--format", "json", "--quiet", "--offline-scan", tmpDir)
 	if err != nil {
 		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("trivy scan failed",
@@ -609,7 +613,7 @@ func parseSeverityFromOSV(severities []struct {
 			return "CRITICAL", 9.0
 		case "HIGH":
 			return "HIGH", 7.0
-		case "MEDIUM":
+		case "MEDIUM", "MODERATE":
 			return "MEDIUM", 5.0
 		case "LOW":
 			return "LOW", 2.0
@@ -633,36 +637,18 @@ func parseSeverityFromOSV(severities []struct {
 	return "UNKNOWN", 0.0
 }
 
-// extractCVSSScore extracts numeric score from CVSS vector string.
+// extractCVSSScore returns the CVSS v3 base score for a vector string or a
+// bare numeric score. It returns 0 when the input cannot be scored.
 func extractCVSSScore(cvssVector string) float64 {
-	// CVSS vector format: CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H
-	// We need to compute the score from the vector, but for simplicity,
-	// we'll look for a numeric score if present or use a heuristic
-
-	// Try to find a numeric score in the string
-	parts := strings.SplitSeq(cvssVector, "/")
-	for part := range parts {
-		if after, ok := strings.CutPrefix(part, "CVSS:"); ok {
-			scoreStr := after
-			if score, err := strconv.ParseFloat(scoreStr, 64); err == nil {
-				return score
-			}
-		}
+	if score, ok := cvss3BaseScore(cvssVector); ok {
+		return score
 	}
 
-	// Heuristic: count the number of H (High impact) components
-	// This is a simplified approach; a full CVSS calculator would be more accurate
-	highCount := strings.Count(cvssVector, ":H")
-	switch {
-	case highCount >= 3:
-		return 9.0 // Critical
-	case highCount >= 2:
-		return 7.5 // High
-	case highCount >= 1:
-		return 5.5 // Medium
-	default:
-		return 3.0 // Low
+	if score, err := strconv.ParseFloat(strings.TrimSpace(cvssVector), 64); err == nil && score >= 0 && score <= 10 {
+		return score
 	}
+
+	return 0
 }
 
 // cvssScoreToSeverity converts CVSS score to severity level.
@@ -719,4 +705,26 @@ func extractFixedVersionFromOSV(affected []struct {
 	}
 
 	return ""
+}
+
+var errInvalidPackage = errors.New("package name or version contains unsupported characters")
+
+// validPackageToken reports whether a package name or version only uses
+// characters that are inert in every manifest format written by
+// writeManifest (no quotes, angle brackets, whitespace or control chars).
+func validPackageToken(s string) bool {
+	if s == "" || len(s) > 255 {
+		return false
+	}
+
+	for _, r := range s {
+		switch {
+		case r >= 'a' && r <= 'z', r >= 'A' && r <= 'Z', r >= '0' && r <= '9':
+		case strings.ContainsRune("._-+~@/:!", r):
+		default:
+			return false
+		}
+	}
+
+	return true
 }

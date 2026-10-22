@@ -8,11 +8,16 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
 	"github.com/google/uuid"
 )
+
+// MaxSearchResults is the largest match count a search may have; broader
+// queries are rejected so cost stays bounded.
+const MaxSearchResults = 10000
 
 type SearchResult struct {
 	Repository string            `json:"repository"`
@@ -160,10 +165,15 @@ func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readab
 
 	source, joinRepo := searchSource(filter)
 
-	q := `SELECT COUNT(*) FROM ` + source + ` AS s` + repoJoin(joinRepo)
+	// Bounded: callers only need to know whether the count exceeds
+	// MaxSearchResults, so counting stops one row past it instead of
+	// scanning every matching artifact.
+	inner := `SELECT 1 FROM ` + source + ` AS s` + repoJoin(joinRepo)
 	if where != "" {
-		q += " WHERE " + where
+		inner += " WHERE " + where
 	}
+
+	q := `SELECT COUNT(*) FROM (` + inner + ` LIMIT ` + strconv.Itoa(MaxSearchResults+1) + `) AS c`
 
 	var count int64
 	if err := e.db.QueryRowContext(ctx, q, args...).Scan(&count); err != nil {

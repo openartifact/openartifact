@@ -103,13 +103,22 @@ func (l *Logger) run() {
 			ProjectID:    event.ProjectID,
 			IPAddress:    event.IPAddress,
 		}
-		if err := l.db.InsertAuditLog(context.Background(), entry); err != nil {
+		ctx, cancel := context.WithTimeout(context.Background(), insertTimeout)
+		err := l.db.InsertAuditLog(ctx, entry)
+
+		cancel()
+
+		if err != nil {
 			l.log.Errorw("audit log insert failed", "action", event.Action, "error", err)
 		}
 	}
 
 	close(l.done)
 }
+
+// insertTimeout bounds one audit insert so a stalled database cannot wedge the
+// single writer (and with it every Log caller and Shutdown).
+const insertTimeout = 10 * time.Second
 
 // buildDetailsJSON always yields valid JSON regardless of input bytes.
 func buildDetailsJSON(message, actor string) string {

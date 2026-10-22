@@ -227,3 +227,21 @@ func TestSpdxSafeStripsNewlines(t *testing.T) {
 		t.Fatalf("got %q", got)
 	}
 }
+
+func TestGenerateSPDX_DependencyInjection(t *testing.T) {
+	g := NewGenerator(nil, newTestLogger(t))
+	meta := map[string]any{"dependencies": []any{
+		map[string]any{"name": "x\nPackageLicenseConcluded: MIT\nPackageName: evil", "version": "1\r\nPackageName: evil2"},
+	}}
+
+	res, err := g.GenerateSPDX(context.Background(), "r", "lib@1.0.0", "npm", meta)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for line := range strings.SplitSeq(res.Text, "\n") {
+		if strings.HasPrefix(line, "PackageLicenseConcluded: MIT") || strings.HasPrefix(line, "PackageName: evil") {
+			t.Fatalf("injected tag line: %q", line)
+		}
+	}
+}

@@ -12,6 +12,8 @@ import (
 )
 
 // errUnsupportedEcosystem marks an ecosystem a scanner has no way to scan.
+var errScannerPanic = errors.New("scanner panic")
+
 var errUnsupportedEcosystem = errors.New("unsupported ecosystem")
 
 // FailureKind classifies why a scanner could not produce a result. The kind is

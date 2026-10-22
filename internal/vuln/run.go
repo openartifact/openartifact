@@ -6,6 +6,7 @@ package vuln
 
 import (
 	"context"
+	"fmt"
 	"slices"
 	"strings"
 	"sync"
@@ -75,6 +76,12 @@ func Run(ctx context.Context, log *logger.Logger, backends []ScannerBackend, pac
 
 	for i, backend := range backends {
 		wg.Go(func() {
+			defer func() {
+				if r := recover(); r != nil {
+					results[i] = result{err: newScanError(backend.Name(), FailureInternal, fmt.Errorf("%w: %v", errScannerPanic, r))}
+				}
+			}()
+
 			vulns, err := backend.Scan(ctx, packageName, version, ecosystem)
 			if err != nil {
 				results[i] = result{err: classify(backend.Name(), err)}

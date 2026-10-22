@@ -92,39 +92,52 @@ func IsLicenseKey(key string) bool {
 func (d *Detector) DetectFromMetadata(metadata map[string]any) []string {
 	var licenses []string
 
+	add := func(raw string) {
+		if raw == "" {
+			return
+		}
+
+		if normalized := d.NormalizeLicense(raw); normalized != "" && !contains(licenses, normalized) {
+			licenses = append(licenses, normalized)
+		}
+	}
+
 	for _, key := range licenseKeys {
 		if val, ok := metadata[key]; ok {
-			switch v := val.(type) {
-			case string:
-				if v != "" {
-					normalized := d.NormalizeLicense(v)
-					if normalized != "" && !contains(licenses, normalized) {
-						licenses = append(licenses, normalized)
-					}
-				}
-			case []any:
-				for _, item := range v {
-					if str, ok := item.(string); ok && str != "" {
-						normalized := d.NormalizeLicense(str)
-						if normalized != "" && !contains(licenses, normalized) {
-							licenses = append(licenses, normalized)
-						}
-					}
-				}
-			case []string:
-				for _, str := range v {
-					if str != "" {
-						normalized := d.NormalizeLicense(str)
-						if normalized != "" && !contains(licenses, normalized) {
-							licenses = append(licenses, normalized)
-						}
-					}
-				}
-			}
+			collectLicenseStrings(val, add, 0)
 		}
 	}
 
 	return licenses
+}
+
+// collectLicenseStrings walks the shapes registries use for license fields:
+// a string, a list of strings, or the legacy npm/maven objects
+// ({"type": "MIT"}, {"name": "..."}), alone or in a list.
+func collectLicenseStrings(val any, add func(string), depth int) {
+	if depth > 3 {
+		return
+	}
+
+	switch v := val.(type) {
+	case string:
+		add(v)
+	case []string:
+		for _, str := range v {
+			add(str)
+		}
+	case []any:
+		for _, item := range v {
+			collectLicenseStrings(item, add, depth+1)
+		}
+	case map[string]any:
+		for _, k := range []string{"type", "name", "spdx_id", "spdxId", "id"} {
+			if str, ok := v[k].(string); ok && str != "" {
+				add(str)
+				return
+			}
+		}
+	}
 }
 
 // NormalizeLicense normalizes a license string to SPDX identifier
@@ -181,7 +194,7 @@ func (d *Detector) EvaluatePolicy(licenses []string, policy *models.LicensePolic
 		}
 	}
 
-	// If allowed_licenses is non-empty and no license is allowed → violation
+	// If allowed_licenses is non-empty and no license is allowed → violation.
 	if len(policy.AllowedLicenses) > 0 {
 		allowed := normalizeSet(policy.AllowedLicenses)
 		found := false

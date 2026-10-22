@@ -10,6 +10,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -40,8 +41,14 @@ func NewHandler(db *sql.DB, evaluator *auth.Evaluator, log *logger.Logger) *Hand
 	}
 }
 
+const (
+	maxFilterValues = 50
+	searchTimeout   = 15 * time.Second
+)
+
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	ctx := r.Context()
+	ctx, cancel := context.WithTimeout(r.Context(), searchTimeout)
+	defer cancel()
 
 	q := r.URL.Query().Get("q")
 	if q == "" {
@@ -78,9 +85,19 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		offset = n
 	}
 
+	if offset > MaxSearchResults {
+		writeJSONError(w, http.StatusBadRequest, "invalid_offset", "offset too large")
+		return
+	}
+
 	filter := ParseQuery(q)
 	filter.Formats = append(filter.Formats, r.URL.Query()["format"]...)
 	filter.Repos = append(filter.Repos, r.URL.Query()["repo"]...)
+
+	if len(filter.Formats) > maxFilterValues || len(filter.Repos) > maxFilterValues {
+		writeJSONError(w, http.StatusBadRequest, "invalid_filter", "too many format or repo filters")
+		return
+	}
 
 	principal := middleware.PrincipalFromContext(ctx)
 
@@ -100,7 +117,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if count > 10000 {
+	if count > MaxSearchResults {
 		writeJSONError(w, http.StatusBadRequest, "query_too_broad", "query too broad; add more filters")
 		return
 	}

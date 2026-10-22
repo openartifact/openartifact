@@ -79,8 +79,8 @@ func (g *Generator) GenerateCycloneDX(ctx context.Context, repoID, artifactID, f
 		for _, dep := range deps {
 			if depMap, ok := dep.(map[string]any); ok {
 				depName, _ := depMap["name"].(string)
-
 				depVersion, _ := depMap["version"].(string)
+				depName, depVersion = spdxSafe(depName), spdxSafe(depVersion)
 				depName, depVersion = spdxSafe(depName), spdxSafe(depVersion)
 				if depName != "" {
 					depPURL := generatePURL(format, depName, depVersion)
@@ -115,7 +115,7 @@ func (g *Generator) GenerateSPDX(ctx context.Context, repoID, artifactID, format
 	// Extract artifact name and version from artifactID (format: "name@version")
 	name, version := splitArtifactID(artifactID)
 
-	name, version = spdxSafe(name), spdxSafe(version)
+	name, version, format = spdxSafe(name), spdxSafe(version), spdxSafe(format)
 
 	// Build the SPDX text format
 	var spdxText strings.Builder
@@ -151,8 +151,8 @@ PackageCopyrightText: NOASSERTION
 		for _, dep := range deps {
 			if depMap, ok := dep.(map[string]any); ok {
 				depName, _ := depMap["name"].(string)
-
 				depVersion, _ := depMap["version"].(string)
+				depName, depVersion = spdxSafe(depName), spdxSafe(depVersion)
 				if depName != "" {
 					fmt.Fprintf(&spdxText, `
 ExternalRef: SPDXRef-%s-%s

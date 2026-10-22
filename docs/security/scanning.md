@@ -83,7 +83,7 @@ curl -sS -X POST HOST/api/v1/repositories/REPO/secrets/scan -H 'Authorization: B
 | `GET/DELETE …/secrets/scans/{id}` | read / delete |
 | `POST …/secrets/scans/{id}/quarantine` | `{"quarantined":true\|false}`; applies to the scan's `artifact_id` |
 
-The result has `scan_status` `clean` or `flagged`, `finding_count` and `findings`. Findings never contain the secret: `type`, `description`, `severity`, `redacted_value` (first four characters + `****`) and a `line_hint` around the match with the value masked.
+The result has `scan_status` `clean` or `flagged`, `finding_count` and `findings`. Findings never contain the secret: `type`, `description`, `severity`, `redacted_value` (at most the first eighth of the value, up to four characters, then `****`) and a `line_hint` around the match with every detected secret in the window masked.
 
 | Rule (`type`) | Severity |
 |---|---|
@@ -107,7 +107,7 @@ Licenses are read from the artifact's properties (set them with the properties A
 
 Policy fields: `name` (required, max 255), `description`, `action` (`warn` default, `block`, `allow`), `allowed_licenses`, `denied_licenses`, `enabled`. **`enabled` defaults to `false` when omitted on create**, and disabled policies are ignored.
 
-Evaluation: a license is a violation when any identifier in it is in `denied_licenses`; and if `allowed_licenses` is set, a violation is raised when none of the artifact's licenses is allowed. Matching is case-insensitive and treats the spellings of one license version as the same: `GPL-3.0`, `GPL-3.0-only`, `GPL-3.0+`, `GPL-3.0-or-later` and `GPLv3` all match one policy entry, so a policy entry written with any of them covers the others (`GPL-3.0` is a different entry from `GPL-2.0`). SPDX expressions are split: `A AND B` needs every identifier allowed, `A OR B` needs one. Each violation is returned with `policy_id`, `policy_name`, `action` and `violation`. **An artifact that declares no license never violates a policy**, not even an allow list: policies match licenses, they do not require one. A declared name that is not a known alias or SPDX identifier is compared as written: it cannot match a deny entry, but it is not in an allow list either.
+Evaluation: a license is a violation when any identifier in it is in `denied_licenses`; and if `allowed_licenses` is set, a violation is raised when none of the artifact's licenses is allowed. Matching is case-insensitive and treats the spellings of one license version as the same: `GPL-3.0`, `GPL-3.0-only`, `GPL-3.0+`, `GPL-3.0-or-later` and `GPLv3` all match one policy entry, so a policy entry written with any of them covers the others (`GPL-3.0` is a different entry from `GPL-2.0`). SPDX expressions are split: `A AND B` needs every identifier allowed, `A OR B` needs one. Each violation is returned with `policy_id`, `policy_name`, `action` and `violation`. **An artifact that declares no license never violates a policy**, not even an allow list: policies match licenses, they do not require one. License fields given as objects (`{"type": "MIT"}`, the legacy npm and Maven shapes) are read like plain strings. A declared name that is not a known alias or SPDX identifier is compared as written: it cannot match a deny entry, but it is not in an allow list either.
 
 What the `action` does:
 

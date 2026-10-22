@@ -24,7 +24,11 @@ func TestCompareSemver(t *testing.T) {
 		{"1.9.9", "2.0.0", -1},
 		{"1.2.3", "1.2.4", -1},
 		{"1.2.4", "1.2.3", 1},
-		{"1.0.0-alpha", "1.0.0", 0}, // pre-release stripped
+		{"1.0.0-alpha", "1.0.0", -1},
+		{"1.0.0-alpha", "1.0.0-alpha.1", -1},
+		{"1.0.0-alpha.2", "1.0.0-alpha.10", -1},
+		{"1.0.0-beta", "1.0.0-alpha", 1},
+		{"2.0.0-rc.1", "1.9.0", 1},
 		{"2.0.0+build", "2.0.0", 0}, // build metadata stripped
 		{"10.0.0", "9.0.0", 1},
 	}
@@ -182,5 +186,21 @@ func TestShouldRunPolicy_InvalidCronFallsBackTo24h(t *testing.T) {
 
 	if !w.shouldRunPolicy(&models.CleanupPolicy{LastRunAt: &old, ScheduleCron: "bogus"}) {
 		t.Error("should run when last run was 25 hours ago")
+	}
+}
+
+func TestComputeLatestVersion_PrereleaseNeverWins(t *testing.T) {
+	versions := []*models.NPMVersion{
+		{Version: "1.9.0"},
+		{Version: "99.0.0-0"},
+		{Version: "1.8.0"},
+	}
+
+	if got := computeLatestVersion(versions); got != "1.9.0" {
+		t.Fatalf("latest = %q, want 1.9.0", got)
+	}
+
+	if got := computeLatestVersion([]*models.NPMVersion{{Version: "1.0.0-beta"}}); got != "1.0.0-beta" {
+		t.Fatalf("only prerelease: latest = %q", got)
 	}
 }

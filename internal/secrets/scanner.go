@@ -5,9 +5,12 @@
 package secrets
 
 import (
+	"cmp"
 	"encoding/json"
 	"regexp"
+	"slices"
 	"strings"
+	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -123,25 +126,40 @@ var defaultPatterns = []SecretPattern{
 	},
 }
 
+// span is a half-open byte range [start,end) of a detected secret.
+type span struct{ start, end int }
+
 // ScanText scans a text string for secrets.
 func (s *Scanner) ScanText(text string) []models.SecretFinding {
-	var findings []models.SecretFinding
+	type hit struct {
+		pattern SecretPattern
+		sp      span
+	}
+
+	var hits []hit
+
+	// Collect every match first so each line hint can mask all neighbouring
+	// secrets, not only its own.
+	spans := make([]span, 0, 4)
 
 	for _, pattern := range s.patterns {
-		matches := pattern.Regex.FindAllStringIndex(text, -1)
-		for _, match := range matches {
-			start, end := match[0], match[1]
-			matchedText := text[start:end]
-
-			finding := models.SecretFinding{
-				Type:          pattern.Name,
-				Description:   pattern.Description,
-				Severity:      pattern.Severity,
-				RedactedValue: redactValue(matchedText),
-				LineHint:      getLineHint(text, start, end),
-			}
-			findings = append(findings, finding)
+		for _, match := range pattern.Regex.FindAllStringIndex(text, -1) {
+			sp := span{match[0], match[1]}
+			hits = append(hits, hit{pattern, sp})
+			spans = append(spans, sp)
 		}
+	}
+
+	var findings []models.SecretFinding
+
+	for _, h := range hits {
+		findings = append(findings, models.SecretFinding{
+			Type:          h.pattern.Name,
+			Description:   h.pattern.Description,
+			Severity:      h.pattern.Severity,
+			RedactedValue: redactValue(text[h.sp.start:h.sp.end]),
+			LineHint:      getLineHint(text, h.sp.start, h.sp.end, spans),
+		})
 	}
 
 	return findings
@@ -159,17 +177,20 @@ func (s *Scanner) ScanMetadata(metadata map[string]any) []models.SecretFinding {
 	return s.ScanText(string(metadataJSON))
 }
 
-// redactValue returns first 4 chars + "****".
+// redactValue masks a secret, keeping at most an eighth of it (max 4 bytes,
+// cut on a rune boundary) so a finding never reveals a useful prefix.
 func redactValue(value string) string {
-	if len(value) <= 4 {
-		return "****"
+	n := min(len(value)/8, 4)
+	for n > 0 && !utf8.RuneStart(value[n]) {
+		n--
 	}
 
-	return value[:4] + "****"
+	return value[:n] + "****"
 }
 
-// getLineHint returns up to 100 chars around the match, with the secret replaced by "****".
-func getLineHint(text string, start, end int) string {
+// getLineHint returns up to 100 chars around the match with every detected
+// secret (spans, which includes the match itself) replaced by "****".
+func getLineHint(text string, start, end int, spans []span) string {
 	const contextSize = 50
 
 	// Find line boundaries
@@ -183,26 +204,58 @@ func getLineHint(text string, start, end int) string {
 		lineEnd++
 	}
 
-	// Get context around the match
 	contextStart := max(start-contextSize, lineStart)
-
 	contextEnd := min(end+contextSize, lineEnd)
 
-	// Extract the hint
-	hint := text[contextStart:contextEnd]
-
-	// Replace the secret with "****"
-	relativeStart := start - contextStart
-	relativeEnd := end - contextStart
-	hint = hint[:relativeStart] + "****" + hint[relativeEnd:]
-
-	// Clean up whitespace
-	hint = strings.TrimSpace(hint)
-
-	// Limit to 100 chars
-	if len(hint) > 100 {
-		hint = hint[:100] + "..."
+	// Window edges may land inside a multibyte rune; widen them to boundaries.
+	for contextStart > lineStart && !utf8.RuneStart(text[contextStart]) {
+		contextStart--
 	}
 
-	return hint
+	for contextEnd < lineEnd && !utf8.RuneStart(text[contextEnd]) {
+		contextEnd++
+	}
+
+	var b strings.Builder
+
+	pos := contextStart
+
+	for _, sp := range sortedSpans(spans) {
+		if sp.end <= pos || sp.start >= contextEnd {
+			continue
+		}
+
+		if sp.start > pos {
+			b.WriteString(text[pos:sp.start])
+		}
+
+		b.WriteString("****")
+
+		pos = max(pos, sp.end)
+	}
+
+	if pos < contextEnd {
+		b.WriteString(text[pos:contextEnd])
+	}
+
+	hint := strings.TrimSpace(b.String())
+
+	// Limit to 100 bytes without splitting a rune.
+	if len(hint) > 100 {
+		cut := 100
+		for cut > 0 && !utf8.RuneStart(hint[cut]) {
+			cut--
+		}
+
+		hint = hint[:cut] + "..."
+	}
+
+	return strings.ToValidUTF8(hint, "")
+}
+
+func sortedSpans(spans []span) []span {
+	out := slices.Clone(spans)
+	slices.SortFunc(out, func(a, b span) int { return cmp.Compare(a.start, b.start) })
+
+	return out
 }

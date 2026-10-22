@@ -60,6 +60,8 @@ type CleanupWorker struct {
 	db        database.Database
 	blobStore storage.BlobStore
 	log       *logger.Logger
+	startOnce sync.Once
+	stopOnce  sync.Once
 	stopCh    chan struct{}
 	doneCh    chan struct{}
 
@@ -87,7 +89,12 @@ func NewCleanupWorker(db database.Database, blobStore storage.BlobStore, log *lo
 	}
 }
 
+// Start begins the schedule. Only the first call counts.
 func (w *CleanupWorker) Start() {
+	w.startOnce.Do(w.start)
+}
+
+func (w *CleanupWorker) start() {
 	go func() {
 		defer close(w.doneCh)
 
@@ -120,9 +127,16 @@ func (w *CleanupWorker) safeCycle() {
 	w.runCleanupCycle(ctx)
 }
 
+// Stop is idempotent and safe without Start.
 func (w *CleanupWorker) Stop() {
-	close(w.stopCh)
-	w.cancel()
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+		w.cancel()
+	})
+
+	// Never started: nothing will close doneCh, and a later Start must not.
+	w.startOnce.Do(func() { close(w.doneCh) })
+
 	<-w.doneCh
 	w.wg.Wait()
 }

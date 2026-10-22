@@ -34,9 +34,10 @@ type PresignedUploadWorker struct {
 	// orphanAge is how old a staging object without a row must be to be deleted.
 	orphanAge time.Duration
 
-	stopOnce sync.Once
-	stopCh   chan struct{}
-	doneCh   chan struct{}
+	startOnce sync.Once
+	stopOnce  sync.Once
+	stopCh    chan struct{}
+	doneCh    chan struct{}
 }
 
 // NewPresignedUploadWorker builds the worker. urlTTL is the upload URL
@@ -61,6 +62,10 @@ func NewPresignedUploadWorker(db database.Database, blobStore storage.BlobStore,
 
 // Start launches the sweep loop.
 func (w *PresignedUploadWorker) Start() {
+	w.startOnce.Do(w.start)
+}
+
+func (w *PresignedUploadWorker) start() {
 	go func() {
 		defer close(w.doneCh)
 
@@ -95,6 +100,10 @@ func (w *PresignedUploadWorker) safeSweep() {
 // Stop ends the loop and waits for the in-flight sweep.
 func (w *PresignedUploadWorker) Stop() {
 	w.stopOnce.Do(func() { close(w.stopCh) })
+
+	// Never started: nothing will close doneCh, and a later Start must not.
+	w.startOnce.Do(func() { close(w.doneCh) })
+
 	<-w.doneCh
 }
 

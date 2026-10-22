@@ -108,31 +108,16 @@ func TestExtractCVSSScore(t *testing.T) {
 		vector   string
 		expected float64
 	}{
-		{
-			name:     "CVSS with numeric score",
-			vector:   "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-			expected: 3.1,
-		},
-		{
-			name:     "CVSS with 3 high components",
-			vector:   "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
-			expected: 3.0,
-		},
-		{
-			name:     "CVSS with 2 high components",
-			vector:   "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:L",
-			expected: 3.0,
-		},
-		{
-			name:     "CVSS with 1 high component",
-			vector:   "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L",
-			expected: 3.0,
-		},
-		{
-			name:     "CVSS with no high components",
-			vector:   "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L",
-			expected: 3.0,
-		},
+		{name: "critical", vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H", expected: 9.8},
+		{name: "3.0 critical", vector: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:L", expected: 9.4},
+		{name: "high", vector: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:L/A:L", expected: 8.6},
+		{name: "all low impact", vector: "CVSS:3.0/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:L/A:L", expected: 7.3},
+		{name: "scope changed", vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:C/C:H/I:H/A:H", expected: 10.0},
+		{name: "medium", vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:L/I:N/A:N", expected: 5.3},
+		{name: "no impact", vector: "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:N/I:N/A:N", expected: 0},
+		{name: "bare number", vector: "7.5", expected: 7.5},
+		{name: "garbage", vector: "CVSS:3.1/AV:X", expected: 0},
+		{name: "v4 not scored", vector: "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N", expected: 0},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -187,5 +172,26 @@ func TestCvssScoreToSeverity_Boundaries(t *testing.T) {
 				t.Errorf("cvssScoreToSeverity(%.2f) = %q, want %q", tt.score, got, tt.expected)
 			}
 		})
+	}
+}
+
+func TestParseSeverityFromOSV_Moderate(t *testing.T) {
+	sev, _ := parseSeverityFromOSV(nil, "MODERATE")
+	if sev != "MEDIUM" {
+		t.Fatalf("MODERATE = %q, want MEDIUM", sev)
+	}
+}
+
+func TestValidPackageToken(t *testing.T) {
+	for _, ok := range []string{"@babel/core", "1.2.3-rc.1+build", "github.com/a/b", "v1.0.0+incompatible", "g:a"} {
+		if !validPackageToken(ok) {
+			t.Errorf("%q should be valid", ok)
+		}
+	}
+
+	for _, bad := range []string{"", "x\ny", "a</version>", `a"b`, "a b", "a=b"} {
+		if validPackageToken(bad) {
+			t.Errorf("%q should be invalid", bad)
+		}
 	}
 }

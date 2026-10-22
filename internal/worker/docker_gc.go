@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"slices"
+	"sync"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -117,8 +118,10 @@ type DockerGCWorker struct {
 	interval  time.Duration
 	grace     time.Duration
 
-	stopCh chan struct{}
-	doneCh chan struct{}
+	startOnce sync.Once
+	stopOnce  sync.Once
+	stopCh    chan struct{}
+	doneCh    chan struct{}
 	// runCtx is cancelled by Stop so in-flight runs stop promptly.
 	runCtx context.Context //nolint:containedctx // lifecycle context of the worker
 	cancel context.CancelFunc
@@ -153,6 +156,10 @@ func (w *DockerGCWorker) DefaultGrace() time.Duration { return w.grace }
 // Start begins the scheduled passes. With a non-positive interval nothing is
 // scheduled.
 func (w *DockerGCWorker) Start() {
+	w.startOnce.Do(w.start)
+}
+
+func (w *DockerGCWorker) start() {
 	if w.interval <= 0 || w.store == nil {
 		close(w.doneCh)
 		return
@@ -188,8 +195,14 @@ func (w *DockerGCWorker) runAllSafely() {
 
 // Stop cancels in-flight runs and waits for the schedule goroutine to exit.
 func (w *DockerGCWorker) Stop() {
-	close(w.stopCh)
-	w.cancel()
+	w.stopOnce.Do(func() {
+		close(w.stopCh)
+		w.cancel()
+	})
+
+	// Never started: nothing will close doneCh, and a later Start must not.
+	w.startOnce.Do(func() { close(w.doneCh) })
+
 	<-w.doneCh
 }
 

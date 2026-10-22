@@ -5,6 +5,7 @@
 package worker
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -86,24 +87,28 @@ func (w *NPMMetadataWorker) regenerate(ctx context.Context, packageID string) er
 	return nil
 }
 
+// computeLatestVersion picks the "latest" dist-tag target. Non-deprecated
+// stable releases win over non-deprecated prereleases, which win over
+// deprecated versions; within a tier the highest semver precedence wins. A
+// prerelease therefore never becomes latest while a stable release exists.
 func computeLatestVersion(versions []*models.NPMVersion) string {
-	var best string
+	var (
+		best     string
+		bestRank = -1
+	)
 
 	for _, v := range versions {
-		if isDeprecated(v.ManifestJSON) {
-			continue
+		rank := 0
+		if !isDeprecated(v.ManifestJSON) {
+			rank = 2
 		}
 
-		if best == "" || compareSemver(v.Version, best) > 0 {
-			best = v.Version
+		if !isPrerelease(v.Version) {
+			rank++
 		}
-	}
 
-	if best == "" {
-		for _, v := range versions {
-			if best == "" || compareSemver(v.Version, best) > 0 {
-				best = v.Version
-			}
+		if rank > bestRank || (rank == bestRank && compareSemver(v.Version, best) > 0) {
+			best, bestRank = v.Version, rank
 		}
 	}
 
@@ -125,37 +130,69 @@ func isDeprecated(manifestJSON []byte) bool {
 	return dep != ""
 }
 
-func compareSemver(a, b string) int {
-	aParts := semverNums(a)
-	bParts := semverNums(b)
+func isPrerelease(v string) bool {
+	v, _, _ = strings.Cut(v, "+")
+	_, pre, _ := strings.Cut(v, "-")
 
-	for i := range 3 {
-		av := aParts[i]
-
-		bv := bParts[i]
-		if av < bv {
-			return -1
-		}
-
-		if av > bv {
-			return 1
-		}
-	}
-
-	return 0
+	return pre != ""
 }
 
-func semverNums(v string) [3]int {
-	v = strings.SplitN(v, "-", 2)[0]
-	v = strings.SplitN(v, "+", 2)[0]
-	parts := strings.SplitN(v, ".", 3)
+// compareSemver implements semver 2.0.0 precedence (build metadata ignored).
+func compareSemver(a, b string) int {
+	aNums, aPre := semverParts(a)
+	bNums, bPre := semverParts(b)
 
-	var nums [3]int
-
-	for i := 0; i < 3 && i < len(parts); i++ {
-		n, _ := strconv.Atoi(parts[i])
-		nums[i] = n
+	for i := range 3 {
+		if c := cmp.Compare(aNums[i], bNums[i]); c != 0 {
+			return c
+		}
 	}
 
-	return nums
+	switch {
+	case aPre == "" && bPre == "":
+		return 0
+	case aPre == "":
+		return 1
+	case bPre == "":
+		return -1
+	}
+
+	ai, bi := strings.Split(aPre, "."), strings.Split(bPre, ".")
+	for i := 0; i < len(ai) && i < len(bi); i++ {
+		if c := comparePreIdent(ai[i], bi[i]); c != 0 {
+			return c
+		}
+	}
+
+	return cmp.Compare(len(ai), len(bi))
+}
+
+func comparePreIdent(a, b string) int {
+	an, aErr := strconv.ParseUint(a, 10, 64)
+	bn, bErr := strconv.ParseUint(b, 10, 64)
+
+	switch {
+	case aErr == nil && bErr == nil:
+		return cmp.Compare(an, bn)
+	case aErr == nil:
+		return -1
+	case bErr == nil:
+		return 1
+	}
+
+	return strings.Compare(a, b)
+}
+
+func semverParts(v string) ([3]uint64, string) {
+	v, _, _ = strings.Cut(strings.TrimPrefix(strings.TrimSpace(v), "v"), "+")
+	v, pre, _ := strings.Cut(v, "-")
+	parts := strings.SplitN(v, ".", 3)
+
+	var nums [3]uint64
+
+	for i := 0; i < 3 && i < len(parts); i++ {
+		nums[i], _ = strconv.ParseUint(parts[i], 10, 64)
+	}
+
+	return nums, pre
 }

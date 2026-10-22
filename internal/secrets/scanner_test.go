@@ -5,7 +5,9 @@
 package secrets
 
 import (
+	"strings"
 	"testing"
+	"unicode/utf8"
 
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -608,5 +610,29 @@ b3BlbnNzaC1rZXktdjEAAAAABG5vbmUtbm9uZS1ub25lAAAAAAAAAEcAAAAH
 
 	if !found {
 		t.Error("expected to find private_key type")
+	}
+}
+
+func TestScanText_LineHintMasksNeighbouringSecretsAndStaysUTF8(t *testing.T) {
+	log, _ := logger.New("error", "json", "stderr")
+	s := NewScanner(log)
+
+	akia := "AKIAIOSFODNN7EXAMPLE"
+	npm := "npm_" + strings.Repeat("a", 36)
+	text := strings.Repeat("é", 30) + akia + " " + npm + strings.Repeat("é", 60)
+
+	findings := s.ScanText(text)
+	if len(findings) < 2 {
+		t.Fatalf("findings = %d, want >=2", len(findings))
+	}
+
+	for _, f := range findings {
+		if strings.Contains(f.LineHint, akia) || strings.Contains(f.LineHint, npm) {
+			t.Errorf("hint leaks a secret: %q", f.LineHint)
+		}
+
+		if !utf8.ValidString(f.LineHint) || !utf8.ValidString(f.RedactedValue) {
+			t.Errorf("invalid UTF-8 in finding: %q / %q", f.LineHint, f.RedactedValue)
+		}
 	}
 }

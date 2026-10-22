@@ -225,6 +225,11 @@ func main() {
 	outFmt := globalFlags.String("format", "table", "")
 	_ = globalFlags.Parse(os.Args[1:])
 
+	tokenFlagSet := false
+
+	globalFlags.Visit(func(f *flag.Flag) { tokenFlagSet = tokenFlagSet || f.Name == "token" })
+	warnCredentialExposure(os.Stderr, *serverURL, *token, tokenFlagSet)
+
 	remaining := globalFlags.Args()
 	if len(remaining) == 0 {
 		printUsage()
@@ -904,3 +909,21 @@ func setFlags(fs *flag.FlagSet) map[string]bool {
 
 // escape makes a user-supplied value safe as one URL path segment.
 func escape(s string) string { return url.PathEscape(s) }
+
+// warnCredentialExposure prints warnings on w for the two ways the CLI can leak
+// its token: a --token argument (visible to every local user in the process
+// list and kept in shell history) and a token sent over plain http to a
+// non-loopback server.
+func warnCredentialExposure(w io.Writer, serverURL, token string, tokenFlagSet bool) {
+	if token == "" {
+		return
+	}
+
+	if tokenFlagSet {
+		fmt.Fprintln(w, "Warning: --token is visible in the process list and shell history; prefer OA_TOKEN or `oa auth login`.")
+	}
+
+	if u, err := url.Parse(serverURL); err == nil && u.Scheme == "http" && !isLoopbackHost(u.Hostname()) {
+		fmt.Fprintf(w, "Warning: sending the API token over plain http to %s; use https.\n", u.Host)
+	}
+}

@@ -172,7 +172,7 @@ func TestEvaluatePolicy(t *testing.T) {
 	t.Run("empty licenses with allowed list is not violation", func(t *testing.T) {
 		policy := &models.LicensePolicy{Enabled: true, AllowedLicenses: []string{"MIT"}}
 		ok, violations := d.EvaluatePolicy([]string{}, policy)
-		// no licenses, allowed check skipped (len(licenses)==0)
+		// no licenses declared: policies match licenses, they do not require one
 		if !ok || len(violations) != 0 {
 			t.Errorf("empty licenses should not trigger allowed-list violation, got ok=%v violations=%v", ok, violations)
 		}
@@ -239,5 +239,19 @@ func TestNormalizeLicense_PyPIClassifier(t *testing.T) {
 		if got := d.NormalizeLicense(in); got != want {
 			t.Errorf("NormalizeLicense(%q) = %q, want %q", in, got, want)
 		}
+	}
+}
+
+func TestDetectFromMetadata_MapShapes(t *testing.T) {
+	d := NewDetector(nil)
+
+	got := d.DetectFromMetadata(map[string]any{"license": map[string]any{"type": "GPL-3.0"}})
+	if len(got) != 1 || got[0] != "GPL-3.0-only" {
+		t.Fatalf("map license = %v", got)
+	}
+
+	got = d.DetectFromMetadata(map[string]any{"licenses": []any{map[string]any{"type": "MIT"}, map[string]any{"name": "Apache-2.0"}}})
+	if len(got) != 2 {
+		t.Fatalf("list of maps = %v", got)
 	}
 }
