@@ -88,6 +88,8 @@ func TestIsSPARepoPathAndBypass(t *testing.T) {
 		{"package detail", "/repos/myrepo/packages/npm/lodash", true},
 		{"package detail scoped npm", "/repos/myrepo/packages/npm/@scope%2Fpkg", true},
 		{"package detail docker", "/repos/myrepo/packages/docker/org%2Fapp", true},
+		{"package detail raw path with extension", "/repos/myrepo/packages/raw/docs%2Fhello.txt", true},
+		{"package detail dotted name", "/repos/myrepo/packages/npm/lodash.debounce", true},
 
 		// Real format-handler endpoints that must NOT be treated as pages.
 		{"npm packument", "/repos/myrepo/lodash", false},

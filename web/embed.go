@@ -85,8 +85,12 @@ func newSPAHandler(sub fs.FS) http.Handler {
 		}
 
 		// Missing static files (anything under assets/ or with a file
-		// extension) must 404 rather than return HTML with a 200.
-		if strings.HasPrefix(clean, "assets/") || path.Ext(clean) != "" {
+		// extension) must 404 rather than return HTML with a 200. Nothing
+		// under /repos/ is a static file: the RBAC middleware only hands this
+		// handler real page navigations there, and the last segment is a
+		// package name, which routinely carries a dot (lodash.debounce, a raw
+		// docs/hello.txt, com.example.app), so the extension says nothing.
+		if strings.HasPrefix(clean, "assets/") || (!strings.HasPrefix(clean, "repos/") && path.Ext(clean) != "") {
 			notFound(w, false)
 			return
 		}
