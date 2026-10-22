@@ -65,3 +65,37 @@ func TestSecurityHeadersArtifactsSandboxedAndAttached(t *testing.T) {
 		t.Errorf("non-artifact path got Content-Disposition %q", got)
 	}
 }
+
+func TestSecurityHeadersSPANavigationNotSandboxed(t *testing.T) {
+	h := SecurityHeadersMiddleware(false)(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "text/html; charset=utf-8")
+		_, _ = w.Write([]byte("<html></html>"))
+	}))
+
+	nav := func(path string) *httptest.ResponseRecorder {
+		r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path, nil)
+		r.Header.Set("Accept", "text/html")
+		r.Header.Set("Sec-Fetch-Mode", "navigate")
+		r.Header.Set("Sec-Fetch-Dest", "document")
+		w := httptest.NewRecorder()
+		h.ServeHTTP(w, r)
+
+		return w
+	}
+
+	for _, path := range []string{"/repos/r/settings", "/repos/r/packages/npm/@a%2Fb"} {
+		w := nav(path)
+		if strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") || w.Header().Get("Content-Disposition") != "" {
+			t.Errorf("%s: SPA page got sandbox/attachment: %v", path, w.Header())
+		}
+	}
+
+	// A real artifact download (no navigation headers) is still locked down.
+	r := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/repos/raw/r/x.html", nil)
+	w := httptest.NewRecorder()
+	h.ServeHTTP(w, r)
+
+	if !strings.Contains(w.Header().Get("Content-Security-Policy"), "sandbox") || w.Header().Get("Content-Disposition") != "attachment" {
+		t.Errorf("raw html download not sandboxed: %v", w.Header())
+	}
+}

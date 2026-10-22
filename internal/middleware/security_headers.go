@@ -22,7 +22,10 @@ func SecurityHeadersMiddleware(hsts bool) func(http.Handler) http.Handler {
 			h.Set("X-Frame-Options", "DENY")
 			h.Set("Content-Security-Policy", "frame-ancestors 'none'")
 			h.Set("Referrer-Policy", "no-referrer")
-			if strings.HasPrefix(r.URL.Path, "/repos/") {
+			// Browser page loads of SPA routes under /repos/ are answered by the
+			// SPA (see RBACMiddleware), not by an artifact handler: they need
+			// scripts and must render, so they keep the baseline CSP.
+			if strings.HasPrefix(r.URL.Path, "/repos/") && !isSPANavigation(r) {
 				// Artifact bytes are uploader-controlled and served from the
 				// app origin: sandbox them (opaque origin, no scripts, no
 				// cookies/API access) and force a download for any type a
