@@ -328,6 +328,9 @@ func (m *MockDatabase) GetComponentByID(ctx context.Context, id string) (*models
 }
 
 func (m *MockDatabase) GetComponentByFilename(ctx context.Context, repoID string, filename string) (*models.Component, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
 	for _, comp := range m.components {
 		if comp.RepositoryID == repoID && comp.Filename == filename {
 			return comp, nil
