@@ -34,7 +34,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Debian (APT) | `deb` | `HOST/repos/REPO/` (`dists/`, `pool/`) | hosted, proxy | `POST /api/v1/repositories/REPO/debs` (multipart) | [debian](debian.md) |
 | RPM (YUM/DNF) | `rpm` | `HOST/repos/REPO/` (`repodata/repomd.xml`, `Packages/`) | hosted, proxy | `POST /api/v1/repositories/REPO/packages` (multipart) | [rpm](rpm.md) |
 | Go modules | `go` | `GOPROXY=HOST/repos/REPO` | hosted | `PUT <module>/@v/<version>` (module zip) | [go](go.md) |
-| Cargo | `cargo` | `sparse+HOST/repos/REPO/index/` | hosted | `cargo publish` (`PUT /api/v1/crates/new`) | [cargo](cargo.md) |
+| Cargo | `cargo` | `sparse+HOST/repos/REPO/index/` | hosted, proxy, group | `cargo publish` (`PUT /api/v1/crates/new`) | [cargo](cargo.md) |
 | NuGet | `nuget` | `HOST/repos/REPO/v3/index.json` | hosted | `dotnet nuget push` (`PUT /v3/package`) | [nuget](nuget.md) |
 | RubyGems | `rubygems` | `HOST/repos/REPO/` | hosted | `gem push` (`POST /api/v1/gems`) | [rubygems](rubygems.md) |
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted | `POST /<platform>` with `X-Filename` | [conda](conda.md) |

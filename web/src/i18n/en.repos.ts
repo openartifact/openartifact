@@ -236,8 +236,8 @@ export const enRepos = {
   'repoDetail.group.emptyTitle': 'No members',
   'repoDetail.group.emptyHint': 'This group has no member repositories, so every request returns not found.',
   'repoDetail.group.loadFailed': 'Failed to load group members',
-  'repos.new.proxyFormatsHint': 'Proxy repositories are available for deb, docker, helm, maven, npm, pypi, raw and rpm. A docker proxy defaults to Docker Hub and a pypi proxy to pypi.org when the upstream URL is empty.',
-  'repos.new.groupFormatsHint': 'Group repositories are available for docker, helm, maven, npm, pypi and raw. deb and rpm groups are not supported.',
+  'repos.new.proxyFormatsHint': 'Proxy repositories are available for cargo, deb, docker, helm, maven, npm, pypi, raw and rpm. A docker proxy defaults to Docker Hub, a pypi proxy to pypi.org and a cargo proxy to crates.io when the upstream URL is empty.',
+  'repos.new.groupFormatsHint': 'Group repositories are available for cargo, docker, helm, maven, npm, pypi and raw. deb and rpm groups are not supported.',
 
   // Trash / soft delete
   'browser.selectItem': 'Select {name}',

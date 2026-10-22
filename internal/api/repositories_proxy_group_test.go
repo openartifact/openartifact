@@ -98,7 +98,7 @@ func TestCreateProxyRejectsUnsafeUpstreams(t *testing.T) {
 }
 
 func TestCreateProxyAcceptsSupportedFormats(t *testing.T) {
-	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "helm"} {
+	for _, format := range []string{"maven", "deb", "rpm", "raw", "pypi", "npm", "docker", "cargo", "helm"} {
 		db := newProxyGroupDB()
 		rw := createRepo(t, db, `{"name":"p","format":"`+format+`","repo_type":"proxy","upstream_url":"https://93.184.216.34/repo/","upstream_username":"u","upstream_password":"p"}`)
 
@@ -124,6 +124,12 @@ func TestCreateProxyDefaultUpstream(t *testing.T) {
 	if rw := createRepo(t, db, `{"name":"p","format":"pypi","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
 		db.created == nil || db.created.UpstreamURL != "https://pypi.org/simple" {
 		t.Errorf("pypi proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
+	}
+
+	db = newProxyGroupDB()
+	if rw := createRepo(t, db, `{"name":"p","format":"cargo","repo_type":"proxy"}`); rw.Code != http.StatusCreated ||
+		db.created == nil || db.created.UpstreamURL != "https://index.crates.io" {
+		t.Errorf("cargo proxy without upstream_url: status %d created %+v body %s", rw.Code, db.created, rw.Body.String())
 	}
 
 	// Formats without a well-known public upstream still require one.

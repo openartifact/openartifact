@@ -142,6 +142,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 		return
 	}
 
+	if repo.Format == "cargo" {
+		s.serveCargo(w, r, repo, relPath)
+		return
+	}
+
 	key, ok := CleanPath(relPath)
 	if !ok {
 		http.NotFound(w, r)
@@ -662,6 +667,9 @@ func Immutable(format, key string) bool {
 	case "helm":
 		// Chart archives (charts/<file>), not index.yaml or provenance files.
 		return strings.HasPrefix(key, helmChartsDir) && !strings.HasSuffix(name, helmProvExt)
+	case "cargo":
+		// Crate files, not index files or config.json.
+		return strings.HasPrefix(key, "api/v1/crates/") && name == "download"
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)

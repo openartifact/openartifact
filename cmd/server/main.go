@@ -770,6 +770,9 @@ func run(args []string) error {
 	rawHTTP.RegisterRepoRoutes(rawHosted)
 	npmHTTP.RegisterRepoRoutes(npmHosted)
 
+	cargoHosted := chi.NewRouter()
+	cargoHTTP.RegisterRepoRoutes(cargoHosted)
+
 	pypiHosted := chi.NewRouter()
 	pypiHTTP.RegisterRepoRoutes(pypiHosted)
 
@@ -786,6 +789,7 @@ func run(args []string) error {
 		"pypi":   pypiHosted,
 		"raw":    rawHosted,
 		"npm":    npmHosted,
+		"cargo":  cargoHosted,
 		"docker": dockerHosted,
 		"helm":   helmHosted,
 	}).WithBaseURL(cfg.BaseURL)

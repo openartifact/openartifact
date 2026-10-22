@@ -23,7 +23,7 @@ const DockerHubUpstream = "https://registry-1.docker.io"
 // pulled through the OCI distribution protocol.
 func ProxySupported(format string) bool {
 	switch format {
-	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "helm":
+	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "cargo", "helm":
 		return true
 	}
 
@@ -37,7 +37,7 @@ func ProxySupported(format string) bool {
 // rejected instead.
 func GroupSupported(format string) bool {
 	switch format {
-	case "maven", "docker", "raw", "pypi", "npm", "helm":
+	case "maven", "docker", "raw", "pypi", "npm", "cargo", "helm":
 		return true
 	}
 
@@ -52,13 +52,15 @@ func DefaultUpstreamURL(format string) string {
 		return DockerHubUpstream
 	case "pypi":
 		return "https://pypi.org/simple"
+	case "cargo":
+		return "https://index.crates.io"
 	}
 
 	return ""
 }
 
 // ProxyFormats lists the proxy-capable formats for error messages.
-func ProxyFormats() string { return "deb, docker, helm, maven, npm, pypi, raw, rpm" }
+func ProxyFormats() string { return "cargo, deb, docker, helm, maven, npm, pypi, raw, rpm" }
 
 // GroupFormats lists the group-capable formats for error messages.
-func GroupFormats() string { return "docker, helm, maven, npm, pypi, raw" }
+func GroupFormats() string { return "cargo, docker, helm, maven, npm, pypi, raw" }

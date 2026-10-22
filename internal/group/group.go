@@ -87,6 +87,10 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 		return
 	}
 
+	if grp.Format == "cargo" && h.serveCargo(w, r, grp, relPath, readable, be) {
+		return
+	}
+
 	h.serveFirstHit(w, r, readable, relPath, be)
 }
 

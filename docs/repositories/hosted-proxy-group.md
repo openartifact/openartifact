@@ -19,8 +19,9 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 | deb | yes | yes | no |
 | rpm | yes | yes | no |
 | docker | yes | yes | yes |
+| cargo | yes | yes | yes |
 | helm | yes | yes | yes |
-| nuget, go, cargo, rubygems, conda, conan, ivy, sbt | yes | no | no |
+| nuget, go, rubygems, conda, conan, ivy, sbt | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Deb and RPM groups are rejected because their `Packages`/`Release`/`repodata` metadata is generated per repository and cannot be merged across members. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -53,7 +54,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 |---|---|---|
 | `name`, `format`, `description`, `public` | all | `public` grants anonymous read ([see below](#public-repositories-and-rbac)). |
 | `repo_type` | all | `hosted` (default), `proxy`, `group`. Any other value: `400`. |
-| `upstream_url` | proxy (required, except docker and pypi) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`) and pypi (defaults to `https://pypi.org/simple`). |
+| `upstream_url` | proxy (required, except docker, pypi and cargo) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`) and cargo (defaults to `https://index.crates.io`). |
 | `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream (for docker: sent to the registry's token service). Stored encrypted, never returned. |
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
@@ -82,12 +83,12 @@ Each entry has `id`, `name`, `format`, `repo_type`, `priority`. `DELETE /api/v1/
 
 ## Proxy repositories
 
-Requests are mirrored by path from `upstream_url` (npm and Helm proxies are the exception, see [npm proxies](#npm-proxies) and [Helm proxies](#helm-proxies)). A file is fetched on first request, stored content-addressed in the blob store, recorded under the repository (it appears in the package list and can be downloaded there) and served from the cache afterwards. Path segments that are empty, `.`, `..`, contain backslashes or control characters, and directory paths (trailing `/`) answer `404`; upstream requests carry `Accept-Encoding: identity`, so bytes are mirrored unchanged.
+Requests are mirrored by path from `upstream_url` (npm, cargo and Helm proxies are the exception, see [npm proxies](#npm-proxies), [cargo proxies](#cargo-proxies) and [Helm proxies](#helm-proxies)). A file is fetched on first request, stored content-addressed in the blob store, recorded under the repository (it appears in the package list and can be downloaded there) and served from the cache afterwards. Path segments that are empty, `.`, `..`, contain backslashes or control characters, and directory paths (trailing `/`) answer `404`; upstream requests carry `Accept-Encoding: identity`, so bytes are mirrored unchanged.
 
 ### Cache TTLs
 
 - `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, Helm `index.yaml` and `.prov` files, and everything in raw repositories.
-- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`), npm tarballs and Helm chart archives are immutable once cached and never revalidated.
+- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`), npm tarballs, cargo crate files and Helm chart archives are immutable once cached and never revalidated.
 - An upstream 404/410 is cached for `negative_cache_ttl_seconds` and drops any cached copy of the file (it is never served stale).
 
 ### Upstream failures and serve-stale
@@ -135,6 +136,26 @@ A Helm proxy mirrors a classic chart repository: `upstream_url` is the directory
 - Uploading to a proxy (`POST /charts`) and every other write answer `405`.
 - With the upstream down, `helm repo add`/`update` are answered from the cached index (stale, `Warning: 110`, for up to `max_stale_seconds`) and cached charts are always served; a chart never pulled before answers `502`.
 
+### Cargo proxies
+
+A cargo proxy (`upstream_url` such as `https://index.crates.io`, the default) is a sparse registry, not a path mirror. Point cargo at it with `sparse+HOST/repos/REPO/index/`; to use it for crates.io dependencies replace the source:
+
+```toml
+# ~/.cargo/config.toml
+[source.crates-io]
+replace-with = "oa"
+
+[source.oa]
+registry = "sparse+HOST/repos/REPO/index/"
+```
+
+- **`config.json`** (`GET /index/config.json`, also `/config.json`) is generated, not fetched: `dl` and `api` point at `BASE_URL/repos/REPO`, and a private repository adds `"auth-required": true` (cargo then sends its token with every request). It never touches the upstream.
+- **Index files** (`GET /index/<prefix>/<crate>`, the usual `1/`, `2/`, `3/<c>/` and `<ab>/<cd>/` layout, lowercase) are fetched from the upstream, checked to be a well-formed newline-delimited JSON index (an HTML error page served with `200` is `502` and not cached), cached verbatim with the repository TTL and served stale on upstream failure. Responses carry the blob's `ETag`, so cargo revalidates with `If-None-Match`. Paths that do not follow the layout are `404` without an upstream request.
+- **Crate files** (`GET /api/v1/crates/<crate>/<version>/download`) are fetched from the URL the upstream's own `config.json` `dl` template yields (for crates.io `https://static.crates.io/crates/<crate>/<version>/download`; the `{crate}`, `{version}`, `{prefix}`, `{lowerprefix}` and `{sha256-checksum}` markers are supported), after checking the version is listed in the crate's index file (a version it does not list is `404` and never fetched). The bytes must match the sha256 `cksum` of that index entry or they are refused with `502` and not cached. Cached crate files are immutable. Yanked versions stay downloadable, as upstream.
+- Upstream credentials (Basic) go only to the configured upstream host, never to the host a `dl` template points at. Registries that need cargo's bare-token `Authorization` header are not supported as upstreams.
+- **Writes:** `cargo publish`, `yank` and `unyank` against a proxy answer `405` (`Allow: GET, HEAD`); `cargo search` is not proxied (`404`).
+- With the upstream down, builds keep working from the cache: cached crates are always served, an index file is served stale (`Warning: 110`) for up to `max_stale_seconds` past its expiry, and a crate never requested before answers `502`.
+
 ### Upstream URL, SSRF and credentials
 
 `upstream_url` must be a plain `http(s)` base URL (no credentials, query or fragment); credentials go in `upstream_username`/`upstream_password`. It passes the same SSRF validation as webhooks, at configuration time and on every fetch and redirect: loopback, private and link-local addresses are refused. Set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` only for internal upstreams; the cloud metadata range (169.254.x) stays blocked. See [`../../.env.example`](../../.env.example).
@@ -152,8 +173,9 @@ A group is an ordered list of hosted and proxy members of the same format. Group
 - Maven `maven-metadata.xml` (and its `.md5/.sha1/.sha256/.sha512` checksums) is merged across all readable members: versions are united and ordered, `latest`/`release`/`lastUpdated` recomputed. With one contributing member its document is served unchanged; an erroring member is ignored while another contributes.
 - A pypi group merges `GET /simple/` (union of project names) and `GET /simple/<project>/` across readable hosted and pypi proxy members: the file list is the union by filename, and when several members list the same filename the earliest member wins. Links are rewritten to `/repos/GROUP/files/<project>/<filename>`, and a download is resolved first-hit in member order, so it comes from the member whose entry was listed. A member failing while another contributes is ignored, but the partial page is served with `Cache-Control: no-store`; with no contributor the group answers `404`, or `502` if a member failed. The group answers HTML or PEP 691 JSON by `Accept`, like a proxy.
 - A Helm group merges `GET /index.yaml` across readable hosted and Helm proxy members: a chart name and version is listed once, from the earliest member that has it (the first member's entry, digest included, wins), and every chart URL is rewritten to `BASE_URL/repos/GROUP/charts/<file>`. Chart downloads (and `.prov` files) are resolved first-hit in member order. A member failing or serving an unreadable index while another contributes is ignored; with no contributor the group answers `404`, or `502` if a member failed. Only `index.yaml` and `charts/<file>` are served: a hosted member's chart listing (`GET /charts`) is not exposed.
+- A cargo group generates its own `config.json` (`dl`/`api` point at the group) and merges each crate's index file across readable hosted and cargo proxy members: the union of versions (build metadata ignored when comparing), the earliest member winning a version both list, and every other line untouched. Crate downloads are resolved first-hit in member order, so a crate comes from the member whose index entry won the merge. A member failing while another contributes is ignored; with no contributor the group answers `404`, or `502` if a member failed or served something that is not an index file. Clients use `sparse+HOST/repos/GROUP/index/`.
 - Docker groups resolve manifests and blobs from the first readable member that has them and merge the `tags/list` of all readable members (sorted, de-duplicated, paginated with `n`/`last`).
-- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `HOST/repos/GROUP` for Helm, `HOSTPORT/GROUP/<image>:<tag>` for docker.
+- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `HOST/repos/GROUP` for Helm, `HOSTPORT/GROUP/<image>:<tag>` for docker.
 
 ## Public repositories and RBAC
 

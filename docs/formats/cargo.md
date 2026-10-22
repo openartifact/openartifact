@@ -6,12 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Cargo
 
-Hosted Cargo registry with a sparse index, `config.json`, crate download, publish, yank/unyank and search.
+Cargo registry (hosted, proxy or group) with a sparse index, `config.json`, crate download, publish, yank/unyank and search.
 
 | | |
 |---|---|
 | Repo URL | `HOST/repos/REPO/` (sparse index at `HOST/repos/REPO/index/`) |
-| Repository types | hosted only. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
+| Repository types | hosted, proxy, group. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
 
 ## Client setup
 
@@ -29,6 +29,23 @@ cargo publish --registry REPO
 ```
 
 The server accepts `Authorization: Bearer <TOKEN>` or Basic with the token as password; there is no bare-token form. Cargo sends `token` verbatim as the header value, so if publish answers `401` set `token = "Bearer <TOKEN>"`. See [authentication](../security/authentication.md).
+
+## Proxy and group repositories
+
+- **Proxy:** mirrors a sparse registry (default `https://index.crates.io`). Replace crates.io with it in `~/.cargo/config.toml`, or use it as an alternative registry:
+
+  ```toml
+  [source.crates-io]
+  replace-with = "oa"
+
+  [source.oa]
+  registry = "sparse+HOST/repos/PROXY/index/"
+  ```
+
+  `config.json` is generated (`dl`/`api` point at the proxy); index files are cached with the repository TTL and served stale when the upstream is down; crate files are fetched from the upstream's `dl` template, verified against the index `cksum` and cached immutably. Publishing to a proxy is `405`. See [cargo proxies](../repositories/hosted-proxy-group.md#cargo-proxies).
+- **Group:** an ordered list of hosted and proxy cargo members behind one index URL. Index files are merged (union by version, first member wins), crates come from the first member that has them. Publishing to a group is `405`: publish to a hosted member and read through the group. See [group repositories](../repositories/hosted-proxy-group.md#group-repositories).
+
+Private proxies and groups work like private hosted repositories: `config.json` carries `"auth-required": true` and cargo needs the token (`token = "Bearer <TOKEN>"`, see above).
 
 ## Endpoints
 

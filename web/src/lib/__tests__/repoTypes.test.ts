@@ -17,11 +17,11 @@ describe('allowedFormats', () => {
   it('offers every format for hosted repositories', () => {
     expect(allowedFormats('hosted')).toEqual(ALL_FORMATS)
   })
-  it('restricts proxy to deb, docker, helm, maven, npm, pypi, raw, rpm in picker order', () => {
-    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'deb', 'rpm', 'raw'])
+  it('restricts proxy to cargo, deb, docker, helm, maven, npm, pypi, raw, rpm in picker order', () => {
+    expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'cargo', 'helm', 'deb', 'rpm', 'raw'])
   })
-  it('restricts group to docker, helm, maven, npm, pypi and raw', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'raw'])
+  it('restricts group to cargo, docker, helm, maven, npm, pypi and raw', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'cargo', 'helm', 'raw'])
     expect(isFormatAllowed('group', 'deb')).toBe(false)
     expect(isFormatAllowed('group', 'rpm')).toBe(false)
   })
@@ -47,12 +47,14 @@ describe('coerceFormat', () => {
 })
 
 describe('upstream URL', () => {
-  it('is optional only for docker and pypi (well-known defaults)', () => {
+  it('is optional only for docker, pypi and cargo (well-known defaults)', () => {
     expect(upstreamUrlRequired('docker')).toBe(false)
     expect(upstreamUrlRequired('pypi')).toBe(false)
+    expect(upstreamUrlRequired('cargo')).toBe(false)
     expect(upstreamUrlRequired('maven')).toBe(true)
     expect(upstreamUrlPlaceholder('docker')).toBe('https://registry-1.docker.io')
     expect(upstreamUrlPlaceholder('pypi')).toBe('https://pypi.org/simple')
+    expect(upstreamUrlPlaceholder('cargo')).toBe('https://index.crates.io')
   })
 })
 
