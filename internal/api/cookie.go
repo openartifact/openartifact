@@ -45,7 +45,8 @@ func setSessionCookie(w http.ResponseWriter, r *http.Request, value string) {
 		HttpOnly: true,
 		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(auth.SessionDuration.Seconds()),
+		// Absolute lifetime: the sliding idle expiry is enforced server-side.
+		MaxAge: int(auth.SessionAbsoluteLifetime().Seconds()),
 	})
 }
 
@@ -70,7 +71,7 @@ func setCSRFCookie(w http.ResponseWriter, r *http.Request, token string) {
 		Path:     "/",
 		Secure:   isSecureRequest(r),
 		SameSite: http.SameSiteLaxMode,
-		MaxAge:   int(auth.SessionDuration.Seconds()),
+		MaxAge:   int(auth.SessionAbsoluteLifetime().Seconds()),
 	})
 }
 
