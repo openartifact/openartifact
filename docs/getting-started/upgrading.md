@@ -85,7 +85,11 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
-### Next release: security hardening and configuration
+### 0.6.0
+
+> **Recreate upgrade required, and set a real database password first.** Stop every 0.5.x replica before 0.6.0 starts (Kubernetes: `strategy: Recreate`, or scale to 0): migration `025` renames tables the old binaries query. The server no longer starts with the `CHANGE_ME` example database password, and PostgreSQL must allow the `pg_trgm` extension. Both are detailed below.
+
+#### Security hardening and configuration
 
 Migrations `028` (delta patch blob index), `029` and `031` (audit actions). Changes that can break an existing deployment or client:
 
@@ -104,7 +108,7 @@ Migrations `028` (delta patch blob index), `029` and `031` (audit actions). Chan
 | Audit | Admin changes to users, groups, permission targets, SSO providers and tokens issued for other users are audited (`user.*`, `group.*`, `permission_target.*`, `sso_provider.*`, `token.created_for_user`). |
 | `resetpw` | Defaults to `sslmode=require`. |
 
-### Next release: database indexes and the `pg_trgm` extension
+#### Database indexes and the `pg_trgm` extension
 
 Migration `030` needs the PostgreSQL `pg_trgm` extension (`CREATE EXTENSION IF NOT EXISTS pg_trgm`). It is a trusted extension since PostgreSQL 13, so the database owner can create it; it ships in the official `postgres` images and in the `postgresql-contrib` package of distributions that split it. On a managed service, allow-list it first, or run `CREATE EXTENSION pg_trgm` as an administrator before the upgrade. Without it the migration fails and the server exits at startup.
 
@@ -116,7 +120,7 @@ What changes:
 - The proxy cache eviction and the retention cleanup now work in batches (2000 expired cache entries, 200 package versions per round trip), so one long run no longer rolls back as a whole when it hits its timeout.
 - `GET /api/v1/search` answers from one query (total and page together). Behavior is unchanged: a query matching more than 10000 rows is still `400 query_too_broad`.
 
-### Next release: groups hide proxy versions of hosted package names
+#### Groups hide proxy versions of hosted package names
 
 Migration `029` adds `repositories.merge_proxy_versions` (`boolean NOT NULL DEFAULT false`).
 
@@ -129,7 +133,7 @@ Proxy repositories:
 - Concurrent upstream fetches are bounded (16 at a time per server), and the upstream documents the proxy and group parse in memory (pypi, helm, nuget, cargo, OCI tag lists) share one concurrency gate.
 - Maven, deb and rpm files without a published digest are no longer cached "forever" everywhere: `archetype-catalog.xml`, `.deb`/`.udeb` outside a `pool/` directory and `.rpm` outside a `Packages/` directory use `cache_ttl_seconds`, and an HTML `200` answer for a package path is refused with `502`. Already cached files keep their old expiry until evicted.
 
-### Next release: organizations become projects
+#### Organizations become projects
 
 **Requires a Recreate upgrade.** Stop all old replicas before starting the new version; do not use a rolling upgrade. The migration renames tables the old binaries still query, so old and new replicas cannot run side by side.
 
