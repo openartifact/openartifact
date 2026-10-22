@@ -101,7 +101,7 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint ar
 
 ## Review skills
 
-`.agents/skills/` vendors four Go skills from [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) (MIT, pinned commit in `.agents/skills/README.md`): `golang-security`, `golang-safety`, `golang-concurrency`, `golang-context`. Load them for **reviews** of security-sensitive code (proxies and groups, auth/RBAC/projects, upload and format handlers, anything serving upstream- or uploader-controlled bytes) and of workers, locks and goroutines; skip them for routine implementation. Use their review mode only, not their sub-agent fan-out. This file wins on conflict: errors go through `writeError` (no `samber/oops`), DB access through sqlc/pgx, and the repo's own conventions above.
+`.agents/skills/` vendors Go skills from [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) (MIT, pinned commit in `.agents/skills/README.md`). Load `golang-security`, `golang-safety`, `golang-concurrency`, `golang-context` for **reviews** of security-sensitive code (proxies and groups, auth/RBAC/projects, upload and format handlers, anything serving upstream- or uploader-controlled bytes) and of workers, locks and goroutines; load `golang-performance` and `golang-benchmark` for performance reviews and before optimizing hot paths (measure first with benchmarks/pprof). Skip them for routine implementation. Use their review mode only, not their sub-agent fan-out. This file wins on conflict: errors go through `writeError` (no `samber/oops`), DB access through sqlc/pgx, and the repo's own conventions above.
 
 ## CI and releases
 

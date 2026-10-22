@@ -14,6 +14,8 @@ Vendored from [samber/cc-skills-golang](https://github.com/samber/cc-skills-gola
 | `golang-safety` | Nil, slice/map aliasing, numeric overflow |
 | `golang-concurrency` | Goroutine lifecycle, locks, channels, worker pools |
 | `golang-context` | Cancellation, deadlines, request-scoped values |
+| `golang-performance` | Allocation, I/O, hot paths; optimization patterns |
+| `golang-benchmark` | Benchmarks, benchstat, pprof, trace |
 
 When to load them and how they rank against repo conventions: see "Review skills" in `AGENTS.md`.
 
