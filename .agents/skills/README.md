@@ -16,6 +16,10 @@ Vendored from [samber/cc-skills-golang](https://github.com/samber/cc-skills-gola
 | `golang-context` | Cancellation, deadlines, request-scoped values |
 | `golang-performance` | Allocation, I/O, hot paths; optimization patterns |
 | `golang-benchmark` | Benchmarks, benchstat, pprof, trace |
+| `golang-database` | Queries, transactions, locks, pool, N+1 |
+| `golang-observability` | Metrics, logging, tracing |
+| `golang-testing` | Test design, fuzzing, races, flaky tests |
+| `golang-troubleshooting` | Debugging concrete failures |
 
 When to load them and how they rank against repo conventions: see "Review skills" in `AGENTS.md`.
 

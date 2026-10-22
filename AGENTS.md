@@ -101,7 +101,16 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint ar
 
 ## Review skills
 
-`.agents/skills/` vendors Go skills from [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) (MIT, pinned commit in `.agents/skills/README.md`). Load `golang-security`, `golang-safety`, `golang-concurrency`, `golang-context` for **reviews** of security-sensitive code (proxies and groups, auth/RBAC/projects, upload and format handlers, anything serving upstream- or uploader-controlled bytes) and of workers, locks and goroutines; load `golang-performance` and `golang-benchmark` for performance reviews and before optimizing hot paths (measure first with benchmarks/pprof). Skip them for routine implementation. Use their review mode only, not their sub-agent fan-out. This file wins on conflict: errors go through `writeError` (no `samber/oops`), DB access through sqlc/pgx, and the repo's own conventions above.
+`.agents/skills/` vendors Go skills from [samber/cc-skills-golang](https://github.com/samber/cc-skills-golang) (MIT, pinned commit in `.agents/skills/README.md`). When to load them:
+
+- `golang-security`, `golang-safety`, `golang-concurrency`, `golang-context`: **reviews** of security-sensitive code (proxies and groups, auth/RBAC/projects, upload and format handlers, anything serving upstream- or uploader-controlled bytes) and of workers, locks and goroutines.
+- `golang-performance`, `golang-benchmark`: performance reviews and before optimizing hot paths (measure first with benchmarks/pprof).
+- `golang-database`: writing or reviewing queries, transactions, row locks, advisory locks and migrations-adjacent Go code.
+- `golang-observability`: metrics (label cardinality), slog logging, tracing.
+- `golang-testing`: writing or reviewing tests; the repo uses the standard `testing` package (no testify) and the test rules in this file.
+- `golang-troubleshooting`: debugging a concrete failure (flaky test, deadlock, leak, panic), not reviews.
+
+Skip them for routine implementation. Use their review mode only, not their sub-agent fan-out. This file wins on conflict: errors go through `writeError` (no `samber/oops`), DB access through sqlc/pgx, tests follow the rules above, and the repo's own conventions apply.
 
 ## CI and releases
 
