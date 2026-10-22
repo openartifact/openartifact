@@ -97,8 +97,8 @@ func TestSearchFreeTextQuery(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "my-repo", "npm", "lodash", "4.17.21", "lodash-4.17.21.tgz", "abc123", int64(100), now, nil, nil, nil)
+	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
+	rows := sqlmock.NewRows(cols).AddRow(repoID, "my-repo", "npm", "lodash", "4.17.21", "lodash-4.17.21.tgz", "abc123", int64(100), now, nil, nil, nil, int64(1))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -131,8 +131,8 @@ func TestSearchFormatFilter(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "npm-repo", "npm", "react", "18.0.0", "", "", int64(0), now, nil, nil, nil)
+	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
+	rows := sqlmock.NewRows(cols).AddRow(repoID, "npm-repo", "npm", "react", "18.0.0", "", "", int64(0), now, nil, nil, nil, int64(1))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -158,8 +158,8 @@ func TestSearchSHA256PrefixClause(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "repo", "rpm", "mypkg", "1.0", "", "deadbeef1234", int64(0), now, nil, nil, nil)
+	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
+	rows := sqlmock.NewRows(cols).AddRow(repoID, "repo", "rpm", "mypkg", "1.0", "", "deadbeef1234", int64(0), now, nil, nil, nil, int64(1))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -185,10 +185,10 @@ func TestSearchPostFilterRemovesUnreadableRepo(t *testing.T) {
 	readableID := uuid.New()
 	unreadableID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope"}
+	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
 	rows := sqlmock.NewRows(cols).
-		AddRow(readableID, "repo-a", "rpm", "pkg-a", "1.0", "", "", int64(0), now, nil, nil, nil).
-		AddRow(unreadableID, "repo-b", "rpm", "pkg-b", "2.0", "", "", int64(0), now, nil, nil, nil)
+		AddRow(readableID, "repo-a", "rpm", "pkg-a", "1.0", "", "", int64(0), now, nil, nil, nil, int64(2)).
+		AddRow(unreadableID, "repo-b", "rpm", "pkg-b", "2.0", "", "", int64(0), now, nil, nil, nil, int64(2))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -217,8 +217,8 @@ func TestSearchMavenMetadata(t *testing.T) {
 
 	repoID := uuid.New()
 	now := time.Now()
-	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope"}
-	rows := sqlmock.NewRows(cols).AddRow(repoID, "maven-repo", "maven", "myapp", "1.0.0", "", "", int64(0), now, "com.example", "myapp", nil)
+	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
+	rows := sqlmock.NewRows(cols).AddRow(repoID, "maven-repo", "maven", "myapp", "1.0.0", "", "", int64(0), now, "com.example", "myapp", nil, int64(1))
 	mock.ExpectQuery(`SELECT`).WillReturnRows(rows)
 
 	exec := NewExecutor(db)
@@ -307,5 +307,63 @@ func TestBuildWhereClauseTreatsLikeMetacharactersLiterally(t *testing.T) {
 
 	if args[0] != `%ui\_kit\%%` || args[1] != `ab\_%` {
 		t.Errorf("args = %q, %q; LIKE metacharacters must be escaped", args[0], args[1])
+	}
+}
+
+func TestSearchPageReturnsTotalFromOneQuery(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("open sqlmock: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	repoID := uuid.New()
+	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
+	rows := sqlmock.NewRows(cols).AddRow(repoID, "repo", "npm", "lodash", "1.0.0", "", "", int64(0), time.Now(), nil, nil, nil, int64(137))
+	mock.ExpectQuery(`WITH matched AS MATERIALIZED .* count\(\*\) OVER \(\)`).WillReturnRows(rows)
+
+	results, total, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, 1, 0, map[uuid.UUID]struct{}{repoID: {}})
+	if err != nil {
+		t.Fatalf("SearchPage: %v", err)
+	}
+
+	if len(results) != 1 || total != 137 {
+		t.Fatalf("got %d results, total %d; want 1 result, total 137", len(results), total)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
+	}
+}
+
+// A page past the last match has no row to carry the total, so it is counted
+// separately; page 0 with no rows is simply an empty result, no second query.
+func TestSearchPageEmptyPageCounts(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("open sqlmock: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	cols := []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
+	mock.ExpectQuery(`WITH matched`).WillReturnRows(sqlmock.NewRows(cols))
+	mock.ExpectQuery(`WITH matched`).WillReturnRows(sqlmock.NewRows(cols))
+	mock.ExpectQuery(`SELECT COUNT`).WillReturnRows(sqlmock.NewRows([]string{"count"}).AddRow(30))
+
+	exec := NewExecutor(db)
+	readable := map[uuid.UUID]struct{}{uuid.New(): {}}
+
+	_, total, err := exec.SearchPage(context.Background(), SearchFilter{FreeText: "x"}, 25, 0, readable)
+	if err != nil || total != 0 {
+		t.Fatalf("first page: total %d, err %v; want 0, nil", total, err)
+	}
+
+	_, total, err = exec.SearchPage(context.Background(), SearchFilter{FreeText: "x"}, 25, 50, readable)
+	if err != nil || total != 30 {
+		t.Fatalf("page past the end: total %d, err %v; want 30, nil", total, err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
 	}
 }

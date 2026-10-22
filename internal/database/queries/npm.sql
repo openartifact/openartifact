@@ -43,6 +43,17 @@ SELECT id, package_id, version, manifest_json, integrity, shasum, blob_id, tarba
 FROM npm_versions
 WHERE package_id = $1 AND deleted_at IS NULL;
 
+-- name: GetNPMVersionStates :many
+-- What the latest-version computation needs of every live version: its number
+-- and whether its manifest carries a deprecation message. The manifest itself
+-- stays in the database, so regenerating a package with hundreds of versions
+-- does not ship megabytes of manifests to the worker.
+SELECT version,
+       COALESCE(jsonb_typeof(manifest_json -> 'deprecated') = 'string'
+                AND manifest_json ->> 'deprecated' <> '', false)::boolean AS deprecated
+FROM npm_versions
+WHERE package_id = $1 AND deleted_at IS NULL;
+
 -- name: UpdateNPMVersionManifest :exec
 UPDATE npm_versions SET manifest_json = $3::jsonb WHERE package_id = $1 AND version = $2 AND deleted_at IS NULL;
 

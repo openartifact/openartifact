@@ -8,7 +8,6 @@ import (
 	"cmp"
 	"context"
 	"database/sql"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"strings"
@@ -66,10 +65,11 @@ func (w *NPMMetadataWorker) regenerate(ctx context.Context, packageID string) er
 		defer release()
 	}
 
-	// GetNPMVersionsByPackage returns live versions only: trashed versions
-	// never count towards latest, and a restored one counts again on the next
-	// run (the trash API notifies after a restore).
-	versions, err := w.db.GetNPMVersionsByPackage(ctx, packageID)
+	// Only live versions are returned: trashed versions never count towards
+	// latest, and a restored one counts again on the next run (the trash API
+	// notifies after a restore). Their manifests stay in the database; only the
+	// version number and the deprecation flag are read.
+	versions, err := w.db.GetNPMVersionStates(ctx, packageID)
 	if err != nil {
 		return fmt.Errorf("npm worker: getting versions of %s: %w", packageID, err)
 	}
@@ -91,7 +91,7 @@ func (w *NPMMetadataWorker) regenerate(ctx context.Context, packageID string) er
 // stable releases win over non-deprecated prereleases, which win over
 // deprecated versions; within a tier the highest semver precedence wins. A
 // prerelease therefore never becomes latest while a stable release exists.
-func computeLatestVersion(versions []*models.NPMVersion) string {
+func computeLatestVersion(versions []models.NPMVersionState) string {
 	var (
 		best     string
 		bestRank = -1
@@ -99,7 +99,7 @@ func computeLatestVersion(versions []*models.NPMVersion) string {
 
 	for _, v := range versions {
 		rank := 0
-		if !isDeprecated(v.ManifestJSON) {
+		if !v.Deprecated {
 			rank = 2
 		}
 
@@ -113,21 +113,6 @@ func computeLatestVersion(versions []*models.NPMVersion) string {
 	}
 
 	return best
-}
-
-func isDeprecated(manifestJSON []byte) bool {
-	if len(manifestJSON) == 0 {
-		return false
-	}
-
-	var m map[string]any
-	if err := json.Unmarshal(manifestJSON, &m); err != nil {
-		return false
-	}
-
-	dep, _ := m["deprecated"].(string)
-
-	return dep != ""
 }
 
 func isPrerelease(v string) bool {

@@ -94,7 +94,7 @@ func TestNPMWorker_LatestVersionRecomputation(t *testing.T) {
 }
 
 // gatedNPMDB serves versions from a concurrency-safe store and blocks the first
-// GetNPMVersionsByPackage (after taking its snapshot) until released, so a
+// GetNPMVersionStates (after taking its snapshot) until released, so a
 // regeneration is deterministically in flight while publishes keep arriving.
 type gatedNPMDB struct {
 	*npmCountingDB
@@ -115,7 +115,7 @@ func (g *gatedNPMDB) publish(pkgID, version string) {
 	})
 }
 
-func (g *gatedNPMDB) GetNPMVersionsByPackage(_ context.Context, pkgID string) ([]*models.NPMVersion, error) {
+func (g *gatedNPMDB) GetNPMVersionStates(_ context.Context, pkgID string) ([]models.NPMVersionState, error) {
 	g.vmu.Lock()
 
 	var snapshot []*models.NPMVersion
@@ -132,7 +132,7 @@ func (g *gatedNPMDB) GetNPMVersionsByPackage(_ context.Context, pkgID string) ([
 		<-g.release
 	}
 
-	return snapshot, nil
+	return npmVersionStates(snapshot), nil
 }
 
 // Publishing storms must collapse into at most one running plus one rerun, and

@@ -232,6 +232,43 @@ func (q *Queries) GetNPMVersion(ctx context.Context, arg GetNPMVersionParams) (G
 	return i, err
 }
 
+const getNPMVersionStates = `-- name: GetNPMVersionStates :many
+SELECT version,
+       COALESCE(jsonb_typeof(manifest_json -> 'deprecated') = 'string'
+                AND manifest_json ->> 'deprecated' <> '', false)::boolean AS deprecated
+FROM npm_versions
+WHERE package_id = $1 AND deleted_at IS NULL
+`
+
+type GetNPMVersionStatesRow struct {
+	Version    string `db:"version" json:"version"`
+	Deprecated bool   `db:"deprecated" json:"deprecated"`
+}
+
+// What the latest-version computation needs of every live version: its number
+// and whether its manifest carries a deprecation message. The manifest itself
+// stays in the database, so regenerating a package with hundreds of versions
+// does not ship megabytes of manifests to the worker.
+func (q *Queries) GetNPMVersionStates(ctx context.Context, packageID string) ([]GetNPMVersionStatesRow, error) {
+	rows, err := q.db.Query(ctx, getNPMVersionStates, packageID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []GetNPMVersionStatesRow{}
+	for rows.Next() {
+		var i GetNPMVersionStatesRow
+		if err := rows.Scan(&i.Version, &i.Deprecated); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const getNPMVersionsByPackage = `-- name: GetNPMVersionsByPackage :many
 SELECT id, package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at
 FROM npm_versions

@@ -6,11 +6,11 @@ package worker
 
 import (
 	"context"
-	"database/sql"
 	"database/sql/driver"
 	"errors"
 	"fmt"
 	"regexp"
+	"slices"
 	"strings"
 	"sync"
 	"time"
@@ -651,7 +651,7 @@ func partitionSelect(cols []string) string {
 	return strings.Join(parts, ", ")
 }
 
-// trashOutcome is what trashCandidate did with a selected row.
+// trashOutcome is what trashCandidates did with a batch of selected rows.
 type trashOutcome int
 
 const (
@@ -664,23 +664,28 @@ const (
 	trashSkipped
 )
 
-// trashCandidate moves c to the trash when the repository's retention allows
-// it. A failed move skips the row: deleting permanently because the soft path
-// broke would defeat the point of the trash.
-func (w *CleanupWorker) trashCandidate(ctx context.Context, repoID string, t formatTable, c cleanupCandidate) trashOutcome {
+// trashCandidates moves cs to the trash, in one transaction, when the
+// repository's retention allows it. A failed move skips the rows: deleting
+// permanently because the soft path broke would defeat the point of the trash.
+func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate) trashOutcome {
 	store, ok := w.db.(database.TrashStore)
 	if !ok {
 		return trashHard
 	}
 
-	soft, err := store.TrashRows(ctx, repoID, t.kind, []string{c.id}, cleanupActor)
+	ids := make([]string, len(cs))
+	for i, c := range cs {
+		ids[i] = c.id
+	}
+
+	soft, err := store.TrashRows(ctx, repoID, t.kind, ids, cleanupActor)
 
 	switch {
 	case errors.Is(err, database.ErrTrashNotFound):
-		// A concurrent delete removed the row since it was selected.
+		// Concurrent deletes removed every row since they were selected.
 		return trashSkipped
 	case err != nil:
-		w.log.Warnw("failed to move artifact to trash", "id", c.id, "error", err)
+		w.log.Warnw("failed to move artifacts to trash", "count", len(ids), "error", err)
 
 		return trashSkipped
 	case soft:
@@ -696,7 +701,6 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 		return 0, err
 	}
 
-	conn := w.db.GetDB()
 	totalDeleted := 0
 
 	// Usage of the rows removed so far is handed back to the repository's quota
@@ -706,19 +710,132 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 
 	defer func() { w.releaseQuota(ctx, policy.RepositoryID, released) }()
 
-	// Delete artifacts: the DB row first, then the underlying blobs from
-	// storage only if no other row still references them.
-	for _, c := range toDelete {
+	for chunk := range slices.Chunk(toDelete, cleanupChunkSize) {
 		if err := ctx.Err(); err != nil {
 			return totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
 		}
 
-		if w.protectedByBundle(ctx, conn, c.blobIDs) {
+		totalDeleted += w.deleteChunk(ctx, policy, repo, tableInfo, chunk, &released)
+	}
+
+	return totalDeleted, nil
+}
+
+// cleanupChunkSize is how many selected rows are looked up and deleted per
+// batch: a handful of statements per chunk instead of several per row, while
+// the bundle-protection answer stays a few seconds old at most.
+const cleanupChunkSize = 200
+
+// blobFacts is what the cleanup needs to know about one blob row.
+type blobFacts struct {
+	sha256 string
+	size   int64
+	// bundled: a release bundle references the blob and pins it.
+	bundled bool
+}
+
+// deleteChunk removes the rows of chunk the policy may remove and returns how
+// many it removed (or moved to the trash). The blob facts of the whole chunk
+// come from one query; the rows go with one statement; the underlying blobs
+// leave storage only when no other row still references them.
+func (w *CleanupWorker) deleteChunk(
+	ctx context.Context,
+	policy *models.CleanupPolicy,
+	repo *models.Repository,
+	t formatTable,
+	chunk []cleanupCandidate,
+	released *quotaRelease,
+) int {
+	facts, err := w.loadBlobFacts(ctx, chunk)
+	if err != nil {
+		// A failed protection check protects: deleting on doubt cannot be undone.
+		w.log.Warnw("failed to look up blobs for cleanup, skipping batch", "count", len(chunk), "error", err)
+
+		return 0
+	}
+
+	eligible := w.eligibleCandidates(repo, chunk, facts)
+	if len(eligible) == 0 {
+		return 0
+	}
+
+	// Soft delete keeps the rows, their blobs and their quota usage until the
+	// purge; only the permanent path below releases them.
+	switch w.trashCandidates(ctx, policy.RepositoryID, t, eligible) {
+	case trashMoved:
+		return len(eligible)
+	case trashSkipped:
+		return 0
+	case trashHard:
+	}
+
+	deleted := w.deleteRows(ctx, t.table, eligible)
+
+	var (
+		removed int
+		shas    []string
+		seen    = map[string]struct{}{}
+	)
+
+	for _, c := range eligible {
+		if _, ok := deleted[c.id]; !ok {
 			continue
 		}
 
-		// A worker has no admin to force, so an immutable repository's released
-		// versions are never cleaned up.
+		removed++
+
+		if t.quotaTracked {
+			released.rows++
+		}
+
+		for _, blobID := range c.blobIDs {
+			f, ok := facts[blobID]
+			if !ok {
+				continue
+			}
+
+			// The usage an upload of the row reserved, read before the rows went
+			// (a concurrent delete could drop the blob and its size after).
+			if t.quotaTracked {
+				released.bytes += f.size
+			}
+
+			if _, dup := seen[f.sha256]; !dup {
+				seen[f.sha256] = struct{}{}
+				shas = append(shas, f.sha256)
+			}
+		}
+	}
+
+	for _, sha256 := range shas {
+		if ctx.Err() != nil {
+			break
+		}
+
+		if err := storage.SafeDeleteBlob(ctx, w.db, w.blobStore, sha256); err != nil {
+			w.log.Warnw("failed to delete blob from storage", "sha256", sha256, "error", err)
+		}
+	}
+
+	return removed
+}
+
+// eligibleCandidates drops the rows a cleanup must leave: those whose blobs a
+// release bundle pins and, in an immutable repository, released versions (a
+// worker has no admin to force).
+func (w *CleanupWorker) eligibleCandidates(repo *models.Repository, chunk []cleanupCandidate, facts map[string]blobFacts) []cleanupCandidate {
+	eligible := make([]cleanupCandidate, 0, len(chunk))
+
+nextRow:
+	for _, c := range chunk {
+		for _, blobID := range c.blobIDs {
+			if facts[blobID].bundled {
+				w.log.Debugw("skipping cleanup: blob is referenced by a release bundle", "blob_id", blobID)
+
+				continue nextRow
+			}
+		}
+
 		if repo.ImmutableReleases && trash.IsRelease(repo.Format, c.version) {
 			w.log.Debugw("skipping cleanup: released version is immutable",
 				"repository_id", repo.ID, "id", c.id, "name", c.name, "version", c.version)
@@ -726,131 +843,117 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 			continue
 		}
 
-		// Soft delete keeps the row, its blobs and its quota usage until the
-		// purge; only the permanent path below releases them.
-		switch w.trashCandidate(ctx, policy.RepositoryID, tableInfo, c) {
-		case trashMoved:
-			totalDeleted++
+		eligible = append(eligible, c)
+	}
 
-			continue
-		case trashSkipped:
-			continue
-		case trashHard:
+	return eligible
+}
+
+// loadBlobFacts reads sha256, size and release-bundle pinning of every blob the
+// chunk's rows reference, keyed by blob id, in one query. Blobs that no longer
+// exist are simply absent.
+func (w *CleanupWorker) loadBlobFacts(ctx context.Context, chunk []cleanupCandidate) (map[string]blobFacts, error) {
+	var ids []string
+
+	for _, c := range chunk {
+		for _, id := range c.blobIDs {
+			if id != "" {
+				ids = append(ids, id)
+			}
+		}
+	}
+
+	facts := make(map[string]blobFacts, len(ids))
+	if len(ids) == 0 {
+		return facts, nil
+	}
+
+	rows, err := w.db.GetDB().QueryContext(ctx,
+		`SELECT b.id::text, b.sha256, b.size_bytes,
+		        EXISTS(SELECT 1 FROM release_bundle_items rbi WHERE rbi.sha256 = b.sha256)
+		 FROM blobs b WHERE b.id = ANY($1::uuid[])`, uuidArrayLiteral(ids))
+	if err != nil {
+		return nil, fmt.Errorf("query blobs: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	for rows.Next() {
+		var (
+			id string
+			f  blobFacts
+		)
+
+		if err := rows.Scan(&id, &f.sha256, &f.size, &f.bundled); err != nil {
+			return nil, fmt.Errorf("scan blob: %w", err)
 		}
 
-		// Read the row's usage while its blob rows are certainly still there (the
-		// row references them); once the row is gone a concurrent delete could
-		// drop the blob and the size with it.
-		var rowBytes int64
-		if tableInfo.quotaTracked {
-			rowBytes = w.rowBlobBytes(ctx, conn, c.blobIDs)
+		facts[id] = f
+	}
+
+	return facts, rows.Err()
+}
+
+// deleteRows deletes the rows with one statement and returns the ids it
+// removed; rows a concurrent API delete got to first are not among them (that
+// delete already released their quota and blobs). If the batch statement fails
+// the rows are retried one by one, so one bad row cannot keep the rest.
+func (w *CleanupWorker) deleteRows(ctx context.Context, table string, cs []cleanupCandidate) map[string]struct{} {
+	conn := w.db.GetDB()
+	deleted := make(map[string]struct{}, len(cs))
+
+	ids := make([]string, len(cs))
+	for i, c := range cs {
+		ids[i] = c.id
+	}
+
+	//nolint:gosec // G201: table is a constant of the format registry; ids are a bound argument
+	batch := fmt.Sprintf("DELETE FROM %s WHERE id = ANY($1::uuid[]) AND deleted_at IS NULL RETURNING id::text", table)
+
+	rows, err := conn.QueryContext(ctx, batch, uuidArrayLiteral(ids))
+	if err == nil {
+		defer func() { _ = rows.Close() }()
+
+		for rows.Next() {
+			var id string
+			if scanErr := rows.Scan(&id); scanErr != nil {
+				w.log.Warnw("failed to read deleted artifact id", "error", scanErr)
+				break
+			}
+
+			deleted[id] = struct{}{}
 		}
 
-		//nolint:gosec // G201: query uses validated table/column names from internal constants
-		deleteQuery := fmt.Sprintf("DELETE FROM %s WHERE id = $1 AND deleted_at IS NULL", tableInfo.table)
+		if rowsErr := rows.Err(); rowsErr != nil {
+			w.log.Warnw("failed to read deleted artifact ids", "error", rowsErr)
+		}
 
-		res, err := conn.ExecContext(ctx, deleteQuery, c.id)
+		return deleted
+	}
+
+	w.log.Warnw("failed to delete artifacts in one batch, retrying one by one", "count", len(ids), "error", err)
+
+	//nolint:gosec // G201: see above
+	single := fmt.Sprintf("DELETE FROM %s WHERE id = $1 AND deleted_at IS NULL", table)
+
+	for _, id := range ids {
+		res, err := conn.ExecContext(ctx, single, id)
 		if err != nil {
-			w.log.Warnw("failed to delete artifact from database", "id", c.id, "error", err)
+			w.log.Warnw("failed to delete artifact from database", "id", id, "error", err)
 			continue
 		}
 
-		// A concurrent API delete may have removed the row since it was
-		// selected; that delete already released its quota and blobs.
-		if n, rowsErr := res.RowsAffected(); rowsErr == nil && n == 0 {
-			continue
-		}
-
-		totalDeleted++
-
-		if tableInfo.quotaTracked {
-			released.bytes += rowBytes
-			released.rows++
-		}
-
-		for _, blobID := range c.blobIDs {
-			if blobID == "" {
-				continue
-			}
-
-			var sha256 string
-
-			if err := conn.QueryRowContext(ctx, "SELECT sha256 FROM blobs WHERE id = $1", blobID).Scan(&sha256); err != nil {
-				if !errors.Is(err, sql.ErrNoRows) {
-					w.log.Warnw("failed to resolve blob sha256 for cleanup", "blob_id", blobID, "error", err)
-				}
-
-				continue
-			}
-
-			if err := storage.SafeDeleteBlob(ctx, w.db, w.blobStore, sha256); err != nil {
-				w.log.Warnw("failed to delete blob from storage", "sha256", sha256, "error", err)
-			}
+		if n, rowsErr := res.RowsAffected(); rowsErr == nil && n > 0 {
+			deleted[id] = struct{}{}
 		}
 	}
 
-	return totalDeleted, nil
+	return deleted
 }
 
-// protectedByBundle reports whether any of the blobs is referenced by a release
-// bundle, which pins them: such a row must not be deleted. A failed check also
-// protects, since deleting on doubt cannot be undone.
-func (w *CleanupWorker) protectedByBundle(ctx context.Context, conn *sql.DB, blobIDs []string) bool {
-	for _, blobID := range blobIDs {
-		if blobID == "" {
-			continue
-		}
-
-		var bundleProtected bool
-
-		checkErr := conn.QueryRowContext(ctx,
-			`SELECT EXISTS(
-				SELECT 1 FROM release_bundle_items rbi
-				JOIN blobs b ON b.sha256 = rbi.sha256
-				WHERE b.id = $1
-			)`, blobID,
-		).Scan(&bundleProtected)
-		if checkErr != nil {
-			w.log.Warnw("failed to check bundle protection for blob", "blob_id", blobID, "error", checkErr)
-
-			return true
-		}
-
-		if bundleProtected {
-			w.log.Debugw("skipping cleanup: blob is referenced by a release bundle", "blob_id", blobID)
-
-			return true
-		}
-	}
-
-	return false
-}
-
-// rowBlobBytes returns the combined size of the blobs a row owns, the amount an
-// upload of that row reserved against the repository's quota. A lookup failure
-// yields 0: the row's artifact is still released and the next reconcile
-// corrects the byte count.
-func (w *CleanupWorker) rowBlobBytes(ctx context.Context, conn *sql.DB, blobIDs []string) int64 {
-	var total int64
-
-	for _, blobID := range blobIDs {
-		if blobID == "" {
-			continue
-		}
-
-		var size int64
-		if err := conn.QueryRowContext(ctx, "SELECT size_bytes FROM blobs WHERE id = $1", blobID).Scan(&size); err != nil {
-			if !errors.Is(err, sql.ErrNoRows) {
-				w.log.Warnw("failed to resolve blob size for quota release", "blob_id", blobID, "error", err)
-			}
-
-			continue
-		}
-
-		total += size
-	}
-
-	return total
+// uuidArrayLiteral renders ids as a Postgres array literal for ANY($1::uuid[]).
+func uuidArrayLiteral(ids []string) string {
+	return "{" + strings.Join(ids, ",") + "}"
 }
 
 // quotaRelease is the usage a cleanup run took out of a repository: the summed

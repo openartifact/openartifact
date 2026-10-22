@@ -223,6 +223,9 @@ func (m *BaseMockDB) CreateNPMVersion(ctx context.Context, v *models.NPMVersion)
 func (m *BaseMockDB) GetNPMVersion(ctx context.Context, packageID, version string) (*models.NPMVersion, error) {
 	return nil, errNotImpl("GetNPMVersion")
 }
+func (m *BaseMockDB) GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error) {
+	return nil, errNotImpl("GetNPMVersionStates")
+}
 func (m *BaseMockDB) GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error) {
 	return nil, errNotImpl("GetNPMVersionsByPackage")
 }
@@ -313,6 +316,9 @@ func (m *BaseMockDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepo
 func (m *BaseMockDB) RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error {
 	return errNotImpl("RemoveGroupMember")
 }
+func (m *BaseMockDB) ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error) {
+	return nil, errNotImpl("ListGroupMemberRepositories")
+}
 func (m *BaseMockDB) ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error) {
 	return nil, errNotImpl("ListGroupMembers")
 }
@@ -357,6 +363,9 @@ func (m *BaseMockDB) DeletePyPIPackage(ctx context.Context, repoID, name, versio
 }
 func (m *BaseMockDB) ListPyPIPackages(ctx context.Context, repoID string) ([]*models.PyPIPackage, error) {
 	return nil, errNotImpl("ListPyPIPackages")
+}
+func (m *BaseMockDB) ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error) {
+	return nil, errNotImpl("ListPyPIPackageNames")
 }
 func (m *BaseMockDB) ListPyPIPackageVersions(ctx context.Context, repoID, name string) ([]*models.PyPIPackage, error) {
 	return nil, errNotImpl("ListPyPIPackageVersions")

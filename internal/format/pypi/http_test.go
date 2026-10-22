@@ -12,6 +12,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"slices"
 	"strings"
 	"testing"
 
@@ -42,6 +43,23 @@ func (d *pypiDB) CreatePyPIPackage(_ context.Context, p *models.PyPIPackage) err
 
 func (d *pypiDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPackage, error) {
 	return d.pkgs, nil
+}
+
+func (d *pypiDB) ListPyPIPackageNames(_ context.Context, _ string) ([]string, error) {
+	return distinctPyPINames(d.pkgs), nil
+}
+
+// distinctPyPINames mirrors the ListPyPIPackageNames query: the distinct stored
+// names, sorted.
+func distinctPyPINames(pkgs []*models.PyPIPackage) []string {
+	names := make([]string, 0, len(pkgs))
+	for _, p := range pkgs {
+		names = append(names, p.Name)
+	}
+
+	slices.Sort(names)
+
+	return slices.Compact(names)
 }
 
 func (d *pypiDB) GetPyPIPackageByFilename(_ context.Context, _, filename string) (*models.PyPIPackage, error) {

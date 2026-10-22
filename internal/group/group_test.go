@@ -26,12 +26,14 @@ type groupDB struct {
 	repos map[string]*models.Repository
 }
 
-func (d *groupDB) ListGroupMembers(context.Context, string) ([]*models.RepositoryGroupMember, error) {
-	return d.links, nil
-}
+func (d *groupDB) ListGroupMemberRepositories(context.Context, string) ([]*models.Repository, error) {
+	repos := make([]*models.Repository, 0, len(d.links))
 
-func (d *groupDB) GetRepositoryByID(_ context.Context, id string) (*models.Repository, error) {
-	return d.repos[id], nil
+	for _, l := range d.links {
+		repos = append(repos, d.repos[l.MemberRepoID])
+	}
+
+	return repos, nil
 }
 
 // memberReply is what a fake member answers for a path.

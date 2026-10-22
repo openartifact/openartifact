@@ -32,12 +32,12 @@ func (m *mockSearcher) SearchRepositories(_ context.Context, _ SearchFilter, _, 
 	return m.repos, m.repoErr
 }
 
-func (m *mockSearcher) CountResults(_ context.Context, _ SearchFilter, _ map[uuid.UUID]struct{}) (int64, error) {
-	return m.count, m.err
-}
+func (m *mockSearcher) SearchPage(_ context.Context, _ SearchFilter, _, _ int, _ map[uuid.UUID]struct{}) ([]SearchResult, int64, error) {
+	if m.err != nil {
+		return nil, 0, m.err
+	}
 
-func (m *mockSearcher) Search(_ context.Context, _ SearchFilter, _, _ int, _ map[uuid.UUID]struct{}) ([]SearchResult, error) {
-	return m.results, m.err
+	return m.results, m.count, nil
 }
 
 func newTestHandler(t *testing.T, ms *mockSearcher) (*Handler, func()) {

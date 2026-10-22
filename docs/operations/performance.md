@@ -132,6 +132,15 @@ For each scenario this writes `<scenario>.{cpu,heap,allocs,mutex,block,goroutine
 
 Read and write timeouts default to 0 so large uploads and downloads are never cut off; slow-header protection comes from `SERVER_READ_HEADER_TIMEOUT` (default 20 s). The full list is in [`.env.example`](../../.env.example) and [`openartifact.example.yaml`](../../openartifact.example.yaml).
 
+### Database indexes and queries
+
+- Package search (`/api/v1/search`, the `name`/`version`/`description` filters) matches with `ILIKE '%term%'` and is served by GIN trigram indexes (`idx_*_trgm`, extension `pg_trgm`, created by migration `030`). If you restore a dump into a database without the extension, search falls back to sequential scans (correct, but 16-35x slower on 300k blobs and 250k package rows).
+- File-name lookups for deb, rpm and PyPI downloads use `(repository_id, filename)` indexes.
+- The proxy cache eviction deletes expired entries in batches of 2000 and skips the table scan entirely when nothing expired more than an hour ago.
+- The repository package listing (`GET /api/v1/repositories/{name}/packages`) counts the matching rows only when the page is full (or past the end); a short page, the common case for small repositories, derives `total` from the page itself. Large repositories still pay one `COUNT` per full page.
+- The npm worker computes the `latest` dist-tag from version numbers and a deprecation flag read in SQL, so a publish no longer loads every manifest of the package.
+- A group request resolves its members with one query instead of one per member.
+
 ### Auth lookup cache
 
 Every authenticated request looks up its token, user, groups, permission targets and the repository by name. `DB_AUTH_CACHE_TTL_MS` keeps those results in memory for that many milliseconds (default 2000), saving several database round trips per request. `0` disables the cache.

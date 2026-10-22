@@ -32,6 +32,7 @@ DELETE FROM proxy_cache_entries e
 USING repositories r
 WHERE r.id = e.repository_id
   AND r.deleted_at IS NULL
+  AND e.expires_at < now()
   AND e.expires_at < now() - CASE
       WHEN e.blob_key IS NOT NULL THEN COALESCE(r.max_stale_seconds, 0) * interval '1 second'
       ELSE interval '0'
@@ -40,6 +41,9 @@ WHERE r.id = e.repository_id
 
 // Cached files stay past their expiry for the repository's max_stale_seconds so
 // they can still be served when the upstream is down; negative entries do not.
+// The plain expires_at < now() is the sargable bound every deletable row meets
+// (the CASE only subtracts more): it lets the planner use idx_proxy_cache_expires
+// instead of scanning the whole table.
 func (q *Queries) DeleteExpiredProxyCacheEntries(ctx context.Context) (int64, error) {
 	result, err := q.db.Exec(ctx, deleteExpiredProxyCacheEntries)
 	if err != nil {

@@ -20,8 +20,9 @@ import (
 )
 
 type Searcher interface {
-	CountResults(ctx context.Context, filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (int64, error)
-	Search(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]SearchResult, error)
+	// SearchPage returns one page of results and the number of matches (capped
+	// at MaxSearchResults+1) from a single scan.
+	SearchPage(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]SearchResult, int64, error)
 	SearchRepositories(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]RepositoryResult, error)
 }
 
@@ -109,9 +110,9 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	count, err := h.searcher.CountResults(ctx, filter, readableRepos)
+	results, count, err := h.searcher.SearchPage(ctx, filter, limit, offset, readableRepos)
 	if err != nil {
-		h.log.Errorw("search count failed", "error", err)
+		h.log.Errorw("search failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "search failed")
 
 		return
@@ -119,14 +120,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if count > MaxSearchResults {
 		writeJSONError(w, http.StatusBadRequest, "query_too_broad", "query too broad; add more filters")
-		return
-	}
-
-	results, err := h.searcher.Search(ctx, filter, limit, offset, readableRepos)
-	if err != nil {
-		h.log.Errorw("search failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal_error", "search failed")
-
 		return
 	}
 

@@ -187,7 +187,7 @@ func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	packages, err := h.DB.ListPyPIPackages(r.Context(), repo.ID)
+	storedNames, err := h.DB.ListPyPIPackageNames(r.Context(), repo.ID)
 	if err != nil {
 		h.Log.Errorw("failed to list packages", "repo", repoName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -195,13 +195,13 @@ func (h *HTTPHandler) handleSimpleIndex(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Build unique package names
-	seen := make(map[string]bool)
+	// Stored names are distinct but not necessarily normalized (legacy rows),
+	// so two of them can collapse to one project.
+	seen := make(map[string]bool, len(storedNames))
+	uniqueNames := make([]string, 0, len(storedNames))
 
-	var uniqueNames []string
-
-	for _, pkg := range packages {
-		normalized := normalizePyPIName(pkg.Name)
+	for _, name := range storedNames {
+		normalized := normalizePyPIName(name)
 		if !seen[normalized] {
 			seen[normalized] = true
 			uniqueNames = append(uniqueNames, normalized)

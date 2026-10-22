@@ -47,8 +47,16 @@ func (d *fakeDB) GetRepositoryByID(_ context.Context, id string) (*models.Reposi
 	return nil, nil
 }
 
-func (d *fakeDB) ListGroupMembers(_ context.Context, id string) ([]*models.RepositoryGroupMember, error) {
-	return d.links[id], nil
+func (d *fakeDB) ListGroupMemberRepositories(ctx context.Context, id string) ([]*models.Repository, error) {
+	var repos []*models.Repository
+
+	for _, l := range d.links[id] {
+		if r, _ := d.GetRepositoryByID(ctx, l.MemberRepoID); r != nil {
+			repos = append(repos, r)
+		}
+	}
+
+	return repos, nil
 }
 
 func (d *fakeDB) GetProxyCacheEntry(_ context.Context, repoID, key string) (*models.ProxyCacheEntry, error) {

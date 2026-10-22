@@ -358,19 +358,14 @@ func (p *PostgresDB) ListComponentsByRepo(ctx context.Context, repoID, formatFil
 // SearchComponents is ListComponentsByRepo with the extra filters and the
 // ordering of ComponentListOptions.
 func (p *PostgresDB) SearchComponents(ctx context.Context, repoID string, opts ComponentListOptions) ([]*models.Component, int, error) {
-	total, err := p.q.CountRepoComponents(ctx, dbsqlc.CountRepoComponentsParams{
-		RepoID:       repoID,
-		FormatFilter: opts.Format,
-		NameFilter:   opts.Name,
-		Q:            opts.Query,
-	})
-	if err != nil {
-		return nil, 0, fmt.Errorf("failed to count packages: %w", err)
-	}
-
 	rows, err := p.listComponentRows(ctx, repoID, opts)
 	if err != nil {
 		return nil, 0, fmt.Errorf("failed to list packages: %w", err)
+	}
+
+	total, err := p.componentTotal(ctx, repoID, opts, len(rows))
+	if err != nil {
+		return nil, 0, err
 	}
 
 	components := make([]*models.Component, 0, len(rows))
@@ -395,7 +390,30 @@ func (p *PostgresDB) SearchComponents(ctx context.Context, repoID string, opts C
 		})
 	}
 
-	return components, int(total), nil
+	return components, total, nil
+}
+
+// componentTotal is the number of rows the listing matches in total. A page
+// that came back neither full nor (past the first page) empty already ends the
+// listing, so its size gives the total without scanning the repository again;
+// only a full page, or an empty page past the end, needs CountRepoComponents.
+func (p *PostgresDB) componentTotal(ctx context.Context, repoID string, opts ComponentListOptions, pageRows int) (int, error) {
+	offset := (opts.Page - 1) * opts.Limit
+	if opts.Limit > 0 && opts.Page > 0 && pageRows < opts.Limit && (pageRows > 0 || offset == 0) {
+		return offset + pageRows, nil
+	}
+
+	total, err := p.q.CountRepoComponents(ctx, dbsqlc.CountRepoComponentsParams{
+		RepoID:       repoID,
+		FormatFilter: opts.Format,
+		NameFilter:   opts.Name,
+		Q:            opts.Query,
+	})
+	if err != nil {
+		return 0, fmt.Errorf("failed to count packages: %w", err)
+	}
+
+	return int(total), nil
 }
 
 // componentRow is the row shape shared by ListRepoComponents and
@@ -1568,6 +1586,20 @@ func (p *PostgresDB) GetNPMVersionsByPackage(ctx context.Context, packageID stri
 	return versions, nil
 }
 
+func (p *PostgresDB) GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error) {
+	rows, err := p.q.GetNPMVersionStates(ctx, packageID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to query npm version states: %w", err)
+	}
+
+	states := make([]models.NPMVersionState, len(rows))
+	for i, row := range rows {
+		states[i] = models.NPMVersionState{Version: row.Version, Deprecated: row.Deprecated}
+	}
+
+	return states, nil
+}
+
 func (p *PostgresDB) UpdateNPMPackageLatestVersion(ctx context.Context, packageID, latestVersion string) error {
 	if err := p.q.UpdateNPMPackageLatestVersion(ctx, dbsqlc.UpdateNPMPackageLatestVersionParams{
 		ID:            packageID,
@@ -2019,6 +2051,40 @@ func (p *PostgresDB) ListGroupMembers(ctx context.Context, groupRepoID string) (
 	return members, nil
 }
 
+func (p *PostgresDB) ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error) {
+	rows, err := p.db.QueryContext(ctx, `
+		WITH links AS (
+			SELECT member_repo_id, priority, created_at AS linked_at
+			FROM repository_group_members WHERE group_repo_id = $1
+		)
+		SELECT `+repoColumns+`
+		FROM repositories JOIN links ON links.member_repo_id = repositories.id
+		WHERE repositories.deleted_at IS NULL
+		ORDER BY links.priority, links.linked_at, links.member_repo_id`, groupRepoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list group member repositories: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var repos []*models.Repository
+
+	for rows.Next() {
+		r := &models.Repository{}
+		if err := rows.Scan(repoScanDest(r)...); err != nil {
+			return nil, fmt.Errorf("failed to scan group member repository: %w", err)
+		}
+
+		repos = append(repos, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list group member repositories: %w", err)
+	}
+
+	return repos, nil
+}
+
 func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey string) (*models.ProxyCacheEntry, error) {
 	row, err := p.q.GetProxyCacheEntry(ctx, dbsqlc.GetProxyCacheEntryParams{
 		RepositoryID: repoID,
@@ -2463,6 +2529,15 @@ func (p *PostgresDB) ListPyPIPackages(ctx context.Context, repoID string) ([]*mo
 	}
 
 	return packages, nil
+}
+
+func (p *PostgresDB) ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error) {
+	names, err := p.q.ListPyPIPackageNames(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list pypi package names: %w", err)
+	}
+
+	return names, nil
 }
 
 func (p *PostgresDB) ListPyPIPackageVersions(ctx context.Context, repoID, name string) ([]*models.PyPIPackage, error) {

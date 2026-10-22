@@ -35,6 +35,13 @@ type NPMVersion struct {
 	CreatedAt     time.Time
 }
 
+// NPMVersionState is the part of a live npm version that decides the "latest"
+// dist-tag: its number and whether its manifest carries a deprecation message.
+type NPMVersionState struct {
+	Version    string
+	Deprecated bool
+}
+
 type NPMDistTag struct {
 	ID        string
 	PackageID string

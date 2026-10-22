@@ -153,9 +153,11 @@ func unifiedSearchBranches() []string {
 	}
 }
 
-// CountResults returns how many rows the filter matches, scoped to the
-// caller's readable repositories. An empty readableRepos set (no permission
-// on anything) always yields 0 — it must never fall back to counting all rows.
+// CountResults returns how many rows the filter matches (capped at
+// MaxSearchResults+1), scoped to the caller's readable repositories. An empty
+// readableRepos set (no permission on anything) always yields 0 — it must never
+// fall back to counting all rows. SearchPage already returns the count with its
+// page; this stands alone for the one case that cannot (a page past the end).
 func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (int64, error) {
 	if len(readableRepos) == 0 {
 		return 0, nil
@@ -176,6 +178,7 @@ func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readab
 	q := `SELECT COUNT(*) FROM (` + inner + ` LIMIT ` + strconv.Itoa(MaxSearchResults+1) + `) AS c`
 
 	var count int64
+	//nolint:gosec // G701: see G201 in runSearch, q holds constant fragments and $n placeholders only
 	if err := e.db.QueryRowContext(ctx, q, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count query: %w", err)
 	}
@@ -205,8 +208,53 @@ func (e *Executor) Search(
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 ) ([]SearchResult, error) {
+	results, _, err := e.runSearch(ctx, filter, limit, offset, readableRepos, false)
+
+	return results, err
+}
+
+// SearchPage is Search plus the number of matches, from one scan of the union.
+// The matches are read once, capped at MaxSearchResults+1 rows (a total above
+// MaxSearchResults is only ever used to reject the query), and both the page
+// and the count come from that set; a count query beside a page query would
+// scan the union twice. When the total exceeds MaxSearchResults the returned
+// page is an arbitrary slice of the capped set and must be discarded by the
+// caller. A page past the last match carries no row to read the total from, so
+// that one case asks for it separately.
+func (e *Executor) SearchPage(
+	ctx context.Context,
+	filter SearchFilter,
+	limit, offset int,
+	readableRepos map[uuid.UUID]struct{},
+) ([]SearchResult, int64, error) {
+	results, total, err := e.runSearch(ctx, filter, limit, offset, readableRepos, true)
+	if err != nil {
+		return nil, 0, err
+	}
+
+	if len(results) == 0 && offset > 0 && len(readableRepos) > 0 {
+		total, err = e.CountResults(ctx, filter, readableRepos)
+		if err != nil {
+			return nil, 0, err
+		}
+	}
+
+	return results, total, nil
+}
+
+// runSearch builds and runs the staged page query. With capped the page is
+// taken from the at most MaxSearchResults+1 matching rows and every returned
+// row carries their count; otherwise the page is the newest rows of all
+// matches and the count is 0.
+func (e *Executor) runSearch(
+	ctx context.Context,
+	filter SearchFilter,
+	limit, offset int,
+	readableRepos map[uuid.UUID]struct{},
+	capped bool,
+) ([]SearchResult, int64, error) {
 	if len(readableRepos) == 0 {
-		return nil, nil
+		return nil, 0, nil
 	}
 
 	where, args := buildWhereClause(filter, readableRepos)
@@ -217,15 +265,39 @@ func (e *Executor) Search(
 
 	source, joinRepo := searchSource(filter)
 
-	//nolint:gosec // G201: every formatted fragment is a constant or built from constants; user values are bound $n arguments
-	q := fmt.Sprintf(`WITH page AS (
-		SELECT s.repository_id, s.format, s.name, s.version, s.created_at, s.id, s.path,
+	const pageColumns = `repository_id, format, name, version, created_at, id, path,
+			group_id, artifact_id_coord, scope, blob_id, manifest_image, manifest_digest`
+
+	matches := fmt.Sprintf(`SELECT s.repository_id, s.format, s.name, s.version, s.created_at, s.id, s.path,
 			s.group_id, s.artifact_id_coord, s.scope, s.blob_id, s.manifest_image, s.manifest_digest
 		FROM %s AS s%s
+		%s`, source, repoJoin(joinRepo), whereClause(where))
+
+	var pageCTE, totalExpr string
+
+	if capped {
+		// The window count is evaluated before ORDER BY/LIMIT, over the capped set.
+		pageCTE = fmt.Sprintf(`WITH matched AS MATERIALIZED (
+		%s
+		LIMIT %d
+	), page AS (
+		SELECT %s, count(*) OVER () AS total
+		FROM matched
+		ORDER BY created_at DESC, id
+		LIMIT $%d OFFSET $%d
+	)`, matches, MaxSearchResults+1, pageColumns, limitN, offsetN)
+		totalExpr = "p.total"
+	} else {
+		pageCTE = fmt.Sprintf(`WITH page AS (
 		%s
 		ORDER BY s.created_at DESC, s.id
 		LIMIT $%d OFFSET $%d
-	)
+	)`, matches, limitN, offsetN)
+		totalExpr = "0::bigint"
+	}
+
+	//nolint:gosec // G201: every formatted fragment is a constant or built from constants; user values are bound $n arguments
+	q := fmt.Sprintf(`%s
 	SELECT
 		p.repository_id,
 		r.name AS repository,
@@ -238,29 +310,30 @@ func (e *Executor) Search(
 		p.created_at,
 		p.group_id,
 		p.artifact_id_coord,
-		p.scope
+		p.scope,
+		%s AS total
 	FROM page AS p
 	JOIN repositories r ON r.id = p.repository_id AND r.deleted_at IS NULL
 	%s
 	ORDER BY p.created_at DESC, p.id`,
-		source,
-		repoJoin(joinRepo),
-		whereClause(where),
-		limitN,
-		offsetN,
+		pageCTE,
 		searchSHA256Expr,
 		searchSizeExpr,
+		totalExpr,
 		fmt.Sprintf(searchBlobJoins, "p"),
 	)
 
 	//nolint:gosec // G701: see G201 above, q contains placeholders only
 	rows, err := e.db.QueryContext(ctx, q, args...)
 	if err != nil {
-		return nil, fmt.Errorf("search query: %w", err)
+		return nil, 0, fmt.Errorf("search query: %w", err)
 	}
 	defer func() { _ = rows.Close() }()
 
-	var results []SearchResult
+	var (
+		results []SearchResult
+		total   int64
+	)
 
 	for rows.Next() {
 		var (
@@ -272,8 +345,8 @@ func (e *Executor) Search(
 		)
 
 		if err := rows.Scan(&repoIDRaw, &sr.Repository, &sr.Format, &sr.Name, &sr.Version,
-			&sr.Path, &sr.SHA256, &sr.Size, &sr.CreatedAt, &groupID, &artifactID, &scope); err != nil {
-			return nil, fmt.Errorf("scan search result: %w", err)
+			&sr.Path, &sr.SHA256, &sr.Size, &sr.CreatedAt, &groupID, &artifactID, &scope, &total); err != nil {
+			return nil, 0, fmt.Errorf("scan search result: %w", err)
 		}
 
 		repoID, err := uuid.Parse(repoIDRaw)
@@ -301,7 +374,7 @@ func (e *Executor) Search(
 		results = append(results, sr)
 	}
 
-	return results, rows.Err()
+	return results, total, rows.Err()
 }
 
 // SearchRepositories returns the repositories themselves whose name matches the

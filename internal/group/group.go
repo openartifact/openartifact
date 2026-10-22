@@ -147,20 +147,15 @@ func authPath(format string, m *models.Repository, relPath string) string {
 // members returns grp's members in priority order. Members that cannot be
 // served from a group (nested groups, a different format) are skipped.
 func (h *Handler) members(r *http.Request, grp *models.Repository) ([]*models.Repository, error) {
-	links, err := h.db.ListGroupMembers(r.Context(), grp.ID)
+	repos, err := h.db.ListGroupMemberRepositories(r.Context(), grp.ID)
 	if err != nil {
 		return nil, err //nolint:wrapcheck // caller logs
 	}
 
-	out := make([]*models.Repository, 0, len(links))
+	out := make([]*models.Repository, 0, len(repos))
 
-	for _, l := range links {
-		m, err := h.db.GetRepositoryByID(r.Context(), l.MemberRepoID)
-		if err != nil {
-			return nil, err //nolint:wrapcheck // caller logs
-		}
-
-		if m == nil || m.RepoType == repotype.Group || m.Format != grp.Format || m.Blocked {
+	for _, m := range repos {
+		if m.RepoType == repotype.Group || m.Format != grp.Format || m.Blocked {
 			continue
 		}
 

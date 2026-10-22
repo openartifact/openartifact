@@ -6,7 +6,6 @@ package worker
 
 import (
 	"context"
-	"encoding/json"
 	"fmt"
 	"strconv"
 	"testing"
@@ -225,20 +224,13 @@ func BenchmarkMavenRegenerate(b *testing.B) {
 	}
 }
 
-func benchWorkerNPMVersions(n int) []*models.NPMVersion {
-	versions := make([]*models.NPMVersion, n)
+func benchWorkerNPMVersions(n int) []models.NPMVersionState {
+	versions := make([]models.NPMVersionState, n)
 
 	for i := range versions {
-		manifest, _ := json.Marshal(map[string]any{
-			"name":         "example",
-			"version":      "1.0.0",
-			"dependencies": map[string]string{"lodash": "^4.17.21", "express": "^4.18.2"},
-			"dist":         map[string]string{"shasum": "x"},
-		})
-
-		versions[i] = &models.NPMVersion{
-			Version:      fmt.Sprintf("%d.%d.%d", i/10000, (i/100)%100, i%100),
-			ManifestJSON: manifest,
+		versions[i] = models.NPMVersionState{
+			Version:    fmt.Sprintf("%d.%d.%d", i/10000, (i/100)%100, i%100),
+			Deprecated: i%7 == 0,
 		}
 	}
 

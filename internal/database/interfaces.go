@@ -131,6 +131,9 @@ type Database interface {
 	CreateNPMVersion(ctx context.Context, v *models.NPMVersion) (*models.NPMVersion, error)
 	GetNPMVersion(ctx context.Context, packageID, version string) (*models.NPMVersion, error)
 	GetNPMVersionsByPackage(ctx context.Context, packageID string) ([]*models.NPMVersion, error)
+	// GetNPMVersionStates returns number and deprecation of every live version
+	// of the package, without the manifests.
+	GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error)
 	// UpdateNPMVersionManifest replaces the stored manifest of a live version
 	// (used for `npm deprecate`).
 	UpdateNPMVersionManifest(ctx context.Context, packageID, version string, manifest []byte) error
@@ -188,6 +191,9 @@ type Database interface {
 	AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error
 	RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error
 	ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error)
+	// ListGroupMemberRepositories returns the live member repositories of a
+	// group in priority order (the order of ListGroupMembers) in one query.
+	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
 	// ReplaceGroupMembers atomically replaces a group's ordered member list (empty clears it).
 	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
 	// CreateRepositoryWithMembers creates a repository and its group members in one transaction.
@@ -219,6 +225,9 @@ type Database interface {
 	GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error)
 	DeletePyPIPackage(ctx context.Context, repoID, name, version, filename string) error
 	ListPyPIPackages(ctx context.Context, repoID string) ([]*models.PyPIPackage, error)
+	// ListPyPIPackageNames returns the distinct stored project names of a
+	// repository, sorted, without loading any file row.
+	ListPyPIPackageNames(ctx context.Context, repoID string) ([]string, error)
 	ListPyPIPackageVersions(ctx context.Context, repoID, name string) ([]*models.PyPIPackage, error)
 
 	// NuGet methods

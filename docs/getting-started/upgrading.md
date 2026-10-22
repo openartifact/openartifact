@@ -85,6 +85,18 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Next release: database indexes and the `pg_trgm` extension
+
+Migration `030` needs the PostgreSQL `pg_trgm` extension (`CREATE EXTENSION IF NOT EXISTS pg_trgm`). It is a trusted extension since PostgreSQL 13, so the database owner can create it; it ships in the official `postgres` images and in the `postgresql-contrib` package of distributions that split it. On a managed service, allow-list it first, or run `CREATE EXTENSION pg_trgm` as an administrator before the upgrade. Without it the migration fails and the server exits at startup.
+
+What changes:
+
+- The transactional part creates the extension; the no-transaction part `030_perf_indexes_build` builds the indexes with `CREATE INDEX CONCURRENTLY` (reads and writes continue; on a very large database the trigram indexes take minutes). A build interrupted midway leaves an invalid index that the next start drops and rebuilds.
+- New: `(repository_id, filename)` indexes on `deb_packages`, `rpm_packages` and `pypi_packages` (pool and file downloads were sequential scans), a partial expression index for PyPI names stored with `--`, 16 trigram indexes behind package search, and indexes for the foreign keys `deb_packages.component_id`, `auth_user_groups.group_id` and `repository_group_members.member_repo_id`.
+- Dropped: the duplicate indexes `idx_blobs_sha256`, `idx_proxy_cache_repository_key` and `idx_vuln_results_scan_job`, which a unique or primary index already covers.
+- The proxy cache eviction and the retention cleanup now work in batches (2000 expired cache entries, 200 package versions per round trip), so one long run no longer rolls back as a whole when it hits its timeout.
+- `GET /api/v1/search` answers from one query (total and page together). Behavior is unchanged: a query matching more than 10000 rows is still `400 query_too_broad`.
+
 ### Next release: groups hide proxy versions of hosted package names
 
 Migration `029` adds `repositories.merge_proxy_versions` (`boolean NOT NULL DEFAULT false`).

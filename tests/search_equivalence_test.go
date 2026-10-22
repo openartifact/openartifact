@@ -236,12 +236,29 @@ func TestSearchMatchesLegacyQuery(t *testing.T) {
 						t.Fatalf("page differs:\n got  %+v\n want %+v", got, want)
 					}
 
+					wantCount := legacySearchCount(t, pg, c, ids)
+
+					// SearchPage: same page and the total from one scan, also
+					// for pages past the end.
+					gotPage, gotTotal, err := exec.SearchPage(context.Background(), c.filter, page.limit, page.offset, readable)
+					if err != nil {
+						t.Fatalf("SearchPage: %v", err)
+					}
+
+					if fmt.Sprintf("%+v", gotPage) != fmt.Sprintf("%+v", want) {
+						t.Fatalf("SearchPage page differs:\n got  %+v\n want %+v", gotPage, want)
+					}
+
+					if gotTotal != wantCount {
+						t.Fatalf("SearchPage total = %d, legacy %d", gotTotal, wantCount)
+					}
+
 					gotCount, err := exec.CountResults(context.Background(), c.filter, readable)
 					if err != nil {
 						t.Fatalf("CountResults: %v", err)
 					}
 
-					if wantCount := legacySearchCount(t, pg, c, ids); gotCount != wantCount {
+					if gotCount != wantCount {
 						t.Fatalf("count = %d, legacy %d", gotCount, wantCount)
 					}
 				})

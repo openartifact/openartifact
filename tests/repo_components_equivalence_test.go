@@ -342,3 +342,32 @@ func TestSearchComponentsSortByName(t *testing.T) {
 		t.Fatalf("q+sort: total=%d len=%d err=%v first=%v", total, len(rows), err, rows)
 	}
 }
+
+// TestSearchComponentsTotalAcrossPages: the total is the same whichever page
+// is asked for, including the short last page and pages past the end (where it
+// is derived from the page itself or counted, depending on the page).
+func TestSearchComponentsTotalAcrossPages(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	repo := seedEquivalenceRepo(t, pg)
+	ctx := context.Background()
+
+	for _, format := range []string{"", "maven", "rpm", "npm"} {
+		want := len(legacyList(t, pg, repo, format, 1, 100000))
+		if want == 0 {
+			t.Fatalf("format %q: seed has no rows", format)
+		}
+
+		for _, limit := range []int{1, 7, want, want + 1} {
+			for page := 1; page <= want/limit+2; page++ {
+				_, total, err := pg.SearchComponents(ctx, repo, database.ComponentListOptions{Format: format, Page: page, Limit: limit})
+				if err != nil {
+					t.Fatalf("format=%q limit=%d page=%d: %v", format, limit, page, err)
+				}
+
+				if total != want {
+					t.Fatalf("format=%q limit=%d page=%d: total = %d, want %d", format, limit, page, total, want)
+				}
+			}
+		}
+	}
+}

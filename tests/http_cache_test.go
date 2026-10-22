@@ -46,6 +46,17 @@ func (d *cacheDB) ListPyPIPackages(context.Context, string) ([]*models.PyPIPacka
 	return d.pypi, nil
 }
 
+func (d *cacheDB) ListPyPIPackageNames(context.Context, string) ([]string, error) {
+	names := make([]string, 0, len(d.pypi))
+	for _, p := range d.pypi {
+		names = append(names, p.Name)
+	}
+
+	slices.Sort(names)
+
+	return slices.Compact(names), nil
+}
+
 func (d *cacheDB) ListPyPIPackageVersions(_ context.Context, _, name string) ([]*models.PyPIPackage, error) {
 	var out []*models.PyPIPackage
 

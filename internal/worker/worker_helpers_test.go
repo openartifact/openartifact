@@ -5,7 +5,6 @@
 package worker
 
 import (
-	"encoding/json"
 	"testing"
 	"time"
 
@@ -40,49 +39,10 @@ func TestCompareSemver(t *testing.T) {
 	}
 }
 
-// ---- isDeprecated ----
-
-func TestIsDeprecated_False(t *testing.T) {
-	if isDeprecated(nil) {
-		t.Error("nil manifest should not be deprecated")
-	}
-
-	if isDeprecated([]byte(`{}`)) {
-		t.Error("empty object should not be deprecated")
-	}
-
-	manifest, _ := json.Marshal(map[string]any{"name": "foo"})
-	if isDeprecated(manifest) {
-		t.Error("manifest without 'deprecated' should not be deprecated")
-	}
-}
-
-func TestIsDeprecated_True(t *testing.T) {
-	manifest, _ := json.Marshal(map[string]any{"deprecated": "use bar instead"})
-	if !isDeprecated(manifest) {
-		t.Error("manifest with non-empty 'deprecated' should be deprecated")
-	}
-}
-
-func TestIsDeprecated_EmptyString(t *testing.T) {
-	// deprecated="" means NOT deprecated
-	manifest, _ := json.Marshal(map[string]any{"deprecated": ""})
-	if isDeprecated(manifest) {
-		t.Error("manifest with empty 'deprecated' string should not be deprecated")
-	}
-}
-
 // ---- computeLatestVersion ----
 
-func makeVersion(v string, deprecated bool) *models.NPMVersion {
-	m := map[string]any{}
-	if deprecated {
-		m["deprecated"] = "old"
-	}
-
-	b, _ := json.Marshal(m)
-
-	return &models.NPMVersion{Version: v, ManifestJSON: b}
+func makeVersion(v string, deprecated bool) models.NPMVersionState {
+	return models.NPMVersionState{Version: v, Deprecated: deprecated}
 }
 
 func TestComputeLatestVersion_Empty(t *testing.T) {
@@ -93,7 +53,7 @@ func TestComputeLatestVersion_Empty(t *testing.T) {
 }
 
 func TestComputeLatestVersion_PicksHighest(t *testing.T) {
-	versions := []*models.NPMVersion{
+	versions := []models.NPMVersionState{
 		makeVersion("1.0.0", false),
 		makeVersion("2.0.0", false),
 		makeVersion("1.5.0", false),
@@ -106,7 +66,7 @@ func TestComputeLatestVersion_PicksHighest(t *testing.T) {
 }
 
 func TestComputeLatestVersion_SkipsDeprecated(t *testing.T) {
-	versions := []*models.NPMVersion{
+	versions := []models.NPMVersionState{
 		makeVersion("1.0.0", false),
 		makeVersion("3.0.0", true), // deprecated — should be skipped
 		makeVersion("2.0.0", false),
@@ -120,7 +80,7 @@ func TestComputeLatestVersion_SkipsDeprecated(t *testing.T) {
 
 func TestComputeLatestVersion_AllDeprecated(t *testing.T) {
 	// Falls back to highest even if all are deprecated
-	versions := []*models.NPMVersion{
+	versions := []models.NPMVersionState{
 		makeVersion("1.0.0", true),
 		makeVersion("3.0.0", true),
 	}
@@ -190,7 +150,7 @@ func TestShouldRunPolicy_InvalidCronFallsBackTo24h(t *testing.T) {
 }
 
 func TestComputeLatestVersion_PrereleaseNeverWins(t *testing.T) {
-	versions := []*models.NPMVersion{
+	versions := []models.NPMVersionState{
 		{Version: "1.9.0"},
 		{Version: "99.0.0-0"},
 		{Version: "1.8.0"},
@@ -200,7 +160,7 @@ func TestComputeLatestVersion_PrereleaseNeverWins(t *testing.T) {
 		t.Fatalf("latest = %q, want 1.9.0", got)
 	}
 
-	if got := computeLatestVersion([]*models.NPMVersion{{Version: "1.0.0-beta"}}); got != "1.0.0-beta" {
+	if got := computeLatestVersion([]models.NPMVersionState{{Version: "1.0.0-beta"}}); got != "1.0.0-beta" {
 		t.Fatalf("only prerelease: latest = %q", got)
 	}
 }

@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"context"
 	"database/sql"
+	"encoding/json"
 	"fmt"
 	"io"
 	"maps"
@@ -612,6 +613,31 @@ func (m *MockDatabase) GetNPMVersionsByPackage(ctx context.Context, packageID st
 	}
 
 	return result, nil
+}
+
+func (m *MockDatabase) GetNPMVersionStates(ctx context.Context, packageID string) ([]models.NPMVersionState, error) {
+	versions, _ := m.GetNPMVersionsByPackage(ctx, packageID)
+
+	return npmVersionStates(versions), nil
+}
+
+// npmVersionStates is what GetNPMVersionStates reads in SQL: the version and
+// whether its manifest has a non-empty string "deprecated".
+func npmVersionStates(versions []*models.NPMVersion) []models.NPMVersionState {
+	states := make([]models.NPMVersionState, 0, len(versions))
+
+	for _, v := range versions {
+		var manifest struct {
+			Deprecated any `json:"deprecated"`
+		}
+
+		_ = json.Unmarshal(v.ManifestJSON, &manifest)
+		msg, _ := manifest.Deprecated.(string)
+
+		states = append(states, models.NPMVersionState{Version: v.Version, Deprecated: msg != ""})
+	}
+
+	return states
 }
 
 func (m *MockDatabase) UpdateNPMVersionManifest(ctx context.Context, packageID, version string, manifest []byte) error {

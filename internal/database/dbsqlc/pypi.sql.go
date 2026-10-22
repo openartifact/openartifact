@@ -227,6 +227,35 @@ func (q *Queries) GetPyPIPackagesByFilename(ctx context.Context, arg GetPyPIPack
 	return items, nil
 }
 
+const listPyPIPackageNames = `-- name: ListPyPIPackageNames :many
+SELECT DISTINCT name::text AS name
+FROM pypi_packages
+WHERE repository_id = $1 AND deleted_at IS NULL
+ORDER BY name
+`
+
+// Distinct stored project names of a repository, for the /simple/ root. No blob
+// join and no per-file columns: the page needs the names only.
+func (q *Queries) ListPyPIPackageNames(ctx context.Context, repositoryID string) ([]string, error) {
+	rows, err := q.db.Query(ctx, listPyPIPackageNames, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []string{}
+	for rows.Next() {
+		var name string
+		if err := rows.Scan(&name); err != nil {
+			return nil, err
+		}
+		items = append(items, name)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
 const listPyPIPackageVersions = `-- name: ListPyPIPackageVersions :many
 SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at
 FROM pypi_packages pp
@@ -263,6 +292,9 @@ type ListPyPIPackageVersionsRow struct {
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// The second arm finds legacy rows stored with a "--" run in their name; it is
+// served by the partial expression index idx_pypi_packages_legacy_name, so the
+// OR resolves to a BitmapOr of two index scans, never a table scan.
 func (q *Queries) ListPyPIPackageVersions(ctx context.Context, arg ListPyPIPackageVersionsParams) ([]ListPyPIPackageVersionsRow, error) {
 	rows, err := q.db.Query(ctx, listPyPIPackageVersions, arg.RepositoryID, arg.Name)
 	if err != nil {
