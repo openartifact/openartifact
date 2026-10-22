@@ -1,3 +1,9 @@
+<!--
+SPDX-FileCopyrightText: The OpenArtifact Authors
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+
 <template>
   <div class="space-y-5">
     <!-- Loading skeleton -->
