@@ -67,15 +67,18 @@ type AnalysisResult struct {
 	QuarantineRecommended bool     `json:"quarantine_recommended"`
 }
 
-// UsageInfo holds token usage from the API response.
+// UsageInfo holds token usage and the serving model from the API response.
 type UsageInfo struct {
 	PromptTokens     int
 	CompletionTokens int
+	// Model is the model the provider reports having served the request
+	// (e.g. a dated snapshot), or the configured model when it reports none.
+	Model string
 }
 
 // Config holds AI client configuration.
 type Config struct {
-	Provider     string // "openai", "azure", "ollama"
+	Provider     string // "openai", "azure", "ollama", "custom" (any OpenAI-compatible endpoint; BaseURL required)
 	BaseURL      string // override endpoint
 	APIKey       string
 	Model        string
@@ -97,8 +100,10 @@ func NewClient(cfg Config) *Client {
 	baseURL := cfg.BaseURL
 	if baseURL == "" {
 		switch cfg.Provider {
-		case "azure":
-			// Azure requires BaseURL to be set explicitly
+		case "azure", "custom":
+			// Azure and custom endpoints require BaseURL to be set explicitly;
+			// leaving it empty fails at request time instead of silently
+			// sending the key to api.openai.com.
 			baseURL = cfg.BaseURL
 		case "ollama":
 			baseURL = "http://localhost:11434/v1"
@@ -131,6 +136,9 @@ func NewClient(cfg Config) *Client {
 	}
 }
 
+// Model returns the configured model name.
+func (c *Client) Model() string { return c.cfg.Model }
+
 // chatRequest is the OpenAI chat completions request body.
 type chatRequest struct {
 	Model       string        `json:"model"`
@@ -145,6 +153,7 @@ type chatMessage struct {
 }
 
 type chatResponse struct {
+	Model   string `json:"model"`
 	Choices []struct {
 		Message struct {
 			Content string `json:"content"`
@@ -252,6 +261,12 @@ func (c *Client) Analyze(ctx context.Context, manifestText string) (*AnalysisRes
 	usage := &UsageInfo{
 		PromptTokens:     chatResp.Usage.PromptTokens,
 		CompletionTokens: chatResp.Usage.CompletionTokens,
+		Model:            c.cfg.Model,
+	}
+
+	// The response is untrusted input: bound the reported model name.
+	if m := strings.TrimSpace(chatResp.Model); m != "" {
+		usage.Model = truncateUTF8(m, 200)
 	}
 
 	return &result, usage, nil

@@ -52,7 +52,7 @@ Give the agent a token whose permission targets cover only the repositories it s
 | `search_artifacts(query, repository?, format?)` | case-insensitive substring match on name, version, arch and filename over *recent* packages only: the newest 50 of one repository, or the newest 20 of each readable repository, stopping at 50 hits. Not a full-text index; use `GET /api/v1/search` for that |
 | `list_ai_analyses(repository_id, status?, license_concern?, limit?, offset?)` | stored AI analyses of a repository; `status` is `pending`, `processing`, `completed` or `failed`; `limit` default 20, max 100. `license_concern` is declared in the schema but not applied by the server |
 | `get_artifact_analysis(repository_id, artifact_id)` | one stored AI analysis |
-| `trigger_ai_analysis(repository_id, artifact_id, artifact_format, manifest_text, artifact_name?, artifact_version?)` | queue an analysis; `manifest_text` max 64 KiB; returns `queued` immediately and the result appears asynchronously |
+| `trigger_ai_analysis(repository_id, artifact_id, manifest_text?, artifact_format?, artifact_name?, artifact_version?)` | queue an analysis; without `manifest_text` (max 64 KiB) the server reads the manifest from the stored artifact; returns `queued` immediately and the result appears asynchronously |
 
 The three AI tools take the repository **UUID** (`repository_id`), not its name, and `artifact_id` is the package/component ID. They only produce results when AI analysis is enabled; see [AI analysis](ai-analysis.md).
 

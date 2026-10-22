@@ -119,7 +119,8 @@ backup:
 
 ai:
   enabled: false
-  provider: "openai"   # openai | azure | vertex | ollama
+  autoAnalyze: false   # analyse every upload automatically; off = only on request (UI/API/MCP)
+  provider: "openai"   # openai | azure | ollama | custom (custom needs baseUrl)
   # baseUrl: "https://api.openai.com/v1"
   # apiKey: "CHANGE_ME"
   model: "gpt-4o-mini"

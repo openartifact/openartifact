@@ -8839,14 +8839,27 @@
           }
         ],
         "requestBody": {
-          "required": true,
+          "required": false,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
                   "manifest_text": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Optional manifest text sent to the model as-is (max 256 KiB). When omitted the server reads the manifest from the stored artifact."
+                  },
+                  "artifact_format": {
+                    "type": "string",
+                    "description": "Optional; taken from the stored artifact when omitted."
+                  },
+                  "artifact_name": {
+                    "type": "string",
+                    "description": "Optional; taken from the stored artifact when omitted."
+                  },
+                  "artifact_version": {
+                    "type": "string",
+                    "description": "Optional; taken from the stored artifact when omitted."
                   }
                 }
               }
@@ -8855,7 +8868,37 @@
         },
         "responses": {
           "202": {
-            "description": "Accepted"
+            "description": "Queued"
+          },
+          "404": {
+            "description": "Repository not found, or no manifest_text given and the artifact is not in the repository",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "422": {
+            "description": "No manifest_text given and no manifest can be read from this kind of artifact (for example docker images and raw files)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "503": {
+            "description": "AI analysis is not enabled",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -8879,7 +8922,26 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "enabled": { "type": "boolean" },
+                    "auto_analyze": { "type": "boolean" },
+                    "provider": { "type": "string" },
+                    "base_url": { "type": "string" },
+                    "api_key": { "type": "string", "description": "Always masked." },
+                    "has_api_key": { "type": "boolean" },
+                    "model": { "type": "string" },
+                    "max_tokens": { "type": "integer" },
+                    "timeout_secs": { "type": "integer" },
+                    "system_prompt": { "type": "string" }
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -8909,8 +8971,14 @@
                   "enabled": {
                     "type": "boolean"
                   },
+                  "auto_analyze": {
+                    "type": "boolean",
+                    "description": "Analyse every upload automatically (default false). Takes effect immediately."
+                  },
                   "provider": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": ["openai", "azure", "ollama", "custom"],
+                    "description": "custom is any OpenAI-compatible endpoint and requires base_url."
                   },
                   "base_url": {
                     "type": "string"
@@ -8990,6 +9058,10 @@
               "schema": {
                 "type": "object",
                 "properties": {
+                  "provider": {
+                    "type": "string",
+                    "enum": ["openai", "azure", "ollama", "custom"]
+                  },
                   "base_url": {
                     "type": "string"
                   },

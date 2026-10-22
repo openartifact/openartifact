@@ -52,6 +52,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <!-- Form content (fades when disabled) -->
       <div class="space-y-4 transition-opacity duration-200" :class="{ 'opacity-40 pointer-events-none': !form.enabled }" :aria-disabled="!form.enabled">
+        <!-- Auto-analysis -->
+        <div class="bg-surface rounded-xl border border-border p-5 flex items-start gap-4">
+          <AppToggle v-model="form.auto_analyze" labelledby="ai-auto-label" class="mt-0.5" />
+          <div class="min-w-0">
+            <p id="ai-auto-label" class="text-sm font-semibold text-foreground leading-tight">{{ t('adm.ai.autoAnalyze') }}</p>
+            <p class="text-xs text-muted mt-0.5 leading-relaxed">{{ t('adm.ai.autoAnalyzeHint') }}</p>
+          </div>
+        </div>
+
         <!-- Provider Picker -->
         <div class="bg-surface rounded-xl border border-border p-5 space-y-3">
           <div>
@@ -366,6 +375,7 @@ const testResult = ref<TestResult | null>(null)
 
 const form = reactive<AIConfig>({
   enabled: false,
+  auto_analyze: false,
   provider: 'openai',
   base_url: '',
   api_key: '',
@@ -449,6 +459,7 @@ onMounted(async () => {
   try {
     const cfg = await getAIConfig()
     form.enabled = cfg.enabled
+    form.auto_analyze = cfg.auto_analyze ?? false
     form.provider = cfg.provider || 'openai'
     form.base_url = cfg.base_url || PROVIDERS.value[form.provider]?.defaultUrl || ''
     form.api_key = cfg.api_key || ''

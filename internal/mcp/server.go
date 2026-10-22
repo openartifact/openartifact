@@ -253,7 +253,7 @@ func (s *Server) registerTools() {
 	// ── trigger_ai_analysis ──────────────────────────────────────────────────
 	s.mcpServer.AddTool(
 		mcp.NewTool("trigger_ai_analysis",
-			mcp.WithDescription("Manually trigger an AI analysis for an artifact by providing its manifest text. Use this to re-analyze an artifact or analyze one that was missed."),
+			mcp.WithDescription("Trigger an AI analysis for an artifact. The server reads the manifest from the stored artifact; pass manifest_text to override it. Use this to re-analyze an artifact or analyze one that was missed."),
 			mcp.WithString("repository_id",
 				mcp.Required(),
 				mcp.Description("Repository ID (UUID)"),
@@ -263,8 +263,7 @@ func (s *Server) registerTools() {
 				mcp.Description("Artifact ID"),
 			),
 			mcp.WithString("artifact_format",
-				mcp.Required(),
-				mcp.Description("Package format: npm, maven, deb, rpm, helm, pypi, cargo, etc."),
+				mcp.Description("Package format: npm, maven, deb, rpm, helm, pypi, cargo, etc. (optional; taken from the artifact)"),
 			),
 			mcp.WithString("artifact_name",
 				mcp.Description("Package name"),
@@ -273,8 +272,7 @@ func (s *Server) registerTools() {
 				mcp.Description("Package version"),
 			),
 			mcp.WithString("manifest_text",
-				mcp.Required(),
-				mcp.Description("Raw manifest content (package.json, pom.xml, go.mod, requirements.txt, etc.)"),
+				mcp.Description("Optional raw manifest content (package.json, pom.xml, go.mod, requirements.txt, etc.); when omitted the server extracts it from the stored artifact"),
 			),
 		),
 		s.handleTriggerAIAnalysis,

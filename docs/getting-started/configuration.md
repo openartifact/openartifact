@@ -190,13 +190,14 @@ Signs APT and RPM metadata; see [signing](../security/signing.md).
 
 ### AI analysis (`ai`)
 
-Optional and off by default; see [AI analysis](../integrations/ai-analysis.md). Once an administrator has saved the `ai.enabled` setting through the UI/API, the stored settings decide whether analysis runs and the values below only fill fields left empty there.
+Optional and off by default; see [AI analysis](../integrations/ai-analysis.md). Once an administrator has saved the `ai.enabled` setting through the UI/API, the stored settings decide whether analysis runs and the values below only fill fields left empty there. Saved changes apply immediately without a restart; changes to these environment variables need one.
 
 | Env | YAML | Default | Meaning |
 |---|---|---|---|
 | `AI_ENABLED` | `enabled` | `false` | Enable analysis |
-| `AI_PROVIDER` | `provider` | `openai` | `openai`, `azure` or `ollama` (OpenAI-compatible endpoints); the admin API rejects other values |
-| `AI_BASE_URL` | `baseUrl` | empty | Endpoint; defaults to `https://api.openai.com/v1` (openai) or `http://localhost:11434/v1` (ollama); required for azure |
+| `AI_AUTO_ANALYZE` | `autoAnalyze` | `false` | Analyse every upload automatically (the manifest of each upload is sent to the provider) |
+| `AI_PROVIDER` | `provider` | `openai` | `openai`, `azure`, `ollama` or `custom` (OpenAI-compatible endpoints); the admin API rejects other values |
+| `AI_BASE_URL` | `baseUrl` | empty | Endpoint; defaults to `https://api.openai.com/v1` (openai) or `http://localhost:11434/v1` (ollama); required for azure and custom |
 | `AI_API_KEY` | `apiKey` | empty | Provider key (**secret**) |
 | `AI_MODEL` | `model` | `gpt-4o-mini` | Model name |
 | `AI_MAX_TOKENS` | `maxTokens` | `1024` | Completion tokens per request |

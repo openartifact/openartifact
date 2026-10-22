@@ -296,6 +296,11 @@ func checkDownloadLookupMatchesListing(t *testing.T, pg *database.PostgresDB, re
 		t.Errorf("%s: download size %d, listing size %d", c.Format, blob.Size, c.PackageSize)
 	}
 
+	// The AI analysis worker takes a package's identity from this lookup.
+	if blob.Name != c.Name || blob.Version != c.Version {
+		t.Errorf("%s: download lookup name/version %q %q differ from listing %q %q", c.Format, blob.Name, blob.Version, c.Name, c.Version)
+	}
+
 	other := newRepo(t, pg, "other-"+c.Format, "raw")
 	if foreign, err := pg.GetRepoComponentBlob(ctx, other, c.ID); err != nil || foreign != nil {
 		t.Errorf("%s: id resolved in another repository: %+v, %v", c.Format, foreign, err)

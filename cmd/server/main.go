@@ -15,7 +15,6 @@ import (
 	"os"
 	"os/signal"
 	"runtime"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
@@ -369,103 +368,36 @@ func run(args []string) error {
 	}
 	defer stopWorkers()
 
-	// Initialize AI analysis worker
-	var (
-		aiWorker *worker.AIAnalysisWorker
-		aiClient *ai.Client
-	)
-
-	// Try to load AI config from DB first, fall back to env vars
-	dbEnabled, _ := db.GetSystemSetting(context.Background(), "ai.enabled")
-	aiEnabled := false
-
-	if dbEnabled != "" {
-		// DB config exists, try to parse it
-		if b, err := strconv.ParseBool(dbEnabled); err == nil {
-			aiEnabled = b
-		}
-	} else {
-		// Fall back to env config
-		aiEnabled = cfg.AI.Enabled
+	// Initialize AI analysis worker. The effective settings (env/YAML layered
+	// under the admin-saved ones) are applied at startup and again by the admin
+	// API after every change, so no restart is needed.
+	envAI := ai.Settings{
+		Enabled:     cfg.AI.Enabled,
+		AutoAnalyze: cfg.AI.AutoAnalyze,
+		Config: ai.Config{
+			Provider:     cfg.AI.Provider,
+			BaseURL:      cfg.AI.BaseURL,
+			APIKey:       cfg.AI.APIKey,
+			Model:        cfg.AI.Model,
+			MaxTokens:    cfg.AI.MaxTokens,
+			TimeoutSecs:  cfg.AI.TimeoutSecs,
+			SystemPrompt: cfg.AI.SystemPrompt,
+		},
 	}
 
-	//nolint:nestif // AI config loading from DB requires nested checks
-	if aiEnabled {
-		// Load config from DB if available, otherwise use env
-		var aiCfg ai.Config
+	aiSettings := ai.LoadSettings(context.Background(), db, envAI)
+	aiWorker := worker.NewAIAnalysisWorker(db, nil, log).WithBlobStore(blobStore)
+	aiWorker.Configure(aiSettings)
 
-		if dbEnabled != "" {
-			// Load from DB
-			aiCfg = ai.Config{}
-			if provider, _ := db.GetSystemSetting(context.Background(), "ai.provider"); provider != "" {
-				aiCfg.Provider = provider
-			} else {
-				aiCfg.Provider = cfg.AI.Provider
-			}
-
-			if baseURL, _ := db.GetSystemSetting(context.Background(), "ai.base_url"); baseURL != "" {
-				aiCfg.BaseURL = baseURL
-			} else {
-				aiCfg.BaseURL = cfg.AI.BaseURL
-			}
-
-			if apiKey, _ := db.GetSystemSetting(context.Background(), "ai.api_key"); apiKey != "" {
-				aiCfg.APIKey = apiKey
-			} else {
-				aiCfg.APIKey = cfg.AI.APIKey
-			}
-
-			if model, _ := db.GetSystemSetting(context.Background(), "ai.model"); model != "" {
-				aiCfg.Model = model
-			} else {
-				aiCfg.Model = cfg.AI.Model
-			}
-
-			if maxTokensStr, _ := db.GetSystemSetting(context.Background(), "ai.max_tokens"); maxTokensStr != "" {
-				if n, err := strconv.Atoi(maxTokensStr); err == nil {
-					aiCfg.MaxTokens = n
-				} else {
-					aiCfg.MaxTokens = cfg.AI.MaxTokens
-				}
-			} else {
-				aiCfg.MaxTokens = cfg.AI.MaxTokens
-			}
-
-			if timeoutSecsStr, _ := db.GetSystemSetting(context.Background(), "ai.timeout_secs"); timeoutSecsStr != "" {
-				if n, err := strconv.Atoi(timeoutSecsStr); err == nil {
-					aiCfg.TimeoutSecs = n
-				} else {
-					aiCfg.TimeoutSecs = cfg.AI.TimeoutSecs
-				}
-			} else {
-				aiCfg.TimeoutSecs = cfg.AI.TimeoutSecs
-			}
-
-			if systemPrompt, _ := db.GetSystemSetting(context.Background(), "ai.system_prompt"); systemPrompt != "" {
-				aiCfg.SystemPrompt = systemPrompt
-			} else {
-				aiCfg.SystemPrompt = cfg.AI.SystemPrompt
-			}
-		} else {
-			// Use env config
-			aiCfg = ai.Config{
-				Provider:     cfg.AI.Provider,
-				BaseURL:      cfg.AI.BaseURL,
-				APIKey:       cfg.AI.APIKey,
-				Model:        cfg.AI.Model,
-				MaxTokens:    cfg.AI.MaxTokens,
-				TimeoutSecs:  cfg.AI.TimeoutSecs,
-				SystemPrompt: cfg.AI.SystemPrompt,
-			}
-		}
-
-		aiClient = ai.NewClient(aiCfg)
-		log.Infow("AI analysis enabled", "provider", aiCfg.Provider, "model", aiCfg.Model)
+	if aiSettings.Enabled {
+		log.Infow("AI analysis enabled", "provider", aiSettings.Config.Provider, "model", aiSettings.Config.Model, "auto_analyze", aiSettings.AutoAnalyze)
 	} else {
 		log.Infow("AI analysis disabled")
 	}
 
-	aiWorker = worker.NewAIAnalysisWorker(db, aiClient, log)
+	// Uploads of every format announce themselves through the publisher; the
+	// wrapper feeds them to the AI worker when auto-analysis is on.
+	uploadPublisher := worker.NewAIAutoAnalyzePublisher(webhookDispatcher, aiWorker)
 
 	aiWorker.Start()
 
@@ -720,7 +652,7 @@ func run(args []string) error {
 		log.Warnw("pprof enabled at /api/v1/admin/pprof/ (admin only); disable outside diagnostics")
 	}
 
-	api.NewAdminAIHandler(db, log, evaluator).Register(authedAPI)
+	api.NewAdminAIHandler(db, log, evaluator).WithRuntime(aiWorker, envAI).Register(authedAPI)
 
 	orgsHandler := api.NewOrgsHandler(db, log)
 	orgsHandler.RegisterRoutes(authedAPI)
@@ -902,7 +834,7 @@ func run(args []string) error {
 		helmHTTP, pypiHTTP, nugetHTTP, npmHTTP, cargoHTTP, rubygemsHTTP, rawHTTP,
 		condaHTTP, conanHTTP, ivyHTTP, sbtHTTP, mavenHTTP, dockerHTTP, gomodHTTP,
 	} {
-		h.SetPublisher(webhookDispatcher)
+		h.SetPublisher(uploadPublisher)
 	}
 
 	// Mount the MCP server if enabled (HTTP is the only transport). Mounted under authedAPI

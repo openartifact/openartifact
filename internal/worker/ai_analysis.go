@@ -7,11 +7,13 @@ package worker
 import (
 	"context"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -22,21 +24,31 @@ type AIAnalysisRequest struct {
 	ArtifactFormat  string
 	ArtifactName    string
 	ArtifactVersion string
-	// ManifestText is the extracted plain-text content (package.json, pom.xml, etc.)
+	// ManifestText is caller-supplied plain-text content (package.json,
+	// pom.xml, ...). When empty the worker extracts the manifest from the
+	// stored artifact itself.
 	ManifestText string
+}
+
+// aiRuntime is the hot-swappable part of the worker's configuration.
+type aiRuntime struct {
+	client      *ai.Client
+	autoAnalyze bool
 }
 
 // AIAnalysisWorker processes artifact uploads asynchronously and enriches them
 // with AI-generated metadata (tags, summary, license status, security notes).
 type AIAnalysisWorker struct {
-	db       database.Database
-	aiClient *ai.Client
-	log      *logger.Logger
+	db    database.Database
+	blobs storage.BlobStore
+	log   *logger.Logger
+	rt    atomic.Pointer[aiRuntime]
 
 	mu       sync.Mutex
 	timers   map[string]*time.Timer
 	debounce time.Duration
 	queue    chan AIAnalysisRequest
+	uploads  chan UploadRef
 	stopCh   chan struct{}
 	doneCh   chan struct{}
 	stopOnce sync.Once
@@ -46,28 +58,55 @@ type AIAnalysisWorker struct {
 }
 
 // NewAIAnalysisWorker creates a new worker. Pass nil aiClient to disable AI calls
-// (records will be created with status "pending" for later processing).
+// (records will be created with status "pending" for later processing). The
+// client and the auto-analysis switch can be replaced at runtime with Configure.
 func NewAIAnalysisWorker(db database.Database, aiClient *ai.Client, log *logger.Logger) *AIAnalysisWorker {
 	ctx, cancel := context.WithCancel(context.Background())
 
-	return &AIAnalysisWorker{
+	w := &AIAnalysisWorker{
 		ctx:      ctx,
 		cancel:   cancel,
 		db:       db,
-		aiClient: aiClient,
 		log:      log,
 		timers:   make(map[string]*time.Timer),
 		debounce: 2 * time.Second,
 		queue:    make(chan AIAnalysisRequest, 500),
+		uploads:  make(chan UploadRef, 500),
 		stopCh:   make(chan struct{}),
 		doneCh:   make(chan struct{}),
 	}
+	w.rt.Store(&aiRuntime{client: aiClient})
+
+	return w
+}
+
+// WithBlobStore gives the worker access to stored artifacts so it can extract
+// manifests itself; without it only caller-supplied manifest text works.
+func (w *AIAnalysisWorker) WithBlobStore(bs storage.BlobStore) *AIAnalysisWorker {
+	w.blobs = bs
+	return w
 }
 
 // WithDebounce sets the debounce duration (default 2s).
 func (w *AIAnalysisWorker) WithDebounce(d time.Duration) *AIAnalysisWorker {
 	w.debounce = d
 	return w
+}
+
+// Configure atomically replaces the model client and the auto-analysis switch.
+// Analyses already running finish on the client they started with; every
+// analysis that starts afterwards uses the new one.
+func (w *AIAnalysisWorker) Configure(s ai.Settings) {
+	w.rt.Store(&aiRuntime{client: s.NewClient(), autoAnalyze: s.Enabled && s.AutoAnalyze})
+}
+
+// Enabled reports whether a model client is configured.
+func (w *AIAnalysisWorker) Enabled() bool { return w.rt.Load().client != nil }
+
+// AutoAnalyze reports whether uploads are analysed without being asked to.
+func (w *AIAnalysisWorker) AutoAnalyze() bool {
+	rt := w.rt.Load()
+	return rt.client != nil && rt.autoAnalyze
 }
 
 // Start launches the background processing goroutine.
@@ -83,6 +122,8 @@ func (w *AIAnalysisWorker) Start() {
 			select {
 			case req := <-w.queue:
 				w.safeProcess(req)
+			case ref := <-w.uploads:
+				w.safeResolveUpload(ref)
 			case <-w.stopCh:
 				return
 			}
@@ -161,10 +202,10 @@ func (w *AIAnalysisWorker) Notify(req AIAnalysisRequest) {
 
 // process performs the actual AI analysis and persists results.
 func (w *AIAnalysisWorker) process(req AIAnalysisRequest) {
-	ctx, cancel := context.WithTimeout(w.ctx, 60*time.Second)
-	defer cancel()
+	rt := w.rt.Load()
 
-	// Mark as processing
+	req, blob, failure := w.resolve(req)
+
 	pending := &models.AIAnalysis{
 		RepositoryID:    req.RepositoryID,
 		ArtifactID:      req.ArtifactID,
@@ -174,36 +215,70 @@ func (w *AIAnalysisWorker) process(req AIAnalysisRequest) {
 		Status:          "processing",
 		LicenseStatus:   "UNKNOWN",
 	}
-	if err := w.db.UpsertAIAnalysis(ctx, pending); err != nil {
-		w.log.Errorw("ai worker: failed to mark processing", "artifact_id", req.ArtifactID, "error", err)
-		return
-	}
 
-	if w.aiClient == nil {
-		// AI disabled — leave as pending for external processing
+	if rt.client == nil {
+		// AI disabled: leave as pending for external processing.
 		pending.Status = "pending"
-		_ = w.db.UpsertAIAnalysis(ctx, pending)
+		w.save(pending)
 
 		return
 	}
+
+	if failure != "" {
+		w.fail(pending, req, failure)
+		return
+	}
+
+	w.save(pending)
 
 	if req.ManifestText == "" {
-		w.log.Warnw("ai worker: empty manifest text, skipping", "artifact_id", req.ArtifactID)
+		text, msg := w.extract(req, blob)
+		if msg != "" {
+			w.fail(pending, req, msg)
+			return
+		}
 
-		pending.Status = "failed"
-		pending.ErrorMessage = "no manifest text available for analysis"
-		_ = w.db.UpsertAIAnalysis(ctx, pending)
-
-		return
+		req.ManifestText = text
 	}
 
-	result, usage, err := w.aiClient.Analyze(ctx, req.ManifestText)
+	w.analyze(rt.client, pending, req)
+}
+
+// save upserts an analysis record, logging a failure.
+func (w *AIAnalysisWorker) save(a *models.AIAnalysis) bool {
+	ctx, cancel := context.WithTimeout(w.ctx, 30*time.Second)
+	defer cancel()
+
+	if err := w.db.UpsertAIAnalysis(ctx, a); err != nil {
+		w.log.Errorw("ai worker: failed to save analysis", "artifact_id", a.ArtifactID, "status", a.Status, "error", err)
+		return false
+	}
+
+	return true
+}
+
+// fail records a failed analysis with a user-visible reason.
+func (w *AIAnalysisWorker) fail(a *models.AIAnalysis, req AIAnalysisRequest, msg string) {
+	w.log.Warnw("ai worker: analysis not possible", "artifact_id", req.ArtifactID, "reason", msg)
+
+	a.Status = "failed"
+	a.ErrorMessage = msg
+	w.save(a)
+}
+
+// analyze sends the manifest to the model and stores the outcome.
+func (w *AIAnalysisWorker) analyze(client *ai.Client, pending *models.AIAnalysis, req AIAnalysisRequest) {
+	ctx, cancel := context.WithTimeout(w.ctx, 60*time.Second)
+	defer cancel()
+
+	result, usage, err := client.Analyze(ctx, req.ManifestText)
 	if err != nil {
 		w.log.Errorw("ai worker: analysis failed", "artifact_id", req.ArtifactID, "error", err)
 
 		pending.Status = "failed"
 		pending.ErrorMessage = "ai analysis failed; see server logs"
-		_ = w.db.UpsertAIAnalysis(ctx, pending)
+		pending.ModelUsed = client.Model()
+		w.save(pending)
 
 		return
 	}
@@ -221,18 +296,19 @@ func (w *AIAnalysisWorker) process(req AIAnalysisRequest) {
 		SecurityNotes:         result.SecurityNotes,
 		QuarantineRecommended: result.QuarantineRecommended,
 		Status:                "completed",
+		ModelUsed:             usage.Model,
 		PromptTokens:          usage.PromptTokens,
 		CompletionTokens:      usage.CompletionTokens,
 	}
 
-	if err := w.db.UpsertAIAnalysis(ctx, analysis); err != nil {
-		w.log.Errorw("ai worker: failed to save analysis", "artifact_id", req.ArtifactID, "error", err)
+	if !w.save(analysis) {
 		return
 	}
 
 	w.log.Infow("ai analysis completed",
 		"artifact_id", req.ArtifactID,
 		"format", req.ArtifactFormat,
+		"model", usage.Model,
 		"license_status", result.LicenseStatus,
 		"quarantine", result.QuarantineRecommended,
 		"tags", result.Tags,

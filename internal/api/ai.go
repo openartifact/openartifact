@@ -9,6 +9,7 @@ import (
 	"strconv"
 
 	"github.com/go-chi/chi/v5"
+	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -135,7 +136,7 @@ func (h *AIHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 	artifactID := urlparams.Vars(r)["artifactID"]
 
-	if h.aiWorker == nil {
+	if h.aiWorker == nil || !h.aiWorker.Enabled() {
 		writeError(w, http.StatusServiceUnavailable, "ai_disabled", "AI analysis is not enabled")
 		return
 	}
@@ -171,6 +172,13 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Without caller-supplied text the server reads the manifest from the
+	// stored artifact, so the artifact must exist in this repository and be of
+	// a kind a manifest can be read from.
+	if body.ManifestText == "" && !h.checkExtractable(w, r, repo, artifactID) {
+		return
+	}
+
 	h.aiWorker.Notify(worker.AIAnalysisRequest{
 		RepositoryID:    repo.ID,
 		ArtifactID:      artifactID,
@@ -184,4 +192,30 @@ func (h *AIHandler) handleTrigger(w http.ResponseWriter, r *http.Request) {
 		"status":  "queued",
 		"message": "AI analysis has been queued",
 	})
+}
+
+// checkExtractable answers 404/422/500 and returns false when the artifact
+// cannot be analysed without manifest_text.
+func (h *AIHandler) checkExtractable(w http.ResponseWriter, r *http.Request, repo *models.Repository, artifactID string) bool {
+	blob, err := h.db.GetRepoComponentBlob(r.Context(), repo.ID, artifactID)
+	if err != nil {
+		h.log.Errorw("ai handler: component lookup failed", "artifact_id", artifactID, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return false
+	}
+
+	if blob == nil {
+		writeError(w, http.StatusNotFound, "not_found", "artifact not found")
+		return false
+	}
+
+	if !manifest.Supported(blob.Format, blob.Filename) {
+		writeError(w, http.StatusUnprocessableEntity, "unsupported_artifact",
+			"manifest extraction is not supported for this artifact; supply manifest_text")
+
+		return false
+	}
+
+	return true
 }

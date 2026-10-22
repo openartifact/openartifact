@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -23,10 +24,34 @@ type AdminAIHandler struct {
 	db        database.Database
 	log       *logger.Logger
 	evaluator *auth.Evaluator
+	aiWorker  *worker.AIAnalysisWorker
+	envAI     ai.Settings
 }
 
 func NewAdminAIHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *AdminAIHandler {
 	return &AdminAIHandler{db: db, log: log, evaluator: evaluator}
+}
+
+// WithRuntime makes configuration changes take effect immediately: after every
+// saved change the worker's client and auto-analysis switch are rebuilt from
+// the stored settings layered over env (the env/YAML defaults).
+func (h *AdminAIHandler) WithRuntime(w *worker.AIAnalysisWorker, env ai.Settings) *AdminAIHandler {
+	h.aiWorker = w
+	h.envAI = env
+
+	return h
+}
+
+// reload applies the stored settings to the running worker.
+func (h *AdminAIHandler) reload(ctx context.Context) {
+	if h.aiWorker == nil {
+		return
+	}
+
+	s := ai.LoadSettings(ctx, h.db, h.envAI)
+	h.aiWorker.Configure(s)
+	h.log.Infow("AI settings applied", "enabled", s.Enabled, "auto_analyze", s.AutoAnalyze,
+		"provider", s.Config.Provider, "model", s.Config.Model)
 }
 
 func (h *AdminAIHandler) Register(r chi.Router) {
@@ -62,33 +87,33 @@ func (h *AdminAIHandler) loadConfigFromDB(ctx context.Context) (ai.Config, error
 	// Read each setting
 	// Note: enabled is not stored in ai.Config, it's handled separately
 
-	provider, _ := h.db.GetSystemSetting(ctx, "ai.provider")
+	provider, _ := h.db.GetSystemSetting(ctx, ai.SettingProvider)
 	cfg.Provider = provider
 
-	baseURL, _ := h.db.GetSystemSetting(ctx, "ai.base_url")
+	baseURL, _ := h.db.GetSystemSetting(ctx, ai.SettingBaseURL)
 	cfg.BaseURL = baseURL
 
-	apiKey, _ := h.db.GetSystemSetting(ctx, "ai.api_key")
+	apiKey, _ := h.db.GetSystemSetting(ctx, ai.SettingAPIKey)
 	cfg.APIKey = apiKey
 
-	model, _ := h.db.GetSystemSetting(ctx, "ai.model")
+	model, _ := h.db.GetSystemSetting(ctx, ai.SettingModel)
 	cfg.Model = model
 
-	maxTokensStr, _ := h.db.GetSystemSetting(ctx, "ai.max_tokens")
+	maxTokensStr, _ := h.db.GetSystemSetting(ctx, ai.SettingMaxTokens)
 	if maxTokensStr != "" {
 		if n, err := strconv.Atoi(maxTokensStr); err == nil {
 			cfg.MaxTokens = n
 		}
 	}
 
-	timeoutSecsStr, _ := h.db.GetSystemSetting(ctx, "ai.timeout_secs")
+	timeoutSecsStr, _ := h.db.GetSystemSetting(ctx, ai.SettingTimeoutSecs)
 	if timeoutSecsStr != "" {
 		if n, err := strconv.Atoi(timeoutSecsStr); err == nil {
 			cfg.TimeoutSecs = n
 		}
 	}
 
-	systemPrompt, _ := h.db.GetSystemSetting(ctx, "ai.system_prompt")
+	systemPrompt, _ := h.db.GetSystemSetting(ctx, ai.SettingSystemPrompt)
 	cfg.SystemPrompt = systemPrompt
 
 	return cfg, nil
@@ -105,7 +130,7 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	enabled, _ := h.db.GetSystemSetting(r.Context(), "ai.enabled")
+	enabled, _ := h.db.GetSystemSetting(r.Context(), ai.SettingEnabled)
 	enabledBool := false
 
 	if enabled != "" {
@@ -120,8 +145,12 @@ func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request)
 		apiKeyDisplay = "••••••••" //nolint:gosec // This is a display mask, not a real credential
 	}
 
+	autoAnalyze, _ := h.db.GetSystemSetting(r.Context(), ai.SettingAutoAnalyze)
+	autoAnalyzeBool, _ := strconv.ParseBool(autoAnalyze)
+
 	response := map[string]any{
 		"enabled":       enabledBool,
+		"auto_analyze":  autoAnalyzeBool,
 		"provider":      cfg.Provider,
 		"base_url":      cfg.BaseURL,
 		"api_key":       apiKeyDisplay,
@@ -144,6 +173,7 @@ const (
 	aiProviderOpenAI   = "openai"
 	aiProviderAzure    = "azure"
 	aiProviderOllama   = "ollama"
+	aiProviderCustom   = "custom"
 	aiTestFailedReason = "could not list models from the AI provider; check the endpoint, credentials and server logs"
 )
 
@@ -152,6 +182,7 @@ const (
 // value clears it.
 type aiConfigPatch struct {
 	Enabled      *bool   `json:"enabled"`
+	AutoAnalyze  *bool   `json:"auto_analyze"`
 	Provider     *string `json:"provider"`
 	BaseURL      *string `json:"base_url"`
 	APIKey       *string `json:"api_key"`
@@ -183,8 +214,9 @@ func (p *aiConfigPatch) validate() string {
 // validateEndpoint checks the provider and base URL fields.
 func (p *aiConfigPatch) validateEndpoint() string {
 	if p.Provider != nil && *p.Provider != "" &&
-		*p.Provider != aiProviderOpenAI && *p.Provider != aiProviderAzure && *p.Provider != aiProviderOllama {
-		return "provider must be one of: openai, azure, ollama"
+		*p.Provider != aiProviderOpenAI && *p.Provider != aiProviderAzure &&
+		*p.Provider != aiProviderOllama && *p.Provider != aiProviderCustom {
+		return "provider must be one of: openai, azure, ollama, custom"
 	}
 
 	if p.BaseURL != nil && *p.BaseURL != "" {
@@ -260,7 +292,7 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 
 	// A masked key means "use the stored one".
 	if cfg.APIKey == aiAPIKeyMask || cfg.APIKey == "" {
-		stored, _ := h.db.GetSystemSetting(ctx, "ai.api_key")
+		stored, _ := h.db.GetSystemSetting(ctx, ai.SettingAPIKey)
 		cfg.APIKey = stored
 	}
 
@@ -284,6 +316,11 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
+	if msg := h.customNeedsBaseURL(r.Context(), &body); msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
 	// Keys and values are kept in separate slices so the (secret) values are
 	// never reachable from anything that gets logged.
 	keys := make([]string, 0, 8)
@@ -295,15 +332,19 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 	}
 
 	if body.Enabled != nil {
-		add("ai.enabled", strconv.FormatBool(*body.Enabled))
+		add(ai.SettingEnabled, strconv.FormatBool(*body.Enabled))
+	}
+
+	if body.AutoAnalyze != nil {
+		add(ai.SettingAutoAnalyze, strconv.FormatBool(*body.AutoAnalyze))
 	}
 
 	if body.Provider != nil {
-		add("ai.provider", *body.Provider)
+		add(ai.SettingProvider, *body.Provider)
 	}
 
 	if body.BaseURL != nil {
-		add("ai.base_url", *body.BaseURL)
+		add(ai.SettingBaseURL, *body.BaseURL)
 	}
 
 	// The API key is write-only: the masked placeholder returned by GET means
@@ -323,23 +364,23 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 			stored = enc
 		}
 
-		add("ai.api_key", stored)
+		add(ai.SettingAPIKey, stored)
 	}
 
 	if body.Model != nil {
-		add("ai.model", *body.Model)
+		add(ai.SettingModel, *body.Model)
 	}
 
 	if body.MaxTokens != nil {
-		add("ai.max_tokens", strconv.Itoa(*body.MaxTokens))
+		add(ai.SettingMaxTokens, strconv.Itoa(*body.MaxTokens))
 	}
 
 	if body.TimeoutSecs != nil {
-		add("ai.timeout_secs", strconv.Itoa(*body.TimeoutSecs))
+		add(ai.SettingTimeoutSecs, strconv.Itoa(*body.TimeoutSecs))
 	}
 
 	if body.SystemPrompt != nil {
-		add("ai.system_prompt", *body.SystemPrompt)
+		add(ai.SettingSystemPrompt, *body.SystemPrompt)
 	}
 
 	for i, key := range keys {
@@ -351,7 +392,34 @@ func (h *AdminAIHandler) handlePutConfig(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
+	h.reload(r.Context())
+
 	h.handleGetConfig(w, r)
+}
+
+// customNeedsBaseURL rejects a configuration whose effective provider is
+// "custom" but has no endpoint: there is no default to fall back to, and the
+// stored API key must not be sent to a provider the admin did not choose.
+func (h *AdminAIHandler) customNeedsBaseURL(ctx context.Context, p *aiConfigPatch) string {
+	provider, _ := h.db.GetSystemSetting(ctx, ai.SettingProvider)
+	if p.Provider != nil {
+		provider = *p.Provider
+	}
+
+	if provider != aiProviderCustom {
+		return ""
+	}
+
+	baseURL, _ := h.db.GetSystemSetting(ctx, ai.SettingBaseURL)
+	if p.BaseURL != nil {
+		baseURL = *p.BaseURL
+	}
+
+	if baseURL == "" {
+		return "base_url is required for the custom provider"
+	}
+
+	return ""
 }
 
 func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {

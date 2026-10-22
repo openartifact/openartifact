@@ -13,6 +13,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/mark3labs/mcp-go/mcp"
+	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/search"
@@ -149,15 +150,8 @@ func (s *Server) handleTriggerAIAnalysis(ctx context.Context, req mcp.CallToolRe
 		return mcp.NewToolResultError(err.Error()), nil
 	}
 
-	format, err := req.RequireString("artifact_format")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	manifestText, err := req.RequireString("manifest_text")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
+	format := req.GetString("artifact_format", "")
+	manifestText := req.GetString("manifest_text", "")
 
 	if denied := s.authorizeByID(ctx, repoID, "write"); denied != nil {
 		return denied, nil
@@ -167,8 +161,25 @@ func (s *Server) handleTriggerAIAnalysis(ctx context.Context, req mcp.CallToolRe
 		return mcp.NewToolResultError("manifest_text is too large"), nil
 	}
 
-	if s.aiWorker == nil {
+	if s.aiWorker == nil || !s.aiWorker.Enabled() {
 		return mcp.NewToolResultError("AI analysis is not enabled on this server"), nil
+	}
+
+	// Without manifest_text the server reads the manifest from the stored
+	// artifact, which must exist in the repository and be readable.
+	if manifestText == "" {
+		blob, err := s.db.GetRepoComponentBlob(ctx, repoID, artifactID)
+		if err != nil {
+			return s.internalError("get artifact", err, "artifact_id", artifactID), nil
+		}
+
+		if blob == nil {
+			return mcp.NewToolResultError("artifact not found in this repository"), nil
+		}
+
+		if !manifest.Supported(blob.Format, blob.Filename) {
+			return mcp.NewToolResultError("manifest extraction is not supported for this artifact; supply manifest_text"), nil
+		}
 	}
 
 	s.aiWorker.Notify(worker.AIAnalysisRequest{

@@ -162,8 +162,9 @@ type BackupConfig struct {
 // AIConfig contains AI analysis configuration.
 type AIConfig struct {
 	Enabled      bool   `yaml:"enabled"`
-	Provider     string `yaml:"provider"` // "openai", "azure", "vertex", "ollama"
-	BaseURL      string `yaml:"baseUrl"`  // API base URL (for Azure/Ollama/custom)
+	AutoAnalyze  bool   `yaml:"autoAnalyze"` // analyse every upload without being asked (default off)
+	Provider     string `yaml:"provider"`    // "openai", "azure", "ollama", "custom"
+	BaseURL      string `yaml:"baseUrl"`     // API base URL (for Azure/Ollama/custom)
 	APIKey       string `yaml:"apiKey"`
 	Model        string `yaml:"model"` // e.g. "gpt-4o-mini", "llama3"
 	MaxTokens    int    `yaml:"maxTokens"`
@@ -415,6 +416,7 @@ func applyEnvOverrides(cfg *Config) {
 
 	// AI config
 	overrideBool(&cfg.AI.Enabled, "AI_ENABLED")
+	overrideBool(&cfg.AI.AutoAnalyze, "AI_AUTO_ANALYZE")
 	overrideString(&cfg.AI.Provider, "AI_PROVIDER")
 	overrideString(&cfg.AI.BaseURL, "AI_BASE_URL")
 	overrideString(&cfg.AI.APIKey, "AI_API_KEY")

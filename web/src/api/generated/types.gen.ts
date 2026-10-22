@@ -4849,8 +4849,23 @@ export type GetApiV1RepositoriesByNameAiAnalysisByArtifactIdResponses = {
 };
 
 export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerData = {
-    body: {
+    body?: {
+        /**
+         * Optional manifest text sent to the model as-is (max 256 KiB). When omitted the server reads the manifest from the stored artifact.
+         */
         manifest_text?: string;
+        /**
+         * Optional; taken from the stored artifact when omitted.
+         */
+        artifact_format?: string;
+        /**
+         * Optional; taken from the stored artifact when omitted.
+         */
+        artifact_name?: string;
+        /**
+         * Optional; taken from the stored artifact when omitted.
+         */
+        artifact_version?: string;
     };
     path: {
         name: string;
@@ -4862,6 +4877,18 @@ export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerData = {
 
 export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerErrors = {
     /**
+     * Repository not found, or no manifest_text given and the artifact is not in the repository
+     */
+    404: Error;
+    /**
+     * No manifest_text given and no manifest can be read from this kind of artifact (for example docker images and raw files)
+     */
+    422: Error;
+    /**
+     * AI analysis is not enabled
+     */
+    503: Error;
+    /**
      * Error
      */
     default: Error;
@@ -4871,7 +4898,7 @@ export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerError = Post
 
 export type PostApiV1RepositoriesByNameAiAnalysisByArtifactIdTriggerResponses = {
     /**
-     * Accepted
+     * Queued
      */
     202: unknown;
 };
@@ -4896,13 +4923,36 @@ export type GetApiV1AdminAiConfigResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: {
+        enabled?: boolean;
+        auto_analyze?: boolean;
+        provider?: string;
+        base_url?: string;
+        /**
+         * Always masked.
+         */
+        api_key?: string;
+        has_api_key?: boolean;
+        model?: string;
+        max_tokens?: number;
+        timeout_secs?: number;
+        system_prompt?: string;
+    };
 };
+
+export type GetApiV1AdminAiConfigResponse = GetApiV1AdminAiConfigResponses[keyof GetApiV1AdminAiConfigResponses];
 
 export type PutApiV1AdminAiConfigData = {
     body: {
         enabled?: boolean;
-        provider?: string;
+        /**
+         * Analyse every upload automatically (default false). Takes effect immediately.
+         */
+        auto_analyze?: boolean;
+        /**
+         * custom is any OpenAI-compatible endpoint and requires base_url.
+         */
+        provider?: 'openai' | 'azure' | 'ollama' | 'custom';
         base_url?: string;
         api_key?: string;
         model?: string;
@@ -4956,6 +5006,7 @@ export type GetApiV1AdminAiModelsResponses = {
 
 export type PostApiV1AdminAiTestData = {
     body: {
+        provider?: 'openai' | 'azure' | 'ollama' | 'custom';
         base_url?: string;
         api_key?: string;
         model?: string;

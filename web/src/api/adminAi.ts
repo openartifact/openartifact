@@ -6,6 +6,8 @@ import { request } from './client'
 
 export interface AIConfig {
   enabled: boolean
+  /** Analyse every upload automatically (off: analyses run only on request). */
+  auto_analyze: boolean
   provider: string
   base_url: string
   /** Write-only: GET returns a mask; send the mask back to keep the stored key. */

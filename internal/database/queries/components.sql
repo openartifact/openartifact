@@ -284,93 +284,93 @@ SELECT COUNT(*)::bigint FROM (
 -- come back with an empty sha256. Keep in sync with ListRepoComponents.
 
 -- name: GetRepoComponentBlob :one
-SELECT id, format, filename, sha256, size_bytes, media_type
+SELECT id, format, filename, name, version, sha256, size_bytes, media_type
 FROM (
-    SELECT t.id::uuid AS id, 'deb'::text AS format, COALESCE(t.filename, '')::text AS filename,
+    SELECT t.id::uuid AS id, 'deb'::text AS format, COALESCE(t.filename, '')::text AS filename, t.name::text AS name, t.version::text AS version,
            COALESCE(b.sha256, '')::text AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes, COALESCE(b.media_type, '')::text AS media_type
     FROM deb_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'rpm'::text, COALESCE(t.filename, '')::text,
+    SELECT t.id::uuid, 'rpm'::text, COALESCE(t.filename, '')::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM rpm_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'npm'::text, t.tarball_filename::text,
+    SELECT t.id::uuid, 'npm'::text, t.tarball_filename::text, np.full_name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM npm_versions t JOIN npm_packages np ON np.id = t.package_id LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND np.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'pypi'::text, t.filename::text,
+    SELECT t.id::uuid, 'pypi'::text, t.filename::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM pypi_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'maven'::text, t.repo_path::text,
+    SELECT t.id::uuid, 'maven'::text, t.repo_path::text, t.group_id || ':' || t.artifact_id_coord::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM maven_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'ivy'::text, t.artifact_name || '.' || t.artifact_ext::text,
+    SELECT t.id::uuid, 'ivy'::text, t.artifact_name || '.' || t.artifact_ext::text, t.organisation || ':' || t.module::text, t.revision::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM ivy_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'sbt'::text, t.filename::text,
+    SELECT t.id::uuid, 'sbt'::text, t.filename::text, t.group_id || ':' || t.artifact_id::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM sbt_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'nuget'::text, t.package_id || '.' || t.version || '.nupkg'::text,
+    SELECT t.id::uuid, 'nuget'::text, t.package_id || '.' || t.version || '.nupkg'::text, t.package_id::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM nuget_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'gomod'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text,
+    SELECT t.id::uuid, 'gomod'::text, t.version || CASE WHEN t.zip_blob_id IS NOT NULL THEN '.zip' ELSE '.mod' END::text, t.module_path::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM gomod_modules t LEFT JOIN blobs b ON b.id = COALESCE(t.zip_blob_id, t.mod_blob_id)
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'cargo'::text, t.name || '-' || t.version || '.crate'::text,
+    SELECT t.id::uuid, 'cargo'::text, t.name || '-' || t.version || '.crate'::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM cargo_crates t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'rubygems'::text, t.name || '-' || t.version || CASE WHEN t.platform = 'ruby' THEN '' ELSE '-' || t.platform END || '.gem'::text,
+    SELECT t.id::uuid, 'rubygems'::text, t.name || '-' || t.version || CASE WHEN t.platform = 'ruby' THEN '' ELSE '-' || t.platform END || '.gem'::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM rubygems_gems t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'conda'::text, t.name || '-' || t.version || '-' || t.build_string || t.extension::text,
+    SELECT t.id::uuid, 'conda'::text, t.name || '-' || t.version || '-' || t.build_string || t.extension::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM conda_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'conan'::text, t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text,
+    SELECT t.id::uuid, 'conan'::text, t.name || '/' || t.version || '@' || t.user_channel || '#' || t.recipe_revision::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM conan_packages t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'helm'::text, t.name || '-' || t.version || '.tgz'::text,
+    SELECT t.id::uuid, 'helm'::text, t.name || '-' || t.version || '.tgz'::text, t.name::text, t.version::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM helm_charts t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
-    SELECT t.id::uuid, 'raw'::text, t.path::text,
+    SELECT t.id::uuid, 'raw'::text, t.path::text, t.path::text, ''::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(b.media_type, '')::text
     FROM raw_artifacts t LEFT JOIN blobs b ON b.id = t.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
     UNION ALL
     -- proxy cache: a cached upstream file; the filename is its upstream-relative path.
-    SELECT t.id::uuid, r.format::text, t.cache_key::text,
+    SELECT t.id::uuid, r.format::text, t.cache_key::text, t.cache_key::text, ''::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, t.size_bytes, 0)::bigint, COALESCE(NULLIF(t.content_type, ''), b.media_type, '')::text
     FROM proxy_cache_entries t JOIN repositories r ON r.id = t.repository_id LEFT JOIN blobs b ON b.sha256 = t.blob_key
     WHERE r.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid AND t.status_code = 200 AND t.blob_key IS NOT NULL
     UNION ALL
     -- docker: the manifest blob; media type is the manifest's own.
-    SELECT t.id::uuid, 'docker'::text, t.manifest_digest::text,
+    SELECT t.id::uuid, 'docker'::text, t.manifest_digest::text, (CASE WHEN t.image = '' THEN r.name ELSE r.name || '/' || t.image END)::text, t.name::text,
            COALESCE(b.sha256, '')::text, COALESCE(b.size_bytes, 0)::bigint, COALESCE(dm.media_type, '')::text
-    FROM docker_tags t LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL LEFT JOIN blobs b ON b.id = dm.blob_id
+    FROM docker_tags t JOIN repositories r ON r.id = t.repository_id AND r.deleted_at IS NULL LEFT JOIN docker_manifests dm ON dm.repository_id = t.repository_id AND dm.image = t.image AND dm.digest = t.manifest_digest AND dm.deleted_at IS NULL LEFT JOIN blobs b ON b.id = dm.blob_id
     WHERE t.deleted_at IS NULL AND t.repository_id = sqlc.arg(repo_id)::uuid AND t.id = sqlc.arg(id)::uuid
 ) AS p
 LIMIT 1;

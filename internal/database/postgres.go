@@ -427,6 +427,8 @@ func (p *PostgresDB) GetRepoComponentBlob(ctx context.Context, repoID, id string
 		ID:        row.ID,
 		Format:    row.Format,
 		Filename:  row.Filename,
+		Name:      row.Name,
+		Version:   row.Version,
 		SHA256:    row.Sha256,
 		Size:      row.SizeBytes,
 		MediaType: row.MediaType,
@@ -6034,13 +6036,10 @@ func (p *PostgresDB) ListSBTArtifacts(ctx context.Context, repoID string) ([]*mo
 
 // UpsertAIAnalysis inserts or updates an AI analysis record.
 //
-// AI analyses are stored across scan_jobs + artifact_refs + ai_results.
-// analysis.ArtifactName/ArtifactVersion have no home in the schema
-// (artifact_refs only tracks repository_id/
-// artifact_path/format) and are accepted here purely for API compatibility —
-// they never round-trip through storage (verified: no caller reads them back
-// off a persisted AIAnalysis). analysis.Status's "processing" value is mapped
-// onto scan_jobs' CHECK-constrained "running" (see aiStatusToJob/FromJob).
+// AI analyses are stored across scan_jobs + artifact_refs + ai_results;
+// ArtifactName/ArtifactVersion live on ai_results (artifact_refs only tracks
+// repository_id/artifact_path/format). analysis.Status's "processing" value is
+// mapped onto scan_jobs' CHECK-constrained "running" (see aiStatusToJob/FromJob).
 func (p *PostgresDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error {
 	tagsJSON, err := json.Marshal(analysis.Tags)
 	if err != nil {
@@ -6060,16 +6059,18 @@ func (p *PostgresDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAn
 				status = EXCLUDED.status, error_message = EXCLUDED.error_message, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO ai_results (scan_job_id, summary, tags, license_status, license_name, security_notes, quarantine_recommended, model_used, prompt_tokens, completion_tokens)
-		SELECT job.id, $6, $7, $8, $9, $10, $11, $12, $13, $14 FROM job
+		INSERT INTO ai_results (scan_job_id, summary, tags, license_status, license_name, security_notes, quarantine_recommended, model_used, prompt_tokens, completion_tokens, artifact_name, artifact_version)
+		SELECT job.id, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			summary = EXCLUDED.summary, tags = EXCLUDED.tags, license_status = EXCLUDED.license_status,
 			license_name = EXCLUDED.license_name, security_notes = EXCLUDED.security_notes,
 			quarantine_recommended = EXCLUDED.quarantine_recommended, model_used = EXCLUDED.model_used,
-			prompt_tokens = EXCLUDED.prompt_tokens, completion_tokens = EXCLUDED.completion_tokens`,
+			prompt_tokens = EXCLUDED.prompt_tokens, completion_tokens = EXCLUDED.completion_tokens,
+			artifact_name = EXCLUDED.artifact_name, artifact_version = EXCLUDED.artifact_version`,
 		analysis.RepositoryID, analysis.ArtifactID, strPtr(analysis.ArtifactFormat), aiStatusToJob(analysis.Status), analysis.ErrorMessage,
 		analysis.Summary, tagsJSON, analysis.LicenseStatus, analysis.LicenseName, analysis.SecurityNotes,
 		analysis.QuarantineRecommended, analysis.ModelUsed, analysis.PromptTokens, analysis.CompletionTokens,
+		analysis.ArtifactName, analysis.ArtifactVersion,
 	)
 
 	return err
@@ -6078,7 +6079,8 @@ func (p *PostgresDB) UpsertAIAnalysis(ctx context.Context, analysis *models.AIAn
 const aiAnalysisSelect = `SELECT air.id, ref.repository_id, ref.artifact_path, ref.format,
 	       air.summary, air.tags, air.license_status, air.license_name, air.security_notes,
 	       air.quarantine_recommended, sj.status, sj.error_message, air.model_used,
-	       air.prompt_tokens, air.completion_tokens, sj.created_at, sj.updated_at
+	       air.prompt_tokens, air.completion_tokens, sj.created_at, sj.updated_at,
+	       air.artifact_name, air.artifact_version
 	FROM ai_results air
 	JOIN scan_jobs sj ON sj.id = air.scan_job_id
 	JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id`
@@ -6187,8 +6189,7 @@ func scanAIAnalysis(s aiAnalysisScanner) (*models.AIAnalysis, error) {
 	return scanAIAnalysisRow(s)
 }
 
-// scanAIAnalysisRow scans an aiAnalysisSelect row. ArtifactName/ArtifactVersion
-// are never selected (see UpsertAIAnalysis) and stay at their Go zero value.
+// scanAIAnalysisRow scans an aiAnalysisSelect row.
 func scanAIAnalysisRow(s aiAnalysisScanner) (*models.AIAnalysis, error) {
 	var a models.AIAnalysis
 
@@ -6205,6 +6206,7 @@ func scanAIAnalysisRow(s aiAnalysisScanner) (*models.AIAnalysis, error) {
 		&errMsg, &a.ModelUsed,
 		&a.PromptTokens, &a.CompletionTokens,
 		&a.CreatedAt, &a.UpdatedAt,
+		&a.ArtifactName, &a.ArtifactVersion,
 	)
 	if err != nil {
 		if errors.Is(err, sql.ErrNoRows) {

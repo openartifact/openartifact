@@ -57,6 +57,8 @@ type ComponentBlob struct {
 	ID        string
 	Format    string
 	Filename  string // the listing's filename for the row
+	Name      string // the listing's package name for the row
+	Version   string // the listing's version for the row ("" for raw and proxy-cache rows)
 	SHA256    string
 	Size      int64
 	MediaType string

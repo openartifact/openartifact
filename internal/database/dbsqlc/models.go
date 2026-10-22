@@ -23,6 +23,8 @@ type AiResult struct {
 	ModelUsed             string          `db:"model_used" json:"model_used"`
 	PromptTokens          int32           `db:"prompt_tokens" json:"prompt_tokens"`
 	CompletionTokens      int32           `db:"completion_tokens" json:"completion_tokens"`
+	ArtifactName          string          `db:"artifact_name" json:"artifact_name"`
+	ArtifactVersion       string          `db:"artifact_version" json:"artifact_version"`
 }
 
 // Custom key-value metadata for artifacts
