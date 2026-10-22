@@ -69,13 +69,30 @@ func (m *Migrator) ensureTrackingTable(ctx context.Context, conn *sql.Conn) erro
 	return nil
 }
 
-func (m *Migrator) acquireLock(ctx context.Context, conn *sql.Conn) error {
-	_, err := conn.ExecContext(ctx, `SELECT pg_advisory_lock(`+advisoryLockKey+`)`)
-	if err != nil {
-		return fmt.Errorf("acquireLock: %w", err)
-	}
+// lockPollInterval is how often a waiting migrator retries the lock.
+const lockPollInterval = 500 * time.Millisecond
 
-	return nil
+// acquireLock polls pg_try_advisory_lock instead of blocking in
+// pg_advisory_lock: a statement blocked on the lock keeps a snapshot open, and
+// CREATE INDEX CONCURRENTLY in another replica's .no_tx migration waits for
+// every such snapshot, so the two would deadlock.
+func (m *Migrator) acquireLock(ctx context.Context, conn *sql.Conn) error {
+	for {
+		var ok bool
+		if err := conn.QueryRowContext(ctx, `SELECT pg_try_advisory_lock(`+advisoryLockKey+`)`).Scan(&ok); err != nil {
+			return fmt.Errorf("acquireLock: %w", err)
+		}
+
+		if ok {
+			return nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("acquireLock: %w", ctx.Err())
+		case <-time.After(lockPollInterval):
+		}
+	}
 }
 
 func (m *Migrator) releaseLock(ctx context.Context, conn *sql.Conn) {
