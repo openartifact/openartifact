@@ -47,3 +47,10 @@ path = [".agents/skills/golang-*/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2026 Samuel Berthe"
 SPDX-License-Identifier = "MIT"
+
+# Agent skills vendored unmodified from vuejs-ai/skills (see .agents/skills/README.md).
+[[annotations]]
+path = [".agents/skills/vue-*/**"]
+precedence = "override"
+SPDX-FileCopyrightText = "2025 hyf0, SerKo <https://github.com/serkodev>"
+SPDX-License-Identifier = "MIT"
