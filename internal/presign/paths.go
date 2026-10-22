@@ -35,6 +35,8 @@ func IsProxyBlobPath(format, relPath string) bool {
 		return strings.HasPrefix(relPath, "charts/") && !strings.HasSuffix(base, ".prov")
 	case "cargo":
 		return strings.HasPrefix(relPath, "api/v1/crates/") && base == "download"
+	case "go":
+		return strings.HasSuffix(base, ".zip") && strings.Contains(relPath, "/@v/")
 	case "raw":
 		return true
 	case "pypi":

@@ -20,8 +20,9 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 | rpm | yes | yes | no |
 | docker | yes | yes | yes |
 | cargo | yes | yes | yes |
+| go | yes | yes | yes |
 | helm | yes | yes | yes |
-| nuget, go, rubygems, conda, conan, ivy, sbt | yes | no | no |
+| nuget, rubygems, conda, conan, ivy, sbt | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Deb and RPM groups are rejected because their `Packages`/`Release`/`repodata` metadata is generated per repository and cannot be merged across members. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.
 
@@ -54,7 +55,7 @@ curl -X POST HOST/api/v1/repositories -H "Authorization: Bearer <TOKEN>" \
 |---|---|---|
 | `name`, `format`, `description`, `public` | all | `public` grants anonymous read ([see below](#public-repositories-and-rbac)). |
 | `repo_type` | all | `hosted` (default), `proxy`, `group`. Any other value: `400`. |
-| `upstream_url` | proxy (required, except docker, pypi and cargo) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`) and cargo (defaults to `https://index.crates.io`). |
+| `upstream_url` | proxy (required, except docker, pypi, cargo and go) | Plain `http(s)` base URL. Optional for docker (defaults to Docker Hub, `https://registry-1.docker.io`), pypi (defaults to `https://pypi.org/simple`), cargo (defaults to `https://index.crates.io`) and go (defaults to `https://proxy.golang.org`). |
 | `upstream_username`, `upstream_password` | proxy | HTTP Basic credentials sent upstream (for docker: sent to the registry's token service). Stored encrypted, never returned. |
 | `cache_ttl_seconds` | proxy | Default 3600 (1 h), max 2592000 (30 d). |
 | `negative_cache_ttl_seconds` | proxy | Default 60, max 86400 (1 d). |
@@ -87,8 +88,8 @@ Requests are mirrored by path from `upstream_url` (npm, cargo and Helm proxies a
 
 ### Cache TTLs
 
-- `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, Helm `index.yaml` and `.prov` files, and everything in raw repositories.
-- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`), npm tarballs, cargo crate files and Helm chart archives are immutable once cached and never revalidated.
+- `cache_ttl_seconds` bounds how long mutable files are served without refetching: Maven `maven-metadata.xml` and `-SNAPSHOT` files, Debian `dists/` and RPM `repodata/` metadata, PyPI simple index and project pages, Helm `index.yaml` and `.prov` files, Go `@v/list`, `@latest` and branch-query `.info` files, and everything in raw repositories.
+- Released Maven artifacts, `.deb`/`.udeb`/`.rpm` files and PyPI distribution files (and their `.metadata`), npm tarballs, cargo crate files, Helm chart archives and Go `.info`/`.mod`/`.zip` of a canonical version are immutable once cached and never revalidated.
 - An upstream 404/410 is cached for `negative_cache_ttl_seconds` and drops any cached copy of the file (it is never served stale).
 
 ### Upstream failures and serve-stale
@@ -160,6 +161,10 @@ registry = "sparse+HOST/repos/REPO/index/"
 
 `upstream_url` must be a plain `http(s)` base URL (no credentials, query or fragment); credentials go in `upstream_username`/`upstream_password`. It passes the same SSRF validation as webhooks, at configuration time and on every fetch and redirect: loopback, private and link-local addresses are refused. Set `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true` only for internal upstreams; the cloud metadata range (169.254.x) stays blocked. See [`../../.env.example`](../../.env.example).
 
+### Go proxies
+
+A go proxy mirrors a GOPROXY (`upstream_url`, default `https://proxy.golang.org`); clients use `GOPROXY=HOST/repos/REPO`. Module paths and versions are forwarded in the case-encoded form the go command uses (`!x`). `@v/list` and `@latest` use the repository TTL with serve-stale on upstream failure; `.info`, `.mod` and `.zip` of a canonical version are immutable. Fetched `.mod` and `.zip` files are verified against the Go checksum database, and bodies that are not what their path claims are refused (`502`, not cached). `GET /sumdb/...` is not proxied (`404`): the go command then asks `sum.golang.org` directly. Details and limits: [Go modules](../formats/go.md#proxy-and-group-repositories).
+
 ### Docker / OCI proxies
 
 A docker proxy is a pull-through cache of an OCI registry and is served under `/v2/` like hosted docker repositories (it has no `/repos/{name}/...` file URLs). `docker pull HOSTPORT/REPO/library/alpine:3.20` fetches `library/alpine:3.20` from the upstream. On Docker Hub (`registry-1.docker.io`, the default) a single-segment image such as `HOSTPORT/REPO/alpine` is mapped to `library/alpine`. Only the scheme and host of `upstream_url` are used. See [Docker / OCI](../formats/docker.md#proxy-and-group-repositories) for client setup and behavior.
@@ -174,8 +179,9 @@ A group is an ordered list of hosted and proxy members of the same format. Group
 - A pypi group merges `GET /simple/` (union of project names) and `GET /simple/<project>/` across readable hosted and pypi proxy members: the file list is the union by filename, and when several members list the same filename the earliest member wins. Links are rewritten to `/repos/GROUP/files/<project>/<filename>`, and a download is resolved first-hit in member order, so it comes from the member whose entry was listed. A member failing while another contributes is ignored, but the partial page is served with `Cache-Control: no-store`; with no contributor the group answers `404`, or `502` if a member failed. The group answers HTML or PEP 691 JSON by `Accept`, like a proxy.
 - A Helm group merges `GET /index.yaml` across readable hosted and Helm proxy members: a chart name and version is listed once, from the earliest member that has it (the first member's entry, digest included, wins), and every chart URL is rewritten to `BASE_URL/repos/GROUP/charts/<file>`. Chart downloads (and `.prov` files) are resolved first-hit in member order. A member failing or serving an unreadable index while another contributes is ignored; with no contributor the group answers `404`, or `502` if a member failed. Only `index.yaml` and `charts/<file>` are served: a hosted member's chart listing (`GET /charts`) is not exposed.
 - A cargo group generates its own `config.json` (`dl`/`api` point at the group) and merges each crate's index file across readable hosted and cargo proxy members: the union of versions (build metadata ignored when comparing), the earliest member winning a version both list, and every other line untouched. Crate downloads are resolved first-hit in member order, so a crate comes from the member whose index entry won the merge. A member failing while another contributes is ignored; with no contributor the group answers `404`, or `502` if a member failed or served something that is not an index file. Clients use `sparse+HOST/repos/GROUP/index/`.
+- A go group answers `<module>/@v/list` with the union of the versions of all readable hosted and go proxy members (SemVer order, highest first, one line per version, failing members ignored while another answers); everything else (`.info`, `.mod`, `.zip`, `@latest`) is first-hit in member order.
 - Docker groups resolve manifests and blobs from the first readable member that has them and merge the `tags/list` of all readable members (sorted, de-duplicated, paginated with `n`/`last`).
-- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `HOST/repos/GROUP` for Helm, `HOSTPORT/GROUP/<image>:<tag>` for docker.
+- Group URLs are the same as hosted ones: `HOST/repos/maven/GROUP` for Maven, `HOST/repos/raw/GROUP/<path>` for raw, `HOST/repos/GROUP/simple/` for PyPI, `sparse+HOST/repos/GROUP/index/` for cargo, `GOPROXY=HOST/repos/GROUP` for Go, `HOST/repos/GROUP` for Helm, `HOSTPORT/GROUP/<image>:<tag>` for docker.
 
 ## Public repositories and RBAC
 

@@ -23,7 +23,7 @@ const DockerHubUpstream = "https://registry-1.docker.io"
 // pulled through the OCI distribution protocol.
 func ProxySupported(format string) bool {
 	switch format {
-	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "cargo", "helm":
+	case "maven", "deb", "docker", "rpm", "raw", "pypi", "npm", "cargo", "go", "helm":
 		return true
 	}
 
@@ -31,13 +31,13 @@ func ProxySupported(format string) bool {
 }
 
 // GroupSupported reports whether group repositories of format can be served.
-// Groups resolve members by path (and merge Maven metadata, npm packuments and
-// PyPI project pages) or, for docker, by OCI manifest/blob; deb/rpm groups
+// Groups resolve members by path (and merge Maven metadata, npm packuments,
+// PyPI project pages and Go version lists) or, for docker, by OCI manifest/blob; deb/rpm groups
 // would need Packages/Release and repodata merged across members and are
 // rejected instead.
 func GroupSupported(format string) bool {
 	switch format {
-	case "maven", "docker", "raw", "pypi", "npm", "cargo", "helm":
+	case "maven", "docker", "raw", "pypi", "npm", "cargo", "go", "helm":
 		return true
 	}
 
@@ -54,13 +54,15 @@ func DefaultUpstreamURL(format string) string {
 		return "https://pypi.org/simple"
 	case "cargo":
 		return "https://index.crates.io"
+	case "go":
+		return "https://proxy.golang.org"
 	}
 
 	return ""
 }
 
 // ProxyFormats lists the proxy-capable formats for error messages.
-func ProxyFormats() string { return "cargo, deb, docker, helm, maven, npm, pypi, raw, rpm" }
+func ProxyFormats() string { return "cargo, deb, docker, go, helm, maven, npm, pypi, raw, rpm" }
 
 // GroupFormats lists the group-capable formats for error messages.
-func GroupFormats() string { return "cargo, docker, helm, maven, npm, pypi, raw" }
+func GroupFormats() string { return "cargo, docker, go, helm, maven, npm, pypi, raw" }

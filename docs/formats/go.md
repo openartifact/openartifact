@@ -6,12 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Go modules
 
-Hosted GOPROXY: serves `list`, `.info`, `.mod`, `.zip` and `@latest`, and accepts module zips by `PUT`.
+GOPROXY: serves `list`, `.info`, `.mod`, `.zip` and `@latest`. Hosted repositories accept module zips by `PUT`; proxy repositories mirror an upstream GOPROXY and group repositories combine several.
 
 | | |
 |---|---|
 | Repo URL | `GOPROXY=HOST/repos/REPO` |
-| Repository types | hosted only (proxy and group are rejected). See [hosted, proxy, group](../repositories/hosted-proxy-group.md) |
+| Repository types | hosted, proxy, group. See [hosted, proxy, group](../repositories/hosted-proxy-group.md) and [below](#proxy-and-group-repositories) |
 
 ## Client setup
 
@@ -22,7 +22,7 @@ go env -w GOPROXY=HOST/repos/REPO,direct
 go env -w GONOSUMDB=*
 ```
 
-Private repositories need a token on every request; see [authentication](../security/authentication.md).
+`GONOSUMDB=*` suits hosted repositories of private modules; do not set it for proxies and groups of public modules, where the checksum database should keep verifying what the client receives. Private repositories need a token on every request; see [authentication](../security/authentication.md).
 
 ## Endpoints
 
@@ -69,5 +69,44 @@ Each version's zip is stored under its own sha256. Up to 0.4.1 every upload regi
 - A version that cannot be matched to exactly one stored zip stays `404`: delete it and upload it again. On the `oci` storage backend, which cannot list objects, only the zip of the shared record itself can be recovered.
 
 See the security note in [upgrading](../getting-started/upgrading.md#050-unreleased).
+
+## Proxy and group repositories
+
+```sh
+export GOPROXY=HOST/repos/REPO          # a go proxy or a go group; no ",direct"
+go mod download                          # GOSUMDB stays at its default
+```
+
+Create a proxy with `repo_type: "proxy"`, `format: "go"`; `upstream_url` defaults to `https://proxy.golang.org`. Proxies and groups are read-only: `PUT` answers `405` (the hosted upload route is not reachable through them).
+
+### Proxy behavior
+
+- Requests are forwarded to `upstream_url` unchanged in the case-encoded form the go command uses (`github.com/!azure/x` goes upstream as `github.com/%21azure/x`). A path that is not a valid module path or version in GOPROXY encoding, a `.mod`/`.zip` of a non-canonical version, and everything outside `<module>/@v/{list,<version>.info,.mod,.zip}` and `<module>/@latest` (including `sumdb/...`) answers `404`.
+- `@v/list`, `@latest` and `.info` of a query such as `master` are cached for `cache_ttl_seconds` and served stale (`Warning: 110`) when the upstream fails. `.info`, `.mod` and `.zip` of a canonical version (a release, pre-release, pseudo-version or `+incompatible`) are immutable: fetched once, never revalidated, and served from the cache with the upstream down.
+- Bodies are checked before they are cached; a body that fails is refused with `502` and not stored: `list` must be one valid semantic version per line, `.info` a JSON object whose `Version` equals the requested version, `.mod` a `go.mod` with a `module` line, `.zip` a zip that `golang.org/x/mod/zip.CheckZip` accepts (files under `<module>@<version>/`, size and path limits).
+- Upstream credentials are sent only to the upstream origin.
+
+### Verification against the checksum database
+
+Every `.mod` and `.zip` is also checked against the Go checksum database before it is stored, using the same protocol and checks as the go command (signed tree heads, tile hashes and inclusion proofs from `golang.org/x/mod/sumdb`): the `h1:` hash of the zip (and of the `go.mod`) must equal the recorded one.
+
+| Checksum database | Result |
+|---|---|
+| records the module version | hash must match; otherwise `502`, not cached |
+| answers `404`/`410` (a private or not-yet-recorded module) | structure checks only (above) |
+| unreachable or erroring | refused (`502`), not cached; a copy already cached keeps being served |
+
+The database is chosen with the standard `GOSUMDB` environment variable of the server process: unset is `sum.golang.org` (built-in key), `sum.golang.google.cn` is accepted, `<name>+<hash>+<key> [url]` selects another database, and `off` disables the lookup (structure checks only). An invalid value is logged and the default is used. Lookups go through the SSRF-checked HTTP client.
+
+Limits:
+
+- A mismatching file is refused, but there is no way to tell a compromised upstream from a stale checksum database entry; both give `502`.
+- The latest signed tree head is kept in memory only. After a restart the server trusts the database's current head again (the go command keeps it on disk).
+- Modules that are not in the checksum database are only structure-checked; the go client's own `GOSUMDB`/`GONOSUMDB`/`GOPRIVATE` settings still decide what it verifies. Checks protect the shared cache; they do not replace the client-side check, which must stay on (set neither `GONOSUMDB` nor `GOFLAGS=-insecure`).
+- `GET /sumdb/<name>/...` is not proxied, so clients reach the checksum database directly; air-gapped clients need their own mirror.
+
+### Group behavior
+
+A go group answers `<module>/@v/list` with the union of all readable members' lists (SemVer order, highest first, deduplicated, anything that is not a version dropped); a member that fails is skipped as long as another answers. All other paths, including `@latest`, are first-hit in member order, so `@latest` is the first member's answer; the go command only asks for it for modules without tagged releases. Members are hosted go repositories and go proxies.
 
 Related: [storage](../operations/storage.md).

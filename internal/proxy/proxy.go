@@ -94,6 +94,10 @@ type Service struct {
 	// baseURL is the server URL rewritten metadata points at (npm tarballs).
 	baseURL string
 
+	// sumdb verifies Go module files against the checksum database; nil
+	// (GOSUMDB=off) verifies their structure only.
+	sumdb *sumDB
+
 	// maxBody caps a single upstream response; DefaultMaxBody unless a test
 	// lowers it.
 	maxBody int64
@@ -103,12 +107,15 @@ type Service struct {
 // client: blocked destination addresses are refused at dial time and on every
 // redirect hop.
 func NewService(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *Service {
+	client := netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout)
+
 	return &Service{
 		log:       log,
 		db:        db,
 		blobStore: blobStore,
-		client:    netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout),
+		client:    client,
 		maxBody:   DefaultMaxBody,
+		sumdb:     newSumDB(os.Getenv("GOSUMDB"), client, log),
 	}
 }
 
@@ -144,6 +151,11 @@ func (s *Service) Serve(w http.ResponseWriter, r *http.Request, repo *models.Rep
 
 	if repo.Format == "cargo" {
 		s.serveCargo(w, r, repo, relPath)
+		return
+	}
+
+	if repo.Format == "go" {
+		s.serveGo(w, r, repo, relPath)
 		return
 	}
 
@@ -670,6 +682,9 @@ func Immutable(format, key string) bool {
 	case "cargo":
 		// Crate files, not index files or config.json.
 		return strings.HasPrefix(key, "api/v1/crates/") && name == "download"
+	case "go":
+		// .info/.mod/.zip of a canonical version, not list/@latest/queries.
+		return goImmutable(key)
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)

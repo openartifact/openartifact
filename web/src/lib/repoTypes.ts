@@ -11,12 +11,12 @@ import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
-const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'helm', 'maven', 'npm', 'pypi', 'raw', 'rpm']
-const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'helm', 'maven', 'npm', 'pypi', 'raw']
+const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'gomod', 'helm', 'maven', 'npm', 'pypi', 'raw', 'rpm']
+const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'gomod', 'helm', 'maven', 'npm', 'pypi', 'raw']
 
-/** Docker, pypi and cargo proxies default to Docker Hub / pypi.org / crates.io; every other proxy needs an upstream URL. */
+/** Docker, pypi, cargo and go proxies default to Docker Hub / pypi.org / crates.io / proxy.golang.org; every other proxy needs an upstream URL. */
 export function upstreamUrlRequired(format: FormatId): boolean {
-  return format !== 'docker' && format !== 'pypi' && format !== 'cargo'
+  return format !== 'docker' && format !== 'pypi' && format !== 'cargo' && format !== 'gomod'
 }
 
 /** Placeholder for the upstream URL field. */
@@ -24,6 +24,7 @@ export function upstreamUrlPlaceholder(format: FormatId): string {
   if (format === 'docker') return 'https://registry-1.docker.io'
   if (format === 'pypi') return 'https://pypi.org/simple'
   if (format === 'cargo') return 'https://index.crates.io'
+  if (format === 'gomod') return 'https://proxy.golang.org'
   return 'https://registry.example.com'
 }
 

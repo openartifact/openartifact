@@ -779,6 +779,10 @@ func run(args []string) error {
 	helmHosted := chi.NewRouter()
 	helmHTTP.RegisterRepoRoutes(helmHosted)
 
+	// Read-only view of the GOPROXY handler: group members are only ever read.
+	goHosted := chi.NewRouter()
+	gomodHTTP.RegisterRepoRoutes(goHosted)
+
 	dockerHTTP := formatdocker.NewHTTPHandler(log, db, servedStore, cfg.BaseURL)
 	dockerHTTP.SetUploadDir(dockerUploadDir(cfg))
 	dockerHTTP.SetAuthorizer(evaluator)
@@ -790,6 +794,7 @@ func run(args []string) error {
 		"raw":    rawHosted,
 		"npm":    npmHosted,
 		"cargo":  cargoHosted,
+		"go":     goHosted,
 		"docker": dockerHosted,
 		"helm":   helmHosted,
 	}).WithBaseURL(cfg.BaseURL)

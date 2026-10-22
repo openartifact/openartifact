@@ -44,6 +44,11 @@ func TestIsProxyBlobPath(t *testing.T) {
 		{"helm", "charts/x-1.0.0.tgz.prov", false},
 		{"helm", "index.yaml", false},
 		{"nuget", "charts/x-1.0.0.tgz", false},
+		{"go", "github.com/!azure/x/@v/v1.0.0.zip", true},
+		{"go", "github.com/x/y/@v/v1.0.0.mod", false},
+		{"go", "github.com/x/y/@v/v1.0.0.info", false},
+		{"go", "github.com/x/y/@v/list", false},
+		{"go", "github.com/x/y/@latest", false},
 		{"docker", "v2/x/manifests/latest", false},
 		{"", "a", false},
 	}
