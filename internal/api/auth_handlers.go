@@ -438,19 +438,15 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, userToResponse(user))
 }
 
+// handleLogout ends the local session. For a session created by an OIDC
+// provider whose IdP supports RP-initiated logout it answers 200 with
+// {"end_session_url"} for the SPA to navigate to, else 204.
 func (h *AuthHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
 	if !requireSameOrigin(w, r) {
 		return
 	}
 
-	if value := sessionCookieValue(r); value != "" {
-		_ = auth.DeleteSession(r.Context(), h.db, value)
-	}
-
-	secure := isSecureContext(r, h.baseURL)
-	clearSessionCookie(w, secure)
-	clearCSRFCookie(w, secure)
-	writeNoContent(w)
+	completeLogout(w, r, h.db, h.log, h.baseURL, "")
 }
 
 func (h *AuthHandler) handleMe(w http.ResponseWriter, r *http.Request) {

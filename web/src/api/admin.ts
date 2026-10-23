@@ -171,10 +171,27 @@ export const getAdminSystemInfo = () => request<AdminSystemInfo>('/api/v1/admin/
 
 // SSO config. OIDC/SAML settings sit at the top level of the body
 // (`oidc_config` / `saml_config`), matching models.SSOProvider.
+/** `''` is a standards-compliant OIDC provider (issuer discovery). */
+export type OIDCType = '' | 'github' | 'oauth2'
+
+/** Mirrors models.OIDCConfig; `client_secret` is write-only (omit it to keep the stored one). */
 export interface OIDCConfigInput {
-  issuer: string
-  client_id: string
-  client_secret: string
+  type?: OIDCType
+  issuer?: string
+  client_id?: string
+  client_secret?: string
+  scopes?: string[]
+  allowed_tenants?: string[]
+  hosted_domain?: string
+  require_email_verified?: boolean
+  graph_groups?: boolean
+  graph_endpoint?: string
+  authorization_url?: string
+  token_url?: string
+  userinfo_url?: string
+  auth_base_url?: string
+  api_base_url?: string
+  allowed_orgs?: string[]
 }
 
 export interface SAMLConfigInput {

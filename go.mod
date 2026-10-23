@@ -15,6 +15,7 @@ require (
 	github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager v0.4.18
 	github.com/aws/aws-sdk-go-v2/service/s3 v1.114.4
 	github.com/aws/smithy-go v1.28.5
+	github.com/beevik/etree v1.8.1
 	github.com/coreos/go-oidc/v3 v3.21.0
 	github.com/crewjam/saml v0.5.1
 	github.com/go-chi/chi/v5 v5.5.0
@@ -25,6 +26,7 @@ require (
 	github.com/modelcontextprotocol/go-sdk v1.8.0
 	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.25.0
+	github.com/russellhaering/goxmldsig v1.6.1
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/sassoftware/go-rpmutils v0.4.0
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
@@ -69,7 +71,6 @@ require (
 	github.com/aws/aws-sdk-go-v2/service/sso v1.38.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/ssooidc v1.43.4 // indirect
 	github.com/aws/aws-sdk-go-v2/service/sts v1.51.4 // indirect
-	github.com/beevik/etree v1.8.1 // indirect
 	github.com/beorn7/perks v1.0.1 // indirect
 	github.com/cenkalti/backoff/v4 v4.3.0 // indirect
 	github.com/cenkalti/backoff/v5 v5.0.3 // indirect
@@ -116,7 +117,6 @@ require (
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
-	github.com/russellhaering/goxmldsig v1.6.1 // indirect
 	github.com/segmentio/asm v1.1.3 // indirect
 	github.com/segmentio/encoding v0.5.4 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
@@ -143,5 +143,7 @@ require (
 )
 
 // crewjam/saml v0.5.1 + fix for signed elements over goxmldsig's 1000-node
-// traversal limit (ported from grafana/saml#89). Drop when upstream ships it.
-replace github.com/crewjam/saml => github.com/openartifact/saml v0.5.2-oa.1
+// traversal limit (ported from grafana/saml#89) + exported typed errors for
+// ParseResponse failures (errors.Is on InvalidResponseError). Drop when
+// upstream ships both.
+replace github.com/crewjam/saml => github.com/openartifact/saml v0.5.2-oa.2

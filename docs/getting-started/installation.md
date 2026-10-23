@@ -38,7 +38,7 @@ Compose also substitutes these variables from `docker/.env` (they are not listed
 
 | Variable | Default | Effect |
 |---|---|---|
-| `AUTH_HMAC_KEY` | empty (random key per boot) | Signs OIDC/SAML login state; set it for SSO that survives restarts |
+| `AUTH_HMAC_KEY` | empty (random key generated once, persisted in the database) | Signs OIDC/SAML login state; optional, a configured value wins over the stored one |
 | `OPENARTIFACT_BIND` | `127.0.0.1` | Host address the port mapping binds to |
 | `OPENARTIFACT_PORT` | `8080` | Host port mapped to the container's 8080. Containers carry no fixed names, so several projects can run side by side: `OPENARTIFACT_PORT=18080 docker compose -p oa-test -f docker/docker-compose.yml --env-file docker/.env up -d --build` (add `-v` to `down` to drop that project's volumes) |
 | `OPENARTIFACT_VERSION` | `dev` | Build argument; the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |

@@ -5,23 +5,16 @@
 package auth
 
 import (
+	"bytes"
 	"context"
 	"crypto/hmac"
-	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/tls"
-	"crypto/x509"
-	"crypto/x509/pkix"
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
-	"encoding/pem"
 	"encoding/xml"
 	"errors"
 	"fmt"
-	"io"
-	"math/big"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -35,42 +28,44 @@ import (
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
-	"github.com/openartifact/openartifact/internal/netutil"
-	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 var (
 	ErrIDPMetadataUnavailable = errors.New("idp metadata unavailable")
-	ErrSAMLSignatureInvalid   = errors.New("saml signature invalid")
-	ErrSAMLAudienceMismatch   = errors.New("saml audience mismatch")
-	ErrSAMLAssertionExpired   = errors.New("saml assertion expired")
+	// ErrSAMLSignatureInvalid covers a signature that does not verify
+	// (tampered, foreign certificate, wrapped assertion, unusable metadata
+	// certificate) and, through ErrSAMLSignatureMissing, a response with no
+	// signature where one is required.
+	ErrSAMLSignatureInvalid = errors.New("saml signature invalid")
+	// ErrSAMLSignatureMissing means neither the response nor the assertion is
+	// signed. It matches ErrSAMLSignatureInvalid too.
+	ErrSAMLSignatureMissing        = fmt.Errorf("%w: response and assertion are unsigned", ErrSAMLSignatureInvalid)
+	ErrSAMLAudienceMismatch        = errors.New("saml audience mismatch")
+	ErrSAMLAssertionExpired        = errors.New("saml assertion expired")
+	ErrSAMLAssertionNotYetValid    = errors.New("saml assertion not yet valid")
+	ErrSAMLRequestMismatch         = errors.New("saml InResponseTo does not match the login request")
+	ErrSAMLDestinationMismatch     = errors.New("saml destination or recipient mismatch")
+	ErrSAMLIssuerMismatch          = errors.New("saml issuer mismatch")
+	ErrSAMLBadStatus               = errors.New("saml response status is not success")
+	errSAMLUnsolicitedInResponseTo = errors.New("idp-initiated assertion carries an InResponseTo")
 )
 
 //nolint:gochecknoglobals // process-lifetime SAML provider cache, keyed by slug
 var samlCache sync.Map
 
-//nolint:gochecknoglobals // process-lifetime SAML provider cache
-var samlMetadataCache sync.Map
-
-//nolint:gochecknoglobals // process-lifetime ephemeral SP keypair (used only when none is configured)
-var (
-	ephemeralSAMLMu   sync.Mutex
-	ephemeralSAMLKey  *rsa.PrivateKey
-	ephemeralSAMLCert *x509.Certificate
-)
-
-type cachedMetadata struct {
-	descriptor *saml.EntityDescriptor
-	fetchedAt  time.Time
-}
-
 type SAMLProvider struct {
-	Slug     string
-	Cfg      models.SAMLConfig
+	Slug string
+	Cfg  models.SAMLConfig
+	// SP is the strict service provider: it only accepts a response to an
+	// AuthnRequest tracked by StartLogin.
 	SP       *samlsp.Middleware
 	EntityID string
 	AcsURL   string
+
+	// idpInitiatedSP accepts unsolicited responses (no InResponseTo). It is
+	// non-nil only when Cfg.AllowIDPInitiated is set.
+	idpInitiatedSP *saml.ServiceProvider
 
 	// fingerprint identifies the row version, IdP metadata and SP identity this
 	// provider was built from; a mismatch means the cached entry is stale.
@@ -93,13 +88,14 @@ func LoadSAMLProvider(ctx context.Context, db database.Database, slug, baseURL s
 		return nil, ErrSSOProviderDisabled
 	}
 
-	return LoadSAMLProviderRow(ctx, row, baseURL, appCfg, log)
+	return LoadSAMLProviderRow(ctx, db, row, baseURL, appCfg, log)
 }
 
 // LoadSAMLProviderRow builds the provider for an already-fetched row without
 // checking Enabled; it exists so admins can test-connect a disabled provider.
-// Public login paths MUST use LoadSAMLProvider.
-func LoadSAMLProviderRow(ctx context.Context, row *models.SSOProvider, baseURL string, appCfg *config.Config, log *logger.Logger) (*SAMLProvider, error) {
+// Public login paths MUST use LoadSAMLProvider. store persists the generated SP
+// keypair when none is configured.
+func LoadSAMLProviderRow(ctx context.Context, store SettingsStore, row *models.SSOProvider, baseURL string, appCfg *config.Config, log *logger.Logger) (*SAMLProvider, error) {
 	slug := row.Slug
 
 	if row.Kind != "saml" {
@@ -114,7 +110,7 @@ func LoadSAMLProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 	entityID := baseURL + "/api/v1/auth/sso/saml/" + slug + "/metadata"
 	acsURL := baseURL + "/api/v1/auth/sso/saml/" + slug + "/acs"
 
-	idpMeta, err := fetchIDPMetadata(ctx, samlCfg, log)
+	idpMeta, err := samlMetadata.metadata(ctx, samlCfg, log)
 	if err != nil {
 		return nil, err
 	}
@@ -130,7 +126,7 @@ func LoadSAMLProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 		}
 	}
 
-	rsaKey, cert, err := loadOrGenerateSAMLKeypair(appCfg, log)
+	rsaKey, cert, err := loadOrGenerateSAMLKeypair(ctx, store, appCfg, log)
 	if err != nil {
 		return nil, fmt.Errorf("load or generate sp keypair: %w", err)
 	}
@@ -145,22 +141,36 @@ func LoadSAMLProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 		return nil, fmt.Errorf("parse metadata url: %w", err)
 	}
 
-	opts := samlsp.Options{
-		EntityID:          entityID,
-		URL:               *acsURLParsed,
-		Key:               rsaKey,
-		Certificate:       cert,
-		IDPMetadata:       idpMeta,
-		AllowIDPInitiated: false,
+	// An IdP without a usable signing certificate can still start a login;
+	// every response is then rejected as unverifiable.
+	signingCerts, certErr := idpSigningCerts(idpMeta)
+	if certErr != nil && log != nil {
+		log.Warnw("SAML IdP metadata has no usable signing certificate; responses cannot be verified", "slug", slug, "error", certErr)
 	}
 
-	sp, err := samlsp.New(opts)
+	sp, err := samlsp.New(samlsp.Options{
+		EntityID:    entityID,
+		URL:         *acsURLParsed,
+		Key:         rsaKey,
+		Certificate: cert,
+		IDPMetadata: idpMeta,
+		// Strict: every response must answer a tracked AuthnRequest.
+		AllowIDPInitiated: false,
+	})
 	if err != nil {
 		return nil, fmt.Errorf("create saml middleware: %w", err)
 	}
 
 	sp.ServiceProvider.AcsURL = *acsURLParsed
 	sp.ServiceProvider.MetadataURL = *metadataURL
+	// Without NameIDPolicy/@Format the IdP uses the NameID format configured for
+	// this application; the library default would ask for transient NameIDs,
+	// which change on every login and cannot identify a user.
+	sp.ServiceProvider.AuthnNameIDFormat = saml.UnspecifiedNameIDFormat
+
+	if len(signingCerts) > 0 {
+		sp.ServiceProvider.SignatureVerifier = &idpCertVerifier{certs: signingCerts}
+	}
 
 	p := &SAMLProvider{
 		Slug:        slug,
@@ -171,17 +181,46 @@ func LoadSAMLProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 		fingerprint: fingerprint,
 	}
 
+	if samlCfg.AllowIDPInitiated {
+		p.idpInitiatedSP = newIDPInitiatedSP(&sp.ServiceProvider)
+	}
+
 	samlCache.Store(slug, p)
 
 	return p, nil
 }
 
+// newIDPInitiatedSP derives the service provider for unsolicited responses from
+// the strict one. Everything else about validation (signature, audience,
+// Destination, Recipient, time window, issuer) is unchanged; only the request
+// binding differs: the response must carry no InResponseTo at all, and the
+// caller additionally checks the assertion's SubjectConfirmationData.
+func newIDPInitiatedSP(strict *saml.ServiceProvider) *saml.ServiceProvider {
+	sp := *strict
+	sp.AllowIDPInitiated = true
+	sp.ValidateRequestID = func(resp saml.Response, _ []string) error {
+		if resp.InResponseTo != "" {
+			return errSAMLUnsolicitedInResponseTo
+		}
+
+		return nil
+	}
+
+	return &sp
+}
+
 // samlFingerprint hashes everything a cached provider is derived from: the row
 // version, the (freshly fetched) IdP metadata, the attribute mapping and the SP
 // entity ID. Any change yields a different fingerprint, so a rotated or revoked
-// IdP certificate or an edited configuration is never served stale.
+// IdP certificate or an edited configuration is never served stale. The
+// metadata's validity hints are left out: IdPs that restamp validUntil on every
+// fetch would otherwise rebuild the provider on every refresh.
 func samlFingerprint(row *models.SSOProvider, idpMeta *saml.EntityDescriptor, entityID string) (string, error) {
-	metaXML, err := xml.Marshal(idpMeta)
+	stable := *idpMeta
+	stable.ValidUntil = time.Time{}
+	stable.CacheDuration = 0
+
+	metaXML, err := xml.Marshal(&stable)
 	if err != nil {
 		return "", fmt.Errorf("marshal idp metadata: %w", err)
 	}
@@ -196,204 +235,6 @@ func samlFingerprint(row *models.SSOProvider, idpMeta *saml.EntityDescriptor, en
 	h.Write(metaXML)
 
 	return hex.EncodeToString(h.Sum(nil)), nil
-}
-
-func generateSelfSignedCert() (*rsa.PrivateKey, *x509.Certificate, error) {
-	key, err := rsa.GenerateKey(rand.Reader, 2048)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	tmpl := &x509.Certificate{
-		SerialNumber: big.NewInt(1),
-		Subject:      pkix.Name{CommonName: "openartifact-saml-sp"},
-		NotBefore:    time.Now().Add(-time.Minute),
-		NotAfter:     time.Now().Add(10 * 365 * 24 * time.Hour),
-	}
-
-	der, err := x509.CreateCertificate(rand.Reader, tmpl, tmpl, &key.PublicKey, key)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	cert, err := x509.ParseCertificate(der)
-	if err != nil {
-		return nil, nil, err
-	}
-
-	return key, cert, nil
-}
-
-func loadOrGenerateSAMLKeypair(cfg *config.Config, log *logger.Logger) (*rsa.PrivateKey, *x509.Certificate, error) {
-	// If both cert and key are configured via environment variables, load them
-	if cfg.Auth.SAMLSPCertPEM != "" && cfg.Auth.SAMLSPKeyPEM != "" { //nolint:nestif // SAML cert loading requires nested validation
-		_, err := tls.X509KeyPair([]byte(cfg.Auth.SAMLSPCertPEM), []byte(cfg.Auth.SAMLSPKeyPEM))
-		if err != nil {
-			return nil, nil, fmt.Errorf("parse saml sp keypair from config: %w", err)
-		}
-
-		// Parse the private key
-		keyBlock, _ := pem.Decode([]byte(cfg.Auth.SAMLSPKeyPEM))
-		if keyBlock == nil {
-			return nil, nil, errors.New("failed to decode SAML SP private key PEM") //nolint:err113 // static error
-		}
-
-		privKey, err := x509.ParsePKCS1PrivateKey(keyBlock.Bytes)
-		if err != nil {
-			// Try PKCS8 format
-			parsedKey, err2 := x509.ParsePKCS8PrivateKey(keyBlock.Bytes)
-			if err2 != nil {
-				return nil, nil, fmt.Errorf("parse saml sp private key: %w", err)
-			}
-
-			var ok bool
-
-			privKey, ok = parsedKey.(*rsa.PrivateKey)
-			if !ok {
-				return nil, nil, errors.New("saml sp private key is not an RSA key") //nolint:err113 // static error
-			}
-		}
-
-		// Parse the certificate
-		certBlock, _ := pem.Decode([]byte(cfg.Auth.SAMLSPCertPEM))
-		if certBlock == nil {
-			return nil, nil, errors.New("failed to decode SAML SP certificate PEM") //nolint:err113 // static error
-		}
-
-		cert, err := x509.ParseCertificate(certBlock.Bytes)
-		if err != nil {
-			return nil, nil, fmt.Errorf("parse saml sp certificate: %w", err)
-		}
-
-		if log != nil {
-			log.Infow("Loaded SAML SP keypair from environment variables", "cert_subject", cert.Subject.String())
-		}
-
-		return privKey, cert, nil
-	}
-
-	// One ephemeral keypair per process, so rebuilding a provider (config or
-	// IdP metadata change) does not change the SP certificate mid-flight.
-	ephemeralSAMLMu.Lock()
-	defer ephemeralSAMLMu.Unlock()
-
-	if ephemeralSAMLKey != nil {
-		return ephemeralSAMLKey, ephemeralSAMLCert, nil
-	}
-
-	if log != nil {
-		log.Warnw("SAML SP keypair not configured via environment variables; using ephemeral keypair. " +
-			"Set OPENARTIFACT_SAML_SP_CERT and OPENARTIFACT_SAML_SP_KEY for persistence across restarts. " +
-			"Generate with: openssl req -x509 -newkey rsa:2048 -keyout sp.key -out sp.crt -days 3650 -nodes -subj \"/CN=openartifact-sp\"")
-	}
-
-	key, cert, err := generateSelfSignedCert()
-	if err != nil {
-		return nil, nil, err
-	}
-
-	ephemeralSAMLKey, ephemeralSAMLCert = key, cert
-
-	return key, cert, nil
-}
-
-func fetchIDPMetadata(ctx context.Context, cfg models.SAMLConfig, log *logger.Logger) (*saml.EntityDescriptor, error) {
-	if cfg.IDPMetadataURL != "" {
-		return fetchIDPMetadataFromURL(ctx, cfg.IDPMetadataURL, log)
-	}
-
-	if cfg.IDPMetadataXML != "" {
-		cacheKey := "static:" + cfg.IDPMetadataXML
-		if cached, ok := samlMetadataCache.Load(cacheKey); ok {
-			if cm, ok := cached.(*cachedMetadata); ok {
-				return cm.descriptor, nil
-			}
-		}
-
-		meta, err := samlsp.ParseMetadata([]byte(cfg.IDPMetadataXML))
-		if err != nil {
-			return nil, fmt.Errorf("parse idp metadata xml: %w", err)
-		}
-
-		samlMetadataCache.Store(cacheKey, &cachedMetadata{descriptor: meta, fetchedAt: time.Now()})
-
-		return meta, nil
-	}
-
-	return nil, errors.New("no idp metadata source configured") //nolint:err113 // static error
-}
-
-const (
-	maxIDPMetadataBytes = 1 << 20
-	maxStaleIDPMetadata = 24 * time.Hour
-)
-
-var errIDPMetadataTooLarge = errors.New("idp metadata exceeds size limit")
-
-func fetchIDPMetadataFromURL(ctx context.Context, metadataURL string, log *logger.Logger) (*saml.EntityDescriptor, error) {
-	const cacheTTL = time.Hour
-
-	if cached, ok := samlMetadataCache.Load(metadataURL); ok {
-		if entry, ok := cached.(*cachedMetadata); ok {
-			if time.Since(entry.fetchedAt) < cacheTTL {
-				return entry.descriptor, nil
-			}
-		}
-	}
-
-	fetchCtx, cancel := context.WithTimeout(ctx, 10*time.Second)
-	defer cancel()
-
-	// The URL is admin-supplied: reject private/loopback targets (unless
-	// OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true) and re-check at dial time.
-	if err := netutil.ValidateOutboundURLContext(fetchCtx, metadataURL); err != nil {
-		return fallbackCachedMetadata(metadataURL, fmt.Errorf("idp metadata url rejected: %w", err), log)
-	}
-
-	req, err := http.NewRequestWithContext(fetchCtx, http.MethodGet, metadataURL, nil)
-	if err != nil {
-		return fallbackCachedMetadata(metadataURL, fmt.Errorf("build metadata request: %w", err), log)
-	}
-
-	resp, err := telemetry.WrapClient(netutil.SafeHTTPClient(10 * time.Second)).Do(req)
-	if err != nil {
-		return fallbackCachedMetadata(metadataURL, err, log)
-	}
-	defer func() { _ = resp.Body.Close() }()
-
-	body, err := io.ReadAll(io.LimitReader(resp.Body, maxIDPMetadataBytes+1))
-	if err != nil {
-		return fallbackCachedMetadata(metadataURL, err, log)
-	}
-
-	if len(body) > maxIDPMetadataBytes {
-		return fallbackCachedMetadata(metadataURL, errIDPMetadataTooLarge, log)
-	}
-
-	meta, err := samlsp.ParseMetadata(body)
-	if err != nil {
-		return fallbackCachedMetadata(metadataURL, err, log)
-	}
-
-	samlMetadataCache.Store(metadataURL, &cachedMetadata{descriptor: meta, fetchedAt: time.Now()})
-
-	return meta, nil
-}
-
-func fallbackCachedMetadata(metadataURL string, fetchErr error, log *logger.Logger) (*saml.EntityDescriptor, error) {
-	if cached, ok := samlMetadataCache.Load(metadataURL); ok {
-		if log != nil {
-			log.Warnw("SAML IdP metadata URL unreachable; using cached copy", "url", metadataURL, "error", fetchErr)
-		}
-
-		// A stale copy is served only for a bounded time, so a revoked IdP
-		// certificate is eventually dropped when the URL stays unreachable.
-		if cm, ok := cached.(*cachedMetadata); ok && time.Since(cm.fetchedAt) < maxStaleIDPMetadata {
-			return cm.descriptor, nil
-		}
-	}
-
-	return nil, fmt.Errorf("%w: %w", ErrIDPMetadataUnavailable, fetchErr)
 }
 
 const (
@@ -501,11 +342,88 @@ func (p *SAMLProvider) StartLogin(w http.ResponseWriter, relayState string, trac
 	return redirectURL.String(), nil
 }
 
-// ParseCallback validates a SAML response at the ACS: it must answer the
-// AuthnRequest tracked by StartLogin (InResponseTo), carry a valid signature,
-// audience and time window, and its assertion ID must not have been seen
-// before. The tracker cookie is cleared whatever the outcome (single use).
-// Unsolicited (IdP-initiated) responses are rejected.
+// SAMLResponseMode says how an ACS request is validated.
+type SAMLResponseMode int
+
+const (
+	// SAMLSPInitiated: the response must answer a request tracked by StartLogin.
+	SAMLSPInitiated SAMLResponseMode = iota
+	// SAMLIDPInitiated: an unsolicited response, accepted only when the provider
+	// enables it.
+	SAMLIDPInitiated
+)
+
+// ResponseMode routes an ACS request. It peeks at Response/@InResponseTo in
+// the (still unverified) document: a response that names a request is
+// SP-initiated; one that names none is IdP-initiated, which only a provider
+// with allow_idp_initiated serves. The peek is a routing hint, never a
+// security decision: each path validates the response in full, and the
+// IdP-initiated path itself insists on an empty InResponseTo, so a document
+// that lies to the peek is rejected either way.
+func (p *SAMLProvider) ResponseMode(r *http.Request) SAMLResponseMode {
+	if p.idpInitiatedSP == nil {
+		return SAMLSPInitiated
+	}
+
+	if err := r.ParseForm(); err != nil || r.PostForm.Get("SAMLart") != "" {
+		return SAMLSPInitiated
+	}
+
+	inResponseTo, ok := peekSAMLInResponseTo(r.PostForm.Get("SAMLResponse"))
+	if ok && inResponseTo == "" {
+		return SAMLIDPInitiated
+	}
+
+	return SAMLSPInitiated
+}
+
+// peekSAMLInResponseTo reads the InResponseTo attribute of the root
+// samlp:Response element of a base64 SAMLResponse without validating anything.
+// ok is false when the payload is not a decodable Response document.
+func peekSAMLInResponseTo(b64 string) (string, bool) {
+	raw, err := base64.StdEncoding.DecodeString(b64)
+	if err != nil {
+		return "", false
+	}
+
+	dec := xml.NewDecoder(bytes.NewReader(raw))
+
+	for {
+		tok, err := dec.Token()
+		if err != nil {
+			return "", false
+		}
+
+		start, isStart := tok.(xml.StartElement)
+		if !isStart {
+			continue
+		}
+
+		if start.Name.Local != "Response" || start.Name.Space != "urn:oasis:names:tc:SAML:2.0:protocol" {
+			return "", false
+		}
+
+		for _, a := range start.Attr {
+			if a.Name.Local == "InResponseTo" && a.Name.Space == "" {
+				return a.Value, true
+			}
+		}
+
+		return "", true
+	}
+}
+
+// ParseCallback validates a SAML response at the ACS and returns its verified
+// assertion. See ResponseMode for the two paths.
+//
+// SP-initiated: the response must answer the AuthnRequest tracked by
+// StartLogin (signed cookie, InResponseTo), carry a valid signature, audience
+// and time window, and its assertion ID must not have been seen before. The
+// tracker cookie is cleared whatever the outcome (single use).
+//
+// IdP-initiated (opt-in): the same validation, with InResponseTo required to be
+// empty on the response and on every SubjectConfirmationData; no tracker is
+// consulted and an SP-initiated tracker cookie is left alone.
 func (p *SAMLProvider) ParseCallback(w http.ResponseWriter, r *http.Request, db database.Database, trackerKey []byte) (*saml.Assertion, error) {
 	if len(trackerKey) == 0 {
 		return nil, ErrSAMLTrackerKey
@@ -513,6 +431,10 @@ func (p *SAMLProvider) ParseCallback(w http.ResponseWriter, r *http.Request, db 
 
 	if err := r.ParseForm(); err != nil {
 		return nil, fmt.Errorf("parse form: %w", err)
+	}
+
+	if p.ResponseMode(r) == SAMLIDPInitiated {
+		return p.parseIDPInitiated(r, db)
 	}
 
 	cookie, err := r.Cookie(samlRequestCookieName(p.Slug))
@@ -539,24 +461,66 @@ func (p *SAMLProvider) ParseCallback(w http.ResponseWriter, r *http.Request, db 
 	return assertion, nil
 }
 
-// classifySAMLParseError maps crewjam's opaque InvalidResponseError (whose
-// public message is deliberately generic) onto this package's sentinels using
-// the private cause.
-func classifySAMLParseError(err error) error {
-	detail := err
-	if ire := (*saml.InvalidResponseError)(nil); errors.As(err, &ire) && ire.PrivateErr != nil {
-		detail = ire.PrivateErr
+func (p *SAMLProvider) parseIDPInitiated(r *http.Request, db database.Database) (*saml.Assertion, error) {
+	assertion, err := p.idpInitiatedSP.ParseResponse(r, nil)
+	if err != nil {
+		return nil, classifySAMLParseError(err)
 	}
 
-	msg := strings.ToLower(detail.Error())
+	// The library skips the SubjectConfirmationData InResponseTo check for
+	// IdP-initiated responses; an assertion that claims to answer a request is
+	// not unsolicited, so it is refused here.
+	if assertion.Subject != nil {
+		for _, sc := range assertion.Subject.SubjectConfirmations {
+			if sc.SubjectConfirmationData != nil && sc.SubjectConfirmationData.InResponseTo != "" {
+				return nil, fmt.Errorf("%w: %w", ErrSAMLRequestMismatch, errSAMLUnsolicitedInResponseTo)
+			}
+		}
+	}
+
+	if err := p.consumeAssertion(r.Context(), db, assertion); err != nil {
+		return nil, err
+	}
+
+	return assertion, nil
+}
+
+// classifySAMLParseError maps the library's InvalidResponseError (whose public
+// message is deliberately generic) onto this package's sentinels through the
+// library's typed errors. Anything it does not recognize is returned as is.
+//
+//nolint:cyclop,gocyclo // one branch per library sentinel
+func classifySAMLParseError(err error) error {
+	// InvalidResponseError's own message is deliberately generic; the private
+	// cause carries the diagnostic text (still only for logs, never clients).
+	detail := err
+
+	var invalid *saml.InvalidResponseError
+	if errors.As(err, &invalid) && invalid.PrivateErr != nil {
+		detail = invalid.PrivateErr
+	}
 
 	switch {
-	case strings.Contains(msg, "signature"):
-		return fmt.Errorf("%w: %w", ErrSAMLSignatureInvalid, err)
-	case strings.Contains(msg, "audience"):
-		return fmt.Errorf("%w: %w", ErrSAMLAudienceMismatch, err)
-	case strings.Contains(msg, "expired") || strings.Contains(msg, "notonorafter"):
-		return fmt.Errorf("%w: %w", ErrSAMLAssertionExpired, err)
+	case errors.Is(err, saml.ErrSignatureMissing):
+		return fmt.Errorf("%w: %w", ErrSAMLSignatureMissing, detail)
+	case errors.Is(err, saml.ErrSignatureInvalid):
+		return fmt.Errorf("%w: %w", ErrSAMLSignatureInvalid, detail)
+	case errors.Is(err, saml.ErrAudienceMismatch):
+		return fmt.Errorf("%w: %w", ErrSAMLAudienceMismatch, detail)
+	case errors.Is(err, saml.ErrExpired):
+		return fmt.Errorf("%w: %w", ErrSAMLAssertionExpired, detail)
+	case errors.Is(err, saml.ErrNotYetValid):
+		return fmt.Errorf("%w: %w", ErrSAMLAssertionNotYetValid, detail)
+	case errors.Is(err, saml.ErrInResponseToMismatch):
+		return fmt.Errorf("%w: %w", ErrSAMLRequestMismatch, detail)
+	case errors.Is(err, saml.ErrDestinationMismatch), errors.Is(err, saml.ErrRecipientMismatch):
+		return fmt.Errorf("%w: %w", ErrSAMLDestinationMismatch, detail)
+	case errors.Is(err, saml.ErrIssuerMismatch):
+		return fmt.Errorf("%w: %w", ErrSAMLIssuerMismatch, detail)
+	}
+
+	if bad := (saml.ErrBadStatus{}); errors.As(err, &bad) {
+		return fmt.Errorf("%w: %w", ErrSAMLBadStatus, detail)
 	}
 
 	return err

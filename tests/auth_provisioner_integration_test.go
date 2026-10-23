@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -268,8 +269,10 @@ func TestProvisioning_OIDC_LinkByEmail_UnverifiedEmailNotLinked(t *testing.T) {
 		t.Fatalf("login with an unverified email must be denied, got 302")
 	}
 
-	if rw.Code != http.StatusConflict {
-		t.Errorf("expected 409, got %d (body: %s)", rw.Code, rw.Body.String())
+	// The denial is deliberately generic: it must not reveal that the address
+	// belongs to a local account.
+	if rw.Code != http.StatusForbidden || !strings.Contains(rw.Body.String(), `"sso_login_denied"`) {
+		t.Errorf("expected 403 sso_login_denied, got %d (body: %s)", rw.Code, rw.Body.String())
 	}
 
 	if got := db.authUsers[existingUser.ID]; got == nil || got.ExternalID != nil {

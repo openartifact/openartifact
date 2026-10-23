@@ -97,15 +97,21 @@ export const useSessionStore = defineStore('session', () => {
     ui.closeCommandPalette()
   }
 
-  /** Ends the server session, then clears the client state. Throws when the server could not be reached. */
-  async function logout(): Promise<void> {
+  /**
+   * Ends the server session, then clears the client state. Resolves to the
+   * IdP end-session URL the caller must navigate to, if there is one. Throws
+   * when the server could not be reached.
+   */
+  async function logout(): Promise<string | undefined> {
+    let endSessionURL: string | undefined
     try {
-      await apiLogout()
+      endSessionURL = await apiLogout()
     } catch (err) {
       // 401: the session is already gone server-side.
       if (!(err instanceof ApiError && err.status === 401)) throw err
     }
     clearSession()
+    return endSessionURL
   }
 
   return { user, ready, isAuthenticated, isAdmin, canCreateRepo, mustChangePassword, projects, probeFailed, fetchMe, clearSession, logout }

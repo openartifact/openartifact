@@ -332,6 +332,18 @@ describe('useSessionStore', () => {
     expect(store.user).toBeNull()
   })
 
+  it('logout() resolves to the IdP end-session URL after clearing the user', async () => {
+    const store = useSessionStore()
+    store.user = { id: '1', username: 'testuser' } as User
+
+    fetchMock.mockResolvedValueOnce(
+      mk({ status: 200, ok: true, json: async () => ({ end_session_url: 'https://idp.example/logout' }) }) as unknown as Response,
+    )
+
+    expect(await store.logout()).toBe('https://idp.example/logout')
+    expect(store.user).toBeNull()
+  })
+
   it('logout() treats 401 as already signed out', async () => {
     const store = useSessionStore()
     store.user = { id: '1', username: 'testuser' } as User

@@ -5,13 +5,13 @@
 package api
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/hex"
 	"errors"
 	"net/http"
-	"strings"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -66,18 +66,7 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		if ssoProviderUnavailable(w, err) {
-			return
-		}
-
-		if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
-			writeError(w, http.StatusBadGateway, "oidc_discovery_failed", "OIDC discovery failed")
-			return
-		}
-
-		h.log.Errorw("oidc login: load provider", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
-
+		h.writeLoadError(w, "oidc login", slug, err)
 		return
 	}
 
@@ -99,17 +88,23 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 
 	state := hex.EncodeToString(rawState)
 
-	rawNonce := make([]byte, 16)
-	if _, err := rand.Read(rawNonce); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate nonce")
-		return
-	}
-
-	nonce := hex.EncodeToString(rawNonce)
-
 	setSSOStateCookie(w, r, h.baseURL, "oa_oidc_pkce_"+slug, codeVerifier)
 	setSSOStateCookie(w, r, h.baseURL, "oa_oidc_state_"+slug, state)
-	setSSOStateCookie(w, r, h.baseURL, "oa_oidc_nonce_"+slug, nonce)
+
+	// The nonce binds the ID token to this browser; plain OAuth 2.0 providers
+	// (github, oauth2) have no ID token.
+	nonce := ""
+
+	if !provider.IsOAuth2() {
+		rawNonce := make([]byte, 16)
+		if _, err := rand.Read(rawNonce); err != nil {
+			writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate nonce")
+			return
+		}
+
+		nonce = hex.EncodeToString(rawNonce)
+		setSSOStateCookie(w, r, h.baseURL, "oa_oidc_nonce_"+slug, nonce)
+	}
 
 	if redirect := r.URL.Query().Get("redirect"); redirect != "" && isOIDCRelativePath(redirect) {
 		setSSOStateCookie(w, r, h.baseURL, "oa_oidc_redirect_"+slug, redirect)
@@ -119,10 +114,82 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, provider.AuthURL(state, nonce, codeChallenge), http.StatusFound)
 }
 
-// rawIDTokenPlaceholder is replaced by the raw ID token once the exchange returns it.
-//
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
-const rawIDTokenPlaceholder = ""
+// writeLoadError maps a provider load failure onto the HTTP response shared
+// by login and callback.
+func (h *OIDCHandler) writeLoadError(w http.ResponseWriter, flow, slug string, err error) {
+	if ssoProviderUnavailable(w, err) {
+		return
+	}
+
+	if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
+		writeError(w, http.StatusBadGateway, "oidc_discovery_failed", "OIDC discovery failed")
+		return
+	}
+
+	h.log.Errorw(flow+": load provider", "slug", slug, "error", err)
+	writeError(w, http.StatusInternalServerError, "internal_error", "failed to load provider")
+}
+
+// writeSSOLoginDenied answers a policy rejection (ErrSSOLoginDenied) with the
+// generic 403 shared by every SSO flow; the reason stays in the server log.
+func writeSSOLoginDenied(w http.ResponseWriter, log *logger.Logger, flow, slug string, err error) {
+	log.Warnw(flow+": sso login denied", "slug", slug, "reason", err.Error())
+	writeError(w, http.StatusForbidden, "sso_login_denied", ssoLoginDeniedMessage)
+}
+
+// writeExchangeError maps a code-exchange or ID token verification failure.
+func (h *OIDCHandler) writeExchangeError(w http.ResponseWriter, slug string, err error) {
+	switch {
+	case ssoProviderUnavailable(w, err):
+	case errors.Is(err, auth.ErrSSOLoginDenied):
+		writeSSOLoginDenied(w, h.log, "oidc callback", slug, err)
+	case errors.Is(err, auth.ErrOIDCDiscoveryFailed):
+		writeError(w, http.StatusBadGateway, "oidc_discovery_failed", "OIDC discovery failed")
+	case errors.Is(err, auth.ErrIDTokenMissing):
+		writeError(w, http.StatusBadGateway, "id_token_missing", "ID token missing from response")
+	case errors.Is(err, auth.ErrIDTokenExpired):
+		writeError(w, http.StatusUnauthorized, "id_token_expired", "ID token has expired")
+	default:
+		h.log.Errorw("oidc callback: exchange", "slug", slug, "error", err)
+		writeError(w, http.StatusBadGateway, "exchange_failed", "token exchange failed")
+	}
+}
+
+// callbackCookies are the per-login browser state set by handleLogin.
+type callbackCookies struct {
+	pkce, state, nonce string
+}
+
+// readCallbackCookies returns the cookies the callback needs and reports
+// whether all of them are present; on failure it has written the response.
+// The nonce cookie is only required for providers that issue an ID token.
+func readCallbackCookies(w http.ResponseWriter, r *http.Request, slug string, needNonce bool) (callbackCookies, bool) {
+	var c callbackCookies
+
+	for _, f := range []struct {
+		name string
+		dst  *string
+		skip bool
+	}{
+		{"oa_oidc_pkce_" + slug, &c.pkce, false},
+		{"oa_oidc_state_" + slug, &c.state, false},
+		{"oa_oidc_nonce_" + slug, &c.nonce, !needNonce},
+	} {
+		if f.skip {
+			continue
+		}
+
+		cookie, err := r.Cookie(f.name)
+		if err != nil || cookie.Value == "" {
+			writeError(w, http.StatusBadRequest, "missing_session_cookies", "login session cookie missing")
+			return callbackCookies{}, false
+		}
+
+		*f.dst = cookie.Value
+	}
+
+	return c, true
+}
 
 func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	slug := urlparams.Vars(r)["slug"]
@@ -135,77 +202,45 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pkceCookie, err := r.Cookie("oa_oidc_pkce_" + slug)
+	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
 	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing_session_cookies", "PKCE cookie missing")
+		h.writeLoadError(w, "oidc callback", slug, err)
 		return
 	}
 
-	stateCookie, err := r.Cookie("oa_oidc_state_" + slug)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing_session_cookies", "state cookie missing")
+	cookies, ok := readCallbackCookies(w, r, slug, !provider.IsOAuth2())
+	if !ok {
 		return
 	}
 
-	nonceCookie, err := r.Cookie("oa_oidc_nonce_" + slug)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "missing_session_cookies", "nonce cookie missing")
-		return
-	}
-
-	if stateCookie.Value == "" || !constTimeEqual(q.Get("state"), stateCookie.Value) {
+	if !constTimeEqual(q.Get("state"), cookies.state) {
 		writeError(w, http.StatusBadRequest, "state_mismatch", "state parameter does not match")
 		return
 	}
 
-	idToken, claimsMap, provider, err := auth.ExchangeWithRetry(ctx, h.db, slug, h.baseURL, q.Get("code"), pkceCookie.Value)
+	res, err := auth.ExchangeWithRetry(ctx, h.db, slug, h.baseURL, q.Get("code"), cookies.pkce)
 	if err != nil {
-		if ssoProviderUnavailable(w, err) {
-			return
-		}
-
-		if errors.Is(err, auth.ErrOIDCDiscoveryFailed) {
-			writeError(w, http.StatusBadGateway, "oidc_discovery_failed", "OIDC discovery failed")
-			return
-		}
-
-		if errors.Is(err, auth.ErrIDTokenMissing) {
-			writeError(w, http.StatusBadGateway, "id_token_missing", "ID token missing from response")
-			return
-		}
-
-		if errors.Is(err, auth.ErrIDTokenExpired) {
-			writeError(w, http.StatusUnauthorized, "id_token_expired", "ID token has expired")
-			return
-		}
-
-		h.log.Errorw("oidc callback: exchange", "slug", slug, "error", err)
-		writeError(w, http.StatusBadGateway, "exchange_failed", "token exchange failed")
-
+		h.writeExchangeError(w, slug, err)
 		return
 	}
 
-	var nonceClaims struct {
-		Nonce string `json:"nonce"`
-	}
-	if err := idToken.Claims(&nonceClaims); err != nil || nonceClaims.Nonce != nonceCookie.Value {
+	if res.IDToken != nil && !constTimeEqual(res.IDToken.Nonce, cookies.nonce) {
 		writeError(w, http.StatusUnauthorized, "nonce_mismatch", "nonce does not match")
 		return
 	}
 
-	cfg := provider.Cfg
-	ssoClaims := auth.SSOClaims{
-		ExternalID:   idToken.Subject,
-		ProviderSlug: slug,
-		Username:     stringFromClaims(claimsMap, firstNonEmpty(cfg.UsernameClaim, "preferred_username")),
-		Email:        stringFromClaims(claimsMap, firstNonEmpty(cfg.EmailClaim, "email")),
-		FullName:     stringFromClaims(claimsMap, firstNonEmpty(cfg.NameClaim, "name")),
-		// email_verified is only meaningful for the standard "email" claim; a
-		// custom email claim has no verification assertion.
-		EmailVerified: cfg.EmailClaim == "" || cfg.EmailClaim == "email",
+	ssoClaims, err := res.Provider.Identity(ctx, res, h.log)
+	if err != nil {
+		if errors.Is(err, auth.ErrSSOLoginDenied) {
+			writeSSOLoginDenied(w, h.log, "oidc callback", slug, err)
+			return
+		}
+
+		h.log.Errorw("oidc callback: resolve identity", "slug", slug, "error", err)
+		writeError(w, http.StatusBadGateway, "exchange_failed", "failed to resolve the user identity")
+
+		return
 	}
-	ssoClaims.EmailVerified = ssoClaims.EmailVerified && boolClaimTrue(claimsMap, "email_verified")
-	ssoClaims.Groups, ssoClaims.GroupsPresent = groupsFromClaims(claimsMap, firstNonEmpty(cfg.GroupsClaim, "groups"))
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
 	if err != nil || providerRow == nil || !providerRow.Enabled {
@@ -220,7 +255,7 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !establishSSOSession(w, r, h.db, h.log, h.baseURL, h.trustedProxies, ssoSessionParams{
-		UserID: user.ID, ProviderSlug: slug, IDToken: rawIDTokenPlaceholder,
+		UserID: user.ID, ProviderSlug: slug, IDToken: res.RawIDToken,
 	}) {
 		return
 	}
@@ -243,38 +278,77 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, safeRedirectPath(redirect), http.StatusFound)
 }
 
+// handleLogout ends the local session and, when the session was created by
+// this OIDC provider and the IdP supports RP-initiated logout, answers with
+// the IdP's end_session URL. It sits outside the CSRF middleware, so it
+// requires a same-origin request. The request body is ignored: the
+// id_token_hint is the one stored with the session and the
+// post_logout_redirect_uri is always this server's login page, so a caller can
+// neither inject a hint nor steer the post-logout redirect.
 func (h *OIDCHandler) handleLogout(w http.ResponseWriter, r *http.Request) {
-	slug := urlparams.Vars(r)["slug"]
-	ctx := r.Context()
-
-	var body struct {
-		IDTokenHint           string `json:"id_token_hint"`
-		PostLogoutRedirectURI string `json:"post_logout_redirect_uri"`
-	}
-
-	_ = decodeJSON(r, &body)
-
-	if cookie, err := r.Cookie(auth.SessionCookieName); err == nil && cookie.Value != "" {
-		_ = auth.DeleteSession(ctx, h.db, cookie.Value)
-	}
-
-	secure := isSecureContext(r, h.baseURL)
-	clearSessionCookie(w, secure)
-	clearCSRFCookie(w, secure)
-
-	provider, err := auth.LoadOIDCProvider(ctx, h.db, slug, h.baseURL)
-	if err != nil {
-		writeNoContent(w)
+	if !requireSameOrigin(w, r) {
 		return
 	}
 
-	endSessionURL, ok := provider.EndSession(body.IDTokenHint, body.PostLogoutRedirectURI)
-	if ok {
+	completeLogout(w, r, h.db, h.log, h.baseURL, urlparams.Vars(r)["slug"])
+}
+
+// completeLogout deletes the request's session, clears the session cookies and
+// answers 200 {"end_session_url"} when the session belongs to an OIDC provider
+// (restricted to onlySlug when non-empty) whose IdP supports RP-initiated
+// logout, else 204. Any failure to work out the IdP URL degrades to a plain
+// local logout. The caller has already enforced same-origin.
+func completeLogout(w http.ResponseWriter, r *http.Request, db database.Database, log *logger.Logger, baseURL, onlySlug string) {
+	ctx := r.Context()
+	endSessionURL := ""
+
+	if value := sessionCookieValue(r); value != "" {
+		// Looked up before the delete: the SSO record dies with the session.
+		endSessionURL = rpLogoutURL(ctx, db, log, baseURL, value, onlySlug)
+
+		if err := auth.DeleteSession(ctx, db, value); err != nil {
+			log.Warnw("logout: delete session", "error", err)
+		}
+	}
+
+	secure := isSecureContext(r, baseURL)
+	clearSessionCookie(w, secure)
+	clearCSRFCookie(w, secure)
+
+	if endSessionURL != "" {
 		writeJSON(w, http.StatusOK, map[string]string{"end_session_url": endSessionURL})
 		return
 	}
 
 	writeNoContent(w)
+}
+
+// rpLogoutURL returns the IdP end_session URL for the session behind
+// cookieValue, or "" when the session is not an OIDC SSO session (of onlySlug,
+// when set) or the IdP has no end_session_endpoint.
+func rpLogoutURL(ctx context.Context, db database.Database, log *logger.Logger, baseURL, cookieValue, onlySlug string) string {
+	info, err := auth.LookupSessionSSO(ctx, db, cookieValue)
+	if err != nil {
+		log.Warnw("logout: read session sso record", "error", err)
+		return ""
+	}
+
+	if info == nil || (onlySlug != "" && info.ProviderSlug != onlySlug) {
+		return ""
+	}
+
+	provider, err := auth.LoadOIDCProvider(ctx, db, info.ProviderSlug, baseURL)
+	if err != nil {
+		log.Warnw("logout: load oidc provider", "slug", info.ProviderSlug, "error", err)
+		return ""
+	}
+
+	endSessionURL, ok := provider.EndSession(info.IDToken, baseURL+"/login")
+	if !ok {
+		return ""
+	}
+
+	return endSessionURL
 }
 
 func isOIDCRelativePath(path string) bool {
@@ -300,61 +374,4 @@ func firstNonEmpty(a, b string) string {
 	}
 
 	return b
-}
-
-func stringFromClaims(claims map[string]any, key string) string {
-	if v, ok := claims[key]; ok {
-		if s, ok := v.(string); ok {
-			return s
-		}
-	}
-
-	return ""
-}
-
-// boolClaimTrue reports whether claims[key] is boolean true. Some IdPs
-// (e.g. Cognito) encode it as the string "true"; that is accepted too.
-func boolClaimTrue(claims map[string]any, key string) bool {
-	switch v := claims[key].(type) {
-	case bool:
-		return v
-	case string:
-		return strings.EqualFold(v, "true")
-	}
-
-	return false
-}
-
-// groupsFromClaims reads the groups claim. present is false when the claim is
-// missing (or null, or of an unusable type): the IdP then said nothing about
-// the user's groups, which is different from an empty list.
-func groupsFromClaims(claims map[string]any, key string) (groups []string, present bool) {
-	v, ok := claims[key]
-	if !ok {
-		return nil, false
-	}
-
-	switch t := v.(type) {
-	case []string:
-		return t, true
-	case []any:
-		out := make([]string, 0, len(t))
-
-		for _, item := range t {
-			if s, ok := item.(string); ok {
-				out = append(out, s)
-			}
-		}
-
-		return out, true
-	case string:
-		// Some IdPs emit a lone group as a bare string.
-		if t == "" {
-			return []string{}, true
-		}
-
-		return []string{t}, true
-	}
-
-	return nil, false
 }

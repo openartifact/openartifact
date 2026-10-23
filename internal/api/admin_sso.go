@@ -105,43 +105,6 @@ func requireHTTPSIdentityURL(raw string) error {
 	return errIdentityURLNotHTTPS
 }
 
-// validateOIDCConfig applies the create-time rules to a (plaintext-secret)
-// OIDC config: required fields, outbound-URL safety, and sane claim names.
-func validateOIDCConfig(cfg *models.OIDCConfig) error {
-	if cfg.Issuer == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
-		return errors.New("oidc_config requires issuer, client_id, and client_secret") //nolint:err113 // validation message surfaced to the admin
-	}
-
-	if err := requireHTTPSIdentityURL(cfg.Issuer); err != nil {
-		return fmt.Errorf("oidc_config.issuer: %w", err)
-	}
-
-	if err := netutil.ValidateOutboundURL(cfg.Issuer); err != nil {
-		return fmt.Errorf("oidc_config.issuer: %w", err)
-	}
-
-	if crypto.IsEncrypted(cfg.ClientSecret) {
-		return errors.New("oidc_config.client_secret must be the plaintext secret") //nolint:err113 // validation message surfaced to the admin
-	}
-
-	for name, v := range map[string]string{
-		"username_claim": cfg.UsernameClaim, "email_claim": cfg.EmailClaim,
-		"name_claim": cfg.NameClaim, "groups_claim": cfg.GroupsClaim,
-	} {
-		if err := validateMappingName("oidc_config."+name, v); err != nil {
-			return err
-		}
-	}
-
-	for _, s := range cfg.Scopes {
-		if s == "" || strings.ContainsAny(s, " \t\r\n") {
-			return errors.New("oidc_config.scopes entries must be non-empty and contain no whitespace") //nolint:err113 // validation message surfaced to the admin
-		}
-	}
-
-	return nil
-}
-
 // validateSAMLConfig applies the create-time rules to a SAML config.
 func validateSAMLConfig(cfg *models.SAMLConfig) error {
 	if cfg.IDPMetadataURL == "" && cfg.IDPMetadataXML == "" {
@@ -162,6 +125,13 @@ func validateSAMLConfig(cfg *models.SAMLConfig) error {
 		if _, err := samlsp.ParseMetadata([]byte(cfg.IDPMetadataXML)); err != nil {
 			return fmt.Errorf("saml_config.idp_metadata_xml is not valid IdP metadata: %w", err)
 		}
+	}
+
+	// 0 means "use the default"; anything else must be a sane interval.
+	if s := cfg.IDPMetadataRefreshSeconds; s != 0 &&
+		(s < auth.MinIDPMetadataRefreshSeconds || s > auth.MaxIDPMetadataRefreshSeconds) {
+		return fmt.Errorf("saml_config.idp_metadata_refresh_seconds must be 0 (default) or between %d and %d", //nolint:err113 // validation message surfaced to the admin
+			auth.MinIDPMetadataRefreshSeconds, auth.MaxIDPMetadataRefreshSeconds)
 	}
 
 	for name, v := range map[string]string{
@@ -706,7 +676,7 @@ func (h *AdminSSOHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusOK, map[string]any{"ok": true, "kind": "oidc"})
 
 	case "saml":
-		_, err := auth.LoadSAMLProviderRow(ctx, existing, h.baseURL, h.cfg, h.log)
+		_, err := auth.LoadSAMLProviderRow(ctx, h.db, existing, h.baseURL, h.cfg, h.log)
 		if err != nil {
 			h.log.Warnw("admin sso test: saml load failed", "slug", existing.Slug, "error", err)
 

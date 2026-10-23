@@ -33,13 +33,52 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
-// samlReplayDB adds the DB-backed assertion replay cache to MockDatabase.
+// samlReplayDB adds the DB-backed assertion replay cache and the system
+// settings store (the persisted SP keypair) to MockDatabase.
 type samlReplayDB struct {
 	*MockDatabase
 
 	mu       sync.Mutex
 	seen     map[string]bool
 	consumed int
+	settings map[string]string
+}
+
+func newSAMLReplayDB(mock *MockDatabase) *samlReplayDB {
+	return &samlReplayDB{MockDatabase: mock, seen: map[string]bool{}, settings: map[string]string{}}
+}
+
+// GetUserByExternalID finds users the provisioner created, so a second login by
+// the same identity signs into the same account (MockDatabase only knows
+// pre-seeded bindings).
+func (d *samlReplayDB) GetUserByExternalID(_ context.Context, externalID, providerSlug string) (*models.User, error) {
+	for _, u := range d.authUsers {
+		if u.ExternalID != nil && *u.ExternalID == externalID && u.ProviderSlug != nil && *u.ProviderSlug == providerSlug {
+			return u, nil
+		}
+	}
+
+	return nil, nil
+}
+
+func (d *samlReplayDB) GetSystemSetting(_ context.Context, key string) (string, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	return d.settings[key], nil
+}
+
+func (d *samlReplayDB) CreateSystemSettingIfAbsent(_ context.Context, key, value string) (bool, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	if _, ok := d.settings[key]; ok {
+		return false, nil
+	}
+
+	d.settings[key] = value
+
+	return true, nil
 }
 
 func (d *samlReplayDB) ConsumeSAMLAssertion(_ context.Context, slug, assertionID string, _ time.Time) (bool, error) {
@@ -130,8 +169,10 @@ type samlFlowEnv struct {
 	db     *samlReplayDB
 	router chi.Router
 	idp    *saml.IdentityProvider
-	row    *models.SSOProvider
-	slug   string
+	// plain is idp without assertion encryption (see plainTextIDP).
+	plain *saml.IdentityProvider
+	row   *models.SSOProvider
+	slug  string
 }
 
 func idpMetadataXML(t *testing.T, idp *saml.IdentityProvider) string {
@@ -145,15 +186,37 @@ func idpMetadataXML(t *testing.T, idp *saml.IdentityProvider) string {
 	return string(b)
 }
 
-func newSAMLFlowEnv(t *testing.T, slug string) *samlFlowEnv {
+// samlEnvOption adjusts the test IdP or the provider's saml_config before the
+// provider is first loaded.
+type samlEnvOption func(t *testing.T, idp *saml.IdentityProvider, cfg *models.SAMLConfig)
+
+func withAllowIDPInitiated(_ *testing.T, _ *saml.IdentityProvider, cfg *models.SAMLConfig) {
+	cfg.AllowIDPInitiated = true
+}
+
+func newSAMLFlowEnv(t *testing.T, slug string, opts ...samlEnvOption) *samlFlowEnv {
 	t.Helper()
 
 	const baseURL = "http://localhost:8080"
 
 	mock := newMockDatabase()
-	db := &samlReplayDB{MockDatabase: mock, seen: map[string]bool{}}
+	db := newSAMLReplayDB(mock)
 	idp := newTestSAMLIdP(t)
 	row := seedSAMLProvider(t, mock, slug, idpMetadataXML(t, idp))
+
+	if len(opts) > 0 {
+		cfg := models.SAMLConfig{IDPMetadataXML: idpMetadataXML(t, idp)}
+		for _, o := range opts {
+			o(t, idp, &cfg)
+		}
+
+		raw, err := json.Marshal(cfg)
+		if err != nil {
+			t.Fatalf("marshal saml config: %v", err)
+		}
+
+		row.SAMLConfig = raw
+	}
 
 	log := newHandlerLogger(t)
 	eval := auth.NewEvaluator(db, log, false)
@@ -175,6 +238,7 @@ func newSAMLFlowEnv(t *testing.T, slug string) *samlFlowEnv {
 	}
 
 	idp.ServiceProviderProvider = &staticSPProvider{md: spMeta}
+	env.plain = plainTextIDP(idp)
 
 	return env
 }
@@ -214,8 +278,32 @@ var samlFormValueRe = regexp.MustCompile(`name="(SAMLResponse|RelayState)" value
 func (e *samlFlowEnv) idpRespond(location string) (string, string) {
 	e.t.Helper()
 
+	return e.idpRespondWith(e.idp, location)
+}
+
+func (e *samlFlowEnv) idpRespondWith(idp *saml.IdentityProvider, location string) (string, string) {
+	e.t.Helper()
+
 	rw := httptest.NewRecorder()
-	e.idp.ServeSSO(rw, httptest.NewRequestWithContext(context.Background(), "GET", location, nil))
+	idp.ServeSSO(rw, httptest.NewRequestWithContext(context.Background(), "GET", location, nil))
+
+	return e.parseIDPForm(rw)
+}
+
+// idpInitiated has idp issue an unsolicited response (an IdP app tile click).
+func (e *samlFlowEnv) idpInitiated(idp *saml.IdentityProvider) string {
+	e.t.Helper()
+
+	rw := httptest.NewRecorder()
+	idp.ServeIDPInitiated(rw, httptest.NewRequestWithContext(context.Background(), "GET", "https://idp.test/launch", nil), "sp", "")
+
+	resp, _ := e.parseIDPForm(rw)
+
+	return resp
+}
+
+func (e *samlFlowEnv) parseIDPForm(rw *httptest.ResponseRecorder) (string, string) {
+	e.t.Helper()
 
 	if rw.Code != http.StatusOK {
 		e.t.Fatalf("idp: expected 200, got %d (%s)", rw.Code, rw.Body.String())

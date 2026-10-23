@@ -50,7 +50,8 @@ func oidcRowConfig(row *models.SSOProvider) (models.OIDCConfig, bool) {
 		return cfg, false
 	}
 
-	return cfg, true
+	// Plain OAuth 2.0 providers (github, oauth2) issue no JWT access tokens.
+	return cfg, cfg.Type == models.OIDCTypeOIDC
 }
 
 // unverifiedIssuer reads the iss claim of a compact JWT without verifying it.

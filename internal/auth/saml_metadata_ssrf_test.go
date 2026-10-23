@@ -10,6 +10,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/netutil"
 )
@@ -26,7 +27,9 @@ func TestFetchIDPMetadataFromURL_LoopbackPolicy(t *testing.T) {
 
 	t.Setenv(netutil.EnvAllowPrivate, "false")
 
-	_, err := fetchIDPMetadataFromURL(context.Background(), srv.URL, nil)
+	fresh := func() *idpMetadataCache { return newIDPMetadataCache(time.Now, downloadIDPMetadata) }
+
+	_, err := fresh().fromURL(context.Background(), srv.URL, time.Hour, nil)
 	if !errors.Is(err, ErrIDPMetadataUnavailable) {
 		t.Fatalf("expected ErrIDPMetadataUnavailable, got %v", err)
 	}
@@ -37,7 +40,7 @@ func TestFetchIDPMetadataFromURL_LoopbackPolicy(t *testing.T) {
 
 	t.Setenv(netutil.EnvAllowPrivate, "true")
 
-	_, _ = fetchIDPMetadataFromURL(context.Background(), srv.URL, nil)
+	_, _ = fresh().fromURL(context.Background(), srv.URL, time.Hour, nil)
 
 	if hits != 1 {
 		t.Fatalf("expected request to reach loopback server when allowed, hits=%d", hits)

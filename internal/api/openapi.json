@@ -1617,6 +1617,117 @@
           }
         }
       },
+      "EndSessionResponse": {
+        "type": "object",
+        "required": [
+          "end_session_url"
+        ],
+        "properties": {
+          "end_session_url": {
+            "type": "string",
+            "description": "IdP RP-initiated logout URL (id_token_hint, client_id, post_logout_redirect_uri)."
+          }
+        }
+      },
+      "OIDCConfig": {
+        "type": "object",
+        "description": "OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry has_secret instead.",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "",
+              "github",
+              "oauth2"
+            ],
+            "description": "Empty: standards-compliant OIDC (issuer discovery). github: GitHub / GitHub Enterprise Server (OAuth 2.0). oauth2: generic OAuth 2.0 with a userinfo endpoint."
+          },
+          "issuer": {
+            "type": "string",
+            "description": "Issuer URL (required for type \"\"). https://accounts.google.com enforces email_verified; https://login.microsoftonline.com/{common|organizations|consumers}/v2.0 is a multi-tenant Entra authority and requires allowed_tenants."
+          },
+          "client_id": {
+            "type": "string"
+          },
+          "client_secret": {
+            "type": "string",
+            "writeOnly": true
+          },
+          "has_secret": {
+            "type": "boolean",
+            "readOnly": true
+          },
+          "scopes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Default: openid email profile (github: read:user user:email read:org). Request groups explicitly if the IdP needs it."
+          },
+          "username_claim": {
+            "type": "string"
+          },
+          "email_claim": {
+            "type": "string"
+          },
+          "name_claim": {
+            "type": "string"
+          },
+          "groups_claim": {
+            "type": "string"
+          },
+          "allowed_tenants": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Entra tenant IDs (GUIDs) allowed to sign in. Required for multi-tenant authorities."
+          },
+          "hosted_domain": {
+            "type": "string",
+            "description": "Google Workspace domain: sent as the hd authorization parameter and required in the hd claim."
+          },
+          "require_email_verified": {
+            "type": "boolean",
+            "description": "Deny logins whose email is not verified by the IdP (always on for Google)."
+          },
+          "graph_groups": {
+            "type": "boolean",
+            "description": "Resolve Entra groups overage through Microsoft Graph (needs a delegated User.Read access token; group_mapping keys are group object IDs)."
+          },
+          "graph_endpoint": {
+            "type": "string",
+            "description": "Microsoft Graph base URL (default https://graph.microsoft.com)."
+          },
+          "authorization_url": {
+            "type": "string",
+            "description": "type oauth2: authorization endpoint."
+          },
+          "token_url": {
+            "type": "string",
+            "description": "type oauth2: token endpoint."
+          },
+          "userinfo_url": {
+            "type": "string",
+            "description": "type oauth2: userinfo endpoint (subject is sub, else id)."
+          },
+          "auth_base_url": {
+            "type": "string",
+            "description": "type github: base URL of GitHub Enterprise Server (default https://github.com)."
+          },
+          "api_base_url": {
+            "type": "string",
+            "description": "type github: API base URL (default https://api.github.com)."
+          },
+          "allowed_orgs": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "type github: organizations whose members may sign in (required). Groups are \"org\" and \"org/team-slug\", lower-case."
+          }
+        }
+      },
       "SSOProvider": {
         "type": "object",
         "properties": {
@@ -1641,10 +1752,47 @@
             "type": "boolean"
           },
           "oidc_config": {
-            "type": "object"
+            "$ref": "#/components/schemas/OIDCConfig"
           },
           "saml_config": {
-            "type": "object"
+            "type": "object",
+            "description": "SAML settings (kind=saml). At least one IdP metadata source is required on create; the URL wins when both are set.",
+            "properties": {
+              "idp_metadata_url": {
+                "type": "string",
+                "description": "HTTPS URL of the IdP metadata. Refreshed in the background, so IdP certificate rollover is picked up without editing the provider."
+              },
+              "idp_metadata_xml": {
+                "type": "string",
+                "description": "Static IdP metadata document. Never refreshed; its validUntil is ignored."
+              },
+              "idp_metadata_refresh_seconds": {
+                "type": "integer",
+                "minimum": 0,
+                "maximum": 86400,
+                "description": "How long fetched IdP metadata is reused before it is re-read from idp_metadata_url. 0 or unset means 3600; otherwise 60 to 86400. A shorter cacheDuration or validUntil in the metadata itself wins (floor 60s)."
+              },
+              "username_attribute": {
+                "type": "string",
+                "description": "Assertion attribute Name for the username (default uid)."
+              },
+              "email_attribute": {
+                "type": "string",
+                "description": "Assertion attribute Name for the email (default mail)."
+              },
+              "name_attribute": {
+                "type": "string",
+                "description": "Assertion attribute Name for the display name (default displayName)."
+              },
+              "groups_attribute": {
+                "type": "string",
+                "description": "Assertion attribute Name carrying group values. When set and present in the assertion (even with no values) the user's SSO group memberships are synced to that set; when absent from the assertion existing memberships are kept."
+              },
+              "allow_idp_initiated": {
+                "type": "boolean",
+                "description": "Accept IdP-initiated (unsolicited) responses, e.g. from an IdP app tile. Off by default: such responses are not bound to a login request this server started, so login CSRF is possible. Signature, audience, recipient and replay checks still apply."
+              }
+            }
           },
           "claim_mapping": {
             "type": "object"
@@ -4202,13 +4350,33 @@
     "/api/v1/auth/logout": {
       "post": {
         "summary": "Logout",
-        "description": "Logout the current user",
+        "description": "Logout the current user (same-origin only). Sessions created by an OIDC provider whose IdP advertises an end_session_endpoint get 200 with the RP-initiated logout URL to navigate to.",
         "tags": [
           "Authentication"
         ],
         "responses": {
+          "200": {
+            "description": "Logged out locally; continue at the IdP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndSessionResponse"
+                }
+              }
+            }
+          },
           "204": {
             "description": "Logout successful, no content"
+          },
+          "403": {
+            "description": "Cross-site request rejected",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }
@@ -14424,6 +14592,7 @@
     "/api/v1/auth/sso/oidc/{slug}/logout": {
       "post": {
         "summary": "OIDC logout",
+        "description": "Ends the local session (the request body is ignored; same-origin only). When the session was created by this provider and its IdP advertises an end_session_endpoint, responds 200 with the RP-initiated logout URL the browser must navigate to; otherwise 204.",
         "tags": [
           "SSO"
         ],
@@ -14439,7 +14608,17 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Logged out locally; continue at the IdP",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/EndSessionResponse"
+                }
+              }
+            }
+          },
+          "204": {
+            "description": "Logged out locally, no IdP logout"
           },
           "default": {
             "description": "Error",

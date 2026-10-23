@@ -122,9 +122,9 @@ auth:
   allowAnonymousRead: false
   legacyApiKeyEnabled: true  # default true; set false to disable the legacy API key
   sessionDurationHours: 24
-  # hmacKey: "CHANGE_ME"  # REQUIRED for restart/replica-safe SSO; random per boot if unset
-  # samlSpCert: ""         # PEM, persistent SAML SP certificate
-  # samlSpKey: ""          # PEM, persistent SAML SP key
+  # hmacKey: "CHANGE_ME"  # optional; unset = random key generated once, persisted in system_settings
+  # samlSpCert: ""         # PEM SAML SP certificate; unset = self-signed pair generated once, persisted encrypted
+  # samlSpKey: ""          # PEM SAML SP key; regenerating means re-registering the cert at the IdP
 
 gpg:
   enabled: false

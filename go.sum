@@ -165,8 +165,8 @@ github.com/modelcontextprotocol/go-sdk v1.8.0 h1:KIvahhYqwtbeniWVPs3TcXEA7b8jEtw
 github.com/modelcontextprotocol/go-sdk v1.8.0/go.mod h1:dL7u98E/zjJTGzEq+j30jQ8K2k1mb6LeAH4inEcSGts=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 h1:C3w9PqII01/Oq1c1nUAm88MOHcQC9l5mIlSMApZMrHA=
 github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822/go.mod h1:+n7T8mK8HuQTcFwEeznm/DIxMOiR9yIdICNftLE1DvQ=
-github.com/openartifact/saml v0.5.2-oa.1 h1:R9lWo0N78ZC8flRByYW4y3z5IR3vdUpr0iGj4EuxL+k=
-github.com/openartifact/saml v0.5.2-oa.1/go.mod h1:8Y2tGYuayZ07THqOPtT8d6nDSElzOgnl22YCMCYrcbg=
+github.com/openartifact/saml v0.5.2-oa.2 h1:WWSKy54XT6qdTlWoWOyQdi/1whHvzPthsxxrOjxA9IA=
+github.com/openartifact/saml v0.5.2-oa.2/go.mod h1:8Y2tGYuayZ07THqOPtT8d6nDSElzOgnl22YCMCYrcbg=
 github.com/opencontainers/go-digest v1.0.0 h1:apOUWs51W5PlhuyGyz9FCeeBIOUDA/6nW8Oi/yOhh5U=
 github.com/opencontainers/go-digest v1.0.0/go.mod h1:0JzlMkj0TRzQZfJkVvzbP0HBR3IKzErnv2BNG4W4MAM=
 github.com/opencontainers/image-spec v1.1.1 h1:y0fUlFfIZhPF1W537XOLg0/fcx6zcHCJwooC2xJA040=

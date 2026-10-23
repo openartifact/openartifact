@@ -630,20 +630,124 @@ export type GpgKey = {
     expires_at?: string | null;
 };
 
+export type EndSessionResponse = {
+    /**
+     * IdP RP-initiated logout URL (id_token_hint, client_id, post_logout_redirect_uri).
+     */
+    end_session_url: string;
+};
+
+/**
+ * OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry has_secret instead.
+ */
+export type OidcConfig = {
+    /**
+     * Empty: standards-compliant OIDC (issuer discovery). github: GitHub / GitHub Enterprise Server (OAuth 2.0). oauth2: generic OAuth 2.0 with a userinfo endpoint.
+     */
+    type?: '' | 'github' | 'oauth2';
+    /**
+     * Issuer URL (required for type ""). https://accounts.google.com enforces email_verified; https://login.microsoftonline.com/{common|organizations|consumers}/v2.0 is a multi-tenant Entra authority and requires allowed_tenants.
+     */
+    issuer?: string;
+    client_id?: string;
+    readonly has_secret?: boolean;
+    /**
+     * Default: openid email profile (github: read:user user:email read:org). Request groups explicitly if the IdP needs it.
+     */
+    scopes?: Array<string>;
+    username_claim?: string;
+    email_claim?: string;
+    name_claim?: string;
+    groups_claim?: string;
+    /**
+     * Entra tenant IDs (GUIDs) allowed to sign in. Required for multi-tenant authorities.
+     */
+    allowed_tenants?: Array<string>;
+    /**
+     * Google Workspace domain: sent as the hd authorization parameter and required in the hd claim.
+     */
+    hosted_domain?: string;
+    /**
+     * Deny logins whose email is not verified by the IdP (always on for Google).
+     */
+    require_email_verified?: boolean;
+    /**
+     * Resolve Entra groups overage through Microsoft Graph (needs a delegated User.Read access token; group_mapping keys are group object IDs).
+     */
+    graph_groups?: boolean;
+    /**
+     * Microsoft Graph base URL (default https://graph.microsoft.com).
+     */
+    graph_endpoint?: string;
+    /**
+     * type oauth2: authorization endpoint.
+     */
+    authorization_url?: string;
+    /**
+     * type oauth2: token endpoint.
+     */
+    token_url?: string;
+    /**
+     * type oauth2: userinfo endpoint (subject is sub, else id).
+     */
+    userinfo_url?: string;
+    /**
+     * type github: base URL of GitHub Enterprise Server (default https://github.com).
+     */
+    auth_base_url?: string;
+    /**
+     * type github: API base URL (default https://api.github.com).
+     */
+    api_base_url?: string;
+    /**
+     * type github: organizations whose members may sign in (required). Groups are "org" and "org/team-slug", lower-case.
+     */
+    allowed_orgs?: Array<string>;
+};
+
 export type SsoProvider = {
     id?: string;
     slug?: string;
     kind?: 'oidc' | 'saml';
     display_name?: string;
     enabled?: boolean;
-    oidc_config?: {
-        [key: string]: unknown;
-    };
+    oidc_config?: OidcConfig;
+    /**
+     * SAML settings (kind=saml). At least one IdP metadata source is required on create; the URL wins when both are set.
+     */
     saml_config?: {
-        [key: string]: unknown;
-    };
-    claim_mapping?: {
-        [key: string]: unknown;
+        /**
+         * HTTPS URL of the IdP metadata. Refreshed in the background, so IdP certificate rollover is picked up without editing the provider.
+         */
+        idp_metadata_url?: string;
+        /**
+         * Static IdP metadata document. Never refreshed; its validUntil is ignored.
+         */
+        idp_metadata_xml?: string;
+        /**
+         * How long fetched IdP metadata is reused before it is re-read from idp_metadata_url. 0 or unset means 3600; otherwise 60 to 86400. A shorter cacheDuration or validUntil in the metadata itself wins (floor 60s).
+         */
+        idp_metadata_refresh_seconds?: number;
+        /**
+         * Assertion attribute Name for the username (default uid).
+         */
+        username_attribute?: string;
+        /**
+         * Assertion attribute Name for the email (default mail).
+         */
+        email_attribute?: string;
+        /**
+         * Assertion attribute Name for the display name (default displayName).
+         */
+        name_attribute?: string;
+        /**
+         * Assertion attribute Name carrying group values. When set and present in the assertion (even with no values) the user's SSO group memberships are synced to that set; when absent from the assertion existing memberships are kept.
+         */
+        groups_attribute?: string;
+        /**
+         * Accept IdP-initiated (unsolicited) responses, e.g. from an IdP app tile. Off by default: such responses are not bound to a login request this server started, so login CSRF is possible. Signature, audience, recipient and replay checks still apply.
+         */
+        allow_idp_initiated?: boolean;
     };
     group_mapping?: {
         [key: string]: string;
@@ -1652,6 +1756,130 @@ export type DependencyTrackTest = {
     missing_permissions?: Array<string>;
 };
 
+/**
+ * OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry has_secret instead.
+ */
+export type OidcConfigWritable = {
+    /**
+     * Empty: standards-compliant OIDC (issuer discovery). github: GitHub / GitHub Enterprise Server (OAuth 2.0). oauth2: generic OAuth 2.0 with a userinfo endpoint.
+     */
+    type?: '' | 'github' | 'oauth2';
+    /**
+     * Issuer URL (required for type ""). https://accounts.google.com enforces email_verified; https://login.microsoftonline.com/{common|organizations|consumers}/v2.0 is a multi-tenant Entra authority and requires allowed_tenants.
+     */
+    issuer?: string;
+    client_id?: string;
+    client_secret?: string;
+    /**
+     * Default: openid email profile (github: read:user user:email read:org). Request groups explicitly if the IdP needs it.
+     */
+    scopes?: Array<string>;
+    username_claim?: string;
+    email_claim?: string;
+    name_claim?: string;
+    groups_claim?: string;
+    /**
+     * Entra tenant IDs (GUIDs) allowed to sign in. Required for multi-tenant authorities.
+     */
+    allowed_tenants?: Array<string>;
+    /**
+     * Google Workspace domain: sent as the hd authorization parameter and required in the hd claim.
+     */
+    hosted_domain?: string;
+    /**
+     * Deny logins whose email is not verified by the IdP (always on for Google).
+     */
+    require_email_verified?: boolean;
+    /**
+     * Resolve Entra groups overage through Microsoft Graph (needs a delegated User.Read access token; group_mapping keys are group object IDs).
+     */
+    graph_groups?: boolean;
+    /**
+     * Microsoft Graph base URL (default https://graph.microsoft.com).
+     */
+    graph_endpoint?: string;
+    /**
+     * type oauth2: authorization endpoint.
+     */
+    authorization_url?: string;
+    /**
+     * type oauth2: token endpoint.
+     */
+    token_url?: string;
+    /**
+     * type oauth2: userinfo endpoint (subject is sub, else id).
+     */
+    userinfo_url?: string;
+    /**
+     * type github: base URL of GitHub Enterprise Server (default https://github.com).
+     */
+    auth_base_url?: string;
+    /**
+     * type github: API base URL (default https://api.github.com).
+     */
+    api_base_url?: string;
+    /**
+     * type github: organizations whose members may sign in (required). Groups are "org" and "org/team-slug", lower-case.
+     */
+    allowed_orgs?: Array<string>;
+};
+
+export type SsoProviderWritable = {
+    id?: string;
+    slug?: string;
+    kind?: 'oidc' | 'saml';
+    display_name?: string;
+    enabled?: boolean;
+    oidc_config?: OidcConfigWritable;
+    /**
+     * SAML settings (kind=saml). At least one IdP metadata source is required on create; the URL wins when both are set.
+     */
+    saml_config?: {
+        /**
+         * HTTPS URL of the IdP metadata. Refreshed in the background, so IdP certificate rollover is picked up without editing the provider.
+         */
+        idp_metadata_url?: string;
+        /**
+         * Static IdP metadata document. Never refreshed; its validUntil is ignored.
+         */
+        idp_metadata_xml?: string;
+        /**
+         * How long fetched IdP metadata is reused before it is re-read from idp_metadata_url. 0 or unset means 3600; otherwise 60 to 86400. A shorter cacheDuration or validUntil in the metadata itself wins (floor 60s).
+         */
+        idp_metadata_refresh_seconds?: number;
+        /**
+         * Assertion attribute Name for the username (default uid).
+         */
+        username_attribute?: string;
+        /**
+         * Assertion attribute Name for the email (default mail).
+         */
+        email_attribute?: string;
+        /**
+         * Assertion attribute Name for the display name (default displayName).
+         */
+        name_attribute?: string;
+        /**
+         * Assertion attribute Name carrying group values. When set and present in the assertion (even with no values) the user's SSO group memberships are synced to that set; when absent from the assertion existing memberships are kept.
+         */
+        groups_attribute?: string;
+        /**
+         * Accept IdP-initiated (unsolicited) responses, e.g. from an IdP app tile. Off by default: such responses are not bound to a login request this server started, so login CSRF is possible. Signature, audience, recipient and replay checks still apply.
+         */
+        allow_idp_initiated?: boolean;
+    };
+    group_mapping?: {
+        [key: string]: string;
+    };
+    permission_mapping?: {
+        [key: string]: string;
+    };
+    auto_provision_users?: boolean;
+    link_by_email?: boolean;
+    created_at?: string;
+    updated_at?: string;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -1768,7 +1996,20 @@ export type PostApiV1AuthLogoutData = {
     url: '/api/v1/auth/logout';
 };
 
+export type PostApiV1AuthLogoutErrors = {
+    /**
+     * Cross-site request rejected
+     */
+    403: Error;
+};
+
+export type PostApiV1AuthLogoutError = PostApiV1AuthLogoutErrors[keyof PostApiV1AuthLogoutErrors];
+
 export type PostApiV1AuthLogoutResponses = {
+    /**
+     * Logged out locally; continue at the IdP
+     */
+    200: EndSessionResponse;
     /**
      * Logout successful, no content
      */
@@ -8048,10 +8289,16 @@ export type PostApiV1AuthSsoOidcBySlugLogoutError = PostApiV1AuthSsoOidcBySlugLo
 
 export type PostApiV1AuthSsoOidcBySlugLogoutResponses = {
     /**
-     * Success
+     * Logged out locally; continue at the IdP
      */
-    200: unknown;
+    200: EndSessionResponse;
+    /**
+     * Logged out locally, no IdP logout
+     */
+    204: void;
 };
+
+export type PostApiV1AuthSsoOidcBySlugLogoutResponse = PostApiV1AuthSsoOidcBySlugLogoutResponses[keyof PostApiV1AuthSsoOidcBySlugLogoutResponses];
 
 export type GetApiV1AuthSsoSamlBySlugLoginData = {
     body?: never;

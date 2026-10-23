@@ -64,9 +64,10 @@ func seedSAMLProvider(t *testing.T, db *MockDatabase, slug, metadataXML string) 
 	return p
 }
 
-func setupSAMLRouter(t *testing.T, db *MockDatabase, baseURL string) chi.Router {
+func setupSAMLRouter(t *testing.T, mock *MockDatabase, baseURL string) chi.Router {
 	t.Helper()
 	log := newHandlerLogger(t)
+	db := newSAMLReplayDB(mock)
 	eval := auth.NewEvaluator(db, log, false)
 	cfg := &config.Config{BaseURL: baseURL}
 	h := api.NewSAMLHandler(db, log, eval, []byte("test-hmac-key"), baseURL, cfg)

@@ -77,8 +77,8 @@ Keep these identical across upgrades, restores and replicas:
 | Setting | If lost or changed |
 |---|---|
 | `OPENARTIFACT_SECRET_KEY` | Values stored encrypted (`enc:v1:...`: webhook secrets, upstream passwords, SSO client secrets, AI keys, storage credentials) can no longer be decrypted. Removing the key entirely makes reading them fail; setting it for the first time leaves existing plaintext values readable |
-| `AUTH_HMAC_KEY` | Signs OIDC/SAML login state. If unset, a random key is generated at every start; logins in flight during a restart, or handled by a different replica, fail. Sessions and API tokens are not affected |
-| `OPENARTIFACT_SAML_SP_CERT` / `_KEY` | Without them an ephemeral keypair is generated per process; the IdP registration must be redone after each restart |
+| `AUTH_HMAC_KEY` | Signs OIDC/SAML login state. If unset, a random key is generated once and persisted in `system_settings`, shared by replicas. A configured value wins. Sessions and API tokens are not affected |
+| `OPENARTIFACT_SAML_SP_CERT` / `_KEY` | If unset, a self-signed keypair is generated once and persisted encrypted in `system_settings` (unencrypted without `OPENARTIFACT_SECRET_KEY`), shared by replicas. Regenerating it (lost database) means re-registering the SP certificate at the IdP |
 | `BASE_URL` | SAML entity ID and ACS URL, and links in generated indexes, are derived from it; changing it breaks existing IdP registrations |
 
 Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installation.md#docker-compose) for adding the others. The `docker/.env` file and any compose override belong in your backup.
@@ -157,6 +157,21 @@ Migration `054` (GPG key management; additive) creates `gpg_keys` and `gpg_key_r
   - JSON-RPC batch arrays are refused with 400 when `MCP-Protocol-Version` is `2025-06-18` or later. Tools reject unknown arguments (input schema with `additionalProperties: false`), and argument errors are now tool errors (`isError: true`) instead of JSON-RPC errors.
   - Results gained `content_trust` and `notice` fields (and a trailing `NOTE:` text block) wherever they carry third-party text, and every tool has an `outputSchema` and annotations. `trigger_ai_analysis` now always checks that the artifact exists in the given repository.
   - New public endpoints `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource<MCP_HTTP_PATH>` (RFC 9728), and OIDC access tokens whose `aud` is `<BASE_URL><MCP_HTTP_PATH>` are accepted for users already linked through an enabled OIDC provider (needs `BASE_URL`).
+
+
+#### SSO (OIDC and SAML) changes
+
+SSO changes (see [sso.md](../security/sso.md)); no migration beyond the new per-session SSO table, applied automatically:
+
+- **Default OIDC scopes** are now `openid email profile`; `groups` is no longer requested by default. A provider that relied on the default must set `oidc_config.scopes` explicitly (for example `["openid","email","profile","groups"]`), or its groups claim disappears.
+- **Groups semantics.** `group_mapping` replaces SSO-managed memberships only when the IdP actually sent the groups claim/attribute. An absent claim (or an unresolved Entra overage) keeps memberships and logs a warning; a present but empty claim clears them. SAML needs `groups_attribute` configured and present in the assertion. `permission_mapping` stays add-only.
+- **Error codes.** Identity conflicts (email already used by another account, identity bound elsewhere, ambiguous email) now return a generic `403 sso_login_denied` instead of `409 email_already_in_use`, `409 identity_conflict` and `500 email_link_ambiguous`; the reason is only in the server log. `user_not_provisioned` and `account_disabled` (403) are unchanged. Update clients or scripts that matched the old codes.
+- **Logout.** `POST /api/v1/auth/logout` and `POST /api/v1/auth/sso/oidc/{slug}/logout` require a same-origin request. For an OIDC session whose IdP advertises `end_session_endpoint` the response is `200 {"end_session_url": ...}` (the web UI navigates there) instead of `204`. Register `BASE_URL/login` at the IdP as a post-logout redirect URI. A hint or redirect in the request body is ignored.
+- **Session rotation.** Every SSO login revokes the pre-login session and issues a new session and CSRF token.
+- **Generated keys are persisted.** Without `AUTH_HMAC_KEY` a random key is generated once and stored in `system_settings` (shared by replicas); without `OPENARTIFACT_SAML_SP_CERT`/`_KEY` a self-signed SP keypair is generated once and stored encrypted. A SAML SP certificate previously regenerated at each start is now stable; re-register it at the IdP once. Without `OPENARTIFACT_SECRET_KEY` the stored SP key is unencrypted. Multi-replica SSO needs no manual key step any more.
+- **Entra multi-tenant.** Issuers `https://login.microsoftonline.com/{common|organizations|consumers}/v2.0` now require `allowed_tenants`; external IDs for them become `<tid>:<sub>`, so existing multi-tenant identities will not match (back up and re-link).
+- **New OIDC options:** `type` (`github`, `oauth2`; `github` requires `allowed_orgs`), `hosted_domain`, `require_email_verified` (Google always enforces `email_verified`), `graph_groups`/`graph_endpoint`, `authorization_url`, `token_url`, `userinfo_url`, `auth_base_url`, `api_base_url`.
+- **SAML:** IdP metadata is refreshed every `idp_metadata_refresh_seconds` (default 3600; stale copy served up to 24 h); static `idp_metadata_xml` never refreshes, so include old and new signing certificates for a rollover. IdP-initiated login stays off unless `allow_idp_initiated` is `true` (it carries a login-CSRF risk).
 
 ### 0.7.0
 

@@ -30,7 +30,7 @@ openartifact -repair-gomod               # relink Go module zips damaged on <= 0
 - Boolean variables are parsed with Go's `strconv.ParseBool`: `1`, `t`, `T`, `TRUE`, `true`, `True`, `0`, `f`, `F`, `FALSE`, `false`, `False`. `yes`/`no`/`on`/`off` are invalid.
 - An invalid integer, boolean or duration is ignored: a `WARN: ignoring invalid value for <KEY>` line is printed to stderr (without the value) and the previous setting stays.
 - Integers are plain decimal. Durations use Go syntax (`5m`, `90s`). List variables are comma-separated and trimmed; an empty list value does not clear a list set in the file.
-- With no `AUTH_HMAC_KEY` the server generates a random key at each start and warns on stderr.
+- With no `AUTH_HMAC_KEY` the server generates a random key once and persists it in `system_settings`, so it survives restarts and is shared by replicas.
 
 ## Environment-only variables
 
@@ -38,7 +38,7 @@ These are read directly from the environment, have no YAML key and are not in `i
 
 | Variable | Meaning |
 |---|---|
-| `OPENARTIFACT_SECRET_KEY` | Secret-encryption key (any string of at least 16 bytes; hashed to an AES-256-GCM key). Unset: stored credentials are kept in plaintext and a warning is logged. A shorter key aborts startup. Changing or losing it makes existing `enc:v1:` ciphertexts unreadable. Protects webhook secrets, upstream passwords, SSO client secrets, AI keys and storage credentials stored in the database |
+| `OPENARTIFACT_SECRET_KEY` | Secret-encryption key (any string of at least 16 bytes; hashed to an AES-256-GCM key). Unset: stored credentials (including the generated SAML SP key) are kept in plaintext and a warning is logged. A shorter key aborts startup. Changing or losing it makes existing `enc:v1:` ciphertexts unreadable. Protects webhook secrets, upstream passwords, SSO client secrets, AI keys and storage credentials stored in the database |
 | `METRICS_AUTH_TOKEN` | Bearer token required for `GET /metrics`. See [monitoring](../operations/monitoring.md) |
 | `METRICS_ALLOW_ANONYMOUS` | Exactly `true` serves `/metrics` without a token. With neither variable set, `/metrics` answers `401` and a warning is logged |
 | `MIGRATE_ON_START` | Exactly `false` (lowercase) skips automatic migrations; any other value, including `0` or `FALSE`, keeps them on |
@@ -196,9 +196,9 @@ See [authentication](../security/authentication.md) and [RBAC](../security/rbac.
 | `API_KEY` | `server.apiKey` | empty | Deprecated static write key; authenticates as `system/legacy-api-key` and logs a warning on each use |
 | `LEGACY_API_KEY_ENABLED` | `legacyApiKeyEnabled` | `false` | Accept `API_KEY` at all |
 | `SESSION_DURATION_HOURS` | `sessionDurationHours` | `24` | Web session lifetime |
-| `AUTH_HMAC_KEY` | `hmacKey` | random per start | Signs OIDC/SAML login state; set for restart- and replica-safe SSO (**secret**) |
-| `OPENARTIFACT_SAML_SP_CERT` | `samlSpCert` | empty | PEM certificate of the SAML service provider |
-| `OPENARTIFACT_SAML_SP_KEY` | `samlSpKey` | empty | PEM private key of the SAML service provider (**secret**). Without the pair an ephemeral keypair is generated per process and the IdP registration breaks on restart |
+| `AUTH_HMAC_KEY` | `hmacKey` | generated once, persisted | Signs OIDC/SAML login state. Unset: a random key is generated once and stored in `system_settings` (shared by replicas); a configured value wins (**secret**) |
+| `OPENARTIFACT_SAML_SP_CERT` | `samlSpCert` | empty | PEM certificate of the SAML service provider. Unset: a self-signed pair is generated once and persisted encrypted in `system_settings` (shared by replicas); regenerating it means re-registering the SP certificate at the IdP |
+| `OPENARTIFACT_SAML_SP_KEY` | `samlSpKey` | empty | PEM private key of the SAML service provider (**secret**). Unset together with the certificate: see above. Stored unencrypted when `OPENARTIFACT_SECRET_KEY` is unset |
 
 `API_KEY` lives under `server` in YAML, not `auth`.
 

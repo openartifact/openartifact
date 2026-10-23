@@ -9,10 +9,12 @@ import (
 	"net/http"
 	"strings"
 
+	"github.com/crewjam/saml"
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -90,7 +92,79 @@ func (h *SAMLHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, loginURL, http.StatusFound)
 }
 
-//nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
+// samlACSErrors maps the auth package's SAML failures onto the ACS response.
+// Order matters: the first match wins. Every entry answers with a generic
+// message; the detail (the wrapped error) is only logged.
+//
+//nolint:gochecknoglobals // immutable lookup table
+var samlACSErrors = []struct {
+	target error
+	status int
+	code   string
+	msg    string
+	// quiet failures are expected noise (replays, stray posts): logged at warn.
+	logMsg string
+}{
+	{auth.ErrSAMLSignatureInvalid, http.StatusBadRequest, "saml_signature_invalid", "SAML signature invalid", "saml acs: signature rejected"},
+	{auth.ErrSAMLAudienceMismatch, http.StatusBadRequest, "saml_audience_mismatch", "SAML audience mismatch", "saml acs: audience rejected"},
+	{auth.ErrSAMLAssertionExpired, http.StatusUnauthorized, "saml_assertion_expired", "SAML assertion expired", "saml acs: assertion expired"},
+	{auth.ErrSAMLReplay, http.StatusUnauthorized, "saml_invalid", "SAML response invalid", "saml acs: assertion replay rejected"},
+	{auth.ErrSAMLRequestUntracked, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: response does not match a pending login request"},
+	{auth.ErrSAMLRequestMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: InResponseTo rejected"},
+	{auth.ErrSAMLAssertionNotYetValid, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: assertion not yet valid"},
+	{auth.ErrSAMLDestinationMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: destination or recipient rejected"},
+	{auth.ErrSAMLIssuerMismatch, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: issuer rejected"},
+	{auth.ErrSAMLBadStatus, http.StatusBadRequest, "saml_invalid", "SAML response invalid", "saml acs: IdP reported a failure status"},
+}
+
+// writeACSParseError answers a rejected response. Unrecognized failures are a
+// generic 400 saml_invalid, never the error text.
+func (h *SAMLHandler) writeACSParseError(w http.ResponseWriter, slug string, err error) {
+	for _, m := range samlACSErrors {
+		if errors.Is(err, m.target) {
+			h.log.Warnw(m.logMsg, "slug", slug, "reason", err.Error())
+			writeError(w, m.status, m.code, m.msg)
+
+			return
+		}
+	}
+
+	h.log.Errorw("saml acs: parse callback", "slug", slug, "error", err)
+	writeError(w, http.StatusBadRequest, "saml_invalid", "SAML response invalid")
+}
+
+// acsRedirect decides where a successful login lands. SP-initiated RelayState
+// is HMAC-signed by this server and verified before any side effect. An
+// IdP-initiated RelayState is chosen and unsigned by the IdP (or whoever posts
+// the response), so it is honored only as a same-origin relative path and
+// otherwise ignored: never rejected, never followed off-site.
+func (h *SAMLHandler) acsRedirect(w http.ResponseWriter, r *http.Request, mode auth.SAMLResponseMode) (string, bool) {
+	rs := r.Form.Get("RelayState")
+	if rs == "" {
+		return "/", true
+	}
+
+	if mode == auth.SAMLIDPInitiated {
+		if isOIDCRelativePath(rs) {
+			return rs, true
+		}
+
+		return "/", true
+	}
+
+	decoded, err := auth.VerifyRelayState(rs, string(h.hmacKey))
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid_relay_state", "invalid relay state")
+		return "", false
+	}
+
+	if isOIDCRelativePath(decoded) {
+		return decoded, true
+	}
+
+	return "/", true
+}
+
 func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	slug := urlparams.Vars(r)["slug"]
 	ctx := r.Context()
@@ -98,22 +172,6 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	if err := r.ParseForm(); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "failed to parse form")
 		return
-	}
-
-	// Validate RelayState before any side effect (assertion consumption,
-	// provisioning, session creation).
-	redirect := "/"
-
-	if rs := r.Form.Get("RelayState"); rs != "" {
-		decoded, err := auth.VerifyRelayState(rs, string(h.hmacKey))
-		if err != nil {
-			writeError(w, http.StatusBadRequest, "invalid_relay_state", "invalid relay state")
-			return
-		}
-
-		if isOIDCRelativePath(decoded) {
-			redirect = decoded
-		}
 	}
 
 	provider, err := auth.LoadSAMLProvider(ctx, h.db, slug, h.baseURL, h.cfg, h.log)
@@ -133,40 +191,18 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Validate RelayState before any side effect (assertion consumption,
+	// provisioning, session creation).
+	mode := provider.ResponseMode(r)
+
+	redirect, ok := h.acsRedirect(w, r, mode)
+	if !ok {
+		return
+	}
+
 	assertion, err := provider.ParseCallback(w, r, h.db, h.hmacKey)
 	if err != nil {
-		if errors.Is(err, auth.ErrSAMLSignatureInvalid) {
-			writeError(w, http.StatusBadRequest, "saml_signature_invalid", "SAML signature invalid")
-			return
-		}
-
-		if errors.Is(err, auth.ErrSAMLAudienceMismatch) {
-			writeError(w, http.StatusBadRequest, "saml_audience_mismatch", "SAML audience mismatch")
-			return
-		}
-
-		if errors.Is(err, auth.ErrSAMLAssertionExpired) {
-			writeError(w, http.StatusUnauthorized, "saml_assertion_expired", "SAML assertion expired")
-			return
-		}
-
-		if errors.Is(err, auth.ErrSAMLReplay) {
-			h.log.Warnw("saml acs: assertion replay rejected", "slug", slug)
-			writeError(w, http.StatusUnauthorized, "saml_invalid", "SAML response invalid")
-
-			return
-		}
-
-		if errors.Is(err, auth.ErrSAMLRequestUntracked) {
-			h.log.Warnw("saml acs: response does not match a pending login request", "slug", slug)
-			writeError(w, http.StatusBadRequest, "saml_invalid", "SAML response invalid")
-
-			return
-		}
-
-		h.log.Errorw("saml acs: parse callback", "slug", slug, "error", err)
-		writeError(w, http.StatusBadRequest, "saml_invalid", "SAML response invalid")
-
+		h.writeACSParseError(w, slug, err)
 		return
 	}
 
@@ -180,67 +216,24 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	cfg := provider.Cfg
-	usernameAttr := firstNonEmpty(cfg.UsernameAttribute, "uid")
-	emailAttr := firstNonEmpty(cfg.EmailAttribute, "mail")
-	nameAttr := firstNonEmpty(cfg.NameAttribute, "displayName")
-	groupsAttr := cfg.GroupsAttribute
-
-	username := ""
-	email := ""
-	fullName := ""
-	emailVerifiedAttr := ""
-
-	var (
-		groups        []string
-		groupsPresent bool
-	)
-
-	for _, stmt := range assertion.AttributeStatements {
-		for _, attr := range stmt.Attributes {
-			switch attr.Name {
-			case usernameAttr:
-				if len(attr.Values) > 0 {
-					username = attr.Values[0].Value
-				}
-			case emailAttr:
-				if len(attr.Values) > 0 {
-					email = attr.Values[0].Value
-				}
-			case nameAttr:
-				if len(attr.Values) > 0 {
-					fullName = attr.Values[0].Value
-				}
-			case groupsAttr:
-				if groupsAttr != "" {
-					groupsPresent = true
-
-					for _, v := range attr.Values {
-						groups = append(groups, v.Value)
-					}
-				}
-			}
-
-			if attr.Name == "email_verified" && len(attr.Values) > 0 {
-				emailVerifiedAttr = attr.Values[0].Value
-			}
-		}
-	}
+	attrs := readSAMLAttributes(assertion, provider.Cfg)
 
 	ssoClaims := auth.SSOClaims{
 		ExternalID:   externalID,
 		ProviderSlug: slug,
-		Username:     username,
-		Email:        email,
+		Username:     attrs.username,
+		Email:        attrs.email,
 		// The assertion is signed by the configured IdP, which is the authority
 		// for the attributes, but SAML has no standard verification flag, so the
 		// email counts as verified only when the IdP explicitly sends
 		// email_verified=true (a missing attribute must not enable link_by_email
 		// takeover of a local account).
-		EmailVerified: samlEmailVerified(emailVerifiedAttr),
-		FullName:      fullName,
-		Groups:        groups,
-		GroupsPresent: groupsPresent,
+		EmailVerified: samlEmailVerified(attrs.emailVerified),
+		FullName:      attrs.fullName,
+		Groups:        attrs.groups,
+		// Only a configured groups_attribute that the assertion carries counts as
+		// the IdP stating the user's groups; otherwise existing memberships stay.
+		GroupsPresent: attrs.groupsPresent,
 	}
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
@@ -261,8 +254,62 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mode == auth.SAMLIDPInitiated {
+		h.log.Infow("saml acs: idp-initiated login", "slug", slug)
+	}
+
 	//nolint:gosec // G710: redirect is a same-origin relative path (safeRedirectPath)
 	http.Redirect(w, r, safeRedirectPath(redirect), http.StatusFound)
+}
+
+type samlAttributes struct {
+	username, email, fullName, emailVerified string
+	groups                                   []string
+	groupsPresent                            bool
+}
+
+// readSAMLAttributes extracts the mapped attributes from a verified assertion.
+// Attributes match by Name. The groups are "present" only when a
+// groups_attribute is configured and the assertion carries it, even with no
+// values (an explicit empty group set); an absent attribute says nothing.
+func readSAMLAttributes(assertion *saml.Assertion, cfg models.SAMLConfig) samlAttributes {
+	out := samlAttributes{}
+
+	// One attribute may feed several fields (username_attribute and
+	// email_attribute are often both "mail").
+	targets := map[string][]*string{}
+	bind := func(name string, dst *string) { targets[name] = append(targets[name], dst) }
+
+	bind(firstNonEmpty(cfg.UsernameAttribute, "uid"), &out.username)
+	bind(firstNonEmpty(cfg.EmailAttribute, "mail"), &out.email)
+	bind(firstNonEmpty(cfg.NameAttribute, "displayName"), &out.fullName)
+	bind("email_verified", &out.emailVerified)
+
+	for _, stmt := range assertion.AttributeStatements {
+		for _, attr := range stmt.Attributes {
+			if cfg.GroupsAttribute != "" && attr.Name == cfg.GroupsAttribute {
+				out.groupsPresent = true
+
+				for _, v := range attr.Values {
+					if v.Value != "" {
+						out.groups = append(out.groups, v.Value)
+					}
+				}
+
+				continue
+			}
+
+			if len(attr.Values) == 0 {
+				continue
+			}
+
+			for _, dst := range targets[attr.Name] {
+				*dst = attr.Values[0].Value
+			}
+		}
+	}
+
+	return out
 }
 
 func (h *SAMLHandler) handleMetadata(w http.ResponseWriter, r *http.Request) {

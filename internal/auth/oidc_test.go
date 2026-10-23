@@ -119,9 +119,9 @@ func newFakeIdP(t *testing.T) *fakeIdP {
 func exchangeErr(t *testing.T, db database.Database, code string) error {
 	t.Helper()
 
-	idToken, _, _, err := ExchangeWithRetry(context.Background(), db, "oidc-retry", "http://localhost", code, "verifier")
-	if idToken != nil {
-		t.Fatalf("no ID token may be returned on failure, got %v", idToken)
+	res, err := ExchangeWithRetry(context.Background(), db, "oidc-retry", "http://localhost", code, "verifier")
+	if res != nil {
+		t.Fatalf("no result may be returned on failure, got %v", res)
 	}
 
 	return err

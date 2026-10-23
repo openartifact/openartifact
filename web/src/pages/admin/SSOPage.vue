@@ -163,13 +163,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <template v-if="form.kind === 'oidc'">
           <div>
+            <label for="oidc-type" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.type') }}</label>
+            <select id="oidc-type" v-model="form.oidc_config.type" :class="inputClass">
+              <option value="">{{ t('adm.sso.type.oidc') }}</option>
+              <option value="github">{{ t('adm.sso.type.github') }}</option>
+              <option value="oauth2">{{ t('adm.sso.type.oauth2') }}</option>
+            </select>
+          </div>
+          <div v-if="form.oidc_config.type === ''">
             <label for="issuer" class="block text-sm font-medium text-foreground mb-2">{{ t('adm.sso.field.issuer') }}</label>
             <input
               id="issuer"
               v-model="form.oidc_config.issuer"
               type="url"
               required
-              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
+              :class="inputClass"
               placeholder="https://accounts.google.com"
             />
           </div>
@@ -180,7 +188,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               v-model="form.oidc_config.client_id"
               type="text"
               required
-              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
+              :class="inputClass"
             />
           </div>
           <div>
@@ -191,10 +199,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               type="password"
               autocomplete="new-password"
               :required="!editingProvider"
-              class="w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary"
+              :class="inputClass"
               placeholder="••••••••••••••••"
             />
             <p v-if="editingProvider" class="text-xs text-muted mt-1">{{ t('adm.sso.field.secretEditHint') }}</p>
+          </div>
+          <div v-for="field in oidcExtraFields" :key="field.key">
+            <label :for="`oidc-${field.key}`" class="block text-sm font-medium text-foreground mb-2">{{ field.label }}</label>
+            <input
+              :id="`oidc-${field.key}`"
+              v-model="form.oidc_config[field.key]"
+              :type="field.url ? 'url' : 'text'"
+              :required="field.required"
+              :class="inputClass"
+            />
+            <p v-if="field.hint" class="text-xs text-muted mt-1">{{ field.hint }}</p>
+          </div>
+          <div class="flex items-center gap-3">
+            <AppToggle v-model="form.oidc_config.require_email_verified" labelledby="sso-emailverified-label" />
+            <span id="sso-emailverified-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.requireEmailVerified') }}</span>
+          </div>
+          <div v-if="form.oidc_config.type === ''" class="flex items-center gap-3">
+            <AppToggle v-model="form.oidc_config.graph_groups" labelledby="sso-graphgroups-label" />
+            <span id="sso-graphgroups-label" class="text-sm font-medium text-foreground">{{ t('adm.sso.field.graphGroups') }}</span>
           </div>
         </template>
 
@@ -253,7 +280,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import PageHeader from '../../components/PageHeader.vue'
-import { ref, onMounted } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import {
   BoltIcon,
   PencilIcon,
@@ -262,7 +289,10 @@ import {
   ShieldCheckIcon,
 } from '@heroicons/vue/24/outline'
 import { request, ApiError } from '../../api/client'
-import { saveSSOProvider, testSSOProvider, type SSOConfigInput } from '../../api/admin'
+import { saveSSOProvider, testSSOProvider, type OIDCConfigInput, type SSOConfigInput } from '../../api/admin'
+import {
+  buildOIDCPayload, oidcFormFrom, emptyOIDCForm, type OIDCTextKey,
+} from '../../lib/ssoOidcForm'
 import AppButton from '../../components/AppButton.vue'
 import AppToggle from '../../components/AppToggle.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
@@ -279,10 +309,7 @@ interface SSOProvider {
   kind: 'oidc' | 'saml'
   display_name: string
   enabled: boolean
-  oidc_config?: {
-    issuer?: string
-    client_id?: string
-  }
+  oidc_config?: OIDCConfigInput & { has_secret?: boolean }
   saml_config?: {
     idp_metadata_url?: string
     idp_metadata_xml?: string
@@ -313,12 +340,51 @@ const testing = ref<string | null>(null)
 // Results of tests run in this session (the API does not persist them).
 const testResults = ref<Record<string, TestOutcome>>({})
 
+interface ExtraField {
+  key: OIDCTextKey
+  label: string
+  hint?: string
+  url?: boolean
+  required?: boolean
+}
+
+const inputClass =
+  'w-full px-3 py-2 bg-bg border border-border-strong rounded-lg text-sm font-mono text-foreground placeholder-muted focus:ring-2 focus:ring-primary focus:border-primary'
+
+// The settings that apply to the selected provider type, after the common ones.
+const oidcExtraFields = computed<ExtraField[]>(() => {
+  const scopes: ExtraField = { key: 'scopes', label: t('adm.sso.field.scopes'), hint: t('adm.sso.field.scopesHint') }
+  switch (form.value.oidc_config.type) {
+    case 'github':
+      return [
+        scopes,
+        { key: 'allowed_orgs', label: t('adm.sso.field.allowedOrgs'), hint: t('adm.sso.field.allowedOrgsHint'), required: true },
+        { key: 'auth_base_url', label: t('adm.sso.field.authBaseUrl'), hint: t('adm.sso.field.authBaseUrlHint'), url: true },
+        { key: 'api_base_url', label: t('adm.sso.field.apiBaseUrl'), hint: t('adm.sso.field.apiBaseUrlHint'), url: true },
+      ]
+    case 'oauth2':
+      return [
+        scopes,
+        { key: 'authorization_url', label: t('adm.sso.field.authorizationUrl'), url: true, required: true },
+        { key: 'token_url', label: t('adm.sso.field.tokenUrl'), url: true, required: true },
+        { key: 'userinfo_url', label: t('adm.sso.field.userinfoUrl'), url: true, required: true },
+      ]
+    default:
+      return [
+        scopes,
+        { key: 'allowed_tenants', label: t('adm.sso.field.allowedTenants'), hint: t('adm.sso.field.allowedTenantsHint') },
+        { key: 'hosted_domain', label: t('adm.sso.field.hostedDomain'), hint: t('adm.sso.field.hostedDomainHint') },
+        { key: 'graph_endpoint', label: t('adm.sso.field.graphEndpoint'), hint: t('adm.sso.field.graphEndpointHint'), url: true },
+      ]
+  }
+})
+
 function emptyForm() {
   return {
     display_name: '',
     slug: '',
     kind: 'oidc' as 'oidc' | 'saml',
-    oidc_config: { issuer: '', client_id: '', client_secret: '' },
+    oidc_config: emptyOIDCForm(),
     saml_config: { idp_metadata_url: '', idp_metadata_xml: '' },
     auto_provision_users: false,
     link_by_email: false,
@@ -357,11 +423,7 @@ function openEditDrawer(provider: SSOProvider): void {
     display_name: provider.display_name,
     slug: provider.slug,
     kind: provider.kind,
-    oidc_config: {
-      issuer: provider.oidc_config?.issuer ?? '',
-      client_id: provider.oidc_config?.client_id ?? '',
-      client_secret: '',
-    },
+    oidc_config: oidcFormFrom(provider.oidc_config),
     saml_config: {
       idp_metadata_url: provider.saml_config?.idp_metadata_url ?? '',
       idp_metadata_xml: provider.saml_config?.idp_metadata_xml ?? '',
@@ -377,8 +439,8 @@ function closeDrawer(): void {
 }
 
 // Builds the top-level config fields shared by POST and PATCH. On edit the
-// stored client secret cannot be read back, so oidc_config is only sent when
-// the secret is re-entered (a PATCH replaces the whole object).
+// stored client secret cannot be read back: leaving it blank keeps it (the
+// server merges the patch) unless the type, issuer or client ID changed.
 function buildConfig(): Partial<SSOConfigInput> | null {
   const f = form.value
   const config: Partial<SSOConfigInput> = {
@@ -390,17 +452,21 @@ function buildConfig(): Partial<SSOConfigInput> | null {
     return config
   }
   const existing = editingProvider.value?.oidc_config
-  if (f.oidc_config.client_secret) {
-    config.oidc_config = { ...f.oidc_config }
-  } else if (editingProvider.value) {
-    const changed = f.oidc_config.issuer !== (existing?.issuer ?? '') || f.oidc_config.client_id !== (existing?.client_id ?? '')
-    if (changed) {
-      toasts.error(t('adm.sso.secretRequired'))
-      return null
-    }
-  } else {
-    config.oidc_config = { ...f.oidc_config }
+  if (f.oidc_config.client_secret || !editingProvider.value) {
+    config.oidc_config = buildOIDCPayload(f.oidc_config, true)
+    return config
   }
+  // The stored secret cannot be read back and the server keeps it when it is
+  // omitted, but pointing the stored secret at another issuer/client is refused.
+  const changed =
+    f.oidc_config.type !== (existing?.type ?? '') ||
+    f.oidc_config.issuer !== (existing?.issuer ?? '') ||
+    f.oidc_config.client_id !== (existing?.client_id ?? '')
+  if (changed) {
+    toasts.error(t('adm.sso.secretRequired'))
+    return null
+  }
+  config.oidc_config = buildOIDCPayload(f.oidc_config, false)
   return config
 }
 
