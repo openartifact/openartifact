@@ -357,7 +357,9 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	body, err := s.blobs.Get(r.Context(), sha)
+	// ref.SHA256 is the unit's own blob id from the database (equal to the
+	// validated request value), never the request string itself.
+	body, err := s.blobs.Get(r.Context(), ref.SHA256)
 	if errors.Is(err, storage.ErrBlobNotFound) {
 		writeErr(w, http.StatusNotFound, codeNotFound, "blob bytes are missing at the origin")
 
