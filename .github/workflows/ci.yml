@@ -130,7 +130,7 @@ jobs:
           $G bucket allow --read --write --owner "$TEST_S3_BUCKET" --key ci
 
       - name: go test (integration tag, race)
-        run: go test -race -tags integration -count=1 -timeout 15m ./tests/... ./internal/database/... ./internal/worker/... ./internal/storage/... ./internal/format/gomod/... ./internal/promote/...
+        run: go test -race -tags integration -count=1 -timeout 15m ./tests/... ./internal/database/... ./internal/worker/... ./internal/storage/... ./internal/replication/... ./internal/format/gomod/... ./internal/promote/...
 
   lint:
     name: golangci-lint
