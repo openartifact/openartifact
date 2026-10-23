@@ -434,14 +434,15 @@ func (im *importer) noteRetry(what string, retry int, wait time.Duration, err er
 	im.rep.logf("retry %d/%d in %s: %s: %v", retry, im.retry.max, wait.Round(time.Millisecond), what, err)
 }
 
-// importJob is one asset on its way to a destination repository.
+// importJob is one transfer unit on its way to a destination repository: the
+// assets are transferred one after the other, in order (formats where a package
+// is several files, or where versions must arrive oldest first, group them).
 type importJob struct {
-	repo     sourceRepo
-	dst      string
-	asset    sourceAsset
-	index    *targetIndex
-	layout   [2]string // distribution, component derived from the source layout
-	existing bool      // the destination already has something at this path
+	repo   sourceRepo
+	dst    string
+	assets []sourceAsset
+	index  *targetIndex
+	layout [2]string // distribution, component derived from the source layout
 }
 
 func (im *importer) run(ctx context.Context) *importReport {
@@ -499,12 +500,25 @@ func (im *importer) importRepo(ctx context.Context, m repoMapping) {
 	}
 
 	jobs := make([]importJob, 0, len(todo))
-	for _, a := range todo {
-		_, existing := ix.byPathOK(a.Path)
-		jobs = append(jobs, importJob{repo: repo, dst: m.Dst, asset: a, index: ix, layout: [2]string{dist, comp}, existing: existing})
+	for _, unit := range groupUnits(repo.Format, todo) {
+		jobs = append(jobs, importJob{repo: repo, dst: m.Dst, assets: unit, index: ix, layout: [2]string{dist, comp}})
 	}
 
 	im.runJobs(ctx, jobs)
+}
+
+// groupUnits arranges the selected assets into transfer units.
+func groupUnits(f importFormat, assets []sourceAsset) [][]sourceAsset {
+	if def := formatDefs[f]; def.units != nil {
+		return def.units(assets)
+	}
+
+	units := make([][]sourceAsset, 0, len(assets))
+	for _, a := range assets {
+		units = append(units, []sourceAsset{a})
+	}
+
+	return units
 }
 
 // byPathOK reports whether the destination holds anything at path p.
@@ -560,11 +574,24 @@ feed:
 }
 
 func (im *importer) handle(ctx context.Context, j importJob) {
-	if ctx.Err() != nil {
+	if def := formatDefs[j.repo.Format]; def.transferUnit != nil {
+		if ctx.Err() == nil {
+			def.transferUnit(ctx, im, j)
+		}
+
 		return
 	}
 
-	a := j.asset
+	for _, a := range j.assets {
+		if ctx.Err() != nil {
+			return
+		}
+
+		im.handleAsset(ctx, j, a)
+	}
+}
+
+func (im *importer) handleAsset(ctx context.Context, j importJob, a sourceAsset) {
 	key := stateKey(j.repo.Name, j.dst, a.Path)
 
 	if marker := resumeMarker(a); marker != "" && im.state.isDone(key, marker) {
@@ -572,24 +599,23 @@ func (im *importer) handle(ctx context.Context, j importJob) {
 		return
 	}
 
-	if e, ok := j.index.lookup(a.Path, a.SHA256); ok {
-		im.finishPresent(ctx, j, key, e)
+	if e, ok := j.index.lookup(a); ok {
+		im.finishPresent(ctx, j, a, key, e)
 		return
 	}
 
 	if im.cfg.DryRun {
-		im.plan(j)
+		im.plan(j, a)
 		return
 	}
 
-	if err := im.transfer(ctx, j, key); err != nil {
+	if err := im.transfer(ctx, j, a, key); err != nil {
 		im.rep.fail(j.repo.Name, a.Path, err)
 	}
 }
 
 // plan records what a real run would upload.
-func (im *importer) plan(j importJob) {
-	a := j.asset
+func (im *importer) plan(j importJob, a sourceAsset) {
 	detail := ""
 
 	if j.repo.Format == formatDeb {
@@ -608,9 +634,7 @@ func (im *importer) plan(j importJob) {
 
 // finishPresent handles an asset the destination already has with the same
 // content: nothing is transferred, but properties are (re)applied.
-func (im *importer) finishPresent(ctx context.Context, j importJob, key string, e indexEntry) {
-	a := j.asset
-
+func (im *importer) finishPresent(ctx context.Context, j importJob, a sourceAsset, key string, e indexEntry) {
 	if im.cfg.DryRun {
 		im.rep.add(func(r *importReport) { r.Present++ })
 		im.rep.logf("present  %s/%s", j.repo.Name, a.Path)
@@ -726,9 +750,7 @@ func (im *importer) uploadMeta(j importJob, a sourceAsset) (uploadMeta, error) {
 
 // transfer streams one asset to the destination, verifies it end to end, and
 // applies its properties.
-func (im *importer) transfer(ctx context.Context, j importJob, key string) error {
-	a := j.asset
-
+func (im *importer) transfer(ctx context.Context, j importJob, a sourceAsset, key string) error {
 	if err := im.src.Details(ctx, &a); err != nil {
 		return err
 	}
@@ -744,7 +766,7 @@ func (im *importer) transfer(ctx context.Context, j importJob, key string) error
 	}
 
 	if err := im.verify(ctx, j, a, res, got); err != nil {
-		return im.discard(ctx, j, res, err)
+		return im.discard(ctx, j, a, res, err)
 	}
 
 	if err := im.applyProperties(ctx, j, a, res.ID); err != nil {
@@ -813,7 +835,7 @@ func (im *importer) uploadWithRetry(ctx context.Context, j importJob, a sourceAs
 	return res, got, err
 }
 
-func overwritesInPlace(f importFormat) bool { return f == formatMaven || f == formatRaw }
+func overwritesInPlace(f importFormat) bool { return formatDefs[f].overwrites }
 
 // repeatableUpload reports whether a failed upload may be attempted again.
 func repeatableUpload(f importFormat, a sourceAsset) bool {
@@ -856,8 +878,8 @@ func (im *importer) verify(ctx context.Context, j importJob, a sourceAsset, res 
 
 // discard removes a copy that failed verification so it cannot be mistaken for
 // a good one, unless it replaced pre-existing content that must not be lost.
-func (im *importer) discard(ctx context.Context, j importJob, res uploadResult, cause error) error {
-	if j.existing {
+func (im *importer) discard(ctx context.Context, j importJob, a sourceAsset, res uploadResult, cause error) error {
+	if _, existing := j.index.byPathOK(a.Path); existing && formatDefs[j.repo.Format].match == matchPath {
 		return fmt.Errorf("%w (left in place: it replaced existing content)", cause)
 	}
 
@@ -865,7 +887,7 @@ func (im *importer) discard(ctx context.Context, j importJob, res uploadResult, 
 	cctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 30*time.Second)
 	defer cancel()
 
-	if err := im.tgt.remove(cctx, j.repo.Format, j.dst, j.asset.Path, res.ID); err != nil {
+	if err := im.tgt.remove(cctx, j.repo.Format, j.dst, a, res); err != nil {
 		return fmt.Errorf("%w (could not remove the bad copy: %w)", cause, err)
 	}
 

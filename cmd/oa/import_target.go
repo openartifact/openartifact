@@ -64,6 +64,43 @@ func (t *importTarget) request(ctx context.Context, method, apiPath string, body
 	return t.c.httpClient.Do(req)
 }
 
+// send issues a request and turns an error status into an error: 409 becomes
+// errUploadConflict, anything else outside 2xx a serverError. On success the
+// caller owns (and closes) the response body.
+func (t *importTarget) send(ctx context.Context, method, apiPath string, body io.Reader, length int64, hdr http.Header) (*http.Response, error) {
+	resp, err := t.request(ctx, method, apiPath, body, length, hdr)
+	if err != nil {
+		return nil, err
+	}
+
+	if resp.StatusCode/100 == 2 {
+		return resp, nil
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusConflict {
+		return nil, errUploadConflict
+	}
+
+	return nil, serverError(resp, method+" "+apiPath)
+}
+
+// storedResult resolves the id and stored digest of a package that was just
+// uploaded, by finding it in the destination's listing (see findStored).
+func (t *importTarget) storedResult(ctx context.Context, dst string, f importFormat, q string, want func(listedPackage) bool) (uploadResult, error) {
+	p, ok, err := t.findStored(ctx, dst, f, q, want)
+	if err != nil {
+		return uploadResult{}, err
+	}
+
+	if !ok {
+		return uploadResult{}, fmt.Errorf("%w: the server accepted the upload but the package is not listed in %q", errImportVerify, dst)
+	}
+
+	return uploadResult{ID: p.ID, SHA256: strings.ToLower(p.SHA256)}, nil
+}
+
 func (t *importTarget) getJSON(ctx context.Context, apiPath string, v any) (int, error) {
 	resp, err := t.request(ctx, http.MethodGet, apiPath, nil, -1, nil)
 	if err != nil {
@@ -166,35 +203,54 @@ type indexEntry struct {
 	SHA256 string
 }
 
-// targetIndex lets the importer recognise what is already present. Maven and
-// raw packages are addressed by path; deb and rpm by content digest (the server
-// derives their file names from package metadata, not from the source path).
+// listedPackage is one row of the destination's package listing.
+type listedPackage struct {
+	ID       string
+	SHA256   string
+	Filename string
+	Name     string
+	Version  string
+	Arch     string
+}
+
+// targetIndex lets the importer recognise what is already present: by the
+// listed file name (Maven, raw: the path is the address), by content digest
+// (everything whose file names the server derives from package metadata), or
+// by whatever a format's present function derives from the listing.
 type targetIndex struct {
 	format importFormat
 	byPath map[string]indexEntry
 	bySHA  map[string]indexEntry
+	// all keeps every listed row for formats with their own identity rules.
+	all []listedPackage
 }
 
-func (ix *targetIndex) lookup(p, sha string) (indexEntry, bool) {
+func (ix *targetIndex) lookup(a sourceAsset) (indexEntry, bool) {
 	if ix == nil {
 		return indexEntry{}, false
 	}
 
-	switch ix.format {
-	case formatMaven, formatRaw:
-		e, ok := ix.byPath[p]
-		return e, ok && sha != "" && e.SHA256 == sha
-	case formatDeb, formatRPM:
-		e, ok := ix.bySHA[sha]
-		return e, ok && sha != ""
+	def := formatDefs[ix.format]
+	if def.present != nil {
+		return def.present(ix, a)
+	}
+
+	switch def.match {
+	case matchPath:
+		e, ok := ix.byPath[a.Path]
+		return e, ok && a.SHA256 != "" && e.SHA256 == a.SHA256
+	case matchSHA:
+		e, ok := ix.bySHA[a.SHA256]
+		return e, ok && a.SHA256 != ""
 	}
 
 	return indexEntry{}, false
 }
 
-// eachPackage pages through the repository's package listing until fn returns
+// eachListed pages through the repository's package listing, optionally
+// narrowed by a case-insensitive text q on name or version, until fn returns
 // false or the listing ends.
-func (t *importTarget) eachPackage(ctx context.Context, name string, f importFormat, fn func(id, sha, filename string) bool) error {
+func (t *importTarget) eachListed(ctx context.Context, name string, f importFormat, q string, fn func(listedPackage) bool) error {
 	for page, seen := 1, 0; ; page++ {
 		var resp struct {
 			Total    int `json:"total"`
@@ -202,16 +258,23 @@ func (t *importTarget) eachPackage(ctx context.Context, name string, f importFor
 				ID       string `json:"id"`
 				SHA256   string `json:"sha256"`
 				Filename string `json:"filename"`
+				Name     string `json:"name"`
+				Version  string `json:"version"`
+				Arch     string `json:"arch"`
 			} `json:"packages"`
 		}
 
-		q := "?format=" + url.QueryEscape(string(f)) + "&page=" + strconv.Itoa(page) + "&limit=" + strconv.Itoa(indexPageSize)
-		if _, err := t.getJSON(ctx, "/api/v1/repositories/"+url.PathEscape(name)+"/packages"+q, &resp); err != nil {
+		query := "?format=" + url.QueryEscape(string(f)) + "&page=" + strconv.Itoa(page) + "&limit=" + strconv.Itoa(indexPageSize)
+		if q != "" {
+			query += "&q=" + url.QueryEscape(q)
+		}
+
+		if _, err := t.getJSON(ctx, "/api/v1/repositories/"+url.PathEscape(name)+"/packages"+query, &resp); err != nil {
 			return fmt.Errorf("listing existing packages of %q: %w", name, err)
 		}
 
 		for _, p := range resp.Packages {
-			if !fn(p.ID, p.SHA256, p.Filename) {
+			if !fn(listedPackage{ID: p.ID, SHA256: p.SHA256, Filename: p.Filename, Name: p.Name, Version: p.Version, Arch: p.Arch}) {
 				return nil
 			}
 		}
@@ -223,14 +286,37 @@ func (t *importTarget) eachPackage(ctx context.Context, name string, f importFor
 	}
 }
 
+// findStored looks in the destination for the package accepted by want, among
+// the rows matching the text q. Upload functions use it to learn the id and the
+// stored digest of a package whose upload response carries neither: want should
+// match the package's identity (name, version, file name), not its digest, so
+// that a copy stored with different bytes is detected by verification.
+func (t *importTarget) findStored(ctx context.Context, dst string, f importFormat, q string, want func(listedPackage) bool) (listedPackage, bool, error) {
+	var (
+		found listedPackage
+		ok    bool
+	)
+
+	err := t.eachListed(ctx, dst, f, q, func(p listedPackage) bool {
+		if want(p) {
+			found, ok = p, true
+		}
+
+		return !ok
+	})
+
+	return found, ok, err
+}
+
 // loadIndex pages through the repository's package listing.
 func (t *importTarget) loadIndex(ctx context.Context, name string, f importFormat) (*targetIndex, error) {
 	ix := &targetIndex{format: f, byPath: map[string]indexEntry{}, bySHA: map[string]indexEntry{}}
 
-	err := t.eachPackage(ctx, name, f, func(id, sha, filename string) bool {
-		e := indexEntry{ID: id, SHA256: sha}
-		ix.byPath[filename] = e
-		ix.bySHA[sha] = e
+	err := t.eachListed(ctx, name, f, "", func(p listedPackage) bool {
+		e := indexEntry{ID: p.ID, SHA256: p.SHA256}
+		ix.byPath[p.Filename] = e
+		ix.bySHA[p.SHA256] = e
+		ix.all = append(ix.all, p)
 
 		return true
 	})
@@ -244,20 +330,9 @@ func (t *importTarget) loadIndex(ctx context.Context, name string, f importForma
 // findBySHA looks for a package with the given content digest in the
 // repository, as a fresh read of the server's state.
 func (t *importTarget) findBySHA(ctx context.Context, name string, f importFormat, sha string) (indexEntry, bool, error) {
-	var (
-		found indexEntry
-		ok    bool
-	)
+	p, ok, err := t.findStored(ctx, name, f, "", func(p listedPackage) bool { return p.SHA256 == sha })
 
-	err := t.eachPackage(ctx, name, f, func(id, s, _ string) bool {
-		if s == sha {
-			found, ok = indexEntry{ID: id, SHA256: s}, true
-		}
-
-		return !ok
-	})
-
-	return found, ok, err
+	return indexEntry{ID: p.ID, SHA256: p.SHA256}, ok, err
 }
 
 // uploadMeta is what travels with an asset besides its bytes.
@@ -287,19 +362,12 @@ func (m uploadMeta) header() http.Header {
 // upload streams body to the destination using the format's native upload
 // endpoint.
 func (t *importTarget) upload(ctx context.Context, f importFormat, dst string, a sourceAsset, body io.Reader, m uploadMeta) (uploadResult, error) {
-	switch f {
-	case formatMaven:
-		return t.putFile(ctx, "/repos/maven/"+url.PathEscape(dst)+"/"+escapePath(a.Path), a, body, m, false)
-	case formatRaw:
-		return t.putFile(ctx, "/repos/raw/"+url.PathEscape(dst)+"/"+escapePath(a.Path), a, body, m, true)
-	case formatDeb:
-		fields := [][2]string{{"distribution", m.DebDist}, {"component", m.DebComponent}}
-		return t.postPackage(ctx, "/api/v1/repositories/"+url.PathEscape(dst)+"/debs", a, body, m, fields)
-	case formatRPM:
-		return t.postPackage(ctx, "/api/v1/repositories/"+url.PathEscape(dst)+"/packages", a, body, m, nil)
+	def, ok := formatDefs[f]
+	if !ok || def.upload == nil {
+		return uploadResult{}, fmt.Errorf("%w: unsupported format %q", errImportUsage, f)
 	}
 
-	return uploadResult{}, fmt.Errorf("%w: unsupported format %q", errImportUsage, f)
+	return def.upload(ctx, t, uploadRequest{Dst: dst, Asset: a, Body: body, Meta: m})
 }
 
 func (t *importTarget) putFile(ctx context.Context, apiPath string, a sourceAsset, body io.Reader, m uploadMeta, jsonReply bool) (uploadResult, error) {
@@ -453,24 +521,17 @@ func (t *importTarget) serverSHA256(ctx context.Context, dst, p string) (string,
 
 // remove best-effort deletes a stored asset (used when verification fails so a
 // corrupt copy is not left behind).
-func (t *importTarget) remove(ctx context.Context, f importFormat, dst, p, id string) error {
-	var apiPath string
-
-	switch f {
-	case formatMaven:
-		apiPath = "/repos/maven/" + url.PathEscape(dst) + "/" + escapePath(p)
-	case formatRaw:
-		apiPath = "/repos/raw/" + url.PathEscape(dst) + "/" + escapePath(p)
-	case formatDeb:
-		apiPath = "/api/v1/repositories/" + url.PathEscape(dst) + "/debs/" + url.PathEscape(id)
-	case formatRPM:
-		apiPath = "/api/v1/repositories/" + url.PathEscape(dst) + "/packages/" + url.PathEscape(id)
+func (t *importTarget) remove(ctx context.Context, f importFormat, dst string, a sourceAsset, res uploadResult) error {
+	def, ok := formatDefs[f]
+	if !ok || def.remove == nil {
+		return errNoRemove(f)
 	}
 
-	if apiPath == "" || ((f == formatDeb || f == formatRPM) && id == "") {
-		return fmt.Errorf("%w: cannot determine what to remove", errImportUsage)
-	}
+	return def.remove(ctx, t, dst, a, res)
+}
 
+// deletePath issues a DELETE on a native format endpoint (already escaped).
+func (t *importTarget) deletePath(ctx context.Context, apiPath string) error {
 	resp, err := t.request(ctx, http.MethodDelete, apiPath, nil, -1, nil)
 	if err != nil {
 		return err
@@ -483,6 +544,15 @@ func (t *importTarget) remove(ctx context.Context, f importFormat, dst, p, id st
 	}
 
 	return nil
+}
+
+// deleteByID deletes a package by its id below an API prefix (ending in "/").
+func (t *importTarget) deleteByID(ctx context.Context, prefix, id string) error {
+	if id == "" {
+		return fmt.Errorf("%w: cannot determine what to remove", errImportUsage)
+	}
+
+	return t.deletePath(ctx, prefix+url.PathEscape(id))
 }
 
 // setProperties merges props onto the package with the given id.

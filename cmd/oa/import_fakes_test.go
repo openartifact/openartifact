@@ -5,6 +5,7 @@
 package main
 
 import (
+	"cmp"
 	"crypto/sha1"
 	"crypto/sha256"
 	"encoding/hex"
@@ -35,6 +36,8 @@ func sum1(b []byte) string {
 type fakeItem struct {
 	id      string
 	path    string // maven/raw path, deb/rpm file name
+	name    string // listed package name (formats registering their own routes)
+	version string // listed package version
 	sha     string
 	size    int
 	created string
@@ -47,6 +50,47 @@ type fakeRepo struct {
 	format   string
 	repoType string
 	items    []*fakeItem
+}
+
+// fakeOARoutes lets a format's test file add the routes of its native upload
+// protocol to every fakeOA, keyed by the repository format. The routes are
+// relative to the repository: "/repos/<repo>/..." is registered as "/..." and
+// docker's "/v2/<repo>/..." as "/v2/...". Register from an init function.
+var fakeOARoutes = map[string]func(f *fakeOA, mux *http.ServeMux){}
+
+// formatMux picks the per-format mux for /repos/<repo>/... and /v2/<repo>/...
+// requests and strips the repository from the path (stashing it in the
+// "X-Fake-Repo" header). Everything else is nil.
+func (f *fakeOA) formatMux(byFormat map[string]*http.ServeMux, r *http.Request) *http.ServeMux {
+	parts := strings.SplitN(strings.TrimPrefix(r.URL.Path, "/"), "/", 3)
+	if len(parts) < 2 || (parts[0] != "repos" && parts[0] != "v2") {
+		return nil
+	}
+
+	repo := f.repos[parts[1]]
+	if repo == nil {
+		return nil
+	}
+
+	m := byFormat[repo.format]
+	if m == nil {
+		return nil
+	}
+
+	rest := "/"
+	if len(parts) == 3 {
+		rest += parts[2]
+	}
+
+	if parts[0] == "v2" {
+		rest = "/v2" + rest
+	}
+
+	r.Header.Set("X-Fake-Repo", parts[1])
+	r.URL.Path = rest
+	r.URL.RawPath = ""
+
+	return m
 }
 
 // fakeOA mimics the slice of the OpenArtifact API the importer uses.
@@ -78,6 +122,17 @@ func newFakeOA(t *testing.T, repos map[string]*fakeRepo) *fakeOA {
 	mux.HandleFunc("GET /repos/maven/{name}/{path...}", f.getMavenChecksum)
 	mux.HandleFunc("DELETE /repos/{format}/{name}/{path...}", f.deleteFile)
 
+	// Formats with their own upload protocol add their routes from their
+	// test files (see fakeOARoutes); the request is routed by the format of the
+	// repository it names, as the real server does.
+	byFormat := map[string]*http.ServeMux{}
+
+	for format, register := range fakeOARoutes {
+		m := http.NewServeMux()
+		register(f, m)
+		byFormat[format] = m
+	}
+
 	f.srv = httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if r.Header.Get("Authorization") != "Bearer "+f.token {
 			http.Error(w, `{"error":"unauthorized"}`, http.StatusUnauthorized)
@@ -86,6 +141,12 @@ func newFakeOA(t *testing.T, repos map[string]*fakeRepo) *fakeOA {
 
 		f.mu.Lock()
 		defer f.mu.Unlock()
+
+		if m := f.formatMux(byFormat, r); m != nil {
+			m.ServeHTTP(w, r)
+			return
+		}
+
 		mux.ServeHTTP(w, r)
 	}))
 	t.Cleanup(f.srv.Close)
@@ -148,16 +209,27 @@ func (f *fakeOA) listPackages(w http.ResponseWriter, r *http.Request) {
 	repo := f.repos[r.PathValue("name")]
 	page, _ := strconv.Atoi(r.URL.Query().Get("page"))
 	limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
+	q := strings.ToLower(r.URL.Query().Get("q"))
 
-	var out []map[string]string
+	var matching []*fakeItem
 
-	for i, it := range repo.items {
-		if i >= (page-1)*limit && i < page*limit {
-			out = append(out, map[string]string{"id": it.id, "sha256": it.sha, "filename": it.path})
+	for _, it := range repo.items {
+		if q == "" || strings.Contains(strings.ToLower(it.name), q) || strings.Contains(strings.ToLower(it.version), q) {
+			matching = append(matching, it)
 		}
 	}
 
-	f.reply(w, http.StatusOK, map[string]any{"total": len(repo.items), "packages": out})
+	var out []map[string]string
+
+	for i, it := range matching {
+		if i >= (page-1)*limit && i < page*limit {
+			out = append(out, map[string]string{
+				"id": it.id, "sha256": it.sha, "filename": it.path, "name": it.name, "version": it.version,
+			})
+		}
+	}
+
+	f.reply(w, http.StatusOK, map[string]any{"total": len(matching), "packages": out})
 }
 
 func (f *fakeOA) store(repoName, path string, data []byte, created string) *fakeItem {
@@ -310,6 +382,11 @@ type fakeFile struct {
 	props   map[string][]string
 	// sha256 overrides the advertised digest (to simulate corruption).
 	sha256 string
+	// compName/compVersion/compGroup make Nexus list the file as (part of) a
+	// component through /service/rest/v1/components; empty: no component.
+	compGroup, compName, compVersion string
+	// contentType is the asset content type Nexus reports (default octet-stream).
+	contentType string
 }
 
 func (f fakeFile) advertised() string {
@@ -359,12 +436,50 @@ func newFakeNexus(t *testing.T, repos ...fakeSourceRepo) *httptest.Server {
 				"checksum":    map[string]string{"sha1": sum1(f.data), "sha256": f.advertised()},
 				"fileSize":    len(f.data),
 				"blobCreated": f.created,
-				"contentType": "application/octet-stream",
+				"contentType": cmp.Or(f.contentType, "application/octet-stream"),
 			})
 		}
 
 		page := map[string]any{"items": items, "continuationToken": nil}
 		if end < len(repo.files) {
+			page["continuationToken"] = strconv.Itoa(end)
+		}
+
+		_ = json.NewEncoder(w).Encode(page)
+	})
+
+	// Components: one component per file that names one, two per page.
+	mux.HandleFunc("GET /service/rest/v1/components", func(w http.ResponseWriter, r *http.Request) {
+		repo := byName[r.URL.Query().Get("repository")]
+
+		var comps []fakeFile
+
+		for _, f := range repo.files {
+			if f.compName != "" {
+				comps = append(comps, f)
+			}
+		}
+
+		start, _ := strconv.Atoi(r.URL.Query().Get("continuationToken"))
+		end := min(start+2, len(comps))
+
+		var items []map[string]any
+
+		for _, f := range comps[start:end] {
+			items = append(items, map[string]any{
+				"repository": repo.name, "format": repo.format,
+				"group": f.compGroup, "name": f.compName, "version": f.compVersion,
+				"assets": []map[string]any{{
+					"downloadUrl": "http://" + r.Host + "/repository/" + repo.name + "/" + f.path,
+					"path":        f.path,
+					"checksum":    map[string]string{"sha1": sum1(f.data), "sha256": f.advertised()},
+					"fileSize":    len(f.data),
+				}},
+			})
+		}
+
+		page := map[string]any{"items": items, "continuationToken": nil}
+		if end < len(comps) {
 			page["continuationToken"] = strconv.Itoa(end)
 		}
 

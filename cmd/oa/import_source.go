@@ -22,10 +22,22 @@ import (
 type importFormat string
 
 const (
-	formatMaven importFormat = "maven"
-	formatDeb   importFormat = "deb"
-	formatRPM   importFormat = "rpm"
-	formatRaw   importFormat = "raw"
+	formatMaven    importFormat = "maven"
+	formatDeb      importFormat = "deb"
+	formatRPM      importFormat = "rpm"
+	formatRaw      importFormat = "raw"
+	formatNPM      importFormat = "npm"
+	formatPyPI     importFormat = "pypi"
+	formatDocker   importFormat = "docker"
+	formatHelm     importFormat = "helm"
+	formatNuGet    importFormat = "nuget"
+	formatRubyGems importFormat = "rubygems"
+	formatCargo    importFormat = "cargo"
+	formatGo       importFormat = "go"
+	formatConda    importFormat = "conda"
+	formatConan    importFormat = "conan"
+	formatIvy      importFormat = "ivy"
+	formatSBT      importFormat = "sbt"
 )
 
 const (
@@ -42,7 +54,7 @@ var (
 	errHTTP               = errors.New("unexpected response")
 	errSourceRepoNotFound = errors.New("source repository not found")
 	errSourceNotHosted    = errors.New("only hosted (local) repositories can be imported")
-	errSourceFormat       = errors.New("unsupported source repository format (supported: maven, apt/debian, yum/rpm, raw/generic)")
+	errSourceFormat       = errors.New("unsupported source repository format (see docs/migration/nexus-artifactory.md for the supported formats)")
 )
 
 // sourceRepo describes a repository on the source system.
@@ -69,6 +81,18 @@ type sourceAsset struct {
 	// Props holds the source system's properties (Artifactory); a key may carry
 	// several values.
 	Props map[string][]string
+	// Component is the package identity the source reported for this file
+	// (Nexus components, Artifactory package properties); empty fields are
+	// unknown and formats fall back to parsing Path.
+	Component sourceComponent
+}
+
+// sourceComponent is the package a stored file belongs to, as the source
+// system names it.
+type sourceComponent struct {
+	Group   string
+	Name    string
+	Version string
 }
 
 // importSource lists and streams the assets of a source system.
@@ -222,18 +246,7 @@ type nexusSource struct {
 }
 
 func nexusFormat(f string) (importFormat, bool) {
-	switch f {
-	case "maven2":
-		return formatMaven, true
-	case "apt":
-		return formatDeb, true
-	case "yum":
-		return formatRPM, true
-	case "raw":
-		return formatRaw, true
-	}
-
-	return "", false
+	return lookupSourceFormat(nexusFormats, f)
 }
 
 func (n *nexusSource) Repository(ctx context.Context, name string) (sourceRepo, error) {
@@ -328,7 +341,62 @@ func (n *nexusSource) Assets(ctx context.Context, repo sourceRepo) ([]sourceAsse
 		}
 
 		if page.ContinuationToken == "" {
-			return out, nil
+			break
+		}
+
+		token = page.ContinuationToken
+	}
+
+	if def, ok := formatDefs[repo.Format]; ok && def.components {
+		if err := n.attachComponents(ctx, repo, out); err != nil {
+			return nil, err
+		}
+	}
+
+	return out, nil
+}
+
+// attachComponents fills in the package identity (group, name, version) of
+// every asset that belongs to a Nexus component. Assets without a component
+// (indexes, packuments) keep an empty identity.
+func (n *nexusSource) attachComponents(ctx context.Context, repo sourceRepo, assets []sourceAsset) error {
+	byPath := make(map[string]int, len(assets))
+	for i, a := range assets {
+		byPath[a.Path] = i
+	}
+
+	token := ""
+
+	for {
+		q := "?repository=" + url.QueryEscape(repo.Name)
+		if token != "" {
+			q += "&continuationToken=" + url.QueryEscape(token)
+		}
+
+		var page struct {
+			Items []struct {
+				Group   string       `json:"group"`
+				Name    string       `json:"name"`
+				Version string       `json:"version"`
+				Assets  []nexusAsset `json:"assets"`
+			} `json:"items"`
+			ContinuationToken string `json:"continuationToken"`
+		}
+
+		if err := n.http.getJSON(ctx, n.http.resolve("/service/rest/v1/components"+q), &page); err != nil {
+			return fmt.Errorf("listing components of %q: %w", repo.Name, err)
+		}
+
+		for _, c := range page.Items {
+			for _, ca := range c.Assets {
+				if i, ok := byPath[strings.TrimPrefix(ca.Path, "/")]; ok {
+					assets[i].Component = sourceComponent{Group: c.Group, Name: c.Name, Version: c.Version}
+				}
+			}
+		}
+
+		if page.ContinuationToken == "" {
+			return nil
 		}
 
 		token = page.ContinuationToken
@@ -380,18 +448,7 @@ type artifactorySource struct {
 }
 
 func artifactoryFormat(packageType string) (importFormat, bool) {
-	switch strings.ToLower(packageType) {
-	case "maven":
-		return formatMaven, true
-	case "debian":
-		return formatDeb, true
-	case "rpm":
-		return formatRPM, true
-	case "generic":
-		return formatRaw, true
-	}
-
-	return "", false
+	return lookupSourceFormat(artifactoryFormats, strings.ToLower(packageType))
 }
 
 func (a *artifactorySource) Repository(ctx context.Context, name string) (sourceRepo, error) {
@@ -637,38 +694,29 @@ func (a *artifactorySource) Open(ctx context.Context, asset sourceAsset) (io.Rea
 // ─── Selection and layout ─────────────────────────────────────────────────────
 
 // importable reports whether an asset is a payload file the importer should
-// move for the given format, with the reason when it is not. Indexes, checksum
-// sidecars and signatures are regenerated by the target.
+// move for the given format. Indexes, checksum sidecars and signatures are
+// regenerated by the target.
 func importable(f importFormat, p string) bool {
 	// Artifactory keeps internal state in dot-directories (.index, .npm, ...).
 	if strings.HasPrefix(p, ".") {
 		return false
 	}
 
-	switch f {
-	case formatMaven:
-		return importableMaven(p)
-	case formatDeb:
-		if strings.HasPrefix(p, "dists/") {
-			return false
-		}
+	def, ok := formatDefs[f]
 
-		if !strings.HasSuffix(p, ".deb") {
-			return false
-		}
-	case formatRPM:
-		if strings.HasPrefix(p, "repodata/") || strings.Contains(p, "/repodata/") {
-			return false
-		}
+	return ok && def.importable(p)
+}
 
-		if !strings.HasSuffix(p, ".rpm") {
-			return false
-		}
-	case formatRaw:
-		// everything is payload
+func importableDeb(p string) bool {
+	return !strings.HasPrefix(p, "dists/") && strings.HasSuffix(p, ".deb")
+}
+
+func importableRPM(p string) bool {
+	if strings.HasPrefix(p, "repodata/") || strings.Contains(p, "/repodata/") {
+		return false
 	}
 
-	return true
+	return strings.HasSuffix(p, ".rpm")
 }
 
 func importableMaven(p string) bool {
