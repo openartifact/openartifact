@@ -704,7 +704,6 @@ func (r fixedResolver) SignerForRepo(context.Context, string) (gpg.Signer, error
 	return r.signer, nil
 }
 
-
 func TestGroupDebCallerWhoCannotReadAMemberGetsAVariantWithoutIt(t *testing.T) {
 	f := newGroupFixture(t)
 	ctx := context.Background()
@@ -716,7 +715,7 @@ func TestGroupDebCallerWhoCannotReadAMemberGetsAVariantWithoutIt(t *testing.T) {
 	f.debPackage(open, "foo", "1.0")
 	f.debPackage(secret, "classified", "1.0")
 
-	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, nil, func() gpg.Signer { return stubSigner{} }, testLogger(t))
+	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, nil, fixedResolver{stubSigner{}}, testLogger(t))
 	t.Cleanup(w.Stop)
 
 	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {

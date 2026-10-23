@@ -245,7 +245,7 @@ func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 	if meta == nil {
 		var ok bool
 
-		if meta, ok = h.generateOnMiss(w, r, grp, p, key, scope, readable); !ok {
+		if meta, ok = h.generateOnMiss(w, r, grp, p, key, readable); !ok {
 			return
 		}
 
@@ -261,7 +261,7 @@ func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 // generateOnMiss generates the group's metadata when its anchor row is absent
 // and returns the requested row afterwards. ok is false once a response was
 // written.
-func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, key, scope string, readable []string) (*models.RepoMetadata, bool) {
+func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, key string, readable []string) (*models.RepoMetadata, bool) {
 	if !h.worthGenerating(w, r, grp, p) {
 		return nil, false
 	}
