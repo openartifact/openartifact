@@ -87,7 +87,7 @@ func TestListWebhooksForEvent_SelectsSubscribers(t *testing.T) {
 		{"event without repo-scoped subscriber", repoA, created, []string{"global-up-create"}},
 		{"event only one global webhook subscribes to", repoA, deleted, []string{"global-deleted"}},
 		{"global event without repository", "", uploaded, []string{"global-up-create"}},
-		{"event nobody subscribes to", repoA, webhook.EventArtifactDownloaded, nil},
+		{"event nobody subscribes to", repoA, webhook.EventRepoPurged, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			got, err := pg.ListWebhooksForEvent(ctx, tc.repoID, tc.event)
@@ -106,6 +106,60 @@ func TestListWebhooksForEvent_SelectsSubscribers(t *testing.T) {
 				t.Errorf("subscribers = %v, want %v", names, tc.want)
 			}
 		})
+	}
+}
+
+// TestWebhookPayloadFormatPersists round-trips payload_format through every
+// read path against real Postgres, and checks the column's CHECK constraint.
+func TestWebhookPayloadFormatPersists(t *testing.T) {
+	pg := freshPostgres(t, 5)
+	ctx := context.Background()
+	repo := newRepo(t, pg, "fmt-repo", "raw")
+
+	cloud := seedWebhookFor(t, pg, "cloud", "", "https://example.com/c", "", true, webhook.EventArtifactUploaded)
+	if cloud.PayloadFormat != "" {
+		t.Fatalf("seed must start unset, got %q", cloud.PayloadFormat)
+	}
+
+	// An unset format (older backup, older caller) is stored as the default.
+	got, err := pg.GetWebhook(ctx, cloud.ID)
+	if err != nil || got.PayloadFormat != models.PayloadFormatOpenArtifact {
+		t.Fatalf("default format = %q, err %v", got.PayloadFormat, err)
+	}
+
+	got.PayloadFormat = models.PayloadFormatCloudEvents
+	if err := pg.UpdateWebhook(ctx, got); err != nil {
+		t.Fatal(err)
+	}
+
+	scoped := &models.Webhook{
+		RepositoryID: repo, Name: "slack", URL: "https://example.com/s", Enabled: true,
+		Events: []string{webhook.EventArtifactUploaded}, ContentType: "application/json",
+		PayloadFormat: models.PayloadFormatSlack, SSLVerify: true, MaxRetries: 1, TimeoutSeconds: 10,
+	}
+	if err := pg.CreateWebhook(ctx, scoped); err != nil {
+		t.Fatal(err)
+	}
+
+	byID, _ := pg.GetWebhook(ctx, cloud.ID)
+	global, _ := pg.ListWebhooks(ctx, "")
+	byRepo, _ := pg.ListWebhooks(ctx, repo)
+	forEvent, _ := pg.ListWebhooksForEvent(ctx, repo, webhook.EventArtifactUploaded)
+
+	if byID.PayloadFormat != "cloudevents" || len(global) != 1 || global[0].PayloadFormat != "cloudevents" ||
+		len(byRepo) != 1 || byRepo[0].PayloadFormat != "slack" || len(forEvent) != 2 {
+		t.Fatalf("format not persisted: get=%q global=%v repo=%v forEvent=%d", byID.PayloadFormat, global, byRepo, len(forEvent))
+	}
+
+	for _, wh := range forEvent {
+		want := map[string]string{"cloud": "cloudevents", "slack": "slack"}[wh.Name]
+		if wh.PayloadFormat != want {
+			t.Errorf("ListWebhooksForEvent %s format = %q, want %q", wh.Name, wh.PayloadFormat, want)
+		}
+	}
+
+	if _, err := pg.GetDB().ExecContext(ctx, `UPDATE webhooks SET payload_format = 'xml' WHERE id = $1`, cloud.ID); err == nil {
+		t.Fatal("the CHECK constraint accepted an unknown payload_format")
 	}
 }
 

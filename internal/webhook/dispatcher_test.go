@@ -49,7 +49,6 @@ func TestEventTypes(t *testing.T) {
 	events := []string{
 		EventArtifactUploaded,
 		EventArtifactDeleted,
-		EventArtifactDownloaded,
 		EventRepoCreated,
 		EventRepoDeleted,
 		EventArtifactRestored,
@@ -141,7 +140,6 @@ func TestEventTypeValues(t *testing.T) {
 	}{
 		{"artifact uploaded", EventArtifactUploaded, "artifact.uploaded"},
 		{"artifact deleted", EventArtifactDeleted, "artifact.deleted"},
-		{"artifact downloaded", EventArtifactDownloaded, "artifact.downloaded"},
 		{"repo created", EventRepoCreated, "repository.created"},
 		{"repo deleted", EventRepoDeleted, "repository.deleted"},
 		{"artifact restored", EventArtifactRestored, "artifact.restored"},

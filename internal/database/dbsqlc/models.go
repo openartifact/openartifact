@@ -1131,6 +1131,8 @@ type Webhook struct {
 	TimeoutSeconds int32     `db:"timeout_seconds" json:"timeout_seconds"`
 	CreatedAt      time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
+	// Delivery body format: openartifact, cloudevents, slack, teams or discord.
+	PayloadFormat string `db:"payload_format" json:"payload_format"`
 }
 
 // Webhook delivery attempts and history

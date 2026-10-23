@@ -24,6 +24,7 @@ require (
 	github.com/klauspost/compress v1.20.3
 	github.com/mark3labs/mcp-go v1.3.0
 	github.com/prometheus/client_golang v1.25.0
+	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
 	github.com/totallygamerjet/bsdiff v1.0.0
 	github.com/ulikunitz/xz v0.5.17
@@ -100,7 +101,6 @@ require (
 	github.com/prometheus/common v0.72.1 // indirect
 	github.com/prometheus/procfs v0.22.0 // indirect
 	github.com/russellhaering/goxmldsig v1.6.1 // indirect
-	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3 // indirect
 	github.com/shirou/gopsutil/v4 v4.26.6 // indirect
 	github.com/sirupsen/logrus v1.9.4 // indirect
 	github.com/spf13/cast v1.10.0 // indirect

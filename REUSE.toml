@@ -54,3 +54,23 @@ path = [".agents/skills/vue-*/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2025 hyf0, SerKo <https://github.com/serkodev>"
 SPDX-License-Identifier = "MIT"
+
+# JSON Schemas vendored unmodified as test fixtures (internal/webhook/format_test.go).
+[[annotations]]
+path = "internal/webhook/testdata/cloudevents-schema-1.0.2.json"
+precedence = "override"
+SPDX-FileCopyrightText = "CloudEvents Authors (https://github.com/cloudevents/spec)"
+SPDX-License-Identifier = "Apache-2.0"
+
+[[annotations]]
+path = "internal/webhook/testdata/adaptive-card-schema-1.5.json"
+precedence = "override"
+SPDX-FileCopyrightText = "Microsoft Corporation (https://github.com/microsoft/AdaptiveCards)"
+SPDX-License-Identifier = "MIT"
+
+# Golden webhook bodies compared byte for byte by internal/webhook/format_test.go.
+[[annotations]]
+path = "internal/webhook/testdata/golden/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "The OpenArtifact Authors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"

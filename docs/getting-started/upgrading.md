@@ -97,6 +97,11 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - Creating a repository now clears the auth cache too, so a new repository shows up in permission-derived lists at once.
 - Web UI: the Ctrl+K palette tells a too broad query ("Refine your query") from a failed request (inline error with Retry) and from an empty result, cancels the request of an outdated query, lists a package once, and links to `/search?q=…` for all results. The header trigger is a real button and shows ⌘K on Apple platforms, Ctrl K elsewhere. The duplicate "Open profile" command is gone ("Open settings" opens the same page).
 
+#### Webhook payload formats (migration `051`)
+
+- New per-webhook `payload_format`: `openartifact` (the default, body unchanged), `cloudevents`, `slack`, `teams` or `discord`; see [webhooks](../operations/webhooks.md#payload-formats). Existing webhooks keep `openartifact`, so nothing changes until a format is chosen. Migration `051` adds the column with a CHECK constraint (a metadata-only change on a small table).
+- **`artifact.downloaded` is no longer an accepted event.** It could be subscribed to but nothing ever emitted it; creating or updating a webhook with it now fails with 400, and migration `051` removes it from existing subscriptions. A webhook that subscribed only to it is left with no events and never fires. The `artifact.downloaded` action of the [audit log](../operations/monitoring.md) is unrelated and unchanged.
+
 ### 0.6.0
 
 > **Recreate upgrade required, and set a real database password first.** Stop every 0.5.x replica before 0.6.0 starts (Kubernetes: `strategy: Recreate`, or scale to 0): migration `025` renames tables the old binaries query. The server no longer starts with the `CHANGE_ME` example database password, and PostgreSQL must allow the `pg_trgm` extension. Both are detailed below.

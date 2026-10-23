@@ -1,33 +1,33 @@
 -- name: CreateWebhook :one
-INSERT INTO webhooks (repository_id, name, url, secret_enc, enabled, events, content_type, ssl_verify, max_retries, timeout_seconds)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO webhooks (repository_id, name, url, secret_enc, enabled, events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id, created_at, updated_at;
 
 -- name: GetWebhook :one
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks WHERE id = $1;
 
 -- name: UpdateWebhook :exec
 UPDATE webhooks
-SET name = $2, url = $3, secret_enc = $4, enabled = $5, events = $6, content_type = $7, ssl_verify = $8, max_retries = $9, timeout_seconds = $10, updated_at = now()
+SET name = $2, url = $3, secret_enc = $4, enabled = $5, events = $6, content_type = $7, payload_format = $8, ssl_verify = $9, max_retries = $10, timeout_seconds = $11, updated_at = now()
 WHERE id = $1;
 
 -- name: DeleteWebhook :exec
 DELETE FROM webhooks WHERE id = $1;
 
 -- name: ListGlobalWebhooks :many
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks WHERE repository_id IS NULL ORDER BY created_at DESC;
 
 -- name: ListWebhooksByRepo :many
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks WHERE repository_id = $1 ORDER BY created_at DESC;
 
 -- name: ListWebhooksForEvent :many
 -- event_type must stay an explicit ::text scalar: with a bare `$2 = ANY(events)`
 -- sqlc infers the array column's type (generating a []string param) while
 -- Postgres types the placeholder as text, so pgx fails to encode the argument.
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks
 WHERE (repository_id = sqlc.narg(repository_id) OR repository_id IS NULL) AND enabled = true AND sqlc.arg(event_type)::text = ANY(events)
 ORDER BY created_at DESC;

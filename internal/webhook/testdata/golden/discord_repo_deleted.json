@@ -1,0 +1,30 @@
+{
+  "allowed_mentions": {
+    "parse": []
+  },
+  "embeds": [
+    {
+      "color": 15158332,
+      "fields": [
+        {
+          "inline": true,
+          "name": "Repository",
+          "value": "`docker-proxy`"
+        },
+        {
+          "inline": true,
+          "name": "Format",
+          "value": "`docker`"
+        },
+        {
+          "inline": true,
+          "name": "Type",
+          "value": "`proxy`"
+        }
+      ],
+      "timestamp": "2026-01-02T15:04:05Z",
+      "title": "Repository deleted"
+    }
+  ],
+  "username": "OpenArtifact"
+}

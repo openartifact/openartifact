@@ -22,12 +22,15 @@ A webhook is either global (fires for events in every repository) or scoped to o
 | `repository.deleted` | a repository is deleted (moved to the trash, or permanently when its retention is 0) |
 | `repository.restored` | a repository is restored from the trash |
 | `repository.purged` | a trashed repository is removed for good |
-| `artifact.downloaded` | accepted as a subscription, but nothing emits it today |
 | `webhook.test` | only by the test route; cannot be subscribed to |
 
 Events are published after the operation succeeds. A failure to record an event never fails the upload or delete that caused it.
 
+There is no `artifact.downloaded` event. A download is the highest-volume operation of an artifact manager (every CI job and every package manager resolve, every client retry and range request), and a delivery means one database insert plus one outbound HTTP request, so it is not offered; subscribing to it is rejected with 400. Use the [audit log](monitoring.md) (`artifact.downloaded` action) or the download metrics for that.
+
 ### Payloads
+
+These are the native (`openartifact`) payloads. Other [formats](#payload-formats) wrap or re-render the same data.
 
 Artifact events:
 
@@ -49,13 +52,60 @@ Artifact events:
 
 `version`, `sha256` and `size` are omitted when the format or the operation does not provide them. Repository events carry `event`, `timestamp`, `repository`, `format` and `type` (`hosted`, `proxy` or `group`). `artifact.restored` and `artifact.purged` use the artifact payload and `repository.restored` and `repository.purged` the repository payload; only the `event` value differs. See [Trash](trash.md#audit-and-webhook-events). The test event is `{"event":"webhook.test","message":"This is a test webhook delivery","timestamp":<unix seconds>}`.
 
+## Payload formats
+
+`payload_format` selects the body of every delivery of a webhook (default `openartifact`). The stored delivery log always keeps the native payload; the format is applied when the request is sent, so changing it also applies to pending retries. The test delivery uses the webhook's format. The `X-Hub-Signature-256` header is computed over the body actually sent, for every format.
+
+| `payload_format` | Body | `Content-Type` |
+|---|---|---|
+| `openartifact` | the native payloads above, unchanged | `application/json` |
+| `cloudevents` | a [CloudEvents 1.0](https://github.com/cloudevents/spec/blob/v1.0.2/cloudevents/spec.md) event in structured JSON mode | `application/cloudevents+json` |
+| `slack` | a Slack [incoming webhook](https://api.slack.com/messaging/webhooks) message with Block Kit blocks | `application/json` |
+| `teams` | a Teams Workflows ("When a Teams webhook request is received") message carrying an Adaptive Card 1.4 | `application/json` |
+| `discord` | a Discord [webhook](https://discord.com/developers/docs/resources/webhook#execute-webhook) message with one embed | `application/json` |
+
+The formats are fixed built-in templates; there is no user-supplied template language.
+
+### CloudEvents
+
+```json
+{
+  "specversion": "1.0",
+  "id": "5b1f3c1e-0000-4000-8000-00000000d001",
+  "source": "https://oa.example.com",
+  "type": "io.openartifact.artifact.uploaded",
+  "time": "2026-01-02T15:04:05Z",
+  "subject": "npm-hosted/left-pad/-/left-pad-1.3.0.tgz",
+  "datacontenttype": "application/json",
+  "data": { "event": "artifact.uploaded", "timestamp": "2026-01-02T15:04:05Z", "repository": "npm-hosted", "format": "npm", "artifact": { "name": "left-pad", "path": "left-pad/-/left-pad-1.3.0.tgz" } }
+}
+```
+
+- `id` is the delivery ID, identical on every retry of that delivery: use it to deduplicate.
+- `source` is the server's public `BASE_URL` (default `http://localhost:8080`), without a trailing slash; `type` is `io.openartifact.` plus the event name, e.g. `io.openartifact.repository.created` or `io.openartifact.webhook.test`.
+- `time` is the event time as RFC 3339 (the test event's unix timestamp is converted).
+- `subject` is `<repository>/<path>` for artifact events and `<repository>` for repository events; it is absent for `webhook.test`.
+- `data` is the native payload.
+
+The output is validated against the CloudEvents 1.0.2 JSON schema in the unit tests.
+
+### Slack, Teams and Discord
+
+Each shows a title (`Artifact uploaded`, `Repository deleted`, `Webhook test`, ...) and the event's facts: repository, format, type, and for artifact events the name, version, path, SHA-256 and size. Values are untrusted (an artifact name is chosen by whoever uploads), so they are escaped for the target service:
+
+- **Slack**: `&`, `<` and `>` are entity-escaped (so `<!channel>`, `<@U123>` and `<url|text>` cannot form), and values are shown as inline code.
+- **Discord**: values are inline code spans (markdown and mentions are literal), and `allowed_mentions.parse` is empty, so nothing can ping `@everyone`, a role or a user. A value is cut at 1000 characters (the embed limit is 1024).
+- **Teams**: markdown characters in values are backslash-escaped, so they render literally with no links or emphasis. The Adaptive Card is validated against the official Adaptive Cards 1.5 schema in the unit tests.
+
+Over-long values are truncated to 1000 characters in all three. Slack and Discord incoming webhooks do not verify the signature header; it is sent anyway and ignored. These services answer `2xx` on success and an error status otherwise, which the retry logic above handles as for any receiver.
+
 ## Request
 
-Each delivery is an HTTP `POST` of the JSON payload:
+Each delivery is an HTTP `POST` of the formatted body:
 
 | Header | Value |
 |---|---|
-| `Content-Type` | `application/json` (the only accepted type) |
+| `Content-Type` | `application/json`, or `application/cloudevents+json` for the `cloudevents` format |
 | `User-Agent` | `OpenArtifact-Webhook/1.0` |
 | `X-Hub-Signature-256` | `sha256=<hex>`, only when the webhook has a secret |
 
@@ -113,20 +163,26 @@ Fields:
 |---|---|---|
 | `name` | required | up to 255 characters |
 | `url` | required | up to 2048 characters, validated as above |
-| `events` | required | 1 to 32 names from the table above; duplicates are dropped |
+| `events` | required | 1 to 32 names from the table above (without `webhook.test`); duplicates are dropped |
 | `secret` | optional | write-only, up to 512 characters |
 | `enabled` | default `true` | |
-| `content_type` | default `application/json` | no other value is accepted |
+| `content_type` | default `application/json` | no other value is accepted; the `cloudevents` format sends `application/cloudevents+json` regardless |
+| `payload_format` | default `openartifact` | `openartifact`, `cloudevents`, `slack`, `teams` or `discord`; anything else is a 400 |
 | `ssl_verify` | default `true` | |
 | `max_retries` | default `3` | clamped to 0 to 10 |
 | `timeout_seconds` | default `30` | clamped to 1 to 30 |
 
-Responses carry `id`, `repository_id` (null for global), `name`, `url`, `enabled`, `events`, `content_type`, `ssl_verify`, `max_retries`, `timeout_seconds`, `has_secret`, `created_at` and `updated_at`. The secret is never returned.
+Responses carry `id`, `repository_id` (null for global), `name`, `url`, `enabled`, `events`, `content_type`, `payload_format`, `ssl_verify`, `max_retries`, `timeout_seconds`, `has_secret`, `created_at` and `updated_at`. The secret is never returned.
 
 ```sh
 curl -X POST HOST/api/v1/repositories/REPO/webhooks \
   -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
   -d '{"name":"ci","url":"https://ci.example.com/hook","secret":"<SECRET>","events":["artifact.uploaded","artifact.deleted"]}'
+
+# CloudEvents consumers (Knative, Argo Events, EventBridge pipes, ...)
+curl -X POST HOST/api/v1/webhooks \
+  -H "Authorization: Bearer <TOKEN>" -H "Content-Type: application/json" \
+  -d '{"name":"events","url":"https://broker.example.com/in","events":["artifact.uploaded"],"payload_format":"cloudevents"}'
 
 curl -X POST -H "Authorization: Bearer <TOKEN>" HOST/api/v1/webhooks/<ID>/test
 curl -H "Authorization: Bearer <TOKEN>" "HOST/api/v1/webhooks/<ID>/deliveries?limit=20"

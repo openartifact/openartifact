@@ -62,6 +62,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.name') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.url') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.events') }}</th>
+              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.format') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.status') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.webhooks.column.created') }}</th>
               <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('common.actions') }}</th>
@@ -87,6 +88,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <span v-if="!hook.events?.length" class="text-xs text-muted">—</span>
                 </div>
               </td>
+              <td class="px-4 py-3 text-xs text-muted">{{ formatLabel(hook.payload_format) }}</td>
               <td class="px-4 py-3">
                 <span
                   v-if="hook.enabled"
@@ -169,6 +171,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           />
         </div>
 
+        <div>
+          <label for="wh-format" class="block text-sm font-medium text-foreground mb-1.5">
+            {{ t('adm.webhooks.field.payloadFormat') }}
+          </label>
+          <select
+            id="wh-format"
+            v-model="form.payload_format"
+            aria-describedby="wh-format-hint"
+            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground focus:ring-2 focus:ring-primary/50"
+          >
+            <option v-for="format in WEBHOOK_PAYLOAD_FORMATS" :key="format" :value="format">
+              {{ tDynamic(`adm.webhooks.format.${format}`) }}
+            </option>
+          </select>
+          <p id="wh-format-hint" class="text-caption text-muted mt-1">{{ t('adm.webhooks.field.payloadFormatHint') }}</p>
+        </div>
+
         <fieldset>
           <legend class="block text-sm font-medium text-foreground mb-2">
             {{ t('adm.webhooks.field.events') }} <span class="text-danger">*</span>
@@ -248,7 +267,12 @@ import AppButton from '../../components/AppButton.vue'
 import AppToggle from '../../components/AppToggle.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
-import { WEBHOOK_EVENTS, type WebhookEvent } from '../../lib/webhookEvents'
+import {
+  WEBHOOK_EVENTS,
+  WEBHOOK_PAYLOAD_FORMATS,
+  type WebhookEvent,
+  type WebhookPayloadFormat,
+} from '../../lib/webhookEvents'
 
 interface Webhook {
   id: string
@@ -258,6 +282,7 @@ interface Webhook {
   has_secret?: boolean
   events: string[]
   content_type?: string
+  payload_format?: string
   ssl_verify?: boolean
   enabled: boolean
   max_retries?: number
@@ -285,6 +310,7 @@ const form = ref({
   url: '',
   secret: '',
   events: [] as WebhookEvent[],
+  payload_format: 'openartifact' as WebhookPayloadFormat,
   ssl_verify: true,
   enabled: true,
 })
@@ -299,6 +325,10 @@ const canSave = computed(
   () => !saving.value && !!form.value.name.trim() && !!form.value.url.trim() && form.value.events.length > 0,
 )
 
+
+function formatLabel(format?: string): string {
+  return tDynamic(`adm.webhooks.format.${format || 'openartifact'}`)
+}
 
 function toggleEvent(value: WebhookEvent): void {
   const idx = form.value.events.indexOf(value)
@@ -329,6 +359,7 @@ function openCreate(): void {
     url: '',
     secret: '',
     events: [],
+    payload_format: 'openartifact',
     ssl_verify: true,
     enabled: true,
   }
@@ -347,6 +378,7 @@ async function submitCreate(): Promise<void> {
       name: form.value.name.trim(),
       url: form.value.url.trim(),
       events: form.value.events,
+      payload_format: form.value.payload_format,
       ssl_verify: form.value.ssl_verify,
     }
     if (form.value.secret.trim()) payload.secret = form.value.secret.trim()

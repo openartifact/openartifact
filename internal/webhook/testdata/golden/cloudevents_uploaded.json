@@ -1,0 +1,22 @@
+{
+  "data": {
+    "artifact": {
+      "name": "left-pad",
+      "path": "left-pad/-/left-pad-1.3.0.tgz",
+      "sha256": "abababababababababababababababababababababababababababababababab",
+      "size": 4096,
+      "version": "1.3.0"
+    },
+    "event": "artifact.uploaded",
+    "format": "npm",
+    "repository": "npm-hosted",
+    "timestamp": "2026-01-02T15:04:05Z"
+  },
+  "datacontenttype": "application/json",
+  "id": "5b1f3c1e-0000-4000-8000-00000000d001",
+  "source": "https://oa.example.com",
+  "specversion": "1.0",
+  "subject": "npm-hosted/left-pad/-/left-pad-1.3.0.tgz",
+  "time": "2026-01-02T15:04:05Z",
+  "type": "io.openartifact.artifact.uploaded"
+}

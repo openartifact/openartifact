@@ -1,0 +1,21 @@
+{
+  "blocks": [
+    {
+      "text": {
+        "text": "Webhook test",
+        "type": "plain_text"
+      },
+      "type": "header"
+    },
+    {
+      "fields": [
+        {
+          "text": "*Message*\n`This is a test webhook delivery`",
+          "type": "mrkdwn"
+        }
+      ],
+      "type": "section"
+    }
+  ],
+  "text": "Webhook test"
+}

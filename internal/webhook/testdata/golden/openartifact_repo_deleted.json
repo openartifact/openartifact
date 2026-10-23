@@ -1,0 +1,7 @@
+{
+  "event": "repository.deleted",
+  "format": "docker",
+  "repository": "docker-proxy",
+  "timestamp": "2026-01-02T15:04:05Z",
+  "type": "proxy"
+}

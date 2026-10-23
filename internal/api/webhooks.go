@@ -5,6 +5,7 @@
 package api
 
 import (
+	"cmp"
 	"errors"
 	"net/http"
 	"strings"
@@ -83,6 +84,7 @@ func webhookToResponse(wh *models.Webhook) responses.WebhookResponse {
 		Enabled:        wh.Enabled,
 		Events:         events,
 		ContentType:    wh.ContentType,
+		PayloadFormat:  cmp.Or(wh.PayloadFormat, models.PayloadFormatOpenArtifact),
 		HasSecret:      wh.SecretEnc != "",
 		SSLVerify:      wh.SSLVerify,
 		TimeoutSeconds: wh.TimeoutSeconds,
@@ -190,6 +192,14 @@ func normalizeWebhookName(name string) (string, error) {
 func validateWebhookContentType(ct string) error {
 	if ct != webhookContentType {
 		return validationError("content_type must be " + webhookContentType)
+	}
+
+	return nil
+}
+
+func validateWebhookPayloadFormat(format string) error {
+	if !webhook.IsPayloadFormat(format) {
+		return validationError("unknown payload_format " + format + "; valid formats: " + strings.Join(webhook.PayloadFormats(), ", "))
 	}
 
 	return nil
@@ -307,6 +317,7 @@ func (h *WebhooksHandler) createWebhook(w http.ResponseWriter, r *http.Request, 
 		Enabled        *bool    `json:"enabled"`
 		Events         []string `json:"events"`
 		ContentType    string   `json:"content_type"`
+		PayloadFormat  string   `json:"payload_format"`
 		SSLVerify      *bool    `json:"ssl_verify"`
 		MaxRetries     *int     `json:"max_retries"`
 		TimeoutSeconds *int     `json:"timeout_seconds"`
@@ -348,6 +359,12 @@ func (h *WebhooksHandler) createWebhook(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
+	payloadFormat := cmp.Or(req.PayloadFormat, models.PayloadFormatOpenArtifact)
+	if err := validateWebhookPayloadFormat(payloadFormat); err != nil {
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+		return
+	}
+
 	secretEnc, err := encryptWebhookSecret(req.Secret)
 	if err != nil {
 		h.log.Errorw("create webhook: secret encryption failed", "error", err)
@@ -364,6 +381,7 @@ func (h *WebhooksHandler) createWebhook(w http.ResponseWriter, r *http.Request, 
 		Enabled:        req.Enabled == nil || *req.Enabled,
 		Events:         events,
 		ContentType:    contentType,
+		PayloadFormat:  payloadFormat,
 		SSLVerify:      req.SSLVerify == nil || *req.SSLVerify,
 		MaxRetries:     defaultWebhookRetries,
 		TimeoutSeconds: webhook.DefaultTimeoutSeconds,
@@ -435,6 +453,7 @@ func (h *WebhooksHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		Enabled        *bool     `json:"enabled"`
 		Events         *[]string `json:"events"`
 		ContentType    *string   `json:"content_type"`
+		PayloadFormat  *string   `json:"payload_format"`
 		SSLVerify      *bool     `json:"ssl_verify"`
 		MaxRetries     *int      `json:"max_retries"`
 		TimeoutSeconds *int      `json:"timeout_seconds"`
@@ -496,6 +515,15 @@ func (h *WebhooksHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		}
 
 		wh.ContentType = *req.ContentType
+	}
+
+	if req.PayloadFormat != nil {
+		if err := validateWebhookPayloadFormat(*req.PayloadFormat); err != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+			return
+		}
+
+		wh.PayloadFormat = *req.PayloadFormat
 	}
 
 	if req.SSLVerify != nil {

@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -48,7 +49,22 @@ func (db *webhooksMockDB) UpdateWebhook(_ context.Context, wh *models.Webhook) e
 	return nil
 }
 
+func (db *webhooksMockDB) CreateWebhookDelivery(_ context.Context, d *models.WebhookDelivery) error {
+	d.ID = "delivery-1"
+	return nil
+}
+
+func (db *webhooksMockDB) UpdateWebhookDelivery(context.Context, *models.WebhookDelivery) error {
+	return nil
+}
+
 func newWebhooksTestRouter(t *testing.T, db *webhooksMockDB) (http.Handler, *http.Request) {
+	t.Helper()
+
+	return newWebhooksTestRouterWith(t, db, nil)
+}
+
+func newWebhooksTestRouterWith(t *testing.T, db *webhooksMockDB, dispatcher *webhook.Dispatcher) (http.Handler, *http.Request) {
 	t.Helper()
 
 	log, err := logger.New("error", "json", "stderr")
@@ -56,7 +72,7 @@ func newWebhooksTestRouter(t *testing.T, db *webhooksMockDB) (http.Handler, *htt
 		t.Fatalf("new logger: %v", err)
 	}
 
-	h := NewWebhooksHandler(db, log, auth.NewEvaluator(db, log, false), nil)
+	h := NewWebhooksHandler(db, log, auth.NewEvaluator(db, log, false), dispatcher)
 	r := chi.NewRouter()
 	h.RegisterAuthed(r)
 
@@ -131,6 +147,8 @@ func TestWebhookCreateValidation(t *testing.T) {
 		"no events":       `{"name":"x","url":"https://93.184.216.34/h","events":[]}`,
 		"unknown event":   `{"name":"x","url":"https://93.184.216.34/h","events":["push"]}`,
 		"bad contenttype": `{"name":"x","url":"https://93.184.216.34/h","events":["artifact.uploaded"],"content_type":"text/plain"}`,
+		"unknown format":  `{"name":"x","url":"https://93.184.216.34/h","events":["artifact.uploaded"],"payload_format":"xml"}`,
+		"downloaded":      `{"name":"x","url":"https://93.184.216.34/h","events":["artifact.downloaded"]}`,
 		"bad json":        `{`,
 	} {
 		rw := doWebhookRequest(t, r, base, http.MethodPost, "/api/v1/webhooks", body)
@@ -187,5 +205,137 @@ func TestWebhookNonAdminForbidden(t *testing.T) {
 	rw := doWebhookRequest(t, r, base, http.MethodGet, "/api/v1/webhooks", "")
 	if rw.Code != http.StatusForbidden {
 		t.Fatalf("status = %d", rw.Code)
+	}
+}
+
+func TestWebhookPayloadFormat(t *testing.T) {
+	t.Setenv(netutil.EnvAllowPrivate, "true")
+
+	create := func(t *testing.T, body string) (*webhooksMockDB, map[string]any) {
+		t.Helper()
+
+		db := &webhooksMockDB{}
+		r, base := newWebhooksTestRouter(t, db)
+
+		rw := doWebhookRequest(t, r, base, http.MethodPost, "/api/v1/webhooks", body)
+		if rw.Code != http.StatusCreated {
+			t.Fatalf("status = %d: %s", rw.Code, rw.Body.String())
+		}
+
+		var resp map[string]any
+		if err := json.Unmarshal(rw.Body.Bytes(), &resp); err != nil {
+			t.Fatal(err)
+		}
+
+		return db, resp
+	}
+
+	t.Run("defaults to openartifact", func(t *testing.T) {
+		db, resp := create(t, `{"name":"x","url":"http://127.0.0.1:9/h","events":["artifact.uploaded"]}`)
+		if db.stored.PayloadFormat != "openartifact" || resp["payload_format"] != "openartifact" {
+			t.Fatalf("stored %q, response %v", db.stored.PayloadFormat, resp["payload_format"])
+		}
+	})
+
+	for _, format := range webhook.PayloadFormats() {
+		t.Run("create "+format, func(t *testing.T) {
+			db, resp := create(t, `{"name":"x","url":"http://127.0.0.1:9/h","events":["artifact.uploaded"],"payload_format":"`+format+`"}`)
+			if db.stored.PayloadFormat != format || resp["payload_format"] != format {
+				t.Fatalf("stored %q, response %v", db.stored.PayloadFormat, resp["payload_format"])
+			}
+		})
+	}
+
+	t.Run("update changes and validates", func(t *testing.T) {
+		db := &webhooksMockDB{stored: &models.Webhook{
+			ID: "wh-1", Name: "ci", URL: "https://93.184.216.34/h", Enabled: true, Events: []string{"artifact.uploaded"},
+			ContentType: "application/json", PayloadFormat: "openartifact", SSLVerify: true, MaxRetries: 3, TimeoutSeconds: 30,
+		}}
+		r, base := newWebhooksTestRouter(t, db)
+
+		rw := doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/wh-1", `{"payload_format":"nope"}`)
+		if rw.Code != http.StatusBadRequest || db.stored.PayloadFormat != "openartifact" {
+			t.Fatalf("invalid format: status %d, stored %q", rw.Code, db.stored.PayloadFormat)
+		}
+
+		rw = doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/wh-1", `{"payload_format":"teams"}`)
+		if rw.Code != http.StatusOK || db.stored.PayloadFormat != "teams" {
+			t.Fatalf("status %d, stored %q: %s", rw.Code, db.stored.PayloadFormat, rw.Body.String())
+		}
+
+		// An update that does not mention the format keeps it.
+		rw = doWebhookRequest(t, r, base, http.MethodPut, "/api/v1/webhooks/wh-1", `{"enabled":false}`)
+		if rw.Code != http.StatusOK || db.stored.PayloadFormat != "teams" {
+			t.Fatalf("format not kept: status %d, stored %q", rw.Code, db.stored.PayloadFormat)
+		}
+	})
+
+	t.Run("rows predating the column read as openartifact", func(t *testing.T) {
+		db := &webhooksMockDB{stored: &models.Webhook{ID: "wh-1", Name: "old", URL: "https://93.184.216.34/h"}}
+		r, base := newWebhooksTestRouter(t, db)
+
+		rw := doWebhookRequest(t, r, base, http.MethodGet, "/api/v1/webhooks/wh-1", "")
+		if !strings.Contains(rw.Body.String(), `"payload_format":"openartifact"`) {
+			t.Fatalf("body = %s", rw.Body.String())
+		}
+	})
+}
+
+// TestWebhookTestDeliveryUsesPayloadFormat drives POST /webhooks/{id}/test
+// through a real dispatcher and checks the request the receiver gets.
+func TestWebhookTestDeliveryUsesPayloadFormat(t *testing.T) {
+	t.Setenv(netutil.EnvAllowPrivate, "true")
+
+	type received struct {
+		contentType string
+		body        map[string]any
+	}
+
+	got := make(chan received, 1)
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		_ = json.NewDecoder(r.Body).Decode(&body)
+		got <- received{r.Header.Get("Content-Type"), body}
+		w.WriteHeader(http.StatusNoContent)
+	}))
+	t.Cleanup(srv.Close)
+
+	log, err := logger.New("error", "json", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	for format, check := range map[string]func(received) bool{
+		"openartifact": func(r received) bool { return r.contentType == "application/json" && r.body["event"] == "webhook.test" },
+		"cloudevents": func(r received) bool {
+			return r.contentType == "application/cloudevents+json" && r.body["specversion"] == "1.0" &&
+				r.body["type"] == "io.openartifact.webhook.test" && r.body["id"] == "delivery-1"
+		},
+		"slack":   func(r received) bool { return r.body["blocks"] != nil && r.body["text"] != nil },
+		"teams":   func(r received) bool { return r.body["type"] == "message" && r.body["attachments"] != nil },
+		"discord": func(r received) bool { return r.body["embeds"] != nil },
+	} {
+		t.Run(format, func(t *testing.T) {
+			db := &webhooksMockDB{stored: &models.Webhook{
+				ID: "wh-1", Name: "t", URL: srv.URL, Enabled: true, Events: []string{"artifact.uploaded"},
+				ContentType: "application/json", PayloadFormat: format, SSLVerify: true, MaxRetries: 1, TimeoutSeconds: 5,
+			}}
+
+			d := webhook.NewDispatcher(db, log)
+			d.Start()
+			t.Cleanup(d.Stop)
+
+			r, base := newWebhooksTestRouterWith(t, db, d)
+
+			rw := doWebhookRequest(t, r, base, http.MethodPost, "/api/v1/webhooks/wh-1/test", "")
+			if rw.Code != http.StatusAccepted {
+				t.Fatalf("status = %d: %s", rw.Code, rw.Body.String())
+			}
+
+			rec := <-got
+			if !check(rec) {
+				t.Fatalf("unexpected %s request: content type %q, body %v", format, rec.contentType, rec.body)
+			}
+		})
 	}
 }

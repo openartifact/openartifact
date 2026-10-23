@@ -14,6 +14,7 @@ type WebhookResponse struct {
 	Enabled        bool     `json:"enabled"`
 	Events         []string `json:"events"`
 	ContentType    string   `json:"content_type"`
+	PayloadFormat  string   `json:"payload_format"`
 	HasSecret      bool     `json:"has_secret"`
 	SSLVerify      bool     `json:"ssl_verify"`
 	TimeoutSeconds int      `json:"timeout_seconds"`

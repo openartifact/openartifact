@@ -1,0 +1,16 @@
+{
+  "data": {
+    "event": "repository.deleted",
+    "format": "docker",
+    "repository": "docker-proxy",
+    "timestamp": "2026-01-02T15:04:05Z",
+    "type": "proxy"
+  },
+  "datacontenttype": "application/json",
+  "id": "5b1f3c1e-0000-4000-8000-00000000d002",
+  "source": "https://oa.example.com",
+  "specversion": "1.0",
+  "subject": "docker-proxy",
+  "time": "2026-01-02T15:04:05Z",
+  "type": "io.openartifact.repository.deleted"
+}

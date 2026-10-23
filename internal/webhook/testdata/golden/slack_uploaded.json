@@ -1,0 +1,45 @@
+{
+  "blocks": [
+    {
+      "text": {
+        "text": "Artifact uploaded",
+        "type": "plain_text"
+      },
+      "type": "header"
+    },
+    {
+      "fields": [
+        {
+          "text": "*Repository*\n`npm-hosted`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*Format*\n`npm`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*Artifact*\n`left-pad`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*Version*\n`1.3.0`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*Path*\n`left-pad/-/left-pad-1.3.0.tgz`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*SHA-256*\n`abababababababababababababababababababababababababababababababab`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*Size*\n`4.0 KiB`",
+          "type": "mrkdwn"
+        }
+      ],
+      "type": "section"
+    }
+  ],
+  "text": "Artifact uploaded: left-pad 1.3.0"
+}

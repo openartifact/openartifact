@@ -1,0 +1,29 @@
+{
+  "blocks": [
+    {
+      "text": {
+        "text": "Repository deleted",
+        "type": "plain_text"
+      },
+      "type": "header"
+    },
+    {
+      "fields": [
+        {
+          "text": "*Repository*\n`docker-proxy`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*Format*\n`docker`",
+          "type": "mrkdwn"
+        },
+        {
+          "text": "*Type*\n`proxy`",
+          "type": "mrkdwn"
+        }
+      ],
+      "type": "section"
+    }
+  ],
+  "text": "Repository deleted: docker-proxy"
+}

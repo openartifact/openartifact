@@ -5,6 +5,7 @@
 package database
 
 import (
+	"cmp"
 	"context"
 	"database/sql"
 	"encoding/json"
@@ -3397,6 +3398,7 @@ func (p *PostgresDB) CreateWebhook(ctx context.Context, wh *models.Webhook) erro
 		Enabled:        wh.Enabled,
 		Events:         wh.Events,
 		ContentType:    wh.ContentType,
+		PayloadFormat:  cmp.Or(wh.PayloadFormat, models.PayloadFormatOpenArtifact),
 		SslVerify:      wh.SSLVerify,
 		MaxRetries:     int32(wh.MaxRetries),     //nolint:gosec // G115: value is bounded by API validation
 		TimeoutSeconds: int32(wh.TimeoutSeconds), //nolint:gosec // G115: value is bounded by API validation
@@ -3441,6 +3443,7 @@ func (p *PostgresDB) GetWebhook(ctx context.Context, id string) (*models.Webhook
 		Enabled:        row.Enabled,
 		Events:         row.Events,
 		ContentType:    row.ContentType,
+		PayloadFormat:  row.PayloadFormat,
 		SSLVerify:      row.SslVerify,
 		MaxRetries:     int(row.MaxRetries),
 		TimeoutSeconds: int(row.TimeoutSeconds),
@@ -3459,6 +3462,7 @@ func (p *PostgresDB) UpdateWebhook(ctx context.Context, wh *models.Webhook) erro
 		Enabled:        wh.Enabled,
 		Events:         wh.Events,
 		ContentType:    wh.ContentType,
+		PayloadFormat:  cmp.Or(wh.PayloadFormat, models.PayloadFormatOpenArtifact),
 		SslVerify:      wh.SSLVerify,
 		MaxRetries:     int32(wh.MaxRetries),     //nolint:gosec // G115: value is bounded by API validation
 		TimeoutSeconds: int32(wh.TimeoutSeconds), //nolint:gosec // G115: value is bounded by API validation
@@ -3508,6 +3512,7 @@ func (p *PostgresDB) ListWebhooks(ctx context.Context, repoID string) ([]*models
 				Enabled:        r.Enabled,
 				Events:         r.Events,
 				ContentType:    r.ContentType,
+				PayloadFormat:  r.PayloadFormat,
 				SSLVerify:      r.SslVerify,
 				MaxRetries:     int(r.MaxRetries),
 				TimeoutSeconds: int(r.TimeoutSeconds),
@@ -3540,6 +3545,7 @@ func (p *PostgresDB) ListWebhooks(ctx context.Context, repoID string) ([]*models
 				Enabled:        r.Enabled,
 				Events:         r.Events,
 				ContentType:    r.ContentType,
+				PayloadFormat:  r.PayloadFormat,
 				SSLVerify:      r.SslVerify,
 				MaxRetries:     int(r.MaxRetries),
 				TimeoutSeconds: int(r.TimeoutSeconds),
@@ -3588,6 +3594,7 @@ func (p *PostgresDB) ListWebhooksForEvent(ctx context.Context, repoID, eventType
 			Enabled:        r.Enabled,
 			Events:         r.Events,
 			ContentType:    r.ContentType,
+			PayloadFormat:  r.PayloadFormat,
 			SSLVerify:      r.SslVerify,
 			MaxRetries:     int(r.MaxRetries),
 			TimeoutSeconds: int(r.TimeoutSeconds),

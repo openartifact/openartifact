@@ -67,8 +67,8 @@ func (q *Queries) ClaimPendingWebhookDeliveries(ctx context.Context, arg ClaimPe
 }
 
 const createWebhook = `-- name: CreateWebhook :one
-INSERT INTO webhooks (repository_id, name, url, secret_enc, enabled, events, content_type, ssl_verify, max_retries, timeout_seconds)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)
+INSERT INTO webhooks (repository_id, name, url, secret_enc, enabled, events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 RETURNING id, created_at, updated_at
 `
 
@@ -80,6 +80,7 @@ type CreateWebhookParams struct {
 	Enabled        bool     `db:"enabled" json:"enabled"`
 	Events         []string `db:"events" json:"events"`
 	ContentType    string   `db:"content_type" json:"content_type"`
+	PayloadFormat  string   `db:"payload_format" json:"payload_format"`
 	SslVerify      bool     `db:"ssl_verify" json:"ssl_verify"`
 	MaxRetries     int32    `db:"max_retries" json:"max_retries"`
 	TimeoutSeconds int32    `db:"timeout_seconds" json:"timeout_seconds"`
@@ -100,6 +101,7 @@ func (q *Queries) CreateWebhook(ctx context.Context, arg CreateWebhookParams) (C
 		arg.Enabled,
 		arg.Events,
 		arg.ContentType,
+		arg.PayloadFormat,
 		arg.SslVerify,
 		arg.MaxRetries,
 		arg.TimeoutSeconds,
@@ -157,7 +159,7 @@ func (q *Queries) DeleteWebhook(ctx context.Context, id string) error {
 }
 
 const getWebhook = `-- name: GetWebhook :one
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks WHERE id = $1
 `
 
@@ -170,6 +172,7 @@ type GetWebhookRow struct {
 	Enabled        bool        `db:"enabled" json:"enabled"`
 	Events         []string    `db:"events" json:"events"`
 	ContentType    string      `db:"content_type" json:"content_type"`
+	PayloadFormat  string      `db:"payload_format" json:"payload_format"`
 	SslVerify      bool        `db:"ssl_verify" json:"ssl_verify"`
 	MaxRetries     int32       `db:"max_retries" json:"max_retries"`
 	TimeoutSeconds int32       `db:"timeout_seconds" json:"timeout_seconds"`
@@ -189,6 +192,7 @@ func (q *Queries) GetWebhook(ctx context.Context, id string) (GetWebhookRow, err
 		&i.Enabled,
 		&i.Events,
 		&i.ContentType,
+		&i.PayloadFormat,
 		&i.SslVerify,
 		&i.MaxRetries,
 		&i.TimeoutSeconds,
@@ -199,7 +203,7 @@ func (q *Queries) GetWebhook(ctx context.Context, id string) (GetWebhookRow, err
 }
 
 const listGlobalWebhooks = `-- name: ListGlobalWebhooks :many
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks WHERE repository_id IS NULL ORDER BY created_at DESC
 `
 
@@ -212,6 +216,7 @@ type ListGlobalWebhooksRow struct {
 	Enabled        bool        `db:"enabled" json:"enabled"`
 	Events         []string    `db:"events" json:"events"`
 	ContentType    string      `db:"content_type" json:"content_type"`
+	PayloadFormat  string      `db:"payload_format" json:"payload_format"`
 	SslVerify      bool        `db:"ssl_verify" json:"ssl_verify"`
 	MaxRetries     int32       `db:"max_retries" json:"max_retries"`
 	TimeoutSeconds int32       `db:"timeout_seconds" json:"timeout_seconds"`
@@ -237,6 +242,7 @@ func (q *Queries) ListGlobalWebhooks(ctx context.Context) ([]ListGlobalWebhooksR
 			&i.Enabled,
 			&i.Events,
 			&i.ContentType,
+			&i.PayloadFormat,
 			&i.SslVerify,
 			&i.MaxRetries,
 			&i.TimeoutSeconds,
@@ -297,7 +303,7 @@ func (q *Queries) ListWebhookDeliveries(ctx context.Context, arg ListWebhookDeli
 }
 
 const listWebhooksByRepo = `-- name: ListWebhooksByRepo :many
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks WHERE repository_id = $1 ORDER BY created_at DESC
 `
 
@@ -310,6 +316,7 @@ type ListWebhooksByRepoRow struct {
 	Enabled        bool        `db:"enabled" json:"enabled"`
 	Events         []string    `db:"events" json:"events"`
 	ContentType    string      `db:"content_type" json:"content_type"`
+	PayloadFormat  string      `db:"payload_format" json:"payload_format"`
 	SslVerify      bool        `db:"ssl_verify" json:"ssl_verify"`
 	MaxRetries     int32       `db:"max_retries" json:"max_retries"`
 	TimeoutSeconds int32       `db:"timeout_seconds" json:"timeout_seconds"`
@@ -335,6 +342,7 @@ func (q *Queries) ListWebhooksByRepo(ctx context.Context, repositoryID *string) 
 			&i.Enabled,
 			&i.Events,
 			&i.ContentType,
+			&i.PayloadFormat,
 			&i.SslVerify,
 			&i.MaxRetries,
 			&i.TimeoutSeconds,
@@ -352,7 +360,7 @@ func (q *Queries) ListWebhooksByRepo(ctx context.Context, repositoryID *string) 
 }
 
 const listWebhooksForEvent = `-- name: ListWebhooksForEvent :many
-SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
+SELECT id, COALESCE(repository_id::text, '') AS repository_id, name, url, COALESCE(secret_enc, '') AS secret_enc, enabled, COALESCE(events, '{}') AS events, content_type, payload_format, ssl_verify, max_retries, timeout_seconds, created_at, updated_at
 FROM webhooks
 WHERE (repository_id = $1 OR repository_id IS NULL) AND enabled = true AND $2::text = ANY(events)
 ORDER BY created_at DESC
@@ -372,6 +380,7 @@ type ListWebhooksForEventRow struct {
 	Enabled        bool        `db:"enabled" json:"enabled"`
 	Events         []string    `db:"events" json:"events"`
 	ContentType    string      `db:"content_type" json:"content_type"`
+	PayloadFormat  string      `db:"payload_format" json:"payload_format"`
 	SslVerify      bool        `db:"ssl_verify" json:"ssl_verify"`
 	MaxRetries     int32       `db:"max_retries" json:"max_retries"`
 	TimeoutSeconds int32       `db:"timeout_seconds" json:"timeout_seconds"`
@@ -400,6 +409,7 @@ func (q *Queries) ListWebhooksForEvent(ctx context.Context, arg ListWebhooksForE
 			&i.Enabled,
 			&i.Events,
 			&i.ContentType,
+			&i.PayloadFormat,
 			&i.SslVerify,
 			&i.MaxRetries,
 			&i.TimeoutSeconds,
@@ -418,7 +428,7 @@ func (q *Queries) ListWebhooksForEvent(ctx context.Context, arg ListWebhooksForE
 
 const updateWebhook = `-- name: UpdateWebhook :exec
 UPDATE webhooks
-SET name = $2, url = $3, secret_enc = $4, enabled = $5, events = $6, content_type = $7, ssl_verify = $8, max_retries = $9, timeout_seconds = $10, updated_at = now()
+SET name = $2, url = $3, secret_enc = $4, enabled = $5, events = $6, content_type = $7, payload_format = $8, ssl_verify = $9, max_retries = $10, timeout_seconds = $11, updated_at = now()
 WHERE id = $1
 `
 
@@ -430,6 +440,7 @@ type UpdateWebhookParams struct {
 	Enabled        bool     `db:"enabled" json:"enabled"`
 	Events         []string `db:"events" json:"events"`
 	ContentType    string   `db:"content_type" json:"content_type"`
+	PayloadFormat  string   `db:"payload_format" json:"payload_format"`
 	SslVerify      bool     `db:"ssl_verify" json:"ssl_verify"`
 	MaxRetries     int32    `db:"max_retries" json:"max_retries"`
 	TimeoutSeconds int32    `db:"timeout_seconds" json:"timeout_seconds"`
@@ -444,6 +455,7 @@ func (q *Queries) UpdateWebhook(ctx context.Context, arg UpdateWebhookParams) er
 		arg.Enabled,
 		arg.Events,
 		arg.ContentType,
+		arg.PayloadFormat,
 		arg.SslVerify,
 		arg.MaxRetries,
 		arg.TimeoutSeconds,

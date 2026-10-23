@@ -239,8 +239,12 @@ export type Webhook = {
     repository_id?: string;
     name?: string;
     url?: string;
-    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
     content_type?: string;
+    /**
+     * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
+     */
+    payload_format?: 'openartifact' | 'cloudevents' | 'slack' | 'teams' | 'discord';
     ssl_verify?: boolean;
     max_retries?: number;
     timeout_seconds?: number;
@@ -1803,8 +1807,12 @@ export type PostApiV1RepositoriesByNameWebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
         content_type?: string;
+        /**
+         * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
+         */
+        payload_format?: 'openartifact' | 'cloudevents' | 'slack' | 'teams' | 'discord';
         ssl_verify?: boolean;
         max_retries?: number;
         timeout_seconds?: number;
@@ -2668,8 +2676,12 @@ export type PostApiV1WebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
         content_type?: string;
+        /**
+         * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
+         */
+        payload_format?: 'openartifact' | 'cloudevents' | 'slack' | 'teams' | 'discord';
         ssl_verify?: boolean;
         max_retries?: number;
         timeout_seconds?: number;
@@ -2744,8 +2756,12 @@ export type PutApiV1WebhooksByIdData = {
         name?: string;
         url?: string;
         secret?: string;
-        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'artifact.downloaded' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
         content_type?: string;
+        /**
+         * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
+         */
+        payload_format?: 'openartifact' | 'cloudevents' | 'slack' | 'teams' | 'discord';
         ssl_verify?: boolean;
         max_retries?: number;
         timeout_seconds?: number;

@@ -336,6 +336,7 @@ func run(args []string) error {
 
 	// Initialize webhook dispatcher
 	webhookDispatcher := webhook.NewDispatcher(db, log)
+	webhookDispatcher.SetBaseURL(cfg.BaseURL)
 
 	webhookDispatcher.Start()
 

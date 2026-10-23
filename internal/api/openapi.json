@@ -498,7 +498,6 @@
               "enum": [
                 "artifact.uploaded",
                 "artifact.deleted",
-                "artifact.downloaded",
                 "repository.created",
                 "repository.deleted",
                 "artifact.restored",
@@ -510,6 +509,18 @@
           },
           "content_type": {
             "type": "string"
+          },
+          "payload_format": {
+            "type": "string",
+            "enum": [
+              "openartifact",
+              "cloudevents",
+              "slack",
+              "teams",
+              "discord"
+            ],
+            "default": "openartifact",
+            "description": "Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes."
           },
           "ssl_verify": {
             "type": "boolean"
@@ -4062,7 +4073,6 @@
                       "enum": [
                         "artifact.uploaded",
                         "artifact.deleted",
-                        "artifact.downloaded",
                         "repository.created",
                         "repository.deleted",
                         "artifact.restored",
@@ -4074,6 +4084,18 @@
                   },
                   "content_type": {
                     "type": "string"
+                  },
+                  "payload_format": {
+                    "type": "string",
+                    "enum": [
+                      "openartifact",
+                      "cloudevents",
+                      "slack",
+                      "teams",
+                      "discord"
+                    ],
+                    "default": "openartifact",
+                    "description": "Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes."
                   },
                   "ssl_verify": {
                     "type": "boolean"
@@ -5605,7 +5627,6 @@
                       "enum": [
                         "artifact.uploaded",
                         "artifact.deleted",
-                        "artifact.downloaded",
                         "repository.created",
                         "repository.deleted",
                         "artifact.restored",
@@ -5617,6 +5638,18 @@
                   },
                   "content_type": {
                     "type": "string"
+                  },
+                  "payload_format": {
+                    "type": "string",
+                    "enum": [
+                      "openartifact",
+                      "cloudevents",
+                      "slack",
+                      "teams",
+                      "discord"
+                    ],
+                    "default": "openartifact",
+                    "description": "Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes."
                   },
                   "ssl_verify": {
                     "type": "boolean"
@@ -5729,7 +5762,6 @@
                       "enum": [
                         "artifact.uploaded",
                         "artifact.deleted",
-                        "artifact.downloaded",
                         "repository.created",
                         "repository.deleted",
                         "artifact.restored",
@@ -5741,6 +5773,18 @@
                   },
                   "content_type": {
                     "type": "string"
+                  },
+                  "payload_format": {
+                    "type": "string",
+                    "enum": [
+                      "openartifact",
+                      "cloudevents",
+                      "slack",
+                      "teams",
+                      "discord"
+                    ],
+                    "default": "openartifact",
+                    "description": "Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes."
                   },
                   "ssl_verify": {
                     "type": "boolean"

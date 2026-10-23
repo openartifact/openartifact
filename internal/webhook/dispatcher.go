@@ -10,10 +10,10 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"io"
 	"math"
 	"net/http"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -26,11 +26,10 @@ import (
 
 // Event types.
 const (
-	EventArtifactUploaded   = "artifact.uploaded"
-	EventArtifactDeleted    = "artifact.deleted"
-	EventArtifactDownloaded = "artifact.downloaded"
-	EventRepoCreated        = "repository.created"
-	EventRepoDeleted        = "repository.deleted"
+	EventArtifactUploaded = "artifact.uploaded"
+	EventArtifactDeleted  = "artifact.deleted"
+	EventRepoCreated      = "repository.created"
+	EventRepoDeleted      = "repository.deleted"
 	// EventArtifactRestored and EventRepoRestored fire when an item leaves the
 	// trash; EventArtifactPurged and EventRepoPurged when it is removed for
 	// good (by an admin or the retention purge). The deleted events fire for
@@ -52,15 +51,17 @@ type Dispatcher struct {
 	client *http.Client
 	// insecureClient skips TLS verification for webhooks with ssl_verify=false.
 	insecureClient *http.Client
-	queue          chan *models.WebhookDelivery
-	stopCh         chan struct{}
-	doneCh         chan struct{}
-	inflight       sync.Map // delivery ID -> struct{}; prevents duplicate concurrent deliveries
-	wg             sync.WaitGroup
-	stopOnce       sync.Once
-	started        atomic.Bool
-	ctx            context.Context //nolint:containedctx // lifecycle context for in-flight deliveries; cancelled by Stop
-	cancel         context.CancelFunc
+	// source is the CloudEvents source of cloudevents-format deliveries.
+	source   string
+	queue    chan *models.WebhookDelivery
+	stopCh   chan struct{}
+	doneCh   chan struct{}
+	inflight sync.Map // delivery ID -> struct{}; prevents duplicate concurrent deliveries
+	wg       sync.WaitGroup
+	stopOnce sync.Once
+	started  atomic.Bool
+	ctx      context.Context //nolint:containedctx // lifecycle context for in-flight deliveries; cancelled by Stop
+	cancel   context.CancelFunc
 }
 
 const (
@@ -88,6 +89,12 @@ func NewDispatcher(db database.Database, log *logger.Logger) *Dispatcher {
 		ctx:            ctx,
 		cancel:         cancel,
 	}
+}
+
+// SetBaseURL sets the server's external base URL, used as the CloudEvents
+// source of cloudevents-format deliveries. Call it before Start.
+func (d *Dispatcher) SetBaseURL(baseURL string) {
+	d.source = strings.TrimRight(baseURL, "/")
 }
 
 // enqueue claims the delivery (so the retry loop and Dispatch never process the
@@ -269,7 +276,7 @@ func (d *Dispatcher) Stop() {
 
 // deliver attempts to deliver a webhook.
 func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDelivery) {
-	payloadJSON, err := json.Marshal(delivery.Payload)
+	payloadJSON, contentType, err := renderBody(wh, delivery, d.source)
 	if err != nil {
 		d.log.Errorw("failed to marshal payload", "webhook_id", wh.ID, "error", err)
 		delivery.AttemptCount = wh.MaxRetries // permanent: payload can never marshal
@@ -294,11 +301,7 @@ func (d *Dispatcher) deliver(wh *models.Webhook, delivery *models.WebhookDeliver
 		return
 	}
 
-	ct := wh.ContentType
-	if ct == "" {
-		ct = "application/json"
-	}
-	req.Header.Set("Content-Type", ct)
+	req.Header.Set("Content-Type", contentType)
 	req.Header.Set("User-Agent", "OpenArtifact-Webhook/1.0")
 
 	// Add HMAC signature if secret is provided

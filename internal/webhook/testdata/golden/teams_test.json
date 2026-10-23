@@ -1,0 +1,40 @@
+{
+  "attachments": [
+    {
+      "content": {
+        "$schema": "http://adaptivecards.io/schemas/adaptive-card.json",
+        "body": [
+          {
+            "color": "Accent",
+            "size": "Medium",
+            "text": "Webhook test",
+            "type": "TextBlock",
+            "weight": "Bolder",
+            "wrap": true
+          },
+          {
+            "facts": [
+              {
+                "title": "Message",
+                "value": "This is a test webhook delivery"
+              }
+            ],
+            "type": "FactSet"
+          },
+          {
+            "isSubtle": true,
+            "size": "Small",
+            "text": "{{DATE(2026-01-02T15:04:05Z, SHORT)}} {{TIME(2026-01-02T15:04:05Z)}}",
+            "type": "TextBlock",
+            "wrap": true
+          }
+        ],
+        "type": "AdaptiveCard",
+        "version": "1.4"
+      },
+      "contentType": "application/vnd.microsoft.card.adaptive",
+      "contentUrl": null
+    }
+  ],
+  "type": "message"
+}

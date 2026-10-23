@@ -1,0 +1,20 @@
+{
+  "allowed_mentions": {
+    "parse": []
+  },
+  "embeds": [
+    {
+      "color": 3447003,
+      "fields": [
+        {
+          "inline": true,
+          "name": "Message",
+          "value": "`This is a test webhook delivery`"
+        }
+      ],
+      "timestamp": "2026-01-02T15:04:05Z",
+      "title": "Webhook test"
+    }
+  ],
+  "username": "OpenArtifact"
+}
