@@ -15,6 +15,7 @@ import (
 	"errors"
 	"io"
 	"slices"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -224,6 +225,22 @@ func (f *groupFixture) owner(groupID, path string) string {
 
 type packageRow struct{ name, version, filename string }
 
+func debPlainIndex(t *testing.T, md map[string][]byte) []byte {
+	t.Helper()
+
+	zr, err := gzip.NewReader(bytes.NewReader(md["dists/bookworm/main/binary-amd64/Packages.gz"]))
+	if err != nil {
+		t.Fatalf("Packages.gz: %v", err)
+	}
+
+	plain, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return plain
+}
+
 func debListing(t *testing.T, md map[string][]byte) []packageRow {
 	t.Helper()
 
@@ -302,6 +319,15 @@ func TestGroupDebMergesHostedAndProxyInMemberOrder(t *testing.T) {
 	release := formatdeb.ParseRelease(md["dists/bookworm/Release"])
 	if len(release.Files) == 0 || !release.HasIndex("main", "amd64") {
 		t.Errorf("merged Release = %q", md["dists/bookworm/Release"])
+	}
+
+	// apt skips an index whose uncompressed entry is missing from Release.
+	plain := debPlainIndex(t, md)
+	sum := sha256.Sum256(plain)
+
+	plainLine := hex.EncodeToString(sum[:]) + " " + strconv.Itoa(len(plain)) + " main/binary-amd64/Packages"
+	if !strings.Contains(strings.Join(strings.Fields(string(md["dists/bookworm/Release"])), " ")+" ", plainLine+" ") {
+		t.Errorf("Release does not list the uncompressed Packages as %q:\n%s", plainLine, md["dists/bookworm/Release"])
 	}
 
 	st, err := f.pg.GetGroupMetadataState(ctx, grp.ID)

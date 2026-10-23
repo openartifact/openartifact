@@ -8,8 +8,13 @@ import (
 	"bytes"
 	"compress/gzip"
 	"context"
+	"crypto/md5"  //nolint:gosec // required by the protocol
+	"crypto/sha1" //nolint:gosec // required by the protocol
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"path"
 	"regexp"
@@ -340,6 +345,8 @@ func (j *groupJob) buildDebDist(ctx context.Context, dist string, hosted map[str
 
 			base := fmt.Sprintf("%s/binary-%s/Packages", comp, arch)
 
+			files = append(files, idx.plainInfo(base))
+
 			for ext, data := range map[string][]byte{".gz": idx.gz, ".xz": idx.xz} {
 				j.blobs["dists/"+dist+"/"+base+ext] = data
 				md5sum, sha1sum, sha256sum := formatdeb.CalculateChecksums(data)
@@ -420,6 +427,11 @@ type debIndex struct {
 	gw           *gzip.Writer
 	xw           io.WriteCloser
 	out          io.Writer
+
+	// plain hashes the uncompressed index. Release lists it although it is
+	// not stored: apt skips an index whose uncompressed entry is missing.
+	plainMD5, plainSHA1, plainSHA256 hash.Hash
+	plainSize                        int64
 }
 
 func newDebIndex(sizeHint int) (*debIndex, error) {
@@ -432,9 +444,21 @@ func newDebIndex(sizeHint int) (*debIndex, error) {
 	}
 
 	idx.xw = xw
-	idx.out = io.MultiWriter(idx.gw, idx.xw)
+	idx.plainMD5, idx.plainSHA1, idx.plainSHA256 = md5.New(), sha1.New(), sha256.New() //nolint:gosec // required by the protocol
+	idx.out = io.MultiWriter(idx.gw, idx.xw, idx.plainMD5, idx.plainSHA1, idx.plainSHA256)
 
 	return idx, nil
+}
+
+// plainInfo describes the uncompressed index for the Release file.
+func (i *debIndex) plainInfo(name string) formatdeb.FileInfo {
+	return formatdeb.FileInfo{
+		Filename: name,
+		Size:     i.plainSize,
+		MD5sum:   hex.EncodeToString(i.plainMD5.Sum(nil)),
+		SHA1:     hex.EncodeToString(i.plainSHA1.Sum(nil)),
+		SHA256:   hex.EncodeToString(i.plainSHA256.Sum(nil)),
+	}
 }
 
 func (i *debIndex) close() error {
@@ -546,6 +570,8 @@ func (j *groupJob) addDebStanza(idx *debIndex, seen map[string]struct{}, m *mode
 	}
 
 	seen[key] = struct{}{}
+
+	idx.plainSize += int64(len(st.Text))
 
 	if _, err := io.WriteString(idx.out, st.Text); err != nil {
 		return fmt.Errorf("group worker: writing Packages: %w", err)
