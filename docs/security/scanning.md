@@ -15,9 +15,9 @@ Scans are **API-driven and manual**: vulnerability, secret and SBOM scans never 
 | [Vulnerabilities](#vulnerability-scans) | package name, version, ecosystem | OSV API, or the `trivy` / `grype` binary ([installing them](#installing-trivy-and-grype)) |
 | [Secrets](#secret-scans) | text and/or metadata JSON you send | built-in regex rules |
 | [Licenses](#license-scans-and-policies) | `artifact_id` | the stored package file ([how](licenses.md)) plus the artifact's [properties](../repositories/properties.md) |
-| [SBOM](#sbom) | `artifact_id`, format | `artifact_id` plus the stored `dependencies` property |
+| [SBOM](#sbom) | `artifact_id`, format | `artifact_id`; components from the stored package file and the `dependencies` property |
 
-Vulnerability scans look up the name/version you pass, secret scans inspect only the content you pass, and SBOM data comes from properties you set. License scans do open the stored package file: they read the licenses it declares itself ([License metadata](licenses.md)) and add the ones in the artifact's properties.
+Vulnerability scans look up the name/version you pass, secret scans inspect only the content you pass, and SBOM components come from the stored package file plus the properties you set. License scans also open the stored package file: they read the licenses it declares itself ([License metadata](licenses.md)) and add the ones in the artifact's properties.
 
 ## Vulnerability scans
 

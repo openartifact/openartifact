@@ -39,12 +39,33 @@ Existing callers that pass `"spec_version":"1.4"` or `"2.3"` keep getting those 
 
 - **Subject**: the package named by `artifact_id` (split at the last `@` into name and version), typed from the repository format, with a [purl](https://github.com/package-url/purl-spec) (`pkg:npm/%40babel/core@7.0.0`, `pkg:maven/group/artifact@1.0`, ...). The tool (`OpenArtifact`, with the server version) is recorded in the metadata.
 - **Hash**: the `sha256` of the package file when the package listing identifies exactly one match for the name and version. It is omitted rather than guessed when the match is ambiguous.
-- **Components**: the entries of the artifact's `dependencies` property, a JSON array such as `[{"name":"left-pad","version":"1.3.0","license":"MIT"}]`. A dependency may also carry `purl`, `sha256`, `license` and `licenses`. The document includes the dependency graph (`dependencies` in CycloneDX, `DEPENDS_ON` relationships in SPDX).
+- **Components**: the dependencies the stored package file declares (table below), merged with the entries of the artifact's `dependencies` property, a JSON array such as `[{"name":"left-pad","version":"1.3.0","license":"MIT"}]` (a dependency may also carry `purl`, `sha256`, `license` and `licenses`). An entry the property lists keeps its property data; the file adds the rest, deduplicated by purl. The document includes the dependency graph (`dependencies` in CycloneDX, `DEPENDS_ON` relationships in SPDX): every component hangs directly off the packaged artifact, transitive edges are not reconstructed.
 - **Licenses**: from the latest license scan and the `license` / `licenses` properties. A value that is an SPDX identifier or expression (`MIT OR Apache-2.0`, `GPL-2.0-or-later WITH Classpath-exception-2.0`) is canonicalised against the SPDX license list 3.29.0 and emitted as `license.id` / `expression`. Any other name is kept as `license.name` in CycloneDX and as a `LicenseRef-*` with its text in `hasExtractedLicensingInfos` in SPDX. `NOASSERTION` appears only when nothing is known.
 - **Vulnerabilities** (CycloneDX): the findings of the latest completed or partial vulnerability scan, with `id`, `source` (`NVD`, `GITHUB`, `OSV`), `ratings` (severity, and the CVSS score when the scanner provided one), `cwes`, an `advisories` link, `affects` and an `analysis` block (below). SPDX documents carry the advisories as `SECURITY` external references.
 - `metadata` in the request is rejected: components come from the stored properties, not from the caller.
 
-The dependency list is only as good as the properties the artifact carries; OpenArtifact does not open package files. See [properties](../repositories/properties.md).
+### Components read from the package file
+
+`artifact_id` is either `name@version` or the id of a row of the package listing (`GET …/packages`); the second form also gives the document the package's real name, version and hash. The package file is found through the listing (for Maven, the `.pom` is preferred over the jar next to it; a jar falls back to the `pom.xml` it embeds). It is read from the blob store with the same bounded reader the AI analysis and license scan use.
+
+| Format | Read from | Notes |
+|---|---|---|
+| npm | `package.json` (`dependencies`, `optionalDependencies`), `npm-shrinkwrap.json` / `package-lock.json` when the tarball ships one | the lockfile pins exact versions and adds the installed transitive packages (dev-only entries are left out) and their licenses |
+| pypi | `Requires-Dist` of `METADATA` / `PKG-INFO` | requirements gated on an `extra` are skipped; only `==` pins a version |
+| maven, sbt | `<dependencies>` of the pom (`compile` and `runtime` scopes) | `${property}` references and `dependencyManagement` versions are resolved; unresolved ones leave the version out |
+| ivy | `ivy.xml` dependencies | |
+| cargo | `[dependencies]`, `[build-dependencies]` and `[target.*.dependencies]` of `Cargo.toml`; `Cargo.lock` when the crate ships one | the lockfile pins versions and adds locked packages; only `=x.y.z` pins a version in `Cargo.toml` |
+| go | `require` of `go.mod` (the `.mod` file or the one inside the module zip) | exact versions |
+| nuget | `.nuspec` dependency groups | only `[x.y.z]` pins a version |
+| rubygems | runtime dependencies of the gemspec | only `= x.y.z` pins a version |
+| helm | `Chart.yaml` and `requirements.yaml` dependencies, `Chart.lock` when present | the lock pins versions |
+| conda | `depends` of `info/index.json` | only `==x.y.z` pins a version |
+| deb | `Pre-Depends` and `Depends` of the control file | the first of a set of alternatives; purls use the namespace `ubuntu` when the version or maintainer says so, `debian` otherwise |
+| rpm | `Requires` of the header | rpmlib features, file paths and shared-object or boolean capabilities are skipped; the purl namespace is derived from `Vendor` or the release tag |
+| conan | quoted `name/version` references in the `requires` of `conanfile.py` | `tool_requires` and `test_requires` are skipped; the recipe is never executed |
+| docker, raw | not read | components come from the `dependencies` property only |
+
+A dependency whose manifest gives only a version range has no `version` and a purl without one; the range is kept in the CycloneDX component property `openartifact:version_range`. A file that cannot be read (damaged, not the archive its name says) leaves the properties as the only source and is logged. A file that cannot be read **safely** (a manifest or lockfile over 8 MiB, a decompressed stream over the limit, an archive with two candidates for the same manifest) fails the request with `422 unsafe_artifact`. At most 10 000 dependencies are listed per artifact. See [properties](../repositories/properties.md).
 
 ## VEX
 
@@ -62,6 +83,10 @@ oa vex get REPO --artifact-id my-lib@1.2.3 --output vex.openvex.json
 | `GET …/vex/statements` | recorded decisions (optional `artifact_id`) |
 | `PUT …/vex/statements` | record or replace the decision for one `artifact_id` + `vuln_id` |
 | `DELETE …/vex/statements/{id}` | delete a decision; the vulnerability falls back to its derived status |
+
+### In the web UI
+
+Open **Security → Vulnerability scans**, pick the repository and use **Details** on a scan: every finding has a **VEX decision** button (status, justification for `not_affected`, impact and action statements) and shows its recorded status. The **VEX decisions** section below the scans lists the repository's statements with a delete action and downloads the OpenVEX or CycloneDX VEX document of the repository (or of one artifact from its findings drawer).
 
 ### Status of a vulnerability
 
@@ -115,8 +140,8 @@ grype my-image --vex vex.openvex.json
 ## Limitations
 
 - Generation is per artifact for SBOMs; a VEX document may cover a whole repository.
-- A Maven pom that declares no license takes the one of its parent pom stored in the same repository or a group it belongs to (see [Maven parent poms](licenses.md#maven-parent-poms)); the SBOM shows it once the pom's license scan result exists, which an upload records. Dependency licenses are still only what the artifact's properties carry.
-- Package contents are not inspected: components, dependency licenses and hashes depend on what the artifact's properties carry.
+- A Maven pom that declares no license takes the one of its parent pom stored in the same repository or a group it belongs to (see [Maven parent poms](licenses.md#maven-parent-poms)); the SBOM shows it once the pom's license scan result exists, which an upload records. Dependency licenses come from lockfiles or the artifact's properties.
+- Components are what the manifest and lockfile declare, not a resolved install: a package without a lockfile lists its direct dependencies only, and the graph is flat. Dependency hashes and licenses come from lockfiles or properties.
 - Vulnerabilities in the SBOM come from the latest completed or partial scan; a repository that was never scanned yields `under_investigation` only for the findings it has, and none otherwise.
 - The OpenVEX document and statement ids are generated per request; timestamps are the time of generation.
 - SPDX documents are 2.3 only.

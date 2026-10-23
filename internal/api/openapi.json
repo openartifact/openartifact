@@ -4463,7 +4463,7 @@
     "/api/v1/repositories/{name}/sbom/generate": {
       "post": {
         "summary": "Generate SBOM",
-        "description": "Generate a Software Bill of Materials for a repository artifact",
+        "description": "Generate a Software Bill of Materials for a repository artifact. Components are the dependencies declared by the stored package file (manifest and lockfile) merged with the artifact's `dependencies` property.",
         "tags": [
           "Repositories",
           "SBOM"
@@ -4513,6 +4513,9 @@
         "responses": {
           "201": {
             "description": "SBOM generation started"
+          },
+          "422": {
+            "description": "The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`)"
           }
         }
       }

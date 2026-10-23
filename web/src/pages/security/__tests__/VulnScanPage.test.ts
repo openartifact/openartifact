@@ -6,6 +6,7 @@ import { describe, it, expect, spyOn } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import VulnScanPage from '../VulnScanPage.vue'
+import VexDecisionDialog from '../../../components/VexDecisionDialog.vue'
 import { REPO, makeRouter, type RecordedCall } from './scanPageHarness'
 
 const base = {
@@ -678,5 +679,158 @@ describe('VulnScanPage scanner readiness', () => {
     expect(box('trivy').disabled).toBe(false)
     expect(box('grype').disabled).toBe(false)
     expect(document.body.querySelector('[data-testid="scanner-unavailable"]')).toBeNull()
+  })
+})
+
+describe('VulnScanPage VEX decisions', () => {
+  type Stmt = { id: string; artifact_id: string; vuln_id: string; status: string; justification?: string; impact_statement?: string }
+
+  const SCAN = { ...PARTIAL, repository_name: REPO, artifact_id: 'art-1' }
+  const FINDINGS = [
+    { id: 'CVE-1', severity: 'HIGH', cvss: 7.5, fixed_in: '1.2.0', summary: 'first' },
+    { id: 'CVE-2', severity: 'LOW', cvss: 2.1, fixed_in: '', summary: 'second' },
+  ]
+  const VEX = `/api/v1/repositories/${REPO}/vex/statements`
+
+  /** An in-memory server for the decisions endpoints. */
+  async function mountWithVex(initial: Stmt[]) {
+    const store = [...initial]
+    const result = await mountPage(`/security/vulns?repo=${REPO}`, {
+      rows: [SCAN],
+      other: (c) => {
+        if (c.path === `/api/v1/repositories/${REPO}/vuln/scans/${SCAN.id}`) return { ...SCAN, vulnerabilities: FINDINGS }
+        if (c.path === VEX && c.method === 'GET') {
+          const artifact = c.search.get('artifact_id')
+          return { statements: store.filter((s) => !artifact || s.artifact_id === artifact) }
+        }
+        if (c.path === VEX && c.method === 'PUT') {
+          const b = c.body as Stmt
+          const rec = { ...b, id: store.find((s) => s.vuln_id === b.vuln_id)?.id ?? `new-${b.vuln_id}` }
+          const at = store.findIndex((s) => s.vuln_id === b.vuln_id)
+          if (at >= 0) store[at] = rec
+          else store.push(rec)
+          return rec
+        }
+        if (c.path.startsWith(`${VEX}/`) && c.method === 'DELETE') {
+          store.splice(store.findIndex((s) => c.path.endsWith(`/${s.id}`)), 1)
+          return {}
+        }
+        return {}
+      },
+    })
+    return result
+  }
+
+  const NOT_AFFECTED: Stmt = {
+    id: 's1',
+    artifact_id: 'art-1',
+    vuln_id: 'CVE-1',
+    status: 'not_affected',
+    justification: 'component_not_present',
+    impact_statement: 'not shipped',
+  }
+
+  const findingRows = () => Array.from(body().querySelectorAll<HTMLElement>('[data-testid="finding-row"]'))
+  const q = <T extends HTMLElement>(testId: string) => body().querySelector<T>(`[data-testid="${testId}"]`)
+
+  async function openDetails(wrapper: Wrapper) {
+    await rowOf(wrapper, 'pkg-partial').get('[data-testid="scan-details"]').trigger('click')
+    await flushPromises()
+  }
+
+  async function set(testId: string, value: string, event: 'change' | 'input') {
+    const el = q<HTMLSelectElement | HTMLTextAreaElement>(testId)!
+    el.value = value
+    el.dispatchEvent(new Event(event, { bubbles: true }))
+    await flushPromises()
+  }
+
+  const confirmDelete = async () => {
+    const confirm = Array.from(body().querySelectorAll<HTMLButtonElement>('[role="dialog"] button'))
+      .filter((b) => b.textContent?.trim() === 'Delete')
+      .at(-1)!
+    confirm.click()
+    await flushPromises()
+  }
+
+  it('lists the repository decisions under the repository filter, with the artifact named', async () => {
+    const { wrapper, calls } = await mountWithVex([NOT_AFFECTED])
+    const rows = wrapper.findAll('[data-testid="vex-statement-row"]')
+    expect(rows).toHaveLength(1)
+    expect(rows[0]!.text()).toContain('pkg-partial@1.0.0')
+    expect(rows[0]!.text()).toContain('CVE-1')
+    expect(rows[0]!.text()).toContain('Not affected')
+    expect(calls.filter((c) => c.path === VEX && c.method === 'GET').map((c) => c.search.get('artifact_id'))).toEqual([null])
+  })
+
+  it('asks for a repository filter instead of listing every repository', async () => {
+    const { wrapper, calls } = await mountPage('/security/vulns')
+    expect(wrapper.find('[data-testid="vex-select-repo"]').exists()).toBe(true)
+    expect(calls.some((c) => c.path.endsWith('/vex/statements'))).toBe(false)
+  })
+
+  it('shows the recorded decision as a badge on its finding and offers both downloads for the artifact', async () => {
+    const { wrapper, calls } = await mountWithVex([NOT_AFFECTED])
+    await openDetails(wrapper)
+
+    expect(calls.some((c) => c.path === VEX && c.search.get('artifact_id') === 'art-1')).toBe(true)
+    const rows = findingRows()
+    expect(rows).toHaveLength(2)
+    expect(rows[0]!.querySelector('[data-testid="finding-vex-status"]')?.textContent).toContain('Not affected')
+    expect(rows[1]!.querySelector('[data-testid="finding-vex-status"]')).toBeNull()
+    expect(q('vex-artifact-download-openvex')?.textContent).toContain('OpenVEX')
+    expect(q('vex-artifact-download-cyclonedx')?.textContent).toContain('CycloneDX VEX')
+  })
+
+  it('records a decision from a finding, shows its badge and refreshes the repository list', async () => {
+    const { wrapper, calls } = await mountWithVex([NOT_AFFECTED])
+    await openDetails(wrapper)
+
+    findingRows()[1]!.querySelector<HTMLButtonElement>('[data-testid="vex-decision-open"]')!.click()
+    await flushPromises()
+    expect(q<HTMLSelectElement>('vex-status')!.value).toBe('under_investigation')
+    await set('vex-status', 'affected', 'change')
+    await set('vex-action', 'upgrade', 'input')
+    q<HTMLButtonElement>('vex-save')!.click()
+    await flushPromises()
+
+    const put = calls.find((c) => c.path === VEX && c.method === 'PUT')!
+    expect(put.body).toEqual({ artifact_id: 'art-1', vuln_id: 'CVE-2', status: 'affected', action_statement: 'upgrade' })
+    // The leave transition keeps the markup around; the dialog's open state is what closes.
+    expect(wrapper.findComponent(VexDecisionDialog).props('open')).toBe(false)
+    expect(findingRows()[1]!.querySelector('[data-testid="finding-vex-status"]')?.textContent).toContain('Affected')
+    expect(wrapper.findAll('[data-testid="vex-statement-row"]')).toHaveLength(2)
+  })
+
+  it('prefills an existing decision and deletes it after the confirmation', async () => {
+    const { wrapper, calls } = await mountWithVex([NOT_AFFECTED])
+    await openDetails(wrapper)
+
+    findingRows()[0]!.querySelector<HTMLButtonElement>('[data-testid="vex-decision-open"]')!.click()
+    await flushPromises()
+    expect(q<HTMLSelectElement>('vex-status')!.value).toBe('not_affected')
+    expect(q<HTMLSelectElement>('vex-justification')!.value).toBe('component_not_present')
+    expect(q<HTMLTextAreaElement>('vex-impact')!.value).toBe('not shipped')
+
+    q<HTMLButtonElement>('vex-delete')!.click()
+    await flushPromises()
+    await confirmDelete()
+
+    expect(calls.some((c) => c.method === 'DELETE' && c.path === `${VEX}/s1`)).toBe(true)
+    expect(findingRows()[0]!.querySelector('[data-testid="finding-vex-status"]')).toBeNull()
+    expect(wrapper.findAll('[data-testid="vex-statement-row"]')).toHaveLength(0)
+  })
+
+  it('removes a decision from the repository list and clears the open scan badge', async () => {
+    const { wrapper } = await mountWithVex([NOT_AFFECTED])
+    await openDetails(wrapper)
+    expect(findingRows()[0]!.querySelector('[data-testid="finding-vex-status"]')).not.toBeNull()
+
+    await wrapper.get('[data-testid="vex-statement-delete"]').trigger('click')
+    await flushPromises()
+    await confirmDelete()
+
+    expect(wrapper.findAll('[data-testid="vex-statement-row"]')).toHaveLength(0)
+    expect(findingRows()[0]!.querySelector('[data-testid="finding-vex-status"]')).toBeNull()
   })
 })

@@ -535,13 +535,13 @@ func TestMatchUpload(t *testing.T) {
 func TestParseConanReference(t *testing.T) {
 	t.Parallel()
 
-	key, ok := parseConanReference("zlib/1.3@acme/stable#abc123")
+	key, ok := models.ParseConanReference("zlib/1.3@acme/stable#abc123")
 	if !ok || key.Name != "zlib" || key.Version != "1.3" || key.UserChannel != "acme/stable" || key.RecipeRevision != "abc123" {
 		t.Errorf("key = %+v ok=%v", key, ok)
 	}
 
 	for _, bad := range []string{"", "zlib", "zlib/1.3", "zlib/1.3@_/_", "/1.3@_/_#r"} {
-		if _, ok := parseConanReference(bad); ok {
+		if _, ok := models.ParseConanReference(bad); ok {
 			t.Errorf("%q parsed", bad)
 		}
 	}

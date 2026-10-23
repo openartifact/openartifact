@@ -460,3 +460,26 @@ func TestAutoEligibleLimitsJVMFormatsToDescriptors(t *testing.T) {
 		}
 	}
 }
+
+func TestLockfilesAreReadOnlyWhenDepsIsSet(t *testing.T) {
+	t.Parallel()
+
+	data := tarGz(t, []file{
+		{"package/package.json", `{"name":"demo"}`},
+		{"package/npm-shrinkwrap.json", `{"lockfileVersion":3}`},
+	})
+
+	src := memSource("npm", "demo-1.0.0.tgz", data)
+
+	parts, err := ExtractParts(context.Background(), src)
+	if err != nil || len(parts) != 1 || parts[0].Label != "package.json" {
+		t.Fatalf("without Deps: parts = %+v, err = %v", parts, err)
+	}
+
+	src.Deps = true
+
+	parts, err = ExtractParts(context.Background(), src)
+	if err != nil || len(parts) != 2 || parts[0].Label != "package.json" || parts[1].Label != "npm-shrinkwrap.json" {
+		t.Fatalf("with Deps: parts = %+v, err = %v", parts, err)
+	}
+}

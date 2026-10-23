@@ -4,7 +4,10 @@
 
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ConanPackage is one stored file of a Conan recipe revision (PackageID empty)
 // or of a package revision of it. Conan 2 addresses everything by revision: the
@@ -52,4 +55,24 @@ type ConanRecipe struct {
 	Name        string
 	Version     string
 	UserChannel string
+}
+
+// ParseConanReference splits name/version@user/channel#revision.
+func ParseConanReference(ref string) (ConanFileKey, bool) {
+	name, rest, ok := strings.Cut(ref, "/")
+	if !ok {
+		return ConanFileKey{}, false
+	}
+
+	version, rest, ok := strings.Cut(rest, "@")
+	if !ok {
+		return ConanFileKey{}, false
+	}
+
+	userChannel, rrev, ok := strings.Cut(rest, "#")
+	if !ok || name == "" || version == "" {
+		return ConanFileKey{}, false
+	}
+
+	return ConanFileKey{Name: name, Version: version, UserChannel: userChannel, RecipeRevision: rrev}, true
 }

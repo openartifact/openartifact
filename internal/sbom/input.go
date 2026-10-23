@@ -16,10 +16,13 @@ import (
 
 // Dep is one dependency listed in the artifact's "dependencies" property.
 type Dep struct {
-	Name     string
-	Version  string
-	PURL     string
-	SHA256   string
+	Name    string
+	Version string
+	PURL    string
+	SHA256  string
+	// Range is the declared version constraint of a dependency read from a
+	// package file when the file pins no exact version.
+	Range    string
 	Licenses []licenseEntry
 }
 
@@ -221,7 +224,9 @@ func (g *Generator) loadHash(ctx context.Context, repoID string, in *Input) erro
 		sum = c.SHA256
 	}
 
-	in.SHA256 = strings.ToLower(sum)
+	if sum != "" {
+		in.SHA256 = strings.ToLower(sum)
+	}
 
 	return nil
 }

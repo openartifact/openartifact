@@ -94,6 +94,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - SPDX `documentNamespace` and OpenVEX `@id` are now minted under `BASE_URL` (`urn:openartifact:...` when it is empty) instead of `openartifact.io`. Documents already stored keep their identifiers.
 - Creating or updating a cleanup policy on a repository whose format the cleanup worker cannot process now answers `400 UNSUPPORTED_FORMAT`; such policies previously failed on every run.
 - `POST /api/v1/admin/storage/{name}/test` runs a real bucket or container check for `gcs` and `azure` backends instead of answering `not_implemented`.
+- SBOM components are now read from the stored package file (manifest and lockfile) for npm, pypi, maven, sbt, ivy, cargo, go, nuget, rubygems, helm, conda, deb, rpm and conan, and merged with the `dependencies` property. SBOMs generated after the upgrade list more components than before. `artifact_id` may also be a package-listing row id. `POST …/sbom/generate` answers `422 unsafe_artifact` for a package file that cannot be read safely. See [SBOM and VEX](../security/sbom.md#components-read-from-the-package-file).
+- The web UI can record, list and delete VEX decisions and download OpenVEX / CycloneDX VEX documents (Security → Vulnerability scans).
 
 #### Conan 1.x clients (migration `057`)
 
