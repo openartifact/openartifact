@@ -625,6 +625,12 @@ func TestBackupRestoreS3RoundTrip(t *testing.T) {
 	src.seed()
 	// Drain the source's async regeneration so the blob set is stable.
 	src.stopWorkers()
+	// Superseded generated metadata is queued for deletion, not removed: sweep
+	// it so the bucket holds exactly the objects the source still references.
+	sweeper := worker.NewBlobDeletionSweeper(src.pg, tpoCopyDeleter{store}, harness.Log, 0, 500)
+	if _, err := sweeper.RunOnce(t.Context()); err != nil {
+		t.Fatalf("sweep queued blob deletions: %v", err)
+	}
 
 	wantBlobs := bsrBlobSizes(t, store)
 	archive := src.runBackup()
