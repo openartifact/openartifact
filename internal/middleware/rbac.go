@@ -136,7 +136,7 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 
 			// A project token's service account is a repository credential
 			// only: it gets no /api/v1 list endpoint, not even a filtered one.
-			if ((scope.anyAuthenticated && principal.ServiceProjectID == "") || isDockerPing(r)) && !principal.IsAnonymous {
+			if ((scope.anyAuthenticated && principal.ServiceProjectID == "") || isDockerRootless(r)) && !principal.IsAnonymous {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -203,6 +203,14 @@ func writeDelegatedHidden(w http.ResponseWriter, r *http.Request, evaluator *aut
 // authenticated principal"; the handler answers a static 200.
 func isDockerPing(r *http.Request) bool {
 	return isSafeMethod(r.Method) && r.URL.Path == "/v2/"
+}
+
+// isDockerRootless reports whether r is a registry request that names no
+// repository: the ping or the catalog (GET|HEAD /v2/_catalog). Any
+// authenticated principal passes; the catalog handler lists only the images the
+// principal may read.
+func isDockerRootless(r *http.Request) bool {
+	return isDockerPing(r) || (isSafeMethod(r.Method) && r.URL.Path == "/v2/_catalog")
 }
 
 func isSafeMethod(method string) bool {
@@ -778,7 +786,9 @@ func isSPARepoPath(segments []string) bool {
 // ("org/team/app/manifests/1"). The parse is shared with the registry handler
 // (ocipath), so RBAC authorizes the repository the handler serves.
 func splitDockerPath(rest string) (string, string) {
-	if rest == "" {
+	// "" is the version check and "_catalog" the catalog: neither names a
+	// repository (a bare repository name is never a registry endpoint).
+	if rest == "" || rest == "_catalog" {
 		return "", ""
 	}
 

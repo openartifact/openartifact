@@ -785,7 +785,7 @@ func run(args []string) error {
 	dockerHTTP.SetAuthorizer(evaluator)
 	dockerHTTP.RegisterRoutes(dockerHosted)
 
-	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore), evaluator, map[string]http.Handler{
+	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore).WithDockerDigestTTL(cfg.Workers.ProxyDockerDigestTTL), evaluator, map[string]http.Handler{
 		"maven":  mavenHosted,
 		"pypi":   pypiHosted,
 		"raw":    rawHosted,

@@ -178,6 +178,12 @@ workers:
   # period longer than your slowest push and the longest-lived digest pin.
   dockerGcInterval: 1h
   dockerGcGracePeriod: 24h
+  # Docker proxy repositories: manifests and blobs addressed by digest are
+  # evicted from the proxy cache after proxyDockerDigestTtl without a pull (a
+  # pull in the second half of the period renews them) and fetched from the
+  # upstream again on the next one. 0 keeps them until an admin purge or the
+  # repository's removal.
+  proxyDockerDigestTtl: 720h
   # Abandoned docker blob uploads idle longer than dockerUploadTtl are deleted
   # with their staged file (0 disables the sweeper). dockerUploadDir stages
   # in-progress uploads; it must hold your biggest layer.

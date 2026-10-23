@@ -102,6 +102,11 @@ type Service struct {
 	// baseURL is the server URL rewritten metadata points at (npm tarballs).
 	baseURL string
 
+	// dockerDigestTTL is how long a docker manifest or blob addressed by digest
+	// stays cached after it was last used; 0 keeps them until an admin purge or
+	// the repository's removal (see WithDockerDigestTTL).
+	dockerDigestTTL time.Duration
+
 	// sumdb verifies Go module files against the checksum database; nil
 	// (GOSUMDB=off) verifies their structure only.
 	sumdb *sumDB
@@ -140,6 +145,17 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 		fetches:    base.NewGate(maxConcurrentFetches),
 		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
 	}
+}
+
+// WithDockerDigestTTL sets how long a docker manifest or blob addressed by
+// digest stays cached without being used. Such an entry never changes, so
+// until now it never expired; with a positive ttl the cache worker evicts it
+// (and its blob, once no other entry references it) after ttl without a pull,
+// and every pull that finds it past half its lifetime renews it. 0 keeps the
+// old behavior. It must be called before the service serves requests.
+func (s *Service) WithDockerDigestTTL(ttl time.Duration) *Service {
+	s.dockerDigestTTL = max(ttl, 0)
+	return s
 }
 
 // Serve answers a GET/HEAD for relPath (the path below the repository root)

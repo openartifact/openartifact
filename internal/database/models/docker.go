@@ -112,3 +112,15 @@ type DockerTag struct {
 	CreatedAt      time.Time `db:"created_at"`
 	UpdatedAt      time.Time `db:"updated_at"`
 }
+
+// DockerCatalogEntry is one name of the registry catalog: an image of a docker
+// repository, "<repository>/<image>" (just the repository for its default
+// image). Sources are the repositories that hold the image: the repository
+// itself, or for a group its members that do.
+type DockerCatalogEntry struct {
+	// Name is the distribution name listed in the catalog.
+	Name       string
+	Repository *Repository
+	Image      string
+	Sources    []*Repository
+}

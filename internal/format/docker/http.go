@@ -106,6 +106,7 @@ func (h *HTTPHandler) SetAuthorizer(a Authorizer) { h.authz = a }
 // path to ocipath — the same parser RBAC uses to pick the repository.
 func (h *HTTPHandler) RegisterRoutes(r chi.Router) {
 	r.Get("/v2/", h.handleVersionCheck)
+	r.Get("/v2/_catalog", h.handleCatalog)
 	r.HandleFunc("/v2/*", h.serveV2)
 }
 
@@ -888,16 +889,8 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blob, err := h.getVisibleBlob(r.Context(), repo.ID, image, digest)
-	if err != nil {
-		h.log.Errorw("failed to get blob", "digest", digest, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if blob == nil {
-		h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
+	blob, ok := h.servableBlob(w, r, repo.ID, image, digest)
+	if !ok {
 		return
 	}
 
@@ -952,16 +945,8 @@ func (h *HTTPHandler) handleHeadBlob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	blob, err := h.getVisibleBlob(r.Context(), repo.ID, image, digest)
-	if err != nil {
-		h.log.Errorw("failed to get blob", "digest", digest, "error", err)
-		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-
-		return
-	}
-
-	if blob == nil {
-		h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
+	blob, ok := h.servableBlob(w, r, repo.ID, image, digest)
+	if !ok {
 		return
 	}
 
@@ -1231,6 +1216,12 @@ func (h *HTTPHandler) mountSource(r *http.Request, target *models.Repository, im
 		return nil
 	}
 
+	// A layer only trashed manifests of the source hold is not served there,
+	// so it is not handed to another repository either.
+	if trashed, terr := h.blobInTrash(ctx, srcRepo.ID, digest); terr != nil || trashed {
+		return nil
+	}
+
 	quarantined, err := quarantine.IsQuarantined(ctx, h.db, srcRepo.ID, quarantine.PathKeys(blob.ID, digest, from+"/blobs/"+digest)...)
 	if err != nil || quarantined {
 		return nil
@@ -1361,6 +1352,57 @@ func (h *HTTPHandler) getVisibleBlob(ctx context.Context, repoID, image, digest 
 	}
 
 	return blob, nil
+}
+
+// blobInTrash reports whether the repository's manifests reference the blob and
+// all of them are in the trash. Databases that do not track trashed manifests
+// never report it.
+func (h *HTTPHandler) blobInTrash(ctx context.Context, repoID, digest string) (bool, error) {
+	t, ok := h.db.(database.DockerBlobTrash)
+	if !ok {
+		return false, nil
+	}
+
+	return t.DockerBlobInTrash(ctx, repoID, digest)
+}
+
+// servableBlob is getVisibleBlob for the endpoints that hand a blob to a
+// client (GET and HEAD by digest): a blob only trashed manifests reference is
+// absent until one of them is restored, while a blob a live manifest references
+// (a layer shared with another image) or no manifest references yet (an upload
+// awaiting its manifest) is served. Uploads, mounts into an image and manifest
+// validation keep using getVisibleBlob, so pushing an image that reuses a
+// trashed layer still works: the layer is found missing, uploaded again, and
+// served once the new manifest references it. On failure it has written the
+// registry error response and returns ok=false.
+func (h *HTTPHandler) servableBlob(w http.ResponseWriter, r *http.Request, repoID, image, digest string) (*models.DockerBlob, bool) {
+	blob, err := h.getVisibleBlob(r.Context(), repoID, image, digest)
+	if err != nil {
+		h.log.Errorw("failed to get blob", "digest", digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return nil, false
+	}
+
+	if blob == nil {
+		h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
+		return nil, false
+	}
+
+	trashed, err := h.blobInTrash(r.Context(), repoID, digest)
+	if err != nil {
+		h.log.Errorw("failed to check blob trash state", "digest", digest, "error", err)
+		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
+
+		return nil, false
+	}
+
+	if trashed {
+		h.errorResponse(w, http.StatusNotFound, "BLOB_UNKNOWN", "blob not found")
+		return nil, false
+	}
+
+	return blob, true
 }
 
 // blobSize is the blob's byte length for Content-Length: the size verified at
@@ -1951,20 +1993,10 @@ func (h *HTTPHandler) handleListTags(w http.ResponseWriter, r *http.Request) {
 	// Pagination per the distribution spec: n bounds the page, last is the
 	// final tag of the previous page, and a Link header points at the next
 	// page whenever more tags remain.
-	n := defaultTagPage
-
-	if nStr := r.URL.Query().Get("n"); nStr != "" {
-		parsed, parseErr := strconv.Atoi(nStr)
-		if parseErr != nil || parsed < 0 {
-			h.errorResponse(w, http.StatusBadRequest, "PAGINATION_NUMBER_INVALID", "invalid n")
-
-			return
-		}
-
-		n = min(parsed, maxTagPage)
+	n, lastStr, ok := h.pageParams(w, r)
+	if !ok {
+		return
 	}
-
-	lastStr := r.URL.Query().Get("last")
 
 	var tags []*models.DockerTag
 

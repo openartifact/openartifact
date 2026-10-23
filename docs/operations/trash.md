@@ -192,7 +192,7 @@ A restore can conflict:
 - **The repository is in the trash** (`409 repository_in_trash`): restore the repository first.
 - **A docker tag's manifest is in the trash** (`409 manifest_in_trash`): restore the manifest first. Restoring a manifest also restores the tags that were trashed with it.
 
-**Docker blobs of trashed images.** Layers and config blobs are served by digest from the repository's blob record, independent of manifests. While an image is in the trash its manifest and tags are `404`, but its layers can still be fetched by anyone who knows the digest and can read the repository; they disappear only once the manifest is purged and garbage collection runs. See [Docker](../formats/docker.md#garbage-collection).
+**Docker blobs of trashed images.** While an image is in the trash its manifest and tags are `404`, and so are the layers and config blobs only trashed manifests reference (`404 BLOB_UNKNOWN` on `GET`/`HEAD` by digest); a layer a live image shares keeps being served, and restoring the manifest makes its blobs fetchable again. The blobs are deleted only once the manifest is purged and garbage collection runs. See [Docker](../formats/docker.md#garbage-collection).
 
 ## Purge
 

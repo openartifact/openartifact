@@ -103,6 +103,12 @@ A Conan 1.x client can now use a conan repository (see [Conan](../formats/conan.
 - The ping now advertises `revisions,checksum_deploy`. Conan 2 clients start sending an empty `PUT` with `X-Checksum-Deploy: true` before uploads and fall back to the normal upload on `404`; nothing to change on the client.
 - Set `BASE_URL` to the address clients use: Conan 1 URLs in `upload_urls` and `download_urls` are absolute.
 
+#### Docker catalog, trashed blobs, proxy digest eviction (migration `063`)
+
+- `GET /v2/_catalog` now exists: it lists the docker images the caller may read, paginated with `n`/`last`. See [Docker](../formats/docker.md#endpoints).
+- A layer or config blob that only trashed manifests reference now answers `404 BLOB_UNKNOWN` by digest until a manifest that references it is restored. Before, it stayed downloadable while the image sat in the trash.
+- Docker proxy repositories used to keep manifests and blobs addressed by digest forever. They are now evicted after `workers.proxyDockerDigestTtl` (default `720h`, env `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL`) without a pull, and a pull renews them; the next pull of an evicted digest goes to the upstream again. Set it to `0` to keep the old behavior. Migration `063` gives the entries already cached the default 30 days from the upgrade, so content nobody pulls in that time is evicted by the proxy cache worker.
+
 ### 0.7.0
 
 Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webhook payload format), `052` (VEX statements) and `053` (license source and unresolved licenses). All are additive; a rolling upgrade from 0.6.0 is fine. Migration `041` is numbered below `051`–`053` on purpose; the migrator applies every file not yet recorded, whatever its number.
