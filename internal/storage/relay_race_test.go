@@ -20,6 +20,7 @@ import (
 // upload's lock, then serves from the wrapped reader.
 type signalReader struct {
 	io.Reader
+
 	once    sync.Once
 	started chan struct{}
 }
@@ -46,7 +47,7 @@ func newRaceFixture(t *testing.T) *raceFixture {
 	t.Helper()
 
 	env, fsys := newFSRelayEnv(t)
-	partSize := int64(MinPartSize)
+	partSize := MinPartSize
 	size := raceParts * partSize
 	data := bytes.Repeat([]byte("0123456789abcdef"), int(size)/16)
 
@@ -74,7 +75,7 @@ func (f *raceFixture) part(n int) []byte {
 
 // slowRewrite starts a retry of part 1 whose body the caller feeds through the
 // returned writer. It returns once the PUT holds the upload's lock.
-func (f *raceFixture) slowRewrite(t *testing.T) (w *io.PipeWriter, done <-chan int) {
+func (f *raceFixture) slowRewrite(t *testing.T) (*io.PipeWriter, <-chan int) {
 	t.Helper()
 
 	pr, pw := io.Pipe()

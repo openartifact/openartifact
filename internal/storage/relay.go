@@ -417,7 +417,7 @@ func (r *relay) finalize(ctx context.Context, id string, parts int) error {
 
 // seal marks the upload as being completed. created is true when this call
 // made the marker.
-func (r *relay) seal(id string) (created bool, err error) {
+func (r *relay) seal(id string) (bool, error) {
 	f, err := os.OpenFile(r.sealPath(id), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
 	if errors.Is(err, os.ErrExist) {
 		return false, nil
@@ -737,7 +737,7 @@ func (r *relay) servePut(w http.ResponseWriter, req *http.Request) {
 // putPart writes one part while holding the upload's shared lock, so a
 // concurrent finalize waits for it, and refuses the part once the upload is
 // sealed or published (409).
-func (r *relay) putPart(id string, part int, meta relayMeta, length int64, body io.Reader) (etag string, status int) {
+func (r *relay) putPart(id string, part int, meta relayMeta, length int64, body io.Reader) (string, int) {
 	unlock, err := lockShared(r.lockPath(id))
 	if err != nil {
 		return "", http.StatusInternalServerError
@@ -749,7 +749,7 @@ func (r *relay) putPart(id string, part int, meta relayMeta, length int64, body 
 		return "", http.StatusConflict
 	}
 
-	etag, err = r.writePart(id, part, meta, length, body)
+	etag, err := r.writePart(id, part, meta, length, body)
 	if err != nil {
 		return "", http.StatusBadRequest
 	}

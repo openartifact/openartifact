@@ -108,7 +108,7 @@ func TestGCSPromoteComposesPinnedGeneration(t *testing.T) {
 		t.Errorf("compose request = %+v", f.compose)
 	}
 
-	if got := f.meta.Get("x-goog-meta-sha256"); got != "abcd" {
+	if got := f.meta.Get("X-Goog-Meta-Sha256"); got != "abcd" {
 		t.Errorf("x-goog-meta-sha256 = %q", got)
 	}
 }

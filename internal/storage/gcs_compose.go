@@ -25,7 +25,7 @@ const (
 	gcsEndpoint         = "https://storage.googleapis.com"
 	gcsRegion           = "auto"
 	gcsSigningService   = "s3"
-	gcsGenerationHeader = "x-goog-generation"
+	gcsGenerationHeader = "X-Goog-Generation"
 	gcsComposeTimeout   = 2 * time.Minute
 )
 

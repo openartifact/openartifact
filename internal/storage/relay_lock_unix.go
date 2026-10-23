@@ -41,7 +41,7 @@ func lockShared(path string) (func(), error) {
 
 // tryLockExclusive takes an exclusive advisory lock on path without waiting.
 // held is true when a shared or exclusive holder owns the lock.
-func tryLockExclusive(path string) (unlock func(), held bool, err error) {
+func tryLockExclusive(path string) (func(), bool, error) {
 	f, err := os.OpenFile(path, os.O_CREATE|os.O_RDWR, 0o600)
 	if err != nil {
 		return nil, false, fmt.Errorf("open lock file: %w", err)
