@@ -326,7 +326,7 @@ func TestSPA_HeadAndErrors(t *testing.T) {
 // TestSPA_RepoPagesWithDottedNames is the regression test for direct loads of
 // package pages whose name has a file extension (a raw "docs/hello.txt",
 // "lodash.debounce"): the extension heuristic that 404s missing static files
-// must not apply under /repos/.
+// must not apply under /repos/ or to a /bundles/NAME/1.0.0 version.
 func TestSPA_RepoPagesWithDottedNames(t *testing.T) {
 	h, fsys := testSPA()
 	index := string(fsys["index.html"].Data)
@@ -336,6 +336,7 @@ func TestSPA_RepoPagesWithDottedNames(t *testing.T) {
 		"/repos/raw-files/packages/raw/hello.txt",
 		"/repos/npm-local/packages/npm/lodash.debounce",
 		"/repos/maven-releases/packages/maven/com.example%3Aapp",
+		"/bundles/shop/1.0.0",
 	} {
 		rw := do(h, http.MethodGet, p, nil)
 		if rw.Code != http.StatusOK || rw.Body.String() != index {
@@ -343,7 +344,7 @@ func TestSPA_RepoPagesWithDottedNames(t *testing.T) {
 		}
 	}
 
-	// The heuristic still protects everything outside /repos/.
+	// The heuristic still protects everything outside /repos/ and /bundles/.
 	if rw := do(h, http.MethodGet, "/docs/hello.txt", nil); rw.Code != http.StatusNotFound {
 		t.Errorf("GET /docs/hello.txt = %d, want 404", rw.Code)
 	}

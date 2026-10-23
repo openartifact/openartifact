@@ -87,8 +87,10 @@ func newSPAHandler(sub fs.FS) http.Handler {
 		// under /repos/ is a static file: the RBAC middleware only hands this
 		// handler real page navigations there, and the last segment is a
 		// package name, which routinely carries a dot (lodash.debounce, a raw
-		// docs/hello.txt, com.example.app), so the extension says nothing.
-		if strings.HasPrefix(clean, "assets/") || (!strings.HasPrefix(clean, "repos/") && path.Ext(clean) != "") {
+		// docs/hello.txt, com.example.app), so the extension says nothing. The
+		// same goes for /bundles/NAME/VERSION, whose version is usually semver
+		// (1.0.0).
+		if strings.HasPrefix(clean, "assets/") || (!strings.HasPrefix(clean, "repos/") && !strings.HasPrefix(clean, "bundles/") && path.Ext(clean) != "") {
 			notFound(w, false)
 			return
 		}
