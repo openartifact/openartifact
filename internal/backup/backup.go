@@ -63,6 +63,26 @@ func (e *Engine) restoreWarn(msg string, kv ...any) {
 	e.log.Warnw(msg, kv...)
 }
 
+// restoreSkip logs a record the restore leaves alone on purpose (it already
+// exists on the target) and counts it, without making the restore incomplete.
+func (e *Engine) restoreSkip(msg string, kv ...any) {
+	e.restoreSkips.Add(1)
+	e.log.Infow(msg, kv...)
+}
+
+// restoreMissingUser reports a record whose user was not restored. When the
+// user was skipped because the target already has an account of that name (the
+// bootstrap admin), the record is skipped with it; any other missing user is a
+// failure.
+func (e *Engine) restoreMissingUser(st *restoreState, oldUserID, msg string, kv ...any) {
+	if _, kept := st.keptUsers[oldUserID]; kept {
+		e.restoreSkip(msg+" (the user already exists on this instance)", kv...)
+		return
+	}
+
+	e.restoreWarn(msg, kv...)
+}
+
 // redactOIDCSecret blanks client_secret inside an OIDC config JSON blob.
 func redactOIDCSecret(raw json.RawMessage) json.RawMessage {
 	if len(raw) == 0 {
@@ -128,6 +148,9 @@ type Engine struct {
 	// restore so RunRestore can report partial failure instead of success.
 	// Only the restore holding opMu touches it.
 	restoreFailures atomic.Int64
+	// restoreSkips counts records left alone because the target already has
+	// them; they are logged but do not fail the restore.
+	restoreSkips atomic.Int64
 
 	// regen schedules metadata regeneration for restored repositories; optional.
 	regen Regenerator
@@ -982,6 +1005,7 @@ func (e *Engine) writeJSONLFile(tw *tar.Writer, filename string, data any) error
 type restoreState struct {
 	repoIDMap       map[string]string    // old repository id -> new
 	userIDMap       map[string]string    // old user id -> new
+	keptUsers       map[string]struct{}  // old ids of users whose name already exists on the target
 	distIDMap       map[string]string    // old debian_distributions id -> new
 	distByRepoName  map[string]string    // old_repo_id+"|"+dist_name -> new dist id
 	compByDistName  map[string]string    // new_dist_id+"|"+comp_name -> new comp id
@@ -1013,6 +1037,7 @@ func newRestoreState() *restoreState {
 	return &restoreState{
 		repoIDMap:        map[string]string{},
 		userIDMap:        map[string]string{},
+		keptUsers:        map[string]struct{}{},
 		distIDMap:        map[string]string{},
 		distByRepoName:   map[string]string{},
 		compByDistName:   map[string]string{},
@@ -1126,6 +1151,7 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 
 	st := newRestoreState()
 	e.restoreFailures.Store(0)
+	e.restoreSkips.Store(0)
 
 	// Process files. Order matters: exportMetadata always writes
 	// repositories/users/groups first, then the debian hierarchy before
@@ -1164,7 +1190,7 @@ func (e *Engine) RunRestore(ctx context.Context, backupPath string) error {
 		return fmt.Errorf("%w: %d records/blobs failed or were skipped", ErrRestoreIncomplete, failed)
 	}
 
-	e.log.Infow("restore completed successfully", "backup_path", backupPath)
+	e.log.Infow("restore completed successfully", "backup_path", backupPath, "skipped_existing", e.restoreSkips.Load())
 
 	return nil
 }
@@ -1531,6 +1557,16 @@ func (e *Engine) restoreUsers(ctx context.Context, r io.Reader, st *restoreState
 	for _, user := range users {
 		oldID := user.ID
 		if _, err := e.db.CreateUser(ctx, user); err != nil {
+			if database.IsUniqueViolation(err) {
+				// A fresh target already has its bootstrap admin: keep that
+				// account; what depends on the archive's one is skipped with it.
+				e.restoreSkip("user already exists, keeping the existing one", "username", user.Username)
+
+				st.keptUsers[oldID] = struct{}{}
+
+				continue
+			}
+
 			e.restoreWarn("failed to restore user", "username", user.Username, "error", err)
 			continue
 		}
@@ -1993,7 +2029,7 @@ func (e *Engine) restoreTokens(ctx context.Context, r io.Reader, st *restoreStat
 	for _, it := range items {
 		newUserID, ok := st.userIDMap[it.UserID]
 		if !ok {
-			e.restoreWarn("skipping token: source user not restored", "user_id", it.UserID, "name", it.Name)
+			e.restoreMissingUser(st, it.UserID, "skipping token: source user not restored", "user_id", it.UserID, "name", it.Name)
 			continue
 		}
 
@@ -2328,7 +2364,7 @@ func (e *Engine) restoreProjectMember(ctx context.Context, st *restoreState, old
 
 	newUserID, ok := st.userIDMap[oldUserID]
 	if !ok {
-		e.restoreWarn("skipping project member: source user not restored", "user_id", oldUserID)
+		e.restoreMissingUser(st, oldUserID, "skipping project member: source user not restored", "user_id", oldUserID)
 		return
 	}
 

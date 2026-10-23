@@ -98,11 +98,7 @@ func (m metadataBlobs) reclaimOne(ctx context.Context, sum string) error {
 			return nil
 		}
 
-		if err := m.store.Delete(ctx, sum); err != nil {
-			return fmt.Errorf("delete blob: %w", err)
-		}
-
-		return nil
+		return storage.DiscardUnreferencedBytes(ctx, m.db, m.store, sum)
 	})
 }
 

@@ -617,3 +617,73 @@ func TestBackupArchivesOnlyBlobsOfItsSnapshot(t *testing.T) {
 		t.Errorf("archive holds %d blobs, want 1", len(blobs))
 	}
 }
+
+// ReclaimMetadataBlob frees generated metadata, which has no blobs row. When a
+// blobs row of byte-identical content was deleted while a backup runs, the
+// reclaim must not remove the bytes under that backup: they are queued like any
+// other deleted blob and removed only after the lease ends.
+func TestReclaimMetadataBlobKeepsBytesOfARunningBackupsBlob(t *testing.T) {
+	r := newDeletionRig(t)
+	ctx := context.Background()
+
+	sha := r.upload("identical to a generated metadata file")
+
+	snap, err := r.pg.BeginBackupSnapshot(ctx, time.Minute)
+	if err != nil {
+		t.Fatalf("BeginBackupSnapshot: %v", err)
+	}
+
+	defer snap.Release()
+
+	// The snapshot lists the blobs row; it is deleted afterwards, then the
+	// metadata worker reclaims the same content (no row, no reference left).
+	r.remove(sha)
+
+	if err := storage.ReclaimMetadataBlob(ctx, r.pg, r.store, sha); err != nil {
+		t.Fatalf("ReclaimMetadataBlob: %v", err)
+	}
+
+	if !r.exists(sha) {
+		t.Fatal("ReclaimMetadataBlob removed bytes a running backup's snapshot still lists")
+	}
+
+	if st := r.sweep(r.sweeper); st.Deleted != 0 || !r.exists(sha) {
+		t.Fatalf("sweep during the backup = %+v exists=%v, want the bytes held", st, r.exists(sha))
+	}
+
+	snap.Release()
+
+	if st := r.sweep(r.sweeper); st.Deleted != 1 || r.exists(sha) {
+		t.Fatalf("sweep after the backup = %+v exists=%v, want the bytes deleted", st, r.exists(sha))
+	}
+}
+
+// A metadata blob that a repository_metadata row references again (a concurrent
+// regeneration of the same content) keeps its bytes however the queue runs.
+func TestReclaimMetadataBlobKeepsBytesReferencedAgain(t *testing.T) {
+	r := newDeletionRig(t)
+	ctx := context.Background()
+
+	sha := r.upload("regenerated metadata")
+	r.remove(sha) // no blobs row any more, bytes queued
+
+	system := models.SystemProjectID
+	repo := &models.Repository{Name: "meta-repo", Format: "maven", RepoType: "hosted", ProjectID: &system}
+	if err := r.pg.CreateRepository(ctx, repo); err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := r.pg.GetDB().ExecContext(ctx,
+		`INSERT INTO repository_metadata (repository_id, path, blob_sha256, blob_size) VALUES ($1, 'g/a/maven-metadata.xml', $2, 20)`,
+		repo.ID, sha); err != nil {
+		t.Fatalf("insert repository_metadata: %v", err)
+	}
+
+	if err := storage.ReclaimMetadataBlob(ctx, r.pg, r.store, sha); err != nil {
+		t.Fatalf("ReclaimMetadataBlob: %v", err)
+	}
+
+	if st := r.sweep(r.sweeper); st.Deleted != 0 || st.Kept != 1 || !r.exists(sha) {
+		t.Fatalf("sweep = %+v exists=%v, want the referenced metadata blob kept", st, r.exists(sha))
+	}
+}

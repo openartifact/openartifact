@@ -258,10 +258,33 @@ func ReclaimMetadataBlob(ctx context.Context, db database.Database, blobStore Bl
 			return nil
 		}
 
-		if err := blobStore.Delete(ctx, sha); err != nil {
-			return fmt.Errorf("delete metadata blob %s: %w", sha, err)
+		return DiscardUnreferencedBytes(ctx, db, blobStore, sha)
+	})
+}
+
+type blobDeletionQueue interface {
+	EnqueueBlobDeletion(ctx context.Context, sha256, scope string) error
+}
+
+// DiscardUnreferencedBytes frees the bytes of a blob the caller has just found
+// unreferenced under the blob's lock, without a blobs row of its own to delete
+// (generated metadata). The bytes are queued like any other deleted blob, not
+// removed at once: a running backup may still list a blobs row of the same
+// content (an upload of byte-identical content that was deleted since) and must
+// find its bytes. The sweeper re-checks references before it removes anything.
+// Databases without the queue (test doubles) delete right away.
+func DiscardUnreferencedBytes(ctx context.Context, db database.Database, blobStore BlobStore, sha string) error {
+	if q, ok := db.(blobDeletionQueue); ok {
+		if err := q.EnqueueBlobDeletion(ctx, sha, database.BlobDeletionScopeAll); err != nil {
+			return fmt.Errorf("queue metadata blob %s for deletion: %w", sha, err)
 		}
 
 		return nil
-	})
+	}
+
+	if err := blobStore.Delete(ctx, sha); err != nil {
+		return fmt.Errorf("delete metadata blob %s: %w", sha, err)
+	}
+
+	return nil
 }

@@ -125,7 +125,12 @@ func (e *Engine) restorePermissionAssignments(ctx context.Context, r io.Reader, 
 		}
 
 		if !ok {
-			e.restoreWarn("skipping permission assignment: principal not restored", "principal_type", a.PrincipalType, "principal_id", a.PrincipalID)
+			if a.PrincipalType == "user" {
+				e.restoreMissingUser(st, a.PrincipalID, "skipping permission assignment: principal not restored", "principal_type", a.PrincipalType, "principal_id", a.PrincipalID)
+			} else {
+				e.restoreWarn("skipping permission assignment: principal not restored", "principal_type", a.PrincipalType, "principal_id", a.PrincipalID)
+			}
+
 			continue
 		}
 
@@ -156,7 +161,12 @@ func (e *Engine) restoreUserGroups(ctx context.Context, r io.Reader, st *restore
 		groupID, gok := st.groupIDMap[m.GroupID]
 
 		if !uok || !gok {
-			e.restoreWarn("skipping group membership: user or group not restored", "user_id", m.UserID, "group_id", m.GroupID)
+			if _, kept := st.keptUsers[m.UserID]; kept && gok {
+				e.restoreMissingUser(st, m.UserID, "skipping group membership: user not restored", "user_id", m.UserID, "group_id", m.GroupID)
+			} else {
+				e.restoreWarn("skipping group membership: user or group not restored", "user_id", m.UserID, "group_id", m.GroupID)
+			}
+
 			continue
 		}
 
