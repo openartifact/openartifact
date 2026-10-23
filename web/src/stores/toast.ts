@@ -7,11 +7,18 @@ import { ref, computed } from 'vue'
 
 export type ToastLevel = 'info' | 'success' | 'warning' | 'error'
 
+/** A button on the toast; running it dismisses the toast. */
+export interface ToastAction {
+  label: string
+  run: () => void
+}
+
 export interface Toast {
   id: number
   level: ToastLevel
   title: string
   description?: string
+  action?: ToastAction
   timeoutMs: number
   createdAt: number
 }
@@ -39,6 +46,7 @@ export const useToastStore = defineStore('toast', () => {
       id,
       title: input.title,
       description: input.description,
+      action: input.action,
       level: input.level,
       timeoutMs,
       createdAt: Date.now(),

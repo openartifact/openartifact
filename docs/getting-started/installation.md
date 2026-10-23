@@ -164,3 +164,21 @@ The version comes from the `VERSION` file and is injected with `-ldflags "-X mai
 - To terminate TLS in OpenArtifact: `SERVER_TLS_ENABLED=true` with `SERVER_TLS_CERT` and `SERVER_TLS_KEY` (PEM files; both required, minimum TLS 1.2). Only in this mode does the server send `Strict-Transport-Security`; behind a TLS-terminating proxy, set HSTS on the proxy.
 - Uploads can be large, and read/write timeouts default to `0` (unlimited). Raise or disable any body-size and timeout limit on the proxy as well.
 - `GET /health` (always 200, JSON with version and component status) and `GET /ready` (503 when the database is down) are the probe endpoints; the compose healthcheck uses `/health`.
+
+## Install the web UI as an app
+
+The web UI is an installable app (PWA): it opens in its own window without browser chrome and gets an icon on the desktop, launcher or home screen. Installing needs a secure origin: serve OpenArtifact over HTTPS (see above) or open it on `localhost`. Over plain `http://` on any other host the browser offers no install and does not run the service worker; the UI itself keeps working in a tab.
+
+| Platform | How |
+|---|---|
+| Desktop Chrome / Edge | Click the install icon at the right end of the address bar, or **Install app** next to your user name in the sidebar footer (shown only when the browser offers an install). |
+| Android (Chrome) | Menu → **Install app** (or **Add to Home screen**), or the **Install app** button in the sidebar. |
+| iOS / iPadOS (Safari) | Share → **Add to Home Screen**. Safari fires no install event, so there is no in-app button. |
+
+What the installed app does and does not do:
+
+- It is the same UI, served by the same server, and signs in like any browser tab: no separate login mode, and sessions, tokens and permissions are unchanged.
+- The service worker (`/sw.js`) caches only the build assets and the static app shell (offline page, icons, manifest). API, repository (`/repos/`), registry (`/v2/`), `/metrics`, `/health`, login and SSO responses are never cached and never touched by the worker, so no data is served from a previous session.
+- Without a network connection, opening a page shows a small "You are offline" page with a **Try again** link instead of the browser error page.
+- After an upgrade the UI shows a **New version available** notice with a **Reload** button. The page is never reloaded on its own, so a form in progress is not lost; the new version is used after you click it (or reopen the app).
+- A reverse proxy must pass `/sw.js` and `/manifest.webmanifest` on with their `Cache-Control: no-cache` header, or an upgrade is noticed late. To remove the app, uninstall it from the browser or OS like any other app.

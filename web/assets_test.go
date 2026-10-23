@@ -143,6 +143,117 @@ func TestSPA_AssetHeaders(t *testing.T) {
 	}
 }
 
+// pwaSPA is testSPA plus the installable-app files Vite copies from public/ or
+// builds at the dist root.
+func pwaSPA() http.Handler {
+	manifest := `{"name":"OpenArtifact","start_url":"/","scope":"/","display":"standalone","icons":[` +
+		strings.Repeat(`{"src":"/icons/icon-192.png","sizes":"192x192","type":"image/png"},`, 20) + `{}]}`
+	worker := "(function(){self.addEventListener('fetch',function(){});" + strings.Repeat("var a=1;", 200) + "})()"
+
+	return newSPAHandler(fstest.MapFS{
+		"index.html":                 {Data: []byte("<!doctype html><title>OpenArtifact</title>")},
+		"manifest.webmanifest":       {Data: []byte(manifest)},
+		"sw.js":                      {Data: []byte(worker)},
+		"offline.html":               {Data: []byte("<!doctype html><title>Offline</title>")},
+		"icons/icon-192.png":         {Data: append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)},
+		"icons/apple-touch-icon.png": {Data: append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)},
+	})
+}
+
+func TestSPA_PWAFiles(t *testing.T) {
+	h := pwaSPA()
+
+	tests := []struct {
+		path      string
+		wantType  string
+		wantCache string
+	}{
+		{"/manifest.webmanifest", "application/manifest+json", "no-cache"},
+		{"/sw.js", "text/javascript; charset=utf-8", "no-cache"},
+		{"/offline.html", "text/html; charset=utf-8", "no-cache"},
+		{"/icons/icon-192.png", "image/png", "no-cache"},
+		{"/icons/apple-touch-icon.png", "image/png", "no-cache"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.path, func(t *testing.T) {
+			rw := do(h, http.MethodGet, tc.path, nil)
+			if rw.Code != http.StatusOK {
+				t.Fatalf("status = %d, want 200", rw.Code)
+			}
+
+			got := rw.Header()
+			if got.Get("Content-Type") != tc.wantType {
+				t.Errorf("Content-Type = %q, want %q", got.Get("Content-Type"), tc.wantType)
+			}
+
+			// The worker and the manifest must always be revalidated: a stale
+			// sw.js would pin users on an old release.
+			if got.Get("Cache-Control") != tc.wantCache {
+				t.Errorf("Cache-Control = %q, want %q", got.Get("Cache-Control"), tc.wantCache)
+			}
+
+			if got.Get("ETag") == "" || got.Get("X-Content-Type-Options") != "nosniff" {
+				t.Errorf("missing ETag or nosniff: %v", got)
+			}
+
+			// Root-served, so the default scope "/" already covers the app.
+			if got.Get("Service-Worker-Allowed") != "" {
+				t.Errorf("unexpected Service-Worker-Allowed = %q", got.Get("Service-Worker-Allowed"))
+			}
+		})
+	}
+}
+
+func TestSPA_PWAContentTypeSurvivesGzipAndRevalidation(t *testing.T) {
+	h := pwaSPA()
+
+	for _, p := range []string{"/manifest.webmanifest", "/sw.js"} {
+		gz := do(h, http.MethodGet, p, map[string]string{"Accept-Encoding": "gzip"})
+		if gz.Header().Get("Content-Encoding") != "gzip" {
+			t.Errorf("%s: not gzip-encoded: %v", p, gz.Header())
+		}
+
+		if rw := do(h, http.MethodGet, p, map[string]string{"Accept-Encoding": "gzip", "If-None-Match": gz.Header().Get("ETag")}); rw.Code != http.StatusNotModified {
+			t.Errorf("%s: matching validator = %d, want 304", p, rw.Code)
+		}
+
+		if rw := do(h, http.MethodHead, p, nil); rw.Code != http.StatusOK || rw.Body.Len() != 0 {
+			t.Errorf("%s: HEAD = %d with %d body bytes", p, rw.Code, rw.Body.Len())
+		}
+	}
+
+	manifest := do(h, http.MethodGet, "/manifest.webmanifest", map[string]string{"Accept-Encoding": "gzip"})
+	if !strings.Contains(string(gunzip(t, manifest.Body.Bytes())), `"display":"standalone"`) {
+		t.Errorf("gunzipped manifest lost its content")
+	}
+}
+
+// TestSPA_PWAFilesAreGETOnly keeps the page-bypass contract: the worker and the
+// manifest answer GET/HEAD only, and the SPA never answers under /api/.
+func TestSPA_PWAFilesAreGETOnly(t *testing.T) {
+	h := pwaSPA()
+
+	for _, p := range []string{"/sw.js", "/manifest.webmanifest"} {
+		if rw := do(h, http.MethodPost, p, nil); rw.Code != http.StatusMethodNotAllowed {
+			t.Errorf("POST %s = %d, want 405", p, rw.Code)
+		}
+	}
+
+	for _, p := range []string{"/api/sw.js", "/api/v1/auth/me"} {
+		if rw := do(h, http.MethodGet, p, nil); rw.Code != http.StatusNotFound || rw.Header().Get("Content-Type") != "application/json" {
+			t.Errorf("GET %s = %d (%s), want a JSON 404", p, rw.Code, rw.Header().Get("Content-Type"))
+		}
+	}
+
+	// A worker that was not built (fresh clone, dev) is a 404, not the SPA shell:
+	// registering HTML as a worker script would fail loudly in the browser.
+	bare := newSPAHandler(fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
+	if rw := do(bare, http.MethodGet, "/sw.js", nil); rw.Code != http.StatusNotFound {
+		t.Errorf("GET /sw.js without a worker = %d, want 404", rw.Code)
+	}
+}
+
 func TestSPA_ConditionalRequests(t *testing.T) {
 	h, _ := testSPA()
 

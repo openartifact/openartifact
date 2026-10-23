@@ -143,6 +143,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ session.user?.username }}
         </span>
         <button
+          v-if="canInstall"
+          type="button"
+          class="shrink-0 text-muted hover:text-foreground transition-colors"
+          :aria-label="t('pwa.install')"
+          :title="t('pwa.install')"
+          @click="install"
+        >
+          <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
+        </button>
+        <button
           type="button"
           class="shrink-0 text-muted hover:text-foreground transition-colors"
           :aria-label="t('auth.signOut')"
@@ -162,6 +172,7 @@ import { computed, nextTick, ref, watch } from 'vue'
 import { useMediaQuery } from '@vueuse/core'
 import { useRoute } from 'vue-router'
 import { useSignOut } from '../composables/useSignOut'
+import { useInstallPrompt } from '../composables/useInstallPrompt'
 import {
   HomeIcon,
   CubeIcon,
@@ -183,6 +194,7 @@ import {
   UserCircleIcon,
   ChevronLeftIcon,
   ChevronRightIcon,
+  ArrowDownTrayIcon,
   ArrowRightOnRectangleIcon,
   BellAlertIcon,
   ShieldExclamationIcon,
@@ -239,4 +251,5 @@ watch(() => route.path, (path) => {
 })
 
 const handleLogout = useSignOut()
+const { canInstall, install } = useInstallPrompt()
 </script>

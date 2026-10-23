@@ -17,6 +17,7 @@ path = [
   "web/package.json",
   "web/tsconfig.json",
   "web/tsconfig.node.json",
+  "web/tsconfig.sw.json",
   "web/dist/**",
   "docs/**.png",
   "web/public/**",

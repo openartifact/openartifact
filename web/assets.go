@@ -30,6 +30,15 @@ const (
 	cacheRevalidate = "no-cache"
 )
 
+// contentTypes pins the media type of files the platform mime tables get wrong
+// or lack (Go has no built-in entry for .webmanifest and a shell-less image has
+// no /etc/mime.types), so the install manifest is never sniffed as text/plain.
+//
+//nolint:gochecknoglobals // read-only table
+var contentTypes = map[string]string{
+	".webmanifest": "application/manifest+json",
+}
+
 // hashedName matches the file names Vite emits under assets/
 // (`[name]-[hash][extname]`, see web/vite.config.ts).
 var hashedName = regexp.MustCompile(`-[A-Za-z0-9_-]{8,}\.[A-Za-z0-9.]+$`)
@@ -117,7 +126,11 @@ func loadAssets(sub fs.FS) map[string]*asset {
 			return nil //nolint:nilerr // an unreadable embedded file is simply not served
 		}
 
-		ctyp := mime.TypeByExtension(path.Ext(p))
+		ctyp := contentTypes[path.Ext(p)]
+		if ctyp == "" {
+			ctyp = mime.TypeByExtension(path.Ext(p))
+		}
+
 		if ctyp == "" {
 			ctyp = http.DetectContentType(body)
 		}

@@ -256,6 +256,12 @@ const base = {
   // Toasts
   'toast.dismiss': 'Dismiss',
 
+  // Installable app (PWA)
+  'pwa.updateAvailable': 'New version available',
+  'pwa.updateHint': 'Reload to switch to it. Your current page is left untouched until you do.',
+  'pwa.reload': 'Reload',
+  'pwa.install': 'Install app',
+
   // Status bar
   'status.healthy': 'Healthy',
   'status.degraded': 'Degraded',

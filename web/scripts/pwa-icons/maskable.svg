@@ -1,0 +1,13 @@
+<!--
+SPDX-FileCopyrightText: The OpenArtifact Authors
+
+SPDX-License-Identifier: AGPL-3.0-or-later
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <rect width="512" height="512" fill="#4F46E5"/>
+  <g transform="translate(134 144) scale(8)">
+    <rect x="13" y="10" width="10" height="10" fill="#FFFFFF" fill-opacity="0.7"/>
+    <path d="M5 11v15.25h22V11" fill="none" stroke="#FFFFFF" stroke-width="3.5"/>
+    <path d="M3.5 9.5L13 3" fill="none" stroke="#FFFFFF" stroke-width="3.5"/>
+  </g>
+</svg>

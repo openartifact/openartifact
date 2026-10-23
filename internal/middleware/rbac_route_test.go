@@ -150,17 +150,21 @@ func TestIsStaticPath(t *testing.T) {
 	cfg := RBACConfig{MCPPath: "/mcp"}
 
 	for path, want := range map[string]bool{
-		"/":                    true,
-		"/login":               true,
-		"/assets/app.js":       true,
-		"/repos":               true,
-		"/repos/x":             false,
-		"/api/v1/auth/me":      false,
-		"/v2/":                 false,
-		"/mcp":                 false,
-		"/mcp/sse":             false,
-		"/mcpish":              true,
-		"/repos/raw/x/a/b.txt": false,
+		"/":                     true,
+		"/login":                true,
+		"/assets/app.js":        true,
+		"/sw.js":                true,
+		"/manifest.webmanifest": true,
+		"/offline.html":         true,
+		"/icons/icon-192.png":   true,
+		"/repos":                true,
+		"/repos/x":              false,
+		"/api/v1/auth/me":       false,
+		"/v2/":                  false,
+		"/mcp":                  false,
+		"/mcp/sse":              false,
+		"/mcpish":               true,
+		"/repos/raw/x/a/b.txt":  false,
 	} {
 		if got := isStaticPath(path, cfg); got != want {
 			t.Errorf("isStaticPath(%q) = %v, want %v", path, got, want)

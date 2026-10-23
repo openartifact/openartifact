@@ -10,6 +10,8 @@ import './style.css'
 import { useThemeStore } from './stores/theme'
 import { useToastStore } from './stores/toast'
 import { isSessionExpired } from './api/client'
+import { captureInstallPrompt } from './composables/useInstallPrompt'
+import { startServiceWorker } from './pwa/register'
 
 const app = createApp(App)
 
@@ -42,4 +44,10 @@ window.addEventListener('unhandledrejection', (event) => {
   console.error('[unhandledrejection]', event.reason)
 })
 
+// The install event can fire before any component mounts: listen from the start.
+captureInstallPrompt()
+
 app.mount('#app')
+
+// Not in dev: Vite serves modules the worker would otherwise have to ignore.
+if (import.meta.env.PROD) startServiceWorker()

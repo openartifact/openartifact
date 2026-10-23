@@ -32,6 +32,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <div class="flex-1 min-w-0">
             <p class="text-sm font-medium text-foreground">{{ toast.title }}</p>
             <p v-if="toast.description" class="text-xs text-muted mt-0.5">{{ toast.description }}</p>
+            <button
+              v-if="toast.action"
+              type="button"
+              class="mt-2 rounded-md bg-primary px-3 py-1 text-xs font-medium text-primary-contrast hover:opacity-90 transition-opacity"
+              @click="runAction(toast)"
+            >{{ toast.action.label }}</button>
           </div>
           <!-- Close -->
           <button
@@ -44,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </button>
         </div>
         <!-- Progress bar -->
-        <div class="h-0.5 w-full bg-border/30">
+        <div v-if="toast.timeoutMs > 0" class="h-0.5 w-full bg-border/30">
           <div
             class="h-full toast-progress"
             :class="progressClass(toast.level)"
@@ -66,11 +72,16 @@ import {
   XCircleIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
-import { useToastStore } from '../stores/toast'
+import { useToastStore, type Toast } from '../stores/toast'
 import { t } from '../i18n/en'
 
 const toastStore = useToastStore()
 const toasts = computed(() => toastStore.visible)
+
+function runAction(toast: Toast) {
+  toastStore.dismiss(toast.id)
+  toast.action?.run()
+}
 
 function iconFor(level: string) {
   switch (level) {

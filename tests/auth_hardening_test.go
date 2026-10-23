@@ -175,7 +175,7 @@ func TestRBAC_StaticAssetsStayPublic(t *testing.T) {
 	db := newMockDatabase()
 	handler := newRBACMiddleware(db, middleware.RBACConfig{}, newMWLogger(t))(noopHandler(http.StatusOK))
 
-	for _, path := range []string{"/", "/login", "/assets/app.js", "/favicon.ico"} {
+	for _, path := range []string{"/", "/login", "/assets/app.js", "/favicon.ico", "/sw.js", "/manifest.webmanifest", "/offline.html"} {
 		if rw := serve(handler, http.MethodGet, path, nil); rw.Code != http.StatusOK {
 			t.Errorf("GET %s = %d, want 200", path, rw.Code)
 		}
@@ -184,6 +184,11 @@ func TestRBAC_StaticAssetsStayPublic(t *testing.T) {
 	// ...but not for mutations.
 	if rw := serve(handler, http.MethodPost, "/login", nil); rw.Code != http.StatusUnauthorized {
 		t.Errorf("POST /login anonymous = %d, want 401", rw.Code)
+	}
+
+	// The worker and the manifest are no exception: GET/HEAD only.
+	if rw := serve(handler, http.MethodPost, "/sw.js", nil); rw.Code != http.StatusUnauthorized {
+		t.Errorf("POST /sw.js anonymous = %d, want 401", rw.Code)
 	}
 }
 
