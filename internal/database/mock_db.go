@@ -865,6 +865,9 @@ func (m *BaseMockDB) CountBlobsOnStorageBackend(ctx context.Context, backendID s
 func (m *BaseMockDB) ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error) {
 	return false, errNotImpl("ReserveStorageUsage")
 }
+func (m *BaseMockDB) ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
+	return errNotImpl("ChargeStorageUsage")
+}
 func (m *BaseMockDB) ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error) {
 	return nil, errNotImpl("ReconcileStorageUsage")
 }

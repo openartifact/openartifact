@@ -64,7 +64,7 @@ func (o Outcome) PublicError() string {
 // outcome is StatusFailed when all of them failed and StatusPartial when only
 // some did. Failure details are logged here; Outcome carries only what is safe
 // to show clients.
-func Run(ctx context.Context, log *logger.Logger, backends []ScannerBackend, packageName, version, ecosystem string) Outcome {
+func Run(ctx context.Context, log *logger.Logger, backends []ScannerBackend, pkg Package) Outcome {
 	type result struct {
 		vulns []models.Vulnerability
 		err   *ScanError
@@ -82,7 +82,7 @@ func Run(ctx context.Context, log *logger.Logger, backends []ScannerBackend, pac
 				}
 			}()
 
-			vulns, err := backend.Scan(ctx, packageName, version, ecosystem)
+			vulns, err := backend.Scan(ctx, pkg)
 			if err != nil {
 				results[i] = result{err: classify(backend.Name(), err)}
 				return
@@ -104,9 +104,9 @@ func Run(ctx context.Context, log *logger.Logger, backends []ScannerBackend, pac
 				"scanner", res.err.Scanner,
 				"kind", string(res.err.Kind),
 				"error", res.err,
-				"package", packageName,
-				"version", version,
-				"ecosystem", ecosystem,
+				"package", pkg.Name,
+				"version", pkg.Version,
+				"ecosystem", pkg.Ecosystem,
 			)
 
 			out.Failures = append(out.Failures, res.err)

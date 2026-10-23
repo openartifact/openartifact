@@ -87,11 +87,6 @@ func (h *DockerGCHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.runner == nil {
-		writeError(w, http.StatusNotImplemented, "not_implemented", "docker registry garbage collection is not available")
-		return
-	}
-
 	var body dockerGCRequest
 	if err := decodeJSON(r, &body); err != nil && !errors.Is(err, io.EOF) {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
@@ -134,8 +129,6 @@ func (h *DockerGCHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "validation_failed", "repository is not a docker repository")
 		case errors.Is(err, worker.ErrDockerGCBusy):
 			writeError(w, http.StatusConflict, "conflict", "garbage collection is already running for this repository")
-		case errors.Is(err, worker.ErrDockerGCUnsupported):
-			writeError(w, http.StatusNotImplemented, "not_implemented", "docker registry garbage collection is not available")
 		default:
 			h.log.Errorw("docker gc failed", "repository", repo.Name, "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "garbage collection failed")

@@ -222,6 +222,17 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Grype needs the distribution of a deb or rpm; when it is unknown osv
+	// scans instead, and the stored scan names the scanners that really run.
+	pkg, scanners, err := h.scanPlan(ctx, repo, body.ArtifactID,
+		vuln.Package{Name: body.PackageName, Version: body.PackageVersion, Ecosystem: body.Ecosystem}, scanners)
+	if err != nil {
+		h.log.Errorw("scan vuln: db error resolving the package distribution", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
 	// Reserve a background-scan slot before creating any state, so a flood of
 	// requests cannot spawn unbounded goroutines or leave rows stuck "scanning".
 	select {
@@ -266,14 +277,15 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	go func() {
 		defer func() { <-h.scanSem }()
 
-		h.performScan(&job)
+		h.performScan(&job, pkg)
 	}()
 
 	writeJSON(w, http.StatusOK, vulnScanResultToMap(scanResult))
 }
 
-// performScan performs the actual vulnerability scan.
-func (h *VulnHandler) performScan(scanResult *models.VulnScanResult) {
+// performScan performs the actual vulnerability scan of pkg with the scanners
+// the result names.
+func (h *VulnHandler) performScan(scanResult *models.VulnScanResult, pkg vuln.Package) {
 	// Use background context for async operation
 	ctx, cancel := context.WithTimeout(context.Background(), vulnScanTimeout)
 	defer cancel()
@@ -288,7 +300,7 @@ func (h *VulnHandler) performScan(scanResult *models.VulnScanResult) {
 
 	// A scanner that cannot run is a failed scan, never "no vulnerabilities".
 	// Run logs the failure details; only the sanitized text is stored.
-	outcome := vuln.Run(ctx, h.log, backends, scanResult.PackageName, scanResult.PackageVersion, scanResult.Ecosystem)
+	outcome := vuln.Run(ctx, h.log, backends, pkg)
 
 	scanResult.ScanStatus = outcome.Status
 	scanResult.ScanError = outcome.PublicError()

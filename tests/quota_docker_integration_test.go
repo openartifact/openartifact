@@ -119,6 +119,8 @@ func (f *qdFixture) setLimit(e *qrEnv, maxBytes int64) {
 func (f *qdFixture) wantReconciled(e *qrEnv, step string) {
 	f.t.Helper()
 
+	e.wantNoPending(step)
+
 	size, count := e.usage()
 
 	q, err := f.pg.ReconcileStorageUsage(context.Background(), e.repoID)

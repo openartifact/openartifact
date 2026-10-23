@@ -12,6 +12,12 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// gcDB satisfies DockerGCDB; Stop never reaches the GC store.
+type gcDB struct {
+	*database.BaseMockDB
+	database.DockerGCStore
+}
+
 // Stop must be idempotent and must not hang when Start was never called.
 func TestWorkerStopWithoutStartAndTwice(t *testing.T) {
 	log, err := logger.New("error", "json", "stderr")
@@ -23,7 +29,7 @@ func TestWorkerStopWithoutStartAndTwice(t *testing.T) {
 
 	stoppers := map[string]func(){
 		"cleanup":   NewCleanupWorker(db, nil, log).Stop,
-		"dockergc":  NewDockerGCWorker(db, nil, log, time.Hour, time.Hour).Stop,
+		"dockergc":  NewDockerGCWorker(&gcDB{BaseMockDB: db}, nil, log, time.Hour, time.Hour).Stop,
 		"presigned": NewPresignedUploadWorker(db, nil, time.Hour, log).Stop,
 		"dockerup":  NewDockerUploadSweeper(db, t.TempDir(), time.Hour, log).Stop,
 	}

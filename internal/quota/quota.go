@@ -58,6 +58,17 @@ func EnforceN(ctx context.Context, db database.Database, repoID string, size int
 	return nil
 }
 
+// ChargeN adds the usage of count artifacts totalling size bytes whose rows
+// already exist, past any limit and without a reservation to match later: for
+// a row that was created although no reservation was made for it.
+func ChargeN(ctx context.Context, db database.Database, repoID string, size int64, count int) error {
+	if err := db.ChargeStorageUsage(ctx, repoID, max(size, 0), max(count, 0)); err != nil {
+		return fmt.Errorf("charge quota: %w", err)
+	}
+
+	return nil
+}
+
 // Release returns a previous reservation (size bytes and one artifact). It uses
 // a context detached from request cancellation so a client that hung up still
 // gets its reservation back.

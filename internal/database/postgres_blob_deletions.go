@@ -38,10 +38,12 @@ func (p *PostgresDB) deletionGraceSeconds() float64 {
 }
 
 // EnqueueBlobDeletion queues the copies of sha256 named by scope for deletion
-// (see BlobDeletionScope*). The caller holds the per-blob lock and has already
-// removed what made the copies live (the blobs row, or the placement on that
-// tier); the bytes stay until the grace period has passed and no live backup
-// can still need them.
+// (see BlobDeletionScope*). The caller has already removed what made the copies
+// live (the blobs row, or the placement on that tier) and normally holds the
+// per-blob lock; a caller that cannot (a write that raced a placement flip and
+// queues its own stray copy) may enqueue without it, because the sweeper
+// re-checks the placement under the lock before it deletes anything. The bytes
+// stay until the grace period has passed and no live backup can still need them.
 func (p *PostgresDB) EnqueueBlobDeletion(ctx context.Context, sha256, scope string) error {
 	err := p.q.EnqueueBlobDeletion(ctx, dbsqlc.EnqueueBlobDeletionParams{
 		Sha256: sha256, Scope: scope, GraceSeconds: p.deletionGraceSeconds(),

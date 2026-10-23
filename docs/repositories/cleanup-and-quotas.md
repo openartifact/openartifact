@@ -157,7 +157,7 @@ The counters are updated incrementally with `synchronous_commit=off` (see [perfo
 - A restore from a [backup](../operations/backup.md) reconciles when it finishes, because restored packages were not reserved against any quota.
 - An admin can reconcile one repository on demand with `POST /api/v1/repositories/{repo}/quota/reconcile`. The response is the quota, as for `GET`, with the recomputed `current_size_bytes` and `current_artifact_count`. A repository without a quota row gets an unlimited one.
 
-The recount is a single statement over one snapshot of the tables. An upload or delete that is in flight at that moment (reserved but not yet stored, or removed but not yet released) can leave the result off by that one operation until the next reconcile.
+The recount is a single statement over one snapshot of the tables and is exact while uploads and deletes are running. A reservation is recorded in the `quota_pending` table in the same transaction as the counter change, and the insert of the package row consumes it in the row's own transaction (a database trigger); a deleted row leaves an entry the same way until its usage is returned. The reconcile counts the rows **plus** the entries that are still pending, and applies only the difference to the counter, so an upload or delete in flight at that moment, or a reservation made while the recount runs, is neither lost nor counted twice. Entries whose partner never came (a crashed upload) stop counting after an hour (a delete that returned no quota: two minutes), which is the longest an upload can take before a recount treats it as abandoned.
 
 ### API
 

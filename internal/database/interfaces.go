@@ -533,7 +533,13 @@ type Database interface {
 	IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	// ReserveStorageUsage atomically adds usage if it fits the quota; false,nil when exceeded.
+	// A non-zero reservation leaves a pending entry (quota_pending) until the
+	// package row insert or the matching DecrementStorageUsage consumes it, so
+	// a reconcile during the upload stays exact.
 	ReserveStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) (bool, error)
+	// ChargeStorageUsage adds usage for a package row that already exists,
+	// past any limit, leaving no pending entry (see ReserveStorageUsage).
+	ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	// ReconcileStorageUsage recomputes one repository's usage counters from its
 	// package rows (sum of blob sizes, one artifact per row) and returns the
 	// corrected quota.

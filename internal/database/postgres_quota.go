@@ -41,6 +41,31 @@ ON CONFLICT (repository_id) DO UPDATE
  WHERE (q.max_size_bytes = 0 OR q.current_size_bytes + EXCLUDED.current_size_bytes <= q.max_size_bytes)
    AND (q.max_artifact_count = 0 OR q.current_artifact_count + EXCLUDED.current_artifact_count <= q.max_artifact_count)`
 
+// reserveStorageLedgerSQL is reserveStorageSQL plus the quota_pending entry
+// (kind 0) of the reservation, in the same statement: the reconcile counts the
+// entry until the package row or the release consumes it, so a recount while
+// the upload is in flight stays exact. It is for non-zero reservations only;
+// the rows affected are 1 when the reservation fit and 0 when it did not.
+const reserveStorageLedgerSQL = `
+WITH reserved AS (` + reserveStorageSQL + `
+RETURNING 1)
+INSERT INTO quota_pending (repository_id, size_bytes, artifact_count)
+SELECT $3::uuid, $1::bigint, $2::integer FROM reserved`
+
+// takePendingSQL consumes the pending entries of a release (exact match
+// first, then the oldest entries that fit, for batch releases).
+const takePendingSQL = `SELECT quota_pending_take($3::uuid, $1::bigint, $2::integer, true)`
+
+// reserveSQL picks the reservation statement: a reservation of nothing leaves
+// no pending entry.
+func reserveSQL(sizeBytes int64, artifactCount int) string {
+	if sizeBytes == 0 && artifactCount == 0 {
+		return reserveStorageSQL
+	}
+
+	return reserveStorageLedgerSQL
+}
+
 // releaseStorageSQL returns ($1 bytes, $2 artifacts) to the repository ($3),
 // never taking a counter below zero.
 const releaseStorageSQL = `
@@ -140,7 +165,7 @@ func (p *PostgresDB) ReserveStorageUsage(ctx context.Context, repoID string, siz
 	switch {
 	case errors.Is(err, pgx.ErrNoRows):
 		// No project ceiling: the repository statement alone (single round trip).
-		n, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, reserveStorageSQL)
+		n, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, reserveSQL(sizeBytes, artifactCount))
 		if err != nil {
 			return false, fmt.Errorf("failed to reserve storage usage: %w", err)
 		}
@@ -177,7 +202,7 @@ func (p *PostgresDB) reserveTwoLevel(ctx context.Context, projectID, repoID stri
 		return false, nil
 	}
 
-	tag, err = tx.Exec(ctx, reserveStorageSQL, sizeBytes, int64(artifactCount), repoID)
+	tag, err = tx.Exec(ctx, reserveSQL(sizeBytes, artifactCount), sizeBytes, int64(artifactCount), repoID)
 	if err != nil {
 		return false, fmt.Errorf("failed to reserve storage usage: %w", err)
 	}
@@ -193,11 +218,42 @@ func (p *PostgresDB) reserveTwoLevel(ctx context.Context, projectID, repoID stri
 	return true, nil
 }
 
+// chargeStorageSQL and chargeProjectSQL add ($1 bytes, $2 artifacts) to the
+// repository ($3) and its project's ceiling without checking a limit and
+// without a pending entry.
+const (
+	chargeStorageSQL = `
+INSERT INTO storage_quotas AS q (repository_id, current_size_bytes, current_artifact_count)
+VALUES ($3, $1, $2)
+ON CONFLICT (repository_id) DO UPDATE
+   SET current_size_bytes = q.current_size_bytes + EXCLUDED.current_size_bytes,
+       current_artifact_count = q.current_artifact_count + EXCLUDED.current_artifact_count`
+
+	chargeProjectSQL = `
+UPDATE project_quotas
+   SET current_size_bytes = current_size_bytes + $1,
+       current_artifact_count = current_artifact_count + $2
+ WHERE project_id = (SELECT project_id FROM repositories WHERE id = $3)
+   AND (max_size_bytes > 0 OR max_artifact_count > 0)`
+)
+
+// ChargeStorageUsage adds usage whose package row already exists (a row that
+// was created without a reservation), past any limit: the artifact is stored,
+// so refusing it would only desynchronise the counters. Nothing is left
+// pending.
+func (p *PostgresDB) ChargeStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
+	if _, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, chargeProjectSQL, chargeStorageSQL); err != nil {
+		return fmt.Errorf("failed to charge storage usage: %w", err)
+	}
+
+	return nil
+}
+
 // DecrementStorageUsage gives a reservation back (or accounts for a delete), on
 // the repository and on its project's ceiling when that has one. A repository
 // without a quota row has nothing to decrement.
 func (p *PostgresDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
-	if _, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, releaseProjectSQL, releaseStorageSQL); err != nil {
+	if _, err := p.execQuota(ctx, sizeBytes, artifactCount, repoID, releaseProjectSQL, releaseStorageSQL, takePendingSQL); err != nil {
 		return fmt.Errorf("failed to decrement storage usage: %w", err)
 	}
 
@@ -248,29 +304,61 @@ UNION ALL SELECT repository_id, blob_id, 0 FROM docker_blobs`
 // They are assembled from the pieces below so the single-repository variant
 // can add its filter to both the row list and the reset.
 const (
+	// reconcileUsageSQL counts the rows and adds the pending entries that are
+	// still fresh (see migration 061): a reservation whose row is not inserted
+	// yet, or a deleted row whose usage is not returned yet, is part of the
+	// counter and so of the recount. snap is the counter as of the statement's
+	// snapshot; the fix applies only the difference to the counter's current
+	// value, so a reservation committed after the snapshot is never lost.
 	reconcileUsageSQL = `
-WITH usage AS (
+WITH counted AS (
     SELECT r.repository_id,
            COALESCE(SUM(b.size_bytes), 0)::bigint AS size_bytes,
            COALESCE(SUM(r.n), 0)::bigint AS artifacts
       FROM (` + quotaUsageRowsSQL + `) r
       LEFT JOIN blobs b ON b.id = r.blob_id`
 
-	reconcileFixSQL = `
+	reconcilePendingSQL = `
      GROUP BY r.repository_id
+), pending AS (
+    SELECT repository_id,
+           COALESCE(SUM(size_bytes), 0)::bigint AS size_bytes,
+           COALESCE(SUM(artifact_count), 0)::bigint AS artifacts
+      FROM quota_pending
+     WHERE created_at > now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL + `' ELSE interval '` + quotaPendingReleaseTTL + `' END`
+
+	reconcilePendingEndSQL = `
+     GROUP BY repository_id
+), usage AS (
+    SELECT COALESCE(c.repository_id, p.repository_id) AS repository_id,
+           COALESCE(c.size_bytes, 0) + COALESCE(p.size_bytes, 0) AS size_bytes,
+           COALESCE(c.artifacts, 0) + COALESCE(p.artifacts, 0) AS artifacts
+      FROM counted c
+      FULL JOIN pending p ON p.repository_id = c.repository_id
+), snap AS (
+    SELECT repository_id, current_size_bytes AS size_bytes, current_artifact_count AS artifacts
+      FROM storage_quotas`
+
+	reconcileFixSQL = `
 ), fixed AS (
     INSERT INTO storage_quotas AS q (repository_id, current_size_bytes, current_artifact_count)
-    SELECT repository_id, size_bytes, artifacts FROM usage
+    SELECT u.repository_id, u.size_bytes, u.artifacts FROM usage u
+     WHERE EXISTS (SELECT 1 FROM repositories rp WHERE rp.id = u.repository_id)
     ON CONFLICT (repository_id) DO UPDATE
-       SET current_size_bytes = EXCLUDED.current_size_bytes,
-           current_artifact_count = EXCLUDED.current_artifact_count
-     WHERE q.current_size_bytes <> EXCLUDED.current_size_bytes
-        OR q.current_artifact_count <> EXCLUDED.current_artifact_count
+       SET current_size_bytes = GREATEST(0, q.current_size_bytes + EXCLUDED.current_size_bytes
+               - COALESCE((SELECT s.size_bytes FROM snap s WHERE s.repository_id = q.repository_id), 0)),
+           current_artifact_count = GREATEST(0, q.current_artifact_count + EXCLUDED.current_artifact_count
+               - COALESCE((SELECT s.artifacts FROM snap s WHERE s.repository_id = q.repository_id), 0))
+     WHERE COALESCE((SELECT s.size_bytes FROM snap s WHERE s.repository_id = q.repository_id), 0) <> EXCLUDED.current_size_bytes
+        OR COALESCE((SELECT s.artifacts FROM snap s WHERE s.repository_id = q.repository_id), 0) <> EXCLUDED.current_artifact_count
     RETURNING 1
 ), emptied AS (
     UPDATE storage_quotas q
-       SET current_size_bytes = 0, current_artifact_count = 0
-     WHERE (q.current_size_bytes <> 0 OR q.current_artifact_count <> 0)
+       SET current_size_bytes = GREATEST(0, q.current_size_bytes - s.size_bytes),
+           current_artifact_count = GREATEST(0, q.current_artifact_count - s.artifacts)
+      FROM snap s
+     WHERE s.repository_id = q.repository_id
+       AND (s.size_bytes <> 0 OR s.artifacts <> 0)
        AND NOT EXISTS (SELECT 1 FROM usage u WHERE u.repository_id = q.repository_id)`
 
 	reconcileCountSQL = `
@@ -279,13 +367,30 @@ WITH usage AS (
 SELECT (SELECT COUNT(*) FROM fixed) + (SELECT COUNT(*) FROM emptied)`
 
 	// reconcileAllStorageSQL covers every repository.
-	reconcileAllStorageSQL = reconcileUsageSQL + reconcileFixSQL + reconcileCountSQL
+	reconcileAllStorageSQL = reconcileUsageSQL + reconcilePendingSQL + reconcilePendingEndSQL + reconcileFixSQL + reconcileCountSQL
 
 	// reconcileOneStorageSQL covers only the repository passed as $1.
-	reconcileOneStorageSQL = reconcileUsageSQL +
-		` WHERE r.repository_id = $1::uuid` + reconcileFixSQL +
-		` AND q.repository_id = $1::uuid` + reconcileCountSQL
+	reconcileOneStorageSQL = reconcileUsageSQL + ` WHERE r.repository_id = $1::uuid` +
+		reconcilePendingSQL + ` AND repository_id = $1::uuid` + reconcilePendingEndSQL +
+		` WHERE repository_id = $1::uuid` + reconcileFixSQL + `
+       AND q.repository_id = $1::uuid` + reconcileCountSQL
 )
+
+// Pending entries (quota_pending, migration 061) older than these were never
+// matched by their partner (a crashed upload; a delete that returned no
+// quota) and stop counting. A reservation lives as long as an upload can take;
+// a delete returns its quota right after the row is gone.
+const (
+	quotaPendingReserveTTL = "1 hour"
+	quotaPendingReleaseTTL = "2 minutes"
+)
+
+// purgeStalePendingSQL drops the pending entries that expired (or whose
+// repository is gone) so the table does not keep what no partner will consume.
+const purgeStalePendingSQL = `
+DELETE FROM quota_pending
+ WHERE created_at <= now() - CASE kind WHEN 0 THEN interval '` + quotaPendingReserveTTL + `' ELSE interval '` + quotaPendingReleaseTTL + `' END
+    OR NOT EXISTS (SELECT 1 FROM repositories r WHERE r.id = quota_pending.repository_id)`
 
 // reconcileProjectsSQL rewrites the counters of every project with a ceiling
 // from the (already reconciled) repository counters; $1, when not NULL,
@@ -336,11 +441,17 @@ const quotaReconcileLockKey = `hashtext('openartifact-quota-reconcile')::bigint`
 // unlimited, if it did not exist). The counters are maintained incrementally
 // with asynchronous commits, so a crash can leave them off; this is the repair.
 //
-// The recount is one statement over a single snapshot: an upload that has
-// reserved but not yet inserted its row (or a delete that removed the row but
-// not yet released) is not seen consistently, so the result can be off by those
-// in-flight operations until the next reconcile.
+// The recount is one statement over a single snapshot. An upload that has
+// reserved but not yet inserted its row, or a delete that removed the row but
+// not yet released it, is accounted for by its quota_pending entry, and the fix
+// adds only the difference to the counter's current value, so the result is
+// exact at every instant (entries older than quotaPendingReserveTTL and
+// quotaPendingReleaseTTL are abandoned operations and do not count).
 func (p *PostgresDB) ReconcileStorageUsage(ctx context.Context, repoID string) (*models.StorageQuota, error) {
+	if _, err := p.pool.Exec(ctx, purgeStalePendingSQL); err != nil {
+		return nil, fmt.Errorf("failed to purge stale pending quota entries: %w", err)
+	}
+
 	if _, err := p.pool.Exec(ctx, reconcileOneStorageSQL, repoID); err != nil {
 		return nil, fmt.Errorf("failed to reconcile storage usage: %w", err)
 	}
@@ -374,6 +485,10 @@ func (p *PostgresDB) ReconcileAllStorageUsage(ctx context.Context) (int64, error
 
 	if !locked {
 		return 0, nil
+	}
+
+	if _, err := tx.Exec(ctx, purgeStalePendingSQL); err != nil {
+		return 0, fmt.Errorf("failed to purge stale pending quota entries: %w", err)
 	}
 
 	var changed int64

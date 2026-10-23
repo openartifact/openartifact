@@ -10,6 +10,7 @@ import (
 	"errors"
 	"os"
 	"path/filepath"
+	"slices"
 	"strings"
 	"testing"
 
@@ -40,11 +41,126 @@ func TestBuildPURL(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := buildPURL(tt.ecosystem, tt.pkg, tt.version)
+			got, err := buildPURL(Package{Name: tt.pkg, Version: tt.version, Ecosystem: tt.ecosystem})
 			if err != nil || got != tt.want {
 				t.Errorf("buildPURL(%q, %q, %q) = %q, %v; want %q", tt.ecosystem, tt.pkg, tt.version, got, err, tt.want)
 			}
 		})
+	}
+}
+
+// A deb or rpm is a package of one distribution release: the distro qualifier
+// carries it, the namespace names the distribution, and an rpm's epoch is a
+// qualifier of its own (without it grype reports packages as vulnerable that an
+// epoch has already fixed).
+func TestBuildPURL_DebAndRPM(t *testing.T) {
+	tests := []struct {
+		name string
+		pkg  Package
+		want string
+	}{
+		{
+			"debian", Package{Name: "openssl", Version: "3.0.11-1~deb12u2", Ecosystem: "deb", Distro: "debian-12"},
+			"pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12",
+		},
+		{
+			"ubuntu", Package{Name: "openssl", Version: "3.0.2-0ubuntu1.10", Ecosystem: "deb", Distro: "ubuntu-22.04"},
+			"pkg:deb/ubuntu/openssl@3.0.2-0ubuntu1.10?distro=ubuntu-22.04",
+		},
+		{
+			"ecosystem is case-insensitive", Package{Name: "openssl", Version: "1", Ecosystem: "DEB", Distro: "debian-12"},
+			"pkg:deb/debian/openssl@1?distro=debian-12",
+		},
+		{
+			"deb epoch stays in the version", Package{Name: "vim", Version: "2:9.0.1378-2", Ecosystem: "deb", Distro: "debian-12"},
+			"pkg:deb/debian/vim@2%3A9.0.1378-2?distro=debian-12",
+		},
+		{
+			"deb name with plus signs", Package{Name: "libstdc++6", Version: "12.2.0-14", Ecosystem: "deb", Distro: "debian-12"},
+			"pkg:deb/debian/libstdc%2B%2B6@12.2.0-14?distro=debian-12",
+		},
+		{
+			"rhel is the redhat namespace", Package{Name: "openssl", Version: "3.0.7-24.el9", Ecosystem: "rpm", Distro: "rhel-9"},
+			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9",
+		},
+		{
+			"rpm epoch field", Package{Name: "openssl", Version: "3.0.7-24.el9", Epoch: 1, Ecosystem: "rpm", Distro: "rhel-9"},
+			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1",
+		},
+		{
+			"rpm epoch prefix of the version", Package{Name: "openssl", Version: "1:3.0.7-24.el9", Ecosystem: "rpm", Distro: "rhel-9"},
+			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1",
+		},
+		{
+			"epoch field wins over the prefix", Package{Name: "openssl", Version: "1:3.0.7-24.el9", Epoch: 2, Ecosystem: "rpm", Distro: "rhel-9"},
+			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=2",
+		},
+		{
+			"release is appended to a bare version", Package{Name: "openssl", Version: "3.0.7", Release: "24.el9_2", Epoch: 1, Ecosystem: "rpm", Distro: "rhel-9"},
+			"pkg:rpm/redhat/openssl@3.0.7-24.el9_2?distro=rhel-9&epoch=1",
+		},
+		{
+			"release is not appended twice", Package{Name: "openssl", Version: "3.0.7-24.el9", Release: "24.el9", Ecosystem: "rpm", Distro: "rhel-9"},
+			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9",
+		},
+		{
+			"fedora", Package{Name: "curl", Version: "8.2.1-3.fc39", Ecosystem: "rpm", Distro: "fedora-39"},
+			"pkg:rpm/fedora/curl@8.2.1-3.fc39?distro=fedora-39",
+		},
+		{
+			"amazon linux", Package{Name: "curl", Version: "8.3.0-1.amzn2023.0.4", Ecosystem: "rpm", Distro: "amzn-2023"},
+			"pkg:rpm/amzn/curl@8.3.0-1.amzn2023.0.4?distro=amzn-2023",
+		},
+		{
+			"minor release of the distribution", Package{Name: "openssl", Version: "1-1.el9", Ecosystem: "rpm", Distro: "rhel-9.2"},
+			"pkg:rpm/redhat/openssl@1-1.el9?distro=rhel-9.2",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildPURL(tt.pkg)
+			if err != nil || got != tt.want {
+				t.Errorf("buildPURL(%+v) = %q, %v; want %q", tt.pkg, got, err, tt.want)
+			}
+		})
+	}
+}
+
+// A deb or rpm without a usable distro is refused, never turned into a
+// Package URL grype answers with "no match" (which would read as clean).
+func TestBuildPURL_DebAndRPMNeedADistro(t *testing.T) {
+	for _, tt := range []struct{ name, ecosystem, distro string }{
+		{"deb without a distro", "deb", ""},
+		{"rpm without a distro", "rpm", ""},
+		{"codename without a version", "deb", "bookworm"},
+		{"distro without an id", "deb", "12"},
+		{"upper case", "deb", "Debian-12"},
+		{"qualifier injection", "deb", "debian-12&epoch=9"},
+		{"path injection", "deb", "debian/../x-12"},
+		{"trailing dot", "deb", "debian-12."},
+		{"space", "rpm", "rhel 9"},
+		{"newline", "rpm", "rhel-9\n"},
+		{"too long", "rpm", strings.Repeat("a", 70) + "-9"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			got, err := buildPURL(Package{Name: "openssl", Version: "1.0", Ecosystem: tt.ecosystem, Distro: tt.distro})
+			if !errors.Is(err, errDistroRequired) || got != "" {
+				t.Errorf("buildPURL = %q, %v; want %v", got, err, errDistroRequired)
+			}
+		})
+	}
+}
+
+// Reports have no distribution to name, so deb and rpm stay generic there.
+func TestPackageURL_DebAndRPMStayGeneric(t *testing.T) {
+	for ecosystem, want := range map[string]string{
+		"deb": "pkg:generic/openssl@1.0?ecosystem=deb",
+		"rpm": "pkg:generic/openssl@1.0?ecosystem=rpm",
+	} {
+		if got := PackageURL(ecosystem, "openssl", "1.0"); got != want {
+			t.Errorf("PackageURL(%q) = %q, want %q", ecosystem, got, want)
+		}
 	}
 }
 
@@ -54,15 +170,13 @@ func TestBuildPURL_Refusals(t *testing.T) {
 		want                          error
 	}{
 		{"docker is not a grype ecosystem", "docker", "nginx", "1", errUnsupportedEcosystem},
-		{"deb needs a distribution", "deb", "openssl", "1.1.0", errUnsupportedEcosystem},
-		{"rpm needs a distribution", "rpm", "openssl", "1.0.1", errUnsupportedEcosystem},
 		{"scope without a name", "npm", "@scope/", "1", errNoPURL},
 		{"maven without an artifact", "maven", "group:", "1", errNoPURL},
 		{"go namespace with an empty segment", "go", "github.com//x", "v1", errNoPURL},
 		{"empty version", "cargo", "regex", "", errNoPURL},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			if got, err := buildPURL(tt.ecosystem, tt.pkg, tt.version); !errors.Is(err, tt.want) || got != "" {
+			if got, err := buildPURL(Package{Name: tt.pkg, Version: tt.version, Ecosystem: tt.ecosystem}); !errors.Is(err, tt.want) || got != "" {
 				t.Errorf("buildPURL = %q, %v; want error %v", got, err, tt.want)
 			}
 		})
@@ -74,7 +188,7 @@ func TestBuildPURL_Refusals(t *testing.T) {
 // holds nothing but unreserved characters, "%XX", "/", ":" and "@".
 func TestBuildPURL_NeverCarriesRawSpecialCharacters(t *testing.T) {
 	for _, in := range []string{"a b", "a?x=1", "a#f", "a\nb", "--config=/etc/x", "a%41", "é", "a;b", "a`b"} {
-		got, err := buildPURL("npm", in, "1.0.0")
+		got, err := buildPURL(Package{Name: in, Version: "1.0.0", Ecosystem: "npm"})
 		if err != nil {
 			t.Fatalf("%q: %v", in, err)
 		}
@@ -95,7 +209,7 @@ echo '{"matches":[]}'`)
 
 	backend := testRegistry(t, log).Backend("grype")
 
-	if _, err := backend.Scan(context.Background(), "@angular/core", "8.0.0", "npm"); err != nil {
+	if _, err := backend.Scan(context.Background(), Package{Name: "@angular/core", Version: "8.0.0", Ecosystem: "npm"}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -126,17 +240,20 @@ func TestGrypeScan_RefusesWithoutRunningTheBinary(t *testing.T) {
 	backend := testRegistry(t, log).Backend("grype")
 
 	for _, tt := range []struct {
-		name, ecosystem, pkg string
-		want                 FailureKind
+		name string
+		pkg  Package
+		want FailureKind
 	}{
-		{"deb", "deb", "openssl", FailureUnsupported},
-		{"rpm", "rpm", "openssl", FailureUnsupported},
-		{"docker", "docker", "nginx", FailureUnsupported},
-		{"name with a space", "npm", "a b", FailureInternal},
-		{"name with a quote", "npm", `a"b`, FailureInternal},
+		{"deb without a distro", Package{Name: "openssl", Version: "1.0.0", Ecosystem: "deb"}, FailureUnsupported},
+		{"rpm without a distro", Package{Name: "openssl", Version: "1.0.0", Ecosystem: "rpm"}, FailureUnsupported},
+		{"deb with a codename instead of a distro", Package{Name: "openssl", Version: "1.0.0", Ecosystem: "deb", Distro: "bookworm"}, FailureUnsupported},
+		{"docker", leftPad("docker"), FailureUnsupported},
+		{"name with a space", Package{Name: "a b", Version: "1.0.0", Ecosystem: "npm"}, FailureInternal},
+		{"name with a quote", Package{Name: `a"b`, Version: "1.0.0", Ecosystem: "npm"}, FailureInternal},
+		{"release with a space", Package{Name: "openssl", Version: "1.0.0", Release: "1 el9", Ecosystem: "rpm", Distro: "rhel-9"}, FailureInternal},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := backend.Scan(context.Background(), tt.pkg, "1.0.0", tt.ecosystem)
+			_, err := backend.Scan(context.Background(), tt.pkg)
 			if se := asScanError(t, err); se.Kind != tt.want {
 				t.Errorf("kind = %q, want %q", se.Kind, tt.want)
 			}
@@ -145,6 +262,51 @@ func TestGrypeScan_RefusesWithoutRunningTheBinary(t *testing.T) {
 
 	if _, err := os.Stat(ran); err == nil {
 		t.Error("grype was run for a package it cannot scan")
+	}
+}
+
+// A deb or rpm with its distribution release is scanned: grype gets the Package
+// URL with the distro qualifier (and an rpm's epoch), which is what makes it
+// match against the advisories of that release.
+func TestGrypeScan_DebAndRPMGetTheirDistro(t *testing.T) {
+	log, _ := logger.New("error", "json", "stderr")
+
+	tests := []struct {
+		name string
+		pkg  Package
+		want string
+	}{
+		{
+			"debian", Package{Name: "openssl", Version: "3.0.11-1~deb12u2", Ecosystem: "deb", Distro: "debian-12"},
+			"pkg:deb/debian/openssl@3.0.11-1~deb12u2?distro=debian-12",
+		},
+		{
+			"rhel with epoch and release", Package{Name: "openssl", Version: "3.0.7", Release: "24.el9", Epoch: 1, Ecosystem: "rpm", Distro: "rhel-9"},
+			"pkg:rpm/redhat/openssl@3.0.7-24.el9?distro=rhel-9&epoch=1",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			argsFile := filepath.Join(t.TempDir(), "args")
+
+			installFakeScanner(t, "grype", `printf '%s\n' "$@" > `+argsFile+`
+echo '{"matches":[{"vulnerability":{"id":"CVE-2024-0001","severity":"High"}}]}'`)
+
+			out := Run(context.Background(), log, []ScannerBackend{testRegistry(t, log).Backend("grype")}, tt.pkg)
+			if out.Status != StatusCompleted || !slices.Equal(vulnIDs(out.Vulnerabilities), []string{"CVE-2024-0001"}) {
+				t.Fatalf("status=%q (%s) vulns=%v", out.Status, out.PublicError(), vulnIDs(out.Vulnerabilities))
+			}
+
+			raw, err := os.ReadFile(argsFile)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if args := strings.Fields(string(raw)); len(args) < 1 || args[0] != tt.want {
+				t.Errorf("grype was run with %v, want the target %q", args, tt.want)
+			}
+		})
 	}
 }
 

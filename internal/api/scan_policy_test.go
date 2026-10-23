@@ -176,7 +176,7 @@ type stubScanner struct {
 
 func (s stubScanner) Name() string { return s.name }
 
-func (s stubScanner) Scan(context.Context, string, string, string) ([]models.Vulnerability, error) {
+func (s stubScanner) Scan(context.Context, vuln.Package) ([]models.Vulnerability, error) {
 	return s.vulns, s.err
 }
 

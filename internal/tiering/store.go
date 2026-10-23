@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"strconv"
 	"strings"
 	"sync"
@@ -30,12 +31,21 @@ const (
 	// registryRetryInterval rate-limits on-demand registry reloads triggered by
 	// a placement on a tier this replica does not know yet.
 	registryRetryInterval = 5 * time.Second
+	// settleTimeout bounds the placement re-check after a write. It runs on a
+	// context detached from the caller's: an upload abandoned by its client
+	// right after the bytes landed must still have a stray copy queued.
+	settleTimeout = 30 * time.Second
 )
 
-// placementDB is the read side the tiered store needs.
+// placementDB is the database side the tiered store needs: placement reads, and
+// the deferred-deletion queue a write that raced a placement flip uses to retire
+// its copy (see Store.settleWrite).
 type placementDB interface {
 	GetBlobPlacement(ctx context.Context, sha256 string) (backendID string, size int64, found bool, err error)
 	WithBlobLock(ctx context.Context, sha256 string, fn func(ctx context.Context) error) error
+	// EnqueueBlobDeletion queues the copy on backendID ("" = primary store) of
+	// sha256 for deferred deletion.
+	EnqueueBlobDeletion(ctx context.Context, sha256, backendID string) error
 }
 
 // Store is a storage.BlobStore over every tier. Reads resolve the tier holding
@@ -380,10 +390,15 @@ func (s *Store) requireExists(ctx context.Context, st storage.BlobStore, sha str
 // Put implements storage.BlobStore. A blob that already has a row is written
 // to the tier it is placed on (an existing copy is left untouched by every
 // backend), so a re-upload never creates a second copy; anything else lands on
-// the primary tier. Uploaders hold the per-blob lock around Put, which the
-// mover's flip also takes, so the placement read here cannot change under them;
-// an upload that does not take the lock can leave a stray copy behind a flip,
-// which is harmless (reads find it, Delete removes it) and only costs space.
+// the primary tier.
+//
+// The placement is read before the write, and a write can be slow, so a move of
+// the same blob may flip the placement in between (the per-blob lock the
+// uploaders hold serializes the flip against them, but not every caller holds
+// it). settleWrite therefore re-reads the placement once the bytes are in
+// place and queues the copy this call wrote for deferred deletion when it no
+// longer is the placement: no write, locked or not, leaves a copy behind a flip
+// that nothing is going to remove.
 func (s *Store) Put(ctx context.Context, data io.Reader, metadata map[string]string) (string, error) {
 	snap := s.reg.Snapshot()
 	primary := snap.Primary()
@@ -392,21 +407,85 @@ func (s *Store) Put(ctx context.Context, data io.Reader, metadata map[string]str
 		return primary.Store.Put(ctx, data, metadata)
 	}
 
-	target := primary
+	target, err := s.placedTier(ctx, snap, metadata["sha256"])
+	if err != nil {
+		return "", err
+	}
 
-	if sha := metadata["sha256"]; storage.ValidateBlobID(sha) == nil {
+	id, err := target.Store.Put(ctx, data, metadata)
+	if err != nil {
+		return "", err //nolint:wrapcheck // backend errors (digest mismatch, ...) are matched by callers
+	}
+
+	if err := s.settleWrite(ctx, id, target); err != nil {
+		return "", err
+	}
+
+	return id, nil
+}
+
+// placedTier is the tier a write of sha belongs on: the tier the blob is placed
+// on when it has a row there, the primary tier otherwise (a new blob, an
+// unknown sha, or a placement that could not be read: settleWrite re-checks it
+// after the write).
+func (s *Store) placedTier(ctx context.Context, snap *Snapshot, sha string) (*Tier, error) {
+	if storage.ValidateBlobID(sha) == nil {
 		if backend, _, found, err := s.db.GetBlobPlacement(ctx, sha); err == nil && found && backend != "" {
 			t, _ := s.resolveTier(ctx, snap, backend)
 
 			if t == nil || t.Store == nil {
-				return "", fmt.Errorf("%w: blob %s is placed on a tier this server cannot open", ErrTierUnavailable, sha)
+				return nil, fmt.Errorf("%w: blob %s is placed on a tier this server cannot open", ErrTierUnavailable, sha)
 			}
 
-			target = t
+			return t, nil
 		}
 	}
 
-	return target.Store.Put(ctx, data, metadata) //nolint:wrapcheck // backend errors (digest mismatch, ...) are matched by callers
+	return snap.Primary(), nil
+}
+
+// settleWrite closes the window between reading a blob's placement and writing
+// its bytes. Called after a write of sha to the tier `written` succeeded, it
+// re-reads the placement: when the blob has a row that now points somewhere
+// else (a move flipped it meanwhile) the copy just written is a stray, and it
+// is queued for deferred deletion on `written`'s backend, the same queue the
+// mover uses for the source copy of a move. The sweeper re-checks the placement
+// under the per-blob lock before it deletes anything, so queuing needs no lock
+// here (the caller may already hold it) and a placement that points back at the
+// tier keeps its bytes.
+//
+// A blob without a row is a new upload: the row will be created with the
+// primary placement, so nothing is stray. An error is returned when the
+// placement cannot be verified or the copy cannot be queued, so the caller
+// fails the upload instead of leaving an unaccounted copy.
+func (s *Store) settleWrite(ctx context.Context, sha string, written *Tier) error {
+	if storage.ValidateBlobID(sha) != nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), settleTimeout)
+	defer cancel()
+
+	placed, _, found, err := s.db.GetBlobPlacement(ctx, sha)
+	if err != nil {
+		return fmt.Errorf("verify placement of blob %s after write: %w", sha, err)
+	}
+
+	if !found || placed == written.BackendID {
+		return nil
+	}
+
+	s.forget(sha)
+
+	if err := s.db.EnqueueBlobDeletion(ctx, sha, written.BackendID); err != nil {
+		return fmt.Errorf("queue stray copy of blob %s on tier %s for deletion: %w", sha, written.Name, err)
+	}
+
+	if s.log != nil {
+		s.log.Infow("a write raced a tier move; its copy is queued for deletion", "blob", sha, "tier", written.Name)
+	}
+
+	return nil
 }
 
 // Delete implements storage.BlobStore: every tier's copy is removed. A failure
@@ -578,17 +657,72 @@ func (s *Store) OpenStaging(ctx context.Context, id, version string) (io.ReadClo
 	return st.OpenStaging(ctx, id, version)
 }
 
-// PromoteStaging implements storage.StagingStore. The verified object lands on
-// the primary tier. A blob that was already placed on another tier keeps its
-// placement; the extra primary copy is a stray that reads tolerate and Delete
-// removes (see docs/operations/storage-tiering.md).
+// PromoteStaging implements storage.StagingStore. The verified object becomes
+// the blob on the tier the blob belongs on, like Put: the primary tier for a new
+// blob, the tier it is placed on otherwise. Staging lives on the primary store,
+// so a blob placed on a cold tier is not copied back onto the primary store: a
+// cold tier that already holds it needs nothing (content addressing makes the
+// bytes identical), one that lost it gets the staged bytes streamed in, still
+// conditional on the verified version. Like Put, the promotion re-checks the
+// placement afterwards (settleWrite), so a move that flipped the blob while the
+// object was being promoted cannot leave a primary copy nothing removes.
 func (s *Store) PromoteStaging(ctx context.Context, id, sha, version string, metadata map[string]string) error {
 	st, ok := s.primaryStaging()
 	if !ok {
 		return storage.ErrPresignNotSupported
 	}
 
-	return st.PromoteStaging(ctx, id, sha, version, metadata)
+	snap := s.reg.Snapshot()
+
+	if !snap.HasCold() {
+		return st.PromoteStaging(ctx, id, sha, version, metadata)
+	}
+
+	target, err := s.placedTier(ctx, snap, sha)
+	if err != nil {
+		return err
+	}
+
+	if target.Primary() {
+		err = st.PromoteStaging(ctx, id, sha, version, metadata)
+	} else {
+		err = promoteToTier(ctx, st, target, id, sha, version, metadata)
+	}
+
+	if err != nil {
+		return err
+	}
+
+	return s.settleWrite(ctx, sha, target)
+}
+
+// promoteToTier makes the verified staging object the blob sha on a cold tier.
+func promoteToTier(ctx context.Context, st storage.StagingStore, target *Tier, id, sha, version string, metadata map[string]string) error {
+	if ok, err := target.Store.Exists(ctx, sha); err != nil {
+		return fmt.Errorf("check blob on tier %s: %w", target.Name, err)
+	} else if ok {
+		return nil
+	}
+
+	rc, err := st.OpenStaging(ctx, id, version)
+	if err != nil {
+		return err //nolint:wrapcheck // ErrStagingNotFound and ErrStagingChanged are matched by callers
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	md := maps.Clone(metadata)
+	if md == nil {
+		md = map[string]string{}
+	}
+
+	md["sha256"] = sha
+
+	if _, err := target.Store.Put(ctx, rc, md); err != nil {
+		return fmt.Errorf("promote staging object to tier %s: %w", target.Name, err)
+	}
+
+	return nil
 }
 
 // DeleteStaging implements storage.StagingStore.

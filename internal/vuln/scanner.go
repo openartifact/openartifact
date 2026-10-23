@@ -23,9 +23,24 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// Package is what a scan looks up: one package of one ecosystem.
+type Package struct {
+	Name      string
+	Version   string
+	Ecosystem string
+	// Distro is the distribution release a deb or rpm package belongs to, as
+	// "<id>-<version>" ("debian-12", "ubuntu-22.04", "rhel-9"); empty when it is
+	// unknown or the ecosystem has no distributions. Only grype reads it.
+	Distro string
+	// Release and Epoch complete an rpm's Version when the repository stores
+	// them separately; zero values add nothing. Only grype reads them.
+	Release string
+	Epoch   int
+}
+
 // ScannerBackend is the interface for vulnerability scanning backends.
 type ScannerBackend interface {
-	Scan(ctx context.Context, packageName, version, ecosystem string) ([]models.Vulnerability, error)
+	Scan(ctx context.Context, pkg Package) ([]models.Vulnerability, error)
 	Name() string
 }
 
@@ -91,11 +106,13 @@ type osvVulnerability struct {
 }
 
 // Scan queries OSV API for vulnerabilities in a package.
-func (s *OSVScanner) Scan(ctx context.Context, packageName, version, ecosystem string) ([]models.Vulnerability, error) {
+func (s *OSVScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerability, error) {
+	packageName, version := pkg.Name, pkg.Version
+
 	// Map ecosystem to OSV format
-	osvEcosystem := mapEcosystem(ecosystem)
+	osvEcosystem := mapEcosystem(pkg.Ecosystem)
 	if osvEcosystem == "" {
-		return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, ecosystem))
+		return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, pkg.Ecosystem))
 	}
 
 	// Build request
@@ -208,7 +225,9 @@ type trivyCVSS struct {
 }
 
 // Scan runs trivy on a temporary manifest file.
-func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem string) ([]models.Vulnerability, error) {
+func (s *TrivyScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerability, error) {
+	packageName, version, ecosystem := pkg.Name, pkg.Version, pkg.Ecosystem
+
 	// Create temp directory with a manifest file
 	tmpDir, err := os.MkdirTemp("", "trivy-scan-*")
 	if err != nil {
@@ -465,18 +484,21 @@ type grypeArtifact struct {
 }
 
 // Scan runs grype on the given package.
-func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem string) ([]models.Vulnerability, error) {
-	if !validPackageToken(packageName) || !validPackageToken(version) {
+func (s *GrypeScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerability, error) {
+	packageName, version, ecosystem := pkg.Name, pkg.Version, pkg.Ecosystem
+
+	if !validPackageToken(packageName) || !validPackageToken(version) || (pkg.Release != "" && !validPackageToken(pkg.Release)) {
 		return nil, newScanError(s.Name(), FailureInternal, errInvalidPackage)
 	}
 
-	// grype takes the package as a Package URL (pkg:pypi/django@3.0). Debian
-	// and RPM packages are not scannable: a name and a version do not say which
-	// distribution they belong to, and grype then reports no match at all.
-	pkgRef, err := buildPURL(ecosystem, packageName, version)
+	// grype takes the package as a Package URL (pkg:pypi/django@3.0). A deb or
+	// rpm only means something inside a distribution release (the distro
+	// qualifier): without one grype reports no match at all, which would read
+	// as a clean package, so such a package is refused instead.
+	pkgRef, err := buildPURL(pkg)
 	if err != nil {
-		if errors.Is(err, errUnsupportedEcosystem) {
-			return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, ecosystem))
+		if errors.Is(err, errUnsupportedEcosystem) || errors.Is(err, errDistroRequired) {
+			return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", err, ecosystem))
 		}
 
 		return nil, newScanError(s.Name(), FailureInternal, err)

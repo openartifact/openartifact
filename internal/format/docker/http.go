@@ -291,7 +291,7 @@ func (h *HTTPHandler) settleQuota(ctx context.Context, repoID string, size int64
 	case reserved && !inserted:
 		h.releaseQuota(ctx, repoID, size, count)
 	case !reserved && inserted:
-		if err := quota.EnforceN(ctx, h.db, repoID, size, count); err != nil {
+		if err := quota.ChargeN(ctx, h.db, repoID, size, count); err != nil {
 			h.log.Warnw("quota not charged for a re-created row; reconcile will repair it", "repository_id", repoID, "error", err)
 		}
 	}

@@ -59,7 +59,7 @@ Each move owns one row in `storage_tier_moves`, keyed by the blob's sha256, so a
 | 2 `copied` | The source bytes are streamed to the target backend through the throttle, hashing on the way. A hash mismatch (corrupt source) deletes the target object and fails the move. If the target already holds an object of the right size (a resumed move) the copy is skipped. | unchanged |
 | 3 `verified` | The target object must exist with the recorded size, and, with `tiering.verifyReadback` (default on), is read back and its sha256 compared to the blob id. A bad copy is deleted so a retry writes it afresh. | unchanged |
 | 4 `flipped` | One database transaction, taken under the same per-blob advisory lock uploaders and deleters use: re-check that the target copy still exists with the right size, `UPDATE blobs SET storage_backend_id = target, tier_changed_at = now()` only if the placement still equals the move's source, and set the journal row to `flipped`. | **target** |
-| 5 `cleaned` | Under the blob lock, if the placement is still the target, **queue** the source copy for [deferred removal](#deferred-removal-of-the-old-copy). If the placement moved on or the blob is gone, leave the source alone. | target |
+| 5 `cleaned` | Under the blob lock, if the placement is still the target, **queue** the source copy for [deferred removal](#deferred-removal-of-the-old-copy), and likewise any copy found on a tier that is neither the source nor the target ([stray copies](#writes-that-race-a-move)). If the placement moved on or the blob is gone, leave the source alone. | target |
 | finish | The journal row is deleted. | target |
 
 The flip is the only operation that changes where a blob lives. Everything before it only adds an unreferenced copy; everything after it only removes a superseded copy.
@@ -92,6 +92,16 @@ A journal row is retried by every pass while it has attempts left (`5` back to b
 - One mover pass runs cluster-wide: the worker takes a session advisory lock (`openartifact:tier-mover`) on a pinned database connection, so a second replica's pass is skipped, not queued.
 - Within a pass, `tiering.concurrency` blobs move at once. Two moves of the same blob are impossible: the journal's primary key makes the second claim return the first row.
 - The flip, the old-copy removal and `SafeDeleteBlob` all hold the per-blob advisory lock, so a delete either completes before the flip (the flip reports the blob gone) or after (the delete queues every tier's copy for removal).
+
+### Writes that race a move
+
+Every writer takes the per-blob lock around "store the bytes, insert the row" except a few that cannot: the proxy cache's first write (it stores the object before it takes the lock, then re-checks under it), the generated deb and rpm metadata, and a backup restore. A write reads the blob's placement and then streams its bytes, so a move can flip the blob in between, and the bytes land on the tier the blob just left. The guarantee therefore does not depend on who holds the lock; the tiered store enforces it for every write that goes through it:
+
+- **Write, then verify.** After every `Put`, and after promoting a [presigned upload](storage.md#presigned-uploads), the store re-reads the placement. When the blob has a row and the row now points at another tier than the one written, the copy just written is queued in `blob_deletions` on that tier's backend (scope = the tier written, `primary` for the primary store), the same queue step 5 uses. Queuing needs no lock: the sweeper re-checks the placement under the blob lock before it deletes a copy, and keeps the bytes when the placement points at that tier again. A blob without a row is a new upload; its row is created on the primary store, so nothing is stray. If the placement cannot be re-read or the copy cannot be queued, the write fails with an error instead of leaving a copy nothing accounts for.
+- **Presigned uploads follow the placement.** Staging lives on the primary store, but completing an upload of a blob placed on a cold tier never copies the bytes back onto the primary store: a tier that already holds the blob needs nothing (content addressing makes the bytes identical), and one that lost its copy gets the staged bytes streamed in, still conditional on the verified staging version.
+- **A move cleans up behind itself.** Step 5 queues, under the blob lock, a copy on every tier other than the target and the source, which retires strays left by earlier versions. A tier that cannot be reached at that moment is skipped with a warning (one unreachable tier must not stall moves that do not involve it).
+
+So a copy that is not the blob's placement is always either being moved (journaled) or queued for deletion, and once the [sweeper](storage.md#deferred-blob-deletion) has run after `blobDeletion.grace` the blob's bytes are on its placement tier only. A queued stray is never read (the placement points elsewhere) and deleting the blob removes it. One narrow case is outside the guarantee: a replica that has not loaded the first cold tier yet (replicas pick up tier changes within `tiering.refreshInterval`, 30 seconds by default) stores straight to the primary store without the check.
 
 ## Policies
 
@@ -152,7 +162,7 @@ A pass is bounded to two hours and honors shutdown: an interrupted pass leaves j
 
 All blob access goes through a tiered store that wraps the primary store. A read first tries the tier where the blob is believed to be (a one-minute in-memory cache of recent placements, otherwise the primary store). When that tier reports the object missing, the store asks the database for the placement and reads from there, and finally tries the remaining tiers. Only "not found" moves on to the next tier; any other error (a database failure while looking up the placement, a tier that this server cannot open, a backend error) is returned instead of being reported as a missing blob, so a broken cold tier answers `500`/`503`, never `404`. `Exists` follows the same rule. A flip that happens while a download starts is therefore invisible. The source copy is deleted only after the placement flips; a download that opened the source just before cleanup keeps reading on a filesystem tier (the open file survives the unlink), and on an object-store tier a download that loses that race fails like any interrupted transfer and succeeds on retry.
 
-Uploads always write to the primary store. Deleting a blob removes its row at once and queues the bytes of every tier that has a copy for [deferred removal](#deferred-removal-of-the-old-copy); when the blob's placement points at a tier this server cannot resolve, the delete fails and keeps the row rather than orphaning the bytes. Listing and existence checks look at all tiers.
+A new blob is written to the primary store; a re-upload of a blob that has a row is written to the tier the row places it on, so it never creates a second copy (see [writes that race a move](#writes-that-race-a-move)). Deleting a blob removes its row at once and queues the bytes of every tier that has a copy for [deferred removal](#deferred-removal-of-the-old-copy); when the blob's placement points at a tier this server cannot resolve, the delete fails and keeps the row rather than orphaning the bytes. Listing and existence checks look at all tiers.
 
 ### Promote-on-read
 
@@ -262,7 +272,6 @@ The only copy still deleted at once is a target copy the mover itself wrote and 
 
 ## Limitations
 
-- **Unlocked writers can leave a stray copy.** The uploaders that bypass the per-blob lock (and S3 staging promotion) always write to the primary store. If such a write races a move of the same blob, a copy can remain on the primary store after the blob moved to a cold tier. It is never read (the placement points at the cold tier), it is bytes-identical by content addressing, and deleting the blob removes it. It only costs space.
 - **Any-reference matching.** A deduplicated blob matches a repository, format or path condition if any of its references does.
 - **Stats are computed live** (`GROUP BY storage_backend_id`) when you open the tier list; on very large installations that is a scan of the blobs table.
 - **Access tracking is for native protocol downloads only**, at one-hour resolution; blobs read only through the admin API or by presigned URL are not counted as accessed. Presigned and redirect downloads that go straight to a cold backend work only when that backend supports presigning; otherwise the server streams the object.

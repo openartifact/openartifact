@@ -272,7 +272,12 @@ func TestReconcileStorageUsage_RepairsProjectDrift(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	// No package rows exist, so the repository recount is 0 and the project follows.
+	// No package rows exist and the reservation is abandoned (older than any
+	// upload can take), so the repository recount is 0 and the project follows.
+	if _, err := pg.GetDB().ExecContext(ctx, `UPDATE quota_pending SET created_at = now() - interval '2 hours' WHERE repository_id = $1`, repo); err != nil {
+		t.Fatal(err)
+	}
+
 	if _, err := pg.ReconcileStorageUsage(ctx, repo); err != nil {
 		t.Fatalf("ReconcileStorageUsage: %v", err)
 	}

@@ -264,10 +264,29 @@ func qpfFormats() []qpfFormat {
 	}
 }
 
+// wantNoPending asserts that every reservation and delete of the repository was
+// matched by its package row or release: nothing is left in quota_pending
+// for a recount to count on top of the rows.
+func (e *qrEnv) wantNoPending(step string) {
+	e.t.Helper()
+
+	var n int
+	if err := e.pg.GetDB().QueryRowContext(context.Background(),
+		`SELECT COUNT(*) FROM quota_pending WHERE repository_id = $1`, e.repoID).Scan(&n); err != nil {
+		e.t.Fatalf("%s: count pending quota entries: %v", step, err)
+	}
+
+	if n != 0 {
+		e.t.Fatalf("%s: %d pending quota entries left, want 0 (a reservation or delete that no row or release consumed)", step, n)
+	}
+}
+
 // wantReconciled recomputes the counters from the package tables and asserts
-// they equal the incrementally maintained ones.
+// they equal the incrementally maintained ones, with nothing left pending.
 func (e *qrEnv) wantReconciled(step string) {
 	e.t.Helper()
+
+	e.wantNoPending(step)
 
 	size, count := e.usage()
 

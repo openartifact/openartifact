@@ -33,8 +33,9 @@ type DB interface {
 	// uploaders take.
 	WithBlobLock(ctx context.Context, sha256 string, fn func(ctx context.Context) error) error
 	// EnqueueBlobDeletion queues the copy on backendID ("" = primary store) of
-	// sha256 for deferred deletion (see database.BlobDeletion). Callers hold the
-	// per-blob lock.
+	// sha256 for deferred deletion (see database.BlobDeletion). The mover holds
+	// the per-blob lock; Store.settleWrite does not, which is safe because the
+	// sweeper re-checks the placement under the lock before it deletes a copy.
 	EnqueueBlobDeletion(ctx context.Context, sha256, backendID string) error
 	FlipBlobPlacement(ctx context.Context, sha256, from, to string, verify func(ctx context.Context) error) (models.FlipOutcome, error)
 	TouchBlobAccess(ctx context.Context, accessed map[string]time.Time, resolution time.Duration) (int64, error)

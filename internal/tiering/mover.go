@@ -421,7 +421,9 @@ func (m *Mover) abandon(ctx context.Context, row *models.StorageTierMove, dst *T
 // deleted) is never stripped of its authoritative copy. While the blob still
 // exists it also re-confirms the target copy under the lock, so the source is
 // never retired unless the bytes it would leave behind are really there (a
-// target that vanished, or turns out to be the source itself).
+// target that vanished, or turns out to be the source itself). Copies on any
+// third tier are queued too (queueStrayCopies), so once a move finishes the
+// blob is live on exactly one tier.
 func (m *Mover) removeOldCopy(ctx context.Context, row *models.StorageTierMove) error {
 	_, dst, err := m.tiers(row.FromBackendID, row.ToBackendID)
 	if err != nil {
@@ -453,6 +455,49 @@ func (m *Mover) removeOldCopy(ctx context.Context, row *models.StorageTierMove) 
 			return fmt.Errorf("queue old copy for deletion: %w", qerr)
 		}
 
-		return nil
+		if !found {
+			return nil // the blob is gone; its deletion already queued every copy
+		}
+
+		return m.queueStrayCopies(ctx, row)
 	})
+}
+
+// queueStrayCopies queues for deletion every copy of the blob that sits on a
+// tier which is neither the move's target (the placement) nor its source (queued
+// by removeOldCopy): the copy an earlier upload left on the primary store while
+// the blob was being moved, or any other bytes that outlived a placement. It
+// runs under the per-blob lock after the flip. Writes that land later are
+// accounted for by Store.settleWrite. A tier that cannot be reached right now is
+// skipped with a warning: one unreachable tier must not stall every move that
+// does not involve it.
+func (m *Mover) queueStrayCopies(ctx context.Context, row *models.StorageTierMove) error {
+	for _, t := range m.reg.Snapshot().Tiers {
+		if t.Store == nil || t.BackendID == row.ToBackendID || t.BackendID == row.FromBackendID {
+			continue
+		}
+
+		present, err := t.Store.Exists(ctx, row.SHA256)
+		if err != nil {
+			if m.log != nil {
+				m.log.Warnw("could not check tier for a stray copy after a move", "blob", row.SHA256, "tier", t.Name, "error", err)
+			}
+
+			continue
+		}
+
+		if !present {
+			continue
+		}
+
+		if err := m.db.EnqueueBlobDeletion(ctx, row.SHA256, t.BackendID); err != nil {
+			return fmt.Errorf("queue stray copy on tier %s for deletion: %w", t.Name, err)
+		}
+
+		if m.log != nil {
+			m.log.Infow("stray blob copy queued for deletion after a move", "blob", row.SHA256, "tier", t.Name)
+		}
+	}
+
+	return nil
 }

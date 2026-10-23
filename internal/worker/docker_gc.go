@@ -39,8 +39,6 @@ const (
 var (
 	// ErrDockerGCBusy means another run is collecting the repository.
 	ErrDockerGCBusy = errors.New("docker registry garbage collection is already running for this repository")
-	// ErrDockerGCUnsupported means the database cannot run registry GC.
-	ErrDockerGCUnsupported = errors.New("docker registry garbage collection is not supported by this database")
 	// ErrNotDockerRepo means GC was requested for a repository that is not a docker registry.
 	ErrNotDockerRepo = errors.New("repository is not a docker repository")
 	// ErrInvalidDockerGCGrace means a negative grace period was requested.
@@ -96,6 +94,13 @@ type DockerGCReport struct {
 	Truncated bool
 }
 
+// DockerGCDB is the database a DockerGCWorker needs: the repository and quota
+// queries plus the GC store. *database.PostgresDB implements it.
+type DockerGCDB interface {
+	database.Database
+	database.DockerGCStore
+}
+
 // DockerGCWorker deletes untagged docker manifests older than a grace period
 // and the blobs only they referenced.
 //
@@ -111,8 +116,7 @@ type DockerGCReport struct {
 // transaction that holds the repository's exclusive docker lock, which manifest
 // pushes take shared; and recently pushed or used content is never touched.
 type DockerGCWorker struct {
-	db        database.Database
-	store     database.DockerGCStore
+	db        DockerGCDB
 	blobStore storage.BlobStore
 	log       *logger.Logger
 	interval  time.Duration
@@ -130,14 +134,11 @@ type DockerGCWorker struct {
 // NewDockerGCWorker creates the worker. interval is the pause between
 // scheduled passes over all docker repositories (0 disables the schedule;
 // RunRepo still works for on-demand runs); grace is the default minimum age.
-func NewDockerGCWorker(db database.Database, blobStore storage.BlobStore, log *logger.Logger, interval, grace time.Duration) *DockerGCWorker {
+func NewDockerGCWorker(db DockerGCDB, blobStore storage.BlobStore, log *logger.Logger, interval, grace time.Duration) *DockerGCWorker {
 	runCtx, cancel := context.WithCancel(context.Background())
-
-	store, _ := db.(database.DockerGCStore)
 
 	return &DockerGCWorker{
 		db:        db,
-		store:     store,
 		blobStore: blobStore,
 		log:       log,
 		interval:  interval,
@@ -160,7 +161,7 @@ func (w *DockerGCWorker) Start() {
 }
 
 func (w *DockerGCWorker) start() {
-	if w.interval <= 0 || w.store == nil {
+	if w.interval <= 0 {
 		close(w.doneCh)
 		return
 	}
@@ -236,10 +237,6 @@ func (w *DockerGCWorker) runAll(ctx context.Context) {
 // RunRepo runs registry GC on one docker repository. It stops early, leaving a
 // consistent state, when ctx or the worker is cancelled, or after an hour.
 func (w *DockerGCWorker) RunRepo(ctx context.Context, repo *models.Repository, opts DockerGCOptions) (*DockerGCReport, error) {
-	if w.store == nil {
-		return nil, ErrDockerGCUnsupported
-	}
-
 	if repo.Format != "docker" {
 		return nil, ErrNotDockerRepo
 	}
@@ -302,7 +299,7 @@ func (r *dockerGCRun) run(ctx context.Context) error {
 		return err
 	}
 
-	manifests, err := r.w.store.ListDockerGCManifests(ctx, r.repo.ID, r.opts.Grace)
+	manifests, err := r.w.db.ListDockerGCManifests(ctx, r.repo.ID, r.opts.Grace)
 	if err != nil {
 		return fmt.Errorf("docker gc: %w", err)
 	}
@@ -325,7 +322,7 @@ func (r *dockerGCRun) run(ctx context.Context) error {
 // from the blob store. A body missing from storage references nothing.
 func (r *dockerGCRun) indexManifests(ctx context.Context) error {
 	for {
-		batch, err := r.w.store.ListUnindexedDockerManifests(ctx, r.repo.ID, dockerGCIndexBatch)
+		batch, err := r.w.db.ListUnindexedDockerManifests(ctx, r.repo.ID, dockerGCIndexBatch)
 		if err != nil {
 			return fmt.Errorf("docker gc: %w", err)
 		}
@@ -340,7 +337,7 @@ func (r *dockerGCRun) indexManifests(ctx context.Context) error {
 				return fmt.Errorf("docker gc: index manifest %s: %w", m.Digest, err)
 			}
 
-			if err := r.w.store.SetDockerManifestRefs(ctx, r.repo.ID, m, refs); err != nil {
+			if err := r.w.db.SetDockerManifestRefs(ctx, r.repo.ID, m, refs); err != nil {
 				return fmt.Errorf("docker gc: %w", err)
 			}
 		}
@@ -376,7 +373,7 @@ func (r *dockerGCRun) planDryRun(ctx context.Context, doomed []*models.DockerGCM
 		r.countFreed(m.BlobSHA256, m.Size)
 	}
 
-	blobs, err := r.w.store.ListDockerGCBlobs(ctx, r.repo.ID, r.opts.Grace, ids, dockerGCPlanLimit)
+	blobs, err := r.w.db.ListDockerGCBlobs(ctx, r.repo.ID, r.opts.Grace, ids, dockerGCPlanLimit)
 	if err != nil {
 		return fmt.Errorf("docker gc: %w", err)
 	}
@@ -400,7 +397,7 @@ func (r *dockerGCRun) deleteManifests(ctx context.Context, doomed []*models.Dock
 			ids[i] = m.ID
 		}
 
-		deleted, err := r.w.store.DeleteDockerManifestsForGC(ctx, r.repo.ID, ids, r.opts.Grace)
+		deleted, err := r.w.db.DeleteDockerManifestsForGC(ctx, r.repo.ID, ids, r.opts.Grace)
 		if err != nil {
 			return fmt.Errorf("docker gc: %w", err)
 		}
@@ -440,7 +437,7 @@ func (r *dockerGCRun) sweepBlobs(ctx context.Context) error {
 			return fmt.Errorf("docker gc: %w", err)
 		}
 
-		candidates, err := r.w.store.ListDockerGCBlobs(ctx, r.repo.ID, r.opts.Grace, nil, dockerGCBlobBatch)
+		candidates, err := r.w.db.ListDockerGCBlobs(ctx, r.repo.ID, r.opts.Grace, nil, dockerGCBlobBatch)
 		if err != nil {
 			return fmt.Errorf("docker gc: %w", err)
 		}
@@ -454,7 +451,7 @@ func (r *dockerGCRun) sweepBlobs(ctx context.Context) error {
 			digests[i] = b.Digest
 		}
 
-		deleted, err := r.w.store.DeleteDockerBlobsForGC(ctx, r.repo.ID, digests, r.opts.Grace)
+		deleted, err := r.w.db.DeleteDockerBlobsForGC(ctx, r.repo.ID, digests, r.opts.Grace)
 		if err != nil {
 			return fmt.Errorf("docker gc: %w", err)
 		}
@@ -489,7 +486,7 @@ func (r *dockerGCRun) releaseBlob(ctx context.Context, sha string, size int64) {
 		return
 	}
 
-	still, err := r.w.store.BlobRowExists(ctx, sha)
+	still, err := r.w.db.BlobRowExists(ctx, sha)
 	if err != nil {
 		r.report.Failures++
 

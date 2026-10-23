@@ -445,3 +445,51 @@ func TestIntegrationCrashAtEveryStep(t *testing.T) {
 		})
 	}
 }
+
+// An upload that holds no blob lock, slow enough that a move flips the blob and
+// the sweeper retires the hot copy before the bytes land, must not leave the
+// recreated hot copy behind: the real queue accepts it without the lock and the
+// sweep removes it.
+func TestIntegrationWriteRacingAMoveLeavesNoStrayCopy(t *testing.T) {
+	r := newPGRig(t)
+	data := bytes.Repeat([]byte("racing upload "), 500)
+	sha := r.addBlob(data)
+
+	racing := &racingStore{BlobStore: r.hot}
+	r.hot = racing
+	r.restart()
+
+	racing.before = func() {
+		if st, err := r.engine.RunPass(context.Background()); err != nil || st.Moved != 1 {
+			t.Errorf("racing pass = %+v, %v; want the blob moved", st, err)
+		}
+
+		r.sweep()
+	}
+
+	if id, err := r.store.Put(context.Background(), bytes.NewReader(data), map[string]string{"sha256": sha}); err != nil || id != sha {
+		t.Fatalf("Put = %q, %v", id, err)
+	}
+
+	if hot, _ := r.onDisk(sha); !hot {
+		t.Fatalf("setup: the racing write was meant to recreate the hot copy")
+	}
+
+	if n, err := r.pg.CountBlobDeletions(context.Background()); err != nil || n != 1 {
+		t.Fatalf("queued deletions = %d, %v; want the stray hot copy", n, err)
+	}
+
+	r.sweep()
+
+	if hot, cold := r.onDisk(sha); hot || !cold {
+		t.Errorf("after the sweep hot=%v cold=%v, want only the cold directory", hot, cold)
+	}
+
+	if be := r.placement(sha); be != r.coldID {
+		t.Errorf("placement = %q, want the cold backend", be)
+	}
+
+	if got := r.readSum(sha); got != sha {
+		t.Errorf("blob unreadable after the race (%s)", got)
+	}
+}

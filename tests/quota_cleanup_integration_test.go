@@ -112,6 +112,17 @@ func (e *cleanupQuotaEnv) pkg(repoID, format, name, version string, size, ageDay
 	blobID, sha := e.blob(size)
 	created := time.Now().Add(-time.Duration(ageDays) * 24 * time.Hour)
 
+	// Reserve first, as an upload does: the row insert then consumes the
+	// reservation's pending entry.
+	var blobBytes int64
+	if err := e.pg.GetDB().QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, blobID).Scan(&blobBytes); err != nil {
+		e.t.Fatalf("blob size: %v", err)
+	}
+
+	if ok, err := e.pg.ReserveStorageUsage(context.Background(), repoID, blobBytes, 1); err != nil || !ok {
+		e.t.Fatalf("ReserveStorageUsage = %v, %v", ok, err)
+	}
+
 	switch format {
 	case "helm":
 		e.exec(`INSERT INTO helm_charts (repository_id, name, version, blob_id, created_at) VALUES ($1, $2, $3, $4, $5)`,
@@ -128,15 +139,6 @@ func (e *cleanupQuotaEnv) pkg(repoID, format, name, version string, size, ageDay
 		        VALUES ($1, $2, $3, $4, $5, $6, 'amd64', $7)`, repoID, dist, comp, blobID, name, version, created)
 	default:
 		e.t.Fatalf("unsupported format %q", format)
-	}
-
-	var blobBytes int64
-	if err := e.pg.GetDB().QueryRowContext(context.Background(), `SELECT size_bytes FROM blobs WHERE id = $1`, blobID).Scan(&blobBytes); err != nil {
-		e.t.Fatalf("blob size: %v", err)
-	}
-
-	if ok, err := e.pg.ReserveStorageUsage(context.Background(), repoID, blobBytes, 1); err != nil || !ok {
-		e.t.Fatalf("ReserveStorageUsage = %v, %v", ok, err)
 	}
 
 	return sha, blobBytes

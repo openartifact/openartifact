@@ -188,6 +188,8 @@ func qrfFormats() []qrfFormat {
 func (e *qrEnv) rfWantReconciled(step string) {
 	e.t.Helper()
 
+	e.wantNoPending(step)
+
 	size, count := e.usage()
 
 	q, err := e.pg.ReconcileStorageUsage(context.Background(), e.repoID)

@@ -69,7 +69,9 @@ type RepairResult struct {
 	// Unrepairable rows stay unservable (404) until re-uploaded.
 	Unrepairable []RepairIssue
 	// ListUnsupported is true when the blob store cannot enumerate objects
-	// (OCI), so only the shared row's own object could be recovered.
+	// (OCI: the Distribution spec has no blob listing), so orphaned zips, which
+	// no database row records, cannot be discovered and only the shared row's
+	// own object could be recovered.
 	ListUnsupported bool
 	// BlobRowsDeleted counts invalid blobs rows removed from the database
 	// (their storage objects are never deleted).

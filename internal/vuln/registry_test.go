@@ -168,7 +168,7 @@ func TestScanWithoutDatabaseFailsWithoutRunningBinary(t *testing.T) {
 
 	backend := NewRegistry(log, Options{CacheDir: t.TempDir()}).Backend("trivy")
 
-	_, err := backend.Scan(context.Background(), "left-pad", "1.0.0", "npm")
+	_, err := backend.Scan(context.Background(), leftPad("npm"))
 	if se := asScanError(t, err); se.Kind != FailureDatabase {
 		t.Fatalf("kind = %q (%v), want %q", se.Kind, err, FailureDatabase)
 	}
@@ -190,7 +190,7 @@ func TestScanCommandLines(t *testing.T) {
 		cache := seededCache(t)
 
 		_, err := NewRegistry(log, Options{CacheDir: cache, Trivy: TrivyOptions{DBRepository: "mirror.example/trivy-db"}}).
-			Backend("trivy").Scan(context.Background(), "left-pad", "1.0.0", "npm")
+			Backend("trivy").Scan(context.Background(), leftPad("npm"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -215,7 +215,7 @@ func TestScanCommandLines(t *testing.T) {
 
 		cache := seededCache(t)
 
-		_, err := NewRegistry(log, Options{CacheDir: cache}).Backend("grype").Scan(context.Background(), "left-pad", "1.0.0", "npm")
+		_, err := NewRegistry(log, Options{CacheDir: cache}).Backend("grype").Scan(context.Background(), leftPad("npm"))
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -231,7 +231,7 @@ func TestScanFailureNamingTheDatabaseIsClassified(t *testing.T) {
 	log, _ := logger.New("error", "json", "stderr")
 	installFakeScanner(t, "trivy", `echo "FATAL init error: DB error: failed to open db" >&2; exit 1`)
 
-	_, err := testRegistry(t, log).Backend("trivy").Scan(context.Background(), "left-pad", "1.0.0", "npm")
+	_, err := testRegistry(t, log).Backend("trivy").Scan(context.Background(), leftPad("npm"))
 	if se := asScanError(t, err); se.Kind != FailureDatabase {
 		t.Fatalf("kind = %q, want %q", se.Kind, FailureDatabase)
 	}

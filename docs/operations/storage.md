@@ -303,6 +303,8 @@ Only the user who created the upload, or an admin, can complete it (`403` otherw
 
 If the staging object is overwritten (a second `PUT`) during or after verification, this is detected through an ETag precondition on the read and on the server-side copy: `complete` answers `409` `upload_changed`, the staging object is deleted and nothing is recorded.
 
+With [storage tiers](storage-tiering.md#writes-that-race-a-move), completing an upload of a blob that is already placed on a cold tier does not copy it back onto the primary store.
+
 Errors from `complete`:
 
 | Status | Cause |

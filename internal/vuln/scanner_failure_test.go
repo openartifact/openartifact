@@ -159,7 +159,7 @@ func TestCLIScanners_Failures(t *testing.T) {
 
 			backend := testRegistry(t, log).Backend(tt.scanner)
 
-			vulns, err := backend.Scan(ctx, "left-pad", "1.0.0", tt.ecosystem)
+			vulns, err := backend.Scan(ctx, leftPad(tt.ecosystem))
 			if err == nil {
 				t.Fatalf("scan must fail, got %d vulnerabilities and no error", len(vulns))
 			}
@@ -174,7 +174,7 @@ func TestCLIScanners_Failures(t *testing.T) {
 			}
 
 			// End to end through Run: the failure is a failed scan, never a clean one.
-			out := Run(ctx, log, []ScannerBackend{backend}, "left-pad", "1.0.0", tt.ecosystem)
+			out := Run(ctx, log, []ScannerBackend{backend}, leftPad(tt.ecosystem))
 			if out.Status != StatusFailed || len(out.Vulnerabilities) != 0 {
 				t.Errorf("Run status=%q vulns=%d, want %q with no findings", out.Status, len(out.Vulnerabilities), StatusFailed)
 			}
@@ -213,7 +213,7 @@ func TestCLIScanners_Success(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			installFakeScanner(t, tt.scanner, tt.script)
 
-			out := Run(context.Background(), log, []ScannerBackend{testRegistry(t, log).Backend(tt.scanner)}, "left-pad", "1.0.0", "npm")
+			out := Run(context.Background(), log, []ScannerBackend{testRegistry(t, log).Backend(tt.scanner)}, leftPad("npm"))
 
 			if out.Status != StatusCompleted {
 				t.Fatalf("status = %q (%s), want %q", out.Status, out.PublicError(), StatusCompleted)
@@ -282,7 +282,7 @@ func TestOSVScanner_Failures(t *testing.T) {
 				defer cancel()
 			}
 
-			_, err := scanner.Scan(ctx, "left-pad", "1.0.0", tt.ecosystem)
+			_, err := scanner.Scan(ctx, leftPad(tt.ecosystem))
 			if err == nil {
 				t.Fatal("scan must fail, got no error")
 			}
@@ -291,7 +291,7 @@ func TestOSVScanner_Failures(t *testing.T) {
 				t.Fatalf("kind = %q (%v), want %q", se.Kind, err, tt.want)
 			}
 
-			out := Run(ctx, log, []ScannerBackend{scanner}, "left-pad", "1.0.0", tt.ecosystem)
+			out := Run(ctx, log, []ScannerBackend{scanner}, leftPad(tt.ecosystem))
 			if out.Status != StatusFailed {
 				t.Errorf("Run status = %q, want %q", out.Status, StatusFailed)
 			}
@@ -313,7 +313,7 @@ func TestOSVScanner_Unreachable(t *testing.T) {
 	scanner := NewOSVScanner(log)
 	scanner.osvBaseURL = url
 
-	_, err := scanner.Scan(context.Background(), "left-pad", "1.0.0", "npm")
+	_, err := scanner.Scan(context.Background(), leftPad("npm"))
 	if err == nil {
 		t.Fatal("scan must fail when OSV is unreachable")
 	}
@@ -334,7 +334,7 @@ func TestOSVScanner_Success(t *testing.T) {
 	scanner := NewOSVScanner(log)
 	scanner.osvBaseURL = srv.URL
 
-	out := Run(context.Background(), log, []ScannerBackend{scanner}, "left-pad", "1.0.0", "npm")
+	out := Run(context.Background(), log, []ScannerBackend{scanner}, leftPad("npm"))
 	if out.Status != StatusCompleted || !slices.Equal(vulnIDs(out.Vulnerabilities), []string{"GHSA-aaaa"}) {
 		t.Fatalf("status=%q vulns=%v", out.Status, vulnIDs(out.Vulnerabilities))
 	}
@@ -355,7 +355,7 @@ func TestRun_PartialWithRealScanners(t *testing.T) {
 
 	withoutScannerBinaries(t)
 
-	out := Run(context.Background(), log, []ScannerBackend{osv, testRegistry(t, log).Backend("trivy")}, "left-pad", "1.0.0", "npm")
+	out := Run(context.Background(), log, []ScannerBackend{osv, testRegistry(t, log).Backend("trivy")}, leftPad("npm"))
 
 	if out.Status != StatusPartial {
 		t.Fatalf("status = %q, want %q", out.Status, StatusPartial)

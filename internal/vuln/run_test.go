@@ -24,8 +24,13 @@ type stubBackend struct {
 
 func (s stubBackend) Name() string { return s.name }
 
-func (s stubBackend) Scan(context.Context, string, string, string) ([]models.Vulnerability, error) {
+func (s stubBackend) Scan(context.Context, Package) ([]models.Vulnerability, error) {
 	return s.vulns, s.err
+}
+
+// leftPad is the package the scanner tests look up, in the given ecosystem.
+func leftPad(ecosystem string) Package {
+	return Package{Name: "left-pad", Version: "1.0.0", Ecosystem: ecosystem}
 }
 
 func vulnIDs(vs []models.Vulnerability) []string {
@@ -113,7 +118,7 @@ func TestRun_Outcomes(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			out := Run(context.Background(), log, tt.backends, "pkg", "1.0.0", "npm")
+			out := Run(context.Background(), log, tt.backends, Package{Name: "pkg", Version: "1.0.0", Ecosystem: "npm"})
 
 			if out.Status != tt.wantStatus {
 				t.Errorf("Status = %q, want %q", out.Status, tt.wantStatus)
@@ -146,7 +151,7 @@ func TestRun_Outcomes(t *testing.T) {
 func TestRun_FailedScannersNeverNil(t *testing.T) {
 	log, _ := logger.New("error", "json", "stderr")
 
-	out := Run(context.Background(), log, []ScannerBackend{stubBackend{name: "osv"}}, "pkg", "1.0.0", "npm")
+	out := Run(context.Background(), log, []ScannerBackend{stubBackend{name: "osv"}}, Package{Name: "pkg", Version: "1.0.0", Ecosystem: "npm"})
 
 	if out.FailedScanners() == nil {
 		t.Error("FailedScanners must be an empty slice, not nil, so it serializes as []")
