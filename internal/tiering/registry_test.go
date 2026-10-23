@@ -61,6 +61,13 @@ func TestConfigFromBackend(t *testing.T) {
 				t.Errorf("config = %+v", c)
 			}
 		}},
+		{"azure endpoint", "azure", `{"account":"devstoreaccount1","container":"c","endpoint":"http://azurite:10000/devstoreaccount1"}`, false, func(t *testing.T, c storage.StorageConfig) {
+			t.Helper()
+
+			if c.AzureEndpoint != "http://azurite:10000/devstoreaccount1" {
+				t.Errorf("config = %+v", c)
+			}
+		}},
 		{"oci host gets a scheme", "oci", `{"endpoint":"registry.local:5000","insecure":true,"repository":"r"}`, false, func(t *testing.T, c storage.StorageConfig) {
 			t.Helper()
 

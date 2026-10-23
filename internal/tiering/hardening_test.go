@@ -196,6 +196,8 @@ func TestLocateDistinguishesStorages(t *testing.T) {
 		{"different endpoints", storage.StorageConfig{Type: "s3", Endpoint: "m1:9000", Bucket: "a"}, storage.StorageConfig{Type: "s3", Endpoint: "m2:9000", Bucket: "a"}, false},
 		{"s3 family kinds share a bucket", storage.StorageConfig{Type: "s3", Endpoint: "m:9000", Bucket: "a"}, storage.StorageConfig{Type: "seaweedfs", Endpoint: "http://m:9000/", Bucket: "a"}, true},
 		{"azure containers", storage.StorageConfig{Type: "azure", AzureAccountName: "x", AzureContainerName: "a"}, storage.StorageConfig{Type: "azure", AzureAccountName: "x", AzureContainerName: "b"}, false},
+		{"azure default endpoint spelled out", storage.StorageConfig{Type: "azure", AzureAccountName: "X", AzureContainerName: "a"}, storage.StorageConfig{Type: "azure", AzureAccountName: "x", AzureContainerName: "a", AzureEndpoint: "https://x.blob.core.windows.net/"}, true},
+		{"azure emulators on different hosts", storage.StorageConfig{Type: "azure", AzureAccountName: "devstoreaccount1", AzureContainerName: "a", AzureEndpoint: "http://az1:10000/devstoreaccount1"}, storage.StorageConfig{Type: "azure", AzureAccountName: "devstoreaccount1", AzureContainerName: "a", AzureEndpoint: "http://az2:10000/devstoreaccount1"}, false},
 		{"sibling directories", storage.StorageConfig{Type: "filesystem", Path: filepath.Join(base, "a")}, storage.StorageConfig{Type: "filesystem", Path: filepath.Join(base, "b")}, false},
 		{"directories with a common name prefix", storage.StorageConfig{Type: "filesystem", Path: filepath.Join(base, "data")}, storage.StorageConfig{Type: "filesystem", Path: filepath.Join(base, "data-cold")}, false},
 	} {

@@ -1,11 +1,11 @@
 -- name: CreatePresignedUpload :one
-INSERT INTO presigned_uploads (repository_id, path, size_bytes, sha256, content_type, created_by, expires_at)
-VALUES ($1, $2, $3, $4, $5, $6, $7)
+INSERT INTO presigned_uploads (repository_id, path, size_bytes, sha256, content_type, created_by, expires_at, part_size)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
 RETURNING id, created_at;
 
 -- name: GetPresignedUpload :one
 SELECT id, repository_id, path, size_bytes, sha256, content_type, created_by, created_at, expires_at,
-       completing_since, completed_at, artifact_id
+       completing_since, completed_at, artifact_id, part_size, multipart_id
 FROM presigned_uploads
 WHERE id = $1 AND repository_id = $2;
 
@@ -38,6 +38,14 @@ SELECT id
 FROM presigned_uploads
 WHERE expires_at < now()
   -- never pull the staging object from under a complete that is verifying it
-  AND (completing_since IS NULL OR completing_since < now() - interval '1 hour')
+  -- (the longest complete lease is 6 hours + 1 minute)
+  AND (completing_since IS NULL OR completing_since < now() - interval '7 hours')
 ORDER BY expires_at
 LIMIT $1;
+
+-- name: SetPresignedUploadMultipartID :exec
+UPDATE presigned_uploads SET multipart_id = $2 WHERE id = $1;
+
+-- name: ExtendPresignedUploadExpiry :exec
+-- An upload that is still receiving parts stays alive: the deadline only moves forward.
+UPDATE presigned_uploads SET expires_at = GREATEST(expires_at, $2) WHERE id = $1 AND completed_at IS NULL;

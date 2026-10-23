@@ -51,12 +51,14 @@ Defaults: type `filesystem`, bucket `artifacts`, region `us-east-1`, path `/var/
 | `OPENARTIFACT_AZURE_ACCOUNT_NAME` | `azureAccountName` | azure | required |
 | `OPENARTIFACT_AZURE_ACCOUNT_KEY` | `azureAccountKey` | azure | required, base64 as shown by Azure |
 | `OPENARTIFACT_AZURE_CONTAINER_NAME` | `azureContainerName` | azure | required |
+| `OPENARTIFACT_AZURE_ENDPOINT` | `azureEndpoint` | azure | blob service URL for Azurite or a sovereign cloud; empty = `https://<account>.blob.core.windows.net`. With Azurite use `http://host:10000/devstoreaccount1` |
+| `STORAGE_STAGING_PATH` | `stagingPath` | oci | spool directory for [server-relayed presigned uploads](#presigned-uploads); default `<system temp dir>/openartifact-staging` |
 | `STORAGE_BUCKET` | `bucket` | oci | the repository name inside the registry |
 | `STORAGE_OCI_USERNAME` | `ociUsername` | oci | Basic auth, sent only to the registry host |
 | `STORAGE_OCI_PASSWORD` | `ociPassword` | oci | |
 | `STORAGE_OCI_INSECURE` | `ociInsecure` | oci | swaps in a plain HTTP transport for `http://` registries. It does not disable TLS verification |
 
-The Azure account endpoint is derived as `https://<account>.blob.core.windows.net/<container>`; there is no endpoint setting. Azure and OCI clients use a 30 s HTTP timeout.
+The Azure account endpoint defaults to `https://<account>.blob.core.windows.net/<container>`; `azureEndpoint` overrides the service URL (Azurite, sovereign clouds). Azure and OCI clients use a 30 s HTTP timeout.
 
 ### Credentials
 
@@ -145,7 +147,7 @@ Consequences: storage is freed after the grace period rather than at the delete 
 
 With an object-store backend, OpenArtifact can hand the byte transfer to the object store: instead of streaming a blob, it answers `307 Temporary Redirect` with a presigned GET URL and the client downloads directly from the bucket. Large artifacts then no longer flow through the server. It is opt-in and off by default.
 
-Supported backends: `s3` (including `garage` and `seaweedfs`) and `gcs` (through its S3-compatible HMAC API, same code path). `filesystem`, `azure` and `oci` do not support presigning: downloads keep streaming and the upload API answers `501`.
+Supported backends for presigned downloads: `s3` (including `garage` and `seaweedfs`) and `gcs` (through its S3-compatible HMAC API, same code path), and `azure` (a read-only shared access signature). `filesystem` and `oci` have no download presigning: downloads keep streaming. [Presigned uploads](#presigned-uploads) work on every backend.
 
 ### How it works
 
@@ -275,7 +277,17 @@ Verified here in a smoke test against Garage S3 (server binary, `presignEndpoint
 
 ### Presigned uploads
 
-Raw hosted repositories on S3 or GCS storage can take uploads that bypass the server: the client uploads the bytes straight to the bucket, then the server reads the object back from the bucket (internal traffic) to verify it and records it. Other formats and backends are not covered; on filesystem, Azure and OCI backends the create call answers `501` and records nothing.
+Hosted raw repositories take uploads that bypass the API path of the server: the client uploads the bytes straight to the backend, then the server reads the object back (internal traffic) to verify it and records it. Other formats are not covered. Files up to 5 GiB use one `PUT`; larger files (up to 5 TiB) use a [multipart upload](#multipart-uploads). Every backend supports both:
+
+| Backend | Upload URL | Notes |
+|---|---|---|
+| `s3`, `garage`, `seaweedfs` | presigned `PUT` (SigV4) | multipart through S3 `UploadPart`; promoting an object above 4 GiB uses `UploadPartCopy` because `CopyObject` refuses sources above 5 GiB |
+| `gcs` | presigned `PUT` through the S3-compatible API | same code path as S3; parts are not verifiable against the real service here, see the caveats below |
+| `azure` | service SAS `PUT` (block blob) | a single `PUT` is limited to 5000 MiB by Azure, so larger files must use multipart (staged blocks, committed at `complete`). `azureEndpoint` / `OPENARTIFACT_AZURE_ENDPOINT` points at Azurite or a sovereign cloud |
+| `filesystem` | short-lived HMAC-signed URL served by OpenArtifact itself | needs `baseUrl` (`BASE_URL`) to be an address the client can reach; staging lives in `<path>/staging` |
+| `oci` (registry) | the same HMAC-signed URL | staging spool in `stagingPath` (`STORAGE_STAGING_PATH`, default `<tmp>/openartifact-staging`); the verified blob is then pushed to the registry. An OCI registry has no pre-authenticated upload URLs. To use Oracle Cloud Object Storage with presigned URLs, configure it as `type: s3` through its S3-compatibility endpoint |
+
+For the filesystem and OCI backends the URL is `<baseUrl>/upload-relay/<id>/<part>?exp=<unix>&sig=<hex>`. The HMAC-SHA256 signature covers the upload id, part number, size and expiry and is keyed by a random key kept next to the staging data (`<staging>/.signing-key`, shared by replicas on a shared volume). The route needs no `Authorization` header: the signature is the credential, exactly like a presigned bucket URL. A part already uploaded is replaced by a new `PUT`; a finalized object is never overwritten. Without a usable `baseUrl` the create call answers `501 presign_unsupported`. Once `complete` starts (or the last part arrives) the upload is sealed: relay PUTs are answered `409`, `complete` waits for PUTs that are still writing, and the published object never changes afterwards, so the bytes that were hashed are the bytes that get promoted. On the filesystem backend the staging directory must belong to one server or to replicas sharing the volume with working `flock` locks.
 
 1. `POST /api/v1/repositories/{name}/uploads` with `{"path": "...", "size": N, "sha256": "...", "content_type": "..."}` (`content_type` optional). Needs write permission on the repository and on the path. Answers `201`:
 
@@ -283,11 +295,11 @@ Raw hosted repositories on S3 or GCS storage can take uploads that bypass the se
    {"id": "...", "upload_url": "https://...", "method": "PUT", "headers": {"Content-Length": "..."}, "expires_at": "..."}
    ```
 
-   `size` is at most 5 GiB, a single `PUT` (multipart upload is not implemented). `Content-Length` is signed into the URL, so the object store rejects any other size. The response carries `Cache-Control: no-store` because `upload_url` is a bearer credential. Each user may have at most `presignMaxPendingUploads` (default 20, `0` = unlimited) outstanding uploads, meaning not yet completed and not expired; beyond that the call answers `429` with a `Retry-After` header.
+   `size` is at most 5 GiB for a single `PUT` (above it, set `multipart`, see below). `Content-Length` is signed into the URL, so the backend rejects any other size. The response carries `Cache-Control: no-store` because `upload_url` is a bearer credential. Each user may have at most `presignMaxPendingUploads` (default 20, `0` = unlimited) outstanding uploads, meaning not yet completed and not expired; beyond that the call answers `429` with a `Retry-After` header.
 2. The client `PUT`s the bytes to `upload_url` with the returned `headers`, without the OpenArtifact `Authorization` header. The URL lives for `presignUploadTtl`.
-3. `POST /api/v1/repositories/{name}/uploads/{id}/complete`. The server checks the staging object's size, re-hashes it (internal traffic between the server and the object store) against the declared sha256, copies it server-side to its content-addressed key, records the artifact exactly like a raw `PUT` (the path is overwritten, the `artifact.uploaded` webhook fires, a replaced blob is cleaned up) and deletes the staging object. Answers `201 {"id", "path", "sha256", "size"}`.
+3. `POST /api/v1/repositories/{name}/uploads/{id}/complete`. The server checks the staging object's size, re-hashes it (internal traffic between the server and the backend) against the declared sha256, copies it server-side to its content-addressed key, records the artifact exactly like a raw `PUT` (the path is overwritten, the `artifact.uploaded` webhook fires, a replaced blob is cleaned up) and deletes the staging object. Answers `201 {"id", "path", "sha256", "size"}`.
 
-Only the user who created the upload, or an admin, can complete it (`403` otherwise). Verification and commit run detached from the HTTP request with their own 30 minute timeout, so a client disconnect or timeout does not abort them. `complete` is idempotent: while a verification is running, another `complete` answers `409` with code `upload_in_progress` and a `Retry-After` header; after a success, a retry answers `200` with the same `{"id", "path", "sha256", "size"}` body (the first success is `201`). The upload row is kept, marked completed, until the cleanup worker removes it after `expires_at`.
+Only the user who created the upload, or an admin, can complete it (`403` otherwise). Verification and commit run detached from the HTTP request, so a client disconnect or timeout does not abort them. Their timeout is 30 minutes plus one second per 20 MiB of the declared size, at most 6 hours. `complete` is idempotent: while a verification is running, another `complete` answers `409` with code `upload_in_progress` and a `Retry-After` header; after a success, a retry answers `200` with the same `{"id", "path", "sha256", "size"}` body (the first success is `201`). The upload row is kept, marked completed, until the cleanup worker removes it after `expires_at`.
 
 If the staging object is overwritten (a second `PUT`) during or after verification, this is detected through an ETag precondition on the read and on the server-side copy: `complete` answers `409` `upload_changed`, the staging object is deleted and nothing is recorded.
 
@@ -298,7 +310,7 @@ Errors from `complete`:
 | `400` | repository is not raw/hosted, or bad input |
 | `403` | caller is neither the creator of the upload nor an admin |
 | `404` | unknown upload |
-| `409` | code `upload_missing`: nothing uploaded to the staging key yet; `upload_in_progress`: a verification is already running (retry after `Retry-After`); `upload_changed`: "staging object changed during verification" |
+| `409` | code `upload_missing`: nothing uploaded to the staging key yet; `upload_incomplete`: a part of a multipart upload is missing or has the wrong size (the message names the parts; upload them and call `complete` again); `upload_in_progress`: a verification is already running (retry after `Retry-After`); `upload_changed`: "staging object changed during verification" |
 | `410` | the upload expired |
 | `422` | size or sha256 mismatch; the staging object and the upload are discarded and nothing is recorded |
 | `501` | the backend cannot do it |
@@ -329,9 +341,43 @@ Add any other keys from the returned `headers` object as `-H` options in step 2.
 oa artifact upload --presigned [--path P] [--content-type T] <repo> <file>
 ```
 
+#### Multipart uploads
+
+A file above 5 GiB (and any file you choose, up to 5 TiB) is uploaded in parts. Part size is 5 MiB to 4000 MiB with at most 10000 parts; when `part_size` is omitted the server picks one of at least 64 MiB that keeps the count within the limit. The part size is stored with the upload, so the plan cannot change between calls.
+
+1. `POST /api/v1/repositories/{name}/uploads` with `"multipart": true` (and optionally `"part_size": N`) added to the body. A size above 5 GiB without `multipart` answers `400 invalid_size`; an empty file cannot be multipart. Answers `201 {"id", "multipart": true, "part_size", "part_count", "expires_at"}` and no `upload_url`.
+2. `POST /api/v1/repositories/{name}/uploads/{id}/parts` with `{"part_numbers": [1, 2, 3]}` (1 to 100 distinct numbers within `part_count`) answers `200 {"parts": [{"part_number", "upload_url", "method": "PUT", "headers", "size"}], "expires_at"}`. Every part is exactly `part_size` bytes except the last, and the size is signed into the URL. The call can be repeated for more parts or to re-sign a part, and each call extends the upload's deadline to a full URL lifetime plus the grace period, so an upload that makes progress does not expire however long it takes.
+3. The client `PUT`s every part, in any order and in parallel, retrying a failed part with a fresh `PUT`. It does not need to record the returned `ETag`s: at `complete` the server lists the parts the backend holds.
+4. `POST .../complete` as above. The server first assembles the parts into the staging object (S3 `CompleteMultipartUpload`, Azure block list commit, filesystem concatenation), answering `409 upload_incomplete` if one is missing, then runs the same size check, sha256 re-hash and promotion as for a single `PUT`. The sha256 is therefore always computed by the server over the assembled bytes, so the content-addressed invariant (`blobs/<sha256>` holds exactly the bytes with that hash) is unchanged.
+5. `POST .../uploads/{id}/abort` (creator or admin, `204`) discards a multipart upload that will not be completed: unfinished parts, staging object and row. Use it instead of waiting for the expiry sweep.
+
+```sh
+# 1. plan (SIZE above 5 GiB)
+curl -sS -X POST https://artifacts.example.com/api/v1/repositories/files/uploads \
+  -H "Authorization: Bearer $OA_TOKEN" -H 'Content-Type: application/json' \
+  -d "{\"path\":\"$FILE\",\"size\":$SIZE,\"sha256\":\"$SHA\",\"multipart\":true}" > upload.json
+ID=$(jq -r .id upload.json); PS=$(jq -r .part_size upload.json); N=$(jq -r .part_count upload.json)
+
+# 2-3. sign and upload part 1 (repeat for 2..N)
+curl -sS -X POST "https://artifacts.example.com/api/v1/repositories/files/uploads/$ID/parts" \
+  -H "Authorization: Bearer $OA_TOKEN" -H 'Content-Type: application/json' \
+  -d '{"part_numbers":[1]}' > part1.json
+dd if="$FILE" bs="$PS" skip=0 count=1 iflag=fullblock status=none |
+  curl -sS -X PUT "$(jq -r '.parts[0].upload_url' part1.json)" \
+    -H "Content-Length: $(jq -r '.parts[0].size' part1.json)" --data-binary @-
+
+# 4. complete
+curl -sS -X POST "https://artifacts.example.com/api/v1/repositories/files/uploads/$ID/complete" \
+  -H "Authorization: Bearer $OA_TOKEN"
+```
+
+`oa artifact upload --presigned` switches to multipart on its own above 5 GiB; `--multipart` forces it, `--part-size` sets the part size and `--parallel` the number of parts in flight (each part is retried with backoff, and the upload is aborted when a part fails for good). See the [CLI reference](../integrations/cli.md).
+
+Keep the object store's own limits in mind: S3 and Garage cap a copy source at 5 GiB, which the server handles with ranged `UploadPartCopy` when it promotes a large object; GCS has no `UploadPartCopy` and a plain copy is one synchronous request whose duration grows with the object, so promotion composes the staged object (a one-component XML API `compose`, pinned to the verified generation) instead: no bytes are rewritten and the time does not depend on the size.
+
 #### Staging and cleanup
 
-Uploads land under the key prefix `staging/<uuid>` in the bucket. A worker runs every 5 minutes. It deletes uploads (database rows and staging objects) that were never completed once expiry plus the grace period has passed, removes the rows of completed uploads after `expires_at`, and also sweeps the `staging/` prefix: objects older than `presignUploadTtl` plus the 1 hour grace period that have no upload row (for example a re-`PUT` after cleanup, a mismatch, or a repository delete cascade) are deleted. A bucket lifecycle rule expiring the `staging/` prefix after 1 to 2 days is still recommended as defence in depth, but it is no longer the only mechanism.
+Uploads land under the key prefix `staging/<uuid>` in the bucket (`<path>/staging` on the filesystem, the spool directory for OCI). Open multipart uploads are tracked by the backend as well: on S3, abandoned `CreateMultipartUpload` sessions bill for their parts, and on Azure uncommitted blocks expire after a week by themselves. A worker runs every 5 minutes. It deletes uploads (database rows and staging objects) that were never completed once expiry plus the grace period has passed, removes the rows of completed uploads after `expires_at`, and also sweeps the `staging/` prefix: objects older than `presignUploadTtl` plus the 1 hour grace period that have no upload row (for example a re-`PUT` after cleanup, a mismatch, or a repository delete cascade) are deleted. The sweep and the abort endpoint also abort the backend's in-progress multipart upload. A bucket lifecycle rule expiring the `staging/` prefix after 1 to 2 days, plus an `AbortIncompleteMultipartUpload` rule (`DaysAfterInitiation: 2`) on the bucket, is still recommended as defence in depth, but it is no longer the only mechanism.
 
 #### Quota, license and secret scanning
 

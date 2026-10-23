@@ -139,3 +139,42 @@ func TestListGroupMembersOrderIsStable(t *testing.T) {
 		}
 	}
 }
+
+// A multipart upload keeps its plan and backend handle in the row, and every
+// parts call can move the deadline out but never back in.
+func TestPresignedMultipartPlanAndExpiry(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	s := newQuotaSeeder(t, pg, "mp-raw", "raw")
+	ctx := context.Background()
+	soon := time.Now().Add(time.Hour).Truncate(time.Second)
+
+	up := &models.PresignedUpload{
+		RepositoryID: s.repo, Path: "big.bin", SizeBytes: 6 << 30, PartSize: 64 << 20,
+		SHA256: strings.Repeat("b", 64), CreatedBy: "alice", ExpiresAt: soon,
+	}
+	if err := pg.CreatePresignedUpload(ctx, up); err != nil {
+		t.Fatalf("CreatePresignedUpload: %v", err)
+	}
+
+	if err := pg.SetPresignedUploadMultipartID(ctx, up.ID, "upload-handle"); err != nil {
+		t.Fatalf("SetPresignedUploadMultipartID: %v", err)
+	}
+
+	later := soon.Add(5 * time.Hour)
+	if err := pg.ExtendPresignedUploadExpiry(ctx, up.ID, later); err != nil {
+		t.Fatalf("ExtendPresignedUploadExpiry: %v", err)
+	}
+
+	if err := pg.ExtendPresignedUploadExpiry(ctx, up.ID, soon); err != nil {
+		t.Fatalf("ExtendPresignedUploadExpiry (earlier): %v", err)
+	}
+
+	got, err := pg.GetPresignedUpload(ctx, s.repo, up.ID)
+	if err != nil || got == nil {
+		t.Fatalf("GetPresignedUpload = %v, %v", got, err)
+	}
+
+	if got.PartSize != 64<<20 || got.MultipartID != "upload-handle" || !got.ExpiresAt.Equal(later) {
+		t.Errorf("row = part size %d, handle %q, expires %v; want 64 MiB, upload-handle, %v", got.PartSize, got.MultipartID, got.ExpiresAt, later)
+	}
+}

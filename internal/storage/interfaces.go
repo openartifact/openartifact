@@ -82,6 +82,9 @@ type StorageConfig struct {
 	AzureAccountName         string            `yaml:"azureAccountName"`         // Azure storage account name
 	AzureAccountKey          string            `yaml:"azureAccountKey"`          // Azure storage account key
 	AzureContainerName       string            `yaml:"azureContainerName"`       // Azure container name
+	AzureEndpoint            string            `yaml:"azureEndpoint"`            // Azure blob service URL (Azurite or a sovereign cloud); empty = https://<account>.blob.core.windows.net
+	StagingPath              string            `yaml:"stagingPath"`              // Spool directory for server-relayed presigned uploads on oci storage (filesystem uses <path>/staging); empty = <tmp>/openartifact-staging
+	PublicURL                string            `yaml:"-"`                        // Public base URL of this server (BASE_URL), set by the config loader; server-relayed upload URLs point at it
 	// OCI-specific fields
 	OCIInsecure bool   `yaml:"ociInsecure"` // Allow plain HTTP for OCI registry (dev/testing only)
 	OCIUsername string `yaml:"ociUsername"` // OCI registry username

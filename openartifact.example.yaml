@@ -88,10 +88,12 @@ storage:
   # azureAccountName: myaccount
   # azureAccountKey: CHANGE_ME
   # azureContainerName: artifacts
+  # azureEndpoint: http://azurite:10000/devstoreaccount1   # Azurite / sovereign cloud; empty = https://<account>.blob.core.windows.net
   # OCI registry:
   # ociUsername: user
   # ociPassword: CHANGE_ME
   # ociInsecure: false
+  # stagingPath: /var/lib/artifacts-staging   # spool dir for server-relayed presigned uploads (oci only)
 
 log:
   level: "info"    # debug | info | warn | error

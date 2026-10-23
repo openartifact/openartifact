@@ -179,3 +179,39 @@ func (m *MetricsBlobStore) WalkStaging(ctx context.Context, olderThan time.Time,
 
 	return s.WalkStaging(ctx, olderThan, fn)
 }
+
+// MultipartSupported reports whether the wrapped store can stage multipart uploads.
+func (m *MetricsBlobStore) MultipartSupported() bool {
+	s, ok := m.inner.(MultipartStagingStore)
+	return ok && s.MultipartSupported()
+}
+
+// InitiateMultipart forwards to the wrapped store.
+func (m *MetricsBlobStore) InitiateMultipart(ctx context.Context, id string, size, partSize int64) (string, error) {
+	s, ok := m.inner.(MultipartStagingStore)
+	if !ok {
+		return "", ErrPresignNotSupported
+	}
+
+	return s.InitiateMultipart(ctx, id, size, partSize)
+}
+
+// PresignStagingPart forwards to the wrapped store.
+func (m *MetricsBlobStore) PresignStagingPart(ctx context.Context, id, handle string, number int, length int64, ttl time.Duration) (PresignedPut, error) {
+	s, ok := m.inner.(MultipartStagingStore)
+	if !ok {
+		return PresignedPut{}, ErrPresignNotSupported
+	}
+
+	return s.PresignStagingPart(ctx, id, handle, number, length, ttl)
+}
+
+// CompleteMultipart forwards to the wrapped store.
+func (m *MetricsBlobStore) CompleteMultipart(ctx context.Context, id, handle string, size, partSize int64) error {
+	s, ok := m.inner.(MultipartStagingStore)
+	if !ok {
+		return ErrPresignNotSupported
+	}
+
+	return s.CompleteMultipart(ctx, id, handle, size, partSize)
+}

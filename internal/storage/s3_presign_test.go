@@ -186,7 +186,8 @@ func TestFilesystemStoreCannotPresign(t *testing.T) {
 		t.Errorf("PresignURL error = %v, want ErrPresignNotSupported", err)
 	}
 
-	if _, ok := any(fs).(StagingStore); ok {
-		t.Error("filesystem store must not implement StagingStore")
+	// Without a public URL there is no relay, so staging is unsupported.
+	if fs.StagingSupported() {
+		t.Error("filesystem store without PublicURL must not support staging")
 	}
 }

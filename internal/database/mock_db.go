@@ -753,6 +753,12 @@ func (m *BaseMockDB) CreatePresignedUploadCapped(ctx context.Context, u *models.
 func (m *BaseMockDB) ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error) {
 	return nil, errNotImpl("ExistingPresignedUploadIDs")
 }
+func (m *BaseMockDB) SetPresignedUploadMultipartID(ctx context.Context, id, multipartID string) error {
+	return errNotImpl("SetPresignedUploadMultipartID")
+}
+func (m *BaseMockDB) ExtendPresignedUploadExpiry(ctx context.Context, id string, expiresAt time.Time) error {
+	return errNotImpl("ExtendPresignedUploadExpiry")
+}
 func (m *BaseMockDB) ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error) {
 	return nil, errNotImpl("ListExpiredPresignedUploads")
 }
