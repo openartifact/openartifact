@@ -863,6 +863,16 @@ type PypiPackage struct {
 	DeletedBy      *string    `db:"deleted_by" json:"deleted_by"`
 }
 
+// Quota usage already in storage_quotas counters but not (yet) backed by package rows, or the reverse; see migration 061
+type QuotaPending struct {
+	ID            int64     `db:"id" json:"id"`
+	RepositoryID  string    `db:"repository_id" json:"repository_id"`
+	SizeBytes     int64     `db:"size_bytes" json:"size_bytes"`
+	ArtifactCount int32     `db:"artifact_count" json:"artifact_count"`
+	Kind          int16     `db:"kind" json:"kind"`
+	CreatedAt     time.Time `db:"created_at" json:"created_at"`
+}
+
 type RawArtifact struct {
 	ID           string          `db:"id" json:"id"`
 	RepositoryID string          `db:"repository_id" json:"repository_id"`

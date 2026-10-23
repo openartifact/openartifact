@@ -41,10 +41,6 @@ docker compose -f docker/docker-compose.yml run --rm openartifact ./openartifact
 
 With `MIGRATE_ON_START=false` the server logs `automatic migrations skipped` at start and does not check the schema version, so a new binary against an unmigrated database may fail at query time. `make migrate` does the same from a source checkout (`go run ./cmd/server -migrate`).
 
-### Unreleased
-
-- Maven poms that declare no license now inherit it from their `<parent>` pom stored in the same repository or in a group it belongs to (including poms a proxy member already cached), for the upload license policy, the license scan and the SBOM. A blocking policy can therefore reject a child whose parent declares a denied license. Existing scan results are not rewritten: scan the pom again. See [Maven parent poms](../security/licenses.md#maven-parent-poms).
-
 ## Docker Compose
 
 From the checkout of the new version:
@@ -111,6 +107,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - Grype and Trivy scans of deb and rpm packages now run with the distribution release derived from the package, or are routed to osv when it is unknown (or, for Trivy, a Fedora rpm), instead of failing with `unsupported_ecosystem`. The `scanner` field shows what ran. See [scanning](../security/scanning.md).
 - **`oa import` covers every hosted format.** Besides Maven, Debian, RPM and raw it now imports npm, PyPI, Docker/OCI, Helm, NuGet, RubyGems, Cargo, Go, Conda, Conan (v2 layout), Ivy and sbt from Nexus 3 and Artifactory, preserving creation times, with checksum verification and resumable runs. See [Migrating from Nexus and Artifactory](../migration/nexus-artifactory.md).
 - **`X-OA-Import-Created-At` is honored by every hosted upload** (for `manage` principals only), not just Maven, raw, Debian and RPM. A backup restore now also keeps the backed-up `created_at` of those rows instead of stamping the restore time. No migration.
+- Maven poms that declare no license now inherit it from their `<parent>` pom stored in the same repository or in a group it belongs to (including poms a proxy member already cached), for the upload license policy, the license scan and the SBOM. A blocking policy can therefore reject a child whose parent declares a denied license. Existing scan results are not rewritten: scan the pom again. See [Maven parent poms](../security/licenses.md#maven-parent-poms).
 
 #### Conan 1.x clients (migration `057`)
 
