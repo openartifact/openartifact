@@ -56,6 +56,8 @@ import (
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/proxy"
+	"github.com/openartifact/openartifact/internal/replication"
+	"github.com/openartifact/openartifact/internal/recovery"
 	"github.com/openartifact/openartifact/internal/repodispatch"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/sbom"
@@ -95,8 +97,13 @@ func versionLine() string {
 
 func main() {
 	if err := run(os.Args[1:]); err != nil {
-		if _, reported := errors.AsType[reportedError](err); !reported {
+		ee, hasCode := errors.AsType[exitError](err)
+		if _, reported := errors.AsType[reportedError](err); !reported && !hasCode {
 			fmt.Fprintf(os.Stderr, "openartifact-server: %v\n", err)
+		}
+
+		if hasCode {
+			os.Exit(ee.code)
 		}
 
 		os.Exit(1)
@@ -120,6 +127,10 @@ func (e reportedError) Unwrap() error { return e.error }
 // for -migrate, verify and -h) and an error for every startup or runtime
 // failure, so the process never exits 0 while the service is not running.
 func run(args []string) error {
+	if len(args) > 0 && args[0] == "rebuild" {
+		return runRebuild(args[1:])
+	}
+
 	flags := flag.NewFlagSet("openartifact-server", flag.ContinueOnError)
 	migrateFlag := flags.Bool("migrate", false, "run migrations and exit")
 	repairGomodFlag := flags.Bool("repair-gomod", false, "relink Go module zips damaged by the <=0.4.1 shared-blob bug, then exit")
@@ -289,6 +300,11 @@ func run(args []string) error {
 	// whichever tier holds it, new blobs land on the primary store. With no
 	// tier besides the primary one the wrapper forwards straight to it.
 	tierRegistry := tiering.NewRegistry(db, rawBlobStore, cfg.Storage, log)
+	if cfg.StorageReplica.Enabled() {
+		// A tier backend must never be the blob replica's location.
+		tierRegistry.Reserve(cfg.StorageReplica.StorageConfig)
+	}
+
 	if err := tierRegistry.Start(context.Background(), cfg.Tiering.RefreshInterval); err != nil {
 		return fail("failed to load storage tiers", err)
 	}
@@ -297,7 +313,29 @@ func run(args []string) error {
 	tierAccess.Start()
 
 	tieredStore := tiering.NewStore(tierRegistry, db, tierAccess, reg, log)
-	blobStore := storage.NewMetricsBlobStore(tieredStore, reg)
+
+	// Blob replication (docs/operations/replication.md): with storage.replica
+	// set, every write and delete is queued for a secondary backend and reads
+	// the primary cannot answer fall back to it. Unset, the stack is unchanged.
+	var (
+		replSvc    *replication.Service
+		primaryTop storage.BlobStore    = tieredStore
+		sweepStore worker.BlobByteStore = tieredStore
+		replAdmin  api.ReplicationService
+		replStop   = func() {}
+	)
+
+	if replSvc, err = newReplication(cfg, db, tieredStore, reg, log); err != nil {
+		return fail("failed to initialize blob replication", err)
+	}
+
+	if replSvc != nil {
+		primaryTop, sweepStore, replAdmin, replStop = replSvc.Store(), replSvc.Store(), replSvc, replSvc.Stop
+
+		log.Infow("Blob replication enabled", "replica", cfg.StorageReplica.Type, "location", cfg.StorageReplica.Summary(), "read_fallback", cfg.StorageReplica.ReadFallback)
+	}
+
+	blobStore := storage.NewMetricsBlobStore(primaryTop, reg)
 
 	log.Infow("Storage initialized", "type", cfg.Storage.Type, "path", cfg.Storage.Path)
 
@@ -324,17 +362,7 @@ func run(args []string) error {
 
 	// File/env GPG key (optional): the read-only fallback that signs wherever no
 	// database-managed key (admin API) applies.
-	var signer gpg.Signer
-
-	if cfg.GPG.Enabled && cfg.GPG.KeyPath != "" {
-		s, err := gpg.NewLocalSignerFromFile(cfg.GPG.KeyPath, []byte(cfg.GPG.Passphrase))
-		if err != nil {
-			log.Warnw("Failed to initialize the configured GPG signer", "error", err)
-		} else {
-			signer = s
-			log.Infow("GPG signer initialized", "fingerprint", s.KeyFingerprint())
-		}
-	}
+	signer := fileSigner(cfg, log)
 
 	// Resolves the signer of each repository: its own database key, else the
 	// global active one, else the configured file/env key.
@@ -423,9 +451,30 @@ func run(args []string) error {
 	// Blob deletion sweeper: removes the bytes of deleted blobs and retired
 	// tier copies after the grace period and once no running backup can still
 	// need them. Every replica may run one (no global lock).
-	blobSweeper := worker.NewBlobDeletionSweeper(db, tieredStore, log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).WithMetrics(reg)
+	blobSweeper := worker.NewBlobDeletionSweeper(db, sweepStore, log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).WithMetrics(reg)
 	blobSweeper.Start()
 
+	if replSvc != nil {
+		replSvc.Start()
+	}
+
+	// Disaster-recovery journal (docs/operations/rebuild-from-storage.md):
+	// database triggers mark changed package rows, this worker mirrors each as a
+	// sidecar blob so `openartifact rebuild` can re-index an empty database.
+	// Sidecars go through blobStore, so they are replicated with everything else.
+	journal := recovery.NewJournal(db.GetDB(), blobStore, log, &reg.Recovery, recovery.JournalConfig{
+		Batch: cfg.Recovery.Journal.Batch, Concurrency: cfg.Recovery.Journal.Concurrency,
+		ReconcileInterval: cfg.Recovery.Journal.ReconcileInterval,
+	})
+
+	var journalWorker *recovery.Worker
+
+	if err := journal.SetEnabled(context.Background(), cfg.Recovery.Journal.Enabled); err != nil {
+		log.Errorw("recovery journal unavailable (is the schema migrated?)", "error", err)
+	} else if cfg.Recovery.Journal.Enabled {
+		journalWorker = recovery.NewWorker(journal, log, cfg.Recovery.Journal.Interval)
+		journalWorker.Start()
+	}
 	// stopWorkers stops every background worker exactly once. It runs in the
 	// shutdown sequence (after HTTP stops, before the audit logger flushes) and
 	// also via defer so early-return paths never leak goroutines.
@@ -438,7 +487,7 @@ func run(args []string) error {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
 				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, dockerUploadSweeper.Stop, trashPurgeWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
-				tierWorker.Stop, blobSweeper.Stop, tierRegistry.Stop, tierAccess.Stop,
+				tierWorker.Stop, blobSweeper.Stop, replStop, tierRegistry.Stop, tierAccess.Stop, journalWorker.Stop,
 			} {
 				stop()
 			}
@@ -799,6 +848,8 @@ func run(args []string) error {
 	api.NewAdminAuditHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminStorageHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminTieringHandler(db, tierRegistry, tierEngine, tierWorker, log, evaluator).Register(authedAPI)
+	api.NewAdminReplicationHandler(replAdmin, log, evaluator).Register(authedAPI)
+	api.NewAdminRecoveryHandler(journal, log, evaluator).Register(authedAPI)
 	api.NewAdminGPGHandler(db, log, evaluator, gpgKeys).Register(authedAPI)
 	sysInfoHandler.RegisterAuthed(authedAPI)
 
@@ -1202,6 +1253,25 @@ func metricsAuthMiddleware(token string, allowAnonymous bool) func(http.Handler)
 			next.ServeHTTP(w, r)
 		})
 	}
+}
+
+// fileSigner loads the configured file/env GPG key; nil when none is
+// configured or it cannot be loaded (logged).
+func fileSigner(cfg *config.Config, log *logger.Logger) gpg.Signer {
+	if !cfg.GPG.Enabled || cfg.GPG.KeyPath == "" {
+		return nil
+	}
+
+	s, err := gpg.NewLocalSignerFromFile(cfg.GPG.KeyPath, []byte(cfg.GPG.Passphrase))
+	if err != nil {
+		log.Warnw("Failed to initialize the configured GPG signer", "error", err)
+
+		return nil
+	}
+
+	log.Infow("GPG signer initialized", "fingerprint", s.KeyFingerprint())
+
+	return s
 }
 
 // autoGenerateGPGKey implements gpg.autoGenerate: when no signing key exists

@@ -562,6 +562,22 @@ func (s *Store) DeleteCopy(ctx context.Context, backendID, id string) error {
 	return t.Store.Delete(ctx, id) //nolint:wrapcheck // ErrBlobNotFound is matched by the caller
 }
 
+// TierStores returns the stores of the usable tiers, primary first. The
+// replication verify job lists each one separately: List concatenates the
+// tiers, so its ids are only ascending within one tier.
+func (s *Store) TierStores() []storage.BlobStore {
+	snap := s.reg.Snapshot()
+	out := make([]storage.BlobStore, 0, len(snap.Tiers))
+
+	for _, t := range snap.Tiers {
+		if t.Store != nil {
+			out = append(out, t.Store)
+		}
+	}
+
+	return out
+}
+
 // List implements storage.BlobStore: it walks the tiers in order, primary first.
 // A blob mid-move can appear once per tier. Tiers that cannot list are skipped,
 // except the primary, whose ErrListNotSupported is returned. Backups do not use

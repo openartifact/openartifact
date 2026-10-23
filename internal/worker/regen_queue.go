@@ -145,6 +145,8 @@ func newRegenQueue[K comparable](format string, log *logger.Logger, run func(ctx
 
 func (q *regenQueue[K]) setDebounce(d time.Duration) { q.debounce = d }
 
+func (q *regenQueue[K]) setDrainTimeout(d time.Duration) { q.drainTimeout = d }
+
 func (q *regenQueue[K]) setLimiter(l *RegenLimiter) {
 	if l != nil {
 		q.limiter = l

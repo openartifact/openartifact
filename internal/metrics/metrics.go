@@ -38,6 +38,9 @@ type Registry struct {
 	BlobDeletionsPending prometheus.Gauge
 	BlobDeletionsSwept   *prometheus.CounterVec
 
+	// Replication holds the collectors of async blob replication to a replica.
+	Replication *ReplicationMetrics
+
 	// ScannerInstallAttemptsTotal counts runtime scanner installs. The scanner
 	// label is trivy or grype; result is one of a fixed set (see internal/vuln).
 	ScannerInstallAttemptsTotal *prometheus.CounterVec
@@ -48,6 +51,9 @@ type Registry struct {
 	// restart, the age of the database on disk), in Unix seconds.
 	ScannerDBUpdateAttemptsTotal  *prometheus.CounterVec
 	ScannerDBLastSuccessTimestamp *prometheus.GaugeVec
+
+	// Recovery holds the disaster-recovery row journal metrics.
+	Recovery RecoveryMetrics
 }
 
 // NewRegistry creates all metrics, registers them on the default Prometheus
@@ -140,6 +146,8 @@ func NewRegistry() *Registry {
 			Help: "Queued blob deletions the sweeper finished, by result: deleted (bytes removed) or kept (the blob was re-uploaded or the copy is authoritative again).",
 		}, []string{"result"}),
 
+		Replication: NewReplicationMetrics(),
+
 		ScannerInstallAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_scanner_install_attempts_total",
 			Help: "Runtime installs of the Trivy and Grype binaries, by scanner and result (installed, reused, unsupported_platform, download_failed, checksum_mismatch, extract_failed, noexec, insecure_location, failed).",
@@ -178,6 +186,9 @@ func NewRegistry() *Registry {
 		r.ScannerDBUpdateAttemptsTotal,
 		r.ScannerDBLastSuccessTimestamp,
 	)
+	prometheus.MustRegister(r.Replication.Collectors()...)
+
+	r.Recovery = newRecoveryMetrics()
 
 	return r
 }
