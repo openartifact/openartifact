@@ -119,7 +119,7 @@ def valid(body: bytes, header: str, secret: bytes) -> bool:
     return hmac.compare_digest(expected, header)
 ```
 
-A response with a `2xx` status is a success. Everything else (other status, connection error, timeout, a secret that cannot be decrypted) is a failed attempt. The response status and up to 64 KiB of the body are stored in the delivery log. Redirects are followed at most twice and are checked like the original URL.
+A response with a `2xx` status is a success. Everything else (other status, connection error, timeout, a secret that cannot be decrypted) is a failed attempt. The response status and up to 64 KiB of the body are stored in the delivery log. Redirects are never followed (a replayed signed body must not reach a host the owner did not configure): a `3xx` response is a failed attempt.
 
 ## Retries
 
