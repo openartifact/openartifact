@@ -11,7 +11,23 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"sync"
 )
+
+// spoolBufSize is the copy buffer of spoolVerified. Large enough to keep the
+// write syscalls few on multi-megabyte blobs.
+const spoolBufSize = 128 * 1024
+
+// spoolBufs pools the copy buffers: io.Copy into an *os.File allocates a fresh
+// 32 KiB buffer per call, which showed up as io.copyBuffer in allocation
+// profiles of upload-heavy servers.
+var spoolBufs = sync.Pool{ //nolint:gochecknoglobals // process-wide buffer pool
+	New: func() any {
+		b := make([]byte, spoolBufSize)
+
+		return &b
+	},
+}
 
 // ErrDigestMismatch is returned by BlobStore.Put when the streamed bytes do
 // not hash to the sha256 the caller claimed in the metadata. Nothing is
@@ -37,7 +53,14 @@ func spoolVerified(data io.Reader, want, dir, pattern string) (*os.File, int64, 
 
 	hasher := sha256.New()
 
-	size, err := io.Copy(spool, io.TeeReader(data, hasher))
+	buf := spoolBufs.Get().(*[]byte) //nolint:forcetypeassert // the pool only holds *[]byte
+
+	// The writer is wrapped so *os.File.ReadFrom does not take over and
+	// allocate its own buffer; the TeeReader source has no WriteTo either.
+	size, err := io.CopyBuffer(struct{ io.Writer }{spool}, io.TeeReader(data, hasher), *buf)
+
+	spoolBufs.Put(buf)
+
 	if err != nil {
 		discard()
 

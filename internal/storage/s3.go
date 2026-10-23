@@ -14,17 +14,24 @@ import (
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
+	v4 "github.com/aws/aws-sdk-go-v2/aws/signer/v4"
 	"github.com/aws/aws-sdk-go-v2/config"
 	"github.com/aws/aws-sdk-go-v2/credentials"
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 // Sentinel errors for S3 Blob Store.
 var (
 	ErrS3PutRequiresSHA256 = errors.New("S3BlobStore.Put requires \"sha256\" in metadata")
 )
+
+// s3PartSize is the multipart part size; a verified spool no larger than this
+// is stored with one PutObject instead of the transfer manager (see Put).
+const s3PartSize = 16 * 1024 * 1024
 
 // S3BlobStore implements BlobStore backed by Amazon S3 or any S3-compatible service.
 type S3BlobStore struct {
@@ -70,7 +77,7 @@ func NewS3BlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 	client := s3.NewFromConfig(awsCfg, s3Opts)
 
 	uploader := transfermanager.New(client, func(o *transfermanager.Options) {
-		o.PartSizeBytes = 16 * 1024 * 1024
+		o.PartSizeBytes = s3PartSize
 		o.Concurrency = 4
 	})
 
@@ -153,7 +160,10 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 	// Hash into a private spool first: the object only becomes visible once
 	// the claimed digest matches the bytes, and the bytes uploaded are the
 	// bytes that were hashed.
-	spool, _, err := spoolVerified(data, sha, "", "s3-put-*.tmp")
+	_, endSpool := telemetry.StartSpan(ctx, "storage.s3.spool")
+	spool, size, err := spoolVerified(data, sha, "", "s3-put-*.tmp")
+	endSpool(err)
+
 	if err != nil {
 		return "", fmt.Errorf("s3: %w", err)
 	}
@@ -164,7 +174,10 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 	}()
 
 	// Verified content already present is never overwritten.
-	exists, err := s.Exists(ctx, sha)
+	existsCtx, endExists := telemetry.StartSpan(ctx, "storage.s3.head")
+	exists, err := s.Exists(existsCtx, sha)
+	endExists(err)
+
 	if err != nil {
 		return "", err
 	}
@@ -173,17 +186,46 @@ func (s *S3BlobStore) Put(ctx context.Context, data io.Reader, metadata map[stri
 		return sha, nil
 	}
 
-	_, err = s.uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
-		Bucket:   aws.String(s.bucket),
-		Key:      aws.String(key),
-		Body:     spool,
-		Metadata: metadata,
-	})
+	ctx, endUpload := telemetry.StartSpan(ctx, "storage.s3.upload")
+	defer func() { endUpload(err) }()
+
+	if size <= s3PartSize {
+		err = s.putSingle(ctx, key, spool, size, sha, metadata)
+	} else {
+		_, err = s.uploader.UploadObject(ctx, &transfermanager.UploadObjectInput{
+			Bucket:   aws.String(s.bucket),
+			Key:      aws.String(key),
+			Body:     spool,
+			Metadata: metadata,
+		})
+	}
+
 	if err != nil {
 		return "", fmt.Errorf("s3: upload %s: %w", key, err)
 	}
 
 	return sha, nil
+}
+
+// putSingle stores a verified spool of at most s3PartSize bytes with one
+// PutObject. The transfer manager would first read the whole body into memory
+// (io.ReadAll) and the SDK would then hash it twice more (SigV4 payload hash on
+// plain-HTTP endpoints, default CRC32 checksum); the spool is already a
+// seekable file whose sha256 was verified, so that digest is used as the
+// signed x-amz-content-sha256 payload hash instead: the object store still
+// checks the received bytes against it, with no extra pass over the body.
+func (s *S3BlobStore) putSingle(ctx context.Context, key string, spool io.ReadSeeker, size int64, sha string, metadata map[string]string) error {
+	_, err := s.client.PutObject(v4.SetPayloadHash(ctx, sha), &s3.PutObjectInput{
+		Bucket:        aws.String(s.bucket),
+		Key:           aws.String(key),
+		Body:          spool,
+		ContentLength: aws.Int64(size),
+		Metadata:      metadata,
+	}, func(o *s3.Options) {
+		o.RequestChecksumCalculation = aws.RequestChecksumCalculationWhenRequired
+	})
+
+	return err
 }
 
 // Get retrieves a blob by its SHA-256 identifier.

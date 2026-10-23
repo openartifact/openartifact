@@ -9,7 +9,10 @@ import (
 	"io"
 	"time"
 
+	"go.opentelemetry.io/otel/attribute"
+
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 type countingReader struct {
@@ -33,10 +36,33 @@ func NewMetricsBlobStore(inner BlobStore, reg *metrics.Registry) *MetricsBlobSto
 	return &MetricsBlobStore{inner: inner, reg: reg}
 }
 
+// observe times one blob store call: it feeds the operation latency histogram
+// and, under a sampled request, a "storage.<operation>" span, so the object
+// store shows up as its own step in a trace instead of a gap between queries.
+// It returns the function that records the outcome.
+func (m *MetricsBlobStore) observe(ctx context.Context, operation string) (context.Context, func(err error)) {
+	start := time.Now()
+	ctx, end := telemetry.StartSpan(ctx, "storage."+operation, attribute.String("blob.operation", operation))
+
+	return ctx, func(err error) {
+		end(err)
+
+		result := "ok"
+		if err != nil {
+			result = "error"
+		}
+
+		m.reg.BlobOperationDurationSeconds.WithLabelValues(operation, result).Observe(time.Since(start).Seconds())
+	}
+}
+
 func (m *MetricsBlobStore) Put(ctx context.Context, data io.Reader, metadata map[string]string) (string, error) {
 	cr := &countingReader{r: data}
 
+	ctx, done := m.observe(ctx, "put")
 	id, err := m.inner.Put(ctx, cr, metadata)
+	done(err)
+
 	if err == nil {
 		m.reg.BlobBytesTotal.WithLabelValues("put").Add(float64(cr.count))
 	}
@@ -45,7 +71,10 @@ func (m *MetricsBlobStore) Put(ctx context.Context, data io.Reader, metadata map
 }
 
 func (m *MetricsBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error) {
+	ctx, done := m.observe(ctx, "get")
 	rc, err := m.inner.Get(ctx, id)
+	done(err)
+
 	if err != nil {
 		return nil, err
 	}
@@ -54,15 +83,27 @@ func (m *MetricsBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, e
 }
 
 func (m *MetricsBlobStore) Delete(ctx context.Context, id string) error {
-	return m.inner.Delete(ctx, id)
+	ctx, done := m.observe(ctx, "delete")
+	err := m.inner.Delete(ctx, id)
+	done(err)
+
+	return err
 }
 
 func (m *MetricsBlobStore) Exists(ctx context.Context, id string) (bool, error) {
-	return m.inner.Exists(ctx, id)
+	ctx, done := m.observe(ctx, "exists")
+	ok, err := m.inner.Exists(ctx, id)
+	done(err)
+
+	return ok, err
 }
 
 func (m *MetricsBlobStore) GetMetadata(ctx context.Context, id string) (map[string]string, error) {
-	return m.inner.GetMetadata(ctx, id)
+	ctx, done := m.observe(ctx, "metadata")
+	md, err := m.inner.GetMetadata(ctx, id)
+	done(err)
+
+	return md, err
 }
 
 func (m *MetricsBlobStore) List(ctx context.Context, token string, limit int) ([]string, string, error) {
@@ -70,11 +111,19 @@ func (m *MetricsBlobStore) List(ctx context.Context, token string, limit int) ([
 }
 
 func (m *MetricsBlobStore) GetSize(ctx context.Context, id string) (int64, error) {
-	return m.inner.GetSize(ctx, id)
+	ctx, done := m.observe(ctx, "size")
+	n, err := m.inner.GetSize(ctx, id)
+	done(err)
+
+	return n, err
 }
 
 func (m *MetricsBlobStore) ExistsBySHA256(ctx context.Context, sha256 string) (string, bool, error) {
-	return m.inner.ExistsBySHA256(ctx, sha256)
+	ctx, done := m.observe(ctx, "exists_by_sha256")
+	key, ok, err := m.inner.ExistsBySHA256(ctx, sha256)
+	done(err)
+
+	return key, ok, err
 }
 
 func (m *MetricsBlobStore) PresignURL(ctx context.Context, sha256 string, ttl time.Duration) (string, error) {

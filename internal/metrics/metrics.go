@@ -17,6 +17,7 @@ type Registry struct {
 	HTTPRequestDurationSeconds          *prometheus.HistogramVec
 	UploadsTotal                        *prometheus.CounterVec
 	BlobBytesTotal                      *prometheus.CounterVec
+	BlobOperationDurationSeconds        *prometheus.HistogramVec
 	BlobDownloadsTotal                  *prometheus.CounterVec
 	MetadataRegenerationsTotal          *prometheus.CounterVec
 	MetadataRegenerationDurationSeconds *prometheus.HistogramVec
@@ -87,6 +88,18 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 			Name: "openartifact_blob_bytes_total",
 			Help: "Total bytes transferred to/from the blob store.",
 		}, []string{"operation"}),
+
+		// Latency of the object store itself, as seen by the server: the
+		// floor under every upload. For Put it covers reading the client's
+		// body, so large uploads are bounded by the client's speed; for Get it
+		// is the time to open the object, not to stream it.
+		//
+		//	histogram_quantile(0.95, sum by (le) (rate(openartifact_blob_operation_duration_seconds_bucket{operation="put"}[5m])))
+		BlobOperationDurationSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
+			Name:    "openartifact_blob_operation_duration_seconds",
+			Help:    "Blob store operation latency by operation (put, get, exists, exists_by_sha256, delete, size, metadata) and result (ok, error).",
+			Buckets: []float64{.0005, .001, .0025, .005, .01, .025, .05, .1, .25, .5, 1, 2.5, 10, 60},
+		}, []string{"operation", "result"}),
 
 		BlobDownloadsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_blob_downloads_total",
@@ -176,6 +189,7 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 		r.HTTPRequestDurationSeconds,
 		r.UploadsTotal,
 		r.BlobBytesTotal,
+		r.BlobOperationDurationSeconds,
 		r.BlobDownloadsTotal,
 		r.MetadataRegenerationsTotal,
 		r.MetadataRegenerationDurationSeconds,
