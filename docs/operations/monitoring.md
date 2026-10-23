@@ -67,7 +67,7 @@ scrape_configs:
 
 | Metric | Type | Labels | Notes |
 |---|---|---|---|
-| `openartifact_http_requests_total` | counter | `method`, `path`, `status` | `path` is the route pattern (trailing `/*` removed), or `unknown`, so cardinality stays bounded |
+| `openartifact_http_requests_total` | counter | `method`, `path`, `status` | `path` is the route pattern (trailing `/*` removed), or `unmatched` for requests that match no route (the raw path is never used), so cardinality stays bounded |
 | `openartifact_http_request_duration_seconds` | histogram | `method`, `path` | buckets 0.005 to 10 s |
 | `openartifact_uploads_total` | counter | `format`, `result` | `result` is `success` or `error`; only the API upload handlers for `deb`, `npm`, `rpm` and `maven` count here |
 | `openartifact_blob_bytes_total` | counter | `operation` | bytes written (`put`) and read (`get`) through the blob store |

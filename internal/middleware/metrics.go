@@ -15,6 +15,10 @@ import (
 	"github.com/openartifact/openartifact/internal/metrics"
 )
 
+// unmatchedPath is the path label of requests that match no route (404, 405):
+// a fixed value, never the raw path, so cardinality stays bounded.
+const unmatchedPath = "unmatched"
+
 func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -32,7 +36,7 @@ func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 
 			duration := time.Since(start)
 
-			path := "unknown"
+			path := unmatchedPath
 
 			if rctx := chi.RouteContext(r.Context()); rctx != nil {
 				if p := rctx.RoutePattern(); p != "" {
