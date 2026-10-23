@@ -85,7 +85,7 @@ How it behaves:
 
 Debian repositories need nothing equivalent: apt verifies the signed `Release`/`InRelease`, which already covers every package through its checksums.
 
-`primary.xml` lists each package's installed size (`RPMTAG_LONGSIZE`/`SIZE`) and archive size (rpm 4 signature tag 271/1007, or `PAYLOADSIZEALT` for rpm 6 packages), which dnf uses for its transaction size checks. Packages uploaded by earlier versions are re-read from storage the first time their repository's metadata is regenerated, which the upgrade triggers once at startup.
+`primary.xml` lists each package's installed size (`RPMTAG_LONGSIZE`/`SIZE`) and archive size (rpm 4 signature tag 271/1007, or `PAYLOADSIZEALT` for rpm 6 packages), which dnf uses for its transaction size checks. Packages uploaded by earlier versions are re-read from storage the first time their repository's metadata is regenerated, which happens once at the first start after the upgrade: migration `064` flags every hosted RPM repository for regeneration, and the metadata worker processes the flagged ones at startup. No new upload is needed.
 
 ## Proxy
 

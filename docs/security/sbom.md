@@ -155,7 +155,7 @@ The ECDSA hash follows the curve (SHA-256, SHA-384, SHA-512), as Sigstore requir
 
 ### Verify with cosign
 
-[cosign](https://github.com/sigstore/cosign) v2.4+ and v3 verify the bundle against the public key, offline. OpenArtifact does not use Sigstore's transparency log, so tell cosign to skip it:
+[cosign](https://github.com/sigstore/cosign) v2.5+ (including v3) verify the bundle against the public key, offline. OpenArtifact does not use Sigstore's transparency log, so tell cosign to skip it:
 
 ```sh
 curl -sS HOST/.well-known/openartifact/attestation-key.pem -o attestation-key.pem
