@@ -35,6 +35,8 @@ type Repository struct {
 	// hosted member win a package name: proxy members' versions and files of
 	// a name any hosted member holds are hidden. true merges all members.
 	MergeProxyVersions bool
+	// SignPackages (hosted rpm only) signs uploaded RPMs with the active GPG key.
+	SignPackages bool
 	// DeletedAt/DeletedBy are set while the repository is in the trash. Every
 	// lookup except the trash API hides such a repository.
 	DeletedAt *time.Time

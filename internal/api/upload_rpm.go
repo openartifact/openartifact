@@ -31,8 +31,10 @@ import (
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/internal/worker"
+	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
+	"github.com/openartifact/openartifact/pkg/rpmsign"
 )
 
 const (
@@ -52,6 +54,7 @@ type RPMUploadHandler struct {
 	publisher  webhook.Publisher
 
 	packageDeleter PackageDeleter
+	keys           gpg.Resolver
 }
 
 func NewRPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
@@ -71,6 +74,11 @@ func (h *RPMUploadHandler) SetDebWorker(w *worker.DebMetadataWorker) {
 
 func (h *RPMUploadHandler) SetRPMWorker(w *worker.RPMetadataWorker) {
 	h.rpmWorker = w
+}
+
+// SetKeyResolver wires the signing keys used by repositories with sign_packages.
+func (h *RPMUploadHandler) SetKeyResolver(r gpg.Resolver) {
+	h.keys = r
 }
 
 // SetPublisher wires the webhook publisher used for artifact events. It also
@@ -172,17 +180,7 @@ func (h *RPMUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 	if err != nil {
 		uploadResult = "error"
 
-		switch {
-		case errors.Is(err, errResponseWritten):
-			// licensepolicy.Enforce already answered.
-		case isInvalidRPMError(err):
-			writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid rpm package: "+err.Error())
-		case errors.Is(err, quota.ErrExceeded):
-			quota.WriteExceeded(w)
-		default:
-			h.log.Errorw("RPM upload failed", "repository", repoName, "filename", header.Filename, "error", err)
-			writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
-		}
+		h.writeUploadError(w, err, repoName, header.Filename)
 
 		return
 	}
@@ -460,6 +458,96 @@ func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repo
 	return nil, err
 }
 
+var (
+	// errNoSigningKey means sign_packages is on but no key resolves for the repository.
+	errNoSigningKey = errors.New("no signing key")
+	// errSigningFailed means the package could not be signed (unsupported format, unreadable signature header).
+	errSigningFailed = errors.New("signing failed")
+)
+
+// writeUploadError maps an uploadPipeline failure to its HTTP response.
+func (h *RPMUploadHandler) writeUploadError(w http.ResponseWriter, err error, repoName, filename string) {
+	switch {
+	case errors.Is(err, errResponseWritten):
+		// licensepolicy.Enforce already answered.
+	case isInvalidRPMError(err):
+		writeError(w, http.StatusBadRequest, "INVALID_INPUT", "invalid rpm package: "+err.Error())
+	case errors.Is(err, quota.ErrExceeded):
+		quota.WriteExceeded(w)
+	case writeSigningError(w, err):
+	default:
+		h.log.Errorw("RPM upload failed", "repository", repoName, "filename", filename, "error", err)
+		writeError(w, http.StatusInternalServerError, "UPLOAD_ERROR", "upload processing failed")
+	}
+}
+
+// writeSigningError answers the sign_packages failures and reports whether err was one.
+func writeSigningError(w http.ResponseWriter, err error) bool {
+	switch {
+	case errors.Is(err, errNoSigningKey):
+		writeError(w, http.StatusConflict, "SIGNING_KEY_REQUIRED",
+			"the repository signs packages (sign_packages) but no GPG key is active for it; activate a key or turn the setting off")
+	case errors.Is(err, errSigningFailed):
+		writeError(w, http.StatusUnprocessableEntity, "SIGNING_FAILED", "cannot sign the package: "+err.Error())
+	default:
+		return false
+	}
+
+	return true
+}
+
+// countingWriter counts the bytes written through it.
+type countingWriter struct{ n int64 }
+
+func (c *countingWriter) Write(p []byte) (int, error) {
+	c.n += int64(len(p))
+	return len(p), nil
+}
+
+// signUpload returns a signed copy of the spooled package and its parsed
+// header. The copy is a different file: its digest, size and header offsets
+// differ from the upload's, and those are what the blob store, the database
+// and the repodata checksums then use. The caller closes the returned spool.
+func (h *RPMUploadHandler) signUpload(ctx context.Context, repo *models.Repository, sp *rpmSpool) (*rpmSpool, *pkgrpm.Package, error) {
+	var signer gpg.Signer
+
+	if h.keys != nil {
+		var err error
+
+		signer, err = h.keys.SignerForRepo(ctx, repo.ID)
+		if err != nil {
+			return nil, nil, fmt.Errorf("resolving the signing key: %w", err)
+		}
+	}
+
+	if signer == nil {
+		return nil, nil, errNoSigningKey
+	}
+
+	out, err := os.CreateTemp("", "rpm-signed-*.tmp")
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	signed := &rpmSpool{file: out}
+
+	hasher, count := sha256.New(), &countingWriter{}
+	if err := rpmsign.Sign(sp.file, io.MultiWriter(out, hasher, count), signer); err != nil {
+		signed.close(h.log)
+		return nil, nil, fmt.Errorf("%w: %w", errSigningFailed, err)
+	}
+
+	signed.sha256, signed.size = hex.EncodeToString(hasher.Sum(nil)), count.n
+
+	pkg, err := parseSpooled(signed)
+	if err != nil {
+		signed.close(h.log)
+		return nil, nil, fmt.Errorf("%w: the signed package does not parse: %w", errSigningFailed, err)
+	}
+
+	return signed, pkg, nil
+}
+
 // errResponseWritten means a policy check already wrote the HTTP response.
 var errResponseWritten = errors.New("response already written")
 
@@ -508,6 +596,17 @@ func (h *RPMUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 
 	if licensepolicy.Enforce(w, r, h.db, h.log, repo.ID, pkg.License) {
 		return nil, errResponseWritten
+	}
+
+	if repo.SignPackages {
+		signed, signedPkg, err := h.signUpload(ctx, repo, sp)
+		if err != nil {
+			return nil, err
+		}
+
+		defer signed.close(h.log)
+
+		sp, pkg = signed, signedPkg
 	}
 
 	extra, err := pkg.MarshalExtra()

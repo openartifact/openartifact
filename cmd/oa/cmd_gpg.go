@@ -5,6 +5,7 @@
 package main
 
 import (
+	"bytes"
 	"encoding/json"
 	"flag"
 	"fmt"
@@ -283,7 +284,23 @@ func gpgDelete(args []string, client *Client) {
 		path += "?force=true"
 	}
 
-	deleteResource(client, path, "GPG key deleted.")
+	resp, err := client.do("DELETE", path, nil, "")
+	if err != nil {
+		dief("%v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	if resp.StatusCode == http.StatusConflict && !*force {
+		body, _ := io.ReadAll(io.LimitReader(resp.Body, 1<<16))
+		if bytes.Contains(body, []byte("key_in_use")) {
+			dief("the key is active or assigned to a repository; deactivate it first or run again with --force")
+		}
+
+		resp.Body = io.NopCloser(bytes.NewReader(body))
+	}
+
+	checkOK(resp, http.StatusOK, http.StatusNoContent)
+	fmt.Println("GPG key deleted.")
 }
 
 func gpgActivate(args []string, client *Client, outFmt string) {

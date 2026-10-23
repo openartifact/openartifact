@@ -190,10 +190,10 @@ func (p *PostgresDB) Migrate(ctx context.Context) error {
 
 // repoColumns is the column list every repository read selects; repoScanDest
 // returns the matching Scan destinations.
-const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
+const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
 
 func repoScanDest(r *models.Repository) []any {
-	return []any{&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.ProjectID, &r.PresignDownloads, &r.TrashRetentionDays, &r.ImmutableReleases, &r.MergeProxyVersions, &r.DeletedAt, &r.DeletedBy, &r.CreatedAt, &r.UpdatedAt}
+	return []any{&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.ProjectID, &r.PresignDownloads, &r.TrashRetentionDays, &r.ImmutableReleases, &r.MergeProxyVersions, &r.SignPackages, &r.DeletedAt, &r.DeletedBy, &r.CreatedAt, &r.UpdatedAt}
 }
 
 func (p *PostgresDB) GetRepositoryByNameUncached(ctx context.Context, name string) (*models.Repository, error) {
@@ -337,8 +337,8 @@ type repoExecer interface {
 
 func updateRepositoryRow(ctx context.Context, db repoExecer, repo *models.Repository) error {
 	_, err := db.ExecContext(ctx,
-		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12, immutable_releases = $13, presign_downloads = $15, merge_proxy_versions = $16, updated_at = now() WHERE id = $14 AND deleted_at IS NULL`,
-		repo.Description, repo.Public, repo.RepoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.ProjectID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.ID, repo.PresignDownloads, repo.MergeProxyVersions,
+		`UPDATE repositories SET description = $1, public = $2, repo_type = $3, upstream_url = NULLIF($4,''), upstream_username = NULLIF($5,''), upstream_password_enc = NULLIF($6,''), cache_ttl_seconds = $7, negative_cache_ttl_seconds = $8, max_stale_seconds = $9, blocked = $10, project_id = $11, trash_retention_days = $12, immutable_releases = $13, presign_downloads = $15, merge_proxy_versions = $16, sign_packages = $17, updated_at = now() WHERE id = $14 AND deleted_at IS NULL`,
+		repo.Description, repo.Public, repo.RepoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.ProjectID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.ID, repo.PresignDownloads, repo.MergeProxyVersions, repo.SignPackages,
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update repository: %w", err)
@@ -502,8 +502,8 @@ func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Reposito
 	}
 
 	return p.db.QueryRowContext(ctx,
-		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id, trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish, merge_proxy_versions) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16, $17, $18) RETURNING id, created_at, updated_at`,
-		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.ProjectID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.PresignDownloads, repo.AllowFullUnpublish, repo.MergeProxyVersions,
+		`INSERT INTO repositories (id, name, format, description, public, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, max_stale_seconds, blocked, project_id, trash_retention_days, immutable_releases, presign_downloads, allow_full_unpublish, merge_proxy_versions, sign_packages) VALUES (gen_random_uuid(), $1, $2, $3, $4, $5, NULLIF($6,''), NULLIF($7,''), NULLIF($8,''), $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19) RETURNING id, created_at, updated_at`,
+		repo.Name, repo.Format, repo.Description, repo.Public, repoType, repo.UpstreamURL, repo.UpstreamUsername, repo.UpstreamPasswordEnc, repo.CacheTTLSeconds, repo.NegativeCacheTTLSeconds, repo.MaxStaleSeconds, repo.Blocked, repo.ProjectID, repo.TrashRetentionDays, repo.ImmutableReleases, repo.PresignDownloads, repo.AllowFullUnpublish, repo.MergeProxyVersions, repo.SignPackages,
 	).Scan(&repo.ID, &repo.CreatedAt, &repo.UpdatedAt)
 }
 

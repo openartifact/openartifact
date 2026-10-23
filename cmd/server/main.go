@@ -745,6 +745,7 @@ func run(args []string) error {
 	rpmUpload.SetDebWorker(debWorker)
 	rpmUpload.SetRPMWorker(rpmWorker)
 	rpmUpload.SetPackageDeleter(cleanupWorker)
+	rpmUpload.SetKeyResolver(gpgKeys)
 	rpmUpload.Register(authedAPI)
 
 	debUpload := api.NewDebUploadHandler(log, db, blobStore, reg)

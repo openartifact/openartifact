@@ -122,6 +122,7 @@ Migration `054` (GPG key management; additive) creates `gpg_keys` and `gpg_key_r
 - **APT repositories serve `public.key`.** `HOST/repos/REPO/public.key` used to return `404` for Debian repositories; it now returns the key that signs the repository, from the next metadata regeneration (or when a key is activated).
 - **RPM `primary.xml` lists packages under `<location>`** (it was written as `<Location>`, which dnf cannot download from). Fixed; repositories pick it up when their metadata is next regenerated (any upload or delete, or a key change).
 - **Bundles can be sealed with a GPG signature** (`gpg_key_id`, previously `501`), with `GET .../manifest` and `.../manifest.asc` to verify it.
+- **RPM repositories can sign packages.** Migration `054` also adds `repositories.sign_packages` (default `false`, so nothing changes on upgrade). Enabling it on a hosted RPM repository signs every later upload with the repository's signing key, so dnf works with the default `gpgcheck=1`; the stored file is the signed one (new SHA-256), existing packages are not re-signed and key rotation does not touch them ([RPM](../formats/rpm.md#signing-packages-sign_packages)). Debian needs no change: apt trusts the signed `Release`.
 
 ### 0.7.0
 

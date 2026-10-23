@@ -71,7 +71,7 @@ Served relative to `HOST/repos/REPO`:
 
 ## Signing
 
-Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` to sign `InRelease` and `Release.gpg` ([signing](../security/signing.md)). Without a key apt refuses the repository unless the source line is marked `[trusted=yes]`. `Release.gpg` is a standard ASCII-armored detached signature that `gpgv` and apt verify (`gpgv --keyring KEYRING Release.gpg Release`); before 0.5.0 it was armored twice and only `InRelease` was usable. It is rewritten the next time the repository's indexes are regenerated (any upload or delete).
+Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` to sign `InRelease` and `Release.gpg` ([signing](../security/signing.md)). Without a key apt refuses the repository unless the source line is marked `[trusted=yes]`. `Release.gpg` is a standard ASCII-armored detached signature that `gpgv` and apt verify (`gpgv --keyring KEYRING Release.gpg Release`); before 0.5.0 it was armored twice and only `InRelease` was usable. It is rewritten the next time the repository's indexes are regenerated (any upload or delete). Individual `.deb` files are not signed: apt verifies them through the checksums in the signed `Release`.
 
 ## Proxy
 

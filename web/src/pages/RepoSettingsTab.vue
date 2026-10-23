@@ -73,6 +73,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p class="text-xs text-muted">{{ t('repos.settings.mergeProxyVersionsHint') }}</p>
         <p v-if="!session.isAdmin" class="text-xs text-muted">{{ t('repos.settings.mergeProxyVersionsAdminOnly') }}</p>
       </div>
+      <div v-if="isSignable" class="space-y-1">
+        <div class="flex items-center gap-3">
+          <input id="repo-sign-packages" v-model="form.signPackages" type="checkbox" class="rounded accent-[rgb(var(--color-primary))]" />
+          <label for="repo-sign-packages" class="text-sm font-medium text-foreground">{{ t('repos.settings.signPackages') }}</label>
+        </div>
+        <p class="text-xs text-muted">{{ t('repos.settings.signPackagesHint') }}</p>
+      </div>
       <AppButton type="submit" :disabled="!!retentionError" :loading="loading">
         {{ loading ? t('common.saving') : t('common.save') }}
       </AppButton>
@@ -110,6 +117,7 @@ interface SettingsForm {
   trashRetention: string
   immutableReleases: boolean
   mergeProxyVersions: boolean
+  signPackages: boolean
 }
 
 function formFrom(r: Repository): SettingsForm {
@@ -120,6 +128,7 @@ function formFrom(r: Repository): SettingsForm {
     trashRetention: r.trash_retention_days == null ? '' : String(r.trash_retention_days),
     immutableReleases: r.immutable_releases ?? false,
     mergeProxyVersions: r.merge_proxy_versions ?? false,
+    signPackages: r.sign_packages ?? false,
   }
 }
 
@@ -127,6 +136,7 @@ const form = ref<SettingsForm>(formFrom(props.repo))
 const retentionError = computed(() =>
   parseRetentionInput(form.value.trashRetention) === undefined ? t('repos.settings.trashRetentionInvalid') : '',
 )
+const isSignable = computed(() => props.repo.format === 'rpm' && props.repo.repo_type === 'hosted')
 const loading = ref(false)
 const toasts = useToastStore()
 
@@ -148,6 +158,7 @@ async function handleSave(): Promise<void> {
       trash_retention_days: parseRetentionInput(form.value.trashRetention) ?? null,
       immutable_releases: form.value.immutableReleases,
       // The API answers 403 to non-admins that send the field, so only admins send it.
+      ...(isSignable.value ? { sign_packages: form.value.signPackages } : {}),
       ...(props.repo.repo_type === 'group' && session.isAdmin ? { merge_proxy_versions: form.value.mergeProxyVersions } : {}),
     })
     toasts.success(t('common.save'))

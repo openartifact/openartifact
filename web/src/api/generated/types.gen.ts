@@ -185,6 +185,10 @@ export type Repository = {
      * Group repositories only. false (default): for a package name held by a readable hosted member, proxy members' versions of that name are hidden (hosted members win, dependency-confusion protection). true: merge proxy versions with the hosted ones. Only administrators can set it.
      */
     merge_proxy_versions?: boolean;
+    /**
+     * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
+     */
+    sign_packages?: boolean;
 };
 
 export type RepositoryMember = {
@@ -1746,6 +1750,10 @@ export type PostApiV1RepositoriesData = {
          * Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group.
          */
         merge_proxy_versions?: boolean;
+        /**
+         * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
+         */
+        sign_packages?: boolean;
     };
     path?: never;
     query?: never;
@@ -5624,6 +5632,10 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
          * Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group.
          */
         merge_proxy_versions?: boolean;
+        /**
+         * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
+         */
+        sign_packages?: boolean;
     };
     path: {
         project: string;
@@ -6635,6 +6647,10 @@ export type PatchApiV1RepositoryByNameData = {
          * Group repositories only, administrators only (403 otherwise). Absent leaves it unchanged.
          */
         merge_proxy_versions?: boolean;
+        /**
+         * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
+         */
+        sign_packages?: boolean;
     };
     path: {
         name: string;

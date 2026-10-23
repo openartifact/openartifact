@@ -366,6 +366,10 @@
           "merge_proxy_versions": {
             "type": "boolean",
             "description": "Group repositories only. false (default): for a package name held by a readable hosted member, proxy members' versions of that name are hidden (hosted members win, dependency-confusion protection). true: merge proxy versions with the hosted ones. Only administrators can set it."
+          },
+          "sign_packages": {
+            "type": "boolean",
+            "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
           }
         },
         "required": [
@@ -3994,6 +3998,10 @@
                   "merge_proxy_versions": {
                     "type": "boolean",
                     "description": "Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group."
+                  },
+                  "sign_packages": {
+                    "type": "boolean",
+                    "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
                   }
                 },
                 "required": [
@@ -10386,6 +10394,10 @@
                   "merge_proxy_versions": {
                     "type": "boolean",
                     "description": "Group repositories only, administrators only (403 otherwise). Default false: hosted members win a package name and proxy versions of the same name are hidden. true merges proxy versions into the group."
+                  },
+                  "sign_packages": {
+                    "type": "boolean",
+                    "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
                   }
                 }
               }
@@ -11779,6 +11791,10 @@
                   "merge_proxy_versions": {
                     "type": "boolean",
                     "description": "Group repositories only, administrators only (403 otherwise). Absent leaves it unchanged."
+                  },
+                  "sign_packages": {
+                    "type": "boolean",
+                    "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
                   }
                 }
               }

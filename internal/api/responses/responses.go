@@ -110,6 +110,8 @@ type RepositoryResponse struct {
 	// package name and proxy members' versions of it are hidden; true merges
 	// every member's versions.
 	MergeProxyVersions bool `json:"merge_proxy_versions"`
+	// SignPackages (hosted rpm only): uploads are signed with the active GPG key.
+	SignPackages bool `json:"sign_packages"`
 
 	// Proxy repositories only. The upstream password is never returned.
 	UpstreamURL             string `json:"upstream_url,omitempty"`

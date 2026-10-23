@@ -38,7 +38,7 @@ SPDX-License-Identifier = "AGPL-3.0-or-later"
 
 # Binary rpm size fixtures (rpm format 4 and 6, built from testdata/sizes.spec).
 [[annotations]]
-path = ["pkg/rpm/testdata/sizes-v4.rpm", "pkg/rpm/testdata/sizes-v6.rpm"]
+path = ["pkg/rpm/testdata/sizes-v4.rpm", "pkg/rpm/testdata/sizes-v6.rpm", "pkg/rpmsign/testdata/hello.rpm"]
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"

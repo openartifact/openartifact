@@ -12,6 +12,7 @@ import (
 	"fmt"
 	"io"
 	"os"
+	"time"
 
 	"github.com/ProtonMail/go-crypto/openpgp"
 	"github.com/ProtonMail/go-crypto/openpgp/armor"
@@ -162,6 +163,22 @@ func (s *LocalSigner) KeyFingerprint() string {
 	}
 
 	return fmt.Sprintf("%X", s.entity.PrimaryKey.Fingerprint)
+}
+
+// SigningKey returns the unlocked private key that makes signatures: the
+// signing subkey when the entity has one, the primary key otherwise. It lets
+// signers of other formats (RPM package signatures) use the same key.
+func (s *LocalSigner) SigningKey() (*packet.PrivateKey, error) {
+	if s.entity == nil {
+		return nil, ErrNoKeysFound
+	}
+
+	key, ok := s.entity.SigningKey(time.Now())
+	if !ok || key.PrivateKey == nil || key.PrivateKey.Encrypted {
+		return nil, ErrKeyCannotSign
+	}
+
+	return key.PrivateKey, nil
 }
 
 // KeyID returns the short key ID (last 16 hex characters).

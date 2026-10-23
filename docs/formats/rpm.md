@@ -63,7 +63,27 @@ Served relative to `HOST/repos/REPO`:
 
 ## Signing
 
-Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` ([signing](../security/signing.md)): the worker then writes `repomd.xml.asc` and `public.key`, which `repo_gpgcheck=1` and `gpgkey=` use. `repomd.xml.asc` is a standard ASCII-armored detached signature (`gpg --verify repomd.xml.asc repomd.xml` succeeds with the key from `public.key`). Package files themselves are not re-signed.
+Set `GPG_ENABLED=true`, `GPG_KEY_PATH` and `GPG_PASSPHRASE` ([signing](../security/signing.md)): the worker then writes `repomd.xml.asc` and `public.key`, which `repo_gpgcheck=1` and `gpgkey=` use. `repomd.xml.asc` is a standard ASCII-armored detached signature (`gpg --verify repomd.xml.asc repomd.xml` succeeds with the key from `public.key`). 
+
+### Signing packages (`sign_packages`)
+
+`repo_gpgcheck=1` only proves the metadata is genuine. dnf and yum default to `gpgcheck=1`, which also wants a signature inside each `.rpm`. Turn on **Sign uploaded packages** in the repository settings, `oa repo update NAME --sign-packages` or `PATCH /api/v1/repository/NAME` with `{"sign_packages": true}` (hosted `rpm` repositories only, off by default). Every upload then gets an OpenPGP header signature from the key that signs the repository's metadata (repository key, then global key, then the configured key file; see [Signing](../security/signing.md)). Clients configure:
+
+```ini
+gpgcheck=1
+repo_gpgcheck=1
+gpgkey=HOST/repos/REPO/public.key
+```
+
+How it behaves:
+
+- **The signed file is the stored file.** Signing rewrites the RPM signature header, so the result is a new blob with its own SHA-256 and size. Only that blob is kept; the upload is not stored. The package's size, checksum in `primary.xml`, `repomd.xml` and the API all describe the bytes clients download, so `dnf` checksums match. The package payload and header are untouched; `rpm -K` reports the digests and the signature as OK.
+- **Uploading the original again is a duplicate** (`409`, same NEVRA). Keep the unsigned file if you need it elsewhere.
+- **No key, no upload.** If `sign_packages` is on and no key applies, the upload fails with `409 SIGNING_KEY_REQUIRED`; nothing is stored unsigned. A package that cannot be signed is `422 SIGNING_FAILED`: the signer needs the payload digest rpm 4.14+ writes and the rpm 4 package format (packages built with `_rpmformat 6` are not supported yet).
+- **Existing packages are not re-signed.** Turning the setting on affects later uploads; rotating the key does not touch packages already stored, which stay valid against the key that signed them. Keep the old public key in the clients' keyring (`rpm --import`) or re-upload the packages after deleting them.
+- Proxy repositories serve upstream packages with the upstream signature; `sign_packages` is rejected for them.
+
+Debian repositories need nothing equivalent: apt verifies the signed `Release`/`InRelease`, which already covers every package through its checksums.
 
 `primary.xml` lists each package's installed size (`RPMTAG_LONGSIZE`/`SIZE`) and archive size (rpm 4 signature tag 271/1007, or `PAYLOADSIZEALT` for rpm 6 packages), which dnf uses for its transaction size checks. Packages uploaded by earlier versions are re-read from storage the first time their repository's metadata is regenerated, which the upgrade triggers once at startup.
 

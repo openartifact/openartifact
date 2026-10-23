@@ -318,6 +318,8 @@ export const enRepos = {
   'repos.settings.immutableReleasesHint': 'Release versions cannot be overwritten or deleted. Snapshots and pre-releases are not affected.',
   'repos.settings.mergeProxyVersions': 'Merge proxy versions',
   'repos.settings.mergeProxyVersionsHint': 'By default, hosted members win a package name: proxy versions of a name that a hosted member holds are hidden. Enabling this merges them back in, which exposes the group to dependency confusion: a public package with the same name as an internal one could be installed.',
+  'repos.settings.signPackages': 'Sign packages on upload',
+  'repos.settings.signPackagesHint': 'New uploads are signed with the active GPG key. Existing packages are not re-signed. Requires an active key.',
   'repos.settings.mergeProxyVersionsAdminOnly': 'Only administrators can change this setting.',
   'quota.noneHint': 'This repository has no storage limit. Set a quota to control how much space it can use.',
   'quota.unlimited': 'Unlimited',

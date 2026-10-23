@@ -420,6 +420,8 @@ func unsupportedRepoTypeMessage(repoType, format string) string {
 // errMergeProxyVersionsAdmin explains why a project maintainer may not touch
 // merge_proxy_versions: it switches the dependency-confusion protection of a
 // group off.
+const errSignPackagesRPMOnly = "sign_packages is only valid for hosted rpm repositories"
+
 const errMergeProxyVersionsAdmin = "only an administrator can change merge_proxy_versions"
 
 var errUpstreamURLShape = errors.New("upstream_url must be a plain base URL without credentials, query or fragment")
@@ -552,6 +554,8 @@ type createRepositoryBody struct {
 	// MergeProxyVersions (groups only, administrators only) turns the
 	// hosted-members-win rule off: versions of every member are merged.
 	MergeProxyVersions bool `json:"merge_proxy_versions"`
+	// SignPackages (hosted rpm only) signs uploads with the active GPG key.
+	SignPackages bool `json:"sign_packages"`
 }
 
 // handleCreate is the admin-only POST /api/v1/repositories.
@@ -631,6 +635,11 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	if body.SignPackages && (repoType != "hosted" || body.Format != "rpm") {
+		writeError(w, http.StatusBadRequest, "validation_failed", errSignPackagesRPMOnly)
+		return
+	}
+
 	if actor != nil {
 		if body.MergeProxyVersions {
 			writeError(w, http.StatusForbidden, "forbidden", errMergeProxyVersionsAdmin)
@@ -653,6 +662,7 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		TrashRetentionDays: body.TrashRetentionDays,
 		ImmutableReleases:  body.ImmutableReleases,
 		MergeProxyVersions: body.MergeProxyVersions,
+		SignPackages:       body.SignPackages,
 	}
 
 	hasUpstream := body.UpstreamURL != "" || body.UpstreamUsername != "" || body.UpstreamPassword != ""
@@ -838,10 +848,20 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		ImmutableReleases  *bool       `json:"immutable_releases"`
 		// MergeProxyVersions: groups only, administrators only.
 		MergeProxyVersions *bool `json:"merge_proxy_versions"`
+		SignPackages       *bool `json:"sign_packages"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
 		return
+	}
+
+	if body.SignPackages != nil {
+		if *body.SignPackages && (repo.RepoType != "hosted" || repo.Format != "rpm") {
+			writeError(w, http.StatusBadRequest, "validation_failed", errSignPackagesRPMOnly)
+			return
+		}
+
+		repo.SignPackages = *body.SignPackages
 	}
 
 	if actor != nil && body.MergeProxyVersions != nil {
@@ -1650,6 +1670,7 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		TrashRetentionDays: r.TrashRetentionDays,
 		ImmutableReleases:  r.ImmutableReleases,
 		MergeProxyVersions: r.MergeProxyVersions,
+		SignPackages:       r.SignPackages,
 	}
 
 	if r.RepoType == repotype.Proxy {

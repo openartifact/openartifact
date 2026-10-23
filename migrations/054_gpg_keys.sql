@@ -104,3 +104,7 @@ ALTER TABLE audit_logs ADD CONSTRAINT chk_audit_action CHECK (action IN (
     -- GPG key management
     'gpg_key.created', 'gpg_key.deleted', 'gpg_key.activated', 'gpg_key.deactivated', 'gpg_key.exported'
 )) NOT VALID;
+
+-- Per-repository opt-in: sign uploaded RPMs with the active GPG key.
+ALTER TABLE repositories ADD COLUMN IF NOT EXISTS sign_packages boolean NOT NULL DEFAULT false;
+COMMENT ON COLUMN repositories.sign_packages IS 'Hosted rpm repositories only: sign uploaded RPMs with the active GPG key.';
