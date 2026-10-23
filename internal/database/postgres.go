@@ -2099,6 +2099,40 @@ func (p *PostgresDB) ListGroupMemberRepositories(ctx context.Context, groupRepoI
 	return repos, nil
 }
 
+func (p *PostgresDB) ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error) {
+	rows, err := p.db.QueryContext(ctx, `
+		WITH links AS (
+			SELECT group_repo_id, created_at AS linked_at
+			FROM repository_group_members WHERE member_repo_id = $1
+		)
+		SELECT `+repoColumns+`
+		FROM repositories JOIN links ON links.group_repo_id = repositories.id
+		WHERE repositories.deleted_at IS NULL
+		ORDER BY links.linked_at, links.group_repo_id`, memberRepoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups of member: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var repos []*models.Repository
+
+	for rows.Next() {
+		r := &models.Repository{}
+		if err := rows.Scan(repoScanDest(r)...); err != nil {
+			return nil, fmt.Errorf("failed to scan group repository: %w", err)
+		}
+
+		repos = append(repos, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list groups of member: %w", err)
+	}
+
+	return repos, nil
+}
+
 func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey string) (*models.ProxyCacheEntry, error) {
 	row, err := p.q.GetProxyCacheEntry(ctx, dbsqlc.GetProxyCacheEntryParams{
 		RepositoryID: repoID,

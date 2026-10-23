@@ -7,12 +7,14 @@ package api
 import (
 	"context"
 	"fmt"
+	"net/http"
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 	pkgmaven "github.com/openartifact/openartifact/pkg/maven"
@@ -21,52 +23,137 @@ import (
 // maxParentRescan bounds how many unresolved poms one parent upload re-evaluates.
 const maxParentRescan = 500
 
+// pomSources lists, in lookup order, the repositories a parent pom of a pom in
+// repoID may come from: the repository itself, then the other members of every
+// group it belongs to in each group's priority order. Proxy members count only
+// through what they have already cached.
+func pomSources(ctx context.Context, db database.Database, repoID string) ([]*models.Repository, error) {
+	sources := []*models.Repository{{ID: repoID, RepoType: repotype.Hosted}}
+	seen := map[string]struct{}{repoID: {}}
+
+	groups, err := db.ListGroupsOfMember(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("list groups of repository: %w", err)
+	}
+
+	for _, g := range groups {
+		members, err := db.ListGroupMemberRepositories(ctx, g.ID)
+		if err != nil {
+			return nil, fmt.Errorf("list group members: %w", err)
+		}
+
+		for _, m := range members {
+			if _, dup := seen[m.ID]; dup || m.Format != "maven" {
+				continue
+			}
+
+			seen[m.ID] = struct{}{}
+			sources = append(sources, m)
+		}
+	}
+
+	return sources, nil
+}
+
 // repoPOMLookup returns a licensemeta.POMLookup that reads a parent pom from the
-// stored artifacts of one repository. It never reaches outside the repository:
-// a parent that is not stored there is "not available", and the child's
-// license stays unresolved until the parent is uploaded.
+// stored artifacts of the repository, then from the other members of its groups
+// (hosted members' stored poms, proxy members' cached poms). It never reaches
+// outside the registry: a parent that is not stored or already cached is "not
+// available", and the child's license stays unresolved until it is.
 func repoPOMLookup(db database.Database, blobs storage.BlobStore, repoID string) licensemeta.POMLookup {
+	var sources []*models.Repository
+
 	return func(ctx context.Context, groupID, artifactID, version string) (*pkgmaven.POM, error) {
 		if blobs == nil {
 			return nil, nil
 		}
 
-		art, err := db.GetMavenArtifactByPath(ctx, repoID, pkgmaven.RepositoryPath(pkgmaven.Coordinate{
+		if sources == nil {
+			var err error
+
+			if sources, err = pomSources(ctx, db, repoID); err != nil {
+				return nil, err
+			}
+		}
+
+		path := pkgmaven.RepositoryPath(pkgmaven.Coordinate{
 			GroupID: groupID, ArtifactID: artifactID, Version: version, Extension: "pom",
-		}))
-		if err != nil {
-			return nil, fmt.Errorf("get parent pom: %w", err)
-		}
+		})
 
-		if art == nil && pkgmaven.IsSnapshot(version) {
-			art, err = db.GetLatestSnapshotFile(ctx, repoID, groupID, artifactID, version, "", "pom")
+		for _, src := range sources {
+			sha, err := sourcePOMBlob(ctx, db, src, groupID, artifactID, version, path)
 			if err != nil {
-				return nil, fmt.Errorf("get parent snapshot pom: %w", err)
+				return nil, err
+			}
+
+			if sha == "" {
+				continue
+			}
+
+			if pom, err := readStoredPOM(ctx, blobs, sha); err != nil || pom != nil {
+				return pom, err
 			}
 		}
 
-		if art == nil || art.SHA256 == "" {
-			return nil, nil
-		}
-
-		rc, err := blobs.Get(ctx, art.SHA256)
-		if err != nil {
-			return nil, fmt.Errorf("open parent pom: %w", err)
-		}
-
-		defer func() { _ = rc.Close() }()
-
-		pom, perr := pkgmaven.ParsePOM(rc)
-		if perr != nil {
-			if ctxErr := ctx.Err(); ctxErr != nil {
-				return nil, fmt.Errorf("read parent pom: %w", ctxErr)
-			}
-
-			return nil, nil
-		}
-
-		return pom, nil
+		return nil, nil
 	}
+}
+
+// sourcePOMBlob returns the blob digest of the pom at path in src, or "" when
+// src does not hold it.
+func sourcePOMBlob(ctx context.Context, db database.Database, src *models.Repository, groupID, artifactID, version, path string) (string, error) {
+	if src.RepoType == repotype.Proxy {
+		entry, err := db.GetProxyCacheEntry(ctx, src.ID, path)
+		if err != nil {
+			return "", fmt.Errorf("get cached parent pom: %w", err)
+		}
+
+		if entry == nil || entry.StatusCode != http.StatusOK {
+			return "", nil
+		}
+
+		return entry.BlobKey, nil
+	}
+
+	art, err := db.GetMavenArtifactByPath(ctx, src.ID, path)
+	if err != nil {
+		return "", fmt.Errorf("get parent pom: %w", err)
+	}
+
+	if art == nil && pkgmaven.IsSnapshot(version) {
+		art, err = db.GetLatestSnapshotFile(ctx, src.ID, groupID, artifactID, version, "", "pom")
+		if err != nil {
+			return "", fmt.Errorf("get parent snapshot pom: %w", err)
+		}
+	}
+
+	if art == nil {
+		return "", nil
+	}
+
+	return art.SHA256, nil
+}
+
+// readStoredPOM parses the pom stored as blob sha; nil for one that does not
+// parse (it declares nothing usable).
+func readStoredPOM(ctx context.Context, blobs storage.BlobStore, sha string) (*pkgmaven.POM, error) {
+	rc, err := blobs.Get(ctx, sha)
+	if err != nil {
+		return nil, fmt.Errorf("open parent pom: %w", err)
+	}
+
+	defer func() { _ = rc.Close() }()
+
+	pom, perr := pkgmaven.ParsePOM(rc)
+	if perr != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("read parent pom: %w", ctxErr)
+		}
+
+		return nil, nil //nolint:nilnil // an unparsable parent declares nothing usable
+	}
+
+	return pom, nil
 }
 
 // inheritedPOMLicenses resolves the licenses of a pom that declares none from
@@ -87,6 +174,33 @@ func recordPOMLicenses(ctx context.Context, db database.Database, log *logger.Lo
 	}
 
 	return nil
+}
+
+// reevaluateWaitingPOMs re-resolves the unresolved poms of the repository that
+// stored a possible parent and of the hosted repositories that share a group
+// with it (their poms may take that parent through the group).
+func reevaluateWaitingPOMs(ctx context.Context, db database.Database, blobs storage.BlobStore, log *logger.Logger, repoID string) (int, error) {
+	sources, err := pomSources(ctx, db, repoID)
+	if err != nil {
+		return 0, err
+	}
+
+	total := 0
+
+	for _, src := range sources {
+		if src.RepoType == repotype.Proxy {
+			continue
+		}
+
+		n, err := reevaluateUnresolvedPOMs(ctx, db, blobs, log, src.ID)
+		total += n
+
+		if err != nil {
+			return total, err
+		}
+	}
+
+	return total, nil
 }
 
 // reevaluateUnresolvedPOMs re-resolves the poms of a repository whose license

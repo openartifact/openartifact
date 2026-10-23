@@ -43,7 +43,7 @@ With `MIGRATE_ON_START=false` the server logs `automatic migrations skipped` at 
 
 ### Unreleased
 
-- Maven poms that declare no license now inherit it from their `<parent>` pom stored in the same repository, for the upload license policy, the license scan and the SBOM. A blocking policy can therefore reject a child whose parent declares a denied license. Existing scan results are not rewritten: scan the pom again. See [Maven parent poms](../security/licenses.md#maven-parent-poms).
+- Maven poms that declare no license now inherit it from their `<parent>` pom stored in the same repository or in a group it belongs to (including poms a proxy member already cached), for the upload license policy, the license scan and the SBOM. A blocking policy can therefore reject a child whose parent declares a denied license. Existing scan results are not rewritten: scan the pom again. See [Maven parent poms](../security/licenses.md#maven-parent-poms).
 
 ## Docker Compose
 

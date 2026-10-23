@@ -532,7 +532,7 @@ func (h *MavenUploadHandler) afterPOMStored(ctx context.Context, repoID, artifac
 		return
 	}
 
-	if n, err := reevaluateUnresolvedPOMs(ctx, h.db, h.blobStore, h.log, repoID); err != nil {
+	if n, err := reevaluateWaitingPOMs(ctx, h.db, h.blobStore, h.log, repoID); err != nil {
 		h.log.Warnw("maven upload: re-evaluating poms waiting for a parent failed", "error", err)
 	} else if n > 0 {
 		h.log.Infow("maven upload: poms re-evaluated after their parent was stored", "repository_id", repoID, "count", n)

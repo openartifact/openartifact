@@ -316,6 +316,9 @@ func (m *BaseMockDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepo
 func (m *BaseMockDB) RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error {
 	return errNotImpl("RemoveGroupMember")
 }
+func (m *BaseMockDB) ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error) {
+	return nil, errNotImpl("ListGroupsOfMember")
+}
 func (m *BaseMockDB) ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error) {
 	return nil, errNotImpl("ListGroupMemberRepositories")
 }

@@ -30,16 +30,58 @@ type mavenRepoDB struct {
 	// policy that blocks a license later found through a parent must not also
 	// reject that parent's own upload.
 	freePolicyReads int
-	arts            map[string]*models.MavenArtifact // by repo path
+	arts            map[string]*models.MavenArtifact // by repository id + "|" + repo path
 	scans           map[string]*models.LicenseScanResult
+	repos           map[string]*models.Repository // by name
+	// groupMembers maps a group's id to its members, in priority order.
+	groupMembers map[string][]*models.Repository
+	// proxyCache maps a proxy repository id + "|" + path to its cached file.
+	proxyCache map[string]*models.ProxyCacheEntry
+	nextID     int
 }
 
 func newMavenRepoDB() *mavenRepoDB {
-	return &mavenRepoDB{arts: map[string]*models.MavenArtifact{}, scans: map[string]*models.LicenseScanResult{}}
+	d := &mavenRepoDB{
+		arts: map[string]*models.MavenArtifact{}, scans: map[string]*models.LicenseScanResult{},
+		repos: map[string]*models.Repository{}, groupMembers: map[string][]*models.Repository{},
+		proxyCache: map[string]*models.ProxyCacheEntry{},
+	}
+	d.addRepo("r", "repo-1", "hosted")
+
+	return d
+}
+
+func (d *mavenRepoDB) addRepo(name, id, repoType string) *models.Repository {
+	r := &models.Repository{ID: id, Name: name, Format: "maven", RepoType: repoType}
+	d.repos[name] = r
+
+	return r
 }
 
 func (d *mavenRepoDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
-	return &models.Repository{ID: "repo-1", Name: name, Format: "maven", RepoType: "hosted"}, nil
+	return d.repos[name], nil
+}
+
+func (d *mavenRepoDB) ListGroupsOfMember(_ context.Context, memberID string) ([]*models.Repository, error) {
+	var out []*models.Repository
+
+	for _, g := range d.repos {
+		for _, m := range d.groupMembers[g.ID] {
+			if m.ID == memberID {
+				out = append(out, g)
+			}
+		}
+	}
+
+	return out, nil
+}
+
+func (d *mavenRepoDB) ListGroupMemberRepositories(_ context.Context, groupID string) ([]*models.Repository, error) {
+	return d.groupMembers[groupID], nil
+}
+
+func (d *mavenRepoDB) GetProxyCacheEntry(_ context.Context, repoID, key string) (*models.ProxyCacheEntry, error) {
+	return d.proxyCache[repoID+"|"+key], nil
 }
 
 func (d *mavenRepoDB) GetOrCreateStorageQuota(context.Context, string) (*models.StorageQuota, error) {
@@ -54,8 +96,8 @@ func (d *mavenRepoDB) UpsertBlob(_ context.Context, sha256, _ string, _ int64) (
 	return "blob-" + sha256, nil
 }
 
-func (d *mavenRepoDB) GetMavenArtifactByPath(_ context.Context, _, path string) (*models.MavenArtifact, error) {
-	return d.arts[path], nil
+func (d *mavenRepoDB) GetMavenArtifactByPath(_ context.Context, repoID, path string) (*models.MavenArtifact, error) {
+	return d.arts[repoID+"|"+path], nil
 }
 
 func (d *mavenRepoDB) GetLatestSnapshotFile(context.Context, string, string, string, string, string, string) (*models.MavenArtifact, error) {
@@ -63,17 +105,18 @@ func (d *mavenRepoDB) GetLatestSnapshotFile(context.Context, string, string, str
 }
 
 func (d *mavenRepoDB) CreateMavenArtifact(_ context.Context, a *models.MavenArtifact) error {
-	a.ID = "art-" + strconv.Itoa(len(d.arts)+1)
-	d.arts[a.RepoPath] = a
+	d.nextID++
+	a.ID = "art-" + strconv.Itoa(d.nextID)
+	d.arts[a.RepositoryID+"|"+a.RepoPath] = a
 
 	return nil
 }
 
-func (d *mavenRepoDB) GetMavenArtifactsByGAV(_ context.Context, _, g, a, v string) ([]*models.MavenArtifact, error) {
+func (d *mavenRepoDB) GetMavenArtifactsByGAV(_ context.Context, repoID, g, a, v string) ([]*models.MavenArtifact, error) {
 	var out []*models.MavenArtifact
 
 	for _, art := range d.arts {
-		if art.GroupID == g && art.ArtifactCoord == a && art.Version == v {
+		if art.RepositoryID == repoID && art.GroupID == g && art.ArtifactCoord == a && art.Version == v {
 			out = append(out, art)
 		}
 	}
@@ -81,10 +124,13 @@ func (d *mavenRepoDB) GetMavenArtifactsByGAV(_ context.Context, _, g, a, v strin
 	return out, nil
 }
 
-func (d *mavenRepoDB) ListMavenArtifactsByRepo(context.Context, string) ([]*models.MavenArtifact, error) {
+func (d *mavenRepoDB) ListMavenArtifactsByRepo(_ context.Context, repoID string) ([]*models.MavenArtifact, error) {
 	var out []*models.MavenArtifact
+
 	for _, art := range d.arts {
-		out = append(out, art)
+		if art.RepositoryID == repoID {
+			out = append(out, art)
+		}
 	}
 
 	return out, nil
@@ -116,10 +162,13 @@ func (d *mavenRepoDB) CreateLicenseScanResult(_ context.Context, r *models.Licen
 	return nil
 }
 
-func (d *mavenRepoDB) ListLicenseScanResults(context.Context, string) ([]*models.LicenseScanResult, error) {
+func (d *mavenRepoDB) ListLicenseScanResults(_ context.Context, repoID string) ([]*models.LicenseScanResult, error) {
 	var out []*models.LicenseScanResult
+
 	for _, s := range d.scans {
-		out = append(out, s)
+		if s.RepositoryID == repoID {
+			out = append(out, s)
+		}
 	}
 
 	return out, nil
@@ -129,9 +178,9 @@ func (d *mavenRepoDB) ListArtifactProperties(context.Context, string, string) (m
 	return nil, nil
 }
 
-func (d *mavenRepoDB) GetRepoComponentBlob(_ context.Context, _, id string) (*models.ComponentBlob, error) {
+func (d *mavenRepoDB) GetRepoComponentBlob(_ context.Context, repoID, id string) (*models.ComponentBlob, error) {
 	for _, a := range d.arts {
-		if a.ID == id {
+		if a.ID == id && a.RepositoryID == repoID {
 			return &models.ComponentBlob{ID: id, Format: "maven", Filename: a.ArtifactCoord + "-" + a.Version + "." + a.Extension, SHA256: a.SHA256}, nil
 		}
 	}
@@ -164,7 +213,13 @@ func newMavenParentEnv(t *testing.T) *mavenParentEnv {
 func (e *mavenParentEnv) put(group, artifact, version, body string) *httptest.ResponseRecorder {
 	e.t.Helper()
 
-	path := "/repos/maven/r/" + strings.ReplaceAll(group, ".", "/") + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	return e.putIn("r", group, artifact, version, body)
+}
+
+func (e *mavenParentEnv) putIn(repo, group, artifact, version, body string) *httptest.ResponseRecorder {
+	e.t.Helper()
+
+	path := "/repos/maven/" + repo + "/" + strings.ReplaceAll(group, ".", "/") + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
 	rec := httptest.NewRecorder()
 	e.router.ServeHTTP(rec, httptest.NewRequestWithContext(e.t.Context(), http.MethodPut, path, strings.NewReader(body)))
 
@@ -188,6 +243,14 @@ func (e *mavenParentEnv) scanLicenses(id string) []string {
 
 func (e *mavenParentEnv) scanOf(id string) *models.LicenseScanResult {
 	return e.db.scans[id]
+}
+
+// cacheInProxy stores pom as an already proxied file of the proxy repository.
+func (e *mavenParentEnv) cacheInProxy(proxy *models.Repository, group, artifact, version, pom string) {
+	path := strings.ReplaceAll(group, ".", "/") + "/" + artifact + "/" + version + "/" + artifact + "-" + version + ".pom"
+	sha := "proxy-" + artifact + "-" + version
+	e.blobs.Blobs[sha] = []byte(pom)
+	e.db.proxyCache[proxy.ID+"|"+path] = &models.ProxyCacheEntry{RepositoryID: proxy.ID, CacheKey: path, BlobKey: sha, StatusCode: http.StatusOK}
 }
 
 func pomXML(group, artifact, version, packaging, parent, licenses string) string {
@@ -352,5 +415,95 @@ func TestMavenPut_InheritedBlockedLicenseIsRejected(t *testing.T) {
 	rec := e.put("com.acme", "child", "1", pomXML("com.acme", "child", "1", "", parentRef("com.acme", "parent", "1"), ""))
 	if rec.Code != http.StatusForbidden {
 		t.Fatalf("child inheriting a blocked license = %d, want 403: %s", rec.Code, rec.Body.String())
+	}
+}
+
+// groupEnv is a group "g" of a hosted repository "r", a second hosted
+// repository "other" and a proxy "central", in that priority order.
+func newGroupEnv(t *testing.T) (*mavenParentEnv, *models.Repository) {
+	t.Helper()
+
+	e := newMavenParentEnv(t)
+	other := e.db.addRepo("other", "repo-2", "hosted")
+	central := e.db.addRepo("central", "repo-3", "proxy")
+	g := e.db.addRepo("g", "repo-4", "group")
+	e.db.groupMembers[g.ID] = []*models.Repository{e.db.repos["r"], other, central}
+
+	return e, central
+}
+
+func TestMavenPut_ParentFromProxyCacheInGroup(t *testing.T) {
+	e, central := newGroupEnv(t)
+	e.cacheInProxy(central, "org.spring", "starter-parent", "3.2.0", pomXML("org.spring", "starter-parent", "3.2.0", "pom", "", "Apache-2.0"))
+
+	rec := e.put("com.acme", "app", "1", pomXML("com.acme", "app", "1", "", parentRef("org.spring", "starter-parent", "3.2.0"), ""))
+	if rec.Code != http.StatusCreated {
+		t.Fatalf("child = %d: %s", rec.Code, rec.Body.String())
+	}
+
+	id := rec.Header().Get("X-Oa-Artifact-Id")
+	if got := e.scanOf(id); got == nil || !slices.Equal(got.Licenses, []string{"Apache-2.0"}) {
+		t.Fatalf("scan = %+v, want Apache-2.0 from the proxy cache", got)
+	}
+
+	if got := e.scanLicenses(id); !slices.Equal(got, []string{"Apache-2.0"}) {
+		t.Fatalf("scan path licenses = %v, want [Apache-2.0]", got)
+	}
+}
+
+func TestMavenPut_ParentFromHostedGroupMember(t *testing.T) {
+	e, _ := newGroupEnv(t)
+	e.putIn("other", "com.acme", "parent", "1", pomXML("com.acme", "parent", "1", "pom", "", "MIT"))
+
+	rec := e.put("com.acme", "child", "1", pomXML("com.acme", "child", "1", "", parentRef("com.acme", "parent", "1"), ""))
+	if got := e.scanLicenses(rec.Header().Get("X-Oa-Artifact-Id")); !slices.Equal(got, []string{"MIT"}) {
+		t.Fatalf("licenses = %v, want [MIT]", got)
+	}
+}
+
+func TestMavenPut_ParentNotInAnyGroupIsNotFound(t *testing.T) {
+	e := newMavenParentEnv(t)
+	other := e.db.addRepo("other", "repo-2", "hosted")
+	_ = other
+	// "other" shares no group with "r": its pom is not a candidate parent.
+	e.putIn("other", "com.acme", "parent", "1", pomXML("com.acme", "parent", "1", "pom", "", "MIT"))
+
+	rec := e.put("com.acme", "child", "1", pomXML("com.acme", "child", "1", "", parentRef("com.acme", "parent", "1"), ""))
+	if got := e.scanLicenses(rec.Header().Get("X-Oa-Artifact-Id")); len(got) != 0 {
+		t.Fatalf("licenses = %v, want none", got)
+	}
+}
+
+func TestMavenPut_ParentLandsInGroupMemberLater(t *testing.T) {
+	e, _ := newGroupEnv(t)
+
+	rec := e.put("com.acme", "child", "1", pomXML("com.acme", "child", "1", "", parentRef("com.acme", "parent", "1"), ""))
+	id := rec.Header().Get("X-Oa-Artifact-Id")
+
+	if got := e.scanOf(id); got == nil || len(got.Licenses) != 0 {
+		t.Fatalf("unresolved scan = %+v, want empty", got)
+	}
+
+	e.putIn("other", "com.acme", "parent", "1", pomXML("com.acme", "parent", "1", "pom", "", "EPL-2.0"))
+
+	if got := e.scanOf(id); got == nil || !slices.Equal(got.Licenses, []string{"EPL-2.0"}) {
+		t.Fatalf("scan after the parent landed in a group member = %+v, want EPL-2.0", got)
+	}
+}
+
+func TestMavenPut_ParentCachedByProxyLaterIsFoundByRescan(t *testing.T) {
+	e, central := newGroupEnv(t)
+
+	rec := e.put("com.acme", "child", "1", pomXML("com.acme", "child", "1", "", parentRef("org.spring", "starter-parent", "3.2.0"), ""))
+	id := rec.Header().Get("X-Oa-Artifact-Id")
+
+	if got := e.scanLicenses(id); len(got) != 0 {
+		t.Fatalf("licenses before the proxy cached the parent = %v, want none", got)
+	}
+
+	e.cacheInProxy(central, "org.spring", "starter-parent", "3.2.0", pomXML("org.spring", "starter-parent", "3.2.0", "pom", "", "Apache-2.0"))
+
+	if got := e.scanLicenses(id); !slices.Equal(got, []string{"Apache-2.0"}) {
+		t.Fatalf("licenses after the proxy cached the parent = %v, want [Apache-2.0]", got)
 	}
 }

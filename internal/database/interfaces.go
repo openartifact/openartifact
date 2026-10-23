@@ -194,6 +194,9 @@ type Database interface {
 	// ListGroupMemberRepositories returns the live member repositories of a
 	// group in priority order (the order of ListGroupMembers) in one query.
 	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
+	// ListGroupsOfMember returns the live group repositories the repository is
+	// a member of, oldest link first.
+	ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error)
 	// ReplaceGroupMembers atomically replaces a group's ordered member list (empty clears it).
 	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
 	// CreateRepositoryWithMembers creates a repository and its group members in one transaction.
