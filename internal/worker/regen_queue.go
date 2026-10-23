@@ -188,6 +188,20 @@ func (q *regenQueue[K]) Notify(key K) {
 	}
 }
 
+// notifyIfIdle is Notify for a trigger that fires on every read (a cache that
+// may have expired): it does nothing while key already has a regeneration
+// waiting, queued or running, so steady traffic cannot keep re-arming a run
+// that is already about to refresh the data.
+func (q *regenQueue[K]) notifyIfIdle(key K) {
+	q.mu.Lock()
+	_, busy := q.entries[key]
+	q.mu.Unlock()
+
+	if !busy {
+		q.Notify(key)
+	}
+}
+
 func (q *regenQueue[K]) debounceLeftLocked(e *regenEntry) time.Duration {
 	d := q.debounce
 	if rem := max(q.maxDelay, q.debounce) - time.Since(e.first); rem < d {

@@ -55,6 +55,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repodispatch"
+	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/secrets"
@@ -344,11 +345,24 @@ func run(args []string) error {
 	go rpmWorker.RegenerateStale(context.Background())
 
 	debWorker := worker.NewDebMetadataWorker(db, blobStore, gpgKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
-	gpgKeys.SetRefreshers(rpmWorker, debWorker)
 
 	if cfg.GPG.AutoGenerate {
 		go autoGenerateGPGKey(gpgKeys, log)
 	}
+
+	// Deb and rpm group repositories: their merged metadata is regenerated when
+	// a member changes (the hosted workers' stale hook) and read from the
+	// proxy members' caches.
+	proxySvc := proxy.NewService(log, db, servedStore).WithDockerDigestTTL(cfg.Workers.ProxyDockerDigestTTL)
+	groupMetadataWorker := worker.NewGroupMetadataWorker(db, blobStore, proxySvc, rpmWorker, gpgKeys, log).
+		WithMetrics(reg).WithRegenLimiter(regenLimiter)
+	rpmWorker.WithStaleHook(groupMetadataWorker.NotifyMemberChanged)
+	debWorker.WithStaleHook(groupMetadataWorker.NotifyMemberChanged)
+
+	// A key change re-signs a group through the group worker, not the hosted ones.
+	gpgKeys.SetRefreshers(groupRefresher{db: db, hosted: rpmWorker, group: groupMetadataWorker}, groupRefresher{db: db, hosted: debWorker, group: groupMetadataWorker})
+
+	go groupMetadataWorker.RegenerateStale(context.Background())
 
 	mavenWorker := worker.NewMavenMetadataWorker(db, blobStore, db.GetDB(), log, reg).WithRegenLimiter(regenLimiter)
 	npmWorker := worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg).WithRegenLimiter(regenLimiter)
@@ -429,7 +443,7 @@ func run(args []string) error {
 			// so stop them in parallel to keep shutdown within one drain window.
 			var drain sync.WaitGroup
 
-			for _, stop := range []func(){npmWorker.Stop, mavenWorker.Stop, debWorker.Stop, rpmWorker.Stop} {
+			for _, stop := range []func(){npmWorker.Stop, mavenWorker.Stop, debWorker.Stop, rpmWorker.Stop, groupMetadataWorker.Stop} {
 				drain.Go(stop)
 			}
 
@@ -804,8 +818,14 @@ func run(args []string) error {
 	dockerHTTP.SetAuthorizer(evaluator)
 	dockerHTTP.RegisterRoutes(dockerHosted)
 
-	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore).WithDockerDigestTTL(cfg.Workers.ProxyDockerDigestTTL), evaluator, map[string]http.Handler{
+	debHosted, rpmHosted := chi.NewRouter(), chi.NewRouter()
+	debHTTP.RegisterRepoRoutes(debHosted)
+	rpmHTTP.RegisterRepoRoutes(rpmHosted)
+
+	repoDispatch := repodispatch.New(log, db, proxySvc, evaluator, map[string]http.Handler{
 		"maven":  mavenHosted,
+		"deb":    debHosted,
+		"rpm":    rpmHosted,
 		"pypi":   pypiHosted,
 		"raw":    rawHosted,
 		"npm":    npmHosted,
@@ -814,7 +834,7 @@ func run(args []string) error {
 		"nuget":  nugetHosted,
 		"docker": dockerHosted,
 		"helm":   helmHosted,
-	}).WithBaseURL(cfg.BaseURL)
+	}).WithBaseURL(cfg.BaseURL).WithGroupMetadata(blobStore, groupMetadataWorker)
 
 	authedAPI.Route("/repos/{name}", func(r chi.Router) {
 		r.Use(repoDispatch.Middleware)
@@ -864,7 +884,7 @@ func run(args []string) error {
 		dockerHTTP.RegisterRoutes(r)
 	})
 
-	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(blobStore).WithPublisher(webhookDispatcher)
+	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(blobStore).WithPublisher(webhookDispatcher).WithGroupMetadata(groupMetadataWorker)
 	repoHandler.RegisterAuthed(authedAPI)
 
 	cleanupHandler := api.NewCleanupHandler(db, log, evaluator, cleanupWorker)
@@ -876,6 +896,7 @@ func run(args []string) error {
 		WithBlobStore(blobStore).
 		WithPublisher(webhookDispatcher).
 		WithRegenerator(api.NewWorkerRegenerator(debWorker, rpmWorker, mavenWorker, npmWorker)).
+		WithGroupMetadata(groupMetadataWorker).
 		RegisterAuthed(authedAPI)
 	// The retention purge worker is started above; the manual purge lives in
 	// TrashHandler.
@@ -1091,4 +1112,22 @@ func autoGenerateGPGKey(svc *gpgkeys.Service, log *logger.Logger) {
 	case created:
 		log.Infow("gpg.autoGenerate: generated the repository signing key (RSA 4096) and made it globally active")
 	}
+}
+
+// groupRefresher sends a key change to the worker that generates the
+// repository's metadata: the group worker for a group, else the hosted worker.
+type groupRefresher struct {
+	db     database.Database
+	hosted interface{ NotifyStale(repoID string) }
+	group  *worker.GroupMetadataWorker
+}
+
+func (g groupRefresher) NotifyStale(repoID string) {
+	repo, err := g.db.GetRepositoryByID(context.Background(), repoID)
+	if err == nil && repo != nil && repo.RepoType == repotype.Group {
+		g.group.NotifyStale(repoID)
+		return
+	}
+
+	g.hosted.NotifyStale(repoID)
 }

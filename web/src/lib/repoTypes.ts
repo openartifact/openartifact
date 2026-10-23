@@ -12,7 +12,7 @@ import { ALL_FORMATS, type FormatId } from './formats'
 export type RepoType = 'hosted' | 'proxy' | 'group'
 
 const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
-const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw']
+const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
 
 /** Docker, pypi, cargo, go and nuget proxies default to Docker Hub / pypi.org / crates.io / proxy.golang.org / nuget.org; every other proxy needs an upstream URL. */
 export function upstreamUrlRequired(format: FormatId): boolean {

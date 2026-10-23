@@ -12,7 +12,7 @@ YUM/DNF repository with generated `repodata/`, optional `comps.xml` groups and G
 |---|---|
 | Format id | `rpm` |
 | Repo URL | `HOST/repos/REPO` (metadata `repodata/repomd.xml`, packages `Packages/`) |
-| Repository types | hosted, proxy; no groups ([details](../repositories/hosted-proxy-group.md)) |
+| Repository types | hosted, proxy, group ([details](../repositories/hosted-proxy-group.md#deb-and-rpm-groups)) |
 
 ## Client setup
 
@@ -90,3 +90,7 @@ Debian repositories need nothing equivalent: apt verifies the signed `Release`/`
 ## Proxy
 
 An RPM proxy repository mirrors `repodata/` and `Packages/` from `upstream_url`. `.rpm` files below a `Packages/` directory are immutable once cached; `.rpm` files elsewhere (flat layouts) and `repodata/` are served from cache until `cache_ttl_seconds` (default 1 hour) and then revalidated. Upstream metadata and signatures pass through unchanged, so clients must trust the upstream's key. Negative caching and serve-stale: [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+
+## Group
+
+An RPM group publishes merged `repodata/` (`repomd.xml`, `primary`, `filelists`, `other` and `modules`), signed with the server key (`repomd.xml.asc`), and serves `Packages/` files from the member that owns them. Use `baseurl=HOST/repos/GROUP` and `gpgkey=HOST/repos/GROUP/public.key` as for a hosted repository. Merging rules, regeneration and limits: [Deb and RPM groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups).

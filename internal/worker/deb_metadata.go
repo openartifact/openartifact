@@ -53,6 +53,7 @@ type DebMetadataWorker struct {
 	signers   gpg.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
+	onStale   func(repoID string)
 }
 
 func NewDebMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
@@ -96,9 +97,20 @@ func (w *DebMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.S
 	return signer, nil
 }
 
+// WithStaleHook calls fn with the repository id on every NotifyStale: the group
+// repositories that list it as a member regenerate their merged metadata.
+func (w *DebMetadataWorker) WithStaleHook(fn func(repoID string)) *DebMetadataWorker {
+	w.onStale = fn
+	return w
+}
+
 // NotifyStale schedules a coalesced regeneration of the repository's dists/ metadata.
 func (w *DebMetadataWorker) NotifyStale(repoID string) {
 	w.q.Notify(repoID)
+
+	if w.onStale != nil {
+		w.onStale(repoID)
+	}
 }
 
 // blobs returns the shared blob bookkeeping (see metadataBlobs) for this worker.

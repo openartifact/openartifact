@@ -865,6 +865,21 @@ func (m *BaseMockDB) ReconcileStorageUsage(ctx context.Context, repoID string) (
 func (m *BaseMockDB) ReconcileAllStorageUsage(ctx context.Context) (int64, error) {
 	return 0, errNotImpl("ReconcileAllStorageUsage")
 }
+func (m *BaseMockDB) MarkGroupMetadataStale(ctx context.Context, groupID string) error {
+	return errNotImpl("MarkGroupMetadataStale")
+}
+func (m *BaseMockDB) GetGroupMetadataState(ctx context.Context, groupID string) (*models.GroupMetadataState, error) {
+	return nil, errNotImpl("GetGroupMetadataState")
+}
+func (m *BaseMockDB) ListMetadataGroupsOfMember(ctx context.Context, memberRepoID string) ([]string, error) {
+	return nil, errNotImpl("ListMetadataGroupsOfMember")
+}
+func (m *BaseMockDB) ListStaleMetadataGroups(ctx context.Context) ([]string, error) {
+	return nil, errNotImpl("ListStaleMetadataGroups")
+}
+func (m *BaseMockDB) GetGroupPackageOwner(ctx context.Context, groupID, path string) (string, bool, error) {
+	return "", false, errNotImpl("GetGroupPackageOwner")
+}
 func (m *BaseMockDB) ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error {
 	return errNotImpl("ReplaceGroupMembers")
 }

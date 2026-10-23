@@ -10,7 +10,7 @@ Two separate topics: the GPG key the server uses to sign APT and RPM repository 
 
 ## Repository metadata signing (GPG)
 
-GPG keys sign the metadata of Debian and RPM repositories and the manifest of sealed [release bundles](../repositories/release-bundles.md). Uploaded packages are stored as-is: OpenArtifact does not sign or re-sign `.deb`/`.rpm` files, only the index files that list them. Other formats are not signed.
+GPG keys sign the metadata of Debian and RPM repositories and the manifest of sealed [release bundles](../repositories/release-bundles.md). Uploaded packages are stored as-is: OpenArtifact does not sign or re-sign `.deb`/`.rpm` files, only the index files that list them. Other formats are not signed. Deb and RPM group repositories publish their own merged index and sign it with the key resolved for the group itself (its own, else the global active, else the file / environment key); upstream signatures of proxy members are not passed through ([groups](../repositories/hosted-proxy-group.md#deb-and-rpm-groups)).
 
 There are two ways to provide a key, and they combine:
 

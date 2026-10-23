@@ -20,10 +20,11 @@ describe('allowedFormats', () => {
   it('restricts proxy to cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw, rpm in picker order', () => {
     expect(allowedFormats('proxy')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw'])
   })
-  it('restricts group to cargo, docker, go, helm, maven, npm, nuget, pypi and raw', () => {
-    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'nuget', 'go', 'raw'])
-    expect(isFormatAllowed('group', 'deb')).toBe(false)
-    expect(isFormatAllowed('group', 'rpm')).toBe(false)
+  it('restricts group to cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw and rpm', () => {
+    expect(allowedFormats('group')).toEqual(['docker', 'npm', 'pypi', 'maven', 'helm', 'cargo', 'deb', 'rpm', 'nuget', 'go', 'raw'])
+    expect(isFormatAllowed('group', 'deb')).toBe(true)
+    expect(isFormatAllowed('group', 'rpm')).toBe(true)
+    expect(isFormatAllowed('group', 'conda')).toBe(false)
   })
   it('does not leak the shared format list through mutation', () => {
     allowedFormats('hosted').pop()
@@ -38,7 +39,7 @@ describe('coerceFormat', () => {
   })
   it('falls back to the first allowed format when unsupported', () => {
     expect(coerceFormat('proxy', 'conda')).toBe(allowedFormats('proxy')[0])
-    expect(coerceFormat('group', 'deb')).toBe(allowedFormats('group')[0])
+    expect(coerceFormat('group', 'conda')).toBe(allowedFormats('group')[0])
   })
   it('keeps docker for proxy and group', () => {
     expect(coerceFormat('proxy', 'docker')).toBe('docker')

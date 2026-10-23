@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -40,6 +41,10 @@ type Handler struct {
 
 	// packuments bounds concurrent npm packument merges.
 	packuments base.Gate
+
+	// blobs and metadata serve deb and rpm groups (WithMetadata).
+	blobs    storage.BlobStore
+	metadata MetadataGenerator
 }
 
 // NewHandler creates the group handler.
@@ -101,7 +106,7 @@ func (h *Handler) Serve(w http.ResponseWriter, r *http.Request, grp *models.Repo
 }
 
 // serveMerged answers the requests a group of a version-merging format
-// (maven, pypi, npm, helm, cargo, go, nuget) merges over its members; false
+// (maven, pypi, npm, helm, cargo, go, nuget, deb, rpm) merges over its members; false
 // means the request is a plain first-hit one.
 func (h *Handler) serveMerged(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, relPath string, be Backend) bool {
 	switch grp.Format {
@@ -124,6 +129,10 @@ func (h *Handler) serveMerged(w http.ResponseWriter, r *http.Request, grp *model
 		return h.serveGo(w, r, grp, relPath, readable, be)
 	case "nuget":
 		return h.serveNuGet(w, r, grp, relPath, readable, be)
+	case "deb", "rpm":
+		h.serveDebRPM(w, r, grp, readable, relPath, be)
+
+		return true
 	}
 
 	return false

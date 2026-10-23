@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -64,6 +65,14 @@ func New(log *logger.Logger, db database.Database, proxySvc *proxy.Service, auth
 func (d *Dispatcher) WithBaseURL(baseURL string) *Dispatcher {
 	d.proxy.SetBaseURL(baseURL)
 	d.group.SetBaseURL(baseURL)
+
+	return d
+}
+
+// WithGroupMetadata enables deb and rpm groups: gen generates their merged
+// metadata, stored in blobs.
+func (d *Dispatcher) WithGroupMetadata(blobs storage.BlobStore, gen group.MetadataGenerator) *Dispatcher {
+	d.group.WithMetadata(blobs, gen)
 
 	return d
 }

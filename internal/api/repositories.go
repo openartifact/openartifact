@@ -98,6 +98,7 @@ type RepositoriesHandler struct {
 	evaluator *auth.Evaluator
 	blobStore storage.BlobStore
 	publisher webhook.Publisher
+	groupMeta GroupMetadataNotifier
 
 	// gc tracks background orphan-blob collections started by repository deletes.
 	gc sync.WaitGroup
@@ -119,6 +120,42 @@ func (h *RepositoriesHandler) WithPublisher(p webhook.Publisher) *RepositoriesHa
 	h.publisher = p
 
 	return h
+}
+
+// GroupMetadataNotifier invalidates the generated metadata of deb and rpm group
+// repositories (worker.GroupMetadataWorker).
+type GroupMetadataNotifier interface {
+	// NotifyStale marks a group's metadata stale and schedules its regeneration.
+	NotifyStale(groupID string)
+	// NotifyMemberChanged does so for every deb/rpm group listing the repository.
+	NotifyMemberChanged(repoID string)
+}
+
+// WithGroupMetadata makes changes to deb and rpm repositories regenerate the
+// metadata of the groups they belong to.
+func (h *RepositoriesHandler) WithGroupMetadata(n GroupMetadataNotifier) *RepositoriesHandler {
+	h.groupMeta = n
+
+	return h
+}
+
+// metadataChanged invalidates the merged metadata a change to repo affects: a
+// deb/rpm group's own, or its member's groups'.
+func (h *RepositoriesHandler) metadataChanged(repo *models.Repository) {
+	notifyGroupMetadata(h.groupMeta, repo)
+}
+
+func notifyGroupMetadata(n GroupMetadataNotifier, repo *models.Repository) {
+	if n == nil || (repo.Format != "deb" && repo.Format != "rpm") {
+		return
+	}
+
+	if repo.RepoType == repotype.Group {
+		n.NotifyStale(repo.ID)
+		return
+	}
+
+	n.NotifyMemberChanged(repo.ID)
 }
 
 // WaitBackground blocks until background orphan-blob collections finish.
@@ -408,8 +445,6 @@ func unsupportedRepoTypeMessage(repoType, format string) string {
 	switch {
 	case repoType == repotype.Proxy && !repotype.ProxySupported(format):
 		return fmt.Sprintf("proxy repositories are not supported for format %q (supported: %s)", format, repotype.ProxyFormats())
-	case repoType == repotype.Group && (format == "deb" || format == "rpm"):
-		return fmt.Sprintf("group repositories are not supported for format %q: repository metadata cannot be merged across members (supported: %s)", format, repotype.GroupFormats())
 	case repoType == repotype.Group && !repotype.GroupSupported(format):
 		return fmt.Sprintf("group repositories are not supported for format %q (supported: %s)", format, repotype.GroupFormats())
 	}
@@ -783,6 +818,8 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		return
 	}
 
+	h.metadataChanged(repo)
+
 	webhook.Emit(r.Context(), h.publisher, repo.ID, webhook.EventRepoCreated,
 		webhook.RepositoryPayload(webhook.EventRepoCreated, repo.Name, repo.Format, repo.RepoType))
 
@@ -1056,6 +1093,8 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	h.metadataChanged(repo)
+
 	writeJSON(w, http.StatusOK, h.repositoryResponse(ctx, repo, map[string]string{}))
 }
 
@@ -1118,6 +1157,9 @@ func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	// A hard delete cascades the membership rows away: note the groups first.
+	groups := h.metadataGroupsOf(ctx, repo)
+
 	soft, err := h.softDeleteRepository(ctx, repo)
 	if err != nil {
 		if errors.Is(err, database.ErrTrashNotFound) {
@@ -1133,6 +1175,10 @@ func (h *RepositoriesHandler) handleDelete(w http.ResponseWriter, r *http.Reques
 
 	if !soft && !h.hardDeleteRepository(ctx, w, repo) {
 		return
+	}
+
+	for _, id := range groups {
+		h.groupMeta.NotifyStale(id)
 	}
 
 	webhook.Emit(ctx, h.publisher, repo.ID, webhook.EventRepoDeleted,
@@ -1172,6 +1218,21 @@ func deleteConfirmation(r *http.Request) string {
 	}
 
 	return body.Confirm
+}
+
+// metadataGroupsOf returns the deb/rpm groups whose merged metadata lists repo.
+func (h *RepositoriesHandler) metadataGroupsOf(ctx context.Context, repo *models.Repository) []string {
+	if h.groupMeta == nil || repo.RepoType == repotype.Group || (repo.Format != "deb" && repo.Format != "rpm") {
+		return nil
+	}
+
+	ids, err := h.db.ListMetadataGroupsOfMember(ctx, repo.ID)
+	if err != nil {
+		h.log.Warnw("delete repository: listing groups of member failed", "repository", repo.Name, "error", err)
+		return nil
+	}
+
+	return ids
 }
 
 // softDeleteRepository moves the repository to the trash when its retention
@@ -1639,6 +1700,8 @@ func (h *RepositoriesHandler) handleUpdateMembers(w http.ResponseWriter, r *http
 
 		return
 	}
+
+	h.metadataChanged(repo)
 
 	members, err := h.db.ListGroupMembers(ctx, repo.ID)
 	if err != nil {

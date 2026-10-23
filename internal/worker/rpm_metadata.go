@@ -29,6 +29,7 @@ type RPMetadataWorker struct {
 	signers   gpg.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
+	onStale   func(repoID string)
 }
 
 func NewRPMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger, reg *metrics.Registry) *RPMetadataWorker {
@@ -67,9 +68,20 @@ func (w *RPMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Si
 	return signer, nil
 }
 
+// WithStaleHook calls fn with the repository id on every NotifyStale: the group
+// repositories that list it as a member regenerate their merged metadata.
+func (w *RPMetadataWorker) WithStaleHook(fn func(repoID string)) *RPMetadataWorker {
+	w.onStale = fn
+	return w
+}
+
 // NotifyStale schedules a coalesced regeneration of the repository's repodata.
 func (w *RPMetadataWorker) NotifyStale(repoID string) {
 	w.q.Notify(repoID)
+
+	if w.onStale != nil {
+		w.onStale(repoID)
+	}
 }
 
 // Stop drains pending regenerations and waits for running ones (bounded).
@@ -122,12 +134,10 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 		return nil
 	}
 
-	packages, err := w.db.ListRpmPackagesForMetadata(ctx, repoID)
+	packages, err := w.PackagesForMetadata(ctx, repoID)
 	if err != nil {
-		return fmt.Errorf("rpm worker: loading packages: %w", err)
+		return err
 	}
-
-	w.backfillFromBlob(ctx, repoID, packages)
 
 	blobs, err := w.buildMetadata(ctx, repoID, packages)
 	if err != nil {
@@ -228,6 +238,19 @@ func (w *RPMetadataWorker) Regenerate(ctx context.Context, repoID string) error 
 	w.log.Infow("metadata regeneration complete", "repo_id", repoID, "packages", len(packages))
 
 	return nil
+}
+
+// PackagesForMetadata returns every package of the repository with the data its
+// metadata needs, completing rows stored by older versions from their blobs.
+func (w *RPMetadataWorker) PackagesForMetadata(ctx context.Context, repoID string) ([]pkgrpm.Package, error) {
+	packages, err := w.db.ListRpmPackagesForMetadata(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("rpm worker: loading packages: %w", err)
+	}
+
+	w.backfillFromBlob(ctx, repoID, packages)
+
+	return packages, nil
 }
 
 // backfillFromBlob re-reads the headers of packages persisted before weak

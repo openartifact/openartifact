@@ -32,12 +32,13 @@ func ProxySupported(format string) bool {
 
 // GroupSupported reports whether group repositories of format can be served.
 // Groups resolve members by path (and merge Maven metadata, npm packuments,
-// NuGet registrations, PyPI project pages and Go version lists) or, for docker, by OCI manifest/blob; deb/rpm groups
-// would need Packages/Release and repodata merged across members and are
-// rejected instead.
+// NuGet registrations, PyPI project pages and Go version lists), for docker by
+// OCI manifest/blob, and for deb and rpm by generating the Release/Packages
+// indexes or repodata of the group from all members (internal/worker's
+// GroupMetadataWorker) and serving each package from the member that owns it.
 func GroupSupported(format string) bool {
 	switch format {
-	case "maven", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget":
+	case "maven", "deb", "docker", "raw", "pypi", "npm", "cargo", "go", "helm", "nuget", "rpm":
 		return true
 	}
 
@@ -67,4 +68,4 @@ func DefaultUpstreamURL(format string) string {
 func ProxyFormats() string { return "cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw, rpm" }
 
 // GroupFormats lists the group-capable formats for error messages.
-func GroupFormats() string { return "cargo, docker, go, helm, maven, npm, nuget, pypi, raw" }
+func GroupFormats() string { return "cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw, rpm" }

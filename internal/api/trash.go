@@ -48,6 +48,7 @@ type TrashHandler struct {
 	blobStore storage.BlobStore
 	publisher webhook.Publisher
 	regen     TrashRegenerator
+	groupMeta GroupMetadataNotifier
 
 	// gc tracks background orphan-blob collections started by repository purges.
 	gc sync.WaitGroup
@@ -74,6 +75,14 @@ func (h *TrashHandler) WithPublisher(p webhook.Publisher) *TrashHandler {
 // WithRegenerator enables the metadata refresh after a restore.
 func (h *TrashHandler) WithRegenerator(r TrashRegenerator) *TrashHandler {
 	h.regen = r
+
+	return h
+}
+
+// WithGroupMetadata makes restoring a deb or rpm repository regenerate the
+// merged metadata of the groups it belongs to (or its own, for a group).
+func (h *TrashHandler) WithGroupMetadata(n GroupMetadataNotifier) *TrashHandler {
+	h.groupMeta = n
 
 	return h
 }
@@ -349,8 +358,25 @@ func (h *TrashHandler) restore(w http.ResponseWriter, r *http.Request, store dat
 	trash.AuditRestored(ctx, item)
 	h.emitRestored(ctx, item)
 	h.regenerateRestored(ctx, item)
+	h.notifyRestoredRepository(ctx, item)
 
 	writeJSON(w, http.StatusOK, trashItemResponse(item))
+}
+
+// notifyRestoredRepository invalidates the group metadata a restored repository
+// takes part in: its members' groups reappear in them, a group's own metadata
+// is regenerated.
+func (h *TrashHandler) notifyRestoredRepository(ctx context.Context, item *models.TrashItem) {
+	if item.Kind != models.TrashKindRepository || h.groupMeta == nil {
+		return
+	}
+
+	repo, err := h.db.GetRepositoryByID(ctx, item.RepositoryID)
+	if err != nil || repo == nil {
+		return
+	}
+
+	notifyGroupMetadata(h.groupMeta, repo)
 }
 
 func (h *TrashHandler) emitRestored(ctx context.Context, item *models.TrashItem) {

@@ -220,29 +220,111 @@ func isXMLChar(r rune) bool {
 		r >= 0x10000 && r <= 0x10FFFF
 }
 
+// DocKind selects which repodata document a DocWriter renders.
+type DocKind int
+
+const (
+	DocPrimary DocKind = iota
+	DocFilelists
+	DocOther
+)
+
+// DocWriter streams one repodata document (primary, filelists or other)
+// package by package, for a caller that merges packages from several sources:
+// rendered ones from the database (Package) and verbatim elements read from an
+// upstream document (Raw). count is the number of packages the caller will
+// write; it is the document's packages attribute.
+type DocWriter struct {
+	kind  DocKind
+	o     *xmlOut
+	rf    *requiresFilter
+	wrote bool
+}
+
+// NewDocWriter writes the document header of kind to w.
+func NewDocWriter(w io.Writer, kind DocKind, count int) *DocWriter {
+	d := &DocWriter{kind: kind, o: newXMLOut(w)}
+
+	d.o.raw(xmlHeader)
+
+	switch kind {
+	case DocPrimary:
+		d.rf = newRequiresFilter()
+		d.o.raw(`<metadata xmlns="` + nsCommon + `" xmlns:rpm="` + nsRPM + `" packages="`)
+	case DocFilelists:
+		d.o.raw(`<filelists xmlns="` + nsFilelists + `" packages="`)
+	case DocOther:
+		d.o.raw(`<otherdata xmlns="` + nsOther + `" packages="`)
+	}
+
+	d.o.i64(int64(count))
+	d.o.raw(`">`)
+
+	return d
+}
+
+// Package renders p into the document.
+func (d *DocWriter) Package(p *rpm.Package) {
+	d.wrote = true
+
+	switch d.kind {
+	case DocPrimary:
+		writePrimaryPackage(d.o, d.rf, p)
+	case DocFilelists:
+		writeFilelistsPackage(d.o, p)
+	case DocOther:
+		writeOtherPackage(d.o, p)
+	}
+
+	d.o.flushIfFull()
+}
+
+// Raw appends an already serialized <package> element.
+func (d *DocWriter) Raw(element []byte) {
+	d.wrote = true
+
+	d.o.raw("\n  ")
+	d.o.buf = append(d.o.buf, element...)
+	d.o.flushIfFull()
+}
+
+// Close writes the closing tag and reports the first write error.
+func (d *DocWriter) Close() error {
+	if d.wrote {
+		d.o.raw("\n")
+	}
+
+	switch d.kind {
+	case DocPrimary:
+		d.o.raw("</metadata>")
+	case DocFilelists:
+		d.o.raw("</filelists>")
+	case DocOther:
+		d.o.raw("</otherdata>")
+	}
+
+	return d.o.finish()
+}
+
 // WritePrimaryXML streams primary.xml for packages to w.
 func WritePrimaryXML(w io.Writer, packages []rpm.Package) error {
-	o := newXMLOut(w)
+	return writeDocument(w, DocPrimary, packages)
+}
 
-	o.raw(xmlHeader)
-	o.raw(`<metadata xmlns="` + nsCommon + `" xmlns:rpm="` + nsRPM + `" packages="`)
-	o.i64(int64(len(packages)))
-	o.raw(`">`)
-
-	rf := newRequiresFilter()
+func writeDocument(w io.Writer, kind DocKind, packages []rpm.Package) error {
+	d := NewDocWriter(w, kind, len(packages))
 
 	for i := range packages {
-		writePrimaryPackage(o, rf, &packages[i])
-		o.flushIfFull()
+		d.Package(&packages[i])
 	}
 
-	if len(packages) > 0 {
-		o.raw("\n")
-	}
+	return d.Close()
+}
 
-	o.raw("</metadata>")
-
-	return o.finish()
+// PackageLocation is the href a hosted package is listed under in primary.xml
+// (and served from): Packages/<name>-<version>-<release>.<arch>.rpm.
+func PackageLocation(p *rpm.Package) string {
+	return "Packages/" + url.PathEscape(p.Name+"-"+p.Version+"-"+p.Release+"."+p.Arch+".rpm")
 }
 
 func writePrimaryPackage(o *xmlOut, rf *requiresFilter, p *rpm.Package) {
@@ -288,7 +370,7 @@ func writePrimaryPackage(o *xmlOut, rf *requiresFilter, p *rpm.Package) {
 	// The element is lower-case: libdnf and createrepo_c only recognise
 	// <location>, and cannot download a package listed under any other name.
 	o.open("    ", "location")
-	o.attr("href", "Packages/"+url.PathEscape(p.Name+"-"+p.Version+"-"+p.Release+"."+p.Arch+".rpm"))
+	o.attr("href", PackageLocation(p))
 	o.emptyClose("location")
 
 	writePrimaryFormat(o, rf, p)
@@ -373,72 +455,40 @@ func writeDepList(o *xmlOut, tag string, deps []rpm.Dependency, isRequires bool)
 
 // WriteFilelistsXML streams filelists.xml for packages to w.
 func WriteFilelistsXML(w io.Writer, packages []rpm.Package) error {
-	o := newXMLOut(w)
+	return writeDocument(w, DocFilelists, packages)
+}
 
-	o.raw(xmlHeader)
-	o.raw(`<filelists xmlns="` + nsFilelists + `" packages="`)
-	o.i64(int64(len(packages)))
-	o.raw(`">`)
+func writeFilelistsPackage(o *xmlOut, p *rpm.Package) {
+	writePackageRef(o, p)
 
-	for i := range packages {
-		p := &packages[i]
-
-		writePackageRef(o, p)
-
-		for j := range p.Files {
-			o.elem("    ", "file", p.Files[j].Path)
-		}
-
-		o.raw("\n  </package>")
-		o.flushIfFull()
+	for j := range p.Files {
+		o.elem("    ", "file", p.Files[j].Path)
 	}
 
-	if len(packages) > 0 {
-		o.raw("\n")
-	}
-
-	o.raw("</filelists>")
-
-	return o.finish()
+	o.raw("\n  </package>")
 }
 
 // WriteOtherXML streams other.xml for packages to w.
 func WriteOtherXML(w io.Writer, packages []rpm.Package) error {
-	o := newXMLOut(w)
+	return writeDocument(w, DocOther, packages)
+}
 
-	o.raw(xmlHeader)
-	o.raw(`<otherdata xmlns="` + nsOther + `" packages="`)
-	o.i64(int64(len(packages)))
-	o.raw(`">`)
+func writeOtherPackage(o *xmlOut, p *rpm.Package) {
+	writePackageRef(o, p)
 
-	for i := range packages {
-		p := &packages[i]
+	for j := range p.Changelogs {
+		cl := &p.Changelogs[j]
 
-		writePackageRef(o, p)
-
-		for j := range p.Changelogs {
-			cl := &p.Changelogs[j]
-
-			o.open("    ", "changelog")
-			o.attr("author", cl.Author)
-			o.raw(` date="`)
-			o.i64(cl.Time)
-			o.raw(`">`)
-			o.text(cl.Description)
-			o.closeTag("changelog")
-		}
-
-		o.raw("\n  </package>")
-		o.flushIfFull()
+		o.open("    ", "changelog")
+		o.attr("author", cl.Author)
+		o.raw(` date="`)
+		o.i64(cl.Time)
+		o.raw(`">`)
+		o.text(cl.Description)
+		o.closeTag("changelog")
 	}
 
-	if len(packages) > 0 {
-		o.raw("\n")
-	}
-
-	o.raw("</otherdata>")
-
-	return o.finish()
+	o.raw("\n  </package>")
 }
 
 // writePackageRef opens a filelists/other <package> element and its <version>.
