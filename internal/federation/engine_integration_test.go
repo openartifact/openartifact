@@ -1231,10 +1231,14 @@ func TestEngineForgedBlobListIsNeverFetchedFromAPeer(t *testing.T) {
 	}))
 
 	peer := b.addPeer(t, a)
-	err := b.pull(t, peer)
+	// The peer answers 404 for the foreign blob: the unit is parked, the pull goes on.
+	if err := b.pull(t, peer); err != nil {
+		t.Fatalf("pull error = %v, want the unit deferred", err)
+	}
 
-	if !errors.Is(err, ErrNotFound) {
-		t.Fatalf("pull error = %v, want the peer's 404 for a blob that is not the unit's", err)
+	d := b.deferred(t, peer)
+	if len(d) != 1 || d[0].UnitKey != "victim" || d[0].Reason != "blob_missing" {
+		t.Fatalf("deferred = %+v, want victim parked as blob_missing", d)
 	}
 
 	b.mustBeAbsent(t, "victim")
