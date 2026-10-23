@@ -168,3 +168,16 @@ func (c *claims) claim(owner string, loc location) error {
 
 	return nil
 }
+
+// CheckDistinct reports an error when a and b keep their objects at the same
+// place (the same or overlapping directory, bucket, container or repository).
+// Replication uses it to refuse a replica that aliases the primary store.
+func CheckDistinct(a, b storage.StorageConfig) error {
+	cl := newClaims()
+
+	if err := cl.claim("a", locate(a)); err != nil {
+		return err
+	}
+
+	return cl.claim("b", locate(b))
+}

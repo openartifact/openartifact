@@ -148,3 +148,5 @@ See also: [rebuild from storage](rebuild-from-storage.md) when the database is l
 - `oa backup restore <id>` sends JSON, but the server requires the multipart `file` upload described above, so it fails with 400. Use curl or the UI.
 - `oa backup create --help` lists `full|metadata`; the server accepts `metadata-only`.
 - Lists are read in one call of up to 100000 rows per table.
+
+See also: [blob replication](replication.md), a second copy of the blob store on another backend.

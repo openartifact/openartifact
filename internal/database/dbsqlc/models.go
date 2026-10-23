@@ -227,6 +227,32 @@ type BlobDeletion struct {
 	Attempts     int32      `db:"attempts" json:"attempts"`
 }
 
+// Pending blob replication work: one row per blob, op = copy or delete; the latest operation wins.
+type BlobReplication struct {
+	Sha256 string `db:"sha256" json:"sha256"`
+	Op     string `db:"op" json:"op"`
+	// Bumped when op changes; a worker completes or fails a row only for the version it claimed.
+	Version       int64      `db:"version" json:"version"`
+	Attempts      int32      `db:"attempts" json:"attempts"`
+	NextAttemptAt time.Time  `db:"next_attempt_at" json:"next_attempt_at"`
+	ClaimedUntil  *time.Time `db:"claimed_until" json:"claimed_until"`
+	LastError     string     `db:"last_error" json:"last_error"`
+	EnqueuedAt    time.Time  `db:"enqueued_at" json:"enqueued_at"`
+}
+
+// Singleton row: blob replication totals and verify progress.
+type BlobReplicationState struct {
+	ID              int16      `db:"id" json:"id"`
+	ReplicatedTotal int64      `db:"replicated_total" json:"replicated_total"`
+	ReplicatedBytes int64      `db:"replicated_bytes" json:"replicated_bytes"`
+	LastError       string     `db:"last_error" json:"last_error"`
+	LastErrorAt     *time.Time `db:"last_error_at" json:"last_error_at"`
+	VerifyRequested bool       `db:"verify_requested" json:"verify_requested"`
+	VerifyCursor    string     `db:"verify_cursor" json:"verify_cursor"`
+	VerifyRun       []byte     `db:"verify_run" json:"verify_run"`
+	LastVerify      []byte     `db:"last_verify" json:"last_verify"`
+}
+
 // Immutable audit trail of every bundle promotion attempt
 type BundlePromotion struct {
 	ID           string     `db:"id" json:"id"`
