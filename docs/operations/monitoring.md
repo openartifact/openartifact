@@ -162,13 +162,15 @@ Prometheus stays the primary interface and `/metrics` is unchanged. With `metric
 
 ### Overhead and binary size
 
-Enabling the OTLP exporters adds the OpenTelemetry SDK and the OTLP protobuf definitions to the server binary (about 13 MB, 32 to 46 MB stripped, and 25 more Go modules in `go.mod`). With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
+Enabling the OTLP exporters adds the OpenTelemetry SDK and the OTLP protobuf definitions to the server binary (about 14 MB: the stripped server binary grows from 32.3 to 45.9 MB, and `go list -m all` from 159 to 217 modules, most of them OpenTelemetry, gRPC and protobuf). With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
 
 ### Trying it locally
 
+With the bundled compose file, add the variables to the `openartifact` service's `environment:` (the file passes only the variables it lists), for example `OPENARTIFACT_OTLP_ENABLED: "true"` and `OTEL_EXPORTER_OTLP_ENDPOINT: http://jaeger:4317` next to a Jaeger service on the same network.
+
 ```sh
 docker run --rm -d --name jaeger -p 16686:16686 -p 4317:4317 -p 4318:4318 docker.io/jaegertracing/jaeger:latest
-OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 ./bin/openartifact-server
+OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 ./bin/openartifact
 # browse http://localhost:16686, service "openartifact"
 ```
 

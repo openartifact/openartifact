@@ -72,7 +72,7 @@ func attrs(s sdktrace.ReadOnlySpan) map[string]attribute.Value {
 }
 
 func serve(h http.Handler, method, target string, hdr map[string]string) *httptest.ResponseRecorder {
-	req := httptest.NewRequest(method, target, nil)
+	req := httptest.NewRequestWithContext(context.Background(), method, target, nil)
 	for k, v := range hdr {
 		req.Header.Set(k, v)
 	}
@@ -199,8 +199,8 @@ func TestServerSpanNamingUsesRouteTemplate(t *testing.T) {
 		}
 
 		for k, v := range a {
-			if strings.Contains(v.Emit(), "sekret") || strings.Contains(v.Emit(), "alice") || strings.Contains(v.Emit(), "12345") {
-				t.Errorf("attribute %s leaks request data: %q", k, v.Emit())
+			if strings.Contains(v.String(), "sekret") || strings.Contains(v.String(), "alice") || strings.Contains(v.String(), "12345") {
+				t.Errorf("attribute %s leaks request data: %q", k, v.String())
 			}
 		}
 
@@ -257,10 +257,10 @@ func TestTraceContextAndBaggagePropagation(t *testing.T) {
 	downstream := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) { down = r.Header.Clone() }))
 	defer downstream.Close()
 
-	var inCtx context.Context
+	var gotBaggage string
 
 	h := HTTPMiddleware()(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
-		inCtx = r.Context()
+		gotBaggage = baggage.FromContext(r.Context()).Member("tenant").Value()
 
 		req, _ := http.NewRequestWithContext(r.Context(), http.MethodGet, downstream.URL+"/pkg?sig=sekret", nil)
 		req.Header.Set("Authorization", "Bearer sekret")
@@ -288,8 +288,8 @@ func TestTraceContextAndBaggagePropagation(t *testing.T) {
 		t.Errorf("server parent span %s, want %s", got, incomingSpanID)
 	}
 
-	if m := baggage.FromContext(inCtx).Member("tenant"); m.Value() != "acme" {
-		t.Errorf("baggage not extracted: %q", m.Value())
+	if gotBaggage != "acme" {
+		t.Errorf("baggage not extracted: %q", gotBaggage)
 	}
 
 	// Outbound: same trace, the client span is the parent seen downstream.
@@ -312,8 +312,8 @@ func TestTraceContextAndBaggagePropagation(t *testing.T) {
 	// The client span holds the host, never the path, query or credentials.
 	for k, v := range attrs(client) {
 		for _, bad := range []string{"sekret", "/pkg", "Bearer"} {
-			if strings.Contains(v.Emit(), bad) {
-				t.Errorf("client attribute %s leaks %q: %q", k, bad, v.Emit())
+			if strings.Contains(v.String(), bad) {
+				t.Errorf("client attribute %s leaks %q: %q", k, bad, v.String())
 			}
 		}
 	}
@@ -340,7 +340,12 @@ func TestClientSpanLifecycleAndErrors(t *testing.T) {
 	c := WrapClient(&http.Client{})
 
 	do := func(path string) *http.Response {
-		resp, err := c.Get(srv.URL + path)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, srv.URL+path, nil)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		resp, err := c.Do(req)
 		if err != nil {
 			t.Fatal(err)
 		}
@@ -370,8 +375,14 @@ func TestClientSpanLifecycleAndErrors(t *testing.T) {
 
 	// A transport error must not put the URL (which may hold credentials) in
 	// the span.
-	_, err := c.Get("http://user:pw@127.0.0.1:1/path?token=sekret")
-	if err == nil {
+	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://user:pw@127.0.0.1:1/path?token=sekret", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if resp, err := c.Do(req); err == nil {
+		_ = resp.Body.Close()
+
 		t.Fatal("expected a connection error")
 	}
 
@@ -381,8 +392,8 @@ func TestClientSpanLifecycleAndErrors(t *testing.T) {
 	}
 
 	for k, v := range attrs(s) {
-		if strings.ContainsAny(v.Emit(), "?@") || strings.Contains(v.Emit(), "sekret") || strings.Contains(v.Emit(), "pw") {
-			t.Errorf("attribute %s leaks request data: %q", k, v.Emit())
+		if strings.ContainsAny(v.String(), "?@") || strings.Contains(v.String(), "sekret") || strings.Contains(v.String(), "pw") {
+			t.Errorf("attribute %s leaks request data: %q", k, v.String())
 		}
 	}
 
@@ -415,7 +426,7 @@ func TestStatementName(t *testing.T) {
 func TestDBTracer(t *testing.T) {
 	rec := install(t)
 	tr := DBTracer{}
-	sql := "-- name: GetUserByName :one\nSELECT * FROM users WHERE name = $1"
+	sql := "-- name: GetUserByName :one\nSELECT id FROM users WHERE name = $1"
 	args := []any{"alice@example.com"}
 
 	// No request span: workers polling the database do not mint root spans.
@@ -456,7 +467,14 @@ func TestDBTracer(t *testing.T) {
 		t.Fatalf("%d db spans, want 4", len(db))
 	}
 
-	for _, s := range db[:3] {
+	assertQuerySpans(t, db[:3])
+	assertNoLeak(t, db)
+}
+
+func assertQuerySpans(t *testing.T, db []sdktrace.ReadOnlySpan) {
+	t.Helper()
+
+	for _, s := range db {
 		if s.Name() != "GetUserByName" || s.SpanKind() != trace.SpanKindClient {
 			t.Errorf("span %q kind %v", s.Name(), s.SpanKind())
 		}
@@ -474,10 +492,16 @@ func TestDBTracer(t *testing.T) {
 	if db[2].Status().Code != codes.Error || attrs(db[2])["db.response.status_code"].AsString() != "23505" {
 		t.Errorf("pg error span: %v %v", db[2].Status(), attrs(db[2]))
 	}
+}
 
-	if db[3].Name() != "batch" || len(db[3].Events()) != 1 {
-		t.Errorf("batch span %q events %d", db[3].Name(), len(db[3].Events()))
+func assertNoLeak(t *testing.T, db []sdktrace.ReadOnlySpan) {
+	t.Helper()
+
+	if b := db[3]; b.Name() != "batch" || len(b.Events()) != 1 {
+		t.Errorf("batch span %q events %d", b.Name(), len(b.Events()))
 	}
+
+	leaks := func(v string) bool { return strings.Contains(v, "alice") || strings.Contains(v, "users") }
 
 	for _, s := range db {
 		if s.Status().Description != "" {
@@ -485,14 +509,14 @@ func TestDBTracer(t *testing.T) {
 		}
 
 		for k, v := range attrs(s) {
-			if strings.Contains(v.Emit(), "alice") || strings.Contains(v.Emit(), "users") {
-				t.Errorf("attribute %s leaks SQL or args: %q", k, v.Emit())
+			if leaks(v.String()) {
+				t.Errorf("attribute %s leaks SQL or args: %q", k, v.String())
 			}
 		}
 
 		for _, e := range s.Events() {
 			for _, kv := range e.Attributes {
-				if strings.Contains(kv.Value.Emit(), "alice") || strings.Contains(kv.Value.Emit(), "users") {
+				if leaks(kv.Value.String()) {
 					t.Errorf("event attribute %s leaks SQL or args", kv.Key)
 				}
 			}

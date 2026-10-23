@@ -100,6 +100,7 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 				scheme = "https"
 			}
 
+			//nolint:spancheck // ended by finishServer in the deferred function below
 			ctx, span := tracer.Start(ctx, method,
 				trace.WithSpanKind(trace.SpanKindServer),
 				trace.WithAttributes(
@@ -123,7 +124,7 @@ func HTTPMiddleware() func(http.Handler) http.Handler {
 			}()
 
 			next.ServeHTTP(rw, r.WithContext(ctx))
-		})
+		}) //nolint:spancheck // span ended by the deferred finishServer
 	}
 }
 

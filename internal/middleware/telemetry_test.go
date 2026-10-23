@@ -33,8 +33,8 @@ func chain(t *testing.T) (*observer.ObservedLogs, *httptest.ResponseRecorder) {
 	h = TracingMiddleware(h)
 	h = telemetry.HTTPMiddleware()(h)
 
-	req := httptest.NewRequest(http.MethodGet, "/x?token=sekret", nil)
-	req.Header.Set("traceparent", testTraceparent)
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/x?token=sekret", nil)
+	req.Header.Set("Traceparent", testTraceparent)
 
 	rr := httptest.NewRecorder()
 	h.ServeHTTP(rr, req)

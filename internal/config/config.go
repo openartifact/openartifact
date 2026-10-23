@@ -638,15 +638,7 @@ func (c *Config) Validate() error {
 		return errNegativeTrashRetention
 	}
 
-	if err := c.Telemetry.Validate(); err != nil {
-		return err
-	}
-
-	if err := c.validateTiering(); err != nil {
-		return err
-	}
-
-	if err := c.validateBlobRetention(); err != nil {
+	if err := c.validateBackgroundServices(); err != nil {
 		return err
 	}
 
@@ -692,6 +684,20 @@ func (c *Config) validateTiering() error {
 }
 
 // validateBlobRetention checks the deferred blob deletion and backup lease settings.
+// validateBackgroundServices checks the optional subsystems (telemetry,
+// storage tiering, deferred blob deletion).
+func (c *Config) validateBackgroundServices() error {
+	if err := c.Telemetry.Validate(); err != nil {
+		return err
+	}
+
+	if err := c.validateTiering(); err != nil {
+		return err
+	}
+
+	return c.validateBlobRetention()
+}
+
 func (c *Config) validateBlobRetention() error {
 	if c.BlobDeletion.Grace < 0 {
 		return errBlobDeletionNegative

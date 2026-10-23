@@ -73,6 +73,7 @@ func startDBSpan(ctx context.Context, name, verb string) context.Context {
 		return ctx
 	}
 
+	//nolint:spancheck // ended by endDBSpan through the context
 	ctx, span := otel.Tracer(scope).Start(ctx, name, trace.WithSpanKind(trace.SpanKindClient),
 		trace.WithAttributes(
 			attribute.String("db.system.name", "postgresql"),
@@ -80,7 +81,7 @@ func startDBSpan(ctx context.Context, name, verb string) context.Context {
 			attribute.String("db.query.summary", name),
 		))
 
-	return context.WithValue(ctx, dbSpanKey{}, span)
+	return context.WithValue(ctx, dbSpanKey{}, span) //nolint:spancheck // ended by endDBSpan
 }
 
 func endDBSpan(ctx context.Context, err error) {
@@ -114,7 +115,7 @@ var sqlVerbs = map[string]struct{}{ //nolint:gochecknoglobals // immutable allow
 // statementName returns the span name and the SQL verb of a statement. The
 // name is the sqlc statement name when present, otherwise the verb; both come
 // from a fixed set (generated names, verb allowlist), so cardinality is bounded.
-func statementName(sql string) (name, verb string) {
+func statementName(sql string) (string, string) {
 	s := strings.TrimSpace(sql)
 
 	if rest, ok := strings.CutPrefix(s, sqlcNamePrefix); ok {
@@ -125,7 +126,7 @@ func statementName(sql string) (name, verb string) {
 
 		// "-- name: GetUser :one\nSELECT ..." keeps the verb of the body.
 		_, body, _ := strings.Cut(rest, "\n")
-		verb = firstVerb(body)
+		verb := firstVerb(body)
 
 		if id := rest[:end]; isIdent(id) {
 			return id, verb

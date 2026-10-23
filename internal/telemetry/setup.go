@@ -58,7 +58,7 @@ type Build struct {
 // Install makes tp the process tracer provider and enables W3C trace context
 // and baggage propagation. The returned function restores the disabled state.
 // Setup uses it; tests use it with an in-memory provider.
-func Install(tp trace.TracerProvider) (uninstall func()) {
+func Install(tp trace.TracerProvider) func() {
 	otel.SetTracerProvider(tp)
 	otel.SetTextMapPropagator(propagation.NewCompositeTextMapPropagator(
 		propagation.TraceContext{}, propagation.Baggage{}))
