@@ -13,8 +13,12 @@ type LicenseScanResult struct {
 	ArtifactID      string
 	Licenses        []string
 	SPDXExpressions []string
-	ScanStatus      string // "pending", "completed", "failed"
-	ScanError       string
+	// UnresolvedLicenses are the entries of Licenses that are not SPDX
+	// expressions: raw text read from the artifact ("BSD", "BSD License"),
+	// kept as written and flagged for review.
+	UnresolvedLicenses []string
+	ScanStatus         string // "pending", "completed", "failed"
+	ScanError          string
 	// Quarantined makes downloads of the artifact answer 403 until approved.
 	Quarantined bool
 	// QuarantineApproved records that an admin approved the artifact for

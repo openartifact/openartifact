@@ -378,7 +378,7 @@ func newLicenseHandlerFor(t *testing.T, db *scanPolicyDB) *LicenseHandler {
 
 	log, ev := newBundlesScansEnv(t, &bundlesScansMockDB{})
 
-	return NewLicenseHandler(db, log, ev, nil)
+	return NewLicenseHandler(db, log, ev, nil, nil)
 }
 
 const licenseScanBody = `{"artifact_id":"leftpad@1.0.0"}`
@@ -560,7 +560,7 @@ func TestProperties_LicenseKeyQuarantines(t *testing.T) {
 			db := newScanPolicyDB()
 			db.policies = []*models.LicensePolicy{tt.policy}
 			log, _ := newBundlesScansEnv(t, &bundlesScansMockDB{})
-			h := NewPropertiesHandler(log, db)
+			h := NewPropertiesHandler(log, db, nil)
 			register := func(r chi.Router) { h.RegisterRoutes(r, "/api/v1/repositories/{name}") }
 
 			rw := serveAs(register, tt.method, "/api/v1/repositories/repo/artifacts/leftpad@1.0.0/properties", tt.body)
@@ -584,7 +584,7 @@ func TestProperties_QuarantineSurvivesLicenseEdit(t *testing.T) {
 	db := newScanPolicyDB()
 	db.policies = []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0"})}
 	log, _ := newBundlesScansEnv(t, &bundlesScansMockDB{})
-	h := NewPropertiesHandler(log, db)
+	h := NewPropertiesHandler(log, db, nil)
 	register := func(r chi.Router) { h.RegisterRoutes(r, "/api/v1/repositories/{name}") }
 	path := "/api/v1/repositories/repo/artifacts/leftpad@1.0.0/properties"
 

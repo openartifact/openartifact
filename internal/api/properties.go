@@ -15,18 +15,27 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/license"
+	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type PropertiesHandler struct {
-	db  database.Database
-	log *logger.Logger
+	db       database.Database
+	log      *logger.Logger
+	licenses artifactLicenseSource
 }
 
-func NewPropertiesHandler(log *logger.Logger, db database.Database) *PropertiesHandler {
-	return &PropertiesHandler{db: db, log: log}
+// NewPropertiesHandler returns the artifact properties handler. blobs is the
+// store read to re-evaluate license policies on the artifact's own declared
+// licenses when a license property changes.
+func NewPropertiesHandler(log *logger.Logger, db database.Database, blobs storage.BlobStore) *PropertiesHandler {
+	return &PropertiesHandler{
+		db: db, log: log,
+		licenses: artifactLicenseSource{db: db, blobs: blobs, log: log, detector: license.NewDetector(log)},
+	}
 }
 
 // validatePropertyKey returns a message for an unusable property key, or "".
@@ -222,9 +231,16 @@ func (h *PropertiesHandler) applyLicensePolicy(w http.ResponseWriter, r *http.Re
 
 	ctx := r.Context()
 
-	metadata, err := storedArtifactMetadata(ctx, h.db, repoID, artifactID)
+	licenses, err := h.licenses.licenses(ctx, repoID, artifactID)
+	if licensemeta.Unsafe(err) {
+		writeError(w, http.StatusUnprocessableEntity, "unsafe_artifact",
+			"properties saved, but the artifact's metadata is too large or ambiguous to be read safely")
+
+		return false
+	}
+
 	if err == nil {
-		_, _, err = licensepolicy.Record(ctx, h.db, h.log, repoID, artifactID, license.NewDetector(h.log).DetectFromMetadata(metadata))
+		_, _, err = licensepolicy.Record(ctx, h.db, h.log, repoID, artifactID, licenses)
 	}
 
 	if err != nil {

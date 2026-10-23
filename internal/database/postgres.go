@@ -4734,14 +4734,16 @@ func (p *PostgresDB) CreateLicenseScanResult(ctx context.Context, result *models
 				completed_at = EXCLUDED.completed_at, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions, quarantined, quarantine_approved)
-		SELECT job.id, $6, $7, $8, $9 FROM job
+		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions, quarantined, quarantine_approved, unresolved_licenses)
+		SELECT job.id, $6, $7, $8, $9, $10 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			licenses = EXCLUDED.licenses, spdx_expressions = EXCLUDED.spdx_expressions,
-			quarantined = EXCLUDED.quarantined, quarantine_approved = EXCLUDED.quarantine_approved
+			quarantined = EXCLUDED.quarantined, quarantine_approved = EXCLUDED.quarantine_approved,
+			unresolved_licenses = EXCLUDED.unresolved_licenses
 		RETURNING id`,
 		result.RepositoryID, result.ArtifactID, result.ScanStatus, result.ScanError, scannedAt,
 		nonNilStrings(result.Licenses), nonNilStrings(result.SPDXExpressions), result.Quarantined, result.QuarantineApproved,
+		nonNilStrings(result.UnresolvedLicenses),
 	).Scan(&result.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create license scan result: %w", err)
@@ -4780,14 +4782,15 @@ func (p *PostgresDB) UpdateLicenseScanResult(ctx context.Context, result *models
 
 	_, err := p.db.ExecContext(ctx, `
 		WITH res AS (
-			UPDATE license_results SET licenses = $1, spdx_expressions = $2, quarantined = $7, quarantine_approved = $8
+			UPDATE license_results SET licenses = $1, spdx_expressions = $2, quarantined = $7, quarantine_approved = $8,
+				unresolved_licenses = $9
 			WHERE id = $6
 			RETURNING scan_job_id
 		)
 		UPDATE scan_jobs sj SET status = $3, error_message = NULLIF($4, ''), completed_at = $5, updated_at = now()
 		FROM res WHERE sj.id = res.scan_job_id`,
 		result.Licenses, result.SPDXExpressions, result.ScanStatus, result.ScanError, scannedAt, result.ID,
-		result.Quarantined, result.QuarantineApproved,
+		result.Quarantined, result.QuarantineApproved, nonNilStrings(result.UnresolvedLicenses),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update license scan result: %w", err)

@@ -154,7 +154,7 @@ func serveAs(register func(chi.Router), method, path, body string) *httptest.Res
 func TestLicenseRepoScopedPolicyEndpointsRejectGlobalPolicies(t *testing.T) {
 	db := &bundlesScansMockDB{policy: &models.LicensePolicy{ID: testPolicyID, RepositoryID: nil, Name: "global", Action: "warn"}}
 	log, ev := newBundlesScansEnv(t, db)
-	h := NewLicenseHandler(db, log, ev, nil)
+	h := NewLicenseHandler(db, log, ev, nil, nil)
 
 	path := "/api/v1/repositories/repo/license/policies/" + testPolicyID
 
@@ -175,7 +175,7 @@ func TestLicensePolicyActionValidation(t *testing.T) {
 	repoID := testRepoID
 	db := &bundlesScansMockDB{policy: &models.LicensePolicy{ID: testPolicyID, RepositoryID: &repoID, Name: "p", Action: "warn"}}
 	log, ev := newBundlesScansEnv(t, db)
-	h := NewLicenseHandler(db, log, ev, nil)
+	h := NewLicenseHandler(db, log, ev, nil, nil)
 
 	rw := serveAs(h.RegisterRoutes, http.MethodPut, "/api/v1/repositories/repo/license/policies/"+testPolicyID, `{"action":"explode"}`)
 	if rw.Code != http.StatusBadRequest {
@@ -273,7 +273,7 @@ func TestBundleSealRejectsMalformedBody(t *testing.T) {
 func TestPropertiesBodyValidationAndTransaction(t *testing.T) {
 	db := &bundlesScansMockDB{}
 	log, _ := newBundlesScansEnv(t, db)
-	h := NewPropertiesHandler(log, db)
+	h := NewPropertiesHandler(log, db, nil)
 	register := func(r chi.Router) { h.RegisterRoutes(r, "/api/v1/repositories/{name}") }
 	path := "/api/v1/repositories/repo/artifacts/pkg-1.0/properties"
 
@@ -345,7 +345,7 @@ func TestSBOMDeleteIsRepoScoped(t *testing.T) {
 func TestLicenseScanRejectsClientMetadata(t *testing.T) {
 	db := &bundlesScansMockDB{props: map[string]string{"license": "MIT"}}
 	log, ev := newBundlesScansEnv(t, db)
-	h := NewLicenseHandler(db, log, ev, nil)
+	h := NewLicenseHandler(db, log, ev, nil, nil)
 
 	rw := serveAs(h.RegisterRoutes, http.MethodPost, "/api/v1/repositories/repo/license/scan", `{"artifact_id":"pkg","metadata":{"license":"GPL-3.0"}}`)
 	if rw.Code != http.StatusBadRequest {

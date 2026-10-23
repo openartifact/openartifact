@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
@@ -274,6 +275,14 @@ func TestDownloadQuarantine(t *testing.T) {
 func publishCrate(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, meta string) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return publishCrateData(t, db, bs, pub, meta, []byte("crate-bytes"))
+}
+
+// publishCrateData publishes crate with the given publish metadata JSON, the
+// way cargo (or curl) sends it.
+func publishCrateData(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, meta string, crateData []byte) *httptest.ResponseRecorder {
+	t.Helper()
+
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
 	h.SetPublisher(pub)
 
@@ -282,7 +291,6 @@ func publishCrate(t *testing.T, db database.Database, bs *formattest.BlobStore, 
 	_ = binary.Write(&body, binary.LittleEndian, uint32(len(meta)))
 	body.WriteString(meta)
 
-	crateData := []byte("crate-bytes")
 	_ = binary.Write(&body, binary.LittleEndian, uint32(len(crateData)))
 	body.Write(crateData)
 
@@ -399,6 +407,73 @@ func TestPublishRejectsOversizedDeclaredLengths(t *testing.T) {
 
 			if len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
 				t.Error("oversized publish must not store or emit anything")
+			}
+		})
+	}
+}
+
+func crateWith(t *testing.T, cargoToml string) []byte {
+	t.Helper()
+
+	return archivetest.TarGz(t,
+		archivetest.File("demo-0.1.0/src/lib.rs", ""),
+		archivetest.File("demo-0.1.0/Cargo.toml", cargoToml),
+	)
+}
+
+// The publish metadata's license is client-supplied; policies must judge the
+// Cargo.toml inside the crate.
+func TestPublishLicensePolicyReadsTheCrate(t *testing.T) {
+	deny := []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})}
+
+	tests := []struct {
+		name string
+		toml string
+		meta string
+		want policytest.Outcome
+	}{
+		{"no license in the publish metadata", "[package]\nname = \"demo\"\nlicense = \"GPL-3.0-only\"\n", `{"name":"demo","vers":"0.1.0"}`, policytest.Blocked},
+		{"publish metadata claims MIT, crate is GPL", "[package]\nname = \"demo\"\nlicense = \"GPL-3.0-only\"\n", `{"name":"demo","vers":"0.1.0","license":"MIT"}`, policytest.Blocked},
+		{"publish metadata claims GPL, crate is MIT", "[package]\nname = \"demo\"\nlicense = \"MIT\"\n", `{"name":"demo","vers":"0.1.0","license":"GPL-3.0-only"}`, policytest.Admitted},
+		{"legacy slash expression", "[package]\nname = \"demo\"\nlicense = \"MIT/GPL-3.0-only\"\n", `{"name":"demo","vers":"0.1.0"}`, policytest.Blocked},
+		{"crate declares nothing: publish metadata is the fallback", "[package]\nname = \"demo\"\n", `{"name":"demo","vers":"0.1.0","license":"GPL-3.0-only"}`, policytest.Blocked},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := policytest.Case{Want: tc.want, Policies: deny}
+			inner := &cargoDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := publishCrateData(t, c.DB(inner), bs, pub, tc.meta, crateWith(t, tc.toml))
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+			assertStored(t, c, w.Code, inner, bs, pub)
+		})
+	}
+}
+
+func TestPublishRejectsUnsafeCrates(t *testing.T) {
+	crates := map[string][]byte{
+		"oversized Cargo.toml": crateWith(t, "[package]\nname = \"demo\"\nlicense = \"MIT\"\n# "+strings.Repeat("A", 2<<20)),
+		"two Cargo.toml files": archivetest.TarGz(t,
+			archivetest.File("demo-0.1.0/Cargo.toml", "[package]\nlicense = \"MIT\"\n"),
+			archivetest.File("other/Cargo.toml", "[package]\nlicense = \"GPL-3.0-only\"\n")),
+	}
+
+	for name, crate := range crates {
+		t.Run(name, func(t *testing.T) {
+			inner := &cargoDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := publishCrateData(t, inner, bs, pub, `{"name":"demo","vers":"0.1.0","license":"MIT"}`, crate)
+			if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "LICENSE_METADATA_UNSAFE") {
+				t.Fatalf("want 422 LICENSE_METADATA_UNSAFE, got %d: %s", w.Code, w.Body.String())
+			}
+
+			if len(inner.crates) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+				t.Fatal("rejected publish stored something")
 			}
 		})
 	}

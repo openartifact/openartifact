@@ -20,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
@@ -186,6 +187,14 @@ type pypiField struct{ key, value string }
 func uploadWithFields(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, fields ...pypiField) *httptest.ResponseRecorder {
 	t.Helper()
 
+	return uploadFile(t, db, bs, pub, "demo_pkg-1.0.tar.gz", []byte("payload"), fields...)
+}
+
+// uploadFile uploads content as filename the way twine does, with the given
+// extra form fields (name and version are always sent).
+func uploadFile(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, filename string, content []byte, fields ...pypiField) *httptest.ResponseRecorder {
+	t.Helper()
+
 	h := NewHTTPHandler(formattest.NewLogger(t), db, bs, "http://localhost")
 	h.SetPublisher(pub)
 
@@ -199,12 +208,12 @@ func uploadWithFields(t *testing.T, db database.Database, bs *formattest.BlobSto
 		_ = mw.WriteField(f.key, f.value)
 	}
 
-	fw, err := mw.CreateFormFile("content", "demo_pkg-1.0.tar.gz")
+	fw, err := mw.CreateFormFile("content", filename)
 	if err != nil {
 		t.Fatal(err)
 	}
 
-	_, _ = fw.Write([]byte("payload"))
+	_, _ = fw.Write(content)
 	_ = mw.Close()
 
 	req := formattest.Request(http.MethodPost, "/repos/myrepo/legacy/", &body)
@@ -470,5 +479,124 @@ func TestDownloadContentDispositionEscapesFilename(t *testing.T) {
 
 	if disp != "attachment" || params["filename"] != name || len(params) != 1 {
 		t.Fatalf("disposition = %q params = %v", disp, params)
+	}
+}
+
+const demoWheel = "demo_pkg-1.0-py3-none-any.whl"
+
+func wheelWith(t *testing.T, metadata string) []byte {
+	t.Helper()
+
+	return archivetest.Zip(t,
+		archivetest.File("demo_pkg/__init__.py", ""),
+		archivetest.File("demo_pkg-1.0.dist-info/METADATA", "Metadata-Version: 2.1\nName: Demo_Pkg\nVersion: 1.0\n"+metadata),
+	)
+}
+
+// A curl upload sends no license fields: policies must still see what the
+// wheel itself declares.
+func TestUploadLicensePolicyReadsTheArtifact(t *testing.T) {
+	wheels := map[string]string{
+		"PEP 639 expression": "License-Expression: GPL-3.0-only\n",
+		"short License":      "License: GPL-3.0-only\n",
+		"classifier":         "Classifier: License :: OSI Approved :: GNU General Public License v3 (GPLv3)\n",
+	}
+
+	for name, metadata := range wheels {
+		for _, c := range policytest.Cases("GPL-3.0-only") {
+			t.Run(name+"/"+c.Name, func(t *testing.T) {
+				inner := &pypiDB{DB: formattest.NewDB()}
+				bs := formattest.NewBlobStore()
+				pub := &formattest.Publisher{}
+
+				w := uploadFile(t, c.DB(inner), bs, pub, demoWheel, wheelWith(t, metadata))
+				c.AssertResponse(t, w.Code, w.Body.Bytes())
+				assertPkgStored(t, c, w.Code, inner, bs, pub)
+			})
+		}
+	}
+}
+
+func TestUploadLicensePolicyArtifactBeatsFormFields(t *testing.T) {
+	denyGPL := []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})}
+
+	tests := []struct {
+		name     string
+		metadata string
+		fields   []pypiField
+		want     policytest.Outcome
+	}{
+		{"form claims MIT, wheel is GPL", "License-Expression: GPL-3.0-only\n", []pypiField{{"license_expression", "MIT"}, {"license", "MIT"}}, policytest.Blocked},
+		{"form claims GPL, wheel is MIT", "License-Expression: MIT\n", []pypiField{{"license_expression", "GPL-3.0-only"}}, policytest.Admitted},
+		{"wheel declares nothing: the form is the fallback", "", []pypiField{{"license_expression", "GPL-3.0-only"}}, policytest.Blocked},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := policytest.Case{Want: tc.want, Policies: denyGPL}
+			inner := &pypiDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := uploadFile(t, c.DB(inner), bs, pub, demoWheel, wheelWith(t, tc.metadata), tc.fields...)
+			c.AssertResponse(t, w.Code, w.Body.Bytes())
+			assertPkgStored(t, c, w.Code, inner, bs, pub)
+		})
+	}
+}
+
+// Django 3.0 declares "License: BSD" and the classifier "BSD License": neither
+// names one SPDX license, the raw value is what a policy can match.
+func TestUploadLicensePolicyDjangoStyleBSD(t *testing.T) {
+	metadata := "License: BSD\nClassifier: License :: OSI Approved :: BSD License\n"
+
+	c := policytest.Case{Want: policytest.Blocked, Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"BSD"})}}
+	inner := &pypiDB{DB: formattest.NewDB()}
+	bs := formattest.NewBlobStore()
+	pub := &formattest.Publisher{}
+
+	w := uploadFile(t, c.DB(inner), bs, pub, demoWheel, wheelWith(t, metadata))
+	c.AssertResponse(t, w.Code, w.Body.Bytes())
+	assertPkgStored(t, c, w.Code, inner, bs, pub)
+}
+
+func TestUploadSdistLicenseFromPKGINFO(t *testing.T) {
+	sdist := archivetest.TarGz(t, archivetest.File("demo_pkg-1.0/PKG-INFO", "Metadata-Version: 2.1\nName: Demo_Pkg\nVersion: 1.0\nLicense: GPL-3.0-only\n"))
+
+	c := policytest.Case{Want: policytest.Blocked, Policies: []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})}}
+	inner := &pypiDB{DB: formattest.NewDB()}
+	bs := formattest.NewBlobStore()
+	pub := &formattest.Publisher{}
+
+	w := uploadFile(t, c.DB(inner), bs, pub, "demo_pkg-1.0.tar.gz", sdist, pypiField{"license", "MIT"})
+	c.AssertResponse(t, w.Code, w.Body.Bytes())
+	assertPkgStored(t, c, w.Code, inner, bs, pub)
+}
+
+func TestUploadRejectsUnsafeArchives(t *testing.T) {
+	const header = "Metadata-Version: 2.1\nName: Demo_Pkg\nVersion: 1.0\n"
+
+	archives := map[string][]byte{
+		"zip bomb METADATA": archivetest.Zip(t, archivetest.File("demo_pkg-1.0.dist-info/METADATA", header+"Description: "+strings.Repeat("A", 8<<20))),
+		"two METADATA files": archivetest.Zip(t,
+			archivetest.File("demo_pkg-1.0.dist-info/METADATA", header+"License: MIT\n"),
+			archivetest.File("other-1.0.dist-info/METADATA", header+"License: GPL-3.0-only\n")),
+	}
+
+	for name, wheel := range archives {
+		t.Run(name, func(t *testing.T) {
+			inner := &pypiDB{DB: formattest.NewDB()}
+			bs := formattest.NewBlobStore()
+			pub := &formattest.Publisher{}
+
+			w := uploadFile(t, inner, bs, pub, demoWheel, wheel, pypiField{"license", "MIT"})
+			if w.Code != http.StatusUnprocessableEntity || !strings.Contains(w.Body.String(), "LICENSE_METADATA_UNSAFE") {
+				t.Fatalf("want 422 LICENSE_METADATA_UNSAFE, got %d: %s", w.Code, w.Body.String())
+			}
+
+			if len(inner.pkgs) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+				t.Fatal("rejected upload stored something")
+			}
+		})
 	}
 }

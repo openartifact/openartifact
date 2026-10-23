@@ -878,7 +878,7 @@ func run(args []string) error {
 	backupHandler.RegisterAuthed(authedAPI)
 
 	licenseDetector := license.NewDetector(log)
-	licenseHandler := api.NewLicenseHandler(db, log, evaluator, licenseDetector)
+	licenseHandler := api.NewLicenseHandler(db, log, evaluator, licenseDetector, blobStore)
 	licenseHandler.RegisterRoutes(authedAPI)
 
 	secretScanner := secrets.NewScanner(log)
@@ -900,7 +900,7 @@ func run(args []string) error {
 	quotasHandler := api.NewQuotasHandler(log, db, evaluator)
 	quotasHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
-	propertiesHandler := api.NewPropertiesHandler(log, db)
+	propertiesHandler := api.NewPropertiesHandler(log, db, blobStore)
 	propertiesHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 
 	aiHandler := api.NewAIHandler(db, log, evaluator, aiWorker)

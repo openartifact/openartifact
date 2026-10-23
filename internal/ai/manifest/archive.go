@@ -23,15 +23,19 @@ type slot struct {
 	label string
 	match func(name string) bool
 	// decode turns the member into text; nil reads it as plain text.
-	decode func(io.Reader) (string, error)
+	decode func(io.Reader, limits) (string, error)
+	// unique makes a second matching member an ErrAmbiguous error in strict
+	// mode: tools that read the archive differently (first versus last entry
+	// of a name) would otherwise disagree about which one is the manifest.
+	unique bool
 }
 
-func (s slot) read(r io.Reader) (string, error) {
+func (s slot) read(r io.Reader, l limits) (string, error) {
 	if s.decode != nil {
-		return s.decode(r)
+		return s.decode(r, l)
 	}
 
-	return readText(r)
+	return readText(r, l)
 }
 
 // compression selects the stream decoder in front of a tar.
@@ -72,16 +76,24 @@ func decompress(r io.Reader, c compression) (io.Reader, func(), error) {
 // collectTar walks a tar stream until every slot has a member or the stream
 // ends. Members beyond the first match of a slot are ignored. A damaged or
 // over-limit tail is tolerated when something was found before it.
-func collectTar(ctx context.Context, r io.Reader, slots []slot) ([]section, error) {
+func collectTar(ctx context.Context, r io.Reader, slots []slot, l limits) ([]section, error) {
 	tr := tar.NewReader(ctxReader{ctx: ctx, r: &capReader{r: r, n: maxScanBytes}})
 
 	found := make([]*string, len(slots))
 	remaining := len(slots)
+	walkAll := uniqueSlots(slots, l)
 
-	for remaining > 0 {
+	for walkAll || remaining > 0 {
 		hdr, err := tr.Next()
 		if err != nil {
-			if errors.Is(err, io.EOF) || anyFound(found) {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			// A damaged tail is tolerated once something was found, except
+			// the scan limit: the tail of a decompression bomb must not
+			// pass as a valid archive.
+			if anyFound(found) && !(walkAll && errors.Is(err, ErrTooLarge)) {
 				break
 			}
 
@@ -93,11 +105,19 @@ func collectTar(ctx context.Context, r io.Reader, slots []slot) ([]section, erro
 		}
 
 		for i, s := range slots {
-			if found[i] != nil || !s.match(hdr.Name) {
+			if !s.match(hdr.Name) {
 				continue
 			}
 
-			text, err := s.read(tr)
+			if found[i] != nil {
+				if l.strict && s.unique {
+					return nil, ErrAmbiguous
+				}
+
+				continue
+			}
+
+			text, err := s.read(tr, l)
 			if err != nil {
 				return nil, err
 			}
@@ -113,7 +133,7 @@ func collectTar(ctx context.Context, r io.Reader, slots []slot) ([]section, erro
 }
 
 // collectZip picks members out of a zip with random access.
-func collectZip(ra *readerAt, slots []slot) ([]section, error) {
+func collectZip(ra *readerAt, slots []slot, l limits) ([]section, error) {
 	zr, err := zip.NewReader(ra, ra.size)
 	if err != nil {
 		return nil, fmt.Errorf("read zip: %w", err)
@@ -127,7 +147,15 @@ func collectZip(ra *readerAt, slots []slot) ([]section, error) {
 		}
 
 		for i, s := range slots {
-			if found[i] != nil || !s.match(f.Name) {
+			if !s.match(f.Name) {
+				continue
+			}
+
+			if found[i] != nil {
+				if l.strict && s.unique {
+					return nil, ErrAmbiguous
+				}
+
 				continue
 			}
 
@@ -136,7 +164,7 @@ func collectZip(ra *readerAt, slots []slot) ([]section, error) {
 				return nil, fmt.Errorf("open zip member: %w", err)
 			}
 
-			text, err := s.read(rc)
+			text, err := s.read(rc, l)
 			_ = rc.Close()
 
 			if err != nil {
@@ -148,12 +176,28 @@ func collectZip(ra *readerAt, slots []slot) ([]section, error) {
 			break
 		}
 
-		if allFound(found) {
+		if allFound(found) && !uniqueSlots(slots, l) {
 			break
 		}
 	}
 
 	return sectionsOf(slots, found), nil
+}
+
+// uniqueSlots reports whether the whole archive must be walked: a strict read
+// of a unique slot has to see every candidate.
+func uniqueSlots(slots []slot, l limits) bool {
+	if !l.strict {
+		return false
+	}
+
+	for _, s := range slots {
+		if s.unique {
+			return true
+		}
+	}
+
+	return false
 }
 
 func anyFound(found []*string) bool {
@@ -189,47 +233,31 @@ func sectionsOf(slots []slot, found []*string) []section {
 }
 
 // tarManifest opens the blob as a (compressed) tar and collects the slots.
-func tarManifest(ctx context.Context, src Source, c compression, slots []slot) (string, error) {
+func tarManifest(ctx context.Context, src Source, c compression, slots []slot) ([]section, error) {
 	rc, err := src.Open()
 	if err != nil {
-		return "", fmt.Errorf("open artifact: %w", err)
+		return nil, fmt.Errorf("open artifact: %w", err)
 	}
 	defer func() { _ = rc.Close() }()
 
 	stream, closeDec, err := decompress(ctxReader{ctx: ctx, r: rc}, c)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer closeDec()
 
-	parts, err := collectTar(ctx, stream, slots)
-	if err != nil {
-		return "", err
-	}
-
-	return assemble(parts), nil
+	return collectTar(ctx, stream, slots, src.limits())
 }
 
 // zipManifest opens the blob as a zip and collects the slots.
-func zipManifest(ctx context.Context, src Source, slots []slot) (string, error) {
+func zipManifest(ctx context.Context, src Source, slots []slot) ([]section, error) {
 	ra, err := openAt(ctx, src.Open)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer ra.release()
 
-	parts, err := collectZip(ra, slots)
-	if err != nil {
-		return "", err
-	}
-
-	return assemble(parts), nil
-}
-
-// assemble renders sections; a lone section keeps its label so the model
-// knows which file it is reading.
-func assemble(parts []section) string {
-	return join(parts...)
+	return collectZip(ra, slots, src.limits())
 }
 
 // hasSuffixFold is a case-insensitive HasSuffix.

@@ -29,38 +29,30 @@ func atDepthOne(file string) func(string) bool {
 	}
 }
 
-func extractNPM(ctx context.Context, src Source) (string, error) {
-	return tarManifest(ctx, src, compGzip, []slot{{label: "package.json", match: atDepthOne("package.json")}})
+func extractNPM(ctx context.Context, src Source) ([]section, error) {
+	return tarManifest(ctx, src, compGzip, []slot{{label: "package.json", match: atDepthOne("package.json"), unique: true}})
 }
 
-func extractCargo(ctx context.Context, src Source) (string, error) {
-	return tarManifest(ctx, src, compGzip, []slot{{label: "Cargo.toml", match: atDepthOne("Cargo.toml")}})
+func extractCargo(ctx context.Context, src Source) ([]section, error) {
+	return tarManifest(ctx, src, compGzip, []slot{{label: "Cargo.toml", match: atDepthOne("Cargo.toml"), unique: true}})
 }
 
-func extractHelm(ctx context.Context, src Source) (string, error) {
+func extractHelm(ctx context.Context, src Source) ([]section, error) {
 	return tarManifest(ctx, src, compGzip, []slot{
 		{label: "Chart.yaml", match: atDepthOne("Chart.yaml")},
 		{label: "requirements.yaml", match: atDepthOne("requirements.yaml")},
 	})
 }
 
-func trimPyDecode(r io.Reader) (string, error) {
-	text, err := readText(r)
-	if err != nil {
-		return "", err
-	}
-
-	return trimPyBody(text), nil
-}
-
-func extractPyPI(ctx context.Context, src Source) (string, error) {
+func extractPyPI(ctx context.Context, src Source) ([]section, error) {
 	name := strings.ToLower(path.Base(src.Filename))
 
 	switch {
 	case hasAnySuffix(name, ".whl", ".zip", ".egg"):
 		return zipManifest(ctx, src, []slot{{
 			label:  "METADATA",
-			decode: trimPyDecode,
+			decode: readPyText,
+			unique: true,
 			match: func(n string) bool {
 				clean, ok := topLevel(n)
 				if !ok {
@@ -77,13 +69,13 @@ func extractPyPI(ctx context.Context, src Source) (string, error) {
 			},
 		}})
 	case strings.HasSuffix(name, ".tar.bz2"):
-		return tarManifest(ctx, src, compBzip2, []slot{{label: "PKG-INFO", decode: trimPyDecode, match: atDepthOne("PKG-INFO")}})
+		return tarManifest(ctx, src, compBzip2, []slot{{label: "PKG-INFO", decode: readPyText, match: atDepthOne("PKG-INFO"), unique: true}})
 	default:
-		return tarManifest(ctx, src, compGzip, []slot{{label: "PKG-INFO", decode: trimPyDecode, match: atDepthOne("PKG-INFO")}})
+		return tarManifest(ctx, src, compGzip, []slot{{label: "PKG-INFO", decode: readPyText, match: atDepthOne("PKG-INFO"), unique: true}})
 	}
 }
 
-func extractJVM(ctx context.Context, src Source) (string, error) {
+func extractJVM(ctx context.Context, src Source) ([]section, error) {
 	name := strings.ToLower(path.Base(src.Filename))
 
 	if strings.HasSuffix(name, ".jar") {
@@ -108,9 +100,10 @@ func isEmbeddedPOM(name string) bool {
 	return len(parts) == 3 && parts[2] == "pom.xml"
 }
 
-func extractNuGet(ctx context.Context, src Source) (string, error) {
+func extractNuGet(ctx context.Context, src Source) ([]section, error) {
 	return zipManifest(ctx, src, []slot{{
-		label: ".nuspec",
+		label:  ".nuspec",
+		unique: true,
 		match: func(n string) bool {
 			f, ok := rootFile(n)
 			return ok && hasSuffixFold(f, ".nuspec")
@@ -118,7 +111,7 @@ func extractNuGet(ctx context.Context, src Source) (string, error) {
 	}})
 }
 
-func extractGoMod(ctx context.Context, src Source) (string, error) {
+func extractGoMod(ctx context.Context, src Source) ([]section, error) {
 	if hasSuffixFold(src.Filename, ".mod") {
 		return readBlobText(ctx, src)
 	}
@@ -138,21 +131,21 @@ func extractGoMod(ctx context.Context, src Source) (string, error) {
 	}})
 }
 
-func extractGem(ctx context.Context, src Source) (string, error) {
+func extractGem(ctx context.Context, src Source) ([]section, error) {
 	return tarManifest(ctx, src, compNone, []slot{{
 		label: "metadata (gemspec)",
 		match: func(n string) bool {
 			f, ok := rootFile(n)
 			return ok && f == "metadata.gz"
 		},
-		decode: func(r io.Reader) (string, error) {
+		decode: func(r io.Reader, l limits) (string, error) {
 			gr, err := gzip.NewReader(io.LimitReader(r, maxCompressedMember))
 			if err != nil {
 				return "", fmt.Errorf("gzip open: %w", err)
 			}
 			defer func() { _ = gr.Close() }()
 
-			return readText(gr)
+			return readText(gr, l)
 		},
 	}})
 }
@@ -169,7 +162,7 @@ func cleanName(n string) string {
 	return c
 }
 
-func extractConda(ctx context.Context, src Source) (string, error) {
+func extractConda(ctx context.Context, src Source) ([]section, error) {
 	if !hasSuffixFold(src.Filename, ".conda") {
 		return tarManifest(ctx, src, compBzip2, condaInfoSlots())
 	}
@@ -181,14 +174,14 @@ func extractConda(ctx context.Context, src Source) (string, error) {
 			f, ok := rootFile(n)
 			return ok && strings.HasPrefix(f, "info-") && strings.HasSuffix(f, ".tar.zst")
 		},
-		decode: func(r io.Reader) (string, error) {
+		decode: func(r io.Reader, l limits) (string, error) {
 			stream, closeDec, err := decompress(r, compZstd)
 			if err != nil {
 				return "", err
 			}
 			defer closeDec()
 
-			parts, err := collectTar(ctx, stream, condaInfoSlots())
+			parts, err := collectTar(ctx, stream, condaInfoSlots(), l)
 			if err != nil {
 				return "", err
 			}
@@ -201,25 +194,25 @@ func extractConda(ctx context.Context, src Source) (string, error) {
 // conanSiblings are the recipe files worth sending next to the manifest.
 func conanSiblings() []string { return []string{"conanfile.py", "conandata.yml"} }
 
-func extractConan(ctx context.Context, src Source) (string, error) {
+func extractConan(ctx context.Context, src Source) ([]section, error) {
 	var parts []section
 
 	if src.Sibling != nil {
 		for _, name := range conanSiblings() {
 			rc, err := src.Sibling(name)
 			if err != nil {
-				return "", fmt.Errorf("open %s: %w", name, err)
+				return nil, fmt.Errorf("open %s: %w", name, err)
 			}
 
 			if rc == nil {
 				continue
 			}
 
-			text, err := readText(ctxReader{ctx: ctx, r: rc})
+			text, err := readText(ctxReader{ctx: ctx, r: rc}, src.limits())
 			_ = rc.Close()
 
 			if err != nil {
-				return "", err
+				return nil, err
 			}
 
 			parts = append(parts, section{label: name, body: text})
@@ -227,15 +220,10 @@ func extractConan(ctx context.Context, src Source) (string, error) {
 	}
 
 	if len(parts) == 0 {
-		text, err := readBlobText(ctx, src)
-		if err != nil {
-			return "", err
-		}
-
-		return text, nil
+		return readBlobText(ctx, src)
 	}
 
-	return join(parts...), nil
+	return parts, nil
 }
 
 // debFieldOrder lists the control fields sent first, in this order.
@@ -247,16 +235,16 @@ func debFieldOrder() []string {
 	}
 }
 
-func extractDeb(ctx context.Context, src Source) (string, error) {
+func extractDeb(ctx context.Context, src Source) ([]section, error) {
 	ra, err := openAt(ctx, src.Open)
 	if err != nil {
-		return "", err
+		return nil, err
 	}
 	defer ra.release()
 
 	df, err := deb.ParseDebFileAt(ra, ra.size)
 	if err != nil {
-		return "", fmt.Errorf("parse deb: %w", err)
+		return nil, fmt.Errorf("parse deb: %w", err)
 	}
 
 	fields := df.ControlFile.Fields
@@ -286,22 +274,22 @@ func extractDeb(ctx context.Context, src Source) (string, error) {
 		fmt.Fprintf(&b, "%s: %s\n", k, fields[k])
 	}
 
-	return join(section{label: "control", body: b.String()}), nil
+	return []section{{label: "control", body: b.String()}}, nil
 }
 
 // maxRPMDeps bounds the dependency lines rendered from an rpm header.
 const maxRPMDeps = 200
 
-func extractRPM(ctx context.Context, src Source) (string, error) {
+func extractRPM(ctx context.Context, src Source) ([]section, error) {
 	rc, err := src.Open()
 	if err != nil {
-		return "", fmt.Errorf("open artifact: %w", err)
+		return nil, fmt.Errorf("open artifact: %w", err)
 	}
 	defer func() { _ = rc.Close() }()
 
 	pkg, err := rpm.ParseRPM(ctxReader{ctx: ctx, r: rc})
 	if err != nil {
-		return "", fmt.Errorf("parse rpm: %w", err)
+		return nil, fmt.Errorf("parse rpm: %w", err)
 	}
 
 	var b strings.Builder
@@ -327,7 +315,7 @@ func extractRPM(ctx context.Context, src Source) (string, error) {
 	writeRPMDeps(&b, "Provides", pkg.Provides)
 	writeRPMDeps(&b, "Conflicts", pkg.Conflicts)
 
-	return join(section{label: "rpm header", body: b.String()}), nil
+	return []section{{label: "rpm header", body: b.String()}}, nil
 }
 
 func writeRPMDeps(b *strings.Builder, label string, deps []rpm.Dependency) {

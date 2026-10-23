@@ -64,11 +64,11 @@ func realRouter() chi.Router {
 	api.NewVEXHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewWebhooksHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewBackupHandler(nil, nil, nil, nil).RegisterAuthed(r)
-	api.NewLicenseHandler(nil, nil, nil, nil).RegisterRoutes(r)
+	api.NewLicenseHandler(nil, nil, nil, nil, nil).RegisterRoutes(r)
 	api.NewSecretsHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	api.NewVulnHandler(nil, nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	api.NewQuotasHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
-	api.NewPropertiesHandler(nil, nil).RegisterRoutes(r, repoPrefix)
+	api.NewPropertiesHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	log, err := logger.New("error", "json", "stderr")
 	if err != nil {
 		panic(err)

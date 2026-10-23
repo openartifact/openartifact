@@ -12,12 +12,14 @@ import (
 	"maps"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -38,7 +40,13 @@ func blockAllowListPolicy() policytest.Case {
 func buildLicensedNPMPublishBody(t *testing.T, packageName, version string, extra map[string]any) []byte {
 	t.Helper()
 
-	tarball := buildTarballBytes(t, map[string]any{"name": packageName, "version": version})
+	return buildNPMPublishBodyWithTarball(t, packageName, version, buildTarballBytes(t, map[string]any{"name": packageName, "version": version}), extra)
+}
+
+// buildNPMPublishBodyWithTarball publishes the given tarball with extra merged
+// into the publish JSON's version manifest, the way a client controls it.
+func buildNPMPublishBodyWithTarball(t *testing.T, packageName, version string, tarball []byte, extra map[string]any) []byte {
+	t.Helper()
 
 	integrity, sha1Hex, _, _, err := pkgnpm.ComputeIntegrity(bytes.NewReader(tarball))
 	if err != nil {
@@ -124,6 +132,78 @@ func TestNPMPublish_LicensePolicy(t *testing.T) {
 				}
 			})
 		}
+	}
+}
+
+// The publish JSON's manifest is client-supplied: policies must judge the
+// package.json inside the tarball.
+func TestNPMPublish_LicensePolicyReadsTheTarball(t *testing.T) {
+	deny := []*models.LicensePolicy{policytest.Policy(licensepolicy.ActionBlock, nil, []string{"GPL-3.0-only"})}
+
+	tests := []struct {
+		name     string
+		tarball  map[string]any
+		manifest map[string]any
+		want     policytest.Outcome
+	}{
+		{"manifest has no license", map[string]any{"license": "GPL-3.0-only"}, nil, policytest.Blocked},
+		{"manifest claims MIT, tarball is GPL", map[string]any{"license": "GPL-3.0-only"}, map[string]any{"license": "MIT"}, policytest.Blocked},
+		{"manifest claims GPL, tarball is MIT", map[string]any{"license": "MIT"}, map[string]any{"license": "GPL-3.0-only"}, policytest.Admitted},
+		{"legacy licenses array in the tarball", map[string]any{"licenses": []any{map[string]any{"type": "GPL-3.0-only"}}}, nil, policytest.Blocked},
+		{"tarball declares nothing: the manifest is the fallback", nil, map[string]any{"license": "GPL-3.0-only"}, policytest.Blocked},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			c := policytest.Case{Want: tc.want, Policies: deny}
+			db := newMockDatabase()
+			bs := newMockBlobStore()
+			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+
+			pkgJSON := map[string]any{"name": "lodash", "version": "1.0.0"}
+			maps.Copy(pkgJSON, tc.tarball)
+
+			tarball := buildTarballBytes(t, pkgJSON)
+			rec := publishNPM(t, newLicensedNPMRouter(c.DB(db), bs), buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, tc.manifest))
+
+			c.AssertResponse(t, rec.Code, rec.Body.Bytes())
+
+			if c.Stopped() && (len(bs.blobs) != 0 || len(db.npmVersions) != 0 || len(db.npmPackages) != 0) {
+				t.Errorf("rejected publish stored data: blobs=%d versions=%d packages=%d", len(bs.blobs), len(db.npmVersions), len(db.npmPackages))
+			}
+
+			if !c.Stopped() && len(db.npmVersions) != 1 {
+				t.Errorf("admitted publish not stored")
+			}
+		})
+	}
+}
+
+func TestNPMPublish_RejectsUnsafeTarballs(t *testing.T) {
+	tarballs := map[string][]byte{
+		"two package.json files": archivetest.TarGz(t,
+			archivetest.File("package/package.json", `{"name":"lodash","version":"1.0.0","license":"MIT"}`),
+			archivetest.File("evil/package.json", `{"name":"lodash","version":"1.0.0","license":"GPL-3.0-only"}`)),
+		"oversized package.json": archivetest.TarGz(t,
+			archivetest.File("package/package.json", `{"name":"lodash","version":"1.0.0","license":"MIT","x":"`+strings.Repeat("A", 2<<20)+`"}`)),
+	}
+
+	for name, tarball := range tarballs {
+		t.Run(name, func(t *testing.T) {
+			db := newMockDatabase()
+			bs := newMockBlobStore()
+			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+
+			rec := publishNPM(t, newLicensedNPMRouter(db, bs), buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, map[string]any{"license": "MIT"}))
+
+			if rec.Code != http.StatusUnprocessableEntity || !strings.Contains(rec.Body.String(), licensepolicy.CodeMetadataUnsafe) {
+				t.Fatalf("want 422 %s, got %d: %s", licensepolicy.CodeMetadataUnsafe, rec.Code, rec.Body.String())
+			}
+
+			if len(bs.blobs) != 0 || len(db.npmVersions) != 0 || len(db.npmPackages) != 0 {
+				t.Errorf("rejected publish stored data")
+			}
+		})
 	}
 }
 
@@ -282,5 +362,49 @@ func TestMavenUpload_NoLicenseAdmittedUnderBlockPolicy(t *testing.T) {
 	code := mavenDo(router, http.MethodPut, "/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.pom", mavenPom(""))
 	if code != http.StatusCreated {
 		t.Fatalf("pom PUT = %d, want 201", code)
+	}
+}
+
+// Maven poms name licenses in free text; names that mean exactly one SPDX
+// license (or a canonical license URL) are matched by policies.
+func TestMavenUpload_LicensePolicyReadsThePOM(t *testing.T) {
+	poms := map[string]string{
+		"license name": `<licenses><license><name>The Apache Software License, Version 2.0</name></license></licenses>`,
+		"license url":  `<licenses><license><url>https://www.apache.org/licenses/LICENSE-2.0.txt</url></license></licenses>`,
+	}
+
+	for name, licenses := range poms {
+		pom := `<project><modelVersion>4.0.0</modelVersion><groupId>com.example</groupId><artifactId>myapp</artifactId><version>1.0.0</version>` + licenses + `</project>`
+
+		for _, c := range policytest.Cases("Apache-2.0") {
+			t.Run(name+"/"+c.Name, func(t *testing.T) {
+				db := newMockDatabase()
+				bs := newMockBlobStore()
+				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+
+				log, _ := logger.New("info", "json", "stdout")
+				router := chi.NewRouter()
+				api.NewMavenUploadHandler(log, c.DB(db), bs, nil).Register(router)
+
+				req := httptest.NewRequestWithContext(context.Background(), http.MethodPut,
+					"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.pom", strings.NewReader(pom))
+				rec := httptest.NewRecorder()
+				router.ServeHTTP(rec, req)
+
+				if c.Want == policytest.Admitted {
+					if rec.Code != http.StatusCreated {
+						t.Fatalf("admitted upload status = %d: %s", rec.Code, rec.Body.String())
+					}
+
+					return
+				}
+
+				c.AssertResponse(t, rec.Code, rec.Body.Bytes())
+
+				if len(bs.blobs) != 0 {
+					t.Errorf("rejected upload stored %d blobs", len(bs.blobs))
+				}
+			})
+		}
 	}
 }

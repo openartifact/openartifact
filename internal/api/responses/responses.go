@@ -439,6 +439,10 @@ type LicenseScanResultResponse struct {
 	ScannedAt       *string  `json:"scanned_at"`
 	ScanError       *string  `json:"scan_error"`
 	SPDXExpressions []string `json:"spdx_expressions"`
+	// UnresolvedLicenses are the entries of licenses that are not SPDX
+	// expressions: raw text read from the artifact ("BSD", "BSD License"),
+	// kept as written and flagged for review.
+	UnresolvedLicenses []string `json:"unresolved_licenses"`
 	// Quarantined: downloads of the artifact answer 403 until it is approved
 	// (a blocking license policy matched its licenses).
 	Quarantined bool `json:"quarantined"`

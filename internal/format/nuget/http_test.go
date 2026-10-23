@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
@@ -195,7 +196,7 @@ func TestPushLicensePolicy(t *testing.T) {
 func TestPushLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 	nuspecs := map[string]string{
 		"no license":      nuspecWithLicense(""),
-		"licenseUrl only": nuspecWithLicense(`<licenseUrl>https://www.gnu.org/licenses/gpl-3.0.html</licenseUrl>`),
+		"licenseUrl only": nuspecWithLicense(`<licenseUrl>https://example.com/eula</licenseUrl>`),
 		"license file":    nuspecWithLicense(`<license type="file">LICENSE.txt</license>`),
 	}
 
@@ -213,5 +214,51 @@ func TestPushLicensePolicyNoEnforceableLicenseAdmitted(t *testing.T) {
 			c.AssertResponse(t, w.Code, w.Body.Bytes())
 			assertNupkgStored(t, c, w.Code, inner, bs, pub)
 		})
+	}
+}
+
+// licenseUrl is deprecated but still what older packages carry: the ones that
+// name a license (licenses.nuget.org, canonical URLs) are enforced.
+func TestPushLicensePolicyLicenseURL(t *testing.T) {
+	urls := map[string]string{
+		"licenses.nuget.org": "https://licenses.nuget.org/GPL-3.0-only",
+		"canonical gnu.org":  "https://www.gnu.org/licenses/gpl-3.0.html",
+	}
+
+	for name, url := range urls {
+		for _, c := range policytest.Cases("GPL-3.0-only") {
+			t.Run(name+"/"+c.Name, func(t *testing.T) {
+				inner := &nugetDB{DB: formattest.NewDB()}
+				bs := formattest.NewBlobStore()
+				pub := &formattest.Publisher{}
+
+				w := pushNuspec(t, c.DB(inner), bs, pub, nuspecWithLicense(`<licenseUrl>`+url+`</licenseUrl>`))
+				c.AssertResponse(t, w.Code, w.Body.Bytes())
+				assertNupkgStored(t, c, w.Code, inner, bs, pub)
+			})
+		}
+	}
+}
+
+func TestPushRejectsAmbiguousNuspec(t *testing.T) {
+	nupkg := archivetest.Zip(t,
+		archivetest.File("Newtonsoft.Json.nuspec", nuspecWithLicense(`<license type="expression">MIT</license>`)),
+		archivetest.File("Other.nuspec", nuspecWithLicense(`<license type="expression">GPL-3.0-only</license>`)),
+	)
+
+	inner := &nugetDB{DB: formattest.NewDB()}
+	bs := formattest.NewBlobStore()
+	pub := &formattest.Publisher{}
+
+	h := NewHTTPHandler(formattest.NewLogger(t), inner, bs, "http://localhost")
+	h.SetPublisher(pub)
+
+	w := pushBytes(t, h, nupkg)
+	if w.Code != http.StatusBadRequest {
+		t.Fatalf("want 400, got %d: %s", w.Code, w.Body.String())
+	}
+
+	if inner.pkg != nil || len(bs.Blobs) != 0 || len(pub.Events()) != 0 {
+		t.Fatal("rejected push stored something")
 	}
 }

@@ -286,3 +286,15 @@ func yamlRequirement(v any) string {
 
 	return strings.Join(parts, ", ")
 }
+
+// ParseLicenses returns the licenses a .gem file declares in its gemspec
+// (metadata.gz). It is how a stored gem's licenses are read after upload; the
+// upload path reads the same field from the same metadata.
+func ParseLicenses(ctx context.Context, r io.Reader) ([]string, error) {
+	metadata, err := NewRubyGemsHandler().Parse(ctx, r)
+	if err != nil {
+		return nil, err
+	}
+
+	return getStringArrayFromMetadata(metadata, "licenses"), nil
+}

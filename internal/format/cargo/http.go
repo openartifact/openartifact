@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -282,6 +283,34 @@ const (
 	maxPublishCrateBytes    = 128 << 20 // 128 MiB .crate file (crates.io allows 10 MiB)
 )
 
+// publishLicenses returns the licenses a policy is enforced on: the license of
+// the Cargo.toml inside the crate. The publish metadata's "license" is only the
+// fallback for a crate that declares none there (or is not readable), so a
+// client cannot publish a crate under a different license than it ships. A
+// crate whose archive cannot be read safely is refused (false, response
+// written). A crate that only declares license_file has no enforceable license.
+func (h *HTTPHandler) publishLicenses(w http.ResponseWriter, r *http.Request, name, version string, crate []byte, metadata map[string]any) ([]string, bool) {
+	res, err := licensemeta.ReadBytes(r.Context(), "cargo", name+"-"+version+".crate", crate)
+
+	switch {
+	case licensemeta.Unsafe(err):
+		h.Log.Warnw("cargo publish rejected: crate metadata cannot be read safely", "name", name, "version", version, "error", err)
+		licensepolicy.RejectUnsafe(w, h.Log)
+
+		return nil, false
+	case err != nil:
+		h.Log.Debugw("cargo publish: crate metadata unreadable, using the publish metadata license", "name", name, "version", version, "error", err)
+	case !res.Empty():
+		return res.Licenses, true
+	}
+
+	if declared, _ := metadata["license"].(string); declared != "" {
+		return []string{declared}, true
+	}
+
+	return nil, true
+}
+
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
@@ -345,12 +374,6 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// A crate that only declares license_file has no enforceable license.
-	declared, _ := metadata["license"].(string)
-	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, declared) {
-		return
-	}
-
 	// Refuse a duplicate before the (up to 128 MiB) crate is read: a version
 	// is published once, and a crate name is unique regardless of case.
 	conflict, err := h.publishConflict(r.Context(), repoID, crateName, version)
@@ -390,6 +413,11 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	checksum := fmt.Sprintf("%x", sha256.Sum256(crateBytes))
+
+	licenses, ok := h.publishLicenses(w, r, crateName, version, crateBytes, metadata)
+	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
+		return
+	}
 
 	// Extract optional fields
 	description, _ := metadata["description"].(string)

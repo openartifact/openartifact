@@ -4,7 +4,11 @@
 
 package rubygems
 
-import "testing"
+import (
+	"bytes"
+	"context"
+	"testing"
+)
 
 const sampleGemYAML = `--- !ruby/object:Gem::Specification
 name: nokogiri
@@ -49,5 +53,12 @@ func TestCompareGemVersions(t *testing.T) {
 
 	if !isPrerelease("1.0.rc1") || isPrerelease("1.0.0") {
 		t.Fatal("bad prerelease detection")
+	}
+}
+
+func TestParseLicenses(t *testing.T) {
+	got, err := ParseLicenses(context.Background(), bytes.NewReader(gemWithMetadata(t, []byte(sampleGemYAML))))
+	if err != nil || len(got) != 1 || got[0] != "MIT" {
+		t.Fatalf("ParseLicenses = %v, %v; want [MIT]", got, err)
 	}
 }

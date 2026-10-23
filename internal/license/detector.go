@@ -73,6 +73,37 @@ var licenseAliases = map[string]string{
 	"gnu affero general public license v3 or later (agplv3+)": "AGPL-3.0-or-later",
 	"apache software license 2.0":                             "Apache-2.0",
 	"mozilla public license 2.0 (mpl 2.0)":                    "MPL-2.0",
+
+	// More trove classifiers that name exactly one license. Classifiers that
+	// do not ("BSD License", "GNU General Public License (GPL)", "Artistic
+	// License", "Public Domain") are deliberately absent: they stay as written
+	// and are flagged as unresolved.
+	"python software foundation license":                         "PSF-2.0",
+	"isc license (iscl)":                                         "ISC",
+	"mit no attribution license (mit-0)":                         "MIT-0",
+	"the unlicense (unlicense)":                                  "Unlicense",
+	"cc0 1.0 universal (cc0 1.0) public domain dedication":       "CC0-1.0",
+	"mozilla public license 1.1 (mpl 1.1)":                       "MPL-1.1",
+	"european union public licence 1.1 (eupl 1.1)":               "EUPL-1.1",
+	"european union public licence 1.2 (eupl 1.2)":               "EUPL-1.2",
+	"boost software license 1.0 (bsl-1.0)":                       "BSL-1.0",
+	"zlib/libpng license":                                        "Zlib",
+	"eclipse public license 1.0 (epl-1.0)":                       "EPL-1.0",
+	"eclipse public license 2.0 (epl-2.0)":                       "EPL-2.0",
+	"common development and distribution license 1.0 (cddl-1.0)": "CDDL-1.0",
+	"do what the f*ck you want to public license (wtfpl)":        "WTFPL",
+	"postgresql license":                                         "PostgreSQL",
+	"w3c license":                                                "W3C",
+	"university of illinois/ncsa open source license":            "NCSA",
+	"sil open font license 1.1 (ofl-1.1)":                        "OFL-1.1",
+	"open software license 3.0 (osl-3.0)":                        "OSL-3.0",
+	"historical permission notice and disclaimer (hpnd)":         "HPND",
+
+	// Names Maven poms commonly use.
+	"the apache software license, version 2.0": "Apache-2.0",
+	"the apache license, version 2.0":          "Apache-2.0",
+	"apache license, version 2.0":              "Apache-2.0",
+	"the mit license":                          "MIT",
 }
 
 // licenseKeys are the metadata (and artifact property) keys DetectFromMetadata

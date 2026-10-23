@@ -43,6 +43,11 @@ const (
 	// be read; the upload is refused rather than admitted unchecked.
 	CodePolicyUnavailable = "LICENSE_POLICY_UNAVAILABLE"
 
+	// CodeMetadataUnsafe is the error code returned when the package file's
+	// own metadata cannot be read safely (oversized or ambiguous), so its
+	// licenses cannot be checked.
+	CodeMetadataUnsafe = "LICENSE_METADATA_UNSAFE"
+
 	// ActionBlock is the policy action that rejects or quarantines.
 	ActionBlock = "block"
 
@@ -160,6 +165,16 @@ func writeBody(w http.ResponseWriter, log *logger.Logger, status int, body error
 	}
 }
 
+// RejectUnsafe answers 422 LICENSE_METADATA_UNSAFE for an upload whose package
+// file is a decompression bomb or holds ambiguous metadata (licensemeta.Unsafe).
+// The caller MUST return after calling it.
+func RejectUnsafe(w http.ResponseWriter, log *logger.Logger) {
+	writeBody(w, log, http.StatusUnprocessableEntity, errorBody{
+		Error: "upload rejected: the package metadata is too large or ambiguous to be read safely",
+		Code:  CodeMetadataUnsafe,
+	})
+}
+
 // Enforce applies the repository's license policies to an upload whose
 // metadata declares licenses. It returns true when the upload must not
 // continue, after writing the response:
@@ -249,6 +264,7 @@ func Record(ctx context.Context, db Store, log *logger.Logger, repoID, artifactI
 		RepositoryID:       repoID,
 		ArtifactID:         artifactID,
 		Licenses:           licenses,
+		UnresolvedLicenses: license.NewDetector(log).Unresolved(licenses),
 		SPDXExpressions:    []string{},
 		ScanStatus:         "completed",
 		Quarantined:        quarantined,

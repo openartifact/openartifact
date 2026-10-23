@@ -15,7 +15,9 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/license"
+	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -25,14 +27,18 @@ type LicenseHandler struct {
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	detector  *license.Detector
+	licenses  artifactLicenseSource
 }
 
-func NewLicenseHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, detector *license.Detector) *LicenseHandler {
+// NewLicenseHandler returns the license scan and policy handler. blobs is the
+// store the scan reads artifact files from to find their declared licenses.
+func NewLicenseHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, detector *license.Detector, blobs storage.BlobStore) *LicenseHandler {
 	return &LicenseHandler{
 		db:        db,
 		log:       log,
 		evaluator: evaluator,
 		detector:  detector,
+		licenses:  artifactLicenseSource{db: db, blobs: blobs, log: log, detector: detector},
 	}
 }
 
@@ -95,7 +101,7 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Caller-supplied metadata would let a scan report whatever the caller
-	// wants; licenses are derived from the artifact's stored properties only.
+	// wants; licenses are derived from the stored artifact and its properties.
 	if len(body.Metadata) > 0 {
 		writeError(w, http.StatusBadRequest, "validation_failed",
 			"metadata is not accepted; set the artifact's license properties instead")
@@ -103,17 +109,24 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	metadata, err := storedArtifactMetadata(ctx, h.db, repo.ID, body.ArtifactID)
+	licenses, err := h.licenses.licenses(ctx, repo.ID, body.ArtifactID)
+	if licensemeta.Unsafe(err) {
+		writeError(w, http.StatusUnprocessableEntity, "unsafe_artifact",
+			"the artifact's metadata is too large or ambiguous to be read safely")
+
+		return
+	}
+
 	if err != nil {
-		h.log.Errorw("scan licenses: db error reading artifact properties", "error", err)
+		h.log.Errorw("scan licenses: db error reading artifact licenses", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
 	}
 
-	// Detect licenses from the stored metadata, evaluate the policies and
-	// record the result; a violated blocking policy quarantines the artifact.
-	scanResult, violations, err := licensepolicy.Record(ctx, h.db, h.log, repo.ID, body.ArtifactID, h.detector.DetectFromMetadata(metadata))
+	// Evaluate the policies on the licenses the artifact declares and record
+	// the result; a violated blocking policy quarantines the artifact.
+	scanResult, violations, err := licensepolicy.Record(ctx, h.db, h.log, repo.ID, body.ArtifactID, licenses)
 	if err != nil {
 		h.log.Errorw("scan licenses: db error recording scan result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -129,6 +142,7 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		"repo_id":             scanResult.RepositoryID,
 		"artifact_id":         scanResult.ArtifactID,
 		"licenses":            scanResult.Licenses,
+		"unresolved_licenses": nonNilStrings(scanResult.UnresolvedLicenses),
 		"scan_status":         scanResult.ScanStatus,
 		"scanned_at":          scanResult.ScannedAt,
 		"created_at":          scanResult.CreatedAt,
@@ -732,6 +746,7 @@ func scanResultToMap(result *models.LicenseScanResult) responses.LicenseScanResu
 		ScanError:       scanError,
 		SPDXExpressions: result.SPDXExpressions,
 
+		UnresolvedLicenses: nonNilStrings(result.UnresolvedLicenses),
 		Quarantined:        result.Quarantined,
 		QuarantineApproved: result.QuarantineApproved,
 	}

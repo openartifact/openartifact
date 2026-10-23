@@ -25,6 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -456,13 +457,7 @@ func (h *MavenUploadHandler) enforcePomLicenses(w http.ResponseWriter, r *http.R
 		return false
 	}
 
-	licenses := make([]string, 0, len(pom.Licenses))
-
-	for _, l := range pom.Licenses {
-		if name := strings.TrimSpace(l.Name); name != "" {
-			licenses = append(licenses, name)
-		}
-	}
+	licenses := licensemeta.ParsePOM(pom)
 
 	if !licensepolicy.Enforce(w, r, h.db, h.log, repoID, licenses...) {
 		return false

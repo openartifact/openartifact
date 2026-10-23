@@ -69,7 +69,8 @@ func scanVulnResult(row rowScanner) (*models.VulnScanResult, error) {
 // licenseResultColumns is the column list scanLicenseResult reads. Queries
 // select it FROM license_results lr JOIN scan_jobs sj JOIN artifact_refs ref.
 const licenseResultColumns = `lr.id, ref.repository_id, ref.artifact_path, lr.licenses, lr.spdx_expressions,
-	       sj.status, sj.error_message, lr.quarantined, lr.quarantine_approved, sj.completed_at, sj.created_at, sj.updated_at`
+	       sj.status, sj.error_message, lr.quarantined, lr.quarantine_approved, sj.completed_at, sj.created_at, sj.updated_at,
+	       lr.unresolved_licenses`
 
 // scanLicenseResult reads one row selected with licenseResultColumns.
 func scanLicenseResult(row rowScanner) (*models.LicenseScanResult, error) {
@@ -81,7 +82,8 @@ func scanLicenseResult(row rowScanner) (*models.LicenseScanResult, error) {
 	)
 
 	if err := row.Scan(&result.ID, &result.RepositoryID, &result.ArtifactID, &result.Licenses, &result.SPDXExpressions,
-		&result.ScanStatus, &errMsg, &result.Quarantined, &result.QuarantineApproved, &scannedAt, &result.CreatedAt, &result.UpdatedAt); err != nil {
+		&result.ScanStatus, &errMsg, &result.Quarantined, &result.QuarantineApproved, &scannedAt, &result.CreatedAt, &result.UpdatedAt,
+		&result.UnresolvedLicenses); err != nil {
 		return nil, err //nolint:wrapcheck // callers wrap with their own context and test sql.ErrNoRows
 	}
 

@@ -12,6 +12,7 @@
 package manifest
 
 import (
+	"bufio"
 	"context"
 	"errors"
 	"fmt"
@@ -50,6 +51,9 @@ var (
 	ErrNotFound = errors.New("no manifest found in artifact")
 	// ErrTooLarge means the artifact exceeds the extraction limits.
 	ErrTooLarge = errors.New("artifact is too large for manifest extraction")
+	// ErrAmbiguous means the artifact holds several candidates for a manifest
+	// that must be unique (Strict sources only).
+	ErrAmbiguous = errors.New("artifact holds more than one manifest")
 )
 
 // Source describes the artifact to read.
@@ -65,10 +69,35 @@ type Source struct {
 	// keep conanfile.py next to the conanmanifest.txt the listing points at).
 	// It returns (nil, nil) when no such file exists. May be nil.
 	Sibling func(name string) (io.ReadCloser, error)
+	// MemberLimit bounds what is read from one archive member; zero means
+	// MaxBytes.
+	MemberLimit int64
+	// Strict makes a member (or, for METADATA / PKG-INFO, a header block)
+	// larger than the limit fail with ErrTooLarge instead of being cut short,
+	// and an archive with two candidates for a unique manifest fail with
+	// ErrAmbiguous. Callers that act on the manifest's content (license
+	// enforcement) need this: a silently truncated or arbitrarily picked
+	// manifest could hide what the package really declares.
+	Strict bool
 }
 
-// extractor reads the manifest of one artifact kind.
-type extractor func(ctx context.Context, src Source) (string, error)
+// limits are the per-read bounds derived from a Source.
+type limits struct {
+	n      int64
+	strict bool
+}
+
+func (s Source) limits() limits {
+	n := s.MemberLimit
+	if n <= 0 {
+		n = maxMemberBytes
+	}
+
+	return limits{n: n, strict: s.Strict}
+}
+
+// extractor reads the manifest files of one artifact kind.
+type extractor func(ctx context.Context, src Source) ([]section, error)
 
 // Supported reports whether a manifest can be extracted for the file.
 func Supported(format, filename string) bool {
@@ -90,6 +119,46 @@ func AutoEligible(format, filename string) bool {
 	return Supported(format, filename)
 }
 
+// Part is one manifest file read from an artifact.
+type Part struct {
+	// Label names the file (package.json, METADATA, pom.xml, ...); empty for
+	// artifacts that are the manifest themselves (a .pom).
+	Label string
+	// Body is the file's text, valid UTF-8 without NULs.
+	Body string
+}
+
+// ExtractParts returns the manifest files of the artifact separately, each
+// read up to src.MemberLimit (MaxBytes when zero). Unlike Extract it does not
+// trim the result to MaxBytes. It returns ErrNotFound when the artifact holds
+// no manifest file.
+func ExtractParts(ctx context.Context, src Source) ([]Part, error) {
+	ex := pick(src.Format, src.Filename)
+	if ex == nil {
+		return nil, ErrUnsupported
+	}
+
+	sections, err := ex(ctx, src)
+	if err != nil {
+		return nil, err
+	}
+
+	parts := make([]Part, 0, len(sections))
+
+	for _, sec := range sections {
+		body := strings.ReplaceAll(strings.ToValidUTF8(sec.body, "\uFFFD"), "\x00", "")
+		if strings.TrimSpace(body) != "" {
+			parts = append(parts, Part{Label: sec.label, Body: body})
+		}
+	}
+
+	if len(parts) == 0 {
+		return nil, ErrNotFound
+	}
+
+	return parts, nil
+}
+
 // Extract returns the manifest text of the artifact (at most MaxBytes).
 func Extract(ctx context.Context, src Source) (string, error) {
 	ex := pick(src.Format, src.Filename)
@@ -97,12 +166,12 @@ func Extract(ctx context.Context, src Source) (string, error) {
 		return "", ErrUnsupported
 	}
 
-	text, err := ex(ctx, src)
+	sections, err := ex(ctx, src)
 	if err != nil {
 		return "", err
 	}
 
-	text = clean(text)
+	text := clean(render(sections))
 	if strings.TrimSpace(text) == "" {
 		return "", ErrNotFound
 	}
@@ -129,6 +198,16 @@ func clean(s string) string {
 type section struct {
 	label string
 	body  string
+}
+
+// render renders the sections of an extraction. A lone unlabelled section (an
+// artifact that is the manifest itself) is returned as it was read.
+func render(sections []section) string {
+	if len(sections) == 1 && sections[0].label == "" {
+		return sections[0].body
+	}
+
+	return join(sections...)
 }
 
 // join renders sections; a single unlabelled section is returned bare.
@@ -192,11 +271,20 @@ func (c *capReader) Read(p []byte) (int, error) {
 	return n, err
 }
 
-// readText reads up to MaxBytes of r (extra input is ignored).
-func readText(r io.Reader) (string, error) {
-	data, err := io.ReadAll(io.LimitReader(r, maxMemberBytes))
+// readText reads up to l.n bytes of r. Extra input is ignored, or an
+// ErrTooLarge in strict mode.
+func readText(r io.Reader, l limits) (string, error) {
+	data, err := io.ReadAll(io.LimitReader(r, l.n+1))
 	if err != nil {
 		return "", fmt.Errorf("read manifest: %w", err)
+	}
+
+	if int64(len(data)) > l.n {
+		if l.strict {
+			return "", ErrTooLarge
+		}
+
+		data = data[:l.n]
 	}
 
 	return string(data), nil
@@ -253,15 +341,63 @@ func openAt(ctx context.Context, open func() (io.ReadCloser, error)) (*readerAt,
 	return &readerAt{ReaderAt: f, size: n, release: release}, nil
 }
 
-// readBlobText reads the artifact blob as text (at most MaxBytes).
-func readBlobText(ctx context.Context, src Source) (string, error) {
+// readBlobText reads the artifact blob as text (at most the member limit).
+func readBlobText(ctx context.Context, src Source) ([]section, error) {
 	rc, err := src.Open()
 	if err != nil {
-		return "", fmt.Errorf("open artifact: %w", err)
+		return nil, fmt.Errorf("open artifact: %w", err)
 	}
 	defer func() { _ = rc.Close() }()
 
-	return readText(ctxReader{ctx: ctx, r: rc})
+	text, err := readText(ctxReader{ctx: ctx, r: rc}, src.limits())
+	if err != nil {
+		return nil, err
+	}
+
+	return []section{{body: text}}, nil
+}
+
+// readPyText reads the RFC 822 header block of a METADATA/PKG-INFO file and,
+// unless strict, only the head of its (potentially huge) long description. A
+// strict read stops at the end of the headers (the body is never read) and
+// fails with ErrTooLarge when the headers alone exceed the limit, so padding
+// cannot push a License field out of view.
+func readPyText(r io.Reader, l limits) (string, error) {
+	if !l.strict {
+		text, err := readText(r, l)
+		if err != nil {
+			return "", err
+		}
+
+		return trimPyBody(text), nil
+	}
+
+	br := bufio.NewReader(io.LimitReader(r, l.n+1))
+
+	var head strings.Builder
+
+	for {
+		line, err := br.ReadString('\n')
+		head.WriteString(line)
+
+		if int64(head.Len()) > l.n {
+			return "", ErrTooLarge
+		}
+
+		if strings.TrimRight(line, "\r\n") == "" && line != "" {
+			break
+		}
+
+		if err != nil {
+			if errors.Is(err, io.EOF) {
+				break
+			}
+
+			return "", fmt.Errorf("read manifest: %w", err)
+		}
+	}
+
+	return head.String(), nil
 }
 
 // trimPyBody keeps the RFC 822 header block of a METADATA/PKG-INFO file and
