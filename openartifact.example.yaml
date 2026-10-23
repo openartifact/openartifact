@@ -231,4 +231,4 @@ scanners:
   grype:
     path: ""               # command name or absolute path; default "grype" on PATH
     install: none          # none | auto: as for trivy
-    dbUrl: ""              # http(s) URL of a grype database listing.json (a mirror); default grype's built-in
+    dbUrl: ""              # http(s) URL of a grype database listing.json (a mirror), no credentials in the URL; default grype's built-in

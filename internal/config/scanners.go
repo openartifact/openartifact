@@ -147,7 +147,9 @@ func (s ScannersConfig) validate() error {
 
 	if s.Grype.DBURL != "" {
 		u, err := url.Parse(s.Grype.DBURL)
-		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
+		// Credentials in the URL would be logged and exposed to every process
+		// that can read the scanner's environment.
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.User != nil {
 			return fmt.Errorf("scanners.grype.dbUrl: %w", errScannerURL)
 		}
 	}

@@ -41,6 +41,13 @@ type Registry struct {
 	// ScannerInstallAttemptsTotal counts runtime scanner installs. The scanner
 	// label is trivy or grype; result is one of a fixed set (see internal/vuln).
 	ScannerInstallAttemptsTotal *prometheus.CounterVec
+
+	// ScannerDBUpdateAttemptsTotal counts vulnerability database refreshes by
+	// scanner (trivy, grype) and result (success, failure);
+	// ScannerDBLastSuccessTimestamp is when each last succeeded (or, after a
+	// restart, the age of the database on disk), in Unix seconds.
+	ScannerDBUpdateAttemptsTotal  *prometheus.CounterVec
+	ScannerDBLastSuccessTimestamp *prometheus.GaugeVec
 }
 
 // NewRegistry creates all metrics, registers them on the default Prometheus
@@ -135,8 +142,18 @@ func NewRegistry() *Registry {
 
 		ScannerInstallAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_scanner_install_attempts_total",
-			Help: "Runtime installs of the Trivy and Grype binaries, by scanner and result (installed, reused, unsupported_platform, download_failed, checksum_mismatch, extract_failed, noexec, failed).",
+			Help: "Runtime installs of the Trivy and Grype binaries, by scanner and result (installed, reused, unsupported_platform, download_failed, checksum_mismatch, extract_failed, noexec, insecure_location, failed).",
 		}, []string{"scanner", "result"}),
+
+		ScannerDBUpdateAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_scanner_db_update_attempts_total",
+			Help: "Vulnerability database refreshes of the Trivy and Grype scanners, by scanner and result (success, failure).",
+		}, []string{"scanner", "result"}),
+
+		ScannerDBLastSuccessTimestamp: prometheus.NewGaugeVec(prometheus.GaugeOpts{
+			Name: "openartifact_scanner_db_last_success_timestamp_seconds",
+			Help: "Unix time of the last successful vulnerability database refresh (or the database's age on disk after a restart), by scanner.",
+		}, []string{"scanner"}),
 	}
 
 	prometheus.MustRegister(
@@ -158,6 +175,8 @@ func NewRegistry() *Registry {
 		r.BlobDeletionsPending,
 		r.BlobDeletionsSwept,
 		r.ScannerInstallAttemptsTotal,
+		r.ScannerDBUpdateAttemptsTotal,
+		r.ScannerDBLastSuccessTimestamp,
 	)
 
 	return r

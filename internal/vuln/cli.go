@@ -38,6 +38,11 @@ type cliTool struct {
 	// the verified copy goes (<cacheDir base>/bin/<name>).
 	installAuto bool
 	installDir  string
+	// installRefusal, when set, is why install "auto" was refused at
+	// construction (shown instead of an install state); platform is
+	// "<goos>/<goarch>", for the unsupported-platform message.
+	installRefusal string
+	platform       string
 
 	mu          sync.Mutex
 	updating    bool
@@ -49,7 +54,13 @@ type cliTool struct {
 	// binary once it passed the exec probe.
 	installState  string
 	installCode   string
+	installDetail string
 	installedPath string
+	// installedSum is the pinned sha256 of the installed binary and
+	// installedInfo what stat said when it was verified: a change of file,
+	// size or mtime makes lookup hash it again before it is trusted.
+	installedSum  string
+	installedInfo os.FileInfo
 }
 
 func newCLITool(name, path, cacheDir string, dbPresent func(string) bool) cliTool {
@@ -71,16 +82,45 @@ func (t *cliTool) lookup() (string, error) {
 	}
 
 	if t.installAuto {
-		t.mu.Lock()
-		installed := t.installedPath
-		t.mu.Unlock()
-
-		if installed != "" && fileExists(installed) {
+		if installed := t.verifiedInstalled(); installed != "" {
 			return installed, nil
 		}
 	}
 
 	return "", err
+}
+
+// verifiedInstalled returns the installed binary when it is still the file
+// that passed verification: its directories and the file belong to the server's
+// user and nobody else can write them, and, if the file changed since (another
+// inode, size or mtime), it still hashes to the pinned checksum.
+func (t *cliTool) verifiedInstalled() string {
+	t.mu.Lock()
+	path, sum, prev := t.installedPath, t.installedSum, t.installedInfo
+	t.mu.Unlock()
+
+	if path == "" {
+		return ""
+	}
+
+	info, err := checkInstallTree(filepath.Dir(t.installDir), path)
+	if err != nil {
+		return ""
+	}
+
+	if prev != nil && sameFileState(prev, info) {
+		return path
+	}
+
+	if got, err := fileSHA256(path); err != nil || got != sum {
+		return ""
+	}
+
+	t.mu.Lock()
+	t.installedInfo = info
+	t.mu.Unlock()
+
+	return path
 }
 
 // preflight returns the binary a scan runs, or the failure the scan would hit
@@ -171,7 +211,7 @@ func dbMTime(dir string) time.Time {
 
 	for _, pattern := range []string{
 		filepath.Join(dir, "db", "metadata.json"),
-		filepath.Join(dir, "*", "vulnerability.db"),
+		filepath.Join(dir, grypeSchemaGlob, "vulnerability.db"),
 	} {
 		matches, _ := filepath.Glob(pattern)
 		for _, m := range matches {
@@ -190,10 +230,18 @@ func trivyDBPresent(cacheDir string) bool {
 		fileExists(filepath.Join(cacheDir, "db", "metadata.json"))
 }
 
-// grypeDBPresent reports whether a grype cache directory holds a database
-// (<cacheDir>/<schema version>/vulnerability.db).
+// grypeSchemaGlob matches grype's schema directories ("5", "6", ...). Grype
+// downloads into grype-db-download* directories that hold a vulnerability.db
+// long before it is activated, so a wildcard would count a half-done update.
+const grypeSchemaGlob = "[0-9]*"
+
+// grypeDownloadGlob matches the directories grype downloads into.
+const grypeDownloadGlob = "grype-db-download*"
+
+// grypeDBPresent reports whether a grype cache directory holds an activated
+// database (<cacheDir>/<schema version>/vulnerability.db).
 func grypeDBPresent(cacheDir string) bool {
-	matches, _ := filepath.Glob(filepath.Join(cacheDir, "*", "vulnerability.db"))
+	matches, _ := filepath.Glob(filepath.Join(cacheDir, grypeSchemaGlob, "vulnerability.db"))
 
 	return slices.ContainsFunc(matches, fileExists)
 }
@@ -206,30 +254,146 @@ func fileExists(path string) bool {
 
 // updateTrivyDB downloads (or refreshes) the trivy database, and the Java
 // database when a repository for it is configured.
+//
+// Trivy deletes the database directory it is about to replace, so refreshing
+// the live one would leave scans without a database for as long as the
+// download takes. The download therefore runs in a staging directory seeded
+// with hard links to the live files (Trivy still sees the current metadata and
+// skips an unneeded download) and only a finished, different database is
+// swapped in, atomically where the filesystem allows.
 func (r *Registry) updateTrivyDB(ctx context.Context) error {
-	base := []string{"image", "--quiet", "--skip-version-check", "--cache-dir=" + r.trivy.cacheDir}
+	t := &r.trivy
 
-	args := append(append([]string{}, base...), "--download-db-only")
-	if r.opts.Trivy.DBRepository != "" {
-		args = append(args, "--db-repository="+r.opts.Trivy.DBRepository)
+	return t.withLock(ctx, func() error {
+		stage := filepath.Join(t.cacheDir, trivyStagingDir)
+
+		if err := os.RemoveAll(stage); err != nil {
+			return fmt.Errorf("clear %s staging dir: %w", t.name, err)
+		}
+
+		if err := os.MkdirAll(stage, 0o750); err != nil {
+			return fmt.Errorf("create %s staging dir: %w", t.name, err)
+		}
+
+		defer func() { _ = os.RemoveAll(stage) }()
+
+		for _, d := range trivyDBDirs {
+			seedStage(filepath.Join(t.cacheDir, d), filepath.Join(stage, d))
+		}
+
+		base := []string{"image", "--quiet", "--skip-version-check", "--cache-dir=" + stage}
+
+		args := append(append([]string{}, base...), "--download-db-only")
+		if r.opts.Trivy.DBRepository != "" {
+			args = append(args, "--db-repository="+r.opts.Trivy.DBRepository)
+		}
+
+		if err := r.runUpdate(ctx, t, nil, args); err != nil {
+			return err
+		}
+
+		if r.opts.Trivy.JavaDBRepository != "" {
+			args = append(append([]string{}, base...), "--download-java-db-only", "--java-db-repository="+r.opts.Trivy.JavaDBRepository)
+
+			if err := r.runUpdate(ctx, t, nil, args); err != nil {
+				return err
+			}
+		}
+
+		for _, d := range trivyDBDirs {
+			if err := promoteStaged(filepath.Join(stage, d), filepath.Join(t.cacheDir, d)); err != nil {
+				return fmt.Errorf("%w: %s: %w", errDBUpdateRun, t.name, err)
+			}
+		}
+
+		return nil
+	})
+}
+
+// trivyStagingDir is where a Trivy refresh downloads, inside the cache
+// directory so that a rename into place never crosses filesystems.
+const trivyStagingDir = ".staging"
+
+// trivyDBDirs are the directories of Trivy's cache directory a database
+// download writes: the vulnerability database and the optional Java index.
+//
+//nolint:gochecknoglobals // read-only table
+var trivyDBDirs = []string{"db", "java-db"}
+
+// seedStage hard-links the files of the live database directory into staged.
+// Trivy replaces the files by removing them and writing new ones, which leaves
+// the live inodes alone. If linking is not possible the stage stays empty and
+// Trivy downloads from scratch.
+func seedStage(live, staged string) {
+	entries, err := os.ReadDir(live)
+	if err != nil {
+		return
 	}
 
-	if err := r.runUpdate(ctx, &r.trivy, nil, args); err != nil {
-		return err
+	if err := os.MkdirAll(staged, 0o750); err != nil {
+		return
 	}
 
-	if r.opts.Trivy.JavaDBRepository == "" {
+	for _, e := range entries {
+		if !e.Type().IsRegular() {
+			continue
+		}
+
+		if err := os.Link(filepath.Join(live, e.Name()), filepath.Join(staged, e.Name())); err != nil {
+			_ = os.RemoveAll(staged)
+
+			return
+		}
+	}
+}
+
+// promoteStaged makes the staged directory the live one unless Trivy left it
+// as it was (every file is still the live file).
+func promoteStaged(staged, live string) error {
+	if _, err := os.Stat(staged); err != nil {
+		return nil //nolint:nilerr // nothing was downloaded into this directory
+	}
+
+	if sameFiles(staged, live) {
 		return nil
 	}
 
-	args = append(append([]string{}, base...), "--download-java-db-only", "--java-db-repository="+r.opts.Trivy.JavaDBRepository)
-
-	return r.runUpdate(ctx, &r.trivy, nil, args)
+	return swapDirs(staged, live)
 }
 
-// updateGrypeDB downloads (or refreshes) the grype database.
+// sameFiles reports whether a and b hold the same regular files (the same
+// inodes, not copies).
+func sameFiles(a, b string) bool {
+	entries, err := os.ReadDir(a)
+	if err != nil {
+		return false
+	}
+
+	other, err := os.ReadDir(b)
+	if err != nil || len(other) != len(entries) {
+		return false
+	}
+
+	for _, e := range entries {
+		fa, errA := os.Stat(filepath.Join(a, e.Name()))
+		fb, errB := os.Stat(filepath.Join(b, e.Name()))
+
+		if errA != nil || errB != nil || !os.SameFile(fa, fb) {
+			return false
+		}
+	}
+
+	return true
+}
+
+// updateGrypeDB downloads (or refreshes) the grype database. Grype downloads
+// into a grype-db-download* directory and activates it by renaming; a killed
+// run leaves that directory behind (up to the size of the database), so the
+// leftovers are removed before and after the run.
 func (r *Registry) updateGrypeDB(ctx context.Context) error {
-	env := r.grype.env()
+	t := &r.grype
+
+	env := t.env()
 	if r.opts.Grype.DBURL != "" {
 		env = append(env, "GRYPE_DB_UPDATE_URL="+r.opts.Grype.DBURL)
 	}
@@ -237,7 +401,24 @@ func (r *Registry) updateGrypeDB(ctx context.Context) error {
 	// An update must be allowed to download whatever scans are told not to.
 	env = append(env, "GRYPE_DB_AUTO_UPDATE=true")
 
-	return r.runUpdate(ctx, &r.grype, env, []string{"db", "update", "--quiet"})
+	return t.withLock(ctx, func() error {
+		if err := os.MkdirAll(t.cacheDir, 0o750); err != nil {
+			return fmt.Errorf("create %s cache dir: %w", t.name, err)
+		}
+
+		removeGrypeDownloads(t.cacheDir)
+		defer removeGrypeDownloads(t.cacheDir)
+
+		return r.runUpdate(ctx, t, env, []string{"db", "update", "--quiet"})
+	})
+}
+
+// removeGrypeDownloads deletes grype's unfinished download directories.
+func removeGrypeDownloads(cacheDir string) {
+	matches, _ := filepath.Glob(filepath.Join(cacheDir, grypeDownloadGlob))
+	for _, m := range matches {
+		_ = os.RemoveAll(m)
+	}
 }
 
 // env is the environment that points grype at its cache directory and stops it
