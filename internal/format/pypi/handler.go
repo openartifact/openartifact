@@ -7,6 +7,7 @@ package pypi
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/gzip"
 	"context"
 	"errors"
@@ -21,6 +22,9 @@ import (
 const (
 	maxPyPIPackageBytes  = 100 << 20
 	maxPyPIMetadataBytes = 4 << 20
+	// maxPyPIUnpackedBytes bounds the decompressed bytes read while scanning an
+	// sdist for PKG-INFO, so a gzip bomb cannot burn CPU in tar.Next.
+	maxPyPIUnpackedBytes = 256 << 20
 )
 
 type PyPIHandler struct{}
@@ -97,7 +101,7 @@ func isValidSdist(data []byte) bool {
 }
 
 func parseWheel(data []byte) (map[string]any, error) {
-	zr, err := zip.NewReader(strings.NewReader(string(data)), int64(len(data)))
+	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read wheel: %w", err)
 	}
@@ -119,13 +123,13 @@ func parseWheel(data []byte) (map[string]any, error) {
 }
 
 func parseSdist(data []byte) (map[string]any, error) {
-	gr, err := gzip.NewReader(strings.NewReader(string(data)))
+	gr, err := gzip.NewReader(bytes.NewReader(data))
 	if err != nil {
 		return nil, fmt.Errorf("failed to read gzip: %w", err)
 	}
 	defer func() { _ = gr.Close() }()
 
-	tr := tar.NewReader(gr)
+	tr := tar.NewReader(io.LimitReader(gr, maxPyPIUnpackedBytes))
 
 	// Find PKG-INFO at root
 	for {

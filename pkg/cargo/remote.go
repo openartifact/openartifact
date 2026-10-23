@@ -200,7 +200,7 @@ var errBadConfig = errors.New("not a cargo registry config")
 // ParseConfig reads a registry config.json.
 func ParseConfig(r io.Reader) (Config, error) {
 	var c Config
-	if err := json.NewDecoder(r).Decode(&c); err != nil || c.DL == "" {
+	if err := json.NewDecoder(io.LimitReader(r, 1<<20)).Decode(&c); err != nil || c.DL == "" {
 		return Config{}, errBadConfig
 	}
 

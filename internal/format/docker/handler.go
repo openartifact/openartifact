@@ -12,6 +12,7 @@ import (
 	"io"
 
 	"github.com/openartifact/openartifact/internal/format"
+	"github.com/openartifact/openartifact/internal/format/base"
 )
 
 type DockerHandler struct{}
@@ -33,7 +34,7 @@ func (h *DockerHandler) GetFileExtension() string {
 }
 
 func (h *DockerHandler) Validate(ctx context.Context, r io.Reader) error {
-	data, err := io.ReadAll(r)
+	data, err := base.ReadAllLimited(r, maxManifestBytes)
 	if err != nil {
 		return fmt.Errorf("failed to read manifest: %w", err)
 	}
@@ -54,7 +55,7 @@ func (h *DockerHandler) Validate(ctx context.Context, r io.Reader) error {
 }
 
 func (h *DockerHandler) Parse(ctx context.Context, r io.Reader) (map[string]any, error) {
-	data, err := io.ReadAll(r)
+	data, err := base.ReadAllLimited(r, maxManifestBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read manifest: %w", err)
 	}

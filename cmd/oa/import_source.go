@@ -34,6 +34,8 @@ const (
 
 	aqlPageSize = 1000
 	maxErrBody  = 512
+	// maxSourceJSONBytes caps a JSON response read from an import source.
+	maxSourceJSONBytes = 64 << 20
 )
 
 var (
@@ -161,7 +163,7 @@ func (s *sourceHTTP) getJSONOnce(ctx context.Context, rawURL string, v any) erro
 		return statusError(resp, "GET "+redactURL(rawURL))
 	}
 
-	if err := json.NewDecoder(resp.Body).Decode(v); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxSourceJSONBytes)).Decode(v); err != nil {
 		return fmt.Errorf("decoding %s: %w", redactURL(rawURL), err)
 	}
 
@@ -506,7 +508,7 @@ func (a *artifactorySource) aqlPageOnce(ctx context.Context, repo string, offset
 	}
 
 	var page aqlResponse
-	if err := json.NewDecoder(resp.Body).Decode(&page); err != nil {
+	if err := json.NewDecoder(io.LimitReader(resp.Body, maxSourceJSONBytes)).Decode(&page); err != nil {
 		return aqlResponse{}, fmt.Errorf("%s: decoding response: %w", what, err)
 	}
 

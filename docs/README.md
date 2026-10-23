@@ -71,6 +71,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | [MCP server](integrations/mcp.md) | Tools, permissions and client configuration (Claude, Cursor, VS Code, Codex, omp) |
 | [REST API](integrations/api.md) | OpenAPI spec, Swagger UI, authentication, conventions |
 | [AI analysis](integrations/ai-analysis.md) | Optional LLM analysis of package manifests |
+| [yap](integrations/yap.md) | Build deb/rpm packages with yap, publish them and install from clients |
 
 ## Development
 

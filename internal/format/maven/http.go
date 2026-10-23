@@ -29,6 +29,9 @@ import (
 
 // metadataMaxAge is how long shared caches may reuse a public repository's
 // metadata and artifacts before revalidating.
+// maxMetadataBlobBytes caps a maven-metadata.xml read back from the blob store.
+const maxMetadataBlobBytes = 16 << 20
+
 const metadataMaxAge = 300
 
 type HTTPHandler struct {
@@ -274,7 +277,7 @@ func (h *HTTPHandler) readMetadataBlob(ctx context.Context, sha256 string) ([]by
 
 	defer func() { _ = rc.Close() }()
 
-	data, err := io.ReadAll(rc)
+	data, err := base.ReadAllLimited(rc, maxMetadataBlobBytes)
 	if err != nil {
 		return nil, fmt.Errorf("read metadata blob: %w", err)
 	}

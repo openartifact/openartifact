@@ -2083,7 +2083,7 @@ func (h *HTTPHandler) handleGetReferrers(w http.ResponseWriter, r *http.Request)
 			continue
 		}
 
-		manifestBody, readErr := io.ReadAll(content)
+		manifestBody, readErr := io.ReadAll(io.LimitReader(content, maxManifestBytes))
 		_ = content.Close()
 
 		if readErr == nil {
