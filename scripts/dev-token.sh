@@ -88,7 +88,7 @@ mint() {
 }
 
 status="$(mint)"
-if [ "$status" = 403 ] && [ "$(jq -r '.code // empty' "$body")" = password_change_required ]; then
+if [ "$status" = 403 ] && [ "$(jq -r '.error // .code // empty' "$body")" = password_change_required ]; then
 	[ "$change_pass" = 1 ] || die "password change required: rerun with --change-password and OA_NEW_PASS"
 	[ -n "${OA_NEW_PASS:-}" ] || die "--change-password needs OA_NEW_PASS"
 	export OA_NEW_PASS
