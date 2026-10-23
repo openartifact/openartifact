@@ -34,8 +34,11 @@ type S3BlobStore struct {
 	bucket     string
 	presignTTL time.Duration
 	// gcs marks Google Cloud Storage's XML API, which copies objects of any size
-	// with CopyObject but has no UploadPartCopy.
+	// with CopyObject, subject to request time limits, but has no UploadPartCopy.
 	gcs bool
+	// gcsCompose promotes staged objects on GCS (no UploadPartCopy, and a
+	// size-independent compose instead of a long synchronous copy).
+	gcsCompose *gcsComposer
 	// copyOverride replaces the promote copy thresholds (tests).
 	copyOverride *copyLimit
 }

@@ -4,7 +4,11 @@
 
 package storage
 
-import "errors"
+import (
+	"errors"
+
+	"github.com/aws/aws-sdk-go-v2/credentials"
+)
 
 // Sentinel errors for GCS Blob Store.
 var (
@@ -43,6 +47,7 @@ func NewGCSBlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 	}
 
 	store.gcs = true
+	store.gcsCompose = newGCSComposer(cfg.GCSBucket, credentials.NewStaticCredentialsProvider(cfg.GCSHMACKey, cfg.GCSHMACSecret, ""))
 
 	return store, nil
 }

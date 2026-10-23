@@ -335,6 +335,10 @@ func (s *S3BlobStore) stagingMultipartIDs(ctx context.Context, olderThan time.Ti
 // UploadPartCopy, each conditional on the same version, because CopyObject
 // refuses sources above 5 GiB.
 func (s *S3BlobStore) copyStaging(ctx context.Context, src, dst, version string, md map[string]string) error {
+	if s.gcsCompose != nil {
+		return s.gcsCompose.compose(ctx, src, dst, version, md)
+	}
+
 	size := int64(-1)
 
 	if !s.gcs {
@@ -348,8 +352,7 @@ func (s *S3BlobStore) copyStaging(ctx context.Context, src, dst, version string,
 		}
 	}
 
-	// GCS copies objects of any size with CopyObject; for an unknown size
-	// (never on S3) the single call is the only option.
+	// An unknown size is only possible on GCS without the compose client (tests).
 	if size < 0 || size <= s.copyLimits().single {
 		_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:            aws.String(s.bucket),

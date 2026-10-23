@@ -46,6 +46,9 @@ const (
 	relayWalkBatch   = 200
 	relayMetaSuffix  = ".meta"
 	relayUploadSufx  = ".upload"
+	relaySealSuffix  = ".sealed"
+	relayLockSuffix  = ".lock"
+	relayLockPoll    = 20 * time.Millisecond
 	relayPartInfix   = ".part"
 	uuidLen          = 36
 )
@@ -72,6 +75,10 @@ type relay struct {
 	publicURL string
 	key       []byte
 	now       func() time.Time
+
+	// afterSeal, when set, runs once an upload is sealed and before finalize
+	// waits for in-flight writers (tests only).
+	afterSeal func()
 }
 
 // newRelay prepares the staging directory and signing key. It returns nil when
@@ -185,6 +192,8 @@ func isStagingID(id string) bool {
 func (r *relay) objectPath(id string) string { return filepath.Join(r.dir, id) }
 func (r *relay) uploadPath(id string) string { return filepath.Join(r.dir, id+relayUploadSufx) }
 func (r *relay) metaPath(id string) string   { return filepath.Join(r.dir, id+relayMetaSuffix) }
+func (r *relay) sealPath(id string) string   { return filepath.Join(r.dir, id+relaySealSuffix) }
+func (r *relay) lockPath(id string) string   { return filepath.Join(r.dir, id+relayLockSuffix) }
 
 func (r *relay) markerPath(id string, part int) string {
 	return filepath.Join(r.dir, id+relayPartInfix+strconv.Itoa(part))
@@ -305,7 +314,7 @@ func (r *relay) PresignStagingPart(_ context.Context, id, _ string, number int, 
 }
 
 // CompleteMultipart implements MultipartStagingStore.
-func (r *relay) CompleteMultipart(_ context.Context, id, _ string, size, partSize int64) error {
+func (r *relay) CompleteMultipart(ctx context.Context, id, _ string, size, partSize int64) error {
 	if r == nil {
 		return ErrPresignNotSupported
 	}
@@ -331,7 +340,7 @@ func (r *relay) CompleteMultipart(_ context.Context, id, _ string, size, partSiz
 		return fmt.Errorf("%w: missing parts %v", ErrMultipartIncomplete, missing)
 	}
 
-	return r.finalize(id, meta.PartCount)
+	return r.finalize(ctx, id, meta.PartCount)
 }
 
 func isRegular(path string) bool {
@@ -354,12 +363,42 @@ func (r *relay) missingParts(id string, meta relayMeta) []int {
 
 // finalize publishes <id>.upload as <id> without overwriting an existing
 // object; concurrent finalizers all succeed.
-func (r *relay) finalize(id string, parts int) error {
-	err := os.Link(r.uploadPath(id), r.objectPath(id))
+//
+// The object shares the partial upload's inode, so no writer may touch it once
+// it is published. finalize therefore seals the upload first (every later part
+// PUT answers 409), then waits for the PUTs already writing (they hold the
+// upload's shared lock) before it links. From the link on the bytes never
+// change, so whatever the caller verifies is exactly what is promoted.
+func (r *relay) finalize(ctx context.Context, id string, parts int) error {
+	if isRegular(r.objectPath(id)) {
+		return nil
+	}
+
+	sealed, err := r.seal(id)
+	if err != nil {
+		return err
+	}
+
+	if r.afterSeal != nil {
+		r.afterSeal()
+	}
+
+	unlock, err := r.lockExclusive(ctx, id)
+	if err != nil {
+		r.unseal(id, sealed)
+
+		return err
+	}
+
+	defer unlock()
+
+	err = os.Link(r.uploadPath(id), r.objectPath(id))
 	if err != nil && !errors.Is(err, os.ErrExist) {
 		if isRegular(r.objectPath(id)) {
 			return nil // another finalizer got there first
 		}
+
+		r.unseal(id, sealed)
 
 		return fmt.Errorf("finalize upload: %w", err)
 	}
@@ -374,6 +413,52 @@ func (r *relay) finalize(id string, parts int) error {
 	}
 
 	return nil
+}
+
+// seal marks the upload as being completed. created is true when this call
+// made the marker.
+func (r *relay) seal(id string) (created bool, err error) {
+	f, err := os.OpenFile(r.sealPath(id), os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600)
+	if errors.Is(err, os.ErrExist) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("seal upload: %w", err)
+	}
+
+	return true, f.Close()
+}
+
+// unseal reopens an upload whose completion failed before the object was
+// published, so the client can go on.
+func (r *relay) unseal(id string, created bool) {
+	if created && !isRegular(r.objectPath(id)) {
+		_ = os.Remove(r.sealPath(id))
+	}
+}
+
+// lockExclusive waits until no part PUT is writing.
+func (r *relay) lockExclusive(ctx context.Context, id string) (func(), error) {
+	tick := time.NewTicker(relayLockPoll)
+	defer tick.Stop()
+
+	for {
+		unlock, held, err := tryLockExclusive(r.lockPath(id))
+		if err != nil {
+			return nil, err
+		}
+
+		if !held {
+			return unlock, nil
+		}
+
+		select {
+		case <-ctx.Done():
+			return nil, fmt.Errorf("wait for in-flight part uploads: %w", ctx.Err())
+		case <-tick.C:
+		}
+	}
 }
 
 func stagedVersion(info os.FileInfo) string {
@@ -458,16 +543,18 @@ func (r *relay) DeleteStaging(_ context.Context, id string) error {
 		}
 	}
 
+	// The plan goes first: a part PUT arriving now finds no upload.
+	remove(r.metaPath(id))
 	remove(r.objectPath(id))
 	remove(r.uploadPath(id))
+	remove(r.sealPath(id))
+	remove(r.lockPath(id))
 
 	if matches, err := filepath.Glob(filepath.Join(r.dir, id+relayPartInfix+"*")); err == nil {
 		for _, m := range matches {
 			remove(m)
 		}
 	}
-
-	remove(r.metaPath(id))
 
 	return firstErr
 }
@@ -484,7 +571,7 @@ func stagingFileID(name string) (string, bool) {
 	}
 
 	switch {
-	case rest == "", rest == relayMetaSuffix, rest == relayUploadSufx:
+	case rest == "", rest == relayMetaSuffix, rest == relayUploadSufx, rest == relaySealSuffix, rest == relayLockSuffix:
 		return id, true
 	case strings.HasPrefix(rest, relayPartInfix):
 		_, err := strconv.Atoi(rest[len(relayPartInfix):])
@@ -616,12 +703,6 @@ func (r *relay) servePut(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	if isRegular(r.objectPath(id)) {
-		http.Error(w, "upload already complete", http.StatusConflict)
-
-		return
-	}
-
 	if req.ContentLength < 0 {
 		http.Error(w, "content length required", http.StatusLengthRequired)
 
@@ -634,15 +715,15 @@ func (r *relay) servePut(w http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	etag, err := r.writePart(id, part, meta, length, req.Body)
-	if err != nil {
-		http.Error(w, "bad part body", http.StatusBadRequest)
+	etag, status := r.putPart(id, part, meta, length, req.Body)
+	if status != http.StatusOK {
+		http.Error(w, http.StatusText(status), status)
 
 		return
 	}
 
 	if len(r.missingParts(id, meta)) == 0 {
-		if err := r.finalize(id, meta.PartCount); err != nil {
+		if err := r.finalize(req.Context(), id, meta.PartCount); err != nil {
 			http.Error(w, "finalize failed", http.StatusInternalServerError)
 
 			return
@@ -651,6 +732,29 @@ func (r *relay) servePut(w http.ResponseWriter, req *http.Request) {
 
 	w.Header().Set("ETag", `"`+etag+`"`)
 	w.WriteHeader(http.StatusOK)
+}
+
+// putPart writes one part while holding the upload's shared lock, so a
+// concurrent finalize waits for it, and refuses the part once the upload is
+// sealed or published (409).
+func (r *relay) putPart(id string, part int, meta relayMeta, length int64, body io.Reader) (etag string, status int) {
+	unlock, err := lockShared(r.lockPath(id))
+	if err != nil {
+		return "", http.StatusInternalServerError
+	}
+
+	defer unlock()
+
+	if isRegular(r.sealPath(id)) || isRegular(r.objectPath(id)) || !isRegular(r.metaPath(id)) {
+		return "", http.StatusConflict
+	}
+
+	etag, err = r.writePart(id, part, meta, length, body)
+	if err != nil {
+		return "", http.StatusBadRequest
+	}
+
+	return etag, http.StatusOK
 }
 
 // writePart streams exactly length bytes of body to the part's offset of the
