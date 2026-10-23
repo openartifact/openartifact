@@ -140,7 +140,7 @@ func (w *AIAnalysisWorker) extract(req AIAnalysisRequest, blob *models.Component
 // name/version@user/channel#recipe_revision; the reader is nil when the recipe
 // has no such file.
 func (w *AIAnalysisWorker) conanSibling(ctx context.Context, repoID, reference, file string) (io.ReadCloser, error) {
-	key, ok := parseConanReference(reference)
+	key, ok := models.ParseConanReference(reference)
 	if !ok {
 		return nil, nil //nolint:nilnil // no such file
 	}
@@ -157,26 +157,6 @@ func (w *AIAnalysisWorker) conanSibling(ctx context.Context, repoID, reference, 
 	}
 
 	return w.blobs.Get(ctx, row.BlobKey)
-}
-
-// parseConanReference splits name/version@user/channel#revision.
-func parseConanReference(ref string) (models.ConanFileKey, bool) {
-	name, rest, ok := strings.Cut(ref, "/")
-	if !ok {
-		return models.ConanFileKey{}, false
-	}
-
-	version, rest, ok := strings.Cut(rest, "@")
-	if !ok {
-		return models.ConanFileKey{}, false
-	}
-
-	userChannel, rrev, ok := strings.Cut(rest, "#")
-	if !ok || name == "" || version == "" {
-		return models.ConanFileKey{}, false
-	}
-
-	return models.ConanFileKey{Name: name, Version: version, UserChannel: userChannel, RecipeRevision: rrev}, true
 }
 
 // UploadRef identifies a package an upload event announced; the worker finds

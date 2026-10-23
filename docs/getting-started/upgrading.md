@@ -41,6 +41,10 @@ docker compose -f docker/docker-compose.yml run --rm openartifact ./openartifact
 
 With `MIGRATE_ON_START=false` the server logs `automatic migrations skipped` at start and does not check the schema version, so a new binary against an unmigrated database may fail at query time. `make migrate` does the same from a source checkout (`go run ./cmd/server -migrate`).
 
+### Unreleased
+
+- Maven poms that declare no license now inherit it from their `<parent>` pom stored in the same repository or in a group it belongs to (including poms a proxy member already cached), for the upload license policy, the license scan and the SBOM. A blocking policy can therefore reject a child whose parent declares a denied license. Existing scan results are not rewritten: scan the pom again. See [Maven parent poms](../security/licenses.md#maven-parent-poms).
+
 ## Docker Compose
 
 From the checkout of the new version:
@@ -92,6 +96,22 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - SPDX `documentNamespace` and OpenVEX `@id` are now minted under `BASE_URL` (`urn:openartifact:...` when it is empty) instead of `openartifact.io`. Documents already stored keep their identifiers.
 - Creating or updating a cleanup policy on a repository whose format the cleanup worker cannot process now answers `400 UNSUPPORTED_FORMAT`; such policies previously failed on every run.
 - `POST /api/v1/admin/storage/{name}/test` runs a real bucket or container check for `gcs` and `azure` backends instead of answering `not_implemented`.
+- SBOM components are now read from the stored package file (manifest and lockfile) for npm, pypi, maven, sbt, ivy, cargo, go, nuget, rubygems, helm, conda, deb, rpm and conan, and merged with the `dependencies` property. SBOMs generated after the upgrade list more components than before. `artifact_id` may also be a package-listing row id. `POST …/sbom/generate` answers `422 unsafe_artifact` for a package file that cannot be read safely. See [SBOM and VEX](../security/sbom.md#components-read-from-the-package-file).
+- The web UI can record, list and delete VEX decisions and download OpenVEX / CycloneDX VEX documents (Security → Vulnerability scans).
+
+#### Conan 1.x clients (migration `057`)
+
+A Conan 1.x client can now use a conan repository (see [Conan](../formats/conan.md#conan-1x)). Migration `057` adds `md5` and `sha1` columns to `conan_packages` and an index on `sha1` (`CREATE INDEX CONCURRENTLY`); it also stops the `updated_at` trigger from firing on a digest-only change, because that column is the revision time. The migration is additive and safe for a rolling upgrade.
+
+- Files stored by earlier versions have no digests. A Conan 1 client's file listing fills in the MD5 on first read; the SHA-1 is recorded then too. Those files only take part in checksum deploy after that, or after being uploaded again.
+- The ping now advertises `revisions,checksum_deploy`. Conan 2 clients start sending an empty `PUT` with `X-Checksum-Deploy: true` before uploads and fall back to the normal upload on `404`; nothing to change on the client.
+- Set `BASE_URL` to the address clients use: Conan 1 URLs in `upload_urls` and `download_urls` are absolute.
+
+#### Docker catalog, trashed blobs, proxy digest eviction (migration `063`)
+
+- `GET /v2/_catalog` now exists: it lists the docker images the caller may read, paginated with `n`/`last`. See [Docker](../formats/docker.md#endpoints).
+- A layer or config blob that only trashed manifests reference now answers `404 BLOB_UNKNOWN` by digest until a manifest that references it is restored. Before, it stayed downloadable while the image sat in the trash.
+- Docker proxy repositories used to keep manifests and blobs addressed by digest forever. They are now evicted after `workers.proxyDockerDigestTtl` (default `720h`, env `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL`) without a pull, and a pull renews them; the next pull of an evicted digest goes to the upstream again. Set it to `0` to keep the old behavior. Migration `063` gives the entries already cached the default 30 days from the upgrade, so content nobody pulls in that time is evicted by the proxy cache worker.
 
 ### 0.7.0
 

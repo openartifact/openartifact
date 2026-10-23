@@ -36,6 +36,7 @@ var (
 	errTLSFilesRequired   = errors.New("server TLS is enabled but tlsCert/tlsKey are not set")
 
 	errNegativeDockerGCGrace    = errors.New("workers.dockerGcGracePeriod must not be negative")
+	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
 	errBlobDeletionBatch        = errors.New("blobDeletion.sweepBatch must be at least 1")
@@ -99,6 +100,12 @@ type WorkersConfig struct {
 	// outlast the slowest push: layers are uploaded before the manifest that
 	// references them.
 	DockerGCGracePeriod time.Duration `yaml:"dockerGcGracePeriod"`
+	// ProxyDockerDigestTTL is how long a docker proxy keeps a manifest or blob
+	// addressed by digest after its last pull. Such content never changes, so
+	// this only bounds the cache's size: the proxy cache worker evicts what has
+	// not been pulled for this long, and the next pull fetches it again. Zero
+	// keeps it until an admin purge or the repository's removal.
+	ProxyDockerDigestTTL time.Duration `yaml:"proxyDockerDigestTtl"`
 	// DockerUploadTTL is how long a blob upload session may sit idle before
 	// the sweeper deletes it and its staged file. Zero or negative disables
 	// the sweeper.
@@ -391,6 +398,7 @@ func defaultConfig() *Config {
 			MetadataRegenConcurrency:     4,
 			DockerGCInterval:             time.Hour,
 			DockerGCGracePeriod:          24 * time.Hour,
+			ProxyDockerDigestTTL:         30 * 24 * time.Hour,
 			DockerUploadTTL:              24 * time.Hour,
 			WebhookDeliveryRetentionDays: 30,
 		},
@@ -553,6 +561,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Workers.MetadataRegenConcurrency, "OPENARTIFACT_METADATA_REGEN_CONCURRENCY")
 	overrideDuration(&cfg.Workers.DockerGCInterval, "OPENARTIFACT_DOCKER_GC_INTERVAL")
 	overrideDuration(&cfg.Workers.DockerGCGracePeriod, "OPENARTIFACT_DOCKER_GC_GRACE_PERIOD")
+	overrideDuration(&cfg.Workers.ProxyDockerDigestTTL, "OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL")
 	overrideDuration(&cfg.Workers.DockerUploadTTL, "OPENARTIFACT_DOCKER_UPLOAD_TTL")
 	overrideString(&cfg.Workers.DockerUploadDir, "OPENARTIFACT_DOCKER_UPLOAD_DIR")
 	overrideInt(&cfg.Workers.WebhookDeliveryRetentionDays, "OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS")
@@ -652,6 +661,10 @@ func (c *Config) Validate() error {
 
 	if c.Workers.DockerGCGracePeriod < 0 {
 		return errNegativeDockerGCGrace
+	}
+
+	if c.Workers.ProxyDockerDigestTTL < 0 {
+		return errNegativeDigestTTL
 	}
 
 	if c.Trash.RetentionDays < 0 {

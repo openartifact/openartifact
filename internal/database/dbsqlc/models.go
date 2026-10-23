@@ -303,6 +303,10 @@ type ConanPackage struct {
 	PackageRevision string `db:"package_revision" json:"package_revision"`
 	// Path of the stored file inside its recipe or package revision (conanfile.py, conan_package.tgz, metadata/sign/...); empty for rows stored before migration 019.
 	Filename string `db:"filename" json:"filename"`
+	// Lowercase hex MD5 of the file, as Conan 1 snapshots report it. Empty until computed.
+	Md5 string `db:"md5" json:"md5"`
+	// Lowercase hex SHA-1 of the file, for Conan checksum deploy (X-Checksum-Sha1). Empty for files stored before it was tracked.
+	Sha1 string `db:"sha1" json:"sha1"`
 }
 
 type CondaPackage struct {

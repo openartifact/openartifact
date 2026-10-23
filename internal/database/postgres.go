@@ -2099,6 +2099,40 @@ func (p *PostgresDB) ListGroupMemberRepositories(ctx context.Context, groupRepoI
 	return repos, nil
 }
 
+func (p *PostgresDB) ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error) {
+	rows, err := p.db.QueryContext(ctx, `
+		WITH links AS (
+			SELECT group_repo_id, created_at AS linked_at
+			FROM repository_group_members WHERE member_repo_id = $1
+		)
+		SELECT `+repoColumns+`
+		FROM repositories JOIN links ON links.group_repo_id = repositories.id
+		WHERE repositories.deleted_at IS NULL
+		ORDER BY links.linked_at, links.group_repo_id`, memberRepoID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list groups of member: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	var repos []*models.Repository
+
+	for rows.Next() {
+		r := &models.Repository{}
+		if err := rows.Scan(repoScanDest(r)...); err != nil {
+			return nil, fmt.Errorf("failed to scan group repository: %w", err)
+		}
+
+		repos = append(repos, r)
+	}
+
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("failed to list groups of member: %w", err)
+	}
+
+	return repos, nil
+}
+
 func (p *PostgresDB) GetProxyCacheEntry(ctx context.Context, repoID, cacheKey string) (*models.ProxyCacheEntry, error) {
 	row, err := p.q.GetProxyCacheEntry(ctx, dbsqlc.GetProxyCacheEntryParams{
 		RepositoryID: repoID,
@@ -6007,6 +6041,8 @@ func (p *PostgresDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPa
 		PackageRevision: pkg.PackageRevision,
 		Filename:        pkg.Filename,
 		BlobID:          blobID,
+		Md5:             pkg.MD5,
+		Sha1:            pkg.SHA1,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create conan package: %w", err)
@@ -6034,6 +6070,8 @@ func conanPackageFromRow(row dbsqlc.GetConanPackageRow) *models.ConanPackage {
 		BlobKey:         row.BlobKey,
 		SHA256:          row.Sha256,
 		SizeBytes:       row.SizeBytes,
+		MD5:             row.Md5,
+		SHA1:            row.Sha1,
 		CreatedAt:       row.CreatedAt,
 		UpdatedAt:       row.UpdatedAt,
 	}
@@ -6098,6 +6136,31 @@ func (p *PostgresDB) ListConanRecipes(ctx context.Context, repoID string) ([]mod
 	}
 
 	return recipes, nil
+}
+
+// FindConanPackageBySHA1 returns a live file of the repository whose content
+// has the given SHA-1, or (nil, nil).
+func (p *PostgresDB) FindConanPackageBySHA1(ctx context.Context, repoID, sha1 string) (*models.ConanPackage, error) {
+	row, err := p.q.FindConanPackageBySHA1(ctx, dbsqlc.FindConanPackageBySHA1Params{RepositoryID: repoID, Sha1: sha1})
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to find conan package by sha1: %w", err)
+	}
+
+	return conanPackageFromRow(dbsqlc.GetConanPackageRow(row)), nil
+}
+
+// SetConanPackageDigests records the MD5 and SHA-1 of a file stored without
+// them.
+func (p *PostgresDB) SetConanPackageDigests(ctx context.Context, id, md5, sha1 string) error {
+	if err := p.q.SetConanPackageDigests(ctx, dbsqlc.SetConanPackageDigestsParams{ID: id, Md5: md5, Sha1: sha1}); err != nil {
+		return fmt.Errorf("failed to set conan package digests: %w", err)
+	}
+
+	return nil
 }
 
 func (p *PostgresDB) DeleteConanPackage(ctx context.Context, id string) error {

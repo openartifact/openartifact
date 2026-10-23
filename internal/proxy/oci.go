@@ -164,6 +164,10 @@ func (s *Service) serveOCIEntry(w http.ResponseWriter, r *http.Request, repo *mo
 
 		entry := res.entry
 
+		if res.fromCache && !res.stale {
+			s.renewDigestEntry(r.Context(), repo, entry)
+		}
+
 		if quarantine.Enforce(w, r, s.db, repo.ID, quarantine.PathKeys(key, entry.ID, req.Name+"/"+kindSegment(req.Kind)+"/"+req.Ref, req.Ref, r.URL.Path)...) {
 			return
 		}
@@ -209,6 +213,41 @@ func (s *Service) serveOCIEntry(w http.ResponseWriter, r *http.Request, repo *mo
 	}
 
 	writeOCIEntry(w, req, res, rc)
+}
+
+// ociTTL is ttlFor for the docker proxy: an entry addressed by digest (the only
+// docker key ttlFor pins as immutable) lives dockerDigestTTL after its last use
+// when that is set, so the cache worker can evict content nobody pulls any more.
+func (s *Service) ociTTL(repo *models.Repository, key string, pinnable bool) time.Duration {
+	ttl := ttlFor(repo, key, pinnable)
+	if ttl == immutableTTL && s.dockerDigestTTL > 0 {
+		return s.dockerDigestTTL
+	}
+
+	return ttl
+}
+
+// renewDigestEntry moves the expiry of a digest-addressed entry that was just
+// served from cache out to dockerDigestTTL from now, once it is past half its
+// lifetime (a pull of a hot image costs no write) or still carries the
+// open-ended lifetime entries had before digest eviction existed.
+func (s *Service) renewDigestEntry(ctx context.Context, repo *models.Repository, entry *models.ProxyCacheEntry) {
+	ttl := s.dockerDigestTTL
+	if ttl <= 0 || !Immutable(repo.Format, entry.CacheKey) {
+		return
+	}
+
+	remaining := time.Until(entry.ExpiresAt)
+	if remaining >= ttl/2 && remaining <= ttl {
+		return
+	}
+
+	renewed := *entry
+	renewed.ExpiresAt = time.Now().Add(ttl)
+
+	if err := s.db.UpsertProxyCacheEntry(ctx, &renewed); err != nil {
+		s.log.Warnw("failed to renew docker digest cache entry", "repo", repo.Name, "path", entry.CacheKey, "error", err)
+	}
 }
 
 func kindSegment(kind ocipath.Kind) string {
@@ -460,7 +499,7 @@ func (s *Service) storeOCI(ctx context.Context, repo *models.Repository, key str
 		ContentType:  contentType,
 		StatusCode:   http.StatusOK,
 		SizeBytes:    size,
-		ExpiresAt:    now.Add(ttlFor(repo, key, completeBody(resp))),
+		ExpiresAt:    now.Add(s.ociTTL(repo, key, completeBody(resp))),
 		CreatedAt:    now,
 		UpdatedAt:    now,
 	}

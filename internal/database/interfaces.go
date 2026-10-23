@@ -194,6 +194,9 @@ type Database interface {
 	// ListGroupMemberRepositories returns the live member repositories of a
 	// group in priority order (the order of ListGroupMembers) in one query.
 	ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error)
+	// ListGroupsOfMember returns the live group repositories the repository is
+	// a member of, oldest link first.
+	ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error)
 	// ReplaceGroupMembers atomically replaces a group's ordered member list (empty clears it).
 	ReplaceGroupMembers(ctx context.Context, groupRepoID string, memberIDs []string) error
 	// CreateRepositoryWithMembers creates a repository and its group members in one transaction.
@@ -616,6 +619,12 @@ type Database interface {
 	ListConanRecipeFiles(ctx context.Context, repoID, name, version, userChannel string) ([]*models.ConanPackage, error)
 	// ListConanRecipes returns the distinct recipes of a repository.
 	ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error)
+	// FindConanPackageBySHA1 returns a live file of the repository with this
+	// SHA-1 (Conan checksum deploy), or (nil, nil).
+	FindConanPackageBySHA1(ctx context.Context, repoID, sha1 string) (*models.ConanPackage, error)
+	// SetConanPackageDigests records the digests of a file stored without them;
+	// it leaves updated_at (the revision time) alone.
+	SetConanPackageDigests(ctx context.Context, id, md5, sha1 string) error
 	DeleteConanPackage(ctx context.Context, id string) error
 	ListConanPackages(ctx context.Context, repoID string) ([]*models.ConanPackage, error)
 

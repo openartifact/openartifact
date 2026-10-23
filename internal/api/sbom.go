@@ -160,6 +160,13 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		result, genErr = h.generator.GenerateSPDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
 	}
 
+	if errors.Is(genErr, sbom.ErrUnsafeArtifact) {
+		writeError(w, http.StatusUnprocessableEntity, "unsafe_artifact",
+			"the artifact's manifest is too large or ambiguous to be read safely")
+
+		return
+	}
+
 	if genErr != nil {
 		h.log.Errorw("generate SBOM: generation error", "error", genErr)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to generate SBOM")

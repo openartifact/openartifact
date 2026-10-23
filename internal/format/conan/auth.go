@@ -12,9 +12,11 @@ import (
 )
 
 // serverCapabilities is advertised on ping. "revisions" is mandatory for a
-// Conan 2 client; checksum_deploy (upload by checksum) and the other optional
-// capabilities are not implemented, so they are not advertised.
-const serverCapabilities = "revisions"
+// Conan 2 client and lets a Conan 1 client with revisions enabled use the v2
+// routes; "checksum_deploy" is the upload by checksum of checksum.go. The other
+// optional capabilities (oauth_token, matrix_params, only_v2) are not
+// implemented, so they are not advertised.
+const serverCapabilities = "revisions,checksum_deploy"
 
 // handlePing answers the conan client's capability probe. The client pings
 // {remote}/v1/ping even when it then speaks v2.

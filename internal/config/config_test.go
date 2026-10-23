@@ -689,6 +689,49 @@ func TestDockerGCConfig(t *testing.T) {
 	})
 }
 
+func TestProxyDockerDigestTTLConfig(t *testing.T) {
+	t.Run("defaults to 30 days", func(t *testing.T) {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := cfg.Workers.ProxyDockerDigestTTL; got != 30*24*time.Hour {
+			t.Fatalf("default = %v, want 720h", got)
+		}
+	})
+
+	t.Run("env override, zero disables", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL", "0s")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if got := cfg.Workers.ProxyDockerDigestTTL; got != 0 {
+			t.Fatalf("override = %v, want 0", got)
+		}
+
+		if err := cfg.Validate(); err != nil {
+			t.Fatalf("Validate() = %v, want nil", err)
+		}
+	})
+
+	t.Run("negative is rejected", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL", "-1h")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if err := cfg.Validate(); !errors.Is(err, errNegativeDigestTTL) {
+			t.Fatalf("Validate() = %v, want errNegativeDigestTTL", err)
+		}
+	})
+}
+
 func TestLoad_PresignDefaults(t *testing.T) {
 	cfg, err := Load("")
 	if err != nil {

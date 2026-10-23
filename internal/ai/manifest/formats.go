@@ -30,18 +30,35 @@ func atDepthOne(file string) func(string) bool {
 }
 
 func extractNPM(ctx context.Context, src Source) ([]section, error) {
-	return tarManifest(ctx, src, compGzip, []slot{{label: "package.json", match: atDepthOne("package.json"), unique: true}})
+	slots := []slot{{label: "package.json", match: atDepthOne("package.json"), unique: true}}
+	if src.Deps {
+		slots = append(slots,
+			slot{label: "npm-shrinkwrap.json", match: atDepthOne("npm-shrinkwrap.json"), unique: true},
+			slot{label: "package-lock.json", match: atDepthOne("package-lock.json"), unique: true})
+	}
+
+	return tarManifest(ctx, src, compGzip, slots)
 }
 
 func extractCargo(ctx context.Context, src Source) ([]section, error) {
-	return tarManifest(ctx, src, compGzip, []slot{{label: "Cargo.toml", match: atDepthOne("Cargo.toml"), unique: true}})
+	slots := []slot{{label: "Cargo.toml", match: atDepthOne("Cargo.toml"), unique: true}}
+	if src.Deps {
+		slots = append(slots, slot{label: "Cargo.lock", match: atDepthOne("Cargo.lock"), unique: true})
+	}
+
+	return tarManifest(ctx, src, compGzip, slots)
 }
 
 func extractHelm(ctx context.Context, src Source) ([]section, error) {
-	return tarManifest(ctx, src, compGzip, []slot{
+	slots := []slot{
 		{label: "Chart.yaml", match: atDepthOne("Chart.yaml")},
 		{label: "requirements.yaml", match: atDepthOne("requirements.yaml")},
-	})
+	}
+	if src.Deps {
+		slots = append(slots, slot{label: "Chart.lock", match: atDepthOne("Chart.lock")})
+	}
+
+	return tarManifest(ctx, src, compGzip, slots)
 }
 
 func extractPyPI(ctx context.Context, src Source) ([]section, error) {

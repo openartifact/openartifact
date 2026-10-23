@@ -120,3 +120,24 @@ func BenchmarkGroupMembers(b *testing.B) {
 		}
 	})
 }
+
+// ListGroupsOfMember returns the groups a repository belongs to, and nothing
+// for one that belongs to none.
+func TestListGroupsOfMember(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	ctx := context.Background()
+	group, members := seedGroup(t, pg, 2)
+
+	got, err := pg.ListGroupsOfMember(ctx, members[0])
+	if err != nil {
+		t.Fatalf("ListGroupsOfMember: %v", err)
+	}
+
+	if len(got) != 1 || got[0].ID != group {
+		t.Fatalf("groups of member = %v, want [%s]", got, group)
+	}
+
+	if got, err = pg.ListGroupsOfMember(ctx, group); err != nil || len(got) != 0 {
+		t.Fatalf("groups of the group itself = %v, %v, want none", got, err)
+	}
+}

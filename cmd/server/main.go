@@ -789,7 +789,7 @@ func run(args []string) error {
 	dockerHTTP.SetAuthorizer(evaluator)
 	dockerHTTP.RegisterRoutes(dockerHosted)
 
-	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore), evaluator, map[string]http.Handler{
+	repoDispatch := repodispatch.New(log, db, proxy.NewService(log, db, servedStore).WithDockerDigestTTL(cfg.Workers.ProxyDockerDigestTTL), evaluator, map[string]http.Handler{
 		"maven":  mavenHosted,
 		"pypi":   pypiHosted,
 		"raw":    rawHosted,
@@ -867,7 +867,7 @@ func run(args []string) error {
 
 	api.NewBundlesHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 
-	sbomGen := sbom.NewGenerator(db, log).WithToolVersion(version).WithBaseURL(cfg.BaseURL)
+	sbomGen := sbom.NewGenerator(db, log).WithBlobStore(blobStore).WithToolVersion(version).WithBaseURL(cfg.BaseURL)
 	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, blobStore)
 	sbomHandler.RegisterAuthed(authedAPI)
 	api.NewVEXHandler(db, log, evaluator, sbomGen).RegisterAuthed(authedAPI)

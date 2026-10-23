@@ -354,7 +354,9 @@ func TestOCI_PullAnswersTokenChallengeAndCaches(t *testing.T) {
 	}
 }
 
-func TestOCI_ImmutableContentNeverExpires(t *testing.T) {
+// Without a digest TTL (workers.proxyDockerDigestTtl = 0) digest-addressed
+// entries are open-ended: only an admin purge removes them.
+func TestOCI_DigestContentIsOpenEndedWithoutDigestTTL(t *testing.T) {
 	f := newOCIFixture(t)
 	dg := f.reg.addManifest("library/alpine", "3.20", alpineManifest)
 	layer := f.reg.addBlob("library/alpine", "layer-bytes")
@@ -945,5 +947,112 @@ func TestOCI_ReferrersContentTypeIsRestricted(t *testing.T) {
 		if got := w.Header().Get("Content-Type"); got != want {
 			t.Errorf("upstream %q: Content-Type = %q, want %q", in, got, want)
 		}
+	}
+}
+
+// digestTTLFixture caches a manifest and a layer by digest through a proxy
+// whose digest TTL is ttl and returns their cache keys.
+func digestTTLFixture(t *testing.T, ttl time.Duration) (*ociFixture, []string) {
+	t.Helper()
+
+	f := newOCIFixture(t)
+	f.svc.WithDockerDigestTTL(ttl)
+
+	dg := f.reg.addManifest("library/alpine", "3.20", alpineManifest)
+	layer := f.reg.addBlob("library/alpine", "layer-bytes")
+
+	for _, p := range []string{"manifests/3.20", "manifests/" + dg, "blobs/" + layer} {
+		if w := f.do(http.MethodGet, "hub/library/alpine/"+p); w.Code != http.StatusOK {
+			t.Fatalf("GET %s = %d", p, w.Code)
+		}
+	}
+
+	return f, []string{"library/alpine/manifests/" + dg, "library/alpine/blobs/" + layer}
+}
+
+func TestOCI_DigestEntriesExpireAfterTheDigestTTL(t *testing.T) {
+	const ttl = 48 * time.Hour
+
+	f, digestKeys := digestTTLFixture(t, ttl)
+
+	for _, key := range digestKeys {
+		e := f.db.entry("docker-1", key)
+		if e == nil {
+			t.Fatalf("%s not cached", key)
+		}
+
+		if left := time.Until(e.ExpiresAt); left > ttl || left < ttl-time.Minute {
+			t.Errorf("%s expires in %v, want about %v so the cache worker can evict it", key, left, ttl)
+		}
+	}
+
+	// A tag keeps the repository's cache TTL: only digests are capped here.
+	if tag := f.db.entry("docker-1", "library/alpine/manifests/3.20"); time.Until(tag.ExpiresAt) > time.Hour {
+		t.Errorf("tag expires in %v, want the repository TTL (10m)", time.Until(tag.ExpiresAt))
+	}
+}
+
+func TestOCI_PullRenewsDigestEntriesPastHalfTheirLife(t *testing.T) {
+	const ttl = 48 * time.Hour
+
+	tests := []struct {
+		name      string
+		remaining time.Duration
+		renewed   bool
+	}{
+		{"fresh entry is left alone", ttl - time.Hour, false},
+		{"just under half the life renews", ttl/2 - time.Minute, true},
+		{"nearly expired renews", time.Minute, true},
+		{"entry from before digest eviction renews", 100 * 365 * 24 * time.Hour, true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			f, keys := digestTTLFixture(t, ttl)
+			key := keys[1] // the layer
+
+			e := f.db.entry("docker-1", key)
+			set := time.Now().Add(tc.remaining)
+			e.ExpiresAt = set
+
+			if err := f.db.UpsertProxyCacheEntry(context.Background(), e); err != nil {
+				t.Fatal(err)
+			}
+
+			layer := strings.TrimPrefix(key, "library/alpine/blobs/")
+			if w := f.do(http.MethodGet, "hub/library/alpine/blobs/"+layer); w.Code != http.StatusOK || w.Body.String() != "layer-bytes" {
+				t.Fatalf("pull = %d %q", w.Code, w.Body.String())
+			}
+
+			got := f.db.entry("docker-1", key).ExpiresAt
+
+			if tc.renewed {
+				if left := time.Until(got); left > ttl || left < ttl-time.Minute {
+					t.Fatalf("expires in %v after the pull, want renewed to about %v", left, ttl)
+				}
+
+				return
+			}
+
+			if !got.Equal(set) {
+				t.Fatalf("expiry moved from %v to %v, want it left alone", set, got)
+			}
+		})
+	}
+}
+
+func TestOCI_PullLeavesOpenEndedEntriesAloneWithoutDigestTTL(t *testing.T) {
+	f, keys := digestTTLFixture(t, 0)
+	key := keys[1]
+
+	before := f.db.entry("docker-1", key).ExpiresAt
+
+	layer := strings.TrimPrefix(key, "library/alpine/blobs/")
+	if w := f.do(http.MethodGet, "hub/library/alpine/blobs/"+layer); w.Code != http.StatusOK {
+		t.Fatalf("pull = %d", w.Code)
+	}
+
+	if after := f.db.entry("docker-1", key).ExpiresAt; !after.Equal(before) {
+		t.Fatalf("expiry changed from %v to %v with the digest TTL disabled", before, after)
 	}
 }

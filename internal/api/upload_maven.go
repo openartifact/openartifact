@@ -262,8 +262,12 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	var pomInfo pomLicenseInfo
+
 	if parts.ext == "pom" && parts.classifier == "" {
-		if h.enforcePomLicenses(w, r, tmp, repoID, groupID, artifactIDCoord, version, artPath) {
+		var rejected bool
+
+		if rejected, pomInfo = h.enforcePomLicenses(w, r, tmp, repoID, groupID, artifactIDCoord, version, artPath); rejected {
 			uploadResult = "error"
 			return
 		}
@@ -420,6 +424,8 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		h.mavenWorker.NotifyStale(repoID, groupID, artifactIDCoord)
 	}
 
+	h.afterPOMStored(r.Context(), repoID, art.ID, pomInfo)
+
 	webhook.Emit(r.Context(), h.publisher, repoID, webhook.EventArtifactUploaded,
 		webhook.ArtifactPayload(webhook.EventArtifactUploaded, webhook.Artifact{
 			Repository: repoName,
@@ -456,45 +462,81 @@ func parseUploadedPOM(pomFile *os.File) *pkgmaven.POM {
 	return pom
 }
 
+// pomLicenseInfo is what the license check learned about an uploaded pom, for
+// the work that follows the store.
+type pomLicenseInfo struct {
+	// inherits is set when the pom declares no license and has a <parent>: its
+	// licenses (inherited, possibly none yet) are recorded as its scan result.
+	inherits  bool
+	inherited []string
+	// mayBeParent is set for a pom-packaged pom, which other poms may inherit
+	// their licenses from.
+	mayBeParent bool
+}
+
 // enforcePomLicenses applies the license policy to the licenses declared in
-// the uploaded .pom (the jar is stored before the pom, so its siblings are
-// already in the repository). It returns true when it wrote the rejection. On a
-// rejection the sibling files already stored for the same group, artifact and
-// version are quarantined best-effort, so the blocked version cannot be
-// downloaded through them. A pom that cannot be read declares nothing the
-// policy can check: without a blocking policy it is admitted, with one it is
-// refused with 422 LICENSE_METADATA_UNREADABLE.
-func (h *MavenUploadHandler) enforcePomLicenses(w http.ResponseWriter, r *http.Request, pomFile *os.File, repoID, groupID, artifactID, version, artPath string) bool {
+// the uploaded .pom, or inherited from its <parent> chain when it declares none
+// (parents are looked up in this repository only; an absent parent leaves the
+// licenses unresolved, see afterPOMStored). The jar is stored before the pom,
+// so its siblings are already in the repository. It returns true when it wrote
+// the rejection. On a rejection the sibling files already stored for the same
+// group, artifact and version are quarantined best-effort, so the blocked
+// version cannot be downloaded through them. A pom that cannot be read declares
+// nothing the policy can check: without a blocking policy it is admitted, with
+// one it is refused with 422 LICENSE_METADATA_UNREADABLE.
+func (h *MavenUploadHandler) enforcePomLicenses(w http.ResponseWriter, r *http.Request, pomFile *os.File, repoID, groupID, artifactID, version, artPath string) (bool, pomLicenseInfo) {
 	pom := parseUploadedPOM(pomFile)
 	if pom == nil {
-		return licensepolicy.RefuseUnderivable(w, r, h.db, h.log, repoID)
+		return licensepolicy.RefuseUnderivable(w, r, h.db, h.log, repoID), pomLicenseInfo{}
 	}
 
+	info := pomLicenseInfo{mayBeParent: strings.EqualFold(strings.TrimSpace(pom.Packaging), "pom")}
 	licenses := licensemeta.ParsePOM(pom)
 
+	if parent := licensemeta.POMParent(pom); parent != nil {
+		inherited, _, err := inheritedPOMLicenses(r.Context(), h.db, h.blobStore, repoID, parent)
+		if err != nil {
+			h.log.Warnw("maven upload: parent pom licenses could not be resolved", "path", artPath, "error", err)
+
+			if licensepolicy.RefuseUnderivable(w, r, h.db, h.log, repoID) {
+				return true, info
+			}
+		}
+
+		info.inherits, info.inherited, licenses = true, inherited, inherited
+	}
+
 	if !licensepolicy.Enforce(w, r, h.db, h.log, repoID, licenses...) {
-		return false
+		return false, info
 	}
 
-	ctx := context.WithoutCancel(r.Context())
+	quarantineSiblings(context.WithoutCancel(r.Context()), h.db, h.log, repoID, groupID, artifactID, version, artPath, licenses)
 
-	siblings, err := h.db.GetMavenArtifactsByGAV(ctx, repoID, groupID, artifactID, version)
-	if err != nil {
-		h.log.Warnw("maven license block: failed to list sibling files", "path", artPath, "error", err)
-		return true
-	}
+	return true, info
+}
 
-	for _, s := range siblings {
-		if s.RepoPath == artPath {
-			continue
+// afterPOMStored does what follows a pom being stored: a pom that inherits its
+// licenses gets its scan result recorded (empty while the parent is not
+// stored), and a pom that may be a parent re-evaluates the poms still waiting
+// for one. Failures are logged; the upload has succeeded.
+func (h *MavenUploadHandler) afterPOMStored(ctx context.Context, repoID, artifactID string, info pomLicenseInfo) {
+	ctx = context.WithoutCancel(ctx)
+
+	if info.inherits {
+		if err := recordPOMLicenses(ctx, h.db, h.log, repoID, artifactID, info.inherited); err != nil {
+			h.log.Warnw("maven upload: recording inherited licenses failed", "artifact_id", artifactID, "error", err)
 		}
-
-		if _, _, recErr := licensepolicy.Record(ctx, h.db, h.log, repoID, s.RepoPath, licenses, models.LicenseSourceArtifact); recErr != nil {
-			h.log.Warnw("maven license block: failed to quarantine sibling", "path", s.RepoPath, "error", recErr)
-		}
 	}
 
-	return true
+	if !info.mayBeParent {
+		return
+	}
+
+	if n, err := reevaluateWaitingPOMs(ctx, h.db, h.blobStore, h.log, repoID); err != nil {
+		h.log.Warnw("maven upload: re-evaluating poms waiting for a parent failed", "error", err)
+	} else if n > 0 {
+		h.log.Infow("maven upload: poms re-evaluated after their parent was stored", "repository_id", repoID, "count", n)
+	}
 }
 
 // errMavenImmutableRelease is the client-facing 409 text for a delete of a

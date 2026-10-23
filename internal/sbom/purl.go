@@ -80,6 +80,12 @@ func purlPath(p string) string {
 // written "group:artifact" or "group/artifact"; pypi names are normalized.
 // version "" and "unknown" yield a version-less purl.
 func generatePURL(format, name, version string) string {
+	return generatePURLNS(format, "", name, version)
+}
+
+// generatePURLNS is generatePURL with an explicit namespace for the types that
+// require one (deb: the distribution, rpm: the vendor); other types ignore it.
+func generatePURLNS(format, namespace, name, version string) string {
 	typ := purlType(format)
 
 	switch typ {
@@ -89,6 +95,10 @@ func generatePURL(format, name, version string) string {
 		}
 	case "pypi":
 		name = strings.ToLower(strings.ReplaceAll(name, "_", "-"))
+	}
+
+	if namespace != "" && (typ == "deb" || typ == "rpm") {
+		name = namespace + "/" + name
 	}
 
 	purl := "pkg:" + typ + "/" + purlPath(name)

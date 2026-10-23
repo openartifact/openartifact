@@ -204,6 +204,19 @@ func writeClass(b *strings.Builder, body []rune) {
 // without {rrev}) as {package_id: {"content": conaninfo.txt}}, or {package_id: {}}
 // with list_only=True.
 func (h *HTTPHandler) handleSearchPackages(w http.ResponseWriter, r *http.Request) {
+	h.searchPackages(w, r, false)
+}
+
+// handleV1SearchPackages is the Conan 1 package search, which looks in every
+// recipe revision: a package id found in a newer revision wins. The response
+// carries the raw conaninfo.txt under "content", which Conan 1.48 and later read.
+func (h *HTTPHandler) handleV1SearchPackages(w http.ResponseWriter, r *http.Request) {
+	h.searchPackages(w, r, true)
+}
+
+// searchPackages answers a package search of one recipe revision, or of all of
+// them (newest first) with allRevisions.
+func (h *HTTPHandler) searchPackages(w http.ResponseWriter, r *http.Request, allRevisions bool) {
 	s, ok := h.scopeOf(w, r)
 	if !ok {
 		return
@@ -214,19 +227,25 @@ func (h *HTTPHandler) handleSearchPackages(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	rrev := s.rrev
+	rrevs := []string{s.rrev}
 
-	if rrev == "" {
+	switch {
+	case allRevisions || s.rrev == "":
 		revs := recipeRevisions(files)
 		if len(revs) == 0 {
 			http.NotFound(w, r)
 			return
 		}
 
-		rrev = revs[0].ID
-	}
+		rrevs = rrevs[:0]
+		for _, rev := range revs {
+			rrevs = append(rrevs, rev.ID)
+		}
 
-	if !hasFile(revisionFiles(files, rrev, "", ""), manifestFile) {
+		if !allRevisions {
+			rrevs = rrevs[:1]
+		}
+	case !hasFile(revisionFiles(files, s.rrev, "", ""), manifestFile):
 		http.NotFound(w, r)
 		return
 	}
@@ -234,20 +253,26 @@ func (h *HTTPHandler) handleSearchPackages(w http.ResponseWriter, r *http.Reques
 	listOnly := strings.EqualFold(r.URL.Query().Get("list_only"), "true")
 	out := map[string]map[string]string{}
 
-	for _, pid := range packageIDs(files, rrev) {
-		if listOnly {
-			out[pid] = map[string]string{}
-			continue
-		}
+	for _, rrev := range rrevs {
+		for _, pid := range packageIDs(files, rrev) {
+			if _, seen := out[pid]; seen {
+				continue
+			}
 
-		info, found, err := h.latestConanInfo(r, files, rrev, pid)
-		if err != nil {
-			h.fail(w, "failed to read conaninfo", err, "package", pid)
-			return
-		}
+			if listOnly {
+				out[pid] = map[string]string{}
+				continue
+			}
 
-		if found {
-			out[pid] = map[string]string{"content": info}
+			info, found, err := h.latestConanInfo(r, files, rrev, pid)
+			if err != nil {
+				h.fail(w, "failed to read conaninfo", err, "package", pid)
+				return
+			}
+
+			if found {
+				out[pid] = map[string]string{"content": info}
+			}
 		}
 	}
 

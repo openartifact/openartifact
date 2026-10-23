@@ -316,6 +316,9 @@ func (m *BaseMockDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepo
 func (m *BaseMockDB) RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error {
 	return errNotImpl("RemoveGroupMember")
 }
+func (m *BaseMockDB) ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error) {
+	return nil, errNotImpl("ListGroupsOfMember")
+}
 func (m *BaseMockDB) ListGroupMemberRepositories(ctx context.Context, groupRepoID string) ([]*models.Repository, error) {
 	return nil, errNotImpl("ListGroupMemberRepositories")
 }
@@ -1020,6 +1023,12 @@ func (m *BaseMockDB) ListConanRecipeFiles(ctx context.Context, repoID, name, ver
 }
 func (m *BaseMockDB) ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error) {
 	return nil, errNotImpl("ListConanRecipes")
+}
+func (m *BaseMockDB) FindConanPackageBySHA1(ctx context.Context, repoID, sha1 string) (*models.ConanPackage, error) {
+	return nil, errNotImpl("FindConanPackageBySHA1")
+}
+func (m *BaseMockDB) SetConanPackageDigests(ctx context.Context, id, md5, sha1 string) error {
+	return errNotImpl("SetConanPackageDigests")
 }
 func (m *BaseMockDB) DeleteConanPackage(ctx context.Context, id string) error {
 	return errNotImpl("DeleteConanPackage")

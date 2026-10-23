@@ -409,6 +409,51 @@ func (q *Queries) DeleteStaleDockerUploads(ctx context.Context, updatedAt time.T
 	return items, nil
 }
 
+const dockerBlobHeldOnlyByTrash = `-- name: DockerBlobHeldOnlyByTrash :one
+SELECT (CASE
+    WHEN EXISTS (
+        SELECT 1 FROM docker_manifest_refs r
+        JOIN docker_manifests dm ON dm.id = r.manifest_id
+        WHERE r.repository_id = $1::uuid AND r.kind = 'blob'
+          AND r.digest = $2::text AND dm.deleted_at IS NULL
+    ) THEN false
+    WHEN NOT EXISTS (
+        SELECT 1 FROM docker_manifest_refs r
+        JOIN docker_manifests dm ON dm.id = r.manifest_id
+        WHERE r.repository_id = $1::uuid AND r.kind = 'blob'
+          AND r.digest = $2::text AND dm.deleted_at IS NOT NULL
+    ) THEN false
+    ELSE NOT EXISTS (
+        SELECT 1 FROM docker_manifests dm
+        WHERE dm.repository_id = $1::uuid AND dm.deleted_at IS NULL
+          AND NOT EXISTS (
+              SELECT 1 FROM docker_manifest_refs r
+              WHERE r.manifest_id = dm.id AND r.kind = 'indexed'
+          )
+    )
+END)::boolean AS trashed
+`
+
+type DockerBlobHeldOnlyByTrashParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Digest       string `db:"digest" json:"digest"`
+}
+
+// Whether the blob is referenced by manifests of the repository and every one
+// of them is in the trash: it is then not served by digest until a restore.
+// The CASE keeps the cheap answers first: a blob a live manifest references
+// (the common case, a shared layer) ends at the first live row, and a blob no
+// manifest references (an upload not yet claimed) at the first lookup. The last
+// branch guards manifests that predate docker_manifest_refs and have not been
+// indexed yet: their references are unknown, so while a live one exists the
+// repository's blobs are never hidden.
+func (q *Queries) DockerBlobHeldOnlyByTrash(ctx context.Context, arg DockerBlobHeldOnlyByTrashParams) (bool, error) {
+	row := q.db.QueryRow(ctx, dockerBlobHeldOnlyByTrash, arg.RepositoryID, arg.Digest)
+	var trashed bool
+	err := row.Scan(&trashed)
+	return trashed, err
+}
+
 const dockerBlobVisibleToImage = `-- name: DockerBlobVisibleToImage :one
 SELECT EXISTS (
     SELECT 1 FROM docker_blob_images i
@@ -660,6 +705,120 @@ func (q *Queries) ListDockerBlobs(ctx context.Context, repositoryID string) ([]L
 			&i.Size,
 			&i.BlobSha256,
 			&i.CreatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listDockerCatalog = `-- name: ListDockerCatalog :many
+WITH RECURSIVE hosted(repository_id, image) AS (
+    SELECT r.id, (SELECT min(m.image) FROM docker_manifests m
+                  WHERE m.repository_id = r.id AND m.deleted_at IS NULL)
+    FROM repositories r
+    WHERE r.format = 'docker' AND r.repo_type = 'hosted' AND r.deleted_at IS NULL AND NOT r.blocked
+  UNION ALL
+    SELECT h.repository_id, (SELECT min(m.image) FROM docker_manifests m
+                             WHERE m.repository_id = h.repository_id AND m.deleted_at IS NULL
+                               AND m.image > h.image)
+    FROM hosted h
+    WHERE h.image IS NOT NULL
+),
+proxied AS (
+    SELECT DISTINCT e.repository_id,
+           substring(e.cache_key FROM '^(.+)/manifests/[^/]+$') AS image
+    FROM proxy_cache_entries e
+    JOIN repositories r ON r.id = e.repository_id
+    WHERE r.format = 'docker' AND r.repo_type = 'proxy' AND r.deleted_at IS NULL AND NOT r.blocked
+      AND e.status_code = 200 AND e.blob_key IS NOT NULL
+      AND e.cache_key LIKE '%/manifests/%'
+),
+held AS (
+    SELECT repository_id, image FROM hosted WHERE image IS NOT NULL
+    UNION
+    SELECT repository_id, image FROM proxied WHERE image IS NOT NULL
+),
+listed AS (
+    SELECT r.id AS repository_id, r.name AS repository_name, r.project_id AS repository_project_id,
+           h.image, r.id AS source_id, r.name AS source_name, r.project_id AS source_project_id
+    FROM held h
+    JOIN repositories r ON r.id = h.repository_id
+  UNION ALL
+    SELECT g.id, g.name, g.project_id, h.image, mr.id, mr.name, mr.project_id
+    FROM repositories g
+    JOIN repository_group_members m ON m.group_repo_id = g.id
+    JOIN repositories mr ON mr.id = m.member_repo_id AND mr.deleted_at IS NULL AND NOT mr.blocked
+    JOIN held h ON h.repository_id = mr.id AND h.image <> ''
+    WHERE g.format = 'docker' AND g.repo_type = 'group' AND g.deleted_at IS NULL
+),
+named AS (
+    SELECT l.repository_id, l.repository_name, l.repository_project_id, l.image, l.source_id, l.source_name, l.source_project_id,
+           (CASE WHEN l.image = '' THEN l.repository_name ELSE l.repository_name || '/' || l.image END) COLLATE "C" AS full_name
+    FROM listed l
+)
+SELECT n.full_name::text AS full_name,
+       n.repository_id::uuid AS repository_id,
+       n.repository_name::text AS repository_name,
+       COALESCE(n.repository_project_id::text, '')::text AS repository_project_id,
+       n.image::text AS image,
+       array_agg(n.source_id::text ORDER BY n.source_id)::text[] AS source_ids,
+       array_agg(n.source_name::text ORDER BY n.source_id)::text[] AS source_names,
+       array_agg(COALESCE(n.source_project_id::text, '') ORDER BY n.source_id)::text[] AS source_project_ids
+FROM named n
+WHERE n.full_name > $1::text COLLATE "C"
+GROUP BY n.full_name, n.repository_id, n.repository_name, n.repository_project_id, n.image
+ORDER BY n.full_name
+LIMIT $2::int
+`
+
+type ListDockerCatalogParams struct {
+	After     string `db:"after" json:"after"`
+	PageLimit int32  `db:"page_limit" json:"page_limit"`
+}
+
+type ListDockerCatalogRow struct {
+	FullName            string   `db:"full_name" json:"full_name"`
+	RepositoryID        string   `db:"repository_id" json:"repository_id"`
+	RepositoryName      string   `db:"repository_name" json:"repository_name"`
+	RepositoryProjectID string   `db:"repository_project_id" json:"repository_project_id"`
+	Image               string   `db:"image" json:"image"`
+	SourceIds           []string `db:"source_ids" json:"source_ids"`
+	SourceNames         []string `db:"source_names" json:"source_names"`
+	SourceProjectIds    []string `db:"source_project_ids" json:"source_project_ids"`
+}
+
+// One page of the registry catalog: every image of the docker repositories,
+// ordered by distribution name ("<repository>/<image>", just "<repository>"
+// for the default image) after $1, up to $2 names. Hosted repositories list
+// their images with a live manifest (a loose index scan over the live-digest
+// index, one probe per image), proxy repositories the images with a cached
+// manifest, groups the images of their members under the group's own name.
+// sources lists, per name, the repositories that hold the image (the repository
+// itself unless it is a group): the caller authorizes each of them. The
+// parallel arrays are ordered by source id.
+func (q *Queries) ListDockerCatalog(ctx context.Context, arg ListDockerCatalogParams) ([]ListDockerCatalogRow, error) {
+	rows, err := q.db.Query(ctx, listDockerCatalog, arg.After, arg.PageLimit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListDockerCatalogRow{}
+	for rows.Next() {
+		var i ListDockerCatalogRow
+		if err := rows.Scan(
+			&i.FullName,
+			&i.RepositoryID,
+			&i.RepositoryName,
+			&i.RepositoryProjectID,
+			&i.Image,
+			&i.SourceIds,
+			&i.SourceNames,
+			&i.SourceProjectIds,
 		); err != nil {
 			return nil, err
 		}

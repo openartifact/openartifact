@@ -245,7 +245,7 @@ func (g *Generator) GenerateCycloneDX(ctx context.Context, repoID, artifactID, f
 	}
 
 	in := newInput(format, artifactID, metadata)
-	if err := g.load(ctx, repoID, in); err != nil {
+	if err := g.loadSBOM(ctx, repoID, in); err != nil {
 		return nil, err
 	}
 
@@ -273,6 +273,10 @@ func (g *Generator) GenerateCycloneDX(ctx context.Context, repoID, artifactID, f
 
 		if d.SHA256 != "" {
 			c.Hashes = []cdxHash{{Alg: "SHA-256", Content: d.SHA256}}
+		}
+
+		if d.Range != "" {
+			c.Properties = []cdxProp{{Name: "openartifact:version_range", Value: d.Range}}
 		}
 
 		bom.Components = append(bom.Components, c)

@@ -59,6 +59,6 @@ License detection and SBOM generation for an artifact id read these keys from it
 |---|---|
 | `license`, `License`, `spdx_id`, `spdxId` | License detection. Added to the licenses the stored package file declares ([License metadata](../security/licenses.md)); a property cannot hide them. |
 | `licenses`, `Licenses` | Comma-separated list of licenses. |
-| `dependencies` | JSON array of `{"name","version"}` objects: SBOM components. |
+| `dependencies` | JSON array of `{"name","version"}` objects: SBOM components, added to the dependencies read from the package file ([SBOM](../security/sbom.md#components-read-from-the-package-file)). |
 
 Setting or changing one of the license keys through `PUT` or `PATCH` also checks the artifact against the repository's [license policies](../security/scanning.md#quarantine-after-upload): a `block` policy that the license violates quarantines the artifact, and only an admin approval releases it. See [scanning](../security/scanning.md) for the scan endpoints. [`oa import`](../migration/nexus-artifactory.md) copies Artifactory properties (`deb.*`, `rpm.*`, `build.name`, `build.number`, `vcs.*` by default) into properties of the imported packages.

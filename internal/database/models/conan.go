@@ -4,7 +4,10 @@
 
 package models
 
-import "time"
+import (
+	"strings"
+	"time"
+)
 
 // ConanPackage is one stored file of a Conan recipe revision (PackageID empty)
 // or of a package revision of it. Conan 2 addresses everything by revision: the
@@ -27,6 +30,11 @@ type ConanPackage struct {
 	BlobKey   string
 	SHA256    string
 	SizeBytes int64
+	// MD5 and SHA1 are the lowercase hex digests Conan 1 clients ask for
+	// (snapshots, checksum deploy); empty for files stored before they were
+	// tracked.
+	MD5       string
+	SHA1      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }
@@ -47,4 +55,24 @@ type ConanRecipe struct {
 	Name        string
 	Version     string
 	UserChannel string
+}
+
+// ParseConanReference splits name/version@user/channel#revision.
+func ParseConanReference(ref string) (ConanFileKey, bool) {
+	name, rest, ok := strings.Cut(ref, "/")
+	if !ok {
+		return ConanFileKey{}, false
+	}
+
+	version, rest, ok := strings.Cut(rest, "@")
+	if !ok {
+		return ConanFileKey{}, false
+	}
+
+	userChannel, rrev, ok := strings.Cut(rest, "#")
+	if !ok || name == "" || version == "" {
+		return ConanFileKey{}, false
+	}
+
+	return ConanFileKey{Name: name, Version: version, UserChannel: userChannel, RecipeRevision: rrev}, true
 }

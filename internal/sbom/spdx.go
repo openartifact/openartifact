@@ -241,7 +241,7 @@ func (g *Generator) spdxDocument(in *Input) *spdxDoc {
 
 func (g *Generator) loadSPDX(ctx context.Context, repoID, artifactID, format string, metadata map[string]any) (*Input, error) {
 	in := newInput(format, artifactID, metadata)
-	if err := g.load(ctx, repoID, in); err != nil {
+	if err := g.loadSBOM(ctx, repoID, in); err != nil {
 		return nil, err
 	}
 

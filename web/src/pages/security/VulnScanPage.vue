@@ -232,11 +232,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </div>
 
+    <!-- VEX decisions of the filtered repository -->
+    <VexStatementsPanel ref="vexPanel" :repo="filters.repo" :artifact-labels="artifactLabels" @changed="reloadDetailVex" />
+
     <!-- Scan details (full findings, loaded from the scan's repository) -->
     <AdminDialog
       :open="detailRow !== null"
       drawer
-      max-width="max-w-2xl"
+      max-width="max-w-3xl"
       :title="t('sec.vuln.detailTitle')"
       :description="detailRow ? `${detailRow.repository_name} · ${detailRow.package_name}@${detailRow.package_version}` : ''"
       @close="closeDetail"
@@ -247,7 +250,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <p v-else-if="detailError" class="text-sm text-danger" role="alert">{{ detailError }}</p>
       <div v-else-if="detail" class="space-y-4" data-testid="scan-detail">
-        <VulnScanStatus :status="detail.scan_status" :scan-error="detail.scan_error" :failed-scanners="detail.failed_scanners" />
+        <div class="flex items-start justify-between gap-3 flex-wrap">
+          <VulnScanStatus :status="detail.scan_status" :scan-error="detail.scan_error" :failed-scanners="detail.failed_scanners" />
+          <VexDownloadButtons
+            v-if="detailRow"
+            :repo="detailRow.repository_name"
+            :artifact-id="detail.artifact_id"
+            size="sm"
+            test-id-prefix="vex-artifact-download"
+          />
+        </div>
+        <p v-if="vexError" class="text-sm text-danger" role="alert" data-testid="vex-load-error">{{ vexError }}</p>
         <h3 class="text-sm font-semibold">{{ t('sec.vuln.findings') }}</h3>
         <p v-if="!findings.length" class="text-sm text-muted">{{ t('sec.vuln.noFindings') }}</p>
         <div v-else class="overflow-x-auto">
@@ -258,21 +271,49 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('sec.vuln.finding.severity') }}</th>
                 <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('sec.vuln.finding.cvss') }}</th>
                 <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('sec.vuln.finding.fixedIn') }}</th>
-                <th scope="col" class="text-left py-2 text-muted font-medium">{{ t('sec.vuln.finding.summary') }}</th>
+                <th scope="col" class="text-left py-2 pr-3 text-muted font-medium">{{ t('sec.vuln.finding.summary') }}</th>
+                <th scope="col" class="text-left py-2 text-muted font-medium">{{ t('sec.vex.eyebrow') }}</th>
               </tr>
             </thead>
             <tbody>
-              <tr v-for="f in findings" :key="f.id" class="border-b border-border last:border-0 align-top">
+              <tr v-for="f in findings" :key="f.id" class="border-b border-border last:border-0 align-top" data-testid="finding-row">
                 <td class="py-2 pr-3 font-mono text-xs">{{ f.id }}</td>
                 <td class="py-2 pr-3 text-xs">{{ f.severity }}</td>
                 <td class="py-2 pr-3 text-xs font-mono">{{ f.cvss > 0 ? f.cvss : '—' }}</td>
                 <td class="py-2 pr-3 text-xs font-mono">{{ f.fixed_in || '—' }}</td>
-                <td class="py-2 text-xs text-muted">{{ f.summary }}</td>
+                <td class="py-2 pr-3 text-xs text-muted">{{ f.summary }}</td>
+                <td class="py-2">
+                  <div class="flex flex-col items-start gap-1.5">
+                    <VexStatusBadge v-if="vexByVuln.get(f.id)" :status="vexByVuln.get(f.id)!.status" data-testid="finding-vex-status" />
+                    <AppButton
+                      variant="secondary"
+                      size="xs"
+                      :aria-label="`${t('sec.vex.decision')}: ${f.id}`"
+                      data-testid="vex-decision-open"
+                      @click="openVexDecision(f.id)"
+                    >
+                      {{ t('sec.vex.decision') }}
+                    </AppButton>
+                  </div>
+                </td>
               </tr>
             </tbody>
           </table>
         </div>
       </div>
+      <!-- Nested inside the drawer: HeadlessUI closes a dialog on clicks outside its own tree. -->
+      <VexDecisionDialog
+        v-if="detailRow && detail"
+        :open="vexVulnId !== null"
+        :repo="detailRow.repository_name"
+        :artifact-id="detail.artifact_id"
+        :artifact-label="`${detail.package_name}@${detail.package_version}`"
+        :vuln-id="vexVulnId ?? ''"
+        :existing="vexVulnId !== null ? (vexByVuln.get(vexVulnId) ?? null) : null"
+        @close="vexVulnId = null"
+        @saved="onVexSaved"
+        @deleted="onVexDeleted"
+      />
     </AdminDialog>
 
     <ConfirmDialog
@@ -403,6 +444,10 @@ import AdminDialog from '../../components/AdminDialog.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import StatusBadge from '../../components/StatusBadge.vue'
 import VulnScanStatus from '../../components/VulnScanStatus.vue'
+import VexDecisionDialog from '../../components/VexDecisionDialog.vue'
+import VexDownloadButtons from '../../components/VexDownloadButtons.vue'
+import VexStatementsPanel from '../../components/VexStatementsPanel.vue'
+import VexStatusBadge from '../../components/VexStatusBadge.vue'
 import { useToastStore } from '../../stores/toast'
 import { useRepoPackages } from '../../composables/useRepoPackages'
 import {
@@ -423,7 +468,9 @@ import {
   type VulnScanner,
   type VulnScannerStatus,
 } from '../../api/security'
+import { listVexStatements, type VexRecord } from '../../api/vex'
 import { formatLabel } from '../../lib/formats'
+import { vexByVulnId } from '../../lib/vex'
 import { normalizeScannerSelection, vulnCountsState, vulnScanLabel } from '../../lib/scanStatus'
 import {
   EMPTY_VULN_FILTERS,
@@ -711,6 +758,11 @@ async function openDetail(row: VulnScanRow): Promise<void> {
   detail.value = null
   detailError.value = ''
   detailLoading.value = true
+  vexRecords.value = []
+  vexError.value = ''
+  vexVulnId.value = null
+  // The decisions load beside the findings; a failure here must not hide the findings.
+  void loadVexRecords(row, seq)
   try {
     const full = await getVulnScan(row.repository_name, row.id)
     if (seq !== detailSeq) return
@@ -728,6 +780,56 @@ function closeDetail(): void {
   detailRow.value = null
   detail.value = null
   detailLoading.value = false
+  vexVulnId.value = null
+}
+
+// ─── VEX decisions: per finding of the open scan, plus the repository's list ──
+
+const vexPanel = ref<InstanceType<typeof VexStatementsPanel> | null>(null)
+/** Decisions recorded for the open scan's artifact. */
+const vexRecords = ref<VexRecord[]>([])
+const vexError = ref('')
+/** The finding whose decision dialog is open. */
+const vexVulnId = ref<string | null>(null)
+
+const vexByVuln = computed(() => vexByVulnId(vexRecords.value))
+
+/** `name@version` per scanned artifact the loaded rows know, for the decisions list. */
+const artifactLabels = computed<Record<string, string>>(() =>
+  Object.fromEntries(scans.value.map((s) => [s.artifact_id, `${s.package_name}@${s.package_version}`])),
+)
+
+async function loadVexRecords(row: VulnScanRow, seq: number): Promise<void> {
+  try {
+    const records = await listVexStatements(row.repository_name, row.artifact_id)
+    if (seq !== detailSeq) return
+    vexRecords.value = records
+    vexError.value = ''
+  } catch (err) {
+    if (seq !== detailSeq) return
+    vexError.value = err instanceof Error ? err.message : t('sec.vex.artifactLoadFailed')
+  }
+}
+
+/** The repository list deleted a decision: the open scan's badges must follow. */
+function reloadDetailVex(): void {
+  if (detailRow.value) void loadVexRecords(detailRow.value, detailSeq)
+}
+
+function openVexDecision(vulnId: string): void {
+  vexVulnId.value = vulnId
+}
+
+function onVexSaved(record: VexRecord): void {
+  vexRecords.value = [...vexRecords.value.filter((r) => r.vuln_id !== record.vuln_id), record]
+  vexVulnId.value = null
+  void vexPanel.value?.reload()
+}
+
+function onVexDeleted(id: string): void {
+  vexRecords.value = vexRecords.value.filter((r) => r.id !== id)
+  vexVulnId.value = null
+  void vexPanel.value?.reload()
 }
 
 // ─── Scan drawer ────────────────────────────────────────────────────────────

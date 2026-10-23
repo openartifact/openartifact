@@ -79,6 +79,11 @@ type Source struct {
 	// enforcement) need this: a silently truncated or arbitrarily picked
 	// manifest could hide what the package really declares.
 	Strict bool
+	// Deps also reads the lockfiles an artifact ships next to its manifest
+	// (npm-shrinkwrap.json, package-lock.json, Cargo.lock, Chart.lock),
+	// listed after the manifest parts. SBOM generation sets it; the AI
+	// analysis and license readers leave it off so their input is unchanged.
+	Deps bool
 }
 
 // limits are the per-read bounds derived from a Source.

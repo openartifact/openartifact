@@ -56,5 +56,10 @@ func parsePOM(filename string, parts []manifest.Part) (Result, error) {
 		return Result{}, fmt.Errorf("pom: %w", err)
 	}
 
-	return Result{Licenses: ParsePOM(pom), Source: "pom"}, nil
+	res := Result{Licenses: ParsePOM(pom), Source: "pom"}
+	if len(res.Licenses) == 0 {
+		res.Parent = pom.Parent
+	}
+
+	return res, nil
 }

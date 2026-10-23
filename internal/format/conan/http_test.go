@@ -134,13 +134,13 @@ type revisionsResponse struct {
 	} `json:"revisions"`
 }
 
-func TestPingAdvertisesRevisionsOnly(t *testing.T) {
+func TestPingAdvertisesRevisionsAndChecksumDeploy(t *testing.T) {
 	e := newEnv(t)
 
 	for _, p := range []string{"/repos/myrepo/v1/ping", "/repos/myrepo/v2/ping"} {
 		w := e.mustDo(http.MethodGet, p, "", http.StatusOK)
-		if got := w.Header().Get("X-Conan-Server-Capabilities"); got != "revisions" {
-			t.Errorf("%s capabilities = %q, want revisions", p, got)
+		if got := w.Header().Get("X-Conan-Server-Capabilities"); got != "revisions,checksum_deploy" {
+			t.Errorf("%s capabilities = %q, want revisions,checksum_deploy", p, got)
 		}
 	}
 }

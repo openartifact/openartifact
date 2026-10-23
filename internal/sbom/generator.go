@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -23,6 +24,7 @@ var ErrUnsupportedSpec = errors.New("unsupported SBOM spec version")
 // Generator builds SBOM and VEX documents.
 type Generator struct {
 	db          database.Database
+	blobs       storage.BlobStore
 	log         *logger.Logger
 	toolVersion string
 	baseURL     string
@@ -46,6 +48,14 @@ type SBOMResult struct {
 // properties are then used, no scans, hashes or VEX decisions).
 func NewGenerator(db database.Database, log *logger.Logger) *Generator {
 	return &Generator{db: db, log: log, toolVersion: "dev", now: time.Now}
+}
+
+// WithBlobStore lets the generator read the stored package file of an artifact
+// to list its dependencies (see package pkgdeps). Without it components come
+// from the artifact's properties only.
+func (g *Generator) WithBlobStore(b storage.BlobStore) *Generator {
+	g.blobs = b
+	return g
 }
 
 // WithToolVersion sets the OpenArtifact version recorded as the generating tool.
