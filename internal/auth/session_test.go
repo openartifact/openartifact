@@ -135,7 +135,7 @@ func (m *sessionMockDB) GetMavenArtifactByPath(_ context.Context, _, _ string) (
 func (m *sessionMockDB) GetMavenArtifactsByGAV(_ context.Context, _, _, _, _ string) ([]*models.MavenArtifact, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) GetMavenArtifactsByGA(_ context.Context, _, _, _ string) ([]*models.MavenArtifact, error) {
+func (m *sessionMockDB) ListMavenGARefs(_ context.Context, _, _, _ string) (*models.MavenGARefs, error) {
 	return nil, nil
 }
 func (m *sessionMockDB) GetLatestSnapshot(_ context.Context, _, _, _, _ string) (*models.MavenArtifact, error) {

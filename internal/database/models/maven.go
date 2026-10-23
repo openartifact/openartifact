@@ -36,6 +36,24 @@ type MavenArtifact struct {
 	UpdatedAt     time.Time
 }
 
+// MavenGARefs is what maven-metadata.xml regeneration needs to know about one
+// group:artifact, without the ids, paths and checksums of the full artifact rows.
+type MavenGARefs struct {
+	// Versions holds every distinct live version, in version (string) order.
+	Versions []string
+	// Snapshots holds one entry per live file of every -SNAPSHOT version.
+	Snapshots []MavenSnapshotRef
+}
+
+// MavenSnapshotRef is one live file of a -SNAPSHOT version.
+type MavenSnapshotRef struct {
+	Version     string
+	Classifier  string
+	Extension   string
+	Timestamp   string
+	BuildNumber int
+}
+
 func (m *MavenArtifact) Coordinate() pkgmaven.Coordinate {
 	return pkgmaven.Coordinate{
 		GroupID:    m.GroupID,

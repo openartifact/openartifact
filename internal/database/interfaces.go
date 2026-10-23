@@ -115,7 +115,7 @@ type Database interface {
 	CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error
 	GetMavenArtifactByPath(ctx context.Context, repoID, path string) (*models.MavenArtifact, error)
 	GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID, artifactID, version string) ([]*models.MavenArtifact, error)
-	GetMavenArtifactsByGA(ctx context.Context, repoID, groupID, artifactID string) ([]*models.MavenArtifact, error)
+	ListMavenGARefs(ctx context.Context, repoID, groupID, artifactID string) (*models.MavenGARefs, error)
 	GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error)
 	// GetLatestSnapshotFile returns the newest snapshot build of the file with
 	// the given classifier and extension.

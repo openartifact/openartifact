@@ -11,6 +11,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"slices"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -187,8 +189,8 @@ func (m *BaseMockDB) GetMavenArtifactByPath(ctx context.Context, repoID, path st
 func (m *BaseMockDB) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID, artifactID, version string) ([]*models.MavenArtifact, error) {
 	return nil, errNotImpl("GetMavenArtifactsByGAV")
 }
-func (m *BaseMockDB) GetMavenArtifactsByGA(ctx context.Context, repoID, groupID, artifactID string) ([]*models.MavenArtifact, error) {
-	return nil, errNotImpl("GetMavenArtifactsByGA")
+func (m *BaseMockDB) ListMavenGARefs(ctx context.Context, repoID, groupID, artifactID string) (*models.MavenGARefs, error) {
+	return nil, errNotImpl("ListMavenGARefs")
 }
 func (m *BaseMockDB) GetLatestSnapshotFile(ctx context.Context, repoID, groupID, artifactID, version, classifier, extension string) (*models.MavenArtifact, error) {
 	return nil, errNotImpl("GetLatestSnapshotFile")
@@ -1367,4 +1369,30 @@ func (m *BaseMockDB) ListSigningRepositoriesWithoutKey(ctx context.Context) ([]m
 }
 func (m *BaseMockDB) ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error) {
 	return nil, errNotImpl("ResolveGPGKeyForRepository")
+}
+
+// MavenGARefsFromArtifacts derives what ListMavenGARefs returns (versions in
+// string order, snapshot files for -SNAPSHOT versions) from full artifact rows,
+// for in-memory test databases.
+func MavenGARefsFromArtifacts(arts []*models.MavenArtifact) *models.MavenGARefs {
+	refs := &models.MavenGARefs{}
+
+	for _, a := range arts {
+		refs.Versions = append(refs.Versions, a.Version)
+
+		if strings.HasSuffix(a.Version, "-SNAPSHOT") {
+			refs.Snapshots = append(refs.Snapshots, models.MavenSnapshotRef{
+				Version:     a.Version,
+				Classifier:  a.Classifier,
+				Extension:   a.Extension,
+				Timestamp:   a.SnapshotTimestamp,
+				BuildNumber: a.SnapshotBuildNumber,
+			})
+		}
+	}
+
+	slices.Sort(refs.Versions)
+	refs.Versions = slices.Compact(refs.Versions)
+
+	return refs
 }

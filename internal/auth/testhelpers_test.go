@@ -116,7 +116,7 @@ func (m *tokenMockDB) GetMavenArtifactByPath(_ context.Context, _, _ string) (*m
 func (m *tokenMockDB) GetMavenArtifactsByGAV(_ context.Context, _, _, _, _ string) ([]*models.MavenArtifact, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) GetMavenArtifactsByGA(_ context.Context, _, _, _ string) ([]*models.MavenArtifact, error) {
+func (m *tokenMockDB) ListMavenGARefs(_ context.Context, _, _, _ string) (*models.MavenGARefs, error) {
 	return nil, nil
 }
 func (m *tokenMockDB) GetLatestSnapshot(_ context.Context, _, _, _, _ string) (*models.MavenArtifact, error) {

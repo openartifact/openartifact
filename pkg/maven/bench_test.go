@@ -136,3 +136,49 @@ func BenchmarkCompareVersions(b *testing.B) {
 		_ = CompareVersions("1.10.0-beta-2", "1.10.0-rc1")
 	}
 }
+
+// benchVersions builds n distinct versions in shuffled order, mixing release,
+// qualifier and snapshot shapes as seen in real maven-metadata.xml files.
+func benchVersions(n int) []string {
+	versions := make([]string, 0, n)
+
+	for i := range n {
+		v := fmt.Sprintf("%d.%d.%d", i/100, (i/10)%10, i%10)
+
+		switch i % 5 {
+		case 1:
+			v += "-SNAPSHOT"
+		case 2:
+			v += "-RC1"
+		case 3:
+			v += ".Final"
+		}
+
+		versions = append(versions, v)
+	}
+
+	// Deterministic shuffle: stride permutation so the input is not presorted.
+	out := make([]string, n)
+	for i, v := range versions {
+		out[(i*7919)%n] = v
+	}
+
+	return out
+}
+
+// BenchmarkSortVersions orders a metadata version list in Maven order.
+func BenchmarkSortVersions(b *testing.B) {
+	for _, n := range []int{100, 1000, 10000} {
+		src := benchVersions(n)
+		work := make([]string, n)
+
+		b.Run(fmt.Sprintf("versions=%d", n), func(b *testing.B) {
+			b.ReportAllocs()
+
+			for b.Loop() {
+				copy(work, src)
+				SortVersions(work)
+			}
+		})
+	}
+}

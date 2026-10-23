@@ -23,6 +23,8 @@ type benchWorkerDB struct {
 	components    []models.DebianComponent
 	architectures []models.DebianArchitecture
 	artifacts     []*models.MavenArtifact
+	refs          *models.MavenGARefs
+	refsFor       int
 
 	meta    map[string]*models.RepoMetadata
 	upserts int
@@ -36,8 +38,13 @@ func (d *benchWorkerDB) GetDebianArchitecturesByDist(context.Context, string) ([
 	return d.architectures, nil
 }
 
-func (d *benchWorkerDB) GetMavenArtifactsByGA(context.Context, string, string, string) ([]*models.MavenArtifact, error) {
-	return d.artifacts, nil
+func (d *benchWorkerDB) ListMavenGARefs(context.Context, string, string, string) (*models.MavenGARefs, error) {
+	// Derived once per artifact list so benchmarks measure the worker, not the mock.
+	if d.refs == nil || d.refsFor != len(d.artifacts) {
+		d.refs, d.refsFor = sq.MavenGARefsFromArtifacts(d.artifacts), len(d.artifacts)
+	}
+
+	return d.refs, nil
 }
 
 func (d *benchWorkerDB) GetRepoMetadataByPath(_ context.Context, _, path string) (*models.RepoMetadata, error) {

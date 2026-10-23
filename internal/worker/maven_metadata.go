@@ -88,7 +88,7 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		defer release()
 	}
 
-	arts, err := w.db.GetMavenArtifactsByGA(ctx, repoID, groupID, artifactID)
+	refs, err := w.db.ListMavenGARefs(ctx, repoID, groupID, artifactID)
 	if err != nil {
 		return fmt.Errorf("maven worker: querying artifacts: %w", err)
 	}
@@ -100,21 +100,14 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 	// is pruned so it never advertises versions that no longer have a live file.
 	keep := make([]string, 0, 4)
 
-	if len(arts) == 0 {
+	if len(refs.Versions) == 0 {
 		return w.pruneMetadata(ctx, repoID, dir, keep)
 	}
 
-	versionSet := make(map[string]struct{})
-	for _, a := range arts {
-		versionSet[a.Version] = struct{}{}
-	}
-
-	versions := make([]string, 0, len(versionSet))
-	for v := range versionSet {
-		versions = append(versions, v)
-	}
-
-	sort.Slice(versions, func(i, j int) bool { return pkgmaven.CompareVersions(versions[i], versions[j]) < 0 })
+	// The query returns distinct versions already, in string order, so the
+	// stable Maven-order sort below is deterministic across runs.
+	versions := refs.Versions
+	pkgmaven.SortVersions(versions)
 
 	latestVersion := versions[len(versions)-1]
 	latestRelease := ""
@@ -135,12 +128,10 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 		return fmt.Errorf("maven worker: group metadata: %w", err)
 	}
 
-	snapshotVersions := make(map[string][]*models.MavenArtifact)
+	snapshotVersions := make(map[string][]models.MavenSnapshotRef)
 
-	for _, a := range arts {
-		if pkgmaven.IsSnapshot(a.Version) {
-			snapshotVersions[a.Version] = append(snapshotVersions[a.Version], a)
-		}
+	for _, a := range refs.Snapshots {
+		snapshotVersions[a.Version] = append(snapshotVersions[a.Version], a)
 	}
 
 	for snapVersion, snapArts := range snapshotVersions {
@@ -148,21 +139,21 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 
 		latestBn := 0
 		for _, a := range snapArts {
-			if a.SnapshotTimestamp > latestTs || (a.SnapshotTimestamp == latestTs && a.SnapshotBuildNumber > latestBn) {
-				latestTs = a.SnapshotTimestamp
-				latestBn = a.SnapshotBuildNumber
+			if a.Timestamp > latestTs || (a.Timestamp == latestTs && a.BuildNumber > latestBn) {
+				latestTs = a.Timestamp
+				latestBn = a.BuildNumber
 			}
 		}
 
 		// Keep only the newest build per (extension, classifier).
 		type snapKey struct{ ext, classifier string }
 
-		newest := make(map[snapKey]*models.MavenArtifact)
+		newest := make(map[snapKey]models.MavenSnapshotRef)
 
 		for _, a := range snapArts {
 			k := snapKey{a.Extension, a.Classifier}
-			if cur, ok := newest[k]; !ok || a.SnapshotTimestamp > cur.SnapshotTimestamp ||
-				(a.SnapshotTimestamp == cur.SnapshotTimestamp && a.SnapshotBuildNumber > cur.SnapshotBuildNumber) {
+			if cur, ok := newest[k]; !ok || a.Timestamp > cur.Timestamp ||
+				(a.Timestamp == cur.Timestamp && a.BuildNumber > cur.BuildNumber) {
 				newest[k] = a
 			}
 		}
@@ -171,12 +162,12 @@ func (w *MavenMetadataWorker) regenerate(ctx context.Context, repoID, groupID, a
 
 		baseVersion := strings.TrimSuffix(snapVersion, "-SNAPSHOT")
 		for _, a := range newest {
-			value := baseVersion + "-" + a.SnapshotTimestamp + "-" + strconv.Itoa(a.SnapshotBuildNumber)
+			value := baseVersion + "-" + a.Timestamp + "-" + strconv.Itoa(a.BuildNumber)
 			entries = append(entries, fmtmaven.SnapshotEntry{
 				Extension:  a.Extension,
 				Classifier: a.Classifier,
 				Value:      value,
-				Updated:    strings.ReplaceAll(a.SnapshotTimestamp, ".", ""),
+				Updated:    strings.ReplaceAll(a.Timestamp, ".", ""),
 			})
 		}
 

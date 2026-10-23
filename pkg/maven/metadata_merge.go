@@ -206,7 +206,7 @@ func mergeVersioning(docs []*Metadata) *Versioning {
 		return nil
 	}
 
-	slices.SortStableFunc(versions, CompareVersions)
+	SortVersions(versions)
 
 	out := &Versioning{Versions: versions, LastUpdated: updated}
 	if len(versions) > 0 {

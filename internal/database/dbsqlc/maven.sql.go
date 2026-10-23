@@ -251,74 +251,6 @@ func (q *Queries) GetMavenArtifactByPath(ctx context.Context, arg GetMavenArtifa
 	return i, err
 }
 
-const getMavenArtifactsByGA = `-- name: GetMavenArtifactsByGA :many
-SELECT id, repository_id,
-       blob_id,
-       group_id, artifact_id_coord, version, classifier, extension,
-       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
-       created_at, updated_at
-FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND deleted_at IS NULL
-`
-
-type GetMavenArtifactsByGAParams struct {
-	RepositoryID    string `db:"repository_id" json:"repository_id"`
-	GroupID         string `db:"group_id" json:"group_id"`
-	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
-}
-
-type GetMavenArtifactsByGARow struct {
-	ID                  string    `db:"id" json:"id"`
-	RepositoryID        string    `db:"repository_id" json:"repository_id"`
-	BlobID              string    `db:"blob_id" json:"blob_id"`
-	GroupID             string    `db:"group_id" json:"group_id"`
-	ArtifactIDCoord     string    `db:"artifact_id_coord" json:"artifact_id_coord"`
-	Version             string    `db:"version" json:"version"`
-	Classifier          string    `db:"classifier" json:"classifier"`
-	Extension           string    `db:"extension" json:"extension"`
-	SnapshotTimestamp   *string   `db:"snapshot_timestamp" json:"snapshot_timestamp"`
-	SnapshotBuildNumber int32     `db:"snapshot_build_number" json:"snapshot_build_number"`
-	IsSnapshot          bool      `db:"is_snapshot" json:"is_snapshot"`
-	RepoPath            string    `db:"repo_path" json:"repo_path"`
-	CreatedAt           time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt           time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetMavenArtifactsByGA(ctx context.Context, arg GetMavenArtifactsByGAParams) ([]GetMavenArtifactsByGARow, error) {
-	rows, err := q.db.Query(ctx, getMavenArtifactsByGA, arg.RepositoryID, arg.GroupID, arg.ArtifactIDCoord)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []GetMavenArtifactsByGARow{}
-	for rows.Next() {
-		var i GetMavenArtifactsByGARow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.BlobID,
-			&i.GroupID,
-			&i.ArtifactIDCoord,
-			&i.Version,
-			&i.Classifier,
-			&i.Extension,
-			&i.SnapshotTimestamp,
-			&i.SnapshotBuildNumber,
-			&i.IsSnapshot,
-			&i.RepoPath,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const getMavenArtifactsByGAV = `-- name: GetMavenArtifactsByGAV :many
 SELECT id, repository_id,
        blob_id,
@@ -446,6 +378,73 @@ func (q *Queries) ListMavenArtifactsByRepo(ctx context.Context, repositoryID str
 			&i.RepoPath,
 			&i.CreatedAt,
 			&i.UpdatedAt,
+		); err != nil {
+			return nil, err
+		}
+		items = append(items, i)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, err
+	}
+	return items, nil
+}
+
+const listMavenGARefs = `-- name: ListMavenGARefs :many
+SELECT v.version::text AS version,
+       ''::text AS classifier,
+       ''::text AS extension,
+       ''::text AS snapshot_timestamp,
+       0::int AS snapshot_build_number,
+       false AS snapshot_row
+FROM (
+    SELECT DISTINCT d.version
+    FROM maven_artifacts d
+    WHERE d.repository_id = $1 AND d.group_id = $2 AND d.artifact_id_coord = $3 AND d.deleted_at IS NULL
+) v
+UNION ALL
+SELECT s.version::text, s.classifier::text, s.extension::text,
+       COALESCE(s.snapshot_timestamp, '')::text, s.snapshot_build_number::int, true
+FROM maven_artifacts s
+WHERE s.repository_id = $1 AND s.group_id = $2 AND s.artifact_id_coord = $3 AND s.deleted_at IS NULL
+  AND s.version LIKE '%-SNAPSHOT'
+ORDER BY snapshot_row, version, classifier, extension, snapshot_timestamp, snapshot_build_number
+`
+
+type ListMavenGARefsParams struct {
+	RepositoryID    string `db:"repository_id" json:"repository_id"`
+	GroupID         string `db:"group_id" json:"group_id"`
+	ArtifactIDCoord string `db:"artifact_id_coord" json:"artifact_id_coord"`
+}
+
+type ListMavenGARefsRow struct {
+	Version             string `db:"version" json:"version"`
+	Classifier          string `db:"classifier" json:"classifier"`
+	Extension           string `db:"extension" json:"extension"`
+	SnapshotTimestamp   string `db:"snapshot_timestamp" json:"snapshot_timestamp"`
+	SnapshotBuildNumber int32  `db:"snapshot_build_number" json:"snapshot_build_number"`
+	SnapshotRow         bool   `db:"snapshot_row" json:"snapshot_row"`
+}
+
+// Everything maven-metadata.xml regeneration needs for one group:artifact,
+// without the per-row ids, paths and checksum join of the full artifact load:
+// one row per distinct live version (snapshot_row = false) plus one row per
+// file of every -SNAPSHOT version (snapshot_row = true).
+func (q *Queries) ListMavenGARefs(ctx context.Context, arg ListMavenGARefsParams) ([]ListMavenGARefsRow, error) {
+	rows, err := q.db.Query(ctx, listMavenGARefs, arg.RepositoryID, arg.GroupID, arg.ArtifactIDCoord)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	items := []ListMavenGARefsRow{}
+	for rows.Next() {
+		var i ListMavenGARefsRow
+		if err := rows.Scan(
+			&i.Version,
+			&i.Classifier,
+			&i.Extension,
+			&i.SnapshotTimestamp,
+			&i.SnapshotBuildNumber,
+			&i.SnapshotRow,
 		); err != nil {
 			return nil, err
 		}

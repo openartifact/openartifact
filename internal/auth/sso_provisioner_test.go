@@ -340,7 +340,7 @@ func (m *provMockDB) GetMavenArtifactByPath(_ context.Context, _, _ string) (*mo
 func (m *provMockDB) GetMavenArtifactsByGAV(_ context.Context, _, _, _, _ string) ([]*models.MavenArtifact, error) {
 	return nil, nil
 }
-func (m *provMockDB) GetMavenArtifactsByGA(_ context.Context, _, _, _ string) ([]*models.MavenArtifact, error) {
+func (m *provMockDB) ListMavenGARefs(_ context.Context, _, _, _ string) (*models.MavenGARefs, error) {
 	return nil, nil
 }
 func (m *provMockDB) GetLatestSnapshot(_ context.Context, _, _, _, _ string) (*models.MavenArtifact, error) {

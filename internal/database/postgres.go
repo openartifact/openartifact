@@ -1303,42 +1303,37 @@ func (p *PostgresDB) GetMavenArtifactsByGAV(ctx context.Context, repoID, groupID
 	return artifacts, nil
 }
 
-func (p *PostgresDB) GetMavenArtifactsByGA(ctx context.Context, repoID, groupID, artifactID string) ([]*models.MavenArtifact, error) {
-	rows, err := p.q.GetMavenArtifactsByGA(ctx, dbsqlc.GetMavenArtifactsByGAParams{
+// ListMavenGARefs loads the versions and snapshot files of one group:artifact
+// in a single narrow query (no artifact ids, paths or checksum join).
+func (p *PostgresDB) ListMavenGARefs(ctx context.Context, repoID, groupID, artifactID string) (*models.MavenGARefs, error) {
+	rows, err := p.q.ListMavenGARefs(ctx, dbsqlc.ListMavenGARefsParams{
 		RepositoryID:    repoID,
 		GroupID:         groupID,
 		ArtifactIDCoord: artifactID,
 	})
 	if err != nil {
-		return nil, fmt.Errorf("failed to query maven artifacts by ga: %w", err)
+		return nil, fmt.Errorf("failed to query maven refs by ga: %w", err)
 	}
 
-	var artifacts []*models.MavenArtifact
+	refs := &models.MavenGARefs{}
 
 	for _, row := range rows {
-		artifacts = append(artifacts, &models.MavenArtifact{
-			ID:                  row.ID,
-			RepositoryID:        row.RepositoryID,
-			BlobID:              row.BlobID,
-			GroupID:             row.GroupID,
-			ArtifactCoord:       row.ArtifactIDCoord,
-			Version:             row.Version,
-			Classifier:          row.Classifier,
-			Extension:           row.Extension,
-			SnapshotTimestamp:   derefStr(row.SnapshotTimestamp),
-			SnapshotBuildNumber: int(row.SnapshotBuildNumber),
-			IsSnapshot:          row.IsSnapshot,
-			RepoPath:            row.RepoPath,
-			CreatedAt:           row.CreatedAt,
-			UpdatedAt:           row.UpdatedAt,
+		if !row.SnapshotRow {
+			refs.Versions = append(refs.Versions, row.Version)
+
+			continue
+		}
+
+		refs.Snapshots = append(refs.Snapshots, models.MavenSnapshotRef{
+			Version:     row.Version,
+			Classifier:  row.Classifier,
+			Extension:   row.Extension,
+			Timestamp:   row.SnapshotTimestamp,
+			BuildNumber: int(row.SnapshotBuildNumber),
 		})
 	}
 
-	if err := p.fillMavenChecksums(ctx, artifacts...); err != nil {
-		return nil, err
-	}
-
-	return artifacts, nil
+	return refs, nil
 }
 
 func (p *PostgresDB) GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error) {

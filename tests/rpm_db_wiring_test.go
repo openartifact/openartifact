@@ -525,7 +525,7 @@ func (m *MockDatabase) GetMavenArtifactsByGAV(ctx context.Context, repoID, group
 	return result, nil
 }
 
-func (m *MockDatabase) GetMavenArtifactsByGA(ctx context.Context, repoID, groupID, artifactID string) ([]*models.MavenArtifact, error) {
+func (m *MockDatabase) ListMavenGARefs(ctx context.Context, repoID, groupID, artifactID string) (*models.MavenGARefs, error) {
 	var result []*models.MavenArtifact
 
 	for _, a := range m.mavenArtifacts {
@@ -534,7 +534,7 @@ func (m *MockDatabase) GetMavenArtifactsByGA(ctx context.Context, repoID, groupI
 		}
 	}
 
-	return result, nil
+	return database.MavenGARefsFromArtifacts(result), nil
 }
 
 func (m *MockDatabase) GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error) {

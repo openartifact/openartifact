@@ -24,14 +24,29 @@ SELECT id, repository_id,
 FROM maven_artifacts
 WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND version = $4 AND deleted_at IS NULL;
 
--- name: GetMavenArtifactsByGA :many
-SELECT id, repository_id,
-       blob_id,
-       group_id, artifact_id_coord, version, classifier, extension,
-       snapshot_timestamp, snapshot_build_number, is_snapshot, repo_path,
-       created_at, updated_at
-FROM maven_artifacts
-WHERE repository_id = $1 AND group_id = $2 AND artifact_id_coord = $3 AND deleted_at IS NULL;
+-- name: ListMavenGARefs :many
+-- Everything maven-metadata.xml regeneration needs for one group:artifact,
+-- without the per-row ids, paths and checksum join of the full artifact load:
+-- one row per distinct live version (snapshot_row = false) plus one row per
+-- file of every -SNAPSHOT version (snapshot_row = true).
+SELECT v.version::text AS version,
+       ''::text AS classifier,
+       ''::text AS extension,
+       ''::text AS snapshot_timestamp,
+       0::int AS snapshot_build_number,
+       false AS snapshot_row
+FROM (
+    SELECT DISTINCT d.version
+    FROM maven_artifacts d
+    WHERE d.repository_id = $1 AND d.group_id = $2 AND d.artifact_id_coord = $3 AND d.deleted_at IS NULL
+) v
+UNION ALL
+SELECT s.version::text, s.classifier::text, s.extension::text,
+       COALESCE(s.snapshot_timestamp, '')::text, s.snapshot_build_number::int, true
+FROM maven_artifacts s
+WHERE s.repository_id = $1 AND s.group_id = $2 AND s.artifact_id_coord = $3 AND s.deleted_at IS NULL
+  AND s.version LIKE '%-SNAPSHOT'
+ORDER BY snapshot_row, version, classifier, extension, snapshot_timestamp, snapshot_build_number;
 
 -- name: GetLatestSnapshot :one
 SELECT id, repository_id,
