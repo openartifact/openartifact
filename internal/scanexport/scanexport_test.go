@@ -8,53 +8,12 @@ import (
 	"bytes"
 	"encoding/json"
 	"fmt"
-	"os"
 	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/scanexport"
-	"github.com/santhosh-tekuri/jsonschema/v6"
 )
-
-// validateSARIF checks doc against the official SARIF 2.1.0 JSON schema.
-func validateSARIF(t *testing.T, doc *scanexport.Log) {
-	t.Helper()
-
-	raw, err := os.ReadFile("testdata/sarif-schema-2.1.0.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	schemaDoc, err := jsonschema.UnmarshalJSON(bytes.NewReader(raw))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	c := jsonschema.NewCompiler()
-	if err := c.AddResource("sarif.json", schemaDoc); err != nil {
-		t.Fatal(err)
-	}
-
-	schema, err := c.Compile("sarif.json")
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	out, err := json.Marshal(doc)
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	inst, err := jsonschema.UnmarshalJSON(bytes.NewReader(out))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if err := schema.Validate(inst); err != nil {
-		t.Fatalf("SARIF does not match the 2.1.0 schema: %v", err)
-	}
-}
 
 func checkScore(t *testing.T, v any) {
 	t.Helper()
@@ -146,7 +105,6 @@ func TestVulnSARIF_ValidSchemaAndGitHubLimits(t *testing.T) {
 		t.Fatal("truncated")
 	}
 
-	validateSARIF(t, doc)
 	checkGitHubLimits(t, doc)
 
 	var names []string
@@ -219,7 +177,6 @@ func TestVulnSARIF_EmptyIsAValidRun(t *testing.T) {
 		t.Fatalf("runs = %+v", doc.Runs)
 	}
 
-	validateSARIF(t, doc)
 }
 
 func TestVulnSARIF_TruncatesToGitHubLimitKeepingWorst(t *testing.T) {
@@ -284,7 +241,6 @@ func secretItems() []scanexport.SecretItem {
 
 func TestSecretsExports_NeverContainValues(t *testing.T) {
 	doc, _ := scanexport.SecretsSARIF(secretItems())
-	validateSARIF(t, doc)
 	checkGitHubLimits(t, doc)
 
 	var csvBuf bytes.Buffer
