@@ -132,6 +132,8 @@ For every blob either side lists, it compares the primary with the replica (size
 
 A pass is started by the schedule (`verifyInterval`), automatically the first time replication is enabled, and by `POST /api/v1/admin/storage/replication/verify`. It lists the primary store with its own listing; stores that cannot list (the OCI backend) are walked through the `blobs` table instead (`listing: database` in the result), and when the replica cannot list, blobs that only it holds are not found. Per blob the cost is one size lookup on each side, bounded by `concurrency`; `verifyDeep` reads every blob in full from both backends, so use it sparingly on large stores and cloud egress.
 
+A blob counts as referenced when a `blobs` row, a generated repository metadata row, a package row or a current [disaster-recovery sidecar](rebuild-from-storage.md#how-it-works) points at it, so the sidecars of a lost primary come back with the packages.
+
 Blobs without a `blobs` row (generated repository metadata and other internally written objects) are found by verify only through the stores' own listings; when the primary is walked through the database they are repaired by the read fallback and read repair instead.
 
 ## Admin API
