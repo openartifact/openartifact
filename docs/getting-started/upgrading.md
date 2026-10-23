@@ -85,7 +85,35 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
-### Unreleased
+### 0.7.0
+
+Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webhook payload format), `052` (VEX statements) and `053` (license source and unresolved licenses). All are additive; a rolling upgrade from 0.6.0 is fine. Migration `041` is numbered below `051`–`053` on purpose; the migrator applies every file not yet recorded, whatever its number.
+
+#### License policies read the package itself (migration `053`)
+
+- Licenses now come from the uploaded file (wheel `METADATA` / sdist `PKG-INFO`, npm `package.json`, Cargo `Cargo.toml`, NuGet `.nuspec`, Maven `.pom`; RubyGems already did). Upload form fields are only a fallback, so a client can no longer bypass a license policy by omitting or faking them. See [licenses](../security/licenses.md).
+- **Under an enabled `block` policy, an upload whose licenses cannot be read from the file is refused** with `422 LICENSE_METADATA_UNREADABLE` (for example a PyPI `.egg`/`.exe`, a damaged archive, an unparsable `.pom`). A re-scan of such a stored package fails with `422 unreadable_artifact`. Without a block policy the client-declared fields stay the fallback.
+- Scan results gain `license_source` (`artifact` or `client_declared`; existing rows read as `client_declared`) and `unresolved_licenses` (names such as `BSD` that do not map to one SPDX id). Existing results are not rewritten: re-scan to refresh them.
+
+#### SBOM and VEX (migration `052`)
+
+- SBOMs default to CycloneDX 1.5 (1.4 and 1.6 via `spec_version`) with purls, hashes, SPDX license expressions, the dependency graph and vulnerabilities; SPDX 2.3 is available as `spdx-json` and tag-value. Old `format` / `spec_version` values still work.
+- New VEX documents (OpenVEX 0.2.0, CycloneDX VEX) and admin-recorded `not_affected` decisions: `GET /api/v1/repositories/{name}/vex`, `GET`/`PUT …/vex/statements`, `DELETE …/vex/statements/{id}`; `oa vex`. Decisions are included in backups. See [SBOM and VEX](../security/sbom.md).
+
+#### Exports
+
+- Scan exports: `GET …/vuln/scans/{id}/export`, `GET /api/v1/vuln/scans/export`, `GET …/secrets/scans/export` and `…/secrets/scans/{id}/export` with `format=sarif|csv|json`. Secret exports never contain the matched value. See [scanning](../security/scanning.md).
+- Audit exports: `GET /api/v1/admin/audit/export` and `GET /api/v1/projects/{p}/activity/export` (`jsonl` or `csv`), `oa audit export`. The field sets are an append-only contract. See [monitoring](../operations/monitoring.md).
+- New cross-repository scan overview for admins: `GET /api/v1/vuln/scans` and `GET /api/v1/vuln/scans/summary`.
+
+#### OpenTelemetry
+
+- Optional OTLP tracing (and OTLP push of the Prometheus metrics), **off by default**: `OPENARTIFACT_OTLP_ENABLED=true` plus the standard `OTEL_EXPORTER_OTLP_*` variables. Inbound `baggage` is never forwarded to upstreams, webhooks or AI providers. The server binary is about 14 MB larger. See [monitoring](../operations/monitoring.md).
+
+#### Docker Compose and the web UI
+
+- The compose file no longer sets `container_name`; containers are named by the compose project (`docker-openartifact-1`, …). Scripts that address `openartifact` / `openartifact-postgres` by name must use `docker compose exec openartifact …` instead. The published port is `OPENARTIFACT_PORT` (default `8080`).
+- The web UI is an installable app (web manifest and a service worker that caches only the hashed static assets, never API or repository responses). It needs HTTPS (or `localhost`); a reverse proxy must pass `/sw.js` and `/manifest.webmanifest` through without long-lived caching. See [installation](installation.md).
 
 #### Prometheus `path` label
 
