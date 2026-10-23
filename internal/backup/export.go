@@ -92,8 +92,9 @@ func (e *Engine) exportArchive(ctx context.Context, tw *tar.Writer, manifest *Ba
 	return nil
 }
 
-// exportBlobs writes every blobs row of the snapshot, in sha256 order, to the
-// archive. It reads the table (not the storage listing), so exactly the blobs
+// exportBlobs writes every stored object of the snapshot, in sha256 order, to
+// the archive: the blobs rows plus the generated metadata and deltas that have
+// none. It reads the tables (not the storage listing), so exactly the objects
 // the exported records reference are archived, whichever backend or tier holds
 // them. The expected count comes from the snapshot; an archive with fewer is an
 // error.

@@ -118,9 +118,16 @@ func (q *Queries) CountBlobDeletions(ctx context.Context) (int64, error) {
 }
 
 const countBlobs = `-- name: CountBlobs :one
-SELECT count(*) FROM blobs
+SELECT count(*) FROM (
+    SELECT sha256 FROM blobs
+    UNION
+    SELECT blob_sha256 FROM repository_metadata
+    UNION
+    SELECT delta_sha256 FROM package_deltas
+) o
 `
 
+// The number of stored objects ListBlobsAfter pages through.
 func (q *Queries) CountBlobs(ctx context.Context) (int64, error) {
 	row := q.db.QueryRow(ctx, countBlobs)
 	var count int64
@@ -215,9 +222,17 @@ func (q *Queries) EnqueueBlobDeletion(ctx context.Context, arg EnqueueBlobDeleti
 }
 
 const listBlobsAfter = `-- name: ListBlobsAfter :many
-SELECT sha256, size_bytes FROM blobs
-WHERE sha256 > $1::text
-ORDER BY sha256
+SELECT o.sha256::text AS sha256, max(o.size_bytes)::bigint AS size_bytes
+FROM (
+    SELECT sha256, size_bytes FROM blobs
+    UNION ALL
+    SELECT blob_sha256, blob_size FROM repository_metadata
+    UNION ALL
+    SELECT delta_sha256, delta_size FROM package_deltas
+) o
+WHERE o.sha256 > $1::text
+GROUP BY o.sha256
+ORDER BY o.sha256
 LIMIT $2::int
 `
 
@@ -231,8 +246,9 @@ type ListBlobsAfterRow struct {
 	SizeBytes int64  `db:"size_bytes" json:"size_bytes"`
 }
 
-// One keyset page of the blobs table, ordered by sha256 (a full backup reads it
-// through its snapshot).
+// One keyset page of the stored objects, ordered by sha256 (a full backup reads
+// it through its snapshot): the blobs table plus the generated metadata and
+// deltas that live in the same content-addressed key space without a blobs row.
 func (q *Queries) ListBlobsAfter(ctx context.Context, arg ListBlobsAfterParams) ([]ListBlobsAfterRow, error) {
 	rows, err := q.db.Query(ctx, listBlobsAfter, arg.After, arg.PageSize)
 	if err != nil {

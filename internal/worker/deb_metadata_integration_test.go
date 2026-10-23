@@ -245,6 +245,11 @@ func TestDebRegenerateReclaimsOnlyUnreferencedMetadataBlobs(t *testing.T) {
 		t.Fatalf("regenerate B after dropping the component: %v", err)
 	}
 
+	// The reclaim queues the bytes; the sweeper removes them.
+	if _, err := NewBlobDeletionSweeper(pg, copyDeleter{store}, testLogger(t), 0, 500).RunOnce(ctx); err != nil {
+		t.Fatalf("sweep queued blob deletions: %v", err)
+	}
+
 	if ok, err := store.Exists(ctx, empty); err != nil || ok {
 		t.Fatalf("blob %s is unreferenced but still stored (exists=%v err=%v)", empty, ok, err)
 	}

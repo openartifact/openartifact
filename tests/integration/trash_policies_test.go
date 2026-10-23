@@ -33,6 +33,7 @@ import (
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	"github.com/openartifact/openartifact/internal/middleware"
+	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/worker"
 )
@@ -392,8 +393,23 @@ func tpoAge(t *testing.T, table, repo string, days int) {
 		WHERE repository_id = (SELECT id FROM repositories WHERE name = $1) AND deleted_at IS NOT NULL`, repo, days)
 }
 
+// tpoCopyDeleter lets the harness' blob store serve as the sweeper's byte store.
+type tpoCopyDeleter struct{ storage.BlobStore }
+
+func (c tpoCopyDeleter) DeleteCopy(ctx context.Context, _, sha string) error {
+	return c.Delete(ctx, sha)
+}
+
+// tpoBlobStored reports whether the bytes of sha are still stored. Deleting a
+// blob only queues its bytes, so the sweeper runs first (grace 0, no running
+// backup: everything queued is due).
 func tpoBlobStored(t *testing.T, sha string) bool {
 	t.Helper()
+
+	sweeper := worker.NewBlobDeletionSweeper(harness.Database, tpoCopyDeleter{harness.BlobStore}, harness.Log, 0, 500)
+	if _, err := sweeper.RunOnce(t.Context()); err != nil {
+		t.Fatalf("sweep queued blob deletions: %v", err)
+	}
 
 	_, ok, err := harness.BlobStore.ExistsBySHA256(t.Context(), sha)
 	if err != nil {

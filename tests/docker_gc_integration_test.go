@@ -215,6 +215,8 @@ func (f *gcFixture) blobRecords() int {
 func (f *gcFixture) inStore(digest string) bool {
 	f.t.Helper()
 
+	sweepQueuedBlobs(f.t, f.pg, f.store)
+
 	_, ok, err := f.store.ExistsBySHA256(context.Background(), strings.TrimPrefix(digest, "sha256:"))
 	if err != nil {
 		f.t.Fatalf("ExistsBySHA256: %v", err)

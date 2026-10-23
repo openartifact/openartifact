@@ -115,10 +115,11 @@ type SnapshotReader interface {
 	ListWebhooks(ctx context.Context, repoID string) ([]*models.Webhook, error) // repoID="" = global
 	SearchCargoCrates(ctx context.Context, repoID, query string, limit int) ([]*models.CargoCrate, error)
 
-	// ListBlobsAfter returns up to limit blobs rows with sha256 > after, in
-	// sha256 order.
+	// ListBlobsAfter returns up to limit stored objects with sha256 > after, in
+	// sha256 order: blobs rows plus the generated metadata and deltas that
+	// have no blobs row.
 	ListBlobsAfter(ctx context.Context, after string, limit int) ([]BlobRow, error)
-	// CountBlobs returns the number of blobs rows.
+	// CountBlobs returns the number of objects ListBlobsAfter pages through.
 	CountBlobs(ctx context.Context) (int64, error)
 
 	// Release ends the snapshot and removes its lease. It is idempotent.

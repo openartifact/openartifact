@@ -85,12 +85,28 @@ DELETE FROM backup_leases WHERE expires_at <= now();
 SELECT count(*) FROM backup_leases WHERE expires_at > now();
 
 -- name: ListBlobsAfter :many
--- One keyset page of the blobs table, ordered by sha256 (a full backup reads it
--- through its snapshot).
-SELECT sha256, size_bytes FROM blobs
-WHERE sha256 > @after::text
-ORDER BY sha256
+-- One keyset page of the stored objects, ordered by sha256 (a full backup reads
+-- it through its snapshot): the blobs table plus the generated metadata and
+-- deltas that live in the same content-addressed key space without a blobs row.
+SELECT o.sha256::text AS sha256, max(o.size_bytes)::bigint AS size_bytes
+FROM (
+    SELECT sha256, size_bytes FROM blobs
+    UNION ALL
+    SELECT blob_sha256, blob_size FROM repository_metadata
+    UNION ALL
+    SELECT delta_sha256, delta_size FROM package_deltas
+) o
+WHERE o.sha256 > @after::text
+GROUP BY o.sha256
+ORDER BY o.sha256
 LIMIT @page_size::int;
 
 -- name: CountBlobs :one
-SELECT count(*) FROM blobs;
+-- The number of stored objects ListBlobsAfter pages through.
+SELECT count(*) FROM (
+    SELECT sha256 FROM blobs
+    UNION
+    SELECT blob_sha256 FROM repository_metadata
+    UNION
+    SELECT delta_sha256 FROM package_deltas
+) o;
