@@ -298,6 +298,12 @@ type Database interface {
 	CreateSession(ctx context.Context, session *models.Session) (*models.Session, error)
 	GetSessionByTokenHash(ctx context.Context, hash string) (*models.Session, error)
 	DeleteSession(ctx context.Context, tokenHash string) error
+	// SetSessionSSO records the SSO provider (and its encrypted ID token) a
+	// session was created by, for RP-initiated logout.
+	SetSessionSSO(ctx context.Context, sessionID, providerSlug, encryptedIDToken string) error
+	// GetSessionSSO returns the SSO record of the session with tokenHash, or
+	// nil when the session was not created by SSO (or does not exist).
+	GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error)
 	UpdateSessionLastSeen(ctx context.Context, sessionID string, expiresAt time.Time) error
 	// ConsumeSAMLAssertion records a SAML assertion ID as used; false means it was
 	// already consumed (replay).

@@ -191,7 +191,10 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 	fullName := ""
 	emailVerifiedAttr := ""
 
-	var groups []string
+	var (
+		groups        []string
+		groupsPresent bool
+	)
 
 	for _, stmt := range assertion.AttributeStatements {
 		for _, attr := range stmt.Attributes {
@@ -210,6 +213,8 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 				}
 			case groupsAttr:
 				if groupsAttr != "" {
+					groupsPresent = true
+
 					for _, v := range attr.Values {
 						groups = append(groups, v.Value)
 					}
@@ -235,6 +240,7 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 		EmailVerified: samlEmailVerified(emailVerifiedAttr),
 		FullName:      fullName,
 		Groups:        groups,
+		GroupsPresent: groupsPresent,
 	}
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
@@ -245,55 +251,15 @@ func (h *SAMLHandler) handleACS(w http.ResponseWriter, r *http.Request) {
 
 	user, err := auth.NewProvisioner(h.db, h.log).Provision(ctx, providerRow, ssoClaims)
 	if err != nil {
-		if errors.Is(err, auth.ErrUserNotProvisioned) {
-			writeError(w, http.StatusForbidden, "user_not_provisioned", "auto-provisioning is disabled for this provider")
-			return
-		}
-
-		if errors.Is(err, auth.ErrAccountDisabled) {
-			writeError(w, http.StatusForbidden, "account_disabled", "user account is disabled")
-			return
-		}
-
-		if errors.Is(err, auth.ErrEmailAlreadyInUse) {
-			writeError(w, http.StatusConflict, "email_already_in_use", "email is already associated with another account")
-			return
-		}
-
-		if errors.Is(err, auth.ErrEmailLinkAmbiguous) {
-			writeError(w, http.StatusInternalServerError, "email_link_ambiguous", "multiple accounts share this email")
-			return
-		}
-
-		if errors.Is(err, auth.ErrIdentityConflict) {
-			writeError(w, http.StatusConflict, "identity_conflict", "account is already linked to a different identity")
-			return
-		}
-
-		h.log.Errorw("saml acs: provision", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "user provisioning failed")
-
+		writeSSOProvisionError(w, h.log, "saml acs", slug, err)
 		return
 	}
 
-	csrfToken, err := middleware.NewCSRFToken()
-	if err != nil {
-		h.log.Errorw("saml acs: generate CSRF token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
+	if !establishSSOSession(w, r, h.db, h.log, h.baseURL, h.trustedProxies, ssoSessionParams{
+		UserID: user.ID, ProviderSlug: slug,
+	}) {
 		return
 	}
-
-	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, middleware.ClientIP(r, h.trustedProxies), r.UserAgent())
-	if err != nil {
-		h.log.Errorw("saml acs: create session", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
-
-		return
-	}
-
-	secure := isSecureContext(r, h.baseURL)
-	setSessionCookie(w, secure, cookieValue)
-	setCSRFCookie(w, secure, csrfToken)
 
 	//nolint:gosec // G710: redirect is a same-origin relative path (safeRedirectPath)
 	http.Redirect(w, r, safeRedirectPath(redirect), http.StatusFound)

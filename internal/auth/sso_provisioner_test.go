@@ -932,6 +932,9 @@ func testClaims(extID, email, username string, groups []string) SSOClaims {
 		Email:        email,
 		FullName:     "Test User",
 		Groups:       groups,
+		// The IdP sent a groups set (possibly empty) unless a test says
+		// otherwise.
+		GroupsPresent: true,
 		// The IdP verified the email unless a test says otherwise.
 		EmailVerified: true,
 	}

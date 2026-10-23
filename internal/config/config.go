@@ -5,8 +5,6 @@
 package config
 
 import (
-	"crypto/rand"
-	"encoding/hex"
 	"errors"
 	"fmt"
 	"net/url"
@@ -646,18 +644,6 @@ func finalizeConfig(cfg *Config) error {
 	// Server-relayed presigned uploads (filesystem and oci storage) point
 	// clients at this server.
 	cfg.Storage.PublicURL = cfg.BaseURL
-
-	// Handle HMAC key generation
-	if cfg.Auth.HMACKey == "" {
-		raw := make([]byte, 32)
-		if _, err := rand.Read(raw); err != nil {
-			return fmt.Errorf("generate ephemeral hmac key: %w", err)
-		}
-
-		cfg.Auth.HMACKey = hex.EncodeToString(raw)
-
-		fmt.Fprintln(os.Stderr, "WARN: AUTH_HMAC_KEY not set, generated ephemeral key — SAML RelayState will fail across server restarts")
-	}
 
 	return nil
 }

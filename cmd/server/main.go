@@ -740,7 +740,11 @@ func run(args []string) error {
 	authHandler := api.NewAuthHandler(db, log, evaluator, trustedProxies).WithBaseURL(cfg.BaseURL)
 	authHandler.RegisterPublic(router)
 
-	hmacKey := []byte(cfg.Auth.HMACKey)
+	hmacKey, err := auth.ResolveHMACKey(context.Background(), db, cfg.Auth.HMACKey, log)
+	if err != nil {
+		return fail("failed to resolve the SSO HMAC key", err)
+	}
+
 	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(trustedProxies).RegisterPublic(router)
 	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(trustedProxies).RegisterPublic(router)
 

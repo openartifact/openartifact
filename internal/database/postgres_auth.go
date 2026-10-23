@@ -586,6 +586,38 @@ func (p *PostgresDB) GetSessionByTokenHash(ctx context.Context, hash string) (*m
 	return s, nil
 }
 
+func (p *PostgresDB) SetSessionSSO(ctx context.Context, sessionID, providerSlug, encryptedIDToken string) error {
+	_, err := p.db.ExecContext(ctx,
+		`INSERT INTO auth_session_sso (session_id, provider_slug, id_token) VALUES ($1, $2, $3)
+		ON CONFLICT (session_id) DO UPDATE SET provider_slug = EXCLUDED.provider_slug, id_token = EXCLUDED.id_token`,
+		sessionID, providerSlug, encryptedIDToken,
+	)
+	if err != nil {
+		return fmt.Errorf("failed to set session sso: %w", err)
+	}
+
+	return nil
+}
+
+func (p *PostgresDB) GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error) {
+	rec := &models.SessionSSO{}
+
+	err := p.db.QueryRowContext(ctx,
+		`SELECT x.provider_slug, x.id_token FROM auth_session_sso x
+		JOIN auth_sessions s ON s.id = x.session_id WHERE s.token_hash = $1`,
+		tokenHash,
+	).Scan(&rec.ProviderSlug, &rec.IDToken)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("failed to get session sso: %w", err)
+	}
+
+	return rec, nil
+}
+
 func (p *PostgresDB) DeleteSession(ctx context.Context, tokenHash string) error {
 	_, err := p.db.ExecContext(ctx, `DELETE FROM auth_sessions WHERE token_hash=$1`, tokenHash)
 	if err != nil {

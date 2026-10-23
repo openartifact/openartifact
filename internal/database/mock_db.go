@@ -459,6 +459,12 @@ func (m *BaseMockDB) GetSessionByTokenHash(ctx context.Context, hash string) (*m
 func (m *BaseMockDB) DeleteSession(ctx context.Context, tokenHash string) error {
 	return errNotImpl("DeleteSession")
 }
+func (m *BaseMockDB) SetSessionSSO(ctx context.Context, sessionID, providerSlug, encryptedIDToken string) error {
+	return errNotImpl("SetSessionSSO")
+}
+func (m *BaseMockDB) GetSessionSSO(ctx context.Context, tokenHash string) (*models.SessionSSO, error) {
+	return nil, errNotImpl("GetSessionSSO")
+}
 func (m *BaseMockDB) UpdateSessionLastSeen(ctx context.Context, sessionID string, expiresAt time.Time) error {
 	return errNotImpl("UpdateSessionLastSeen")
 }

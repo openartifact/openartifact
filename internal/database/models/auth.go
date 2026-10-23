@@ -59,6 +59,13 @@ type Session struct {
 	LastSeenAt time.Time
 }
 
+// SessionSSO links a session to the SSO provider that created it. IDToken is
+// stored encrypted; it is empty for providers without an ID token.
+type SessionSSO struct {
+	ProviderSlug string
+	IDToken      string
+}
+
 type Token struct {
 	ID         string
 	UserID     string

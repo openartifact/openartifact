@@ -119,7 +119,11 @@ func (h *OIDCHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	http.Redirect(w, r, provider.AuthURL(state, nonce, codeChallenge), http.StatusFound)
 }
 
+// rawIDTokenPlaceholder is replaced by the raw ID token once the exchange returns it.
+//
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
+const rawIDTokenPlaceholder = ""
+
 func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 	slug := urlparams.Vars(r)["slug"]
 	ctx := r.Context()
@@ -196,12 +200,12 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 		Username:     stringFromClaims(claimsMap, firstNonEmpty(cfg.UsernameClaim, "preferred_username")),
 		Email:        stringFromClaims(claimsMap, firstNonEmpty(cfg.EmailClaim, "email")),
 		FullName:     stringFromClaims(claimsMap, firstNonEmpty(cfg.NameClaim, "name")),
-		Groups:       groupsFromClaims(claimsMap, firstNonEmpty(cfg.GroupsClaim, "groups")),
 		// email_verified is only meaningful for the standard "email" claim; a
 		// custom email claim has no verification assertion.
 		EmailVerified: cfg.EmailClaim == "" || cfg.EmailClaim == "email",
 	}
 	ssoClaims.EmailVerified = ssoClaims.EmailVerified && boolClaimTrue(claimsMap, "email_verified")
+	ssoClaims.Groups, ssoClaims.GroupsPresent = groupsFromClaims(claimsMap, firstNonEmpty(cfg.GroupsClaim, "groups"))
 
 	providerRow, err := h.db.GetSSOProviderBySlug(ctx, slug)
 	if err != nil || providerRow == nil || !providerRow.Enabled {
@@ -211,55 +215,15 @@ func (h *OIDCHandler) handleCallback(w http.ResponseWriter, r *http.Request) {
 
 	user, err := auth.NewProvisioner(h.db, h.log).Provision(ctx, providerRow, ssoClaims)
 	if err != nil {
-		if errors.Is(err, auth.ErrUserNotProvisioned) {
-			writeError(w, http.StatusForbidden, "user_not_provisioned", "auto-provisioning is disabled for this provider")
-			return
-		}
-
-		if errors.Is(err, auth.ErrAccountDisabled) {
-			writeError(w, http.StatusForbidden, "account_disabled", "user account is disabled")
-			return
-		}
-
-		if errors.Is(err, auth.ErrEmailAlreadyInUse) {
-			writeError(w, http.StatusConflict, "email_already_in_use", "email is already associated with another account")
-			return
-		}
-
-		if errors.Is(err, auth.ErrEmailLinkAmbiguous) {
-			writeError(w, http.StatusInternalServerError, "email_link_ambiguous", "multiple accounts share this email")
-			return
-		}
-
-		if errors.Is(err, auth.ErrIdentityConflict) {
-			writeError(w, http.StatusConflict, "identity_conflict", "account is already linked to a different identity")
-			return
-		}
-
-		h.log.Errorw("oidc callback: provision", "slug", slug, "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "user provisioning failed")
-
+		writeSSOProvisionError(w, h.log, "oidc callback", slug, err)
 		return
 	}
 
-	csrfToken, err := middleware.NewCSRFToken()
-	if err != nil {
-		h.log.Errorw("oidc callback: generate CSRF token", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
+	if !establishSSOSession(w, r, h.db, h.log, h.baseURL, h.trustedProxies, ssoSessionParams{
+		UserID: user.ID, ProviderSlug: slug, IDToken: rawIDTokenPlaceholder,
+	}) {
 		return
 	}
-
-	cookieValue, _, err := auth.CreateSession(ctx, h.db, user.ID, middleware.ClientIP(r, h.trustedProxies), r.UserAgent())
-	if err != nil {
-		h.log.Errorw("oidc callback: create session", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "session creation failed")
-
-		return
-	}
-
-	secure := isSecureContext(r, h.baseURL)
-	setSessionCookie(w, secure, cookieValue)
-	setCSRFCookie(w, secure, csrfToken)
 
 	for _, name := range []string{"oa_oidc_pkce_" + slug, "oa_oidc_state_" + slug, "oa_oidc_nonce_" + slug} {
 		clearSSOStateCookie(w, r, h.baseURL, name)
@@ -361,25 +325,36 @@ func boolClaimTrue(claims map[string]any, key string) bool {
 	return false
 }
 
-func groupsFromClaims(claims map[string]any, key string) []string {
+// groupsFromClaims reads the groups claim. present is false when the claim is
+// missing (or null, or of an unusable type): the IdP then said nothing about
+// the user's groups, which is different from an empty list.
+func groupsFromClaims(claims map[string]any, key string) (groups []string, present bool) {
 	v, ok := claims[key]
 	if !ok {
-		return nil
+		return nil, false
 	}
 
 	switch t := v.(type) {
 	case []string:
-		return t
+		return t, true
 	case []any:
 		out := make([]string, 0, len(t))
+
 		for _, item := range t {
 			if s, ok := item.(string); ok {
 				out = append(out, s)
 			}
 		}
 
-		return out
+		return out, true
+	case string:
+		// Some IdPs emit a lone group as a bare string.
+		if t == "" {
+			return []string{}, true
+		}
+
+		return []string{t}, true
 	}
 
-	return nil
+	return nil, false
 }

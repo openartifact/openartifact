@@ -13,6 +13,7 @@ import (
 	"net"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -182,4 +183,49 @@ func DeleteSession(ctx context.Context, db database.Database, cookieValue string
 	tokenHash := hex.EncodeToString(hashBytes[:])
 
 	return db.DeleteSession(ctx, tokenHash)
+}
+
+// AttachSSOSession records the SSO provider that created the session
+// identified by sessionID together with the (encrypted) ID token, so logout
+// can run RP-initiated logout.
+func AttachSSOSession(ctx context.Context, db database.Database, sessionID, providerSlug, rawIDToken string) error {
+	enc, err := crypto.Encrypt(rawIDToken)
+	if err != nil {
+		return fmt.Errorf("encrypt id token: %w", err)
+	}
+
+	return db.SetSessionSSO(ctx, sessionID, providerSlug, enc)
+}
+
+// SessionSSOInfo is the decrypted SSO record of a session.
+type SessionSSOInfo struct {
+	ProviderSlug string
+	IDToken      string
+}
+
+// LookupSessionSSO returns the SSO provider and ID token behind a session
+// cookie, or nil when the session is not an SSO session (or is unknown).
+func LookupSessionSSO(ctx context.Context, db database.Database, cookieValue string) (*SessionSSOInfo, error) {
+	raw, ok := decodeSessionCookie(cookieValue)
+	if !ok {
+		return nil, nil //nolint:nilnil // nil means "not an SSO session"
+	}
+
+	hashBytes := sha256.Sum256(raw)
+
+	rec, err := db.GetSessionSSO(ctx, hex.EncodeToString(hashBytes[:]))
+	if err != nil {
+		return nil, fmt.Errorf("get session sso: %w", err)
+	}
+
+	if rec == nil {
+		return nil, nil //nolint:nilnil // nil means "not an SSO session"
+	}
+
+	idToken, err := crypto.Decrypt(rec.IDToken)
+	if err != nil {
+		return nil, fmt.Errorf("decrypt id token: %w", err)
+	}
+
+	return &SessionSSOInfo{ProviderSlug: rec.ProviderSlug, IDToken: idToken}, nil
 }

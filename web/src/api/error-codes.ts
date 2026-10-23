@@ -41,6 +41,7 @@ export const ErrorCodes = {
   MISSING_SUBJECT: 'missing_subject',
   USER_NOT_PROVISIONED: 'user_not_provisioned',
   EMAIL_ALREADY_IN_USE: 'email_already_in_use',
+  SSO_LOGIN_DENIED: 'sso_login_denied',
   EMAIL_LINK_AMBIGUOUS: 'email_link_ambiguous',
   INVALID_RELAY_STATE: 'invalid_relay_state',
   OIDC_DISCOVERY_FAILED: 'oidc_discovery_failed',

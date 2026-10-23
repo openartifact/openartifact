@@ -31,6 +31,12 @@ type SSOClaims struct {
 	EmailVerified bool
 	FullName      string
 	Groups        []string
+	// GroupsPresent distinguishes "the IdP did not tell us the user's groups"
+	// (claim or attribute absent, Entra overage not resolved) from "the IdP
+	// says the user has no groups". Only a present set, even an empty one,
+	// replaces the user's SSO-managed memberships; an absent one keeps them,
+	// so a misconfigured IdP cannot silently revoke group access.
+	GroupsPresent bool
 }
 
 type Provisioner struct {
@@ -167,17 +173,32 @@ func (p *Provisioner) Provision(ctx context.Context, provider *models.SSOProvide
 		user.FullName = fullNameUpdate
 	}
 
-	// Group sync failure is non-fatal: a transient error must not block an otherwise valid login.
+	p.syncGroups(ctx, user, provider, claims)
+
+	return user, nil
+}
+
+// syncGroups applies the IdP group set. Failures are non-fatal: a transient
+// error must not block an otherwise valid login.
+func (p *Provisioner) syncGroups(ctx context.Context, user *models.User, provider *models.SSOProvider, claims SSOClaims) {
+	if !claims.GroupsPresent {
+		// Keep whatever the previous login granted; an absent claim is not
+		// evidence that the user left every group.
+		if len(provider.GroupMapping) > 0 {
+			p.log.Warnw("sso login carried no groups claim; keeping existing SSO group memberships",
+				"user_id", user.ID, "provider_slug", provider.Slug)
+		}
+
+		return
+	}
+
 	if err := p.SyncSSOGroupsFromClaims(ctx, user.ID, provider, claims.Groups); err != nil {
 		p.log.Warnw("sso group sync failed; login continues", "user_id", user.ID, "error", err)
 	}
 
-	// Permission sync failure is non-fatal
 	if err := p.SyncSSOPermissionsFromGroups(ctx, provider, claims.Groups); err != nil {
 		p.log.Warnw("sso permission sync failed; login continues", "user_id", user.ID, "error", err)
 	}
-
-	return user, nil
 }
 
 // maxUsernameAttempts bounds the suffix search on username collisions.
