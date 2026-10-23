@@ -50,6 +50,8 @@ type RPMUploadHandler struct {
 	debHandler *DebUploadHandler
 	rpmWorker  *worker.RPMetadataWorker
 	publisher  webhook.Publisher
+
+	packageDeleter PackageDeleter
 }
 
 func NewRPMUploadHandler(log *logger.Logger, db database.Database, blobStore storage.BlobStore, reg *metrics.Registry) *RPMUploadHandler {
@@ -562,13 +564,9 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	// Package rows of every other format (npm, pypi, ...) are listed by
-	// GET /packages but have no deletion path here; refuse instead of
-	// reporting a misleading "package not found".
+	// Every other format deletes through the generic package deleter.
 	if repo.Format != "rpm" {
-		writeError(w, http.StatusBadRequest, "UNSUPPORTED_FORMAT",
-			"deleting packages by id is only supported for deb and rpm repositories")
-
+		h.deleteOtherFormat(w, r, repo)
 		return
 	}
 

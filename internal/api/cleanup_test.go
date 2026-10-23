@@ -54,13 +54,19 @@ func (db *cleanupMockDB) UpdateCleanupPolicy(_ context.Context, p *models.Cleanu
 }
 
 type fakeRunner struct {
-	ids []string
-	err error
+	ids     []string
+	err     error
+	preview *worker.CleanupPreview
 }
 
 func (f *fakeRunner) TriggerPolicy(_ context.Context, id string) error {
 	f.ids = append(f.ids, id)
 	return f.err
+}
+
+func (f *fakeRunner) PreviewPolicy(_ context.Context, id string) (*worker.CleanupPreview, error) {
+	f.ids = append(f.ids, "preview:"+id)
+	return f.preview, f.err
 }
 
 func cleanupRequest(t *testing.T, db *cleanupMockDB, runner CleanupRunner, method, path, body string) *httptest.ResponseRecorder {

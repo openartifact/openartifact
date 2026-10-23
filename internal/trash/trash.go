@@ -139,14 +139,21 @@ func Delete(ctx context.Context, db database.Database, req Request, hard func() 
 		}
 	}
 
+	AuditDeleted(ctx, req.RepoID, req.Kind, firstOrEmpty(req.IDs), soft, req.Resource)
+
+	return nil
+}
+
+// AuditDeleted records one artifact.deleted event: soft when the row went to
+// the trash, permanent otherwise. Delete does it for its callers; a caller
+// that deletes by other means (the generic package delete) calls it itself.
+func AuditDeleted(ctx context.Context, repoID string, kind models.TrashKind, id string, soft bool, resource string) {
 	verb := "deleted"
 	if soft {
 		verb = "moved to trash"
 	}
 
-	auditEvent(ctx, audit.ActionArtifactDeleted, req.RepoID, string(req.Kind), firstOrEmpty(req.IDs), verb+": "+req.Resource)
-
-	return nil
+	auditEvent(ctx, audit.ActionArtifactDeleted, repoID, string(kind), id, verb+": "+resource)
 }
 
 func firstOrEmpty(ids []string) string {

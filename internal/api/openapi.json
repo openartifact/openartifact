@@ -2944,6 +2944,61 @@
           "truncated"
         ]
       },
+      "CleanupPreview": {
+        "type": "object",
+        "properties": {
+          "repository": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "dry_run": {
+            "type": "boolean"
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Package rows a run would remove (one per file for formats that store files separately)"
+          },
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CleanupPreviewItem"
+            }
+          },
+          "truncated": {
+            "type": "boolean",
+            "description": "items is capped at 500 entries"
+          }
+        },
+        "required": [
+          "repository",
+          "format",
+          "dry_run",
+          "rows",
+          "items",
+          "truncated"
+        ]
+      },
+      "CleanupPreviewItem": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          }
+        },
+        "required": [
+          "id",
+          "name",
+          "version"
+        ]
+      },
       "PresignedUploadRequest": {
         "type": "object",
         "required": [
@@ -3197,6 +3252,10 @@
               "package_id": {
                 "type": "string",
                 "format": "uuid"
+              },
+              "trashed": {
+                "type": "boolean",
+                "description": "The package went to the trash and can be restored (absent for deb and rpm)"
               }
             }
           },
@@ -12409,6 +12468,55 @@
         }
       }
     },
+    "/api/v1/repositories/{name}/cleanup-policies/{id}/dry-run": {
+      "post": {
+        "summary": "Preview what a cleanup policy would remove (admin; nothing is changed)",
+        "description": "Evaluates the policy now with every protection a run applies (immutable releases, release bundles, quarantine, dist-tagged npm versions, the newest build of a maven snapshot) and lists the rows a run would remove or move to the trash. Synchronous; the list is capped at 500 rows.",
+        "tags": [
+          "Cleanup"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What a run would remove",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/CleanupPreview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "/api/v1/repositories/{name}/registry-gc": {
       "post": {
         "summary": "Run Docker registry garbage collection now (admin; 409 if already running, 400 if not a docker repository)",
@@ -13886,8 +13994,8 @@
     },
     "/api/v1/repositories/{name}/packages/{id}": {
       "delete": {
-        "summary": "Delete a RPM package",
-        "description": "Delete a package from a hosted repository. Requires write access.",
+        "summary": "Delete a package",
+        "description": "Delete a package row (an id of the package listing) from a hosted repository of any format: into the trash when the repository keeps one, else for good, refreshing the format's generated metadata. A conan recipe revision goes with its files. Released versions of immutable repositories answer 409 unless an admin passes force. Requires write access.",
         "tags": [
           "Repositories"
         ],

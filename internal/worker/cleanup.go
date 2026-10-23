@@ -70,6 +70,9 @@ type CleanupWorker struct {
 	wg     sync.WaitGroup // manually triggered policy runs
 
 	rpmNotifier, debNotifier MetadataNotifier
+	mavenNotifier            MavenNotifier
+	npmNotifier              NPMNotifier
+	dockerGC                 DockerGCRunner
 
 	lastOrphanGC         time.Time // only touched from the tick goroutine
 	lastQuotaReconcileAt time.Time // only touched from the tick goroutine
@@ -362,54 +365,6 @@ func (w *CleanupWorker) TriggerPolicy(ctx context.Context, policyID string) erro
 	return nil
 }
 
-// formatTable maps a repository format to the single table that stores its
-// blob-bearing rows, for the generic cleanup-by-policy code below. Every table
-// listed here has an `id` PK, a `repository_id` FK, `created_at`, and one or
-// more FKs into the global blobs table.
-type formatTable struct {
-	table string
-	// nameCol is the package name, matched against name_pattern.
-	nameCol string
-	// partitionCols identify "the same package" for keep_last_n: versions are
-	// only ranked against other versions of the same name and architecture /
-	// distribution, so a newer arm64 build never evicts the only amd64 one.
-	partitionCols []string
-	// versionExpr identifies one version; rows sharing it (e.g. a pypi sdist
-	// and wheel) count as a single version for keep_last_n.
-	versionExpr string
-	// blobCols are the (possibly nullable) FK columns to blobs.id owned by the row.
-	blobCols []string
-	// quotaTracked marks formats whose uploads reserve storage quota (one
-	// artifact per row, the row's blob size). Deleting such a row must give that
-	// usage back. Every hosted format is metered.
-	quotaTracked bool
-	// kind is the trash kind of the table's rows, for the soft-delete path.
-	kind models.TrashKind
-}
-
-// cleanupFormatTable covers formats whose packages live in one table with
-// direct blob FKs. npm is intentionally not listed: its tarballs live in
-// npm_versions, joined to npm_packages for name/repository_id — a different
-// shape the single-table query below cannot express.
-func cleanupFormatTable(format string) (formatTable, bool) {
-	switch format {
-	case "rpm":
-		return formatTable{"rpm_packages", "name", []string{"name", "arch"}, "version || '-' || release || ':' || epoch::text", []string{"blob_id"}, true, models.TrashKindRPM}, true
-	case "deb":
-		return formatTable{"deb_packages", "name", []string{"name", "arch", "distribution_id::text"}, "version", []string{"blob_id"}, true, models.TrashKindDeb}, true
-	case "helm":
-		return formatTable{"helm_charts", "name", []string{"name"}, "version", []string{"blob_id"}, true, models.TrashKindHelm}, true
-	case "pypi":
-		return formatTable{"pypi_packages", "name", []string{"name"}, "version", []string{"blob_id"}, true, models.TrashKindPyPI}, true
-	case "nuget":
-		return formatTable{"nuget_packages", "package_id", []string{"package_id"}, "version", []string{"blob_id"}, true, models.TrashKindNuGet}, true
-	case "go": // the format id is "go"; the table is gomod_modules (chk_repo_format)
-		return formatTable{"gomod_modules", "module_path", []string{"module_path"}, "version", []string{"zip_blob_id", "mod_blob_id"}, true, models.TrashKindGoMod}, true
-	default:
-		return formatTable{}, false
-	}
-}
-
 func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPolicy) (int, error) {
 	// Never run a policy that could select everything: re-validate what the API
 	// enforces, since rows may predate validation.
@@ -435,11 +390,12 @@ func (w *CleanupWorker) runPolicy(ctx context.Context, policy *models.CleanupPol
 		return 0, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
 	}
 
-	deleted, err := w.deleteArtifacts(ctx, policy, repo, tableInfo)
+	run, deleted, err := w.deleteArtifacts(ctx, policy, repo, tableInfo)
 	// Also after a partial run: whatever was removed before the error must
 	// leave the generated metadata.
 	if deleted > 0 {
 		w.refreshMetadata(ctx, repo)
+		w.refreshFormatMetadata(ctx, repo, run)
 	}
 
 	return deleted, err
@@ -551,16 +507,17 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 
 	partition := strings.Join(t.partitionCols, ", ")
 
-	blobSelect := make([]string, len(t.blobCols))
-	blobOut := make([]string, len(t.blobCols))
+	// Blob columns are appended as ", b0, b1": a format without any (docker
+	// tags) contributes nothing.
+	var blobSelect, blobOut string
 
 	for i, c := range t.blobCols {
-		blobSelect[i] = fmt.Sprintf("COALESCE(%s::text, '') AS b%d", c, i)
-		blobOut[i] = fmt.Sprintf("b%d", i)
+		blobSelect += fmt.Sprintf(", COALESCE(%s::text, '') AS b%d", c, i)
+		blobOut += fmt.Sprintf(", b%d", i)
 	}
 
 	args := []any{policy.RepositoryID}
-	conds := []string{}
+	conds := []string{"NOT prot"}
 
 	if policy.KeepLastN != nil {
 		args = append(args, *policy.KeepLastN)
@@ -572,30 +529,34 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 		conds = append(conds, fmt.Sprintf("created_at < now() - make_interval(days => $%d)", len(args)))
 	}
 
-	// Inner: the newest created_at per (package, version) so that multi-file
-	// versions rank as one. Outer: dense rank of versions within a package.
+	// Inner: the newest timestamp per (package, version) so that multi-file
+	// versions rank as one. Middle: dense rank of versions within a package.
+	// Outer: protected rows stay ranked (they occupy a slot) but are never
+	// selected.
+	ts := t.timeColumn()
 	query := fmt.Sprintf(`
-		SELECT id, cname, cver, %s FROM (
-			SELECT id, cname, cver, %s, created_at,
-			       DENSE_RANK() OVER (PARTITION BY %s ORDER BY vts DESC, ver DESC) AS rk
+		SELECT id, cname, cver%[1]s FROM (
+			SELECT id, cname, cver%[1]s, created_at, prot,
+			       DENSE_RANK() OVER (PARTITION BY %[2]s ORDER BY vts DESC, ver DESC) AS rk
 			FROM (
-				SELECT id, %s AS cname, version AS cver, %s, created_at,
-				       %s,
-				       (%s) AS ver,
-				       MAX(created_at) OVER (PARTITION BY %s, (%s)) AS vts
-				FROM %s
+				SELECT id, %[3]s AS cname, %[4]s AS cver%[5]s, %[6]s AS created_at,
+				       (%[7]s) AS prot,
+				       %[8]s,
+				       (%[9]s) AS ver,
+				       MAX(%[6]s) OVER (PARTITION BY %[10]s, (%[9]s)) AS vts
+				FROM %[11]s src
 				WHERE repository_id = $1 AND deleted_at IS NULL
 			) base
 		) ranked
-		WHERE %s`,
-		strings.Join(blobOut, ", "),
-		strings.Join(blobOut, ", "),
+		WHERE %[12]s`,
+		blobOut,
 		partitionAliases(len(t.partitionCols)),
-		t.nameCol, strings.Join(blobSelect, ", "),
+		t.nameCol, t.versionColumn(), blobSelect, ts,
+		t.protection(),
 		partitionSelect(t.partitionCols),
 		t.versionExpr,
-		partition, t.versionExpr,
-		t.table,
+		partition,
+		t.sourceExpr(),
 		strings.Join(conds, " AND "))
 
 	rows, err := w.db.GetDB().QueryContext(ctx, query, args...)
@@ -668,9 +629,20 @@ const (
 // repository's retention allows it. A failed move skips the rows: deleting
 // permanently because the soft path broke would defeat the point of the trash.
 func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate) trashOutcome {
+	outcome, err := w.moveToTrash(ctx, repoID, t, cs)
+	if err != nil && !errors.Is(err, database.ErrTrashNotFound) {
+		w.log.Warnw("failed to move artifacts to trash", "count", len(cs), "error", err)
+	}
+
+	return outcome
+}
+
+// moveToTrash is trashCandidates with the failure reported: database.ErrTrashNotFound
+// when concurrent deletes removed every row since they were selected.
+func (w *CleanupWorker) moveToTrash(ctx context.Context, repoID string, t formatTable, cs []cleanupCandidate) (trashOutcome, error) {
 	store, ok := w.db.(database.TrashStore)
 	if !ok {
-		return trashHard
+		return trashHard, nil
 	}
 
 	ids := make([]string, len(cs))
@@ -681,24 +653,52 @@ func (w *CleanupWorker) trashCandidates(ctx context.Context, repoID string, t fo
 	soft, err := store.TrashRows(ctx, repoID, t.kind, ids, cleanupActor)
 
 	switch {
-	case errors.Is(err, database.ErrTrashNotFound):
-		// Concurrent deletes removed every row since they were selected.
-		return trashSkipped
 	case err != nil:
-		w.log.Warnw("failed to move artifacts to trash", "count", len(ids), "error", err)
-
-		return trashSkipped
+		return trashSkipped, err
 	case soft:
-		return trashMoved
+		return trashMoved, nil
 	default:
-		return trashHard
+		return trashHard, nil
 	}
 }
 
-func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.CleanupPolicy, repo *models.Repository, tableInfo formatTable) (int, error) {
+// cleanupRun is the state of one policy run on one repository: the usage the
+// run took out of the repository's quota and the names of the packages it
+// removed rows of (their generated metadata needs a refresh afterwards).
+type cleanupRun struct {
+	released quotaRelease
+	touched  map[string]struct{}
+	// hard counts the rows removed permanently (not moved to the trash).
+	hard int
+}
+
+func newCleanupRun() *cleanupRun { return &cleanupRun{touched: map[string]struct{}{}} }
+
+// touch records the packages cs belong to.
+func (r *cleanupRun) touch(cs []cleanupCandidate) {
+	for _, c := range cs {
+		r.touched[c.name] = struct{}{}
+	}
+}
+
+// names returns the touched package names.
+func (r *cleanupRun) names() []string {
+	out := make([]string, 0, len(r.touched))
+	for n := range r.touched {
+		out = append(out, n)
+	}
+
+	slices.Sort(out)
+
+	return out
+}
+
+func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.CleanupPolicy, repo *models.Repository, tableInfo formatTable) (*cleanupRun, int, error) {
+	run := newCleanupRun()
+
 	toDelete, err := w.selectCandidates(ctx, policy, tableInfo)
 	if err != nil {
-		return 0, err
+		return run, 0, err
 	}
 
 	totalDeleted := 0
@@ -706,19 +706,17 @@ func (w *CleanupWorker) deleteArtifacts(ctx context.Context, policy *models.Clea
 	// Usage of the rows removed so far is handed back to the repository's quota
 	// in one update when the run ends, however it ends (finished, timed out,
 	// cancelled); a crash in between leaves it to the periodic reconcile.
-	var released quotaRelease
-
-	defer func() { w.releaseQuota(ctx, policy.RepositoryID, released) }()
+	defer func() { w.releaseQuota(ctx, policy.RepositoryID, run.released) }()
 
 	for chunk := range slices.Chunk(toDelete, cleanupChunkSize) {
 		if err := ctx.Err(); err != nil {
-			return totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
+			return run, totalDeleted, fmt.Errorf("cleanup interrupted: %w", err)
 		}
 
-		totalDeleted += w.deleteChunk(ctx, policy, repo, tableInfo, chunk, &released)
+		totalDeleted += w.deleteChunk(ctx, policy, repo, tableInfo, chunk, run)
 	}
 
-	return totalDeleted, nil
+	return run, totalDeleted, nil
 }
 
 // cleanupChunkSize is how many selected rows are looked up and deleted per
@@ -744,7 +742,7 @@ func (w *CleanupWorker) deleteChunk(
 	repo *models.Repository,
 	t formatTable,
 	chunk []cleanupCandidate,
-	released *quotaRelease,
+	run *cleanupRun,
 ) int {
 	facts, err := w.loadBlobFacts(ctx, chunk)
 	if err != nil {
@@ -754,7 +752,7 @@ func (w *CleanupWorker) deleteChunk(
 		return 0
 	}
 
-	eligible := w.eligibleCandidates(repo, chunk, facts)
+	eligible := w.eligibleCandidates(ctx, repo, chunk, facts)
 	if len(eligible) == 0 {
 		return 0
 	}
@@ -763,12 +761,21 @@ func (w *CleanupWorker) deleteChunk(
 	// purge; only the permanent path below releases them.
 	switch w.trashCandidates(ctx, policy.RepositoryID, t, eligible) {
 	case trashMoved:
+		run.touch(eligible)
+
 		return len(eligible)
 	case trashSkipped:
 		return 0
 	case trashHard:
 	}
 
+	return w.hardDelete(ctx, t, eligible, facts, run)
+}
+
+// hardDelete removes rows permanently: the rows go with one statement, the
+// usage they reserved is added to run for release, and each blob leaves
+// storage once no other row references it. It returns how many rows it removed.
+func (w *CleanupWorker) hardDelete(ctx context.Context, t formatTable, eligible []cleanupCandidate, facts map[string]blobFacts, run *cleanupRun) int {
 	deleted := w.deleteRows(ctx, t.table, eligible)
 
 	var (
@@ -784,8 +791,11 @@ func (w *CleanupWorker) deleteChunk(
 
 		removed++
 
+		run.touched[c.name] = struct{}{}
+		run.hard++
+
 		if t.quotaTracked {
-			released.rows++
+			run.released.rows++
 		}
 
 		for _, blobID := range c.blobIDs {
@@ -797,7 +807,7 @@ func (w *CleanupWorker) deleteChunk(
 			// The usage an upload of the row reserved, read before the rows went
 			// (a concurrent delete could drop the blob and its size after).
 			if t.quotaTracked {
-				released.bytes += f.size
+				run.released.bytes += f.size
 			}
 
 			if _, dup := seen[f.sha256]; !dup {
@@ -821,13 +831,28 @@ func (w *CleanupWorker) deleteChunk(
 }
 
 // eligibleCandidates drops the rows a cleanup must leave: those whose blobs a
-// release bundle pins and, in an immutable repository, released versions (a
-// worker has no admin to force).
-func (w *CleanupWorker) eligibleCandidates(repo *models.Repository, chunk []cleanupCandidate, facts map[string]blobFacts) []cleanupCandidate {
+// release bundle pins, those a scan quarantined (kept for the review that
+// quarantine asks for) and, in an immutable repository, released versions (a
+// worker has no admin to force). A failed quarantine lookup protects the whole
+// chunk: deleting on doubt cannot be undone.
+func (w *CleanupWorker) eligibleCandidates(ctx context.Context, repo *models.Repository, chunk []cleanupCandidate, facts map[string]blobFacts) []cleanupCandidate {
+	quarantined, err := w.quarantinedIDs(ctx, repo.ID, chunk)
+	if err != nil {
+		w.log.Warnw("failed to look up quarantine state for cleanup, skipping batch", "repository_id", repo.ID, "count", len(chunk), "error", err)
+
+		return nil
+	}
+
 	eligible := make([]cleanupCandidate, 0, len(chunk))
 
 nextRow:
 	for _, c := range chunk {
+		if _, q := quarantined[c.id]; q {
+			w.log.Debugw("skipping cleanup: artifact is quarantined", "repository_id", repo.ID, "id", c.id, "name", c.name)
+
+			continue
+		}
+
 		for _, blobID := range c.blobIDs {
 			if facts[blobID].bundled {
 				w.log.Debugw("skipping cleanup: blob is referenced by a release bundle", "blob_id", blobID)
@@ -847,6 +872,45 @@ nextRow:
 	}
 
 	return eligible
+}
+
+// quarantinedIDs returns the ids of the rows of chunk whose scan results are
+// flagged quarantined. Scans anchor on the package row id (the id the package
+// listing shows), the same key the download path checks first.
+func (w *CleanupWorker) quarantinedIDs(ctx context.Context, repoID string, chunk []cleanupCandidate) (map[string]struct{}, error) {
+	ids := make([]string, len(chunk))
+	for i, c := range chunk {
+		ids[i] = c.id
+	}
+
+	rows, err := w.db.GetDB().QueryContext(ctx, `
+		SELECT DISTINCT ref.artifact_path
+		FROM artifact_refs ref
+		JOIN scan_jobs sj ON sj.artifact_ref_id = ref.id
+		WHERE ref.repository_id = $1
+		  AND ref.artifact_path = ANY($2::text[])
+		  AND (EXISTS (SELECT 1 FROM vuln_results vr WHERE vr.scan_job_id = sj.id AND vr.quarantined)
+		    OR EXISTS (SELECT 1 FROM secret_results sr WHERE sr.scan_job_id = sj.id AND sr.quarantined)
+		    OR EXISTS (SELECT 1 FROM license_results lr WHERE lr.scan_job_id = sj.id AND lr.quarantined))`,
+		repoID, "{"+strings.Join(ids, ",")+"}")
+	if err != nil {
+		return nil, fmt.Errorf("query quarantined artifacts: %w", err)
+	}
+
+	defer func() { _ = rows.Close() }()
+
+	out := map[string]struct{}{}
+
+	for rows.Next() {
+		var id string
+		if err := rows.Scan(&id); err != nil {
+			return nil, fmt.Errorf("scan quarantined artifact: %w", err)
+		}
+
+		out[id] = struct{}{}
+	}
+
+	return out, rows.Err()
 }
 
 // loadBlobFacts reads sha256, size and release-bundle pinning of every blob the

@@ -25,6 +25,8 @@ import (
 // *worker.CleanupWorker.
 type CleanupRunner interface {
 	TriggerPolicy(ctx context.Context, policyID string) error
+	// PreviewPolicy reports what a run would remove, removing nothing.
+	PreviewPolicy(ctx context.Context, policyID string) (*worker.CleanupPreview, error)
 }
 
 type CleanupHandler struct {
@@ -45,6 +47,7 @@ func (h *CleanupHandler) RegisterAuthed(r chi.Router) {
 	r.Put("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleUpdate)
 	r.Delete("/api/v1/repositories/{name}/cleanup-policies/{id}", h.handleDelete)
 	r.Post("/api/v1/repositories/{name}/cleanup-policies/{id}/run", h.handleRun)
+	r.Post("/api/v1/repositories/{name}/cleanup-policies/{id}/dry-run", h.handleDryRun)
 }
 
 func (h *CleanupHandler) handleList(w http.ResponseWriter, r *http.Request) {
@@ -420,6 +423,99 @@ func (h *CleanupHandler) handleRun(w http.ResponseWriter, r *http.Request) {
 		"message":   "cleanup policy run started",
 		"policy_id": id,
 	})
+}
+
+// cleanupPreviewResponse is what a dry run of a cleanup policy reports.
+type cleanupPreviewResponse struct {
+	Repository string                       `json:"repository"`
+	Format     string                       `json:"format"`
+	DryRun     bool                         `json:"dry_run"`
+	Rows       int                          `json:"rows"`
+	Items      []cleanupPreviewItemResponse `json:"items"`
+	Truncated  bool                         `json:"truncated"`
+}
+
+type cleanupPreviewItemResponse struct {
+	ID      string `json:"id"`
+	Name    string `json:"name"`
+	Version string `json:"version"`
+}
+
+// handleDryRun reports, synchronously, what a run of the policy would remove
+// right now: the rows outside the keep rules, minus the ones a protection
+// keeps (immutable releases, release bundles, quarantine, dist-tagged npm
+// versions, the newest build of a maven snapshot). Nothing is changed.
+func (h *CleanupHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
+	name := urlparams.Vars(r)["name"]
+	id := urlparams.Vars(r)["id"]
+	ctx := r.Context()
+
+	repo, err := h.db.GetRepositoryByName(ctx, name)
+	if err != nil {
+		h.log.Errorw("dry-run cleanup policy: db error getting repo", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return
+	}
+
+	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
+		return
+	}
+
+	policy, err := h.db.GetCleanupPolicy(ctx, id)
+	if err != nil {
+		h.log.Errorw("dry-run cleanup policy: db error getting policy", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if policy == nil || policy.RepositoryID != repo.ID {
+		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+		return
+	}
+
+	if h.runner == nil {
+		writeError(w, http.StatusNotImplemented, "not_implemented", "cleanup worker is not available")
+		return
+	}
+
+	prev, err := h.runner.PreviewPolicy(ctx, id)
+	if err != nil {
+		h.writePreviewError(w, err)
+		return
+	}
+
+	items := make([]cleanupPreviewItemResponse, len(prev.Items))
+	for i, it := range prev.Items {
+		items[i] = cleanupPreviewItemResponse{ID: it.ID, Name: it.Name, Version: it.Version}
+	}
+
+	writeJSON(w, http.StatusOK, cleanupPreviewResponse{
+		Repository: prev.Repository,
+		Format:     prev.Format,
+		DryRun:     true,
+		Rows:       prev.Rows,
+		Items:      items,
+		Truncated:  prev.Truncated,
+	})
+}
+
+func (h *CleanupHandler) writePreviewError(w http.ResponseWriter, err error) {
+	switch {
+	case errors.Is(err, worker.ErrPolicyNotFound), errors.Is(err, worker.ErrRepositoryNotFound):
+		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
+	case errors.Is(err, models.ErrInvalidCleanupPolicy):
+		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
+	default:
+		h.log.Errorw("dry-run cleanup policy failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to evaluate cleanup policy")
+	}
 }
 
 func policyToMap(p *models.CleanupPolicy) responses.CleanupPolicyResponse {

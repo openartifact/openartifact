@@ -351,14 +351,17 @@ func run(args []string) error {
 	cleanupWorker := worker.NewCleanupWorker(db, blobStore, log)
 	cleanupWorker.SetMetadataNotifiers(rpmWorker, debWorker)
 
-	cleanupWorker.Start()
-
 	presignedUploadWorker := worker.NewPresignedUploadWorker(db, blobStore, cfg.Storage.PresignUploadTTL, log)
 	presignedUploadWorker.Start()
 
 	// Docker registry GC: untagged manifests past the grace period and the
 	// blobs only they referenced. Also runs on demand from the admin API.
 	dockerGCWorker := worker.NewDockerGCWorker(db, blobStore, log, cfg.Workers.DockerGCInterval, cfg.Workers.DockerGCGracePeriod)
+
+	// A cleanup run refreshes the maven metadata and npm packuments of what it
+	// removed and collects the docker manifests it left untagged.
+	cleanupWorker.SetRegenNotifiers(mavenWorker, npmWorker, dockerGCWorker)
+	cleanupWorker.Start()
 
 	dockerGCWorker.Start()
 
@@ -727,6 +730,7 @@ func run(args []string) error {
 	rpmUpload := api.NewRPMUploadHandler(log, db, blobStore, reg)
 	rpmUpload.SetDebWorker(debWorker)
 	rpmUpload.SetRPMWorker(rpmWorker)
+	rpmUpload.SetPackageDeleter(cleanupWorker)
 	rpmUpload.Register(authedAPI)
 
 	debUpload := api.NewDebUploadHandler(log, db, blobStore, reg)
