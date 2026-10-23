@@ -430,3 +430,56 @@ func TestServe_HTMLPageForPackagePathIsRefused(t *testing.T) {
 		}
 	}
 }
+
+// An upstream may not make the proxy store an oversized index or metadata file,
+// while a package file of the same size is allowed.
+func TestServe_MetadataFetchesAreCapped(t *testing.T) {
+	cases := []struct {
+		format, key string
+	}{
+		{"maven", "g/a/maven-metadata.xml"},
+		{"deb", "dists/stable/main/binary-amd64/Packages"},
+		{"rpm", "repodata/repomd.xml"},
+		{"helm", "index.yaml"},
+		{"go", "example.com/m/@v/list"},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.format, func(t *testing.T) {
+			f := newFixture(t, okBody("0123456789-too-long"))
+			f.repo.Format = tc.format
+			f.svc.maxMeta = 10
+
+			if w := f.do(http.MethodGet, tc.key); w.Code != http.StatusBadGateway {
+				t.Errorf("status = %d, want 502", w.Code)
+			}
+
+			if f.db.entry("repo-1", tc.key) != nil {
+				t.Error("oversized metadata was cached")
+			}
+		})
+	}
+}
+
+func TestIsMetadataKey(t *testing.T) {
+	for _, tc := range []struct {
+		format, key string
+		want        bool
+	}{
+		{"deb", "pool/main/a/app/app_1_amd64.deb", false},
+		{"deb", "dists/stable/InRelease", true},
+		{"rpm", "Packages/a-1.rpm", false},
+		{"maven", "g/a/1/a-1.jar", false},
+		{"npm", "left-pad", true},
+		{"npm", "left-pad/-/left-pad-1.0.0.tgz", false},
+		{"pypi", "simple/requests/", true},
+		{"pypi", "files/x.whl", false},
+		{"cargo", "api/v1/crates/a/1/download", false},
+		{"cargo", "config.json", true},
+		{"nuget", "v3/package/a/1/a.1.nupkg", false},
+	} {
+		if got := isMetadataKey(tc.format, tc.key); got != tc.want {
+			t.Errorf("isMetadataKey(%s, %s) = %v, want %v", tc.format, tc.key, got, tc.want)
+		}
+	}
+}

@@ -44,6 +44,13 @@ const (
 	// DefaultMaxBody caps any single file fetched from an upstream.
 	DefaultMaxBody int64 = 4 << 30 // 4 GiB
 
+	// DefaultMaxMetadata caps an index or metadata file fetched from an
+	// upstream (Packages, repodata, packuments, simple pages, maven-metadata,
+	// helm and cargo indexes, Go version lists). The largest real ones are
+	// tens of MiB; a hostile upstream must not make the proxy spool and store
+	// gigabytes under a metadata name.
+	DefaultMaxMetadata int64 = 256 << 20
+
 	// fetchTimeout bounds one upstream fetch, independent of any client.
 	fetchTimeout = 15 * time.Minute
 
@@ -127,6 +134,10 @@ type Service struct {
 	// maxBody caps a single upstream response; DefaultMaxBody unless a test
 	// lowers it.
 	maxBody int64
+
+	// maxMeta caps an index or metadata response; DefaultMaxMetadata unless a
+	// test lowers it.
+	maxMeta int64
 }
 
 // NewService creates the proxy service. Upstream requests use an SSRF-safe
@@ -141,6 +152,7 @@ func NewService(log *logger.Logger, db database.Database, blobStore storage.Blob
 		blobStore:  blobStore,
 		client:     client,
 		maxBody:    DefaultMaxBody,
+		maxMeta:    DefaultMaxMetadata,
 		packuments: base.NewGate(maxConcurrentPackuments),
 		fetches:    base.NewGate(maxConcurrentFetches),
 		sumdb:      newSumDB(os.Getenv("GOSUMDB"), client, log),
@@ -589,7 +601,12 @@ func (s *Service) newUpstreamRequest(ctx context.Context, repo *models.Repositor
 // store spools the response, enforcing the size limit, then writes the blob
 // and cache entry under the blob lock.
 func (s *Service) store(ctx context.Context, repo *models.Repository, key string, resp *http.Response, o fetchOpts) (*models.ProxyCacheEntry, error) {
-	if resp.ContentLength > s.maxBody {
+	limit := s.maxBody
+	if isMetadataKey(repo.Format, key) {
+		limit = min(limit, s.maxMeta)
+	}
+
+	if resp.ContentLength > limit {
 		s.log.Warnw("proxy upstream file exceeds size limit", "repo", repo.Name, "path", key, "size", resp.ContentLength)
 		return nil, errUpstream
 	}
@@ -617,13 +634,13 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 
 	hasher := sha256.New()
 
-	size, err := io.Copy(io.MultiWriter(spool, hasher), io.LimitReader(resp.Body, s.maxBody+1))
+	size, err := io.Copy(io.MultiWriter(spool, hasher), io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		s.log.Warnw("proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
 		return nil, errUpstreamDown
 	}
 
-	if size > s.maxBody {
+	if size > limit {
 		s.log.Warnw("proxy upstream body oversized", "repo", repo.Name, "path", key, "size", size)
 		return nil, errUpstream
 	}
@@ -862,6 +879,35 @@ func Immutable(format, key string) bool {
 	case "docker":
 		// Blobs and manifests addressed by digest; tags move.
 		return digestRE.MatchString(name)
+	}
+
+	return false
+}
+
+// isMetadataKey reports whether key names an index or metadata file of format
+// (small by nature, capped at DefaultMaxMetadata) rather than a package file.
+func isMetadataKey(format, key string) bool {
+	name := key[strings.LastIndexByte(key, '/')+1:]
+
+	switch format {
+	case "deb":
+		return inDir(key, "dists")
+	case "rpm":
+		return inDir(key, "repodata")
+	case "maven":
+		return strings.HasPrefix(name, "maven-metadata")
+	case "pypi":
+		return !strings.HasPrefix(key, "files/")
+	case "npm":
+		return !strings.Contains(key, "/-/")
+	case "helm":
+		return name == helmIndexKey
+	case "cargo":
+		return !strings.HasPrefix(key, "api/v1/crates/")
+	case "go":
+		return name == "list" || strings.HasSuffix(key, "/@latest")
+	case "nuget":
+		return !strings.HasPrefix(key, "v3/package/")
 	}
 
 	return false

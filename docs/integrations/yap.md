@@ -33,7 +33,7 @@ Package name, version and architecture come from the recipe and end up in the co
 
 ## 3. Publish
 
-With `yap publish` (release of yap that includes it):
+With `yap publish` (yap from the release that includes it, M0Rf30/yap#248):
 
 ```sh
 export YAP_OA_URL=https://artifacts.example.com
@@ -45,7 +45,7 @@ yap publish artifacts/            # every .deb and .rpm in the directory
 yap publish --dry-run artifacts/  # show what would be uploaded
 ```
 
-The same settings are flags (`--url`, `--token-file`, `--deb-repo`, `--rpm-repo`, `--distribution` default `stable`, `--component` default `main`, `--timeout`) or a `publish` block in `yap.json` (`url`, `debRepo`, `rpmRepo`, `distribution`, `component`; the token is never read from the file). Use `--insecure-http` only for a local plain-HTTP instance.
+The same settings are flags (`--url`, `--token-file`, `--deb-repo`, `--rpm-repo`, `--distribution` default `stable`, `--component` default `main`, `--retries`, `--timeout`) or a `publish` block in `yap.json` (`url`, `debRepo`, `rpmRepo`, `distribution`, `component`; the token is never read from the file). `--insecure-http` is needed only to send the token over plain HTTP to a non-loopback host. Each upload is verified against the SHA-256 the server reports. `.apk` and `.pkg.tar.*` files go to a hosted raw repository (`--apk-repo`, `--pacman-repo`); OpenArtifact has no native apk or pacman format.
 
 `yap publish` is a thin client of the same routes you can call with `curl`:
 
@@ -61,7 +61,7 @@ curl -fsS -H "Authorization: Bearer $TOKEN" \
   "$HOST/api/v1/repositories/acme-rpm/packages"
 ```
 
-Packages are immutable: uploading the same name, version and architecture again is `409`. Bump the release in the recipe instead of re-publishing.
+Packages are immutable. `yap publish` of the same bytes again is a no-op (reported as `unchanged`); the same name and version with different bytes is `409` (a raw `curl` upload of an existing file is also `409`). Bump the release in the recipe instead.
 
 ## 4. Install on clients
 
