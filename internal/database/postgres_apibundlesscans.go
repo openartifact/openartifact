@@ -9,6 +9,7 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+	"strings"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -335,14 +336,26 @@ func (p *PostgresDB) AddBundleItems(ctx context.Context, bundleID string, items 
 // SealReleaseBundle moves a draft bundle to sealed with a conditional UPDATE
 // (WHERE state = 'draft'), so concurrent item adds/seals cannot interleave.
 // It reports whether the bundle was sealed; false means it was no longer a
-// draft (or does not exist). A bundle with no items is never sealed.
-func (p *PostgresDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time) (bool, error) {
+// draft (or does not exist), or, when sig is given, that its items changed
+// since the manifest was signed. A bundle with no items is never sealed.
+func (p *PostgresDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error) {
+	var keyID, signature, itemIDs *string
+
+	if sig != nil {
+		ids := strings.Join(sig.ItemIDs, ",")
+		keyID, signature, itemIDs = &sig.KeyFingerprint, &sig.Signature, &ids
+	}
+
 	res, err := p.db.ExecContext(ctx, `
 		UPDATE release_bundles
-		SET state = 'sealed', sealed_at = $2, sealer_id = (SELECT id FROM auth_users WHERE username = $3), updated_at = now()
+		SET state = 'sealed', sealed_at = $2, sealer_id = (SELECT id FROM auth_users WHERE username = $3),
+		    gpg_key_id = $4, gpg_signature = $5, updated_at = now()
 		WHERE id = $1 AND state = 'draft'
-		  AND EXISTS (SELECT 1 FROM release_bundle_items WHERE bundle_id = $1)`,
-		bundleID, sealedAt, sealedBy)
+		  AND EXISTS (SELECT 1 FROM release_bundle_items WHERE bundle_id = $1)
+		  AND ($6::text IS NULL OR $6::text = (
+		        SELECT COALESCE(string_agg(id::text, ',' ORDER BY id::text COLLATE "C"), '')
+		        FROM release_bundle_items WHERE bundle_id = $1))`,
+		bundleID, sealedAt, sealedBy, keyID, signature, itemIDs)
 	if err != nil {
 		return false, fmt.Errorf("failed to seal release bundle: %w", err)
 	}

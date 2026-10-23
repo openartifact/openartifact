@@ -35,7 +35,7 @@ func TestRemoveBundleItemRefusesSealedBundle(t *testing.T) {
 		t.Fatalf("AddBundleItems: %v", err)
 	}
 
-	if ok, err := pg.SealReleaseBundle(ctx, b.ID, "admin", time.Now()); err != nil || !ok {
+	if ok, err := pg.SealReleaseBundle(ctx, b.ID, "admin", time.Now(), nil); err != nil || !ok {
 		t.Fatalf("SealReleaseBundle = %v, %v", ok, err)
 	}
 

@@ -48,7 +48,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | [Scanning](security/scanning.md) | Vulnerability, secret and license scans, quarantine |
 | [SBOM and VEX](security/sbom.md) | CycloneDX / SPDX SBOMs, OpenVEX / CycloneDX VEX, Dependency-Track, Trivy, Grype |
 | [License metadata](security/licenses.md) | How licenses are read from package files: precedence per format, unresolved licenses, limits and limitations |
-| [Signing](security/signing.md) | GPG signing of APT/RPM metadata; verifying release archives and images |
+| [Signing](security/signing.md) | GPG key management and signing of APT/RPM metadata and release bundles; verifying release archives and images |
 
 ## Operations
 

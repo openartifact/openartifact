@@ -32,7 +32,7 @@ gpgkey=HOST/repos/REPO/public.key
 curl -u USERNAME:<TOKEN> -F file=@my-package-1.0.x86_64.rpm HOST/api/v1/repositories/REPO/packages
 ```
 
-`repomd.xml.asc` and `public.key` exist only when signing is enabled (`GPG_ENABLED=true` and `GPG_KEY_PATH` set; see [Signing](#signing)). Without signing set `repo_gpgcheck=0` and drop `gpgkey`. For private repositories add `username=` and `password=<TOKEN>` to the repo file (the username is ignored).
+`repomd.xml.asc` and `public.key` exist only when a signing key applies to the repository (a managed key from the admin API or `oa gpg`, or `GPG_ENABLED=true` with `GPG_KEY_PATH`; see [Signing](../security/signing.md)). Without signing set `repo_gpgcheck=0` and drop `gpgkey`. For private repositories add `username=` and `password=<TOKEN>` to the repo file (the username is ignored).
 
 ## Upload API
 

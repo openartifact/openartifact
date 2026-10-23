@@ -26,13 +26,13 @@ import (
 type RPMetadataWorker struct {
 	db        sq.Database
 	blobStore storage.BlobStore
-	signer    gpg.Signer
+	signers   gpg.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
 }
 
-func NewRPMetadataWorker(db sq.Database, blobStore storage.BlobStore, signer gpg.Signer, log *logger.Logger, reg *metrics.Registry) *RPMetadataWorker {
-	w := &RPMetadataWorker{db: db, blobStore: blobStore, signer: signer, log: log}
+func NewRPMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger, reg *metrics.Registry) *RPMetadataWorker {
+	w := &RPMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("rpm", log, w.Regenerate)
 	w.q.setMetrics(reg)
 
@@ -48,6 +48,23 @@ func (w *RPMetadataWorker) WithDebounce(d time.Duration) *RPMetadataWorker {
 func (w *RPMetadataWorker) WithRegenLimiter(l *RegenLimiter) *RPMetadataWorker {
 	w.q.setLimiter(l)
 	return w
+}
+
+// signerFor returns the signer of the repository's metadata, nil when it is
+// unsigned. A resolution failure aborts the regeneration: replacing signed
+// metadata with unsigned metadata because of a transient error would break
+// every client that verifies it.
+func (w *RPMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
+	if w.signers == nil {
+		return nil, nil //nolint:nilnil // nil signer means unsigned
+	}
+
+	signer, err := w.signers.SignerForRepo(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("rpm worker: resolving signing key: %w", err)
+	}
+
+	return signer, nil
 }
 
 // NotifyStale schedules a coalesced regeneration of the repository's repodata.
@@ -362,15 +379,20 @@ func (w *RPMetadataWorker) buildMetadata(ctx context.Context, repoID string, pac
 
 	blobs["repodata/repomd.xml"] = repomdXML
 
-	if w.signer != nil {
-		signature, signErr := formatrpm.SignRepomdXML(w.signer, repomdXML)
+	signer, err := w.signerFor(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+
+	if signer != nil {
+		signature, signErr := formatrpm.SignRepomdXML(signer, repomdXML)
 		if signErr != nil {
 			w.log.Warnw("failed to sign repomd.xml", "error", signErr)
 		} else {
 			blobs["repodata/repomd.xml.asc"] = signature
 		}
 
-		publicKey, keyErr := formatrpm.PublicKey(w.signer)
+		publicKey, keyErr := formatrpm.PublicKey(signer)
 		if keyErr != nil {
 			w.log.Warnw("failed to export public key", "error", keyErr)
 		} else {

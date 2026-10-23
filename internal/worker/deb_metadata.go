@@ -23,7 +23,7 @@ import (
 
 // listOldMetadata returns path -> blob sha256 of the generated dists/ metadata rows.
 func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND path LIKE 'dists/%'`, repoID)
+	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND (path LIKE 'dists/%' OR path = 'public.key')`, repoID)
 	if err != nil {
 		return nil, fmt.Errorf("deb worker: listing repo_metadata: %w", err)
 	}
@@ -50,13 +50,13 @@ func listOldMetadata(ctx context.Context, tx sq.Transaction, repoID string) (map
 type DebMetadataWorker struct {
 	db        sq.Database
 	blobStore storage.BlobStore
-	signer    gpg.Signer
+	signers   gpg.Resolver
 	log       *logger.Logger
 	q         *regenQueue[string]
 }
 
-func NewDebMetadataWorker(db sq.Database, blobStore storage.BlobStore, signer gpg.Signer, log *logger.Logger) *DebMetadataWorker {
-	w := &DebMetadataWorker{db: db, blobStore: blobStore, signer: signer, log: log}
+func NewDebMetadataWorker(db sq.Database, blobStore storage.BlobStore, signers gpg.Resolver, log *logger.Logger) *DebMetadataWorker {
+	w := &DebMetadataWorker{db: db, blobStore: blobStore, signers: signers, log: log}
 	w.q = newRegenQueue("deb", log, w.regenerate)
 
 	return w
@@ -77,6 +77,23 @@ func (w *DebMetadataWorker) WithMetrics(reg *metrics.Registry) *DebMetadataWorke
 func (w *DebMetadataWorker) WithRegenLimiter(l *RegenLimiter) *DebMetadataWorker {
 	w.q.setLimiter(l)
 	return w
+}
+
+// signerFor returns the signer of the repository's metadata, nil when it is
+// unsigned. A resolution failure aborts the regeneration: replacing signed
+// metadata with unsigned metadata because of a transient error would break
+// every client that verifies it.
+func (w *DebMetadataWorker) signerFor(ctx context.Context, repoID string) (gpg.Signer, error) {
+	if w.signers == nil {
+		return nil, nil //nolint:nilnil // nil signer means unsigned
+	}
+
+	signer, err := w.signers.SignerForRepo(ctx, repoID)
+	if err != nil {
+		return nil, fmt.Errorf("deb worker: resolving signing key: %w", err)
+	}
+
+	return signer, nil
 }
 
 // NotifyStale schedules a coalesced regeneration of the repository's dists/ metadata.
@@ -126,12 +143,28 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 		byDist[e.Distribution] = append(byDist[e.Distribution], e)
 	}
 
+	signer, err := w.signerFor(ctx, repoID)
+	if err != nil {
+		return err
+	}
+
 	blobs := make(map[string][]byte)
 
 	for _, dist := range distributions {
-		if err := w.generateDistribution(ctx, dist, byDist[dist.Name], blobs); err != nil {
+		if err := w.generateDistribution(ctx, dist, byDist[dist.Name], signer, blobs); err != nil {
 			return err
 		}
+	}
+
+	// APT clients fetch the key the metadata is signed with from the same
+	// place as RPM clients: HOST/repos/REPO/public.key.
+	if signer != nil {
+		publicKey, keyErr := signer.PublicKey()
+		if keyErr != nil {
+			return fmt.Errorf("deb worker: exporting public key: %w", keyErr)
+		}
+
+		blobs["public.key"] = publicKey
 	}
 
 	// Existing generated metadata, so rows/blobs for removed paths can be reclaimed.
@@ -210,7 +243,7 @@ func (w *DebMetadataWorker) regenerate(ctx context.Context, repoID string) error
 // Release.gpg for one distribution into blobs, keyed by full "dists/..." path.
 // Every component x architecture pair gets an index (empty when no packages
 // remain) so stale listings can never be served after deletions.
-func (w *DebMetadataWorker) generateDistribution(ctx context.Context, dist models.DebianDistribution, entries []models.DebPackageEntry, blobs map[string][]byte) error {
+func (w *DebMetadataWorker) generateDistribution(ctx context.Context, dist models.DebianDistribution, entries []models.DebPackageEntry, signer gpg.Signer, blobs map[string][]byte) error {
 	components, err := w.db.GetDebianComponentsByDist(ctx, dist.ID)
 	if err != nil {
 		return fmt.Errorf("deb worker: querying components for dist %s: %w", dist.Name, err)
@@ -303,8 +336,8 @@ func (w *DebMetadataWorker) generateDistribution(ctx context.Context, dist model
 	releaseContent := releaseGen.GenerateRelease(fileInfos)
 	blobs["dists/"+dist.Name+"/Release"] = []byte(releaseContent)
 
-	if w.signer != nil {
-		signed, err := formatdeb.NewReleaseSigner(w.signer).SignRelease([]byte(releaseContent))
+	if signer != nil {
+		signed, err := formatdeb.NewReleaseSigner(signer).SignRelease([]byte(releaseContent))
 		if err != nil {
 			w.log.Warnw("failed to sign release", "dist", dist.Name, "error", err)
 		} else {

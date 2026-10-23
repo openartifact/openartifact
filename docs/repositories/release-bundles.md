@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 A release bundle is a named, versioned set of artifacts (referenced by SHA-256) that is assembled as a draft, sealed to freeze it, and archived when retired. Promotion pipelines define the ordered stages a bundle is meant to move through.
 
-**Promotion is not implemented.** `POST .../promote` validates the request and then answers `501 not_implemented`: no artifacts are copied, no promotion record is written and the bundle's `current_stage` does not change. Likewise sealing with a `gpg_key_id` answers `501`. Everything else below works. There is no web UI page for bundles; use the API.
+**Promotion is not implemented.** `POST .../promote` validates the request and then answers `501 not_implemented`: no artifacts are copied, no promotion record is written and the bundle's `current_stage` does not change. Everything else below works, including sealing with a GPG signature (see [Signing](#signing-a-bundle)). There is no web UI page for bundles; use the API.
 
 All routes are under `/api/v1` and need an admin principal (`403 forbidden` otherwise). Names and versions are 1-255 bytes, valid UTF-8, without `/`, `\` or control characters.
 
@@ -32,12 +32,14 @@ An operation in the wrong state is `409 conflict`. Sealing an empty bundle is `4
 |---|---|
 | `GET /api/v1/bundles?name=&state=&page=&limit=` | List (`limit` 1-100, default 25) as `{total, page, limit, bundles}`. |
 | `POST /api/v1/bundles` | Create a draft: `{"name","version","description","pipeline_id"}` (`pipeline_id` optional, must be an existing pipeline's UUID). `201`. |
-| `GET /api/v1/bundles/{name}/{version}` | One bundle: `id, name, version, description, state, pipeline_id, current_stage, created_by, sealed_at, sealed_by, archived_at, archived_by, created_at, updated_at`. |
+| `GET /api/v1/bundles/{name}/{version}` | One bundle: `id, name, version, description, state, pipeline_id, current_stage, created_by, sealed_at, sealed_by, archived_at, archived_by, gpg_key_id, gpg_signature, created_at, updated_at`. |
 | `DELETE /api/v1/bundles/{name}/{version}` | Delete; draft only. `204`. |
 | `GET /api/v1/bundles/{name}/{version}/items` | `{"items": [...]}`. |
 | `POST /api/v1/bundles/{name}/{version}/items` | Add 1-500 items atomically (draft only); `201` with the stored items. |
 | `DELETE /api/v1/bundles/{name}/{version}/items/{sha256}` | Remove one item (draft only). `204`. |
-| `POST /api/v1/bundles/{name}/{version}/seal` | Draft to sealed; records `sealed_at`/`sealed_by`. |
+| `POST /api/v1/bundles/{name}/{version}/seal` | Draft to sealed; records `sealed_at`/`sealed_by`. Optional body `{"gpg_key_id"}` signs the manifest. |
+| `GET /api/v1/bundles/{name}/{version}/manifest` | The canonical JSON manifest a signature covers (admin). |
+| `GET /api/v1/bundles/{name}/{version}/manifest.asc` | The armored detached signature (admin); `404` when the bundle was sealed without a key. |
 | `POST /api/v1/bundles/{name}/{version}/archive` | Sealed to archived; records `archived_at`/`archived_by`. |
 | `POST /api/v1/bundles/{name}/{version}/promote` | Validates, then `501` (see above). |
 | `GET /api/v1/bundles/{name}/{version}/promotions` | `{"promotions": [...]}`: the promotion history (always empty while promotion is unimplemented). |
@@ -67,6 +69,20 @@ curl -X POST HOST/api/v1/bundles/shop/2.4.0/items -H "Authorization: Bearer <TOK
 
 curl -X POST HOST/api/v1/bundles/shop/2.4.0/seal -H "Authorization: Bearer <TOKEN>"
 ```
+
+### Signing a bundle
+
+`POST .../seal` with `{"gpg_key_id": "<key id | fingerprint | config>"}` (a key from [`GET /api/v1/admin/gpg/keys`](../security/signing.md#managing-keys); `config` is the `gpg.keyPath` key) signs the bundle manifest before sealing. The manifest is deterministic JSON (`schema: openartifact.release-bundle/v1`, name, version, description, items ordered by SHA-256), so it can be re-fetched and verified at any time:
+
+```sh
+curl -X POST HOST/api/v1/bundles/shop/2.4.0/seal -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' -d '{"gpg_key_id":"<KEY_ID>"}'
+curl -H "Authorization: Bearer <TOKEN>" -o manifest.json     HOST/api/v1/bundles/shop/2.4.0/manifest
+curl -H "Authorization: Bearer <TOKEN>" -o manifest.json.asc HOST/api/v1/bundles/shop/2.4.0/manifest.asc
+gpg --verify manifest.json.asc manifest.json
+```
+
+The bundle's `gpg_key_id` is the signer's fingerprint (it stays meaningful after the key is deleted) and `gpg_signature` the armored signature. An unknown key answers `400 validation_failed` and leaves the bundle a draft. The seal fails with `409` if an item changed while the manifest was being signed.
 
 ## Pipelines API
 

@@ -27,6 +27,7 @@ type BundlesHandler struct {
 	db        database.Database
 	log       *logger.Logger
 	evaluator *auth.Evaluator
+	keys      BundleKeyResolver
 }
 
 const (
@@ -141,6 +142,8 @@ func (h *BundlesHandler) RegisterAuthed(r chi.Router) {
 
 	// Bundle lifecycle
 	r.Post("/api/v1/bundles/{name}/{version}/seal", h.handleSeal)
+	r.Get("/api/v1/bundles/{name}/{version}/manifest", h.handleGetManifest)
+	r.Get("/api/v1/bundles/{name}/{version}/manifest.asc", h.handleGetManifestSignature)
 	r.Post("/api/v1/bundles/{name}/{version}/promote", h.handlePromote)
 	r.Post("/api/v1/bundles/{name}/{version}/archive", h.handleArchive)
 
@@ -971,17 +974,26 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// GPG signing is not yet implemented
+	var signature *models.BundleSignature
+
 	if body.GPGKeyID != nil {
-		writeError(w, http.StatusNotImplemented, "not_implemented", "GPG signing is not yet implemented")
-		return
+		if strings.TrimSpace(*body.GPGKeyID) == "" {
+			writeError(w, http.StatusBadRequest, "validation_failed", "gpg_key_id must not be empty")
+			return
+		}
+
+		var fail *apiFailure
+		if signature, fail = h.signBundle(ctx, *body.GPGKeyID, bundle, items); fail != nil {
+			writeError(w, fail.status, fail.code, fail.msg)
+			return
+		}
 	}
 
 	now := time.Now()
 
 	// Conditional UPDATE ... WHERE state = 'draft': a concurrent seal/archive
 	// (or item removal) between the checks above and here cannot be overwritten.
-	sealed, err := h.db.SealReleaseBundle(ctx, bundle.ID, p.Username, now)
+	sealed, err := h.db.SealReleaseBundle(ctx, bundle.ID, p.Username, now, signature)
 	if err != nil {
 		h.log.Errorw("seal bundle: db error", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -998,6 +1010,11 @@ func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
 	bundle.SealedAt = &now
 	bundle.SealedBy = &p.Username
 	bundle.UpdatedAt = now
+
+	if signature != nil {
+		bundle.GPGKeyID = &signature.KeyFingerprint
+		bundle.GPGSignature = &signature.Signature
+	}
 
 	writeJSON(w, http.StatusOK, bundleToMap(bundle))
 }
@@ -1238,6 +1255,8 @@ func bundleToMap(b *models.ReleaseBundle) map[string]any {
 		"sealed_by":     b.SealedBy,
 		"archived_at":   formatTimePtr(b.ArchivedAt),
 		"archived_by":   b.ArchivedBy,
+		"gpg_key_id":    b.GPGKeyID,
+		"gpg_signature": b.GPGSignature,
 		"created_at":    formatTime(b.CreatedAt),
 		"updated_at":    formatTime(b.UpdatedAt),
 	}

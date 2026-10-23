@@ -56,7 +56,7 @@ func realRouter() chi.Router {
 	api.NewSelfTokensHandler(nil, nil, nil).Register(r)
 	api.NewAdminAuditHandler(nil, nil, nil).Register(r)
 	api.NewAdminStorageHandler(nil, nil, nil).Register(r)
-	api.NewAdminGPGHandler(nil, nil, nil).Register(r)
+	api.NewAdminGPGHandler(nil, nil, nil, nil).Register(r)
 	api.NewProjectsHandler(nil, nil, nil, nil).RegisterRoutes(r)
 	api.NewRepositoriesHandler(nil, nil, nil).RegisterAuthed(r)
 	api.NewCleanupHandler(nil, nil, nil, nil).RegisterAuthed(r)

@@ -113,6 +113,15 @@ A Conan 1.x client can now use a conan repository (see [Conan](../formats/conan.
 - A layer or config blob that only trashed manifests reference now answers `404 BLOB_UNKNOWN` by digest until a manifest that references it is restored. Before, it stayed downloadable while the image sat in the trash.
 - Docker proxy repositories used to keep manifests and blobs addressed by digest forever. They are now evicted after `workers.proxyDockerDigestTtl` (default `720h`, env `OPENARTIFACT_PROXY_DOCKER_DIGEST_TTL`) without a pull, and a pull renews them; the next pull of an evicted digest goes to the upstream again. Set it to `0` to keep the old behavior. Migration `063` gives the entries already cached the default 30 days from the upgrade, so content nobody pulls in that time is evicted by the proxy cache worker.
 
+#### GPG key management (migration `054`)
+
+Migration `054` (GPG key management; additive) creates `gpg_keys` and `gpg_key_repositories` and widens the `chk_audit_action` constraint with the `gpg_key.*` audit actions (`NOT VALID`, then validated by `054_gpg_keys_validate.no_tx.sql`). A rolling upgrade is fine.
+
+- **GPG keys are managed at runtime.** `/api/v1/admin/gpg/keys`, `oa gpg` and the **Admin → GPG keys** page now work (they were stubs). A key configured with `gpg.keyPath` keeps signing exactly as before and appears as a read-only `config` entry; a key you activate takes precedence over it. Storing keys requires `OPENARTIFACT_SECRET_KEY`; without it the page shows how to enable it.
+- **`gpg.autoGenerate` now works.** With no key configured and none stored, the first start generates an RSA-4096 key (global, active) and logs its fingerprint. It needs `OPENARTIFACT_SECRET_KEY`; without it a warning is logged and nothing is generated. It was a no-op before, so an existing `GPG_AUTO_GENERATE=true` starts producing a key on upgrade.
+- **APT repositories serve `public.key`.** `HOST/repos/REPO/public.key` used to return `404` for Debian repositories; it now returns the key that signs the repository, from the next metadata regeneration (or when a key is activated).
+- **Bundles can be sealed with a GPG signature** (`gpg_key_id`, previously `501`), with `GET .../manifest` and `.../manifest.asc` to verify it.
+
 ### 0.7.0
 
 Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webhook payload format), `052` (VEX statements) and `053` (license source and unresolved licenses). All are additive; a rolling upgrade from 0.6.0 is fine. Migration `041` is numbered below `051`–`053` on purpose; the migrator applies every file not yet recorded, whatever its number.

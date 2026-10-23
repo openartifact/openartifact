@@ -127,6 +127,14 @@ const (
 	ActionSSOProviderDeleted = "sso_provider.deleted"
 
 	ActionTokenCreatedForUser = "token.created_for_user"
+
+	// GPG key management.
+
+	ActionGPGKeyCreated     = "gpg_key.created"
+	ActionGPGKeyDeleted     = "gpg_key.deleted"
+	ActionGPGKeyActivated   = "gpg_key.activated"
+	ActionGPGKeyDeactivated = "gpg_key.deactivated"
+	ActionGPGKeyExported    = "gpg_key.exported"
 )
 
 // KnownActions lists every action the audit_logs constraint accepts.
@@ -177,4 +185,6 @@ var KnownActions = []string{
 	ActionSSOProviderCreated, ActionSSOProviderUpdated, ActionSSOProviderDeleted,
 
 	ActionTokenCreatedForUser,
+
+	ActionGPGKeyCreated, ActionGPGKeyDeleted, ActionGPGKeyActivated, ActionGPGKeyDeactivated, ActionGPGKeyExported,
 }

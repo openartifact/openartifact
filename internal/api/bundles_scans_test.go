@@ -88,7 +88,7 @@ func (db *bundlesScansMockDB) ListBundleItems(_ context.Context, _ string) ([]*m
 	return []*models.ReleaseBundleItem{{SHA256: strings.Repeat("a", 64)}}, nil
 }
 
-func (db *bundlesScansMockDB) SealReleaseBundle(_ context.Context, _, _ string, _ time.Time) (bool, error) {
+func (db *bundlesScansMockDB) SealReleaseBundle(_ context.Context, _, _ string, _ time.Time, _ *models.BundleSignature) (bool, error) {
 	db.sealCalled = true
 	return true, nil
 }

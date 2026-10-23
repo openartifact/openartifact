@@ -46,6 +46,7 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	formatrubygems "github.com/openartifact/openartifact/internal/format/rubygems"
 	formatsbt "github.com/openartifact/openartifact/internal/format/sbt"
+	"github.com/openartifact/openartifact/internal/gpgkeys"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/license"
 	aimcp "github.com/openartifact/openartifact/internal/mcp"
@@ -316,28 +317,39 @@ func run(args []string) error {
 		log.Warnw("storage.presignDownloads is on but the storage backend cannot presign URLs; downloads are streamed", "type", cfg.Storage.Type)
 	}
 
-	// Initialize GPG signer (optional)
+	// File/env GPG key (optional): the read-only fallback that signs wherever no
+	// database-managed key (admin API) applies.
 	var signer gpg.Signer
 
 	if cfg.GPG.Enabled && cfg.GPG.KeyPath != "" {
 		s, err := gpg.NewLocalSignerFromFile(cfg.GPG.KeyPath, []byte(cfg.GPG.Passphrase))
 		if err != nil {
-			log.Warnw("Failed to initialize GPG signer, signing disabled", "error", err)
+			log.Warnw("Failed to initialize the configured GPG signer", "error", err)
 		} else {
 			signer = s
 			log.Infow("GPG signer initialized", "fingerprint", s.KeyFingerprint())
 		}
 	}
 
+	// Resolves the signer of each repository: its own database key, else the
+	// global active one, else the configured file/env key.
+	gpgKeys := gpgkeys.New(db, log, signer)
+
 	// Initialize metadata workers
 	// One limiter bounds regenerations across every format: each pins up to two
 	// database connections while it runs.
 	regenLimiter := worker.NewRegenLimiter(cfg.Workers.MetadataRegenConcurrency)
 
-	rpmWorker := worker.NewRPMetadataWorker(db, blobStore, signer, log, reg).WithRegenLimiter(regenLimiter)
+	rpmWorker := worker.NewRPMetadataWorker(db, blobStore, gpgKeys, log, reg).WithRegenLimiter(regenLimiter)
 	go rpmWorker.RegenerateStale(context.Background())
 
-	debWorker := worker.NewDebMetadataWorker(db, blobStore, signer, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
+	debWorker := worker.NewDebMetadataWorker(db, blobStore, gpgKeys, log).WithMetrics(reg).WithRegenLimiter(regenLimiter)
+	gpgKeys.SetRefreshers(rpmWorker, debWorker)
+
+	if cfg.GPG.AutoGenerate {
+		go autoGenerateGPGKey(gpgKeys, log)
+	}
+
 	mavenWorker := worker.NewMavenMetadataWorker(db, blobStore, db.GetDB(), log, reg).WithRegenLimiter(regenLimiter)
 	npmWorker := worker.NewNPMMetadataWorker(db, log, db.GetDB(), reg).WithRegenLimiter(regenLimiter)
 	proxyCacheWorker := worker.NewProxyCacheWorker(db, blobStore, log)
@@ -712,7 +724,7 @@ func run(args []string) error {
 	api.NewAdminAuditHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminStorageHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminTieringHandler(db, tierRegistry, tierEngine, tierWorker, log, evaluator).Register(authedAPI)
-	api.NewAdminGPGHandler(db, log, evaluator).Register(authedAPI)
+	api.NewAdminGPGHandler(db, log, evaluator, gpgKeys).Register(authedAPI)
 	sysInfoHandler.RegisterAuthed(authedAPI)
 
 	if cfg.Server.PprofEnabled {
@@ -867,7 +879,7 @@ func run(args []string) error {
 	// The retention purge worker is started above; the manual purge lives in
 	// TrashHandler.
 
-	api.NewBundlesHandler(db, log, evaluator).RegisterAuthed(authedAPI)
+	api.NewBundlesHandler(db, log, evaluator).WithGPGKeys(gpgKeys).RegisterAuthed(authedAPI)
 
 	sbomGen := sbom.NewGenerator(db, log).WithBlobStore(blobStore).WithToolVersion(version).WithBaseURL(cfg.BaseURL)
 	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, blobStore)
@@ -1058,5 +1070,24 @@ func metricsAuthMiddleware(token string, allowAnonymous bool) func(http.Handler)
 
 			next.ServeHTTP(w, r)
 		})
+	}
+}
+
+// autoGenerateGPGKey implements gpg.autoGenerate: when no signing key exists
+// at all, create one (under a database lock, so replicas starting together
+// create exactly one) and make it the global active key.
+func autoGenerateGPGKey(svc *gpgkeys.Service, log *logger.Logger) {
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Minute)
+	defer cancel()
+
+	created, err := svc.AutoGenerate(ctx)
+
+	switch {
+	case errors.Is(err, gpgkeys.ErrSecretKeyRequired):
+		log.Warnw("gpg.autoGenerate is on but OPENARTIFACT_SECRET_KEY is not set: private keys are only stored encrypted, so no key was generated")
+	case err != nil:
+		log.Errorw("gpg.autoGenerate failed", "error", err)
+	case created:
+		log.Infow("gpg.autoGenerate: generated the repository signing key (RSA 4096) and made it globally active")
 	}
 }

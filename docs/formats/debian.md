@@ -26,11 +26,13 @@ curl -u USERNAME:<TOKEN> -F file=@my-package_1.0_amd64.deb -F distribution=stabl
   HOST/api/v1/repositories/REPO/debs
 ```
 
-The same snippet first fetches `HOST/repos/REPO/public.key` into `/etc/apt/keyrings/REPO.gpg`. That URL returns `404` for Debian repositories: the server only serves `public.key` from stored repository metadata and the Debian worker never writes it (the RPM worker does). Export the public half of the key at `GPG_KEY_PATH` yourself and distribute it, for example:
+The same snippet first fetches `HOST/repos/REPO/public.key` into `/etc/apt/keyrings/REPO.gpg`. The server writes `public.key` with the repository metadata whenever a signing key applies to the repository (the repository's own key, the global active key, or the `GPG_KEY_PATH` file; see [Signing](../security/signing.md)), so the URL works the same way as for RPM repositories:
 
 ```sh
-gpg --export --armor KEYID | sudo gpg --dearmor -o /etc/apt/keyrings/REPO.gpg
+curl -fsSL HOST/repos/REPO/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/REPO.gpg
 ```
+
+Without a signing key `public.key`, `InRelease` and `Release.gpg` return `404`; mark the source `[trusted=yes]` only on networks you control. A key that is activated (or removed) after packages were uploaded re-signs the repository straight away.
 
 For private repositories apt also needs credentials, for example in `/etc/apt/auth.conf.d/` for the host (login `USERNAME`, password the token).
 

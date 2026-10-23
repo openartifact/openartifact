@@ -202,14 +202,14 @@ See [authentication](../security/authentication.md) and [RBAC](../security/rbac.
 
 ### GPG signing (`gpg`)
 
-Signs APT and RPM metadata; see [signing](../security/signing.md).
+Signs APT and RPM metadata and release bundle manifests; see [signing](../security/signing.md). Storing managed keys requires `OPENARTIFACT_SECRET_KEY`.
 
 | Env | YAML | Default | Meaning |
 |---|---|---|---|
-| `GPG_ENABLED` | `enabled` | `false` | Enable signing (needs `GPG_KEY_PATH`) |
-| `GPG_KEY_PATH` | `keyPath` | empty | Private key file |
+| `GPG_ENABLED` | `enabled` | `false` | Load the file key at `GPG_KEY_PATH`. Keys managed through the admin API sign regardless |
+| `GPG_KEY_PATH` | `keyPath` | empty | Private key file (read-only fallback key) |
 | `GPG_PASSPHRASE` | `passphrase` | empty | Key passphrase (**secret**) |
-| `GPG_AUTO_GENERATE` | `autoGenerate` | `false` | Parsed but not read by any code at present: it has no effect |
+| `GPG_AUTO_GENERATE` | `autoGenerate` | `false` | Generate an RSA-4096 global signing key at startup when no key exists yet (needs `OPENARTIFACT_SECRET_KEY`; replica-safe) |
 
 ### Logging (`log`)
 

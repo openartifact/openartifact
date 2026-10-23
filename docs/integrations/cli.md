@@ -79,7 +79,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `group` *admin* | `list`, `create <name> [--description D]`, `show <id>`, `delete <id>`, `members <id>`, `add-member <id> <user-id>`, `rm-member <id> <user-id>` |
 | `project` (roles: [projects](../security/projects.md)) | `list` (with your role), `create <name> [--display-name N] [--description D] [--owner USERNAME]` (`--owner`: global admins; others need `projects.self_create`), `show <name>` (includes `my_role`), `update <name> [--display-name N] [--description D]` (owner; sends `PATCH`) plus admin-only policy flags `--allowed-formats F,F`, `--allowed-repo-types T,T`, `--repo-name-prefix P`, `--allow-public-repos[=false]`, `--max-repositories N`, `--token-max-ttl-days N`, `delete <name>`, `members <name>`, `add-member <name> (<user-id> \| --username U) [--role viewer\|developer\|maintainer\|owner]` (default `viewer`), `set-role <name> <user-id> <role>` (sends `PATCH`), `rm-member <name> <user-id>`, `groups <name>`, `add-group <name> <group-id\|group-name> [--role viewer\|developer\|maintainer]`, `rm-group <name> <group-id\|group-name>` |
 | `token` *admin* | `list` (all tokens), `revoke <id>` |
-| `gpg` *admin* | `list`, `import --key <armored-file>`, `generate --name N --email E [--bits 4096]`, `delete <fingerprint>` |
+| `gpg` *admin* | `list`, `import --key <armored-file\|-> [--name N] [--passphrase-stdin] [--activate\|--no-activate]`, `generate [--name N] [--algorithm ed25519\|rsa4096] [--user-name U] [--email E] [--comment C] [--activate\|--no-activate]`, `activate <key> [--repository R]`, `deactivate <key> [--repository R]`, `export <key> [--output FILE]`, `delete <key> [--force]`. `<key>` is an id, fingerprint or name; the passphrase comes from stdin or `OA_GPG_PASSPHRASE`, never a flag. See [signing](../security/signing.md) |
 | `storage` *admin* | `list`, `create --name N [--type filesystem\|s3\|gcs\|azure\|garage\|seaweedfs\|oci] [--config JSON \| --config-file FILE\|-] [--default]`, `show <name>`, `update <name> [--config JSON \| --config-file FILE\|-] [--default[=false]]`, `delete <name>`, `test <name>` (exits 1 when the backend check fails) |
 | `backup` *admin* | `list`, `create [--type full\|metadata-only]`, `show <id>`, `download <id> <dest>`, `restore <archive-file>` (uploads an archive written by `backup download`) |
 | `audit` *admin* | `list [--limit N] [--action A] [--actor A]` (default limit 50; pages through the server's 100-row pages); `export [--format jsonl\|csv] [--since T] [--until T] [--actor A] [--action A] [-o FILE]` streams the whole log, see [audit export](../operations/monitoring.md#export) |
@@ -148,9 +148,3 @@ There are no top-level `oa upload` / `oa download` commands.
 ### Importing from Nexus or Artifactory
 
 `oa import nexus|artifactory --source-url URL --repo SRC[:DST]...` copies hosted Maven, Debian, RPM and raw repositories from a Nexus 3 or Artifactory server. The source password or token is read from a file, stdin or `OA_IMPORT_SOURCE_TOKEN`, never from the command line. Flags, supported formats, resume and checksum behavior are in [Migrating from Nexus or Artifactory](../migration/nexus-artifactory.md).
-
-## Known limitations
-
-| Command | Problem |
-|---|---|
-| `gpg list`, `import`, `generate`, `delete` | the server endpoints are stubs: `list` always returns an empty list, the other three return `501 not_implemented` |

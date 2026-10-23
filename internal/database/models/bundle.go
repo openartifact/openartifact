@@ -91,3 +91,12 @@ type BundlePromotion struct {
 	StartedAt    time.Time       `db:"started_at"`
 	CompletedAt  *time.Time      `db:"completed_at"`
 }
+
+// BundleSignature is the GPG signature a bundle is sealed with. ItemIDs (the
+// ids of the items the signed manifest was built from, sorted) pin the item
+// set: sealing fails when it changed meanwhile.
+type BundleSignature struct {
+	KeyFingerprint string
+	Signature      string
+	ItemIDs        []string
+}

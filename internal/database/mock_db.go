@@ -1120,7 +1120,7 @@ func (m *BaseMockDB) ListBundlePromotions(ctx context.Context, bundleID string) 
 func (m *BaseMockDB) AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error {
 	return errNotImpl("AddBundleItems")
 }
-func (m *BaseMockDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time) (bool, error) {
+func (m *BaseMockDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error) {
 	return false, errNotImpl("SealReleaseBundle")
 }
 func (m *BaseMockDB) ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error) {
@@ -1251,4 +1251,47 @@ func (s *LiveSnapshot) Release() {
 	if s.OnRelease != nil {
 		s.OnRelease()
 	}
+}
+
+func (m *BaseMockDB) CreateGPGKey(ctx context.Context, k *models.GPGKey) error {
+	return errNotImpl("CreateGPGKey")
+}
+func (m *BaseMockDB) CreateGPGKeyIfNone(ctx context.Context, k *models.GPGKey) (bool, error) {
+	return false, errNotImpl("CreateGPGKeyIfNone")
+}
+func (m *BaseMockDB) ListGPGKeys(ctx context.Context) ([]*models.GPGKey, error) {
+	return nil, errNotImpl("ListGPGKeys")
+}
+func (m *BaseMockDB) GetGPGKey(ctx context.Context, id string) (*models.GPGKey, error) {
+	return nil, errNotImpl("GetGPGKey")
+}
+func (m *BaseMockDB) GetGPGKeyByFingerprint(ctx context.Context, fingerprint string) (*models.GPGKey, error) {
+	return nil, errNotImpl("GetGPGKeyByFingerprint")
+}
+func (m *BaseMockDB) DeleteGPGKey(ctx context.Context, id string) error {
+	return errNotImpl("DeleteGPGKey")
+}
+func (m *BaseMockDB) SetGlobalGPGKey(ctx context.Context, id string) error {
+	return errNotImpl("SetGlobalGPGKey")
+}
+func (m *BaseMockDB) ClearGlobalGPGKey(ctx context.Context) error {
+	return errNotImpl("ClearGlobalGPGKey")
+}
+func (m *BaseMockDB) SetRepositoryGPGKey(ctx context.Context, repoID, keyID, assignedBy string) error {
+	return errNotImpl("SetRepositoryGPGKey")
+}
+func (m *BaseMockDB) ClearRepositoryGPGKey(ctx context.Context, repoID string) (bool, error) {
+	return false, errNotImpl("ClearRepositoryGPGKey")
+}
+func (m *BaseMockDB) ListGPGKeyAssignments(ctx context.Context) ([]models.GPGKeyAssignment, error) {
+	return nil, errNotImpl("ListGPGKeyAssignments")
+}
+func (m *BaseMockDB) ListRepositoriesForGPGKey(ctx context.Context, keyID string) ([]models.GPGSigningRepo, error) {
+	return nil, errNotImpl("ListRepositoriesForGPGKey")
+}
+func (m *BaseMockDB) ListSigningRepositoriesWithoutKey(ctx context.Context) ([]models.GPGSigningRepo, error) {
+	return nil, errNotImpl("ListSigningRepositoriesWithoutKey")
+}
+func (m *BaseMockDB) ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error) {
+	return nil, errNotImpl("ResolveGPGKeyForRepository")
 }

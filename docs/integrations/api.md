@@ -84,7 +84,7 @@ Handler errors share one shape; `details` is only present when a handler adds it
 | `conflict` | 409 | duplicate or state conflict |
 | `payload_too_large` | 413 | body over the endpoint limit |
 | `rate_limited`, `too_many_scans` | 429 | throttled |
-| `not_implemented` | 501 | endpoint exists but the feature is not available (currently the `/admin/gpg/keys` import, generate and delete endpoints) |
+| `not_implemented` | 501 | endpoint exists but the feature is not available |
 | `internal_error` | 500 | server error; the cause is logged, never returned |
 | `LICENSE_BLOCKED` | 403 | a package upload was rejected by a [license policy](../security/scanning.md#blocking-licenses) with action `block`; the body adds `licenses` and `policies` |
 | `LICENSE_METADATA_UNSAFE` | 422 | a package upload was refused because its own metadata is oversized or ambiguous, so its licenses cannot be checked ([License metadata](../security/licenses.md#hostile-files)) |
@@ -169,7 +169,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/projects` (with `/repositories`, `/members`, `/groups` and `/tokens`) | [projects](../security/projects.md): open to every authenticated user and decided per project role, not by global `manage` (`404` for non-members, `403` for members lacking the role). Updates use `PATCH` for the project and for a member's role |
 | `/webhooks` | global webhooks, test, deliveries |
 | `/bundles`, `/pipelines` | [release bundles](../repositories/release-bundles.md) and promotion pipelines |
-| `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log (`/admin/audit/export` streams it as a JSONL or CSV [download](../operations/monitoring.md#export)), GPG keys (`/admin/gpg/keys` is a stub: empty list, 501 on write; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |
+| `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log (`/admin/audit/export` streams it as a JSONL or CSV [download](../operations/monitoring.md#export)), GPG signing keys (`/admin/gpg/keys`: list, import, generate, activate, delete, export; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |
 | `/admin/tiering/{tiers,policies,dry-run,run,status}` | [storage tiers](../operations/storage-tiering.md#admin-api): tiers with placement stats, lifecycle policies (CRUD), dry run (`POST /admin/tiering/dry-run`: counts, bytes and a sample of what would move, no changes), mover trigger and status |
 | `/system/info` | version and build information |
 

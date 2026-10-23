@@ -465,68 +465,6 @@ func handleToken(args []string, client *Client, outFmt string) {
 }
 
 // ═══════════════════════════════════════════════════════════════════════════════
-// GPG
-// ═══════════════════════════════════════════════════════════════════════════════
-
-func handleGPG(args []string, client *Client, outFmt string) {
-	if len(args) < 1 {
-		dief("Usage: oa gpg <list|import|generate|delete>")
-	}
-
-	switch args[0] {
-	case "list":
-		listGeneric(client, "/api/v1/admin/gpg/keys", "keys", []string{"FINGERPRINT", "NAME", "EMAIL"}, []string{"fingerprint", "name", "email"}, outFmt)
-	case "import":
-		fs := flag.NewFlagSet("gpg import", flag.ExitOnError)
-		keyFile := fs.String("key", "", "Path to armored GPG key file")
-		_ = fs.Parse(args[1:])
-
-		if *keyFile == "" {
-			dief("--key is required")
-		}
-
-		data, err := os.ReadFile(*keyFile)
-		if err != nil {
-			dief("reading key file: %v", err)
-		}
-
-		sendJSON(client, "POST", "/api/v1/admin/gpg/keys", map[string]string{"armored_key": string(data)}, http.StatusCreated)
-		fmt.Println("GPG key imported.")
-	case "generate":
-		fs := flag.NewFlagSet("gpg generate", flag.ExitOnError)
-		name := fs.String("name", "", "Name")
-		email := fs.String("email", "", "Email")
-		bits := fs.Int("bits", 4096, "Key size in bits")
-		_ = fs.Parse(args[1:])
-
-		if *name == "" || *email == "" {
-			dief("--name and --email are required")
-		}
-
-		result := sendJSON(client, "POST", "/api/v1/admin/gpg/keys/generate", map[string]any{
-			"name":  *name,
-			"email": *email,
-			"bits":  *bits,
-		}, http.StatusCreated)
-
-		if outFmt == "json" {
-			printJSON(result)
-			return
-		}
-
-		fmt.Printf("GPG key generated: %v\n", result["fingerprint"])
-	case "delete":
-		if len(args) < 2 {
-			dief("Usage: oa gpg delete <fingerprint>")
-		}
-
-		deleteResource(client, "/api/v1/admin/gpg/keys/"+escape(args[1]), "GPG key deleted.")
-	default:
-		dief("Unknown gpg subcommand: %s", args[0])
-	}
-}
-
-// ═══════════════════════════════════════════════════════════════════════════════
 // STORAGE BACKEND (admin)
 // ═══════════════════════════════════════════════════════════════════════════════
 

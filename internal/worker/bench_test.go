@@ -107,7 +107,7 @@ func BenchmarkDebGenerateDistribution(b *testing.B) {
 
 			for b.Loop() {
 				blobs := make(map[string][]byte)
-				if err := w.generateDistribution(context.Background(), dist, entries, blobs); err != nil {
+				if err := w.generateDistribution(context.Background(), dist, entries, nil, blobs); err != nil {
 					b.Fatal(err)
 				}
 			}

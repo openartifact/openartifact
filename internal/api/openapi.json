@@ -1293,23 +1293,64 @@
       },
       "GPGKey": {
         "type": "object",
+        "description": "A signing key. Private key material is never part of the API.",
         "properties": {
+          "id": {
+            "type": "string",
+            "description": "UUID, or `config` for the read-only key configured through gpg.keyPath"
+          },
+          "name": {
+            "type": "string"
+          },
           "fingerprint": {
             "type": "string"
           },
-          "uid": {
+          "key_id": {
+            "type": "string",
+            "description": "Long key id (last 16 hex digits of the fingerprint)"
+          },
+          "algorithm": {
+            "type": "string",
+            "description": "ed25519, rsa2048, rsa4096, ..."
+          },
+          "user_id": {
+            "type": "string"
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "imported",
+              "generated",
+              "auto",
+              "config"
+            ]
+          },
+          "read_only": {
+            "type": "boolean"
+          },
+          "active_global": {
+            "type": "boolean",
+            "description": "Signs every deb/rpm repository that has no key of its own"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Repositories this key is assigned to"
+          },
+          "created_by": {
             "type": "string"
           },
           "created_at": {
             "type": "string",
-            "format": "date-time"
+            "format": "date-time",
+            "nullable": true
           },
           "expires_at": {
             "type": "string",
-            "format": "date-time"
-          },
-          "is_default": {
-            "type": "boolean"
+            "format": "date-time",
+            "nullable": true
           }
         }
       },
@@ -9445,7 +9486,7 @@
     "/api/v1/admin/gpg/keys": {
       "get": {
         "summary": "List GPG keys",
-        "description": "List all GPG keys (admin only)",
+        "description": "Lists the database-managed signing keys plus the read-only entry for the key configured through gpg.keyPath / GPG_KEY_PATH (admin only). Private key material is never returned.",
         "tags": [
           "Admin",
           "GPG"
@@ -9463,6 +9504,10 @@
                       "items": {
                         "$ref": "#/components/schemas/GPGKey"
                       }
+                    },
+                    "can_store_keys": {
+                      "type": "boolean",
+                      "description": "False when OPENARTIFACT_SECRET_KEY is not set: keys cannot be imported or generated because private keys are only stored encrypted."
                     }
                   }
                 }
@@ -9476,7 +9521,7 @@
       },
       "post": {
         "summary": "Import GPG key",
-        "description": "Import an armored GPG key (admin only)",
+        "description": "Imports an ASCII-armored private key (admin only). A passphrase-protected key is unlocked with `passphrase` and stored without it, sealed with OPENARTIFACT_SECRET_KEY. The key becomes the global active key when nothing signs globally yet, unless `activate` says otherwise.",
         "tags": [
           "Admin",
           "GPG"
@@ -9488,15 +9533,26 @@
               "schema": {
                 "type": "object",
                 "properties": {
-                  "armored": {
-                    "type": "string"
+                  "name": {
+                    "type": "string",
+                    "maxLength": 255,
+                    "description": "Unique display name; defaults to key-<keyid>"
+                  },
+                  "private_key": {
+                    "type": "string",
+                    "description": "ASCII-armored private key"
                   },
                   "passphrase": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Passphrase of a protected key"
+                  },
+                  "activate": {
+                    "type": "boolean",
+                    "description": "Make it the global active key; default: only when nothing signs globally yet"
                   }
                 },
                 "required": [
-                  "armored"
+                  "private_key"
                 ]
               }
             }
@@ -9513,8 +9569,14 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid, protected (code passphrase_required), revoked or expired key"
+          },
           "403": {
             "description": "Admin access required"
+          },
+          "409": {
+            "description": "Name or fingerprint already exists, or OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)"
           }
         }
       }
@@ -9522,36 +9584,44 @@
     "/api/v1/admin/gpg/keys/generate": {
       "post": {
         "summary": "Generate GPG key",
-        "description": "Generate a new GPG key (admin only)",
+        "description": "Generates a signing key pair on the server (admin only). The private key is stored sealed and never returned; export the public key with the export route.",
         "tags": [
           "Admin",
           "GPG"
         ],
         "requestBody": {
-          "required": true,
           "content": {
             "application/json": {
               "schema": {
                 "type": "object",
                 "properties": {
                   "name": {
-                    "type": "string"
+                    "type": "string",
+                    "maxLength": 255
+                  },
+                  "algorithm": {
+                    "type": "string",
+                    "enum": [
+                      "ed25519",
+                      "rsa4096"
+                    ],
+                    "default": "ed25519"
+                  },
+                  "user_name": {
+                    "type": "string",
+                    "description": "User id name; default `OpenArtifact repository signing key`"
                   },
                   "email": {
-                    "type": "string",
-                    "format": "email"
+                    "type": "string"
                   },
                   "comment": {
                     "type": "string"
                   },
-                  "passphrase": {
-                    "type": "string"
+                  "activate": {
+                    "type": "boolean",
+                    "description": "Make it the global active key; default: only when nothing signs globally yet"
                   }
-                },
-                "required": [
-                  "name",
-                  "email"
-                ]
+                }
               }
             }
           }
@@ -9567,8 +9637,14 @@
               }
             }
           },
+          "400": {
+            "description": "Invalid input"
+          },
           "403": {
             "description": "Admin access required"
+          },
+          "409": {
+            "description": "Name already exists, or OPENARTIFACT_SECRET_KEY is not set (code secret_key_required)"
           }
         }
       }
@@ -9576,7 +9652,7 @@
     "/api/v1/admin/gpg/keys/{id}": {
       "delete": {
         "summary": "Delete GPG key",
-        "description": "Delete a GPG key (admin only)",
+        "description": "Deletes a database-managed key (admin only). An active key (global or assigned to a repository) is refused with 409 key_in_use unless `force=true`; the repositories it signed are then re-signed by the next applicable key or become unsigned. The config key cannot be deleted.",
         "tags": [
           "Admin",
           "GPG"
@@ -9586,6 +9662,117 @@
             "name": "id",
             "in": "path",
             "required": true,
+            "description": "Key id (UUID) or `config` for the read-only file/env key",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "schema": {
+              "type": "boolean"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "GPG key deleted"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "GPG key not found"
+          },
+          "409": {
+            "description": "Key is active (key_in_use) or read-only"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/gpg/keys/{id}/activate": {
+      "put": {
+        "summary": "Activate GPG key",
+        "description": "Makes the key sign every deb/rpm repository without a key of its own (global scope), or only the named hosted deb/rpm repository when `repository` is given. Affected repositories are re-signed (admin only).",
+        "tags": [
+          "Admin",
+          "GPG"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Key id (UUID) or `config` for the read-only file/env key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": false,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "repository": {
+                    "type": "string",
+                    "description": "Repository name; omit for the global scope"
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "The key",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GPGKey"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Repository is not a hosted deb or rpm repository"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Key or repository not found"
+          },
+          "409": {
+            "description": "Read-only config key"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Deactivate GPG key",
+        "description": "Stops the key signing globally, or for the repository named in the `repository` query parameter (admin only).",
+        "tags": [
+          "Admin",
+          "GPG"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Key id (UUID) or `config` for the read-only file/env key",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repository",
+            "in": "query",
+            "required": false,
             "schema": {
               "type": "string"
             }
@@ -9593,7 +9780,52 @@
         ],
         "responses": {
           "204": {
-            "description": "GPG key deleted"
+            "description": "Deactivated"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Key or repository not found"
+          },
+          "409": {
+            "description": "The key was not active there, or it is the read-only config key"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/gpg/keys/{id}/export": {
+      "get": {
+        "summary": "Export public key",
+        "description": "Downloads the ASCII-armored public key (admin only).",
+        "tags": [
+          "Admin",
+          "GPG"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "description": "Key id (UUID) or `config` for the read-only file/env key",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Armored public key",
+            "content": {
+              "application/pgp-keys": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
           },
           "404": {
             "description": "GPG key not found"
@@ -12157,6 +12389,7 @@
     "/api/v1/bundles/{name}/{version}/seal": {
       "post": {
         "summary": "Seal bundle",
+        "description": "Seals a draft bundle. With `gpg_key_id` (a key id from the admin GPG list, a fingerprint, or `config`) the bundle manifest is signed and the armored detached signature stored with the bundle (`gpg_key_id` = signer fingerprint, `gpg_signature`). An unknown key answers 400 validation_failed.",
         "tags": [
           "Bundles"
         ],
@@ -12206,6 +12439,96 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/manifest": {
+      "get": {
+        "summary": "Get bundle manifest",
+        "description": "The exact JSON document a bundle signature covers (admin only): bundle identity plus its items ordered by digest.",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Manifest",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Bundle not found"
+          }
+        }
+      }
+    },
+    "/api/v1/bundles/{name}/{version}/manifest.asc": {
+      "get": {
+        "summary": "Get bundle manifest signature",
+        "description": "Armored detached GPG signature of the manifest; 404 when the bundle was sealed without a key (admin only). Verify with `gpg --verify manifest.json.asc manifest.json`.",
+        "tags": [
+          "Bundles"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Armored signature",
+            "content": {
+              "application/pgp-signature": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Bundle not found or not signed"
           }
         }
       }

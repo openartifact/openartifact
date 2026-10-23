@@ -145,7 +145,7 @@ func TestDebMetadataVerifiesWithApt(t *testing.T) {
 		components:    []models.DebianComponent{{Name: "main"}},
 		architectures: []models.DebianArchitecture{{Name: "amd64"}},
 	}
-	w := &DebMetadataWorker{db: db, signer: signer, log: testLogger(t)}
+	w := &DebMetadataWorker{db: db, log: testLogger(t)}
 	dist := models.DebianDistribution{ID: "dist-1", Name: "bookworm"}
 	entries := []models.DebPackageEntry{{
 		ID: "1", Name: "hello", Version: "1.0-1", Arch: "amd64", Filename: "hello_1.0-1_amd64.deb",
@@ -154,7 +154,7 @@ func TestDebMetadataVerifiesWithApt(t *testing.T) {
 	}}
 
 	blobs := make(map[string][]byte)
-	if err := w.generateDistribution(context.Background(), dist, entries, blobs); err != nil {
+	if err := w.generateDistribution(context.Background(), dist, entries, signer, blobs); err != nil {
 		t.Fatalf("generateDistribution: %v", err)
 	}
 

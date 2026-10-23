@@ -128,7 +128,7 @@ gpg:
   enabled: false
   # keyPath: /etc/openartifact/gpg/private.key
   # passphrase: ""
-  # autoGenerate: false
+  # autoGenerate: false  # generate a global RSA-4096 signing key at startup when none exists; needs OPENARTIFACT_SECRET_KEY (keys can also be managed via the admin API / `oa gpg`)
 
 backup:
   backupDir: "/var/lib/openartifact/backups"

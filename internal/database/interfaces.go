@@ -667,7 +667,8 @@ type Database interface {
 	// AddBundleItems atomically adds items to a draft bundle (ErrBundleNotDraft otherwise).
 	AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error
 	// SealReleaseBundle conditionally moves a non-empty draft bundle to sealed; false when it was not a draft.
-	SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time) (bool, error)
+	// A non-nil sig is stored with the bundle and requires the item set to still match sig.ItemIDs.
+	SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time, sig *models.BundleSignature) (bool, error)
 
 	// Scan lookups/deletes by ID scoped to a repository (nil / not-found errors when absent).
 	GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error)
@@ -692,6 +693,36 @@ type Database interface {
 	DeleteVEXStatement(ctx context.Context, repoID, id string) error
 	// DeleteSBOMReportInRepo deletes the report and returns the sha256 of its blob ("" if none).
 	DeleteSBOMReportInRepo(ctx context.Context, repoID, id string) (string, error)
+
+	// GPG signing keys (docs/security/signing.md). Private keys are sealed by internal/crypto.
+	// CreateGPGKey stores k inactive and fills ID/CreatedAt; ErrGPGKeyExists on a taken name or fingerprint.
+	CreateGPGKey(ctx context.Context, k *models.GPGKey) error
+	// CreateGPGKeyIfNone stores k as the global active key only when no key exists, under a cluster-wide lock.
+	CreateGPGKeyIfNone(ctx context.Context, k *models.GPGKey) (bool, error)
+	// ListGPGKeys lists every key without its private part.
+	ListGPGKeys(ctx context.Context) ([]*models.GPGKey, error)
+	// GetGPGKey loads one key with its sealed private part; ErrGPGKeyNotFound when absent.
+	GetGPGKey(ctx context.Context, id string) (*models.GPGKey, error)
+	// GetGPGKeyByFingerprint loads a key by fingerprint; ErrGPGKeyNotFound when absent.
+	GetGPGKeyByFingerprint(ctx context.Context, fingerprint string) (*models.GPGKey, error)
+	// DeleteGPGKey removes a key and its repository assignments; ErrGPGKeyNotFound when absent.
+	DeleteGPGKey(ctx context.Context, id string) error
+	// SetGlobalGPGKey makes id the one globally active key; ErrGPGKeyNotFound when absent.
+	SetGlobalGPGKey(ctx context.Context, id string) error
+	// ClearGlobalGPGKey leaves no key globally active.
+	ClearGlobalGPGKey(ctx context.Context) error
+	// SetRepositoryGPGKey makes keyID the signing key of one repository.
+	SetRepositoryGPGKey(ctx context.Context, repoID, keyID, assignedBy string) error
+	// ClearRepositoryGPGKey removes a repository's own key and reports whether there was one.
+	ClearRepositoryGPGKey(ctx context.Context, repoID string) (bool, error)
+	// ListGPGKeyAssignments lists every repository-to-key binding.
+	ListGPGKeyAssignments(ctx context.Context) ([]models.GPGKeyAssignment, error)
+	// ListRepositoriesForGPGKey returns the repositories bound to keyID.
+	ListRepositoriesForGPGKey(ctx context.Context, keyID string) ([]models.GPGSigningRepo, error)
+	// ListSigningRepositoriesWithoutKey returns the hosted deb/rpm repositories that follow the global key.
+	ListSigningRepositoriesWithoutKey(ctx context.Context) ([]models.GPGSigningRepo, error)
+	// ResolveGPGKeyForRepository returns the repository's own key, else the global active one, with its sealed private part; nil when unsigned.
+	ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error)
 
 	// SetArtifactProperties upserts props in one transaction; replace=true clears existing ones first.
 	SetArtifactProperties(ctx context.Context, repoID, artifactID string, props map[string]string, replace bool) error
