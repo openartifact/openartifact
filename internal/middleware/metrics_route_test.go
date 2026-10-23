@@ -35,3 +35,15 @@ func TestMetricsMiddlewareUsesRouteTemplate(t *testing.T) {
 		t.Errorf("unknown series = %v, want 0", got)
 	}
 }
+
+func TestMetricsMiddlewareUnmatchedIsFixedLabel(t *testing.T) {
+	reg := metrics.NewRegistry()
+	h := MetricsMiddleware(reg)(chi.NewRouter())
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/no/such/route/secret-token", nil)
+	h.ServeHTTP(httptest.NewRecorder(), req)
+
+	if got := testutil.ToFloat64(reg.HTTPRequestsTotal.WithLabelValues("GET", "unmatched", "404")); got != 1 {
+		t.Errorf("unmatched series = %v, want 1", got)
+	}
+}

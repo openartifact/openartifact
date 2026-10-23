@@ -87,6 +87,10 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### Unreleased
 
+#### Prometheus `path` label
+
+- The `path` label of `openartifact_http_requests_total` and `openartifact_http_request_duration_seconds` was always `unknown` (the middleware could not see the matched route). It now holds the route pattern (`/api/v1/repositories/{name}`, trailing `/*` removed), and `unmatched` for requests that match no route. Dashboards and alerts that select `path="unknown"` must be updated; series cardinality stays bounded by the route table.
+
 #### Search ranking, grouping and the command palette
 
 - **`GET /api/v1/search` no longer returns the `results` key.** It was a copy of `packages` kept from before 0.5.0; read `packages`. `oa search` is updated and its own `--format json` output keeps `results`.
