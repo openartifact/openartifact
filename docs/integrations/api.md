@@ -151,6 +151,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/trash`, `/repositories/{name}/trash` | [trash](../operations/trash.md): list, restore and purge deleted items and repositories |
 | `/repositories/{name}/{cleanup-policies,quota,webhooks}` | [cleanup and quotas](../repositories/cleanup-and-quotas.md), per-repository [webhooks](../operations/webhooks.md) |
 | `/projects/{project}/activity` | audit events of the project and its repositories for every member, newest first, keyset paging (`cursor`, `has_more`; no total) and no client addresses; see [project activity](../security/projects.md#project-activity) |
+| `/projects/{project}/activity/export` | the same events as a JSONL or CSV download (`format`, `since`, `until`, `actor`, `action`) for every member, with the same token-event and client-address rules; see [audit export](../operations/monitoring.md#export) |
 | `/projects/{project}/{usage,quota,cleanup-policies}` | project storage usage, the project [quota](../repositories/cleanup-and-quotas.md#project-quotas) (`PUT` is global-admin only) and [default cleanup policies](../repositories/cleanup-and-quotas.md#project-default-cleanup-policies); access follows the caller's [project role](../security/projects.md) |
 | `/repositories/{name}/registry-gc` | `POST` (admin): run [Docker registry garbage collection](../formats/docker.md#garbage-collection), optionally as a dry run |
 | `/repositories/{name}/{sbom,vuln,license,secrets}` | SBOMs and [scanning](../security/scanning.md) (scans, quarantine, license policies) |
@@ -162,7 +163,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/projects` (with `/repositories`, `/members`, `/groups` and `/tokens`) | [projects](../security/projects.md): open to every authenticated user and decided per project role, not by global `manage` (`404` for non-members, `403` for members lacking the role). Updates use `PATCH` for the project and for a member's role |
 | `/webhooks` | global webhooks, test, deliveries |
 | `/bundles`, `/pipelines` | [release bundles](../repositories/release-bundles.md) and promotion pipelines |
-| `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log, GPG keys (`/admin/gpg/keys` is a stub: empty list, 501 on write; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |
+| `/admin/{tokens,storage,backup,restore,audit,gpg,sso-providers,ai,license,system}` | token administration, [storage](../operations/storage.md), [backup](../operations/backup.md), audit log (`/admin/audit/export` streams it as a JSONL or CSV [download](../operations/monitoring.md#export)), GPG keys (`/admin/gpg/keys` is a stub: empty list, 501 on write; see [signing](../security/signing.md)), SSO providers, AI settings, global license policies, detailed system info |
 | `/admin/tiering/{tiers,policies,dry-run,run,status}` | [storage tiers](../operations/storage-tiering.md#admin-api): tiers with placement stats, lifecycle policies (CRUD), dry run (`POST /admin/tiering/dry-run`: counts, bytes and a sample of what would move, no changes), mover trigger and status |
 | `/system/info` | version and build information |
 

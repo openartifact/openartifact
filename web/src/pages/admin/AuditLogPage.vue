@@ -7,7 +7,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('admin.audit.title')" :description="t('adm.audit.description')" />
+    <PageHeader :title="t('admin.audit.title')" :description="t('adm.audit.description')">
+      <template #actions>
+        <AuditExportButtons :download="exportAudit" />
+      </template>
+    </PageHeader>
 
     <!-- Filter Panel (the server filters by actor and action) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -126,10 +130,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import AppButton from '../../components/AppButton.vue'
+import AuditExportButtons from '../../components/AuditExportButtons.vue'
 import PageHeader from '../../components/PageHeader.vue'
 import { formatTimestamp } from '../../lib/datetime'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { listAudit, type AuditEntry } from '../../api/audit'
+import { downloadAuditExport, listAudit, type AuditEntry, type ExportFormat } from '../../api/audit'
 import { ChevronRightIcon } from '@heroicons/vue/24/outline'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
@@ -150,6 +155,12 @@ const pageIndex = ref(0)
 const hasMore = ref(false)
 const actor = ref('')
 const action = ref('')
+
+// The export covers the whole log narrowed by the current filters, not the
+// loaded page.
+function exportAudit(format: ExportFormat): Promise<void> {
+  return downloadAuditExport(format, { actor: actor.value.trim(), action: action.value.trim() })
+}
 
 function toggleExpand(id: string | undefined): void {
   if (id == null) return

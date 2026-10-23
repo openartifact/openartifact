@@ -128,12 +128,82 @@ curl -H "Authorization: Bearer <TOKEN>" \
 
 The response is `{"data":[...],"page":1,"per_page":25,"total":N}`, newest first. Each entry has `id`, `timestamp`, `action`, `actor`, `target`, `details`, `ip`, `repository_id`, `resource_type` and `resource_id`.
 
+### Export
+
+`GET /api/v1/admin/audit/export` (admin only) downloads the log, not one page of it, as JSONL or CSV:
+
+```sh
+curl -fOJ -H "Authorization: Bearer <TOKEN>" \
+  "HOST/api/v1/admin/audit/export?format=csv&since=2026-01-01&until=2026-02-01"
+
+oa audit export --format jsonl --since 24h -o audit.jsonl   # or stdout without -o
+```
+
+| Parameter | Default | Meaning |
+|---|---|---|
+| `format` | `jsonl` | `jsonl` (one JSON object per line) or `csv` (header row, then one record per entry) |
+| `since` | | entries at or after this instant: an RFC 3339 timestamp or a `YYYY-MM-DD` date (00:00 UTC) |
+| `until` | | entries strictly before this instant (same forms); must be after `since` |
+| `actor`, `action` | | the same substring filters as the listing |
+
+`oa audit export` takes the same filters as `--format`, `--since`, `--until`, `--actor` and `--action`, plus `-o FILE` (written atomically, so an interrupted transfer leaves no partial file; without `-o` the export goes to stdout). `--since` and `--until` also accept an age such as `36h` or `7d`, resolved against the current time.
+
+The response is a download named `openartifact-audit-<UTC timestamp>.<jsonl|csv>` (`Content-Disposition`), newest entry first. It is streamed: entries are read from the database in keyset pages of 1000 and flushed after every page, no row is counted, and memory stays at one page however large the log is. The body is chunked, so there is no `Content-Length`. If the server fails after the first bytes went out, or the connection drops, the response ends abnormally instead of finishing like a complete file; treat a transfer error as a partial export and run it again. Entries recorded while an export runs are newer than its starting point and may or may not be included.
+
+Fields, in this order. The set is stable: fields may be appended, never renamed or removed.
+
+| Field | Meaning |
+|---|---|
+| `id` | entry UUID; unique, usable as a dedup key |
+| `timestamp` | RFC 3339 in UTC with microseconds, for example `2026-03-01T12:00:00.123456Z` |
+| `action` | action name, for example `auth.login` |
+| `actor` | username or token name (empty when the event has none) |
+| `actor_type` | `user`, `system`, `token` or `sso` |
+| `actor_id` | UUID of the acting user, if any |
+| `resource_type`, `resource_id` | the object the event names, if any |
+| `repository_id`, `project_id` | UUIDs of the repository or project concerned, if any |
+| `ip` | client address |
+| `details` | the event details: a JSON object in JSONL, its JSON text in one CSV cell |
+
+Unset values are `null` in JSONL and an empty cell in CSV. CSV is RFC 4180 (quoted cells, doubled quotes, newlines allowed inside quotes). To keep spreadsheets from running attacker-controlled text, a CSV cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is written with a leading `'`; read JSONL when you need the exact value.
+
+Members of a project export the project's own activity with `GET /api/v1/projects/{project}/activity/export` (same `format`, `since`, `until`, `actor` and `action` parameters, file name `openartifact-<project>-activity-<timestamp>.<ext>`). It applies the same visibility rules as the [project activity](../security/projects.md#project-activity) feed: `project.token_*` events only for maintainers and above and no client addresses. Its fields are `id`, `timestamp`, `action`, `actor`, `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. The Admin, Audit page and the project's Activity section have **Export JSONL** and **Export CSV** buttons for the same downloads (the admin button applies the filters typed on the page).
+
+#### Shipping the log to a SIEM
+
+Every entry has a unique `id` and an RFC 3339 `timestamp`, and `since` is inclusive, so a periodic job can ingest the last window and let the target drop the overlap. The examples assume `jq` and a token with admin rights in `OA_TOKEN`.
+
+Splunk (HTTP Event Collector, event time taken from `timestamp`):
+
+```sh
+oa audit export --since 1h \
+  | jq -c '{time: (.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601), sourcetype: "openartifact:audit", event: .}' \
+  | curl -fsS -H "Authorization: Splunk $HEC_TOKEN" --data-binary @- https://splunk.example.com:8088/services/collector/event
+```
+
+Elasticsearch (bulk API; using `id` as the document id makes re-ingesting an overlapping window idempotent):
+
+```sh
+oa audit export --since 1h \
+  | jq -c '{index: {_index: "openartifact-audit", _id: .id}}, (. + {"@timestamp": .timestamp})' \
+  | curl -fsS -H "Content-Type: application/x-ndjson" -u "$ES_USER:$ES_PASS" --data-binary @- https://es.example.com:9200/_bulk
+```
+
+For a large backlog split the stream first (`split -l 10000` over the export, one `_bulk` call per part).
+
+Loki (push API; entries are sent oldest first, each as a log line with its own time; Loki's `reject_old_samples` limit, 7 days by default, refuses older entries):
+
+```sh
+oa audit export --since 1h \
+  | jq -cs 'reverse | {streams: [{stream: {job: "openartifact-audit"}, values: map([(.timestamp | sub("\\.[0-9]+Z$"; "Z") | fromdateiso8601 | tostring) + "000000000", tostring])}]}' \
+  | curl -fsS -H "Content-Type: application/json" --data-binary @- http://loki.example.com:3100/loki/api/v1/push
+```
+
 Behaviour to know:
 
 - Writes go through a buffered queue (1000 events). When it is full a request waits up to 2 s, then the event is dropped and `openartifact_audit_dropped_total` increases. The queue is flushed on graceful shutdown (5 s).
 - There is no retention or purge: `audit_logs` grows until you delete rows yourself (for example with a scheduled SQL `DELETE ... WHERE created_at < now() - interval '1 year'`).
 - Audit logs are not part of [backups](backup.md).
-- The `oa audit list` command does not work against this endpoint (it sends `limit` and `user` and reads `entries`); use the route above.
 
 ## Logging
 

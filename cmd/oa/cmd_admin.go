@@ -6,6 +6,7 @@ package main
 
 import (
 	"encoding/json"
+	"errors"
 	"flag"
 	"fmt"
 	"io"
@@ -15,6 +16,7 @@ import (
 	"path/filepath"
 	"strconv"
 	"strings"
+	"time"
 )
 
 // ═══════════════════════════════════════════════════════════════════════════════
@@ -802,6 +804,11 @@ func backupRestore(client *Client, archive string) {
 const auditPageSize = 100
 
 func handleAudit(args []string, client *Client, outFmt string) {
+	if len(args) >= 1 && args[0] == "export" {
+		handleAuditExport(args[1:], client)
+		return
+	}
+
 	if len(args) >= 1 && args[0] != "list" {
 		dief("Unknown audit subcommand: %s", args[0])
 	}
@@ -859,4 +866,124 @@ func handleAudit(args []string, client *Client, outFmt string) {
 
 	printTable(entries, []string{"TIME", "ACTOR", "ACTION", "TYPE", "TARGET"},
 		[]string{"timestamp", "actor", "action", "resource_type", "target"}, outFmt)
+}
+
+// auditExportQuery builds the query string of GET /api/v1/admin/audit/export.
+// since and until accept what the server accepts (RFC 3339 or YYYY-MM-DD, UTC)
+// and also a relative age such as 24h or 7d, resolved against now.
+func auditExportQuery(format, since, until, actor, action string, now time.Time) (url.Values, error) {
+	if format != "jsonl" && format != "csv" {
+		return nil, fmt.Errorf("--format must be jsonl or csv, got %q", format)
+	}
+
+	q := url.Values{"format": {format}}
+
+	for _, f := range []struct{ name, value string }{{"since", since}, {"until", until}} {
+		if f.value == "" {
+			continue
+		}
+
+		resolved, err := resolveAuditTime(f.value, now)
+		if err != nil {
+			return nil, fmt.Errorf("--%s: %w", f.name, err)
+		}
+
+		q.Set(f.name, resolved)
+	}
+
+	if actor != "" {
+		q.Set("actor", actor)
+	}
+
+	if action != "" {
+		q.Set("action", action)
+	}
+
+	return q, nil
+}
+
+var errAuditTime = errors.New("expected RFC 3339, YYYY-MM-DD or a relative age like 24h or 7d")
+
+// resolveAuditTime turns a relative age (Go duration or <n>d) into an RFC 3339
+// instant before now; absolute values are validated and passed through.
+func resolveAuditTime(v string, now time.Time) (string, error) {
+	if _, err := time.Parse(time.RFC3339Nano, v); err == nil {
+		return v, nil
+	}
+
+	if _, err := time.Parse(time.DateOnly, v); err == nil {
+		return v, nil
+	}
+
+	age, err := parseAge(v)
+	if err != nil {
+		return "", errAuditTime
+	}
+
+	return now.Add(-age).UTC().Format(time.RFC3339), nil
+}
+
+func parseAge(v string) (time.Duration, error) {
+	if days, ok := strings.CutSuffix(v, "d"); ok {
+		n, err := strconv.Atoi(days)
+		if err != nil || n < 0 {
+			return 0, errAuditTime
+		}
+
+		return time.Duration(n) * 24 * time.Hour, nil
+	}
+
+	d, err := time.ParseDuration(v)
+	if err != nil || d < 0 {
+		return 0, errAuditTime
+	}
+
+	return d, nil
+}
+
+// handleAuditExport streams the server's audit export to a file (written
+// atomically, so an interrupted transfer leaves nothing behind) or to stdout.
+func handleAuditExport(args []string, client *Client) {
+	fs := flag.NewFlagSet("audit export", flag.ExitOnError)
+	format := fs.String("format", "jsonl", "Export format: jsonl|csv")
+	since := fs.String("since", "", "Only entries at or after this time (RFC 3339, YYYY-MM-DD or an age like 24h, 7d)")
+	until := fs.String("until", "", "Only entries before this time (same forms)")
+	actor := fs.String("actor", "", "Filter by actor")
+	action := fs.String("action", "", "Filter by action")
+	output := fs.String("o", "", "Write to this file instead of stdout")
+	fs.StringVar(output, "output", "", "Write to this file instead of stdout")
+
+	_ = fs.Parse(args)
+
+	if fs.NArg() > 0 {
+		dief("unexpected argument: %s", fs.Arg(0))
+	}
+
+	q, err := auditExportQuery(*format, *since, *until, *actor, *action, time.Now())
+	if err != nil {
+		dief("%v", err)
+	}
+
+	resp, err := client.do(http.MethodGet, "/api/v1/admin/audit/export?"+q.Encode(), nil, "")
+	if err != nil {
+		dief("%v", err)
+	}
+	defer func() { _ = resp.Body.Close() }()
+
+	checkOK(resp)
+
+	if *output == "" || *output == "-" {
+		if _, err := io.Copy(os.Stdout, resp.Body); err != nil {
+			dief("writing export: %v", err)
+		}
+
+		return
+	}
+
+	n, err := downloadTo(resp, *output)
+	if err != nil {
+		dief("%v", err)
+	}
+
+	fmt.Fprintf(os.Stderr, "Exported %d bytes to '%s'.\n", n, *output)
 }

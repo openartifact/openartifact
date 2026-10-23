@@ -103,6 +103,8 @@ func projectMemberAction(method, collection, id string) (auth.ProjectAction, boo
 	}
 
 	switch {
+	case collection == "activity" && id == "export" && method == http.MethodGet:
+		return auth.ProjectActionRead, true
 	case collection == "members" && (method == http.MethodPatch || method == http.MethodDelete):
 		return auth.ProjectActionMembersManage, true
 	case collection == "groups" && (method == http.MethodPut || method == http.MethodDelete):

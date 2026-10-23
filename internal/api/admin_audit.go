@@ -28,6 +28,35 @@ func NewAdminAuditHandler(db database.Database, log *logger.Logger, evaluator *a
 
 func (h *AdminAuditHandler) Register(r chi.Router) {
 	r.Get("/api/v1/admin/audit", h.handleList)
+	r.Get("/api/v1/admin/audit/export", h.handleExport)
+}
+
+// handleExport streams the whole audit log (or the slice selected by actor,
+// action, since and until) as JSONL or CSV, newest first.
+//
+//	GET /api/v1/admin/audit/export?format=jsonl|csv
+func (h *AdminAuditHandler) handleExport(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
+	e := &auditExport{
+		db:  h.db,
+		log: h.log,
+		row: func(l *models.AuditLog) auditExportRow {
+			return newAdminAuditExportRow(l)
+		},
+		columns:    adminAuditExportColumns,
+		filePrefix: "openartifact-audit",
+	}
+
+	var ok bool
+
+	if e.format, ok = parseAuditExportQuery(w, r, &e.params); !ok {
+		return
+	}
+
+	e.serve(w, r)
 }
 
 func (h *AdminAuditHandler) handleList(w http.ResponseWriter, r *http.Request) {

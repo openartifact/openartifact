@@ -43,7 +43,11 @@ type AuditListParams struct {
 	// HideProjectTokenEvents drops project.token_* entries (token mint and
 	// revoke), which only maintainers may see.
 	HideProjectTokenEvents bool
-	Limit                  int
+	// Since and Until bound created_at: entries at or after Since and strictly
+	// before Until. Nil leaves that side open.
+	Since *time.Time
+	Until *time.Time
+	Limit int
 	// Offset skips that many entries. Ignored when After is set.
 	Offset int
 	// After, when set, returns only entries strictly after this position

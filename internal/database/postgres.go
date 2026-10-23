@@ -2834,6 +2834,16 @@ func auditFilterWhere(params models.AuditListParams) (string, []any) {
 		where += fmt.Sprintf(" AND (details_json->>'actor' ILIKE $%[1]d OR actor_id::text ILIKE $%[1]d)", len(args))
 	}
 
+	if params.Since != nil {
+		args = append(args, *params.Since)
+		where += fmt.Sprintf(" AND created_at >= $%d", len(args))
+	}
+
+	if params.Until != nil {
+		args = append(args, *params.Until)
+		where += fmt.Sprintf(" AND created_at < $%d", len(args))
+	}
+
 	return where, args
 }
 

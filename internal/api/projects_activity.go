@@ -97,3 +97,35 @@ func activityEntry(l *models.AuditLog) responses.ProjectActivityEntry {
 		RepositoryID: l.RepositoryID,
 	}
 }
+
+// handleExportActivity streams the project's activity as JSONL or CSV to any
+// member, newest first, with the same visibility rules as the listing:
+// project.token_* events only for maintainers and above, no client addresses.
+//
+//	GET /api/v1/projects/{project}/activity/export?format=jsonl|csv
+func (h *ProjectsHandler) handleExportActivity(w http.ResponseWriter, r *http.Request) {
+	access, ok := h.loadAccess(w, r, auth.ProjectActionRead)
+	if !ok {
+		return
+	}
+
+	e := &auditExport{
+		db:  h.db,
+		log: h.log,
+		params: models.AuditListParams{
+			ProjectID:              access.project.ID,
+			HideProjectTokenEvents: !access.isMaintainer(),
+		},
+		columns: projectActivityExportColumns,
+		row: func(l *models.AuditLog) auditExportRow {
+			return newProjectActivityExportRow(l)
+		},
+		filePrefix: "openartifact-" + access.project.Slug + "-activity",
+	}
+
+	if e.format, ok = parseAuditExportQuery(w, r, &e.params); !ok {
+		return
+	}
+
+	e.serve(w, r)
+}

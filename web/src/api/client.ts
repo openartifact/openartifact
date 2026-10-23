@@ -156,3 +156,19 @@ export async function preflight(path: string): Promise<{ filename?: string }> {
     controller.abort()
   }
 }
+
+/**
+ * Downloads a same-origin GET: preflights it so a refusal (403, 400) surfaces
+ * as an ApiError, then hands the transfer to the browser, which streams it to
+ * disk named by the attachment header (`fallbackName` when it sends none).
+ */
+export async function downloadAttachment(url: string, fallbackName: string): Promise<void> {
+  const { filename } = await preflight(url)
+
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename ?? fallbackName
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
+}

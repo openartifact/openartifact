@@ -8127,6 +8127,94 @@
         }
       }
     },
+    "/api/v1/admin/audit/export": {
+      "get": {
+        "summary": "Export audit log",
+        "description": "Export the audit log as JSONL or CSV (admin only). Streams the log as a download without counting rows: entries are read in keyset pages (newest first) and flushed after every page, so memory stays bounded however long the log is. The body is chunked (no `Content-Length`); if the server fails after the response started the connection is aborted rather than ended normally, so a truncated file is detectable. In CSV, cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` to defuse spreadsheet formula injection. Fields (stable; new fields may be appended): `id`, `timestamp` (RFC 3339, UTC), `action`, `actor`, `actor_type`, `actor_id`, `resource_type`, `resource_id`, `repository_id`, `project_id`, `ip`, `details` (JSON object; in CSV its JSON text). Unset values are `null` in JSONL and empty in CSV.",
+        "tags": [
+          "Admin",
+          "Audit"
+        ],
+        "parameters": [
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`jsonl` (default): one JSON object per line. `csv`: header row plus one record per entry.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "jsonl",
+                "csv"
+              ],
+              "default": "jsonl"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Only entries at or after this instant: RFC 3339 timestamp or `YYYY-MM-DD` (00:00 UTC).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "Only entries strictly before this instant (same forms as `since`); must be after `since`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Case-insensitive substring of the actor name or actor id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Case-insensitive substring of the action name.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Audit export stream",
+            "headers": {
+              "Content-Disposition": {
+                "description": "`attachment; filename=\"...\"` with a UTC timestamp in the name.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format`, malformed `since`/`until`, or `since` not before `until`"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
     "/api/v1/admin/gpg/keys": {
       "get": {
         "summary": "List GPG keys",
@@ -9453,6 +9541,104 @@
           },
           "400": {
             "description": "Malformed cursor"
+          },
+          "404": {
+            "description": "Project not found or the caller is not a member"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/activity/export": {
+      "get": {
+        "summary": "Export project activity",
+        "description": "Export the project's activity (same scope and visibility as `GET /api/v1/projects/{project}/activity`: `project.token_*` events only for maintainers and above, no client addresses) as JSONL or CSV, for any member. Streams the log as a download without counting rows: entries are read in keyset pages (newest first) and flushed after every page, so memory stays bounded however long the log is. The body is chunked (no `Content-Length`); if the server fails after the response started the connection is aborted rather than ended normally, so a truncated file is detectable. In CSV, cells starting with `=`, `+`, `-`, `@`, tab or CR are prefixed with `'` to defuse spreadsheet formula injection. Fields: `id`, `timestamp` (RFC 3339, UTC), `action`, `actor`, `actor_type`, `message`, `resource_type`, `resource_id`, `repository_id`.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`jsonl` (default): one JSON object per line. `csv`: header row plus one record per entry.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "jsonl",
+                "csv"
+              ],
+              "default": "jsonl"
+            }
+          },
+          {
+            "name": "since",
+            "in": "query",
+            "description": "Only entries at or after this instant: RFC 3339 timestamp or `YYYY-MM-DD` (00:00 UTC).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "until",
+            "in": "query",
+            "description": "Only entries strictly before this instant (same forms as `since`); must be after `since`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "actor",
+            "in": "query",
+            "description": "Case-insensitive substring of the actor name or actor id.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "action",
+            "in": "query",
+            "description": "Case-insensitive substring of the action name.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Activity export stream",
+            "headers": {
+              "Content-Disposition": {
+                "description": "`attachment; filename=\"...\"` with a UTC timestamp in the name.",
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/x-ndjson": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format`, malformed `since`/`until`, or `since` not before `until`"
+          },
+          "403": {
+            "description": "Access denied"
           },
           "404": {
             "description": "Project not found or the caller is not a member"

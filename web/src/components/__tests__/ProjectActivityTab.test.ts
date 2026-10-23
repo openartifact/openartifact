@@ -4,6 +4,7 @@
 
 import { describe, it, expect, spyOn, afterEach, type Mock } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
+import { createPinia } from 'pinia'
 import ProjectActivityTab from '../ProjectActivityTab.vue'
 import { formatDateTime } from '../../lib/datetime'
 
@@ -24,7 +25,7 @@ afterEach(() => spy?.mockRestore())
 
 function mountTab(respond: (url: string) => Response) {
   spy = spyOn(globalThis, 'fetch').mockImplementation(async (input) => respond(String(input)))
-  const wrapper = mount(ProjectActivityTab, { props: { project: 'p' } })
+  const wrapper = mount(ProjectActivityTab, { props: { project: 'p' }, global: { plugins: [createPinia()] } })
   return flushPromises().then(() => wrapper)
 }
 
@@ -51,6 +52,23 @@ describe('ProjectActivityTab', () => {
     expect(wrapper.find('[data-testid="activity-more"]').exists()).toBe(false)
   })
 
+  it('downloads the export of the current project in the chosen format', async () => {
+    const wrapper = await mountTab(() => json({ data: [], per_page: 25, has_more: false }))
+    const clicked: { href: string; download: string }[] = []
+    const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.getAttribute('href') ?? '', download: this.download })
+    })
+    spy.mockImplementation(
+      async () => new Response('x', { status: 200, headers: { 'Content-Disposition': 'attachment; filename="p-activity.csv"' } }),
+    )
+
+    await wrapper.find('[data-testid="export-csv"]').trigger('click')
+    await flushPromises()
+
+    expect(clicked).toEqual([{ href: '/api/v1/projects/p/activity/export?format=csv', download: 'p-activity.csv' }])
+    click.mockRestore()
+  })
+
   it('says so when nothing is recorded', async () => {
     const wrapper = await mountTab(() => json({ data: [], per_page: 25, has_more: false }))
     expect(wrapper.find('[data-testid="activity-empty"]').exists()).toBe(true)
@@ -73,7 +91,7 @@ describe('ProjectActivityTab', () => {
 
   it('drops a slow response for the previous project after a project switch', async () => {
     const pending = deferredFetch()
-    const wrapper = mount(ProjectActivityTab, { props: { project: 'old' } })
+    const wrapper = mount(ProjectActivityTab, { props: { project: 'old' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     await wrapper.setProps({ project: 'new' })
     await flushPromises()
@@ -94,7 +112,7 @@ describe('ProjectActivityTab', () => {
 
   it('drops a load-more response that lands after the project changed', async () => {
     const pending = deferredFetch()
-    const wrapper = mount(ProjectActivityTab, { props: { project: 'old' } })
+    const wrapper = mount(ProjectActivityTab, { props: { project: 'old' }, global: { plugins: [createPinia()] } })
     await flushPromises()
     pending.get('/api/v1/projects/old/activity?per_page=25')!(
       json({ data: [entry('o1', 'project.created', 'old-1')], per_page: 25, has_more: true, next_cursor: 'c2' }),

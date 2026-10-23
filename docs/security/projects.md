@@ -146,6 +146,7 @@ Every member reads the events of their own project, without being a global admin
 
 - Newest first, keyset paging like the admin log: `per_page` (default 25, at most 100), `cursor` (the previous `next_cursor`), `has_more`. There is no total and no row is ever counted. `actor` and `action` are case-insensitive substring filters.
 - Entries carry `id`, `timestamp`, `action`, `actor` (user or token name), `actor_type`, `message`, `resource_type`, `resource_id` and `repository_id`. They never carry the client IP address: that stays in the admin log.
+- `GET /projects/{project}/activity/export?format=jsonl|csv` downloads the same feed (all of it, optionally narrowed by `since`, `until`, `actor`, `action`) with the same visibility rules; fields and format in [audit export](../operations/monitoring.md#export). The **Activity** section has the matching buttons.
 - Access is the viewer role: a non-member gets `404`, the same as for an unknown project, so one project's activity never leaks into another's. Anonymous, deploy and scoped credentials get no project role, as for every other project route.
 
 ## API

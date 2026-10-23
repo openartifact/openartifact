@@ -3,7 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect, spyOn } from 'bun:test'
-import { listAudit } from '../audit'
+import { downloadAuditExport, listAudit } from '../audit'
+import { ApiError } from '../client'
 
 function json(body: unknown): Response {
   return new Response(JSON.stringify(body), { status: 200, headers: { 'Content-Type': 'application/json' } })
@@ -43,5 +44,38 @@ describe('listAudit', () => {
   it('reports the last page without a cursor', async () => {
     spyOn(globalThis, 'fetch').mockResolvedValueOnce(json({ data: [{ id: '9' }], has_more: false }))
     expect(await listAudit()).toEqual({ items: [{ id: '9' }], hasMore: false, nextCursor: null })
+  })
+})
+
+describe('downloadAuditExport', () => {
+  it('preflights the export with the filters, then lets the browser stream it', async () => {
+    const fetchSpy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('x', { status: 200, headers: { 'Content-Disposition': 'attachment; filename="openartifact-audit-20260101T000000Z.csv"' } }),
+    )
+    const clicked: { href: string; download: string }[] = []
+    spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.getAttribute('href') ?? '', download: this.download })
+    })
+
+    await downloadAuditExport('csv', { actor: 'alice', action: '' })
+
+    const url = requestedUrl(fetchSpy)
+    expect(url.pathname).toBe('/api/v1/admin/audit/export')
+    expect(url.searchParams.get('format')).toBe('csv')
+    expect(url.searchParams.get('actor')).toBe('alice')
+    expect(url.searchParams.has('action')).toBe(false)
+    expect(clicked).toEqual([{ href: '/api/v1/admin/audit/export?format=csv&actor=alice', download: 'openartifact-audit-20260101T000000Z.csv' }])
+  })
+
+  it('rejects with the server error and starts no download', async () => {
+    spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'admin access required', code: 'forbidden' }), { status: 403, headers: { 'Content-Type': 'application/json' } }),
+    )
+    const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+
+    const err = await downloadAuditExport('jsonl').catch((e: unknown) => e)
+
+    expect(err).toBeInstanceOf(ApiError)
+    expect(click).not.toHaveBeenCalled()
   })
 })

@@ -4265,6 +4265,54 @@ export type GetApiV1AdminAuditResponses = {
 
 export type GetApiV1AdminAuditResponse = GetApiV1AdminAuditResponses[keyof GetApiV1AdminAuditResponses];
 
+export type GetApiV1AdminAuditExportData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * `jsonl` (default): one JSON object per line. `csv`: header row plus one record per entry.
+         */
+        format?: 'jsonl' | 'csv';
+        /**
+         * Only entries at or after this instant: RFC 3339 timestamp or `YYYY-MM-DD` (00:00 UTC).
+         */
+        since?: string;
+        /**
+         * Only entries strictly before this instant (same forms as `since`); must be after `since`.
+         */
+        until?: string;
+        /**
+         * Case-insensitive substring of the actor name or actor id.
+         */
+        actor?: string;
+        /**
+         * Case-insensitive substring of the action name.
+         */
+        action?: string;
+    };
+    url: '/api/v1/admin/audit/export';
+};
+
+export type GetApiV1AdminAuditExportErrors = {
+    /**
+     * Unknown `format`, malformed `since`/`until`, or `since` not before `until`
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminAuditExportResponses = {
+    /**
+     * Audit export stream
+     */
+    200: string;
+};
+
+export type GetApiV1AdminAuditExportResponse = GetApiV1AdminAuditExportResponses[keyof GetApiV1AdminAuditExportResponses];
+
 export type GetApiV1AdminGpgKeysData = {
     body?: never;
     path?: never;
@@ -5208,6 +5256,60 @@ export type GetApiV1ProjectsByProjectActivityResponses = {
 };
 
 export type GetApiV1ProjectsByProjectActivityResponse = GetApiV1ProjectsByProjectActivityResponses[keyof GetApiV1ProjectsByProjectActivityResponses];
+
+export type GetApiV1ProjectsByProjectActivityExportData = {
+    body?: never;
+    path: {
+        project: string;
+    };
+    query?: {
+        /**
+         * `jsonl` (default): one JSON object per line. `csv`: header row plus one record per entry.
+         */
+        format?: 'jsonl' | 'csv';
+        /**
+         * Only entries at or after this instant: RFC 3339 timestamp or `YYYY-MM-DD` (00:00 UTC).
+         */
+        since?: string;
+        /**
+         * Only entries strictly before this instant (same forms as `since`); must be after `since`.
+         */
+        until?: string;
+        /**
+         * Case-insensitive substring of the actor name or actor id.
+         */
+        actor?: string;
+        /**
+         * Case-insensitive substring of the action name.
+         */
+        action?: string;
+    };
+    url: '/api/v1/projects/{project}/activity/export';
+};
+
+export type GetApiV1ProjectsByProjectActivityExportErrors = {
+    /**
+     * Unknown `format`, malformed `since`/`until`, or `since` not before `until`
+     */
+    400: unknown;
+    /**
+     * Access denied
+     */
+    403: unknown;
+    /**
+     * Project not found or the caller is not a member
+     */
+    404: unknown;
+};
+
+export type GetApiV1ProjectsByProjectActivityExportResponses = {
+    /**
+     * Activity export stream
+     */
+    200: string;
+};
+
+export type GetApiV1ProjectsByProjectActivityExportResponse = GetApiV1ProjectsByProjectActivityExportResponses[keyof GetApiV1ProjectsByProjectActivityExportResponses];
 
 export type GetApiV1ProjectsByProjectQuotaData = {
     body?: never;

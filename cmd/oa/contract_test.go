@@ -20,6 +20,7 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api"
@@ -763,6 +764,38 @@ func TestContractBackupAuditSystem(t *testing.T) {
 			out:     "repo.create",
 		},
 		{
+			name:    "audit export streams to stdout with filters",
+			args:    []string{"audit", "export", "--format", "csv", "--since", "2026-01-01", "--until", "2026-02-01T00:00:00Z", "--actor", "admin", "--action", "auth"},
+			replies: map[string]reply{"GET /api/v1/admin/audit/export": {status: 200, body: "id,timestamp\nx,y\n", headers: map[string]string{"Content-Type": "text/csv"}}},
+			calls: []call{{method: "GET", pattern: "/api/v1/admin/audit/export", query: map[string]string{
+				"format": "csv", "since": "2026-01-01", "until": "2026-02-01T00:00:00Z", "actor": "admin", "action": "auth",
+			}}},
+			out: "id,timestamp\nx,y\n",
+		},
+		{
+			name:    "audit export defaults to jsonl and resolves a relative since",
+			args:    []string{"audit", "export", "--since", "7d"},
+			replies: map[string]reply{"GET /api/v1/admin/audit/export": ok("")},
+			calls:   []call{{method: "GET", pattern: "/api/v1/admin/audit/export", query: map[string]string{"format": "jsonl"}}},
+		},
+		{
+			name: "audit export rejects an unknown format before any request",
+			args: []string{"audit", "export", "--format", "xml"},
+			fail: "--format must be jsonl or csv",
+		},
+		{
+			name: "audit export rejects a malformed time before any request",
+			args: []string{"audit", "export", "--until", "yesterday-ish"},
+			fail: "--until",
+		},
+		{
+			name:    "audit export reports a refusal",
+			args:    []string{"audit", "export"},
+			replies: map[string]reply{"GET /api/v1/admin/audit/export": {status: 403, body: `{"error":"admin access required"}`}},
+			calls:   []call{{method: "GET", pattern: "/api/v1/admin/audit/export"}},
+			fail:    "admin access required",
+		},
+		{
 			name:    "system info prefers the admin endpoint",
 			args:    []string{"system", "info"},
 			replies: map[string]reply{"GET /api/v1/admin/system/info": ok(`{"version":"1","uptime":"1h","db_status":"ok"}`)},
@@ -962,4 +995,73 @@ func TestContractRepoFeatures(t *testing.T) {
 			out:     "aa",
 		},
 	})
+}
+
+func TestContractAuditExportToFile(t *testing.T) {
+	const body = "{\"id\":\"1\"}\n{\"id\":\"2\"}\n"
+
+	cs, srv := newContractServer(t, map[string]reply{"GET /api/v1/admin/audit/export": {status: 200, body: body}})
+	dest := filepath.Join(t.TempDir(), "audit.jsonl")
+
+	res := runOA(t, srv, "", "audit", "export", "--format", "jsonl", "-o", dest)
+	if res.code != 0 {
+		t.Fatalf("exit %d: %s", res.code, res.stderr)
+	}
+
+	if len(cs.bad) > 0 {
+		t.Errorf("CLI hit routes the server does not serve: %v", cs.bad)
+	}
+
+	got, err := os.ReadFile(dest)
+	if err != nil || string(got) != body {
+		t.Errorf("file = %q (%v), want %q", got, err, body)
+	}
+
+	if res.stdout != "" {
+		t.Errorf("stdout must stay clean when writing to a file, got %q", res.stdout)
+	}
+
+	entries, _ := os.ReadDir(filepath.Dir(dest))
+	if len(entries) != 1 {
+		t.Errorf("temp files left behind: %v", entries)
+	}
+}
+
+func TestAuditExportQuery(t *testing.T) {
+	now := time.Date(2026, 3, 10, 12, 0, 0, 0, time.UTC)
+
+	for name, tc := range map[string]struct {
+		since, until string
+		want         map[string]string
+		err          string
+	}{
+		"relative days":    {since: "7d", want: map[string]string{"since": "2026-03-03T12:00:00Z"}},
+		"relative hours":   {since: "36h", until: "1h", want: map[string]string{"since": "2026-03-09T00:00:00Z", "until": "2026-03-10T11:00:00Z"}},
+		"date passes":      {since: "2026-01-01", want: map[string]string{"since": "2026-01-01"}},
+		"rfc3339 passes":   {until: "2026-01-01T10:00:00+02:00", want: map[string]string{"until": "2026-01-01T10:00:00+02:00"}},
+		"garbage":          {since: "soon", err: "--since"},
+		"negative age":     {since: "-3h", err: "--since"},
+		"day count needed": {until: "xd", err: "--until"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			q, err := auditExportQuery("jsonl", tc.since, tc.until, "", "", now)
+			if tc.err != "" {
+				if err == nil || !strings.Contains(err.Error(), tc.err) {
+					t.Fatalf("err = %v, want %q", err, tc.err)
+				}
+
+				return
+			}
+
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			for k, v := range tc.want {
+				if q.Get(k) != v {
+					t.Errorf("%s = %q, want %q", k, q.Get(k), v)
+				}
+			}
+		})
+	}
 }

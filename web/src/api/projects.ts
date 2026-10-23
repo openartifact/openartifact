@@ -2,7 +2,8 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { downloadAttachment, request } from './client'
+import type { ExportFormat } from './audit'
 import type { Repository } from './repositories'
 import type { ApiCleanupPolicy } from '../lib/cleanupPolicy'
 import type {
@@ -268,3 +269,7 @@ export async function listProjectActivity(
   const res = await request<Partial<ProjectActivityPage>>(`${base(project)}/activity${query}`)
   return { items: res?.data ?? [], hasMore: res?.has_more ?? false, nextCursor: res?.next_cursor ?? null }
 }
+
+/** Downloads the project's activity (any member) as JSONL or CSV, newest first. */
+export const downloadProjectActivityExport = (project: string, format: ExportFormat) =>
+  downloadAttachment(`${base(project)}/activity/export?format=${format}`, `openartifact-${project}-activity.${format}`)

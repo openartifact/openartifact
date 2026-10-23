@@ -11,9 +11,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 <template>
   <section class="rounded-xl border border-border bg-surface overflow-hidden" :aria-label="t('projects.activity.title')">
-    <div class="px-4 py-3 border-b border-border">
-      <h2 class="text-sm font-semibold text-foreground">{{ t('projects.activity.title') }}</h2>
-      <p class="mt-0.5 text-xs text-muted">{{ t('projects.activity.hint') }}</p>
+    <div class="px-4 py-3 border-b border-border flex flex-wrap items-start justify-between gap-3">
+      <div>
+        <h2 class="text-sm font-semibold text-foreground">{{ t('projects.activity.title') }}</h2>
+        <p class="mt-0.5 text-xs text-muted">{{ t('projects.activity.hint') }}</p>
+      </div>
+      <AuditExportButtons :download="exportActivity" />
     </div>
 
     <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
@@ -57,7 +60,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
-import { listProjectActivity, type ProjectActivityEntry } from '../api/projects'
+import AuditExportButtons from './AuditExportButtons.vue'
+import { downloadProjectActivityExport, listProjectActivity, type ProjectActivityEntry } from '../api/projects'
+import type { ExportFormat } from '../api/audit'
 import { formatDateTime } from '../lib/datetime'
 import { t } from '../i18n/en'
 
@@ -110,6 +115,8 @@ async function loadMore(): Promise<void> {
     if (mine === generation) loadingMore.value = false
   }
 }
+
+const exportActivity = (format: ExportFormat) => downloadProjectActivityExport(props.project, format)
 
 watch(() => props.project, loadFirst, { immediate: true })
 </script>

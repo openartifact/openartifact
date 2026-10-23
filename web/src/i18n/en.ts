@@ -90,6 +90,9 @@ const base = {
 
   // Common
   'common.loading': 'Loading...',
+  'common.export.jsonl': 'Export JSONL',
+  'common.export.csv': 'Export CSV',
+  'common.export.failed': 'Export failed',
   'common.save': 'Save',
   'common.saving': 'Saving...',
   'common.saved': 'Saved',

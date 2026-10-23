@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { downloadAttachment, request } from './client'
 import type { AuditEntry, GetApiV1AdminAuditData, GetApiV1AdminAuditResponses } from './generated/types.gen'
 
 export type { AuditEntry }
@@ -49,4 +49,19 @@ export async function listAudit(filters?: AuditFilters): Promise<AuditPage> {
     hasMore: raw.has_more ?? false,
     nextCursor: raw.next_cursor ?? null,
   }
+}
+
+/** Wire formats of the audit and project activity exports. */
+export type ExportFormat = 'jsonl' | 'csv'
+
+/**
+ * Downloads the audit log (admin) as JSONL or CSV, narrowed by the same
+ * actor/action filters as the listing. The server streams the whole log, not
+ * just the loaded page.
+ */
+export function downloadAuditExport(format: ExportFormat, filters?: Pick<AuditFilters, 'actor' | 'action'>): Promise<void> {
+  const qs = new URLSearchParams({ format })
+  if (filters?.actor) qs.set('actor', filters.actor)
+  if (filters?.action) qs.set('action', filters.action)
+  return downloadAttachment(`/api/v1/admin/audit/export?${qs}`, `openartifact-audit.${format}`)
 }
