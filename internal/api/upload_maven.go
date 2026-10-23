@@ -104,7 +104,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	uploadResult := "success"
 
 	if h.reg != nil {
-		defer func() { h.reg.UploadsTotal.WithLabelValues("maven", uploadResult).Inc() }()
+		defer func() { h.reg.CountUpload(metrics.FormatMaven, uploadResult) }()
 	}
 
 	repoID, err := h.resolveRepoID(r.Context(), repoName)

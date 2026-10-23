@@ -67,9 +67,9 @@ scrape_configs:
 
 | Metric | Type | Labels | Notes |
 |---|---|---|---|
-| `openartifact_http_requests_total` | counter | `method`, `path`, `status` | `path` is the route pattern (trailing `/*` removed), or `unmatched` for requests that match no route (the raw path is never used), so cardinality stays bounded |
-| `openartifact_http_request_duration_seconds` | histogram | `method`, `path` | buckets 0.005 to 10 s |
-| `openartifact_uploads_total` | counter | `format`, `result` | `result` is `success` or `error`; only the API upload handlers for `deb`, `npm`, `rpm` and `maven` count here |
+| `openartifact_http_requests_total` | counter | `method`, `path`, `status` | `path` is the route template that served the request (see [the `path` label](#the-path-label)), or `unmatched` for requests that match no route; the raw URL is never used, so cardinality is bounded by the route table |
+| `openartifact_http_request_duration_seconds` | histogram | `method`, `path` | buckets 0.005 to 10 s; same `path` values |
+| `openartifact_uploads_total` | counter | `format`, `result` | hosted upload requests: `format` is one of `deb`, `rpm`, `npm`, `maven`, `helm`, `rubygems`, `docker`, `pypi`, `cargo`, `go`, `nuget`, `conda`, `conan`, `ivy`, `sbt`, `raw`; `result` is `success` (HTTP status below 400) or `error` (400 and above). See [what counts as an upload](#what-counts-as-an-upload) |
 | `openartifact_blob_bytes_total` | counter | `operation` | bytes written (`put`) and read (`get`) through the blob store |
 | `openartifact_blob_downloads_total` | counter | `mode`, `reason` | blob `GET`s by delivery: `mode=redirect` (`reason=presigned`) or `mode=stream` (`disabled`, `unsupported`, `below_min_size`, `sign_failed`, `repo_lookup_failed`, `missing_object`); see [presigned URLs](storage.md#presigned-urls) |
 | `openartifact_metadata_regenerations_total` | counter | `format` | `rpm`, `maven`, `npm` |
@@ -85,7 +85,51 @@ scrape_configs:
 | `openartifact_scanner_install_attempts_total` | counter | `scanner`, `result` | runtime installs of Trivy / Grype (`scanners.<name>.install: auto`): `installed`, `reused` (a verified copy was already there), `unsupported_platform`, `download_failed`, `checksum_mismatch`, `extract_failed`, `noexec`, `insecure_location`, `failed` |
 | `openartifact_scanner_db_update_attempts_total` | counter | `scanner`, `result` | background vulnerability database refreshes of Trivy / Grype: `success` or `failure` (a refresh cut short by shutdown is not counted) |
 | `openartifact_scanner_db_last_success_timestamp_seconds` | gauge | `scanner` | Unix time of the last successful refresh; after a restart it starts from the age of the database on disk, and is absent for a scanner that has no database |
+| `openartifact_db_pool_connections` | gauge | `pool`, `state` | established database connections: `state` is `in_use` (checked out) or `idle`; see [database pools](#database-connection-pools) |
+| `openartifact_db_pool_open_connections` | gauge | `pool` | connections that exist, including (pgx) those being opened |
+| `openartifact_db_pool_max_connections` | gauge | `pool` | configured limit (`database.maxOpenConns`) |
+| `openartifact_db_pool_acquire_waits_total` | counter | `pool` | acquisitions that found every connection busy and had to wait |
+| `openartifact_db_pool_acquire_wait_seconds_total` | counter | `pool` | cumulative time those acquisitions waited |
+| `openartifact_db_pool_connections_closed_total` | counter | `pool`, `reason` | connections the pool closed: `max_lifetime` or `max_idle` (connection churn) |
+| `openartifact_db_pool_acquires_total`, `openartifact_db_pool_acquire_seconds_total`, `openartifact_db_pool_acquire_canceled_total`, `openartifact_db_pool_connections_created_total` | counter | `pool` | `pool="pgx"` only (database/sql keeps no such counters): successful acquisitions, time spent acquiring, acquisitions abandoned by a cancelled caller, connections opened |
 | `openartifact_blob_deletions_swept_total` | counter | `result` | sweeper decisions: `deleted` (bytes removed) or `kept` (the blob was referenced or placed there again, entry dropped) |
+
+#### The `path` label
+
+`path` is the chi route template of the handler that served the request, never the raw URL: repository, package and image names, versions, tags and digests cannot reach a label. Templates keep their parameter names (`/repos/{name}/{pkg}/{version}`) and catch-alls keep their `/*` (`/repos/raw/{name}/*`, `/repos/maven/{name}/*`), so each catch-all is a single series however many files it serves. A request that matches no route is `unmatched`.
+
+The OCI registry is served by one catch-all route, `/v2/*`; it is split by the endpoint the path addresses, using the distribution-spec templates:
+
+| `path` | Request |
+|---|---|
+| `/v2/{name}/manifests/{reference}` | manifest get, head, put, delete |
+| `/v2/{name}/blobs/{digest}` | blob get, head, delete |
+| `/v2/{name}/blobs/uploads` | start a blob upload (also the monolithic `POST ?digest=`) |
+| `/v2/{name}/blobs/uploads/{uuid}` | upload status, chunk, completion, cancel |
+| `/v2/{name}/tags/list` | tag listing |
+| `/v2/{name}/referrers/{digest}` | referrers |
+| `/v2/*` | any other path under `/v2/` |
+| `/v2`, `/v2/_catalog` | version check, catalog |
+
+Other templates worth knowing: `/repos/{name}/*` (a publish to an npm or Go repository, `PUT`), `/repos/{name}/{pkg}` (npm packument), `/repos/{name}/{platform}` (conda), `/*` (the web UI).
+
+#### What counts as an upload
+
+`openartifact_uploads_total` counts one per hosted upload request that reaches an upload handler, whatever the client protocol, so every format has the same series:
+
+- `deb`, `rpm` (API upload), `npm` (publish), `maven` (`PUT`), `raw` (presigned upload completion), and `go` (GOPROXY upload) are counted by their handlers.
+- `helm`, `rubygems`, `pypi`, `cargo`, `nuget`, `conda`, `conan`, `ivy`, `sbt` and `raw` (direct `PUT`) are counted by the HTTP middleware from the response status of the upload route (`POST /charts`, `PUT /api/v1/crates/new`, `POST /legacy/`, ...).
+- `docker` counts the requests that finish pushing an object: a manifest `PUT`, the `PUT` that completes a blob upload, and a monolithic `POST ?digest=`. Starting an upload and chunk `PATCH`es are not counted, and a push of several layers counts one per layer plus one for the manifest.
+- A package made of several files counts one per file request (a Maven deploy issues a `PUT` for the POM, the jar and each checksum; Conan and Ivy/sbt likewise).
+- A request refused by authentication or RBAC (`401`, `403`) never reaches the route and is not counted. Anything the upload route itself answers with `4xx` or `5xx` (unknown repository, validation, quota, immutable release, storage failure) is `result="error"`.
+
+For the presigned raw upload (`POST /api/v1/repositories/{name}/uploads/{id}/complete`), a completion that fails (size or sha256 mismatch, expired upload, quota, storage error) is `error`; a retried completion of an already completed upload and an abort are not counted.
+
+#### Database connection pools
+
+The server keeps two connection pools to PostgreSQL, both capped by `database.maxOpenConns`, and the `pool` label tells them apart: `pgx` is the pgx pool the sqlc queries run on, `sql` is the `database/sql` pool (per-request authentication lookups, migrations, workers). They are read when Prometheus scrapes, not sampled in the background. Each pool opens connections independently, so up to twice `maxOpenConns` can be open at once: size `max_connections` of PostgreSQL accordingly.
+
+Saturation shows as `in_use` close to `max_connections` together with a growing `acquire_waits_total` and `acquire_wait_seconds_total`; a high rate of `connections_closed_total` means the pool is opening and closing connections instead of reusing them.
 
 Useful queries:
 
@@ -96,6 +140,23 @@ sum by (path) (rate(openartifact_http_requests_total{status=~"5.."}[5m]))
 
 # p95 latency per route
 histogram_quantile(0.95, sum by (le, path) (rate(openartifact_http_request_duration_seconds_bucket[5m])))
+
+# p95 latency of OCI manifest and blob traffic
+histogram_quantile(0.95, sum by (le, path) (rate(openartifact_http_request_duration_seconds_bucket{path=~"/v2/.*"}[5m])))
+
+# upload rate and failure ratio per format
+sum by (format) (rate(openartifact_uploads_total[5m]))
+sum by (format) (rate(openartifact_uploads_total{result="error"}[5m]))
+  / sum by (format) (rate(openartifact_uploads_total[5m]))
+
+# database pool utilisation (1 = every connection checked out)
+openartifact_db_pool_connections{state="in_use"} / openartifact_db_pool_max_connections
+
+# average time an acquisition waited, for acquisitions that had to wait
+rate(openartifact_db_pool_acquire_wait_seconds_total[5m]) / rate(openartifact_db_pool_acquire_waits_total[5m])
+
+# requests that waited for a database connection, per second
+sum by (pool) (rate(openartifact_db_pool_acquire_waits_total[5m]))
 
 # audit events being dropped (should stay 0)
 increase(openartifact_audit_dropped_total[1h]) > 0

@@ -293,7 +293,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 	uploadResult := "success"
 
 	if h.reg != nil {
-		defer func() { h.reg.UploadsTotal.WithLabelValues("npm", uploadResult).Inc() }()
+		defer func() { h.reg.CountUpload(metrics.FormatNPM, uploadResult) }()
 	}
 
 	if h.publishSlots != nil {

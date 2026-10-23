@@ -94,7 +94,7 @@ func (h *DebUploadHandler) handleUpload(w http.ResponseWriter, r *http.Request) 
 	uploadResult := "success"
 
 	if h.reg != nil {
-		defer func() { h.reg.UploadsTotal.WithLabelValues("deb", uploadResult).Inc() }()
+		defer func() { h.reg.CountUpload(metrics.FormatDeb, uploadResult) }()
 	}
 
 	r.Body = http.MaxBytesReader(w, r.Body, maxDebUploadSize+multipartOverhead)

@@ -11,13 +11,14 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 )
 
 // The metrics middleware wraps the router from outside; the path label must
 // still be the route template, not "unknown".
 func TestMetricsMiddlewarePathLabel(t *testing.T) {
-	reg := metrics.NewRegistry()
+	reg := metrics.NewRegistryOn(prometheus.NewRegistry())
 
 	r := chi.NewRouter()
 	r.Get("/api/v1/things/{id}", func(http.ResponseWriter, *http.Request) {})

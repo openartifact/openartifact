@@ -59,10 +59,17 @@ type Registry struct {
 // NewRegistry creates all metrics, registers them on the default Prometheus
 // registry, and returns the populated Registry struct.
 func NewRegistry() *Registry {
+	return NewRegistryOn(prometheus.DefaultRegisterer)
+}
+
+// NewRegistryOn is NewRegistry with an explicit Prometheus registerer, so tests
+// can build a Registry (and read it back) without touching the process-wide
+// default registry, where a second registration would panic.
+func NewRegistryOn(reg prometheus.Registerer) *Registry {
 	r := &Registry{
 		HTTPRequestsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_http_requests_total",
-			Help: "Total number of HTTP requests.",
+			Help: "Total number of HTTP requests by method, route template (never the raw URL) and status.",
 		}, []string{"method", "path", "status"}),
 
 		HTTPRequestDurationSeconds: prometheus.NewHistogramVec(prometheus.HistogramOpts{
@@ -73,7 +80,7 @@ func NewRegistry() *Registry {
 
 		UploadsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
 			Name: "openartifact_uploads_total",
-			Help: "Total number of artifact uploads.",
+			Help: "Hosted upload requests by package format and result (success, error).",
 		}, []string{"format", "result"}),
 
 		BlobBytesTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
@@ -164,7 +171,7 @@ func NewRegistry() *Registry {
 		}, []string{"scanner"}),
 	}
 
-	prometheus.MustRegister(
+	reg.MustRegister(
 		r.HTTPRequestsTotal,
 		r.HTTPRequestDurationSeconds,
 		r.UploadsTotal,
@@ -186,9 +193,9 @@ func NewRegistry() *Registry {
 		r.ScannerDBUpdateAttemptsTotal,
 		r.ScannerDBLastSuccessTimestamp,
 	)
-	prometheus.MustRegister(r.Replication.Collectors()...)
+	reg.MustRegister(r.Replication.Collectors()...)
 
-	r.Recovery = newRecoveryMetrics()
+	r.Recovery = newRecoveryMetrics(reg)
 
 	return r
 }

@@ -303,7 +303,6 @@ func (h *PresignedUploadHandler) handleAbort(w http.ResponseWriter, r *http.Requ
 	}
 
 	h.forgetUpload(up.ID)
-	h.countUpload("aborted")
 	w.WriteHeader(http.StatusNoContent)
 }
 

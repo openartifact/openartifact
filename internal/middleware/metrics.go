@@ -8,16 +8,11 @@ import (
 	"context"
 	"net/http"
 	"strconv"
-	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/metrics"
 )
-
-// unmatchedPath is the path label of requests that match no route (404, 405):
-// a fixed value, never the raw path, so cardinality stays bounded.
-const unmatchedPath = "unmatched"
 
 func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
@@ -36,17 +31,19 @@ func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 
 			duration := time.Since(start)
 
-			path := unmatchedPath
-
+			pattern := ""
 			if rctx := chi.RouteContext(r.Context()); rctx != nil {
-				if p := rctx.RoutePattern(); p != "" {
-					path = strings.TrimSuffix(p, "/*")
-				}
+				pattern = rctx.RoutePattern()
 			}
 
+			path := PathLabel(pattern, r)
 			statusStr := strconv.Itoa(wrapped.statusCode)
 			reg.HTTPRequestsTotal.WithLabelValues(methodLabel(r.Method), path, statusStr).Inc()
 			reg.HTTPRequestDurationSeconds.WithLabelValues(methodLabel(r.Method), path).Observe(duration.Seconds())
+
+			if format, ok := uploadFormat(r, pattern); ok {
+				reg.CountUpload(format, metrics.UploadResult(wrapped.statusCode))
+			}
 		})
 	}
 }

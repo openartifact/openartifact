@@ -438,12 +438,6 @@ func (c *headCapture) Write(p []byte) (int, error) {
 	return len(p), nil
 }
 
-func (h *PresignedUploadHandler) countUpload(result string) {
-	if h.reg != nil {
-		h.reg.UploadsTotal.WithLabelValues("raw", result).Inc()
-	}
-}
-
 // authorizeCompleter lets only the creator of an upload, or an administrator,
 // complete it.
 func (h *PresignedUploadHandler) authorizeCompleter(w http.ResponseWriter, r *http.Request, up *models.PresignedUpload) bool {
@@ -527,6 +521,7 @@ func (h *PresignedUploadHandler) handleComplete(w http.ResponseWriter, r *http.R
 
 	if expired {
 		h.forgetUpload(up.ID)
+		h.reg.CountUpload(metrics.FormatRaw, metrics.UploadError)
 		writeError(w, http.StatusGone, "upload_expired", "upload expired; start a new one")
 
 		return
@@ -541,9 +536,13 @@ func (h *PresignedUploadHandler) handleComplete(w http.ResponseWriter, r *http.R
 	// running on the detached context.
 	resp, fail := h.complete(r.WithContext(ctx), repo, up)
 	if fail != nil {
+		h.reg.CountUpload(metrics.FormatRaw, metrics.UploadError)
 		writeError(w, fail.status, fail.code, fail.message)
+
 		return
 	}
+
+	h.reg.CountUpload(metrics.FormatRaw, metrics.UploadSuccess)
 
 	writeJSON(w, http.StatusCreated, resp)
 }
@@ -571,7 +570,6 @@ func (h *PresignedUploadHandler) release(ctx context.Context, id string) {
 func (h *PresignedUploadHandler) reject(repo *models.Repository, up *models.PresignedUpload, err error, f *completeFailure) *completeFailure {
 	h.Log.Warnw("presigned upload rejected", "repo", repo.Name, "path", up.Path, "upload_id", up.ID, "reason", err.Error())
 	h.forgetUpload(up.ID)
-	h.countUpload("rejected")
 
 	return f
 }
@@ -655,7 +653,6 @@ func (h *PresignedUploadHandler) complete(req *http.Request, repo *models.Reposi
 		// result, and an admin can complete it with ?force=true; the cleanup
 		// worker removes the staging object after expiry otherwise.
 		h.Log.Infow("presigned upload refused: immutable release", "repo", repo.Name, "path", up.Path, "upload_id", up.ID)
-		h.countUpload("rejected")
 		h.release(ctx, up.ID)
 
 		return CompletePresignedUploadResponse{}, failImmutable(up.Path)
@@ -664,19 +661,15 @@ func (h *PresignedUploadHandler) complete(req *http.Request, repo *models.Reposi
 		// upload stays pending, so it can be completed once space is freed;
 		// the cleanup worker removes the staging object after expiry otherwise.
 		h.Log.Infow("presigned upload refused: quota exceeded", "repo", repo.Name, "path", up.Path, "upload_id", up.ID)
-		h.countUpload("rejected")
 		h.release(ctx, up.ID)
 
 		return CompletePresignedUploadResponse{}, failQuota()
 	case err != nil:
 		h.Log.Errorw("presigned upload: failed to record artifact", "repo", repo.Name, "path", up.Path, "error", err)
-		h.countUpload("failure")
 		h.release(ctx, up.ID)
 
 		return CompletePresignedUploadResponse{}, failInternal()
 	}
-
-	h.countUpload("success")
 
 	artifactID := formatraw.StoredID(artifact, previous)
 

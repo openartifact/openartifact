@@ -23,8 +23,8 @@ type RecoveryMetrics struct {
 	ReconcileMarkedTotal prometheus.Counter
 }
 
-// newRecoveryMetrics builds and registers the journal metrics on the default registry.
-func newRecoveryMetrics() RecoveryMetrics {
+// newRecoveryMetrics builds the journal metrics and registers them on reg.
+func newRecoveryMetrics(reg prometheus.Registerer) RecoveryMetrics {
 	m := RecoveryMetrics{
 		JournalBacklog: prometheus.NewGauge(prometheus.GaugeOpts{
 			Name: "openartifact_recovery_journal_backlog",
@@ -52,7 +52,7 @@ func newRecoveryMetrics() RecoveryMetrics {
 		}),
 	}
 
-	prometheus.MustRegister(m.JournalBacklog, m.OldestDirtyAgeSeconds, m.SidecarsWrittenTotal,
+	reg.MustRegister(m.JournalBacklog, m.OldestDirtyAgeSeconds, m.SidecarsWrittenTotal,
 		m.SidecarsDeletedTotal, m.FailuresTotal, m.ReconcileMarkedTotal)
 
 	return m

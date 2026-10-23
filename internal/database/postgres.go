@@ -157,6 +157,13 @@ func (p *PostgresDB) GetDB() *sql.DB {
 	return p.db
 }
 
+// PoolStat reads the statistics of the shared pgx pool (for the
+// openartifact_db_pool_* metrics). It must not be called on a backup snapshot
+// view, which has no pool of its own.
+func (p *PostgresDB) PoolStat() *pgxpool.Stat {
+	return p.rawPool.Stat()
+}
+
 // Close closes the database connection.
 func (p *PostgresDB) Close() error {
 	if p.rawPool != nil {

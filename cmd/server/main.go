@@ -286,6 +286,7 @@ func run(args []string) error {
 	}
 
 	reg := metrics.NewRegistry()
+	metrics.RegisterDBPools(db.PoolStat, db.GetDB().Stats)
 
 	auditLogger := audit.NewLogger(db, log, reg, 1000)
 	audit.SetDefault(auditLogger)
@@ -964,9 +965,11 @@ func run(args []string) error {
 		gomodHTTP.RegisterRepoRoutes(r)
 		npmUpload.RegisterRepoRoutes(r)
 		// npm publish and GOPROXY upload both need PUT "/*"; dispatch by tail.
+		// npmUpload counts its own uploads; the GOPROXY branch is counted here.
+		goUpload := middleware.CountUploads(reg, metrics.FormatGo, gomodHTTP.HandlePut)
 		r.Put("/*", func(w http.ResponseWriter, req *http.Request) {
 			if formatgomod.IsUploadPath(chi.URLParam(req, "*")) {
-				gomodHTTP.HandlePut(w, req)
+				goUpload(w, req)
 				return
 			}
 			npmUpload.HandlePublish(w, req)
