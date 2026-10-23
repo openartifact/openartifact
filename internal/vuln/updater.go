@@ -13,7 +13,9 @@ import (
 // the background and refreshes them every Options.UpdateInterval, retrying a
 // failed download with exponential backoff. Scans never download a database
 // themselves: they run against the cache and fail with FailureDatabase until it
-// is present. With Offline set nothing is downloaded. Stop ends the updaters.
+// is present. A scanner whose install mode is "auto" and that is neither
+// configured nor on PATH is installed first. With Offline set nothing is
+// downloaded. Stop ends the updaters.
 func (r *Registry) Start(ctx context.Context) {
 	r.mu.Lock()
 	defer r.mu.Unlock()
@@ -26,7 +28,6 @@ func (r *Registry) Start(ctx context.Context) {
 
 	if r.opts.Offline {
 		r.log.Infow("scanner database downloads disabled (offline mode)", "cache_dir", r.opts.CacheDir)
-		return
 	}
 
 	for _, u := range []struct {
@@ -36,12 +37,28 @@ func (r *Registry) Start(ctx context.Context) {
 		{&r.trivy, r.updateTrivyDB},
 		{&r.grype, r.updateGrypeDB},
 	} {
-		if _, err := u.tool.lookup(); err != nil {
-			continue
-		}
-
-		r.wg.Go(func() { r.refreshLoop(ctx, u.tool, u.update) })
+		r.wg.Go(func() { r.runTool(ctx, u.tool, u.update) })
 	}
+}
+
+// runTool is one scanner's background life: make the binary resolvable (adopt
+// or download the pinned release when its install mode is "auto"), then keep
+// its database fresh. Offline mode adopts an installed copy but downloads
+// nothing.
+func (r *Registry) runTool(ctx context.Context, t *cliTool, update func(context.Context) error) {
+	if t.installAuto {
+		r.ensureInstalled(ctx, t, !r.opts.Offline)
+	}
+
+	if r.opts.Offline {
+		return
+	}
+
+	if _, err := t.lookup(); err != nil {
+		return
+	}
+
+	r.refreshLoop(ctx, t, update)
 }
 
 // Stop cancels the database updaters and waits for them to return.

@@ -29,9 +29,11 @@ type scannerJSON struct {
 	Ready       bool    `json:"ready"`
 	DBState     *string `json:"db_state"`
 	DBUpdatedAt *string `json:"db_updated_at"`
-	Code        *string `json:"code"`
-	Message     *string `json:"message"`
-	DocsURL     *string `json:"docs_url"`
+
+	InstallState *string `json:"install_state"`
+	Code         *string `json:"code"`
+	Message      *string `json:"message"`
+	DocsURL      *string `json:"docs_url"`
 }
 
 func decodeScanners(t *testing.T, body []byte) []scannerJSON {
@@ -120,5 +122,39 @@ func TestVulnScanners_AdminOnly(t *testing.T) {
 	rw := serveWithPrincipal(registerScannerRoutes(h), &auth.Principal{IsAnonymous: true}, http.MethodGet, vulnScannersPath, "")
 	if rw.Code != http.StatusForbidden {
 		t.Errorf("anonymous status = %d, want 403", rw.Code)
+	}
+}
+
+func TestVulnScanners_ReportsInstallState(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+
+	log, ev := newBundlesScansEnv(t, &bundlesScansMockDB{})
+	registry := vuln.NewRegistry(log, vuln.Options{
+		CacheDir:        t.TempDir(),
+		DownloadBaseURL: "https://mirror.internal.example/gh",
+		Trivy:           vuln.TrivyOptions{Install: true},
+	})
+	h := NewVulnHandler(nil, log, ev, registry)
+
+	rw := serveAs(registerScannerRoutes(h), http.MethodGet, vulnScannersPath, "")
+	if rw.Code != http.StatusOK {
+		t.Fatalf("status = %d, body %s", rw.Code, rw.Body)
+	}
+
+	if strings.Contains(rw.Body.String(), "mirror.internal.example") {
+		t.Errorf("response leaks the configured download host: %s", rw.Body)
+	}
+
+	got := decodeScanners(t, rw.Body.Bytes())
+
+	trivy := got[1]
+	if trivy.Available || trivy.Ready || trivy.InstallState == nil || *trivy.InstallState != vuln.InstallStateInstalling ||
+		trivy.Code == nil || *trivy.Code != vuln.CodeScannerInstalling {
+		t.Errorf("trivy with install auto must report installing: %+v", trivy)
+	}
+
+	// Without install auto the scanner has no install state.
+	if grype := got[2]; grype.InstallState != nil {
+		t.Errorf("grype install_state = %v, want null", *grype.InstallState)
 	}
 }

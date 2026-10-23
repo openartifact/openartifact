@@ -936,9 +936,13 @@ export type VulnScanner = {
      */
     db_updated_at: string | null;
     /**
+     * State of the automatic installer (`scanners.<name>.install: auto`) for a `trivy` / `grype` binary that is being or was downloaded by the server; null when the binary is not managed by the installer.
+     */
+    install_state: 'installing' | 'ready' | 'failed';
+    /**
      * Why the scanner is not ready; null when it is.
      */
-    code: 'scanner_unavailable' | 'scanner_db_unavailable';
+    code: 'scanner_unavailable' | 'scanner_installing' | 'scanner_install_failed' | 'scanner_install_noexec' | 'scanner_db_unavailable';
     /**
      * What the operator must do when the scanner is not ready.
      */

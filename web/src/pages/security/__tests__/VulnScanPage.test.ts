@@ -205,6 +205,41 @@ describe('VulnScanPage scanner readiness', () => {
     wrapper.unmount()
   })
 
+  it('says whether a scanner is installing or its installation failed', async () => {
+    const { wrapper } = await openForm([
+      { name: 'osv', available: true, ready: true, db_state: null, db_updated_at: null, install_state: null, code: null, message: null, docs_url: null },
+      {
+        name: 'trivy',
+        available: false,
+        ready: false,
+        db_state: null,
+        db_updated_at: null,
+        install_state: 'installing',
+        code: 'scanner_installing',
+        message: 'The pinned trivy release is being downloaded: retry in a minute or two.',
+        docs_url: null,
+      },
+      {
+        name: 'grype',
+        available: false,
+        ready: false,
+        db_state: null,
+        db_updated_at: null,
+        install_state: 'failed',
+        code: 'scanner_install_noexec',
+        message: 'The downloaded grype binary cannot be executed.',
+        docs_url: null,
+      },
+    ])
+
+    expect(box('trivy').disabled).toBe(true)
+    expect(box('grype').disabled).toBe(true)
+    expect(document.body.querySelector('[data-testid="scanner-install-trivy"]')!.textContent).toContain('Installing')
+    expect(document.body.querySelector('[data-testid="scanner-install-grype"]')!.textContent).toContain('Installation failed')
+    expect(document.body.querySelector('[data-testid="scanner-note-grype"]')!.textContent).toContain('cannot be executed')
+    wrapper.unmount()
+  })
+
   it('keeps every scanner selectable when the readiness list is unavailable', async () => {
     const { wrapper } = await openForm(undefined)
 

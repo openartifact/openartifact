@@ -18,7 +18,8 @@ func TestLoad_ScannersDefaults(t *testing.T) {
 	}
 
 	s := cfg.Scanners
-	if s.UpdateInterval != 6*time.Hour || s.Offline || s.CacheDir != "" || s.Trivy != (TrivyScanner{}) || s.Grype != (GrypeScanner{}) {
+	if s.UpdateInterval != 6*time.Hour || s.Offline || s.CacheDir != "" || s.DownloadBaseURL != "https://github.com" ||
+		s.Trivy != (TrivyScanner{Install: "none"}) || s.Grype != (GrypeScanner{Install: "none"}) {
 		t.Errorf("defaults = %+v", s)
 	}
 
@@ -32,8 +33,10 @@ func TestLoad_ScannersYAMLAndEnv(t *testing.T) {
   cacheDir: /data/scanners
   updateInterval: 12h
   offline: false
+  downloadBaseUrl: https://mirror.example/github
   trivy:
     path: /opt/trivy
+    install: auto
     dbRepository: mirror.example/trivy-db
     javaDbRepository: mirror.example/trivy-java-db
   grype:
@@ -52,10 +55,11 @@ func TestLoad_ScannersYAMLAndEnv(t *testing.T) {
 	}
 
 	want := ScannersConfig{
-		CacheDir:       "/data/scanners",
-		UpdateInterval: 12 * time.Hour,
-		Trivy:          TrivyScanner{Path: "/opt/trivy", DBRepository: "mirror.example/trivy-db", JavaDBRepository: "mirror.example/trivy-java-db"},
-		Grype:          GrypeScanner{Path: "grype", DBURL: "https://mirror.example/grype/listing.json"},
+		CacheDir:        "/data/scanners",
+		UpdateInterval:  12 * time.Hour,
+		DownloadBaseURL: "https://mirror.example/github",
+		Trivy:           TrivyScanner{Path: "/opt/trivy", Install: "auto", DBRepository: "mirror.example/trivy-db", JavaDBRepository: "mirror.example/trivy-java-db"},
+		Grype:           GrypeScanner{Path: "grype", Install: "none", DBURL: "https://mirror.example/grype/listing.json"},
 	}
 	if cfg.Scanners != want {
 		t.Fatalf("yaml: got %+v, want %+v", cfg.Scanners, want)
@@ -69,6 +73,9 @@ func TestLoad_ScannersYAMLAndEnv(t *testing.T) {
 	t.Setenv("OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY", "env.example/java")
 	t.Setenv("OPENARTIFACT_GRYPE_PATH", "/env/grype")
 	t.Setenv("OPENARTIFACT_GRYPE_DB_URL", "https://env.example/listing.json")
+	t.Setenv("OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL", "https://env.example/gh")
+	t.Setenv("OPENARTIFACT_TRIVY_INSTALL", "none")
+	t.Setenv("OPENARTIFACT_GRYPE_INSTALL", "auto")
 
 	cfg, err = Load(path)
 	if err != nil {
@@ -76,11 +83,12 @@ func TestLoad_ScannersYAMLAndEnv(t *testing.T) {
 	}
 
 	want = ScannersConfig{
-		CacheDir:       "/env/cache",
-		UpdateInterval: 24 * time.Hour,
-		Offline:        true,
-		Trivy:          TrivyScanner{Path: "/env/trivy", DBRepository: "env.example/db", JavaDBRepository: "env.example/java"},
-		Grype:          GrypeScanner{Path: "/env/grype", DBURL: "https://env.example/listing.json"},
+		CacheDir:        "/env/cache",
+		UpdateInterval:  24 * time.Hour,
+		Offline:         true,
+		DownloadBaseURL: "https://env.example/gh",
+		Trivy:           TrivyScanner{Path: "/env/trivy", Install: "none", DBRepository: "env.example/db", JavaDBRepository: "env.example/java"},
+		Grype:           GrypeScanner{Path: "/env/grype", Install: "auto", DBURL: "https://env.example/listing.json"},
 	}
 	if cfg.Scanners != want {
 		t.Fatalf("env: got %+v, want %+v", cfg.Scanners, want)
@@ -89,7 +97,8 @@ func TestLoad_ScannersYAMLAndEnv(t *testing.T) {
 	opts := cfg.Scanners.VulnOptions()
 	if opts.CacheDir != "/env/cache" || !opts.Offline || opts.UpdateInterval != 24*time.Hour ||
 		opts.Trivy.Path != "/env/trivy" || opts.Trivy.DBRepository != "env.example/db" || opts.Trivy.JavaDBRepository != "env.example/java" ||
-		opts.Grype.Path != "/env/grype" || opts.Grype.DBURL != "https://env.example/listing.json" {
+		opts.Grype.Path != "/env/grype" || opts.Grype.DBURL != "https://env.example/listing.json" ||
+		opts.DownloadBaseURL != "https://env.example/gh" || opts.Trivy.Install || !opts.Grype.Install {
 		t.Errorf("VulnOptions lost a setting: %+v", opts)
 	}
 }
@@ -117,6 +126,16 @@ func TestValidate_Scanners(t *testing.T) {
 		{"grype mirror https", func(s *ScannersConfig) { s.Grype.DBURL = "https://mirror.example/listing.json" }, false},
 		{"grype mirror ftp", func(s *ScannersConfig) { s.Grype.DBURL = "ftp://mirror.example/listing.json" }, true},
 		{"grype mirror without host", func(s *ScannersConfig) { s.Grype.DBURL = "https:///x" }, true},
+		{"trivy install auto", func(s *ScannersConfig) { s.Trivy.Install = "auto" }, false},
+		{"grype install unknown", func(s *ScannersConfig) { s.Grype.Install = "always" }, true},
+		{"trivy install empty", func(s *ScannersConfig) { s.Trivy.Install = "" }, true},
+		{"download base mirror with path", func(s *ScannersConfig) { s.DownloadBaseURL = "https://mirror.example/github/" }, false},
+		{"download base http", func(s *ScannersConfig) { s.DownloadBaseURL = "http://mirror.example" }, true},
+		{"download base loopback http", func(s *ScannersConfig) { s.DownloadBaseURL = "http://127.0.0.1:8000" }, true},
+		{"download base userinfo", func(s *ScannersConfig) { s.DownloadBaseURL = "https://user:pw@mirror.example" }, true},
+		{"download base query", func(s *ScannersConfig) { s.DownloadBaseURL = "https://mirror.example/?a=b" }, true},
+		{"download base empty", func(s *ScannersConfig) { s.DownloadBaseURL = "" }, true},
+		{"download base without host", func(s *ScannersConfig) { s.DownloadBaseURL = "https:///x" }, true},
 	}
 
 	for _, tt := range tests {

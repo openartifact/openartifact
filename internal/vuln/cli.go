@@ -33,10 +33,23 @@ type cliTool struct {
 	// dbPresent reports whether cacheDir holds a database.
 	dbPresent func(cacheDir string) bool
 
+	// installAuto lets the registry download the pinned release when neither
+	// the configured path nor PATH provides the binary; installDir is where
+	// the verified copy goes (<cacheDir base>/bin/<name>).
+	installAuto bool
+	installDir  string
+
 	mu          sync.Mutex
 	updating    bool
 	updateFail  bool
 	lastSuccess time.Time
+
+	// Installer state: installState is "", installing, ready or failed;
+	// installCode is the failure's API code; installedPath is the verified
+	// binary once it passed the exec probe.
+	installState  string
+	installCode   string
+	installedPath string
 }
 
 func newCLITool(name, path, cacheDir string, dbPresent func(string) bool) cliTool {
@@ -48,23 +61,41 @@ func newCLITool(name, path, cacheDir string, dbPresent func(string) bool) cliToo
 	return cliTool{name: name, command: command, cacheDir: cacheDir, dbPresent: dbPresent}
 }
 
-// lookup resolves the binary; an error means the scanner is unavailable.
+// lookup resolves the binary by precedence: the configured path, else PATH,
+// else (install "auto") the verified copy the installer put in the cache. An
+// error means the scanner is unavailable.
 func (t *cliTool) lookup() (string, error) {
-	return exec.LookPath(t.command)
+	p, err := exec.LookPath(t.command)
+	if err == nil {
+		return p, nil
+	}
+
+	if t.installAuto {
+		t.mu.Lock()
+		installed := t.installedPath
+		t.mu.Unlock()
+
+		if installed != "" && fileExists(installed) {
+			return installed, nil
+		}
+	}
+
+	return "", err
 }
 
-// preflight returns the failure a scan would hit before it can start: the
-// binary cannot be found or the database is absent.
-func (t *cliTool) preflight() *ScanError {
-	if _, err := t.lookup(); err != nil {
-		return newScanError(t.name, FailureUnavailable, err)
+// preflight returns the binary a scan runs, or the failure the scan would hit
+// before it can start: the binary cannot be found or the database is absent.
+func (t *cliTool) preflight() (string, *ScanError) {
+	bin, err := t.lookup()
+	if err != nil {
+		return "", newScanError(t.name, FailureUnavailable, err)
 	}
 
 	if !t.dbPresent(t.cacheDir) {
-		return newScanError(t.name, FailureDatabase, fmt.Errorf("%w: %s", errDBMissing, t.cacheDir))
+		return "", newScanError(t.name, FailureDatabase, fmt.Errorf("%w: %s", errDBMissing, t.cacheDir))
 	}
 
-	return nil
+	return bin, nil
 }
 
 func (t *cliTool) beginUpdate() {
@@ -88,19 +119,18 @@ func (t *cliTool) endUpdate(err error) {
 func (t *cliTool) status(offline bool, pathEnv string) ScannerStatus {
 	resolved, err := t.lookup()
 	if err != nil {
-		msg := t.name + " was not found on the server's PATH: install it or set " + pathEnv + " (scanners." + t.name + ".path)."
-		if t.command != t.name {
-			msg = "The configured " + t.name + " binary (" + pathEnv + ") is missing or not executable."
-		}
-
-		return ScannerStatus{Name: t.name, Code: CodeScannerUnavailable, Message: msg, DocsURL: DocsURL}
+		return t.unavailableStatus(offline, pathEnv)
 	}
 
 	t.mu.Lock()
 	updating, failed, last := t.updating, t.updateFail, t.lastSuccess
+	installed := t.installedPath
 	t.mu.Unlock()
 
 	st := ScannerStatus{Name: t.name, Available: true, Path: resolved, CacheDir: t.cacheDir}
+	if installed != "" && resolved == installed {
+		st.InstallState = InstallStateReady
+	}
 
 	if t.dbPresent(t.cacheDir) {
 		st.Ready = true
@@ -221,7 +251,12 @@ func (r *Registry) runUpdate(ctx context.Context, t *cliTool, env, args []string
 		return fmt.Errorf("create %s cache dir: %w", t.name, err)
 	}
 
-	_, stderr, err := runScanner(ctx, env, t.command, args...)
+	bin, err := t.lookup()
+	if err != nil {
+		return fmt.Errorf("%w: %s: %w", errDBUpdateRun, t.name, err)
+	}
+
+	_, stderr, err := runScanner(ctx, env, bin, args...)
 	if err != nil {
 		return fmt.Errorf("%w: %s: %w (stderr: %s)", errDBUpdateRun, t.name, err, stderr)
 	}

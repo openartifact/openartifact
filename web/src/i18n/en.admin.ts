@@ -589,6 +589,8 @@ export const enAdmin = {
   'sec.vuln.scannersRequired': 'Select at least one scanner.',
   'sec.vuln.scannerNotReady': 'Not ready on the server.',
   'sec.vuln.scannerSetupGuide': 'Setup guide',
+  'sec.vuln.installState.installing': 'Installing',
+  'sec.vuln.installState.failed': 'Installation failed',
 
   // Security: licenses
   'sec.license.breadcrumb': 'License scan',

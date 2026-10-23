@@ -409,7 +409,10 @@ func defaultConfig() *Config {
 			RefreshInterval:     30 * time.Second,
 		},
 		Scanners: ScannersConfig{
-			UpdateInterval: 6 * time.Hour,
+			UpdateInterval:  6 * time.Hour,
+			DownloadBaseURL: DefaultScannerDownloadBaseURL,
+			Trivy:           TrivyScanner{Install: InstallNone},
+			Grype:           GrypeScanner{Install: InstallNone},
 		},
 		BaseURL: "http://localhost:8080",
 	}
@@ -575,6 +578,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Scanners.Trivy.JavaDBRepository, "OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY")
 	overrideString(&cfg.Scanners.Grype.Path, "OPENARTIFACT_GRYPE_PATH")
 	overrideString(&cfg.Scanners.Grype.DBURL, "OPENARTIFACT_GRYPE_DB_URL")
+	overrideString(&cfg.Scanners.DownloadBaseURL, "OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL")
+	overrideString(&cfg.Scanners.Trivy.Install, "OPENARTIFACT_TRIVY_INSTALL")
+	overrideString(&cfg.Scanners.Grype.Install, "OPENARTIFACT_GRYPE_INSTALL")
 
 	// Base URL
 	overrideString(&cfg.BaseURL, "BASE_URL")

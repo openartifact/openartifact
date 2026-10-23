@@ -222,10 +222,13 @@ scanners:
   cacheDir: ""             # absolute; default <user cache dir>/openartifact/scanners (the image sets /var/cache/openartifact/scanners)
   updateInterval: 6h       # database refresh interval, at least 1h; 0 downloads once and stops
   offline: false           # never download; the databases must already be in cacheDir
+  downloadBaseUrl: https://github.com  # https origin of the pinned release archives (install: auto); a mirror must serve GitHub's /<owner>/<repo>/releases/download/<tag>/<file> paths
   trivy:
     path: ""               # command name or absolute path; default "trivy" on PATH
+    install: none          # none | auto: download the pinned, sha256-verified release into <cacheDir>/bin when path is empty and trivy is not on PATH
     dbRepository: ""       # OCI repository to download trivy-db from (a mirror); default Trivy's built-in list
     javaDbRepository: ""   # also download the Java index database from this repository; empty skips it
   grype:
     path: ""               # command name or absolute path; default "grype" on PATH
+    install: none          # none | auto: as for trivy
     dbUrl: ""              # http(s) URL of a grype database listing.json (a mirror); default grype's built-in

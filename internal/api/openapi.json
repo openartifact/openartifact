@@ -2302,11 +2302,24 @@
             "format": "date-time",
             "description": "When the vulnerability database was last refreshed; null when there is none or the time is unknown."
           },
+          "install_state": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "installing",
+              "ready",
+              "failed"
+            ],
+            "description": "State of the automatic installer (`scanners.<name>.install: auto`) for a `trivy` / `grype` binary that is being or was downloaded by the server; null when the binary is not managed by the installer."
+          },
           "code": {
             "type": "string",
             "nullable": true,
             "enum": [
               "scanner_unavailable",
+              "scanner_installing",
+              "scanner_install_failed",
+              "scanner_install_noexec",
               "scanner_db_unavailable"
             ],
             "description": "Why the scanner is not ready; null when it is."
@@ -2328,6 +2341,7 @@
           "ready",
           "db_state",
           "db_updated_at",
+          "install_state",
           "code",
           "message",
           "docs_url"

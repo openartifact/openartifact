@@ -26,7 +26,21 @@ var (
 	errScannerPath     = errors.New("must be a command name to look up on PATH or an absolute path")
 	errScannerRepo     = errors.New("must be an OCI repository reference without spaces, not starting with '-'")
 	errScannerURL      = errors.New("must be an absolute http(s) URL")
+	errScannerInstall  = errors.New(`must be "none" or "auto"`)
+	errScannerBaseURL  = errors.New("must be an absolute https URL without credentials, query or fragment")
 )
+
+// Install modes of a scanner binary.
+const (
+	// InstallNone leaves the binary to the operator (PATH or the configured path).
+	InstallNone = "none"
+	// InstallAuto downloads the pinned release into the cache directory when
+	// the binary is neither configured nor on PATH.
+	InstallAuto = "auto"
+)
+
+// DefaultScannerDownloadBaseURL serves the pinned scanner release archives.
+const DefaultScannerDownloadBaseURL = "https://github.com"
 
 // ScannersConfig configures the external vulnerability scanners (trivy, grype)
 // used by on-demand scans (see docs/security/scanning.md). OSV needs none of it.
@@ -41,9 +55,13 @@ type ScannersConfig struct {
 	UpdateInterval time.Duration `yaml:"updateInterval"`
 	// Offline stops the server from downloading databases: scans use what
 	// CacheDir already holds and fail while it holds none.
-	Offline bool         `yaml:"offline"`
-	Trivy   TrivyScanner `yaml:"trivy"`
-	Grype   GrypeScanner `yaml:"grype"`
+	Offline bool `yaml:"offline"`
+	// DownloadBaseURL is the https origin the pinned release archives are
+	// downloaded from when a scanner's install mode is "auto". A mirror must
+	// serve GitHub's release paths (/<owner>/<repo>/releases/download/<tag>/<file>).
+	DownloadBaseURL string       `yaml:"downloadBaseUrl"`
+	Trivy           TrivyScanner `yaml:"trivy"`
+	Grype           GrypeScanner `yaml:"grype"`
 }
 
 // TrivyScanner configures the trivy binary and its database sources.
@@ -51,6 +69,9 @@ type TrivyScanner struct {
 	// Path is the binary: a command name looked up on PATH, or an absolute
 	// path. Empty means "trivy".
 	Path string `yaml:"path"`
+	// Install is "none" (default) or "auto": download the pinned trivy release
+	// into the cache directory when Path is empty and trivy is not on PATH.
+	Install string `yaml:"install"`
 	// DBRepository is an OCI repository mirroring ghcr.io/aquasecurity/trivy-db.
 	// Empty is the upstream default.
 	DBRepository string `yaml:"dbRepository"`
@@ -65,6 +86,9 @@ type GrypeScanner struct {
 	// Path is the binary: a command name looked up on PATH, or an absolute
 	// path. Empty means "grype".
 	Path string `yaml:"path"`
+	// Install is "none" (default) or "auto": download the pinned grype release
+	// into the cache directory when Path is empty and grype is not on PATH.
+	Install string `yaml:"install"`
 	// DBURL is the database listing URL of a mirror (GRYPE_DB_UPDATE_URL).
 	// Empty is the upstream default.
 	DBURL string `yaml:"dbUrl"`
@@ -73,15 +97,17 @@ type GrypeScanner struct {
 // VulnOptions converts the settings to the scanner subsystem's options.
 func (s ScannersConfig) VulnOptions() vuln.Options {
 	return vuln.Options{
-		CacheDir:       s.CacheDir,
-		Offline:        s.Offline,
-		UpdateInterval: s.UpdateInterval,
+		CacheDir:        s.CacheDir,
+		Offline:         s.Offline,
+		UpdateInterval:  s.UpdateInterval,
+		DownloadBaseURL: s.DownloadBaseURL,
 		Trivy: vuln.TrivyOptions{
 			Path:             s.Trivy.Path,
+			Install:          s.Trivy.Install == InstallAuto,
 			DBRepository:     s.Trivy.DBRepository,
 			JavaDBRepository: s.Trivy.JavaDBRepository,
 		},
-		Grype: vuln.GrypeOptions{Path: s.Grype.Path, DBURL: s.Grype.DBURL},
+		Grype: vuln.GrypeOptions{Path: s.Grype.Path, Install: s.Grype.Install == InstallAuto, DBURL: s.Grype.DBURL},
 	}
 }
 
@@ -107,6 +133,16 @@ func (s ScannersConfig) validate() error {
 		if !validOCIRepoRef(repo) {
 			return fmt.Errorf("%s: %w", key, errScannerRepo)
 		}
+	}
+
+	for key, mode := range map[string]string{"scanners.trivy.install": s.Trivy.Install, "scanners.grype.install": s.Grype.Install} {
+		if mode != InstallNone && mode != InstallAuto {
+			return fmt.Errorf("%s: %w", key, errScannerInstall)
+		}
+	}
+
+	if err := validDownloadBaseURL(s.DownloadBaseURL); err != nil {
+		return err
 	}
 
 	if s.Grype.DBURL != "" {
@@ -137,4 +173,16 @@ func validOCIRepoRef(ref string) bool {
 	}
 
 	return !strings.HasPrefix(ref, "-") && !strings.ContainsFunc(ref, func(r rune) bool { return r <= ' ' || r == 0x7f })
+}
+
+// validDownloadBaseURL requires an https origin (with an optional path prefix)
+// that carries no credentials: archives are executed, so they must not travel
+// over plain HTTP.
+func validDownloadBaseURL(raw string) error {
+	u, err := url.Parse(raw)
+	if err != nil || u.Scheme != "https" || u.Host == "" || u.User != nil || u.RawQuery != "" || u.Fragment != "" {
+		return fmt.Errorf("scanners.downloadBaseUrl: %w", errScannerBaseURL)
+	}
+
+	return nil
 }
