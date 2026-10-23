@@ -11,7 +11,6 @@ import (
 	"slices"
 	"strings"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/openartifact/openartifact/internal/clientsetup"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
@@ -28,64 +27,18 @@ const (
 	maxFindingSummary = 500
 )
 
-func (s *Server) registerPackageTools() {
-	s.mcpServer.AddTool(
-		mcp.NewTool("list_packages",
-			mcp.WithDescription("List the packages stored in a repository (any format), newest first. Returns name, version, format, architecture, size, sha256, filename and creation time."),
-			mcp.WithString("repository", mcp.Required(), mcp.Description("Repository name")),
-			mcp.WithString("format", mcp.Description("Only list packages of this format (e.g. npm, deb, docker). Leave empty for all.")),
-			mcp.WithNumber("page", mcp.Description("Page number (1-based, default 1)"), mcp.DefaultNumber(1)),
-			mcp.WithNumber("limit", mcp.Description("Results per page (default 20, max 100)"), mcp.DefaultNumber(defaultPageSize)),
-		),
-		s.handleListPackages,
-	)
-
-	s.mcpServer.AddTool(
-		mcp.NewTool("get_package",
-			mcp.WithDescription("Get every version of a package in a repository, with filename, sha256, size, creation time and a download URL."),
-			mcp.WithString("repository", mcp.Required(), mcp.Description("Repository name")),
-			mcp.WithString("name", mcp.Required(), mcp.Description("Exact package name as returned by list_packages")),
-		),
-		s.handleGetPackage,
-	)
-
-	s.mcpServer.AddTool(
-		mcp.NewTool("get_vulnerabilities",
-			mcp.WithDescription("Summarize known vulnerabilities from stored scan results for a repository: severity counts plus the most severe findings (capped at 100). Requires administrator (global manage) permission, like the REST vulnerability scan endpoints."),
-			mcp.WithString("repository", mcp.Required(), mcp.Description("Repository name")),
-			mcp.WithString("package", mcp.Description("Only include this package name")),
-			mcp.WithString("version", mcp.Description("Only include this package version")),
-		),
-		s.handleGetVulnerabilities,
-	)
-
-	s.mcpServer.AddTool(
-		mcp.NewTool("client_setup",
-			mcp.WithDescription("Get the commands to configure and publish with the native client tools for a repository (npm, docker, pip, mvn, apt, ...). Credentials are placeholders: <USERNAME> and <TOKEN>."),
-			mcp.WithString("repository", mcp.Required(), mcp.Description("Repository name")),
-		),
-		s.handleClientSetup,
-	)
-}
-
-func (s *Server) handleListPackages(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	name, err := req.RequireString("repository")
+func (s *Server) listPackages(ctx context.Context, in listPackagesIn) (packageListResult, error) {
+	repo, err := s.resolveRepo(ctx, in.Repository)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return packageListResult{}, err
 	}
 
-	repo, denied := s.resolveRepo(ctx, name)
-	if denied != nil {
-		return denied, nil
-	}
+	page := clampInt(in.Page, 1, 1, maxPage)
+	limit := clampInt(in.Limit, defaultPageSize, 1, maxPageSize)
 
-	format := req.GetString("format", "")
-	page := intArg(req, "page", 1, 1, maxPage)
-	limit := intArg(req, "limit", defaultPageSize, 1, maxPageSize)
-
-	components, total, err := s.db.ListComponentsByRepo(ctx, repo.ID, format, page, limit)
+	components, total, err := s.db.ListComponentsByRepo(ctx, repo.ID, in.Format, page, limit)
 	if err != nil {
-		return s.internalError("list packages", err, "repository", repo.Name), nil
+		return packageListResult{}, s.internalError("list packages", err, "repository", repo.Name)
 	}
 
 	items := make([]packageDTO, 0, len(components))
@@ -93,32 +46,22 @@ func (s *Server) handleListPackages(ctx context.Context, req mcp.CallToolRequest
 		items = append(items, toPackageDTO(c))
 	}
 
-	return jsonResult(packageListResult{Repository: repo.Name, Total: total, Page: page, Limit: limit, Packages: items})
+	return packageListResult{provenance: newProvenance(), Repository: repo.Name, Total: total, Page: page, Limit: limit, Packages: items}, nil
 }
 
-func (s *Server) handleGetPackage(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoName, err := req.RequireString("repository")
+func (s *Server) getPackage(ctx context.Context, in getPackageIn) (packageDetailResult, error) {
+	repo, err := s.resolveRepo(ctx, in.Repository)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return packageDetailResult{}, err
 	}
 
-	pkgName, err := req.RequireString("name")
+	matches, truncated, err := s.findPackageVersions(ctx, repo, in.Name)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	repo, denied := s.resolveRepo(ctx, repoName)
-	if denied != nil {
-		return denied, nil
-	}
-
-	matches, truncated, err := s.findPackageVersions(ctx, repo, pkgName)
-	if err != nil {
-		return s.internalError("get package", err, "repository", repo.Name, "package", pkgName), nil
+		return packageDetailResult{}, s.internalError("get package", err, "repository", repo.Name, "package", in.Name)
 	}
 
 	if len(matches) == 0 {
-		return mcp.NewToolResultError("package not found"), nil
+		return packageDetailResult{}, errPackageNotFound
 	}
 
 	versions := make([]packageVersionDTO, 0, len(matches))
@@ -135,13 +78,14 @@ func (s *Server) handleGetPackage(ctx context.Context, req mcp.CallToolRequest) 
 		})
 	}
 
-	return jsonResult(packageDetailResult{
+	return packageDetailResult{
+		provenance: newProvenance(),
 		Repository: repo.Name,
 		Format:     matches[0].Format,
-		Name:       pkgName,
+		Name:       in.Name,
 		Versions:   versions,
 		Truncated:  truncated,
-	})
+	}, nil
 }
 
 // findPackageVersions scans the repository listing for components named name.
@@ -182,32 +126,27 @@ func (s *Server) downloadURL(repoName, id string) string {
 	return s.baseURL + "/api/v1/repositories/" + url.PathEscape(repoName) + "/packages/" + url.PathEscape(id) + "/download"
 }
 
-func (s *Server) handleGetVulnerabilities(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoName, err := req.RequireString("repository")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
+func (s *Server) getVulnerabilities(ctx context.Context, in vulnerabilitiesIn) (vulnerabilitiesResult, error) {
 	// Same gate as REST GET /api/v1/repositories/{name}/vuln/scans: the global
 	// `manage` permission (evaluated with no repository, like principalIsAdmin).
 	if !s.allowed(ctx, "", "manage") {
-		return mcp.NewToolResultError(msgAdminRequired), nil
+		return vulnerabilitiesResult{}, errAdminRequired
 	}
 
-	repo, denied := s.resolveRepo(ctx, repoName)
-	if denied != nil {
-		return denied, nil
+	repo, err := s.resolveRepo(ctx, in.Repository)
+	if err != nil {
+		return vulnerabilitiesResult{}, err
 	}
-
-	pkg := req.GetString("package", "")
-	version := req.GetString("version", "")
 
 	scans, err := s.db.ListVulnScanResults(ctx, repo.ID, false)
 	if err != nil {
-		return s.internalError("list vuln scans", err, "repository", repo.Name), nil
+		return vulnerabilitiesResult{}, s.internalError("list vuln scans", err, "repository", repo.Name)
 	}
 
-	return jsonResult(summarizeVulns(repo.Name, pkg, version, scans))
+	res := summarizeVulns(repo.Name, in.Package, in.Version, scans)
+	res.provenance = newProvenance()
+
+	return res, nil
 }
 
 // summarizeVulns aggregates scan results matching the optional package and
@@ -310,10 +249,7 @@ func toFindingDTO(scan *models.VulnScanResult, v models.Vulnerability) findingDT
 		refs = []string{}
 	}
 
-	summary := v.Summary
-	if len(summary) > maxFindingSummary {
-		summary = strings.ToValidUTF8(summary[:maxFindingSummary], "") // never cut a multi-byte rune in half
-	}
+	summary := truncateText(v.Summary, maxFindingSummary)
 
 	return findingDTO{
 		PackageName:    scan.PackageName,
@@ -327,21 +263,16 @@ func toFindingDTO(scan *models.VulnScanResult, v models.Vulnerability) findingDT
 	}
 }
 
-func (s *Server) handleClientSetup(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	name, err := req.RequireString("repository")
+func (s *Server) clientSetup(ctx context.Context, in clientSetupIn) (clientSetupResult, error) {
+	repo, err := s.resolveRepo(ctx, in.Repository)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return clientSetupResult{}, err
 	}
 
-	repo, denied := s.resolveRepo(ctx, name)
-	if denied != nil {
-		return denied, nil
-	}
-
-	return jsonResult(clientSetupResult{
+	return clientSetupResult{
 		Repository: repo.Name,
 		Format:     repo.Format,
 		BaseURL:    clientsetup.RepoBaseURL(repo.Format, s.baseURL, repo.Name),
 		Clients:    clientsetup.Snippets(repo.Format, s.baseURL, repo.Name),
-	})
+	}, nil
 }

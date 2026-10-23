@@ -10,6 +10,8 @@ import (
 	"errors"
 	"fmt"
 	"maps"
+	"net/http"
+	"net/http/httptest"
 	"regexp"
 	"slices"
 	"strings"
@@ -17,8 +19,10 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/pkg/logger"
 	"go.uber.org/zap"
@@ -127,13 +131,30 @@ func (m *mockDB) ListAIAnalyses(context.Context, string, string, bool, int, int)
 }
 
 type harness struct {
-	s    *Server
-	db   *mockDB
-	logs *observer.ObservedLogs
+	s       *Server
+	db      *mockDB
+	logs    *observer.ObservedLogs
+	handler http.Handler
+}
+
+// testPrincipal is the authenticated caller injected in front of the MCP
+// handler by the closure-authorized harness.
+func testPrincipal() *auth.Principal {
+	id := "user-1"
+
+	return &auth.Principal{UserID: &id, Username: "jane", Credential: auth.CredentialBearerToken}
+}
+
+// withPrincipal stands in for the RBAC middleware: it authenticates every
+// request as testPrincipal. The real chain is exercised by the stack tests.
+func withPrincipal(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		next.ServeHTTP(w, r.WithContext(middleware.WithPrincipal(r.Context(), testPrincipal())))
+	})
 }
 
 // newHarness builds a server whose authorizer allows every repository except
-// the names in denied.
+// the names in denied, reached through the real MCP HTTP handler.
 type fakeSearcher struct{}
 
 func (fakeSearcher) Search(context.Context, search.SearchFilter, int, int, map[uuid.UUID]struct{}) ([]search.SearchResult, error) {
@@ -155,43 +176,89 @@ func newHarness(t *testing.T, db *mockDB, denied ...string) *harness {
 	})
 	s.SetSearcher(fakeSearcher{})
 
-	return &harness{s: s, db: db, logs: logs}
+	return &harness{s: s, db: db, logs: logs, handler: withPrincipal(s.HTTPHandler())}
 }
 
-// call invokes a tool through the JSON-RPC layer and returns its text and
-// error flag.
+// rpc posts one JSON-RPC request (protocol 2025-06-18, which the stateless
+// server serves without an initialize round trip) and returns the response.
+func (h *harness) rpc(t *testing.T, method string, params any) *httptest.ResponseRecorder {
+	t.Helper()
+
+	return post(t, h.handler, rpcBody(t, 1, method, params), nil)
+}
+
+func rpcBody(t *testing.T, id int, method string, params any) string {
+	t.Helper()
+
+	msg, err := json.Marshal(map[string]any{"jsonrpc": "2.0", "id": id, "method": method, "params": params})
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	return string(msg)
+}
+
+// post sends body to handler as an MCP client with a bearer credential would;
+// extra headers override the defaults.
+func post(t *testing.T, handler http.Handler, body string, extra map[string]string) *httptest.ResponseRecorder {
+	t.Helper()
+
+	req := httptest.NewRequestWithContext(t.Context(), http.MethodPost, "/mcp", strings.NewReader(body))
+	req.Header.Set("Content-Type", "application/json")
+	req.Header.Set("Accept", "application/json, text/event-stream")
+	req.Header.Set("Mcp-Protocol-Version", "2025-06-18")
+	req.Header.Set("Authorization", "Bearer test")
+
+	for k, v := range extra {
+		if v == "" {
+			req.Header.Del(k)
+		} else {
+			req.Header.Set(k, v)
+		}
+	}
+
+	rec := httptest.NewRecorder()
+	handler.ServeHTTP(rec, req)
+
+	return rec
+}
+
+type toolResponse struct {
+	Result struct {
+		Content []struct {
+			Type string `json:"type"`
+			Text string `json:"text"`
+		} `json:"content"`
+		StructuredContent map[string]any `json:"structuredContent"` //nolint:tagliatelle // MCP wire format is camelCase
+		IsError           bool           `json:"isError"`           //nolint:tagliatelle // MCP wire format is camelCase
+	} `json:"result"`
+	Error *struct {
+		Code    int    `json:"code"`
+		Message string `json:"message"`
+	} `json:"error"`
+}
+
+func decodeToolResponse(t *testing.T, rec *httptest.ResponseRecorder) toolResponse {
+	t.Helper()
+
+	var resp toolResponse
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("status %d, undecodable body %q: %v", rec.Code, rec.Body.String(), err)
+	}
+
+	return resp
+}
+
+// call invokes a tool through the HTTP handler and returns its first text block
+// and error flag.
 func (h *harness) call(t *testing.T, tool string, args map[string]any) (string, bool) {
 	t.Helper()
 
-	msg, err := json.Marshal(map[string]any{
-		"jsonrpc": "2.0", "id": 1, "method": "tools/call",
-		"params": map[string]any{"name": tool, "arguments": args},
-	})
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	raw, err := json.Marshal(h.s.mcpServer.HandleMessage(context.Background(), msg))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	var resp struct {
-		Result struct {
-			Content []struct {
-				Text string `json:"text"`
-			} `json:"content"`
-			IsError bool `json:"isError"` //nolint:tagliatelle // MCP wire format is camelCase
-		} `json:"result"`
-		Error *struct{ Message string } `json:"error"`
-	}
-
-	if err := json.Unmarshal(raw, &resp); err != nil {
-		t.Fatal(err)
-	}
+	rec := h.rpc(t, "tools/call", map[string]any{"name": tool, "arguments": args})
+	resp := decodeToolResponse(t, rec)
 
 	if resp.Error != nil || len(resp.Result.Content) == 0 {
-		t.Fatalf("tool %s: protocol error: %s", tool, raw)
+		t.Fatalf("tool %s: protocol error (status %d): %s", tool, rec.Code, rec.Body.String())
 	}
 
 	return resp.Result.Content[0].Text, resp.Result.IsError
@@ -390,8 +457,13 @@ func TestUnauthorizedRepositoryIsIndistinguishableFromMissing(t *testing.T) {
 func TestRepositoryScopedToolsDenyByID(t *testing.T) {
 	h := newHarness(t, fixtureDB(), "hidden")
 
-	for _, tool := range []string{"list_ai_analyses", "get_artifact_analysis"} {
-		text, isErr := h.call(t, tool, map[string]any{"repository_id": "r-secret", "artifact_id": "x"})
+	tests := map[string]map[string]any{
+		"list_ai_analyses":      {"repository_id": "r-secret"},
+		"get_artifact_analysis": {"repository_id": "r-secret", "artifact_id": "x"},
+	}
+
+	for tool, args := range tests {
+		text, isErr := h.call(t, tool, args)
 		if !isErr || text != msgNotFound {
 			t.Errorf("%s: got (%q, %v), want denial", tool, text, isErr)
 		}
@@ -401,7 +473,7 @@ func TestRepositoryScopedToolsDenyByID(t *testing.T) {
 func TestWithoutAuthorizerEverythingIsDenied(t *testing.T) {
 	log := &logger.Logger{SugaredLogger: zap.NewNop().Sugar()}
 	s := NewServer(fixtureDB(), nil, log, Options{})
-	h := &harness{s: s}
+	h := &harness{s: s, handler: withPrincipal(s.HTTPHandler())}
 
 	text, isErr := h.call(t, "get_repository", map[string]any{"name": "web-npm"})
 	if !isErr || text != msgNotFound {
@@ -440,7 +512,7 @@ func TestListPackagesPaginationCaps(t *testing.T) {
 		wantPage, wantLimit int
 	}{
 		{"limit above cap", map[string]any{"limit": 100000}, 1, maxPageSize},
-		{"zero page and limit", map[string]any{"page": 0, "limit": 0}, 1, 1},
+		{"zero means default", map[string]any{"page": 0, "limit": 0}, 1, defaultPageSize},
 		{"negative", map[string]any{"page": -5, "limit": -5}, 1, 1},
 		{"defaults", nil, 1, defaultPageSize},
 		{"explicit", map[string]any{"page": 3, "limit": 7}, 3, 7},
@@ -639,13 +711,10 @@ func TestInternalErrorsAreGenericAndLogged(t *testing.T) {
 func TestServerInfoReportsBuildVersion(t *testing.T) {
 	h := newHarness(t, fixtureDB())
 
-	resp := h.s.mcpServer.HandleMessage(context.Background(), json.RawMessage(
-		`{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"t","version":"1"}}}`))
-
-	raw, err := json.Marshal(resp)
-	if err != nil {
-		t.Fatal(err)
-	}
+	rec := h.rpc(t, "initialize", map[string]any{
+		"protocolVersion": "2025-03-26", "capabilities": map[string]any{},
+		"clientInfo": map[string]any{"name": "t", "version": "1"},
+	})
 
 	var parsed struct {
 		Result struct {
@@ -655,12 +724,12 @@ func TestServerInfoReportsBuildVersion(t *testing.T) {
 		} `json:"result"`
 	}
 
-	if err := json.Unmarshal(raw, &parsed); err != nil {
-		t.Fatal(err)
+	if err := json.Unmarshal(rec.Body.Bytes(), &parsed); err != nil {
+		t.Fatalf("status %d: %q: %v", rec.Code, rec.Body.String(), err)
 	}
 
 	if parsed.Result.ServerInfo.Version != "1.2.3" {
-		t.Fatalf("serverInfo.version = %q, want 1.2.3", parsed.Result.ServerInfo.Version)
+		t.Fatalf("serverInfo.version = %q, want 1.2.3 (body %s)", parsed.Result.ServerInfo.Version, rec.Body.String())
 	}
 }
 

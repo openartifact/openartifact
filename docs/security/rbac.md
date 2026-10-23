@@ -59,7 +59,7 @@ Rules that apply on top:
 - Paths containing `..` segments, or an encoded `/` or `\` in a repository-naming segment, are rejected with 400 `invalid_path`.
 - While a user has `must_change_password` set, everything except change-password and logout returns 403 `password_change_required`.
 - Reads through proxy and group repositories are re-authorized for each member repository as if requested directly, so a public group never exposes a private member. See [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
-- The [MCP server](../integrations/mcp.md) uses the same evaluator; `get_vulnerabilities` needs global `manage`.
+- The [MCP server](../integrations/mcp.md) uses the same evaluator, per tool rather than per HTTP method: the HTTP layer only requires an authenticated principal, tools need `read` on the repository, `trigger_ai_analysis` needs `write`, and `get_vulnerabilities` needs global `manage`. A denied or missing repository returns `not found or access denied`.
 - Static web UI assets are served without RBAC. Self-service endpoints (change own password, own tokens, edit own profile) skip permission targets but need a session.
 - A token's `scopes` can only narrow its owner's targets, and a `deploy` token is never granted `manage` ([tokens](authentication.md#api-tokens)).
 

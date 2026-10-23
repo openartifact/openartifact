@@ -30,6 +30,8 @@ var (
 	errInvalidPort        = errors.New("invalid server port")
 	errMalformedKeyValue  = errors.New("expected key=value")
 	errMCPTransport       = errors.New(`mcp.transport must be "http" (stdio is not supported)`)
+	errMCPLimits          = errors.New("mcp.maxBodyBytes must be positive; mcp.rateLimitPerMinute and mcp.aiTriggerPerMinute must not be negative")
+	errMCPOrigin          = errors.New("mcp.allowedOrigins entries must be origins like https://host[:port]")
 	errMissingDBDriver    = errors.New("database driver is required")
 	errMissingStorageType = errors.New("storage type is required")
 	errMissingLogLevel    = errors.New("logger level is required")
@@ -275,6 +277,19 @@ type MCPConfig struct {
 	Enabled   bool   `yaml:"enabled"`
 	Transport string `yaml:"transport"` // only "http" is supported
 	HTTPPath  string `yaml:"httpPath"`  // mount path of the HTTP endpoint, default "/mcp"
+	// AllowedOrigins are the browser origins (scheme://host[:port]) accepted in
+	// the Origin header of MCP requests, besides the BASE_URL origin. A request
+	// with any other Origin is refused with 403; requests without an Origin
+	// header (non-browser clients) are unaffected.
+	AllowedOrigins []string `yaml:"allowedOrigins"`
+	// MaxBodyBytes caps one MCP request body (default 1 MiB).
+	MaxBodyBytes int64 `yaml:"maxBodyBytes"`
+	// RateLimitPerMinute caps MCP requests per authenticated principal per
+	// minute (default 600; 0 disables the limit).
+	RateLimitPerMinute int `yaml:"rateLimitPerMinute"`
+	// AITriggerPerMinute caps trigger_ai_analysis calls per principal per
+	// minute, since each one can cost an LLM call (default 10; 0 disables).
+	AITriggerPerMinute int `yaml:"aiTriggerPerMinute"`
 }
 
 // Load loads configuration from YAML file (if provided) and environment variables.
@@ -403,6 +418,11 @@ func defaultConfig() *Config {
 			Enabled:   false,
 			Transport: "http",
 			HTTPPath:  "/mcp",
+
+			AllowedOrigins:     []string{},
+			MaxBodyBytes:       1 << 20,
+			RateLimitPerMinute: 600,
+			AITriggerPerMinute: 10,
 		},
 		Workers: WorkersConfig{
 			MetadataRegenConcurrency:     4,
@@ -571,6 +591,10 @@ func applyEnvOverrides(cfg *Config) {
 	overrideBool(&cfg.MCP.Enabled, "MCP_ENABLED")
 	overrideString(&cfg.MCP.Transport, "MCP_TRANSPORT")
 	overrideString(&cfg.MCP.HTTPPath, "MCP_HTTP_PATH")
+	overrideSlice(&cfg.MCP.AllowedOrigins, "MCP_ALLOWED_ORIGINS")
+	overrideInt64(&cfg.MCP.MaxBodyBytes, "MCP_MAX_BODY_BYTES")
+	overrideInt(&cfg.MCP.RateLimitPerMinute, "MCP_RATE_LIMIT_PER_MINUTE")
+	overrideInt(&cfg.MCP.AITriggerPerMinute, "MCP_AI_TRIGGER_PER_MINUTE")
 
 	// Worker config
 	overrideInt(&cfg.Workers.MetadataRegenConcurrency, "OPENARTIFACT_METADATA_REGEN_CONCURRENCY")
@@ -670,8 +694,8 @@ func (c *Config) Validate() error {
 		return errTLSFilesRequired
 	}
 
-	if c.MCP.Enabled && c.MCP.Transport != "http" {
-		return errMCPTransport
+	if err := c.validateMCP(); err != nil {
+		return err
 	}
 
 	if c.Workers.WebhookDeliveryRetentionDays < 0 {
@@ -897,4 +921,29 @@ func overrideDuration(cfg *time.Duration, key string) {
 		}
 		*cfg = d
 	}
+}
+
+// validateMCP checks the MCP transport, limits and Origin allowlist entries
+// when MCP is enabled.
+func (c *Config) validateMCP() error {
+	if !c.MCP.Enabled {
+		return nil
+	}
+
+	if c.MCP.Transport != "http" {
+		return errMCPTransport
+	}
+
+	if c.MCP.MaxBodyBytes <= 0 || c.MCP.RateLimitPerMinute < 0 || c.MCP.AITriggerPerMinute < 0 {
+		return errMCPLimits
+	}
+
+	for _, o := range c.MCP.AllowedOrigins {
+		u, err := url.Parse(o)
+		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || (u.Path != "" && u.Path != "/") || u.RawQuery != "" || u.Fragment != "" {
+			return fmt.Errorf("%w: %q", errMCPOrigin, o)
+		}
+	}
+
+	return nil
 }

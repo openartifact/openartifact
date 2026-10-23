@@ -994,3 +994,66 @@ func TestValidate_BlobRetention(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_MCPLimitsDefaultsAndEnv(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if m := cfg.MCP; m.MaxBodyBytes != 1<<20 || m.RateLimitPerMinute != 600 || m.AITriggerPerMinute != 10 || len(m.AllowedOrigins) != 0 {
+		t.Fatalf("unexpected MCP defaults: %+v", m)
+	}
+
+	t.Setenv("MCP_ALLOWED_ORIGINS", "https://a.example.org, https://b.example.org:8443")
+	t.Setenv("MCP_MAX_BODY_BYTES", "2048")
+	t.Setenv("MCP_RATE_LIMIT_PER_MINUTE", "0")
+	t.Setenv("MCP_AI_TRIGGER_PER_MINUTE", "3")
+
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	m := cfg.MCP
+	if m.MaxBodyBytes != 2048 || m.RateLimitPerMinute != 0 || m.AITriggerPerMinute != 3 {
+		t.Errorf("env overrides not applied: %+v", m)
+	}
+
+	if len(m.AllowedOrigins) != 2 || m.AllowedOrigins[0] != "https://a.example.org" || m.AllowedOrigins[1] != "https://b.example.org:8443" {
+		t.Errorf("allowed origins = %q", m.AllowedOrigins)
+	}
+}
+
+func TestValidate_MCPLimitsAndOrigins(t *testing.T) {
+	tests := []struct {
+		name    string
+		mutate  func(*MCPConfig)
+		wantErr bool
+	}{
+		{"defaults", func(*MCPConfig) {}, false},
+		{"valid origins", func(m *MCPConfig) { m.AllowedOrigins = []string{"https://a.example.org", "http://localhost:3000"} }, false},
+		{"origin with a path", func(m *MCPConfig) { m.AllowedOrigins = []string{"https://a.example.org/app"} }, true},
+		{"origin without scheme", func(m *MCPConfig) { m.AllowedOrigins = []string{"a.example.org"} }, true},
+		{"wildcard origin", func(m *MCPConfig) { m.AllowedOrigins = []string{"*"} }, true},
+		{"zero body cap", func(m *MCPConfig) { m.MaxBodyBytes = 0 }, true},
+		{"negative rate limit", func(m *MCPConfig) { m.RateLimitPerMinute = -1 }, true},
+		{"rate limits off", func(m *MCPConfig) { m.RateLimitPerMinute, m.AITriggerPerMinute = 0, 0 }, false},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			cfg.MCP.Enabled = true
+			tt.mutate(&cfg.MCP)
+
+			if err := cfg.Validate(); (err != nil) != tt.wantErr {
+				t.Fatalf("Validate() error = %v, wantErr %v", err, tt.wantErr)
+			}
+		})
+	}
+}

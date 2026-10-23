@@ -281,6 +281,10 @@ Optional and off by default; see [MCP](../integrations/mcp.md).
 | `MCP_ENABLED` | `enabled` | `false` | Mount the MCP endpoint |
 | `MCP_TRANSPORT` | `transport` | `http` | Only `http` is valid (`stdio` is rejected) |
 | `MCP_HTTP_PATH` | `httpPath` | `/mcp` | Mount path; requires `Authorization: Bearer <TOKEN>` |
+| `MCP_ALLOWED_ORIGINS` | `allowedOrigins` | none | Browser origins accepted in `Origin` besides the `BASE_URL` origin; other origins get 403 |
+| `MCP_MAX_BODY_BYTES` | `maxBodyBytes` | `1048576` | Max size of one MCP request body |
+| `MCP_RATE_LIMIT_PER_MINUTE` | `rateLimitPerMinute` | `600` | MCP requests per authenticated principal per minute (`0` = unlimited) |
+| `MCP_AI_TRIGGER_PER_MINUTE` | `aiTriggerPerMinute` | `10` | `trigger_ai_analysis` calls per principal per minute (`0` = unlimited) |
 
 ### Pre-set in the Docker Compose file
 

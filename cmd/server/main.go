@@ -498,7 +498,18 @@ func run(args []string) error {
 	// Initialize MCP server
 	var mcpServer *aimcp.Server
 	if cfg.MCP.Enabled {
-		mcpServer = aimcp.NewServer(db, aiWorker, log, aimcp.Options{Version: version, BaseURL: cfg.BaseURL})
+		mcpOpts := aimcp.Options{
+			Version:            version,
+			BaseURL:            cfg.BaseURL,
+			MaxBodyBytes:       cfg.MCP.MaxBodyBytes,
+			RateLimitPerMinute: cfg.MCP.RateLimitPerMinute,
+			AITriggerPerMinute: cfg.MCP.AITriggerPerMinute,
+		}
+		if cfg.BaseURL != "" {
+			mcpOpts.ResourceMetadataURL = middleware.ProtectedResourceMetadataURL(cfg.BaseURL, cfg.MCP.HTTPPath)
+		}
+
+		mcpServer = aimcp.NewServer(db, aiWorker, log, mcpOpts)
 		log.Infow("MCP server enabled", "path", cfg.MCP.HTTPPath)
 	}
 
@@ -526,6 +537,10 @@ func run(args []string) error {
 	server.AddMiddleware(middleware.TracingMiddleware)
 	server.AddMiddleware(middleware.LoggingMiddleware(log))
 	server.AddMiddleware(middleware.CORSMiddleware(cfg.Server.CORSOrigins))
+
+	if mcpServer != nil {
+		server.AddMiddleware(aimcp.OriginMiddleware(cfg.MCP.HTTPPath, cfg.BaseURL, cfg.MCP.AllowedOrigins))
+	}
 
 	trustedProxies := middleware.NewTrustedProxies(cfg.Server.TrustedProxies)
 
@@ -562,6 +577,17 @@ func run(args []string) error {
 		BaseURL:             cfg.BaseURL,
 	}
 	if mcpServer != nil {
+		// OIDC access tokens are audience-bound to the canonical MCP resource URI,
+		// which needs a configured public base URL.
+		if cfg.BaseURL != "" {
+			resource := middleware.MCPResourceURL(cfg.BaseURL, cfg.MCP.HTTPPath)
+			rbacCfg.MCPBearerVerifier = func(ctx context.Context, token string) (*models.User, error) {
+				return auth.VerifyOIDCAccessToken(ctx, db, cfg.BaseURL, token, resource)
+			}
+		} else {
+			log.Warnw("BASE_URL is not set: OIDC access tokens are not accepted on the MCP endpoint (API tokens still work)")
+		}
+
 		mcpServer.SetAuthorizer(func(ctx context.Context, repoName, action string) bool {
 			principal := middleware.PrincipalFromContext(ctx)
 			if principal == nil {
@@ -727,6 +753,14 @@ func run(args []string) error {
 	// OpenAPI documentation
 	openapiHandler := api.NewOpenAPIHandler()
 	openapiHandler.RegisterRoutes(router)
+
+	// RFC 9728 protected-resource metadata of the MCP endpoint: public, outside
+	// the authenticated router so clients can discover how to authenticate.
+	if mcpServer != nil {
+		metadata := aimcp.NewMetadataHandler(db, log, cfg.BaseURL, cfg.MCP.HTTPPath)
+		router.Handle("/.well-known/oauth-protected-resource", metadata)
+		router.Handle("/.well-known/oauth-protected-resource"+cfg.MCP.HTTPPath, metadata)
+	}
 
 	authedAPI := chi.NewRouter()
 	authedAPI.Use(rbacMiddleware)
@@ -1002,8 +1036,9 @@ func run(args []string) error {
 	}
 
 	// Mount the MCP server if enabled (HTTP is the only transport). Mounted under authedAPI
-	// (not the bare router) so it inherits the same RBAC/CSRF/audit chain as
-	// the rest of the API — MCP tools must require auth like any other route.
+	// (not the bare router) so it inherits the RBAC and audit chain: RBAC accepts
+	// only bearer credentials here (never the session cookie) and refuses
+	// anonymous callers; each tool then checks the caller's own permissions.
 	if mcpServer != nil {
 		authedAPI.Mount(cfg.MCP.HTTPPath, mcpServer.HTTPHandler())
 		log.Infow("MCP HTTP endpoint registered", "path", cfg.MCP.HTTPPath)

@@ -148,6 +148,14 @@ Migration `054` (GPG key management; additive) creates `gpg_keys` and `gpg_key_r
 #### Release bundles in the web UI
 
 - New admin pages **Release bundles** (`/bundles`, `/bundles/{name}/{version}`): list and filter bundles, create drafts, add and remove items, seal (optionally signing the manifest with a GPG key), promote a sealed bundle to the next pipeline stage, archive, delete drafts, and download the manifest and signature. No API, schema or configuration change. See [release bundles](../repositories/release-bundles.md#web-ui).
+- MCP server ([MCP](../integrations/mcp.md)), now on the official Go SDK (specification 2026-07-28, older revisions are negotiated). No migration. Changes to check if you use `MCP_ENABLED=true`:
+  - The endpoint accepts only `Authorization: Bearer`. The session cookie and Basic auth no longer work on `/mcp`; clients that relied on them must send an API token as a bearer. Project tokens are refused with 403.
+  - Read-only tokens can now use the read tools: the HTTP gate no longer needs global `write`, each tool checks the caller's own permission (`read` on the repository, `write` for `trigger_ai_analysis`, global `manage` for `get_vulnerabilities`).
+  - A request with an `Origin` header must match the `BASE_URL` origin or an entry of the new `MCP_ALLOWED_ORIGINS`, otherwise it gets 403. Browser-based MCP clients on another origin must be added; CLIs and desktop agents send no `Origin` and are unaffected.
+  - New limits: request body 1 MiB (`MCP_MAX_BODY_BYTES`), 600 requests per minute per principal (`MCP_RATE_LIMIT_PER_MINUTE`) and 10 `trigger_ai_analysis` calls per minute (`MCP_AI_TRIGGER_PER_MINUTE`). `0` disables the two rate limits.
+  - JSON-RPC batch arrays are refused with 400 when `MCP-Protocol-Version` is `2025-06-18` or later. Tools reject unknown arguments (input schema with `additionalProperties: false`), and argument errors are now tool errors (`isError: true`) instead of JSON-RPC errors.
+  - Results gained `content_trust` and `notice` fields (and a trailing `NOTE:` text block) wherever they carry third-party text, and every tool has an `outputSchema` and annotations. `trigger_ai_analysis` now always checks that the artifact exists in the given repository.
+  - New public endpoints `/.well-known/oauth-protected-resource` and `/.well-known/oauth-protected-resource<MCP_HTTP_PATH>` (RFC 9728), and OIDC access tokens whose `aud` is `<BASE_URL><MCP_HTTP_PATH>` are accepted for users already linked through an enabled OIDC provider (needs `BASE_URL`).
 
 ### 0.7.0
 

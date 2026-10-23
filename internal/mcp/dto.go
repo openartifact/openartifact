@@ -18,6 +18,8 @@ import (
 // credentials) and have no JSON tags.
 
 type repositoryListResult struct {
+	provenance
+
 	Total        int                            `json:"total"`
 	Page         int                            `json:"page"`
 	Limit        int                            `json:"limit"`
@@ -52,6 +54,8 @@ func toPackageDTO(c *models.Component) packageDTO {
 }
 
 type packageListResult struct {
+	provenance
+
 	Repository string       `json:"repository"`
 	Total      int          `json:"total"`
 	Page       int          `json:"page"`
@@ -65,6 +69,8 @@ type searchHit struct {
 }
 
 type searchResult struct {
+	provenance
+
 	Query   string      `json:"query"`
 	Results []searchHit `json:"results"`
 	Count   int         `json:"count"`
@@ -82,6 +88,8 @@ type packageVersionDTO struct {
 }
 
 type packageDetailResult struct {
+	provenance
+
 	Repository string              `json:"repository"`
 	Format     string              `json:"format"`
 	Name       string              `json:"name"`
@@ -111,6 +119,8 @@ type findingDTO struct {
 }
 
 type vulnerabilitiesResult struct {
+	provenance
+
 	Repository         string         `json:"repository"`
 	PackageFilter      string         `json:"package_filter,omitempty"`
 	VersionFilter      string         `json:"version_filter,omitempty"`
@@ -164,11 +174,11 @@ func toAnalysisDTO(a *models.AIAnalysis) analysisDTO {
 		ArtifactFormat:        a.ArtifactFormat,
 		ArtifactName:          a.ArtifactName,
 		ArtifactVersion:       a.ArtifactVersion,
-		Summary:               a.Summary,
+		Summary:               truncateText(a.Summary, maxUntrustedText),
 		Tags:                  tags,
 		LicenseStatus:         a.LicenseStatus,
 		LicenseName:           a.LicenseName,
-		SecurityNotes:         a.SecurityNotes,
+		SecurityNotes:         truncateText(a.SecurityNotes, maxUntrustedText),
 		QuarantineRecommended: a.QuarantineRecommended,
 		Status:                a.Status,
 		ModelUsed:             a.ModelUsed,
@@ -178,10 +188,24 @@ func toAnalysisDTO(a *models.AIAnalysis) analysisDTO {
 }
 
 type analysisListResult struct {
+	provenance
+
 	Analyses []analysisDTO `json:"analyses"`
 	Total    int           `json:"total"`
 	Limit    int           `json:"limit"`
 	Offset   int           `json:"offset"`
+}
+
+// analysisResult is one analysis with the untrusted-content marker.
+type analysisResult struct {
+	provenance
+	analysisDTO
+}
+
+// repositoryResult is one repository with the untrusted-content marker.
+type repositoryResult struct {
+	provenance
+	responses.RepositoryResponse
 }
 
 type queuedResult struct {

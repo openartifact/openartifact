@@ -13,7 +13,7 @@ How clients and users prove who they are: local login, sessions, API tokens, ano
 | Credential | Sent as | Used for | CSRF header |
 |---|---|---|---|
 | Session cookie `oa_session` | cookie, set by login | web UI, interactive API use, minting tokens | required on POST/PUT/PATCH/DELETE |
-| API token `oa_pat_…` / `oa_dep_…` | `Authorization: Bearer <TOKEN>`, or Basic with the token as the **password** | package clients, CI, CLI, MCP | not needed |
+| API token `oa_pat_…` / `oa_dep_…` | `Authorization: Bearer <TOKEN>`, or Basic with the token as the **password** (Basic is not accepted on [MCP](#mcp-endpoint)) | package clients, CI, CLI, MCP | not needed |
 | Legacy API key | `X-Api-Key`, Bearer, or Basic password | deprecated, see [below](#legacy-api-key) | not needed |
 | none | | anonymous read, see [below](#anonymous-access) | |
 
@@ -104,6 +104,10 @@ curl -u any-user:<TOKEN> HOST/repos/REPO/path/to/file     # Basic: token as pass
 ```
 
 Per-format client configuration is under [formats](../formats/README.md).
+
+### MCP endpoint
+
+The [MCP server](../integrations/mcp.md) accepts only `Authorization: Bearer`: an API token, an OIDC access token (a JWT from an enabled OIDC provider whose `aud` is the MCP resource URI, mapped to an existing local user), or the deprecated legacy key. The session cookie and Basic credentials are ignored on that path, so there is no CSRF surface and no CSRF token. A missing or invalid credential gets 401 with `WWW-Authenticate: Bearer realm="openartifact", resource_metadata="…"`, and project tokens get 403. Permissions are checked per tool with the same evaluator as the REST API, so a read-only token can use the read tools.
 
 ## Legacy API key
 

@@ -173,6 +173,10 @@ mcp:
   enabled: false
   transport: "http"   # only http is supported (stdio is rejected)
   httpPath: "/mcp"    # mount path; requires "Authorization: Bearer <TOKEN>"
+  # allowedOrigins: ["https://agents.example.com"]  # browser origins accepted besides BASE_URL's; others get 403 (no Origin header = allowed)
+  # maxBodyBytes: 1048576        # max size of one MCP request body (default 1 MiB)
+  # rateLimitPerMinute: 600      # MCP requests per authenticated principal per minute (0 = unlimited)
+  # aiTriggerPerMinute: 10       # trigger_ai_analysis calls per principal per minute (0 = unlimited)
 
 workers:
   # Max metadata regenerations (npm, maven, deb, rpm together) running at once.

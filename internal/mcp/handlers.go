@@ -6,31 +6,29 @@ package mcp
 
 import (
 	"context"
-	"encoding/json"
-	"math"
+	"errors"
 	"strings"
 
 	"github.com/google/uuid"
 
-	"github.com/mark3labs/mcp-go/mcp"
 	"github.com/openartifact/openartifact/internal/ai/manifest"
 	"github.com/openartifact/openartifact/internal/api"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/worker"
 )
 
 // ── Tool Handlers ─────────────────────────────────────────────────────────────
 
-func (s *Server) handleListRepositories(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	format := req.GetString("format", "")
-	page := intArg(req, "page", 1, 1, maxPage)
-	limit := intArg(req, "limit", defaultPageSize, 1, maxPageSize)
+func (s *Server) listRepositories(ctx context.Context, in listRepositoriesIn) (repositoryListResult, error) {
+	page := clampInt(in.Page, 1, 1, maxPage)
+	limit := clampInt(in.Limit, defaultPageSize, 1, maxPageSize)
 
-	repos, err := s.readableRepos(ctx, format)
+	repos, err := s.readableRepos(ctx, in.Format)
 	if err != nil {
-		return s.internalError("list repositories", err, "format", format), nil
+		return repositoryListResult{}, s.internalError("list repositories", err, "format", in.Format)
 	}
 
 	total := len(repos)
@@ -42,39 +40,32 @@ func (s *Server) handleListRepositories(ctx context.Context, req mcp.CallToolReq
 		items = append(items, toRepositoryDTO(r))
 	}
 
-	return jsonResult(repositoryListResult{Total: total, Page: page, Limit: limit, Repositories: items})
+	return repositoryListResult{provenance: newProvenance(), Total: total, Page: page, Limit: limit, Repositories: items}, nil
 }
 
-func (s *Server) handleSearchArtifacts(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	query, err := req.RequireString("query")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	repoName := req.GetString("repository", "")
-	format := req.GetString("format", "")
-	queryLower := strings.ToLower(query)
+func (s *Server) searchArtifacts(ctx context.Context, in searchArtifactsIn) (searchResult, error) {
+	queryLower := strings.ToLower(in.Query)
 
 	var hits []searchHit
 
-	if repoName != "" {
-		repo, denied := s.resolveRepo(ctx, repoName)
-		if denied != nil {
-			return denied, nil
+	if in.Repository != "" {
+		repo, err := s.resolveRepo(ctx, in.Repository)
+		if err != nil {
+			return searchResult{}, err
 		}
 
-		components, _, err := s.db.ListComponentsByRepo(ctx, repo.ID, format, 1, 50)
+		components, _, err := s.db.ListComponentsByRepo(ctx, repo.ID, in.Format, 1, 50)
 		if err != nil {
-			return s.internalError("search components", err, "repository", repo.Name), nil
+			return searchResult{}, s.internalError("search components", err, "repository", repo.Name)
 		}
 
 		hits = appendMatches(hits, repo.Name, components, queryLower)
 	} else {
 		var searchErr error
 
-		hits, searchErr = s.searchAllRepos(ctx, query, format)
+		hits, searchErr = s.searchAllRepos(ctx, in.Query, in.Format)
 		if searchErr != nil {
-			return s.internalError("search artifacts", searchErr), nil
+			return searchResult{}, s.internalError("search artifacts", searchErr)
 		}
 	}
 
@@ -82,54 +73,42 @@ func (s *Server) handleSearchArtifacts(ctx context.Context, req mcp.CallToolRequ
 		hits = []searchHit{}
 	}
 
-	return jsonResult(searchResult{Query: query, Results: hits, Count: len(hits)})
+	return searchResult{provenance: newProvenance(), Query: in.Query, Results: hits, Count: len(hits)}, nil
 }
 
-func (s *Server) handleGetArtifactAnalysis(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoID, err := req.RequireString("repository_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+func (s *Server) getArtifactAnalysis(ctx context.Context, in artifactAnalysisIn) (analysisResult, error) {
+	if err := s.authorizeByID(ctx, in.RepositoryID, "read"); err != nil {
+		return analysisResult{}, err
 	}
 
-	artifactID, err := req.RequireString("artifact_id")
+	analysis, err := s.db.GetAIAnalysis(ctx, in.RepositoryID, in.ArtifactID)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
-	}
-
-	if denied := s.authorizeByID(ctx, repoID, "read"); denied != nil {
-		return denied, nil
-	}
-
-	analysis, err := s.db.GetAIAnalysis(ctx, repoID, artifactID)
-	if err != nil {
-		return s.internalError("get ai analysis", err, "repository_id", repoID, "artifact_id", artifactID), nil
+		return analysisResult{}, s.internalError("get ai analysis", err, "repository_id", in.RepositoryID, "artifact_id", in.ArtifactID)
 	}
 
 	if analysis == nil {
-		return mcp.NewToolResultError("no analysis found for this artifact"), nil
+		return analysisResult{}, errNoAnalysis
 	}
 
-	return jsonResult(toAnalysisDTO(analysis))
+	return analysisResult{provenance: newProvenance(), analysisDTO: toAnalysisDTO(analysis)}, nil
 }
 
-func (s *Server) handleListAIAnalyses(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoID, err := req.RequireString("repository_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+func (s *Server) listAIAnalyses(ctx context.Context, in listAnalysesIn) (analysisListResult, error) {
+	if err := s.authorizeByID(ctx, in.RepositoryID, "read"); err != nil {
+		return analysisListResult{}, err
 	}
 
-	if denied := s.authorizeByID(ctx, repoID, "read"); denied != nil {
-		return denied, nil
+	if !validAnalysisStatus(in.Status) {
+		return analysisListResult{}, errInvalidStatus
 	}
 
-	status := req.GetString("status", "")
-	licenseConcern := strings.EqualFold(strings.TrimSpace(req.GetString("license_concern", "")), "true")
-	limit := intArg(req, "limit", defaultPageSize, 1, maxPageSize)
-	offset := intArg(req, "offset", 0, 0, maxPage*maxPageSize)
+	licenseConcern := strings.EqualFold(strings.TrimSpace(in.LicenseConcern), "true")
+	limit := clampInt(in.Limit, defaultPageSize, 1, maxPageSize)
+	offset := clampInt(in.Offset, 0, 0, maxPage*maxPageSize)
 
-	analyses, total, err := s.db.ListAIAnalyses(ctx, repoID, status, licenseConcern, limit, offset)
+	analyses, total, err := s.db.ListAIAnalyses(ctx, in.RepositoryID, in.Status, licenseConcern, limit, offset)
 	if err != nil {
-		return s.internalError("list ai analyses", err, "repository_id", repoID), nil
+		return analysisListResult{}, s.internalError("list ai analyses", err, "repository_id", in.RepositoryID)
 	}
 
 	items := make([]analysisDTO, 0, len(analyses))
@@ -137,87 +116,78 @@ func (s *Server) handleListAIAnalyses(ctx context.Context, req mcp.CallToolReque
 		items = append(items, toAnalysisDTO(a))
 	}
 
-	return jsonResult(analysisListResult{Analyses: items, Total: total, Limit: limit, Offset: offset})
+	return analysisListResult{provenance: newProvenance(), Analyses: items, Total: total, Limit: limit, Offset: offset}, nil
 }
 
-func (s *Server) handleTriggerAIAnalysis(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	repoID, err := req.RequireString("repository_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+func validAnalysisStatus(status string) bool {
+	switch status {
+	case "", "pending", "processing", "completed", "failed":
+		return true
 	}
 
-	artifactID, err := req.RequireString("artifact_id")
-	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+	return false
+}
+
+func (s *Server) triggerAIAnalysis(ctx context.Context, in triggerAnalysisIn) (queuedResult, error) {
+	if err := s.authorizeByID(ctx, in.RepositoryID, "write"); err != nil {
+		return queuedResult{}, err
 	}
 
-	format := req.GetString("artifact_format", "")
-	manifestText := req.GetString("manifest_text", "")
-
-	if denied := s.authorizeByID(ctx, repoID, "write"); denied != nil {
-		return denied, nil
+	if len(in.ManifestText) > maxManifestTextBytes {
+		return queuedResult{}, errManifestTooLarge
 	}
 
-	if len(manifestText) > maxManifestTextBytes {
-		return mcp.NewToolResultError("manifest_text is too large"), nil
-	}
-
-	artifactName := req.GetString("artifact_name", "")
-	artifactVersion := req.GetString("artifact_version", "")
-
-	if msg := api.ValidateAIArtifactIdentity(format, artifactName, artifactVersion); msg != "" {
-		return mcp.NewToolResultError(msg), nil
+	if msg := api.ValidateAIArtifactIdentity(in.ArtifactFormat, in.ArtifactName, in.ArtifactVersion); msg != "" {
+		return queuedResult{}, errors.New(msg) //nolint:err113 // validation message meant for the model
 	}
 
 	if s.aiWorker == nil || !s.aiWorker.Enabled() {
-		return mcp.NewToolResultError("AI analysis is not enabled on this server"), nil
+		return queuedResult{}, errAIDisabled
 	}
 
-	// Without manifest_text the server reads the manifest from the stored
-	// artifact, which must exist in the repository and be readable.
-	if manifestText == "" {
-		blob, err := s.db.GetRepoComponentBlob(ctx, repoID, artifactID)
-		if err != nil {
-			return s.internalError("get artifact", err, "artifact_id", artifactID), nil
-		}
+	// The artifact must exist in this repository whether or not the caller
+	// supplies the manifest: write access to one repository never lets a caller
+	// queue work (and LLM spend) for an artifact id of another.
+	blob, err := s.db.GetRepoComponentBlob(ctx, in.RepositoryID, in.ArtifactID)
+	if err != nil {
+		return queuedResult{}, s.internalError("get artifact", err, "artifact_id", in.ArtifactID)
+	}
 
-		if blob == nil {
-			return mcp.NewToolResultError("artifact not found in this repository"), nil
-		}
+	if blob == nil {
+		return queuedResult{}, errArtifactNotFound
+	}
 
-		if !manifest.Supported(blob.Format, blob.Filename) {
-			return mcp.NewToolResultError("manifest extraction is not supported for this artifact; supply manifest_text"), nil
-		}
+	if in.ManifestText == "" && !manifest.Supported(blob.Format, blob.Filename) {
+		return queuedResult{}, errManifestUnsupported
+	}
+
+	if p := middleware.PrincipalFromContext(ctx); p != nil && !s.triggerLimiter.allow(principalKey(p)) {
+		return queuedResult{}, errRateLimited
 	}
 
 	s.aiWorker.Notify(worker.AIAnalysisRequest{
-		RepositoryID:    repoID,
-		ArtifactID:      artifactID,
-		ArtifactFormat:  format,
-		ArtifactName:    artifactName,
-		ArtifactVersion: artifactVersion,
-		ManifestText:    manifestText,
+		RepositoryID:    in.RepositoryID,
+		ArtifactID:      in.ArtifactID,
+		ArtifactFormat:  in.ArtifactFormat,
+		ArtifactName:    in.ArtifactName,
+		ArtifactVersion: in.ArtifactVersion,
+		ManifestText:    in.ManifestText,
 	})
 
-	return jsonResult(queuedResult{
+	return queuedResult{
 		Status:     "queued",
-		ArtifactID: artifactID,
+		ArtifactID: in.ArtifactID,
 		Message:    "AI analysis has been queued and will complete asynchronously",
-	})
+	}, nil
 }
 
-func (s *Server) handleGetRepository(ctx context.Context, req mcp.CallToolRequest) (*mcp.CallToolResult, error) {
-	name, err := req.RequireString("name")
+func (s *Server) getRepository(ctx context.Context, in repositoryNameIn) (repositoryResult, error) {
+	repo, err := s.resolveRepo(ctx, in.Name)
 	if err != nil {
-		return mcp.NewToolResultError(err.Error()), nil
+		return repositoryResult{}, err
 	}
 
-	repo, denied := s.resolveRepo(ctx, name)
-	if denied != nil {
-		return denied, nil
-	}
-
-	return jsonResult(toRepositoryDTO(repo))
+	return repositoryResult{provenance: newProvenance(), RepositoryResponse: toRepositoryDTO(repo)}, nil
 }
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -327,28 +297,12 @@ func matchesQuery(c *models.Component, queryLower string) bool {
 	return false
 }
 
-// intArg reads a numeric argument clamped to [lo, hi]; missing or NaN values
-// yield def.
-func intArg(req mcp.CallToolRequest, key string, def, lo, hi int) int {
-	f := req.GetFloat(key, float64(def))
-	if math.IsNaN(f) {
-		return def
-	}
-
-	return int(math.Max(float64(lo), math.Min(float64(hi), f)))
-}
-
-func jsonResult(v any) (*mcp.CallToolResult, error) {
-	// HTML escaping is disabled so placeholders like <TOKEN> stay readable.
-	var buf strings.Builder
-
-	enc := json.NewEncoder(&buf)
-	enc.SetEscapeHTML(false)
-	enc.SetIndent("", "  ")
-
-	if err := enc.Encode(v); err != nil {
-		return mcp.NewToolResultError(msgInternal), nil //nolint:nilerr // MCP tool errors are tool results, not Go errors
-	}
-
-	return mcp.NewToolResultText(strings.TrimRight(buf.String(), "\n")), nil
-}
+var (
+	errNoAnalysis          = errors.New("no analysis found for this artifact")
+	errInvalidStatus       = errors.New("status must be one of: pending, processing, completed, failed")
+	errManifestTooLarge    = errors.New("manifest_text is too large")
+	errAIDisabled          = errors.New("AI analysis is not enabled on this server")
+	errArtifactNotFound    = errors.New("artifact not found in this repository")
+	errManifestUnsupported = errors.New("manifest extraction is not supported for this artifact; supply manifest_text")
+	errPackageNotFound     = errors.New("package not found")
+)

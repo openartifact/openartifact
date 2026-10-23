@@ -48,6 +48,9 @@ type RBACConfig struct {
 	// BaseURL is the public URL of the server; cargo's WWW-Authenticate
 	// challenge points its login_url at it.
 	BaseURL string
+	// MCPBearerVerifier accepts OIDC access tokens on the MCP endpoint in
+	// addition to API tokens; nil accepts API tokens only.
+	MCPBearerVerifier MCPBearerVerifier
 	// ProjectSettings decides whether non-admin users may create projects
 	// (POST /api/v1/projects); nil means only global admins may.
 	ProjectSettings *auth.ProjectSettings
@@ -90,22 +93,17 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 				return
 			}
 
+			if isMCPPath(r.URL.Path, cfg) {
+				serveMCP(w, r, next, cfg, db, log)
+
+				return
+			}
+
 			principal, credential := resolvePrincipal(ctx, r, cfg, db, log)
 			r = r.WithContext(WithPrincipal(ctx, principal))
 
-			// Only GET/HEAD can be an SPA page load. Every other method on any
-			// path gets the full evaluation below, so an SPA-shaped URL can never
-			// be used to reach a mutating format handler unauthenticated.
-			if isSafeMethod(r.Method) {
-				if isStaticPath(r.URL.Path, cfg) {
-					next.ServeHTTP(w, r)
-					return
-				}
-
-				if cfg.SPAHandler != nil && isSPANavigation(r) {
-					cfg.SPAHandler.ServeHTTP(w, r)
-					return
-				}
+			if serveStaticOrSPA(w, r, next, cfg) {
+				return
 			}
 
 			if passwordChangeBlocked(r, principal) {
@@ -168,6 +166,28 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 	}
 }
 
+// serveStaticOrSPA serves static assets and SPA page loads without
+// authorization. Only GET/HEAD can be an SPA page load: every other method on
+// any path gets the full evaluation, so an SPA-shaped URL can never be used to
+// reach a mutating format handler unauthenticated. It reports whether it served.
+func serveStaticOrSPA(w http.ResponseWriter, r *http.Request, next http.Handler, cfg RBACConfig) bool {
+	if !isSafeMethod(r.Method) {
+		return false
+	}
+
+	if isStaticPath(r.URL.Path, cfg) {
+		next.ServeHTTP(w, r)
+		return true
+	}
+
+	if cfg.SPAHandler != nil && isSPANavigation(r) {
+		cfg.SPAHandler.ServeHTTP(w, r)
+		return true
+	}
+
+	return false
+}
+
 // evaluateRepoScope runs the regular check of scope, then, for a delegated
 // repository route, the project-delegated repo.admin check.
 func evaluateRepoScope(ctx context.Context, evaluator *auth.Evaluator, principal *auth.Principal, scope routeScope) (bool, error) {
@@ -221,10 +241,7 @@ func isSafeMethod(method string) bool {
 // no RBAC: neither API, OCI, MCP, nor anything under /repos/. Callers must
 // additionally restrict this to GET/HEAD.
 func isStaticPath(urlPath string, cfg RBACConfig) bool {
-	isMCPPath := cfg.MCPPath != "" &&
-		(urlPath == cfg.MCPPath || strings.HasPrefix(urlPath, cfg.MCPPath+"/"))
-
-	return !strings.HasPrefix(urlPath, "/api/") && !strings.HasPrefix(urlPath, "/v2/") && !isMCPPath &&
+	return !strings.HasPrefix(urlPath, "/api/") && !strings.HasPrefix(urlPath, "/v2/") && !isMCPPath(urlPath, cfg) &&
 		!strings.HasPrefix(urlPath, "/repos/")
 }
 
