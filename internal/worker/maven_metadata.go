@@ -54,6 +54,13 @@ func (w *MavenMetadataWorker) WithDebounce(d time.Duration) *MavenMetadataWorker
 	return w
 }
 
+// WithDrainTimeout sets how long Stop waits for pending regenerations (default
+// 10s); `openartifact rebuild` raises it to wait for a whole rebuilt catalogue.
+func (w *MavenMetadataWorker) WithDrainTimeout(d time.Duration) *MavenMetadataWorker {
+	w.q.setDrainTimeout(d)
+	return w
+}
+
 // WithRegenLimiter shares a concurrency limiter with the other metadata workers.
 func (w *MavenMetadataWorker) WithRegenLimiter(l *RegenLimiter) *MavenMetadataWorker {
 	w.q.setLimiter(l)

@@ -1057,3 +1057,57 @@ func TestValidate_MCPLimitsAndOrigins(t *testing.T) {
 		})
 	}
 }
+
+func TestRecoveryJournalConfig(t *testing.T) {
+	t.Run("defaults", func(t *testing.T) {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		j := cfg.Recovery.Journal
+		if !j.Enabled || j.Interval <= 0 || j.Batch < 1 || j.Concurrency < 1 || j.ReconcileInterval <= 0 {
+			t.Fatalf("unexpected defaults: %+v", j)
+		}
+	})
+
+	t.Run("env overrides", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_RECOVERY_JOURNAL_ENABLED", "false")
+		t.Setenv("OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL", "3s")
+		t.Setenv("OPENARTIFACT_RECOVERY_JOURNAL_BATCH", "7")
+		t.Setenv("OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY", "2")
+		t.Setenv("OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL", "1h")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		j := cfg.Recovery.Journal
+		if j.Enabled || j.Interval != 3*time.Second || j.Batch != 7 || j.Concurrency != 2 || j.ReconcileInterval != time.Hour {
+			t.Fatalf("overrides not applied: %+v", j)
+		}
+	})
+
+	for name, env := range map[string]map[string]string{
+		"zero interval while enabled": {"OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL": "0s"},
+		"zero batch":                  {"OPENARTIFACT_RECOVERY_JOURNAL_BATCH": "0"},
+		"zero concurrency":            {"OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY": "0"},
+		"negative reconcile":          {"OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL": "-1h"},
+	} {
+		t.Run("rejects "+name, func(t *testing.T) {
+			for k, v := range env {
+				t.Setenv(k, v)
+			}
+
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			if err := cfg.Validate(); err == nil {
+				t.Fatal("expected a validation error")
+			}
+		})
+	}
+}

@@ -132,6 +132,18 @@ Tuning of the background mover; tiers and policies are managed through the admin
 | `OPENARTIFACT_TIERING_ACCESS_FLUSH_INTERVAL` | `tiering.accessFlushInterval` | `30s` | How often recorded downloads are written to the database |
 | `OPENARTIFACT_TIERING_REFRESH_INTERVAL` | `tiering.refreshInterval` | `30s` | How often each replica reloads the tier list |
 
+### Disaster-recovery journal (`recovery.journal`)
+
+Row journal that lets `openartifact rebuild` re-index an empty database from the blob store ([rebuild from storage](../operations/rebuild-from-storage.md)).
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_RECOVERY_JOURNAL_ENABLED` | `recovery.journal.enabled` | `true` | Capture changed package rows and write their sidecar blobs. Off: the database triggers return immediately and nothing is written |
+| `OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL` | `recovery.journal.interval` | `10s` | Pause between worker passes; bounds how far sidecars lag behind the database |
+| `OPENARTIFACT_RECOVERY_JOURNAL_BATCH` | `recovery.journal.batch` | `200` | Rows claimed per drain step (at least 1) |
+| `OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY` | `recovery.journal.concurrency` | `4` | Sidecar blobs written or deleted at once (at least 1) |
+| `OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL` | `recovery.journal.reconcileInterval` | `24h` | How often every journaled table is re-checked for rows without a sidecar and sidecars without a row; `0` runs only the first complete pass |
+
 ### Vulnerability scanners (`scanners`)
 
 Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) for installation, egress, offline mode and mirrors.

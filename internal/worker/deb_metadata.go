@@ -74,6 +74,13 @@ func (w *DebMetadataWorker) WithMetrics(reg *metrics.Registry) *DebMetadataWorke
 	return w
 }
 
+// WithDrainTimeout sets how long Stop waits for pending regenerations (default
+// 10s); `openartifact rebuild` raises it to wait for a whole rebuilt catalogue.
+func (w *DebMetadataWorker) WithDrainTimeout(d time.Duration) *DebMetadataWorker {
+	w.q.setDrainTimeout(d)
+	return w
+}
+
 // WithRegenLimiter shares a concurrency limiter with the other metadata workers.
 func (w *DebMetadataWorker) WithRegenLimiter(l *RegenLimiter) *DebMetadataWorker {
 	w.q.setLimiter(l)

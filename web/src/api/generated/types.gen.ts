@@ -557,6 +557,40 @@ export type TierDryRun = {
     }>;
 };
 
+export type RecoveryStatus = {
+    /**
+     * The journal switch the database triggers consult (recovery.journal.enabled)
+     */
+    enabled?: boolean;
+    /**
+     * Changed rows waiting for their sidecar (capped at backlog_cap)
+     */
+    backlog?: number;
+    backlog_cap?: number;
+    /**
+     * Age of the oldest waiting row; the journal lag, hence the rebuild RPO
+     */
+    oldest_dirty_age_seconds?: number;
+    /**
+     * Waiting rows in retry backoff after a failure
+     */
+    retrying_rows?: number;
+    sidecars_tracked?: number;
+    last_error?: string;
+    last_error_at?: string;
+    last_drain_at?: string;
+    /**
+     * When every table last completed a reconcile pass
+     */
+    last_reconcile_at?: string;
+    tables_reconciled?: number;
+    tables_total?: number;
+    /**
+     * Migration number stamped into new sidecars
+     */
+    schema_version?: number;
+};
+
 export type TierMoverStatus = {
     enabled?: boolean;
     running?: boolean;
@@ -5527,6 +5561,29 @@ export type GetApiV1AdminTieringStatusResponses = {
 };
 
 export type GetApiV1AdminTieringStatusResponse = GetApiV1AdminTieringStatusResponses[keyof GetApiV1AdminTieringStatusResponses];
+
+export type GetApiV1AdminRecoveryStatusData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/recovery/status';
+};
+
+export type GetApiV1AdminRecoveryStatusErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminRecoveryStatusResponses = {
+    /**
+     * Journal status
+     */
+    200: RecoveryStatus;
+};
+
+export type GetApiV1AdminRecoveryStatusResponse = GetApiV1AdminRecoveryStatusResponses[keyof GetApiV1AdminRecoveryStatusResponses];
 
 export type GetApiV1AdminAuditData = {
     body?: never;

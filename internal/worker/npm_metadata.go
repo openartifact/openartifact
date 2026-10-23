@@ -39,6 +39,13 @@ func (w *NPMMetadataWorker) WithDebounce(d time.Duration) *NPMMetadataWorker {
 	return w
 }
 
+// WithDrainTimeout sets how long Stop waits for pending regenerations (default
+// 10s); `openartifact rebuild` raises it to wait for a whole rebuilt catalogue.
+func (w *NPMMetadataWorker) WithDrainTimeout(d time.Duration) *NPMMetadataWorker {
+	w.q.setDrainTimeout(d)
+	return w
+}
+
 // WithRegenLimiter shares a concurrency limiter with the other metadata workers.
 func (w *NPMMetadataWorker) WithRegenLimiter(l *RegenLimiter) *NPMMetadataWorker {
 	w.q.setLimiter(l)
