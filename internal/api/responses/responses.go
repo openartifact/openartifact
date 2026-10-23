@@ -370,8 +370,12 @@ type VulnScannerResponse struct {
 	// DBUpdatedAt is when the vulnerability database was last refreshed; null
 	// when there is none or the time is unknown.
 	DBUpdatedAt *string `json:"db_updated_at"`
-	// Code is scanner_unavailable or scanner_db_unavailable when the scanner is
-	// not ready, else null.
+	// InstallState is installing, ready or failed for a scanner whose install
+	// mode is auto and whose binary comes from the installer; null otherwise.
+	InstallState *string `json:"install_state"`
+	// Code is scanner_unavailable, scanner_installing, scanner_install_failed,
+	// scanner_install_noexec or scanner_db_unavailable when the scanner is not
+	// ready, else null.
 	Code *string `json:"code"`
 	// Message says what the operator must do when the scanner is not ready.
 	Message *string `json:"message"`

@@ -141,6 +141,9 @@ Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` need
 | `OPENARTIFACT_SCANNER_UPDATE_INTERVAL` | `scanners.updateInterval` | `6h` | Refresh interval of the background database download; at least `1h`, or `0` to download once and stop |
 | `OPENARTIFACT_SCANNER_OFFLINE` | `scanners.offline` | `false` | Never download databases; they must already be in the cache directory |
 | `OPENARTIFACT_TRIVY_PATH` | `scanners.trivy.path` | `trivy` (from `PATH`) | Command name or absolute path of the Trivy binary |
+| `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL` | `scanners.downloadBaseUrl` | `https://github.com` | `https` origin the pinned Trivy/Grype release archives are downloaded from by `install: auto`; a mirror must serve GitHub's `/<owner>/<repo>/releases/download/<tag>/<file>` paths. No credentials, query or fragment |
+| `OPENARTIFACT_TRIVY_INSTALL` | `scanners.trivy.install` | `none` | `none` or `auto`. `auto` downloads the pinned, sha256-verified Trivy release into `<cacheDir>/bin` when no path is configured and `trivy` is not on `PATH` |
+| `OPENARTIFACT_GRYPE_INSTALL` | `scanners.grype.install` | `none` | Same for Grype |
 | `OPENARTIFACT_TRIVY_DB_REPOSITORY` | `scanners.trivy.dbRepository` | Trivy's built-in list (`mirror.gcr.io/aquasec/trivy-db:2`, then `ghcr.io/aquasecurity/trivy-db:2`) | OCI repository to download `trivy-db` from (a mirror) |
 | `OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY` | `scanners.trivy.javaDbRepository` | empty | When set, the Java index database is downloaded from this repository too; empty skips it |
 | `OPENARTIFACT_GRYPE_PATH` | `scanners.grype.path` | `grype` (from `PATH`) | Command name or absolute path of the Grype binary |

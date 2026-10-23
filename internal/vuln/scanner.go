@@ -224,14 +224,15 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 		return nil, newScanError(s.Name(), FailureInternal, err)
 	}
 
-	if pre := s.tool.preflight(); pre != nil {
+	bin, pre := s.tool.preflight()
+	if pre != nil {
 		return nil, pre
 	}
 
 	// The database is managed by the registry (Registry.Start), never fetched
 	// by a scan: a download inside the scan deadline would time out on a cold
 	// cache and needs a writable cache on every run.
-	stdout, stderr, err := runScanner(ctx, nil, s.tool.command,
+	stdout, stderr, err := runScanner(ctx, nil, bin,
 		"fs", "--scanners", "vuln", "--format", "json", "--quiet", "--offline-scan",
 		"--skip-version-check", "--skip-db-update", "--skip-java-db-update",
 		"--cache-dir="+s.tool.cacheDir, tmpDir)
@@ -485,14 +486,15 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 	// grype <ecosystem>:<name>@<version> -o json --quiet
 	pkgRef := fmt.Sprintf("%s:%s@%s", grypeEcosystem, packageName, version)
 
-	if pre := s.tool.preflight(); pre != nil {
+	bin, pre := s.tool.preflight()
+	if pre != nil {
 		return nil, pre
 	}
 
 	// The database is managed by the registry (Registry.Start), never fetched by a scan.
 	env := append(s.tool.env(), "GRYPE_DB_AUTO_UPDATE=false")
 
-	stdout, stderr, err := runScanner(ctx, env, s.tool.command, pkgRef, "-o", "json", "--quiet")
+	stdout, stderr, err := runScanner(ctx, env, bin, pkgRef, "-o", "json", "--quiet")
 	if err != nil {
 		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("grype scan failed",

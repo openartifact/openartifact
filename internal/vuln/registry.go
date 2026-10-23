@@ -5,12 +5,16 @@
 package vuln
 
 import (
+	"context"
+	"net/http"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -25,6 +29,20 @@ const (
 	// CodeScannerDatabase: the binary is there but its vulnerability database is
 	// missing, still downloading, or could not be downloaded.
 	CodeScannerDatabase = "scanner_db_unavailable"
+	// CodeScannerInstalling: the pinned release is being downloaded into the cache.
+	CodeScannerInstalling = "scanner_installing"
+	// CodeScannerInstallFailed: the download, checksum check or extraction failed.
+	CodeScannerInstallFailed = "scanner_install_failed"
+	// CodeScannerInstallNoexec: the binary was installed but cannot be executed,
+	// typically because the cache directory is on a noexec mount.
+	CodeScannerInstallNoexec = "scanner_install_noexec"
+)
+
+// Install states reported by Status for a scanner whose install mode is "auto".
+const (
+	InstallStateInstalling = "installing"
+	InstallStateReady      = "ready"
+	InstallStateFailed     = "failed"
 )
 
 const (
@@ -47,14 +65,20 @@ type Options struct {
 	// UpdateInterval is the pause between database refreshes after a success.
 	// Zero downloads only when Start runs and then never again.
 	UpdateInterval time.Duration
-	Trivy          TrivyOptions
-	Grype          GrypeOptions
+	// DownloadBaseURL is the https origin the pinned release archives are
+	// downloaded from (installs with Install set). Empty is https://github.com.
+	DownloadBaseURL string
+	Trivy           TrivyOptions
+	Grype           GrypeOptions
 }
 
 // TrivyOptions configures the trivy binary.
 type TrivyOptions struct {
 	// Path is the binary; empty looks "trivy" up on PATH.
 	Path string
+	// Install downloads the pinned release into <CacheDir>/bin when Path is
+	// empty and trivy is not on PATH. A configured Path always wins.
+	Install bool
 	// DBRepository is the OCI repository the vulnerability database is pulled
 	// from (a mirror of ghcr.io/aquasecurity/trivy-db). Empty is the upstream default.
 	DBRepository string
@@ -68,6 +92,9 @@ type TrivyOptions struct {
 type GrypeOptions struct {
 	// Path is the binary; empty looks "grype" up on PATH.
 	Path string
+	// Install downloads the pinned release into <CacheDir>/bin when Path is
+	// empty and grype is not on PATH. A configured Path always wins.
+	Install bool
 	// DBURL is the database listing URL (GRYPE_DB_UPDATE_URL) of a mirror.
 	// Empty is the upstream default.
 	DBURL string
@@ -86,6 +113,18 @@ type Registry struct {
 	retryInitial time.Duration
 	retryMax     time.Duration
 
+	// Installer collaborators; tests replace them.
+	manifest   func() (manifest, error)
+	httpClient *http.Client
+	probe      func(ctx context.Context, bin string, args ...string) error
+	goos       string
+	goarch     string
+	// maxArchive and maxBinary cap an install's download and extracted binary;
+	// zero means the defaults.
+	maxArchive int64
+	maxBinary  int64
+	metrics    *metrics.Registry
+
 	mu     sync.Mutex
 	cancel func()
 	wg     sync.WaitGroup
@@ -98,14 +137,37 @@ func NewRegistry(log *logger.Logger, opts Options) *Registry {
 		opts.CacheDir = defaultCacheDir()
 	}
 
-	return &Registry{
+	if opts.DownloadBaseURL == "" {
+		opts.DownloadBaseURL = "https://github.com"
+	}
+
+	r := &Registry{
 		log:          log,
 		opts:         opts,
 		trivy:        newCLITool(scannerTrivy, opts.Trivy.Path, filepath.Join(opts.CacheDir, scannerTrivy), trivyDBPresent),
 		grype:        newCLITool(scannerGrype, opts.Grype.Path, filepath.Join(opts.CacheDir, scannerGrype), grypeDBPresent),
 		retryInitial: time.Minute,
 		retryMax:     time.Hour,
+		manifest:     embeddedManifest,
+		probe:        probeBinary,
+		goos:         runtime.GOOS,
+		goarch:       runtime.GOARCH,
 	}
+
+	// A configured path always wins over PATH and over an install.
+	r.trivy.installAuto = opts.Trivy.Install && opts.Trivy.Path == ""
+	r.trivy.installDir = filepath.Join(opts.CacheDir, "bin", scannerTrivy)
+	r.grype.installAuto = opts.Grype.Install && opts.Grype.Path == ""
+	r.grype.installDir = filepath.Join(opts.CacheDir, "bin", scannerGrype)
+
+	return r
+}
+
+// WithMetrics counts install attempts in reg.ScannerInstallAttemptsTotal.
+func (r *Registry) WithMetrics(reg *metrics.Registry) *Registry {
+	r.metrics = reg
+
+	return r
 }
 
 // defaultCacheDir is the scanner cache base when none is configured.
@@ -152,10 +214,14 @@ type ScannerStatus struct {
 	CacheDir string
 	// DBState is one of the DBState* values for an available CLI scanner, else "".
 	DBState string
+	// InstallState is one of the InstallState* values for a scanner whose
+	// install mode is "auto" and whose binary came from (or is being fetched by)
+	// the installer, else "".
+	InstallState string
 	// DBUpdatedAt is when the database was last downloaded or refreshed; zero
 	// when there is none or the time is unknown.
 	DBUpdatedAt time.Time
-	// Code is empty for a ready scanner, else CodeScannerUnavailable or CodeScannerDatabase.
+	// Code is empty for a ready scanner, else one of the CodeScanner* values.
 	Code string
 	// Message tells an operator what to do; "" for a ready scanner.
 	Message string

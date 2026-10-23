@@ -77,11 +77,29 @@ The MCP tool `get_vulnerabilities` summarizes stored results and counts `failed`
 | Where the server runs | How |
 |---|---|
 | Binary / VM | install `trivy` and/or `grype` so they are on the server's `PATH`, or set [`OPENARTIFACT_TRIVY_PATH` / `OPENARTIFACT_GRYPE_PATH`](../getting-started/configuration.md#vulnerability-scanners-scanners) |
+| Any, no rebuild | `OPENARTIFACT_TRIVY_INSTALL=auto` and/or `OPENARTIFACT_GRYPE_INSTALL=auto`: the server downloads a pinned, checksum-verified release into the cache directory ([details](#runtime-download-install-auto)) |
 | Docker Compose | `OPENARTIFACT_SCANNERS=trivy` (or `grype`, `all`) in `docker/.env`, then `docker compose build openartifact`; the compose file already mounts a `scanner_cache` volume |
 | Your own build | `docker build -f docker/Dockerfile --build-arg SCANNERS=trivy .` (`none` default, `trivy`, `grype`, `all`) |
 | Released image, Kubernetes | build a derived image (below), and give the pod a writable volume for the cache directory |
 
-The server resolves the binaries when it starts and logs, per scanner, the path it found (`vulnerability scanner available`, with `binary`, `cache_dir`, `db_state`) or a warning when it is missing. A binary installed later is found on the next request (no restart), but its database download only starts at server start.
+The server resolves the binaries when it starts and logs, per scanner, the path it found (`vulnerability scanner available`, with `binary`, `cache_dir`, `db_state`) or a warning when it is missing. A binary installed later is found on the next request (no restart), but its database download only starts at server start (or, with `install: auto`, once the installer has put the binary in place).
+
+### Runtime download (`install: auto`)
+
+With `OPENARTIFACT_TRIVY_INSTALL=auto` (`scanners.trivy.install`) and/or `OPENARTIFACT_GRYPE_INSTALL=auto` the server installs the scanner itself, so the released image and a plain binary install work without a derived image. The default is `none`: nothing is downloaded and executed unless you ask for it.
+
+- **Precedence**: a configured path (`OPENARTIFACT_TRIVY_PATH`) always wins, then a binary on `PATH`, then the installed copy. A configured path that does not exist is an error, never replaced by a download.
+- **What is downloaded**: the release compiled into the server (Trivy 0.76.1, Grype 0.121.0 at the time of writing, the same versions the `SCANNERS` image variant bundles; `linux/amd64` and `linux/arm64` only). The URL is `<downloadBaseUrl>/<owner>/<repo>/releases/download/v<version>/<archive>.tar.gz`, for example `https://github.com/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz`.
+- **How it is verified**: the archive is streamed to a temporary file under a size cap (256 MiB) while its sha256 is computed; a mismatch with the checksum pinned in the server deletes it and nothing is extracted. Only the scanner binary is extracted (cap 512 MiB), and the extracted binary's sha256 must also match its pinned value. An archive containing a symlink, a hard link, an absolute path or a `..` path, or a binary that is not a regular file, is rejected whole. The file is written 0755, fsynced and renamed into `<cacheDir>/bin/<scanner>/<version>/<scanner>`, so a crash never leaves a half-written binary. Nothing is executed before the checks pass.
+- **Restarts**: an installed copy is re-hashed at startup against the pinned checksum and reused without downloading (also in offline mode); a copy that fails the check is discarded and downloaded again. Install the cache directory on a persistent volume to avoid downloading on every start.
+- **Retries**: a failed download or checksum is retried with the same backoff as the database updater (1 minute up to 1 hour). Offline mode only adopts an already installed copy.
+- **`noexec` mounts**: after installing, the server runs the binary once (`--version`). If the cache directory is on a `noexec` mount that fails and the scanner reports `scanner_install_noexec`; mount the volume with exec, point `OPENARTIFACT_SCANNER_CACHE_DIR` somewhere executable, or provide the binary yourself.
+- **Mirrors**: `OPENARTIFACT_SCANNER_DOWNLOAD_BASE_URL` (`scanners.downloadBaseUrl`, default `https://github.com`) must be an `https` URL without credentials, query or fragment (a path prefix is allowed). The mirror must serve GitHub's release layout: `<base>/aquasecurity/trivy/releases/download/v0.76.1/trivy_0.76.1_Linux-64bit.tar.gz`, `…/aquasecurity/trivy/…/trivy_0.76.1_Linux-ARM64.tar.gz`, `<base>/anchore/grype/releases/download/v0.121.0/grype_0.121.0_linux_amd64.tar.gz` and `…_linux_arm64.tar.gz`. The pinned checksums apply, so a mirror cannot substitute other bytes. `HTTP_PROXY`, `HTTPS_PROXY` and `NO_PROXY` are honored. The mirror host itself may be on a private network; a redirect is followed only over `https`, at most 3 times, and not to a private, loopback or link-local address (`OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS` governs those, as for upstream registries).
+- **Egress**: `github.com` and `objects.githubusercontent.com` (GitHub redirects release assets there), or only your mirror.
+- **Status**: while downloading, the [readiness](#checking-scanner-readiness) endpoint reports `install_state: "installing"` and code `scanner_installing`; after a failure `install_state: "failed"` with `scanner_install_failed` or `scanner_install_noexec`. The Prometheus counter `openartifact_scanner_install_attempts_total{scanner,result}` counts attempts; `result` is one of `installed`, `reused`, `unsupported_platform`, `download_failed`, `checksum_mismatch`, `extract_failed`, `noexec`, `failed`.
+- **Bumps**: the pinned versions and checksums are in `internal/vuln/scanners_manifest.json`, compiled into the server. They change only with a new OpenArtifact release: `scripts/update-scanner-manifest.sh` reads the versions from the digest-pinned images in `docker/Dockerfile`, downloads the upstream `*_checksums.txt` and archives, verifies them and rewrites the manifest (`--check` reports a stale one); a unit test fails if the manifest and the Dockerfile disagree. An operator who wants another version installs it and sets `OPENARTIFACT_TRIVY_PATH`.
+
+Security note: `auto` makes the server download and execute third-party code at runtime. The checksums come from the upstream release's own `checksums.txt` files (fetched over TLS when the manifest was generated, not signature-verified), so the guarantee is that the server runs the build that was pinned in its release, not that upstream is trustworthy. If that is not acceptable, bundle the binaries at build time (the `SCANNERS` build arg) or provide them yourself.
 
 ### Databases and the cache directory
 
@@ -136,18 +154,21 @@ Kubernetes and Helm: mount a writable volume (an `emptyDir` is enough, a PVC avo
 
 ```json
 {"scanners":[
-  {"name":"osv","available":true,"ready":true,"db_state":null,"db_updated_at":null,"code":null,"message":null,"docs_url":null},
-  {"name":"trivy","available":true,"ready":false,"db_state":"updating","db_updated_at":null,
+  {"name":"osv","available":true,"ready":true,"db_state":null,"db_updated_at":null,"install_state":null,"code":null,"message":null,"docs_url":null},
+  {"name":"trivy","available":true,"ready":false,"db_state":"updating","db_updated_at":null,"install_state":"ready",
    "code":"scanner_db_unavailable","message":"The vulnerability database is being downloaded: retry in a few minutes.","docs_url":"…"},
-  {"name":"grype","available":false,"ready":false,"db_state":null,"db_updated_at":null,
+  {"name":"grype","available":false,"ready":false,"db_state":null,"db_updated_at":null,"install_state":null,
    "code":"scanner_unavailable","message":"grype was not found on the server's PATH: …","docs_url":"…"}]}
 ```
 
-`available` is whether the binary starts; `ready` is whether a scan can run now. `db_state` is `ready`, `updating`, `failed` (the last download failed: see the server log) or `missing`. The response never contains filesystem paths. The web UI uses it to disable scanners that are not ready in the *Scan package* form and to show `message` with a link to this section.
+`available` is whether the binary starts; `ready` is whether a scan can run now. `db_state` is `ready`, `updating`, `failed` (the last download failed: see the server log) or `missing`. `install_state` (`installing`, `ready` or `failed`, else `null`) tells the progress of the [runtime download](#runtime-download-install-auto). It is `null` when the binary is on `PATH`, configured, or `install` is `none`. The response never contains filesystem paths or the download host. The web UI uses it to disable scanners that are not ready in the *Scan package* form and to show `message` with a link to this section.
 
 | `code` | Meaning | Fix |
 |---|---|---|
-| `scanner_unavailable` | the binary was not found or is not executable | install it, or set `OPENARTIFACT_TRIVY_PATH` / `OPENARTIFACT_GRYPE_PATH` |
+| `scanner_unavailable` | the binary was not found or is not executable | install it, set `OPENARTIFACT_TRIVY_PATH` / `OPENARTIFACT_GRYPE_PATH`, or set `…_INSTALL=auto` |
+| `scanner_installing` | the pinned release is being downloaded (`install: auto`) | wait a minute or two |
+| `scanner_install_failed` | the download, checksum check or extraction failed, or there is no pinned build for this platform | check egress to the download host (or `downloadBaseUrl`), the server log has the cause; on other platforms provide the binary |
+| `scanner_install_noexec` | the binary was installed but cannot be executed (a `noexec` mount) | mount the cache directory with exec or provide the binary |
 | `scanner_db_unavailable` | no vulnerability database yet (still downloading, download failing, or offline without one) | wait, allow egress / set a mirror, or fill the cache in offline mode |
 
 ### Why external binaries

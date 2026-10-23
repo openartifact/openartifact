@@ -37,6 +37,10 @@ type Registry struct {
 	// can still need them.
 	BlobDeletionsPending prometheus.Gauge
 	BlobDeletionsSwept   *prometheus.CounterVec
+
+	// ScannerInstallAttemptsTotal counts runtime scanner installs. The scanner
+	// label is trivy or grype; result is one of a fixed set (see internal/vuln).
+	ScannerInstallAttemptsTotal *prometheus.CounterVec
 }
 
 // NewRegistry creates all metrics, registers them on the default Prometheus
@@ -128,6 +132,11 @@ func NewRegistry() *Registry {
 			Name: "openartifact_blob_deletions_swept_total",
 			Help: "Queued blob deletions the sweeper finished, by result: deleted (bytes removed) or kept (the blob was re-uploaded or the copy is authoritative again).",
 		}, []string{"result"}),
+
+		ScannerInstallAttemptsTotal: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_scanner_install_attempts_total",
+			Help: "Runtime installs of the Trivy and Grype binaries, by scanner and result (installed, reused, unsupported_platform, download_failed, checksum_mismatch, extract_failed, noexec, failed).",
+		}, []string{"scanner", "result"}),
 	}
 
 	prometheus.MustRegister(
@@ -148,6 +157,7 @@ func NewRegistry() *Registry {
 		r.TierMovesPending,
 		r.BlobDeletionsPending,
 		r.BlobDeletionsSwept,
+		r.ScannerInstallAttemptsTotal,
 	)
 
 	return r

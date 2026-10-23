@@ -139,6 +139,8 @@ func vulnScannerToResponse(s vuln.ScannerStatus) responses.VulnScannerResponse {
 		Code:      nonEmptyString(s.Code),
 		Message:   nonEmptyString(s.Message),
 		DocsURL:   nonEmptyString(s.DocsURL),
+
+		InstallState: nonEmptyString(s.InstallState),
 	}
 
 	if !s.DBUpdatedAt.IsZero() {

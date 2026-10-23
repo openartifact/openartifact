@@ -34,7 +34,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `migrations/` | Embedded SQL migrations, applied at startup |
 | `web/` | Vue 3 + TS + Tailwind SPA (bun), embedded via `web/embed.go` |
 | `tests/` | Go integration/handler tests; `tests/integration/` uses testcontainers |
-| `docker/` | Dockerfile (shell-less runtime: `RUNTIME=dhi` default, needs dhi.io login, or `distroless`; `-healthcheck` flag, no RUN in the final stage; optional `SCANNERS` build arg (none, trivy, grype or all) copies digest-pinned Trivy/Grype binaries in, default none), compose, `.env.example` (compose credentials; the full env reference is the root `.env.example`) |
+| `docker/` | Dockerfile (shell-less runtime: `RUNTIME=dhi` default, needs dhi.io login, or `distroless`; `-healthcheck` flag, no RUN in the final stage; optional `SCANNERS` build arg (none, trivy, grype or all) copies digest-pinned Trivy/Grype binaries in, default none; bumping a pinned scanner version also means `scripts/update-scanner-manifest.sh`, which refreshes the runtime-install checksums in `internal/vuln/scanners_manifest.json`), compose, `.env.example` (compose credentials; the full env reference is the root `.env.example`) |
 | `bench/` | Benchmark harness: `bench/run.sh` + `oabench` load generator (`make bench-load`) |
 | `tools/` | Separate Go module (`tools/go.mod`) pinning sqlc, govulncheck, actionlint |
 | `docs/` | User and developer documentation (index: `docs/README.md`); assets in `docs/assets/` |

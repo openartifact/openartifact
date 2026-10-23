@@ -851,7 +851,7 @@ func run(args []string) error {
 
 	// Trivy and grype are external binaries; the registry downloads and
 	// refreshes their databases in the background (docs/security/scanning.md).
-	scannerRegistry := vuln.NewRegistry(log, cfg.Scanners.VulnOptions())
+	scannerRegistry := vuln.NewRegistry(log, cfg.Scanners.VulnOptions()).WithMetrics(reg)
 	scannerRegistry.LogStatus()
 	scannerRegistry.Start(context.Background())
 

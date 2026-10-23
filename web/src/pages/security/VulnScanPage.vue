@@ -239,6 +239,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ul v-if="unavailableScanners.length" class="mt-2 space-y-1.5" data-testid="scanner-unavailable">
             <li v-for="u in unavailableScanners" :key="u.name" class="text-xs text-muted" :data-testid="`scanner-note-${u.name}`">
               <span class="font-medium text-foreground">{{ scannerLabel(u.name) }}</span>:
+              <span
+                v-if="u.install_state === 'installing' || u.install_state === 'failed'"
+                class="font-medium"
+                :class="u.install_state === 'failed' ? 'text-danger' : 'text-foreground'"
+                :data-testid="`scanner-install-${u.name}`"
+              >{{ t(`sec.vuln.installState.${u.install_state}`) }}.</span>
               {{ u.message || t('sec.vuln.scannerNotReady') }}
               <a
                 v-if="safeDocsUrl(u.docs_url)"
