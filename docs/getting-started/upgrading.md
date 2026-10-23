@@ -87,13 +87,14 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### Unreleased
 
-Migrations `067` and `068`.
+Migrations `067`, `068` and `069`.
 
 - New optional [blob replication](../operations/replication.md): set `storage.replica` (environment `OPENARTIFACT_STORAGE_REPLICA_*`) to keep an asynchronous second copy of every blob on another backend, with read fallback, a verify/repair pass and `openartifact_replication_*` metrics. Migration `067` adds the `blob_replication` queue and the `blob_replication_state` table; with no replica configured nothing changes. New admin endpoints `GET /api/v1/admin/storage/replication` and `POST /api/v1/admin/storage/replication/verify`. A storage backend record named `replication` is no longer reachable through `GET /api/v1/admin/storage/replication` (use the list).
 - **Disaster-recovery row journal (migration 068).** Every package row change is mirrored as a small JSON sidecar blob in the blob store by a background worker, so `openartifact rebuild` can re-index an empty database from storage ([rebuild from storage](../operations/rebuild-from-storage.md)). The journal is **enabled by default** (`recovery.journal.enabled`, `OPENARTIFACT_RECOVERY_JOURNAL_ENABLED=false` turns it off).
 - On the first start after the upgrade a backfill writes one sidecar per existing package row. It is paced (it pauses while the queue is long) but on a large installation expect extra blob store writes for a while; watch `GET /api/v1/admin/recovery/status` and `openartifact_recovery_journal_backlog`.
 - The migration adds the `recovery_*` tables and a trigger on each package table (a small insert per changed row). Migrations are forward-only; rolling back the binary leaves the triggers in place; they keep queuing small rows in `recovery_dirty` until a binary with the journal drains them.
 - New subcommand `openartifact rebuild` (`/app/openartifact rebuild` in the container image).
+- Migration `069` builds two indexes on `recovery_sidecars` (concurrently, so writes are not blocked) that the replication verify pass uses to restore the sidecars of a lost primary store.
 
 ### 0.8.1
 

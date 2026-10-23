@@ -579,6 +579,51 @@ func TestIntegrationReplicatesRepairsAndDeletes(t *testing.T) {
 	})
 }
 
+// A disaster-recovery sidecar has no blobs row; the verify pass must still
+// restore it to a refilled primary, while an unreferenced blob that exists
+// only on the replica stays where it is.
+func TestIntegrationVerifyRestoresJournalSidecars(t *testing.T) {
+	e := newE2E(t)
+	ctx := context.Background()
+
+	sidecar, err := e.store.Put(ctx, bytes.NewReader([]byte(`{"table":"raw_artifacts"}`)), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	stray, err := e.store.Put(ctx, bytes.NewReader([]byte("nothing references this")), nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if _, err := e.pg.GetDB().ExecContext(ctx,
+		`INSERT INTO recovery_sidecars (table_name, row_key, row_hash, sidecar_sha256) VALUES ('raw_artifacts', 'k1', 'h1', $1)`, sidecar); err != nil {
+		t.Fatalf("insert sidecar tracking row: %v", err)
+	}
+
+	eventually(t, "both blobs to reach the replica", func() bool {
+		return has(t, e.replica, sidecar) && has(t, e.replica, stray) && e.status().BacklogCopy == 0
+	})
+
+	damageRemove(t, e.primary, sidecar)
+	damageRemove(t, e.primary, stray)
+
+	since := time.Now()
+
+	if ok, err := e.svc.RequestVerify(ctx); err != nil || !ok {
+		t.Fatalf("request verify = %v, %v", ok, err)
+	}
+
+	res := e.awaitVerify(since)
+	if !has(t, e.primary, sidecar) {
+		t.Fatalf("the sidecar was not restored to the primary: verify = %+v", res)
+	}
+
+	if has(t, e.primary, stray) || !has(t, e.replica, stray) {
+		t.Fatalf("an unreferenced blob must stay on the replica only: verify = %+v", res)
+	}
+}
+
 func TestIntegrationBacklogRetriesAndRecovers(t *testing.T) {
 	e := newE2E(t)
 

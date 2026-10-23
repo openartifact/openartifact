@@ -69,12 +69,15 @@ FROM blob_replication;
 SELECT sha256 FROM blobs WHERE sha256 > @after::text ORDER BY sha256 LIMIT @page::int;
 
 -- name: BlobReplicationReferenced :one
--- Whether something in the database still needs the blob: a blobs row or
--- generated repository metadata. (Package-table references are counted by
--- BlobReferenceCount.)
+-- Whether something in the database still needs the blob: a blobs row,
+-- generated repository metadata or a current disaster-recovery sidecar (which
+-- has no blobs row, see migration 068). Package-table references are counted
+-- by BlobReferenceCount.
 SELECT (
     EXISTS (SELECT 1 FROM blobs WHERE sha256 = @sha256::text)
     OR EXISTS (SELECT 1 FROM repository_metadata WHERE blob_sha256 = @sha256::text)
+    OR EXISTS (SELECT 1 FROM recovery_sidecars WHERE sidecar_sha256 = @sha256::text)
+    OR EXISTS (SELECT 1 FROM recovery_sidecars WHERE pending_sha256 = @sha256::text)
 )::boolean AS referenced;
 
 -- name: GetBlobReplicationState :one

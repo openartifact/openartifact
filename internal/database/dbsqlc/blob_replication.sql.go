@@ -60,12 +60,15 @@ const blobReplicationReferenced = `-- name: BlobReplicationReferenced :one
 SELECT (
     EXISTS (SELECT 1 FROM blobs WHERE sha256 = $1::text)
     OR EXISTS (SELECT 1 FROM repository_metadata WHERE blob_sha256 = $1::text)
+    OR EXISTS (SELECT 1 FROM recovery_sidecars WHERE sidecar_sha256 = $1::text)
+    OR EXISTS (SELECT 1 FROM recovery_sidecars WHERE pending_sha256 = $1::text)
 )::boolean AS referenced
 `
 
-// Whether something in the database still needs the blob: a blobs row or
-// generated repository metadata. (Package-table references are counted by
-// BlobReferenceCount.)
+// Whether something in the database still needs the blob: a blobs row,
+// generated repository metadata or a current disaster-recovery sidecar (which
+// has no blobs row, see migration 068). Package-table references are counted
+// by BlobReferenceCount.
 func (q *Queries) BlobReplicationReferenced(ctx context.Context, sha256 string) (bool, error) {
 	row := q.db.QueryRow(ctx, blobReplicationReferenced, sha256)
 	var referenced bool
