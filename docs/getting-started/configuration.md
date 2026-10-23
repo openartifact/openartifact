@@ -132,6 +132,39 @@ Tuning of the background mover; tiers and policies are managed through the admin
 | `OPENARTIFACT_TIERING_ACCESS_FLUSH_INTERVAL` | `tiering.accessFlushInterval` | `30s` | How often recorded downloads are written to the database |
 | `OPENARTIFACT_TIERING_REFRESH_INTERVAL` | `tiering.refreshInterval` | `30s` | How often each replica reloads the tier list |
 
+### Blob replication (`storage.replica`)
+
+An optional second copy of every blob on another backend, with read fallback and verify/repair ([blob replication](../operations/replication.md)). Replication is active when `storage.replica.type` is set; the block nests under `storage:` and takes the primary backend's keys plus the tuning keys below. The environment variables use the `OPENARTIFACT_STORAGE_REPLICA_` prefix (the primary's `STORAGE_*` variables are unrelated). The replica may not be the same location as the primary.
+
+| Environment variable | YAML key (under `storage.replica`) | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_STORAGE_REPLICA_TYPE` | `type` | empty | Replica backend (`filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`). Empty turns replication off |
+| `OPENARTIFACT_STORAGE_REPLICA_PATH` | `path` | empty | Directory (filesystem replica) |
+| `OPENARTIFACT_STORAGE_REPLICA_ENDPOINT` | `endpoint` | empty | S3-compatible endpoint, or OCI registry URL |
+| `OPENARTIFACT_STORAGE_REPLICA_BUCKET` | `bucket` | `artifacts` | Bucket (S3 family) or OCI repository prefix |
+| `OPENARTIFACT_STORAGE_REPLICA_REGION` | `region` | `us-east-1` | Region |
+| `OPENARTIFACT_STORAGE_REPLICA_ACCESS_KEY` | `accessKey` | empty | S3 access key; used only when both keys are set, otherwise the AWS credential chain applies |
+| `OPENARTIFACT_STORAGE_REPLICA_SECRET_KEY` | `secretKey` | empty | S3 secret key (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_FORCE_PATH_STYLE` | `forcePathStyle` | `false` | Path-style S3 addressing |
+| `OPENARTIFACT_STORAGE_REPLICA_OPTIONS` | `options` | none | Free-form backend options as comma-separated `key=value` pairs |
+| `OPENARTIFACT_STORAGE_REPLICA_GCS_BUCKET` | `gcsBucket` | empty | GCS bucket |
+| `OPENARTIFACT_STORAGE_REPLICA_GCS_HMAC_KEY` | `gcsHmacKey` | empty | GCS HMAC access key |
+| `OPENARTIFACT_STORAGE_REPLICA_GCS_HMAC_SECRET` | `gcsHmacSecret` | empty | GCS HMAC secret (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_NAME` | `azureAccountName` | empty | Azure storage account |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ACCOUNT_KEY` | `azureAccountKey` | empty | Azure account key (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_CONTAINER_NAME` | `azureContainerName` | empty | Azure container |
+| `OPENARTIFACT_STORAGE_REPLICA_AZURE_ENDPOINT` | `azureEndpoint` | empty | Blob service URL for Azurite or a sovereign cloud |
+| `OPENARTIFACT_STORAGE_REPLICA_OCI_USERNAME` | `ociUsername` | empty | OCI registry user |
+| `OPENARTIFACT_STORAGE_REPLICA_OCI_PASSWORD` | `ociPassword` | empty | OCI registry password (**secret**) |
+| `OPENARTIFACT_STORAGE_REPLICA_OCI_INSECURE` | `ociInsecure` | `false` | Plain HTTP to the registry (dev/test only) |
+| `OPENARTIFACT_STORAGE_REPLICA_READ_FALLBACK` | `readFallback` | `notfound` | When reads fall back to the replica: `notfound` (the primary says the blob is missing), `error` (also when the primary fails), `off` |
+| `OPENARTIFACT_STORAGE_REPLICA_INTERVAL` | `interval` | `5s` | Pause between replication queue passes; must be positive |
+| `OPENARTIFACT_STORAGE_REPLICA_BATCH` | `batch` | `100` | Queued operations claimed per pass (at least 1) |
+| `OPENARTIFACT_STORAGE_REPLICA_CONCURRENCY` | `concurrency` | `4` | Blobs copied at once (at least 1). With an explicit `database.maxOpenConns`, that must be at least `2 * concurrency + 2` |
+| `OPENARTIFACT_STORAGE_REPLICA_VERIFY_INTERVAL` | `verifyInterval` | `24h` | Pause between full verify passes; `0` runs one only when an admin requests it |
+| `OPENARTIFACT_STORAGE_REPLICA_VERIFY_DEEP` | `verifyDeep` | `false` | Hash both copies in verify passes instead of comparing sizes (reads every blob from both backends) |
+| `OPENARTIFACT_STORAGE_REPLICA_MAX_BACKOFF` | `maxBackoff` | `1h` | Longest retry delay of a failing replication operation; must be positive |
+
 ### Vulnerability scanners (`scanners`)
 
 Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) for installation, egress, offline mode and mirrors.

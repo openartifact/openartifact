@@ -94,6 +94,24 @@ storage:
   # ociPassword: CHANGE_ME
   # ociInsecure: false
   # stagingPath: /var/lib/artifacts-staging   # spool dir for server-relayed presigned uploads (oci only)
+  # Blob replication: an async second copy on another backend with read
+  # fallback and verify/repair (docs/operations/replication.md). Active when
+  # type is set. It takes the same backend keys as above; env: OPENARTIFACT_STORAGE_REPLICA_*.
+  # replica:
+  #   type: s3                  # filesystem | s3 | gcs | azure | garage | seaweedfs | oci
+  #   bucket: openartifact-replica
+  #   region: eu-central-1
+  #   accessKey: CHANGE_ME
+  #   secretKey: CHANGE_ME
+  #   # endpoint: http://garage:3900
+  #   # forcePathStyle: true
+  #   readFallback: notfound    # notfound | error | off: when reads fall back to the replica
+  #   interval: 5s              # pause between queue passes
+  #   batch: 100                # operations claimed per pass
+  #   concurrency: 4            # blobs copied at once
+  #   verifyInterval: 24h       # between full verify passes; 0 = only when an admin requests one
+  #   verifyDeep: false         # hash both copies in verify passes (expensive)
+  #   maxBackoff: 1h            # longest retry delay of a failing operation
 
 log:
   level: "info"    # debug | info | warn | error

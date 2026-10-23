@@ -85,6 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+Migration `067`.
+
+- New optional [blob replication](../operations/replication.md): set `storage.replica` (environment `OPENARTIFACT_STORAGE_REPLICA_*`) to keep an asynchronous second copy of every blob on another backend, with read fallback, a verify/repair pass and `openartifact_replication_*` metrics. Migration `067` adds the `blob_replication` queue and the `blob_replication_state` table; with no replica configured nothing changes. New admin endpoints `GET /api/v1/admin/storage/replication` and `POST /api/v1/admin/storage/replication/verify`. A storage backend record named `replication` is no longer reachable through `GET /api/v1/admin/storage/replication` (use the list).
+
 ### 0.8.1
 
 Migration `066`.
