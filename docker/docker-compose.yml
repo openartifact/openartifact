@@ -5,7 +5,6 @@
 services:
   postgres:
     image: docker.io/postgres:18-alpine@sha256:77f585114c32fbca283dc835b0596f4e52b51b4c6662d7810b2f4084f60a1873
-    container_name: artifact-repo-postgres
     restart: unless-stopped
     security_opt:
       - no-new-privileges:true
@@ -43,7 +42,6 @@ services:
         BUILD_TIME: ${OPENARTIFACT_BUILD_TIME:-unknown}
         # dhi needs `docker login dhi.io`; set OPENARTIFACT_RUNTIME=distroless otherwise.
         RUNTIME: ${OPENARTIFACT_RUNTIME:-dhi}
-    container_name: openartifact
     depends_on:
       postgres:
         condition: service_healthy
@@ -83,7 +81,8 @@ services:
       - no-new-privileges:true
     ports:
       # Bound to loopback; put a TLS reverse proxy in front or change to 0.0.0.0.
-      - "${OPENARTIFACT_BIND:-127.0.0.1}:8080:8080"
+      # OPENARTIFACT_PORT moves the host port so several projects (-p) can run side by side.
+      - "${OPENARTIFACT_BIND:-127.0.0.1}:${OPENARTIFACT_PORT:-8080}:8080"
     volumes:
       - artifacts_data:/var/lib/artifacts
       - backups_data:/var/lib/openartifact/backups

@@ -105,15 +105,10 @@ func TestRegistry_ManifestBodyIsCapped(t *testing.T) {
 // FMTA-11: bytes a failed PATCH wrote past the accepted offset are discarded
 // before the next chunk is appended.
 func TestHandleUploadChunk_TruncatesStrayBytes(t *testing.T) {
-	if err := os.MkdirAll("/tmp/openartifact/docker-uploads", 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
 	uid := uuid.New().String()
-	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	// Accepted: "hello" (5 bytes). A dropped PATCH left "JUNK" behind.
-	if err := os.WriteFile(tempUploadPath(uid), []byte("helloJUNK"), 0o600); err != nil {
+	if err := os.WriteFile(tempUploadPath(t, uid), []byte("helloJUNK"), 0o600); err != nil {
 		t.Fatal(err)
 	}
 
@@ -131,7 +126,7 @@ func TestHandleUploadChunk_TruncatesStrayBytes(t *testing.T) {
 		t.Fatalf("status = %d; %s", rec.Code, rec.Body.String())
 	}
 
-	got, _ := os.ReadFile(tempUploadPath(uid))
+	got, _ := os.ReadFile(tempUploadPath(t, uid))
 	if string(got) != "helloworld" {
 		t.Fatalf("file = %q, want helloworld", got)
 	}

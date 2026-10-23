@@ -76,12 +76,7 @@ func TestDockerHandler_Parse(t *testing.T) {
 }
 
 func TestHandleUploadChunk_MismatchedRepositoryReturnsUnknownUpload(t *testing.T) {
-	if err := os.MkdirAll("/tmp/openartifact/docker-uploads", 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
 	uid := uuid.New().String()
-	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
 		repo: &models.Repository{ID: "repo-other", Format: "docker"},
@@ -117,7 +112,7 @@ func TestHandleUploadChunk_MismatchedRepositoryReturnsUnknownUpload(t *testing.T
 		t.Fatal("upload record must not be deleted on mismatch")
 	}
 
-	if _, err := os.Stat(tempUploadPath(uid)); !os.IsNotExist(err) {
+	if _, err := os.Stat(tempUploadPath(t, uid)); !os.IsNotExist(err) {
 		t.Fatalf("expected no temp file on mismatch, stat err = %v", err)
 	}
 }

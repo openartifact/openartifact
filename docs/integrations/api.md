@@ -54,6 +54,8 @@ curl -sS -X POST "$HOST/api/v1/repositories" \
 curl -sS -H "Authorization: Bearer <TOKEN>" "$HOST/api/v1/repositories?limit=10"
 ```
 
+From a repository checkout, `scripts/dev-token.sh` does steps 1 and 2 and prints only the token: `OA_PASS=<PASSWORD> scripts/dev-token.sh http://localhost:8080` (`--password-stdin` reads the password from stdin; `--change-password` with `OA_NEW_PASS` completes the forced password change of a fresh bootstrap admin; `OA_USER`, `OA_TOKEN_NAME` and `OA_TOKEN_KIND` override the defaults). It needs `curl` and `jq`.
+
 Token body fields: `name` (required, max 100 characters), `kind` (`access` or `deploy`), optional `scopes` (permission target IDs; a scope can only narrow the owner's access) and `expires_at` (RFC 3339, in the future, at most 2 years out). Creating repositories requires an administrator. Valid `format` values: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`. The proxy/group options (`repo_type`, ...) are in the spec; see [hosted, proxy and group repositories](../repositories/hosted-proxy-group.md).
 
 ## Conventions

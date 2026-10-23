@@ -12,6 +12,9 @@ import (
 	"strings"
 )
 
+// dist holds the Vite build output (untracked). The tracked dist/.gitkeep keeps
+// the pattern valid before the UI is built; until then the SPA answers 404.
+//
 //go:embed all:dist
 var distFS embed.FS
 

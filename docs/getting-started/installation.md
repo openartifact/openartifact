@@ -25,7 +25,7 @@ make docker-up                          # build and start; stamps version, commi
 
 `make docker-up` runs `docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build` with the build metadata exported (see the table below). Running that `docker compose` command directly works too, but compose cannot read the `VERSION` file or run `git`, so the image then reports version `dev` and commit/build time `unknown` (the System page labels them "Not recorded").
 
-The UI and API are on <http://localhost:8080>. The port is bound to `127.0.0.1` (change with `OPENARTIFACT_BIND`, e.g. `0.0.0.0`; put a TLS reverse proxy in front for anything else). PostgreSQL is not published to the host. Compose refuses to start while `POSTGRES_PASSWORD` is unset.
+The UI and API are on <http://localhost:8080> (host port: `OPENARTIFACT_PORT`). The port is bound to `127.0.0.1` (change with `OPENARTIFACT_BIND`, e.g. `0.0.0.0`; put a TLS reverse proxy in front for anything else). PostgreSQL is not published to the host. Compose refuses to start while `POSTGRES_PASSWORD` is unset.
 
 Which `.env.example`:
 
@@ -39,7 +39,8 @@ Compose also substitutes these variables from `docker/.env` (they are not listed
 | Variable | Default | Effect |
 |---|---|---|
 | `AUTH_HMAC_KEY` | empty (random key per boot) | Signs OIDC/SAML login state; set it for SSO that survives restarts |
-| `OPENARTIFACT_BIND` | `127.0.0.1` | Host address the port 8080 mapping binds to |
+| `OPENARTIFACT_BIND` | `127.0.0.1` | Host address the port mapping binds to |
+| `OPENARTIFACT_PORT` | `8080` | Host port mapped to the container's 8080. Containers carry no fixed names, so several projects can run side by side: `OPENARTIFACT_PORT=18080 docker compose -p oa-test -f docker/docker-compose.yml --env-file docker/.env up -d --build` (add `-v` to `down` to drop that project's volumes) |
 | `OPENARTIFACT_VERSION` | `dev` | Build argument; the version reported by `/health`, the log, `-version` and the System page. `make docker-up` sets it from the `VERSION` file |
 | `OPENARTIFACT_COMMIT` | `unknown` | Build argument; commit reported by the System page. `make docker-up` sets the 7-character short SHA |
 | `OPENARTIFACT_BUILD_TIME` | `unknown` | Build argument; build time, RFC 3339 in UTC. `make docker-up` sets it |

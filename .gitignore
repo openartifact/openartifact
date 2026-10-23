@@ -50,7 +50,8 @@ web/.env*.local
 web/node_modules/
 web/.vite/
 web/coverage/
-# Vite build output — keep placeholders so go:embed compiles without `npm run build`
+# Vite build output. Only the empty .gitkeep is tracked so `//go:embed all:dist`
+# compiles on a fresh clone without building the UI (vite.config.ts restores it
+# after emptying the directory).
 web/dist/*
 !web/dist/.gitkeep
-!web/dist/index.html

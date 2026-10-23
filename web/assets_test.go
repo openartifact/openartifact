@@ -9,6 +9,7 @@ import (
 	"compress/gzip"
 	"context"
 	"io"
+	"io/fs"
 	"net/http"
 	"net/http/httptest"
 	"strings"
@@ -290,6 +291,28 @@ func TestCompressible(t *testing.T) {
 	for _, tc := range tests {
 		if got := compressible(tc.ctyp); got != tc.want {
 			t.Errorf("compressible(%q) = %v, want %v", tc.ctyp, got, tc.want)
+		}
+	}
+}
+
+// TestSPA_UnbuiltUI covers a fresh clone: the embedded dist/ holds only the
+// .gitkeep placeholder, so every page is 404 and the placeholder is not served.
+func TestSPA_UnbuiltUI(t *testing.T) {
+	h := newSPAHandler(fstest.MapFS{".gitkeep": {}})
+
+	for _, p := range []string{"/", "/repos/x", "/.gitkeep"} {
+		if rw := do(h, http.MethodGet, p, nil); rw.Code != http.StatusNotFound {
+			t.Errorf("GET %s = %d, want 404", p, rw.Code)
+		}
+	}
+}
+
+// TestEmbeddedDistCompiles guards the //go:embed pattern: it must resolve on a
+// checkout where the UI has never been built.
+func TestEmbeddedDistCompiles(t *testing.T) {
+	if _, err := fs.Stat(distFS, "dist/.gitkeep"); err != nil {
+		if _, err2 := fs.Stat(distFS, "dist/index.html"); err2 != nil {
+			t.Fatalf("embedded dist has neither .gitkeep nor index.html: %v", err)
 		}
 	}
 }

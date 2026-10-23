@@ -6,9 +6,19 @@ import { defineConfig } from 'vite'
 import vue from '@vitejs/plugin-vue'
 import tailwindcss from '@tailwindcss/vite'
 import { resolve } from 'path'
+import { writeFileSync } from 'fs'
+
+// Vite empties dist/ before every build, which would delete the tracked
+// .gitkeep that keeps `//go:embed all:dist` compiling on a fresh clone.
+const restoreGitkeep = {
+  name: 'restore-dist-gitkeep',
+  closeBundle() {
+    writeFileSync(resolve(__dirname, 'dist/.gitkeep'), '')
+  },
+}
 
 export default defineConfig({
-  plugins: [vue(), tailwindcss()],
+  plugins: [vue(), tailwindcss(), restoreGitkeep],
   build: {
     outDir: 'dist',
     manifest: true,

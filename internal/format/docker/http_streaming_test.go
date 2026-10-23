@@ -14,6 +14,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
@@ -130,7 +131,9 @@ func newTestHandler(t *testing.T, db database.Database) (*HTTPHandler, storage.B
 		t.Fatalf("store: %v", err)
 	}
 
-	return NewHTTPHandler(log, db, store, "http://localhost"), store
+	h := NewHTTPHandler(log, db, store, "http://localhost")
+	h.SetUploadDir(testUploadDir(t))
+	return h, store
 }
 
 // withChiVars attaches chi URL params so urlparams.Vars resolves them.
@@ -143,17 +146,28 @@ func withChiVars(r *http.Request, kv map[string]string) *http.Request {
 	return r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, rctx))
 }
 
-func tempUploadPath(uuid string) string {
-	return filepath.Join("/tmp/openartifact/docker-uploads", uuid)
+// testUploadDirs maps each test to its private staging directory so a handler
+// built by newTestHandler and a path built by tempUploadPath agree.
+var testUploadDirs sync.Map //nolint:gochecknoglobals // per-test registry shared by newTestHandler and tempUploadPath
+
+func testUploadDir(t *testing.T) string {
+	t.Helper()
+	if d, ok := testUploadDirs.Load(t); ok {
+		return d.(string)
+	}
+	d := t.TempDir()
+	testUploadDirs.Store(t, d)
+	t.Cleanup(func() { testUploadDirs.Delete(t) })
+	return d
+}
+
+func tempUploadPath(t *testing.T, uuid string) string {
+	t.Helper()
+	return filepath.Join(testUploadDir(t), uuid)
 }
 
 func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
-	if err := os.MkdirAll("/tmp/openartifact/docker-uploads", 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
 	uid := uuid.New().String()
-	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
 		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
@@ -192,7 +206,7 @@ func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
 	}
 
 	// The temp file must contain exactly the streamed bytes, in order.
-	data, err := os.ReadFile(tempUploadPath(uid))
+	data, err := os.ReadFile(tempUploadPath(t, uid))
 	if err != nil {
 		t.Fatalf("read temp file: %v", err)
 	}
@@ -203,17 +217,12 @@ func TestHandleUploadChunk_StreamsAndAccumulatesOffset(t *testing.T) {
 }
 
 func TestHandleCompleteBlobUpload_MonolithicBodyAndDigest(t *testing.T) {
-	if err := os.MkdirAll("/tmp/openartifact/docker-uploads", 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
 	payload := []byte("the entire blob arrives in the final PUT")
 	sum := sha256.Sum256(payload)
 	digest := "sha256:" + hex.EncodeToString(sum[:])
 
 	t.Run("correct digest stores blob", func(t *testing.T) {
 		uid := uuid.New().String()
-		defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 		db := &fakeDB{
 			repo:   &models.Repository{ID: "repo-1", Format: "docker"},
@@ -279,7 +288,6 @@ func TestHandleCompleteBlobUpload_MonolithicBodyAndDigest(t *testing.T) {
 
 	t.Run("digest mismatch is rejected", func(t *testing.T) {
 		uid := uuid.New().String()
-		defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 		db := &fakeDB{
 			repo:   &models.Repository{ID: "repo-1", Format: "docker"},

@@ -21,12 +21,7 @@ import (
 // Content-Range start does not match the upload's current offset must be
 // rejected with 416 before anything is written to the temp file.
 func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
-	if err := os.MkdirAll("/tmp/openartifact/docker-uploads", 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
 	uid := uuid.New().String()
-	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
 		repo:   &models.Repository{ID: "repo-1", Format: "docker"},
@@ -56,7 +51,7 @@ func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 		t.Fatalf("offset = %d, want 0 (UpdateDockerUploadOffset must not be called)", db.offset)
 	}
 
-	if _, err := os.Stat(tempUploadPath(uid)); !os.IsNotExist(err) {
+	if _, err := os.Stat(tempUploadPath(t, uid)); !os.IsNotExist(err) {
 		t.Fatalf("expected no temp file to be written on a rejected chunk, stat err = %v", err)
 	}
 }
@@ -65,12 +60,7 @@ func TestHandleUploadChunk_RejectsNonContiguousRange(t *testing.T) {
 // path: a Content-Range whose start matches the current offset proceeds
 // exactly like the no-header case.
 func TestHandleUploadChunk_AcceptsContiguousRange(t *testing.T) {
-	if err := os.MkdirAll("/tmp/openartifact/docker-uploads", 0o755); err != nil {
-		t.Fatalf("mkdir: %v", err)
-	}
-
 	uid := uuid.New().String()
-	defer func() { _ = os.Remove(tempUploadPath(uid)) }()
 
 	db := &fakeDB{
 		repo:   &models.Repository{ID: "repo-1", Format: "docker"},

@@ -108,6 +108,9 @@ func loadAssets(sub fs.FS) map[string]*asset {
 		if err != nil || d.IsDir() {
 			return nil //nolint:nilerr // unreadable entries of the embedded FS are skipped; directories hold no assets
 		}
+		if d.Name() == ".gitkeep" {
+			return nil // placeholder that lets //go:embed compile before the UI is built
+		}
 
 		body, readErr := fs.ReadFile(sub, p)
 		if readErr != nil {
