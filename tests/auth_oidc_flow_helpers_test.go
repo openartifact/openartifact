@@ -63,7 +63,7 @@ func (d *oidcFlowDB) SetSessionSSO(_ context.Context, sessionID, providerSlug, e
 func (d *oidcFlowDB) GetSessionSSO(_ context.Context, tokenHash string) (*models.SessionSSO, error) {
 	rec, ok := d.sso[tokenHash]
 	if !ok {
-		return nil, nil //nolint:nilnil // mirrors the real DB: no record
+		return nil, nil
 	}
 
 	return &rec, nil
@@ -149,7 +149,7 @@ func seedFlowProvider(t *testing.T, db *oidcFlowDB, slug string, cfg models.OIDC
 		cfg.ClientSecret = "test-secret"
 	}
 
-	raw, err := json.Marshal(cfg) //nolint:gosec // test fixture
+	raw, err := json.Marshal(cfg)
 	if err != nil {
 		t.Fatalf("marshal oidc config: %v", err)
 	}

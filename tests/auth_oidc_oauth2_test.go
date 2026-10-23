@@ -45,7 +45,7 @@ func newFakeAPI(t *testing.T, routes map[string]http.HandlerFunc) *fakeAPI {
 		f.mu.Lock()
 		f.hits = append(f.hits, apiHit{
 			r.Method, r.URL.Path, r.URL.RawQuery,
-			r.Header.Get("Accept"), r.Header.Get("X-GitHub-Api-Version"), r.Header.Get("Authorization"),
+			r.Header.Get("Accept"), r.Header.Get("X-Github-Api-Version"), r.Header.Get("Authorization"),
 		})
 		f.mu.Unlock()
 
@@ -189,11 +189,13 @@ func seedGitHub(t *testing.T, db *oidcFlowDB, fx githubFixture, orgs []string, m
 	return api
 }
 
-var octocat = map[string]any{"id": 583231, "login": "octocat", "name": "The Octocat"}
+func octocat() map[string]any {
+	return map[string]any{"id": 583231, "login": "octocat", "name": "The Octocat"}
+}
 
 func TestGitHub_Login_RedirectsWithPKCEAndDefaultScopes(t *testing.T) {
 	db := newOIDCFlowDB()
-	api := seedGitHub(t, db, githubFixture{user: octocat, orgs: [][]any{{}}}, []string{"acme"}, nil)
+	api := seedGitHub(t, db, githubFixture{user: octocat(), orgs: [][]any{{}}}, []string{"acme"}, nil)
 	router, _ := flowRouter(t, db)
 
 	rw := httptest.NewRecorder()
@@ -248,7 +250,7 @@ func TestGitHub_Callback_Identity(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newOIDCFlowDB()
-			fx := githubFixture{user: octocat, emails: tc.emails, orgs: [][]any{{ghMembership("Acme")}}}
+			fx := githubFixture{user: octocat(), emails: tc.emails, orgs: [][]any{{ghMembership("Acme")}}}
 			api := seedGitHub(t, db, fx, []string{"acme"}, nil)
 			router, _ := flowRouter(t, db)
 
@@ -327,7 +329,7 @@ func TestGitHub_Callback_OrganizationGateAndGroups(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
 			db := newOIDCFlowDB()
-			seedGitHub(t, db, githubFixture{user: octocat, orgs: tc.orgs, teams: tc.teams}, []string{"ACME"}, mapping)
+			seedGitHub(t, db, githubFixture{user: octocat(), orgs: tc.orgs, teams: tc.teams}, []string{"ACME"}, mapping)
 			router, logs := flowRouter(t, db)
 
 			rw := flowCallback(t, router, "gh", "good-code", callbackOpts{})
@@ -368,20 +370,20 @@ func TestGitHub_Callback_Failures(t *testing.T) {
 	}{
 		{
 			name:     "token endpoint refuses the code",
-			fixture:  githubFixture{user: octocat, orgs: [][]any{{ghMembership("acme")}}},
+			fixture:  githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}},
 			code:     "bad-code",
 			wantCode: http.StatusBadGateway,
 		},
 		{
 			name: "token endpoint errors",
-			fixture: githubFixture{user: octocat, orgs: [][]any{{ghMembership("acme")}}, token: func(w http.ResponseWriter, _ *http.Request) {
+			fixture: githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}, token: func(w http.ResponseWriter, _ *http.Request) {
 				http.Error(w, "down", http.StatusInternalServerError)
 			}},
 			wantCode: http.StatusBadGateway,
 		},
 		{
 			name:     "state mismatch",
-			fixture:  githubFixture{user: octocat, orgs: [][]any{{ghMembership("acme")}}},
+			fixture:  githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}},
 			opts:     callbackOpts{state: "forged-state"},
 			wantCode: http.StatusBadRequest,
 		},
@@ -423,7 +425,7 @@ func TestGitHub_Callback_OrganizationAPIFailureFailsClosed(t *testing.T) {
 
 	var api *fakeAPI
 
-	fx := githubFixture{user: octocat, orgs: [][]any{{ghMembership("acme")}}}
+	fx := githubFixture{user: octocat(), orgs: [][]any{{ghMembership("acme")}}}
 	routes := fx.routes(&api)
 	routes["/user/memberships/orgs"] = func(w http.ResponseWriter, _ *http.Request) {
 		http.Error(w, "rate limited", http.StatusForbidden)

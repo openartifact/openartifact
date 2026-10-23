@@ -178,7 +178,6 @@ func (c *idpMetadataCache) metadata(ctx context.Context, cfg models.SAMLConfig, 
 	return nil, errNoIDPMetadata
 }
 
-//nolint:gocyclo,cyclop // cache state machine: fresh / backoff / in-flight / fetch
 func (c *idpMetadataCache) fromURL(ctx context.Context, metadataURL string, refresh time.Duration, log *logger.Logger) (*saml.EntityDescriptor, error) {
 	e := c.entry(metadataURL)
 

@@ -68,7 +68,9 @@ func sessionCookieCleared(rw *httptest.ResponseRecorder) bool {
 	return c != nil && c.Value == "" && c.MaxAge < 0
 }
 
-var sameOrigin = map[string]string{"Origin": "http://example.com", "Sec-Fetch-Site": "same-origin"}
+func sameOrigin() map[string]string {
+	return map[string]string{"Origin": "http://example.com", "Sec-Fetch-Site": "same-origin"}
+}
 
 // logoutFixture is a provider "lo" on an IdP with (or without) an
 // end_session_endpoint.
@@ -84,6 +86,8 @@ func logoutFixture(t *testing.T, endSession bool) (*oidcFlowDB, chi.Router, *flo
 }
 
 func logoutCrossSiteRejected(t *testing.T, path string) {
+	t.Helper()
+
 	db, router, idp := logoutFixture(t, true)
 	cookie, _ := ssoLogin(t, router, idp, "lo", "u1")
 
@@ -105,11 +109,13 @@ func logoutCrossSiteRejected(t *testing.T, path string) {
 }
 
 func logoutReturnsEndSessionURL(t *testing.T, path string) {
+	t.Helper()
+
 	db, router, idp := logoutFixture(t, true)
 	cookie, raw := ssoLogin(t, router, idp, "lo", "u1")
 
 	// The client-supplied body is ignored: the hint comes from the DB.
-	rw := postLogout(router, path, cookie, `{"id_token":"attacker-token","end_session_url":"https://evil.example"}`, sameOrigin)
+	rw := postLogout(router, path, cookie, `{"id_token":"attacker-token","end_session_url":"https://evil.example"}`, sameOrigin())
 	if rw.Code != http.StatusOK {
 		t.Fatalf("expected 200, got %d %s", rw.Code, rw.Body.String())
 	}
@@ -138,6 +144,8 @@ func logoutReturnsEndSessionURL(t *testing.T, path string) {
 }
 
 func logoutNonSSOSession(t *testing.T, path string) {
+	t.Helper()
+
 	db, router, _ := logoutFixture(t, true)
 
 	cookie, _, err := auth.CreateSession(context.Background(), db, "local-user", "127.0.0.1", "")
@@ -145,26 +153,30 @@ func logoutNonSSOSession(t *testing.T, path string) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	rw := postLogout(router, path, cookie, "", sameOrigin)
+	rw := postLogout(router, path, cookie, "", sameOrigin())
 	if rw.Code != http.StatusNoContent || sessionAlive(t, db, cookie) || !sessionCookieCleared(rw) {
 		t.Errorf("expected 204 with the session gone, got %d %s", rw.Code, rw.Body.String())
 	}
 }
 
 func logoutIdPWithoutEndSession(t *testing.T, path string) {
+	t.Helper()
+
 	db, router, idp := logoutFixture(t, false)
 	cookie, _ := ssoLogin(t, router, idp, "lo", "u1")
 
-	rw := postLogout(router, path, cookie, "", sameOrigin)
+	rw := postLogout(router, path, cookie, "", sameOrigin())
 	if rw.Code != http.StatusNoContent || sessionAlive(t, db, cookie) {
 		t.Errorf("expected 204 with the session gone, got %d %s", rw.Code, rw.Body.String())
 	}
 }
 
 func logoutWithoutCookie(t *testing.T, path string) {
+	t.Helper()
+
 	_, router, _ := logoutFixture(t, true)
 
-	if rw := postLogout(router, path, "", "", sameOrigin); rw.Code != http.StatusNoContent {
+	if rw := postLogout(router, path, "", "", sameOrigin()); rw.Code != http.StatusNoContent {
 		t.Errorf("expected 204, got %d", rw.Code)
 	}
 }
@@ -202,7 +214,7 @@ func TestOIDC_Logout_ProviderBoundaries(t *testing.T) {
 
 	cookieB, _ := ssoLogin(t, router, idpB, "b", "ub")
 
-	rw := postLogout(router, "/api/v1/auth/sso/oidc/a/logout", cookieB, "", sameOrigin)
+	rw := postLogout(router, "/api/v1/auth/sso/oidc/a/logout", cookieB, "", sameOrigin())
 	if rw.Code != http.StatusNoContent || sessionAlive(t, db, cookieB) {
 		t.Errorf("another provider's session via provider a: expected 204 + local logout, got %d %s", rw.Code, rw.Body.String())
 	}
@@ -214,7 +226,7 @@ func TestOIDC_Logout_ProviderBoundaries(t *testing.T) {
 		t.Fatalf("UpdateSSOProvider: %v", err)
 	}
 
-	rw = postLogout(router, "/api/v1/auth/logout", cookieB2, "", sameOrigin)
+	rw = postLogout(router, "/api/v1/auth/logout", cookieB2, "", sameOrigin())
 	if rw.Code != http.StatusNoContent || sessionAlive(t, db, cookieB2) {
 		t.Errorf("disabled provider: expected plain local logout (204), got %d %s", rw.Code, rw.Body.String())
 	}

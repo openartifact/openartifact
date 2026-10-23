@@ -12,9 +12,10 @@ import (
 	"crypto/x509/pkix"
 	"encoding/base64"
 	"errors"
-	"fmt"
 	"math/big"
 	"runtime"
+	"strconv"
+	"strings"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -114,15 +115,15 @@ func newTestCert(t *testing.T, cn string) *x509.Certificate {
 // idpDoc renders IdP metadata that trusts certs; rootAttrs go on the
 // EntityDescriptor (validUntil / cacheDuration).
 func idpDoc(rootAttrs string, certs ...*x509.Certificate) string {
-	keys := ""
+	var keys strings.Builder
 
 	for _, c := range certs {
-		keys += `<KeyDescriptor use="signing"><KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#"><X509Data><X509Certificate>` +
-			base64.StdEncoding.EncodeToString(c.Raw) + `</X509Certificate></X509Data></KeyInfo></KeyDescriptor>`
+		keys.WriteString(`<KeyDescriptor use="signing"><KeyInfo xmlns="http://www.w3.org/2000/09/xmldsig#"><X509Data><X509Certificate>` +
+			base64.StdEncoding.EncodeToString(c.Raw) + `</X509Certificate></X509Data></KeyInfo></KeyDescriptor>`)
 	}
 
 	return `<EntityDescriptor xmlns="urn:oasis:names:tc:SAML:2.0:metadata" entityID="https://idp.example.com" ` + rootAttrs + `>` +
-		`<IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">` + keys +
+		`<IDPSSODescriptor protocolSupportEnumeration="urn:oasis:names:tc:SAML:2.0:protocol">` + keys.String() +
 		`<SingleSignOnService Binding="urn:oasis:names:tc:SAML:2.0:bindings:HTTP-Redirect" Location="https://idp.example.com/sso"/>` +
 		`</IDPSSODescriptor></EntityDescriptor>`
 }
@@ -167,7 +168,7 @@ func TestIDPMetadataRefresh_ClampsConfiguredInterval(t *testing.T) {
 	}
 
 	for _, tt := range tests {
-		t.Run(fmt.Sprint(tt.seconds), func(t *testing.T) {
+		t.Run(strconv.Itoa(tt.seconds), func(t *testing.T) {
 			t.Parallel()
 
 			if got := IDPMetadataRefresh(models.SAMLConfig{IDPMetadataRefreshSeconds: tt.seconds}); got != tt.want {
@@ -342,7 +343,7 @@ func TestIDPMetadataCache_ValidUntil(t *testing.T) {
 			t.Fatal(err)
 		}
 
-		stub.set("", errors.New("idp down")) //nolint:err113 // test double
+		stub.set("", errors.New("idp down"))
 
 		clock.advance(90 * time.Minute) // refresh due, copy still valid
 
@@ -390,7 +391,7 @@ func TestIDPMetadataCache_StaleIfErrorIsBounded(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	stub.set("", errors.New("idp down")) //nolint:err113 // test double
+	stub.set("", errors.New("idp down"))
 
 	clock.advance(2 * time.Hour)
 
@@ -410,7 +411,7 @@ func TestIDPMetadataCache_NegativeCaching(t *testing.T) {
 	t.Parallel()
 
 	cfg := models.SAMLConfig{IDPMetadataURL: testMetadataURL}
-	down := errors.New("idp down") //nolint:err113 // test double
+	down := errors.New("idp down")
 
 	t.Run("without a copy failures fail fast and are retried after the backoff", func(t *testing.T) {
 		t.Parallel()

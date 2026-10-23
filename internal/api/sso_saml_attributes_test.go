@@ -125,9 +125,12 @@ func TestReadSAMLAttributes_Mapping(t *testing.T) {
 	t.Run("email is unverified unless the IdP says true", func(t *testing.T) {
 		t.Parallel()
 
-		for value, want := range map[string]bool{"true": true, " TRUE ": true, "false": false, "1": false, "": false} {
-			if got := samlEmailVerified(value); got != want {
-				t.Errorf("samlEmailVerified(%q) = %v, want %v", value, got, want)
+		for _, tc := range []struct {
+			value string
+			want  bool
+		}{{"true", true}, {" TRUE ", true}, {"false", false}, {"1", false}, {"", false}} {
+			if got := samlEmailVerified(tc.value); got != tc.want {
+				t.Errorf("samlEmailVerified(%q) = %v, want %v", tc.value, got, tc.want)
 			}
 		}
 	})

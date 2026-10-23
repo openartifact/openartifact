@@ -156,7 +156,7 @@ func boolClaimTrue(claims map[string]any, key string) bool {
 // groupsFromClaims reads the groups claim. present is false when the claim is
 // missing (or null, or of an unusable type): the IdP then said nothing about
 // the user's groups, which is different from an empty list.
-func groupsFromClaims(claims map[string]any, key string) (groups []string, present bool) {
+func groupsFromClaims(claims map[string]any, key string) ([]string, bool) {
 	switch t := claims[key].(type) {
 	case []string:
 		return t, true

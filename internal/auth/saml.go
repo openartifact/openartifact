@@ -386,7 +386,7 @@ func peekSAMLInResponseTo(b64 string) (string, bool) {
 		return "", false
 	}
 
-	dec := xml.NewDecoder(bytes.NewReader(raw))
+	dec := xml.NewDecoder(bytes.NewReader(raw)) //nolint:gosec // G709: stops at the root start element; body capped by net/http ParseForm (10 MiB)
 
 	for {
 		tok, err := dec.Token()
@@ -489,7 +489,7 @@ func (p *SAMLProvider) parseIDPInitiated(r *http.Request, db database.Database) 
 // message is deliberately generic) onto this package's sentinels through the
 // library's typed errors. Anything it does not recognize is returned as is.
 //
-//nolint:cyclop,gocyclo // one branch per library sentinel
+
 func classifySAMLParseError(err error) error {
 	// InvalidResponseError's own message is deliberately generic; the private
 	// cause carries the diagnostic text (still only for logs, never clients).

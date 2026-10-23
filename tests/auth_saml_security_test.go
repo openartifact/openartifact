@@ -258,10 +258,16 @@ type samlAttack struct {
 }
 
 func samlAttacks() []samlAttack {
-	plain := func(_ *testing.T, e *samlFlowEnv, initiated bool) issued { return e.issue(e.plain, initiated) }
+	plain := func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
+		t.Helper()
+
+		return e.issue(e.plain, initiated)
+	}
 
 	mutated := func(fn func(*testing.T, *etree.Element)) func(*testing.T, *samlFlowEnv, bool) issued {
 		return func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
+			t.Helper()
+
 			i := plain(t, e, initiated)
 			i.resp = mutateSAML(t, i.resp, func(root *etree.Element) { fn(t, root) })
 
@@ -271,7 +277,11 @@ func samlAttacks() []samlAttack {
 
 	return []samlAttack{
 		{"signed by a certificate that is not in the metadata", http.StatusBadRequest, "saml_signature_invalid",
-			func(t *testing.T, e *samlFlowEnv, initiated bool) issued { return e.issue(foreignIDP(t, e), initiated) }},
+			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
+				t.Helper()
+
+				return e.issue(foreignIDP(t, e), initiated)
+			}},
 		{"response and assertion unsigned", http.StatusBadRequest, "saml_signature_invalid",
 			mutated(func(_ *testing.T, root *etree.Element) { removeSignatures(root, false) })},
 		{"signed content tampered after signing", http.StatusBadRequest, "saml_signature_invalid",
@@ -281,19 +291,30 @@ func samlAttacks() []samlAttack {
 			})},
 		{"unsigned assertion wrapped in front of the signed one", http.StatusBadRequest, "saml_signature_invalid",
 			mutated(func(t *testing.T, root *etree.Element) {
+				t.Helper()
+
 				root.InsertChildAt(root.FindElement("./Assertion").Index(), evilAssertion(t, root))
 			})},
 		{"assertion encrypted to a key the SP does not hold", http.StatusBadRequest, "saml_invalid",
 			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
+				t.Helper()
+
 				return e.issue(wrongEncryptionKeyIDP(t, e), initiated)
 			}},
 		{"addressed to another audience", http.StatusBadRequest, "saml_audience_mismatch",
-			func(_ *testing.T, e *samlFlowEnv, initiated bool) issued {
+			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
+				t.Helper()
+
 				return e.issue(otherAudienceIDP(e), initiated)
 			}},
 		{"issued long ago (expired)", http.StatusUnauthorized, "saml_assertion_expired",
-			func(_ *testing.T, e *samlFlowEnv, initiated bool) (i issued) {
+			func(t *testing.T, e *samlFlowEnv, initiated bool) issued {
+				t.Helper()
+
+				var i issued
+
 				withSAMLTime(e.t, -10*time.Minute, func() { i = e.issue(e.plain, initiated) })
+
 				return i
 			}},
 	}
@@ -575,6 +596,8 @@ func TestSAML_MultiCertMetadata(t *testing.T) {
 	var second *saml.IdentityProvider
 
 	withTwoCerts := func(t *testing.T, idp *saml.IdentityProvider, cfg *models.SAMLConfig) {
+		t.Helper()
+
 		second = newTestSAMLIdP(t)
 
 		md := idp.Metadata()

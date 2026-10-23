@@ -136,7 +136,7 @@ func (a *oauth2API) get(ctx context.Context, rawURL string, out any) (string, er
 		req.Header.Set(k, v)
 	}
 
-	resp, err := oidcHTTPClient.Do(req) //nolint:gosec // G704: URL is admin-configured; SSRF-guarded client
+	resp, err := oidcHTTPClient.Do(req)
 	if err != nil {
 		return "", fmt.Errorf("oauth2 api request: %w", err)
 	}

@@ -307,9 +307,7 @@ func Load(filePath string) (*Config, error) {
 	applyEnvOverrides(cfg)
 
 	// 4. Finalize config (handle special cases)
-	if err := finalizeConfig(cfg); err != nil {
-		return nil, err
-	}
+	finalizeConfig(cfg)
 
 	return cfg, nil
 }
@@ -633,7 +631,7 @@ func applyEnvOverrides(cfg *Config) {
 }
 
 // finalizeConfig handles special configuration cases.
-func finalizeConfig(cfg *Config) error {
+func finalizeConfig(cfg *Config) {
 	// Handle BASE_URL default
 	if cfg.BaseURL == "" {
 		cfg.BaseURL = "http://localhost:8080"
@@ -644,8 +642,6 @@ func finalizeConfig(cfg *Config) error {
 	// Server-relayed presigned uploads (filesystem and oci storage) point
 	// clients at this server.
 	cfg.Storage.PublicURL = cfg.BaseURL
-
-	return nil
 }
 
 // ValidateFile validates a config file without loading it into the application.

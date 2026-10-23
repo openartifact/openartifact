@@ -45,7 +45,6 @@ var (
 	errGraphStatus      = errors.New("graph: unexpected status")
 )
 
-//nolint:gochecknoglobals // compiled once
 var entraGUIDRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
 
 // IsEntraGUID reports whether s is a GUID (an Entra tenant or object ID).
@@ -197,7 +196,7 @@ func graphMemberObjects(ctx context.Context, graphBase, accessToken string) ([]s
 	for range graphMaxPages {
 		var page struct {
 			Value []string `json:"value"`
-			Next  string   `json:"@odata.nextLink"`
+			Next  string   `json:"@odata.nextLink"` //nolint:tagliatelle // Microsoft Graph wire name
 		}
 
 		if err := graphPost(ctx, next, accessToken, body, &page); err != nil {
@@ -235,7 +234,7 @@ func graphPost(ctx context.Context, rawURL, accessToken string, body []byte, out
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 
-	resp, err := oidcHTTPClient.Do(req) //nolint:gosec // G704: URL is admin-configured; SSRF-guarded client
+	resp, err := oidcHTTPClient.Do(req)
 	if err != nil {
 		// The *url.Error carries the URL only, never the Authorization header.
 		return fmt.Errorf("graph request: %w", err)

@@ -44,7 +44,7 @@ func (d *staleUploadDB) RpmPackageExists(context.Context, string, string, string
 }
 
 func (d *staleUploadDB) GetComponentByFilename(context.Context, string, string) (*models.Component, error) {
-	return nil, nil //nolint:nilnil // no such component
+	return nil, nil
 }
 
 func (d *staleUploadDB) UpsertBlob(_ context.Context, sha256, _ string, _ int64) (string, error) {

@@ -103,7 +103,7 @@ func TestClassifySAMLParseError(t *testing.T) {
 	t.Parallel()
 
 	wrap := func(err error) error { return &saml.InvalidResponseError{PrivateErr: err} }
-	unknown := errors.New("something else") //nolint:err113 // test double
+	unknown := errors.New("something else")
 
 	tests := []struct {
 		name string
@@ -125,7 +125,7 @@ func TestClassifySAMLParseError(t *testing.T) {
 		{"not an InvalidResponseError", unknown, []error{unknown}, []error{ErrSAMLSignatureInvalid}},
 		{
 			"message wording is irrelevant",
-			wrap(errors.New("the signature is fine, audience and expired are just words")), //nolint:err113 // test double
+			wrap(errors.New("the signature is fine, audience and expired are just words")),
 			nil, []error{ErrSAMLSignatureInvalid, ErrSAMLAudienceMismatch, ErrSAMLAssertionExpired},
 		},
 	}
