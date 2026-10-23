@@ -68,15 +68,16 @@ Packages are immutable: uploading the same name, version and architecture again 
 Debian and Ubuntu:
 
 ```sh
-# the repository's public key (Debian repositories: export it yourself, see the Debian page)
+# the repository's public key (served when a signing key applies to the repository)
 sudo install -d -m 0755 /etc/apt/keyrings
-gpg --export --armor KEYID | sudo gpg --dearmor -o /etc/apt/keyrings/acme.gpg
+curl -fsSL -H "Authorization: Bearer $TOKEN" "$HOST/repos/acme-deb/public.key" |
+  sudo gpg --dearmor -o /etc/apt/keyrings/acme.gpg
 echo "deb [signed-by=/etc/apt/keyrings/acme.gpg] $HOST/repos/acme-deb stable main" |
   sudo tee /etc/apt/sources.list.d/acme.list
 sudo apt update && sudo apt install acme
 ```
 
-Without a signing key use `[trusted=yes]` instead of `signed-by=` (testing only). For private repositories put the token into `/etc/apt/auth.conf.d/acme.conf` (`machine HOST login USERNAME password <TOKEN>`).
+Without a signing key `public.key` is `404`: use `[trusted=yes]` instead of `signed-by=` (testing only). For private repositories put the token into `/etc/apt/auth.conf.d/acme.conf` (`machine HOST login USERNAME password <TOKEN>`).
 
 Fedora, RHEL and Rocky:
 
