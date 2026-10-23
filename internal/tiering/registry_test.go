@@ -179,6 +179,7 @@ func TestRegistryWithoutRowsKeepsPrimaryReachable(t *testing.T) {
 // tiersOutageDB fails the tier list, as an unreachable database does.
 type tiersOutageDB struct {
 	*fakeDB
+
 	err error
 }
 
