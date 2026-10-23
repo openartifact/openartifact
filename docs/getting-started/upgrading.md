@@ -95,6 +95,7 @@ Migrations `067`, `068` and `069`.
 - The migration adds the `recovery_*` tables and a trigger on each package table (a small insert per changed row). Migrations are forward-only; rolling back the binary leaves the triggers in place; they keep queuing small rows in `recovery_dirty` until a binary with the journal drains them.
 - New subcommand `openartifact rebuild` (`/app/openartifact rebuild` in the container image).
 - Migration `069` builds two indexes on `recovery_sidecars` (concurrently, so writes are not blocked) that the replication verify pass uses to restore the sidecars of a lost primary store.
+- New [disaster recovery runbook](../operations/disaster-recovery.md) and [PostgreSQL point-in-time recovery guide](../operations/postgres-pitr.md) (CloudNativePG, Barman Cloud plugin, Helm chart). Documentation only.
 
 ### 0.8.1
 
