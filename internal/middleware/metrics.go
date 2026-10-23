@@ -5,6 +5,7 @@
 package middleware
 
 import (
+	"context"
 	"net/http"
 	"strconv"
 	"strings"
@@ -19,6 +20,13 @@ func MetricsMiddleware(reg *metrics.Registry) func(http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			start := time.Now()
 			wrapped := &responseWriter{ResponseWriter: w, statusCode: http.StatusOK}
+
+			// The middleware wraps the router from outside, where chi has not
+			// created its route context yet. Seed one: chi reuses it and fills
+			// in the matched pattern, which is read back below.
+			if chi.RouteContext(r.Context()) == nil {
+				r = r.WithContext(context.WithValue(r.Context(), chi.RouteCtxKey, chi.NewRouteContext()))
+			}
 
 			next.ServeHTTP(wrapped, r)
 
