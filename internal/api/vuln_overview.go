@@ -12,6 +12,8 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/scanexport"
+	"github.com/openartifact/openartifact/internal/urlparams"
 )
 
 const (
@@ -26,6 +28,7 @@ const (
 func (h *VulnHandler) RegisterOverviewRoutes(authedRouter chi.Router) {
 	authedRouter.Get("/api/v1/vuln/scans", h.handleOverview)
 	authedRouter.Get("/api/v1/vuln/scans/summary", h.handleOverviewSummary)
+	authedRouter.Get("/api/v1/vuln/scans/export", h.handleExportOverview)
 }
 
 // vulnOverviewParams reads and validates the overview's query string. It
@@ -197,5 +200,163 @@ func vulnOverviewRowToResponse(s *models.VulnScanOverviewRow) responses.VulnScan
 		ScannedAt:        formatTimePtr(s.ScannedAt),
 		ScanError:        scanError,
 		FailedScanners:   failedScanners,
+	}
+}
+
+const (
+	// vulnExportMaxScans bounds how many scans a cross-repository export reads
+	// (one query each for the findings).
+	vulnExportMaxScans = 2000
+)
+
+// handleExportScan downloads one scan's findings as SARIF, CSV or JSON.
+func (h *VulnHandler) handleExportScan(w http.ResponseWriter, r *http.Request) {
+	name := urlparams.Vars(r)["name"]
+	id := urlparams.Vars(r)["id"]
+	ctx := r.Context()
+
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
+	format, ok := exportFormat(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "validation_failed", "format must be one of: sarif, csv, json")
+		return
+	}
+
+	repo, err := h.db.GetRepositoryByName(ctx, name)
+	if err != nil {
+		h.log.Errorw("export vuln scan: db error getting repo", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if repo == nil || !isUUIDString(id) {
+		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+		return
+	}
+
+	result, err := h.db.GetVulnScanResultByID(ctx, repo.ID, id)
+	if err != nil {
+		h.log.Errorw("export vuln scan: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if result == nil {
+		writeError(w, http.StatusNotFound, "not_found", "vuln scan not found")
+		return
+	}
+
+	h.writeVulnExport(w, format, exportFileName(format, "vuln", repo.Name, id),
+		[]scanexport.VulnItem{{Repo: repo.Name, Scan: result}}, false, func() any { return vulnScanResultToMap(result) })
+}
+
+// handleExportOverview downloads the findings of every scan the overview's
+// filters select (all pages) as SARIF, CSV or JSON.
+func (h *VulnHandler) handleExportOverview(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
+	format, ok := exportFormat(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "validation_failed", "format must be one of: sarif, csv, json")
+		return
+	}
+
+	params, msg := vulnOverviewParams(r)
+	if msg != "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", msg)
+		return
+	}
+
+	// An export is the whole selection, not a page.
+	params.After = nil
+	params.Limit = vulnOverviewMaxLimit
+
+	ctx := r.Context()
+	items := []scanexport.VulnItem{}
+	truncated := false
+
+	for {
+		page, err := h.db.ListVulnScanOverview(ctx, params)
+		if err != nil {
+			if errors.Is(err, database.ErrInvalidVulnScanFilter) {
+				writeError(w, http.StatusBadRequest, "validation_failed", "invalid filter")
+				return
+			}
+
+			h.log.Errorw("export vuln scans: db error", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return
+		}
+
+		for _, row := range page.Scans {
+			if len(items) >= vulnExportMaxScans {
+				truncated = true
+				break
+			}
+
+			scan := &row.VulnScanResult
+			if row.VulnCount > 0 {
+				full, err := h.db.GetVulnScanResultByID(ctx, row.RepositoryID, row.ID)
+				if err != nil {
+					h.log.Errorw("export vuln scans: db error reading findings", "error", err)
+					writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+					return
+				}
+
+				if full == nil {
+					continue // deleted since the page was read
+				}
+
+				scan = full
+			}
+
+			items = append(items, scanexport.VulnItem{Repo: row.RepositoryName, Scan: scan})
+		}
+
+		if truncated || page.Next == nil {
+			break
+		}
+
+		params.After = page.Next
+	}
+
+	h.writeVulnExport(w, format, exportFileName(format, "vuln-scans"), items, truncated, func() any {
+		out := make([]responses.VulnScanExportResponse, 0, len(items))
+
+		for _, it := range items {
+			resp := vulnScanResultToMap(it.Scan)
+			if it.Scan.Vulnerabilities == nil {
+				resp.Vulnerabilities = []models.Vulnerability{}
+			}
+
+			out = append(out, responses.VulnScanExportResponse{VulnScanResultResponse: resp, RepositoryName: it.Repo})
+		}
+
+		return map[string]any{"scans": out, "truncated": truncated}
+	})
+}
+
+// writeVulnExport renders items in format; asJSON builds the JSON body.
+func (h *VulnHandler) writeVulnExport(w http.ResponseWriter, format, filename string, items []scanexport.VulnItem, truncated bool, asJSON func() any) {
+	switch format {
+	case exportFormatSARIF:
+		log, cut := scanexport.VulnSARIF(items)
+		exportHeaders(w, format, filename, truncated || cut)
+		writeExportJSON(w, log)
+	case exportFormatCSV:
+		exportHeaders(w, format, filename, truncated)
+		writeExportCSV(w, scanexport.VulnCSVHeader, scanexport.VulnCSVRows(items))
+	default:
+		exportHeaders(w, format, filename, truncated)
+		writeExportJSON(w, asJSON())
 	}
 }

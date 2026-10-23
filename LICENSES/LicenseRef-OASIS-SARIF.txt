@@ -1,0 +1,7 @@
+Static Analysis Results Format (SARIF) Version 2.1.0 JSON schema
+Copyright (c) OASIS Open 2021. All Rights Reserved.
+
+Source: https://github.com/oasis-tcs/sarif-spec (sarif-2.1/schema/sarif-schema-2.1.0.json).
+Distributed under the OASIS Intellectual Property Rights Policy,
+https://www.oasis-open.org/policies-guidelines/ipr/. Used here unmodified as a test
+fixture to validate the SARIF documents the server exports.

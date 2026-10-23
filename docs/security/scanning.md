@@ -36,6 +36,8 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 | `GET /api/v1/vuln/scans` | the [overview](#the-overview-across-repositories): scans of all repositories, worst first |
 | `GET /api/v1/vuln/scans/summary` | counts for the overview's cards |
 | `GET/DELETE …/vuln/scans/{id}` | read / delete one result |
+| `GET …/vuln/scans/{id}/export` | one scan's findings as [SARIF, CSV or JSON](#exporting-findings-sarif-csv-json) |
+| `GET /api/v1/vuln/scans/export` | the findings of all scans the overview's filters select, same formats |
 | `POST …/vuln/scans/{id}/quarantine` | body `{"quarantined":true\|false}` |
 
 - `POST` returns at once with `scan_status: "scanning"`; the scan runs in the background (120 s limit). Poll `GET …/vuln/scans/{id}` until the status is `completed`, `partial` or `failed`. At most 4 scans run at a time per server; further requests get 429 `too_many_scans` with `Retry-After: 10`.
@@ -198,6 +200,46 @@ Kubernetes and Helm: mount a writable volume (an `emptyDir` is enough, a PVC avo
 
 The design follows [zot](https://zotregistry.dev/)'s CVE scanning: scans run offline against a database that a background task refreshes on an interval with backoff, with a configurable database repository and readiness reporting. zot embeds Trivy as a Go library; OpenArtifact runs the CLIs instead, because that keeps the server binary at its current size and its module graph and vulnerability surface free of Trivy's, lets operators upgrade Trivy independently of the server, and is the only way to offer Grype too. Embedding would be reconsidered if Trivy exposed a stable library API.
 
+## Exporting findings (SARIF, CSV, JSON)
+
+Vulnerability and secret scans can be downloaded for other tools. All export routes need an admin, take `?format=sarif|csv|json` (default `json`; anything else is `400 validation_failed`) and answer with `Content-Disposition: attachment`. The **Security → Vulnerabilities** and **Secrets** pages have SARIF, CSV and JSON buttons: the vulnerability page exports the whole selection of its active filters (all pages, not just the loaded rows), the secrets page the selected repository.
+
+| Export | Route |
+|---|---|
+| One vulnerability scan | `GET /api/v1/repositories/{name}/vuln/scans/{id}/export` |
+| Vulnerability scans across repositories | `GET /api/v1/vuln/scans/export`, with the [overview's](#the-overview-across-repositories) `repo`, `severity`, `status`, `scanner` and `quarantined` filters (`limit` and `cursor` are ignored; at most 2000 scans are read) |
+| Secret scans of a repository | `GET /api/v1/repositories/{name}/secrets/scans/export[?flagged=true]` |
+| One secret scan | `GET /api/v1/repositories/{name}/secrets/scans/{id}/export` |
+
+**SARIF** is 2.1.0 (`application/sarif+json`), checked against the official `sarif-schema-2.1.0.json` in the tests:
+
+- One **run** per scanner (`osv`, `trivy`, `grype`; the secret export has one run, `openartifact-secrets`). A scan that ran several scanners stores one merged finding list that does not say which scanner found what, so it gets its own run named after all of them (`osv+trivy`) instead of being duplicated across runs. A `partial` scan marks its run `executionSuccessful: false`; failed and pending scans have no findings and add none. With nothing to report the file holds one empty run.
+- One **rule** per vulnerability id (the CVE/GHSA/OSV id; `helpUri` is `https://osv.dev/vulnerability/<id>`) or per secret type. The severity is the result `level` (critical and high are `error`, medium `warning`, low and unknown `note`) and the rule's `security-severity` property, which GitHub turns into its critical/high/medium/low label: the finding's CVSS score when the scanner gave one, otherwise 9.5, 8.0, 5.5, 3.0 (0.1 for unknown).
+- One **result** per package and vulnerability (or secret finding), located by the relative artifact path `<repository>/<artifact_id>` (`artifactLocation.uri`, each segment percent-encoded, line 1) with the package URL as a logical location (`pkg:npm/lodash@4.17.20`; `pkg:generic/...?ecosystem=deb` for ecosystems without a Package URL type) and `partialFingerprints["openartifact/v1"]`, a hash of the repository, artifact, package and vulnerability id, so an upload of the same finding matches the earlier one.
+- GitHub's limits are respected: rule ids are at most 255 characters (a longer id is cut and given a hash suffix), messages at most 1024, and at most 25000 results. If there are more, the **least severe are dropped**, the affected runs get `properties.truncated: true` and the response has `X-Export-Truncated: true` (also set when the cross-repository export hit its 2000-scan cap).
+- Secret exports contain the secret type, description, severity and artifact only: no value, not even the redacted one, and no `line_hint`.
+
+**CSV** has one row per finding: `repository, artifact_id, package_name, package_version, ecosystem, scanner, scan_id, scan_status, vulnerability_id, severity, cvss, fixed_in, summary, published_at, references` for vulnerabilities and `repository, artifact_id, scan_id, scan_status, type, description, severity` for secrets. Every cell that starts with `=`, `+`, `-`, `@`, a tab or a carriage return is prefixed with `'`, so a spreadsheet does not evaluate an advisory summary as a formula.
+
+**JSON** is the scan as the read route returns it (`vulnerabilities` included); the cross-repository export is `{"scans": [...], "truncated": false}` with a `repository_name` on each scan, and the secret export drops `redacted_value` and `line_hint`.
+
+### Uploading to GitHub code scanning
+
+```sh
+curl -sS -H 'Authorization: Bearer <TOKEN>' \
+  'HOST/api/v1/vuln/scans/export?format=sarif&severity=high' -o openartifact.sarif
+
+gh api repos/OWNER/REPO/code-scanning/sarifs \
+  -f commit_sha="$(git rev-parse HEAD)" -f ref=refs/heads/main \
+  -f sarif="$(gzip -c openartifact.sarif | base64 -w0)"
+```
+
+The API takes the gzipped, base64-encoded file (at most 10 MB compressed) and needs a token with `security_events` write access. In Actions use `github/codeql-action/upload-sarif` with `sarif_file: openartifact.sarif` instead. GitHub shows each run as its own tool; artifact paths are not files of the GitHub repository, so alerts appear in the Security tab without a source line.
+
+### Importing into DefectDojo
+
+Import the file as scan type **SARIF** (UI: *Import Scan Results*, or `POST /api/v2/import-scan/` with `scan_type=SARIF` and `file=@openartifact.sarif`). Each result's `level`, `ruleId` and artifact path become the finding's severity, title and file path; use *Reimport* so later uploads update the same findings.
+
 ## Secret scans
 
 ```sh
@@ -211,6 +253,7 @@ curl -sS -X POST HOST/api/v1/repositories/REPO/secrets/scan -H 'Authorization: B
 | `POST …/secrets/scan` | `artifact_id` required; `content` (text) and/or `metadata` (object) are scanned |
 | `GET …/secrets/scans[?flagged=true]` | list |
 | `GET/DELETE …/secrets/scans/{id}` | read / delete |
+| `GET …/secrets/scans/export[?flagged=true]`, `GET …/secrets/scans/{id}/export` | findings of all (or flagged) scans of the repository, or of one scan, as [SARIF, CSV or JSON](#exporting-findings-sarif-csv-json); never a secret value |
 | `POST …/secrets/scans/{id}/quarantine` | `{"quarantined":true\|false}`; applies to the scan's `artifact_id` |
 
 The result has `scan_status` `clean` or `flagged`, `finding_count` and `findings`. Findings never contain the secret: `type`, `description`, `severity`, `redacted_value` (at most the first eighth of the value, up to four characters, then `****`) and a `line_hint` around the match with every detected secret in the window masked.

@@ -9,10 +9,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Header -->
     <PageHeader :title="t('sec.secret.title')" :description="t('sec.secret.description')">
       <template #actions>
-        <AppButton variant="primary" size="md" :disabled="!selectedRepo" @click="openDrawer">
-          <ArrowPathIcon class="w-4 h-4" aria-hidden="true" />
-          {{ t('sec.secret.trigger') }}
-        </AppButton>
+        <div class="flex items-center gap-3 flex-wrap">
+          <ScanExportButtons :url="exportUrl" :disabled="!selectedRepo" />
+          <AppButton variant="primary" size="md" :disabled="!selectedRepo" @click="openDrawer">
+            <ArrowPathIcon class="w-4 h-4" aria-hidden="true" />
+            {{ t('sec.secret.trigger') }}
+          </AppButton>
+        </div>
       </template>
     </PageHeader>
 
@@ -216,6 +219,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
+import ScanExportButtons from '../../components/ScanExportButtons.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch } from 'vue'
 import { ArrowPathIcon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
@@ -224,7 +228,7 @@ import FormatBadge from '../../components/FormatBadge.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
 import { useToastStore } from '../../stores/toast'
 import { useRepoPackages } from '../../composables/useRepoPackages'
-import { listSecretScans, triggerSecretScan, setSecretQuarantine, type SecretScan } from '../../api/security'
+import { listSecretScans, triggerSecretScan, setSecretQuarantine, secretScansExportUrl, type ScanExportFormat, type SecretScan } from '../../api/security'
 import { t, tDynamic } from '../../i18n/en'
 
 const toasts = useToastStore()
@@ -240,6 +244,10 @@ const form = ref({ artifactId: '', content: '' })
 const searchQuery = ref('')
 const activeTab = ref<'all' | 'flagged' | 'clean'>('all')
 let loadSeq = 0
+
+function exportUrl(format: ScanExportFormat): string {
+  return secretScansExportUrl(selectedRepo.value, format)
+}
 
 const flaggedCount = computed(() => scans.value.filter((s) => s.scan_status === 'flagged').length)
 const cleanCount = computed(() => scans.value.filter((s) => s.scan_status === 'clean').length)

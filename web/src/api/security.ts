@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, preflight } from './client'
 import type {
   LicensePolicyViolation,
   LicenseScanResult,
@@ -224,4 +224,37 @@ export function setSecretQuarantine(repo: string, scanId: string, quarantined: b
     `${repoBase(repo)}/secrets/scans/${encodeURIComponent(scanId)}/quarantine`,
     jsonPost({ quarantined }),
   )
+}
+
+// ── Exports ───────────────────────────────────────────────────────────────────
+
+/** SARIF 2.1.0 (GitHub code scanning, DefectDojo), CSV or JSON. */
+export type ScanExportFormat = 'sarif' | 'csv' | 'json'
+
+export const SCAN_EXPORT_FORMATS: readonly ScanExportFormat[] = ['sarif', 'csv', 'json']
+
+/** Export of the scans the overview filters select, across repositories. */
+export function vulnScansExportUrl(filters: VulnScanFilters, format: ScanExportFormat): string {
+  return `/api/v1/vuln/scans/export${queryString({ ...filters, format })}`
+}
+
+/** Export of the secret scans of one repository. */
+export function secretScansExportUrl(repo: string, format: ScanExportFormat): string {
+  return `${repoBase(repo)}/secrets/scans/export${queryString({ format })}`
+}
+
+/**
+ * Downloads an export route. A preflight reports what the server would answer
+ * (forbidden, invalid filter) as an ApiError; the browser then fetches the
+ * file itself, so it streams to disk and the session cookie applies.
+ */
+export async function downloadScanExport(url: string, format: ScanExportFormat): Promise<void> {
+  const { filename } = await preflight(url)
+
+  const link = document.createElement('a')
+  link.href = url
+  link.download = filename ?? `scans.${format}`
+  document.body.appendChild(link)
+  link.click()
+  link.remove()
 }

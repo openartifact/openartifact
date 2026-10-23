@@ -2298,6 +2298,47 @@ export type GetApiV1RepositoriesByNameSecretsScansResponses = {
 
 export type GetApiV1RepositoriesByNameSecretsScansResponse = GetApiV1RepositoriesByNameSecretsScansResponses[keyof GetApiV1RepositoriesByNameSecretsScansResponses];
 
+export type GetApiV1RepositoriesByNameSecretsScansExportData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        flagged?: boolean;
+        /**
+         * `sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).
+         */
+        format?: 'sarif' | 'csv' | 'json';
+    };
+    url: '/api/v1/repositories/{name}/secrets/scans/export';
+};
+
+export type GetApiV1RepositoriesByNameSecretsScansExportErrors = {
+    /**
+     * Unknown `format` or filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameSecretsScansExportResponses = {
+    /**
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetApiV1RepositoriesByNameSecretsScansExportResponse = GetApiV1RepositoriesByNameSecretsScansExportResponses[keyof GetApiV1RepositoriesByNameSecretsScansExportResponses];
+
 export type DeleteApiV1RepositoriesByNameSecretsScansByIdData = {
     body?: never;
     path: {
@@ -2347,6 +2388,47 @@ export type GetApiV1RepositoriesByNameSecretsScansByIdResponses = {
      */
     200: unknown;
 };
+
+export type GetApiV1RepositoriesByNameSecretsScansByIdExportData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: {
+        /**
+         * `sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).
+         */
+        format?: 'sarif' | 'csv' | 'json';
+    };
+    url: '/api/v1/repositories/{name}/secrets/scans/{id}/export';
+};
+
+export type GetApiV1RepositoriesByNameSecretsScansByIdExportErrors = {
+    /**
+     * Unknown `format` or filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Scan not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameSecretsScansByIdExportResponses = {
+    /**
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetApiV1RepositoriesByNameSecretsScansByIdExportResponse = GetApiV1RepositoriesByNameSecretsScansByIdExportResponses[keyof GetApiV1RepositoriesByNameSecretsScansByIdExportResponses];
 
 export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineData = {
     body?: never;
@@ -2430,6 +2512,51 @@ export type GetApiV1VulnScansResponses = {
 };
 
 export type GetApiV1VulnScansResponse = GetApiV1VulnScansResponses[keyof GetApiV1VulnScansResponses];
+
+export type GetApiV1VulnScansExportData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Scans with a finding of this severity or worse.
+         */
+        severity?: 'critical' | 'high' | 'medium' | 'low';
+        status?: 'completed' | 'partial' | 'failed' | 'scanning';
+        scanner?: 'osv' | 'trivy' | 'grype';
+        quarantined?: boolean;
+        /**
+         * `sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).
+         */
+        format?: 'sarif' | 'csv' | 'json';
+    };
+    url: '/api/v1/vuln/scans/export';
+};
+
+export type GetApiV1VulnScansExportErrors = {
+    /**
+     * Unknown `format` or filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1VulnScansExportResponses = {
+    /**
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetApiV1VulnScansExportResponse = GetApiV1VulnScansExportResponses[keyof GetApiV1VulnScansExportResponses];
 
 export type GetApiV1VulnScansSummaryData = {
     body?: never;
@@ -2542,6 +2669,47 @@ export type GetApiV1RepositoriesByNameVulnScansResponses = {
 };
 
 export type GetApiV1RepositoriesByNameVulnScansResponse = GetApiV1RepositoriesByNameVulnScansResponses[keyof GetApiV1RepositoriesByNameVulnScansResponses];
+
+export type GetApiV1RepositoriesByNameVulnScansByIdExportData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: {
+        /**
+         * `sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).
+         */
+        format?: 'sarif' | 'csv' | 'json';
+    };
+    url: '/api/v1/repositories/{name}/vuln/scans/{id}/export';
+};
+
+export type GetApiV1RepositoriesByNameVulnScansByIdExportErrors = {
+    /**
+     * Unknown `format` or filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Scan not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameVulnScansByIdExportResponses = {
+    /**
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetApiV1RepositoriesByNameVulnScansByIdExportResponse = GetApiV1RepositoriesByNameVulnScansByIdExportResponses[keyof GetApiV1RepositoriesByNameVulnScansByIdExportResponses];
 
 export type DeleteApiV1RepositoriesByNameVulnScansByIdData = {
     body?: never;
