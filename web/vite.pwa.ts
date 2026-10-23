@@ -8,7 +8,7 @@ import { join, relative, resolve, sep } from 'node:path'
 import { build, type Plugin } from 'vite'
 
 // Static app shell served next to the hashed assets (all from web/public).
-const SHELL_FILES = ['offline.html', 'favicon.svg', 'manifest.webmanifest']
+const SHELL_FILES = ['offline.html', 'favicon.svg', 'manifest.webmanifest', 'theme-init.js']
 
 function walk(dir: string): string[] {
   return readdirSync(dir).flatMap((name) => {

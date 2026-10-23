@@ -19,9 +19,12 @@ OpenArtifact is one Go binary with the web UI embedded. It needs PostgreSQL (the
 ## Docker Compose
 
 ```sh
+docker login dhi.io                     # default runtime is Docker Hardened Images (a free Docker ID is enough)
 cp docker/.env.example docker/.env      # set POSTGRES_PASSWORD
 make docker-up                          # build and start; stamps version, commit and build time
 ```
+
+To skip the login, build on the anonymous distroless base instead: `OPENARTIFACT_RUNTIME=distroless make docker-up`.
 
 `make docker-up` runs `docker compose -f docker/docker-compose.yml --env-file docker/.env up -d --build` with the build metadata exported (see the table below). Running that `docker compose` command directly works too, but compose cannot read the `VERSION` file or run `git`, so the image then reports version `dev` and commit/build time `unknown` (the System page labels them "Not recorded").
 
