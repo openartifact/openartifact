@@ -109,7 +109,7 @@ func (s artifactLicenseSource) fromFile(ctx context.Context, repoID, artifactID 
 	ctx, cancel := context.WithTimeout(ctx, licenseReadTimeout)
 	defer cancel()
 
-	licenses, err := s.read(ctx, blob)
+	licenses, err := s.read(ctx, repoID, blob)
 
 	switch {
 	case err == nil:
@@ -136,9 +136,10 @@ func (s artifactLicenseSource) fromFile(ctx context.Context, repoID, artifactID 
 	return nil, nil
 }
 
-// read returns the licenses the stored file declares; licensemeta.ErrUnsupported
+// read returns the licenses the stored file declares (for a Maven pom with none,
+// the ones inherited from its parent pom in the repository); licensemeta.ErrUnsupported
 // for a file kind that cannot be read.
-func (s artifactLicenseSource) read(ctx context.Context, blob *models.ComponentBlob) ([]string, error) {
+func (s artifactLicenseSource) read(ctx context.Context, repoID string, blob *models.ComponentBlob) ([]string, error) {
 	open := func() (io.ReadCloser, error) { return s.blobs.Get(ctx, blob.SHA256) }
 
 	if blob.Format == "rubygems" {
@@ -150,7 +151,19 @@ func (s artifactLicenseSource) read(ctx context.Context, blob *models.ComponentB
 		return nil, err //nolint:wrapcheck // callers test the licensemeta sentinels
 	}
 
-	return res.Licenses, nil
+	if res.Parent == nil {
+		return res.Licenses, nil
+	}
+
+	// A pom that declares no license takes its parent's. An unresolved chain
+	// (parent not stored yet) leaves the pom with no license until the parent
+	// is uploaded and the pom is evaluated again.
+	inherited, _, err := inheritedPOMLicenses(ctx, s.db, s.blobs, repoID, res.Parent)
+	if err != nil {
+		return nil, err
+	}
+
+	return inherited, nil
 }
 
 // writeLicenseSourceError answers 422 for the errors licenses returns that mean

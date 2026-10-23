@@ -24,12 +24,20 @@ type Dependency struct {
 	Optional   string `xml:"optional"`
 }
 
+// Parent is the <parent> reference of a pom.
+type Parent struct {
+	GroupID    string `xml:"groupId"`
+	ArtifactID string `xml:"artifactId"`
+	Version    string `xml:"version"`
+}
+
 type POM struct {
 	XMLName      xml.Name     `xml:"project"`
 	GroupID      string       `xml:"groupId"`
 	ArtifactID   string       `xml:"artifactId"`
 	Version      string       `xml:"version"`
 	Packaging    string       `xml:"packaging"`
+	Parent       *Parent      `xml:"parent"`
 	Name         string       `xml:"name"`
 	Description  string       `xml:"description"`
 	URL          string       `xml:"url"`

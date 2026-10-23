@@ -115,6 +115,7 @@ grype my-image --vex vex.openvex.json
 ## Limitations
 
 - Generation is per artifact for SBOMs; a VEX document may cover a whole repository.
+- A Maven pom that declares no license takes the one of its parent pom stored in the same repository (see [Maven parent poms](licenses.md#maven-parent-poms)); the SBOM shows it once the pom's license scan result exists, which an upload records. Dependency licenses are still only what the artifact's properties carry.
 - Package contents are not inspected: components, dependency licenses and hashes depend on what the artifact's properties carry.
 - Vulnerabilities in the SBOM come from the latest completed or partial scan; a repository that was never scanned yields `under_investigation` only for the findings it has, and none otherwise.
 - The OpenVEX document and statement ids are generated per request; timestamps are the time of generation.

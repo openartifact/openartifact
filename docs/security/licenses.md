@@ -58,6 +58,17 @@ Every license scan result says where its licenses came from in `license_source`:
 
 Results stored before this field existed are `client_declared`.
 
+## Maven parent poms
+
+A pom that declares no `<licenses>` inherits them from its `<parent>`, as Maven does: a pom that declares licenses keeps its own, otherwise the parent's apply, up the chain.
+
+- The parent is looked up **in the same repository** by its `groupId:artifactId:version`. Nothing is fetched from outside at upload or scan time.
+- The chain is followed up to 10 levels and stops on a cycle (a pom that is, directly or not, its own ancestor).
+- A parent version that is a property (`${revision}`) cannot be resolved.
+- Inheritance applies to the upload check (a blocking policy sees the inherited license), to the license scan of the pom, and to the SBOM, which reads the stored scan result.
+
+When the parent is not stored (yet), the pom is admitted and its scan result is recorded with no license ("unresolved"). Each time a pom with `<packaging>pom</packaging>` is uploaded, the repository's unresolved poms are resolved again (at most 500 per upload): those whose chain now reaches a license get their scan result rewritten, and one that violates a blocking policy is quarantined together with the files stored beside it. Deploying the parent before its children, as a Maven reactor does, avoids the unresolved state.
+
 ## Hostile files
 
 Package files are untrusted. Reading them never writes to disk and is bounded:
@@ -70,7 +81,7 @@ An upload that fails these limits answers `422` with code `LICENSE_METADATA_UNSA
 
 ## Limitations
 
-- Maven licenses are not inherited from a `<parent>` pom.
+- Maven parent lookup is limited to the repository that holds the pom: no remote fetch, no group members, no proxy cache. See [Maven parent poms](#maven-parent-poms).
 - Without a blocking policy, a file that cannot be read is judged on the client's fields (marked `client_declared`).
 - Debian, RPM, Conda, Helm, Docker and Ivy/sbt keep their own readers and are not covered by `LICENSE_METADATA_UNREADABLE`: a descriptor that does not parse declares no license there.
 - The metadata the registry **serves** (npm packument, PyPI JSON, the Cargo index) is still the client's. Only the license policy decision and the license scan use the file's licenses.

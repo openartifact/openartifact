@@ -59,6 +59,10 @@ type Result struct {
 	// "License", "classifier", "package.json", "Cargo.toml", ".nuspec" or
 	// "pom".
 	Source string
+	// Parent is the <parent> a Maven pom declares; set only for a pom that
+	// declares no license of its own, whose licenses are then the parent's
+	// (see InheritPOMLicenses). Nil otherwise.
+	Parent *pkgmaven.Parent
 }
 
 // Empty reports whether the artifact declares no license.

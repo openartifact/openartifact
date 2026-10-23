@@ -41,6 +41,10 @@ docker compose -f docker/docker-compose.yml run --rm openartifact ./openartifact
 
 With `MIGRATE_ON_START=false` the server logs `automatic migrations skipped` at start and does not check the schema version, so a new binary against an unmigrated database may fail at query time. `make migrate` does the same from a source checkout (`go run ./cmd/server -migrate`).
 
+### Unreleased
+
+- Maven poms that declare no license now inherit it from their `<parent>` pom stored in the same repository, for the upload license policy, the license scan and the SBOM. A blocking policy can therefore reject a child whose parent declares a denied license. Existing scan results are not rewritten: scan the pom again. See [Maven parent poms](../security/licenses.md#maven-parent-poms).
+
 ## Docker Compose
 
 From the checkout of the new version:
