@@ -22,8 +22,6 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -107,10 +105,10 @@ func newAttestFixture(t *testing.T, withService bool) *attestFixture {
 	t.Helper()
 
 	log, err := logger.New("error", "console", "stderr")
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	blobs, err := storage.NewFilesystemStore(t.TempDir())
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	db := &attestDB{}
 	eval := auth.NewEvaluator(db, log, false)
@@ -122,20 +120,20 @@ func newAttestFixture(t *testing.T, withService bool) *attestFixture {
 
 	if withService {
 		keyPEM, err := attest.GenerateKeyPEM()
-		require.NoError(t, err)
+		mustNoError(t, err)
 
 		keyFile := filepath.Join(t.TempDir(), "key.pem")
-		require.NoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
+		mustNoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
 
 		svc = attest.NewService(keyFile, nil)
 		info, err := svc.Info(context.Background())
-		require.NoError(t, err)
+		mustNoError(t, err)
 
 		block, _ := pem.Decode([]byte(info.PublicKeyPEM))
-		require.NotNil(t, block)
+		mustNotNil(t, block)
 
 		f.pubKey, err = x509.ParsePKIXPublicKey(block.Bytes)
-		require.NoError(t, err)
+		mustNoError(t, err)
 	}
 
 	r := chi.NewRouter()
@@ -167,7 +165,7 @@ func (f *attestFixture) storeSBOM(t *testing.T, format, contentType, body string
 	t.Helper()
 
 	sha, err := f.blobs.Put(context.Background(), strings.NewReader(body), nil)
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	f.db.report = &models.SBOMReport{
 		ID: attestSBOMID, RepositoryID: attestRepoID, ArtifactID: "lib@1.0.0", Format: format,
@@ -180,9 +178,9 @@ func (f *attestFixture) decodeEnvelope(t *testing.T, body []byte) *attest.Statem
 	t.Helper()
 
 	var env attest.Envelope
-	require.NoError(t, json.Unmarshal(body, &env))
+	mustNoError(t, json.Unmarshal(body, &env))
 	st, err := attest.Verify(&env, f.pubKey)
-	require.NoError(t, err, "signature must verify with the published public key")
+	mustNoError(t, err, "signature must verify with the published public key")
 
 	return st
 }
@@ -194,24 +192,24 @@ func TestSBOMDownloadAttestEnvelopeSignsStoredDocument(t *testing.T) {
 	sum := sha256.Sum256([]byte(doc))
 
 	rw := f.get(t, "/api/v1/repositories/libs/sbom/"+attestSBOMID+"/download?attest=true", true)
-	require.Equal(t, http.StatusOK, rw.Code, rw.Body.String())
-	assert.Equal(t, attest.EnvelopeContentType, rw.Header().Get("Content-Type"))
-	assert.Contains(t, rw.Header().Get("Content-Disposition"), "sbom.cdx.json.intoto.json")
+	mustEqual(t, http.StatusOK, rw.Code, rw.Body.String())
+	expectEqual(t, attest.EnvelopeContentType, rw.Header().Get("Content-Type"))
+	expectContains(t, rw.Header().Get("Content-Disposition"), "sbom.cdx.json.intoto.json")
 
 	st := f.decodeEnvelope(t, rw.Body.Bytes())
-	assert.Equal(t, attest.PredicateCycloneDX, st.PredicateType)
+	expectEqual(t, attest.PredicateCycloneDX, st.PredicateType)
 
 	var predicate map[string]any
-	require.NoError(t, json.Unmarshal(st.Predicate, &predicate))
-	assert.Equal(t, "CycloneDX", predicate["bomFormat"], "the predicate is the stored SBOM itself")
+	mustNoError(t, json.Unmarshal(st.Predicate, &predicate))
+	expectEqual(t, "CycloneDX", predicate["bomFormat"], "the predicate is the stored SBOM itself")
 
 	digests := map[string]bool{}
 	for _, s := range st.Subject {
 		digests[s.Digest["sha256"]] = true
 	}
 
-	assert.True(t, digests[attestPkgSHA], "the package digest is a subject (cosign verify-blob-attestation <package>)")
-	assert.True(t, digests[hex.EncodeToString(sum[:])], "the SBOM file digest is a subject")
+	expectTrue(t, digests[attestPkgSHA], "the package digest is a subject (cosign verify-blob-attestation <package>)")
+	expectTrue(t, digests[hex.EncodeToString(sum[:])], "the SBOM file digest is a subject")
 }
 
 func TestSBOMDownloadAttestBundleIsSigstoreBundle(t *testing.T) {
@@ -219,9 +217,9 @@ func TestSBOMDownloadAttestBundleIsSigstoreBundle(t *testing.T) {
 	f.storeSBOM(t, "spdx3-json", "application/ld+json", `{"@context":"x","@graph":[]}`)
 
 	rw := f.get(t, "/api/v1/repositories/libs/sbom/"+attestSBOMID+"/download?attest=bundle", true)
-	require.Equal(t, http.StatusOK, rw.Code, rw.Body.String())
-	assert.Equal(t, attest.BundleContentType, rw.Header().Get("Content-Type"))
-	assert.Contains(t, rw.Header().Get("Content-Disposition"), "sbom.spdx3.json.sigstore.json")
+	mustEqual(t, http.StatusOK, rw.Code, rw.Body.String())
+	expectEqual(t, attest.BundleContentType, rw.Header().Get("Content-Type"))
+	expectContains(t, rw.Header().Get("Content-Disposition"), "sbom.spdx3.json.sigstore.json")
 
 	var bundle struct {
 		MediaType        string `json:"mediaType"`
@@ -229,13 +227,13 @@ func TestSBOMDownloadAttestBundleIsSigstoreBundle(t *testing.T) {
 		DSSEEnvelopeJSON json.RawMessage `json:"dsseEnvelope"`
 	}
 
-	require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &bundle))
-	assert.Equal(t, attest.BundleMediaType, bundle.MediaType)
-	require.NoError(t, json.Unmarshal(bundle.DSSEEnvelopeJSON, &bundle.DSSEEnvelope))
+	mustNoError(t, json.Unmarshal(rw.Body.Bytes(), &bundle))
+	expectEqual(t, attest.BundleMediaType, bundle.MediaType)
+	mustNoError(t, json.Unmarshal(bundle.DSSEEnvelopeJSON, &bundle.DSSEEnvelope))
 
 	st, err := attest.Verify(&bundle.DSSEEnvelope, f.pubKey)
-	require.NoError(t, err)
-	assert.Equal(t, attest.PredicateSPDX3, st.PredicateType)
+	mustNoError(t, err)
+	expectEqual(t, attest.PredicateSPDX3, st.PredicateType)
 }
 
 func TestSBOMDownloadAttestRejections(t *testing.T) {
@@ -246,29 +244,29 @@ func TestSBOMDownloadAttestRejections(t *testing.T) {
 		f.storeSBOM(t, "spdx", "text/plain", "SPDXVersion: SPDX-2.3\n")
 
 		rw := f.get(t, url+"?attest=true", true)
-		assert.Equal(t, http.StatusBadRequest, rw.Code)
-		assert.Contains(t, rw.Body.String(), "validation_failed")
+		expectEqual(t, http.StatusBadRequest, rw.Code)
+		expectContains(t, rw.Body.String(), "validation_failed")
 	})
 
 	t.Run("unknown attest value", func(t *testing.T) {
 		f := newAttestFixture(t, true)
 		f.storeSBOM(t, "cyclonedx", "application/json", `{}`)
 
-		assert.Equal(t, http.StatusBadRequest, f.get(t, url+"?attest=yes", true).Code)
+		expectEqual(t, http.StatusBadRequest, f.get(t, url+"?attest=yes", true).Code)
 	})
 
 	t.Run("not enabled", func(t *testing.T) {
 		f := newAttestFixture(t, false)
 		f.storeSBOM(t, "cyclonedx", "application/json", `{}`)
 
-		assert.Equal(t, http.StatusNotImplemented, f.get(t, url+"?attest=true", true).Code)
+		expectEqual(t, http.StatusNotImplemented, f.get(t, url+"?attest=true", true).Code)
 	})
 
 	t.Run("admin only", func(t *testing.T) {
 		f := newAttestFixture(t, true)
 		f.storeSBOM(t, "cyclonedx", "application/json", `{}`)
 
-		assert.Equal(t, http.StatusForbidden, f.get(t, url+"?attest=true", false).Code)
+		expectEqual(t, http.StatusForbidden, f.get(t, url+"?attest=true", false).Code)
 	})
 
 	t.Run("plain download is unchanged", func(t *testing.T) {
@@ -276,8 +274,8 @@ func TestSBOMDownloadAttestRejections(t *testing.T) {
 		f.storeSBOM(t, "cyclonedx", "application/json", `{"a":1}`)
 
 		rw := f.get(t, url, true)
-		require.Equal(t, http.StatusOK, rw.Code)
-		assert.Equal(t, `{"a":1}`, rw.Body.String())
+		mustEqual(t, http.StatusOK, rw.Code)
+		expectEqual(t, `{"a":1}`, rw.Body.String())
 	})
 }
 
@@ -294,25 +292,25 @@ func TestVEXDocumentAttest(t *testing.T) {
 			f := newAttestFixture(t, true)
 
 			rw := f.get(t, "/api/v1/repositories/libs/vex?artifact_id=lib@1.0.0&attest=true"+tc.query, true)
-			require.Equal(t, http.StatusOK, rw.Code, rw.Body.String())
-			assert.Contains(t, rw.Header().Get("Content-Disposition"), tc.file)
+			mustEqual(t, http.StatusOK, rw.Code, rw.Body.String())
+			expectContains(t, rw.Header().Get("Content-Disposition"), tc.file)
 
 			st := f.decodeEnvelope(t, rw.Body.Bytes())
-			assert.Equal(t, tc.predicate, st.PredicateType)
-			require.NotEmpty(t, st.Subject)
-			assert.Equal(t, attestPkgSHA, st.Subject[0].Digest["sha256"], "subject is the package the VEX speaks about")
-			assert.True(t, strings.HasPrefix(st.Subject[0].Name, "pkg:"), st.Subject[0].Name)
+			expectEqual(t, tc.predicate, st.PredicateType)
+			mustNotEmpty(t, st.Subject)
+			expectEqual(t, attestPkgSHA, st.Subject[0].Digest["sha256"], "subject is the package the VEX speaks about")
+			expectTrue(t, strings.HasPrefix(st.Subject[0].Name, "pkg:"), st.Subject[0].Name)
 		})
 	}
 
 	t.Run("invalid attest value", func(t *testing.T) {
 		f := newAttestFixture(t, true)
-		assert.Equal(t, http.StatusBadRequest, f.get(t, "/api/v1/repositories/libs/vex?attest=maybe", true).Code)
+		expectEqual(t, http.StatusBadRequest, f.get(t, "/api/v1/repositories/libs/vex?attest=maybe", true).Code)
 	})
 
 	t.Run("not enabled", func(t *testing.T) {
 		f := newAttestFixture(t, false)
-		assert.Equal(t, http.StatusNotImplemented, f.get(t, "/api/v1/repositories/libs/vex?attest=true", true).Code)
+		expectEqual(t, http.StatusNotImplemented, f.get(t, "/api/v1/repositories/libs/vex?attest=true", true).Code)
 	})
 }
 
@@ -320,14 +318,14 @@ func TestAttestationPublicKeyEndpoints(t *testing.T) {
 	f := newAttestFixture(t, true)
 
 	rw := f.get(t, AttestationKeyPath, false)
-	require.Equal(t, http.StatusOK, rw.Code, "the verification key is public")
-	assert.Contains(t, rw.Body.String(), "BEGIN PUBLIC KEY")
-	assert.NotContains(t, rw.Body.String(), "PRIVATE")
+	mustEqual(t, http.StatusOK, rw.Code, "the verification key is public")
+	expectContains(t, rw.Body.String(), "BEGIN PUBLIC KEY")
+	expectNotContains(t, rw.Body.String(), "PRIVATE")
 
 	pubPEM := rw.Body.Bytes()
 
 	rw = f.get(t, "/api/v1/admin/attestation", true)
-	require.Equal(t, http.StatusOK, rw.Code)
+	mustEqual(t, http.StatusOK, rw.Code)
 
 	var info struct {
 		KeyID        string `json:"key_id"`
@@ -337,18 +335,18 @@ func TestAttestationPublicKeyEndpoints(t *testing.T) {
 		PublicKeyURL string `json:"public_key_url"`
 	}
 
-	require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &info))
-	assert.Equal(t, "ecdsa-p256", info.Algorithm)
-	assert.Equal(t, "file", info.Source)
-	assert.Equal(t, AttestationKeyPath, info.PublicKeyURL)
-	assert.True(t, bytes.Equal(pubPEM, []byte(info.PublicKeyPEM)))
-	assert.NotEmpty(t, info.KeyID)
-	assert.NotContains(t, rw.Body.String(), "PRIVATE")
+	mustNoError(t, json.Unmarshal(rw.Body.Bytes(), &info))
+	expectEqual(t, "ecdsa-p256", info.Algorithm)
+	expectEqual(t, "file", info.Source)
+	expectEqual(t, AttestationKeyPath, info.PublicKeyURL)
+	expectTrue(t, bytes.Equal(pubPEM, []byte(info.PublicKeyPEM)))
+	expectNotEmpty(t, info.KeyID)
+	expectNotContains(t, rw.Body.String(), "PRIVATE")
 
-	assert.Equal(t, http.StatusForbidden, f.get(t, "/api/v1/admin/attestation", false).Code)
+	expectEqual(t, http.StatusForbidden, f.get(t, "/api/v1/admin/attestation", false).Code)
 
 	off := newAttestFixture(t, false)
-	assert.Equal(t, http.StatusNotImplemented, off.get(t, AttestationKeyPath, false).Code)
+	expectEqual(t, http.StatusNotImplemented, off.get(t, AttestationKeyPath, false).Code)
 }
 
 func TestAttestEnvelopeSignatureIsBase64(t *testing.T) {
@@ -356,18 +354,18 @@ func TestAttestEnvelopeSignatureIsBase64(t *testing.T) {
 	f.storeSBOM(t, "spdx-json", "application/json", `{"spdxVersion":"SPDX-2.3"}`)
 
 	rw := f.get(t, "/api/v1/repositories/libs/sbom/"+attestSBOMID+"/download?attest=true", true)
-	require.Equal(t, http.StatusOK, rw.Code)
+	mustEqual(t, http.StatusOK, rw.Code)
 
 	var env struct {
 		PayloadType string `json:"payloadType"`
 		Payload     string `json:"payload"`
 	}
 
-	require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &env))
-	assert.Equal(t, attest.PayloadType, env.PayloadType)
+	mustNoError(t, json.Unmarshal(rw.Body.Bytes(), &env))
+	expectEqual(t, attest.PayloadType, env.PayloadType)
 
 	raw, err := base64.StdEncoding.DecodeString(env.Payload)
-	require.NoError(t, err)
-	assert.Contains(t, string(raw), attest.StatementType)
-	assert.Contains(t, string(raw), attest.PredicateSPDX)
+	mustNoError(t, err)
+	expectContains(t, string(raw), attest.StatementType)
+	expectContains(t, string(raw), attest.PredicateSPDX)
 }

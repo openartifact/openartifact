@@ -23,6 +23,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 )
 
@@ -85,16 +86,18 @@ type Envelope struct {
 
 // PAE is the DSSE pre-authentication encoding of a payload.
 func PAE(payloadType string, payload []byte) []byte {
-	b := make([]byte, 0, len(payloadType)+len(payload)+32)
-	b = append(b, "DSSEv1 "...)
-	b = strconv.AppendInt(b, int64(len(payloadType)), 10)
-	b = append(b, ' ')
-	b = append(b, payloadType...)
-	b = append(b, ' ')
-	b = strconv.AppendInt(b, int64(len(payload)), 10)
-	b = append(b, ' ')
+	// The header is built separately and joined with slices.Concat, which
+	// checks the total length itself, so no hand-computed capacity can overflow.
+	header := make([]byte, 0, 64)
+	header = append(header, "DSSEv1 "...)
+	header = strconv.AppendInt(header, int64(len(payloadType)), 10)
+	header = append(header, ' ')
+	header = append(header, payloadType...)
+	header = append(header, ' ')
+	header = strconv.AppendInt(header, int64(len(payload)), 10)
+	header = append(header, ' ')
 
-	return append(b, payload...)
+	return slices.Concat(header, payload)
 }
 
 // Signer signs DSSE payloads with one key.

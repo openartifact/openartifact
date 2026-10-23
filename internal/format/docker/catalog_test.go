@@ -241,6 +241,24 @@ func TestCatalog_ScansPastLongUnreadableRuns(t *testing.T) {
 	}
 }
 
+func TestCatalog_PageSizeIsCapped(t *testing.T) {
+	var entries []*models.DockerCatalogEntry
+	for i := range maxTagPage + 5 {
+		entries = append(entries, hostedEntry(fmt.Sprintf("r%05d", i), "img"))
+	}
+
+	g, _ := newCatalogRegistry(t, entries, func(string, string) bool { return true })
+
+	rec := g.do(http.MethodGet, "/v2/_catalog?n=2000000000", "")
+	if got := decodeCatalog(t, rec); len(got) != maxTagPage {
+		t.Fatalf("huge n returned %d names, want the cap %d", len(got), maxTagPage)
+	}
+
+	if link := rec.Header().Get("Link"); !strings.Contains(link, fmt.Sprintf("n=%d", maxTagPage)) {
+		t.Fatalf("Link %q must carry the capped n=%d", link, maxTagPage)
+	}
+}
+
 func TestCatalog_PageSizeValidation(t *testing.T) {
 	g, db := newCatalogRegistry(t, []*models.DockerCatalogEntry{hostedEntry("a", "x")}, func(string, string) bool { return true })
 

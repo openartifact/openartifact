@@ -14,8 +14,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/crypto"
@@ -142,7 +140,7 @@ type dtFixture struct {
 func newDTFixture(t *testing.T) *dtFixture {
 	t.Helper()
 
-	require.NoError(t, crypto.Init("0123456789abcdef0123456789abcdef0123456789"))
+	mustNoError(t, crypto.Init("0123456789abcdef0123456789abcdef0123456789"))
 	t.Cleanup(func() { _ = crypto.Init("") })
 
 	// The fake server listens on loopback; cloud metadata addresses stay blocked.
@@ -166,7 +164,7 @@ func newDTFixture(t *testing.T) *dtFixture {
 	t.Cleanup(dt.Close)
 
 	log, err := logger.New("error", "console", "stderr")
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	db := &dtDB{settings: map[string]string{}, pushes: map[string]*models.DependencyTrackPush{}}
 	pusher := &fakePusher{}
@@ -203,31 +201,31 @@ func TestDependencyTrackGlobalSettingsNeverReturnTheKey(t *testing.T) {
 	f := newDTFixture(t)
 
 	rw := f.do(t, http.MethodGet, dtGlobal, "", true)
-	require.Equal(t, http.StatusOK, rw.Code)
-	assert.JSONEq(t, `{"enabled":false,"base_url":"","api_key_set":false,"project_name":"","project_version":"","auto_push":false,"push_vex":false}`, rw.Body.String())
+	mustEqual(t, http.StatusOK, rw.Code)
+	expectJSONEq(t, `{"enabled":false,"base_url":"","api_key_set":false,"project_name":"","project_version":"","auto_push":false,"push_vex":false}`, rw.Body.String())
 
 	body := `{"enabled":true,"base_url":"` + f.dt.URL + `","api_key":"` + dtSecretKey + `","project_name":"{repo}/{name}","auto_push":true,"push_vex":true}`
 	rw = f.do(t, http.MethodPut, dtGlobal, body, true)
-	require.Equal(t, http.StatusOK, rw.Code, rw.Body.String())
-	assert.NotContains(t, rw.Body.String(), dtSecretKey)
-	assert.Contains(t, rw.Body.String(), `"api_key_set":true`)
-	assert.NotContains(t, f.db.settings[dtrack.SettingGlobal], dtSecretKey, "stored encrypted")
+	mustEqual(t, http.StatusOK, rw.Code, rw.Body.String())
+	expectNotContains(t, rw.Body.String(), dtSecretKey)
+	expectContains(t, rw.Body.String(), `"api_key_set":true`)
+	expectNotContains(t, f.db.settings[dtrack.SettingGlobal], dtSecretKey, "stored encrypted")
 
 	// Omitting api_key keeps the stored one.
 	rw = f.do(t, http.MethodPut, dtGlobal, `{"enabled":true,"base_url":"`+f.dt.URL+`","auto_push":false,"push_vex":true}`, true)
-	require.Equal(t, http.StatusOK, rw.Code, rw.Body.String())
-	assert.Contains(t, rw.Body.String(), `"api_key_set":true`)
+	mustEqual(t, http.StatusOK, rw.Code, rw.Body.String())
+	expectContains(t, rw.Body.String(), `"api_key_set":true`)
 
 	rw = f.do(t, http.MethodGet, dtGlobal, "", true)
-	assert.NotContains(t, rw.Body.String(), dtSecretKey)
+	expectNotContains(t, rw.Body.String(), dtSecretKey)
 
 	// An empty api_key clears it, which makes enabling invalid.
 	rw = f.do(t, http.MethodPut, dtGlobal, `{"enabled":true,"base_url":"`+f.dt.URL+`","api_key":""}`, true)
-	assert.Equal(t, http.StatusBadRequest, rw.Code)
+	expectEqual(t, http.StatusBadRequest, rw.Code)
 
 	rw = f.do(t, http.MethodPut, dtGlobal, `{"enabled":false,"base_url":"`+f.dt.URL+`","api_key":""}`, true)
-	require.Equal(t, http.StatusOK, rw.Code)
-	assert.Contains(t, rw.Body.String(), `"api_key_set":false`)
+	mustEqual(t, http.StatusOK, rw.Code)
+	expectContains(t, rw.Body.String(), `"api_key_set":false`)
 }
 
 func TestDependencyTrackGlobalSettingsValidation(t *testing.T) {
@@ -243,8 +241,8 @@ func TestDependencyTrackGlobalSettingsValidation(t *testing.T) {
 	} {
 		t.Run(name, func(t *testing.T) {
 			rw := f.do(t, http.MethodPut, dtGlobal, body, true)
-			assert.Equal(t, http.StatusBadRequest, rw.Code, rw.Body.String())
-			assert.NotContains(t, rw.Body.String(), "169.254", "errors do not echo internals")
+			expectEqual(t, http.StatusBadRequest, rw.Code, rw.Body.String())
+			expectNotContains(t, rw.Body.String(), "169.254", "errors do not echo internals")
 		})
 	}
 }
@@ -258,7 +256,7 @@ func TestDependencyTrackEndpointsAreAdminOnly(t *testing.T) {
 		{http.MethodPost, dtRepo + "/test"}, {http.MethodPost, dtRepo + "/push"}, {http.MethodGet, dtRepo + "/pushes"},
 	} {
 		rw := f.do(t, tc.method, tc.path, `{}`, false)
-		assert.Equal(t, http.StatusForbidden, rw.Code, tc.method+" "+tc.path)
+		expectEqual(t, http.StatusForbidden, rw.Code, tc.method+" "+tc.path)
 	}
 }
 
@@ -266,29 +264,29 @@ func TestDependencyTrackConnectionTest(t *testing.T) {
 	f := newDTFixture(t)
 
 	// Not configured.
-	assert.Equal(t, http.StatusBadRequest, f.do(t, http.MethodPost, dtGlobal+"/test", "", true).Code)
+	expectEqual(t, http.StatusBadRequest, f.do(t, http.MethodPost, dtGlobal+"/test", "", true).Code)
 
 	f.do(t, http.MethodPut, dtGlobal, `{"enabled":true,"base_url":"`+f.dt.URL+`","api_key":"`+dtSecretKey+`","push_vex":true}`, true)
 
 	rw := f.do(t, http.MethodPost, dtGlobal+"/test", "", true)
-	require.Equal(t, http.StatusOK, rw.Code, rw.Body.String())
+	mustEqual(t, http.StatusOK, rw.Code, rw.Body.String())
 
 	var out struct {
 		Version string   `json:"version"`
 		Missing []string `json:"missing_permissions"`
 	}
 
-	require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &out))
-	assert.Equal(t, "4.14.2", out.Version)
-	assert.Contains(t, out.Missing, "VULNERABILITY_ANALYSIS")
+	mustNoError(t, json.Unmarshal(rw.Body.Bytes(), &out))
+	expectEqual(t, "4.14.2", out.Version)
+	expectContains(t, out.Missing, "VULNERABILITY_ANALYSIS")
 
 	// A wrong key fails with a generic message.
 	f.do(t, http.MethodPut, dtGlobal, `{"enabled":true,"base_url":"`+f.dt.URL+`","api_key":"wrong-key-value"}`, true)
 
 	rw = f.do(t, http.MethodPost, dtGlobal+"/test", "", true)
-	assert.Equal(t, http.StatusBadRequest, rw.Code)
-	assert.NotContains(t, rw.Body.String(), f.dt.URL, "the upstream address is not echoed")
-	assert.NotContains(t, rw.Body.String(), "wrong-key-value")
+	expectEqual(t, http.StatusBadRequest, rw.Code)
+	expectNotContains(t, rw.Body.String(), f.dt.URL, "the upstream address is not echoed")
+	expectNotContains(t, rw.Body.String(), "wrong-key-value")
 }
 
 func TestDependencyTrackRepositoryOverride(t *testing.T) {
@@ -297,7 +295,7 @@ func TestDependencyTrackRepositoryOverride(t *testing.T) {
 	f.do(t, http.MethodPut, dtGlobal, `{"enabled":true,"base_url":"`+f.dt.URL+`","api_key":"`+dtSecretKey+`","auto_push":true,"push_vex":true}`, true)
 
 	rw := f.do(t, http.MethodGet, dtRepo, "", true)
-	require.Equal(t, http.StatusOK, rw.Code)
+	mustEqual(t, http.StatusOK, rw.Code)
 
 	var got struct {
 		Override  *json.RawMessage `json:"override"`
@@ -309,26 +307,26 @@ func TestDependencyTrackRepositoryOverride(t *testing.T) {
 		} `json:"effective"`
 	}
 
-	require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &got))
-	assert.Nil(t, got.Override)
-	assert.True(t, got.Effective.Ready)
-	assert.Equal(t, "global", got.Effective.Source)
-	assert.Equal(t, "{repo}/{name}", got.Effective.ProjectName, "defaults are shown")
+	mustNoError(t, json.Unmarshal(rw.Body.Bytes(), &got))
+	expectNil(t, got.Override)
+	expectTrue(t, got.Effective.Ready)
+	expectEqual(t, "global", got.Effective.Source)
+	expectEqual(t, "{repo}/{name}", got.Effective.ProjectName, "defaults are shown")
 
 	// A per-repo override with its own key, opting out of VEX.
 	rw = f.do(t, http.MethodPut, dtRepo, `{"enabled":true,"project_name":"x/{name}","api_key":"repo-key-value","push_vex":false}`, true)
-	require.Equal(t, http.StatusOK, rw.Code, rw.Body.String())
-	assert.NotContains(t, rw.Body.String(), "repo-key-value")
-	assert.NotContains(t, f.db.row.APIKey, "repo-key-value", "stored encrypted")
+	mustEqual(t, http.StatusOK, rw.Code, rw.Body.String())
+	expectNotContains(t, rw.Body.String(), "repo-key-value")
+	expectNotContains(t, f.db.row.APIKey, "repo-key-value", "stored encrypted")
 
-	require.NoError(t, json.Unmarshal(rw.Body.Bytes(), &got))
-	assert.Equal(t, "repository", got.Effective.Source)
-	assert.Equal(t, "x/{name}", got.Effective.ProjectName)
+	mustNoError(t, json.Unmarshal(rw.Body.Bytes(), &got))
+	expectEqual(t, "repository", got.Effective.Source)
+	expectEqual(t, "x/{name}", got.Effective.ProjectName)
 
 	// Unknown repository, and removal.
-	assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodGet, "/api/v1/repositories/nope/dependency-track", "", true).Code)
-	assert.Equal(t, http.StatusNoContent, f.do(t, http.MethodDelete, dtRepo, "", true).Code)
-	assert.Equal(t, http.StatusNotFound, f.do(t, http.MethodDelete, dtRepo, "", true).Code)
+	expectEqual(t, http.StatusNotFound, f.do(t, http.MethodGet, "/api/v1/repositories/nope/dependency-track", "", true).Code)
+	expectEqual(t, http.StatusNoContent, f.do(t, http.MethodDelete, dtRepo, "", true).Code)
+	expectEqual(t, http.StatusNotFound, f.do(t, http.MethodDelete, dtRepo, "", true).Code)
 }
 
 func TestDependencyTrackManualPush(t *testing.T) {
@@ -336,33 +334,33 @@ func TestDependencyTrackManualPush(t *testing.T) {
 
 	// Nothing configured: refused.
 	rw := f.do(t, http.MethodPost, dtRepo+"/push", `{"artifact_id":"lib@1.0.0"}`, true)
-	assert.Equal(t, http.StatusConflict, rw.Code)
-	assert.Empty(t, f.pusher.jobs)
+	expectEqual(t, http.StatusConflict, rw.Code)
+	expectEmpty(t, f.pusher.jobs)
 
 	f.do(t, http.MethodPut, dtGlobal, `{"enabled":true,"base_url":"`+f.dt.URL+`","api_key":"`+dtSecretKey+`"}`, true)
 
-	assert.Equal(t, http.StatusBadRequest, f.do(t, http.MethodPost, dtRepo+"/push", `{"artifact_id":""}`, true).Code)
+	expectEqual(t, http.StatusBadRequest, f.do(t, http.MethodPost, dtRepo+"/push", `{"artifact_id":""}`, true).Code)
 
 	rw = f.do(t, http.MethodPost, dtRepo+"/push", `{"artifact_id":"lib@1.0.0"}`, true)
-	require.Equal(t, http.StatusAccepted, rw.Code, rw.Body.String())
-	require.Len(t, f.pusher.jobs, 1)
-	assert.Equal(t, dtrack.Job{RepoID: attestRepoID, ArtifactID: "lib@1.0.0", Trigger: dtrack.TriggerManual}, f.pusher.jobs[0])
-	assert.Contains(t, rw.Body.String(), `"state":"queued"`)
+	mustEqual(t, http.StatusAccepted, rw.Code, rw.Body.String())
+	mustLen(t, f.pusher.jobs, 1)
+	expectEqual(t, dtrack.Job{RepoID: attestRepoID, ArtifactID: "lib@1.0.0", Trigger: dtrack.TriggerManual}, f.pusher.jobs[0])
+	expectContains(t, rw.Body.String(), `"state":"queued"`)
 
 	rw = f.do(t, http.MethodGet, dtRepo+"/pushes", "", true)
-	require.Equal(t, http.StatusOK, rw.Code)
-	assert.Contains(t, rw.Body.String(), `"artifact_id":"lib@1.0.0"`)
+	mustEqual(t, http.StatusOK, rw.Code)
+	expectContains(t, rw.Body.String(), `"artifact_id":"lib@1.0.0"`)
 }
 
 func TestDependencyTrackPushWithoutPusherIsNotImplemented(t *testing.T) {
 	f := newDTFixture(t)
 	log, err := logger.New("error", "console", "stderr")
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	r := chi.NewRouter()
 	NewDependencyTrackHandler(f.db, log, auth.NewEvaluator(f.db, log, false), nil).RegisterAuthed(r)
 	f.router = r
 
 	rw := f.do(t, http.MethodPost, dtRepo+"/push", `{"artifact_id":"lib@1.0.0"}`, true)
-	assert.Equal(t, http.StatusNotImplemented, rw.Code)
+	expectEqual(t, http.StatusNotImplemented, rw.Code)
 }

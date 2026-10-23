@@ -18,8 +18,6 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
@@ -159,16 +157,16 @@ func newAttachFixture(t *testing.T) *attachFixture {
 	t.Helper()
 
 	log, err := logger.New("error", "console", "stderr")
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	blobs, err := storage.NewFilesystemStore(t.TempDir())
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	keyPEM, err := attest.GenerateKeyPEM()
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	keyFile := filepath.Join(t.TempDir(), "key.pem")
-	require.NoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
+	mustNoError(t, os.WriteFile(keyFile, keyPEM, 0o600))
 
 	db := &attachDB{}
 	reg := &fakeRegistry{}
@@ -203,10 +201,10 @@ func attachedStatement(t *testing.T, req docker.ReferrerRequest) (string, []stri
 		} `json:"dsseEnvelope"` //nolint:tagliatelle // Sigstore bundle wire format
 	}
 
-	require.NoError(t, json.Unmarshal(req.Content, &bundle))
+	mustNoError(t, json.Unmarshal(req.Content, &bundle))
 
 	raw, err := base64.StdEncoding.DecodeString(bundle.DSSE.Payload)
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	var st struct {
 		PredicateType string `json:"predicateType"` //nolint:tagliatelle // in-toto wire format
@@ -215,7 +213,7 @@ func attachedStatement(t *testing.T, req docker.ReferrerRequest) (string, []stri
 		} `json:"subject"`
 	}
 
-	require.NoError(t, json.Unmarshal(raw, &st))
+	mustNoError(t, json.Unmarshal(raw, &st))
 
 	var digests []string
 	for _, s := range st.Subject {
@@ -228,22 +226,22 @@ func attachedStatement(t *testing.T, req docker.ReferrerRequest) (string, []stri
 func TestAttestationAttachSetting(t *testing.T) {
 	f := newAttachFixture(t)
 
-	assert.Equal(t, http.StatusForbidden, f.do(http.MethodGet, "/api/v1/repositories/reg/attestation-attach", "", false).Code)
-	assert.Equal(t, http.StatusNotFound, f.do(http.MethodGet, "/api/v1/repositories/nope/attestation-attach", "", true).Code)
+	expectEqual(t, http.StatusForbidden, f.do(http.MethodGet, "/api/v1/repositories/reg/attestation-attach", "", false).Code)
+	expectEqual(t, http.StatusNotFound, f.do(http.MethodGet, "/api/v1/repositories/nope/attestation-attach", "", true).Code)
 
 	rec := f.do(http.MethodGet, "/api/v1/repositories/reg/attestation-attach", "", true)
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"enabled":false}`, rec.Body.String())
+	mustEqual(t, http.StatusOK, rec.Code)
+	expectJSONEq(t, `{"enabled":false}`, rec.Body.String())
 
 	rec = f.do(http.MethodPut, "/api/v1/repositories/reg/attestation-attach", `{"enabled":true}`, true)
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.JSONEq(t, `{"enabled":true}`, rec.Body.String())
-	assert.True(t, f.attacher.Enabled(context.Background(), f.db.repo()))
+	mustEqual(t, http.StatusOK, rec.Code)
+	expectJSONEq(t, `{"enabled":true}`, rec.Body.String())
+	expectTrue(t, f.attacher.Enabled(context.Background(), f.db.repo()))
 
 	f.db.format = "npm"
 	rec = f.do(http.MethodPut, "/api/v1/repositories/reg/attestation-attach", `{"enabled":true}`, true)
-	assert.Equal(t, http.StatusBadRequest, rec.Code)
-	assert.False(t, f.attacher.Enabled(context.Background(), f.db.repo()), "only docker repositories attach")
+	expectEqual(t, http.StatusBadRequest, rec.Code)
+	expectFalse(t, f.attacher.Enabled(context.Background(), f.db.repo()), "only docker repositories attach")
 }
 
 func TestAttestationAttachVEX(t *testing.T) {
@@ -251,10 +249,10 @@ func TestAttestationAttachVEX(t *testing.T) {
 	body := `{"artifact_id":"reg/app@1.0","format":"openvex"}`
 
 	rec := f.do(http.MethodPost, "/api/v1/repositories/reg/vex/attach", body, false)
-	assert.Equal(t, http.StatusForbidden, rec.Code)
+	expectEqual(t, http.StatusForbidden, rec.Code)
 
 	rec = f.do(http.MethodPost, "/api/v1/repositories/reg/vex/attach", body, true)
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
+	mustEqual(t, http.StatusCreated, rec.Code, rec.Body.String())
 
 	var out struct {
 		Subject        string `json:"subject"`
@@ -264,23 +262,23 @@ func TestAttestationAttachVEX(t *testing.T) {
 		Replaced       string `json:"replaced"`
 	}
 
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
-	assert.Equal(t, attachManifestDigest, out.Subject)
-	assert.Equal(t, attest.BundleContentType, out.ArtifactType)
-	assert.Equal(t, "sha256:cccc", out.ReferrerDigest)
-	assert.True(t, out.Created)
-	assert.Equal(t, "sha256:dddd", out.Replaced)
+	mustNoError(t, json.Unmarshal(rec.Body.Bytes(), &out))
+	expectEqual(t, attachManifestDigest, out.Subject)
+	expectEqual(t, attest.BundleContentType, out.ArtifactType)
+	expectEqual(t, "sha256:cccc", out.ReferrerDigest)
+	expectTrue(t, out.Created)
+	expectEqual(t, "sha256:dddd", out.Replaced)
 
-	require.Equal(t, 1, f.reg.count())
+	mustEqual(t, 1, f.reg.count())
 	req := f.reg.attached[0]
-	assert.Equal(t, attachManifestDigest, req.SubjectDigest)
-	assert.Equal(t, attest.BundleContentType, req.ArtifactType)
-	assert.Equal(t, attest.PredicateOpenVEX, req.Annotations["dev.sigstore.bundle.predicateType"])
-	assert.Equal(t, "vex", req.Annotations["dev.openartifact.attestation.kind"])
+	expectEqual(t, attachManifestDigest, req.SubjectDigest)
+	expectEqual(t, attest.BundleContentType, req.ArtifactType)
+	expectEqual(t, attest.PredicateOpenVEX, req.Annotations["dev.sigstore.bundle.predicateType"])
+	expectEqual(t, "vex", req.Annotations["dev.openartifact.attestation.kind"])
 
 	predicate, subjects := attachedStatement(t, req)
-	assert.Equal(t, attest.PredicateOpenVEX, predicate)
-	assert.Contains(t, subjects, strings.TrimPrefix(attachManifestDigest, "sha256:"), "the image manifest digest is the attested subject")
+	expectEqual(t, attest.PredicateOpenVEX, predicate)
+	expectContains(t, subjects, strings.TrimPrefix(attachManifestDigest, "sha256:"), "the image manifest digest is the attested subject")
 }
 
 func TestAttestationAttachIsIdempotentWhenAlreadyAttached(t *testing.T) {
@@ -288,54 +286,54 @@ func TestAttestationAttachIsIdempotentWhenAlreadyAttached(t *testing.T) {
 	f.reg.found = "sha256:eeee"
 
 	rec := f.do(http.MethodPost, "/api/v1/repositories/reg/vex/attach", `{"artifact_id":"reg/app@1.0"}`, true)
-	require.Equal(t, http.StatusOK, rec.Code, rec.Body.String())
-	assert.Contains(t, rec.Body.String(), `"referrer_digest":"sha256:eeee"`)
-	assert.Contains(t, rec.Body.String(), `"created":false`)
-	assert.Zero(t, f.reg.count(), "nothing is signed or stored again for an attached document")
+	mustEqual(t, http.StatusOK, rec.Code, rec.Body.String())
+	expectContains(t, rec.Body.String(), `"referrer_digest":"sha256:eeee"`)
+	expectContains(t, rec.Body.String(), `"created":false`)
+	expectZero(t, f.reg.count(), "nothing is signed or stored again for an attached document")
 }
 
 func TestAttestationAttachErrors(t *testing.T) {
 	f := newAttachFixture(t)
 	url := "/api/v1/repositories/reg/vex/attach"
 
-	assert.Equal(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{}`, true).Code, "artifact_id is required")
-	assert.Equal(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0","format":"xml"}`, true).Code)
-	assert.Equal(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@9.9"}`, true).Code, "unknown tag")
-	assert.Equal(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"other/app@1.0"}`, true).Code, "image of another repository")
+	expectEqual(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{}`, true).Code, "artifact_id is required")
+	expectEqual(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0","format":"xml"}`, true).Code)
+	expectEqual(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@9.9"}`, true).Code, "unknown tag")
+	expectEqual(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"other/app@1.0"}`, true).Code, "image of another repository")
 
 	f.reg.err = quota.ErrExceeded
-	assert.Equal(t, http.StatusInsufficientStorage, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0"}`, true).Code)
+	expectEqual(t, http.StatusInsufficientStorage, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0"}`, true).Code)
 
 	f.reg.err = docker.ErrSubjectNotFound
-	assert.Equal(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0"}`, true).Code)
+	expectEqual(t, http.StatusNotFound, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0"}`, true).Code)
 
 	f.db.format = "npm"
-	assert.Equal(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0"}`, true).Code)
+	expectEqual(t, http.StatusBadRequest, f.do(http.MethodPost, url, `{"artifact_id":"reg/app@1.0"}`, true).Code)
 }
 
 func TestAttestationAttachSBOM(t *testing.T) {
 	f := newAttachFixture(t)
 	doc := `{"bomFormat":"CycloneDX","specVersion":"1.6"}`
 	sha, err := f.blobs.Put(context.Background(), strings.NewReader(doc), nil)
-	require.NoError(t, err)
+	mustNoError(t, err)
 
 	url := "/api/v1/repositories/reg/sbom/" + attestSBOMID + "/attach"
 	f.db.report = &models.SBOMReport{ID: attestSBOMID, RepositoryID: attestRepoID, ArtifactID: "reg/app@1.0", Format: "cyclonedx", BlobSHA256: sha}
 
-	assert.Equal(t, http.StatusNotFound, f.do(http.MethodPost, "/api/v1/repositories/reg/sbom/not-a-uuid/attach", "", true).Code)
+	expectEqual(t, http.StatusNotFound, f.do(http.MethodPost, "/api/v1/repositories/reg/sbom/not-a-uuid/attach", "", true).Code)
 
 	rec := f.do(http.MethodPost, url, "", true)
-	require.Equal(t, http.StatusCreated, rec.Code, rec.Body.String())
-	require.Equal(t, 1, f.reg.count())
+	mustEqual(t, http.StatusCreated, rec.Code, rec.Body.String())
+	mustEqual(t, 1, f.reg.count())
 
 	predicate, subjects := attachedStatement(t, f.reg.attached[0])
-	assert.Equal(t, attest.PredicateCycloneDX, predicate)
-	assert.Contains(t, subjects, strings.TrimPrefix(attachManifestDigest, "sha256:"))
-	assert.Contains(t, subjects, sha, "the SBOM file digest is a subject too")
-	assert.True(t, bytes.Contains(f.reg.attached[0].Content, []byte("dsseEnvelope")))
+	expectEqual(t, attest.PredicateCycloneDX, predicate)
+	expectContains(t, subjects, strings.TrimPrefix(attachManifestDigest, "sha256:"))
+	expectContains(t, subjects, sha, "the SBOM file digest is a subject too")
+	expectTrue(t, bytes.Contains(f.reg.attached[0].Content, []byte("dsseEnvelope")))
 
 	f.db.report.Format = "spdx-tag"
-	assert.Equal(t, http.StatusBadRequest, f.do(http.MethodPost, url, "", true).Code, "tag-value SBOMs cannot be attested")
+	expectEqual(t, http.StatusBadRequest, f.do(http.MethodPost, url, "", true).Code, "tag-value SBOMs cannot be attested")
 }
 
 func TestAttestationAttachHooksOnlyRunWhenEnabled(t *testing.T) {
@@ -345,13 +343,13 @@ func TestAttestationAttachHooksOnlyRunWhenEnabled(t *testing.T) {
 
 	f.attacher.OnSBOMGenerated(ctx, f.db.repo(), report, []byte(`{}`))
 	f.attacher.OnScan(ctx, attestRepoID, "reg/app@1.0")
-	assert.Zero(t, f.reg.count(), "the default is off")
+	expectZero(t, f.reg.count(), "the default is off")
 
 	f.db.enabled = true
 
 	f.attacher.OnSBOMGenerated(ctx, f.db.repo(), report, []byte(`{}`))
-	assert.Equal(t, 1, f.reg.count())
+	expectEqual(t, 1, f.reg.count())
 
 	f.attacher.OnScan(ctx, attestRepoID, "reg/app@1.0")
-	assert.Equal(t, 3, f.reg.count(), "a scan attaches the SBOM and the VEX document")
+	expectEqual(t, 3, f.reg.count(), "a scan attaches the SBOM and the VEX document")
 }
