@@ -114,8 +114,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
       <EmptyState
         v-else-if="!selectedRepo"
-        :title="t('sec.common.selectRepoTitle')"
-        :description="t('sec.ai.selectRepoDesc')"
+        :title="reposLoaded && !repos.length ? t('sec.common.noReposTitle') : t('sec.common.selectRepoTitle')"
+        :description="reposLoaded && !repos.length ? t('sec.common.noReposDesc') : t('sec.ai.selectRepoDesc')"
       />
 
       <EmptyState
@@ -357,7 +357,7 @@ const MAX_PAGES = 10
 const POLL_MS = 4000
 
 const toasts = useToastStore()
-const { repos, selectedRepo, packages, findPackage } = useRepoPackages()
+const { repos, reposLoaded, selectedRepo, packages, findPackage } = useRepoPackages()
 
 const analyses = ref<AIAnalysis[]>([])
 const loadingAnalyses = ref(false)

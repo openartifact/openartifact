@@ -32,7 +32,9 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 |---|---|
 | `POST …/vuln/scan` | body `artifact_id`, `package_name`, `package_version`, `ecosystem` (all required), `scanner` (`osv` default, `trivy`, `grype`) and/or `scanners` (a list of those names, to run several at once); an unknown name is `400 validation_failed` |
 | `GET …/vuln/scanners` | which scanners can run now and, if not, why ([readiness](#checking-scanner-readiness)) |
-| `GET …/vuln/scans[?vulnerable=true]` | list results |
+| `GET …/vuln/scans[?vulnerable=true]` | list the results of one repository |
+| `GET /api/v1/vuln/scans` | the [overview](#the-overview-across-repositories): scans of all repositories, worst first |
+| `GET /api/v1/vuln/scans/summary` | counts for the overview's cards |
 | `GET/DELETE …/vuln/scans/{id}` | read / delete one result |
 | `POST …/vuln/scans/{id}/quarantine` | body `{"quarantined":true\|false}` |
 
@@ -40,6 +42,22 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 - A result carries `vulnerabilities` (id, summary, severity, CVSS, fixed-in version, references, published date), the counts `vuln_count`, `critical_count`, `high_count`, `medium_count`, `low_count`, the `scanner` that ran (several are stored sorted and comma-joined, for example `osv,trivy`) and `failed_scanners`.
 - `ecosystem` uses these names: `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, `deb`, `rpm`, `helm` (OSV); the other backends support a subset: Trivy `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`; Grype `npm`, `pypi`, `maven`, `cargo`, `rubygems`, `nuget`, `go`. Both scan the one package you name, not its dependencies: Trivy is given a generated lockfile that pins it (`package-lock.json`, `Cargo.lock`, `Gemfile.lock`, `packages.lock.json`, or `requirements.txt`, `go.mod`, `pom.xml`), Grype a Package URL (`pkg:npm/%40angular/core@8.0.0`). `deb` and `rpm` are not scannable with Grype (the result would depend on a distribution that a name and version do not carry) and are reported as `unsupported_ecosystem` rather than as clean.
 - `osv` needs outbound HTTPS to `api.osv.dev` and nothing else. `trivy` and `grype` are separate programs that the **release image does not contain**; see [Installing Trivy and Grype](#installing-trivy-and-grype). A scan that selects one that is not installed (or has no vulnerability database yet) is recorded as failed with an actionable `scan_error`.
+
+### The overview across repositories
+
+`GET /api/v1/vuln/scans` (administrators) lists the scans of every repository at once, which is what the **Security → Vulnerabilities** page opens with. Rows are summaries (the repository's name and format, the package, the counts, the status, the scanners, the quarantine flag) without the findings; read those with `GET …/vuln/scans/{id}`. The order is fixed, worst first: most critical findings, then high, medium and low, then newest, then id.
+
+| Query | Meaning |
+|---|---|
+| `repo` | only this repository (by name) |
+| `severity` | `critical`, `high`, `medium` or `low`: scans with at least one finding of that severity **or worse** |
+| `status` | `completed`, `partial`, `failed` or `scanning` (pending or running) |
+| `scanner` | `osv`, `trivy` or `grype`; a scan run by several matches each |
+| `quarantined` | `true` or `false` |
+| `limit` | page size, default 25, at most 100 |
+| `cursor` | the `next_cursor` of the previous page; send the same filters with it |
+
+The response is `{scans, has_more, next_cursor}`: keyset paging, so no row is counted and a deep page costs what the first costs. An unknown filter value or a malformed cursor is `400 validation_failed`. `GET /api/v1/vuln/scans/summary[?repo=NAME]` returns `{total, completed, partial, failed, scanning, quarantined, severity_at_least: {critical, high, medium, low}}` in one query; `severity_at_least.high` is the number of scans with a critical or a high finding, matching the `severity` filter. Failed and partial scans, critical findings, quarantined results and a repository filter are each served from an index (migration `041_scan_jobs_vuln_problems.no_tx.sql` adds the one for failed and partial scans, built concurrently).
 
 ### Scanner failures
 

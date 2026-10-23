@@ -6,7 +6,7 @@ import { describe, it, expect } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import LicenseScanPage from '../LicenseScanPage.vue'
-import { REPO, mockSecurityApi, selectRepo } from './scanPageHarness'
+import { REPO, makeRouter, mockSecurityApi, selectRepo } from './scanPageHarness'
 
 const base = {
   repo_id: 'r1',
@@ -26,13 +26,27 @@ const PageHeaderStub = { template: '<div><slot name="actions" /></div>' }
 
 async function mountPage(extra?: Parameters<typeof mockSecurityApi>[2]) {
   const calls = mockSecurityApi(`/api/v1/repositories/${REPO}/license/scans`, [QUARANTINED, OK, APPROVED], extra)
-  const wrapper = mount(LicenseScanPage, { global: { plugins: [createPinia()], stubs: { RouterLink: true, PageHeader: PageHeaderStub } } })
+  const router = await makeRouter('/security/licenses')
+  const wrapper = mount(LicenseScanPage, { global: { plugins: [createPinia(), router], stubs: { RouterLink: true, PageHeader: PageHeaderStub } } })
   await selectRepo(wrapper)
   return { wrapper, calls }
 }
 
 const rowOf = (wrapper: ReturnType<typeof mount>, license: string, badge?: string) =>
   wrapper.findAll('tbody tr').find((r) => r.text().includes(license) && (!badge || r.find(badge).exists()))!
+
+describe('LicenseScanPage initial selection', () => {
+  it('shows the scans of the first repository without any user input and records it in the URL', async () => {
+    const calls = mockSecurityApi(`/api/v1/repositories/${REPO}/license/scans`, [OK])
+    const router = await makeRouter('/security/licenses')
+    const wrapper = mount(LicenseScanPage, { global: { plugins: [createPinia(), router], stubs: { RouterLink: true, PageHeader: PageHeaderStub } } })
+    await flushPromises()
+
+    expect(calls.some((c) => c.path === `/api/v1/repositories/${REPO}/license/scans`)).toBe(true)
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(router.currentRoute.value.query.repo).toBe(REPO)
+  })
+})
 
 describe('LicenseScanPage quarantine', () => {
   it('badges quarantined and approved scans and offers Approve / Quarantine accordingly', async () => {

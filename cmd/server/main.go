@@ -859,6 +859,7 @@ func run(args []string) error {
 
 	vulnHandler := api.NewVulnHandler(db, log, evaluator, scannerRegistry)
 	vulnHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
+	vulnHandler.RegisterOverviewRoutes(authedAPI)
 
 	quotasHandler := api.NewQuotasHandler(log, db, evaluator)
 	quotasHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")

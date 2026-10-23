@@ -663,6 +663,12 @@ type Database interface {
 	// Scan lookups/deletes by ID scoped to a repository (nil / not-found errors when absent).
 	GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error)
 	DeleteVulnScanResult(ctx context.Context, repoID, id string) error
+	// ListVulnScanOverview returns one keyset page of vulnerability scans across all
+	// repositories, worst first, without their findings (ErrInvalidVulnScanFilter
+	// for an unknown severity, status or scanner or a page size below 1).
+	ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error)
+	// VulnScanOverviewSummary counts the overview's scans, optionally of one repository (by name).
+	VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error)
 	SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error
 	GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error)
 	// SetLicenseScanQuarantine quarantines (true) or approves (false) the artifact of one license scan result.

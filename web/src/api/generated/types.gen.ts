@@ -858,6 +858,69 @@ export type LicensePolicy = {
 };
 
 /**
+ * A vulnerability scan without its findings (`vulnerabilities`), with the name and format of its repository. Fetch the findings with GET /api/v1/repositories/{name}/vuln/scans/{id}.
+ */
+export type VulnScanOverviewRow = {
+    id?: string;
+    repo_id?: string;
+    repository_name?: string;
+    /**
+     * Format of the repository (npm, pypi, maven, ...).
+     */
+    repository_format?: string;
+    artifact_id?: string;
+    package_name?: string;
+    package_version?: string;
+    ecosystem?: string;
+    /**
+     * One scanner name (osv, trivy or grype) or a sorted comma-joined list such as `osv,trivy`.
+     */
+    scanner?: string;
+    /**
+     * Same meaning as on VulnScanResult.
+     */
+    scan_status?: 'pending' | 'scanning' | 'completed' | 'partial' | 'failed';
+    vuln_count?: number;
+    critical_count?: number;
+    high_count?: number;
+    medium_count?: number;
+    low_count?: number;
+    quarantined?: boolean;
+    created_at?: string;
+    updated_at?: string;
+    scanned_at?: string | null;
+    /**
+     * Sanitized summary of the failing scanners.
+     */
+    scan_error?: string | null;
+    failed_scanners?: Array<string>;
+};
+
+/**
+ * Counts of the scans in the overview.
+ */
+export type VulnScanSummary = {
+    total?: number;
+    completed?: number;
+    partial?: number;
+    failed?: number;
+    /**
+     * Scans still pending or running.
+     */
+    scanning?: number;
+    quarantined?: number;
+    /**
+     * Scans with at least one finding of that severity or worse: `high` counts the scans with a critical or a high finding, and so on. Matches the `severity` filter of the list.
+     */
+    severity_at_least?: {
+        critical?: number;
+        high?: number;
+        medium?: number;
+        low?: number;
+    };
+};
+
+/**
  * Result of one vulnerability scan of an artifact.
  */
 export type VulnScanResult = {
@@ -2301,6 +2364,104 @@ export type PostApiV1RepositoriesByNameSecretsScansByIdQuarantineResponses = {
      */
     200: unknown;
 };
+
+export type GetApiV1VulnScansData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only the scans of this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Only scans with at least one finding of this severity or worse.
+         */
+        severity?: 'critical' | 'high' | 'medium' | 'low';
+        /**
+         * Only scans in this state; `scanning` is pending or running.
+         */
+        status?: 'completed' | 'partial' | 'failed' | 'scanning';
+        /**
+         * Only scans run by this scanner (a scan run by several matches each).
+         */
+        scanner?: 'osv' | 'trivy' | 'grype';
+        /**
+         * Only quarantined (`true`) or not quarantined (`false`) scans.
+         */
+        quarantined?: boolean;
+        /**
+         * Page size, default 25.
+         */
+        limit?: number;
+        /**
+         * Opaque `next_cursor` of the previous page.
+         */
+        cursor?: string;
+    };
+    url: '/api/v1/vuln/scans';
+};
+
+export type GetApiV1VulnScansErrors = {
+    /**
+     * Invalid filter or cursor (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1VulnScansResponses = {
+    /**
+     * One page of scans
+     */
+    200: {
+        scans?: Array<VulnScanOverviewRow>;
+        /**
+         * True when scans follow this page.
+         */
+        has_more?: boolean;
+        /**
+         * Pass as `cursor` to fetch the next page. Absent when `has_more` is false.
+         */
+        next_cursor?: string;
+    };
+};
+
+export type GetApiV1VulnScansResponse = GetApiV1VulnScansResponses[keyof GetApiV1VulnScansResponses];
+
+export type GetApiV1VulnScansSummaryData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only the scans of this repository (by name).
+         */
+        repo?: string;
+    };
+    url: '/api/v1/vuln/scans/summary';
+};
+
+export type GetApiV1VulnScansSummaryErrors = {
+    /**
+     * Invalid repository name (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1VulnScansSummaryResponses = {
+    /**
+     * Counts
+     */
+    200: VulnScanSummary;
+};
+
+export type GetApiV1VulnScansSummaryResponse = GetApiV1VulnScansSummaryResponses[keyof GetApiV1VulnScansSummaryResponses];
 
 export type PostApiV1RepositoriesByNameVulnScanData = {
     body: VulnScanRequest;

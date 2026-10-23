@@ -4,6 +4,10 @@
 
 import { describe, it, expect, spyOn, afterEach } from 'bun:test'
 import {
+  listAllVulnScans,
+  getVulnScanSummary,
+  getVulnScan,
+  deleteVulnScan,
   listVulnScanners,
   startVulnScan,
   triggerLicenseScan,
@@ -110,5 +114,34 @@ describe('security api', () => {
     await triggerAIAnalysis('r', 'art-1', { manifest_text: 'm', artifact_name: 'n' })
     expect(lastUrl()).toBe('/api/v1/repositories/r/ai-analysis/art-1/trigger')
     expect(lastBody()).toEqual({ manifest_text: 'm', artifact_name: 'n' })
+  })
+
+  it('lists scans across repositories with only the set filters and the cursor', async () => {
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ scans: [{ id: 's1' }], has_more: true, next_cursor: 'c2' }))
+    const page = await listAllVulnScans({ repo: 'my repo', severity: 'high', quarantined: false, limit: 25, cursor: 'c1' })
+    expect(page).toEqual({ scans: [{ id: 's1' } as never], has_more: true, next_cursor: 'c2' })
+    expect(lastUrl()).toBe('/api/v1/vuln/scans?repo=my+repo&severity=high&quarantined=false&limit=25&cursor=c1')
+
+    spy.mockResolvedValue(json({}))
+    expect(await listAllVulnScans()).toEqual({ scans: [], has_more: false, next_cursor: undefined })
+    expect(lastUrl()).toBe('/api/v1/vuln/scans')
+  })
+
+  it('reads the summary for an optional repository', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ total: 3 }))
+    await getVulnScanSummary('r1')
+    expect(lastUrl()).toBe('/api/v1/vuln/scans/summary?repo=r1')
+    await getVulnScanSummary()
+    expect(lastUrl()).toBe('/api/v1/vuln/scans/summary')
+  })
+
+  it('reads and deletes a single scan through its repository', async () => {
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ id: 's/1' }))
+    await getVulnScan('my repo', 's/1')
+    expect(lastUrl()).toBe('/api/v1/repositories/my%20repo/vuln/scans/s%2F1')
+    spy.mockResolvedValue(new Response(null, { status: 204 }))
+    await deleteVulnScan('my repo', 's/1')
+    expect(lastUrl()).toBe('/api/v1/repositories/my%20repo/vuln/scans/s%2F1')
+    expect((spy.mock.calls.at(-1)![1] as RequestInit).method).toBe('DELETE')
   })
 })

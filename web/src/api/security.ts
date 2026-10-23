@@ -58,6 +58,101 @@ export async function listVulnScans(repo: string): Promise<VulnScan[]> {
   return res.scans ?? []
 }
 
+export type VulnSeverity = 'critical' | 'high' | 'medium' | 'low'
+export type VulnScanStatusFilter = 'completed' | 'partial' | 'failed' | 'scanning'
+
+/**
+ * A row of the cross-repository scan list: the scan summary (no findings) plus
+ * the repository it belongs to, which every per-repository action needs.
+ */
+export type VulnScanRow = Omit<VulnScan, 'vulnerabilities'> & {
+  repository_name: string
+  repository_format: string
+}
+
+export interface VulnScanFilters {
+  /** Repository name. */
+  repo?: string
+  /** Scans with at least one finding of this severity or worse. */
+  severity?: VulnSeverity
+  status?: VulnScanStatusFilter
+  /** Matches scans whose scanner list contains it. */
+  scanner?: VulnScanner
+  quarantined?: boolean
+}
+
+export interface VulnScanListParams extends VulnScanFilters {
+  limit?: number
+  /** Opaque `next_cursor` of the previous page. */
+  cursor?: string
+}
+
+export interface VulnScanPage {
+  scans: VulnScanRow[]
+  has_more: boolean
+  next_cursor?: string
+}
+
+export interface VulnScanSummary {
+  total: number
+  completed: number
+  partial: number
+  failed: number
+  scanning: number
+  quarantined: number
+  /** Scans with at least one finding of the severity or worse (`high` counts critical + high). */
+  severity_at_least: Record<VulnSeverity, number>
+}
+
+function queryString(params: Record<string, string | number | boolean | undefined>): string {
+  const q = new URLSearchParams()
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') q.set(key, String(value))
+  }
+  const s = q.toString()
+  return s ? `?${s}` : ''
+}
+
+/** Admin only: scans across every repository, worst first, keyset-paginated. */
+export async function listAllVulnScans(params: VulnScanListParams = {}): Promise<VulnScanPage> {
+  const res = await request<Partial<VulnScanPage>>(`/api/v1/vuln/scans${queryString({ ...params })}`)
+  return { scans: res.scans ?? [], has_more: res.has_more ?? false, next_cursor: res.next_cursor }
+}
+
+/** Admin only: scan totals, optionally for one repository. */
+export function getVulnScanSummary(repo?: string): Promise<VulnScanSummary> {
+  return request<VulnScanSummary>(`/api/v1/vuln/scans/summary${queryString({ repo })}`)
+}
+
+/** One scan with its full findings. */
+export function getVulnScan(repo: string, scanId: string): Promise<VulnScan> {
+  return request<VulnScan>(`${repoBase(repo)}/vuln/scans/${encodeURIComponent(scanId)}`)
+}
+
+/** One finding of a scan, as stored by the scanners. */
+export interface VulnFinding {
+  id: string
+  summary: string
+  severity: string
+  cvss: number
+  fixed_in: string
+}
+
+/** The findings of a full scan, with missing fields normalised. */
+export function vulnFindings(scan: VulnScan): VulnFinding[] {
+  return (scan.vulnerabilities ?? []).map((v) => ({
+    id: String(v.id ?? ''),
+    summary: String(v.summary ?? ''),
+    severity: String(v.severity ?? ''),
+    cvss: Number(v.cvss ?? 0),
+    fixed_in: String(v.fixed_in ?? ''),
+  }))
+}
+
+export function deleteVulnScan(repo: string, scanId: string): Promise<void> {
+  return request<void>(`${repoBase(repo)}/vuln/scans/${encodeURIComponent(scanId)}`, { method: 'DELETE' })
+}
+
 export function startVulnScan(
   repo: string,
   body: Omit<VulnScanRequest, 'scanner' | 'scanners'> & { scanners: VulnScanner[] },
