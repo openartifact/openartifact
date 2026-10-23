@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"net/http"
 	"strings"
 	"time"
@@ -14,6 +15,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/worker"
 )
 
 // Project cleanup policies are defaults: one applies to every live hosted
@@ -189,4 +191,57 @@ func (h *ProjectsHandler) handleDeleteCleanupPolicy(w http.ResponseWriter, r *ht
 	h.emitCleanupPolicy(r, access.project, policy.ID, "deleted", policy.Name)
 
 	writeNoContent(w)
+}
+
+// ProjectCleanupPreviewer evaluates a project default cleanup policy without
+// running it. It is satisfied by *worker.CleanupWorker.
+type ProjectCleanupPreviewer interface {
+	PreviewProjectPolicy(ctx context.Context, policyID string) ([]*worker.CleanupPreview, error)
+}
+
+// SetCleanupPreviewer wires the dry run of project default cleanup policies.
+func (h *ProjectsHandler) SetCleanupPreviewer(p ProjectCleanupPreviewer) {
+	h.previewer = p
+}
+
+type projectCleanupPreviewResponse struct {
+	DryRun       bool                     `json:"dry_run"`
+	Rows         int                      `json:"rows"`
+	Repositories []cleanupPreviewResponse `json:"repositories"`
+}
+
+// handleDryRunCleanupPolicy reports what a run of a project default policy
+// would remove from each repository it covers, removing nothing.
+//
+//	POST /api/v1/projects/{project}/cleanup-policies/{id}/dry-run
+func (h *ProjectsHandler) handleDryRunCleanupPolicy(w http.ResponseWriter, r *http.Request) {
+	access, ok := h.loadAccess(w, r, auth.ProjectActionUpdate)
+	if !ok {
+		return
+	}
+
+	policy := h.loadProjectPolicy(w, r, access.project)
+	if policy == nil {
+		return
+	}
+
+	if h.previewer == nil {
+		writeError(w, http.StatusNotImplemented, "not_implemented", "cleanup worker is not available")
+		return
+	}
+
+	previews, err := h.previewer.PreviewProjectPolicy(r.Context(), policy.ID)
+	if err != nil {
+		writePolicyPreviewError(w, h.log, err)
+		return
+	}
+
+	resp := projectCleanupPreviewResponse{DryRun: true, Repositories: make([]cleanupPreviewResponse, 0, len(previews))}
+
+	for _, prev := range previews {
+		resp.Rows += prev.Rows
+		resp.Repositories = append(resp.Repositories, newCleanupPreviewResponse(prev))
+	}
+
+	writeJSON(w, http.StatusOK, resp)
 }

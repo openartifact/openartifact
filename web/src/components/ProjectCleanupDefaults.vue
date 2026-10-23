@@ -62,6 +62,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <div class="flex items-center gap-0.5 justify-end">
                 <button
                   type="button"
+                  :title="t('cleanup.dryRun')"
+                  :aria-label="t('cleanup.dryRun')"
+                  :disabled="previewingId === p.id"
+                  class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
+                  data-testid="cleanup-dry-run"
+                  @click="previewPolicy(p)"
+                >
+                  <EyeIcon class="w-4 h-4" />
+                </button>
+                <button
+                  type="button"
                   :title="t('cleanup.editTitle')"
                   :aria-label="t('cleanup.editTitle')"
                   class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
@@ -104,6 +115,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </template>
     </AdminDialog>
 
+    <CleanupDryRunDialog
+      :open="preview !== null"
+      :title="preview?.name ?? ''"
+      :repositories="preview?.repositories ?? []"
+      @close="preview = null"
+    />
+
     <ConfirmDialog
       :open="!!deleteTarget"
       :title="t('cleanup.deleteTitle')"
@@ -122,15 +140,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { PencilIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { EyeIcon, PencilIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import AppToggle from './AppToggle.vue'
 import CleanupPolicyForm from './CleanupPolicyForm.vue'
+import CleanupDryRunDialog from './CleanupDryRunDialog.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
+import type { CleanupPreview } from '../api/generated'
 import {
   createProjectCleanupPolicy,
   deleteProjectCleanupPolicy,
+  dryRunProjectCleanupPolicy,
   listProjectCleanupPolicies,
   updateProjectCleanupPolicy,
 } from '../api/projects'
@@ -161,6 +182,8 @@ const saving = ref(false)
 const togglingId = ref<string | null>(null)
 const deleteTarget = ref<CleanupPolicyView | null>(null)
 const deleting = ref(false)
+const previewingId = ref<string | null>(null)
+const preview = ref<{ name: string; repositories: CleanupPreview[] } | null>(null)
 
 const formValid = computed(() => cleanupFormValid(form.value))
 
@@ -225,6 +248,18 @@ async function toggle(p: CleanupPolicyView): Promise<void> {
     toasts.error(failure(err, t('cleanup.updateFailed')))
   } finally {
     togglingId.value = null
+  }
+}
+
+async function previewPolicy(p: CleanupPolicyView): Promise<void> {
+  previewingId.value = p.id
+  try {
+    const res = await dryRunProjectCleanupPolicy(props.project, p.id)
+    preview.value = { name: p.name, repositories: res.repositories }
+  } catch (err) {
+    toasts.error(failure(err, t('cleanup.dryRun.failed')))
+  } finally {
+    previewingId.value = null
   }
 }
 

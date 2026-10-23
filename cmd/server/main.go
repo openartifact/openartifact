@@ -722,7 +722,9 @@ func run(args []string) error {
 
 	api.NewAdminAIHandler(db, log, evaluator).WithRuntime(aiWorker, envAI).Register(authedAPI)
 
-	api.NewProjectsHandler(db, log, evaluator, projectSettings).RegisterRoutes(authedAPI)
+	projectsAPI := api.NewProjectsHandler(db, log, evaluator, projectSettings)
+	projectsAPI.SetCleanupPreviewer(cleanupWorker)
+	projectsAPI.RegisterRoutes(authedAPI)
 
 	searchHandler := search.NewHandler(db.GetDB(), evaluator, log, search.WithAuthCache(db))
 	authedAPI.Get("/api/v1/search", searchHandler.ServeHTTP)

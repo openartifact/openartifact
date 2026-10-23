@@ -5,6 +5,7 @@
 import { downloadAttachment, request } from './client'
 import type { ExportFormat } from './audit'
 import type { Repository } from './repositories'
+import type { ProjectCleanupPreview } from './generated'
 import type { ApiCleanupPolicy } from '../lib/cleanupPolicy'
 import type {
   Project as GeneratedProject,
@@ -244,6 +245,10 @@ export const updateProjectCleanupPolicy = (project: string, id: string, body: Pr
 /** Owners and global admins. */
 export const deleteProjectCleanupPolicy = (project: string, id: string) =>
   request<void>(`${base(project)}/cleanup-policies/${enc(id)}`, { method: 'DELETE' })
+
+/** Owners and global admins. What a run would remove per repository; removes nothing. */
+export const dryRunProjectCleanupPolicy = (project: string, id: string) =>
+  send<ProjectCleanupPreview>(`${base(project)}/cleanup-policies/${enc(id)}/dry-run`, 'POST', {})
 
 /** One page of project activity, newest first. */
 export interface ProjectActivity {

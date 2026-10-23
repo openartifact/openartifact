@@ -42,6 +42,7 @@ type ProjectsHandler struct {
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	settings  *auth.ProjectSettings
+	previewer ProjectCleanupPreviewer
 }
 
 // NewProjectsHandler returns the projects handler. evaluator decides roles and
@@ -77,6 +78,7 @@ func (h *ProjectsHandler) RegisterRoutes(r chi.Router) {
 	r.Post("/api/v1/projects/{project}/cleanup-policies", h.handleCreateCleanupPolicy)
 	r.Put("/api/v1/projects/{project}/cleanup-policies/{id}", h.handleUpdateCleanupPolicy)
 	r.Delete("/api/v1/projects/{project}/cleanup-policies/{id}", h.handleDeleteCleanupPolicy)
+	r.Post("/api/v1/projects/{project}/cleanup-policies/{id}/dry-run", h.handleDryRunCleanupPolicy)
 	r.Get("/api/v1/admin/projects/settings", h.handleGetSettings)
 	r.Put("/api/v1/admin/projects/settings", h.handlePutSettings)
 }

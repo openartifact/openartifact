@@ -62,4 +62,27 @@ describe('ProjectCleanupDefaults', () => {
     expect(String(post[0])).toBe('/api/v1/projects/p/cleanup-policies')
     expect(JSON.parse(post[1]!.body as string)).toEqual({ name: 'weekly', enabled: true, keep_last_n: 10 })
   })
+
+  it('previews what the default policy would remove, per repository', async () => {
+    const wrapper = mountTab(true)
+    await flushPromises()
+    spy.mockImplementation(async (url) =>
+      String(url).endsWith('/dry-run')
+        ? json({
+            dry_run: true,
+            rows: 2,
+            repositories: [
+              { repository: 'npm-a', format: 'npm', dry_run: true, rows: 2, truncated: false, items: [{ id: 'i1', name: 'left-pad', version: '1.0.0' }, { id: 'i2', name: 'left-pad', version: '1.1.0' }] },
+            ],
+          })
+        : json({ policies: POLICIES }),
+    )
+    await wrapper.find('[data-testid="cleanup-dry-run"]').trigger('click')
+    await flushPromises()
+    const call = spy.mock.calls.find((c) => String(c[0]).endsWith('/cleanup-policies/c1/dry-run'))
+    expect(call?.[1]?.method).toBe('POST')
+    expect(document.querySelector('[data-testid="dryrun-total"]')?.textContent).toContain('2 item(s)')
+    expect(document.querySelectorAll('[data-testid="dryrun-item"]')).toHaveLength(2)
+    expect(document.body.textContent).toContain('npm-a')
+  })
 })

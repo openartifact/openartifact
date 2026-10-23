@@ -576,3 +576,48 @@ func TestDeletePackageNPMDropsDistTags(t *testing.T) {
 		t.Errorf("%d dist-tags left for a deleted version", n)
 	}
 }
+
+// The dry run of a project default policy expands like a run: repositories with
+// their own enabled policy are left out, others are listed, nothing is removed.
+func TestPreviewProjectPolicyExpandsLikeARun(t *testing.T) {
+	e := newCleanupQuotaEnv(t)
+	ctx := context.Background()
+
+	project := e.queryID(`INSERT INTO projects (id, name, slug) VALUES (gen_random_uuid(), 'prevproj', 'prevproj') RETURNING id`)
+	plain := e.projectRepo(project, "plain", "cargo")
+	custom := e.projectRepo(project, "custom", "cargo")
+
+	oldPlain := e.seedFormat(plain, "cargo", "serde", "1.0.0", 30)
+	e.seedFormat(plain, "cargo", "serde", "2.0.0", 1)
+	e.seedFormat(custom, "cargo", "serde", "1.0.0", 30)
+	e.seedFormat(custom, "cargo", "serde", "2.0.0", 1)
+
+	own := 10
+	if err := e.pg.CreateCleanupPolicy(ctx, &models.CleanupPolicy{RepositoryID: custom, Name: "own", Enabled: true, KeepLastN: &own}); err != nil {
+		t.Fatal(err)
+	}
+
+	keep := 1
+	def := &models.CleanupPolicy{ProjectID: project, Name: "default", Enabled: true, KeepLastN: &keep}
+
+	if err := e.pg.CreateCleanupPolicy(ctx, def); err != nil {
+		t.Fatal(err)
+	}
+
+	got, err := e.worker.PreviewProjectPolicy(ctx, def.ID)
+	if err != nil {
+		t.Fatalf("PreviewProjectPolicy: %v", err)
+	}
+
+	if len(got) != 1 || got[0].Repository != "plain" || got[0].Rows != 1 || got[0].Items[0].ID != oldPlain.id {
+		t.Fatalf("preview = %+v, want only the old crate of repository plain", got)
+	}
+
+	if !e.live("cargo", oldPlain.id) {
+		t.Error("the dry run removed a row")
+	}
+
+	if _, err := e.worker.PreviewPolicy(ctx, def.ID); !errors.Is(err, worker.ErrPolicyNotFound) {
+		t.Errorf("PreviewPolicy on a project policy: err = %v, want ErrPolicyNotFound", err)
+	}
+}

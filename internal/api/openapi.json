@@ -2980,6 +2980,29 @@
           "truncated"
         ]
       },
+      "ProjectCleanupPreview": {
+        "type": "object",
+        "properties": {
+          "dry_run": {
+            "type": "boolean"
+          },
+          "rows": {
+            "type": "integer",
+            "description": "Total rows over all repositories"
+          },
+          "repositories": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/CleanupPreview"
+            }
+          }
+        },
+        "required": [
+          "dry_run",
+          "rows",
+          "repositories"
+        ]
+      },
       "CleanupPreviewItem": {
         "type": "object",
         "properties": {
@@ -11055,6 +11078,56 @@
           },
           "404": {
             "description": "Project not found or the caller is not a member"
+          }
+        }
+      }
+    },
+    "/api/v1/projects/{project}/cleanup-policies/{id}/dry-run": {
+      "post": {
+        "summary": "Preview what a project default cleanup policy would remove",
+        "description": "Owners and global admins. Expands the policy over the repositories a run would cover and lists, per repository, the rows a run would remove (capped at 500 each). Nothing is changed.",
+        "tags": [
+          "Projects"
+        ],
+        "parameters": [
+          {
+            "name": "project",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "What a run would remove",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ProjectCleanupPreview"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           }
         }
       }

@@ -141,6 +141,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <ArrowPathIcon v-if="runningId === policy.id" class="w-4 h-4 animate-spin" />
                   <PlayIcon v-else class="w-4 h-4" />
                 </button>
+                <!-- Dry run -->
+                <button
+                  type="button"
+                  :title="t('cleanup.dryRun')" :aria-label="t('cleanup.dryRun')"
+                  :disabled="previewingId === policy.id"
+                  class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors disabled:opacity-40"
+                  data-testid="cleanup-dry-run"
+                  @click="previewPolicy(policy)"
+                >
+                  <EyeIcon class="w-4 h-4" />
+                </button>
                 <!-- Edit -->
                 <button
                   type="button"
@@ -189,6 +200,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- ═══════════════════════════════════════════════════════════════════════
          DELETE CONFIRMATION MODAL
     ════════════════════════════════════════════════════════════════════════════ -->
+    <CleanupDryRunDialog
+      :open="preview !== null"
+      :title="preview?.name ?? ''"
+      :repositories="preview?.repositories ?? []"
+      @close="preview = null"
+    />
+
     <ConfirmDialog
       :open="!!deleteTarget"
       :title="t('cleanup.deleteTitle')"
@@ -212,6 +230,8 @@ import AppButton from '../components/AppButton.vue'
 import AppToggle from '../components/AppToggle.vue'
 import CleanupPolicyForm from '../components/CleanupPolicyForm.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import CleanupDryRunDialog from '../components/CleanupDryRunDialog.vue'
+import type { CleanupPreview } from '../api/generated'
 import { formatDateTime } from '../lib/datetime'
 import {
   cleanupFormFrom,
@@ -231,6 +251,7 @@ import {
   TrashIcon,
   ArrowPathIcon,
   PlayIcon,
+  EyeIcon,
   QueueListIcon,
   CalendarIcon,
 } from '@heroicons/vue/24/outline'
@@ -246,6 +267,8 @@ const loading = ref(true)
 
 // Running
 const runningId = ref<string | null>(null)
+const previewingId = ref<string | null>(null)
+const preview = ref<{ name: string; repositories: CleanupPreview[] } | null>(null)
 const togglingId = ref<string | null>(null)
 
 // Drawer
@@ -314,6 +337,18 @@ async function runPolicy(policy: CleanupPolicy): Promise<void> {
     toasts.error(err instanceof Error ? err.message : t('cleanup.runFailed'))
   } finally {
     runningId.value = null
+  }
+}
+
+async function previewPolicy(policy: CleanupPolicy): Promise<void> {
+  previewingId.value = policy.id
+  try {
+    const res = await request<CleanupPreview>(`${baseUrl()}/${encodeURIComponent(policy.id)}/dry-run`, { method: 'POST' })
+    preview.value = { name: policy.name, repositories: [res] }
+  } catch (err) {
+    toasts.error(err instanceof Error ? err.message : t('cleanup.dryRun.failed'))
+  } finally {
+    previewingId.value = null
   }
 }
 

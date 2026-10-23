@@ -1212,6 +1212,15 @@ export type CleanupPreview = {
     truncated: boolean;
 };
 
+export type ProjectCleanupPreview = {
+    dry_run: boolean;
+    /**
+     * Total rows over all repositories
+     */
+    rows: number;
+    repositories: Array<CleanupPreview>;
+};
+
 export type CleanupPreviewItem = {
     id: string;
     name: string;
@@ -6072,6 +6081,34 @@ export type PostApiV1ProjectsByProjectCleanupPoliciesResponses = {
 };
 
 export type PostApiV1ProjectsByProjectCleanupPoliciesResponse = PostApiV1ProjectsByProjectCleanupPoliciesResponses[keyof PostApiV1ProjectsByProjectCleanupPoliciesResponses];
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunData = {
+    body?: never;
+    path: {
+        project: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/projects/{project}/cleanup-policies/{id}/dry-run';
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunError = PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunErrors[keyof PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunErrors];
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunResponses = {
+    /**
+     * What a run would remove
+     */
+    200: ProjectCleanupPreview;
+};
+
+export type PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunResponse = PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunResponses[keyof PostApiV1ProjectsByProjectCleanupPoliciesByIdDryRunResponses];
 
 export type DeleteApiV1ProjectsByProjectCleanupPoliciesByIdData = {
     body?: never;

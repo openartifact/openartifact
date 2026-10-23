@@ -515,29 +515,38 @@ func (h *CleanupHandler) handleDryRun(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	writeJSON(w, http.StatusOK, newCleanupPreviewResponse(prev))
+}
+
+func newCleanupPreviewResponse(prev *worker.CleanupPreview) cleanupPreviewResponse {
 	items := make([]cleanupPreviewItemResponse, len(prev.Items))
 	for i, it := range prev.Items {
 		items[i] = cleanupPreviewItemResponse{ID: it.ID, Name: it.Name, Version: it.Version}
 	}
 
-	writeJSON(w, http.StatusOK, cleanupPreviewResponse{
+	return cleanupPreviewResponse{
 		Repository: prev.Repository,
 		Format:     prev.Format,
 		DryRun:     true,
 		Rows:       prev.Rows,
 		Items:      items,
 		Truncated:  prev.Truncated,
-	})
+	}
 }
 
 func (h *CleanupHandler) writePreviewError(w http.ResponseWriter, err error) {
+	writePolicyPreviewError(w, h.log, err)
+}
+
+// writePolicyPreviewError maps a dry-run failure to its HTTP answer.
+func writePolicyPreviewError(w http.ResponseWriter, log *logger.Logger, err error) {
 	switch {
 	case errors.Is(err, worker.ErrPolicyNotFound), errors.Is(err, worker.ErrRepositoryNotFound):
 		writeError(w, http.StatusNotFound, "not_found", "cleanup policy not found")
 	case errors.Is(err, models.ErrInvalidCleanupPolicy):
 		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 	default:
-		h.log.Errorw("dry-run cleanup policy failed", "error", err)
+		log.Errorw("dry-run cleanup policy failed", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to evaluate cleanup policy")
 	}
 }

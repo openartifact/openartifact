@@ -13,6 +13,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/worker"
 )
 
 // quotaMockDB adds the project quota and project cleanup policy store to the
@@ -294,5 +295,49 @@ func TestProjectCleanupPolicies_ScopedToProject(t *testing.T) {
 
 	if len(db.policies) != 2 {
 		t.Fatalf("a foreign policy was changed: %v", db.policies)
+	}
+}
+
+type fakeProjectPreviewer struct{ ids []string }
+
+func (f *fakeProjectPreviewer) PreviewProjectPolicy(_ context.Context, id string) ([]*worker.CleanupPreview, error) {
+	f.ids = append(f.ids, id)
+
+	return []*worker.CleanupPreview{
+		{Repository: "a", Format: "npm", Rows: 2, Items: []worker.CleanupPreviewItem{{ID: "1", Name: "x", Version: "1.0.0"}}},
+		{Repository: "b", Format: "cargo", Rows: 1},
+	}, nil
+}
+
+// The dry run of a project default policy is for owners and admins, is scoped
+// to the project, and reports every covered repository.
+func TestProjectCleanupPolicies_DryRun(t *testing.T) {
+	db := newQuotaMock()
+	prev := &fakeProjectPreviewer{}
+
+	log := newFixTestLogger(t)
+	h := NewProjectsHandler(db, log, auth.NewEvaluator(db, log, false), auth.NewProjectSettings(db, false))
+	h.SetCleanupPreviewer(prev)
+
+	router := chi.NewRouter()
+	h.RegisterRoutes(router)
+
+	_, body := projectJSON(t, router, uOwner1, http.MethodPost, "/api/v1/projects/acme/cleanup-policies", `{"name":"d","enabled":true,"keep_last_n":3}`)
+	id, _ := body["id"].(string)
+	path := "/api/v1/projects/acme/cleanup-policies/" + id + "/dry-run"
+
+	code, body := projectJSON(t, router, uOwner1, http.MethodPost, path, "")
+	repos, _ := body["repositories"].([]any)
+
+	if code != http.StatusOK || body["dry_run"] != true || body["rows"] != float64(3) || len(repos) != 2 || len(prev.ids) != 1 || prev.ids[0] != id {
+		t.Fatalf("dry-run = %d %v (calls %v), want 200 with 3 rows over 2 repositories", code, body, prev.ids)
+	}
+
+	if code, _ := projectJSON(t, router, uMaint1, http.MethodPost, path, ""); code != http.StatusForbidden {
+		t.Errorf("maintainer dry-run = %d, want 403", code)
+	}
+
+	if code, _ := projectJSON(t, router, uOwner1, http.MethodPost, "/api/v1/projects/acme/cleanup-policies/00000000-0000-4000-8000-00000000ffff/dry-run", ""); code != http.StatusNotFound {
+		t.Errorf("unknown policy dry-run = %d, want 404", code)
 	}
 }

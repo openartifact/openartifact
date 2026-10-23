@@ -6,6 +6,7 @@ package worker
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"slices"
 
@@ -42,16 +43,67 @@ type CleanupPreview struct {
 // PreviewPolicy reports what a run of the repository policy would remove,
 // applying every protection a run applies (immutable releases, release
 // bundles, quarantine, dist-tagged and newest-snapshot rows), and removes
-// nothing. It returns ErrPolicyNotFound for an unknown policy; project default
-// policies are not supported (they expand into the policies of their
-// repositories at run time).
+// nothing. It returns ErrPolicyNotFound for an unknown policy or a project
+// default policy (see PreviewProjectPolicy).
 func (w *CleanupWorker) PreviewPolicy(ctx context.Context, policyID string) (*CleanupPreview, error) {
+	policy, err := w.loadPreviewPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+
+	if policy.RepositoryID == "" {
+		return nil, ErrPolicyNotFound
+	}
+
+	return w.previewRepository(ctx, policy)
+}
+
+// PreviewProjectPolicy reports what a run of a project default policy would
+// remove, per repository: the policy expands over the live hosted repositories
+// of the project that have no enabled policy of their own, exactly as a run
+// does. Repositories of an unsupported format are left out.
+func (w *CleanupWorker) PreviewProjectPolicy(ctx context.Context, policyID string) ([]*CleanupPreview, error) {
+	policy, err := w.loadPreviewPolicy(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+
+	if policy.RepositoryID != "" || policy.ProjectID == "" {
+		return nil, ErrPolicyNotFound
+	}
+
+	repoIDs, err := w.db.ListProjectCleanupRepositories(ctx, policy.ProjectID)
+	if err != nil {
+		return nil, fmt.Errorf("failed to list project repositories: %w", err)
+	}
+
+	out := make([]*CleanupPreview, 0, len(repoIDs))
+
+	for _, repoID := range repoIDs {
+		perRepo := *policy
+		perRepo.RepositoryID = repoID
+
+		prev, err := w.previewRepository(ctx, &perRepo)
+
+		switch {
+		case err == nil:
+			out = append(out, prev)
+		case errors.Is(err, errUnsupportedCleanupFormat), errors.Is(err, ErrRepositoryNotFound):
+		default:
+			return nil, fmt.Errorf("repository %s: %w", repoID, err)
+		}
+	}
+
+	return out, nil
+}
+
+func (w *CleanupWorker) loadPreviewPolicy(ctx context.Context, policyID string) (*models.CleanupPolicy, error) {
 	policy, err := w.db.GetCleanupPolicy(ctx, policyID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get cleanup policy: %w", err)
 	}
 
-	if policy == nil || policy.RepositoryID == "" {
+	if policy == nil {
 		return nil, ErrPolicyNotFound
 	}
 
@@ -59,6 +111,11 @@ func (w *CleanupWorker) PreviewPolicy(ctx context.Context, policyID string) (*Cl
 		return nil, err
 	}
 
+	return policy, nil
+}
+
+// previewRepository evaluates policy (with RepositoryID set) on one repository.
+func (w *CleanupWorker) previewRepository(ctx context.Context, policy *models.CleanupPolicy) (*CleanupPreview, error) {
 	repo, err := w.db.GetRepositoryByID(ctx, policy.RepositoryID)
 	if err != nil {
 		return nil, fmt.Errorf("failed to get repository: %w", err)
