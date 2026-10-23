@@ -52,6 +52,7 @@ Read requests map to the `read` action and writes (`PUT`, `POST`, `PATCH`, `DELE
 
 - Blobs are content-addressed by SHA-256 and deduplicated across repositories; a blob is removed from storage only when no package references it.
 - Deletes are soft by default: the artifact, version or tag moves to the [trash](../operations/trash.md) (404 on the native protocol, absent from listings, search and generated indexes) and can be restored until its retention expires. A repository can enable `immutable_releases` to block deleting or overwriting released versions.
+- Hosted repositories of raw, Maven, npm, Docker, Helm, PyPI, Cargo, Go and NuGet can be replicated between instances ([federation](../operations/federation.md)).
 - Uploads emit `artifact.uploaded` and deletes `artifact.deleted` webhook events ([webhooks](../operations/webhooks.md)).
 - Storage quotas are enforced on upload for every hosted format; proxy caches are not metered ([quotas](../repositories/cleanup-and-quotas.md#what-counts)).
 - A repository with a [license policy](../security/scanning.md#blocking-licenses) whose action is `block` rejects an upload whose declared license is denied (`403`, code `LICENSE_BLOCKED`). The license is read from the package metadata; Conan, Go and raw uploads carry none and are not checked.

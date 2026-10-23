@@ -256,6 +256,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 <p class="mt-1 text-xs text-muted">{{ t('repos.settings.immutableReleasesHint') }}</p>
               </div>
 
+              <!-- Federation (new hosted repositories of a capable format; managed in the Federation tab afterwards) -->
+              <div v-if="canFederate">
+                <div class="flex items-center gap-3">
+                  <input id="repo-federated" v-model="form.federated" type="checkbox" class="rounded accent-[rgb(var(--color-primary))]" />
+                  <label for="repo-federated" class="text-sm font-medium text-foreground">
+                    {{ t('federation.create.label') }}
+                  </label>
+                </div>
+                <p class="mt-1 text-xs text-muted">{{ t('federation.create.hint') }}</p>
+              </div>
+
               <!-- Merge proxy versions (groups, admins only) -->
               <div v-if="form.type === 'group' && session.isAdmin">
                 <div class="flex items-center gap-3">
@@ -352,7 +363,7 @@ import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import type { FormatId } from '../lib/formats'
-import { allowedFormats, coerceFormat, upstreamUrlPlaceholder, upstreamUrlRequired } from '../lib/repoTypes'
+import { allowedFormats, coerceFormat, federationAvailable, upstreamUrlPlaceholder, upstreamUrlRequired } from '../lib/repoTypes'
 
 const route = useRoute()
 const router = useRouter()
@@ -399,6 +410,7 @@ const form = ref({
   trashRetention: '',
   immutableReleases: false,
   mergeProxyVersions: false,
+  federated: false,
 })
 // Project the repository had when loaded (edit mode); '' is the system project.
 const loadedProject = ref('')
@@ -418,6 +430,8 @@ const nameValid = computed(
 const candidateMembers = computed(() =>
   existing.value.filter((r) => r.format === form.value.format && r.repo_type !== 'group' && r.name !== form.value.name),
 )
+// Federation can be chosen at creation only; afterwards it lives in the repository's Federation tab.
+const canFederate = computed(() => !isEdit.value && federationAvailable(form.value.type, form.value.format))
 const retentionInvalid = computed(() => parseRetentionInput(form.value.trashRetention) === undefined)
 const upstreamOk = computed(
   () => form.value.type !== 'proxy' || !upstreamUrlRequired(form.value.format) || form.value.upstreamUrl.trim() !== '',
@@ -531,6 +545,7 @@ async function submit(): Promise<void> {
         immutable_releases: form.value.immutableReleases,
         ...(form.value.type === 'group' && session.isAdmin ? { merge_proxy_versions: form.value.mergeProxyVersions } : {}),
         repo_type: form.value.type,
+        ...(canFederate.value && form.value.federated ? { federated: true } : {}),
         ...(form.value.project && session.isAdmin ? { project: form.value.project } : {}),
         ...(form.value.type === 'proxy'
           ? {

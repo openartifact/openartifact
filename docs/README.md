@@ -60,6 +60,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | [Trash](operations/trash.md) | Soft delete: retention, restore, purge, immutable releases, repository delete confirmation |
 | [Blob replication](operations/replication.md) | Async second copy of every blob on another backend, read fallback, verify and repair, loss of the primary store |
 | [Backup](operations/backup.md) | Backup and restore of records and blobs |
+| [Federation](operations/federation.md) | Peer-to-peer replication of hosted repositories between instances: setup, conflicts, resync, monitoring |
 | [Disaster recovery](operations/disaster-recovery.md) | Runbook: database lost, storage lost, one repository deleted; RPO and RTO per option, verification commands |
 | [PostgreSQL point-in-time recovery](operations/postgres-pitr.md) | WAL archiving, base backups and restore to a chosen time with CloudNativePG and the Helm chart |
 | [Rebuild from storage](operations/rebuild-from-storage.md) | Row journal sidecars in the blob store and `openartifact rebuild`: re-index an empty database from storage |
@@ -84,5 +85,6 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 |---|---|
 | [Development guide](development/README.md) | Toolchain, build, test, lint, generate, CI and release pipeline |
 | [Architecture](development/architecture.md) | Code layout, request flow, routing invariant, storage and database split |
+| [Design: federated repositories](design/federation.md) | Multi-site replication: unit log, pull protocol, conflict rules, tombstones, peer authentication, supported formats |
 
 Contributor rules: [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md). Security reports: [SECURITY.md](../SECURITY.md).

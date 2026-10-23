@@ -518,6 +518,83 @@ type DockerUpload struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+type FederationDeferred struct {
+	PeerID        string    `db:"peer_id" json:"peer_id"`
+	UnitKey       string    `db:"unit_key" json:"unit_key"`
+	Seq           int64     `db:"seq" json:"seq"`
+	Attempts      int32     `db:"attempts" json:"attempts"`
+	Reason        string    `db:"reason" json:"reason"`
+	LastError     string    `db:"last_error" json:"last_error"`
+	FirstSeenAt   time.Time `db:"first_seen_at" json:"first_seen_at"`
+	NextAttemptAt time.Time `db:"next_attempt_at" json:"next_attempt_at"`
+}
+
+type FederationInstance struct {
+	Singleton  bool      `db:"singleton" json:"singleton"`
+	InstanceID string    `db:"instance_id" json:"instance_id"`
+	CreatedAt  time.Time `db:"created_at" json:"created_at"`
+}
+
+type FederationPeer struct {
+	ID              string     `db:"id" json:"id"`
+	RepoID          string     `db:"repo_id" json:"repo_id"`
+	Name            string     `db:"name" json:"name"`
+	BaseUrl         string     `db:"base_url" json:"base_url"`
+	TokenEnc        string     `db:"token_enc" json:"token_enc"`
+	CaPem           string     `db:"ca_pem" json:"ca_pem"`
+	ClientCertEnc   string     `db:"client_cert_enc" json:"client_cert_enc"`
+	ClientKeyEnc    string     `db:"client_key_enc" json:"client_key_enc"`
+	Enabled         bool       `db:"enabled" json:"enabled"`
+	CursorSeq       int64      `db:"cursor_seq" json:"cursor_seq"`
+	RemoteHeadSeq   int64      `db:"remote_head_seq" json:"remote_head_seq"`
+	RemoteLogID     *string    `db:"remote_log_id" json:"remote_log_id"`
+	LastAttemptAt   *time.Time `db:"last_attempt_at" json:"last_attempt_at"`
+	LastSuccessAt   *time.Time `db:"last_success_at" json:"last_success_at"`
+	LastError       string     `db:"last_error" json:"last_error"`
+	ErrorCount      int32      `db:"error_count" json:"error_count"`
+	NextAttemptAt   *time.Time `db:"next_attempt_at" json:"next_attempt_at"`
+	OldestPendingAt *time.Time `db:"oldest_pending_at" json:"oldest_pending_at"`
+	AppliedTotal    int64      `db:"applied_total" json:"applied_total"`
+	ConflictsTotal  int64      `db:"conflicts_total" json:"conflicts_total"`
+	ResyncRequested bool       `db:"resync_requested" json:"resync_requested"`
+	CreatedAt       time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time  `db:"updated_at" json:"updated_at"`
+}
+
+type FederationPeerToken struct {
+	ID         string     `db:"id" json:"id"`
+	RepoID     string     `db:"repo_id" json:"repo_id"`
+	Name       string     `db:"name" json:"name"`
+	TokenHash  []byte     `db:"token_hash" json:"token_hash"`
+	CreatedBy  string     `db:"created_by" json:"created_by"`
+	CreatedAt  time.Time  `db:"created_at" json:"created_at"`
+	LastUsedAt *time.Time `db:"last_used_at" json:"last_used_at"`
+	RevokedAt  *time.Time `db:"revoked_at" json:"revoked_at"`
+}
+
+type FederationRepo struct {
+	RepoID     string    `db:"repo_id" json:"repo_id"`
+	LogID      string    `db:"log_id" json:"log_id"`
+	HeadSeq    int64     `db:"head_seq" json:"head_seq"`
+	HlcWall    int64     `db:"hlc_wall" json:"hlc_wall"`
+	HlcCounter int32     `db:"hlc_counter" json:"hlc_counter"`
+	EnabledAt  time.Time `db:"enabled_at" json:"enabled_at"`
+}
+
+type FederationUnit struct {
+	RepoID     string    `db:"repo_id" json:"repo_id"`
+	UnitKey    string    `db:"unit_key" json:"unit_key"`
+	Kind       string    `db:"kind" json:"kind"`
+	Event      string    `db:"event" json:"event"`
+	Seq        int64     `db:"seq" json:"seq"`
+	HlcWall    int64     `db:"hlc_wall" json:"hlc_wall"`
+	HlcCounter int32     `db:"hlc_counter" json:"hlc_counter"`
+	Origin     string    `db:"origin" json:"origin"`
+	Tombstone  bool      `db:"tombstone" json:"tombstone"`
+	ContentRef string    `db:"content_ref" json:"content_ref"`
+	ChangedAt  time.Time `db:"changed_at" json:"changed_at"`
+}
+
 // Go module proxy packages
 type GomodModule struct {
 	ID           string     `db:"id" json:"id"`
@@ -1049,6 +1126,7 @@ type Repository struct {
 	MergeProxyVersions bool `db:"merge_proxy_versions" json:"merge_proxy_versions"`
 	// Hosted rpm repositories only: sign uploaded RPMs with the active GPG key.
 	SignPackages bool `db:"sign_packages" json:"sign_packages"`
+	Federated    bool `db:"federated" json:"federated"`
 }
 
 type RepositoryAttestationAttach struct {

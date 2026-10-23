@@ -87,7 +87,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### Unreleased
 
-Migrations `067`, `068`, `069` and `080`.
+Migrations `067` to `071` and `080`.
 
 - New optional [blob replication](../operations/replication.md): set `storage.replica` (environment `OPENARTIFACT_STORAGE_REPLICA_*`) to keep an asynchronous second copy of every blob on another backend, with read fallback, a verify/repair pass and `openartifact_replication_*` metrics. Migration `067` adds the `blob_replication` queue and the `blob_replication_state` table; with no replica configured nothing changes. New admin endpoints `GET /api/v1/admin/storage/replication` and `POST /api/v1/admin/storage/replication/verify`. A storage backend record named `replication` is no longer reachable through `GET /api/v1/admin/storage/replication` (use the list).
 - **Disaster-recovery row journal (migration 068).** Every package row change is mirrored as a small JSON sidecar blob in the blob store by a background worker, so `openartifact rebuild` can re-index an empty database from storage ([rebuild from storage](../operations/rebuild-from-storage.md)). The journal is **enabled by default** (`recovery.journal.enabled`, `OPENARTIFACT_RECOVERY_JOURNAL_ENABLED=false` turns it off).
@@ -95,6 +95,7 @@ Migrations `067`, `068`, `069` and `080`.
 - The migration adds the `recovery_*` tables and a trigger on each package table (a small insert per changed row). Migrations are forward-only; rolling back the binary leaves the triggers in place; they keep queuing small rows in `recovery_dirty` until a binary with the journal drains them.
 - New subcommand `openartifact rebuild` (`/app/openartifact rebuild` in the container image).
 - Migration `069` builds two indexes on `recovery_sidecars` (concurrently, so writes are not blocked) that the replication verify pass uses to restore the sidecars of a lost primary store.
+- Federated repositories ([federation](../operations/federation.md)): migration `070` adds the `federation_*` tables and the `repositories.federated` column, and `071` adds capture triggers on the format unit tables. They do nothing until a repository is federated. New `federation.*` configuration keys (`OPENARTIFACT_FEDERATION_*`, off by default), new admin endpoints under `/api/v1/repositories/{name}/federation` and new peer endpoints under `/federation/v1`. Nothing to do on upgrade.
 - New [disaster recovery runbook](../operations/disaster-recovery.md) and [PostgreSQL point-in-time recovery guide](../operations/postgres-pitr.md) (CloudNativePG, Barman Cloud plugin, Helm chart). Documentation only.
 - `DELETE /api/v1/users/{id}` now hard-deletes the account. Before, it only disabled the user and kept the row. The user's API tokens, sessions, project memberships, group links, permission assignments and SSO link are removed, and an SSO login with the same external ID provisions a fresh user. It is refused for your own account and, with `409`, for the last enabled admin. To keep an account, disable it with `PATCH /api/v1/users/{id}` and `{"disabled": true}`; the Users page now offers separate Disable/Enable and Delete actions.
 - Migration `080` adds the `user.deleted` audit action; disabling a user through `PATCH` now records `user.disabled`.

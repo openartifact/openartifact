@@ -144,6 +144,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <EyeSlashIcon v-else class="w-3 h-3" aria-hidden="true" />
               {{ repo.public ? t('repos.public') : t('repos.private') }}
             </span>
+            <span
+              v-if="repo.federated"
+              class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md bg-surface-hover text-muted"
+              :title="t('federation.badgeTitle')"
+            >
+              <ArrowsRightLeftIcon class="w-3 h-3" aria-hidden="true" />
+              {{ t('federation.badge') }}
+            </span>
           </div>
 
           <p class="text-sm text-muted leading-relaxed line-clamp-2" :class="{ italic: !repo.description }">
@@ -194,9 +202,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
           <router-link :to="repoLink(repo.name)" class="font-medium text-foreground truncate hover:text-primary">{{ repo.name }}</router-link>
           <div><FormatBadge :format="repo.format" /></div>
-          <div>
+          <div class="flex flex-wrap items-center gap-1.5">
             <span class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md bg-surface-hover text-muted">
               {{ repo.repo_type || 'hosted' }}
+            </span>
+            <span
+              v-if="repo.federated"
+              class="inline-flex items-center gap-1 text-xs font-medium px-2 py-0.5 rounded-md bg-surface-hover text-muted"
+              :title="t('federation.badgeTitle')"
+            >
+              <ArrowsRightLeftIcon class="w-3 h-3" aria-hidden="true" />
+              {{ t('federation.badge') }}
             </span>
           </div>
           <div class="text-xs text-muted">{{ repo.public ? t('repos.public') : t('repos.private') }}</div>
@@ -276,7 +292,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import PageHeader from '../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import {
-  Squares2X2Icon, Bars3Icon, EyeIcon, EyeSlashIcon,
+  ArrowsRightLeftIcon, Squares2X2Icon, Bars3Icon, EyeIcon, EyeSlashIcon,
   MagnifyingGlassIcon, TrashIcon, XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import { listAllRepositories, deleteRepository } from '../api/repositories'

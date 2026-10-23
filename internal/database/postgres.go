@@ -190,10 +190,10 @@ func (p *PostgresDB) Migrate(ctx context.Context) error {
 
 // repoColumns is the column list every repository read selects; repoScanDest
 // returns the matching Scan destinations.
-const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
+const repoColumns = `id, name, format, description, COALESCE(public, false), COALESCE(allow_full_unpublish, false), COALESCE(repo_type, 'hosted'), COALESCE(upstream_url, ''), COALESCE(upstream_username, ''), COALESCE(upstream_password_enc, ''), COALESCE(cache_ttl_seconds, 3600), COALESCE(negative_cache_ttl_seconds, 60), COALESCE(max_stale_seconds, 604800), COALESCE(blocked, false), project_id, presign_downloads, trash_retention_days, immutable_releases, merge_proxy_versions, sign_packages, federated, deleted_at, COALESCE(deleted_by, ''), created_at, updated_at`
 
 func repoScanDest(r *models.Repository) []any {
-	return []any{&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.ProjectID, &r.PresignDownloads, &r.TrashRetentionDays, &r.ImmutableReleases, &r.MergeProxyVersions, &r.SignPackages, &r.DeletedAt, &r.DeletedBy, &r.CreatedAt, &r.UpdatedAt}
+	return []any{&r.ID, &r.Name, &r.Format, &r.Description, &r.Public, &r.AllowFullUnpublish, &r.RepoType, &r.UpstreamURL, &r.UpstreamUsername, &r.UpstreamPasswordEnc, &r.CacheTTLSeconds, &r.NegativeCacheTTLSeconds, &r.MaxStaleSeconds, &r.Blocked, &r.ProjectID, &r.PresignDownloads, &r.TrashRetentionDays, &r.ImmutableReleases, &r.MergeProxyVersions, &r.SignPackages, &r.Federated, &r.DeletedAt, &r.DeletedBy, &r.CreatedAt, &r.UpdatedAt}
 }
 
 func (p *PostgresDB) GetRepositoryByNameUncached(ctx context.Context, name string) (*models.Repository, error) {

@@ -509,6 +509,16 @@ func run(args []string) error {
 	}
 	defer stopWorkers()
 
+	// Federation: pull replication with peer instances (docs/operations/federation.md).
+	fed, err := setupFederation(context.Background(), cfg, db, blobStore, log, webhookDispatcher, mavenWorker, npmWorker)
+	if err != nil {
+		return fail("failed to start federation", err)
+	}
+
+	if fed.stop != nil {
+		extraStops = append(extraStops, fed.stop)
+	}
+
 	// Initialize AI analysis worker. The effective settings (env/YAML layered
 	// under the admin-saved ones) are applied at startup and again by the admin
 	// API after every change, so no restart is needed.
@@ -987,7 +997,13 @@ func run(args []string) error {
 	})
 
 	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(blobStore).WithPublisher(webhookDispatcher).WithGroupMetadata(groupMetadataWorker)
+	if cfg.Federation.Enabled {
+		repoHandler.WithFederation(fed.store)
+	}
+
 	repoHandler.RegisterAuthed(authedAPI)
+
+	api.NewFederationHandler(db, log, evaluator, fed.store, cfg.Federation.Enabled, fed.kick).RegisterAuthed(authedAPI)
 
 	cleanupHandler := api.NewCleanupHandler(db, log, evaluator, cleanupWorker)
 	cleanupHandler.RegisterAuthed(authedAPI)
@@ -1111,6 +1127,12 @@ func run(args []string) error {
 	// outside the authenticated router.
 	if relay, ok := rawBlobStore.(storage.RelayServer); ok {
 		router.Put(storage.RelayRoute, relay.RelayHandler().ServeHTTP)
+	}
+
+	// Peer endpoints authenticate with their own per-repository bearer token,
+	// so they sit outside the RBAC/CSRF chain of authedAPI.
+	if fed.server != nil {
+		router.Mount("/federation/v1", fed.server.Handler())
 	}
 
 	router.Mount("/", authedAPI)

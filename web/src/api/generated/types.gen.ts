@@ -278,6 +278,10 @@ export type Repository = {
      * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
      */
     sign_packages?: boolean;
+    /**
+     * True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation.
+     */
+    federated?: boolean;
 };
 
 export type RepositoryMember = {
@@ -1726,6 +1730,200 @@ export type TrashList = {
     limit: number;
 };
 
+/**
+ * A remote instance this repository pulls changes from. Secrets (token, client key) are never returned; has_ca_pem and has_client_cert tell whether TLS material is stored.
+ */
+export type FederationPeer = {
+    id: string;
+    name: string;
+    /**
+     * Base URL of the peer instance.
+     */
+    base_url: string;
+    /**
+     * A disabled peer is not polled.
+     */
+    enabled: boolean;
+    /**
+     * ok: caught up. lagging: behind the peer's head. error: the last attempt failed. pending: never synced yet. disabled: not polled.
+     */
+    state: 'ok' | 'lagging' | 'error' | 'pending' | 'disabled';
+    /**
+     * Last peer log sequence applied locally.
+     */
+    cursor_seq: number;
+    /**
+     * Peer's log head sequence as of the last successful contact.
+     */
+    remote_head_seq: number;
+    /**
+     * Logged units still to apply.
+     */
+    backlog_units: number;
+    /**
+     * Age in seconds of the oldest unapplied change; 0 when caught up.
+     */
+    lag_seconds: number;
+    last_attempt_at?: string;
+    last_success_at?: string;
+    next_attempt_at?: string;
+    /**
+     * Error of the last failed attempt; empty when the last attempt succeeded.
+     */
+    last_error: string;
+    /**
+     * Consecutive failed attempts.
+     */
+    error_count: number;
+    /**
+     * Units applied from this peer since the peer was added.
+     */
+    applied_total: number;
+    /**
+     * Units that conflicted with local content and were resolved by the merge rules.
+     */
+    conflicts_total: number;
+    /**
+     * Units waiting for a dependency or a retry.
+     */
+    deferred_units: number;
+    /**
+     * A resync is queued and not yet started.
+     */
+    resync_requested: boolean;
+    has_ca_pem: boolean;
+    has_client_cert: boolean;
+    created_at: string;
+};
+
+/**
+ * An inbound token a peer presents to pull this repository's log. The secret is shown once at creation and never again.
+ */
+export type FederationToken = {
+    id: string;
+    name: string;
+    created_at: string;
+    last_used_at?: string;
+    /**
+     * Set once the token is revoked.
+     */
+    revoked_at?: string;
+};
+
+export type FederationTokenCreated = {
+    id: string;
+    name: string;
+    /**
+     * Clear-text token, returned only by this response.
+     */
+    token: string;
+    created_at: string;
+};
+
+/**
+ * A unit that could not be applied yet and is retried.
+ */
+export type FederationDeferredUnit = {
+    unit_key: string;
+    /**
+     * Peer log sequence of the unit.
+     */
+    seq: number;
+    attempts: number;
+    /**
+     * Why it was deferred (for example a missing dependency).
+     */
+    reason: string;
+    last_error: string;
+    first_seen_at: string;
+    next_attempt_at: string;
+};
+
+export type FederationDeferredList = {
+    items: Array<FederationDeferredUnit>;
+};
+
+export type FederationStatus = {
+    /**
+     * Federation is on: the repository keeps a change log.
+     */
+    enabled: boolean;
+    /**
+     * The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget).
+     */
+    supported: boolean;
+    /**
+     * Identifier of this instance.
+     */
+    instance_id: string;
+    /**
+     * Identifier of this repository's log; changes when federation is disabled and enabled again.
+     */
+    log_id: string;
+    /**
+     * Highest sequence in the log.
+     */
+    head_seq: number;
+    /**
+     * Logged units.
+     */
+    units: number;
+    /**
+     * Logged deletions.
+     */
+    tombstones: number;
+    peers: Array<FederationPeer>;
+    tokens: Array<FederationToken>;
+};
+
+export type UpdateFederationRequest = {
+    /**
+     * true backfills the log from the existing content; false removes the log and all peers.
+     */
+    enabled: boolean;
+};
+
+export type CreateFederationPeerRequest = {
+    name: string;
+    /**
+     * Base URL of the peer instance; validated against the outbound (SSRF) policy.
+     */
+    base_url: string;
+    /**
+     * Token the peer issued for this repository.
+     */
+    token: string;
+    /**
+     * PEM CA bundle to trust for the peer's TLS certificate.
+     */
+    ca_pem?: string;
+    /**
+     * PEM client certificate for mutual TLS.
+     */
+    client_cert?: string;
+    /**
+     * PEM private key of the client certificate.
+     */
+    client_key?: string;
+};
+
+/**
+ * Absent fields stay unchanged.
+ */
+export type UpdateFederationPeerRequest = {
+    name?: string;
+    base_url?: string;
+    token?: string;
+    ca_pem?: string;
+    client_cert?: string;
+    client_key?: string;
+    enabled?: boolean;
+};
+
+export type CreateFederationTokenRequest = {
+    name: string;
+};
+
 export type PackageUploadResult = {
     success: boolean;
     /**
@@ -2388,6 +2586,10 @@ export type PostApiV1RepositoriesData = {
          * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
          */
         sign_packages?: boolean;
+        /**
+         * Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true).
+         */
+        federated?: boolean;
     };
     path?: never;
     query?: never;
@@ -6505,6 +6707,10 @@ export type PostApiV1ProjectsByProjectRepositoriesData = {
          * Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed.
          */
         sign_packages?: boolean;
+        /**
+         * Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true).
+         */
+        federated?: boolean;
     };
     path: {
         project: string;
@@ -9185,6 +9391,323 @@ export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses = {
 };
 
 export type PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponse = PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses[keyof PostApiV1RepositoriesByNameTrashByKindByIdRestoreResponses];
+
+export type GetApiV1RepositoriesByNameFederationData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation';
+};
+
+export type GetApiV1RepositoriesByNameFederationErrors = {
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameFederationResponses = {
+    /**
+     * Federation status
+     */
+    200: FederationStatus;
+};
+
+export type GetApiV1RepositoriesByNameFederationResponse = GetApiV1RepositoriesByNameFederationResponses[keyof GetApiV1RepositoriesByNameFederationResponses];
+
+export type PutApiV1RepositoriesByNameFederationData = {
+    body: UpdateFederationRequest;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation';
+};
+
+export type PutApiV1RepositoriesByNameFederationErrors = {
+    /**
+     * Invalid request, or the repository is not hosted or its format has no federation (error code validation_failed)
+     */
+    400: Error;
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type PutApiV1RepositoriesByNameFederationError = PutApiV1RepositoriesByNameFederationErrors[keyof PutApiV1RepositoriesByNameFederationErrors];
+
+export type PutApiV1RepositoriesByNameFederationResponses = {
+    /**
+     * The new federation status
+     */
+    200: FederationStatus;
+};
+
+export type PutApiV1RepositoriesByNameFederationResponse = PutApiV1RepositoriesByNameFederationResponses[keyof PutApiV1RepositoriesByNameFederationResponses];
+
+export type PostApiV1RepositoriesByNameFederationPeersData = {
+    body: CreateFederationPeerRequest;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation/peers';
+};
+
+export type PostApiV1RepositoriesByNameFederationPeersErrors = {
+    /**
+     * Invalid request (error code validation_failed)
+     */
+    400: Error;
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Federation is not enabled, or a peer with this name already exists
+     */
+    409: Error;
+};
+
+export type PostApiV1RepositoriesByNameFederationPeersError = PostApiV1RepositoriesByNameFederationPeersErrors[keyof PostApiV1RepositoriesByNameFederationPeersErrors];
+
+export type PostApiV1RepositoriesByNameFederationPeersResponses = {
+    /**
+     * Peer added
+     */
+    201: FederationPeer;
+};
+
+export type PostApiV1RepositoriesByNameFederationPeersResponse = PostApiV1RepositoriesByNameFederationPeersResponses[keyof PostApiV1RepositoriesByNameFederationPeersResponses];
+
+export type DeleteApiV1RepositoriesByNameFederationPeersByIdData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * Peer id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation/peers/{id}';
+};
+
+export type DeleteApiV1RepositoriesByNameFederationPeersByIdErrors = {
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository or peer not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1RepositoriesByNameFederationPeersByIdResponses = {
+    /**
+     * Peer deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1RepositoriesByNameFederationPeersByIdResponse = DeleteApiV1RepositoriesByNameFederationPeersByIdResponses[keyof DeleteApiV1RepositoriesByNameFederationPeersByIdResponses];
+
+export type PatchApiV1RepositoriesByNameFederationPeersByIdData = {
+    body: UpdateFederationPeerRequest;
+    path: {
+        name: string;
+        /**
+         * Peer id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation/peers/{id}';
+};
+
+export type PatchApiV1RepositoriesByNameFederationPeersByIdErrors = {
+    /**
+     * Invalid request (error code validation_failed)
+     */
+    400: Error;
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository or peer not found
+     */
+    404: unknown;
+    /**
+     * A peer with this name already exists
+     */
+    409: Error;
+};
+
+export type PatchApiV1RepositoriesByNameFederationPeersByIdError = PatchApiV1RepositoriesByNameFederationPeersByIdErrors[keyof PatchApiV1RepositoriesByNameFederationPeersByIdErrors];
+
+export type PatchApiV1RepositoriesByNameFederationPeersByIdResponses = {
+    /**
+     * The updated peer
+     */
+    200: FederationPeer;
+};
+
+export type PatchApiV1RepositoriesByNameFederationPeersByIdResponse = PatchApiV1RepositoriesByNameFederationPeersByIdResponses[keyof PatchApiV1RepositoriesByNameFederationPeersByIdResponses];
+
+export type PostApiV1RepositoriesByNameFederationPeersByIdResyncData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * Peer id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation/peers/{id}/resync';
+};
+
+export type PostApiV1RepositoriesByNameFederationPeersByIdResyncErrors = {
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository or peer not found
+     */
+    404: unknown;
+};
+
+export type PostApiV1RepositoriesByNameFederationPeersByIdResyncResponses = {
+    /**
+     * Resync queued
+     */
+    202: FederationPeer;
+};
+
+export type PostApiV1RepositoriesByNameFederationPeersByIdResyncResponse = PostApiV1RepositoriesByNameFederationPeersByIdResyncResponses[keyof PostApiV1RepositoriesByNameFederationPeersByIdResyncResponses];
+
+export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * Peer id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation/peers/{id}/deferred';
+};
+
+export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredErrors = {
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository or peer not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredResponses = {
+    /**
+     * The deferred units
+     */
+    200: FederationDeferredList;
+};
+
+export type GetApiV1RepositoriesByNameFederationPeersByIdDeferredResponse = GetApiV1RepositoriesByNameFederationPeersByIdDeferredResponses[keyof GetApiV1RepositoriesByNameFederationPeersByIdDeferredResponses];
+
+export type PostApiV1RepositoriesByNameFederationTokensData = {
+    body: CreateFederationTokenRequest;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation/tokens';
+};
+
+export type PostApiV1RepositoriesByNameFederationTokensErrors = {
+    /**
+     * Invalid request (error code validation_failed)
+     */
+    400: Error;
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Federation is not enabled
+     */
+    409: Error;
+};
+
+export type PostApiV1RepositoriesByNameFederationTokensError = PostApiV1RepositoriesByNameFederationTokensErrors[keyof PostApiV1RepositoriesByNameFederationTokensErrors];
+
+export type PostApiV1RepositoriesByNameFederationTokensResponses = {
+    /**
+     * Token created
+     */
+    201: FederationTokenCreated;
+};
+
+export type PostApiV1RepositoriesByNameFederationTokensResponse = PostApiV1RepositoriesByNameFederationTokensResponses[keyof PostApiV1RepositoriesByNameFederationTokensResponses];
+
+export type DeleteApiV1RepositoriesByNameFederationTokensByIdData = {
+    body?: never;
+    path: {
+        name: string;
+        /**
+         * Token id.
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/federation/tokens/{id}';
+};
+
+export type DeleteApiV1RepositoriesByNameFederationTokensByIdErrors = {
+    /**
+     * Manage permission on the repository required
+     */
+    403: unknown;
+    /**
+     * Repository or token not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1RepositoriesByNameFederationTokensByIdResponses = {
+    /**
+     * Token revoked
+     */
+    204: void;
+};
+
+export type DeleteApiV1RepositoriesByNameFederationTokensByIdResponse = DeleteApiV1RepositoriesByNameFederationTokensByIdResponses[keyof DeleteApiV1RepositoriesByNameFederationTokensByIdResponses];
 
 export type PostApiV1RepositoriesByNameDebsData = {
     body: {

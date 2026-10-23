@@ -109,6 +109,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <span>{{ t('repos.new.public') }}</span>
                   <span v-if="!publicAllowed" class="text-xs text-muted">{{ t('repos.project.publicBlocked') }}</span>
                 </label>
+
+                <div v-if="canFederate">
+                  <label class="flex items-center gap-2 pt-1 text-sm">
+                    <input v-model="federated" type="checkbox" class="accent-[rgb(var(--color-primary))]" />
+                    <span>{{ t('federation.create.label') }}</span>
+                  </label>
+                  <p class="mt-1 text-xs text-muted">{{ t('federation.create.hint') }}</p>
+                </div>
               </form>
     <template #footer>
       <AppButton variant="ghost" @click="close">{{ t('common.cancel') }}</AppButton>
@@ -132,7 +140,7 @@ import type { Repository } from '../api/repositories'
 import { useToastStore } from '../stores/toast'
 import { CheckIcon } from '@heroicons/vue/24/outline'
 import type { FormatId } from '../lib/formats'
-import { allowedFormats, coerceFormat, upstreamUrlPlaceholder, upstreamUrlRequired } from '../lib/repoTypes'
+import { allowedFormats, coerceFormat, federationAvailable, upstreamUrlPlaceholder, upstreamUrlRequired } from '../lib/repoTypes'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import FormatBadge from './FormatBadge.vue'
@@ -150,6 +158,7 @@ const name = ref('')
 const format = ref<FormatId>('docker')
 const type = ref<'hosted' | 'proxy' | 'group'>('hosted')
 const isPublic = ref(false)
+const federated = ref(false)
 const project = ref('')
 const upstreamUrl = ref('')
 const upstreamUsername = ref('')
@@ -164,6 +173,9 @@ const policy = computed(() => (session.isAdmin ? null : selectedProject.value))
 const prefix = computed(() => policyPrefix(policy.value))
 const publicAllowed = computed(() => policyAllowsPublic(policy.value))
 const formats = computed(() => policyFormats(policy.value, allowedFormats(type.value)))
+
+// Federation applies to hosted repositories of a capable format only.
+const canFederate = computed(() => federationAvailable(type.value, format.value))
 
 const types = [
   { value: 'hosted', label: t('repos.new.type.hosted'), desc: t('repos.new.type.hostedDesc') },
@@ -208,6 +220,7 @@ watch(open, async (isOpen) => {
   name.value = ''
   type.value = 'hosted'
   isPublic.value = false
+  federated.value = false
   project.value = ''
   upstreamUrl.value = ''
   upstreamUsername.value = ''
@@ -238,6 +251,7 @@ async function handleCreate(): Promise<void> {
       public: isPublic.value,
       description: '',
       repo_type: type.value,
+      ...(canFederate.value && federated.value ? { federated: true } : {}),
       ...(project.value && session.isAdmin ? { project: project.value } : {}),
       ...(type.value === 'proxy'
         ? {

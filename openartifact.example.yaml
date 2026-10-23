@@ -237,6 +237,17 @@ trash:
   retentionDays: 7
   purgeInterval: 15m
 
+# Federated repositories: peer-to-peer replication of hosted repositories
+# between instances. enabled is the master switch of the pull workers and of
+# the /federation/v1 peer endpoints. See docs/operations/federation.md.
+#federation:
+#  enabled: false
+#  pollInterval: 30s
+#  batchSize: 200
+#  maxBackoff: 15m
+#  requestTimeout: 30s
+#  tombstoneRetention: 720h
+
 # Storage tiers and lifecycle policies. Tiers (named storage backends) and the
 # policies that move blobs between them are managed in the admin UI/API; this
 # section only tunes the background mover. With only the primary store

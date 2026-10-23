@@ -37,6 +37,9 @@ type Repository struct {
 	MergeProxyVersions bool
 	// SignPackages (hosted rpm only) signs uploaded RPMs with the active GPG key.
 	SignPackages bool
+	// Federated marks a hosted repository that replicates with peers
+	// (see internal/federation). It is set only by federation.Store.Enable.
+	Federated bool
 	// DeletedAt/DeletedBy are set while the repository is in the trash. Every
 	// lookup except the trash API hides such a repository.
 	DeletedAt *time.Time
