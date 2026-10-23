@@ -59,6 +59,8 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | [Storage tiers](operations/storage-tiering.md) | Named tiers on several backends, lifecycle policies, the crash-safe mover, promote-on-read, dry run |
 | [Trash](operations/trash.md) | Soft delete: retention, restore, purge, immutable releases, repository delete confirmation |
 | [Backup](operations/backup.md) | Backup and restore of records and blobs |
+| [Disaster recovery](operations/disaster-recovery.md) | Runbook: database lost, storage lost, one repository deleted; RPO and RTO per option, verification commands |
+| [PostgreSQL point-in-time recovery](operations/postgres-pitr.md) | WAL archiving, base backups and restore to a chosen time with CloudNativePG and the Helm chart |
 | [Monitoring](operations/monitoring.md) | Health, Prometheus metrics, audit log, logging |
 | [Webhooks](operations/webhooks.md) | Events, HMAC signatures, retries, delivery log |
 | [Performance](operations/performance.md) | Benchmarks, load tests, pprof, auth cache and other tuning |

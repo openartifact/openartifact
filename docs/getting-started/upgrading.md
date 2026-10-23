@@ -85,6 +85,10 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+- New [disaster recovery runbook](../operations/disaster-recovery.md) and [PostgreSQL point-in-time recovery guide](../operations/postgres-pitr.md) (CloudNativePG, Barman Cloud plugin, Helm chart). Documentation only: no migration and no behavior change.
+
 ### 0.8.1
 
 Migration `066`.
