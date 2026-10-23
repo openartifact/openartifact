@@ -2583,6 +2583,14 @@
             },
             "description": "Entries of licenses that are not SPDX expressions: raw text read from the artifact (\"BSD\", \"BSD License\"), kept as written and flagged for review."
           },
+          "license_source": {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "client_declared"
+            ],
+            "description": "`artifact`: the licenses include ones read from the stored package file. `client_declared`: they only come from what a client declared (license properties) because the file declares no license, or cannot be read and no blocking policy applies."
+          },
           "scan_status": {
             "type": "string",
             "enum": [
@@ -2716,6 +2724,25 @@
           "code"
         ]
       },
+      "LicenseMetadataUnreadableError": {
+        "type": "object",
+        "description": "Upload rejected (422): the repository has an enabled license policy with action `block` and the package's license cannot be derived from the package file (a file type without readable metadata, a damaged archive), so only the client's own claims would decide the policy.",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "LICENSE_METADATA_UNREADABLE"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
       "LicenseScanRunResult": {
         "type": "object",
         "description": "Result of POST .../license/scan: the recorded license scan plus the policy violations it triggered.",
@@ -2755,6 +2782,14 @@
               "type": "string"
             },
             "description": "Entries of licenses that are not SPDX expressions: raw text read from the artifact (\"BSD\", \"BSD License\"), kept as written and flagged for review."
+          },
+          "license_source": {
+            "type": "string",
+            "enum": [
+              "artifact",
+              "client_declared"
+            ],
+            "description": "`artifact`: the licenses include ones read from the stored package file. `client_declared`: they only come from what a client declared (license properties) because the file declares no license, or cannot be read and no blocking policy applies."
           },
           "scan_status": {
             "type": "string",
@@ -4923,7 +4958,7 @@
             "description": "Repository not found"
           },
           "422": {
-            "description": "The artifact's metadata is too large or ambiguous to be read safely (`unsafe_artifact`)"
+            "description": "The artifact's metadata is too large or ambiguous to be read safely (`unsafe_artifact`), or its license cannot be read from its file while a blocking license policy applies (`unreadable_artifact`)"
           }
         },
         "requestBody": {

@@ -76,6 +76,23 @@ func Supported(format, filename string) bool {
 	return false
 }
 
+// Expected reports whether a file of this format is a package that declares
+// its own license metadata: a wheel or sdist, an npm tarball, a crate, a nupkg,
+// a gem or a .pom. For these a failure to read the licenses (an unsupported
+// file type such as a PyPI .egg, a damaged archive) leaves nothing but the
+// client's claims to judge the package by. Maven jars, checksums and
+// maven-metadata.xml are not: the .pom beside them is the authority.
+func Expected(format, filename string) bool {
+	switch format {
+	case "pypi", "npm", "cargo", "nuget", "rubygems":
+		return true
+	case "maven", "sbt":
+		return strings.HasSuffix(strings.ToLower(filename), ".pom")
+	}
+
+	return false
+}
+
 // ReadBytes reads the licenses of an artifact held in memory.
 func ReadBytes(ctx context.Context, format, filename string, data []byte) (Result, error) {
 	return Read(ctx, format, filename, func() (io.ReadCloser, error) {

@@ -285,11 +285,12 @@ const (
 
 // publishLicenses returns the licenses a policy is enforced on: the license of
 // the Cargo.toml inside the crate. The publish metadata's "license" is only the
-// fallback for a crate that declares none there (or is not readable), so a
-// client cannot publish a crate under a different license than it ships. A
-// crate whose archive cannot be read safely is refused (false, response
-// written). A crate that only declares license_file has no enforceable license.
-func (h *HTTPHandler) publishLicenses(w http.ResponseWriter, r *http.Request, name, version string, crate []byte, metadata map[string]any) ([]string, bool) {
+// fallback for a crate that declares none there, so a client cannot publish a
+// crate under a different license than it ships. A crate whose archive cannot
+// be read safely is refused, and so is one that cannot be read at all while the
+// repository has a blocking policy (false, response written). A crate that
+// only declares license_file has no enforceable license.
+func (h *HTTPHandler) publishLicenses(w http.ResponseWriter, r *http.Request, repoID, name, version string, crate []byte, metadata map[string]any) ([]string, bool) {
 	res, err := licensemeta.ReadBytes(r.Context(), "cargo", name+"-"+version+".crate", crate)
 
 	switch {
@@ -299,7 +300,11 @@ func (h *HTTPHandler) publishLicenses(w http.ResponseWriter, r *http.Request, na
 
 		return nil, false
 	case err != nil:
-		h.Log.Debugw("cargo publish: crate metadata unreadable, using the publish metadata license", "name", name, "version", version, "error", err)
+		h.Log.Debugw("cargo publish: crate metadata unreadable", "name", name, "version", version, "error", err)
+
+		if licensepolicy.RefuseUnderivable(w, r, h.DB, h.Log, repoID) {
+			return nil, false
+		}
 	case !res.Empty():
 		return res.Licenses, true
 	}
@@ -414,7 +419,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 
 	checksum := fmt.Sprintf("%x", sha256.Sum256(crateBytes))
 
-	licenses, ok := h.publishLicenses(w, r, crateName, version, crateBytes, metadata)
+	licenses, ok := h.publishLicenses(w, r, repoID, crateName, version, crateBytes, metadata)
 	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
 		return
 	}

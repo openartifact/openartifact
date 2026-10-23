@@ -219,7 +219,7 @@ func TestRecord_Modes(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			store := newMemStore(tt.policy)
 
-			res, violations, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "pkg@1.0.0", []string{"GPL-3.0"})
+			res, violations, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "pkg@1.0.0", []string{"GPL-3.0"}, models.LicenseSourceArtifact)
 			if err != nil {
 				t.Fatalf("Record: %v", err)
 			}
@@ -242,7 +242,7 @@ func TestRecord_QuarantineLifecycle(t *testing.T) {
 	record := func(licenses ...string) *models.LicenseScanResult {
 		t.Helper()
 
-		res, _, err := licensepolicy.Record(ctx, store, testLog(), "repo-1", "pkg@1.0.0", licenses)
+		res, _, err := licensepolicy.Record(ctx, store, testLog(), "repo-1", "pkg@1.0.0", licenses, models.LicenseSourceArtifact)
 		if err != nil {
 			t.Fatalf("Record: %v", err)
 		}
@@ -293,7 +293,7 @@ func TestRecord_Errors(t *testing.T) {
 		store := newMemStore(policytest.Policy("block", nil, []string{"GPL-3.0"}))
 		store.listErr = errBackend
 
-		if _, _, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "a", []string{"GPL-3.0"}); err == nil {
+		if _, _, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "a", []string{"GPL-3.0"}, models.LicenseSourceArtifact); err == nil {
 			t.Fatal("Record must fail when policies cannot be read")
 		}
 
@@ -306,8 +306,59 @@ func TestRecord_Errors(t *testing.T) {
 		store := newMemStore()
 		store.createErr = errBackend
 
-		if _, _, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "a", []string{"MIT"}); err == nil {
+		if _, _, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "a", []string{"MIT"}, models.LicenseSourceArtifact); err == nil {
 			t.Fatal("Record must report a storage failure")
 		}
 	})
+}
+
+func TestRefuseUnderivable(t *testing.T) {
+	for _, c := range policytest.UnderivableCases() {
+		t.Run(c.Name, func(t *testing.T) {
+			rec := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/upload", nil)
+
+			stopped := licensepolicy.RefuseUnderivable(rec, req, c.DB(nil), testLog(), "repo-1")
+
+			if stopped != c.Stopped() {
+				t.Fatalf("RefuseUnderivable returned %v, want %v", stopped, c.Stopped())
+			}
+
+			if !stopped {
+				if rec.Body.Len() != 0 {
+					t.Fatalf("an admitted upload must not get a response, got %d %q", rec.Code, rec.Body.String())
+				}
+
+				return
+			}
+
+			c.AssertResponse(t, rec.Code, rec.Body.Bytes())
+		})
+	}
+}
+
+func TestHasBlocking(t *testing.T) {
+	blocking, err := licensepolicy.HasBlocking(context.Background(), newMemStore(policytest.Policy("warn", nil, nil), policytest.Policy("block", nil, nil)), "repo-1")
+	if err != nil || !blocking {
+		t.Fatalf("HasBlocking = %v, %v; want true", blocking, err)
+	}
+
+	if _, err := licensepolicy.HasBlocking(context.Background(), &memStore{listErr: errBackend}, "repo-1"); err == nil {
+		t.Fatal("a policy store failure must be returned")
+	}
+}
+
+func TestRecord_StoresTheLicenseSource(t *testing.T) {
+	for _, source := range []string{models.LicenseSourceArtifact, models.LicenseSourceClientDeclared} {
+		store := newMemStore()
+
+		res, _, err := licensepolicy.Record(context.Background(), store, testLog(), "repo-1", "pkg@1.0.0", []string{"MIT"}, source)
+		if err != nil {
+			t.Fatalf("Record: %v", err)
+		}
+
+		if res.LicenseSource != source || store.results["pkg@1.0.0"].LicenseSource != source {
+			t.Errorf("source = %q, stored %q, want %q", res.LicenseSource, store.results["pkg@1.0.0"].LicenseSource, source)
+		}
+	}
 }

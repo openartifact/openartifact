@@ -187,7 +187,11 @@ type pypiField struct{ key, value string }
 func uploadWithFields(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, fields ...pypiField) *httptest.ResponseRecorder {
 	t.Helper()
 
-	return uploadFile(t, db, bs, pub, "demo_pkg-1.0.tar.gz", []byte("payload"), fields...)
+	// An sdist whose PKG-INFO declares no license: the form fields are the only
+	// license information, as for packages built without license metadata.
+	sdist := archivetest.TarGz(t, archivetest.File("demo_pkg-1.0/PKG-INFO", "Metadata-Version: 2.1\nName: Demo_Pkg\nVersion: 1.0\n"))
+
+	return uploadFile(t, db, bs, pub, "demo_pkg-1.0.tar.gz", sdist, fields...)
 }
 
 // uploadFile uploads content as filename the way twine does, with the given
@@ -598,5 +602,35 @@ func TestUploadRejectsUnsafeArchives(t *testing.T) {
 				t.Fatal("rejected upload stored something")
 			}
 		})
+	}
+}
+
+// A file whose licenses cannot be derived (a type that carries no readable
+// metadata, a damaged archive, a wheel without METADATA) is judged on the
+// client's form fields only when no blocking policy applies; with one, the
+// upload is refused whatever the form claims.
+func TestUploadUnderivableLicenses(t *testing.T) {
+	files := map[string]struct {
+		filename string
+		content  []byte
+	}{
+		"egg":                    {"demo_pkg-1.0.egg", []byte("egg")},
+		"windows installer":      {"demo_pkg-1.0.exe", []byte("MZ")},
+		"wheel that is no zip":   {demoWheel, []byte("not a zip")},
+		"wheel without METADATA": {demoWheel, archivetest.Zip(t, archivetest.File("demo_pkg/__init__.py", ""))},
+	}
+
+	for name, f := range files {
+		for _, c := range policytest.UnderivableCases() {
+			t.Run(name+"/"+c.Name, func(t *testing.T) {
+				inner := &pypiDB{DB: formattest.NewDB()}
+				bs := formattest.NewBlobStore()
+				pub := &formattest.Publisher{}
+
+				w := uploadFile(t, c.DB(inner), bs, pub, f.filename, f.content, pypiField{"license", "MIT"})
+				c.AssertResponse(t, w.Code, w.Body.Bytes())
+				assertPkgStored(t, c, w.Code, inner, bs, pub)
+			})
+		}
 	}
 }

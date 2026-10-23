@@ -48,6 +48,12 @@ const (
 	// licenses cannot be checked.
 	CodeMetadataUnsafe = "LICENSE_METADATA_UNSAFE"
 
+	// CodeMetadataUnreadable is the error code returned when a repository has
+	// a blocking policy and the licenses of the upload cannot be derived from
+	// the package file (a file type or archive that cannot be read), so
+	// nothing but the client's own claims would decide the policy.
+	CodeMetadataUnreadable = "LICENSE_METADATA_UNREADABLE"
+
 	// ActionBlock is the policy action that rejects or quarantines.
 	ActionBlock = "block"
 
@@ -175,6 +181,60 @@ func RejectUnsafe(w http.ResponseWriter, log *logger.Logger) {
 	})
 }
 
+// HasBlocking reports whether the repository (or a global policy) has an
+// enabled policy with action "block".
+func HasBlocking(ctx context.Context, db PolicyLister, repoID string) (bool, error) {
+	policies, err := db.ListLicensePolicies(ctx, repoID)
+	if err != nil {
+		return false, err //nolint:wrapcheck // callers log it and answer with a fixed message
+	}
+
+	for _, policy := range policies {
+		if policy != nil && policy.Enabled && policy.Action == ActionBlock {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
+// RefuseUnderivable is called by an upload handler when the licenses of the
+// package could not be derived from the package file (licensemeta reported it
+// unsupported, without metadata or unreadable). Without a blocking policy it
+// returns false and the handler falls back to what the client declared. With
+// one, trusting the client's fields would let a file that tools read
+// differently, or that this server cannot read, bypass the policy, so the
+// upload is refused (true, response written):
+//
+//   - 422 LICENSE_METADATA_UNREADABLE;
+//   - 500 LICENSE_POLICY_UNAVAILABLE when the policies cannot be read.
+func RefuseUnderivable(w http.ResponseWriter, r *http.Request, db PolicyLister, log *logger.Logger, repoID string) bool {
+	blocking, err := HasBlocking(r.Context(), db, repoID)
+	if err != nil {
+		log.Errorw("license policy: cannot read policies", "repository_id", repoID, "error", err)
+		writeBody(w, log, http.StatusInternalServerError, errorBody{
+			Error: "unable to verify the license policy; try again later",
+			Code:  CodePolicyUnavailable,
+		})
+
+		return true
+	}
+
+	if !blocking {
+		return false
+	}
+
+	log.Warnw("license policy: upload rejected, licenses cannot be derived from the package file",
+		"repository_id", repoID)
+
+	writeBody(w, log, http.StatusUnprocessableEntity, errorBody{
+		Error: "upload rejected: the repository has a blocking license policy and the package's license cannot be read from the file",
+		Code:  CodeMetadataUnreadable,
+	})
+
+	return true
+}
+
 // Enforce applies the repository's license policies to an upload whose
 // metadata declares licenses. It returns true when the upload must not
 // continue, after writing the response:
@@ -240,8 +300,12 @@ func Enforce(w http.ResponseWriter, r *http.Request, db PolicyLister, log *logge
 //     be a way out of quarantine);
 //   - an approval holds only for the licenses it was given for.
 //
+// source is models.LicenseSourceArtifact when the licenses include ones read
+// from the package file and models.LicenseSourceClientDeclared when they only
+// come from what a client declared; it is stored with the result.
+//
 // It returns the stored result and all violations (blocking or not).
-func Record(ctx context.Context, db Store, log *logger.Logger, repoID, artifactID string, licenses []string) (*models.LicenseScanResult, []Violation, error) {
+func Record(ctx context.Context, db Store, log *logger.Logger, repoID, artifactID string, licenses []string, source string) (*models.LicenseScanResult, []Violation, error) {
 	licenses = normalize(log, licenses)
 
 	violations, err := Evaluate(ctx, db, log, repoID, licenses)
@@ -265,6 +329,7 @@ func Record(ctx context.Context, db Store, log *logger.Logger, repoID, artifactI
 		ArtifactID:         artifactID,
 		Licenses:           licenses,
 		UnresolvedLicenses: license.NewDetector(log).Unresolved(licenses),
+		LicenseSource:      source,
 		SPDXExpressions:    []string{},
 		ScanStatus:         "completed",
 		Quarantined:        quarantined,

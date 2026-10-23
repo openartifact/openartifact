@@ -443,6 +443,10 @@ type LicenseScanResultResponse struct {
 	// expressions: raw text read from the artifact ("BSD", "BSD License"),
 	// kept as written and flagged for review.
 	UnresolvedLicenses []string `json:"unresolved_licenses"`
+	// LicenseSource is "artifact" when the licenses include ones read from the
+	// package file, "client_declared" when they only come from what a client
+	// declared (license properties).
+	LicenseSource string `json:"license_source"`
 	// Quarantined: downloads of the artifact answer 403 until it is approved
 	// (a blocking license policy matched its licenses).
 	Quarantined bool `json:"quarantined"`

@@ -416,3 +416,29 @@ func isFalse(t *testing.T, v bool, msg ...string) {
 		t.Errorf("expected false: %s", strings.Join(msg, " "))
 	}
 }
+
+func TestExpected(t *testing.T) {
+	tests := []struct {
+		format, filename string
+		want             bool
+	}{
+		{"pypi", "demo-1.0-py3-none-any.whl", true},
+		{"pypi", "demo-1.0.egg", true},
+		{"npm", "demo-1.0.0.tgz", true},
+		{"cargo", "demo-0.1.0.crate", true},
+		{"nuget", "Demo.1.0.0.nupkg", true},
+		{"rubygems", "demo-1.0.0.gem", true},
+		{"maven", "demo-1.0.0.POM", true},
+		{"sbt", "demo_2.13-1.0.0.pom", true},
+		{"maven", "demo-1.0.0.jar", false},
+		{"maven", "demo-1.0.0-sources.jar", false},
+		{"maven", "demo-1.0.0.pom.sha1", false},
+		{"maven", "maven-metadata.xml", false},
+		{"raw", "notes.txt", false},
+		{"docker", "sha256:abc", false},
+	}
+
+	for _, tc := range tests {
+		equal(t, tc.want, licensemeta.Expected(tc.format, tc.filename), tc.format+" "+tc.filename)
+	}
+}

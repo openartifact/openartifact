@@ -146,6 +146,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   >{{ lic }}<span v-if="isUnresolved(scan, lic)" class="font-sans">· {{ t('sec.license.unresolved') }}</span></span>
                 </div>
                 <span v-else class="text-xs text-muted">{{ t('sec.license.none') }}</span>
+                <p
+                  v-if="scan.licenses?.length && scan.license_source === 'client_declared'"
+                  class="mt-1 text-caption text-muted"
+                  :title="t('sec.license.clientDeclaredHint')"
+                  data-testid="license-client-declared"
+                >{{ t('sec.license.clientDeclared') }}</p>
                 <div v-if="violationsFor(scan.id).length" class="mt-2">
                   <LicensePolicyViolations :violations="violationsFor(scan.id)" />
                 </div>

@@ -408,3 +408,65 @@ func TestMavenUpload_LicensePolicyReadsThePOM(t *testing.T) {
 		}
 	}
 }
+
+// A tarball whose licenses cannot be derived is judged on the publish JSON's
+// manifest only when no blocking policy applies; with one it is refused
+// whatever the manifest claims.
+func TestNPMPublish_UnderivableLicenses(t *testing.T) {
+	tarballs := map[string][]byte{
+		"not a tarball":        []byte("not a tarball"),
+		"no package.json":      archivetest.TarGz(t, archivetest.File("package/index.js", "")),
+		"invalid package.json": archivetest.TarGz(t, archivetest.File("package/package.json", "{not json")),
+	}
+
+	for name, tarball := range tarballs {
+		for _, c := range policytest.UnderivableCases() {
+			t.Run(name+"/"+c.Name, func(t *testing.T) {
+				db := newMockDatabase()
+				bs := newMockBlobStore()
+				db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "myrepo"}
+
+				rec := publishNPM(t, newLicensedNPMRouter(c.DB(db), bs),
+					buildNPMPublishBodyWithTarball(t, "lodash", "1.0.0", tarball, map[string]any{"license": "MIT"}))
+
+				c.AssertResponse(t, rec.Code, rec.Body.Bytes())
+
+				stored := len(bs.blobs) != 0 || len(db.npmVersions) != 0 || len(db.npmPackages) != 0
+				if c.Stopped() && stored {
+					t.Errorf("rejected publish stored data")
+				}
+
+				if !c.Stopped() && len(db.npmVersions) != 1 {
+					t.Errorf("admitted publish not stored")
+				}
+			})
+		}
+	}
+}
+
+// A pom that cannot be parsed declares nothing a policy can check: a blocking
+// policy refuses it instead of admitting it unchecked.
+func TestMavenUpload_UnparsablePOMUnderBlockPolicy(t *testing.T) {
+	for _, c := range policytest.UnderivableCases() {
+		t.Run(c.Name, func(t *testing.T) {
+			db := newMockDatabase()
+			bs := newMockBlobStore()
+			db.repositories["repo-1"] = &models.Repository{ID: "repo-1", Name: "maven-repo"}
+
+			log, _ := logger.New("info", "json", "stdout")
+			router := chi.NewRouter()
+			api.NewMavenUploadHandler(log, c.DB(db), bs, nil).Register(router)
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPut,
+				"/repos/maven/maven-repo/com/example/myapp/1.0.0/myapp-1.0.0.pom", strings.NewReader("<project><unclosed>"))
+			rec := httptest.NewRecorder()
+			router.ServeHTTP(rec, req)
+
+			c.AssertResponse(t, rec.Code, rec.Body.Bytes())
+
+			if c.Stopped() && len(bs.blobs) != 0 {
+				t.Errorf("rejected upload stored %d blobs", len(bs.blobs))
+			}
+		})
+	}
+}

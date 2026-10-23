@@ -15,7 +15,6 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/license"
-	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -231,16 +230,13 @@ func (h *PropertiesHandler) applyLicensePolicy(w http.ResponseWriter, r *http.Re
 
 	ctx := r.Context()
 
-	licenses, err := h.licenses.licenses(ctx, repoID, artifactID)
-	if licensemeta.Unsafe(err) {
-		writeError(w, http.StatusUnprocessableEntity, "unsafe_artifact",
-			"properties saved, but the artifact's metadata is too large or ambiguous to be read safely")
-
+	resolved, err := h.licenses.licenses(ctx, repoID, artifactID)
+	if writeLicenseSourceError(w, err, "properties saved, but ") {
 		return false
 	}
 
 	if err == nil {
-		_, _, err = licensepolicy.Record(ctx, h.db, h.log, repoID, artifactID, licenses)
+		_, _, err = licensepolicy.Record(ctx, h.db, h.log, repoID, artifactID, resolved.Licenses, resolved.Source)
 	}
 
 	if err != nil {

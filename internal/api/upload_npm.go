@@ -239,10 +239,11 @@ func prepareNPMVersions(pub *npmPublishBody) ([]*npmPreparedVersion, *npmPublish
 // npmLicenses returns the licenses a policy is enforced on, over every
 // prepared version: those of the package.json inside each tarball. The
 // manifest in the publish JSON is only the fallback for a version whose tarball
-// declares none (or is not readable), so a client cannot publish a tarball
-// under licenses other than the ones it ships. A tarball that cannot be read
-// safely is refused (false, response written).
-func (h *NPMUploadHandler) npmLicenses(w http.ResponseWriter, r *http.Request, prepared []*npmPreparedVersion) ([]string, bool) {
+// declares none, so a client cannot publish a tarball under licenses other than
+// the ones it ships. A tarball that cannot be read safely is refused, and so is
+// one that cannot be read at all while the repository has a blocking policy
+// (false, response written).
+func (h *NPMUploadHandler) npmLicenses(w http.ResponseWriter, r *http.Request, repoID string, prepared []*npmPreparedVersion) ([]string, bool) {
 	var declared []string
 
 	for _, pv := range prepared {
@@ -257,7 +258,11 @@ func (h *NPMUploadHandler) npmLicenses(w http.ResponseWriter, r *http.Request, p
 
 			return nil, false
 		case err != nil:
-			h.log.Debugw("npm publish: tarball metadata unreadable, using the publish manifest", "version", pv.version, "error", err)
+			h.log.Debugw("npm publish: tarball metadata unreadable", "version", pv.version, "error", err)
+
+			if licensepolicy.RefuseUnderivable(w, r, h.db, h.log, repoID) {
+				return nil, false
+			}
 		case !res.Empty():
 			declared = append(declared, res.Licenses...)
 			continue
@@ -473,7 +478,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		}
 	}
 
-	declared, ok := h.npmLicenses(w, r, prepared)
+	declared, ok := h.npmLicenses(w, r, repo.ID, prepared)
 	if !ok || licensepolicy.Enforce(w, r, h.db, h.log, repo.ID, declared...) {
 		uploadResult = "error"
 		return

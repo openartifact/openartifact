@@ -4734,22 +4734,32 @@ func (p *PostgresDB) CreateLicenseScanResult(ctx context.Context, result *models
 				completed_at = EXCLUDED.completed_at, updated_at = now()
 			RETURNING id
 		)
-		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions, quarantined, quarantine_approved, unresolved_licenses)
-		SELECT job.id, $6, $7, $8, $9, $10 FROM job
+		INSERT INTO license_results (scan_job_id, licenses, spdx_expressions, quarantined, quarantine_approved, unresolved_licenses, license_source)
+		SELECT job.id, $6, $7, $8, $9, $10, $11 FROM job
 		ON CONFLICT (scan_job_id) DO UPDATE SET
 			licenses = EXCLUDED.licenses, spdx_expressions = EXCLUDED.spdx_expressions,
 			quarantined = EXCLUDED.quarantined, quarantine_approved = EXCLUDED.quarantine_approved,
-			unresolved_licenses = EXCLUDED.unresolved_licenses
+			unresolved_licenses = EXCLUDED.unresolved_licenses, license_source = EXCLUDED.license_source
 		RETURNING id`,
 		result.RepositoryID, result.ArtifactID, result.ScanStatus, result.ScanError, scannedAt,
 		nonNilStrings(result.Licenses), nonNilStrings(result.SPDXExpressions), result.Quarantined, result.QuarantineApproved,
-		nonNilStrings(result.UnresolvedLicenses),
+		nonNilStrings(result.UnresolvedLicenses), licenseSourceOrDefault(result.LicenseSource),
 	).Scan(&result.ID)
 	if err != nil {
 		return fmt.Errorf("failed to create license scan result: %w", err)
 	}
 
 	return nil
+}
+
+// licenseSourceOrDefault maps an unset source onto the conservative
+// "client_declared".
+func licenseSourceOrDefault(source string) string {
+	if source == "" {
+		return models.LicenseSourceClientDeclared
+	}
+
+	return source
 }
 
 // GetLicenseScanResult gets a license scan result by repo and artifact ID.
@@ -4783,7 +4793,7 @@ func (p *PostgresDB) UpdateLicenseScanResult(ctx context.Context, result *models
 	_, err := p.db.ExecContext(ctx, `
 		WITH res AS (
 			UPDATE license_results SET licenses = $1, spdx_expressions = $2, quarantined = $7, quarantine_approved = $8,
-				unresolved_licenses = $9
+				unresolved_licenses = $9, license_source = $10
 			WHERE id = $6
 			RETURNING scan_job_id
 		)
@@ -4791,6 +4801,7 @@ func (p *PostgresDB) UpdateLicenseScanResult(ctx context.Context, result *models
 		FROM res WHERE sj.id = res.scan_job_id`,
 		result.Licenses, result.SPDXExpressions, result.ScanStatus, result.ScanError, scannedAt, result.ID,
 		result.Quarantined, result.QuarantineApproved, nonNilStrings(result.UnresolvedLicenses),
+		licenseSourceOrDefault(result.LicenseSource),
 	)
 	if err != nil {
 		return fmt.Errorf("failed to update license scan result: %w", err)

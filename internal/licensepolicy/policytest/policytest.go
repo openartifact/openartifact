@@ -43,6 +43,8 @@ const (
 	Blocked
 	// Unavailable: 500 with code LICENSE_POLICY_UNAVAILABLE, nothing stored.
 	Unavailable
+	// Unreadable: 422 with code LICENSE_METADATA_UNREADABLE, nothing stored.
+	Unreadable
 )
 
 var errStore = errors.New("policytest: policy store unavailable")
@@ -116,6 +118,36 @@ func Cases(license string) []Case {
 	}
 }
 
+// UnderivableCases are the policy scenarios for an upload whose licenses cannot
+// be derived from the package file: only a blocking policy refuses it (422
+// LICENSE_METADATA_UNREADABLE, whatever the policy lists), because the
+// client's own claims must not decide that policy. Any other scenario admits it
+// on the client's fields.
+func UnderivableCases() []Case {
+	disabled := Policy(licensepolicy.ActionBlock, nil, []string{"GPL-3.0-only"})
+	disabled.Enabled = false
+
+	return []Case{
+		{Name: "no policies", Want: Admitted},
+		{Name: "allow action", Want: Admitted,
+			Policies: []*models.LicensePolicy{Policy("allow", nil, []string{"GPL-3.0-only"})}},
+		{Name: "warn action", Want: Admitted,
+			Policies: []*models.LicensePolicy{Policy(licensepolicy.ActionWarn, nil, []string{"GPL-3.0-only"})}},
+		{Name: "disabled block policy", Want: Admitted,
+			Policies: []*models.LicensePolicy{disabled}},
+		{Name: "block action denying a license", Want: Unreadable,
+			Policies: []*models.LicensePolicy{Policy(licensepolicy.ActionBlock, nil, []string{"GPL-3.0-only"})}},
+		{Name: "block action with an allow list", Want: Unreadable,
+			Policies: []*models.LicensePolicy{Policy(licensepolicy.ActionBlock, []string{"MIT"}, nil)}},
+		{Name: "warn and block policies", Want: Unreadable,
+			Policies: []*models.LicensePolicy{
+				Policy(licensepolicy.ActionWarn, nil, []string{"MIT"}),
+				Policy(licensepolicy.ActionBlock, nil, []string{"GPL-3.0-only"}),
+			}},
+		{Name: "policy store error", Want: Unavailable, Err: errStore},
+	}
+}
+
 // AssertResponse checks an upload response against the case's outcome. For
 // Admitted it only asserts that the policy did not stop the upload; the caller
 // asserts the success status of its own format.
@@ -141,6 +173,10 @@ func (c Case) AssertResponse(tb testing.TB, status int, body []byte) {
 	case Unavailable:
 		if status != http.StatusInternalServerError || parsed.Code != licensepolicy.CodePolicyUnavailable {
 			tb.Fatalf("want 500 %s, got %d: %s", licensepolicy.CodePolicyUnavailable, status, body)
+		}
+	case Unreadable:
+		if status != http.StatusUnprocessableEntity || parsed.Code != licensepolicy.CodeMetadataUnreadable {
+			tb.Fatalf("want 422 %s, got %d: %s", licensepolicy.CodeMetadataUnreadable, status, body)
 		}
 	case Admitted:
 		if strings.HasPrefix(parsed.Code, "LICENSE_") {

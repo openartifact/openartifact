@@ -15,7 +15,6 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/license"
-	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -109,11 +108,8 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	licenses, err := h.licenses.licenses(ctx, repo.ID, body.ArtifactID)
-	if licensemeta.Unsafe(err) {
-		writeError(w, http.StatusUnprocessableEntity, "unsafe_artifact",
-			"the artifact's metadata is too large or ambiguous to be read safely")
-
+	resolved, err := h.licenses.licenses(ctx, repo.ID, body.ArtifactID)
+	if writeLicenseSourceError(w, err, "") {
 		return
 	}
 
@@ -126,7 +122,7 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 
 	// Evaluate the policies on the licenses the artifact declares and record
 	// the result; a violated blocking policy quarantines the artifact.
-	scanResult, violations, err := licensepolicy.Record(ctx, h.db, h.log, repo.ID, body.ArtifactID, licenses)
+	scanResult, violations, err := licensepolicy.Record(ctx, h.db, h.log, repo.ID, body.ArtifactID, resolved.Licenses, resolved.Source)
 	if err != nil {
 		h.log.Errorw("scan licenses: db error recording scan result", "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
@@ -143,6 +139,7 @@ func (h *LicenseHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 		"artifact_id":         scanResult.ArtifactID,
 		"licenses":            scanResult.Licenses,
 		"unresolved_licenses": nonNilStrings(scanResult.UnresolvedLicenses),
+		"license_source":      scanResult.LicenseSource,
 		"scan_status":         scanResult.ScanStatus,
 		"scanned_at":          scanResult.ScannedAt,
 		"created_at":          scanResult.CreatedAt,
@@ -747,6 +744,7 @@ func scanResultToMap(result *models.LicenseScanResult) responses.LicenseScanResu
 		SPDXExpressions: result.SPDXExpressions,
 
 		UnresolvedLicenses: nonNilStrings(result.UnresolvedLicenses),
+		LicenseSource:      result.LicenseSource,
 		Quarantined:        result.Quarantined,
 		QuarantineApproved: result.QuarantineApproved,
 	}

@@ -15,7 +15,7 @@ An upload request carries claims about the package: twine's form fields, npm's p
 - on **upload**, before anything is stored, and the result is what a `block` policy is enforced on;
 - on a **license scan** and when license **properties** change, from the file stored in the blob store.
 
-The request's own fields are only a **fallback**, used when the file declares no license, or is of a kind that cannot be read (a PyPI `.egg` or `.exe`, a file that is not the archive its name says). They are never merged with the file's licenses and never override them.
+The request's own fields are only a **fallback**, used when the file is readable but declares no license. They are never merged with the file's licenses and never override them. A file whose licenses cannot be read at all is a different case, described [below](#files-whose-license-cannot-be-read).
 
 ## What is read, per format
 
@@ -40,6 +40,24 @@ A license that is not a valid SPDX expression of known identifiers after this st
 - it is evaluated as written: a deny list entry or an allow list entry that spells it the same way (case-insensitive) matches it, nothing else does. For example, Django 3.0's wheel declares `License: BSD`; a policy denying `BSD` matches it, one denying `BSD-3-Clause` does not;
 - under an allow list, an unresolved license is not allowed unless the list names it.
 
+## Files whose license cannot be read
+
+A client can send a file this server cannot read but that its own tools do read (a PyPI `.egg` or `.exe`, a damaged archive, a wheel with no `METADATA`, a `.pom` that does not parse). Trusting the request's fields for it would let those fields override the real license, so the outcome depends on the repository's policies:
+
+| Repository has an enabled policy with action `block` | Upload | Scan, license property change |
+|---|---|---|
+| yes | refused: `422`, code `LICENSE_METADATA_UNREADABLE`, nothing stored | refused: `422 unreadable_artifact`; a property change is saved but not evaluated |
+| no | admitted on the client's fields | evaluated on the artifact's license properties |
+
+This applies to the package files of PyPI, npm, Cargo, NuGet, RubyGems and Maven `.pom` files; a Maven jar, a checksum or `maven-metadata.xml` is judged through its `.pom`. A readable file that simply declares no license is not refused: it cannot hide a license, and the client's fields are the fallback as before. To publish such a file under a blocking policy, add the license to the package metadata in a form this server reads.
+
+Every license scan result says where its licenses came from in `license_source`:
+
+- `artifact`: the licenses include ones read from the stored package file;
+- `client_declared`: they only come from what a client declared (the artifact's [license properties](../repositories/properties.md)), because the file declares no license, cannot be read while no blocking policy applies, or is of a format that has no license metadata (raw, Go, Conan). The scan page labels these results.
+
+Results stored before this field existed are `client_declared`.
+
 ## Hostile files
 
 Package files are untrusted. Reading them never writes to disk and is bounded:
@@ -53,7 +71,7 @@ An upload that fails these limits answers `422` with code `LICENSE_METADATA_UNSA
 ## Limitations
 
 - Maven licenses are not inherited from a `<parent>` pom.
-- Only the formats above are read from the file. A PyPI `.egg`, `.exe` or `.msi` upload, and a `.pom` that does not parse, fall back to the request's fields.
-- A malformed archive is not refused: its licenses are unknown, so a client that can make a tool read what this reader cannot (an archive crafted to parse differently) is only as constrained as the fallback fields.
+- Without a blocking policy, a file that cannot be read is judged on the client's fields (marked `client_declared`).
+- Debian, RPM, Conda, Helm, Docker and Ivy/sbt keep their own readers and are not covered by `LICENSE_METADATA_UNREADABLE`: a descriptor that does not parse declares no license there.
 - The metadata the registry **serves** (npm packument, PyPI JSON, the Cargo index) is still the client's. Only the license policy decision and the license scan use the file's licenses.
 - Existing license scan results are not rewritten: scan the artifact again to pick up the file's licenses.

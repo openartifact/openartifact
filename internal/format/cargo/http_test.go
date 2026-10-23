@@ -275,7 +275,15 @@ func TestDownloadQuarantine(t *testing.T) {
 func publishCrate(t *testing.T, db database.Database, bs *formattest.BlobStore, pub *formattest.Publisher, meta string) *httptest.ResponseRecorder {
 	t.Helper()
 
-	return publishCrateData(t, db, bs, pub, meta, []byte("crate-bytes"))
+	return publishCrateData(t, db, bs, pub, meta, plainCrate(t))
+}
+
+// plainCrate is a crate whose Cargo.toml declares no license: the publish
+// metadata is the only license information.
+func plainCrate(t *testing.T) []byte {
+	t.Helper()
+
+	return crateWith(t, "[package]\nname = \"demo\"\nversion = \"0.1.0\"\n")
 }
 
 // publishCrateData publishes crate with the given publish metadata JSON, the
@@ -476,5 +484,38 @@ func TestPublishRejectsUnsafeCrates(t *testing.T) {
 				t.Fatal("rejected publish stored something")
 			}
 		})
+	}
+}
+
+// A crate whose licenses cannot be derived is judged on the publish metadata's
+// license only when no blocking policy applies; with one it is refused whatever
+// the metadata claims.
+func TestPublishUnderivableLicenses(t *testing.T) {
+	crates := map[string][]byte{
+		"not a tarball":      []byte("junk"),
+		"no Cargo.toml":      archivetest.TarGz(t, archivetest.File("demo-0.1.0/src/lib.rs", "")),
+		"invalid Cargo.toml": crateWith(t, "[package\nlicense ="),
+	}
+
+	for name, crate := range crates {
+		for _, c := range policytest.UnderivableCases() {
+			t.Run(name+"/"+c.Name, func(t *testing.T) {
+				inner := &cargoDB{DB: formattest.NewDB()}
+				bs := formattest.NewBlobStore()
+				pub := &formattest.Publisher{}
+
+				w := publishCrateData(t, c.DB(inner), bs, pub, `{"name":"demo","vers":"0.1.0","license":"MIT"}`, crate)
+				c.AssertResponse(t, w.Code, w.Body.Bytes())
+
+				stored := len(inner.crates) != 0 || len(bs.Blobs) != 0 || len(pub.Events()) != 0
+				if c.Stopped() && stored {
+					t.Fatal("rejected publish stored something")
+				}
+
+				if !c.Stopped() && len(inner.crates) != 1 {
+					t.Fatal("admitted publish not stored")
+				}
+			})
+		}
 	}
 }

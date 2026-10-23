@@ -457,7 +457,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	licenses, ok := h.uploadLicenses(w, r, filename, fileData)
+	licenses, ok := h.uploadLicenses(w, r, repoID, filename, fileData)
 	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
 		return
 	}
@@ -761,11 +761,13 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 
 // uploadLicenses returns the licenses a policy is enforced on: the ones the
 // uploaded file declares in its own METADATA / PKG-INFO. The form fields are
-// only the fallback for a file that declares none (or is not a wheel or sdist),
-// so a curl upload without form metadata cannot bypass a policy, nor can a form
-// claim override the file. A file whose metadata cannot be read safely is
-// refused (false, response written).
-func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, filename string, data []byte) ([]string, bool) {
+// only the fallback for a file that declares none, so a curl upload without
+// form metadata cannot bypass a policy, nor can a form claim override the file.
+// A file whose metadata cannot be read safely is refused, and so is a file that
+// cannot be read at all (not a wheel or sdist, a damaged archive) when the
+// repository has a blocking policy: only the client's claims would decide it
+// (false, response written).
+func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, repoID, filename string, data []byte) ([]string, bool) {
 	res, err := licensemeta.ReadBytes(r.Context(), "pypi", filename, data)
 
 	switch {
@@ -774,9 +776,13 @@ func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, fil
 		licensepolicy.RejectUnsafe(w, h.Log)
 
 		return nil, false
-	case err != nil && !errors.Is(err, licensemeta.ErrUnsupported) && !errors.Is(err, licensemeta.ErrNoMetadata):
-		h.Log.Debugw("pypi upload: package metadata unreadable, using form license fields", "filename", filename, "error", err)
-	case err == nil && !res.Empty():
+	case err != nil:
+		h.Log.Debugw("pypi upload: package metadata unreadable", "filename", filename, "error", err)
+
+		if licensepolicy.RefuseUnderivable(w, r, h.DB, h.Log, repoID) {
+			return nil, false
+		}
+	case !res.Empty():
 		return res.Licenses, true
 	}
 

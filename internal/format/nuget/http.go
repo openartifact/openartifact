@@ -306,8 +306,9 @@ func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models
 // package's own .nuspec, <license type="expression"> or, for packages that only
 // have the deprecated <licenseUrl>, the license that URL names. A package whose
 // archive cannot be read safely (two .nuspec files, an oversized one) is
-// refused (false, response written).
-func (h *HTTPHandler) pushedLicenses(w http.ResponseWriter, r *http.Request, pkg *models.NuGetPackage, data []byte, metadata map[string]any) ([]string, bool) {
+// refused, and so is one whose .nuspec cannot be read while the repository has
+// a blocking policy (false, response written).
+func (h *HTTPHandler) pushedLicenses(w http.ResponseWriter, r *http.Request, repoID string, pkg *models.NuGetPackage, data []byte, metadata map[string]any) ([]string, bool) {
 	res, err := licensemeta.ReadBytes(r.Context(), "nuget", pkg.PackageID+"."+pkg.Version+".nupkg", data)
 
 	switch {
@@ -320,7 +321,11 @@ func (h *HTTPHandler) pushedLicenses(w http.ResponseWriter, r *http.Request, pkg
 		return res.Licenses, true
 	}
 
-	h.Log.Debugw("nuget push: nuspec unreadable for licenses, using the parsed metadata", "id", pkg.PackageID, "error", err)
+	h.Log.Debugw("nuget push: nuspec unreadable for licenses", "id", pkg.PackageID, "error", err)
+
+	if licensepolicy.RefuseUnderivable(w, r, h.DB, h.Log, repoID) {
+		return nil, false
+	}
 
 	if expr, _ := metadata["licenseExpression"].(string); expr != "" {
 		return []string{expr}, true
@@ -358,7 +363,7 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	licenses, ok := h.pushedLicenses(w, r, pkg, data, metadata)
+	licenses, ok := h.pushedLicenses(w, r, repoID, pkg, data, metadata)
 	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
 		return
 	}

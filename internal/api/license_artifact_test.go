@@ -107,6 +107,10 @@ func TestLicenseScan_ReadsTheStoredArtifact(t *testing.T) {
 	if stored := db.licenses[djangoRowID]; stored == nil || len(stored.UnresolvedLicenses) != 1 {
 		t.Errorf("stored result = %+v, want the unresolved license persisted", stored)
 	}
+
+	if out["license_source"] != models.LicenseSourceArtifact {
+		t.Errorf("license_source = %v, want artifact", out["license_source"])
+	}
 }
 
 func TestLicenseScan_ResolvedLicenseIsNotFlagged(t *testing.T) {
@@ -184,6 +188,10 @@ func TestLicenseScan_UnreadableArtifactFallsBackToProperties(t *testing.T) {
 	if got := stringsOf(out["licenses"]); len(got) != 1 || got[0] != "MIT" {
 		t.Errorf("licenses = %v, want the property's", got)
 	}
+
+	if out["license_source"] != models.LicenseSourceClientDeclared {
+		t.Errorf("license_source = %v, want client_declared", out["license_source"])
+	}
 }
 
 func TestLicenseScan_UnsupportedFormatUsesProperties(t *testing.T) {
@@ -228,5 +236,91 @@ func TestScanRubyGem_ReadsGemspecLicenses(t *testing.T) {
 
 	if got := stringsOf(out["licenses"]); len(got) != 1 || got[0] != "GPL-3.0-only" {
 		t.Errorf("licenses = %v, want [GPL-3.0-only]", got)
+	}
+}
+
+// Under a blocking policy, a package whose file cannot be read must not be
+// judged on what clients declared: the scan refuses it, and so does a change of
+// its license properties.
+func TestLicenseScan_UnderivableArtifactUnderBlockPolicy(t *testing.T) {
+	files := map[string]struct {
+		format, filename string
+		data             []byte
+	}{
+		"damaged wheel":          {"pypi", "Django-3.0-py3-none-any.whl", []byte("not a zip")},
+		"egg":                    {"pypi", "Django-3.0-py3.8.egg", []byte("egg")},
+		"npm without a manifest": {"npm", "demo-1.0.0.tgz", archivetest.TarGz(t, archivetest.File("package/index.js", ""))},
+		"unparsable pom":         {"maven", "demo-1.0.0.pom", []byte("<project><unclosed>")},
+	}
+
+	for name, f := range files {
+		t.Run(name, func(t *testing.T) {
+			db, bs := storedArtifact(t, f.format, f.filename, f.data)
+			db.props["license"] = "MIT"
+			db.policies = []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})}
+
+			code, out := scanArtifact(t, db, bs)
+			if code != http.StatusUnprocessableEntity || out["code"] != "unreadable_artifact" {
+				t.Fatalf("status = %d body = %v, want 422 unreadable_artifact", code, out)
+			}
+
+			if len(db.licenses) != 0 {
+				t.Error("a refused scan must not store a result")
+			}
+
+			log, _ := newBundlesScansEnv(t, &bundlesScansMockDB{})
+			h := NewPropertiesHandler(log, db, bs)
+			register := func(r chi.Router) { h.RegisterRoutes(r, "/api/v1/repositories/{name}") }
+
+			rw := serveAs(register, http.MethodPatch, "/api/v1/repositories/repo/artifacts/"+djangoRowID+"/properties", `{"license":"MIT"}`)
+			if rw.Code != http.StatusUnprocessableEntity || !strings.Contains(rw.Body.String(), "unreadable_artifact") {
+				t.Fatalf("properties status = %d (%s), want 422 unreadable_artifact", rw.Code, rw.Body.String())
+			}
+		})
+	}
+}
+
+// Without a blocking policy the properties are the fallback, and the result
+// says so.
+func TestLicenseScan_UnderivableArtifactWithoutBlockPolicy(t *testing.T) {
+	for _, action := range []string{"", "warn", "allow"} {
+		t.Run("policy "+action, func(t *testing.T) {
+			db, bs := storedArtifact(t, "pypi", "Django-3.0-py3.8.egg", []byte("egg"))
+			db.props["license"] = "MIT"
+
+			if action != "" {
+				db.policies = []*models.LicensePolicy{policytest.Policy(action, nil, []string{"MIT"})}
+			}
+
+			code, out := scanArtifact(t, db, bs)
+			if code != http.StatusOK {
+				t.Fatalf("status = %d: %v", code, out)
+			}
+
+			if got := stringsOf(out["licenses"]); len(got) != 1 || got[0] != "MIT" {
+				t.Errorf("licenses = %v, want the property's", got)
+			}
+
+			if out["license_source"] != models.LicenseSourceClientDeclared {
+				t.Errorf("license_source = %v, want client_declared", out["license_source"])
+			}
+		})
+	}
+}
+
+// A readable package that declares no license is not "underivable": nothing
+// was hidden from the server, the result is just client-declared.
+func TestLicenseScan_ReadableWithoutLicenseIsClientDeclared(t *testing.T) {
+	db, bs := storedWheel(t, "")
+	db.props["license"] = "MIT"
+	db.policies = []*models.LicensePolicy{policytest.Policy("block", nil, []string{"GPL-3.0-only"})}
+
+	code, out := scanArtifact(t, db, bs)
+	if code != http.StatusOK {
+		t.Fatalf("status = %d: %v", code, out)
+	}
+
+	if out["license_source"] != models.LicenseSourceClientDeclared {
+		t.Errorf("license_source = %v, want client_declared", out["license_source"])
 	}
 }

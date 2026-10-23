@@ -533,6 +533,8 @@ type LicenseResult struct {
 	QuarantineApproved bool `db:"quarantine_approved" json:"quarantine_approved"`
 	// Entries of licenses that are not SPDX expressions (kept raw, flagged for review).
 	UnresolvedLicenses []string `db:"unresolved_licenses" json:"unresolved_licenses"`
+	// artifact: read from the package file; client_declared: only form fields or properties.
+	LicenseSource string `db:"license_source" json:"license_source"`
 }
 
 type MavenArtifact struct {

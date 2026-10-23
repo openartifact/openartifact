@@ -41,10 +41,14 @@ func (q *quotaFake) DecrementStorageUsage(_ context.Context, _ string, size int6
 	return nil
 }
 
-const (
-	quotaMeta      = `{"name":"demo","vers":"0.1.0"}`
-	quotaCrateSize = int64(len("crate-bytes")) // publishCrate's payload
-)
+const quotaMeta = `{"name":"demo","vers":"0.1.0"}`
+
+// quotaCrateSize is the size of publishCrate's payload.
+func quotaCrateSize(t *testing.T) int64 {
+	t.Helper()
+
+	return int64(len(plainCrate(t)))
+}
 
 func TestPublishReservesQuotaAndYankKeepsIt(t *testing.T) {
 	h, db, bs, pub := newCargoHandler(t)
@@ -53,8 +57,8 @@ func TestPublishReservesQuotaAndYankKeepsIt(t *testing.T) {
 		t.Fatalf("publish status = %d: %s", w.Code, w.Body.String())
 	}
 
-	if db.used != quotaCrateSize || db.artifacts != 1 {
-		t.Errorf("quota used=%d artifacts=%d, want %d/1", db.used, db.artifacts, quotaCrateSize)
+	if db.used != quotaCrateSize(t) || db.artifacts != 1 {
+		t.Errorf("quota used=%d artifacts=%d, want %d/1", db.used, db.artifacts, quotaCrateSize(t))
 	}
 
 	w := formattest.Do(h.RegisterRepoRoutes, formattest.Request(http.MethodDelete, "/repos/myrepo/api/v1/crates/demo/0.1.0/yank", nil))
@@ -62,7 +66,7 @@ func TestPublishReservesQuotaAndYankKeepsIt(t *testing.T) {
 		t.Fatalf("yank status = %d", w.Code)
 	}
 
-	if db.used != quotaCrateSize || db.artifacts != 1 {
+	if db.used != quotaCrateSize(t) || db.artifacts != 1 {
 		t.Errorf("yank changed quota: used=%d artifacts=%d", db.used, db.artifacts)
 	}
 }
@@ -115,7 +119,7 @@ func TestPublishDuplicateDoesNotConsumeQuota(t *testing.T) {
 		t.Fatalf("duplicate status = %d, want 409", w.Code)
 	}
 
-	if db.used != quotaCrateSize || db.artifacts != 1 {
-		t.Errorf("quota used=%d artifacts=%d after duplicate, want %d/1", db.used, db.artifacts, quotaCrateSize)
+	if db.used != quotaCrateSize(t) || db.artifacts != 1 {
+		t.Errorf("quota used=%d artifacts=%d after duplicate, want %d/1", db.used, db.artifacts, quotaCrateSize(t))
 	}
 }
