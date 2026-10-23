@@ -77,6 +77,11 @@ func (r *Registry) Stop() {
 func (r *Registry) refreshLoop(ctx context.Context, t *cliTool, update func(context.Context) error) {
 	retry := r.retryInitial
 
+	// After a restart the database on disk is as fresh as its last refresh.
+	if mt := dbMTime(t.cacheDir); !mt.IsZero() && r.metrics != nil {
+		r.metrics.ScannerDBLastSuccessTimestamp.WithLabelValues(t.name).Set(float64(mt.Unix()))
+	}
+
 	for {
 		wait, again := r.refreshOnce(ctx, t, update, &retry)
 		if !again {
@@ -105,9 +110,12 @@ func (r *Registry) refreshOnce(ctx context.Context, t *cliTool, update func(cont
 	cancel()
 	t.endUpdate(err)
 
+	// An update cut short by shutdown says nothing about the mirror.
 	if ctx.Err() != nil {
 		return 0, false
 	}
+
+	r.countDBUpdate(t.name, err)
 
 	if err != nil {
 		r.log.Errorw("scanner database update failed",
@@ -128,4 +136,19 @@ func (r *Registry) refreshOnce(ctx context.Context, t *cliTool, update func(cont
 	r.log.Infow("scanner database up to date", "scanner", t.name, "cache_dir", t.cacheDir)
 
 	return r.opts.UpdateInterval, r.opts.UpdateInterval > 0
+}
+
+func (r *Registry) countDBUpdate(scanner string, err error) {
+	if r.metrics == nil {
+		return
+	}
+
+	if err != nil {
+		r.metrics.ScannerDBUpdateAttemptsTotal.WithLabelValues(scanner, "failure").Inc()
+
+		return
+	}
+
+	r.metrics.ScannerDBUpdateAttemptsTotal.WithLabelValues(scanner, "success").Inc()
+	r.metrics.ScannerDBLastSuccessTimestamp.WithLabelValues(scanner).SetToCurrentTime()
 }

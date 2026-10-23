@@ -310,8 +310,11 @@ func TestStartOfflineNeverRunsTheBinary(t *testing.T) {
 	installFakeScanner(t, "grype", "touch "+marker)
 
 	r := NewRegistry(log, Options{CacheDir: t.TempDir(), Offline: true})
-	r.Start(context.Background())
-	r.Stop()
+
+	// Synchronous: a Start/Stop pair could be cancelled before the scanner
+	// goroutines reach the guard under test.
+	r.runTool(context.Background(), &r.trivy, r.updateTrivyDB)
+	r.runTool(context.Background(), &r.grype, r.updateGrypeDB)
 
 	if _, err := os.Stat(marker); err == nil {
 		t.Error("offline mode ran a scanner binary")

@@ -32,6 +32,11 @@ trivy_version="$(image_version trivy)"
 grype_version="$(image_version grype)"
 [[ -n "$trivy_version" && -n "$grype_version" ]] || { echo "cannot read pinned versions from $dockerfile" >&2; exit 1; }
 
+# fetch <file> <url>: download over https only, including every redirect hop.
+fetch() {
+  curl --proto '=https' --proto-redir '=https' -fsSL --retry 3 -o "$1" "$2"
+}
+
 # entry <scanner> <owner/repo> <version> <goos/goarch> <archive file name>: JSON for one platform.
 entry() {
   local scanner="$1" repo="$2" version="$3" platform="$4" file="$5"
@@ -39,14 +44,14 @@ entry() {
   local sums="$tmp/$scanner-$version.sums"
 
   if [[ ! -f "$sums" ]]; then
-    curl -fsSL --retry 3 -o "$sums" "https://github.com/$repo/releases/download/v$version/${scanner}_${version}_checksums.txt"
+    fetch "$sums" "https://github.com/$repo/releases/download/v$version/${scanner}_${version}_checksums.txt"
   fi
 
   local archive_sha
   archive_sha="$(awk -v f="$file" '$2 == f { print $1 }' "$sums")"
   [[ ${#archive_sha} -eq 64 ]] || { echo "no checksum for $file" >&2; exit 1; }
 
-  curl -fsSL --retry 3 -o "$tmp/$file" "https://github.com/$repo/releases/download/v$version/$file"
+  fetch "$tmp/$file" "https://github.com/$repo/releases/download/v$version/$file"
   echo "$archive_sha  $tmp/$file" | sha256sum --check --status || { echo "checksum mismatch for $file" >&2; exit 1; }
 
   local dir="$tmp/x-$scanner-${platform//\//-}"
@@ -60,9 +65,12 @@ entry() {
 }
 
 platforms() { # scanner repo version amd64-file arm64-file
-  jq -s 'add' \
-    <(entry "$1" "$2" "$3" linux/amd64 "$4") \
-    <(entry "$1" "$2" "$3" linux/arm64 "$5")
+  # Sequential command substitutions, not <(...): a failing entry must stop the
+  # script (set -e sees it here, but not in a process substitution).
+  local amd64 arm64
+  amd64="$(entry "$1" "$2" "$3" linux/amd64 "$4")"
+  arm64="$(entry "$1" "$2" "$3" linux/arm64 "$5")"
+  jq -n --argjson a "$amd64" --argjson b "$arm64" '$a + $b'
 }
 
 trivy="$(platforms trivy aquasecurity/trivy "$trivy_version" \

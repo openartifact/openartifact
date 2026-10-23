@@ -21,6 +21,7 @@ import (
 	"regexp"
 	"runtime"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"syscall"
 	"testing"
@@ -197,7 +198,7 @@ func requireSH(t *testing.T) {
 	}
 }
 
-func installedBinary(r *Registry) string {
+func installedBinaryPath(r *Registry) string {
 	return filepath.Join(r.trivy.installDir, "9.9.9", "trivy")
 }
 
@@ -230,11 +231,11 @@ func TestInstall_DownloadsVerifiesAndRuns(t *testing.T) {
 	r.ensureInstalled(context.Background(), &r.trivy, true)
 
 	st := statusByName(t, r, "trivy")
-	if !st.Available || st.Path != installedBinary(r) || st.InstallState != InstallStateReady {
+	if !st.Available || st.Path != installedBinaryPath(r) || st.InstallState != InstallStateReady {
 		t.Fatalf("after install: %+v", st)
 	}
 
-	fi, err := os.Stat(installedBinary(r))
+	fi, err := os.Stat(installedBinaryPath(r))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -246,7 +247,7 @@ func TestInstall_DownloadsVerifiesAndRuns(t *testing.T) {
 	assertNoLeftovers(t, r)
 
 	// Only the scanner binary is extracted.
-	entries, _ := os.ReadDir(filepath.Dir(installedBinary(r)))
+	entries, _ := os.ReadDir(filepath.Dir(installedBinaryPath(r)))
 	if len(entries) != 1 {
 		t.Errorf("install dir holds %d entries, want only the binary", len(entries))
 	}
@@ -316,7 +317,7 @@ func TestInstall_NeverInstallsUnverifiedBytes(t *testing.T) {
 				t.Fatalf("installTool = (%q, %v), want %v", result, err, tc.wantErr)
 			}
 
-			if _, err := os.Stat(installedBinary(r)); !errors.Is(err, fs.ErrNotExist) {
+			if _, err := os.Stat(installedBinaryPath(r)); !errors.Is(err, fs.ErrNotExist) {
 				t.Errorf("a binary exists after a failed verification: %v", err)
 			}
 
@@ -364,7 +365,7 @@ func TestInstall_RejectsUnsafeArchives(t *testing.T) {
 				t.Fatalf("installTool = (%q, %v), want %v", result, err, tc.wantErr)
 			}
 
-			if _, err := os.Stat(installedBinary(r)); !errors.Is(err, fs.ErrNotExist) {
+			if _, err := os.Stat(installedBinaryPath(r)); !errors.Is(err, fs.ErrNotExist) {
 				t.Errorf("binary installed from an unsafe archive: %v", err)
 			}
 
@@ -409,7 +410,7 @@ func TestInstall_SizeLimits(t *testing.T) {
 			t.Fatalf("installTool = (%q, %v)", result, err)
 		}
 
-		if _, err := os.Stat(installedBinary(r)); !errors.Is(err, fs.ErrNotExist) {
+		if _, err := os.Stat(installedBinaryPath(r)); !errors.Is(err, fs.ErrNotExist) {
 			t.Errorf("oversize binary was installed: %v", err)
 		}
 
@@ -522,13 +523,13 @@ func TestInstall_PrecedenceConfiguredPathThenPATHThenInstall(t *testing.T) {
 		r := f.registry(fakeTrivyScript, nil)
 		r.ensureInstalled(context.Background(), &r.trivy, true)
 
-		if st := statusByName(t, r, "trivy"); st.Path != installedBinary(r) {
+		if st := statusByName(t, r, "trivy"); st.Path != installedBinaryPath(r) {
 			t.Fatalf("installed path = %q", st.Path)
 		}
 
 		installFakeScanner(t, "trivy", "echo on path")
 
-		if st := statusByName(t, r, "trivy"); st.Path == installedBinary(r) {
+		if st := statusByName(t, r, "trivy"); st.Path == installedBinaryPath(r) {
 			t.Errorf("PATH must win over the installed copy: %+v", st)
 		}
 	})
@@ -568,7 +569,7 @@ func TestInstall_ReusesVerifiedCopyAndReplacesCorruptOne(t *testing.T) {
 	}
 
 	// A modified copy fails the re-hash: it is never executed, and replaced.
-	if err := os.WriteFile(installedBinary(second), []byte("#!/bin/sh\necho tampered\n"), 0o755); err != nil {
+	if err := os.WriteFile(installedBinaryPath(second), []byte("#!/bin/sh\necho tampered\n"), 0o755); err != nil {
 		t.Fatal(err)
 	}
 
@@ -596,7 +597,7 @@ func TestInstall_ReusesVerifiedCopyAndReplacesCorruptOne(t *testing.T) {
 		t.Errorf("probe ran %d times, want once on the replacement", executed)
 	}
 
-	if got, _ := os.ReadFile(installedBinary(third)); string(got) != fakeTrivyScript {
+	if got, _ := os.ReadFile(installedBinaryPath(third)); string(got) != fakeTrivyScript {
 		t.Errorf("binary after repair = %q", got)
 	}
 }
@@ -662,8 +663,9 @@ func TestInstall_OfflineAndNoneNeverDownload(t *testing.T) {
 		f := newInstallFixture(t, archive)
 		r := f.registry(fakeTrivyScript, func(o *Options) { o.Offline = true })
 
-		r.Start(context.Background())
-		r.Stop()
+		// Synchronous: a Start/Stop pair could be cancelled before the
+		// scanner's goroutine reaches the guard under test.
+		r.runTool(context.Background(), &r.trivy, r.updateTrivyDB)
 
 		if n := f.requests.Load(); n != 0 {
 			t.Errorf("%d downloads in offline mode", n)
@@ -681,8 +683,9 @@ func TestInstall_OfflineAndNoneNeverDownload(t *testing.T) {
 		f := newInstallFixture(t, archive)
 		r := f.registry(fakeTrivyScript, func(o *Options) { o.Trivy.Install = false })
 
-		r.Start(context.Background())
-		r.Stop()
+		// Synchronous: a Start/Stop pair could be cancelled before the
+		// scanner's goroutine reaches the guard under test.
+		r.runTool(context.Background(), &r.trivy, r.updateTrivyDB)
 
 		if n := f.requests.Load(); n != 0 {
 			t.Errorf("%d downloads with install none", n)
@@ -714,7 +717,7 @@ func TestInstall_StartInstallsThenRefreshesDatabase(t *testing.T) {
 	})
 
 	st := statusByName(t, r, "trivy")
-	if st.Path != installedBinary(r) || st.InstallState != InstallStateReady || st.DBState != DBStateReady {
+	if st.Path != installedBinaryPath(r) || st.InstallState != InstallStateReady || st.DBState != DBStateReady {
 		t.Errorf("status = %+v", st)
 	}
 }
@@ -789,7 +792,7 @@ func TestInstall_CountsAttemptsByScannerAndResult(t *testing.T) {
 	requireSH(t)
 	withoutScannerBinaries(t)
 
-	reg := metrics.NewRegistry()
+	reg := metricsForTests()
 	f := newInstallFixture(t, buildArchive(t, regular("trivy", fakeTrivyScript)))
 	r := f.registry(fakeTrivyScript, nil).WithMetrics(reg)
 
@@ -810,5 +813,65 @@ func TestInstall_CountsAttemptsByScannerAndResult(t *testing.T) {
 
 	if counter(resultDownload) != 1 || counter(resultInstalled) != 1 {
 		t.Errorf("download_failed=%v installed=%v, want 1 and 1", counter(resultDownload), counter(resultInstalled))
+	}
+}
+
+// metricsForTests creates the metrics registry once per process: it
+// registers on Prometheus' default registry, which refuses a second one.
+//
+//nolint:gochecknoglobals // shared test fixture
+var metricsForTests = sync.OnceValue(metrics.NewRegistry)
+
+func TestDBUpdates_AreCountedAndTimestamped(t *testing.T) {
+	log, _ := logger.New("error", "json", "stderr")
+	r := NewRegistry(log, Options{CacheDir: t.TempDir()}).WithMetrics(metricsForTests())
+	r.retryInitial = time.Millisecond
+
+	attempts := func(result string) float64 {
+		return testutil.ToFloat64(r.metrics.ScannerDBUpdateAttemptsTotal.WithLabelValues("trivy", result))
+	}
+	retry := r.retryInitial
+
+	r.refreshOnce(context.Background(), &r.trivy, func(context.Context) error { return errors.New("mirror down") }, &retry)
+	r.refreshOnce(context.Background(), &r.trivy, func(context.Context) error { return nil }, &retry)
+
+	if attempts("failure") != 1 || attempts("success") != 1 {
+		t.Errorf("failure=%v success=%v, want 1 and 1", attempts("failure"), attempts("success"))
+	}
+
+	if ts := testutil.ToFloat64(r.metrics.ScannerDBLastSuccessTimestamp.WithLabelValues("trivy")); time.Since(time.Unix(int64(ts), 0)) > time.Minute {
+		t.Errorf("last success timestamp = %v, want now", ts)
+	}
+
+	// A refresh cut short by shutdown is neither.
+	cancelled, cancel := context.WithCancel(context.Background())
+	cancel()
+	r.refreshOnce(cancelled, &r.trivy, func(context.Context) error { return context.Canceled }, &retry)
+
+	if attempts("failure") != 1 {
+		t.Errorf("failure = %v after a cancelled update, want 1", attempts("failure"))
+	}
+
+	// After a restart the gauge starts from the database already on disk.
+	grype := r.grype.cacheDir
+	if err := os.MkdirAll(filepath.Join(grype, "6"), 0o750); err != nil {
+		t.Fatal(err)
+	}
+
+	db := filepath.Join(grype, "6", "vulnerability.db")
+	when := time.Now().Add(-48 * time.Hour).Truncate(time.Second)
+
+	if err := os.WriteFile(db, []byte("db"), 0o600); err != nil {
+		t.Fatal(err)
+	}
+
+	if err := os.Chtimes(db, when, when); err != nil {
+		t.Fatal(err)
+	}
+
+	r.refreshLoop(cancelled, &r.grype, func(context.Context) error { return nil })
+
+	if got := testutil.ToFloat64(r.metrics.ScannerDBLastSuccessTimestamp.WithLabelValues("grype")); int64(got) != when.Unix() {
+		t.Errorf("grype gauge = %v, want the database mtime %v", got, when.Unix())
 	}
 }

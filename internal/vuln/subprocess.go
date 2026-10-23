@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strings"
 )
 
 const (
@@ -68,8 +69,10 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 // Stdout beyond maxScannerStdout kills the process and yields
 // ErrScannerOutputTooLarge; stderr beyond maxScannerStderr is truncated.
 //
-// env lists extra KEY=VALUE variables added to the server's environment (a
-// later entry wins over an earlier one with the same key).
+// The subprocess does not inherit the server's whole environment (database,
+// storage and signing secrets stay out of it): see scannerEnv. env lists extra
+// KEY=VALUE variables added to what it inherits (a later entry wins over an
+// earlier one with the same key).
 func runScanner(ctx context.Context, env []string, name string, args ...string) ([]byte, string, error) {
 	return runCapped(ctx, maxScannerStdout, maxScannerStderr, env, name, args...)
 }
@@ -82,9 +85,7 @@ func runCapped(ctx context.Context, stdoutLimit, stderrLimit int, env []string, 
 	errOut := &cappedBuffer{limit: stderrLimit}
 
 	cmd := exec.CommandContext(ctx, name, args...)
-	if len(env) > 0 {
-		cmd.Env = append(os.Environ(), env...)
-	}
+	cmd.Env = scannerEnv(os.Environ(), env)
 
 	cmd.Stdout = out
 	cmd.Stderr = errOut
@@ -99,4 +100,40 @@ func runCapped(ctx context.Context, stdoutLimit, stderrLimit int, env []string, 
 	}
 
 	return out.buf.Bytes(), errOut.buf.String(), nil
+}
+
+// scannerEnvNames are the variables a scanner subprocess inherits from the
+// server: where to find programs, a home and temp directory, locale, proxy and
+// CA settings, and registry credentials (Docker's config location).
+//
+//nolint:gochecknoglobals // read-only allowlist
+var scannerEnvNames = map[string]bool{
+	"PATH": true, "HOME": true, "TMPDIR": true, "TMP": true, "TEMP": true, "USER": true, "LOGNAME": true,
+	"LANG": true, "LANGUAGE": true, "TZ": true,
+	"HTTP_PROXY": true, "HTTPS_PROXY": true, "NO_PROXY": true, "ALL_PROXY": true,
+	"http_proxy": true, "https_proxy": true, "no_proxy": true, "all_proxy": true,
+	"SSL_CERT_FILE": true, "SSL_CERT_DIR": true,
+	"XDG_CACHE_HOME": true, "XDG_CONFIG_HOME": true, "XDG_DATA_HOME": true,
+	"DOCKER_CONFIG": true,
+}
+
+// scannerEnv builds a scanner subprocess's environment from the server's
+// (parent): only the allowlisted names, any LC_* locale variable and the
+// scanners' own TRIVY_* and GRYPE_* settings, then extra on top.
+func scannerEnv(parent, extra []string) []string {
+	env := make([]string, 0, len(parent)+len(extra))
+
+	for _, kv := range parent {
+		name, _, ok := strings.Cut(kv, "=")
+		if !ok {
+			continue
+		}
+
+		if scannerEnvNames[name] || strings.HasPrefix(name, "LC_") ||
+			strings.HasPrefix(name, "TRIVY_") || strings.HasPrefix(name, "GRYPE_") {
+			env = append(env, kv)
+		}
+	}
+
+	return append(env, extra...)
 }

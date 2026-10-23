@@ -82,7 +82,9 @@ scrape_configs:
 | `openartifact_storage_tier_moved_bytes_total` | counter | `from`, `to` | bytes moved between tiers |
 | `openartifact_storage_tier_moves_pending` | gauge | | interrupted or failing moves awaiting recovery; should return to 0 |
 | `openartifact_blob_deletions_pending` | gauge | | blob copies queued for [deferred deletion](storage.md#deferred-blob-deletion), refreshed after every sweeper pass; grows during the grace period and while a backup runs, should fall back afterwards |
-| `openartifact_scanner_install_attempts_total` | counter | `scanner`, `result` | runtime installs of Trivy / Grype (`scanners.<name>.install: auto`): `installed`, `reused` (a verified copy was already there), `unsupported_platform`, `download_failed`, `checksum_mismatch`, `extract_failed`, `noexec`, `failed` |
+| `openartifact_scanner_install_attempts_total` | counter | `scanner`, `result` | runtime installs of Trivy / Grype (`scanners.<name>.install: auto`): `installed`, `reused` (a verified copy was already there), `unsupported_platform`, `download_failed`, `checksum_mismatch`, `extract_failed`, `noexec`, `insecure_location`, `failed` |
+| `openartifact_scanner_db_update_attempts_total` | counter | `scanner`, `result` | background vulnerability database refreshes of Trivy / Grype: `success` or `failure` (a refresh cut short by shutdown is not counted) |
+| `openartifact_scanner_db_last_success_timestamp_seconds` | gauge | `scanner` | Unix time of the last successful refresh; after a restart it starts from the age of the database on disk, and is absent for a scanner that has no database |
 | `openartifact_blob_deletions_swept_total` | counter | `result` | sweeper decisions: `deleted` (bytes removed) or `kept` (the blob was referenced or placed there again, entry dropped) |
 
 Useful queries:
@@ -97,6 +99,12 @@ histogram_quantile(0.95, sum by (le, path) (rate(openartifact_http_request_durat
 
 # audit events being dropped (should stay 0)
 increase(openartifact_audit_dropped_total[1h]) > 0
+
+# a scanner database older than a day (the updater refreshes every 6 h by default)
+time() - openartifact_scanner_db_last_success_timestamp_seconds > 86400
+
+# database refreshes failing (the updater retries with backoff, so the old database keeps serving)
+increase(openartifact_scanner_db_update_attempts_total{result="failure"}[6h]) > 0
 ```
 
 For allocation and CPU profiling see [performance](performance.md).

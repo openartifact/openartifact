@@ -147,7 +147,7 @@ Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` need
 | `OPENARTIFACT_TRIVY_DB_REPOSITORY` | `scanners.trivy.dbRepository` | Trivy's built-in list (`mirror.gcr.io/aquasec/trivy-db:2`, then `ghcr.io/aquasecurity/trivy-db:2`) | OCI repository to download `trivy-db` from (a mirror) |
 | `OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY` | `scanners.trivy.javaDbRepository` | empty | When set, the Java index database is downloaded from this repository too; empty skips it |
 | `OPENARTIFACT_GRYPE_PATH` | `scanners.grype.path` | `grype` (from `PATH`) | Command name or absolute path of the Grype binary |
-| `OPENARTIFACT_GRYPE_DB_URL` | `scanners.grype.dbUrl` | Grype's built-in | `http(s)` URL of a Grype database `listing.json` (a mirror) |
+| `OPENARTIFACT_GRYPE_DB_URL` | `scanners.grype.dbUrl` | Grype's built-in | `http(s)` URL of a Grype database `listing.json` (a mirror), without credentials in the URL |
 
 A path must be a bare command name or absolute (no relative paths), a repository must not contain whitespace or start with `-`, and the server refuses to start on an invalid value. The cache directory is created when the first download starts. The startup log reports each resolved binary and its database state.
 

@@ -125,6 +125,7 @@ func TestValidate_Scanners(t *testing.T) {
 		{"java mirror with newline", func(s *ScannersConfig) { s.Trivy.JavaDBRepository = "a\nb" }, true},
 		{"grype mirror https", func(s *ScannersConfig) { s.Grype.DBURL = "https://mirror.example/listing.json" }, false},
 		{"grype mirror ftp", func(s *ScannersConfig) { s.Grype.DBURL = "ftp://mirror.example/listing.json" }, true},
+		{"grype mirror with userinfo", func(s *ScannersConfig) { s.Grype.DBURL = "https://" + "u" + ":" + "p" + "@mirror.example/listing.json" }, true},
 		{"grype mirror without host", func(s *ScannersConfig) { s.Grype.DBURL = "https:///x" }, true},
 		{"trivy install auto", func(s *ScannersConfig) { s.Trivy.Install = "auto" }, false},
 		{"grype install unknown", func(s *ScannersConfig) { s.Grype.Install = "always" }, true},
