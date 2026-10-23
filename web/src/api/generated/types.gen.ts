@@ -4,6 +4,77 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type ReleaseBundle = {
+    id: string;
+    name: string;
+    version: string;
+    description: string;
+    state: 'draft' | 'sealed' | 'archived';
+    pipeline_id: string | null;
+    current_stage: string | null;
+    created_by: string;
+    sealed_at: string | null;
+    sealed_by: string | null;
+    archived_at: string | null;
+    archived_by: string | null;
+    /**
+     * Fingerprint of the key that signed the manifest; null when unsigned.
+     */
+    gpg_key_id?: string | null;
+    /**
+     * Armored detached signature of the manifest; null when unsigned.
+     */
+    gpg_signature?: string | null;
+    created_at: string;
+    updated_at: string;
+};
+
+export type ReleaseBundleItem = {
+    id: string;
+    bundle_id: string;
+    source_repo_id: string;
+    component_id: string | null;
+    sha256: string;
+    artifact_path: string;
+    format: string;
+    size_bytes: number;
+    added_by: string;
+    added_at: string;
+};
+
+export type BundlePromotion = {
+    id: string;
+    bundle_id: string;
+    from_stage: string | null;
+    to_stage: string;
+    target_repo_id: string;
+    status: 'in_progress' | 'success' | 'failed';
+    promoted_by: string;
+    notes: string;
+    error_message: string | null;
+    item_count: number;
+    started_at: string;
+    completed_at: string | null;
+};
+
+export type PipelineStage = {
+    name: string;
+    /**
+     * UUID of the repository the stage must promote into; empty for any.
+     */
+    repo_id?: string;
+};
+
+export type PromotionPipeline = {
+    id: string;
+    name: string;
+    description: string;
+    stages: Array<PipelineStage>;
+    created_by: string;
+    created_at: string;
+    updated_at: string;
+};
+
 export type Error = {
     /**
      * Error code
@@ -6903,8 +6974,12 @@ export type GetApiV1PipelinesResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: {
+        pipelines?: Array<PromotionPipeline>;
+    };
 };
+
+export type GetApiV1PipelinesResponse = GetApiV1PipelinesResponses[keyof GetApiV1PipelinesResponses];
 
 export type PostApiV1PipelinesData = {
     body: {
@@ -6932,8 +7007,10 @@ export type PostApiV1PipelinesResponses = {
     /**
      * Created
      */
-    201: unknown;
+    201: PromotionPipeline;
 };
+
+export type PostApiV1PipelinesResponse = PostApiV1PipelinesResponses[keyof PostApiV1PipelinesResponses];
 
 export type DeleteApiV1PipelinesByNameData = {
     body?: never;
@@ -6984,8 +7061,10 @@ export type GetApiV1PipelinesByNameResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: PromotionPipeline;
 };
+
+export type GetApiV1PipelinesByNameResponse = GetApiV1PipelinesByNameResponses[keyof GetApiV1PipelinesByNameResponses];
 
 export type PatchApiV1PipelinesByNameData = {
     body: {
@@ -7014,8 +7093,10 @@ export type PatchApiV1PipelinesByNameResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: PromotionPipeline;
 };
+
+export type PatchApiV1PipelinesByNameResponse = PatchApiV1PipelinesByNameResponses[keyof PatchApiV1PipelinesByNameResponses];
 
 export type GetApiV1BundlesData = {
     body?: never;
@@ -7042,8 +7123,15 @@ export type GetApiV1BundlesResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: {
+        total?: number;
+        page?: number;
+        limit?: number;
+        bundles?: Array<ReleaseBundle>;
+    };
 };
+
+export type GetApiV1BundlesResponse = GetApiV1BundlesResponses[keyof GetApiV1BundlesResponses];
 
 export type PostApiV1BundlesData = {
     body: {
@@ -7070,8 +7158,10 @@ export type PostApiV1BundlesResponses = {
     /**
      * Created
      */
-    201: unknown;
+    201: ReleaseBundle;
 };
+
+export type PostApiV1BundlesResponse = PostApiV1BundlesResponses[keyof PostApiV1BundlesResponses];
 
 export type DeleteApiV1BundlesByNameByVersionData = {
     body?: never;
@@ -7124,8 +7214,10 @@ export type GetApiV1BundlesByNameByVersionResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: ReleaseBundle;
 };
+
+export type GetApiV1BundlesByNameByVersionResponse = GetApiV1BundlesByNameByVersionResponses[keyof GetApiV1BundlesByNameByVersionResponses];
 
 export type GetApiV1BundlesByNameByVersionItemsData = {
     body?: never;
@@ -7150,8 +7242,12 @@ export type GetApiV1BundlesByNameByVersionItemsResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: {
+        items?: Array<ReleaseBundleItem>;
+    };
 };
+
+export type GetApiV1BundlesByNameByVersionItemsResponse = GetApiV1BundlesByNameByVersionItemsResponses[keyof GetApiV1BundlesByNameByVersionItemsResponses];
 
 export type PostApiV1BundlesByNameByVersionItemsData = {
     body: {
@@ -7180,8 +7276,12 @@ export type PostApiV1BundlesByNameByVersionItemsResponses = {
     /**
      * Created
      */
-    201: unknown;
+    201: {
+        items?: Array<ReleaseBundleItem>;
+    };
 };
+
+export type PostApiV1BundlesByNameByVersionItemsResponse = PostApiV1BundlesByNameByVersionItemsResponses[keyof PostApiV1BundlesByNameByVersionItemsResponses];
 
 export type DeleteApiV1BundlesByNameByVersionItemsBySha256Data = {
     body?: never;
@@ -7237,8 +7337,10 @@ export type PostApiV1BundlesByNameByVersionSealResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: ReleaseBundle;
 };
+
+export type PostApiV1BundlesByNameByVersionSealResponse = PostApiV1BundlesByNameByVersionSealResponses[keyof PostApiV1BundlesByNameByVersionSealResponses];
 
 export type GetApiV1BundlesByNameByVersionManifestData = {
     body?: never;
@@ -7427,8 +7529,10 @@ export type PostApiV1BundlesByNameByVersionArchiveResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: ReleaseBundle;
 };
+
+export type PostApiV1BundlesByNameByVersionArchiveResponse = PostApiV1BundlesByNameByVersionArchiveResponses[keyof PostApiV1BundlesByNameByVersionArchiveResponses];
 
 export type GetApiV1BundlesByNameByVersionPromotionsData = {
     body?: never;
@@ -7453,8 +7557,12 @@ export type GetApiV1BundlesByNameByVersionPromotionsResponses = {
     /**
      * Success
      */
-    200: unknown;
+    200: {
+        promotions?: Array<BundlePromotion>;
+    };
 };
+
+export type GetApiV1BundlesByNameByVersionPromotionsResponse = GetApiV1BundlesByNameByVersionPromotionsResponses[keyof GetApiV1BundlesByNameByVersionPromotionsResponses];
 
 export type DeleteApiV1RepositoriesByNameCleanupPoliciesByIdData = {
     body?: never;

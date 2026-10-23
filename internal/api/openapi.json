@@ -41,6 +41,264 @@
       }
     },
     "schemas": {
+      "ReleaseBundle": {
+        "type": "object",
+        "required": [
+          "id",
+          "name",
+          "version",
+          "description",
+          "state",
+          "pipeline_id",
+          "current_stage",
+          "created_by",
+          "sealed_at",
+          "sealed_by",
+          "archived_at",
+          "archived_by",
+          "created_at",
+          "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "version": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "sealed",
+              "archived"
+            ]
+          },
+          "pipeline_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "current_stage": {
+            "type": "string",
+            "nullable": true
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "sealed_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "sealed_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "archived_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          },
+          "archived_by": {
+            "type": "string",
+            "nullable": true
+          },
+          "gpg_key_id": {
+            "type": "string",
+            "nullable": true,
+            "description": "Fingerprint of the key that signed the manifest; null when unsigned."
+          },
+          "gpg_signature": {
+            "type": "string",
+            "nullable": true,
+            "description": "Armored detached signature of the manifest; null when unsigned."
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "ReleaseBundleItem": {
+        "type": "object",
+        "required": [
+          "id",
+          "bundle_id",
+          "source_repo_id",
+          "component_id",
+          "sha256",
+          "artifact_path",
+          "format",
+          "size_bytes",
+          "added_by",
+          "added_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bundle_id": {
+            "type": "string"
+          },
+          "source_repo_id": {
+            "type": "string"
+          },
+          "component_id": {
+            "type": "string",
+            "nullable": true
+          },
+          "sha256": {
+            "type": "string"
+          },
+          "artifact_path": {
+            "type": "string"
+          },
+          "format": {
+            "type": "string"
+          },
+          "size_bytes": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "added_by": {
+            "type": "string"
+          },
+          "added_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "BundlePromotion": {
+        "type": "object",
+        "required": [
+          "id",
+          "bundle_id",
+          "from_stage",
+          "to_stage",
+          "target_repo_id",
+          "status",
+          "promoted_by",
+          "notes",
+          "error_message",
+          "item_count",
+          "started_at",
+          "completed_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "bundle_id": {
+            "type": "string"
+          },
+          "from_stage": {
+            "type": "string",
+            "nullable": true
+          },
+          "to_stage": {
+            "type": "string"
+          },
+          "target_repo_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "success",
+              "failed"
+            ]
+          },
+          "promoted_by": {
+            "type": "string"
+          },
+          "notes": {
+            "type": "string"
+          },
+          "error_message": {
+            "type": "string",
+            "nullable": true
+          },
+          "item_count": {
+            "type": "integer"
+          },
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "completed_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time"
+          }
+        }
+      },
+      "PipelineStage": {
+        "type": "object",
+        "required": [
+          "name"
+        ],
+        "properties": {
+          "name": {
+            "type": "string"
+          },
+          "repo_id": {
+            "type": "string",
+            "description": "UUID of the repository the stage must promote into; empty for any."
+          }
+        }
+      },
+      "PromotionPipeline": {
+        "type": "object",
+        "required": [
+        "id",
+        "name",
+        "description",
+        "stages",
+        "created_by",
+        "created_at",
+        "updated_at"
+        ],
+        "properties": {
+          "id": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "description": {
+            "type": "string"
+          },
+          "stages": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PipelineStage"
+            }
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "Error": {
         "type": "object",
         "properties": {
@@ -12318,7 +12576,22 @@
         "parameters": [],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pipelines": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PromotionPipeline"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12364,7 +12637,14 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionPipeline"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12397,7 +12677,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionPipeline"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12449,7 +12736,14 @@
         },
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PromotionPipeline"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12533,7 +12827,31 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "total": {
+                      "type": "integer"
+                    },
+                    "page": {
+                      "type": "integer"
+                    },
+                    "limit": {
+                      "type": "integer"
+                    },
+                    "bundles": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReleaseBundle"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12579,7 +12897,14 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseBundle"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12620,7 +12945,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseBundle"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12700,7 +13032,22 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReleaseBundleItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12757,7 +13104,22 @@
         },
         "responses": {
           "201": {
-            "description": "Created"
+            "description": "Created",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/ReleaseBundleItem"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12863,7 +13225,14 @@
         },
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseBundle"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -13230,7 +13599,14 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReleaseBundle"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -13271,7 +13647,22 @@
         ],
         "responses": {
           "200": {
-            "description": "Success"
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "promotions": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/BundlePromotion"
+                      }
+                    }
+                  }
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",

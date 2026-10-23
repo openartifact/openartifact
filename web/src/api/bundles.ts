@@ -7,41 +7,20 @@ import { request } from './client'
 // Release bundles and promotion pipelines. Every route is admin only and
 // keyed by (name, version) / pipeline name.
 
-export type BundleState = 'draft' | 'sealed' | 'archived'
+import type {
+  BundlePromotion,
+  PipelineStage,
+  PromotionPipeline,
+  ReleaseBundle,
+  ReleaseBundleItem,
+} from './generated/types.gen'
 
-export interface Bundle {
-  id: string
-  name: string
-  version: string
-  description: string
-  state: BundleState
-  pipeline_id: string | null
-  current_stage: string | null
-  created_by: string
-  sealed_at: string | null
-  sealed_by: string | null
-  archived_at: string | null
-  archived_by: string | null
-  /** Fingerprint of the key that signed the manifest when the bundle was sealed; null when unsigned. */
-  gpg_key_id?: string | null
-  /** Armored detached signature of the manifest; null when unsigned. */
-  gpg_signature?: string | null
-  created_at: string
-  updated_at: string
-}
-
-export interface BundleItem {
-  id: string
-  bundle_id: string
-  source_repo_id: string
-  component_id: string | null
-  sha256: string
-  artifact_path: string
-  format: string
-  size_bytes: number
-  added_by: string
-  added_at: string
-}
+export type Bundle = ReleaseBundle
+export type BundleItem = ReleaseBundleItem
+export type Pipeline = PromotionPipeline
+export type { BundlePromotion, PipelineStage }
+export type BundleState = Bundle['state']
+export type PromotionStatus = NonNullable<BundlePromotion['status']>
 
 export interface BundleItemInput {
   source_repo_id: string
@@ -50,38 +29,6 @@ export interface BundleItemInput {
   format?: string
   size_bytes?: number
   component_id?: string
-}
-
-export type PromotionStatus = 'in_progress' | 'success' | 'failed'
-
-export interface BundlePromotion {
-  id: string
-  bundle_id: string
-  from_stage: string | null
-  to_stage: string
-  target_repo_id: string
-  status: PromotionStatus
-  promoted_by: string
-  notes: string
-  error_message: string | null
-  item_count: number
-  started_at: string
-  completed_at: string | null
-}
-
-export interface PipelineStage {
-  name: string
-  repo_id?: string
-}
-
-export interface Pipeline {
-  id: string
-  name: string
-  description: string
-  stages: PipelineStage[]
-  created_by: string
-  created_at: string
-  updated_at: string
 }
 
 export interface BundleList {
