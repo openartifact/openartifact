@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <TransitionRoot appear :show="ui.commandPaletteOpen" as="template">
-    <Dialog as="div" class="relative z-50" @close="close">
+    <Dialog as="div" class="relative z-50" :aria-label="t('palette.dialogLabel')" @close="close">
       <TransitionChild
         as="template"
         enter="motion-safe:duration-150 motion-safe:ease-out"
@@ -48,18 +48,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   />
                   <kbd class="text-micro text-muted border border-border rounded px-1">{{ t('palette.esc') }}</kbd>
                 </div>
+
+                <!-- Announces progress and the result count to screen readers. -->
+                <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ announcement }}</p>
+
                 <ComboboxOptions
+                  v-if="hasOptions"
                   static
                   class="max-h-80 overflow-y-auto py-1"
                   role="listbox"
+                  :aria-label="t('palette.resultsLabel')"
                 >
-                  <p
-                    v-if="!hasAny"
-                    class="px-4 py-6 text-center text-sm text-muted"
-                  >
-                    {{ t('palette.noResults') }}
-                  </p>
-
                   <template v-if="commandResults.length">
                     <p class="px-3 pt-2 pb-1 text-xs text-muted">
                       {{ t('palette.group.commands') }}
@@ -80,12 +79,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     </ComboboxOption>
                   </template>
 
-                  <template v-if="searchResults.packages.length">
+                  <template v-if="packages.length">
                     <p class="px-3 pt-2 pb-1 text-xs text-muted">
                       {{ t('palette.group.packages') }}
                     </p>
                     <ComboboxOption
-                      v-for="pkg in searchResults.packages"
+                      v-for="pkg in packages"
                       :key="packageKey(pkg)"
                       v-slot="{ active }"
                       :value="packageKey(pkg)"
@@ -103,12 +102,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     </ComboboxOption>
                   </template>
 
-                  <template v-if="searchResults.repositories.length">
+                  <template v-if="repositories.length">
                     <p class="px-3 pt-2 pb-1 text-xs text-muted">
                       {{ t('palette.group.repositories') }}
                     </p>
                     <ComboboxOption
-                      v-for="repo in searchResults.repositories"
+                      v-for="repo in repositories"
                       :key="`repo:${repo.name}`"
                       v-slot="{ active }"
                       :value="`repo:${repo.name}`"
@@ -122,7 +121,54 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       </div>
                     </ComboboxOption>
                   </template>
+
+                  <ComboboxOption
+                    v-if="hasQuery"
+                    v-slot="{ active }"
+                    :value="VIEW_ALL"
+                  >
+                    <div
+                      class="mt-1 px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 border-t border-border"
+                      :class="active ? 'bg-surface-hover text-foreground' : 'text-muted'"
+                    >
+                      <MagnifyingGlassIcon class="w-4 h-4 shrink-0" aria-hidden="true" />
+                      <span class="truncate">{{ viewAllLabel }}</span>
+                    </div>
+                  </ComboboxOption>
                 </ComboboxOptions>
+
+                <p
+                  v-if="status === 'loading'"
+                  class="px-4 py-3 text-sm text-muted"
+                >
+                  {{ t('palette.searching') }}
+                </p>
+                <p
+                  v-else-if="status === 'tooBroad'"
+                  class="px-4 py-3 text-sm text-muted"
+                >
+                  {{ t('palette.tooBroad') }}
+                </p>
+                <div
+                  v-else-if="status === 'error'"
+                  class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
+                  role="alert"
+                >
+                  <span class="text-danger">{{ t('palette.error') }}</span>
+                  <button
+                    type="button"
+                    class="rounded px-2 py-1 text-xs font-medium text-foreground border border-border hover:bg-surface-hover"
+                    @click="retry"
+                  >
+                    {{ t('palette.retry') }}
+                  </button>
+                </div>
+                <p
+                  v-else-if="!hasAny"
+                  class="px-4 py-6 text-center text-sm text-muted"
+                >
+                  {{ t('palette.noResults') }}
+                </p>
               </Combobox>
             </DialogPanel>
           </TransitionChild>
@@ -133,7 +179,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, onBeforeUnmount } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import {
   Dialog,
@@ -148,17 +194,18 @@ import {
 import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import { useUIStore } from '../stores/ui'
 import { listCommands, type CommandEntry } from '../composables/useCommands'
-import { search, type SearchResult } from '../api/search'
+import { usePaletteSearch } from '../composables/usePaletteSearch'
+import type { SearchPackageHit } from '../api/search'
 import FormatBadge from './FormatBadge.vue'
 import { t } from '../i18n/en'
 
 const ui = useUIStore()
 const router = useRouter()
 
+const VIEW_ALL = 'viewall'
+
 const query = ref('')
-const searchResults = ref<SearchResult>({ packages: [], repositories: [] })
-let debounceHandle: ReturnType<typeof setTimeout> | null = null
-let searchGeneration = 0
+const { status, packages, repositories, setQuery, retry, reset } = usePaletteSearch()
 
 const commandResults = computed<CommandEntry[]>(() => {
   const q = query.value.trim().toLowerCase()
@@ -167,48 +214,47 @@ const commandResults = computed<CommandEntry[]>(() => {
   return all.filter((c) => c.title.toLowerCase().includes(q))
 })
 
-const hasAny = computed(
-  () =>
-    commandResults.value.length > 0 ||
-    searchResults.value.packages.length > 0 ||
-    searchResults.value.repositories.length > 0,
+const hasQuery = computed(() => query.value.trim().length > 0)
+
+const resultCount = computed(
+  () => commandResults.value.length + packages.value.length + repositories.value.length,
 )
+const hasAny = computed(() => resultCount.value > 0)
 
-// Cancels the pending debounce and invalidates any in-flight request.
-function resetPending(): void {
-  if (debounceHandle) clearTimeout(debounceHandle)
-  debounceHandle = null
-  searchGeneration++
-}
+// The "view all" row is an option too, so the list exists whenever there is a query.
+const hasOptions = computed(() => hasAny.value || hasQuery.value)
 
-onBeforeUnmount(resetPending)
+const viewAllLabel = computed(() => t('palette.viewAll').replace('{q}', query.value.trim()))
+
+// What the polite live region says: progress, the refusal of a too broad
+// query, else how many entries are listed. Errors have their own alert.
+const announcement = computed(() => {
+  switch (status.value) {
+    case 'loading':
+      return t('palette.searching')
+    case 'tooBroad':
+      return t('palette.tooBroad')
+    case 'error':
+      return ''
+    default:
+      if (resultCount.value === 0) return t('palette.noResults')
+      return resultCount.value === 1
+        ? t('palette.count.one')
+        : t('palette.count.other').replace('{n}', String(resultCount.value))
+  }
+})
 
 function onQueryChange(value: string): void {
   query.value = value
-  resetPending()
-  if (!value.trim()) {
-    searchResults.value = { packages: [], repositories: [] }
-    return
-  }
-  const generation = searchGeneration
-  debounceHandle = setTimeout(async () => {
-    debounceHandle = null
-    try {
-      const res = await search({ q: value, limit: 8 })
-      if (generation === searchGeneration) searchResults.value = res
-    } catch {
-      if (generation === searchGeneration) searchResults.value = { packages: [], repositories: [] }
-    }
-  }, 200)
+  setQuery(value)
 }
 
 watch(
   () => ui.commandPaletteOpen,
   (open) => {
     if (!open) {
-      resetPending()
+      reset()
       query.value = ''
-      searchResults.value = { packages: [], repositories: [] }
     }
   },
 )
@@ -217,8 +263,10 @@ function close(): void {
   ui.closeCommandPalette()
 }
 
-function packageKey(pkg: SearchResult['packages'][number]): string {
-  return `pkg:${pkg.repository}:${pkg.format}:${pkg.name}`
+// One row per package version: the key includes the version so rows of a
+// package never collide, even where the server lists several.
+function packageKey(pkg: SearchPackageHit): string {
+  return `pkg:${pkg.repository}:${pkg.format}:${pkg.name}:${pkg.version}`
 }
 
 // Option values are primitive keys: Headless UI compares values by reference,
@@ -227,8 +275,9 @@ function packageKey(pkg: SearchResult['packages'][number]): string {
 async function onSelect(key: string | null): Promise<void> {
   if (!key) return
   const command = commandResults.value.find((c) => `cmd:${c.id}` === key)
-  const pkg = searchResults.value.packages.find((p) => packageKey(p) === key)
-  const repo = searchResults.value.repositories.find((r) => `repo:${r.name}` === key)
+  const pkg = packages.value.find((p) => packageKey(p) === key)
+  const repo = repositories.value.find((r) => `repo:${r.name}` === key)
+  const searchText = query.value.trim()
   close()
   if (command) {
     await command.run()
@@ -240,6 +289,8 @@ async function onSelect(key: string | null): Promise<void> {
     )
   } else if (repo) {
     await router.push(`/repos/${encodeURIComponent(repo.name)}`)
+  } else if (key === VIEW_ALL && searchText) {
+    await router.push({ path: '/search', query: { q: searchText } })
   }
 }
 </script>

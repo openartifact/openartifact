@@ -21,22 +21,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </button>
 
     <!-- Search trigger: pill centred on md+, fills the free space on mobile -->
-    <div
-      class="flex flex-1 min-w-0 items-center gap-2 px-4 py-1.5 rounded-full bg-surface-hover/60 border border-border hover:border-muted/50 cursor-pointer transition-colors md:flex-none md:absolute md:left-1/2 md:-translate-x-1/2 md:w-64"
-      role="button"
+    <button
+      type="button"
+      class="flex flex-1 min-w-0 items-center gap-2 px-4 py-1.5 rounded-full bg-surface-hover/60 border border-border hover:border-muted/50 text-left cursor-pointer transition-colors md:flex-none md:absolute md:left-1/2 md:-translate-x-1/2 md:w-64"
       :aria-label="t('shell.openPalette')"
-      tabindex="0"
+      :aria-keyshortcuts="paletteHotkeyShortcut(apple)"
       @click="ui.openCommandPalette()"
-      @keydown.enter.prevent="ui.openCommandPalette()"
-      @keydown.space.prevent="ui.openCommandPalette()"
     >
       <MagnifyingGlassIcon class="w-4 h-4 text-muted shrink-0" aria-hidden="true" />
       <span class="text-sm text-muted truncate">{{ t('shell.searchPlaceholder') }}</span>
       <kbd
         class="hidden sm:inline ml-auto text-micro font-mono text-muted bg-surface rounded px-1.5 py-0.5 border border-border leading-none"
         aria-hidden="true"
-      >⌘K</kbd>
-    </div>
+      >{{ paletteHotkeyLabel(apple) }}</kbd>
+    </button>
 
     <!-- Right: actions (pushed to the right with ml-auto) -->
     <div class="md:ml-auto flex items-center gap-2 shrink-0">
@@ -50,7 +48,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { Bars3Icon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import { useUIStore } from '../stores/ui'
 import ThemeToggle from './ThemeToggle.vue'
+import { isApplePlatform, paletteHotkeyLabel, paletteHotkeyShortcut } from '../lib/paletteHotkey'
 import { t } from '../i18n/en'
 
 const ui = useUIStore()
+const apple = isApplePlatform()
 </script>

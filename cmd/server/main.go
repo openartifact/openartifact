@@ -678,7 +678,7 @@ func run(args []string) error {
 
 	api.NewProjectsHandler(db, log, evaluator, projectSettings).RegisterRoutes(authedAPI)
 
-	searchHandler := search.NewHandler(db.GetDB(), evaluator, log)
+	searchHandler := search.NewHandler(db.GetDB(), evaluator, log, search.WithAuthCache(db))
 	authedAPI.Get("/api/v1/search", searchHandler.ServeHTTP)
 
 	rpmUpload := api.NewRPMUploadHandler(log, db, blobStore, reg)

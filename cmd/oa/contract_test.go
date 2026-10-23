@@ -426,7 +426,7 @@ func TestContractArtifact(t *testing.T) {
 		{
 			name:    "search",
 			args:    []string{"search", "left"},
-			replies: map[string]reply{"GET /api/v1/search": ok(`{"results":[],"repositories":[]}`)},
+			replies: map[string]reply{"GET /api/v1/search": ok(`{"packages":[],"repositories":[]}`)},
 			calls:   []call{{method: "GET", pattern: "/api/v1/search", query: map[string]string{"q": "left"}}},
 		},
 	})

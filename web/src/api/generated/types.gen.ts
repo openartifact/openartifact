@@ -309,15 +309,11 @@ export type Backup = {
 
 export type SearchResult = {
     /**
-     * Number of matching packages (repositories are not counted)
+     * Number of matching packages (repositories are not counted); with group=package, the number of distinct packages
      */
     total?: number;
     /**
-     * Matching packages/artifacts, newest first
-     */
-    results?: Array<SearchPackageHit>;
-    /**
-     * Same entries as results
+     * Matching packages/artifacts, best match first (exact name, prefix, other substring), then newest first. With group=package, one entry per package: its latest version
      */
     packages?: Array<SearchPackageHit>;
     /**
@@ -2618,6 +2614,10 @@ export type GetApiV1SearchData = {
          */
         repo?: string;
         /**
+         * Set to package to return one package entry per repository, format and name (its latest version) instead of one per version or file
+         */
+        group?: 'package';
+        /**
          * Maximum results to return
          */
         limit?: number;
@@ -2627,6 +2627,13 @@ export type GetApiV1SearchData = {
         offset?: number;
     };
     url: '/api/v1/search';
+};
+
+export type GetApiV1SearchErrors = {
+    /**
+     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, or query_too_broad (more than 10000 matching packages; add filters)
+     */
+    400: unknown;
 };
 
 export type GetApiV1SearchResponses = {

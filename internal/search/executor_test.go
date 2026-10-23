@@ -322,7 +322,7 @@ func TestSearchPageReturnsTotalFromOneQuery(t *testing.T) {
 	rows := sqlmock.NewRows(cols).AddRow(repoID, "repo", "npm", "lodash", "1.0.0", "", "", int64(0), time.Now(), nil, nil, nil, int64(137))
 	mock.ExpectQuery(`WITH matched AS MATERIALIZED .* count\(\*\) OVER \(\)`).WillReturnRows(rows)
 
-	results, total, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, 1, 0, map[uuid.UUID]struct{}{repoID: {}})
+	results, total, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{}, 1, 0, map[uuid.UUID]struct{}{repoID: {}})
 	if err != nil {
 		t.Fatalf("SearchPage: %v", err)
 	}
@@ -353,12 +353,12 @@ func TestSearchPageEmptyPageCounts(t *testing.T) {
 	exec := NewExecutor(db)
 	readable := map[uuid.UUID]struct{}{uuid.New(): {}}
 
-	_, total, err := exec.SearchPage(context.Background(), SearchFilter{FreeText: "x"}, 25, 0, readable)
+	_, total, err := exec.SearchPage(context.Background(), SearchFilter{FreeText: "x"}, PageOptions{}, 25, 0, readable)
 	if err != nil || total != 0 {
 		t.Fatalf("first page: total %d, err %v; want 0, nil", total, err)
 	}
 
-	_, total, err = exec.SearchPage(context.Background(), SearchFilter{FreeText: "x"}, 25, 50, readable)
+	_, total, err = exec.SearchPage(context.Background(), SearchFilter{FreeText: "x"}, PageOptions{}, 25, 50, readable)
 	if err != nil || total != 30 {
 		t.Fatalf("page past the end: total %d, err %v; want 30, nil", total, err)
 	}

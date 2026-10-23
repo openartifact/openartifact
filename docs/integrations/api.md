@@ -155,7 +155,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/repositories/{name}/artifacts/...` | [properties](../repositories/properties.md) and property search |
 | `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas |
 | `/repositories/{name}/ai-analysis` | [AI analysis](ai-analysis.md) |
-| `/search` | search packages and repositories |
+| `/search` | search packages and repositories. Query parameters `q`, `format`, `repo`, `limit` (default 25, max 100), `offset` and `group=package` (one hit per package, its latest version, `total` counts packages). Hits are ranked: exact name, names starting with the query, other matches, then newest first. Returns `{total, packages, repositories}`; `400 query_too_broad` above 10000 matches, `400 invalid_group` for another `group` |
 | `/users`, `/groups`, `/permission-targets` | identity and [RBAC](../security/rbac.md) objects |
 | `/projects` (with `/repositories`, `/members`, `/groups` and `/tokens`) | [projects](../security/projects.md): open to every authenticated user and decided per project role, not by global `manage` (`404` for non-members, `403` for members lacking the role). Updates use `PATCH` for the project and for a member's role |
 | `/webhooks` | global webhooks, test, deliveries |

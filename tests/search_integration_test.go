@@ -160,7 +160,9 @@ func TestSearchFindsRepositoriesByName(t *testing.T) {
 	}{
 		{
 			name: "hyphenated substring finds every repository containing it", who: admin, query: q("ui-kit"),
-			wantRepo: []string{"my-ui-kit-lib", "public-ui-kit", "secret-ui-kit", "ui-kit", "ui-kit-docs"},
+			// Relevance order: the exact name, names starting with the term, then
+			// names merely containing it (alphabetical within each).
+			wantRepo: []string{"ui-kit", "ui-kit-docs", "my-ui-kit-lib", "public-ui-kit", "secret-ui-kit"},
 			wantPkgs: []string{"webapp:acme/ui-kit-1.0.txt"},
 		},
 		{
@@ -185,7 +187,7 @@ func TestSearchFindsRepositoriesByName(t *testing.T) {
 		},
 		{
 			name: "format qualifier", who: admin, query: q("ui-kit format:npm"),
-			wantRepo: []string{"secret-ui-kit", "ui-kit"},
+			wantRepo: []string{"ui-kit", "secret-ui-kit"},
 		},
 		{
 			name: "repo qualifier", who: admin, query: q("ui-kit repo:ui-kit"),
@@ -197,7 +199,7 @@ func TestSearchFindsRepositoriesByName(t *testing.T) {
 		},
 		{
 			name: "limit and offset page the repositories", who: admin, query: q("ui-kit") + "&limit=2&offset=1",
-			wantRepo: []string{"public-ui-kit", "secret-ui-kit"},
+			wantRepo: []string{"ui-kit-docs", "my-ui-kit-lib"},
 			wantPkgs: nil,
 		},
 		{

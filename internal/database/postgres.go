@@ -482,6 +482,9 @@ func (p *PostgresDB) GetRepoComponentBlob(ctx context.Context, repoID, id string
 }
 
 func (p *PostgresDB) CreateRepository(ctx context.Context, repo *models.Repository) error {
+	// A new repository joins the readable set of whoever's grants match it.
+	defer p.authCache.invalidate()
+
 	repoType := repo.RepoType
 	if repoType == "" {
 		repoType = "hosted"

@@ -95,6 +95,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { watch } from 'vue'
+import { useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
 import { useSearch } from '../composables/useSearch'
 import AppButton from '../components/AppButton.vue'
@@ -103,7 +105,22 @@ import FormatBadge from '../components/FormatBadge.vue'
 import { t } from '../i18n/en'
 import { MagnifyingGlassIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 
+const route = useRoute()
 const { query, repoResults, packageResults, searched, error, scheduleSearch, execute, clear } = useSearch()
+
+// /search?q=... (the command palette's "view all results") runs that search,
+// on arrival and when only the query string changes.
+watch(
+  () => route.query.q,
+  (q) => {
+    const text = typeof q === 'string' ? q.trim() : ''
+    if (text && text !== query.value.trim()) {
+      query.value = text
+      void execute()
+    }
+  },
+  { immediate: true },
+)
 
 function onInput() {
   scheduleSearch()

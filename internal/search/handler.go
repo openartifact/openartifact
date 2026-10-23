@@ -22,7 +22,7 @@ import (
 type Searcher interface {
 	// SearchPage returns one page of results and the number of matches (capped
 	// at MaxSearchResults+1) from a single scan.
-	SearchPage(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]SearchResult, int64, error)
+	SearchPage(ctx context.Context, filter SearchFilter, opts PageOptions, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]SearchResult, int64, error)
 	SearchRepositories(ctx context.Context, filter SearchFilter, limit, offset int, readableRepos map[uuid.UUID]struct{}) ([]RepositoryResult, error)
 }
 
@@ -31,21 +31,53 @@ type Handler struct {
 	db        *sql.DB
 	evaluator *auth.Evaluator
 	log       *logger.Logger
+	readable  readableCache
 }
 
-func NewHandler(db *sql.DB, evaluator *auth.Evaluator, log *logger.Logger) *Handler {
-	return &Handler{
+// Option customizes a Handler.
+type Option func(*Handler)
+
+// WithAuthCache caches each principal's readable-repository set for the auth
+// cache's TTL, dropping it whenever the auth cache is invalidated (see
+// readableCache). Without it every request resolves the set afresh.
+func WithAuthCache(src AuthCache) Option {
+	return func(h *Handler) { h.readable.src = src }
+}
+
+func NewHandler(db *sql.DB, evaluator *auth.Evaluator, log *logger.Logger, opts ...Option) *Handler {
+	h := &Handler{
 		searcher:  NewExecutor(db),
 		db:        db,
 		evaluator: evaluator,
 		log:       log,
 	}
+
+	for _, opt := range opts {
+		opt(h)
+	}
+
+	return h
 }
 
 const (
 	maxFilterValues = 50
 	searchTimeout   = 15 * time.Second
+
+	// groupPackage is the group query value that returns one row per package.
+	groupPackage = "package"
 )
+
+// parsePageOptions reads the group parameter; false means an unknown value.
+func parsePageOptions(r *http.Request) (PageOptions, bool) {
+	switch r.URL.Query().Get("group") {
+	case "":
+		return PageOptions{}, true
+	case groupPackage:
+		return PageOptions{GroupByPackage: true}, true
+	default:
+		return PageOptions{}, false
+	}
+}
 
 func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	ctx, cancel := context.WithTimeout(r.Context(), searchTimeout)
@@ -100,6 +132,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	opts, ok := parsePageOptions(r)
+	if !ok {
+		writeJSONError(w, http.StatusBadRequest, "invalid_group", "group must be 'package'")
+		return
+	}
+
 	principal := middleware.PrincipalFromContext(ctx)
 
 	readableRepos, err := h.resolveReadableRepos(ctx, principal)
@@ -110,7 +148,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	results, count, err := h.searcher.SearchPage(ctx, filter, limit, offset, readableRepos)
+	results, count, err := h.searcher.SearchPage(ctx, filter, opts, limit, offset, readableRepos)
 	if err != nil {
 		h.log.Errorw("search failed", "error", err)
 		writeJSONError(w, http.StatusInternalServerError, "internal_error", "search failed")
@@ -144,7 +182,6 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	if encErr := json.NewEncoder(w).Encode(map[string]any{
 		"total":        count,
-		"results":      results,
 		"packages":     results,
 		"repositories": repositories,
 	}); encErr != nil {
@@ -152,12 +189,37 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
+// resolveReadableRepos returns the repositories principal can read. The result
+// may be shared with other requests of the same principal: callers must not
+// modify it.
 func (h *Handler) resolveReadableRepos(ctx context.Context, principal *auth.Principal) (map[uuid.UUID]struct{}, error) {
-	readable := make(map[uuid.UUID]struct{})
-
 	if principal == nil {
-		return readable, nil
+		return map[uuid.UUID]struct{}{}, nil
 	}
+
+	gen, cached := h.readable.begin()
+	if !cached {
+		return h.loadReadableRepos(ctx, principal)
+	}
+
+	key := principalCacheKey(*principal)
+
+	if repos, ok := h.readable.get(key, gen); ok {
+		return repos, nil
+	}
+
+	repos, err := h.loadReadableRepos(ctx, principal)
+	if err != nil {
+		return nil, err
+	}
+
+	h.readable.store(key, gen, repos)
+
+	return repos, nil
+}
+
+func (h *Handler) loadReadableRepos(ctx context.Context, principal *auth.Principal) (map[uuid.UUID]struct{}, error) {
+	readable := make(map[uuid.UUID]struct{})
 
 	// One batched permission lookup instead of one Evaluate per repository.
 	canRead, err := h.evaluator.RepoReadFilter(ctx, *principal)

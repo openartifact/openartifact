@@ -85,6 +85,18 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+#### Search ranking, grouping and the command palette
+
+- **`GET /api/v1/search` no longer returns the `results` key.** It was a copy of `packages` kept from before 0.5.0; read `packages`. `oa search` is updated and its own `--format json` output keeps `results`.
+- Results are ordered by relevance, then newest first: an exact name match, then names starting with the query, then other substring matches, with the row id as the last tie-break so paging is stable. Repositories are ranked the same way, then by name. Before, the order was the newest first only.
+- New query parameter `group=package` returns one hit per package (its latest version) and counts packages in `total`. The command palette uses it. Without it nothing changes except the order.
+- Migration `040` builds a trigram index on `repositories.name` (`CREATE INDEX CONCURRENTLY`, re-runnable, same `pg_trgm` requirement as migration `030`). It is numbered 040 on purpose, so migrations 035 to 039 stay free for changes prepared in parallel; the migrator orders by file name only, so the gap is harmless.
+- The set of repositories a user may read is cached per user for `DB_AUTH_CACHE_TTL_MS` and dropped by the same writes that clear the auth cache, so a permission change made through this instance applies at once and one made through another replica within the TTL; see [Auth lookup cache](../operations/performance.md#auth-lookup-cache). `0` disables it.
+- Creating a repository now clears the auth cache too, so a new repository shows up in permission-derived lists at once.
+- Web UI: the Ctrl+K palette tells a too broad query ("Refine your query") from a failed request (inline error with Retry) and from an empty result, cancels the request of an outdated query, lists a package once, and links to `/search?q=…` for all results. The header trigger is a real button and shows ⌘K on Apple platforms, Ctrl K elsewhere. The duplicate "Open profile" command is gone ("Open settings" opens the same page).
+
 ### 0.6.0
 
 > **Recreate upgrade required, and set a real database password first.** Stop every 0.5.x replica before 0.6.0 starts (Kubernetes: `strategy: Recreate`, or scale to 0): migration `025` renames tables the old binaries query. The server no longer starts with the `CHANGE_ME` example database password, and PostgreSQL must allow the `pg_trgm` extension. Both are detailed below.

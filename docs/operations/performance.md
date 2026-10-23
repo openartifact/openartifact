@@ -135,6 +135,8 @@ Read and write timeouts default to 0 so large uploads and downloads are never cu
 ### Database indexes and queries
 
 - Package search (`/api/v1/search`, the `name`/`version`/`description` filters) matches with `ILIKE '%term%'` and is served by GIN trigram indexes (`idx_*_trgm`, extension `pg_trgm`, created by migration `030`). If you restore a dump into a database without the extension, search falls back to sequential scans (correct, but 16-35x slower on 300k blobs and 250k package rows).
+- The repository half of the search matches `repositories.name` with `ILIKE '%term%'` too, and is served by `idx_repositories_name_trgm` (migration `040`). Results are ranked in the query itself (exact name, prefix, other substring, then newest, then id); the ranking is only computed while the match count is within the 10000-row cap, so a query that is refused as too broad costs what it did before ranking.
+- `group=package` (the command palette) returns each package once, with its latest version, and counts packages.
 - File-name lookups for deb, rpm and PyPI downloads use `(repository_id, filename)` indexes.
 - The proxy cache eviction deletes expired entries in batches of 2000 and skips the table scan entirely when nothing expired more than an hour ago.
 - The repository package listing (`GET /api/v1/repositories/{name}/packages`) counts the matching rows only when the page is full (or past the end); a short page, the common case for small repositories, derives `total` from the page itself. Large repositories still pay one `COUNT` per full page.
@@ -147,6 +149,7 @@ Every authenticated request looks up its token, user, groups, permission targets
 
 - Changes made through this instance apply immediately: the auth-related writes (tokens, users, groups, permissions, repositories, SSO) clear the cache.
 - Other replicas see a change after at most the TTL. So a revoked token, a disabled user or a removed permission can keep working on another replica for up to the TTL. The same holds for changes made outside the server process, such as the `resetpw` command.
+- Search follows the same cache for the set of repositories a user may read, which each search otherwise rebuilds with a permission check per repository. The set is kept per principal (user, token kind and scopes, groups; never shared between principals), for the TTL, and dropped by the same writes. A set computed while such a write happened is not kept.
 - Only positive results are cached for tokens, users and repositories, so creating one is visible at once. Each cache is bounded to 4096 entries and is emptied when the bound is hit.
 
 For a single instance the default is safe. Lower the TTL or set `0` when a multi-replica deployment needs revocations to take effect everywhere at once.

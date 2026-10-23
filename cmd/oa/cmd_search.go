@@ -55,7 +55,7 @@ func handleSearch(args []string, client *Client, outFmt string) {
 
 	var result struct {
 		Repositories []map[string]any `json:"repositories"`
-		Results      []map[string]any `json:"results"`
+		Results      []map[string]any `json:"packages"`
 	}
 	decodeJSON(resp, &result)
 

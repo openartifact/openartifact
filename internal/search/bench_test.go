@@ -7,8 +7,10 @@ package search
 import (
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/openartifact/openartifact/internal/auth"
 )
 
 func BenchmarkParseQuery(b *testing.B) {
@@ -70,5 +72,53 @@ func BenchmarkEscapeLike(b *testing.B) {
 
 	for b.Loop() {
 		_ = escapeLike("my_package%name\\x")
+	}
+}
+
+// BenchmarkRelevanceExpr renders the ranking CASE added to every search.
+func BenchmarkRelevanceExpr(b *testing.B) {
+	b.ReportAllocs()
+
+	for b.Loop() {
+		_, _ = relevanceExpr("s.name", "lodash", 3, true)
+	}
+}
+
+func BenchmarkPrincipalCacheKey(b *testing.B) {
+	id := "6f1c2d3e-0000-4000-8000-000000000001"
+	p := auth.Principal{
+		UserID: &id, Username: "alice", TokenKind: "access",
+		TokenScopes: []string{"proj-a", "proj-b"}, GroupIDs: []string{"g1", "g2", "g3"},
+	}
+
+	b.ReportAllocs()
+
+	for b.Loop() {
+		_ = principalCacheKey(p)
+	}
+}
+
+// BenchmarkReadableCacheHit is what a repeated search by the same principal
+// costs for its readable set instead of scanning every repository and checking
+// permissions on each (loadReadableRepos, a database round trip).
+func BenchmarkReadableCacheHit(b *testing.B) {
+	for _, n := range []int{100, 10000} {
+		b.Run(fmt.Sprintf("readable_repos=%d", n), func(b *testing.B) {
+			src := &fakeAuthCache{ttl: time.Minute}
+			c := &readableCache{src: src}
+			p := auth.Principal{Username: "alice"}
+			key := principalCacheKey(p)
+			gen, _ := c.begin()
+			c.store(key, gen, benchReadable(n))
+
+			b.ReportAllocs()
+
+			for b.Loop() {
+				gen, _ := c.begin()
+				if _, ok := c.get(principalCacheKey(p), gen); !ok {
+					b.Fatal("cache miss")
+				}
+			}
+		})
 	}
 }

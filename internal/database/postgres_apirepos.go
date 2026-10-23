@@ -122,6 +122,9 @@ func lockProjectCap(ctx context.Context, tx *sql.Tx, projectID string, maxReposi
 }
 
 func (p *PostgresDB) createRepository(ctx context.Context, repo *models.Repository, memberIDs []string, maxRepositories int) error {
+	// A new repository joins the readable set of whoever's grants match it.
+	defer p.authCache.invalidate()
+
 	tx, err := p.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("failed to begin transaction: %w", err)

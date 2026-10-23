@@ -47,7 +47,7 @@ func TestSearchPrintsRepositoriesBeforePackages(t *testing.T) {
 		}
 
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"results":[{"name":"ui-kit-pkg","repository":"npm-main","version":"1.0.0","format":"npm"}],` +
+		_, _ = w.Write([]byte(`{"packages":[{"name":"ui-kit-pkg","repository":"npm-main","version":"1.0.0","format":"npm"}],` +
 			`"repositories":[{"name":"ui-kit","format":"npm","description":"UI components"},` +
 			`{"name":"ui-kit-deb","format":"deb","description":"debs"}]}`))
 	}))

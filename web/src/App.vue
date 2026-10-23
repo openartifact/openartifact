@@ -53,6 +53,7 @@ import { useThemeStore } from './stores/theme'
 import { useSessionStore } from './stores/session'
 import { registerCommand, unregisterCommand } from './composables/useCommands'
 import { useSignOut } from './composables/useSignOut'
+import { isPaletteHotkey } from './lib/paletteHotkey'
 import { t } from './i18n/en'
 
 const route = useRoute()
@@ -70,13 +71,13 @@ useEventListener('keydown', (e: KeyboardEvent) => {
   if (e.key === 'Escape' && ui.mobileNavOpen) ui.closeMobileNav()
 })
 
-// Global Ctrl/Cmd+K toggles the command palette. Esc is handled by the
+// Ctrl/Cmd+K toggles the command palette wherever it is mounted (not on the
+// blank layout, where the key stays the browser's). Esc is handled by the
 // Headless UI Dialog itself.
 useEventListener(
   'keydown',
   (e: KeyboardEvent) => {
-    const isPaletteHotkey = (e.ctrlKey || e.metaKey) && (e.key === 'k' || e.key === 'K')
-    if (isPaletteHotkey) {
+    if (showShell.value && isPaletteHotkey(e)) {
       e.preventDefault()
       if (ui.commandPaletteOpen) ui.closeCommandPalette()
       else ui.openCommandPalette()
@@ -89,7 +90,6 @@ const COMMAND_IDS = [
   'nav.dashboard',
   'nav.repos',
   'nav.search',
-  'nav.profile',
   'nav.settings',
   'theme.light',
   'theme.dark',
@@ -115,12 +115,6 @@ onMounted(() => {
     title: t('palette.command.search'),
     group: 'commands',
     run: () => { router.push('/search') },
-  })
-  registerCommand({
-    id: 'nav.profile',
-    title: t('palette.command.profile'),
-    group: 'commands',
-    run: () => { router.push('/settings/profile') },
   })
   registerCommand({
     id: 'nav.settings',

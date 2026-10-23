@@ -710,18 +710,11 @@
         "properties": {
           "total": {
             "type": "integer",
-            "description": "Number of matching packages (repositories are not counted)"
-          },
-          "results": {
-            "type": "array",
-            "description": "Matching packages/artifacts, newest first",
-            "items": {
-              "$ref": "#/components/schemas/SearchPackageHit"
-            }
+            "description": "Number of matching packages (repositories are not counted); with group=package, the number of distinct packages"
           },
           "packages": {
             "type": "array",
-            "description": "Same entries as results",
+            "description": "Matching packages/artifacts, best match first (exact name, prefix, other substring), then newest first. With group=package, one entry per package: its latest version",
             "items": {
               "$ref": "#/components/schemas/SearchPackageHit"
             }
@@ -5476,7 +5469,7 @@
     "/api/v1/search": {
       "get": {
         "summary": "Search packages and repositories",
-        "description": "Search the packages of the repositories the caller can read, and the names of those repositories. Matching is a case-insensitive literal substring match; limit and offset apply to the packages and repositories lists independently.",
+        "description": "Search the packages of the repositories the caller can read, and the names of those repositories. Matching is a case-insensitive literal substring match; results are ordered best match first (exact name, then prefix, then other substring matches, newest first within each). A query matching more than 10000 packages is rejected with 400 query_too_broad. limit and offset apply to the packages and repositories lists independently.",
         "tags": [
           "Search"
         ],
@@ -5504,6 +5497,17 @@
             "description": "Filter by repository name",
             "schema": {
               "type": "string"
+            }
+          },
+          {
+            "name": "group",
+            "in": "query",
+            "description": "Set to package to return one package entry per repository, format and name (its latest version) instead of one per version or file",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "package"
+              ]
             }
           },
           {
@@ -5536,6 +5540,9 @@
                 }
               }
             }
+          },
+          "400": {
+            "description": "Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, or query_too_broad (more than 10000 matching packages; add filters)"
           }
         }
       }

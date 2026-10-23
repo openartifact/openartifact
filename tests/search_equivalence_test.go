@@ -140,13 +140,32 @@ func legacySearch(t *testing.T, pg *database.PostgresDB, c searchEquivalenceCase
 	t.Helper()
 
 	args := append([]any{}, c.legacyArgs...)
+
+	// The legacy view predates relevance ranking: rank it independently of
+	// the production expression (exact name, prefix, other; the last
+	// "/" or ":" segment of a qualified name counts as the name).
+	term := c.filter.Name
+	if term == "" {
+		term = c.filter.FreeText
+	}
+
+	rank := "0::int" // a bare 0 would be an ORDER BY column position
+
+	if term != "" {
+		args = append(args, term)
+		rank = fmt.Sprintf(`CASE
+			WHEN lower(s.name) = lower($%[1]d) OR lower(substring(s.name from '[^/:]*$')) = lower($%[1]d) THEN 0
+			WHEN starts_with(lower(s.name), lower($%[1]d)) OR starts_with(lower(substring(s.name from '[^/:]*$')), lower($%[1]d)) THEN 1
+			ELSE 2 END`, len(args))
+	}
+
 	n := len(args)
 	args = append(args, "{"+strings.Join(readable, ",")+"}", limit, offset)
 
 	q := fmt.Sprintf(`SELECT s.repository_id, r.name, s.format, s.name, s.version, s.path, s.sha256, s.size, s.created_at, s.group_id, s.artifact_id_coord, s.scope
 		FROM %s AS s JOIN repositories r ON r.id = s.repository_id
 		WHERE %s AND s.repository_id = ANY($%d::uuid[])
-		ORDER BY s.created_at DESC LIMIT $%d OFFSET $%d`, legacySearchView, c.legacyWhere, n+1, n+2, n+3)
+		ORDER BY %s, s.created_at DESC LIMIT $%d OFFSET $%d`, legacySearchView, c.legacyWhere, n+1, rank, n+2, n+3)
 
 	rows, err := pg.GetDB().QueryContext(context.Background(), q, args...)
 	if err != nil {
@@ -240,7 +259,7 @@ func TestSearchMatchesLegacyQuery(t *testing.T) {
 
 					// SearchPage: same page and the total from one scan, also
 					// for pages past the end.
-					gotPage, gotTotal, err := exec.SearchPage(context.Background(), c.filter, page.limit, page.offset, readable)
+					gotPage, gotTotal, err := exec.SearchPage(context.Background(), c.filter, search.PageOptions{}, page.limit, page.offset, readable)
 					if err != nil {
 						t.Fatalf("SearchPage: %v", err)
 					}

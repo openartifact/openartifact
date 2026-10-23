@@ -26,13 +26,16 @@ type mockSearcher struct {
 	repos   []RepositoryResult
 	err     error
 	repoErr error
+	gotOpts PageOptions
 }
 
 func (m *mockSearcher) SearchRepositories(_ context.Context, _ SearchFilter, _, _ int, _ map[uuid.UUID]struct{}) ([]RepositoryResult, error) {
 	return m.repos, m.repoErr
 }
 
-func (m *mockSearcher) SearchPage(_ context.Context, _ SearchFilter, _, _ int, _ map[uuid.UUID]struct{}) ([]SearchResult, int64, error) {
+func (m *mockSearcher) SearchPage(_ context.Context, _ SearchFilter, opts PageOptions, _, _ int, _ map[uuid.UUID]struct{}) ([]SearchResult, int64, error) {
+	m.gotOpts = opts
+
 	if m.err != nil {
 		return nil, 0, m.err
 	}
@@ -156,8 +159,12 @@ func TestHandlerSuccessfulSearch(t *testing.T) {
 		t.Error("missing 'total' in response")
 	}
 
-	if resp["results"] == nil {
-		t.Error("missing 'results' in response")
+	if resp["packages"] == nil {
+		t.Error("missing 'packages' in response")
+	}
+
+	if _, dup := resp["results"]; dup {
+		t.Error("response still carries the duplicate 'results' key")
 	}
 }
 
@@ -190,9 +197,9 @@ func TestHandlerEmptyResult(t *testing.T) {
 
 	_ = json.NewDecoder(w.Body).Decode(&resp)
 
-	results, ok := resp["results"].([]any)
+	results, ok := resp["packages"].([]any)
 	if !ok {
-		t.Fatalf("results not found or not an array")
+		t.Fatalf("packages not found or not an array")
 	}
 
 	if len(results) != 0 {

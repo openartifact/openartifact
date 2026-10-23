@@ -25,6 +25,8 @@ export const enAuth = {
   // Shell
   'shell.versionUnknown': 'version unknown',
   'shell.openPalette': 'Open command palette',
+  'shell.paletteHotkey.apple': '⌘K',
+  'shell.paletteHotkey.other': 'Ctrl K',
   'shell.searchPlaceholder': 'Search...',
   'shell.dismissToast': 'Dismiss notification',
   'shell.notifications': 'Notifications',

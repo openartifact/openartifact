@@ -159,6 +159,14 @@ func unifiedSearchBranches() []string {
 // fall back to counting all rows. SearchPage already returns the count with its
 // page; this stands alone for the one case that cannot (a page past the end).
 func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (int64, error) {
+	return e.countResults(ctx, filter, readableRepos, PageOptions{})
+}
+
+// countResults is CountResults for the page shape of opts: with GroupByPackage
+// it counts packages instead of rows, except that a match set above
+// MaxSearchResults rows is reported by its row count so the caller can reject
+// the query exactly as for an ungrouped search.
+func (e *Executor) countResults(ctx context.Context, filter SearchFilter, readableRepos map[uuid.UUID]struct{}, opts PageOptions) (int64, error) {
 	if len(readableRepos) == 0 {
 		return 0, nil
 	}
@@ -170,15 +178,28 @@ func (e *Executor) CountResults(ctx context.Context, filter SearchFilter, readab
 	// Bounded: callers only need to know whether the count exceeds
 	// MaxSearchResults, so counting stops one row past it instead of
 	// scanning every matching artifact.
-	inner := `SELECT 1 FROM ` + source + ` AS s` + repoJoin(joinRepo)
+	limit := strconv.Itoa(MaxSearchResults + 1)
+
+	cols := "1"
+	if opts.GroupByPackage {
+		cols = "s.repository_id, s.format, s.name"
+	}
+
+	inner := `SELECT ` + cols + ` FROM ` + source + ` AS s` + repoJoin(joinRepo)
 	if where != "" {
 		inner += " WHERE " + where
 	}
 
-	q := `SELECT COUNT(*) FROM (` + inner + ` LIMIT ` + strconv.Itoa(MaxSearchResults+1) + `) AS c`
+	q := `SELECT COUNT(*) FROM (` + inner + ` LIMIT ` + limit + `) AS c`
+
+	if opts.GroupByPackage {
+		q = `WITH m AS MATERIALIZED (` + inner + ` LIMIT ` + limit + `)
+	SELECT CASE WHEN (SELECT count(*) FROM m) > ` + strconv.Itoa(MaxSearchResults) + `
+		THEN (SELECT count(*) FROM m)
+		ELSE (SELECT count(*) FROM (SELECT DISTINCT repository_id, format, name FROM m) AS g) END`
+	}
 
 	var count int64
-	//nolint:gosec // G701: see G201 in runSearch, q holds constant fragments and $n placeholders only
 	if err := e.db.QueryRowContext(ctx, q, args...).Scan(&count); err != nil {
 		return 0, fmt.Errorf("count query: %w", err)
 	}
@@ -199,18 +220,28 @@ func repoJoin(join bool) string {
 // scanning, so a caller with no readable repositories always gets an empty
 // result set even if the SQL-level filter were ever bypassed or misapplied.
 //
-// The query is staged: the page (newest first, id as tiebreak so paging is
-// stable) is selected from the narrow union, and only those rows are joined to
-// repositories (name) and blobs (sha256, size).
+// The query is staged: the page (best match first, then newest, id as final
+// tiebreak so paging is stable; see relevanceExpr) is selected from the narrow
+// union, and only those rows are joined to repositories (name) and blobs
+// (sha256, size).
 func (e *Executor) Search(
 	ctx context.Context,
 	filter SearchFilter,
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 ) ([]SearchResult, error) {
-	results, _, err := e.runSearch(ctx, filter, limit, offset, readableRepos, false)
+	results, _, err := e.runSearch(ctx, filter, limit, offset, readableRepos, false, PageOptions{})
 
 	return results, err
+}
+
+// PageOptions shapes the page SearchPage returns.
+type PageOptions struct {
+	// GroupByPackage returns one row per package (repository, format, name):
+	// its latest version. Offset and total then count packages. A match set
+	// above MaxSearchResults rows is still reported as too broad: the returned
+	// total is then the capped row count, not a package count.
+	GroupByPackage bool
 }
 
 // SearchPage is Search plus the number of matches, from one scan of the union.
@@ -220,20 +251,22 @@ func (e *Executor) Search(
 // scan the union twice. When the total exceeds MaxSearchResults the returned
 // page is an arbitrary slice of the capped set and must be discarded by the
 // caller. A page past the last match carries no row to read the total from, so
-// that one case asks for it separately.
+// that one case asks for it separately. The page is ranked only while the
+// total is within the cap.
 func (e *Executor) SearchPage(
 	ctx context.Context,
 	filter SearchFilter,
+	opts PageOptions,
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 ) ([]SearchResult, int64, error) {
-	results, total, err := e.runSearch(ctx, filter, limit, offset, readableRepos, true)
+	results, total, err := e.runSearch(ctx, filter, limit, offset, readableRepos, true, opts)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	if len(results) == 0 && offset > 0 && len(readableRepos) > 0 {
-		total, err = e.CountResults(ctx, filter, readableRepos)
+		total, err = e.countResults(ctx, filter, readableRepos, opts)
 		if err != nil {
 			return nil, 0, err
 		}
@@ -244,14 +277,15 @@ func (e *Executor) SearchPage(
 
 // runSearch builds and runs the staged page query. With capped the page is
 // taken from the at most MaxSearchResults+1 matching rows and every returned
-// row carries their count; otherwise the page is the newest rows of all
-// matches and the count is 0.
+// row carries their count; otherwise the page is the best-ranked rows of all
+// matches and the count is 0. opts.GroupByPackage requires capped.
 func (e *Executor) runSearch(
 	ctx context.Context,
 	filter SearchFilter,
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 	capped bool,
+	opts PageOptions,
 ) ([]SearchResult, int64, error) {
 	if len(readableRepos) == 0 {
 		return nil, 0, nil
@@ -259,40 +293,86 @@ func (e *Executor) runSearch(
 
 	where, args := buildWhereClause(filter, readableRepos)
 
+	// The capped paths rank the already matched rows (and only when the set is
+	// within the cap), the uncapped one ranks while matching.
+	nameCol := "s.name"
+	if capped {
+		nameCol = "name"
+	}
+
+	rank, rankArgs := relevanceExpr(nameCol, relevanceTerm(filter), len(args)+1, true)
+	args = append(args, rankArgs...)
+
 	limitN := len(args) + 1
 	offsetN := len(args) + 2
 	args = append(args, limit, offset)
 
 	source, joinRepo := searchSource(filter)
 
-	const pageColumns = `repository_id, format, name, version, created_at, id, path,
+	const (
+		// The columns of a match, unqualified: as the capped CTEs expose them.
+		matchColumns = `repository_id, format, name, version, created_at, id, path,
 			group_id, artifact_id_coord, scope, blob_id, manifest_image, manifest_digest`
+		// The same columns qualified by the union alias, as the uncapped path reads them.
+		sourceColumns = `s.repository_id, s.format, s.name, s.version, s.created_at, s.id, s.path,
+			s.group_id, s.artifact_id_coord, s.scope, s.blob_id, s.manifest_image, s.manifest_digest`
+	)
 
-	matches := fmt.Sprintf(`SELECT s.repository_id, s.format, s.name, s.version, s.created_at, s.id, s.path,
-			s.group_id, s.artifact_id_coord, s.scope, s.blob_id, s.manifest_image, s.manifest_digest
-		FROM %s AS s%s
+	matches := fmt.Sprintf(`FROM %s AS s%s
 		%s`, source, repoJoin(joinRepo), whereClause(where))
 
 	var pageCTE, totalExpr string
 
-	if capped {
-		// The window count is evaluated before ORDER BY/LIMIT, over the capped set.
+	switch {
+	case capped && opts.GroupByPackage:
+		// One row per package, its latest version; the window count then counts
+		// packages. Above the cap nothing is grouped or ranked (that would sort
+		// and regex-match thousands of rows to build a page that is discarded):
+		// an arbitrary slice of the capped rows stands in, and every row of it
+		// carries the capped row count, which is how the caller sees that the
+		// query is too broad.
 		pageCTE = fmt.Sprintf(`WITH matched AS MATERIALIZED (
-		%s
-		LIMIT %d
-	), page AS (
-		SELECT %s, count(*) OVER () AS total
+		SELECT %[1]s, count(*) OVER () AS matched_total
+		FROM (SELECT %[2]s %[3]s LIMIT %[4]d) AS capped
+	), latest AS (
+		SELECT DISTINCT ON (repository_id, format, name) %[1]s
 		FROM matched
-		ORDER BY created_at DESC, id
-		LIMIT $%d OFFSET $%d
-	)`, matches, MaxSearchResults+1, pageColumns, limitN, offsetN)
+		WHERE matched_total <= %[7]d
+		ORDER BY repository_id, format, name, created_at DESC, id
+	), page AS (
+		(SELECT %[1]s, %[8]s AS relevance, count(*) OVER () AS total
+		FROM latest
+		ORDER BY relevance, created_at DESC, id
+		LIMIT $%[5]d OFFSET $%[6]d)
+		UNION ALL
+		(SELECT %[1]s, 0::int AS relevance, matched_total AS total
+		FROM matched
+		WHERE matched_total > %[7]d
+		LIMIT $%[5]d)
+	)`, matchColumns, sourceColumns, matches, MaxSearchResults+1, limitN, offsetN, MaxSearchResults, rank)
 		totalExpr = "p.total"
-	} else {
+	case capped:
+		// The window count is evaluated before ORDER BY/LIMIT, over the capped
+		// set; above the cap the rows are not ranked, as above.
+		pageCTE = fmt.Sprintf(`WITH matched AS MATERIALIZED (
+		SELECT %[1]s, count(*) OVER () AS matched_total
+		FROM (SELECT %[2]s %[3]s LIMIT %[4]d) AS capped
+	), page AS (
+		SELECT %[1]s,
+			CASE WHEN matched_total > %[7]d THEN 0::int ELSE %[8]s END AS relevance,
+			matched_total AS total
+		FROM matched
+		ORDER BY relevance, created_at DESC, id
+		LIMIT $%[5]d OFFSET $%[6]d
+	)`, matchColumns, sourceColumns, matches, MaxSearchResults+1, limitN, offsetN, MaxSearchResults, rank)
+		totalExpr = "p.total"
+	default:
 		pageCTE = fmt.Sprintf(`WITH page AS (
+		SELECT %s, %s AS relevance
 		%s
-		ORDER BY s.created_at DESC, s.id
+		ORDER BY relevance, s.created_at DESC, s.id
 		LIMIT $%d OFFSET $%d
-	)`, matches, limitN, offsetN)
+	)`, sourceColumns, rank, matches, limitN, offsetN)
 		totalExpr = "0::bigint"
 	}
 
@@ -315,7 +395,7 @@ func (e *Executor) runSearch(
 	FROM page AS p
 	JOIN repositories r ON r.id = p.repository_id AND r.deleted_at IS NULL
 	%s
-	ORDER BY p.created_at DESC, p.id`,
+	ORDER BY p.relevance, p.created_at DESC, p.id`,
 		pageCTE,
 		searchSHA256Expr,
 		searchSizeExpr,
@@ -323,7 +403,6 @@ func (e *Executor) runSearch(
 		fmt.Sprintf(searchBlobJoins, "p"),
 	)
 
-	//nolint:gosec // G701: see G201 above, q contains placeholders only
 	rows, err := e.db.QueryContext(ctx, q, args...)
 	if err != nil {
 		return nil, 0, fmt.Errorf("search query: %w", err)
@@ -379,7 +458,8 @@ func (e *Executor) runSearch(
 
 // SearchRepositories returns the repositories themselves whose name matches the
 // filter (case-insensitive substring, so "ui-kit" finds "ui-kit", "my-ui-kit-lib"
-// and "ui-kit-docs"), ordered by name. The package-oriented terms of the filter
+// and "ui-kit-docs"), best match first (exact name, prefix, substring; see
+// relevanceExpr), then by name. The package-oriented terms of the filter
 // apply to repositories as follows: name:/free text match the repository name,
 // format: matches the repository format, repo: the repository name exactly.
 // sha256: identifies artifacts, never a repository, so it yields no repositories.
@@ -408,6 +488,9 @@ func (e *Executor) SearchRepositories(
 
 	b.addReadable("r.id", readableRepos)
 
+	rank, rankArgs := relevanceExpr("r.name", relevanceTerm(filter), len(b.args)+1, false)
+	b.args = append(b.args, rankArgs...)
+
 	limitN := len(b.args) + 1
 	b.args = append(b.args, limit, offset)
 
@@ -415,10 +498,9 @@ func (e *Executor) SearchRepositories(
 	q := fmt.Sprintf(`SELECT r.id, r.name, r.format, COALESCE(r.description, '')
 	FROM repositories r
 	WHERE r.deleted_at IS NULL AND %s
-	ORDER BY r.name, r.id
-	LIMIT $%d OFFSET $%d`, b.String(), limitN, limitN+1)
+	ORDER BY %s, r.name, r.id
+	LIMIT $%d OFFSET $%d`, b.String(), rank, limitN, limitN+1)
 
-	//nolint:gosec // G701: see G201 above, q contains placeholders only
 	rows, err := e.db.QueryContext(ctx, q, b.args...)
 	if err != nil {
 		return nil, fmt.Errorf("repository search query: %w", err)
@@ -450,6 +532,49 @@ func (e *Executor) SearchRepositories(
 	}
 
 	return results, rows.Err()
+}
+
+// relevanceTerm is the text results are ranked against: the name: qualifier if
+// given, else the free text. Empty means nothing to rank by (a format:, repo: or
+// sha256: only query).
+func relevanceTerm(filter SearchFilter) string {
+	if filter.Name != "" {
+		return filter.Name
+	}
+
+	return filter.FreeText
+}
+
+// relevanceExpr returns a SQL expression ranking nameExpr against term, lowest
+// first: 0 exact (case-insensitive) match, 1 prefix, 2 any other substring
+// match. With segments, the last segment of a qualified name counts as the
+// name itself ("lodash" is an exact match for "@scope/lodash" and for
+// "org.acme:lodash", the way a user types the artifact rather than the
+// coordinate); a repository name has no segments. Without a term every row
+// ranks 0, leaving the caller's recency tie-break in charge.
+//
+// The expression binds two arguments starting at placeholder firstArg: the
+// escaped term and the escaped term as a prefix pattern, returned as args.
+func relevanceExpr(nameExpr, term string, firstArg int, segments bool) (string, []any) {
+	if term == "" {
+		// Cast: a bare integer in ORDER BY is a column position, not a constant.
+		return "0::int", nil
+	}
+
+	exact, prefix := fmt.Sprintf("$%d", firstArg), fmt.Sprintf("$%d", firstArg+1)
+	escaped := escapeLike(term)
+	args := []any{escaped, escaped + "%"}
+
+	exactMatch := nameExpr + " ILIKE " + exact
+	prefixMatch := nameExpr + " ILIKE " + prefix
+
+	if segments {
+		tail := "substring(" + nameExpr + ` from '[^/:]*$')`
+		exactMatch += " OR " + tail + " ILIKE " + exact
+		prefixMatch += " OR " + tail + " ILIKE " + prefix
+	}
+
+	return "CASE WHEN " + exactMatch + " THEN 0 WHEN " + prefixMatch + " THEN 1 ELSE 2 END", args
 }
 
 func whereClause(where string) string {
@@ -512,9 +637,15 @@ func (b *whereBuilder) String() string {
 	return strings.Join(b.clauses, " AND ")
 }
 
+// likeEscaper is built once: a Replacer is safe for concurrent use and costs
+// kilobytes to construct, which every search would otherwise pay per term.
+//
+//nolint:gochecknoglobals // immutable, built once
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
+
 // escapeLike escapes LIKE/ILIKE metacharacters so user input matches literally.
 func escapeLike(s string) string {
-	return strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`).Replace(s)
+	return likeEscaper.Replace(s)
 }
 
 // buildWhereClause builds the filter predicate for both CountResults and
