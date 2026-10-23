@@ -625,6 +625,12 @@ func (h *RPMUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 		return result, err
 	}
 
+	// The worker regenerates only repositories flagged stale (the flag starts
+	// true on the first upload, then is cleared by each regeneration).
+	if err := h.db.MarkRepoStale(ctx, repo.ID); err != nil {
+		h.log.Warnw("failed to mark repo stale after upload", "repo_id", repo.ID, "error", err)
+	}
+
 	if h.rpmWorker != nil {
 		h.rpmWorker.NotifyStale(repo.ID)
 	}
