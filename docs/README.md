@@ -80,5 +80,6 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 |---|---|
 | [Development guide](development/README.md) | Toolchain, build, test, lint, generate, CI and release pipeline |
 | [Architecture](development/architecture.md) | Code layout, request flow, routing invariant, storage and database split |
+| [Design: federated repositories](design/federation.md) | Multi-site replication: unit log, pull protocol, conflict rules, tombstones, peer authentication, supported formats |
 
 Contributor rules: [CONTRIBUTING.md](../CONTRIBUTING.md) and [AGENTS.md](../AGENTS.md). Security reports: [SECURITY.md](../SECURITY.md).
