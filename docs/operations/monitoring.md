@@ -162,7 +162,7 @@ Prometheus stays the primary interface and `/metrics` is unchanged. With `metric
 
 ### Overhead and binary size
 
-Enabling the OTLP exporters adds the OpenTelemetry SDK and the OTLP protobuf definitions to the server binary (about 14 MB: the stripped server binary grows from 32.3 to 45.9 MB, and `go list -m all` from 159 to 217 modules, most of them OpenTelemetry, gRPC and protobuf). With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
+The OpenTelemetry SDK and the OTLP exporters are always compiled in, enabled or not (about 14 MB: the stripped server binary grows from 32.3 to 45.9 MB, and `go list -m all` from 159 to 217 modules, most of them OpenTelemetry, gRPC and protobuf). With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
 
 ### Trying it locally
 
