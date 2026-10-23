@@ -53,6 +53,7 @@ function makeRouter() {
       { path: '/admin/backup', name: 'admin-backup', component: { template: '<div/>' } },
       { path: '/admin/webhooks', name: 'admin-webhooks', component: { template: '<div/>' } },
       { path: '/admin/system', name: 'admin-system', component: { template: '<div/>' } },
+      { path: '/admin/dependency-track', name: 'admin-dependency-track', component: { template: '<div/>' } },
       { path: '/admin/ai', name: 'admin-ai', component: { template: '<div/>' } },
       { path: '/security/vulns', name: 'security-vulns', component: { template: '<div/>' } },
       { path: '/security/licenses', name: 'security-licenses', component: { template: '<div/>' } },

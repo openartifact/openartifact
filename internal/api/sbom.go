@@ -16,6 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -31,6 +32,13 @@ type SBOMHandler struct {
 	evaluator *auth.Evaluator
 	generator *sbom.Generator
 	blobStore storage.BlobStore
+	attest    *attest.Service
+}
+
+// WithAttestation enables signed downloads (`?attest=true`).
+func (h *SBOMHandler) WithAttestation(svc *attest.Service) *SBOMHandler {
+	h.attest = svc
+	return h
 }
 
 func NewSBOMHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, generator *sbom.Generator, blobStore storage.BlobStore) *SBOMHandler {
@@ -62,11 +70,13 @@ func validateSBOMRequest(artifactID, format, specVersion string) string {
 	switch {
 	case format == "":
 		return "format is required"
-	case format != "cyclonedx" && format != "spdx" && format != "spdx-json":
-		return "format must be 'cyclonedx', 'spdx' or 'spdx-json'"
+	case format != "cyclonedx" && format != "spdx" && format != "spdx-json" && format != "spdx3-json":
+		return "format must be 'cyclonedx', 'spdx', 'spdx-json' or 'spdx3-json'"
 	case format == "cyclonedx" && specVersion != "" && !sbom.CycloneDXVersionSupported(specVersion):
 		return "CycloneDX spec_version must be '1.4', '1.5' or '1.6'"
-	case format != "cyclonedx" && specVersion != "" && specVersion != sbom.SPDX23:
+	case format == "spdx3-json" && specVersion != "" && specVersion != sbom.SPDX30:
+		return "SPDX 3 spec_version must be '3.0.1'"
+	case (format == "spdx" || format == "spdx-json") && specVersion != "" && specVersion != sbom.SPDX23:
 		return "SPDX spec_version must be '2.3'"
 	}
 
@@ -80,6 +90,8 @@ func sbomFileExtension(format string) string {
 		return "cdx.json"
 	case "spdx-json":
 		return "spdx.json"
+	case "spdx3-json":
+		return "spdx3.json"
 	case "spdx":
 		return "spdx"
 	default:
@@ -156,6 +168,8 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		result, genErr = h.generator.GenerateCycloneDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata, body.SpecVersion)
 	case "spdx-json":
 		result, genErr = h.generator.GenerateSPDXJSON(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
+	case "spdx3-json":
+		result, genErr = h.generator.GenerateSPDX3JSON(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
 	default:
 		result, genErr = h.generator.GenerateSPDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
 	}
@@ -377,6 +391,12 @@ func (h *SBOMHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode, ok := parseAttest(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "validation_failed", "attest must be 'true' or 'bundle'")
+		return
+	}
+
 	rc, err := h.blobStore.Get(ctx, report.BlobSHA256)
 	if err != nil {
 		h.log.Errorw("download SBOM: blob fetch failed", "sha256", report.BlobSHA256, "error", err)
@@ -385,6 +405,11 @@ func (h *SBOMHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = rc.Close() }()
+
+	if mode != attestNone {
+		h.writeAttested(ctx, w, repo, report, rc, mode)
+		return
+	}
 
 	// The blob already holds the exact bytes generated at SBOM creation
 	// time (JSON for cyclonedx, plain text for spdx), so stream it as-is
@@ -396,6 +421,66 @@ func (h *SBOMHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	if _, err := io.Copy(w, rc); err != nil {
 		h.log.Warnw("download SBOM: failed to stream content", "sha256", report.BlobSHA256, "error", err)
 	}
+}
+
+// attestPredicate is the in-toto predicate type of a stored SBOM format; ""
+// for formats that are not JSON documents (SPDX tag-value).
+func attestPredicate(format string) string {
+	switch format {
+	case "cyclonedx":
+		return attest.PredicateCycloneDX
+	case "spdx-json":
+		return attest.PredicateSPDX
+	case "spdx3-json":
+		return attest.PredicateSPDX3
+	default:
+		return ""
+	}
+}
+
+// writeAttested serves the stored SBOM as a signed in-toto attestation. Its
+// subjects are the described package (when its sha256 is known: what
+// `cosign verify-blob-attestation <package>` checks) and the SBOM file itself.
+func (h *SBOMHandler) writeAttested(ctx context.Context, w http.ResponseWriter, repo *models.Repository,
+	report *models.SBOMReport, rc io.Reader, mode attestMode,
+) {
+	predicateType := attestPredicate(report.Format)
+	if predicateType == "" {
+		writeError(w, http.StatusBadRequest, "validation_failed",
+			"only JSON SBOMs can be attested; generate cyclonedx, spdx-json or spdx3-json")
+
+		return
+	}
+
+	doc, err := readLimited(rc)
+	if err != nil {
+		h.log.Errorw("attest SBOM: reading content failed", "sha256", report.BlobSHA256, "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "failed to read SBOM content")
+
+		return
+	}
+
+	file := "sbom." + sbomFileExtension(report.Format)
+	subjects := []attest.Subject{attest.SHA256Subject(file, report.BlobSHA256)}
+
+	id, err := h.generator.Identity(ctx, repo.ID, repo.Format, report.ArtifactID)
+	if err != nil {
+		h.log.Errorw("attest SBOM: resolving the artifact hash failed", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if id.SHA256 != "" {
+		name := id.PURL
+		if name == "" {
+			name = report.ArtifactID
+		}
+
+		subjects = append([]attest.Subject{attest.SHA256Subject(name, id.SHA256)}, subjects...)
+	}
+
+	attestedResponse(ctx, w, h.log, h.attest, mode, predicateType, doc, subjects, file+"."+mode.extension())
 }
 
 func (h *SBOMHandler) handleDelete(w http.ResponseWriter, r *http.Request) {

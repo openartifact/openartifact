@@ -3510,6 +3510,220 @@
         "required": [
           "success"
         ]
+      },
+      "AttestationKey": {
+        "type": "object",
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "description": "Hex sha256 of the DER public key."
+          },
+          "algorithm": {
+            "type": "string",
+            "description": "`ecdsa-p256`, `ecdsa-p384`, `ecdsa-p521` or `ed25519`."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "file",
+              "generated"
+            ]
+          },
+          "public_key_pem": {
+            "type": "string"
+          },
+          "public_key_url": {
+            "type": "string"
+          }
+        }
+      },
+      "DependencyTrackSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "api_key_set": {
+            "type": "boolean",
+            "description": "The API key is write-only; this tells whether one is stored."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Project name template; empty means `{repo}/{name}`."
+          },
+          "project_version": {
+            "type": "string",
+            "description": "Project version template; empty means `{version}`."
+          },
+          "auto_push": {
+            "type": "boolean",
+            "description": "Push the BOM on upload and after each scan."
+          },
+          "push_vex": {
+            "type": "boolean",
+            "description": "After Dependency-Track's analysis, push the VEX decisions."
+          }
+        }
+      },
+      "DependencyTrackOverride": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "api_key_set": {
+            "type": "boolean"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "project_version": {
+            "type": "string"
+          },
+          "auto_push": {
+            "type": "boolean",
+            "nullable": true
+          },
+          "push_vex": {
+            "type": "boolean",
+            "nullable": true
+          }
+        }
+      },
+      "DependencyTrackEffective": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          },
+          "ready": {
+            "type": "boolean",
+            "description": "Enabled with a URL and an API key."
+          },
+          "source": {
+            "type": "string",
+            "enum": [
+              "none",
+              "global",
+              "repository"
+            ]
+          },
+          "base_url": {
+            "type": "string"
+          },
+          "api_key_set": {
+            "type": "boolean"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "project_version": {
+            "type": "string"
+          },
+          "auto_push": {
+            "type": "boolean"
+          },
+          "push_vex": {
+            "type": "boolean"
+          }
+        }
+      },
+      "DependencyTrackRepository": {
+        "type": "object",
+        "properties": {
+          "override": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/DependencyTrackOverride"
+              }
+            ],
+            "nullable": true
+          },
+          "effective": {
+            "$ref": "#/components/schemas/DependencyTrackEffective"
+          }
+        }
+      },
+      "DependencyTrackPush": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "state": {
+            "type": "string",
+            "enum": [
+              "queued",
+              "running",
+              "done",
+              "skipped",
+              "failed"
+            ]
+          },
+          "detail": {
+            "type": "string"
+          },
+          "project_uuid": {
+            "type": "string"
+          },
+          "project_name": {
+            "type": "string"
+          },
+          "project_version": {
+            "type": "string"
+          },
+          "components": {
+            "type": "integer"
+          },
+          "vex_statements": {
+            "type": "integer",
+            "description": "VEX statements sent (decisions matching a vulnerability Dependency-Track reports)."
+          },
+          "vex_applied": {
+            "type": "integer",
+            "description": "Findings carrying an analysis in Dependency-Track after the import."
+          },
+          "bom_pushed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "vex_pushed_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DependencyTrackTest": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          },
+          "missing_permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
       }
     }
   },
@@ -4721,12 +4935,12 @@
                   },
                   "format": {
                     "type": "string",
-                    "enum": ["cyclonedx", "spdx", "spdx-json"],
-                    "description": "`cyclonedx` (JSON), `spdx` (2.3 tag-value) or `spdx-json` (2.3 JSON)."
+                    "enum": ["cyclonedx", "spdx", "spdx-json", "spdx3-json"],
+                    "description": "`cyclonedx` (JSON), `spdx` (2.3 tag-value), `spdx-json` (2.3 JSON) or `spdx3-json` (SPDX 3.0.1 JSON-LD)."
                   },
                   "spec_version": {
                     "type": "string",
-                    "description": "CycloneDX 1.4, 1.5 (default) or 1.6; SPDX 2.3. Optional."
+                    "description": "CycloneDX 1.4, 1.5 (default) or 1.6; SPDX 2.3; SPDX 3 3.0.1. Optional."
                   },
                   "metadata": {
                     "type": "object"
@@ -4894,22 +5108,47 @@
               "type": "string",
               "format": "uuid"
             }
+          },
+          {
+            "name": "attest",
+            "in": "query",
+            "description": "`true` returns the document as a signed in-toto attestation in a DSSE envelope; `bundle` returns a Sigstore bundle, the input of `cosign verify-blob-attestation`. Verify with the key from `/.well-known/openartifact/attestation-key.pem`.",
+            "schema": {
+              "type": "string",
+              "enum": ["true", "bundle"]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "SBOM file",
+            "description": "SBOM file, or its attestation with `attest`",
             "content": {
               "application/octet-stream": {
                 "schema": {
                   "type": "string",
                   "format": "binary"
                 }
+              },
+              "application/vnd.dsse.envelope.v1+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/vnd.dev.sigstore.bundle.v0.3+json": {
+                "schema": {
+                  "type": "object"
+                }
               }
             }
           },
+          "400": {
+            "description": "Invalid attest value, or the SBOM is not a JSON document (SPDX tag-value cannot be attested)"
+          },
           "404": {
             "description": "SBOM report not found"
+          },
+          "501": {
+            "description": "Attestations are not enabled"
           }
         }
       }
@@ -4958,18 +5197,40 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "attest",
+            "in": "query",
+            "description": "`true` returns the document as a signed in-toto attestation in a DSSE envelope; `bundle` returns a Sigstore bundle, the input of `cosign verify-blob-attestation`. Verify with the key from `/.well-known/openartifact/attestation-key.pem`.",
+            "schema": {
+              "type": "string",
+              "enum": ["true", "bundle"]
+            }
           }
         ],
         "responses": {
           "200": {
-            "description": "VEX document",
+            "description": "VEX document, or its attestation with `attest`",
             "content": {
               "application/json": {
                 "schema": {
                   "type": "object"
                 }
+              },
+              "application/vnd.dsse.envelope.v1+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/vnd.dev.sigstore.bundle.v0.3+json": {
+                "schema": {
+                  "type": "object"
+                }
               }
             }
+          },
+          "501": {
+            "description": "Attestations are not enabled"
           },
           "400": {
             "description": "Invalid format, spec_version or artifact_id"
@@ -15132,6 +15393,535 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/dependency-track": {
+      "get": {
+        "summary": "Get the global Dependency-Track settings",
+        "description": "Admin only. The API key is never returned.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyTrackSettings"
+                }
+              }
+            }
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Replace the global Dependency-Track settings",
+        "description": "Admin only. Replaces the non-secret fields; `api_key` is write-only (omitted keeps it, empty clears it). Enabling needs a base URL and an API key. The URL must pass the outbound SSRF check. Project name and version are templates over `{repo}`, `{name}`, `{version}`, `{artifact_id}` and `{format}`.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean"
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "api_key": {
+                    "type": "string",
+                    "description": "Plaintext API key. Omit to keep the stored one, empty string clears it."
+                  },
+                  "project_name": {
+                    "type": "string"
+                  },
+                  "project_version": {
+                    "type": "string"
+                  },
+                  "auto_push": {
+                    "type": "boolean"
+                  },
+                  "push_vex": {
+                    "type": "boolean"
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyTrackSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/dependency-track/test": {
+      "post": {
+        "summary": "Test the global Dependency-Track connection",
+        "description": "Admin only. Calls the server with the stored URL and key and reports its version and the API key's permissions against the ones the integration needs.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyTrackTest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not configured, unreachable or key rejected"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/dependency-track": {
+      "get": {
+        "summary": "Get a repository's Dependency-Track settings",
+        "description": "Admin only. Returns the repository override (null when none) and the effective configuration.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyTrackRepository"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set a repository's Dependency-Track override",
+        "description": "Admin only. Empty strings and null booleans inherit the global settings.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "enabled": {
+                    "type": "boolean",
+                    "description": "false opts the repository out even when the global integration is on."
+                  },
+                  "base_url": {
+                    "type": "string"
+                  },
+                  "api_key": {
+                    "type": "string",
+                    "description": "Plaintext API key. Omit to keep the stored one, empty string clears it."
+                  },
+                  "project_name": {
+                    "type": "string"
+                  },
+                  "project_version": {
+                    "type": "string"
+                  },
+                  "auto_push": {
+                    "type": "boolean",
+                    "nullable": true
+                  },
+                  "push_vex": {
+                    "type": "boolean",
+                    "nullable": true
+                  }
+                },
+                "required": [
+                  "enabled"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyTrackRepository"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove a repository's Dependency-Track override",
+        "description": "Admin only. The repository falls back to the global settings.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Removed"
+          },
+          "404": {
+            "description": "Repository or override not found"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/dependency-track/test": {
+      "post": {
+        "summary": "Test a repository's Dependency-Track connection",
+        "description": "Admin only. Uses the effective configuration.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyTrackTest"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not configured, unreachable or key rejected"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/dependency-track/push": {
+      "post": {
+        "summary": "Push an artifact to Dependency-Track",
+        "description": "Admin only. Queues the push of the artifact's CycloneDX BOM and, when `push_vex` is on, its VEX decisions; poll `/pushes` for the outcome.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "artifact_id": {
+                    "type": "string",
+                    "description": "`name@version`"
+                  }
+                },
+                "required": [
+                  "artifact_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "202": {
+            "description": "Queued",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DependencyTrackPush"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "409": {
+            "description": "Integration not enabled for the repository, or queue full"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/dependency-track/pushes": {
+      "get": {
+        "summary": "List Dependency-Track pushes",
+        "description": "Admin only. The last push of each artifact, newest first.",
+        "tags": [
+          "Dependency-Track"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "pushes": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/DependencyTrackPush"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/attestation": {
+      "get": {
+        "summary": "Describe the attestation signing key",
+        "description": "Admin only. The key signs `?attest=` SBOM and VEX downloads; its public half is also served unauthenticated at `public_key_url`.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationKey"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Attestations are not enabled"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/.well-known/openartifact/attestation-key.pem": {
+      "get": {
+        "summary": "Attestation public key",
+        "description": "The PEM (PKIX) public key that verifies SBOM and VEX attestations, for `cosign verify-blob-attestation --key`. Unauthenticated.",
+        "tags": [
+          "SBOM"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "PEM public key",
+            "content": {
+              "application/x-pem-file": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "Attestations are not enabled"
           }
         }
       }

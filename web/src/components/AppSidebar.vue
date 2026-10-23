@@ -111,6 +111,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <SidebarLink to="/admin/backup" :icon="ArchiveBoxIcon" :label="t('nav.backup')" :collapsed="collapsed" />
           <SidebarLink to="/admin/webhooks" :icon="BellAlertIcon" :label="t('nav.webhooks')" :collapsed="collapsed" />
           <SidebarLink to="/admin/system" :icon="Cog6ToothIcon" :label="t('nav.system')" :collapsed="collapsed" />
+          <SidebarLink to="/admin/dependency-track" :icon="ShieldExclamationIcon" :label="t('nav.dependencyTrack')" :collapsed="collapsed" />
           <SidebarLink to="/admin/ai" :icon="SparklesIcon" :label="t('shell.aiSettings')" :collapsed="collapsed" />
         </div>
       </template>

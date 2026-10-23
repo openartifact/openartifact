@@ -262,6 +262,26 @@ func (in *Input) scanner() string {
 // status as its analysis. A single input is described in metadata.component
 // (a VEX for one package); several are listed as components (a repository VEX).
 func (g *Generator) GenerateCycloneDXVEX(inputs []*Input, specVersion string) (*SBOMResult, error) {
+	return g.GenerateCycloneDXVEXWith(inputs, specVersion, VEXOptions{})
+}
+
+// VulnRef is a vulnerability as a VEX consumer knows it: its id and source name.
+type VulnRef struct {
+	ID     string
+	Source string
+}
+
+// VEXOptions narrow and rewrite a CycloneDX VEX for a specific consumer.
+type VEXOptions struct {
+	// DecidedOnly keeps only the findings an admin made a VEX decision on.
+	DecidedOnly bool
+	// ResolveVuln maps a finding's vulnerability id to the id and source the
+	// consumer uses for it; ok=false drops the finding (the consumer does not know it).
+	ResolveVuln func(id string) (ref VulnRef, ok bool)
+}
+
+// GenerateCycloneDXVEXWith is GenerateCycloneDXVEX with options.
+func (g *Generator) GenerateCycloneDXVEXWith(inputs []*Input, specVersion string, opts VEXOptions) (*SBOMResult, error) {
 	if specVersion == "" {
 		specVersion = DefaultCycloneDX
 	}
@@ -290,10 +310,56 @@ func (g *Generator) GenerateCycloneDXVEX(inputs []*Input, specVersion string) (*
 			bom.Components = append(bom.Components, c)
 		}
 
-		vulns := in.cdxVulns(c.BOMRef, specVersion)
+		vulns := in.cdxVEXVulns(c.BOMRef, specVersion, opts)
 		bom.Vulnerabilities = append(bom.Vulnerabilities, vulns...)
 		count += len(vulns)
 	}
 
 	return finishJSON(VEXCycloneDX, specVersion, "application/json", bom, count)
+}
+
+// cdxVEXVulns is cdxVulns narrowed and rewritten by opts.
+func (in *Input) cdxVEXVulns(ref, spec string, opts VEXOptions) []cdxVuln {
+	if !opts.DecidedOnly && opts.ResolveVuln == nil {
+		return in.cdxVulns(ref, spec)
+	}
+
+	var out []cdxVuln
+
+	for _, f := range in.Findings() {
+		if opts.DecidedOnly && !f.Decided {
+			continue
+		}
+
+		v := f.cdxVuln(ref, spec)
+
+		if opts.ResolveVuln != nil {
+			r, ok := opts.ResolveVuln(f.Vuln.ID)
+			if !ok {
+				continue
+			}
+
+			v.ID = r.ID
+			v.Source = &cdxSource{Name: r.Source}
+		}
+
+		out = append(out, v)
+	}
+
+	return out
+}
+
+// Identity returns the artifact's name, version, purl and stored sha256 without
+// loading its scans: what an attestation names as its subject. With no database
+// the sha256 stays empty.
+func (g *Generator) Identity(ctx context.Context, repoID, format, artifactID string) (*Input, error) {
+	in := newInput(format, artifactID, nil)
+
+	if g.db != nil {
+		if err := g.loadHash(ctx, repoID, in); err != nil {
+			return nil, err
+		}
+	}
+
+	return in, nil
 }

@@ -62,6 +62,7 @@ func realRouter() chi.Router {
 	api.NewCleanupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewSBOMHandler(nil, nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewVEXHandler(nil, nil, nil, nil).RegisterAuthed(r)
+	api.NewDependencyTrackHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewWebhooksHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewBackupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewLicenseHandler(nil, nil, nil, nil, nil).RegisterRoutes(r)
@@ -915,6 +916,41 @@ func TestContractScans(t *testing.T) {
 			replies: map[string]reply{"GET /api/v1/repositories/{name}/sbom": ok(`{"reports":[{"id":"s1","artifact_id":"a1","format":"spdx"}]}`)},
 			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/sbom"}},
 			out:     "s1",
+		},
+		{
+			name:    "sbom generate spdx3-json defaults to 3.0.1",
+			args:    []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "spdx3-json"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s3","component_count":1}`}},
+			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/sbom/generate", body: m{"artifact_id": "a1", "format": "spdx3-json", "spec_version": "3.0.1"}}},
+			out:     "s3",
+		},
+		{
+			name:    "dtrack show",
+			args:    []string{"dtrack", "show", "r"},
+			replies: map[string]reply{"GET /api/v1/repositories/{name}/dependency-track": ok(`{"override":null,"effective":{"enabled":true,"ready":true,"source":"global"}}`)},
+			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/dependency-track"}},
+			out:     "global",
+		},
+		{
+			name:    "dtrack push",
+			args:    []string{"dtrack", "push", "r", "--artifact-id", "lib@1.0.0"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/dependency-track/push": {status: 202, body: `{"artifact_id":"lib@1.0.0","state":"queued"}`}},
+			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/dependency-track/push", body: m{"artifact_id": "lib@1.0.0"}}},
+			out:     "queued",
+		},
+		{
+			name:    "dtrack pushes",
+			args:    []string{"dtrack", "pushes", "r"},
+			replies: map[string]reply{"GET /api/v1/repositories/{name}/dependency-track/pushes": ok(`{"pushes":[{"artifact_id":"lib@1.0.0","state":"done"}]}`)},
+			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/dependency-track/pushes"}},
+			out:     "done",
+		},
+		{
+			name:    "dtrack test",
+			args:    []string{"dtrack", "test", "r"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/dependency-track/test": ok(`{"version":"4.14.2","permissions":[],"missing_permissions":[]}`)},
+			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/dependency-track/test"}},
+			out:     "4.14.2",
 		},
 		{
 			name:    "vuln scan",

@@ -209,7 +209,7 @@ func webhookRepo(args []string, client *Client, outFmt string) {
 // sbomSpecVersions maps an SBOM format to the spec version used when --spec-version is not given.
 //
 //nolint:gochecknoglobals // immutable lookup table
-var sbomSpecVersions = map[string]string{"cyclonedx": "1.5", "spdx": "2.3", "spdx-json": "2.3"}
+var sbomSpecVersions = map[string]string{"cyclonedx": "1.5", "spdx": "2.3", "spdx-json": "2.3", "spdx3-json": "3.0.1"}
 
 func handleSBOM(args []string, client *Client, outFmt string) {
 	if len(args) < 2 {
@@ -225,13 +225,13 @@ func handleSBOM(args []string, client *Client, outFmt string) {
 	case "generate":
 		fs := flag.NewFlagSet("sbom generate", flag.ExitOnError)
 		artifactID := fs.String("artifact-id", "", "Artifact (package) id to build the SBOM for")
-		format := fs.String("format", "cyclonedx", "SBOM format: cyclonedx|spdx|spdx-json")
-		specVersion := fs.String("spec-version", "", "Spec version (CycloneDX 1.4|1.5|1.6, SPDX 2.3); default 1.5 / 2.3")
+		format := fs.String("format", "cyclonedx", "SBOM format: cyclonedx|spdx|spdx-json|spdx3-json")
+		specVersion := fs.String("spec-version", "", "Spec version (CycloneDX 1.4|1.5|1.6, SPDX 2.3, SPDX 3 3.0.1); default 1.5 / 2.3 / 3.0.1")
 		_ = fs.Parse(args[2:])
 
 		spec, ok := sbomSpecVersions[*format]
 		if !ok {
-			dief("--format must be cyclonedx, spdx or spdx-json")
+			dief("--format must be cyclonedx, spdx, spdx-json or spdx3-json")
 		}
 
 		if *specVersion != "" {
@@ -252,8 +252,18 @@ func handleSBOM(args []string, client *Client, outFmt string) {
 		needArgs(args, 3, "Usage: oa sbom show <repo> <id>")
 		showGeneric(client, base+"/"+escape(args[2]), outFmt)
 	case "download":
-		needArgs(args, 4, "Usage: oa sbom download <repo> <id> <dest>")
-		downloadFile(client, base+"/"+escape(args[2])+"/download", args[3])
+		needArgs(args, 4, "Usage: oa sbom download <repo> <id> <dest> [--attest true|bundle]")
+
+		fs := flag.NewFlagSet("sbom download", flag.ExitOnError)
+		attest := fs.String("attest", "", "Download a signed in-toto attestation instead: true (DSSE envelope) or bundle (Sigstore bundle, for cosign)")
+		_ = fs.Parse(args[4:])
+
+		path := base + "/" + escape(args[2]) + "/download"
+		if *attest != "" {
+			path += "?attest=" + url.QueryEscape(*attest)
+		}
+
+		downloadFile(client, path, args[3])
 	case "delete":
 		needArgs(args, 3, "Usage: oa sbom delete <repo> <id>")
 		deleteResource(client, base+"/"+escape(args[2]), "SBOM deleted.")

@@ -5,6 +5,9 @@
 package api
 
 import (
+	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"net/http"
 	"strings"
@@ -12,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/api/responses"
+	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -32,6 +36,13 @@ type VEXHandler struct {
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	generator *sbom.Generator
+	attest    *attest.Service
+}
+
+// WithAttestation enables signed documents (`?attest=true`).
+func (h *VEXHandler) WithAttestation(svc *attest.Service) *VEXHandler {
+	h.attest = svc
+	return h
 }
 
 func NewVEXHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, generator *sbom.Generator) *VEXHandler {
@@ -93,6 +104,12 @@ func (h *VEXHandler) handleDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	mode, ok := parseAttest(r)
+	if !ok {
+		writeError(w, http.StatusBadRequest, "validation_failed", "attest must be 'true' or 'bundle'")
+		return
+	}
+
 	specVersion := q.Get("spec_version")
 	if specVersion != "" && (format != sbom.VEXCycloneDX || !sbom.CycloneDXVersionSupported(specVersion)) {
 		writeError(w, http.StatusBadRequest, "validation_failed", "spec_version applies to cyclonedx only and must be '1.4', '1.5' or '1.6'")
@@ -144,6 +161,11 @@ func (h *VEXHandler) handleDocument(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if mode != attestNone {
+		h.writeAttested(ctx, w, format, result, inputs, mode)
+		return
+	}
+
 	w.Header().Set("Content-Type", result.ContentType)
 	w.Header().Set("Content-Disposition", "attachment; filename=vex."+format+".json")
 	w.WriteHeader(http.StatusOK)
@@ -152,6 +174,43 @@ func (h *VEXHandler) handleDocument(w http.ResponseWriter, r *http.Request) {
 	if _, err := w.Write(result.Body); err != nil {
 		h.log.Warnw("vex document: failed to write response", "error", err)
 	}
+}
+
+// writeAttested serves the VEX document as a signed in-toto attestation. Its
+// subjects are the packages the document speaks about whose sha256 is known;
+// a VEX document is regenerated on every request, so when none is known the
+// subject is the digest of the signed document itself (the attestation's
+// predicate).
+func (h *VEXHandler) writeAttested(ctx context.Context, w http.ResponseWriter, format string, result *sbom.SBOMResult,
+	inputs []*sbom.Input, mode attestMode,
+) {
+	predicateType := attest.PredicateOpenVEX
+	if format == sbom.VEXCycloneDX {
+		predicateType = attest.PredicateCycloneDX
+	}
+
+	var subjects []attest.Subject
+
+	for _, in := range inputs {
+		if in.SHA256 == "" {
+			continue
+		}
+
+		name := in.PURL
+		if name == "" {
+			name = in.ArtifactID
+		}
+
+		subjects = append(subjects, attest.SHA256Subject(name, in.SHA256))
+	}
+
+	file := "vex." + format + ".json"
+	if len(subjects) == 0 {
+		sum := sha256.Sum256(result.Body)
+		subjects = append(subjects, attest.SHA256Subject(file, hex.EncodeToString(sum[:])))
+	}
+
+	attestedResponse(ctx, w, h.log, h.attest, mode, predicateType, result.Body, subjects, file+"."+mode.extension())
 }
 
 func vexResponse(s *models.VEXStatement) responses.VEXStatementResponse {

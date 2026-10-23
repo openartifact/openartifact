@@ -1183,6 +1183,27 @@ func (m *BaseMockDB) DeleteVEXStatement(ctx context.Context, repoID, id string) 
 func (m *BaseMockDB) DeleteSBOMReportInRepo(ctx context.Context, repoID, id string) (string, error) {
 	return "", errNotImpl("DeleteSBOMReportInRepo")
 }
+func (m *BaseMockDB) GetRepositoryDependencyTrack(ctx context.Context, repoID string) (*models.RepositoryDependencyTrack, error) {
+	return nil, errNotImpl("GetRepositoryDependencyTrack")
+}
+func (m *BaseMockDB) UpsertRepositoryDependencyTrack(ctx context.Context, c *models.RepositoryDependencyTrack) error {
+	return errNotImpl("UpsertRepositoryDependencyTrack")
+}
+func (m *BaseMockDB) DeleteRepositoryDependencyTrack(ctx context.Context, repoID string) (bool, error) {
+	return false, errNotImpl("DeleteRepositoryDependencyTrack")
+}
+func (m *BaseMockDB) UpsertDependencyTrackPush(ctx context.Context, s *models.DependencyTrackPush) error {
+	return errNotImpl("UpsertDependencyTrackPush")
+}
+func (m *BaseMockDB) GetDependencyTrackPush(ctx context.Context, repoID, artifactID string) (*models.DependencyTrackPush, error) {
+	return nil, errNotImpl("GetDependencyTrackPush")
+}
+func (m *BaseMockDB) ListDependencyTrackPushes(ctx context.Context, repoID string, limit int) ([]*models.DependencyTrackPush, error) {
+	return nil, errNotImpl("ListDependencyTrackPushes")
+}
+func (m *BaseMockDB) CreateSystemSettingIfAbsent(ctx context.Context, key, value string) (bool, error) {
+	return false, errNotImpl("CreateSystemSettingIfAbsent")
+}
 func (m *BaseMockDB) SetArtifactProperties(ctx context.Context, repoID, artifactID string, props map[string]string, replace bool) error {
 	return errNotImpl("SetArtifactProperties")
 }

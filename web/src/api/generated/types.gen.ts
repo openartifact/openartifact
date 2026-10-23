@@ -1458,6 +1458,102 @@ export type PackageDeltaList = {
     code?: string;
 };
 
+export type AttestationKey = {
+    /**
+     * Hex sha256 of the DER public key.
+     */
+    key_id?: string;
+    /**
+     * `ecdsa-p256`, `ecdsa-p384`, `ecdsa-p521` or `ed25519`.
+     */
+    algorithm?: string;
+    source?: 'file' | 'generated';
+    public_key_pem?: string;
+    public_key_url?: string;
+};
+
+export type DependencyTrackSettings = {
+    enabled?: boolean;
+    base_url?: string;
+    /**
+     * The API key is write-only; this tells whether one is stored.
+     */
+    api_key_set?: boolean;
+    /**
+     * Project name template; empty means `{repo}/{name}`.
+     */
+    project_name?: string;
+    /**
+     * Project version template; empty means `{version}`.
+     */
+    project_version?: string;
+    /**
+     * Push the BOM on upload and after each scan.
+     */
+    auto_push?: boolean;
+    /**
+     * After Dependency-Track's analysis, push the VEX decisions.
+     */
+    push_vex?: boolean;
+};
+
+export type DependencyTrackOverride = {
+    enabled?: boolean;
+    base_url?: string;
+    api_key_set?: boolean;
+    project_name?: string;
+    project_version?: string;
+    auto_push?: boolean | null;
+    push_vex?: boolean | null;
+};
+
+export type DependencyTrackEffective = {
+    enabled?: boolean;
+    /**
+     * Enabled with a URL and an API key.
+     */
+    ready?: boolean;
+    source?: 'none' | 'global' | 'repository';
+    base_url?: string;
+    api_key_set?: boolean;
+    project_name?: string;
+    project_version?: string;
+    auto_push?: boolean;
+    push_vex?: boolean;
+};
+
+export type DependencyTrackRepository = {
+    override?: DependencyTrackOverride | null;
+    effective?: DependencyTrackEffective;
+};
+
+export type DependencyTrackPush = {
+    artifact_id?: string;
+    state?: 'queued' | 'running' | 'done' | 'skipped' | 'failed';
+    detail?: string;
+    project_uuid?: string;
+    project_name?: string;
+    project_version?: string;
+    components?: number;
+    /**
+     * VEX statements sent (decisions matching a vulnerability Dependency-Track reports).
+     */
+    vex_statements?: number;
+    /**
+     * Findings carrying an analysis in Dependency-Track after the import.
+     */
+    vex_applied?: number;
+    bom_pushed_at?: string | null;
+    vex_pushed_at?: string | null;
+    updated_at?: string;
+};
+
+export type DependencyTrackTest = {
+    version?: string;
+    permissions?: Array<string>;
+    missing_permissions?: Array<string>;
+};
+
 export type GetHealthData = {
     body?: never;
     path?: never;
@@ -2107,11 +2203,11 @@ export type PostApiV1RepositoriesByNameSbomGenerateData = {
     body: {
         artifact_id: string;
         /**
-         * `cyclonedx` (JSON), `spdx` (2.3 tag-value) or `spdx-json` (2.3 JSON).
+         * `cyclonedx` (JSON), `spdx` (2.3 tag-value), `spdx-json` (2.3 JSON) or `spdx3-json` (SPDX 3.0.1 JSON-LD).
          */
-        format: 'cyclonedx' | 'spdx' | 'spdx-json';
+        format: 'cyclonedx' | 'spdx' | 'spdx-json' | 'spdx3-json';
         /**
-         * CycloneDX 1.4, 1.5 (default) or 1.6; SPDX 2.3. Optional.
+         * CycloneDX 1.4, 1.5 (default) or 1.6; SPDX 2.3; SPDX 3 3.0.1. Optional.
          */
         spec_version?: string;
         metadata?: {
@@ -2217,22 +2313,37 @@ export type GetApiV1RepositoriesByNameSbomByIdDownloadData = {
         name: string;
         id: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * `true` returns the document as a signed in-toto attestation in a DSSE envelope; `bundle` returns a Sigstore bundle, the input of `cosign verify-blob-attestation`. Verify with the key from `/.well-known/openartifact/attestation-key.pem`.
+         */
+        attest?: 'true' | 'bundle';
+    };
     url: '/api/v1/repositories/{name}/sbom/{id}/download';
 };
 
 export type GetApiV1RepositoriesByNameSbomByIdDownloadErrors = {
     /**
+     * Invalid attest value, or the SBOM is not a JSON document (SPDX tag-value cannot be attested)
+     */
+    400: unknown;
+    /**
      * SBOM report not found
      */
     404: unknown;
+    /**
+     * Attestations are not enabled
+     */
+    501: unknown;
 };
 
 export type GetApiV1RepositoriesByNameSbomByIdDownloadResponses = {
     /**
-     * SBOM file
+     * SBOM file, or its attestation with `attest`
      */
-    200: Blob | File;
+    200: {
+        [key: string]: unknown;
+    };
 };
 
 export type GetApiV1RepositoriesByNameSbomByIdDownloadResponse = GetApiV1RepositoriesByNameSbomByIdDownloadResponses[keyof GetApiV1RepositoriesByNameSbomByIdDownloadResponses];
@@ -2252,6 +2363,10 @@ export type GetApiV1RepositoriesByNameVexData = {
          * Restrict the document to one artifact (`name@version`).
          */
         artifact_id?: string;
+        /**
+         * `true` returns the document as a signed in-toto attestation in a DSSE envelope; `bundle` returns a Sigstore bundle, the input of `cosign verify-blob-attestation`. Verify with the key from `/.well-known/openartifact/attestation-key.pem`.
+         */
+        attest?: 'true' | 'bundle';
     };
     url: '/api/v1/repositories/{name}/vex';
 };
@@ -2265,11 +2380,15 @@ export type GetApiV1RepositoriesByNameVexErrors = {
      * Repository not found
      */
     404: unknown;
+    /**
+     * Attestations are not enabled
+     */
+    501: unknown;
 };
 
 export type GetApiV1RepositoriesByNameVexResponses = {
     /**
-     * VEX document
+     * VEX document, or its attestation with `attest`
      */
     200: {
         [key: string]: unknown;
@@ -8581,3 +8700,372 @@ export type GetApiV1RepositoriesByNamePackagesByIdDeltasResponses = {
 };
 
 export type GetApiV1RepositoriesByNamePackagesByIdDeltasResponse = GetApiV1RepositoriesByNamePackagesByIdDeltasResponses[keyof GetApiV1RepositoriesByNamePackagesByIdDeltasResponses];
+
+export type GetApiV1AdminDependencyTrackData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/dependency-track';
+};
+
+export type GetApiV1AdminDependencyTrackErrors = {
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AdminDependencyTrackError = GetApiV1AdminDependencyTrackErrors[keyof GetApiV1AdminDependencyTrackErrors];
+
+export type GetApiV1AdminDependencyTrackResponses = {
+    /**
+     * Success
+     */
+    200: DependencyTrackSettings;
+};
+
+export type GetApiV1AdminDependencyTrackResponse = GetApiV1AdminDependencyTrackResponses[keyof GetApiV1AdminDependencyTrackResponses];
+
+export type PutApiV1AdminDependencyTrackData = {
+    body: {
+        enabled: boolean;
+        base_url?: string;
+        /**
+         * Plaintext API key. Omit to keep the stored one, empty string clears it.
+         */
+        api_key?: string;
+        project_name?: string;
+        project_version?: string;
+        auto_push?: boolean;
+        push_vex?: boolean;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/dependency-track';
+};
+
+export type PutApiV1AdminDependencyTrackErrors = {
+    /**
+     * Validation failed
+     */
+    400: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PutApiV1AdminDependencyTrackError = PutApiV1AdminDependencyTrackErrors[keyof PutApiV1AdminDependencyTrackErrors];
+
+export type PutApiV1AdminDependencyTrackResponses = {
+    /**
+     * Success
+     */
+    200: DependencyTrackSettings;
+};
+
+export type PutApiV1AdminDependencyTrackResponse = PutApiV1AdminDependencyTrackResponses[keyof PutApiV1AdminDependencyTrackResponses];
+
+export type PostApiV1AdminDependencyTrackTestData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/dependency-track/test';
+};
+
+export type PostApiV1AdminDependencyTrackTestErrors = {
+    /**
+     * Not configured, unreachable or key rejected
+     */
+    400: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1AdminDependencyTrackTestError = PostApiV1AdminDependencyTrackTestErrors[keyof PostApiV1AdminDependencyTrackTestErrors];
+
+export type PostApiV1AdminDependencyTrackTestResponses = {
+    /**
+     * Success
+     */
+    200: DependencyTrackTest;
+};
+
+export type PostApiV1AdminDependencyTrackTestResponse = PostApiV1AdminDependencyTrackTestResponses[keyof PostApiV1AdminDependencyTrackTestResponses];
+
+export type DeleteApiV1RepositoriesByNameDependencyTrackData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/dependency-track';
+};
+
+export type DeleteApiV1RepositoriesByNameDependencyTrackErrors = {
+    /**
+     * Repository or override not found
+     */
+    404: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type DeleteApiV1RepositoriesByNameDependencyTrackError = DeleteApiV1RepositoriesByNameDependencyTrackErrors[keyof DeleteApiV1RepositoriesByNameDependencyTrackErrors];
+
+export type DeleteApiV1RepositoriesByNameDependencyTrackResponses = {
+    /**
+     * Removed
+     */
+    204: void;
+};
+
+export type DeleteApiV1RepositoriesByNameDependencyTrackResponse = DeleteApiV1RepositoriesByNameDependencyTrackResponses[keyof DeleteApiV1RepositoriesByNameDependencyTrackResponses];
+
+export type GetApiV1RepositoriesByNameDependencyTrackData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/dependency-track';
+};
+
+export type GetApiV1RepositoriesByNameDependencyTrackErrors = {
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1RepositoriesByNameDependencyTrackError = GetApiV1RepositoriesByNameDependencyTrackErrors[keyof GetApiV1RepositoriesByNameDependencyTrackErrors];
+
+export type GetApiV1RepositoriesByNameDependencyTrackResponses = {
+    /**
+     * Success
+     */
+    200: DependencyTrackRepository;
+};
+
+export type GetApiV1RepositoriesByNameDependencyTrackResponse = GetApiV1RepositoriesByNameDependencyTrackResponses[keyof GetApiV1RepositoriesByNameDependencyTrackResponses];
+
+export type PutApiV1RepositoriesByNameDependencyTrackData = {
+    body: {
+        /**
+         * false opts the repository out even when the global integration is on.
+         */
+        enabled: boolean;
+        base_url?: string;
+        /**
+         * Plaintext API key. Omit to keep the stored one, empty string clears it.
+         */
+        api_key?: string;
+        project_name?: string;
+        project_version?: string;
+        auto_push?: boolean | null;
+        push_vex?: boolean | null;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/dependency-track';
+};
+
+export type PutApiV1RepositoriesByNameDependencyTrackErrors = {
+    /**
+     * Validation failed
+     */
+    400: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PutApiV1RepositoriesByNameDependencyTrackError = PutApiV1RepositoriesByNameDependencyTrackErrors[keyof PutApiV1RepositoriesByNameDependencyTrackErrors];
+
+export type PutApiV1RepositoriesByNameDependencyTrackResponses = {
+    /**
+     * Success
+     */
+    200: DependencyTrackRepository;
+};
+
+export type PutApiV1RepositoriesByNameDependencyTrackResponse = PutApiV1RepositoriesByNameDependencyTrackResponses[keyof PutApiV1RepositoriesByNameDependencyTrackResponses];
+
+export type PostApiV1RepositoriesByNameDependencyTrackTestData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/dependency-track/test';
+};
+
+export type PostApiV1RepositoriesByNameDependencyTrackTestErrors = {
+    /**
+     * Not configured, unreachable or key rejected
+     */
+    400: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameDependencyTrackTestError = PostApiV1RepositoriesByNameDependencyTrackTestErrors[keyof PostApiV1RepositoriesByNameDependencyTrackTestErrors];
+
+export type PostApiV1RepositoriesByNameDependencyTrackTestResponses = {
+    /**
+     * Success
+     */
+    200: DependencyTrackTest;
+};
+
+export type PostApiV1RepositoriesByNameDependencyTrackTestResponse = PostApiV1RepositoriesByNameDependencyTrackTestResponses[keyof PostApiV1RepositoriesByNameDependencyTrackTestResponses];
+
+export type PostApiV1RepositoriesByNameDependencyTrackPushData = {
+    body: {
+        /**
+         * `name@version`
+         */
+        artifact_id: string;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/dependency-track/push';
+};
+
+export type PostApiV1RepositoriesByNameDependencyTrackPushErrors = {
+    /**
+     * Validation failed
+     */
+    400: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Integration not enabled for the repository, or queue full
+     */
+    409: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameDependencyTrackPushError = PostApiV1RepositoriesByNameDependencyTrackPushErrors[keyof PostApiV1RepositoriesByNameDependencyTrackPushErrors];
+
+export type PostApiV1RepositoriesByNameDependencyTrackPushResponses = {
+    /**
+     * Queued
+     */
+    202: DependencyTrackPush;
+};
+
+export type PostApiV1RepositoriesByNameDependencyTrackPushResponse = PostApiV1RepositoriesByNameDependencyTrackPushResponses[keyof PostApiV1RepositoriesByNameDependencyTrackPushResponses];
+
+export type GetApiV1RepositoriesByNameDependencyTrackPushesData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/dependency-track/pushes';
+};
+
+export type GetApiV1RepositoriesByNameDependencyTrackPushesErrors = {
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1RepositoriesByNameDependencyTrackPushesError = GetApiV1RepositoriesByNameDependencyTrackPushesErrors[keyof GetApiV1RepositoriesByNameDependencyTrackPushesErrors];
+
+export type GetApiV1RepositoriesByNameDependencyTrackPushesResponses = {
+    /**
+     * Success
+     */
+    200: {
+        pushes?: Array<DependencyTrackPush>;
+    };
+};
+
+export type GetApiV1RepositoriesByNameDependencyTrackPushesResponse = GetApiV1RepositoriesByNameDependencyTrackPushesResponses[keyof GetApiV1RepositoriesByNameDependencyTrackPushesResponses];
+
+export type GetApiV1AdminAttestationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/attestation';
+};
+
+export type GetApiV1AdminAttestationErrors = {
+    /**
+     * Attestations are not enabled
+     */
+    501: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1AdminAttestationError = GetApiV1AdminAttestationErrors[keyof GetApiV1AdminAttestationErrors];
+
+export type GetApiV1AdminAttestationResponses = {
+    /**
+     * Success
+     */
+    200: AttestationKey;
+};
+
+export type GetApiV1AdminAttestationResponse = GetApiV1AdminAttestationResponses[keyof GetApiV1AdminAttestationResponses];
+
+export type GetWellKnownOpenartifactAttestationKeyPemData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/.well-known/openartifact/attestation-key.pem';
+};
+
+export type GetWellKnownOpenartifactAttestationKeyPemErrors = {
+    /**
+     * Attestations are not enabled
+     */
+    501: unknown;
+};
+
+export type GetWellKnownOpenartifactAttestationKeyPemResponses = {
+    /**
+     * PEM public key
+     */
+    200: string;
+};
+
+export type GetWellKnownOpenartifactAttestationKeyPemResponse = GetWellKnownOpenartifactAttestationKeyPemResponses[keyof GetWellKnownOpenartifactAttestationKeyPemResponses];

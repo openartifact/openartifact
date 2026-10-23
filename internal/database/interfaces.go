@@ -742,6 +742,21 @@ type Database interface {
 	// ResolveGPGKeyForRepository returns the repository's own key, else the global active one, with its sealed private part; nil when unsigned.
 	ResolveGPGKeyForRepository(ctx context.Context, repoID string) (*models.GPGKey, error)
 
+	// GetRepositoryDependencyTrack returns the repository's Dependency-Track override, nil when none is set.
+	GetRepositoryDependencyTrack(ctx context.Context, repoID string) (*models.RepositoryDependencyTrack, error)
+	// UpsertRepositoryDependencyTrack stores the override and fills the stored row back.
+	UpsertRepositoryDependencyTrack(ctx context.Context, c *models.RepositoryDependencyTrack) error
+	// DeleteRepositoryDependencyTrack removes the override and reports whether one existed.
+	DeleteRepositoryDependencyTrack(ctx context.Context, repoID string) (bool, error)
+	// UpsertDependencyTrackPush records the push state of an artifact and fills the stored row back.
+	UpsertDependencyTrackPush(ctx context.Context, s *models.DependencyTrackPush) error
+	// GetDependencyTrackPush returns the push state of an artifact, nil when never pushed.
+	GetDependencyTrackPush(ctx context.Context, repoID, artifactID string) (*models.DependencyTrackPush, error)
+	// ListDependencyTrackPushes lists a repository's pushes, most recently updated first.
+	ListDependencyTrackPushes(ctx context.Context, repoID string, limit int) ([]*models.DependencyTrackPush, error)
+	// CreateSystemSettingIfAbsent stores the setting unless the key exists and reports whether it was stored.
+	CreateSystemSettingIfAbsent(ctx context.Context, key, value string) (bool, error)
+
 	// SetArtifactProperties upserts props in one transaction; replace=true clears existing ones first.
 	SetArtifactProperties(ctx context.Context, repoID, artifactID string, props map[string]string, replace bool) error
 

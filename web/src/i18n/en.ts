@@ -65,6 +65,7 @@ const base = {
   'nav.storageTiers': 'Storage Tiers',
   'nav.backup': 'Backup & Restore',
   'nav.webhooks': 'Webhooks',
+  'nav.dependencyTrack': 'Dependency-Track',
   'nav.security': 'Security',
   'nav.vulns': 'Vulnerabilities',
   'nav.licenses': 'Licenses',

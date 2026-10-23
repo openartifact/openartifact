@@ -23,6 +23,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/api"
+	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
@@ -30,6 +31,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/dtrack"
 	formatcargo "github.com/openartifact/openartifact/internal/format/cargo"
 	formatconan "github.com/openartifact/openartifact/internal/format/conan"
 	formatconda "github.com/openartifact/openartifact/internal/format/conda"
@@ -908,9 +910,25 @@ func run(args []string) error {
 		RegisterAuthed(authedAPI)
 
 	sbomGen := sbom.NewGenerator(db, log).WithBlobStore(blobStore).WithToolVersion(version).WithBaseURL(cfg.BaseURL)
-	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, blobStore)
+	// SBOM / VEX attestations: signed with a configured or generated key; the
+	// public half is served unauthenticated so anyone can verify.
+	attestSvc := attest.NewService(cfg.Attest.KeyPath, db)
+	attestHandler := api.NewAttestationHandler(attestSvc, log, evaluator)
+	attestHandler.RegisterPublic(router)
+	attestHandler.RegisterAuthed(authedAPI)
+
+	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, blobStore).WithAttestation(attestSvc)
 	sbomHandler.RegisterAuthed(authedAPI)
-	api.NewVEXHandler(db, log, evaluator, sbomGen).RegisterAuthed(authedAPI)
+	api.NewVEXHandler(db, log, evaluator, sbomGen).WithAttestation(attestSvc).RegisterAuthed(authedAPI)
+
+	// Dependency-Track: pushes the BOM on upload and scan, then the VEX decisions.
+	dtPusher := dtrack.NewPusher(db, api.NewDTrackSources(db, sbomGen), log)
+	dtPusher.Start(context.Background())
+
+	extraStops = append(extraStops, dtPusher.Stop)
+
+	api.NewDependencyTrackHandler(db, log, evaluator, dtPusher).RegisterAuthed(authedAPI)
+	dtPublisher := dtrack.NewUploadPublisher(uploadPublisher, dtPusher)
 
 	webhooksHandler := api.NewWebhooksHandler(db, log, evaluator, webhookDispatcher)
 	webhooksHandler.RegisterAuthed(authedAPI)
@@ -937,7 +955,9 @@ func run(args []string) error {
 
 	extraStops = append(extraStops, scannerRegistry.Stop)
 
-	vulnHandler := api.NewVulnHandler(db, log, evaluator, scannerRegistry)
+	vulnHandler := api.NewVulnHandler(db, log, evaluator, scannerRegistry).WithScanHook(func(repoID, artifactID string) {
+		dtPusher.EnqueueIfEnabled(context.Background(), dtrack.Job{RepoID: repoID, ArtifactID: artifactID, Trigger: dtrack.TriggerScan})
+	})
 	vulnHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 	vulnHandler.RegisterOverviewRoutes(authedAPI)
 
@@ -964,7 +984,7 @@ func run(args []string) error {
 		helmHTTP, pypiHTTP, nugetHTTP, npmHTTP, cargoHTTP, rubygemsHTTP, rawHTTP,
 		condaHTTP, conanHTTP, ivyHTTP, sbtHTTP, mavenHTTP, dockerHTTP, gomodHTTP,
 	} {
-		h.SetPublisher(uploadPublisher)
+		h.SetPublisher(dtPublisher)
 	}
 
 	// Mount the MCP server if enabled (HTTP is the only transport). Mounted under authedAPI

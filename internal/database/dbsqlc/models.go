@@ -384,6 +384,24 @@ type DebianDistribution struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Last BOM/VEX push of an artifact to Dependency-Track: state, counts and the DT project.
+type DependencyTrackPush struct {
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	ArtifactID     string     `db:"artifact_id" json:"artifact_id"`
+	State          string     `db:"state" json:"state"`
+	Detail         string     `db:"detail" json:"detail"`
+	ProjectUuid    string     `db:"project_uuid" json:"project_uuid"`
+	ProjectName    string     `db:"project_name" json:"project_name"`
+	ProjectVersion string     `db:"project_version" json:"project_version"`
+	Components     int32      `db:"components" json:"components"`
+	VexStatements  int32      `db:"vex_statements" json:"vex_statements"`
+	VexApplied     int32      `db:"vex_applied" json:"vex_applied"`
+	BomPushedAt    *time.Time `db:"bom_pushed_at" json:"bom_pushed_at"`
+	VexPushedAt    *time.Time `db:"vex_pushed_at" json:"vex_pushed_at"`
+	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
+}
+
 // OCI/Docker blob registry: per-repo existence index. Content (size, media_type, storage key) is in the global blobs table via blob_id. Shared blobs are deduplicated across repositories.
 type DockerBlob struct {
 	ID           string `db:"id" json:"id"`
@@ -922,6 +940,20 @@ type Repository struct {
 	MergeProxyVersions bool `db:"merge_proxy_versions" json:"merge_proxy_versions"`
 	// Hosted rpm repositories only: sign uploaded RPMs with the active GPG key.
 	SignPackages bool `db:"sign_packages" json:"sign_packages"`
+}
+
+// Per-repository Dependency-Track overrides; empty/NULL fields inherit the global settings. api_key is encrypted.
+type RepositoryDependencyTrack struct {
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	Enabled        bool      `db:"enabled" json:"enabled"`
+	BaseUrl        string    `db:"base_url" json:"base_url"`
+	ApiKey         string    `db:"api_key" json:"api_key"`
+	ProjectName    string    `db:"project_name" json:"project_name"`
+	ProjectVersion string    `db:"project_version" json:"project_version"`
+	AutoPush       *bool     `db:"auto_push" json:"auto_push"`
+	PushVex        *bool     `db:"push_vex" json:"push_vex"`
+	CreatedAt      time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt      time.Time `db:"updated_at" json:"updated_at"`
 }
 
 type RepositoryGroupMember struct {

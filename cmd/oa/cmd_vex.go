@@ -29,9 +29,10 @@ func handleVEX(args []string, client *Client, outFmt string) {
 		format := fs.String("format", "openvex", "VEX format: openvex|cyclonedx")
 		spec := fs.String("spec-version", "", "CycloneDX spec version (1.4|1.5|1.6)")
 		output := fs.String("output", "", "Write the document to this file instead of stdout")
+		attest := fs.String("attest", "", "Return a signed in-toto attestation instead: true (DSSE envelope) or bundle (Sigstore bundle, for cosign)")
 		_ = fs.Parse(args[2:])
 
-		vexGet(client, base, url.Values{"format": {*format}, "spec_version": {*spec}, "artifact_id": {*artifactID}}, *output)
+		vexGet(client, base, url.Values{"format": {*format}, "spec_version": {*spec}, "artifact_id": {*artifactID}, "attest": {*attest}}, *output)
 	case "list":
 		fs := flag.NewFlagSet("vex list", flag.ExitOnError)
 		artifactID := fs.String("artifact-id", "", "Only this artifact")

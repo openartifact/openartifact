@@ -213,6 +213,16 @@ Signs APT and RPM metadata and release bundle manifests; see [signing](../securi
 | `GPG_PASSPHRASE` | `passphrase` | empty | Key passphrase (**secret**) |
 | `GPG_AUTO_GENERATE` | `autoGenerate` | `false` | Generate an RSA-4096 global signing key at startup when no key exists yet (needs `OPENARTIFACT_SECRET_KEY`; replica-safe) |
 
+### Attestation signing (`attestation`)
+
+Signs SBOM and VEX attestations (`?attest=true`); see [SBOM and VEX](../security/sbom.md#signed-sbom-and-vex-attestations).
+
+| Env | YAML | Default | Meaning |
+|---|---|---|---|
+| `ATTESTATION_KEY_PATH` | `keyPath` | empty | Unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519). Empty: an ECDSA P-256 key is generated on first use and stored encrypted in the database |
+
+The Dependency-Track integration has no file or environment settings: it is configured in the admin UI or through the API ([Dependency-Track](../security/dependency-track.md)).
+
 ### Logging (`log`)
 
 | Env | YAML | Default | Meaning |

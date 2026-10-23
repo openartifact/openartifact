@@ -198,6 +198,10 @@ linters:
       - path: "internal/sbom/(cyclonedx|spdx|vex)\\.go"
         linters:
           - tagliatelle
+      # in-toto, DSSE and Sigstore bundle documents and Dependency-Track's REST payloads are camelCase by spec
+      - path: "internal/(attest/.*|dtrack/client|api/attestation_test)\\.go"
+        linters:
+          - tagliatelle
       # Nexus / Artifactory REST payloads are camelCase by contract
       - path: "cmd/oa/import_source\\.go"
         linters:

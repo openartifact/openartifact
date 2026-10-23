@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # SBOM and VEX
 
-Per-artifact software bills of materials (CycloneDX, SPDX) and vulnerability exploitability statements (OpenVEX, CycloneDX VEX), built from the data OpenArtifact already holds: the artifact's stored properties, the package listing, the latest license scan and the latest vulnerability scan. All endpoints are **admin only** and generation is **manual**: nothing is produced on upload. See [Scanning](scanning.md) for how the scans themselves run.
+Per-artifact software bills of materials (CycloneDX, SPDX 2.3 and 3.0) and vulnerability exploitability statements (OpenVEX, CycloneDX VEX), built from the data OpenArtifact already holds: the artifact's stored properties, the package listing, the latest license scan and the latest vulnerability scan. Either can be [signed as an in-toto attestation](#signed-sbom-and-vex-attestations) and [pushed to Dependency-Track](dependency-track.md). All endpoints are **admin only** and generation is **manual**: nothing is stored on upload (the optional Dependency-Track push builds its documents on the fly). See [Scanning](scanning.md) for how the scans themselves run.
 
 ## SBOM
 
@@ -24,16 +24,30 @@ oa sbom download REPO <ID> sbom.json
 |---|---|
 | `POST …/sbom/generate` | `artifact_id`, `format`, optional `spec_version`; returns 201 |
 | `GET …/sbom`, `GET …/sbom/{id}` | list / report (format, spec version, content type, component count, timestamps) |
-| `GET …/sbom/{id}/download` | the document, served as attachment `sbom.cdx.json`, `sbom.spdx.json` or `sbom.spdx` |
+| `GET …/sbom/{id}/download` | the document, served as attachment `sbom.cdx.json`, `sbom.spdx.json`, `sbom.spdx3.json` or `sbom.spdx`; with `?attest=true` or `?attest=bundle` a [signed attestation](#signed-sbom-and-vex-attestations) of it |
 | `DELETE …/sbom/{id}` | delete |
 
 | `format` | Document | `spec_version` |
 |---|---|---|
 | `cyclonedx` | CycloneDX JSON (`application/json`) | `1.4`, `1.5` (default), `1.6` |
 | `spdx-json` | SPDX JSON (`application/spdx+json`) | `2.3` |
+| `spdx3-json` | SPDX 3.0 JSON-LD (`application/ld+json`) | `3.0.1` |
 | `spdx` | SPDX tag-value (`text/spdx`) | `2.3` |
 
 Existing callers that pass `"spec_version":"1.4"` or `"2.3"` keep getting those versions. Documents are stored in the blob store.
+
+### SPDX 3.0
+
+`spdx3-json` produces an SPDX 3.0.1 JSON-LD document: a `SpdxDocument` with a `software_Sbom` root, the described package as `software_Package` (purl, sha256 hash, primary purpose), its dependencies as packages linked by `dependsOn` relationships, licenses as `simplelicensing_LicenseExpression` (or `expandedlicensing_CustomLicense` for a non-SPDX name) linked by `hasConcludedLicense` / `hasDeclaredLicense`, and the vulnerabilities of the latest scan as `security_Vulnerability` with a VEX assessment relationship per finding that carries the derived or recorded status. Only 3.0.1 is supported.
+
+The output is checked against the official [spdx3-validate](https://github.com/spdx/spdx3-validate) (it fetches the SPDX 3.0.1 schema and SHACL model from spdx.org):
+
+```sh
+pip install spdx3-validate
+oa sbom generate REPO --artifact-id my-lib@1.2.3 --format spdx3-json
+oa sbom download REPO <ID> sbom.spdx3.json
+spdx3-validate --json sbom.spdx3.json -s 3.0.1
+```
 
 ### What a document contains
 
@@ -112,9 +126,82 @@ oa vex set REPO --artifact-id my-lib@1.2.3 --vuln CVE-2024-1234 --status not_aff
 
 Decisions are stored per repository, are part of the [backup](../operations/backup.md) and are removed with the repository. The same decisions feed the `analysis` block of the CycloneDX SBOM, so the SBOM and the VEX never disagree. In CycloneDX the justification is mapped to the CycloneDX vocabulary (`code_not_present`, `code_not_reachable`, `requires_environment`, `protected_by_mitigating_control`, ...).
 
+## Signed SBOM and VEX attestations
+
+Add `?attest=true` or `?attest=bundle` to an SBOM download or a VEX request to get the document wrapped in an [in-toto attestation](https://github.com/in-toto/attestation) (a Statement v1) signed as a [DSSE](https://github.com/secure-systems-lab/dsse) envelope. The document itself is the predicate:
+
+| Document | `predicateType` | `cosign --type` |
+|---|---|---|
+| CycloneDX SBOM or VEX | `https://cyclonedx.org/bom` | `cyclonedx` |
+| SPDX 2.3 JSON | `https://spdx.dev/Document` | `spdxjson` |
+| SPDX 3.0 JSON-LD | `https://spdx.dev/Document/v3.0` | `https://spdx.dev/Document/v3.0` |
+| OpenVEX | `https://openvex.dev/ns` | `openvex` |
+
+SPDX tag-value cannot be attested (it is not JSON): the request answers `400`. `?attest=` with any other value answers `400`; without a configured service it answers `501`.
+
+| `attest` | Response | Content type | File |
+|---|---|---|---|
+| `true` | the DSSE envelope (`payloadType` `application/vnd.in-toto+json`) | `application/vnd.dsse.envelope.v1+json` | `sbom.cdx.json.intoto.json` |
+| `bundle` | a Sigstore bundle (v0.3) holding that envelope and the public key hint | `application/vnd.dev.sigstore.bundle.v0.3+json` | `sbom.cdx.json.sigstore.json` |
+
+The statement's **subjects** are the described package (named by its purl, with the `sha256` of the package file when the package listing identifies exactly one match) and, for a stored SBOM, the SBOM file itself. So the attestation verifies against the package you have downloaded, and a VEX attestation against the packages the VEX speaks about. When no package hash is known a VEX attestation is about the digest of the signed document.
+
+### The signing key
+
+- `attestation.keyPath` / `ATTESTATION_KEY_PATH`: an unencrypted PKCS#8 or SEC1 PEM private key, **ECDSA** (P-256, P-384 or P-521) or **Ed25519**.
+- Unset: OpenArtifact generates an ECDSA P-256 key on first use and stores it **encrypted** in the database (with `OPENARTIFACT_SECRET_KEY` set, see [configuration](../getting-started/configuration.md); without it the key is stored in plaintext, like every other stored secret). Replicas converge on one key, and a restore of the database restores the key.
+
+The ECDSA hash follows the curve (SHA-256, SHA-384, SHA-512), as Sigstore requires; Ed25519 signs the DSSE pre-authentication encoding directly. The **public key** is served without authentication at `HOST/.well-known/openartifact/attestation-key.pem` (admins also get its id and algorithm from `GET /api/v1/admin/attestation`). Rotating the key means setting a new `keyPath`, or deleting the `attestation.private_key` system setting to generate a new one; attestations signed earlier keep verifying against the key that signed them, so keep the old public keys.
+
+### Verify with cosign
+
+[cosign](https://github.com/sigstore/cosign) v2.4+ and v3 verify the bundle against the public key, offline. OpenArtifact does not use Sigstore's transparency log, so tell cosign to skip it:
+
+```sh
+curl -sS HOST/.well-known/openartifact/attestation-key.pem -o attestation-key.pem
+
+# SBOM: CycloneDX (use --type spdxjson for spdx-json)
+curl -sS -H 'Authorization: Bearer <TOKEN>' -o sbom.cdx.json.sigstore.json \
+  'HOST/api/v1/repositories/REPO/sbom/<ID>/download?attest=bundle'
+cosign verify-blob-attestation --bundle sbom.cdx.json.sigstore.json --key attestation-key.pem \
+  --type cyclonedx --insecure-ignore-tlog my-lib-1.2.3.tgz
+
+# VEX
+curl -sS -H 'Authorization: Bearer <TOKEN>' -o vex.openvex.json.sigstore.json \
+  'HOST/api/v1/repositories/REPO/vex?artifact_id=my-lib@1.2.3&attest=bundle'
+cosign verify-blob-attestation --bundle vex.openvex.json.sigstore.json --key attestation-key.pem \
+  --type openvex --insecure-ignore-tlog my-lib-1.2.3.tgz
+```
+
+`cosign` prints `Verified OK` and exits 0; a modified package fails with `provided artifact digests do not match digests in statement`, and another key fails the signature check. The same bundle also works with `--type https://cyclonedx.org/bom` (the full predicate URI), and for SPDX 3 use the URI as the type.
+
+### Verify the DSSE envelope without cosign
+
+`?attest=true` returns the plain DSSE envelope, the format in-toto tooling and any DSSE library read (for example `go-securesystemslib/dsse`). The payload is the Statement:
+
+```sh
+jq -r .payload sbom.cdx.json.intoto.json | base64 -d | jq '{_type, predicateType, subject}'
+```
+
+The signature is over `PAE(payloadType, payload)` = `DSSEv1 <len(type)> <type> <len(payload)> <payload>`, ECDSA over the SHA-2 hash matching the curve (or Ed25519 over the PAE itself); the envelope's `keyid` is empty, so verifiers must be given the public key explicitly.
+
+### Attaching to an OCI image
+
+The docker registry already implements the OCI 1.1 referrers API, so a document can be attached to an image with standard tools; no OpenArtifact endpoint is involved:
+
+```sh
+oras attach --artifact-type application/vnd.dev.sigstore.bundle.v0.3+json \
+  HOST/REPO/IMAGE@sha256:<digest> sbom.cdx.json.sigstore.json:application/vnd.dev.sigstore.bundle.v0.3+json
+oras discover HOST/REPO/IMAGE@sha256:<digest>
+```
+
+OpenArtifact does not attach it on its own: doing so would write blobs and manifests into the registry outside the push path, with the quota and garbage-collection accounting of the docker handler, which is deliberately left to the client.
+
 ## Using the documents
 
 ### Dependency-Track
+
+OpenArtifact can push the BOM on upload and after each scan, and the VEX decisions after Dependency-Track's analysis, by itself: see [Dependency-Track](dependency-track.md). By hand:
 
 Upload the CycloneDX SBOM; the dependencies appear as components with their purls and licenses (verified against Dependency-Track 4.14):
 
@@ -144,4 +231,5 @@ grype my-image --vex vex.openvex.json
 - Components are what the manifest and lockfile declare, not a resolved install: a package without a lockfile lists its direct dependencies only, and the graph is flat. Dependency hashes and licenses come from lockfiles or properties.
 - Vulnerabilities in the SBOM come from the latest completed or partial scan; a repository that was never scanned yields `under_investigation` only for the findings it has, and none otherwise.
 - The OpenVEX document and statement ids are generated per request; timestamps are the time of generation.
-- SPDX documents are 2.3 only.
+- SPDX is generated as 2.3 (JSON and tag-value) and 3.0.1 (JSON-LD); other SPDX versions are rejected.
+- Attestations are signed with one instance-wide key and are not logged in a transparency log (`--insecure-ignore-tlog`).

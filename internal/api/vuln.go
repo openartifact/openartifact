@@ -36,6 +36,16 @@ type VulnHandler struct {
 
 	// newBackend builds the scanner backend for a scanner name; tests replace it.
 	newBackend func(name string) vuln.ScannerBackend
+
+	// onScanned, when set, is told about every scan that produced results.
+	onScanned func(repoID, artifactID string)
+}
+
+// WithScanHook sets a function called after each completed (or partial) scan
+// was stored; the Dependency-Track integration uses it to push fresh results.
+func (h *VulnHandler) WithScanHook(f func(repoID, artifactID string)) *VulnHandler {
+	h.onScanned = f
+	return h
 }
 
 const (
@@ -310,6 +320,11 @@ func (h *VulnHandler) performScan(scanResult *models.VulnScanResult) {
 
 	if err := h.db.UpdateVulnScanResult(persistCtx, scanResult); err != nil {
 		h.log.Errorw("vuln scan: db error updating scan result", "error", err)
+		return
+	}
+
+	if h.onScanned != nil && (scanResult.ScanStatus == "completed" || scanResult.ScanStatus == "partial") {
+		h.onScanned(scanResult.RepositoryID, scanResult.ArtifactID)
 	}
 }
 

@@ -216,6 +216,12 @@ const routes: RouteRecordRaw[] = [
     component: () => import('../pages/admin/AISettingsPage.vue'),
     meta: { crumbs: adminTrail('adm.ai.title'), requiresAuth: true, requiresAdmin: true },
   },
+  {
+    path: '/admin/dependency-track',
+    name: 'admin-dependency-track',
+    component: () => import('../pages/admin/DependencyTrackPage.vue'),
+    meta: { crumbs: adminTrail('nav.dependencyTrack'), requiresAuth: true, requiresAdmin: true },
+  },
 
   // Security
   {

@@ -59,6 +59,7 @@ type Config struct {
 	Storage  storage.StorageConfig   `yaml:"storage"`
 	Logger   LoggerConfig            `yaml:"log"`
 	GPG      GPGConfig               `yaml:"gpg"`
+	Attest   AttestationConfig       `yaml:"attestation"`
 	Auth     AuthConfig              `yaml:"auth"`
 	Backup   BackupConfig            `yaml:"backup"`
 	AI       AIConfig                `yaml:"ai"`
@@ -221,6 +222,13 @@ type GPGConfig struct {
 	KeyPath      string `yaml:"keyPath"`
 	Passphrase   string `yaml:"passphrase"`
 	AutoGenerate bool   `yaml:"autoGenerate"`
+}
+
+// AttestationConfig configures the signing key of SBOM and VEX attestations.
+type AttestationConfig struct {
+	// KeyPath is an unencrypted PKCS#8 or SEC1 PEM private key (ECDSA or Ed25519).
+	// Empty: a P-256 key is generated on first use and stored encrypted in the database.
+	KeyPath string `yaml:"keyPath"`
 }
 
 // BackupConfig contains backup configuration.
@@ -524,6 +532,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.GPG.KeyPath, "GPG_KEY_PATH")
 	overrideString(&cfg.GPG.Passphrase, "GPG_PASSPHRASE")
 	overrideBool(&cfg.GPG.AutoGenerate, "GPG_AUTO_GENERATE")
+
+	// Attestation signing key
+	overrideString(&cfg.Attest.KeyPath, "ATTESTATION_KEY_PATH")
 
 	// Auth config
 	overrideBool(&cfg.Auth.AllowAnonymousRead, "ALLOW_ANONYMOUS_READ")
