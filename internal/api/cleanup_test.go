@@ -60,7 +60,7 @@ func (db *cleanupMockDB) UpdateCleanupPolicy(_ context.Context, p *models.Cleanu
 }
 
 func TestCleanupRejectsUnsupportedFormat(t *testing.T) {
-	db := &cleanupMockDB{format: "npm", policy: &models.CleanupPolicy{ID: "pol-1", RepositoryID: "repo-1", Name: "p"}}
+	db := &cleanupMockDB{format: "bogus", policy: &models.CleanupPolicy{ID: "pol-1", RepositoryID: "repo-1", Name: "p"}}
 	base := "/api/v1/repositories/r/cleanup-policies"
 
 	rw := cleanupRequest(t, db, nil, http.MethodPost, base, `{"name":"p","keep_last_n":2}`)
@@ -168,5 +168,44 @@ func TestCleanupRunTriggersWorker(t *testing.T) {
 
 	if rw := cleanupRequest(t, db, nil, http.MethodPost, "/api/v1/repositories/r/cleanup-policies/pol-1/run", ""); rw.Code != http.StatusNotImplemented {
 		t.Fatalf("nil runner status = %d", rw.Code)
+	}
+}
+
+func TestCleanupDryRunReportsWithoutRunning(t *testing.T) {
+	const path = "/api/v1/repositories/r/cleanup-policies/pol-1/dry-run"
+
+	n := 5
+	db := &cleanupMockDB{policy: &models.CleanupPolicy{ID: "pol-1", RepositoryID: "repo-1", Name: "p", KeepLastN: &n}}
+	runner := &fakeRunner{preview: &worker.CleanupPreview{
+		Repository: "r", Format: "npm", Rows: 2, Truncated: true,
+		Items: []worker.CleanupPreviewItem{{ID: "a", Name: "left-pad", Version: "1.0.0"}},
+	}}
+
+	rw := cleanupRequest(t, db, runner, http.MethodPost, path, "")
+	if rw.Code != http.StatusOK {
+		t.Fatalf("status = %d, body = %s", rw.Code, rw.Body)
+	}
+
+	for _, want := range []string{`"dry_run":true`, `"rows":2`, `"truncated":true`, `"name":"left-pad"`, `"version":"1.0.0"`} {
+		if !strings.Contains(rw.Body.String(), want) {
+			t.Errorf("body %s lacks %s", rw.Body, want)
+		}
+	}
+
+	if len(runner.ids) != 1 || runner.ids[0] != "preview:pol-1" {
+		t.Errorf("runner calls = %v, want only the preview", runner.ids)
+	}
+
+	runner.err = models.ErrInvalidCleanupPolicy
+	if rw := cleanupRequest(t, db, runner, http.MethodPost, path, ""); rw.Code != http.StatusBadRequest {
+		t.Errorf("invalid policy status = %d", rw.Code)
+	}
+
+	if rw := cleanupRequest(t, db, runner, http.MethodPost, "/api/v1/repositories/r/cleanup-policies/nope/dry-run", ""); rw.Code != http.StatusNotFound {
+		t.Errorf("unknown policy status = %d", rw.Code)
+	}
+
+	if rw := cleanupRequest(t, db, nil, http.MethodPost, path, ""); rw.Code != http.StatusNotImplemented {
+		t.Errorf("nil runner status = %d", rw.Code)
 	}
 }

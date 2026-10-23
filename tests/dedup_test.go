@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/worker"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -573,31 +574,74 @@ func TestRPMDelete_ReleasesQuotaAndEmitsDeleted(t *testing.T) {
 	}
 }
 
-// Listing now returns rows for every format, but the id-based package delete
-// only knows deb and rpm: other formats must get a clear 400, not a 404 or a
-// wrong delete.
-func TestPackageDelete_UnsupportedFormatRejected(t *testing.T) {
+type fakePackageDeleter struct {
+	repo *models.Repository
+	id   string
+	res  *worker.DeletedPackage
+	err  error
+}
+
+func (f *fakePackageDeleter) DeletePackage(_ context.Context, repo *models.Repository, id string, guard func(worker.DeletedPackage) error) (*worker.DeletedPackage, error) {
+	f.repo, f.id = repo, id
+
+	if f.err != nil {
+		return nil, f.err
+	}
+
+	if err := guard(*f.res); err != nil {
+		return nil, err
+	}
+
+	return f.res, nil
+}
+
+// The id-based package delete of every format but deb and rpm goes through
+// the generic deleter: it deletes, maps not-found to 404 and an immutable
+// release to 409, and answers 501 when none is wired.
+func TestPackageDelete_GenericFormats(t *testing.T) {
 	mock := newMockDatabase()
 	db := rpmLookupDB{mock}
-	mock.repositories["repo-npm"] = &models.Repository{ID: "repo-npm", Name: "npm-repo", Format: "npm"}
-	mock.components["npm-1"] = &models.Component{ID: "npm-1", RepositoryID: "repo-npm", Format: "npm", Name: "left-pad", Version: "1.0.0"}
+	mock.repositories["repo-npm"] = &models.Repository{ID: "repo-npm", Name: "npm-repo", Format: "npm", RepoType: "hosted"}
+	mock.repositories["repo-imm"] = &models.Repository{ID: "repo-imm", Name: "imm-repo", Format: "npm", RepoType: "hosted", ImmutableReleases: true}
 
-	router := newRPMUploadRouter(t, db, newMockBlobStore(), &recordingPublisher{})
+	del := func(h *api.RPMUploadHandler, repo string) *httptest.ResponseRecorder {
+		router := chi.NewRouter()
+		h.Register(router)
 
-	rec := httptest.NewRecorder()
-	router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodDelete,
-		"/api/v1/repositories/npm-repo/packages/npm-1", nil))
+		rec := httptest.NewRecorder()
+		router.ServeHTTP(rec, httptest.NewRequestWithContext(context.Background(), http.MethodDelete,
+			"/api/v1/repositories/"+repo+"/packages/p-1", nil))
 
-	if rec.Code != http.StatusBadRequest {
-		t.Fatalf("delete on npm repo: got %d %s, want 400", rec.Code, rec.Body.String())
+		return rec
 	}
 
-	if !strings.Contains(rec.Body.String(), "UNSUPPORTED_FORMAT") {
-		t.Errorf("expected UNSUPPORTED_FORMAT code, got %s", rec.Body.String())
+	newHandler := func() *api.RPMUploadHandler {
+		return api.NewRPMUploadHandler(newHandlerLogger(t), db, newMockBlobStore(), nil)
 	}
 
-	if _, ok := mock.components["npm-1"]; !ok {
-		t.Error("component must not be deleted")
+	if rec := del(newHandler(), "npm-repo"); rec.Code != http.StatusNotImplemented {
+		t.Errorf("no deleter: got %d %s, want 501", rec.Code, rec.Body.String())
+	}
+
+	d := &fakePackageDeleter{res: &worker.DeletedPackage{ID: "p-1", Name: "left-pad", Version: "1.0.0", Rows: 1}}
+	h := newHandler()
+	h.SetPackageDeleter(d)
+
+	if rec := del(h, "npm-repo"); rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"package_id":"p-1"`) {
+		t.Fatalf("delete: got %d %s, want 200", rec.Code, rec.Body.String())
+	}
+
+	if d.repo == nil || d.repo.Name != "npm-repo" || d.id != "p-1" {
+		t.Errorf("deleter called with %+v, %q", d.repo, d.id)
+	}
+
+	if rec := del(h, "imm-repo"); rec.Code != http.StatusConflict || !strings.Contains(rec.Body.String(), "IMMUTABLE_RELEASE") {
+		t.Errorf("immutable release: got %d %s, want 409", rec.Code, rec.Body.String())
+	}
+
+	d.err = worker.ErrPackageNotFound
+	if rec := del(h, "npm-repo"); rec.Code != http.StatusNotFound {
+		t.Errorf("unknown package: got %d, want 404", rec.Code)
 	}
 }
 

@@ -87,6 +87,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### Unreleased
 
+- Cleanup policies now run on every hosted format (npm, maven, ivy, sbt, cargo, rubygems, conda, conan, raw and docker join deb, rpm, helm, pypi, nuget and go). Policies already stored for these formats, which used to fail on every run, now execute on their next schedule: review their `keep_*` settings, or use the new `POST /api/v1/repositories/{repo}/cleanup-policies/{id}/dry-run` to see what a run would remove. Quarantined packages are now also skipped by cleanup for every format. See [cleanup policies](../repositories/cleanup-and-quotas.md#supported-formats).
+- `DELETE /api/v1/repositories/{repo}/packages/{id}` now works for every hosted format (it answered `400 UNSUPPORTED_FORMAT` for all but deb and rpm); the web UI offers package delete for all of them. Rows go to the [trash](../operations/trash.md) when the repository keeps one.
 - SPDX `documentNamespace` and OpenVEX `@id` are now minted under `BASE_URL` (`urn:openartifact:...` when it is empty) instead of `openartifact.io`. Documents already stored keep their identifiers.
 - Creating or updating a cleanup policy on a repository whose format the cleanup worker cannot process now answers `400 UNSUPPORTED_FORMAT`; such policies previously failed on every run.
 - `POST /api/v1/admin/storage/{name}/test` runs a real bucket or container check for `gcs` and `azure` backends instead of answering `not_implemented`.

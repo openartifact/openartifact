@@ -26,8 +26,7 @@ type DeletedPackage struct {
 	// Name and Version are those of the row the id addressed.
 	Name    string
 	Version string
-	// Rows is the number of rows removed: more than one for a conan recipe
-	// revision, which goes with its files and binary packages.
+	// Rows is the number of rows removed.
 	Rows int
 	// Trashed reports that the rows went to the trash and not away for good.
 	Trashed bool
@@ -107,20 +106,10 @@ func (w *CleanupWorker) DeletePackage(ctx context.Context, repo *models.Reposito
 
 // loadUnit reads the rows an explicit delete of id removes.
 func (w *CleanupWorker) loadUnit(ctx context.Context, repoID string, t formatTable, id string) ([]cleanupCandidate, error) {
-	var blobSelect string
+	blobSelect, _ := t.blobSQL()
 
-	for i, c := range t.blobCols {
-		blobSelect += fmt.Sprintf(", COALESCE(%s::text, '') AS b%d", c, i)
-	}
-
-	unit := "id = $2::uuid"
-	if t.unitMatch != "" {
-		unit = t.unitMatch
-	}
-
-	//nolint:gosec // G201: every fragment is a constant of the format registry; ids are bound arguments
-	query := fmt.Sprintf(`SELECT id::text, %s, %s%s FROM %s src WHERE repository_id = $1::uuid AND deleted_at IS NULL AND %s`,
-		t.nameCol, t.versionColumn(), blobSelect, t.sourceExpr(), unit)
+	query := fmt.Sprintf(`SELECT id::text, %s, %s%s FROM %s src WHERE repository_id = $1::uuid AND deleted_at IS NULL AND id = $2::uuid`,
+		t.nameCol, t.versionColumn(), blobSelect, t.sourceExpr())
 
 	rows, err := w.db.GetDB().QueryContext(ctx, query, repoID, id)
 	if err != nil {

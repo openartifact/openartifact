@@ -153,10 +153,14 @@ export function formatIconEvenOdd(id: string): boolean {
   return isFormatId(key) && FORMAT_META[key].evenodd === true
 }
 
-// Formats whose packages can be deleted by id (server: deb and rpm handlers;
-// every other format answers 400 UNSUPPORTED_FORMAT). Widen together with the
-// server.
-const PACKAGE_DELETE_FORMATS: readonly string[] = ['deb', 'rpm']
+// Formats whose packages can be deleted by id (server: DELETE
+// /repositories/{name}/packages/{id}, the deb and rpm handlers plus the
+// generic deleter of every other hosted format). Keep in step with the
+// server's cleanup format registry (internal/worker/cleanup_formats.go).
+const PACKAGE_DELETE_FORMATS: readonly string[] = [
+  'deb', 'rpm', 'helm', 'pypi', 'nuget', 'go', 'npm', 'maven', 'ivy', 'sbt',
+  'cargo', 'rubygems', 'conda', 'conan', 'raw', 'docker',
+]
 
 export function supportsPackageDelete(format: string | undefined): boolean {
   return format !== undefined && PACKAGE_DELETE_FORMATS.includes(format)

@@ -16,7 +16,9 @@ import (
 
 // MavenNotifier schedules the regeneration of one artifact's maven-metadata.xml
 // files. It is satisfied by *MavenMetadataWorker.
-type MavenNotifier interface{ NotifyStale(repoID, groupID, artifactID string) }
+type MavenNotifier interface {
+	NotifyStale(repoID, groupID, artifactID string)
+}
 
 // NPMNotifier schedules the regeneration of one package's denormalized
 // packument fields (latest version). It is satisfied by *NPMMetadataWorker.

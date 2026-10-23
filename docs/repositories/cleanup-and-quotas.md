@@ -14,7 +14,20 @@ A background worker checks every minute which enabled policies are due (their cr
 
 ### Supported formats
 
-Policies select rows from the format's package table. Supported formats: **deb, rpm, helm, pypi, nuget, go**. For any other format (maven, npm, docker, cargo, rubygems, conda, conan, raw, ivy, sbt) the API accepts a policy, but every run fails with `unsupported format for cleanup: <format>` recorded in `last_run_error`. Docker has its own [registry garbage collection](#docker-registry-garbage-collection).
+Policies run on **every hosted format**: deb, rpm, helm, pypi, nuget, go, npm, maven, ivy, sbt, cargo, rubygems, conda, conan, raw and docker. Proxy and group repositories are never touched (a proxy cache has its own expiry). Creating or updating a policy for a format outside this set answers `400 UNSUPPORTED_FORMAT`. What a "version" is, and what a run does besides deleting rows, depends on the format:
+
+| Format | What is ranked and removed | After a run |
+|---|---|---|
+| deb, rpm, helm, pypi, nuget, go | Versions per package (see below). | deb and rpm indexes are regenerated. |
+| npm | Versions per package. A version a **dist-tag** points at (`latest`, `next`, ...) is never removed, so no tag is left dangling. | A package that lost its last version is dropped; the others get a new packument validator and `latest` is recomputed. |
+| maven | Releases are ranked per `groupId:artifactId`; the timestamped builds of each `-SNAPSHOT` version are ranked against each other. The **newest build of a snapshot is always kept**, so `-SNAPSHOT` keeps resolving. All files of a version (jar, pom, checksums, classifiers) count as one version. | `maven-metadata.xml` of the artifact (and of its snapshot versions) is regenerated. |
+| ivy, sbt | Revisions per `organisation:module` (sbt: per group, artifact and Scala version). | Indexes are computed live. |
+| cargo | Versions per crate. Cleanup **deletes** a version (to hide a version without deleting it, [yank](../formats/cargo.md) it instead). | The sparse index is computed live. |
+| rubygems | Versions per gem and platform. | Specs and the compact index are computed live. |
+| conda | Builds per package and platform (`version-build_string`); the `.tar.bz2` and `.conda` files of one build count together. | `repodata.json` is computed live. |
+| conan | Recipe versions (`version@user/channel`) per package; all revisions of a version count together. | Computed live. |
+| raw | Files ranked against the other files of **their directory**, newest first (a raw file has no version; `name_pattern` is matched against the whole path and restricts what is removed, not how files are ranked). | none |
+| docker | **Tags** per image, aged by their last update (re-tagging counts as activity). | When tags were removed permanently, [registry garbage collection](#docker-registry-garbage-collection) reclaims the manifests and layers they left unreferenced (subject to its grace period). Tags moved to the trash keep their manifests until the purge. |
 
 ### Policy fields
 
@@ -38,8 +51,9 @@ At least one of `keep_last_n` or `keep_since_days` is required; zero or negative
 - Selected versions go through the same path as an API delete. With the default [trash](../operations/trash.md) retention they are **moved to the trash** (`deleted_at` is stamped; the audit entry says `moved to trash`): they disappear from the repository like any deleted item, can be restored, and keep their blob until the purge worker removes them. When the repository's `trash_retention_days` is `0` the row is deleted at once and each blob is removed from storage only if no other row still references it (blobs are deduplicated across repositories).
 - A repository with `immutable_releases` enabled never loses a released version to a policy: release versions are skipped (see [immutable releases](../operations/trash.md#immutable-releases)); only pre-releases and snapshots are eligible.
 - A package whose blob is referenced by a [release bundle](release-bundles.md) item is skipped and kept.
+- A **quarantined** package (a scan quarantined it) is skipped and kept: cleanup never removes the evidence of a finding.
 - Every row deleted permanently also gives its usage (its blob's size and one artifact) back to the repository's counters, in one update at the end of the run. Rows moved to the trash keep counting until they are purged (see [trash and quotas](#trash-and-quotas)). A row that an API delete removed between selection and deletion is skipped, so nothing is released twice. A Go module releases its zip and its `go.mod` together as one artifact.
-- There is no dry-run mode.
+- A [dry run](#api) lists what a run would remove, applying all the protections above, without removing anything.
 
 ### API
 
@@ -53,6 +67,7 @@ All routes need an admin principal.
 | `PUT /api/v1/repositories/{repo}/cleanup-policies/{id}` | Partial update: only the fields sent change (an unset criterion cannot be cleared). The result must validate, except that disabling a policy is always allowed. |
 | `DELETE /api/v1/repositories/{repo}/cleanup-policies/{id}` | Delete; `204`. |
 | `POST /api/v1/repositories/{repo}/cleanup-policies/{id}/run` | Start an immediate asynchronous run; `202`. `409` if it is already running, `400` if the stored policy is invalid. |
+| `POST /api/v1/repositories/{repo}/cleanup-policies/{id}/dry-run` | Evaluate the policy now and answer `200` with `{repository, format, dry_run, rows, items:[{id,name,version}], truncated}`: the rows a run would remove (or move to the trash), at most 500 listed. Nothing is changed. A version made of several files counts one row per file. |
 
 ```sh
 curl -X POST HOST/api/v1/repositories/REPO/cleanup-policies \
@@ -68,7 +83,7 @@ curl -X POST HOST/api/v1/repositories/REPO/cleanup-policies/<ID>/run \
 
 A [project](../security/projects.md) can define default cleanup policies that cover all of its repositories, so a retention rule does not have to be copied into each one. They have the same fields, validation and schedule as the repository policies above (`name`, `enabled`, `keep_last_n`, `keep_since_days`, `name_pattern`, `schedule_cron`); the response carries `project_id` and an empty `repo_id`.
 
-A default policy applies to every live **hosted** repository of the project that has **no enabled policy of its own**. A repository's own enabled policy overrides the defaults: it replaces them, it does not add to them. Disabling or deleting the repository's policy makes the repository fall back to the defaults again. Repositories whose format has no cleanup support (see [supported formats](#supported-formats)) are skipped, and proxy and group repositories are never touched. A run applies the policy to each covered repository with that repository's format rules, and a failure in one repository does not stop the others.
+A default policy applies to every live **hosted** repository of the project that has **no enabled policy of its own**. A repository's own enabled policy overrides the defaults: it replaces them, it does not add to them. Disabling or deleting the repository's policy makes the repository fall back to the defaults again. Proxy and group repositories are never touched. A run applies the policy to each covered repository with that repository's format rules, and a failure in one repository does not stop the others.
 
 | Method and path | Who | Purpose |
 |---|---|---|

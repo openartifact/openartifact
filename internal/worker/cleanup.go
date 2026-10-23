@@ -509,12 +509,7 @@ func (w *CleanupWorker) selectCandidates(ctx context.Context, policy *models.Cle
 
 	// Blob columns are appended as ", b0, b1": a format without any (docker
 	// tags) contributes nothing.
-	var blobSelect, blobOut string
-
-	for i, c := range t.blobCols {
-		blobSelect += fmt.Sprintf(", COALESCE(%s::text, '') AS b%d", c, i)
-		blobOut += fmt.Sprintf(", b%d", i)
-	}
+	blobSelect, blobOut := t.blobSQL()
 
 	args := []any{policy.RepositoryID}
 	conds := []string{"NOT prot"}

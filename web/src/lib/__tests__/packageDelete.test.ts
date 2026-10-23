@@ -6,10 +6,11 @@ import { describe, expect, it } from 'vitest'
 import { supportsPackageDelete } from '../formats'
 
 describe('supportsPackageDelete', () => {
-  it('allows deb and rpm only', () => {
-    expect(supportsPackageDelete('deb')).toBe(true)
-    expect(supportsPackageDelete('rpm')).toBe(true)
-    for (const f of ['npm', 'maven', 'pypi', 'docker', 'raw', 'go', '']) {
+  it('allows every hosted package format', () => {
+    for (const f of ['deb', 'rpm', 'npm', 'maven', 'pypi', 'docker', 'raw', 'go', 'cargo', 'conan']) {
+      expect(supportsPackageDelete(f)).toBe(true)
+    }
+    for (const f of ['', 'unknown']) {
       expect(supportsPackageDelete(f)).toBe(false)
     }
     expect(supportsPackageDelete(undefined)).toBe(false)

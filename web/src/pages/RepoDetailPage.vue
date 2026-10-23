@@ -337,8 +337,8 @@ const canUpload = computed(
     (repo.value?.format === 'deb' || repo.value?.format === 'rpm'),
 )
 
-// Deleting a package row by id is implemented server-side for deb and rpm only
-// (other formats answer 400 UNSUPPORTED_FORMAT), so offer it only there.
+// Deleting a package row by id is implemented server-side for every hosted
+// format (supportsPackageDelete), so offer it for hosted repositories only.
 const canDeletePackages = computed(
   () =>
     session.isAdmin &&

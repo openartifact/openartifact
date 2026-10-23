@@ -5,6 +5,9 @@
 package worker
 
 import (
+	"fmt"
+	"strings"
+
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -39,11 +42,6 @@ type formatTable struct {
 	// dist-tag points at, the newest build of a maven snapshot). Empty means
 	// no row is protected.
 	protectExpr string
-	// unitMatch is a predicate over source columns, with $1 the repository id and
-	// $2 the id of one row, selecting the rows an explicit delete of that row
-	// removes with it (all files of a conan recipe revision). Empty means the
-	// row alone.
-	unitMatch string
 	// blobCols are the (possibly nullable) FK columns to blobs.id owned by the row.
 	blobCols []string
 	// quotaTracked marks formats whose uploads reserve storage quota (one
@@ -158,12 +156,9 @@ func cleanupFormatTable(format string) (formatTable, bool) {
 		return formatTable{table: "conda_packages", nameCol: "name", partitionCols: []string{"name", "platform"},
 			versionExpr: "version || '-' || build_string", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindConda}, true
 	case "conan":
-		// Every file of every revision of a recipe version ranks and goes as one
-		// version: the recipe files, and the packages built from it.
+		// Every revision of a recipe version ranks and goes as one version.
 		return formatTable{table: "conan_packages", nameCol: "name", partitionCols: []string{"name"},
-			versionExpr: "version || '@' || user_channel", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindConan,
-			unitMatch: `(name, version, user_channel, recipe_revision) = (SELECT c.name, c.version, c.user_channel, c.recipe_revision
-				FROM conan_packages c WHERE c.id = $2::uuid AND c.repository_id = $1::uuid)`}, true
+			versionExpr: "version || '@' || user_channel", blobCols: []string{"blob_id"}, quotaTracked: true, kind: models.TrashKindConan}, true
 	case "raw":
 		// A raw file has no version: files are ranked against the other files
 		// of their directory, newest first.
@@ -200,4 +195,18 @@ func mavenCleanupTable() formatTable {
 		quotaTracked: true,
 		kind:         models.TrashKindMaven,
 	}
+}
+
+// blobSQL returns the select-list fragment reading the row's blob ids as text
+// (", COALESCE(col::text, ”) AS b0, ...") and the fragment re-selecting them
+// from a subquery (", b0, ..."). Both are empty for a format without blobs.
+func (t formatTable) blobSQL() (string, string) {
+	var s, o strings.Builder
+
+	for i, c := range t.blobCols {
+		fmt.Fprintf(&s, ", COALESCE(%s::text, '') AS b%d", c, i)
+		fmt.Fprintf(&o, ", b%d", i)
+	}
+
+	return s.String(), o.String()
 }

@@ -89,7 +89,7 @@ docker pull HOSTPORT/dockerhub/alpine:3.20            # same image on Docker Hub
 
 ## Garbage collection
 
-Deleting a tag, or pushing a new image to an existing tag, leaves the old manifest behind untagged, and the layers only that manifest used stay in storage. Registry garbage collection reclaims them: it deletes untagged manifests older than a grace period and then the blobs nothing references any more. [Cleanup policies](../repositories/cleanup-and-quotas.md) do not cover Docker, so this is the way to reclaim Docker storage.
+Deleting a tag, or pushing a new image to an existing tag, leaves the old manifest behind untagged, and the layers only that manifest used stay in storage. Registry garbage collection reclaims them: it deletes untagged manifests older than a grace period and then the blobs nothing references any more. A [cleanup policy](../repositories/cleanup-and-quotas.md) removes old tags and runs this collection afterwards when it removed tags permanently; the admin API below runs it on demand.
 
 **Trash.** Manifests in the [trash](../operations/trash.md) are not collected by garbage collection, and neither are the layers they reference: they stay in storage until the manifest is purged (or restored). Garbage collection only sees live manifests, so a trashed tagged image never turns into an "untagged" candidate. Once the purge worker has removed a manifest, its layers become collectable by the normal rules.
 
