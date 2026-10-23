@@ -18,7 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <FormField :label="t('bundles.seal.key')" id="seal-key">
       <select id="seal-key" v-model="keyId" :class="INPUT_CLASS">
         <option value="">{{ t('bundles.seal.noKey') }}</option>
-        <option v-for="k in keys" :key="k.fingerprint" :value="k.fingerprint">{{ keyLabel(k) }}</option>
+        <option v-for="k in keys" :key="keyValue(k)" :value="keyValue(k)">{{ keyLabel(k) }}</option>
       </select>
     </FormField>
     <p v-if="keysFailed" class="mt-2 text-xs text-warning" role="status">{{ t('bundles.seal.keysFailed') }}</p>
@@ -29,7 +29,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { ref, watch } from 'vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import FormField from './FormField.vue'
-import { ApiError } from '../api/client'
 import { sealBundle, type Bundle } from '../api/bundles'
 import { listGpgKeys, type GpgKey } from '../api/gpg'
 import { INPUT_CLASS } from '../lib/formClasses'
@@ -45,9 +44,15 @@ const keyId = ref('')
 const keysFailed = ref(false)
 const busy = ref(false)
 
+/** The value the seal API accepts: the key id from the admin list (`config` for the configured key). */
+function keyValue(k: GpgKey): string {
+  return k.id ?? k.fingerprint ?? ''
+}
+
 function keyLabel(k: GpgKey): string {
-  const fp = k.fingerprint ?? ''
-  return k.uid ? `${k.uid} (${fp.slice(-16)})` : fp
+  const id = k.key_id ?? (k.fingerprint ?? '').slice(-16)
+  const label = k.name || k.user_id || ''
+  return label ? `${label} (${id})` : id
 }
 
 watch(
@@ -57,7 +62,7 @@ watch(
     keyId.value = ''
     keysFailed.value = false
     try {
-      keys.value = (await listGpgKeys()).items
+      keys.value = (await listGpgKeys()).keys
     } catch {
       keys.value = []
       keysFailed.value = true
@@ -74,8 +79,7 @@ async function seal(): Promise<void> {
     toasts.success(t('bundles.seal.done'))
     emit('sealed', bundle)
   } catch (err) {
-    if (err instanceof ApiError && err.status === 501) toasts.error(t('bundles.seal.unsupported'))
-    else toasts.error(err instanceof Error ? err.message : t('bundles.seal.failed'))
+    toasts.error(err instanceof Error ? err.message : t('bundles.seal.failed'))
   } finally {
     busy.value = false
   }

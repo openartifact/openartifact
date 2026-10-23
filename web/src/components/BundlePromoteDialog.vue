@@ -26,6 +26,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <FormField :label="`${t('bundles.promote.notes')} (${t('common.optional')})`" id="promote-notes">
         <textarea id="promote-notes" v-model="notes" rows="3" :class="INPUT_CLASS" />
       </FormField>
+      <label class="flex items-start gap-2 text-sm text-foreground">
+        <input id="promote-force" v-model="force" type="checkbox" class="mt-0.5 rounded border-border-strong" />
+        <span>
+          {{ t('bundles.promote.force') }}
+          <span class="block text-xs text-muted">{{ t('bundles.promote.forceHint') }}</span>
+        </span>
+      </label>
     </form>
     <template #footer>
       <AppButton variant="secondary" size="sm" @click="emit('close')">{{ t('common.cancel') }}</AppButton>
@@ -48,12 +55,18 @@ import { computed, ref, watch } from 'vue'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import FormField from './FormField.vue'
-import { ApiError } from '../api/client'
-import { promoteBundle, type Bundle, type PipelineStage } from '../api/bundles'
+import { promoteBundle, type Bundle, type PipelineStage, type PromoteResult } from '../api/bundles'
 import type { Repository } from '../api/repositories'
 import { INPUT_CLASS } from '../lib/formClasses'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
+
+function promoteSummary(r: PromoteResult): string {
+  return t('bundles.promote.summary')
+    .replace('{copied}', String(r.copied ?? 0))
+    .replace('{existing}', String(r.existing ?? 0))
+    .replace('{replaced}', String(r.replaced ?? 0))
+}
 
 const props = defineProps<{
   open: boolean
@@ -68,6 +81,7 @@ const toasts = useToastStore()
 const toStage = ref('')
 const targetRepo = ref('')
 const notes = ref('')
+const force = ref(false)
 const busy = ref(false)
 
 /** Name of the repository the chosen stage insists on, when it has one. */
@@ -87,6 +101,7 @@ watch(
     toStage.value = props.stages[0]?.name ?? ''
     targetRepo.value = fixedRepo.value ?? ''
     notes.value = ''
+    force.value = false
   },
   { immediate: true },
 )
@@ -95,16 +110,16 @@ async function submit(): Promise<void> {
   if (busy.value) return
   busy.value = true
   try {
-    await promoteBundle(props.bundle.name, props.bundle.version, {
-      to_stage: toStage.value,
-      target_repo: targetRepo.value,
-      notes: notes.value || undefined,
-    })
-    toasts.success(t('bundles.promote.done'))
+    const res = await promoteBundle(
+      props.bundle.name,
+      props.bundle.version,
+      { to_stage: toStage.value, target_repo: targetRepo.value, notes: notes.value || undefined },
+      force.value,
+    )
+    toasts.success(t('bundles.promote.done'), promoteSummary(res))
     emit('promoted')
   } catch (err) {
-    if (err instanceof ApiError && err.status === 501) toasts.error(t('bundles.promote.unsupported'))
-    else toasts.error(err instanceof Error ? err.message : t('bundles.promote.failed'))
+    toasts.error(err instanceof Error ? err.message : t('bundles.promote.failed'))
   } finally {
     busy.value = false
   }

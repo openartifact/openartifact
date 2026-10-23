@@ -19,7 +19,7 @@ Administrators find **Release bundles** in the sidebar (`/bundles`).
 - **List**: filter by name and state; **New bundle** creates a draft (name, version, description, optional pipeline); **New pipeline** defines the ordered stages, each optionally bound to a repository.
 - **Detail** (`/bundles/{name}/{version}`): summary, the pipeline as a stage trail with the bundle's current stage, the items (format, SHA-256, size, source repository), the vulnerability scan totals of the source repositories (linking to the filtered [vulnerability scans](../security/scanning.md)) and the promotion history.
 - **Draft**: *Add items* (source repository, SHA-256, artifact path, optional format and size), remove items, *Seal* and *Delete*. Sealing offers the registered GPG keys; choosing one signs the manifest.
-- **Sealed**: *Promote* (target stage among the stages after the current one, target repository, notes; a stage bound to a repository fixes the target), *Archive*, and downloads of the *Manifest* and, for a signed bundle, the *Signature*. A server that answers `501` to promotion or signing is reported as unavailable instead of failing silently.
+- **Sealed**: *Promote* (target stage among the stages after the current one, target repository, notes; a stage bound to a repository fixes the target; *Replace conflicting content (force)* sends `?force=true`, see [Promoting a bundle](#promoting-a-bundle)), *Archive*, and downloads of the *Manifest* and, for a signed bundle, the *Signature*.
 
 ## Lifecycle
 

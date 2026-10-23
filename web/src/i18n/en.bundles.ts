@@ -125,7 +125,6 @@ export const enBundles = {
   'bundles.seal.noKey': 'Do not sign',
   'bundles.seal.keysFailed': 'Could not load the GPG keys; the bundle can still be sealed without a signature.',
   'bundles.seal.done': 'Bundle sealed',
-  'bundles.seal.unsupported': 'This server cannot sign bundles yet. Seal without a key.',
   'bundles.seal.failed': 'Could not seal the bundle.',
 
   // Promote
@@ -137,7 +136,9 @@ export const enBundles = {
   'bundles.promote.notes': 'Notes',
   'bundles.promote.submit': 'Promote',
   'bundles.promote.done': 'Bundle promoted',
-  'bundles.promote.unsupported': 'Promotion is not available on this server yet.',
+  'bundles.promote.summary': '{copied} copied, {existing} already present, {replaced} replaced',
+  'bundles.promote.force': 'Replace conflicting content (force)',
+  'bundles.promote.forceHint': 'Content the target already holds at the same coordinates, including released versions of an immutable repository, moves to its trash instead of failing with a conflict.',
   'bundles.promote.failed': 'Could not promote the bundle.',
   'bundles.promote.noStages': 'There is no further stage to promote to.',
 

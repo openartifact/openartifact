@@ -54,6 +54,7 @@ function bundle(over: Record<string, unknown> = {}) {
 
 let state: Record<string, unknown>
 let promoteStatus = 200
+let promoteUrl = ''
 let fetchSpy: Mock<typeof fetch>
 const sent = () => fetchSpy.mock.calls.map((c) => `${(c[1] as RequestInit | undefined)?.method ?? 'GET'} ${String(c[0])}`)
 
@@ -64,15 +65,16 @@ function route(url: string, method: string, body?: string): Response {
   if (url === '/api/v1/pipelines') return json({ pipelines: [PIPELINE] })
   if (url.startsWith('/api/v1/repositories?')) return json({ total: 2, repositories: REPOS })
   if (url.startsWith('/api/v1/vuln/scans/summary')) return json({ total: 3, severity_at_least: { critical: 1, high: 2 } })
-  if (url === '/api/v1/admin/gpg/keys') return json({ keys: [{ fingerprint: 'ABCDEF0123456789', uid: 'Release <r@x>' }] })
+  if (url === '/api/v1/admin/gpg/keys') return json({ keys: [{ id: 'k-1', fingerprint: 'ABCDEF0123456789', key_id: 'ABCDEF0123456789', name: 'Release key' }], can_store_keys: true })
   if (url.endsWith('/seal')) {
-    state = bundle({ state: 'sealed', sealed_at: '2026-10-02T10:00:00Z', sealed_by: 'admin', gpg_key_id: body ? JSON.parse(body).gpg_key_id : null })
+    state = bundle({ state: 'sealed', sealed_at: '2026-10-02T10:00:00Z', sealed_by: 'admin', gpg_key_id: body ? 'ABCDEF0123456789' : null })
     return json(state)
   }
-  if (url.endsWith('/promote')) {
-    if (promoteStatus !== 200) return json({ error: 'not implemented', code: 'not_implemented' }, promoteStatus)
+  if (url.includes('/promote')) {
+    promoteUrl = url
+    if (promoteStatus !== 200) return json({ error: 'conflicting content in the target', code: 'artifact_conflict' }, promoteStatus)
     state = bundle({ state: 'sealed', current_stage: 'qa' })
-    return json(state)
+    return json({ promotion: {}, copied: 2, existing: 1, replaced: 0, items: [] })
   }
   return json({}, 404)
 }
@@ -101,6 +103,7 @@ describe('BundleDetailPage', () => {
   beforeEach(() => {
     document.body.innerHTML = ''
     promoteStatus = 200
+    promoteUrl = ''
     state = bundle()
   })
   afterEach(() => fetchSpy?.mockRestore())
@@ -123,15 +126,15 @@ describe('BundleDetailPage', () => {
     buttonByText('Seal')!.click()
     await flushPromises()
     const select = body().querySelector('#seal-key') as HTMLSelectElement
-    expect(select.textContent).toContain('Release <r@x>')
-    select.value = 'ABCDEF0123456789'
+    expect(select.textContent).toContain('Release key')
+    select.value = 'k-1'
     select.dispatchEvent(new Event('change'))
     const confirm = [...body().querySelectorAll('button')].filter((b) => b.textContent?.trim() === 'Seal').pop()!
     confirm.click()
     await flushPromises()
 
     const seal = fetchSpy.mock.calls.find((c) => String(c[0]).endsWith('/seal'))!
-    expect(JSON.parse((seal[1] as RequestInit).body as string)).toEqual({ gpg_key_id: 'ABCDEF0123456789' })
+    expect(JSON.parse((seal[1] as RequestInit).body as string)).toEqual({ gpg_key_id: 'k-1' })
     expect(wrapper.get('[data-testid="signer"]').text()).toBe('ABCDEF0123456789')
     expect(buttonByText('Promote')).toBeDefined()
     expect(wrapper.text()).not.toContain('Remove')
@@ -151,22 +154,34 @@ describe('BundleDetailPage', () => {
     ;(body().querySelector('#bundle-promote-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
     await flushPromises()
 
-    const promote = fetchSpy.mock.calls.find((c) => String(c[0]).endsWith('/promote'))!
+    const promote = fetchSpy.mock.calls.find((c) => String(c[0]).includes('/promote'))!
     expect(JSON.parse((promote[1] as RequestInit).body as string)).toEqual({ to_stage: 'prod', target_repo: 'maven-prod' })
+    expect(promoteUrl).toBe('/api/v1/bundles/shop/1.0.0/promote')
+    expect(useToastStore().queue.some((x) => x.description === '2 copied, 1 already present, 0 replaced')).toBe(true)
     wrapper.unmount()
   })
 
-  it('reports an unimplemented promotion instead of failing silently', async () => {
+  it('forces a promotion only when asked and shows a conflict message', async () => {
     state = bundle({ state: 'sealed', sealed_at: '2026-10-02T10:00:00Z' })
-    promoteStatus = 501
+    promoteStatus = 409
     const wrapper = await mountPage()
     buttonByText('Promote')!.click()
     await flushPromises()
-    ;(body().querySelector('#promote-repo') as HTMLSelectElement).value = 'maven-dev'
-    ;(body().querySelector('#promote-repo') as HTMLSelectElement).dispatchEvent(new Event('change'))
+    const repo = body().querySelector('#promote-repo') as HTMLSelectElement
+    repo.value = 'maven-dev'
+    repo.dispatchEvent(new Event('change'))
     ;(body().querySelector('#bundle-promote-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
     await flushPromises()
-    expect(useToastStore().queue.some((x) => x.title === 'Promotion is not available on this server yet.')).toBe(true)
+    expect(promoteUrl).toBe('/api/v1/bundles/shop/1.0.0/promote')
+    expect(useToastStore().queue.some((x) => x.title === 'conflicting content in the target')).toBe(true)
+
+    promoteStatus = 200
+    const force = body().querySelector('#promote-force') as HTMLInputElement
+    force.checked = true
+    force.dispatchEvent(new Event('change'))
+    ;(body().querySelector('#bundle-promote-form') as HTMLFormElement).dispatchEvent(new Event('submit'))
+    await flushPromises()
+    expect(promoteUrl).toBe('/api/v1/bundles/shop/1.0.0/promote?force=true')
     wrapper.unmount()
   })
 

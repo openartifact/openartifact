@@ -115,9 +115,21 @@ export function archiveBundle(name: string, version: string): Promise<Bundle> {
   return request<Bundle>(`${bundlePath(name, version)}/archive`, { method: 'POST' })
 }
 
-/** The caller reloads the bundle and its promotions afterwards, so the response body is not used. */
-export async function promoteBundle(name: string, version: string, input: PromoteInput): Promise<void> {
-  await request<unknown>(`${bundlePath(name, version)}/promote`, json('POST', input))
+/** Outcome of a successful promotion. */
+export interface PromoteResult {
+  promotion: BundlePromotion
+  /** Artifacts newly written to the target. */
+  copied: number
+  /** Artifacts the target already held with the same content. */
+  existing: number
+  /** Artifacts a forced promotion moved to the target's trash. */
+  replaced: number
+}
+
+/** `force` (admins) replaces conflicting content in the target instead of answering 409. */
+export function promoteBundle(name: string, version: string, input: PromoteInput, force = false): Promise<PromoteResult> {
+  const query = force ? '?force=true' : ''
+  return request<PromoteResult>(`${bundlePath(name, version)}/promote${query}`, json('POST', input))
 }
 
 export async function listPromotions(name: string, version: string): Promise<BundlePromotion[]> {
