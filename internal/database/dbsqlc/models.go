@@ -227,6 +227,32 @@ type BlobDeletion struct {
 	Attempts     int32      `db:"attempts" json:"attempts"`
 }
 
+// Pending blob replication work: one row per blob, op = copy or delete; the latest operation wins.
+type BlobReplication struct {
+	Sha256 string `db:"sha256" json:"sha256"`
+	Op     string `db:"op" json:"op"`
+	// Bumped when op changes; a worker completes or fails a row only for the version it claimed.
+	Version       int64      `db:"version" json:"version"`
+	Attempts      int32      `db:"attempts" json:"attempts"`
+	NextAttemptAt time.Time  `db:"next_attempt_at" json:"next_attempt_at"`
+	ClaimedUntil  *time.Time `db:"claimed_until" json:"claimed_until"`
+	LastError     string     `db:"last_error" json:"last_error"`
+	EnqueuedAt    time.Time  `db:"enqueued_at" json:"enqueued_at"`
+}
+
+// Singleton row: blob replication totals and verify progress.
+type BlobReplicationState struct {
+	ID              int16      `db:"id" json:"id"`
+	ReplicatedTotal int64      `db:"replicated_total" json:"replicated_total"`
+	ReplicatedBytes int64      `db:"replicated_bytes" json:"replicated_bytes"`
+	LastError       string     `db:"last_error" json:"last_error"`
+	LastErrorAt     *time.Time `db:"last_error_at" json:"last_error_at"`
+	VerifyRequested bool       `db:"verify_requested" json:"verify_requested"`
+	VerifyCursor    string     `db:"verify_cursor" json:"verify_cursor"`
+	VerifyRun       []byte     `db:"verify_run" json:"verify_run"`
+	LastVerify      []byte     `db:"last_verify" json:"last_verify"`
+}
+
 // Immutable audit trail of every bundle promotion attempt
 type BundlePromotion struct {
 	ID           string     `db:"id" json:"id"`
@@ -900,6 +926,48 @@ type RawArtifact struct {
 	BlobID       string          `db:"blob_id" json:"blob_id"`
 	DeletedAt    *time.Time      `db:"deleted_at" json:"deleted_at"`
 	DeletedBy    *string         `db:"deleted_by" json:"deleted_by"`
+}
+
+// Journal work queue: rows whose sidecar must be (re)written or deleted; see migration 068
+type RecoveryDirty struct {
+	TableName string     `db:"table_name" json:"table_name"`
+	RowKey    string     `db:"row_key" json:"row_key"`
+	Seq       int64      `db:"seq" json:"seq"`
+	MarkedAt  time.Time  `db:"marked_at" json:"marked_at"`
+	Attempts  int32      `db:"attempts" json:"attempts"`
+	RetryAt   *time.Time `db:"retry_at" json:"retry_at"`
+	LastError *string    `db:"last_error" json:"last_error"`
+}
+
+// Keyset progress of the journal reconcile passes; see migration 068
+type RecoveryReconcile struct {
+	TableName       string     `db:"table_name" json:"table_name"`
+	Stage           string     `db:"stage" json:"stage"`
+	FullPass        bool       `db:"full_pass" json:"full_pass"`
+	Cursor          *string    `db:"cursor" json:"cursor"`
+	PassStartedAt   *time.Time `db:"pass_started_at" json:"pass_started_at"`
+	LastCompletedAt *time.Time `db:"last_completed_at" json:"last_completed_at"`
+	MarkedTotal     int64      `db:"marked_total" json:"marked_total"`
+}
+
+// Tracking of journal sidecar blobs in the blob store; sidecars have no blobs row; see migration 068
+type RecoverySidecar struct {
+	TableName     string    `db:"table_name" json:"table_name"`
+	RowKey        string    `db:"row_key" json:"row_key"`
+	RowHash       string    `db:"row_hash" json:"row_hash"`
+	SidecarSha256 string    `db:"sidecar_sha256" json:"sidecar_sha256"`
+	PendingSha256 *string   `db:"pending_sha256" json:"pending_sha256"`
+	WrittenAt     time.Time `db:"written_at" json:"written_at"`
+}
+
+// Singleton: journal enabled flag (set from config at startup) and worker progress; see migration 068
+type RecoveryState struct {
+	ID              bool       `db:"id" json:"id"`
+	Enabled         bool       `db:"enabled" json:"enabled"`
+	LastError       *string    `db:"last_error" json:"last_error"`
+	LastErrorAt     *time.Time `db:"last_error_at" json:"last_error_at"`
+	LastDrainAt     *time.Time `db:"last_drain_at" json:"last_drain_at"`
+	LastReconcileAt *time.Time `db:"last_reconcile_at" json:"last_reconcile_at"`
 }
 
 // Versioned, named collections of artifacts moving through a promotion pipeline

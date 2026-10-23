@@ -141,6 +141,8 @@ Procedure for a new instance:
 
 The compose service runs with a read-only root filesystem and `tmpfs` on `/tmp`. The restore upload and its blob spool land in `/tmp`, so a large restore can exhaust that tmpfs; size it up for big archives. Compose credentials are in [`docker/.env.example`](../../docker/.env.example).
 
+See also: [rebuild from storage](rebuild-from-storage.md) when the database is lost and no backup is usable.
+
 ## Limits
 
 - Blob bytes of deleted packages stay in the store for the [deletion grace period](storage.md#deferred-blob-deletion) (default 24 h), so storage is freed later than the delete.
@@ -148,3 +150,5 @@ The compose service runs with a read-only root filesystem and `tmpfs` on `/tmp`.
 - `oa backup restore <id>` sends JSON, but the server requires the multipart `file` upload described above, so it fails with 400. Use curl or the UI.
 - `oa backup create --help` lists `full|metadata`; the server accepts `metadata-only`.
 - Lists are read in one call of up to 100000 rows per table.
+
+See also: [blob replication](replication.md), a second copy of the blob store on another backend.

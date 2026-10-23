@@ -11,6 +11,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -126,7 +127,10 @@ type Registry struct {
 	db         DB
 	primary    storage.BlobStore
 	primaryLoc location
-	log        *logger.Logger
+	// reserved are locations other subsystems own (the blob replica): a tier
+	// backend at one of them is refused like one aliasing the primary store.
+	reserved []location
+	log      *logger.Logger
 
 	snap atomic.Pointer[Snapshot]
 
@@ -168,6 +172,14 @@ func (r *Registry) primaryTier() *Tier {
 	return &Tier{ID: "", Name: DefaultPrimaryTierName, Store: r.primary, identity: r.primaryLoc.id()}
 }
 
+// Reserve keeps tier backends away from the location cfg describes (the blob
+// replica's): a tier whose backend aliases it is unavailable instead of
+// letting a tier move write into, or delete from, the replica. Call it before
+// Start.
+func (r *Registry) Reserve(cfg storage.StorageConfig) {
+	r.reserved = append(r.reserved, locate(cfg))
+}
+
 // Snapshot returns the current tier view.
 func (r *Registry) Snapshot() *Snapshot { return r.snap.Load() }
 
@@ -200,6 +212,10 @@ func (r *Registry) Refresh(ctx context.Context) error {
 	live := map[string]bool{}
 
 	_ = cl.claim("", r.primaryLoc) // the first claim cannot conflict
+
+	for i, loc := range r.reserved {
+		_ = cl.claim("reserved:"+strconv.Itoa(i), loc) // a reserved location never overlaps the primary (checked by the config)
+	}
 
 	hasPrimary := false
 
