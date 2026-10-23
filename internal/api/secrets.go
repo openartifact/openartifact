@@ -13,6 +13,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/scanexport"
 	"github.com/openartifact/openartifact/internal/secrets"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -35,7 +36,9 @@ func NewSecretsHandler(db database.Database, log *logger.Logger, scanner *secret
 func (h *SecretsHandler) RegisterRoutes(authedRouter chi.Router, pathPrefix string) {
 	authedRouter.Post(pathPrefix+"/secrets/scan", h.handleScan)
 	authedRouter.Get(pathPrefix+"/secrets/scans", h.handleListScans)
+	authedRouter.Get(pathPrefix+"/secrets/scans/export", h.handleExportScans)
 	authedRouter.Get(pathPrefix+"/secrets/scans/{id}", h.handleGetScan)
+	authedRouter.Get(pathPrefix+"/secrets/scans/{id}/export", h.handleExportScan)
 	authedRouter.Post(pathPrefix+"/secrets/scans/{id}/quarantine", h.handleQuarantine)
 	authedRouter.Delete(pathPrefix+"/secrets/scans/{id}", h.handleDeleteScan)
 }
@@ -376,5 +379,132 @@ func secretScanResultToMap(result *models.SecretScanResult) responses.SecretScan
 		UpdatedAt:    formatTime(result.UpdatedAt),
 		ScannedAt:    formatTimePtr(result.ScannedAt),
 		ScanError:    scanError,
+	}
+}
+
+// secretExport is the data of a secret scan export request.
+type secretExport struct {
+	repoName string
+	results  []*models.SecretScanResult
+	format   string
+}
+
+// loadExport checks the admin flag and the format and loads the repository's
+// secret scans; on failure it writes the error response and returns nil.
+func (h *SecretsHandler) loadExport(w http.ResponseWriter, r *http.Request, flaggedOnly bool) *secretExport {
+	ctx := r.Context()
+
+	if !requireAdmin(w, r, auth.NewEvaluator(h.db, h.log, false)) {
+		return nil
+	}
+
+	format, valid := exportFormat(r)
+	if !valid {
+		writeError(w, http.StatusBadRequest, "validation_failed", "format must be one of: sarif, csv, json")
+		return nil
+	}
+
+	repo, err := h.db.GetRepositoryByName(ctx, urlparams.Vars(r)["name"])
+	if err != nil {
+		h.log.Errorw("export secret scans: db error getting repo", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return nil
+	}
+
+	if repo == nil {
+		writeError(w, http.StatusNotFound, "not_found", "repository not found")
+		return nil
+	}
+
+	results, err := h.db.ListSecretScanResults(ctx, repo.ID, flaggedOnly)
+	if err != nil {
+		h.log.Errorw("export secret scans: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return nil
+	}
+
+	return &secretExport{repoName: repo.Name, results: results, format: format}
+}
+
+// handleExportScans downloads the findings of all (or, with ?flagged=true, the
+// flagged) secret scans of a repository as SARIF, CSV or JSON.
+func (h *SecretsHandler) handleExportScans(w http.ResponseWriter, r *http.Request) {
+	ex := h.loadExport(w, r, r.URL.Query().Get("flagged") == "true")
+	if ex == nil {
+		return
+	}
+
+	writeSecretsExport(w, ex.format, exportFileName(ex.format, "secrets", ex.repoName), ex.repoName, ex.results)
+}
+
+// handleExportScan downloads one secret scan's findings as SARIF, CSV or JSON.
+func (h *SecretsHandler) handleExportScan(w http.ResponseWriter, r *http.Request) {
+	ex := h.loadExport(w, r, false)
+	if ex == nil {
+		return
+	}
+
+	id := urlparams.Vars(r)["id"]
+
+	for _, res := range ex.results {
+		if res.ID == id {
+			writeSecretsExport(w, ex.format, exportFileName(ex.format, "secrets", ex.repoName, id), ex.repoName, []*models.SecretScanResult{res})
+			return
+		}
+	}
+
+	writeError(w, http.StatusNotFound, "not_found", "secret scan not found")
+}
+
+func writeSecretsExport(w http.ResponseWriter, format, filename, repoName string, results []*models.SecretScanResult) {
+	items := make([]scanexport.SecretItem, 0, len(results))
+	for _, res := range results {
+		items = append(items, scanexport.SecretItem{Repo: repoName, Scan: res})
+	}
+
+	switch format {
+	case exportFormatSARIF:
+		log, cut := scanexport.SecretsSARIF(items)
+		exportHeaders(w, format, filename, cut)
+		writeExportJSON(w, log)
+	case exportFormatCSV:
+		exportHeaders(w, format, filename, false)
+		writeExportCSV(w, scanexport.SecretsCSVHeader, scanexport.SecretsCSVRows(items))
+	default:
+		exportHeaders(w, format, filename, false)
+
+		// The stored findings carry a redacted value and a line hint; an export
+		// holds neither.
+		out := make([]responses.SecretScanExportResponse, 0, len(results))
+		for _, res := range results {
+			out = append(out, secretScanExport(res))
+		}
+
+		if len(results) == 1 {
+			writeExportJSON(w, out[0])
+			return
+		}
+
+		writeExportJSON(w, map[string]any{"scans": out})
+	}
+}
+
+func secretScanExport(res *models.SecretScanResult) responses.SecretScanExportResponse {
+	findings := make([]responses.SecretFindingExport, 0, len(res.Findings))
+	for _, f := range res.Findings {
+		findings = append(findings, responses.SecretFindingExport{Type: f.Type, Description: f.Description, Severity: f.Severity})
+	}
+
+	var scanError *string
+	if res.ScanError != "" {
+		scanError = &res.ScanError
+	}
+
+	return responses.SecretScanExportResponse{
+		ID: res.ID, ArtifactID: res.ArtifactID, ScanStatus: res.ScanStatus,
+		Findings: findings, FindingCount: res.FindingCount, Quarantined: res.Quarantined,
+		CreatedAt: formatTime(res.CreatedAt), ScannedAt: formatTimePtr(res.ScannedAt), ScanError: scanError,
 	}
 }

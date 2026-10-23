@@ -536,6 +536,14 @@ export const enAdmin = {
   'sec.common.scanned': 'Scanned',
   'sec.common.filterStatus': 'Filter by status',
 
+  // Security: scan exports
+  'sec.export.label': 'Export',
+  'sec.export.sarif': 'SARIF',
+  'sec.export.csv': 'CSV',
+  'sec.export.json': 'JSON',
+  'sec.export.download': 'Download',
+  'sec.export.failed': 'Export failed',
+
   // Security: vulnerabilities
   'sec.vuln.breadcrumb': 'Vulnerability scan',
   'sec.vuln.title': 'Vulnerability scan',

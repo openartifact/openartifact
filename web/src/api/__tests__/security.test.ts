@@ -15,6 +15,9 @@ import {
   setVulnQuarantine,
   setLicenseQuarantine,
   VULN_ECOSYSTEMS,
+  vulnScansExportUrl,
+  secretScansExportUrl,
+  downloadScanExport,
 } from '../security'
 import { triggerAIAnalysis } from '../ai'
 
@@ -143,5 +146,42 @@ describe('security api', () => {
     await deleteVulnScan('my repo', 's/1')
     expect(lastUrl()).toBe('/api/v1/repositories/my%20repo/vuln/scans/s%2F1')
     expect((spy.mock.calls.at(-1)![1] as RequestInit).method).toBe('DELETE')
+  })
+})
+
+describe('scan exports', () => {
+  it('builds export URLs that carry the overview filters and the format', () => {
+    expect(vulnScansExportUrl({}, 'sarif')).toBe('/api/v1/vuln/scans/export?format=sarif')
+    expect(vulnScansExportUrl({ repo: 'npm main', severity: 'high', quarantined: false }, 'csv')).toBe(
+      '/api/v1/vuln/scans/export?repo=npm+main&severity=high&quarantined=false&format=csv',
+    )
+    expect(secretScansExportUrl('raw/x', 'json')).toBe('/api/v1/repositories/raw%2Fx/secrets/scans/export?format=json')
+  })
+
+  it('downloads through a preflight, then lets the browser stream the file', async () => {
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response('{}', { status: 200, headers: { 'Content-Disposition': 'attachment; filename="vuln-scans.sarif"' } }),
+    )
+    const clicked: { href: string; download: string }[] = []
+    const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+      clicked.push({ href: this.getAttribute('href') ?? '', download: this.download })
+    })
+    await downloadScanExport('/api/v1/vuln/scans/export?format=sarif', 'sarif')
+    click.mockRestore()
+    expect(lastUrl()).toBe('/api/v1/vuln/scans/export?format=sarif')
+    expect(clicked).toEqual([{ href: '/api/v1/vuln/scans/export?format=sarif', download: 'vuln-scans.sarif' }])
+  })
+
+  it('rejects with the server error and starts no download', async () => {
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(
+      new Response(JSON.stringify({ error: 'admin access required', code: 'forbidden' }), {
+        status: 403,
+        headers: { 'Content-Type': 'application/json' },
+      }),
+    )
+    const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {})
+    await expect(downloadScanExport('/x', 'csv')).rejects.toThrow()
+    expect(click).not.toHaveBeenCalled()
+    click.mockRestore()
   })
 })

@@ -10,6 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <PageHeader :title="t('sec.vuln.title')" :description="t('sec.vuln.description')">
       <template #actions>
         <div class="flex items-center gap-3 flex-wrap">
+          <ScanExportButtons :url="exportUrl" />
           <AppButton variant="primary" size="md" @click="openDrawer">
             <ShieldCheckIcon class="w-4 h-4" aria-hidden="true" />
             {{ t('sec.vuln.scanPackage') }}
@@ -391,6 +392,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import AppButton from '../../components/AppButton.vue'
 import PageHeader from '../../components/PageHeader.vue'
+import ScanExportButtons from '../../components/ScanExportButtons.vue'
 import { formatDateTime } from '../../lib/datetime'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRoute, useRouter, type LocationQuery } from 'vue-router'
@@ -405,6 +407,8 @@ import { useToastStore } from '../../stores/toast'
 import { useRepoPackages } from '../../composables/useRepoPackages'
 import {
   listAllVulnScans,
+  vulnScansExportUrl,
+  type ScanExportFormat,
   getVulnScanSummary,
   getVulnScan,
   deleteVulnScan,
@@ -448,6 +452,10 @@ const { repos, reposLoaded, selectedRepo: drawerRepo, packages, findPackage } = 
 // ─── Filters: the URL query is the single source of truth ───────────────────
 
 const filters = computed(() => parseVulnFilters(route.query))
+/** Export of the scans the active filters select (the whole selection, not the loaded pages). */
+function exportUrl(format: ScanExportFormat): string {
+  return vulnScansExportUrl(toVulnScanFilters(filters.value), format)
+}
 const filtersKey = computed(() => JSON.stringify(filters.value))
 const hasFilters = computed(() => hasVulnFilters(filters.value))
 

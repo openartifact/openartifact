@@ -187,6 +187,10 @@ linters:
       - path: "internal/api/upload_npm\\.go"
         linters:
           - tagliatelle
+      # SARIF 2.1.0 property names are camelCase by specification
+      - path: "internal/scanexport/sarif\\.go"
+        linters:
+          - tagliatelle
       - path: "internal/vuln/scanner\\.go"
         linters:
           - tagliatelle

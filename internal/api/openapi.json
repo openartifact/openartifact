@@ -5370,6 +5370,77 @@
         }
       }
     },
+    "/api/v1/repositories/{name}/secrets/scans/export": {
+      "get": {
+        "summary": "Export secrets scans of a repository",
+        "description": "Findings of all (or with `flagged=true` the flagged) secrets scans of a repository as SARIF, CSV or JSON (admin only). Never contains a secret value, redacted or not.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "flagged",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sarif",
+                "csv",
+                "json"
+              ],
+              "default": "json"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).",
+            "content": {
+              "application/sarif+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format` or filter (`validation_failed`)"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
     "/api/v1/repositories/{name}/secrets/scans/{id}": {
       "get": {
         "summary": "Get secrets scan",
@@ -5435,6 +5506,79 @@
         "responses": {
           "204": {
             "description": "Secrets scan deleted"
+          },
+          "404": {
+            "description": "Scan not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/secrets/scans/{id}/export": {
+      "get": {
+        "summary": "Export a secrets scan",
+        "description": "Findings of one secrets scan as SARIF, CSV or JSON (admin only). Never contains a secret value, redacted or not.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sarif",
+                "csv",
+                "json"
+              ],
+              "default": "json"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).",
+            "content": {
+              "application/sarif+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format` or filter (`validation_failed`)"
+          },
+          "403": {
+            "description": "Admin access required"
           },
           "404": {
             "description": "Scan not found"
@@ -5589,6 +5733,113 @@
           },
           "400": {
             "description": "Invalid filter or cursor (`validation_failed`)"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/vuln/scans/export": {
+      "get": {
+        "summary": "Export vulnerability scans of all repositories",
+        "description": "Findings of every scan the overview filters select (admin only), as SARIF, CSV or JSON. No paging: at most 2000 scans are read.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            },
+            "description": "Only this repository (by name)."
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            },
+            "description": "Scans with a finding of this severity or worse."
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "partial",
+                "failed",
+                "scanning"
+              ]
+            }
+          },
+          {
+            "name": "scanner",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "osv",
+                "trivy",
+                "grype"
+              ]
+            }
+          },
+          {
+            "name": "quarantined",
+            "in": "query",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sarif",
+                "csv",
+                "json"
+              ],
+              "default": "json"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).",
+            "content": {
+              "application/sarif+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format` or filter (`validation_failed`)"
           },
           "403": {
             "description": "Admin access required"
@@ -5766,6 +6017,79 @@
                 }
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vuln/scans/{id}/export": {
+      "get": {
+        "summary": "Export a vulnerability scan",
+        "description": "Findings of one scan as SARIF, CSV or JSON (admin only).",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`sarif` (SARIF 2.1.0, GitHub code scanning compatible), `csv` or `json` (default).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "sarif",
+                "csv",
+                "json"
+              ],
+              "default": "json"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).",
+            "content": {
+              "application/sarif+json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format` or filter (`validation_failed`)"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Scan not found"
           }
         }
       }

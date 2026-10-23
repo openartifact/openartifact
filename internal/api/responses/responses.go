@@ -601,6 +601,14 @@ type VulnScanOverviewRowResponse struct {
 	FailedScanners []string `json:"failed_scanners"`
 }
 
+// VulnScanExportResponse is one scan of the cross-repository JSON export: the
+// scan with its findings and the name of its repository.
+type VulnScanExportResponse struct {
+	VulnScanResultResponse
+
+	RepositoryName string `json:"repository_name"`
+}
+
 // VulnScanOverviewResponse is one keyset page of the overview.
 type VulnScanOverviewResponse struct {
 	Scans   []VulnScanOverviewRowResponse `json:"scans"`
@@ -627,4 +635,25 @@ type VulnScanSummaryResponse struct {
 	Scanning        int                    `json:"scanning"`
 	Quarantined     int                    `json:"quarantined"`
 	SeverityAtLeast VulnScanSeverityCounts `json:"severity_at_least"`
+}
+
+// SecretFindingExport is a secret finding as exported: its type and severity
+// only, never the (redacted) value or the text around it.
+type SecretFindingExport struct {
+	Type        string `json:"type"`
+	Description string `json:"description"`
+	Severity    string `json:"severity"`
+}
+
+// SecretScanExportResponse is a secret scan in the JSON export.
+type SecretScanExportResponse struct {
+	ID           string                `json:"id"`
+	ArtifactID   string                `json:"artifact_id"`
+	ScanStatus   string                `json:"scan_status"`
+	Findings     []SecretFindingExport `json:"findings"`
+	FindingCount int                   `json:"finding_count"`
+	Quarantined  bool                  `json:"quarantined"`
+	CreatedAt    string                `json:"created_at"`
+	ScannedAt    *string               `json:"scanned_at"`
+	ScanError    *string               `json:"scan_error"`
 }

@@ -113,3 +113,24 @@ func purlEscape(s string) string {
 
 	return b.String()
 }
+
+// PackageURL returns the Package URL of a scanned package for reports. An
+// ecosystem with no registered Package URL type (deb, rpm, helm) or a name that
+// cannot be expressed gets a generic one (pkg:generic/name@version) that names
+// the ecosystem as a qualifier.
+func PackageURL(ecosystem, name, version string) string {
+	if p, err := buildPURL(ecosystem, name, version); err == nil {
+		return p
+	}
+
+	p := "pkg:generic/" + purlEscape(name)
+	if version != "" {
+		p += "@" + purlEscape(version)
+	}
+
+	if ecosystem != "" {
+		p += "?ecosystem=" + purlEscape(strings.ToLower(ecosystem))
+	}
+
+	return p
+}

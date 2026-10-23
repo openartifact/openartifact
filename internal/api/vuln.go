@@ -109,6 +109,7 @@ func (h *VulnHandler) RegisterRoutes(authedRouter chi.Router, pathPrefix string)
 	authedRouter.Get(pathPrefix+"/vuln/scanners", h.handleListScanners)
 	authedRouter.Get(pathPrefix+"/vuln/scans", h.handleListScans)
 	authedRouter.Get(pathPrefix+"/vuln/scans/{id}", h.handleGetScan)
+	authedRouter.Get(pathPrefix+"/vuln/scans/{id}/export", h.handleExportScan)
 	authedRouter.Post(pathPrefix+"/vuln/scans/{id}/quarantine", h.handleQuarantine)
 	authedRouter.Delete(pathPrefix+"/vuln/scans/{id}", h.handleDeleteScan)
 }
