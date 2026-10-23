@@ -10,6 +10,8 @@ Admin-triggered export of the database records, and optionally the blobs, to one
 
 Everything is admin only (403 otherwise) and available from the UI (Admin, Backup), the `oa` CLI and the REST API. There is no built-in scheduler and no retention: backups run when asked, and archives stay in the backup directory until you remove them.
 
+A backup is a periodic snapshot. For a recovery point of minutes instead of the backup interval, and for what to do when the database, the blob store or a single repository is lost, see [disaster recovery](disaster-recovery.md) and [PostgreSQL point-in-time recovery](postgres-pitr.md).
+
 ## Settings
 
 | Environment variable | YAML key | Default |

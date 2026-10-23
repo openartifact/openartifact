@@ -96,6 +96,7 @@ Migrations `067` to `071`.
 - New subcommand `openartifact rebuild` (`/app/openartifact rebuild` in the container image).
 - Migration `069` builds two indexes on `recovery_sidecars` (concurrently, so writes are not blocked) that the replication verify pass uses to restore the sidecars of a lost primary store.
 - Federated repositories ([federation](../operations/federation.md)): migration `070` adds the `federation_*` tables and the `repositories.federated` column, and `071` adds capture triggers on the format unit tables. They do nothing until a repository is federated. New `federation.*` configuration keys (`OPENARTIFACT_FEDERATION_*`, off by default), new admin endpoints under `/api/v1/repositories/{name}/federation` and new peer endpoints under `/federation/v1`. Nothing to do on upgrade.
+- New [disaster recovery runbook](../operations/disaster-recovery.md) and [PostgreSQL point-in-time recovery guide](../operations/postgres-pitr.md) (CloudNativePG, Barman Cloud plugin, Helm chart). Documentation only.
 
 ### 0.8.1
 
