@@ -5,6 +5,8 @@
 package group
 
 import (
+	"bytes"
+	"compress/gzip"
 	"context"
 	"errors"
 	"net/http"
@@ -47,12 +49,28 @@ type fakeGenerator struct {
 	err       error
 	published map[string]string // path -> content written by a successful Generate
 
-	generated []string // dist of every Generate call
+	generated []string   // dist of every Generate call
+	readable  [][]string // readable members of every Generate call
 	refreshed int
+	members   int // members of the group; fewer readable ones get a variant scope
 }
 
-func (g *fakeGenerator) Generate(_ context.Context, _, dist string) error {
+// Scope mirrors the worker: all members readable is the shared index.
+func (g *fakeGenerator) Scope(_ context.Context, _ string, readable []string) (string, bool, error) {
+	if len(readable) == 0 {
+		return "", false, nil
+	}
+
+	if len(readable) == g.members {
+		return "", true, nil
+	}
+
+	return ".oa-variant/" + strings.Join(readable, "+") + "/", true, nil
+}
+
+func (g *fakeGenerator) Generate(_ context.Context, _, dist string, readable []string) error {
 	g.generated = append(g.generated, dist)
+	g.readable = append(g.readable, readable)
 
 	if g.err != nil {
 		return g.err
@@ -91,7 +109,7 @@ func newDebRPM(t *testing.T, format string, members ...*models.Repository) *debr
 	f := newFixture(t, format, members...)
 	db := &debrpmDB{groupDB: f.h.db.(*groupDB), metadata: map[string]*models.RepoMetadata{}, owners: map[string]string{}}
 	blobs := formattest.NewBlobStore()
-	gen := &fakeGenerator{db: db, blobs: blobs}
+	gen := &fakeGenerator{db: db, blobs: blobs, members: len(members)}
 
 	f.h = NewHandler(f.h.log, db).WithMetadata(blobs, gen)
 
@@ -298,6 +316,8 @@ func TestGroupPackageFileOfAnUnreadableOwnerIs404(t *testing.T) {
 	f := newDebRPM(t, "rpm", member("open", "rpm", "hosted"), member("secret", "rpm", "hosted"))
 	f.db.owners["Packages/s-1.rpm"] = "id-secret"
 	f.db.owners["Packages/o-1.rpm"] = "id-open"
+	// The variant of the caller who can read only "open" has owners of its own.
+	f.db.owners[".oa-variant/id-open/Packages/o-1.rpm"] = "id-open"
 	f.set("secret", "Packages/s-1.rpm", 200, "SECRET")
 	f.set("open", "Packages/o-1.rpm", 200, "OPEN")
 	f.denied["secret"] = true
@@ -362,5 +382,65 @@ func TestDebRPMGroupWithoutMetadataSupportIs501(t *testing.T) {
 
 	if w := f.get(http.MethodGet, "dists/bookworm/Release"); w.Code != http.StatusNotImplemented {
 		t.Errorf("= %d, want 501 when the handler has no generator", w.Code)
+	}
+}
+
+func TestDebGroupServesPlainPackagesFromTheGzip(t *testing.T) {
+	f := newDebRPM(t, "deb", member("a", "deb", "hosted"))
+	now := time.Now()
+	f.db.state = &models.GroupMetadataState{GeneratedAt: &now}
+
+	var gz bytes.Buffer
+
+	zw := gzip.NewWriter(&gz)
+	_, _ = zw.Write([]byte("Package: foo\n\n"))
+	_ = zw.Close()
+
+	f.db.put(f.blobs, "dists/bookworm/main/binary-amd64/Packages.gz", gz.String())
+
+	w := f.get(http.MethodGet, "dists/bookworm/main/binary-amd64/Packages")
+	if w.Code != http.StatusOK || w.Body.String() != "Package: foo\n\n" {
+		t.Errorf("plain Packages = %d %q, want the decompressed index", w.Code, w.Body.String())
+	}
+}
+
+func TestDebRPMGroupServesACallerOnlyWhatTheirReadableMembersList(t *testing.T) {
+	a, b := member("a", "deb", "hosted"), member("b", "deb", "hosted")
+	f := newDebRPM(t, "deb", a, b)
+	now := time.Now()
+	f.db.state = &models.GroupMetadataState{GeneratedAt: &now}
+	f.db.put(f.blobs, "dists/bookworm/Release", "everything")
+	f.db.put(f.blobs, "public.key", "KEY")
+	f.db.owners["pool/main/s/secret/secret_1_amd64.deb"] = b.ID // the shared index only
+
+	// The caller can read a only: the shared index is not theirs, and the
+	// variant of {a} does not exist yet, so it is generated from a alone.
+	f.denied = map[string]bool{"b": true}
+	variant := ".oa-variant/" + a.ID + "/"
+	f.gen.published = map[string]string{variant + "dists/bookworm/Release": "only a"}
+
+	w := f.get(http.MethodGet, "dists/bookworm/Release")
+	if w.Code != http.StatusOK || w.Body.String() != "only a" {
+		t.Errorf("restricted Release = %d %q, want the variant listing a only", w.Code, w.Body.String())
+	}
+
+	if len(f.gen.readable) != 1 || len(f.gen.readable[0]) != 1 || f.gen.readable[0][0] != a.ID {
+		t.Errorf("generated for %v, want only member a", f.gen.readable)
+	}
+
+	if w := f.get(http.MethodGet, "public.key"); w.Body.String() != "KEY" {
+		t.Errorf("public.key = %q, want the shared key", w.Body.String())
+	}
+
+	// A file b owns in the shared index is not visible through the variant.
+	if w := f.get(http.MethodGet, "pool/main/s/secret/secret_1_amd64.deb"); w.Code != http.StatusNotFound {
+		t.Errorf("file of an unreadable member = %d, want 404", w.Code)
+	}
+
+	// Everyone who can read both members gets the shared index.
+	f.denied = nil
+
+	if w := f.get(http.MethodGet, "dists/bookworm/Release"); w.Body.String() != "everything" {
+		t.Errorf("unrestricted Release = %q, want the shared index", w.Body.String())
 	}
 }

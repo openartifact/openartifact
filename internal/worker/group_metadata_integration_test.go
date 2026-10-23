@@ -280,7 +280,7 @@ func TestGroupDebMergesHostedAndProxyInMemberOrder(t *testing.T) {
 	w := NewGroupMetadataWorker(f.pg, f.blobs, opener, nil, fixedResolver{stubSigner{}}, testLogger(t))
 	t.Cleanup(w.Stop)
 
-	if err := w.Generate(ctx, grp.ID, "bookworm"); err != nil {
+	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
 
@@ -350,7 +350,7 @@ func TestGroupDebMemberOrderDecidesDuplicateVersion(t *testing.T) {
 	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, nil, fixedResolver{}, testLogger(t))
 	t.Cleanup(w.Stop)
 
-	if err := w.Generate(ctx, grp.ID, "bookworm"); err != nil {
+	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -369,7 +369,7 @@ func TestGroupDebMemberOrderDecidesDuplicateVersion(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if err := w.Generate(ctx, grp.ID, "bookworm"); err != nil {
+	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -389,11 +389,11 @@ func TestGroupDebUnknownDistribution(t *testing.T) {
 	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, nil, fixedResolver{}, testLogger(t))
 	t.Cleanup(w.Stop)
 
-	if err := w.Generate(context.Background(), grp.ID, "no-such-dist"); !errors.Is(err, group.ErrDistNotFound) {
+	if err := w.Generate(context.Background(), grp.ID, "no-such-dist", nil); !errors.Is(err, group.ErrDistNotFound) {
 		t.Errorf("Generate(unknown dist) = %v, want ErrDistNotFound", err)
 	}
 
-	if err := w.Generate(context.Background(), grp.ID, "../etc"); !errors.Is(err, group.ErrDistNotFound) {
+	if err := w.Generate(context.Background(), grp.ID, "../etc", nil); !errors.Is(err, group.ErrDistNotFound) {
 		t.Errorf("Generate(invalid dist name) = %v, want ErrDistNotFound", err)
 	}
 }
@@ -410,7 +410,7 @@ func TestGroupDebUnreachableProxyIsPartialAndRetriesSoon(t *testing.T) {
 	w := NewGroupMetadataWorker(f.pg, f.blobs, downUpstream{}, nil, fixedResolver{}, testLogger(t))
 	t.Cleanup(w.Stop)
 
-	if err := w.Generate(ctx, grp.ID, "bookworm"); err != nil {
+	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
 		t.Fatalf("an unreachable proxy member must not fail the group: %v", err)
 	}
 
@@ -437,7 +437,7 @@ func TestGroupDebProxyWithoutTheDistributionIsNotPartial(t *testing.T) {
 	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, nil, fixedResolver{}, testLogger(t))
 	t.Cleanup(w.Stop)
 
-	if err := w.Generate(ctx, grp.ID, "bookworm"); err != nil {
+	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -464,7 +464,7 @@ func TestGroupDebHostedNameHidesProxyVersionsUnlessMerging(t *testing.T) {
 	versions := func() map[string]string {
 		t.Helper()
 
-		if err := w.Generate(ctx, grp.ID, "bookworm"); err != nil {
+		if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
 			t.Fatal(err)
 		}
 
@@ -512,7 +512,7 @@ func TestGroupStaleTracking(t *testing.T) {
 		t.Errorf("a repository outside the group lists groups %v", groups)
 	}
 
-	if err := w.Generate(ctx, grp.ID, "bookworm"); err != nil {
+	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -528,7 +528,7 @@ func TestGroupStaleTracking(t *testing.T) {
 		t.Error("a marked group must be listed as stale")
 	}
 
-	if err := w.Generate(ctx, grp.ID, ""); err != nil {
+	if err := w.Generate(ctx, grp.ID, "", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -627,7 +627,7 @@ func TestGroupRPMMergesHostedAndProxyInMemberOrder(t *testing.T) {
 	w := NewGroupMetadataWorker(f.pg, f.blobs, opener, loader, fixedResolver{stubSigner{}}, testLogger(t))
 	t.Cleanup(w.Stop)
 
-	if err := w.Generate(ctx, grp.ID, ""); err != nil {
+	if err := w.Generate(ctx, grp.ID, "", nil); err != nil {
 		t.Fatalf("Generate: %v", err)
 	}
 
@@ -682,7 +682,7 @@ func TestGroupRPMProxyOnlyAndEmptyHosted(t *testing.T) {
 	w := NewGroupMetadataWorker(f.pg, f.blobs, opener, fakeRPMLoader{}, fixedResolver{}, testLogger(t))
 	t.Cleanup(w.Stop)
 
-	if err := w.Generate(ctx, grp.ID, ""); err != nil {
+	if err := w.Generate(ctx, grp.ID, "", nil); err != nil {
 		t.Fatal(err)
 	}
 
@@ -702,4 +702,94 @@ type fixedResolver struct{ signer gpg.Signer }
 
 func (r fixedResolver) SignerForRepo(context.Context, string) (gpg.Signer, error) {
 	return r.signer, nil
+}
+
+
+func TestGroupDebCallerWhoCannotReadAMemberGetsAVariantWithoutIt(t *testing.T) {
+	f := newGroupFixture(t)
+	ctx := context.Background()
+
+	open := f.repo("deb-open", "deb", "hosted")
+	secret := f.repo("deb-secret", "deb", "hosted")
+	grp := f.repo("deb-group", "deb", "group", open.ID, secret.ID)
+
+	f.debPackage(open, "foo", "1.0")
+	f.debPackage(secret, "classified", "1.0")
+
+	w := NewGroupMetadataWorker(f.pg, f.blobs, fakeUpstream{}, nil, func() gpg.Signer { return stubSigner{} }, testLogger(t))
+	t.Cleanup(w.Stop)
+
+	if err := w.Generate(ctx, grp.ID, "bookworm", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	if scope, ok, err := w.Scope(ctx, grp.ID, []string{secret.ID, open.ID}); err != nil || !ok || scope != "" {
+		t.Fatalf("Scope(all members) = %q, %v, %v; want the shared index", scope, ok, err)
+	}
+
+	scope, ok, err := w.Scope(ctx, grp.ID, []string{open.ID})
+	if err != nil || !ok || !strings.HasPrefix(scope, variantPrefix) {
+		t.Fatalf("Scope(open) = %q, %v, %v; want a variant", scope, ok, err)
+	}
+
+	if _, ok, _ := w.Scope(ctx, grp.ID, []string{}); ok {
+		t.Error("a caller who can read no member must have no metadata")
+	}
+
+	if err := w.Generate(ctx, grp.ID, "bookworm", []string{open.ID}); err != nil {
+		t.Fatal(err)
+	}
+
+	md := f.metadata(grp.ID)
+	variant := map[string][]byte{}
+
+	for path, data := range md {
+		if rest, ok := strings.CutPrefix(path, scope); ok {
+			variant[rest] = data
+		}
+	}
+
+	rows := debListing(t, variant)
+	if len(rows) != 1 || rows[0].name != "foo" {
+		t.Fatalf("variant lists %+v, want foo only", rows)
+	}
+
+	if f.owner(grp.ID, scope+rows[0].filename) != open.ID {
+		t.Error("the variant must map its files to the readable member")
+	}
+
+	for _, p := range []string{"dists/bookworm/Release", "dists/bookworm/InRelease", "dists/bookworm/Release.gpg"} {
+		if _, ok := variant[p]; !ok {
+			t.Errorf("variant has no signed %s", p)
+		}
+	}
+
+	shared := debListing(t, md)
+	if len(shared) != 2 {
+		t.Errorf("shared index lists %+v, want both members' packages", shared)
+	}
+
+	f.assertVariantsDroppedByRegeneration(t, w, grp.ID, scope+rows[0].filename)
+}
+
+// assertVariantsDroppedByRegeneration regenerates the shared index of the group
+// and checks that no variant row or owner (ownerPath) survives.
+func (f *groupFixture) assertVariantsDroppedByRegeneration(t *testing.T, w *GroupMetadataWorker, groupID, ownerPath string) {
+	t.Helper()
+
+	ctx := context.Background()
+
+	if err := w.Generate(ctx, groupID, "bookworm", nil); err != nil {
+		t.Fatal(err)
+	}
+
+	for path := range f.metadata(groupID) {
+		if strings.HasPrefix(path, variantPrefix) {
+			t.Errorf("variant row %s survived a regeneration of the shared index", path)
+		}
+	}
+
+	if _, ok, _ := f.pg.GetGroupPackageOwner(ctx, groupID, ownerPath); ok {
+		t.Error("variant owners survived a regeneration of the shared index")
+	}
 }

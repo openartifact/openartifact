@@ -8,16 +8,19 @@ import (
 	"bytes"
 	"context"
 	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
 	"slices"
 	"sort"
+	"strings"
 	"time"
 
 	sq "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/group"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -79,7 +82,7 @@ type GroupMetadataWorker struct {
 func NewGroupMetadataWorker(db sq.Database, blobStore storage.BlobStore, opener MemberOpener, rpm RPMPackageLoader, signers gpg.Resolver, log *logger.Logger) *GroupMetadataWorker {
 	w := &GroupMetadataWorker{db: db, blobStore: blobStore, opener: opener, rpm: rpm, signers: signers, log: log}
 	w.q = newRegenQueue("group", log, func(ctx context.Context, groupID string) error {
-		return w.generate(ctx, groupID, "", false)
+		return w.generate(ctx, groupID, "", false, nil)
 	})
 
 	return w
@@ -153,8 +156,66 @@ func (w *GroupMetadataWorker) RegenerateStale(ctx context.Context) {
 // generation another process runs. dist is a Debian distribution a client asked
 // for: group.ErrDistNotFound is returned when no member has one the group does
 // not serve yet.
-func (w *GroupMetadataWorker) Generate(ctx context.Context, groupID, dist string) error {
-	return w.generate(ctx, groupID, dist, true)
+//
+// readable are the IDs of the members the caller may read. The metadata a caller
+// is served lists only those members' packages: when they are not all of the
+// group's members, it is generated (and signed) as a variant of its own, stored
+// under Scope(readable), and dropped whenever the group is regenerated.
+func (w *GroupMetadataWorker) Generate(ctx context.Context, groupID, dist string, readable []string) error {
+	return w.generate(ctx, groupID, dist, true, readable)
+}
+
+// variantPrefix prefixes the paths of the metadata variants of a group; no path
+// of a deb or rpm repository starts with it.
+const variantPrefix = ".oa-variant/"
+
+// Scope returns the path prefix under which the metadata for a caller who can
+// read the members with the given IDs is stored: empty when that is every
+// member the group lists (the common case, one shared index), a per-subset
+// prefix otherwise. ok is false when the caller can read none of them.
+func (w *GroupMetadataWorker) Scope(ctx context.Context, groupID string, readable []string) (string, bool, error) {
+	grp, err := w.db.GetRepositoryByID(ctx, groupID)
+	if err != nil || grp == nil {
+		return "", false, fmt.Errorf("group worker: loading group %s: %w", groupID, err)
+	}
+
+	members, err := w.liveMembers(ctx, grp)
+	if err != nil {
+		return "", false, err
+	}
+
+	subset, scope := scopeMembers(members, readable)
+
+	return scope, len(subset) > 0, nil
+}
+
+// scopeMembers narrows members (in priority order) to the readable IDs and
+// names the variant of that subset: "" for all of them, else a prefix keyed by
+// the sorted member IDs. A nil readable means every member.
+func scopeMembers(members []*models.Repository, readable []string) ([]*models.Repository, string) {
+	if readable == nil {
+		return members, ""
+	}
+
+	subset := make([]*models.Repository, 0, len(members))
+	ids := make([]string, 0, len(members))
+
+	for _, m := range members {
+		if slices.Contains(readable, m.ID) {
+			subset = append(subset, m)
+			ids = append(ids, m.ID)
+		}
+	}
+
+	if len(subset) == len(members) {
+		return members, ""
+	}
+
+	sort.Strings(ids)
+
+	sum := sha256.Sum256([]byte(strings.Join(ids, ",")))
+
+	return subset, variantPrefix + hex.EncodeToString(sum[:16]) + "/"
 }
 
 // groupJob is one generation of a group.
@@ -162,7 +223,10 @@ type groupJob struct {
 	w       *GroupMetadataWorker
 	group   *models.Repository
 	members []*models.Repository
-	signer  gpg.Signer
+	// scope is the variant prefix the files are stored under, "" for the
+	// group's shared index.
+	scope  string
+	signer gpg.Signer
 	// blobs are the generated files keyed by group-relative path.
 	blobs map[string][]byte
 	// owners maps each file the index lists to the member serving it.
@@ -185,6 +249,10 @@ type groupOwner struct {
 // claim registers member as the owner of path; false means another member
 // already owns it for different content, so the entry must be left out.
 func (j *groupJob) claim(path, member, sum string) bool {
+	if strings.HasPrefix(path, variantPrefix) {
+		return false
+	}
+
 	if cur, ok := j.owners[path]; ok {
 		return cur.sha256 == sum || cur.sha256 == "" || sum == ""
 	}
@@ -194,7 +262,7 @@ func (j *groupJob) claim(path, member, sum string) bool {
 	return true
 }
 
-func (w *GroupMetadataWorker) generate(ctx context.Context, groupID, hint string, wait bool) error {
+func (w *GroupMetadataWorker) generate(ctx context.Context, groupID, hint string, wait bool, readable []string) error {
 	grp, err := w.db.GetRepositoryByID(ctx, groupID)
 	if err != nil {
 		return fmt.Errorf("group worker: loading group %s: %w", groupID, err)
@@ -204,8 +272,18 @@ func (w *GroupMetadataWorker) generate(ctx context.Context, groupID, hint string
 		return nil
 	}
 
+	all, err := w.liveMembers(ctx, grp)
+	if err != nil {
+		return err
+	}
+
+	members, scope := scopeMembers(all, readable)
+	if len(members) == 0 {
+		return group.ErrDistNotFound
+	}
+
 	if hint != "" {
-		if err := w.checkDist(ctx, grp, hint); err != nil {
+		if err := w.checkDist(ctx, grp, hint, members); err != nil {
 			return err
 		}
 	}
@@ -221,11 +299,11 @@ func (w *GroupMetadataWorker) generate(ctx context.Context, groupID, hint string
 
 	// Another generation, which this one waited for, may have produced what
 	// the caller needs.
-	if waited && w.freshSince(ctx, grp, hint, before) {
+	if waited && w.freshSince(ctx, grp, hint, scope, before) {
 		return nil
 	}
 
-	return w.run(ctx, grp, hint)
+	return w.run(ctx, grp, hint, members, scope)
 }
 
 // lock takes the group's advisory lock; with wait set it retries until ctx
@@ -270,7 +348,18 @@ func (w *GroupMetadataWorker) generatedAt(ctx context.Context, groupID string) t
 
 // freshSince reports whether the group's metadata (and the hinted distribution,
 // if any) was generated after the instant before.
-func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Repository, hint string, before time.Time) bool {
+func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Repository, hint, scope string, before time.Time) bool {
+	if scope != "" {
+		anchor := "repodata/repomd.xml"
+		if grp.Format == "deb" {
+			anchor = "dists/" + hint + "/Release"
+		}
+
+		meta, err := w.db.GetRepoMetadataByPath(ctx, grp.ID, scope+anchor)
+
+		return err == nil && meta != nil
+	}
+
 	if !w.generatedAt(ctx, grp.ID).After(before) {
 		return false
 	}
@@ -285,7 +374,7 @@ func (w *GroupMetadataWorker) freshSince(ctx context.Context, grp *models.Reposi
 }
 
 // run is one locked generation of grp.
-func (w *GroupMetadataWorker) run(ctx context.Context, grp *models.Repository, hint string) error {
+func (w *GroupMetadataWorker) run(ctx context.Context, grp *models.Repository, hint string, members []*models.Repository, scope string) error {
 	if err := w.ensureState(ctx, grp.ID); err != nil {
 		return err
 	}
@@ -295,13 +384,8 @@ func (w *GroupMetadataWorker) run(ctx context.Context, grp *models.Repository, h
 		return fmt.Errorf("group worker: reading state: %w", err)
 	}
 
-	members, err := w.liveMembers(ctx, grp)
-	if err != nil {
-		return err
-	}
-
 	j := &groupJob{
-		w: w, group: grp, members: members,
+		w: w, group: grp, members: members, scope: scope,
 		blobs:  make(map[string][]byte),
 		owners: make(map[string]groupOwner),
 	}
@@ -425,7 +509,7 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	oldSHA, err := listOldGroupMetadata(ctx, tx, groupID)
+	oldSHA, err := listOldGroupMetadata(ctx, tx, groupID, j.scope)
 	if err != nil {
 		return err
 	}
@@ -436,7 +520,8 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		return map[string]string{"path": path, "format": format, "repo_id": groupID, "sha256": sum}
 	}
 
-	for path, data := range j.blobs {
+	for rel, data := range j.blobs {
+		path := j.scope + rel
 		sum := fmt.Sprintf("%x", sha256.Sum256(data))
 		newSHA[path] = sum
 
@@ -468,12 +553,15 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 		}
 	}
 
-	if err := replaceOwners(ctx, tx, groupID, j.owners); err != nil {
+	if err := replaceOwners(ctx, tx, groupID, j.scope, j.owners); err != nil {
 		return err
 	}
 
-	if err := markGenerated(ctx, tx, groupID, st, j.dists, refresh); err != nil {
-		return err
+	// A variant is derived from the shared index's state and does not change it.
+	if j.scope == "" {
+		if err := markGenerated(ctx, tx, groupID, st, j.dists, refresh); err != nil {
+			return err
+		}
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -487,9 +575,11 @@ func (w *GroupMetadataWorker) publish(ctx context.Context, j *groupJob, st *mode
 	return nil
 }
 
-// listOldGroupMetadata returns path -> blob sha256 of the group's generated rows.
-func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID string) (map[string]string, error) {
-	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1`, groupID)
+// listOldGroupMetadata returns path -> blob sha256 of the group's generated
+// rows: all of them for the shared index (so regenerating it drops the
+// variants), those under scope for a variant.
+func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID, scope string) (map[string]string, error) {
+	rows, err := tx.QueryContext(ctx, `SELECT path, blob_sha256 FROM repository_metadata WHERE repository_id = $1 AND ($2 = '' OR starts_with(path, $2))`, groupID, scope)
 	if err != nil {
 		return nil, fmt.Errorf("group worker: listing repository_metadata: %w", err)
 	}
@@ -514,8 +604,8 @@ func listOldGroupMetadata(ctx context.Context, tx sq.Transaction, groupID string
 }
 
 // replaceOwners swaps the group's owner table for owners.
-func replaceOwners(ctx context.Context, tx sq.Transaction, groupID string, owners map[string]groupOwner) error {
-	if _, err := tx.ExecContext(ctx, `DELETE FROM group_package_owners WHERE group_repo_id = $1`, groupID); err != nil {
+func replaceOwners(ctx context.Context, tx sq.Transaction, groupID, scope string, owners map[string]groupOwner) error {
+	if _, err := tx.ExecContext(ctx, `DELETE FROM group_package_owners WHERE group_repo_id = $1 AND ($2 = '' OR starts_with(path, $2))`, groupID, scope); err != nil {
 		return fmt.Errorf("group worker: clearing owners: %w", err)
 	}
 
@@ -532,14 +622,17 @@ func replaceOwners(ctx context.Context, tx sq.Transaction, groupID string, owner
 		paths = paths[n:]
 
 		members := make([]string, n)
+		scoped := make([]string, n)
+
 		for i, p := range chunk {
+			scoped[i] = scope + p
 			members[i] = owners[p].member
 		}
 
 		if _, err := tx.ExecContext(ctx, `
 			INSERT INTO group_package_owners (group_repo_id, path, member_repo_id)
 			SELECT $1, t.p, t.m::uuid FROM unnest($2::text[], $3::text[]) AS t(p, m)
-		`, groupID, chunk, members); err != nil {
+		`, groupID, scoped, members); err != nil {
 			return fmt.Errorf("group worker: storing owners: %w", err)
 		}
 	}

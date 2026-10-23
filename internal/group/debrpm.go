@@ -5,6 +5,7 @@
 package group
 
 import (
+	"compress/gzip"
 	"context"
 	"errors"
 	"io"
@@ -31,7 +32,15 @@ type MetadataGenerator interface {
 	// a Debian group, is a distribution the request asked for: it is added to
 	// the group's served set when some member has it, ErrDistNotFound
 	// otherwise.
-	Generate(ctx context.Context, groupID, dist string) error
+	//
+	// readable are the IDs of the members the caller may read: the metadata a
+	// caller gets lists only their packages.
+	Generate(ctx context.Context, groupID, dist string, readable []string) error
+	// Scope names where the metadata for a caller who can read the members
+	// with these IDs is stored: "" when that is every member of the group (one
+	// index shared by all such callers), a path prefix of its own otherwise. ok
+	// is false when none of them is a live member.
+	Scope(ctx context.Context, groupID string, readable []string) (scope string, ok bool, err error)
 	// Refresh schedules a coalesced regeneration; it is a no-op while one is
 	// already pending or running.
 	Refresh(groupID string)
@@ -76,12 +85,41 @@ func (h *Handler) serveDebRPM(w http.ResponseWriter, r *http.Request, grp *model
 	}
 
 	kind := classifyDebRPM(grp.Format, relPath)
+	if kind.class == classNone {
+		http.NotFound(w, r)
+		return
+	}
+
+	// What a caller is served lists only the members they can read, so each
+	// distinct set of readable members has an index (and signature) of its own;
+	// callers who can read every member share the group's.
+	ids := make([]string, len(readable))
+	for i, m := range readable {
+		ids[i] = m.ID
+	}
+
+	scope, ok, err := h.metadata.Scope(r.Context(), grp.ID, ids)
+	if err != nil {
+		h.log.Errorw("failed to scope group metadata", "group", grp.Name, "error", err)
+		http.Error(w, "internal error", http.StatusInternalServerError)
+
+		return
+	}
+
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 
 	switch kind.class {
 	case classMetadata:
-		h.serveGroupMetadata(w, r, grp, kind, relPath)
+		if relPath == "public.key" {
+			scope = "" // the key is the same for every variant
+		}
+
+		h.serveGroupMetadata(w, r, grp, kind, relPath, scope, ids)
 	case classFile:
-		h.serveGroupFile(w, r, grp, readable, relPath, be)
+		h.serveGroupFile(w, r, grp, readable, scope, relPath, be)
 	default:
 		http.NotFound(w, r)
 	}
@@ -100,8 +138,12 @@ type debRPMPath struct {
 	class pathClass
 	// dist is the Debian distribution of a dists/ path, "" otherwise.
 	dist string
-	// release marks a Debian Release, InRelease or Release.gpg path.
-	release     bool
+	// anchor marks the files a client reads first (a Debian Release,
+	// InRelease or Release.gpg, an RPM repomd.xml or its signature): a miss
+	// on one generates the metadata of the caller's variant.
+	anchor bool
+	// gunzip marks a plain Packages file, served by decompressing Packages.gz.
+	gunzip      bool
 	contentType string
 	maxAge      int
 }
@@ -137,9 +179,11 @@ func classifyDeb(relPath string) debRPMPath {
 
 	switch {
 	case file == "Release" || file == "InRelease":
-		p.contentType, p.release = "text/plain", true
+		p.contentType, p.anchor = "text/plain", true
 	case file == "Release.gpg":
-		p.contentType, p.release = "application/pgp-signature", true
+		p.contentType, p.anchor = "application/pgp-signature", true
+	case strings.HasSuffix(file, "/Packages"):
+		p.contentType, p.gunzip = "text/plain", true
 	case strings.HasSuffix(file, "/Packages.gz"):
 		p.contentType = "application/gzip"
 	case strings.HasSuffix(file, "/Packages.xz"):
@@ -161,9 +205,9 @@ func classifyRPM(relPath string) debRPMPath {
 
 	switch {
 	case file == "repomd.xml":
-		p.contentType, p.maxAge = "application/xml", rpmMetadataMaxAge
+		p.contentType, p.maxAge, p.anchor = "application/xml", rpmMetadataMaxAge, true
 	case file == "repomd.xml.asc":
-		p.contentType, p.maxAge = "application/pgp-signature", rpmMetadataMaxAge
+		p.contentType, p.maxAge, p.anchor = "application/pgp-signature", rpmMetadataMaxAge, true
 	case strings.HasSuffix(file, ".gz"):
 		p.contentType = "application/x-gzip"
 	case strings.HasSuffix(file, ".xz"):
@@ -183,8 +227,14 @@ func classifyRPM(relPath string) debRPMPath {
 // whose metadata does not exist yet is generated on the spot (the request waits
 // for it, bounded); one whose cached metadata is stale or past a proxy member's
 // cache lifetime is served as is while a refresh runs in the background.
-func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, relPath string) {
-	meta, err := h.db.GetRepoMetadataByPath(r.Context(), grp.ID, relPath)
+func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, relPath, scope string, readable []string) {
+	if p.gunzip {
+		relPath += ".gz"
+	}
+
+	key := scope + relPath
+
+	meta, err := h.db.GetRepoMetadataByPath(r.Context(), grp.ID, key)
 	if err != nil {
 		h.log.Errorw("failed to query group metadata", "group", grp.Name, "path", relPath, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -195,7 +245,7 @@ func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 	if meta == nil {
 		var ok bool
 
-		if meta, ok = h.generateOnMiss(w, r, grp, p, relPath); !ok {
+		if meta, ok = h.generateOnMiss(w, r, grp, p, key, scope, readable); !ok {
 			return
 		}
 
@@ -211,7 +261,7 @@ func (h *Handler) serveGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 // generateOnMiss generates the group's metadata when its anchor row is absent
 // and returns the requested row afterwards. ok is false once a response was
 // written.
-func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, relPath string) (*models.RepoMetadata, bool) {
+func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, key, scope string, readable []string) (*models.RepoMetadata, bool) {
 	if !h.worthGenerating(w, r, grp, p) {
 		return nil, false
 	}
@@ -219,7 +269,7 @@ func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *mo
 	ctx, cancel := context.WithTimeout(r.Context(), generationTimeout)
 	defer cancel()
 
-	err := h.metadata.Generate(ctx, grp.ID, p.dist)
+	err := h.metadata.Generate(ctx, grp.ID, p.dist, readable)
 
 	switch {
 	case errors.Is(err, ErrDistNotFound):
@@ -240,9 +290,9 @@ func (h *Handler) generateOnMiss(w http.ResponseWriter, r *http.Request, grp *mo
 		return nil, false
 	}
 
-	meta, err := h.db.GetRepoMetadataByPath(r.Context(), grp.ID, relPath)
+	meta, err := h.db.GetRepoMetadataByPath(r.Context(), grp.ID, key)
 	if err != nil {
-		h.log.Errorw("failed to query group metadata", "group", grp.Name, "path", relPath, "error", err)
+		h.log.Errorw("failed to query group metadata", "group", grp.Name, "path", key, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
 
 		return nil, false
@@ -275,7 +325,9 @@ func (h *Handler) worthGenerating(w http.ResponseWriter, r *http.Request, grp *m
 		return true
 	}
 
-	if p.release {
+	// A variant is dropped with every regeneration of the group, so its first
+	// request after one finds nothing.
+	if p.anchor {
 		return true
 	}
 
@@ -299,7 +351,12 @@ func (h *Handler) refreshIfExpired(ctx context.Context, grp *models.Repository) 
 }
 
 func (h *Handler) writeGroupMetadata(w http.ResponseWriter, r *http.Request, grp *models.Repository, p debRPMPath, meta *models.RepoMetadata) {
-	if base.Revalidate(w, r, grp.Public, `"`+meta.BlobSHA256+`"`, p.maxAge) {
+	etag := `"` + meta.BlobSHA256 + `"`
+	if p.gunzip {
+		etag = `"` + meta.BlobSHA256 + `-plain"`
+	}
+
+	if base.Revalidate(w, r, grp.Public, etag, p.maxAge) {
 		return
 	}
 
@@ -314,14 +371,29 @@ func (h *Handler) writeGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 	defer func() { base.CloseLog(rc, h.log) }()
 
 	w.Header().Set("Content-Type", p.contentType)
-	w.Header().Set("Content-Length", strconv.FormatInt(meta.BlobSize, 10))
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+
+	var body io.Reader = rc
+
+	if p.gunzip {
+		zr, err := gzip.NewReader(rc)
+		if err != nil {
+			h.log.Errorw("failed to read group Packages.gz", "group", grp.Name, "sha256", meta.BlobSHA256, "error", err)
+			http.Error(w, "internal error", http.StatusInternalServerError)
+
+			return
+		}
+
+		body = zr
+	} else {
+		w.Header().Set("Content-Length", strconv.FormatInt(meta.BlobSize, 10))
+	}
 
 	if r.Method == http.MethodHead {
 		return
 	}
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := io.Copy(w, body); err != nil {
 		h.log.Debugw("failed to write group metadata", "group", grp.Name, "error", err)
 	}
 }
@@ -329,10 +401,10 @@ func (h *Handler) writeGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 // serveGroupFile serves a package file from the member the merged index owns
 // it for. A file the index does not list, or whose owner the caller cannot
 // read, does not exist for this caller.
-func (h *Handler) serveGroupFile(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, relPath string, be Backend) {
+func (h *Handler) serveGroupFile(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, scope, relPath string, be Backend) {
 	key := path.Clean(relPath)
 
-	owner, ok, err := h.db.GetGroupPackageOwner(r.Context(), grp.ID, key)
+	owner, ok, err := h.db.GetGroupPackageOwner(r.Context(), grp.ID, scope+key)
 	if err != nil {
 		h.log.Errorw("failed to look up group package owner", "group", grp.Name, "path", key, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
