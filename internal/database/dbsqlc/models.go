@@ -97,6 +97,13 @@ type AuthSession struct {
 	LastSeenAt time.Time   `db:"last_seen_at" json:"last_seen_at"`
 }
 
+type AuthSessionSso struct {
+	SessionID    string    `db:"session_id" json:"session_id"`
+	ProviderSlug string    `db:"provider_slug" json:"provider_slug"`
+	IDToken      string    `db:"id_token" json:"id_token"`
+	CreatedAt    time.Time `db:"created_at" json:"created_at"`
+}
+
 // SSO provider configuration for OIDC and SAML identity providers
 type AuthSsoProvider struct {
 	ID                 string          `db:"id" json:"id"`
