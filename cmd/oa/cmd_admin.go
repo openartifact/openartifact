@@ -873,7 +873,7 @@ func handleAudit(args []string, client *Client, outFmt string) {
 // and also a relative age such as 24h or 7d, resolved against now.
 func auditExportQuery(format, since, until, actor, action string, now time.Time) (url.Values, error) {
 	if format != "jsonl" && format != "csv" {
-		return nil, fmt.Errorf("--format must be jsonl or csv, got %q", format)
+		return nil, fmt.Errorf("%w, got %q", errAuditFormat, format)
 	}
 
 	q := url.Values{"format": {format}}
@@ -901,6 +901,8 @@ func auditExportQuery(format, since, until, actor, action string, now time.Time)
 
 	return q, nil
 }
+
+var errAuditFormat = errors.New("--format must be jsonl or csv")
 
 var errAuditTime = errors.New("expected RFC 3339, YYYY-MM-DD or a relative age like 24h or 7d")
 

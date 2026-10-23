@@ -116,7 +116,7 @@ func (h *ProjectsHandler) handleExportActivity(w http.ResponseWriter, r *http.Re
 			ProjectID:              access.project.ID,
 			HideProjectTokenEvents: !access.isMaintainer(),
 		},
-		columns: projectActivityExportColumns,
+		columns: projectActivityExportColumns(),
 		row: func(l *models.AuditLog) auditExportRow {
 			return newProjectActivityExportRow(l)
 		},

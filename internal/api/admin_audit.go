@@ -46,7 +46,7 @@ func (h *AdminAuditHandler) handleExport(w http.ResponseWriter, r *http.Request)
 		row: func(l *models.AuditLog) auditExportRow {
 			return newAdminAuditExportRow(l)
 		},
-		columns:    adminAuditExportColumns,
+		columns:    adminAuditExportColumns(),
 		filePrefix: "openartifact-audit",
 	}
 

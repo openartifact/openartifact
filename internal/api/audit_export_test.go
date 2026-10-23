@@ -83,7 +83,7 @@ func (d *exportDB) ListAuditLogs(_ context.Context, params models.AuditListParam
 
 func exportEntryMatches(l *models.AuditLog, p models.AuditListParams) bool {
 	switch {
-	case p.After != nil && !(l.CreatedAt.Before(p.After.CreatedAt) || (l.CreatedAt.Equal(p.After.CreatedAt) && l.ID > p.After.ID)):
+	case p.After != nil && !afterCursor(l, p.After):
 		return false
 	case p.Since != nil && l.CreatedAt.Before(*p.Since):
 		return false
@@ -96,6 +96,11 @@ func exportEntryMatches(l *models.AuditLog, p models.AuditListParams) bool {
 	}
 
 	return true
+}
+
+// afterCursor reports whether l sorts strictly after c in (created_at DESC, id).
+func afterCursor(l *models.AuditLog, c *models.AuditCursor) bool {
+	return l.CreatedAt.Before(c.CreatedAt) || (l.CreatedAt.Equal(c.CreatedAt) && l.ID > c.ID)
 }
 
 // exportLogs returns n entries, newest first, one minute apart.
@@ -131,26 +136,29 @@ func (f *flushCounter) Flush() {
 
 // serveExport runs the request and reports whether the handler aborted the
 // connection (http.ErrAbortHandler), which is how a broken stream is signalled.
-func serveExport(t *testing.T, h http.Handler, ctx context.Context, p *auth.Principal, target string) (rec *flushCounter, aborted bool) {
+func serveExport(t *testing.T, h http.Handler, ctx context.Context, p *auth.Principal, target string) (*flushCounter, bool) {
 	t.Helper()
 
 	req := httptest.NewRequestWithContext(ctx, http.MethodGet, target, nil)
 	req = req.WithContext(middleware.WithPrincipal(req.Context(), p))
-	rec = &flushCounter{ResponseRecorder: httptest.NewRecorder()}
+	rec := &flushCounter{ResponseRecorder: httptest.NewRecorder()}
+	aborted := false
 
-	defer func() {
-		if r := recover(); r != nil {
-			if r != http.ErrAbortHandler { //nolint:errorlint // panic value is the sentinel itself
-				panic(r)
+	func() {
+		defer func() {
+			if r := recover(); r != nil {
+				if r != http.ErrAbortHandler { //nolint:errorlint // panic value is the sentinel itself
+					panic(r)
+				}
+
+				aborted = true
 			}
+		}()
 
-			aborted = true
-		}
+		h.ServeHTTP(rec, req)
 	}()
 
-	h.ServeHTTP(rec, req)
-
-	return rec, false
+	return rec, aborted
 }
 
 func newExportAdminRouter(t *testing.T, db *exportDB) http.Handler {
@@ -204,6 +212,22 @@ func jsonlKeys(t *testing.T, line string) []string {
 	return keys
 }
 
+func checkFirstAdminRow(t *testing.T, line string, row map[string]any) {
+	t.Helper()
+
+	if !slices.Equal(jsonlKeys(t, line), adminAuditExportColumns()) {
+		t.Errorf("keys = %v, want %v", jsonlKeys(t, line), adminAuditExportColumns())
+	}
+
+	if row["timestamp"] != "2026-03-01T12:00:00.123456Z" || row["actor"] != "user-0" || row["ip"] != "203.0.113.7" || row["actor_id"] != nil {
+		t.Errorf("first row = %v", row)
+	}
+
+	if d, _ := row["details"].(map[string]any); d["n"] != float64(0) {
+		t.Errorf("details = %v", row["details"])
+	}
+}
+
 func TestAdminAuditExportStreamsEveryEntryInPages(t *testing.T) {
 	const total = 2*auditExportPageSize + 345
 
@@ -237,17 +261,7 @@ func TestAdminAuditExportStreamsEveryEntryInPages(t *testing.T) {
 		}
 
 		if n == 0 {
-			if !slices.Equal(jsonlKeys(t, sc.Text()), adminAuditExportColumns) {
-				t.Errorf("keys = %v, want %v", jsonlKeys(t, sc.Text()), adminAuditExportColumns)
-			}
-
-			if row["timestamp"] != "2026-03-01T12:00:00.123456Z" || row["actor"] != "user-0" || row["ip"] != "203.0.113.7" || row["actor_id"] != nil {
-				t.Errorf("first row = %v", row)
-			}
-
-			if d, _ := row["details"].(map[string]any); d["n"] != float64(0) {
-				t.Errorf("details = %v", row["details"])
-			}
+			checkFirstAdminRow(t, sc.Text(), row)
 		}
 
 		n++
@@ -326,15 +340,15 @@ func TestAdminAuditExportCSVIsParseableAndInjectionSafe(t *testing.T) {
 		t.Fatalf("not valid CSV: %v\n%s", err, rec.Body.String())
 	}
 
-	if len(rows) != len(hostile)+1 || !slices.Equal(rows[0], adminAuditExportColumns) {
+	if len(rows) != len(hostile)+1 || !slices.Equal(rows[0], adminAuditExportColumns()) {
 		t.Fatalf("rows = %d, header = %v", len(rows), rows[0])
 	}
 
-	actor, resource, details := slices.Index(adminAuditExportColumns, "actor"), slices.Index(adminAuditExportColumns, "resource_id"), slices.Index(adminAuditExportColumns, "details")
+	actor, resource, details := slices.Index(adminAuditExportColumns(), "actor"), slices.Index(adminAuditExportColumns(), "resource_id"), slices.Index(adminAuditExportColumns(), "details")
 
 	for i, h := range hostile {
 		row := rows[i+1]
-		if len(row) != len(adminAuditExportColumns) {
+		if len(row) != len(adminAuditExportColumns()) {
 			t.Fatalf("row %d has %d cells", i, len(row))
 		}
 
@@ -369,7 +383,7 @@ func TestAdminAuditExportCSVLeavesUnsetValuesEmpty(t *testing.T) {
 	}
 
 	for _, col := range []string{"actor_type", "actor_id", "resource_type", "resource_id", "repository_id", "project_id"} {
-		if v := rows[1][slices.Index(adminAuditExportColumns, col)]; v != "" {
+		if v := rows[1][slices.Index(adminAuditExportColumns(), col)]; v != "" {
 			t.Errorf("%s = %q, want empty", col, v)
 		}
 	}
@@ -505,7 +519,7 @@ func TestAdminAuditExportStopsWhenTheClientGoesAway(t *testing.T) {
 }
 
 func TestAdminAuditExportEmptyLog(t *testing.T) {
-	for format, want := range map[string]string{"jsonl": "", "csv": strings.Join(adminAuditExportColumns, ",") + "\n"} {
+	for format, want := range map[string]string{"jsonl": "", "csv": strings.Join(adminAuditExportColumns(), ",") + "\n"} {
 		rec, aborted := serveExport(t, newExportAdminRouter(t, newExportDB(nil)), context.Background(), testPrincipal(uAdmin1), "/api/v1/admin/audit/export?format="+format)
 
 		if aborted || rec.Code != http.StatusOK {
@@ -553,11 +567,11 @@ func TestProjectActivityExportColumnsAndNoClientAddress(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if !slices.Equal(rows[0], projectActivityExportColumns) || len(rows) != 3 {
+	if !slices.Equal(rows[0], projectActivityExportColumns()) || len(rows) != 3 {
 		t.Fatalf("rows = %v", rows)
 	}
 
-	if got := rows[2][slices.Index(projectActivityExportColumns, "message")]; got != `repository r created, "quoted"` {
+	if got := rows[2][slices.Index(projectActivityExportColumns(), "message")]; got != `repository r created, "quoted"` {
 		t.Errorf("message = %q", got)
 	}
 
@@ -575,8 +589,8 @@ func TestProjectActivityExportJSONLFields(t *testing.T) {
 	rec, _ := serveExport(t, newExportProjectRouter(t, newExportDB(projectExportLogs())), context.Background(), testPrincipal(uOwner1), "/api/v1/projects/acme/activity/export")
 
 	line, _, _ := strings.Cut(rec.Body.String(), "\n")
-	if !slices.Equal(jsonlKeys(t, line), projectActivityExportColumns) {
-		t.Errorf("keys = %v, want %v", jsonlKeys(t, line), projectActivityExportColumns)
+	if !slices.Equal(jsonlKeys(t, line), projectActivityExportColumns()) {
+		t.Errorf("keys = %v, want %v", jsonlKeys(t, line), projectActivityExportColumns())
 	}
 
 	var row map[string]any

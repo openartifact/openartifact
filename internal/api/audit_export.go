@@ -36,16 +36,20 @@ const (
 // adminAuditExportColumns is the stable, ordered field set of the admin audit
 // export (CSV header and JSONL keys). Adding a field is allowed, renaming or
 // removing one is a breaking change; docs/operations/monitoring.md lists it.
-var adminAuditExportColumns = []string{
-	"id", "timestamp", "action", "actor", "actor_type", "actor_id",
-	"resource_type", "resource_id", "repository_id", "project_id", "ip", "details",
+func adminAuditExportColumns() []string {
+	return []string{
+		"id", "timestamp", "action", "actor", "actor_type", "actor_id",
+		"resource_type", "resource_id", "repository_id", "project_id", "ip", "details",
+	}
 }
 
 // projectActivityExportColumns is the field set of the project activity
 // export. It carries no client address and no user ids.
-var projectActivityExportColumns = []string{
-	"id", "timestamp", "action", "actor", "actor_type", "message",
-	"resource_type", "resource_id", "repository_id",
+func projectActivityExportColumns() []string {
+	return []string{
+		"id", "timestamp", "action", "actor", "actor_type", "message",
+		"resource_type", "resource_id", "repository_id",
+	}
 }
 
 // adminAuditExportRow is one JSONL line of the admin export. Optional columns
