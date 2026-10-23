@@ -2330,7 +2330,7 @@ export type GetApiV1RepositoriesByNameSecretsScansExportErrors = {
 
 export type GetApiV1RepositoriesByNameSecretsScansExportResponses = {
     /**
-     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
      */
     200: {
         [key: string]: unknown;
@@ -2421,7 +2421,7 @@ export type GetApiV1RepositoriesByNameSecretsScansByIdExportErrors = {
 
 export type GetApiV1RepositoriesByNameSecretsScansByIdExportResponses = {
     /**
-     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
      */
     200: {
         [key: string]: unknown;
@@ -2549,7 +2549,7 @@ export type GetApiV1VulnScansExportErrors = {
 
 export type GetApiV1VulnScansExportResponses = {
     /**
-     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
      */
     200: {
         [key: string]: unknown;
@@ -2702,7 +2702,7 @@ export type GetApiV1RepositoriesByNameVulnScansByIdExportErrors = {
 
 export type GetApiV1RepositoriesByNameVulnScansByIdExportResponses = {
     /**
-     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-OA-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
+     * The export as a download. SARIF is `application/sarif+json`, CSV `text/csv`, JSON `application/json`. `X-Export-Truncated: true` means findings were held back (SARIF: more than 25000 results; cross-repository: more than 2000 scans).
      */
     200: {
         [key: string]: unknown;
