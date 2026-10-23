@@ -516,6 +516,21 @@ type GpgKeyRepository struct {
 	AssignedAt   time.Time `db:"assigned_at" json:"assigned_at"`
 }
 
+type GroupMetadataState struct {
+	RepositoryID string          `db:"repository_id" json:"repository_id"`
+	Stale        bool            `db:"stale" json:"stale"`
+	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
+	GeneratedAt  *time.Time      `db:"generated_at" json:"generated_at"`
+	RefreshAfter *time.Time      `db:"refresh_after" json:"refresh_after"`
+	Dists        json.RawMessage `db:"dists" json:"dists"`
+}
+
+type GroupPackageOwner struct {
+	GroupRepoID  string `db:"group_repo_id" json:"group_repo_id"`
+	Path         string `db:"path" json:"path"`
+	MemberRepoID string `db:"member_repo_id" json:"member_repo_id"`
+}
+
 // Helm chart packages
 type HelmChart struct {
 	ID           string     `db:"id" json:"id"`
