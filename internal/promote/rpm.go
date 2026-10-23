@@ -8,6 +8,8 @@ import (
 	"context"
 	"fmt"
 	"strconv"
+
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // rpmPromoter promotes rpm packages. A bundle item is the .rpm blob; every live
@@ -64,11 +66,11 @@ const rpmSourceQuery = `SELECT rp.id::text, rp.name, rp.version, rp.release, rp.
 	 WHERE rp.repository_id = $1 AND rp.deleted_at IS NULL AND b.sha256 = $2
 	 ORDER BY rp.created_at, rp.id`
 
-// rpmDestinationQuery returns the content digest of every live destination row
+// rpmDestinationQuery returns the id, content digest and size of every live destination row
 // with the package's NEVRA, or with its file name: the file name carries no
 // epoch and the download resolves by file name only, so one name must not
 // stand for two contents.
-const rpmDestinationQuery = `SELECT db.sha256
+const rpmDestinationQuery = `SELECT d.id::text, db.sha256, db.size_bytes, d.name, d.version, d.release, d.epoch, COALESCE(d.filename, '')
 	  FROM rpm_packages d JOIN blobs db ON db.id = d.blob_id
 	 WHERE d.repository_id = $1 AND d.deleted_at IS NULL
 	   AND ((d.name = $2 AND d.version = $3 AND d.release = $4 AND d.epoch = $5 AND d.arch = $6)
@@ -166,17 +168,19 @@ func (p rpmPromoter) promoteRow(ctx context.Context, tx Tx, req Request, row *rp
 	art := Artifact{Name: row.name, Version: row.version, Path: row.filename, SHA256: req.SHA256, Size: row.size}
 	res.QuarantineKeys = append(res.QuarantineKeys, row.quarantineKeys()...)
 
-	state, err := p.destination(ctx, tx, req, row)
+	dest, err := p.destination(ctx, tx, req, row)
 	if err != nil {
 		return err
 	}
 
-	switch state {
-	case destSame:
+	if err := dest.replace(ctx, tx, req, models.TrashKindRPM, "rpm", row.name, row.version, res); err != nil {
+		return err
+	}
+
+	switch {
+	case dest.same:
 		res.Existing = append(res.Existing, art)
-	case destDiffers:
-		return req.conflict("rpm", row.name, row.version)
-	case destAbsent:
+	default:
 		if err := p.copyRow(ctx, tx, req, row); err != nil {
 			return err
 		}
@@ -190,39 +194,44 @@ func (p rpmPromoter) promoteRow(ctx context.Context, tx Tx, req Request, row *rp
 	return nil
 }
 
-// destination classifies what the destination holds for the source row: only
-// rows with the same content (destSame), another content at the package's
-// NEVRA or file name (destDiffers), or nothing.
-func (rpmPromoter) destination(ctx context.Context, tx Tx, req Request, row *rpmRow) (destState, error) {
+// destination collects what the destination holds for the source row: rows
+// with the same content (same) and rows with another content at the package's
+// NEVRA or file name (differing).
+func (rpmPromoter) destination(ctx context.Context, tx Tx, req Request, row *rpmRow) (*destCollisions, error) {
 	rows, err := tx.QueryContext(ctx, rpmDestinationQuery,
 		req.Dst.ID, row.name, row.pkgVersion, row.release, row.epoch, row.arch, row.filename)
 	if err != nil {
-		return destAbsent, fmt.Errorf("look up rpm package in the target: %w", err)
+		return nil, fmt.Errorf("look up rpm package in the target: %w", err)
 	}
 
 	defer func() { _ = rows.Close() }()
 
-	state := destAbsent
+	c := &destCollisions{}
 
 	for rows.Next() {
-		var sha string
+		var (
+			d            destRow
+			version, rel string
+			epoch        int
+		)
 
-		if err := rows.Scan(&sha); err != nil {
-			return destAbsent, fmt.Errorf("scan rpm target row: %w", err)
+		if err := rows.Scan(&d.id, &d.sha, &d.size, &d.name, &version, &rel, &epoch, &d.path); err != nil {
+			return nil, fmt.Errorf("scan rpm target row: %w", err)
 		}
 
-		if sha != req.SHA256 {
-			return destDiffers, nil
+		if d.sha != req.SHA256 {
+			d.version = rpmDisplayVersion(epoch, version, rel)
+			c.differing = append(c.differing, d)
+		} else {
+			c.same = true
 		}
-
-		state = destSame
 	}
 
 	if err := rows.Err(); err != nil {
-		return destAbsent, fmt.Errorf("read rpm target rows: %w", err)
+		return nil, fmt.Errorf("read rpm target rows: %w", err)
 	}
 
-	return state, nil
+	return c, nil
 }
 
 // copyRow writes the package row into the destination.

@@ -4,12 +4,15 @@
 
 package promote
 
+import "github.com/openartifact/openartifact/internal/database/models"
+
 // rowSpecs returns the formats that the generic row promoter handles: one
 // table row per artifact file, one blob per row.
 func rowSpecs() []rowSpec {
 	return []rowSpec{
 		{
 			format:  "maven",
+			kind:    models.TrashKindMaven,
 			table:   "maven_artifacts",
 			name:    "s.group_id || ':' || s.artifact_id_coord",
 			version: "s.version",
@@ -23,6 +26,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:  "ivy",
+			kind:    models.TrashKindIvy,
 			table:   "ivy_artifacts",
 			name:    "s.organisation || ':' || s.module",
 			version: "s.revision",
@@ -32,6 +36,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:  "sbt",
+			kind:    models.TrashKindSBT,
 			table:   "sbt_artifacts",
 			name:    "s.group_id || ':' || s.artifact_id",
 			version: "s.version",
@@ -41,6 +46,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:   "pypi",
+			kind:     models.TrashKindPyPI,
 			table:    "pypi_packages",
 			name:     "s.name",
 			version:  "s.version",
@@ -54,6 +60,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:  "nuget",
+			kind:    models.TrashKindNuGet,
 			table:   "nuget_packages",
 			name:    "s.package_id",
 			version: "s.version",
@@ -67,6 +74,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:   "cargo",
+			kind:     models.TrashKindCargo,
 			table:    "cargo_crates",
 			name:     "s.name",
 			version:  "s.version",
@@ -80,6 +88,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:   "rubygems",
+			kind:     models.TrashKindRubyGems,
 			table:    "rubygems_gems",
 			name:     "s.name",
 			version:  "s.version",
@@ -93,6 +102,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:  "conda",
+			kind:    models.TrashKindConda,
 			table:   "conda_packages",
 			name:    "s.name",
 			version: "s.version",
@@ -105,6 +115,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:  "helm",
+			kind:    models.TrashKindHelm,
 			table:   "helm_charts",
 			name:    "s.name",
 			version: "s.version",
@@ -117,6 +128,7 @@ func rowSpecs() []rowSpec {
 		},
 		{
 			format:  "raw",
+			kind:    models.TrashKindRaw,
 			table:   "raw_artifacts",
 			name:    "s.path",
 			version: "",

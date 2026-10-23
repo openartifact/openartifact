@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/promote"
 	"github.com/openartifact/openartifact/internal/quota"
+	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
 )
 
@@ -45,6 +46,7 @@ func (h *BundlesHandler) promoteBundle(w http.ResponseWriter, r *http.Request, b
 		ToStage:  toStage,
 		Notes:    notes,
 		Promoter: promoter,
+		Force:    trash.ForceRequested(r) && trash.IsAdmin(ctx),
 	})
 	if err != nil {
 		h.writePromoteError(w, bundle, err)
@@ -62,6 +64,7 @@ func promoteResponse(report *promote.Report) map[string]any {
 		"promotion": promotionToMap(report.Promotion),
 		"copied":    report.Copied,
 		"existing":  report.Existing,
+		"replaced":  report.Replaced,
 		"items":     report.Items,
 	}
 }
@@ -73,8 +76,8 @@ func (h *BundlesHandler) announcePromotion(r *http.Request, bundle *models.Relea
 		from = *report.Promotion.FromStage
 	}
 
-	details := fmt.Sprintf("bundle %s %s promoted to stage %s (%s): %d items, %d artifacts copied, %d already present",
-		bundle.Name, bundle.Version, report.Promotion.ToStage, target.Name, report.Promotion.ItemCount, report.Copied, report.Existing)
+	details := fmt.Sprintf("bundle %s %s promoted to stage %s (%s): %d items, %d artifacts copied, %d already present, %d replaced",
+		bundle.Name, bundle.Version, report.Promotion.ToStage, target.Name, report.Promotion.ItemCount, report.Copied, report.Existing, report.Replaced)
 	auditPromotion(r, bundle.ID, target.ID, details)
 
 	webhook.Emit(r.Context(), h.publisher, target.ID, webhook.EventBundlePromoted, webhook.BundlePromotedPayload(webhook.BundlePromotion{
@@ -87,6 +90,7 @@ func (h *BundlesHandler) announcePromotion(r *http.Request, bundle *models.Relea
 		Items:      report.Promotion.ItemCount,
 		Copied:     report.Copied,
 		Existing:   report.Existing,
+		Replaced:   report.Replaced,
 	}))
 }
 

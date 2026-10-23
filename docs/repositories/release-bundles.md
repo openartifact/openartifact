@@ -122,7 +122,7 @@ Indexes that clients read from the database (maven, pypi, nuget, cargo, rubygems
 
 ### Rules applied in the target
 
-- **Conflicts.** Promotion never overwrites. An item already present with the same content is skipped, so re-promoting is safe (`existing` in the response). The same coordinates with different content answer `409 artifact_conflict`; when the target has [immutable releases](../operations/trash.md#immutable-releases) and the version is a release, `409 immutable_release`. `?force=true` is not honoured by promotion.
+- **Conflicts.** Promotion never overwrites. An item already present with the same content is skipped, so re-promoting is safe (`existing` in the response). The same coordinates with different content answer `409 artifact_conflict`; when the target has [immutable releases](../operations/trash.md#immutable-releases) and the version is a release, `409 immutable_release`. An administrator can send `?force=true` to replace such content, including released versions of an immutable repository (the same override as for [deletes and overwrites](../operations/trash.md#immutable-releases)): the conflicting target rows are moved to the target's [trash](../operations/trash.md), restorable until retention expires, and the promoted ones take their place. They are listed in `replaced` in the response, and counted in the audit entry and the webhook.
 - **Trash.** Items in the target's trash do not count: a live copy is created next to them.
 - **Quota.** The new artifacts and bytes are charged to the target repository's [quota](cleanup-and-quotas.md); `507 quota_exceeded` if they do not fit. Existing items and blobs already referenced by the target are not charged.
 - **License policy.** The target's [license policies](../security/scanning.md#blocking-licenses) are evaluated against the copied packages; a `block` policy gives `403 LICENSE_BLOCKED`.
@@ -133,7 +133,7 @@ A docker image whose layer references are not indexed yet (registry GC records t
 
 ### Response and side effects
 
-`200` with `{"promotion": {...}, "copied": N, "existing": N, "items": [...]}`. `copied` and `existing` count artifacts (one item can be several, for instance an npm version or a docker image); each entry of `items` has `sha256`, `artifact_path`, `format` and the `copied` and `existing` artifact lists (`name`, `version`, `path`, `sha256`, `size`). The same record is listed by `GET .../promotions` (`status: success`, `completed_at`, `item_count`, `notes`).
+`200` with `{"promotion": {...}, "copied": N, "existing": N, "replaced": N, "items": [...]}`. `copied` and `existing` count artifacts (one item can be several, for instance an npm version or a docker image); each entry of `items` has `sha256`, `artifact_path`, `format` and the `copied`, `existing` and `replaced` artifact lists (`name`, `version`, `path`, `sha256`, `size`). The same record is listed by `GET .../promotions` (`status: success`, `completed_at`, `item_count`, `notes`).
 
 A successful promotion is written to the [audit log](../operations/monitoring.md) as `bundle.promoted` (repository: the target) and emits the [`bundle.promoted` webhook event](../operations/webhooks.md) to the target repository's and the global webhooks.
 

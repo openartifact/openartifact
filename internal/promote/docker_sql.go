@@ -121,9 +121,13 @@ SELECT $1::uuid, s.image, s.name, s.manifest_digest
 ON CONFLICT (repository_id, image, name) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id::text`
 
-// dockerTagDigestSQL returns the manifest digest the live destination tag
-// ($3) of image $2 in repository $1 points at.
+// dockerTagDigestSQL returns the id and manifest digest the live destination
+// tag ($3) of image $2 in repository $1 points at, with the sha256 and size of
+// that manifest's content (” and 0 when the manifest is not live there).
 const dockerTagDigestSQL = `
-SELECT manifest_digest
-  FROM docker_tags
- WHERE repository_id = $1::uuid AND image = $2 AND name = $3 AND deleted_at IS NULL`
+SELECT t.id::text, t.manifest_digest, COALESCE(b.sha256, ''), COALESCE(m.size, 0)::bigint
+  FROM docker_tags t
+  LEFT JOIN docker_manifests m ON m.repository_id = t.repository_id AND m.image = t.image
+                              AND m.digest = t.manifest_digest AND m.deleted_at IS NULL
+  LEFT JOIN blobs b ON b.id = m.blob_id
+ WHERE t.repository_id = $1::uuid AND t.image = $2 AND t.name = $3 AND t.deleted_at IS NULL`

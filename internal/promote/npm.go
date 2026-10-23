@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 
+	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 )
 
@@ -45,9 +46,9 @@ const npmSourceQuery = `SELECT v.id::text, v.package_id::text, p.full_name, v.ve
 	 WHERE p.repository_id = $1::uuid AND v.deleted_at IS NULL AND b.sha256 = $2
 	 ORDER BY v.created_at, v.id`
 
-// npmDestinationQuery returns the tarball digest of the live version $3 of
+// npmDestinationQuery returns the id, tarball digest and size of the live version $3 of
 // package $2 in destination repository $1.
-const npmDestinationQuery = `SELECT b.sha256
+const npmDestinationQuery = `SELECT d.id::text, b.sha256, b.size_bytes
 	  FROM npm_packages p
 	  JOIN npm_versions d ON d.package_id = p.id AND d.deleted_at IS NULL
 	  JOIN blobs b ON b.id = d.blob_id
@@ -103,16 +104,27 @@ func (npmPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, er
 		art := Artifact{Name: r.name, Version: r.version, Path: r.filename, SHA256: req.SHA256, Size: r.size}
 		res.QuarantineKeys = append(res.QuarantineKeys, r.id, r.name, r.name+"@"+r.version, r.name+"/-/"+r.filename, r.filename)
 
-		existing, found, err := npmDestinationSHA(ctx, tx, req, r)
+		dest, err := npmDestination(ctx, tx, req, r)
 		if err != nil {
 			return nil, err
 		}
 
+		if dest.id != "" && dest.sha != req.SHA256 {
+			if !req.Force {
+				return nil, req.conflict("npm", r.name, r.version)
+			}
+
+			if err := req.displace(ctx, tx, models.TrashKindNPM, dest.id); err != nil {
+				return nil, err
+			}
+
+			res.Replaced = append(res.Replaced, Artifact{Name: r.name, Version: r.version, Path: r.filename, SHA256: dest.sha, Size: dest.size})
+			dest = destRow{}
+		}
+
 		switch {
-		case found && existing == req.SHA256:
+		case dest.id != "":
 			res.Existing = append(res.Existing, art)
-		case found:
-			return nil, req.conflict("npm", r.name, r.version)
 		default:
 			pkgID, err := npmCopy(ctx, tx, req, r)
 			if err != nil {
@@ -168,21 +180,21 @@ func npmSourceRows(ctx context.Context, tx Tx, req Request) ([]*npmRow, error) {
 	return narrowRows(rows, func(r *npmRow) candidate { return r.candidate }, req.Path), nil
 }
 
-// npmDestinationSHA returns the tarball digest of the live destination version
-// at the coordinates of source version r, and whether there is one.
-func npmDestinationSHA(ctx context.Context, tx Tx, req Request, r *npmRow) (string, bool, error) {
-	var sha string
+// npmDestination returns the live destination version at the coordinates of
+// source version r, or the zero destRow when there is none.
+func npmDestination(ctx context.Context, tx Tx, req Request, r *npmRow) (destRow, error) {
+	var d destRow
 
-	err := tx.QueryRowContext(ctx, npmDestinationQuery, req.Dst.ID, r.name, r.version).Scan(&sha)
+	err := tx.QueryRowContext(ctx, npmDestinationQuery, req.Dst.ID, r.name, r.version).Scan(&d.id, &d.sha, &d.size)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return "", false, nil
+		return destRow{}, nil
 	case err != nil:
-		return "", false, fmt.Errorf("look up npm version in the target: %w", err)
+		return destRow{}, fmt.Errorf("look up npm version in the target: %w", err)
 	}
 
-	return sha, true, nil
+	return d, nil
 }
 
 // npmCopy writes source version r into the destination: the package (created

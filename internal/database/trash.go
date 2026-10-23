@@ -154,28 +154,8 @@ func (p *PostgresDB) TrashRows(ctx context.Context, repoID string, kind models.T
 
 	defer func() { _ = tx.Rollback() }()
 
-	// One statement timestamp for the row and its cascade, so a cascaded child
-	// is recognisably part of the same delete (and restored with it).
-	//nolint:gosec // G202: spec.table and spec.repoID are constants of the kind registry; ids are bound arguments
-	res, err := tx.ExecContext(ctx,
-		`UPDATE `+spec.table+` t SET deleted_at = now(), deleted_by = $3
-		 WHERE t.id = ANY($1::uuid[]) AND t.deleted_at IS NULL AND `+spec.repoID+` = $2::uuid`,
-		uuidArray(ids), repoID, deletedBy,
-	)
-	if err != nil {
-		return false, fmt.Errorf("trash %s: %w", kind, err)
-	}
-
-	if n, _ := res.RowsAffected(); n == 0 {
-		return false, ErrTrashNotFound
-	}
-
-	for _, id := range ids {
-		for _, stmt := range spec.cascade {
-			if _, err := tx.ExecContext(ctx, stmt, id, deletedBy); err != nil {
-				return false, fmt.Errorf("trash %s cascade: %w", kind, err)
-			}
-		}
+	if err := trashRowsExec(ctx, tx, spec, repoID, ids, deletedBy); err != nil {
+		return false, err
 	}
 
 	if err := tx.Commit(); err != nil {
@@ -183,6 +163,54 @@ func (p *PostgresDB) TrashRows(ctx context.Context, repoID string, kind models.T
 	}
 
 	return true, nil
+}
+
+// trashRowsExec stamps the rows and runs the kind's cascade on e.
+func trashRowsExec(ctx context.Context, e interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}, spec *trashSpec, repoID string, ids []string, deletedBy string,
+) error {
+	// One statement timestamp for the row and its cascade, so a cascaded child
+	// is recognisably part of the same delete (and restored with it).
+	res, err := e.ExecContext(ctx,
+		`UPDATE `+spec.table+` t SET deleted_at = now(), deleted_by = $3
+		 WHERE t.id = ANY($1::uuid[]) AND t.deleted_at IS NULL AND `+spec.repoID+` = $2::uuid`,
+		uuidArray(ids), repoID, deletedBy,
+	)
+	if err != nil {
+		return fmt.Errorf("trash %s: %w", spec.kind, err)
+	}
+
+	if n, _ := res.RowsAffected(); n == 0 {
+		return ErrTrashNotFound
+	}
+
+	for _, id := range ids {
+		for _, stmt := range spec.cascade {
+			if _, err := e.ExecContext(ctx, stmt, id, deletedBy); err != nil {
+				return fmt.Errorf("trash %s cascade: %w", spec.kind, err)
+			}
+		}
+	}
+
+	return nil
+}
+
+// TrashRowsInTx soft-deletes rows of repoID inside the caller's transaction,
+// whatever the repository's retention: a purge removes them for good once the
+// retention window has passed. A caller that replaces live content (a forced
+// bundle promotion) uses it so the replaced rows stay restorable.
+// ErrTrashNotFound means none of the rows is live in repoID.
+func TrashRowsInTx(ctx context.Context, tx interface {
+	ExecContext(ctx context.Context, query string, args ...any) (sql.Result, error)
+}, repoID string, kind models.TrashKind, ids []string, deletedBy string,
+) error {
+	spec, ok := trashSpecByKind(kind)
+	if !ok {
+		return fmt.Errorf("%w: %s", ErrTrashUnknownKind, kind)
+	}
+
+	return trashRowsExec(ctx, tx, spec, repoID, ids, deletedBy)
 }
 
 // uuidArray renders ids as a Postgres array literal for ANY($1::uuid[]).

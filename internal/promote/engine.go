@@ -58,6 +58,9 @@ type Params struct {
 	Notes   string
 	// Promoter is the username recorded on the promotion.
 	Promoter string
+	// Force replaces conflicting content in the target (to its trash) instead
+	// of failing; the caller has checked the principal may override immutability.
+	Force bool
 }
 
 // ItemReport is what happened to one bundle item.
@@ -67,14 +70,17 @@ type ItemReport struct {
 	Format       string     `json:"format"`
 	Copied       []Artifact `json:"copied"`
 	Existing     []Artifact `json:"existing"`
+	// Replaced lists the target artifacts a forced promotion moved to the trash.
+	Replaced []Artifact `json:"replaced"`
 }
 
 // Report is the outcome of a successful promotion.
 type Report struct {
 	Promotion *models.BundlePromotion
 	Items     []ItemReport
-	// Copied and Existing count artifacts written / already present.
-	Copied, Existing int
+	// Copied, Existing and Replaced count artifacts written, already present
+	// and (forced promotions) replaced.
+	Copied, Existing, Replaced int
 }
 
 // Promote copies every item of the bundle into the target repository and
@@ -216,7 +222,7 @@ func (e *Engine) copyItems(ctx context.Context, tx Tx, p Params, srcs map[string
 
 		src := srcs[it.SourceRepoID]
 
-		res, err := promoter.Promote(ctx, tx, Request{Src: src, Dst: p.Target, SHA256: it.SHA256, Path: it.ArtifactPath})
+		res, err := promoter.Promote(ctx, tx, Request{Src: src, Dst: p.Target, SHA256: it.SHA256, Path: it.ArtifactPath, Force: p.Force, Actor: p.Promoter})
 		if err != nil {
 			return nil, total, nil, &ItemError{SHA256: it.SHA256, Path: it.ArtifactPath, Err: err}
 		}
@@ -231,9 +237,10 @@ func (e *Engine) copyItems(ctx context.Context, tx Tx, p Params, srcs map[string
 
 		report.Copied += len(res.Copied)
 		report.Existing += len(res.Existing)
+		report.Replaced += len(res.Replaced)
 		report.Items = append(report.Items, ItemReport{
 			SHA256: it.SHA256, ArtifactPath: it.ArtifactPath, Format: it.Format,
-			Copied: nonNil(res.Copied), Existing: nonNil(res.Existing),
+			Copied: nonNil(res.Copied), Existing: nonNil(res.Existing), Replaced: nonNil(res.Replaced),
 		})
 	}
 

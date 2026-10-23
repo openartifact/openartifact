@@ -27,6 +27,7 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/trash"
@@ -88,6 +89,22 @@ type Request struct {
 	// several artifacts that share the content, only that one is copied;
 	// otherwise every artifact with the content is.
 	Path string
+	// Force replaces content the destination holds at the same coordinates
+	// instead of failing with a ConflictError (an admin's `?force=true`): the
+	// replaced rows are moved to the destination's trash, see displace.
+	Force bool
+	// Actor is the username recorded on rows a forced promotion replaces.
+	Actor string
+}
+
+// displace moves the live destination rows ids of kind to the trash so a
+// forced promotion can write its own in their place.
+func (r Request) displace(ctx context.Context, tx Tx, kind models.TrashKind, ids ...string) error {
+	if err := database.TrashRowsInTx(ctx, tx, r.Dst.ID, kind, ids, r.Actor); err != nil {
+		return fmt.Errorf("replace %s content in the target: %w", kind, err)
+	}
+
+	return nil
 }
 
 // Artifact describes one artifact row a promotion wrote or found.
@@ -134,6 +151,9 @@ type Result struct {
 	Copied []Artifact
 	// Existing are artifacts the destination already held with the same content.
 	Existing []Artifact
+	// Replaced are the destination artifacts a forced promotion moved to the
+	// trash because they held different content (their replacements are in Copied).
+	Replaced []Artifact
 	// Usage is what Copied adds to the destination's quota.
 	Usage Usage
 	// Licenses are the licenses the copied content declares, checked against
@@ -150,6 +170,7 @@ type Result struct {
 func (r *Result) merge(o *Result) {
 	r.Copied = append(r.Copied, o.Copied...)
 	r.Existing = append(r.Existing, o.Existing...)
+	r.Replaced = append(r.Replaced, o.Replaced...)
 	r.Usage.Bytes += o.Usage.Bytes
 	r.Usage.Artifacts += o.Usage.Artifacts
 	r.Licenses = append(r.Licenses, o.Licenses...)

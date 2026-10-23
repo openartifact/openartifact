@@ -12,6 +12,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // dockerPromoter promotes docker/OCI images.
@@ -294,10 +296,61 @@ func (r *dockerRun) copyTags(ctx context.Context, root dockerManifest) (int, err
 }
 
 // copyTag copies one tag. It reports false when the destination already has the
-// tag on the same manifest digest and a conflict when it has it on another.
+// tag on the same manifest digest. A tag on another digest is a conflict, or,
+// when forced, is moved to the trash and replaced by the source tag.
 func (r *dockerRun) copyTag(ctx context.Context, root dockerManifest, t dockerTag) (bool, error) {
 	name := dockerName(r.req.Dst.Name, root.image)
 
+	created, err := r.insertTag(ctx, name, t)
+	if err != nil || created {
+		return created, err
+	}
+
+	var (
+		id, digest string
+		old        destRow
+	)
+
+	err = r.tx.QueryRowContext(ctx, dockerTagDigestSQL, r.req.Dst.ID, root.image, t.Name).Scan(&id, &digest, &old.sha, &old.size)
+
+	switch {
+	case errors.Is(err, sql.ErrNoRows):
+		return false, fmt.Errorf("docker tag %s:%s: %w", name, t.Name, ErrDockerTagChanged)
+	case err != nil:
+		return false, fmt.Errorf("look up docker tag %s:%s in the target: %w", name, t.Name, err)
+	case digest == root.digest:
+		return false, nil
+	case !r.req.Force:
+		return false, r.req.conflict("docker", name+":"+t.Name, t.Name)
+	}
+
+	if err := r.req.displace(ctx, r.tx, models.TrashKindDockerTag, id); err != nil {
+		return false, err
+	}
+
+	r.res.Replaced = append(r.res.Replaced, Artifact{
+		Name:    name,
+		Version: t.Name,
+		Path:    name + "/manifests/" + digest,
+		SHA256:  old.sha,
+		Size:    old.size,
+	})
+
+	created, err = r.insertTag(ctx, name, t)
+	if err != nil {
+		return false, err
+	}
+
+	if !created {
+		return false, fmt.Errorf("docker tag %s:%s: %w", name, t.Name, ErrDockerTagChanged)
+	}
+
+	return true, nil
+}
+
+// insertTag copies source tag t into the destination and reports whether the
+// row was created (false: the destination already holds a live tag of the name).
+func (r *dockerRun) insertTag(ctx context.Context, name string, t dockerTag) (bool, error) {
 	var id string
 
 	err := r.tx.QueryRowContext(ctx, dockerInsertTagSQL, r.req.Dst.ID, t.ID).Scan(&id)
@@ -305,24 +358,11 @@ func (r *dockerRun) copyTag(ctx context.Context, root dockerManifest, t dockerTa
 	switch {
 	case err == nil:
 		return true, nil
-	case !errors.Is(err, sql.ErrNoRows):
-		return false, fmt.Errorf("copy docker tag %s:%s: %w", name, t.Name, err)
-	}
-
-	var digest string
-
-	err = r.tx.QueryRowContext(ctx, dockerTagDigestSQL, r.req.Dst.ID, root.image, t.Name).Scan(&digest)
-
-	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return false, fmt.Errorf("docker tag %s:%s: %w", name, t.Name, ErrDockerTagChanged)
-	case err != nil:
-		return false, fmt.Errorf("look up docker tag %s:%s in the target: %w", name, t.Name, err)
-	case digest != root.digest:
-		return false, r.req.conflict("docker", name+":"+t.Name, t.Name)
+		return false, nil
 	}
 
-	return false, nil
+	return false, fmt.Errorf("copy docker tag %s:%s: %w", name, t.Name, err)
 }
 
 // copyManifest copies manifest m (once per Promote call) with its blobs and, for

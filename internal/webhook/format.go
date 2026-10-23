@@ -283,6 +283,9 @@ func summarize(d *models.WebhookDelivery) eventSummary {
 		facts = addFact(facts, "Stage", payloadString(p, "to_stage"))
 		facts = addFact(facts, "Copied", payloadString(p, "copied"))
 		facts = addFact(facts, "Already present", payloadString(p, "existing"))
+		if replaced := payloadString(p, "replaced"); replaced != "" && replaced != "0" {
+			facts = addFact(facts, "Replaced (forced)", replaced)
+		}
 
 		s.headline = strings.TrimSpace(title + ": " + name + " " + version + " to " + repo)
 	} else if repo != "" {

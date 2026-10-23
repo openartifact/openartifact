@@ -12672,6 +12672,15 @@
             "schema": {
               "type": "string"
             }
+          },
+          {
+            "name": "force",
+            "in": "query",
+            "required": false,
+            "description": "Administrators only: `true` replaces content that the target already holds at the same coordinates, including released versions of a repository with `immutable_releases`, instead of answering 409. The replaced rows go to the target's trash.",
+            "schema": {
+              "type": "boolean"
+            }
           }
         ],
         "requestBody": {
@@ -12715,6 +12724,10 @@
                       "type": "integer",
                       "description": "Artifacts the target already held with the same content"
                     },
+                    "replaced": {
+                      "type": "integer",
+                      "description": "Artifacts a forced promotion moved to the target's trash because they held different content"
+                    },
                     "items": {
                       "type": "array",
                       "items": {
@@ -12754,6 +12767,30 @@
                             }
                           },
                           "existing": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                },
+                                "size": {
+                                  "type": "integer",
+                                  "format": "int64"
+                                }
+                              }
+                            }
+                          },
+                          "replaced": {
                             "type": "array",
                             "items": {
                               "type": "object",

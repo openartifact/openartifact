@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"slices"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // conanPromoter promotes Conan recipes. Every stored file of a recipe or
@@ -82,12 +84,12 @@ const conanSourceQuery = `SELECT s.id::text, s.name, s.version, s.user_channel, 
 // conanFilesQuery lists every live file of recipe revision ($2 name, $3
 // version, $4 user/channel, $5 revision) of source repository $1, in storage
 // order, each with what destination repository $6 holds under the same live
-// unique key: whether there is such a file and, when there is, whether it is
+// unique key: its id, digest and size (id empty when there is no such file) and, when there is, whether it is
 // the same content (the same blob, or a blob with the same digest; two files
 // without a blob are the same).
 const conanFilesQuery = `SELECT s.id::text, s.package_id, s.package_revision, s.filename,
 	       COALESCE(b.sha256, ''), COALESCE(b.size_bytes, 0)::bigint,
-	       d.id IS NOT NULL,
+	       COALESCE(d.id::text, ''), COALESCE(db.sha256, ''), COALESCE(db.size_bytes, 0)::bigint,
 	       COALESCE(d.blob_id IS NOT DISTINCT FROM s.blob_id OR db.sha256 = b.sha256, false)
 	  FROM conan_packages s
 	  LEFT JOIN blobs b ON b.id = s.blob_id
@@ -105,9 +107,9 @@ const conanFilesQuery = `SELECT s.id::text, s.package_id, s.package_revision, s.
 // counters; the timestamps are the wall clock (see conanPromoter). A row
 // without a blob (a metadata-only row) is copied as it is.
 const conanCopyQuery = `INSERT INTO conan_packages (repository_id, blob_id, name, version, user_channel, recipe_revision,
-	       package_id, package_revision, filename, conanfile, conaninfo, created_at, updated_at)
+	       package_id, package_revision, filename, conanfile, conaninfo, md5, sha1, created_at, updated_at)
 	SELECT $1::uuid, s.blob_id, s.name, s.version, s.user_channel, s.recipe_revision,
-	       s.package_id, s.package_revision, s.filename, s.conanfile, s.conaninfo, t.ts, t.ts
+	       s.package_id, s.package_revision, s.filename, s.conanfile, s.conaninfo, s.md5, s.sha1, t.ts, t.ts
 	  FROM conan_packages s
 	 CROSS JOIN LATERAL (SELECT clock_timestamp() AS ts) t
 	 WHERE s.id = $2::uuid`
@@ -116,10 +118,10 @@ const conanCopyQuery = `INSERT INTO conan_packages (repository_id, blob_id, name
 type conanDest struct {
 	conanFile
 
-	sha   string
-	size  int64
-	inDst bool
-	same  bool
+	sha  string
+	size int64
+	dst  destRow
+	same bool
 }
 
 // Promote implements Promoter.
@@ -190,7 +192,7 @@ func conanRevisions(ctx context.Context, tx Tx, req Request) ([]conanRevision, e
 
 // promoteConanRevision copies every file of recipe revision rev that the
 // destination does not hold yet; a file held with different content is a
-// conflict.
+// conflict (or, forced, is replaced).
 func promoteConanRevision(ctx context.Context, tx Tx, req Request, rev conanRevision) (*Result, error) {
 	files, err := conanRevisionFiles(ctx, tx, req, rev)
 	if err != nil {
@@ -203,11 +205,22 @@ func promoteConanRevision(ctx context.Context, tx Tx, req Request, rev conanRevi
 		art := Artifact{Name: rev.name, Version: rev.version, Path: f.path(rev), SHA256: f.sha, Size: f.size}
 		res.QuarantineKeys = append(res.QuarantineKeys, f.quarantineKeys(rev)...)
 
+		if f.dst.id != "" && !f.same {
+			if !req.Force {
+				return nil, req.conflict("conan", rev.name, rev.version)
+			}
+
+			if err := req.displace(ctx, tx, models.TrashKindConan, f.dst.id); err != nil {
+				return nil, err
+			}
+
+			res.Replaced = append(res.Replaced, Artifact{Name: rev.name, Version: rev.version, Path: f.path(rev), SHA256: f.dst.sha, Size: f.dst.size})
+			f.dst = destRow{}
+		}
+
 		switch {
-		case f.inDst && f.same:
+		case f.dst.id != "":
 			res.Existing = append(res.Existing, art)
-		case f.inDst:
-			return nil, req.conflict("conan", rev.name, rev.version)
 		default:
 			if _, err := tx.ExecContext(ctx, conanCopyQuery, req.Dst.ID, f.id); err != nil {
 				return nil, fmt.Errorf("copy conan file into the target: %w", err)
@@ -242,7 +255,7 @@ func conanRevisionFiles(ctx context.Context, tx Tx, req Request, rev conanRevisi
 	for rs.Next() {
 		var f conanDest
 
-		if err := rs.Scan(&f.id, &f.packageID, &f.packageRevision, &f.filename, &f.sha, &f.size, &f.inDst, &f.same); err != nil {
+		if err := rs.Scan(&f.id, &f.packageID, &f.packageRevision, &f.filename, &f.sha, &f.size, &f.dst.id, &f.dst.sha, &f.dst.size, &f.same); err != nil {
 			return nil, fmt.Errorf("scan conan recipe revision file: %w", err)
 		}
 

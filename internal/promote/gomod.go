@@ -9,6 +9,8 @@ import (
 	"database/sql"
 	"errors"
 	"fmt"
+
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // gomodPromoter promotes Go modules. A module version is one gomod_modules row
@@ -44,10 +46,11 @@ const gomodSourceQuery = `SELECT s.id::text, s.module_path, s.version,
 
 // gomodSameQuery compares source module $2 with the live version of the same
 // module path and version in destination repository $1. It returns no row when
-// the destination has none, and whether the content is the same otherwise:
+// the destination has none, else the destination row's id, digest and size and whether the content is the same otherwise:
 // the same zip (or, for a version without zip, the same go.mod). Blobs of an
 // empty digest never compare equal by digest, only by being the same blob row.
-const gomodSameQuery = `SELECT COALESCE(CASE
+const gomodSameQuery = `SELECT d.id::text, COALESCE(dzb.sha256, dmb.sha256, ''), COALESCE(dzb.size_bytes, dmb.size_bytes, 0),
+	       COALESCE(CASE
 	         WHEN s.zip_blob_id IS NOT NULL
 	           THEN d.zip_blob_id = s.zip_blob_id OR (szb.sha256 <> '' AND dzb.sha256 = szb.sha256)
 	         ELSE d.zip_blob_id IS NULL AND (d.mod_blob_id = s.mod_blob_id OR (smb.sha256 <> '' AND dmb.sha256 = smb.sha256))
@@ -82,16 +85,27 @@ func (gomodPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 
 		art := Artifact{Name: r.name, Version: r.version, Path: r.version + ".zip", SHA256: r.sha, Size: r.size}
 
-		same, found, err := gomodSame(ctx, tx, req, r)
+		dest, same, err := gomodSame(ctx, tx, req, r)
 		if err != nil {
 			return nil, err
 		}
 
+		if dest.id != "" && !same {
+			if !req.Force {
+				return nil, req.conflict("go", r.name, r.version)
+			}
+
+			if err := req.displace(ctx, tx, models.TrashKindGoMod, dest.id); err != nil {
+				return nil, err
+			}
+
+			res.Replaced = append(res.Replaced, Artifact{Name: r.name, Version: r.version, Path: r.version + ".zip", SHA256: dest.sha, Size: dest.size})
+			dest = destRow{}
+		}
+
 		switch {
-		case found && same:
+		case dest.id != "":
 			res.Existing = append(res.Existing, art)
-		case found:
-			return nil, req.conflict("go", r.name, r.version)
 		default:
 			if _, err := tx.ExecContext(ctx, gomodCopyQuery, req.Dst.ID, r.id); err != nil {
 				return nil, fmt.Errorf("copy go module into the target: %w", err)
@@ -151,20 +165,23 @@ func gomodSourceRows(ctx context.Context, tx Tx, req Request) ([]*gomodRow, erro
 	return narrowRows(rows, func(r *gomodRow) candidate { return r.candidate }, req.Path), nil
 }
 
-// gomodSame reports whether the destination holds a live version at the
-// coordinates of source module r (found) and, when it does, whether it holds
-// the same content.
-func gomodSame(ctx context.Context, tx Tx, req Request, r *gomodRow) (bool, bool, error) {
-	var same bool
+// gomodSame returns the live destination version at the coordinates of source
+// module r (the zero destRow when there is none) and, when there is one,
+// whether it holds the same content.
+func gomodSame(ctx context.Context, tx Tx, req Request, r *gomodRow) (destRow, bool, error) {
+	var (
+		d    destRow
+		same bool
+	)
 
-	err := tx.QueryRowContext(ctx, gomodSameQuery, req.Dst.ID, r.id).Scan(&same)
+	err := tx.QueryRowContext(ctx, gomodSameQuery, req.Dst.ID, r.id).Scan(&d.id, &d.sha, &d.size, &same)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return false, false, nil
+		return destRow{}, false, nil
 	case err != nil:
-		return false, false, fmt.Errorf("look up go module in the target: %w", err)
+		return destRow{}, false, fmt.Errorf("look up go module in the target: %w", err)
 	}
 
-	return same, true, nil
+	return d, same, nil
 }

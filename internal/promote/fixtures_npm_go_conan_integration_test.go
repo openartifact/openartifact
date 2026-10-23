@@ -6,7 +6,11 @@
 
 package promote
 
-import "fmt"
+import (
+	"crypto/md5"
+	"crypto/sha1"
+	"fmt"
+)
 
 // npmTrashView exposes npm_versions (which has no repository_id of its own) as
 // a single-table updatable view keyed by repository, so the generic cases can
@@ -160,6 +164,10 @@ func conanSeedFiles(h *harness, repoID, rrev, itemBlobID string, files []conanSe
 			"name": "shop", "version": "1.0.0", "user_channel": "acme/stable", "recipe_revision": rrev,
 			"package_id": f.packageID, "package_revision": f.packageRevision, "filename": f.filename,
 		}
+
+		// The Conan 1 checksums (migration 057) must travel with the row.
+		cols["md5"] = fmt.Sprintf("%x", md5.Sum([]byte(f.filename+rrev)))
+		cols["sha1"] = fmt.Sprintf("%x", sha1.Sum([]byte(f.filename+rrev)))
 
 		if f.conanfile != "" {
 			cols["conanfile"] = f.conanfile

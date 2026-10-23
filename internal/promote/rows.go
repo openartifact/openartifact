@@ -11,6 +11,8 @@ import (
 	"errors"
 	"fmt"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // rowSpec describes a format whose artifacts are single rows of one table
@@ -21,7 +23,9 @@ import (
 // specs below (never from request data); request values are bind parameters.
 type rowSpec struct {
 	format string
-	table  string
+	// kind is the trash kind of the table's rows, for forced promotions.
+	kind  models.TrashKind
+	table string
 	// name and version are SQL expressions over the source alias s that give
 	// the reported package name and version ('' when the format has none).
 	name, version string
@@ -70,26 +74,40 @@ func (p rowPromoter) Promote(ctx context.Context, tx Tx, req Request) (*Result, 
 		res.QuarantineKeys = append(res.QuarantineKeys, c.id)
 		res.QuarantineKeys = append(res.QuarantineKeys, c.idents...)
 
-		existing, err := p.destinationSHA(ctx, tx, req, c.id)
+		dest, err := p.destinationRow(ctx, tx, req, c.id)
 		if err != nil {
 			return nil, err
 		}
 
-		switch {
-		case existing == req.SHA256:
-			res.Existing = append(res.Existing, art)
-		case existing != "":
-			return nil, req.conflict(p.spec.format, c.name, c.version)
-		default:
-			if err := p.insert(ctx, tx, req, c.id); err != nil {
+		existing := dest.sha
+
+		if existing != "" && existing != req.SHA256 {
+			if !req.Force {
+				return nil, req.conflict(p.spec.format, c.name, c.version)
+			}
+
+			if err := req.displace(ctx, tx, p.spec.kind, dest.id); err != nil {
 				return nil, err
 			}
 
-			res.Copied = append(res.Copied, art)
-			res.Usage.Bytes += c.size
-			res.Usage.Artifacts++
-			res.Licenses = append(res.Licenses, c.licenses...)
+			res.Replaced = append(res.Replaced, Artifact{Name: c.name, Version: c.version, Path: pathOf(c), SHA256: existing, Size: dest.size})
+			existing = ""
 		}
+
+		if existing == req.SHA256 {
+			res.Existing = append(res.Existing, art)
+
+			continue
+		}
+
+		if err := p.insert(ctx, tx, req, c.id); err != nil {
+			return nil, err
+		}
+
+		res.Copied = append(res.Copied, art)
+		res.Usage.Bytes += c.size
+		res.Usage.Artifacts++
+		res.Licenses = append(res.Licenses, c.licenses...)
 	}
 
 	return res, nil
@@ -201,9 +219,20 @@ func narrow(cands []candidate, path string) []candidate {
 	return hit
 }
 
-// destinationSHA returns the content digest of the live destination row with
-// the same natural key as source row srcID, or "" when there is none.
-func (p rowPromoter) destinationSHA(ctx context.Context, tx Tx, req Request, srcID string) (string, error) {
+// destRow is a live destination row: its id and its blob's digest and size.
+// The zero value means there is none.
+type destRow struct {
+	id   string
+	sha  string
+	size int64
+	// name, version and path describe the row where a promoter needs them
+	// (deb and rpm report every colliding row).
+	name, version, path string
+}
+
+// destinationRow returns the live destination row with the same natural key as
+// source row srcID, or the zero destRow when there is none.
+func (p rowPromoter) destinationRow(ctx context.Context, tx Tx, req Request, srcID string) (destRow, error) {
 	s := p.spec
 
 	conds := make([]string, 0, len(s.key))
@@ -212,7 +241,7 @@ func (p rowPromoter) destinationSHA(ctx context.Context, tx Tx, req Request, src
 	}
 
 	query := fmt.Sprintf(
-		`SELECT db.sha256
+		`SELECT d.id::text, db.sha256, db.size_bytes
 		   FROM %[1]s s
 		   JOIN %[1]s d ON d.repository_id = $1 AND d.deleted_at IS NULL AND %[2]s
 		   JOIN blobs db ON db.id = d.blob_id
@@ -220,18 +249,18 @@ func (p rowPromoter) destinationSHA(ctx context.Context, tx Tx, req Request, src
 		  LIMIT 1`,
 		s.table, strings.Join(conds, " AND "))
 
-	var sha string
+	var d destRow
 
-	err := tx.QueryRowContext(ctx, query, req.Dst.ID, srcID).Scan(&sha)
+	err := tx.QueryRowContext(ctx, query, req.Dst.ID, srcID).Scan(&d.id, &d.sha, &d.size)
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return "", nil
+		return destRow{}, nil
 	case err != nil:
-		return "", fmt.Errorf("look up %s in the target: %w", s.table, err)
+		return destRow{}, fmt.Errorf("look up %s in the target: %w", s.table, err)
 	}
 
-	return sha, nil
+	return d, nil
 }
 
 // insert copies source row srcID into the destination repository.

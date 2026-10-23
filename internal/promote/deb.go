@@ -8,6 +8,7 @@ import (
 	"context"
 	"fmt"
 
+	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 )
 
@@ -57,11 +58,11 @@ const debSourceQuery = `SELECT dp.id::text, dp.distribution_id::text, dp.compone
 // for its distribution too), spelled with names so it matches across repositories.
 const debSameCoords = `dd.name = $2 AND dc.name = $3 AND d.name = $4 AND d.version = $5 AND d.arch = $6`
 
-// debDestinationQuery returns the content digest of every live destination row
+// debDestinationQuery returns the id, content digest and size of every live destination row
 // at the package's coordinates, and of every one that has the same pool file
 // name: the pool resolves a download by file name only, so one name must not
 // stand for two contents.
-const debDestinationQuery = `SELECT db.sha256, (` + debSameCoords + `)
+const debDestinationQuery = `SELECT d.id::text, db.sha256, db.size_bytes, d.name, d.version, COALESCE(d.filename, ''), (` + debSameCoords + `)
 	  FROM deb_packages d
 	  JOIN debian_distributions dd ON dd.id = d.distribution_id
 	  JOIN debian_components dc ON dc.id = d.component_id
@@ -157,17 +158,19 @@ func (p debPromoter) promoteRow(ctx context.Context, tx Tx, req Request, row *de
 	art := Artifact{Name: row.name, Version: row.version, Path: row.filename, SHA256: req.SHA256, Size: row.size}
 	res.QuarantineKeys = append(res.QuarantineKeys, row.quarantineKeys()...)
 
-	state, err := p.destination(ctx, tx, req, row)
+	dest, err := p.destination(ctx, tx, req, row)
 	if err != nil {
 		return err
 	}
 
-	switch state {
-	case destSame:
+	if err := dest.replace(ctx, tx, req, models.TrashKindDeb, "deb", row.name, row.version, res); err != nil {
+		return err
+	}
+
+	switch {
+	case dest.same:
 		res.Existing = append(res.Existing, art)
-	case destDiffers:
-		return req.conflict("deb", row.name, row.version)
-	case destAbsent:
+	default:
 		if err := p.copyRow(ctx, tx, req, row); err != nil {
 			return err
 		}
@@ -181,44 +184,44 @@ func (p debPromoter) promoteRow(ctx context.Context, tx Tx, req Request, row *de
 	return nil
 }
 
-// destination classifies what the destination holds for the source row: the
-// same package at the same coordinates with the same content is destSame, any
+// destination collects what the destination holds for the source row: the
+// same package at the same coordinates with the same content is same, any
 // colliding row (same coordinates or same pool file name) with other content
-// is destDiffers.
-func (debPromoter) destination(ctx context.Context, tx Tx, req Request, row *debRow) (destState, error) {
+// is a differing row.
+func (debPromoter) destination(ctx context.Context, tx Tx, req Request, row *debRow) (*destCollisions, error) {
 	rows, err := tx.QueryContext(ctx, debDestinationQuery,
 		req.Dst.ID, row.dist, row.comp, row.name, row.version, row.arch, row.filename)
 	if err != nil {
-		return destAbsent, fmt.Errorf("look up deb package in the target: %w", err)
+		return nil, fmt.Errorf("look up deb package in the target: %w", err)
 	}
 
 	defer func() { _ = rows.Close() }()
 
-	state := destAbsent
+	c := &destCollisions{}
 
 	for rows.Next() {
 		var (
-			sha        string
+			d          destRow
 			sameCoords bool
 		)
 
-		if err := rows.Scan(&sha, &sameCoords); err != nil {
-			return destAbsent, fmt.Errorf("scan deb target row: %w", err)
+		if err := rows.Scan(&d.id, &d.sha, &d.size, &d.name, &d.version, &d.path, &sameCoords); err != nil {
+			return nil, fmt.Errorf("scan deb target row: %w", err)
 		}
 
 		switch {
-		case sha != req.SHA256:
-			return destDiffers, nil
+		case d.sha != req.SHA256:
+			c.differing = append(c.differing, d)
 		case sameCoords:
-			state = destSame
+			c.same = true
 		}
 	}
 
 	if err := rows.Err(); err != nil {
-		return destAbsent, fmt.Errorf("read deb target rows: %w", err)
+		return nil, fmt.Errorf("read deb target rows: %w", err)
 	}
 
-	return state, nil
+	return c, nil
 }
 
 // copyRow writes the package row into the destination, creating the

@@ -7166,7 +7166,12 @@ export type PostApiV1BundlesByNameByVersionPromoteData = {
         name: string;
         version: string;
     };
-    query?: never;
+    query?: {
+        /**
+         * Administrators only: `true` replaces content that the target already holds at the same coordinates, including released versions of a repository with `immutable_releases`, instead of answering 409. The replaced rows go to the target's trash.
+         */
+        force?: boolean;
+    };
     url: '/api/v1/bundles/{name}/{version}/promote';
 };
 
@@ -7218,6 +7223,10 @@ export type PostApiV1BundlesByNameByVersionPromoteResponses = {
          * Artifacts the target already held with the same content
          */
         existing?: number;
+        /**
+         * Artifacts a forced promotion moved to the target's trash because they held different content
+         */
+        replaced?: number;
         items?: Array<{
             sha256?: string;
             artifact_path?: string;
@@ -7230,6 +7239,13 @@ export type PostApiV1BundlesByNameByVersionPromoteResponses = {
                 size?: number;
             }>;
             existing?: Array<{
+                name?: string;
+                version?: string;
+                path?: string;
+                sha256?: string;
+                size?: number;
+            }>;
+            replaced?: Array<{
                 name?: string;
                 version?: string;
                 path?: string;

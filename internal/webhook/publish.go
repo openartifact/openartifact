@@ -47,6 +47,7 @@ type BundlePromotion struct {
 	Items      int    // bundle items promoted
 	Copied     int    // artifacts newly written to the target
 	Existing   int    // artifacts the target already held with the same content
+	Replaced   int    // artifacts a forced promotion moved to the target's trash
 }
 
 // BundlePromotedPayload builds the JSON payload of a bundle.promoted event.
@@ -63,6 +64,7 @@ func BundlePromotedPayload(b BundlePromotion) map[string]any {
 		"items":      b.Items,
 		"copied":     b.Copied,
 		"existing":   b.Existing,
+		"replaced":   b.Replaced,
 	}
 }
 
