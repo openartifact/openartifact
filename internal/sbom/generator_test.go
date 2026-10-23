@@ -6,6 +6,7 @@ package sbom
 
 import (
 	"context"
+	"encoding/json"
 	"strings"
 	"testing"
 
@@ -242,6 +243,45 @@ func TestGenerateSPDX_DependencyInjection(t *testing.T) {
 	for line := range strings.SplitSeq(res.Text, "\n") {
 		if strings.HasPrefix(line, "PackageLicenseConcluded: MIT") || strings.HasPrefix(line, "PackageName: evil") {
 			t.Fatalf("injected tag line: %q", line)
+		}
+	}
+}
+
+func TestDocumentIdentifiersUseBaseURL(t *testing.T) {
+	ctx := context.Background()
+
+	cases := []struct{ base, spdxPrefix, vexPrefix string }{
+		{"https://oa.example.com/", "https://oa.example.com/spdxdocs/mylib-", "https://oa.example.com/vex/"},
+		{"", "urn:openartifact:spdxdocs:mylib-", "urn:openartifact:vex:"},
+	}
+	for _, c := range cases {
+		g := NewGenerator(nil, newTestLogger(t)).WithBaseURL(c.base)
+
+		res, err := g.GenerateSPDXJSON(ctx, "r", "mylib@1.0.0", "npm", nil)
+		if err != nil {
+			t.Fatalf("spdx: %v", err)
+		}
+
+		var spdx, ovex map[string]any
+		if err := json.Unmarshal(res.Body, &spdx); err != nil {
+			t.Fatalf("spdx body: %v", err)
+		}
+
+		if ns, _ := spdx["documentNamespace"].(string); !strings.HasPrefix(ns, c.spdxPrefix) {
+			t.Errorf("base %q: documentNamespace = %q, want prefix %q", c.base, ns, c.spdxPrefix)
+		}
+
+		vex, err := g.GenerateOpenVEX(nil)
+		if err != nil {
+			t.Fatalf("vex: %v", err)
+		}
+
+		if err := json.Unmarshal(vex.Body, &ovex); err != nil {
+			t.Fatalf("vex body: %v", err)
+		}
+
+		if id, _ := ovex["@id"].(string); !strings.HasPrefix(id, c.vexPrefix) {
+			t.Errorf("base %q: @id = %q, want prefix %q", c.base, id, c.vexPrefix)
 		}
 	}
 }

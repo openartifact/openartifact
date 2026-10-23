@@ -13,7 +13,7 @@ Hosted-only repositories for Ivy and sbt on isolated URL prefixes.
 | Ivy | `HOST/repos/ivy/REPO` |
 | sbt | `HOST/repos/sbt/REPO` |
 
-Proxy and group are not supported for either format (only Maven, Debian, RPM and raw can be proxied; only Maven and raw grouped). Creating one is rejected; a request to an existing one answers `501`. See [hosted, proxy, group](../repositories/hosted-proxy-group.md).
+Proxy and group are not supported for either format (see the [format matrix](README.md#format-matrix): 11 formats can be proxied and 9 grouped, neither includes Ivy or sbt). Creating one is rejected with `400 validation_failed`. A proxy or group of these formats can only exist if restored from a backup; requests to it answer `501`. See [hosted, proxy, group](../repositories/hosted-proxy-group.md).
 
 ## Client setup
 

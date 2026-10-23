@@ -40,7 +40,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
 | Conan (v2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`) | hosted | `conan upload` | [conan](conan.md) |
 
-Proxy repositories exist for Maven, Debian, RPM, Docker and raw; group repositories for Maven, Docker and raw. Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
+Proxy repositories exist for 11 formats (Maven, npm, PyPI, Helm, Go, Cargo, NuGet, Debian, RPM, Docker and raw); group repositories for 9 (all of those except Debian and RPM). Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
 
 ## Authentication
 

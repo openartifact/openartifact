@@ -297,6 +297,7 @@ import { useToastStore } from '../stores/toast'
 import { repoBaseUrl } from '../lib/installCommands'
 import { formatDate } from '../lib/datetime'
 import { formatTtl } from '../lib/repoTypes'
+import { supportsPackageDelete } from '../lib/formats'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
@@ -338,7 +339,12 @@ const canUpload = computed(
 
 // Deleting a package row by id is implemented server-side for deb and rpm only
 // (other formats answer 400 UNSUPPORTED_FORMAT), so offer it only there.
-const canDeletePackages = computed(() => canUpload.value)
+const canDeletePackages = computed(
+  () =>
+    session.isAdmin &&
+    (repo.value?.repo_type ?? 'hosted') === 'hosted' &&
+    supportsPackageDelete(repo.value?.format),
+)
 
 // ── Selection state ────────────────────────────────────────────────────────
 const selectedIds = ref<Set<string>>(new Set())

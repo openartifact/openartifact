@@ -169,7 +169,7 @@ func (g *Generator) GenerateOpenVEX(inputs []*Input) (*SBOMResult, error) {
 	now := g.now().UTC()
 	doc := &openVEXDoc{
 		Context:    OpenVEXContext,
-		ID:         "https://openartifact.io/vex/" + uuid.NewString(),
+		ID:         g.docID("vex", uuid.NewString()),
 		Author:     "OpenArtifact",
 		Role:       "Document Creator",
 		Timestamp:  now.Format(time.RFC3339),

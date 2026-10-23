@@ -85,6 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+- SPDX `documentNamespace` and OpenVEX `@id` are now minted under `BASE_URL` (`urn:openartifact:...` when it is empty) instead of `openartifact.io`. Documents already stored keep their identifiers.
+- Creating or updating a cleanup policy on a repository whose format the cleanup worker cannot process now answers `400 UNSUPPORTED_FORMAT`; such policies previously failed on every run.
+- `POST /api/v1/admin/storage/{name}/test` runs a real bucket or container check for `gcs` and `azure` backends instead of answering `not_implemented`.
+
 ### 0.7.0
 
 Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webhook payload format), `052` (VEX statements) and `053` (license source and unresolved licenses). All are additive; a rolling upgrade from 0.6.0 is fine. Migration `041` is numbered below `051`–`053` on purpose; the migrator applies every file not yet recorded, whatever its number.
