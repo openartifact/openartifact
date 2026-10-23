@@ -105,6 +105,11 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - **Dependency-Track.** An admin-configured integration (global, with per-repository overrides) pushes the CycloneDX BOM on upload and after each scan, then the VEX decisions after Dependency-Track's analysis. It is off until configured: nothing leaves the server by default. The URL goes through the same SSRF guard as other outbound requests, so a Dependency-Track on a private address needs `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`. See [Dependency-Track](../security/dependency-track.md).
 - **Attestations as OCI referrers.** A hosted docker repository can attach the signed SBOM and VEX of an image to it as OCI referrers (`POST …/sbom/{id}/attach`, `POST …/vex/attach`, or automatically after SBOM generation and scans with `PUT …/attestation-attach`). Off by default. See [Attaching to an OCI image](../security/sbom.md#attaching-to-an-oci-image).
 - `oa dtrack`, `oa sbom download --attest` and `oa vex get --attest`.
+||||||| parent of f816c6f (docs: upgrading notes)
+- Migration `061` makes the storage quota counters exact: reservations and deletes leave a short-lived entry in the new `quota_pending` table, package-row triggers consume it, and the reconcile counts rows plus pending entries instead of overwriting the counter, so a recount no longer drifts by the operations in flight. The triggers add a small cost to package inserts and deletes; the index is built concurrently. See [quotas](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct).
+- `POST /api/v1/repositories/{name}/registry-gc` and the docker GC worker no longer have a `501 not_implemented` path; they run on every deployment.
+- Tiered storage now removes the copy a write leaves on the wrong tier when it races a move, and presigned-upload completion follows the blob's placement. See [storage tiering](../operations/storage-tiering.md).
+- Grype scans of deb and rpm packages now run with the distribution release derived from the package, or are routed to osv when it is unknown, instead of failing with `unsupported_ecosystem`. The `scanner` field shows what ran. See [scanning](../security/scanning.md).
 
 #### Conan 1.x clients (migration `057`)
 
