@@ -135,7 +135,7 @@ Tagged releases (`v*.*.*`, workflow `.github/workflows/release.yml`) publish:
 
 | Artifact | Where | Protection |
 |---|---|---|
-| `openartifact_<VERSION>_linux_{amd64,arm64}.tar.gz` (server, `resetpw`), `oa_<VERSION>_{linux,darwin,windows}_{amd64,arm64}` (`.tar.gz`, `.zip` on Windows) and `SHA256SUMS` | GitHub release | SHA-256 checksums and a GitHub build-provenance attestation for each archive and for `SHA256SUMS` |
+| `openartifact_<VERSION>_linux_{amd64,arm64}.tar.gz` (server, `resetpw`), `oa_<VERSION>_{linux,darwin,windows}_{amd64,arm64}` (`.tar.gz`, `.zip` on Windows) and `SHA256SUMS` | GitHub release | SHA-256 checksums, a keyless cosign signature bundle (`SHA256SUMS.sigstore.json`) and a GitHub build-provenance attestation for each archive and for `SHA256SUMS`; the attestation is also attached as the release asset `openartifact-<VERSION>.intoto.jsonl` |
 | Container image `ghcr.io/openartifact/openartifact` (multi-arch; tags `X.Y.Z`, `X.Y`, and `latest` for non-prerelease versions) | GHCR | keyless cosign signature, build-provenance attestation, `provenance: mode=max` and an SBOM attached by BuildKit |
 
 The image is scanned with Trivy (fixable HIGH/CRITICAL fail the release) before any tag is pushed.
@@ -145,7 +145,18 @@ Archives and checksums:
 ```sh
 sha256sum --ignore-missing -c SHA256SUMS
 gh attestation verify openartifact_<VERSION>_linux_amd64.tar.gz --repo openartifact/openartifact
+
+# keyless signature of the checksum file (release assets)
+cosign verify-blob SHA256SUMS --bundle SHA256SUMS.sigstore.json \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  --certificate-identity-regexp '^https://github\.com/openartifact/openartifact/\.github/workflows/release\.yml@'
+
+# offline provenance check with the attached bundle
+gh attestation verify openartifact_<VERSION>_linux_amd64.tar.gz --repo openartifact/openartifact \
+  --bundle openartifact-<VERSION>.intoto.jsonl
 ```
+
+Releases up to v0.7.0 predate the `SHA256SUMS.sigstore.json` signature; for them the original build-provenance attestation was added afterwards as `openartifact-<VERSION>.intoto.jsonl`.
 
 Container image (keyless signature tied to the release workflow of this repository):
 
