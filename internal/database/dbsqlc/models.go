@@ -916,6 +916,8 @@ type Repository struct {
 	ImmutableReleases bool `db:"immutable_releases" json:"immutable_releases"`
 	// Groups only. false (default): when a hosted member holds a package name, proxy members' versions and files of that name are hidden. true: versions of all members are merged.
 	MergeProxyVersions bool `db:"merge_proxy_versions" json:"merge_proxy_versions"`
+	// Hosted rpm repositories only: sign uploaded RPMs with the active GPG key.
+	SignPackages bool `db:"sign_packages" json:"sign_packages"`
 }
 
 type RepositoryGroupMember struct {
