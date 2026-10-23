@@ -162,7 +162,7 @@ All endpoints live under `/federation/v1/` and authenticate with a **peer token*
 | `GET /federation/v1/info` | Handshake: `{protocol, instance_id, log_id, head_seq, repo: {name, format}}` |
 | `GET /federation/v1/log?after=<seq>&limit=<n>` | Feed: units with `seq > after` in seq order: `{log_id, head_seq, entries: [{seq, unit_key, kind, event, tombstone, stamp, content_ref, changed_at}], has_more}` |
 | `GET /federation/v1/unit?key=<unit_key>` | The unit's *current* state: `{unit_key, stamp, tombstone, data, blobs: [{sha256, size}], deps: [unit_key]}` |
-| `GET /federation/v1/blob?key=<unit_key>&sha256=<hex>` | Stream one blob of that unit. Only blobs listed in the unit's `blobs` are served |
+| `GET /federation/v1/blob?unit=<unit_key>&sha256=<hex>` | Stream one blob of that unit. Only blobs listed in the unit's `blobs` are served |
 
 `data` is the Codec's JSON for the unit: the row's replicated columns with local ids and blob ids replaced by sha256 values. The server never serves a blob that is not part of a live unit of the token's repository, so the token cannot be used to read other repositories or arbitrary storage keys.
 
