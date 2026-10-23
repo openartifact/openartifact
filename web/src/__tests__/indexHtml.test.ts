@@ -10,10 +10,10 @@ import { resolve } from 'node:path'
 // carry inline scripts: the browser would block them and log a CSP error.
 describe('index.html', () => {
   const html = readFileSync(resolve(import.meta.dir, '../../index.html'), 'utf8')
-  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script>/g)]
+  const scripts = [...html.matchAll(/<script\b([^>]*)>([\s\S]*?)<\/script[^>]*>/gi)]
 
   it('has no inline script', () => {
-    const inline = scripts.filter(([, attrs]) => !/\bsrc=/.test(attrs))
+    const inline = scripts.filter(([, attrs]) => !/\bsrc=/i.test(attrs))
     expect(inline).toEqual([])
   })
 
