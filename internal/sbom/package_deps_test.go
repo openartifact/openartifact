@@ -47,7 +47,7 @@ func (r *rowDB) GetRepoComponentBlob(_ context.Context, _, id string) (*models.C
 		return r.blob, nil
 	}
 
-	return nil, nil //nolint:nilnil // no such row
+	return nil, nil
 }
 
 const (

@@ -71,6 +71,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </FormField>
     </form>
 
+    <!-- Nested so clicks inside it are not "outside" this dialog. -->
+    <ConfirmDialog
+      :open="confirmOpen"
+      :title="t('sec.vex.deleteTitle')"
+      :description="`${vulnId} · ${artifactLabel ?? artifactId}`"
+      :confirm-label="t('sec.vex.delete')"
+      :busy="deleting"
+      @confirm="remove"
+      @close="confirmOpen = false"
+    >
+      {{ t('sec.vex.deleteDescription') }}
+    </ConfirmDialog>
+
     <template #footer>
       <AppButton
         v-if="existing"
@@ -91,18 +104,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </AppButton>
     </template>
   </AdminDialog>
-
-  <ConfirmDialog
-    :open="confirmOpen"
-    :title="t('sec.vex.deleteTitle')"
-    :description="`${vulnId} · ${artifactLabel ?? artifactId}`"
-    :confirm-label="t('sec.vex.delete')"
-    :busy="deleting"
-    @confirm="remove"
-    @close="confirmOpen = false"
-  >
-    {{ t('sec.vex.deleteDescription') }}
-  </ConfirmDialog>
 </template>
 
 <script setup lang="ts">

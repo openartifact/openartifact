@@ -25,7 +25,7 @@ func parseNPM(parts []manifest.Part) (Result, error) {
 	if body, ok := part(parts, "package.json"); ok {
 		var pkg struct {
 			Dependencies         map[string]any `json:"dependencies"`
-			OptionalDependencies map[string]any `json:"optionalDependencies"`
+			OptionalDependencies map[string]any `json:"optionalDependencies"` //nolint:tagliatelle // npm field name
 		}
 
 		if err := json.Unmarshal([]byte(body), &pkg); err != nil {
@@ -140,12 +140,11 @@ func npmLock(body string) ([]Dep, error) {
 
 			name := e.Name
 			if name == "" {
-				i := strings.LastIndex(k, "node_modules/")
-				if i < 0 {
+				var found bool
+
+				if _, name, found = strings.CutLast(k, "node_modules/"); !found {
 					continue // a workspace member, not an installed package
 				}
-
-				name = k[i+len("node_modules/"):]
 			}
 
 			out = append(out, Dep{Name: name, Version: e.Version, License: lockLicense(e.License)})

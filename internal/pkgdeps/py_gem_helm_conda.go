@@ -63,7 +63,7 @@ func headerValues(text, key string) []string {
 
 	prefix := strings.ToLower(key) + ":"
 
-	for _, line := range strings.Split(text, "\n") {
+	for line := range strings.SplitSeq(text, "\n") {
 		line = strings.TrimRight(line, "\r")
 		if line == "" {
 			break

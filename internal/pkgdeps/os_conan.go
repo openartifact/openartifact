@@ -57,7 +57,7 @@ func debNamespace(version, maintainer string) string {
 func debRelations(field string) []Dep {
 	var out []Dep
 
-	for _, rel := range strings.Split(field, ",") {
+	for rel := range strings.SplitSeq(field, ",") {
 		alt, _, _ := strings.Cut(rel, "|")
 		alt = strings.TrimSpace(alt)
 
@@ -100,7 +100,7 @@ func parseRPM(parts []manifest.Part) Result {
 
 		inRequires := false
 
-		for _, line := range strings.Split(p.Body, "\n") {
+		for line := range strings.SplitSeq(p.Body, "\n") {
 			switch {
 			case line == "Requires:":
 				inRequires = true
@@ -131,7 +131,7 @@ func rpmNamespace(vendor, version string) string {
 		return "opensuse"
 	}
 
-	for _, r := range strings.Fields(v) {
+	for r := range strings.FieldsSeq(v) {
 		if ns := alnum(r); ns != "" {
 			return ns
 		}
@@ -198,7 +198,7 @@ func parseConan(parts []manifest.Part) Result {
 			continue
 		}
 
-		for _, line := range strings.Split(p.Body, "\n") {
+		for line := range strings.SplitSeq(p.Body, "\n") {
 			if !strings.Contains(line, "requires") || strings.Contains(line, "tool_requires") ||
 				strings.Contains(line, "build_requires") || strings.Contains(line, "test_requires") {
 				continue

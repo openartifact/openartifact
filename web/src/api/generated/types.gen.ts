@@ -2003,6 +2003,13 @@ export type PostApiV1RepositoriesByNameSbomGenerateData = {
     url: '/api/v1/repositories/{name}/sbom/generate';
 };
 
+export type PostApiV1RepositoriesByNameSbomGenerateErrors = {
+    /**
+     * The artifact's package file is too large or ambiguous to be read safely (`unsafe_artifact`)
+     */
+    422: unknown;
+};
+
 export type PostApiV1RepositoriesByNameSbomGenerateResponses = {
     /**
      * SBOM generation started

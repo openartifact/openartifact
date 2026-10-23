@@ -301,20 +301,20 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </table>
         </div>
       </div>
+      <!-- Nested inside the drawer: HeadlessUI closes a dialog on clicks outside its own tree. -->
+      <VexDecisionDialog
+        v-if="detailRow && detail"
+        :open="vexVulnId !== null"
+        :repo="detailRow.repository_name"
+        :artifact-id="detail.artifact_id"
+        :artifact-label="`${detail.package_name}@${detail.package_version}`"
+        :vuln-id="vexVulnId ?? ''"
+        :existing="vexVulnId !== null ? (vexByVuln.get(vexVulnId) ?? null) : null"
+        @close="vexVulnId = null"
+        @saved="onVexSaved"
+        @deleted="onVexDeleted"
+      />
     </AdminDialog>
-
-    <VexDecisionDialog
-      v-if="detailRow && detail"
-      :open="vexVulnId !== null"
-      :repo="detailRow.repository_name"
-      :artifact-id="detail.artifact_id"
-      :artifact-label="`${detail.package_name}@${detail.package_version}`"
-      :vuln-id="vexVulnId ?? ''"
-      :existing="vexVulnId !== null ? (vexByVuln.get(vexVulnId) ?? null) : null"
-      @close="vexVulnId = null"
-      @saved="onVexSaved"
-      @deleted="onVexDeleted"
-    />
 
     <ConfirmDialog
       :open="deleteTarget !== null"
