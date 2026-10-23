@@ -184,7 +184,7 @@ func newScanPolicyVulnHandler(t *testing.T, db *scanPolicyDB, backends map[strin
 	t.Helper()
 
 	log, ev := newBundlesScansEnv(t, &bundlesScansMockDB{})
-	h := NewVulnHandler(db, log, ev)
+	h := NewVulnHandler(db, log, ev, nil)
 	h.newBackend = func(name string) vuln.ScannerBackend { return backends[name] }
 
 	return h

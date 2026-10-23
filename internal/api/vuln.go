@@ -31,6 +31,9 @@ type VulnHandler struct {
 	// scanSem bounds the number of concurrently running background scans.
 	scanSem chan struct{}
 
+	// scanners builds the scanner backends and reports their availability.
+	scanners *vuln.Registry
+
 	// newBackend builds the scanner backend for a scanner name; tests replace it.
 	newBackend func(name string) vuln.ScannerBackend
 }
@@ -82,26 +85,68 @@ func normalizeVulnScanners(single string, list []string) ([]string, bool) {
 	return slices.Compact(names), true
 }
 
-// NewVulnHandler creates a new vulnerability handler.
-func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *VulnHandler {
+// NewVulnHandler creates a new vulnerability handler. scanners provides the
+// scanner backends and their availability; nil means the defaults (trivy and
+// grype from PATH, no database refresh).
+func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, scanners *vuln.Registry) *VulnHandler {
+	if scanners == nil {
+		scanners = vuln.NewRegistry(log, vuln.Options{})
+	}
+
 	return &VulnHandler{
-		db:        db,
-		log:       log,
-		evaluator: evaluator,
-		scanSem:   make(chan struct{}, maxConcurrentVulnScans),
-		newBackend: func(name string) vuln.ScannerBackend {
-			return vuln.NewScannerForBackend(name, log)
-		},
+		db:         db,
+		log:        log,
+		evaluator:  evaluator,
+		scanSem:    make(chan struct{}, maxConcurrentVulnScans),
+		scanners:   scanners,
+		newBackend: scanners.Backend,
 	}
 }
 
 // RegisterRoutes registers vulnerability scanning routes.
 func (h *VulnHandler) RegisterRoutes(authedRouter chi.Router, pathPrefix string) {
 	authedRouter.Post(pathPrefix+"/vuln/scan", h.handleScan)
+	authedRouter.Get(pathPrefix+"/vuln/scanners", h.handleListScanners)
 	authedRouter.Get(pathPrefix+"/vuln/scans", h.handleListScans)
 	authedRouter.Get(pathPrefix+"/vuln/scans/{id}", h.handleGetScan)
 	authedRouter.Post(pathPrefix+"/vuln/scans/{id}/quarantine", h.handleQuarantine)
 	authedRouter.Delete(pathPrefix+"/vuln/scans/{id}", h.handleDeleteScan)
+}
+
+// handleListScanners reports which vulnerability scanners can run on this
+// server, so clients can disable the ones that cannot and say why.
+func (h *VulnHandler) handleListScanners(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
+	statuses := h.scanners.Status()
+	out := make([]responses.VulnScannerResponse, 0, len(statuses))
+
+	for _, s := range statuses {
+		out = append(out, vulnScannerToResponse(s))
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"scanners": out})
+}
+
+func vulnScannerToResponse(s vuln.ScannerStatus) responses.VulnScannerResponse {
+	resp := responses.VulnScannerResponse{
+		Name:      s.Name,
+		Available: s.Available,
+		Ready:     s.Ready,
+		DBState:   nonEmptyString(s.DBState),
+		Code:      nonEmptyString(s.Code),
+		Message:   nonEmptyString(s.Message),
+		DocsURL:   nonEmptyString(s.DocsURL),
+	}
+
+	if !s.DBUpdatedAt.IsZero() {
+		at := s.DBUpdatedAt.UTC().Format(time.RFC3339)
+		resp.DBUpdatedAt = &at
+	}
+
+	return resp
 }
 
 // handleScan initiates a vulnerability scan for a package.

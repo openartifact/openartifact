@@ -201,7 +201,7 @@ func TestLicensePolicyActionValidation(t *testing.T) {
 func TestVulnDeleteScanActuallyDeletes(t *testing.T) {
 	db := &bundlesScansMockDB{}
 	log, ev := newBundlesScansEnv(t, db)
-	h := NewVulnHandler(db, log, ev)
+	h := NewVulnHandler(db, log, ev, nil)
 	register := func(r chi.Router) { h.RegisterRoutes(r, "/api/v1/repositories/{name}") }
 
 	rw := serveAs(register, http.MethodDelete, "/api/v1/repositories/repo/vuln/scans/"+testScanID, "")

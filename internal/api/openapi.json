@@ -2173,7 +2173,7 @@
           "scan_error": {
             "type": "string",
             "nullable": true,
-            "description": "Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server; osv: scan timed out`. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`."
+            "description": "Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server (scanner_unavailable), setup guide: <url>; osv: scan timed out`. A scanner that is not installed or has no vulnerability database names its code (`scanner_unavailable`, `scanner_db_unavailable`) and the setup guide. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`."
           },
           "failed_scanners": {
             "type": "array",
@@ -2208,6 +2208,74 @@
           "scanned_at",
           "scan_error",
           "failed_scanners"
+        ]
+      },
+      "VulnScanner": {
+        "type": "object",
+        "description": "Whether one vulnerability scanner can run on the server. Fixed, client-safe text only.",
+        "properties": {
+          "name": {
+            "type": "string",
+            "enum": [
+              "osv",
+              "trivy",
+              "grype"
+            ]
+          },
+          "available": {
+            "type": "boolean",
+            "description": "False when the `trivy` / `grype` binary is not installed or not executable."
+          },
+          "ready": {
+            "type": "boolean",
+            "description": "True when a scan can run now: `osv` always; `trivy` and `grype` when the binary is available and its vulnerability database is present."
+          },
+          "db_state": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "ready",
+              "updating",
+              "failed",
+              "missing"
+            ],
+            "description": "State of the vulnerability database of an available `trivy` / `grype`; null otherwise."
+          },
+          "db_updated_at": {
+            "type": "string",
+            "nullable": true,
+            "format": "date-time",
+            "description": "When the vulnerability database was last refreshed; null when there is none or the time is unknown."
+          },
+          "code": {
+            "type": "string",
+            "nullable": true,
+            "enum": [
+              "scanner_unavailable",
+              "scanner_db_unavailable"
+            ],
+            "description": "Why the scanner is not ready; null when it is."
+          },
+          "message": {
+            "type": "string",
+            "nullable": true,
+            "description": "What the operator must do when the scanner is not ready."
+          },
+          "docs_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "Link to the scanner installation guide when the scanner is not ready."
+          }
+        },
+        "required": [
+          "name",
+          "available",
+          "ready",
+          "db_state",
+          "db_updated_at",
+          "code",
+          "message",
+          "docs_url"
         ]
       },
       "VulnScanRequest": {
@@ -4930,6 +4998,52 @@
                 "$ref": "#/components/schemas/VulnScanRequest"
               }
             }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vuln/scanners": {
+      "get": {
+        "summary": "List vulnerability scanners",
+        "description": "Report which vulnerability scanners can run on the server: `osv` is always ready; `trivy` and `grype` need their binary and a downloaded vulnerability database (see the scanning guide). A client should disable a scanner that is not `ready` and show its `message`.",
+        "tags": [
+          "Repositories",
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Scanners in the order osv, trivy, grype",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scanners": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VulnScanner"
+                      }
+                    }
+                  },
+                  "required": [
+                    "scanners"
+                  ]
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
           }
         }
       }

@@ -580,6 +580,8 @@ export const enAdmin = {
   'sec.vuln.scannersLabel': 'Scanners',
   'sec.vuln.scannersHint': 'Select one or more scanners; the scan fails only when every one of them fails.',
   'sec.vuln.scannersRequired': 'Select at least one scanner.',
+  'sec.vuln.scannerNotReady': 'Not ready on the server.',
+  'sec.vuln.scannerSetupGuide': 'Setup guide',
 
   // Security: licenses
   'sec.license.breadcrumb': 'License scan',

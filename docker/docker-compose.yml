@@ -43,6 +43,10 @@ services:
         BUILD_TIME: ${OPENARTIFACT_BUILD_TIME:-unknown}
         # dhi needs `docker login dhi.io`; set OPENARTIFACT_RUNTIME=distroless otherwise.
         RUNTIME: ${OPENARTIFACT_RUNTIME:-dhi}
+        # Bundle vulnerability scanners: none (default), trivy, grype or all.
+        # The first scan needs egress to download the databases (see
+        # docs/security/scanning.md).
+        SCANNERS: ${OPENARTIFACT_SCANNERS:-none}
     container_name: openartifact
     depends_on:
       postgres:
@@ -71,6 +75,13 @@ services:
       # Public URL clients and SSO callbacks use (e.g. https://artifacts.example.com).
       BASE_URL: ${BASE_URL:-}
       OPENARTIFACT_BACKUP_DIR: /var/lib/openartifact/backups
+      # Vulnerability scanners (only used when built with OPENARTIFACT_SCANNERS).
+      # Offline mode never downloads; mirrors replace ghcr.io / grype.anchore.io.
+      # Set in docker/.env; see docs/security/scanning.md.
+      OPENARTIFACT_SCANNER_OFFLINE: ${OPENARTIFACT_SCANNER_OFFLINE:-false}
+      OPENARTIFACT_SCANNER_UPDATE_INTERVAL: ${OPENARTIFACT_SCANNER_UPDATE_INTERVAL:-6h}
+      OPENARTIFACT_TRIVY_DB_REPOSITORY: ${OPENARTIFACT_TRIVY_DB_REPOSITORY:-}
+      OPENARTIFACT_GRYPE_DB_URL: ${OPENARTIFACT_GRYPE_DB_URL:-}
       LOG_LEVEL: info
       LOG_FORMAT: json
     restart: unless-stopped
@@ -87,6 +98,8 @@ services:
     volumes:
       - artifacts_data:/var/lib/artifacts
       - backups_data:/var/lib/openartifact/backups
+      # Trivy / Grype vulnerability databases (OPENARTIFACT_SCANNER_CACHE_DIR).
+      - scanner_cache:/var/cache/openartifact/scanners
     networks:
       - artifact-repo-network
     healthcheck:
@@ -101,6 +114,7 @@ volumes:
   postgres_data:
   artifacts_data:
   backups_data:
+  scanner_cache:
 
 networks:
   artifact-repo-network:

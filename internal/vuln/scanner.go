@@ -28,18 +28,6 @@ type ScannerBackend interface {
 	Name() string
 }
 
-// NewScannerForBackend returns the appropriate scanner backend for the given name.
-func NewScannerForBackend(name string, log *logger.Logger) ScannerBackend {
-	switch strings.ToLower(name) {
-	case "trivy":
-		return &TrivyScanner{log: log}
-	case "grype":
-		return &GrypeScanner{log: log}
-	default:
-		return NewOSVScanner(log)
-	}
-}
-
 // OSVScanner queries the OSV API for vulnerabilities.
 type OSVScanner struct {
 	log        *logger.Logger
@@ -186,7 +174,8 @@ func (s *OSVScanner) requestFailure(ctx context.Context, err error) *ScanError {
 
 // TrivyScanner scans vulnerabilities using the Trivy CLI.
 type TrivyScanner struct {
-	log *logger.Logger
+	log  *logger.Logger
+	tool *cliTool
 }
 
 func (s *TrivyScanner) Name() string { return "trivy" }
@@ -235,7 +224,17 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 		return nil, newScanError(s.Name(), FailureInternal, err)
 	}
 
-	stdout, stderr, err := runScanner(ctx, "trivy", "fs", "--scanners", "vuln", "--format", "json", "--quiet", "--offline-scan", tmpDir)
+	if pre := s.tool.preflight(); pre != nil {
+		return nil, pre
+	}
+
+	// The database is managed by the registry (Registry.Start), never fetched
+	// by a scan: a download inside the scan deadline would time out on a cold
+	// cache and needs a writable cache on every run.
+	stdout, stderr, err := runScanner(ctx, nil, s.tool.command,
+		"fs", "--scanners", "vuln", "--format", "json", "--quiet", "--offline-scan",
+		"--skip-version-check", "--skip-db-update", "--skip-java-db-update",
+		"--cache-dir="+s.tool.cacheDir, tmpDir)
 	if err != nil {
 		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("trivy scan failed",
@@ -246,7 +245,7 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 			"ecosystem", ecosystem,
 		)
 
-		return nil, runFailure(ctx, s.Name(), err)
+		return nil, runFailure(ctx, s.Name(), err, stderr)
 	}
 
 	return s.parseTrivyOutput(stdout)
@@ -418,7 +417,8 @@ func mapTrivySeverity(severity string, cvssScore float64) string {
 
 // GrypeScanner scans vulnerabilities using the Grype CLI.
 type GrypeScanner struct {
-	log *logger.Logger
+	log  *logger.Logger
+	tool *cliTool
 }
 
 func (s *GrypeScanner) Name() string { return "grype" }
@@ -485,7 +485,14 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 	// grype <ecosystem>:<name>@<version> -o json --quiet
 	pkgRef := fmt.Sprintf("%s:%s@%s", grypeEcosystem, packageName, version)
 
-	stdout, stderr, err := runScanner(ctx, "grype", pkgRef, "-o", "json", "--quiet")
+	if pre := s.tool.preflight(); pre != nil {
+		return nil, pre
+	}
+
+	// The database is managed by the registry (Registry.Start), never fetched by a scan.
+	env := append(s.tool.env(), "GRYPE_DB_AUTO_UPDATE=false")
+
+	stdout, stderr, err := runScanner(ctx, env, s.tool.command, pkgRef, "-o", "json", "--quiet")
 	if err != nil {
 		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("grype scan failed",
@@ -496,7 +503,7 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 			"ecosystem", ecosystem,
 		)
 
-		return nil, runFailure(ctx, s.Name(), err)
+		return nil, runFailure(ctx, s.Name(), err, stderr)
 	}
 
 	return s.parseGrypeOutput(stdout)

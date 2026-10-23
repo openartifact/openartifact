@@ -9,6 +9,7 @@ import (
 	"errors"
 	"io/fs"
 	"os/exec"
+	"strings"
 )
 
 // errUnsupportedEcosystem marks an ecosystem a scanner has no way to scan.
@@ -39,6 +40,9 @@ const (
 	// FailureUpstream: the vulnerability database could not be reached or
 	// answered with an error.
 	FailureUpstream FailureKind = "upstream_error"
+	// FailureDatabase: the scanner's vulnerability database is missing, not yet
+	// downloaded, unreadable, or cannot be written.
+	FailureDatabase FailureKind = "database_unavailable"
 	// FailureInternal: anything else.
 	FailureInternal FailureKind = "internal"
 )
@@ -68,7 +72,9 @@ func (e *ScanError) Unwrap() error { return e.Err }
 func (e *ScanError) PublicMessage() string {
 	switch e.Kind {
 	case FailureUnavailable:
-		return "scanner is not available on the server"
+		return "scanner is not available on the server (" + CodeScannerUnavailable + "), setup guide: " + DocsURL
+	case FailureDatabase:
+		return "scanner vulnerability database is not ready (" + CodeScannerDatabase + "), setup guide: " + DocsURL
 	case FailureTimeout:
 		return "scan timed out"
 	case FailureCanceled:
@@ -125,8 +131,22 @@ func ctxFailure(scanner string, ctxErr error) *ScanError {
 	return newScanError(scanner, FailureCanceled, ctxErr)
 }
 
+// stderrMentionsDatabase reports whether a scanner's error output blames its
+// vulnerability database (corrupt, unreadable, unwritable cache).
+func stderrMentionsDatabase(stderr string) bool {
+	s := strings.ToLower(stderr)
+
+	for _, marker := range []string{"vulnerability db", "vulnerability database", "db error", "failed to open db", "trivy.db"} {
+		if strings.Contains(s, marker) {
+			return true
+		}
+	}
+
+	return false
+}
+
 // runFailure classifies an error from runScanner for the named scanner.
-func runFailure(ctx context.Context, scanner string, err error) *ScanError {
+func runFailure(ctx context.Context, scanner string, err error, stderr string) *ScanError {
 	if errors.Is(err, ErrScannerOutputTooLarge) {
 		return newScanError(scanner, FailureOutputTooLarge, err)
 	}
@@ -140,6 +160,10 @@ func runFailure(ctx context.Context, scanner string, err error) *ScanError {
 	}
 
 	if _, ok := errors.AsType[*exec.ExitError](err); ok {
+		if stderrMentionsDatabase(stderr) {
+			return newScanError(scanner, FailureDatabase, err)
+		}
+
 		return newScanError(scanner, FailureExecution, err)
 	}
 

@@ -145,3 +145,72 @@ describe('VulnScanPage scan form', () => {
     wrapper.unmount()
   })
 })
+
+describe('VulnScanPage scanner readiness', () => {
+  const SCANNERS = [
+    { name: 'osv', available: true, ready: true, db_state: null, db_updated_at: null, code: null, message: null, docs_url: null },
+    {
+      name: 'trivy',
+      available: false,
+      ready: false,
+      db_state: null,
+      db_updated_at: null,
+      code: 'scanner_unavailable',
+      message: "trivy was not found on the server's PATH: install it or set OPENARTIFACT_TRIVY_PATH.",
+      docs_url: 'https://example.com/docs/scanning',
+    },
+    {
+      name: 'grype',
+      available: true,
+      ready: false,
+      db_state: 'updating',
+      db_updated_at: null,
+      code: 'scanner_db_unavailable',
+      message: 'The vulnerability database is being downloaded: retry in a few minutes.',
+      docs_url: 'javascript:alert(1)',
+    },
+  ]
+
+  async function openForm(scanners: unknown) {
+    const calls = mockSecurityApi(`/api/v1/repositories/${REPO}/vuln/scans`, [CLEAN], (call) =>
+      call.path === `/api/v1/repositories/${REPO}/vuln/scanners` ? { scanners } : {},
+    )
+    const wrapper = mount(VulnScanPage, {
+      global: { plugins: [createPinia()], stubs: { RouterLink: true, PageHeader: PageHeaderStub } },
+      attachTo: document.body,
+    })
+    await selectRepo(wrapper)
+    await wrapper.findAll('button').find((b) => b.text().includes('Scan package'))!.trigger('click')
+    await flushPromises()
+    return { wrapper, calls }
+  }
+
+  const box = (name: string) => document.body.querySelector(`[data-testid="scanner-${name}"]`) as HTMLInputElement
+
+  it('disables scanners that are not ready and explains why, without following a non-https link', async () => {
+    const { wrapper, calls } = await openForm(SCANNERS)
+
+    expect(calls.some((c) => c.method === 'GET' && c.path === `/api/v1/repositories/${REPO}/vuln/scanners`)).toBe(true)
+    expect(box('osv').disabled).toBe(false)
+    expect(box('trivy').disabled).toBe(true)
+    expect(box('grype').disabled).toBe(true)
+
+    const trivyNote = document.body.querySelector('[data-testid="scanner-note-trivy"]')!
+    expect(trivyNote.textContent).toContain('OPENARTIFACT_TRIVY_PATH')
+    expect(trivyNote.querySelector('a')!.getAttribute('href')).toBe('https://example.com/docs/scanning')
+
+    const grypeNote = document.body.querySelector('[data-testid="scanner-note-grype"]')!
+    expect(grypeNote.textContent).toContain('being downloaded')
+    expect(grypeNote.querySelector('a')).toBeNull()
+    wrapper.unmount()
+  })
+
+  it('keeps every scanner selectable when the readiness list is unavailable', async () => {
+    const { wrapper } = await openForm(undefined)
+
+    expect(box('trivy').disabled).toBe(false)
+    expect(box('grype').disabled).toBe(false)
+    expect(document.body.querySelector('[data-testid="scanner-unavailable"]')).toBeNull()
+    wrapper.unmount()
+  })
+})

@@ -86,7 +86,7 @@ func TestRun_Outcomes(t *testing.T) {
 			wantStatus:   StatusPartial,
 			wantVulns:    []string{"CVE-9"},
 			wantFailed:   []string{"grype"},
-			wantPublicIn: []string{"grype: scanner is not available on the server"},
+			wantPublicIn: []string{"grype: scanner is not available on the server (scanner_unavailable)"},
 		},
 		{
 			name: "every scanner fails",
@@ -184,7 +184,7 @@ func TestClassify(t *testing.T) {
 func TestScanError_PublicMessageIsFixedPerKind(t *testing.T) {
 	kinds := []FailureKind{
 		FailureUnavailable, FailureTimeout, FailureCanceled, FailureExecution, FailureInvalidOutput,
-		FailureOutputTooLarge, FailureUnsupported, FailureUpstream, FailureInternal,
+		FailureOutputTooLarge, FailureUnsupported, FailureUpstream, FailureDatabase, FailureInternal,
 	}
 
 	seen := map[string]FailureKind{}
@@ -193,7 +193,9 @@ func TestScanError_PublicMessageIsFixedPerKind(t *testing.T) {
 		se := &ScanError{Scanner: "trivy", Kind: k, Err: errors.New("/home/runner/.cache stderr: panic")}
 
 		msg := se.PublicMessage()
-		if msg == "" || strings.ContainsAny(msg, "/:") {
+		// Only the two setup failures carry a code and the docs link.
+		linked := k == FailureUnavailable || k == FailureDatabase
+		if msg == "" || (!linked && strings.ContainsAny(msg, "/:")) || (linked && !strings.Contains(msg, DocsURL)) {
 			t.Errorf("%s: PublicMessage %q must be a plain fixed sentence", k, msg)
 		}
 

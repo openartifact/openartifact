@@ -13,6 +13,8 @@ DOCKER_IMAGE=openartifact:latest
 # docker-build runtime base: dhi (needs `docker login dhi.io`) or distroless
 # (anonymous). docker-up reads OPENARTIFACT_RUNTIME from the environment or docker/.env.
 RUNTIME?=dhi
+# docker-build vulnerability scanners to bundle: none, trivy, grype or all.
+SCANNERS?=none
 DOCKER_CONTAINER=openartifact
 
 # Build version metadata injected via -ldflags at link time.
@@ -141,7 +143,7 @@ deps:
 
 docker-build:
 	@echo "Building Docker image: $(DOCKER_IMAGE)"
-	docker build --build-arg RUNTIME=$(RUNTIME) --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t $(DOCKER_IMAGE) -f docker/Dockerfile .
+	docker build --build-arg RUNTIME=$(RUNTIME) --build-arg SCANNERS=$(SCANNERS) --build-arg VERSION=$(VERSION) --build-arg COMMIT=$(COMMIT) --build-arg BUILD_TIME=$(BUILD_TIME) -t $(DOCKER_IMAGE) -f docker/Dockerfile .
 	@echo "Docker image built: $(DOCKER_IMAGE)"
 
 docker-run: docker-build

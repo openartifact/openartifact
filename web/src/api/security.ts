@@ -7,6 +7,7 @@ import type {
   LicensePolicyViolation,
   LicenseScanResult,
   LicenseScanRunResult,
+  VulnScanner as VulnScannerInfo,
   VulnScanRequest,
   VulnScanResult,
 } from './generated/types.gen'
@@ -32,6 +33,18 @@ export type VulnScanner = 'osv' | 'trivy' | 'grype'
 
 /** The scanners a vulnerability scan can run, in the order they are offered. */
 export const VULN_SCANNERS: readonly VulnScanner[] = ['osv', 'trivy', 'grype']
+
+/**
+ * Whether a scanner can run on the server: `ready` is false when its binary is
+ * missing or its vulnerability database is not there yet, and `message` /
+ * `docs_url` then say how to fix it.
+ */
+export type VulnScannerStatus = VulnScannerInfo
+
+export async function listVulnScanners(repo: string): Promise<VulnScannerStatus[]> {
+  const res = await request<{ scanners?: VulnScannerStatus[] }>(`${repoBase(repo)}/vuln/scanners`)
+  return res.scanners ?? []
+}
 
 /**
  * A vulnerability scan row. `scan_status` is pending | scanning | completed |

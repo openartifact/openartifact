@@ -131,6 +131,23 @@ Tuning of the background mover; tiers and policies are managed through the admin
 | `OPENARTIFACT_TIERING_ACCESS_FLUSH_INTERVAL` | `tiering.accessFlushInterval` | `30s` | How often recorded downloads are written to the database |
 | `OPENARTIFACT_TIERING_REFRESH_INTERVAL` | `tiering.refreshInterval` | `30s` | How often each replica reloads the tier list |
 
+### Vulnerability scanners (`scanners`)
+
+Settings for the `trivy` and `grype` backends of vulnerability scans; `osv` needs none. The binaries are not in the release image; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) for installation, egress, offline mode and mirrors.
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_SCANNER_CACHE_DIR` | `scanners.cacheDir` | `<user cache dir>/openartifact/scanners` (the image sets `/var/cache/openartifact/scanners`) | Absolute directory for the scanner databases (`trivy/` and `grype/` inside); must be writable by the server unless offline |
+| `OPENARTIFACT_SCANNER_UPDATE_INTERVAL` | `scanners.updateInterval` | `6h` | Refresh interval of the background database download; at least `1h`, or `0` to download once and stop |
+| `OPENARTIFACT_SCANNER_OFFLINE` | `scanners.offline` | `false` | Never download databases; they must already be in the cache directory |
+| `OPENARTIFACT_TRIVY_PATH` | `scanners.trivy.path` | `trivy` (from `PATH`) | Command name or absolute path of the Trivy binary |
+| `OPENARTIFACT_TRIVY_DB_REPOSITORY` | `scanners.trivy.dbRepository` | Trivy's built-in list (`mirror.gcr.io/aquasec/trivy-db:2`, then `ghcr.io/aquasecurity/trivy-db:2`) | OCI repository to download `trivy-db` from (a mirror) |
+| `OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY` | `scanners.trivy.javaDbRepository` | empty | When set, the Java index database is downloaded from this repository too; empty skips it |
+| `OPENARTIFACT_GRYPE_PATH` | `scanners.grype.path` | `grype` (from `PATH`) | Command name or absolute path of the Grype binary |
+| `OPENARTIFACT_GRYPE_DB_URL` | `scanners.grype.dbUrl` | Grype's built-in | `http(s)` URL of a Grype database `listing.json` (a mirror) |
+
+A path must be a bare command name or absolute (no relative paths), a repository must not contain whitespace or start with `-`, and the server refuses to start on an invalid value. The cache directory is created when the first download starts. The startup log reports each resolved binary and its database state.
+
 ### Storage (`storage`)
 
 Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `garage` and `seaweedfs` reuse the S3 client with path-style addressing forced on. Details: [storage](../operations/storage.md).
