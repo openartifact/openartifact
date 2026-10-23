@@ -85,6 +85,12 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+Migrations `070` and `071`.
+
+- Federated repositories ([federation](../operations/federation.md)): migration `070` adds the `federation_*` tables and the `repositories.federated` column, and `071` adds capture triggers on the format unit tables. They do nothing until a repository is federated. New `federation.*` configuration keys (`OPENARTIFACT_FEDERATION_*`, off by default), new admin endpoints under `/api/v1/repositories/{name}/federation` and new peer endpoints under `/federation/v1`. Nothing to do on upgrade.
+
 ### 0.8.1
 
 Migration `066`.

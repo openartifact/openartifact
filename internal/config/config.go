@@ -39,6 +39,7 @@ var (
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
+	errFederationSettings       = errors.New("federation.pollInterval, batchSize, maxBackoff and requestTimeout must be positive, tombstoneRetention must not be negative")
 	errBlobDeletionBatch        = errors.New("blobDeletion.sweepBatch must be at least 1")
 	errBlobDeletionNegative     = errors.New("blobDeletion.grace must not be negative")
 	errBackupLeaseTTL           = errors.New("backup.leaseTtl must be positive")
@@ -70,6 +71,7 @@ type Config struct {
 	BlobDeletion BlobDeletionConfig `yaml:"blobDeletion"`
 	Tiering      TieringConfig      `yaml:"tiering"`
 	Projects     ProjectsConfig     `yaml:"projects"`
+	Federation   FederationConfig   `yaml:"federation"`
 	// Telemetry configures OpenTelemetry export (off by default), see
 	// docs/operations/monitoring.md.
 	Telemetry telemetry.Config `yaml:"telemetry"`
@@ -130,6 +132,27 @@ type TrashConfig struct {
 	// PurgeInterval is the pause between purge passes. Zero or negative
 	// disables the schedule: nothing expires until an admin purges by hand.
 	PurgeInterval time.Duration `yaml:"purgeInterval"`
+}
+
+// FederationConfig tunes federated repositories (see docs/operations/federation.md).
+// Repositories are federated individually through the admin API; this only
+// switches the pull workers and the peer endpoints on and tunes them.
+type FederationConfig struct {
+	// Enabled starts the pull workers and mounts the /federation/v1 peer
+	// endpoints. Off by default.
+	Enabled bool `yaml:"enabled"`
+	// PollInterval is the pause between pulls of one peer that is caught up.
+	PollInterval time.Duration `yaml:"pollInterval"`
+	// BatchSize is how many log entries one pull page carries.
+	BatchSize int `yaml:"batchSize"`
+	// MaxBackoff caps the retry delay of an unreachable or failing peer.
+	MaxBackoff time.Duration `yaml:"maxBackoff"`
+	// RequestTimeout bounds one request to a peer (blob transfers are bounded
+	// by it per request, not in total).
+	RequestTimeout time.Duration `yaml:"requestTimeout"`
+	// TombstoneRetention is how long the tombstone of a deleted unit is kept
+	// in the log; a member that stays offline longer must be resynced.
+	TombstoneRetention time.Duration `yaml:"tombstoneRetention"`
 }
 
 // TieringConfig tunes the storage tier mover (see docs/operations/storage-tiering.md).
@@ -432,6 +455,13 @@ func defaultConfig() *Config {
 			RetentionDays: 7,
 			PurgeInterval: 15 * time.Minute,
 		},
+		Federation: FederationConfig{
+			PollInterval:       30 * time.Second,
+			BatchSize:          200,
+			MaxBackoff:         15 * time.Minute,
+			RequestTimeout:     30 * time.Second,
+			TombstoneRetention: 720 * time.Hour,
+		},
 		Tiering: TieringConfig{
 			Enabled:             true,
 			Interval:            5 * time.Minute,
@@ -603,6 +633,14 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
 	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
 
+	// Federation
+	overrideBool(&cfg.Federation.Enabled, "OPENARTIFACT_FEDERATION_ENABLED")
+	overrideDuration(&cfg.Federation.PollInterval, "OPENARTIFACT_FEDERATION_POLL_INTERVAL")
+	overrideInt(&cfg.Federation.BatchSize, "OPENARTIFACT_FEDERATION_BATCH_SIZE")
+	overrideDuration(&cfg.Federation.MaxBackoff, "OPENARTIFACT_FEDERATION_MAX_BACKOFF")
+	overrideDuration(&cfg.Federation.RequestTimeout, "OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT")
+	overrideDuration(&cfg.Federation.TombstoneRetention, "OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION")
+
 	// Storage tiering
 	overrideBool(&cfg.Tiering.Enabled, "OPENARTIFACT_TIERING_ENABLED")
 	overrideDuration(&cfg.Tiering.Interval, "OPENARTIFACT_TIERING_INTERVAL")
@@ -696,6 +734,10 @@ func (c *Config) Validate() error {
 		return errNegativeTrashRetention
 	}
 
+	if err := c.validateFederation(); err != nil {
+		return err
+	}
+
 	if err := c.validateBackgroundServices(); err != nil {
 		return err
 	}
@@ -745,6 +787,16 @@ func (c *Config) validateTiering() error {
 	// advisory lock) that database.maxOpenConns does not account for.
 	if t.Enabled && c.Database.MaxOpenConns > 0 && c.Database.MaxOpenConns < minTieringOpenConns {
 		return errTieringPoolSize
+	}
+
+	return nil
+}
+
+// validateFederation checks the federation settings.
+func (c *Config) validateFederation() error {
+	f := c.Federation
+	if f.PollInterval <= 0 || f.BatchSize < 1 || f.MaxBackoff <= 0 || f.RequestTimeout <= 0 || f.TombstoneRetention < 0 {
+		return errFederationSettings
 	}
 
 	return nil

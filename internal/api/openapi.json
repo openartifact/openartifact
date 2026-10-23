@@ -694,6 +694,10 @@
           "sign_packages": {
             "type": "boolean",
             "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
+          },
+          "federated": {
+            "type": "boolean",
+            "description": "True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation."
           }
         },
         "required": [
@@ -3853,6 +3857,154 @@
           "limit"
         ]
       },
+      "FederationPeer": {
+        "type": "object",
+        "description": "A remote instance this repository pulls changes from. Secrets (token, client key) are never returned; has_ca_pem and has_client_cert tell whether TLS material is stored.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "base_url": { "type": "string", "description": "Base URL of the peer instance." },
+          "enabled": { "type": "boolean", "description": "A disabled peer is not polled." },
+          "state": {
+            "type": "string",
+            "enum": ["ok", "lagging", "error", "pending", "disabled"],
+            "description": "ok: caught up. lagging: behind the peer's head. error: the last attempt failed. pending: never synced yet. disabled: not polled."
+          },
+          "cursor_seq": { "type": "integer", "format": "int64", "description": "Last peer log sequence applied locally." },
+          "remote_head_seq": { "type": "integer", "format": "int64", "description": "Peer's log head sequence as of the last successful contact." },
+          "backlog_units": { "type": "integer", "format": "int64", "description": "Logged units still to apply." },
+          "lag_seconds": { "type": "number", "description": "Age in seconds of the oldest unapplied change; 0 when caught up." },
+          "last_attempt_at": { "type": "string", "format": "date-time" },
+          "last_success_at": { "type": "string", "format": "date-time" },
+          "next_attempt_at": { "type": "string", "format": "date-time" },
+          "last_error": { "type": "string", "description": "Error of the last failed attempt; empty when the last attempt succeeded." },
+          "error_count": { "type": "integer", "description": "Consecutive failed attempts." },
+          "applied_total": { "type": "integer", "format": "int64", "description": "Units applied from this peer since the peer was added." },
+          "conflicts_total": { "type": "integer", "format": "int64", "description": "Units that conflicted with local content and were resolved by the merge rules." },
+          "deferred_units": { "type": "integer", "description": "Units waiting for a dependency or a retry." },
+          "resync_requested": { "type": "boolean", "description": "A resync is queued and not yet started." },
+          "has_ca_pem": { "type": "boolean" },
+          "has_client_cert": { "type": "boolean" },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": [
+          "id",
+          "name",
+          "base_url",
+          "enabled",
+          "state",
+          "cursor_seq",
+          "remote_head_seq",
+          "backlog_units",
+          "lag_seconds",
+          "last_error",
+          "error_count",
+          "applied_total",
+          "conflicts_total",
+          "deferred_units",
+          "resync_requested",
+          "has_ca_pem",
+          "has_client_cert",
+          "created_at"
+        ]
+      },
+      "FederationToken": {
+        "type": "object",
+        "description": "An inbound token a peer presents to pull this repository's log. The secret is shown once at creation and never again.",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "created_at": { "type": "string", "format": "date-time" },
+          "last_used_at": { "type": "string", "format": "date-time" },
+          "revoked_at": { "type": "string", "format": "date-time", "description": "Set once the token is revoked." }
+        },
+        "required": ["id", "name", "created_at"]
+      },
+      "FederationTokenCreated": {
+        "type": "object",
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" },
+          "token": { "type": "string", "description": "Clear-text token, returned only by this response." },
+          "created_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["id", "name", "token", "created_at"]
+      },
+      "FederationDeferredUnit": {
+        "type": "object",
+        "description": "A unit that could not be applied yet and is retried.",
+        "properties": {
+          "unit_key": { "type": "string" },
+          "seq": { "type": "integer", "format": "int64", "description": "Peer log sequence of the unit." },
+          "attempts": { "type": "integer" },
+          "reason": { "type": "string", "description": "Why it was deferred (for example a missing dependency)." },
+          "last_error": { "type": "string" },
+          "first_seen_at": { "type": "string", "format": "date-time" },
+          "next_attempt_at": { "type": "string", "format": "date-time" }
+        },
+        "required": ["unit_key", "seq", "attempts", "reason", "last_error", "first_seen_at", "next_attempt_at"]
+      },
+      "FederationDeferredList": {
+        "type": "object",
+        "properties": {
+          "items": { "type": "array", "items": { "$ref": "#/components/schemas/FederationDeferredUnit" } }
+        },
+        "required": ["items"]
+      },
+      "FederationStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean", "description": "Federation is on: the repository keeps a change log." },
+          "supported": { "type": "boolean", "description": "The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget)." },
+          "instance_id": { "type": "string", "description": "Identifier of this instance." },
+          "log_id": { "type": "string", "description": "Identifier of this repository's log; changes when federation is disabled and enabled again." },
+          "head_seq": { "type": "integer", "format": "int64", "description": "Highest sequence in the log." },
+          "units": { "type": "integer", "format": "int64", "description": "Logged units." },
+          "tombstones": { "type": "integer", "format": "int64", "description": "Logged deletions." },
+          "peers": { "type": "array", "items": { "$ref": "#/components/schemas/FederationPeer" } },
+          "tokens": { "type": "array", "items": { "$ref": "#/components/schemas/FederationToken" } }
+        },
+        "required": ["enabled", "supported", "instance_id", "log_id", "head_seq", "units", "tombstones", "peers", "tokens"]
+      },
+      "UpdateFederationRequest": {
+        "type": "object",
+        "properties": {
+          "enabled": { "type": "boolean", "description": "true backfills the log from the existing content; false removes the log and all peers." }
+        },
+        "required": ["enabled"]
+      },
+      "CreateFederationPeerRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" },
+          "base_url": { "type": "string", "description": "Base URL of the peer instance; validated against the outbound (SSRF) policy." },
+          "token": { "type": "string", "description": "Token the peer issued for this repository." },
+          "ca_pem": { "type": "string", "description": "PEM CA bundle to trust for the peer's TLS certificate." },
+          "client_cert": { "type": "string", "description": "PEM client certificate for mutual TLS." },
+          "client_key": { "type": "string", "description": "PEM private key of the client certificate." }
+        },
+        "required": ["name", "base_url", "token"]
+      },
+      "UpdateFederationPeerRequest": {
+        "type": "object",
+        "description": "Absent fields stay unchanged.",
+        "properties": {
+          "name": { "type": "string" },
+          "base_url": { "type": "string" },
+          "token": { "type": "string" },
+          "ca_pem": { "type": "string" },
+          "client_cert": { "type": "string" },
+          "client_key": { "type": "string" },
+          "enabled": { "type": "boolean" }
+        }
+      },
+      "CreateFederationTokenRequest": {
+        "type": "object",
+        "properties": {
+          "name": { "type": "string" }
+        },
+        "required": ["name"]
+      },
       "PackageUploadResult": {
         "type": "object",
         "properties": {
@@ -4863,6 +5015,10 @@
                   "sign_packages": {
                     "type": "boolean",
                     "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
+                  },
+                  "federated": {
+                    "type": "boolean",
+                    "description": "Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true)."
                   }
                 },
                 "required": [
@@ -11502,6 +11658,10 @@
                   "sign_packages": {
                     "type": "boolean",
                     "description": "Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed."
+                  },
+                  "federated": {
+                    "type": "boolean",
+                    "description": "Enable federation at creation. Only valid for hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget (400 otherwise when true)."
                   }
                 }
               }
@@ -15817,6 +15977,225 @@
           "403": {
             "description": "Delete permission on the repository required (restoring a repository needs an admin)"
           }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/federation": {
+      "get": {
+        "summary": "Get a repository's federation status",
+        "description": "Federation health of one repository: whether it is enabled, the log position, and every peer (with its state, lag and backlog) and inbound token. Requires the repository-scoped manage permission (global administrators have it) or the maintainer or owner role in the repository's project. `supported` is false for proxy and group repositories and for formats without federation.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "responses": {
+          "200": {
+            "description": "Federation status",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationStatus" } } }
+          },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository not found" }
+        }
+      },
+      "put": {
+        "summary": "Enable or disable federation",
+        "description": "Enabling backfills the change log from the repository's existing content. Disabling removes the log and all peers. Idempotent. Same permission as the status read.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateFederationRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "The new federation status",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationStatus" } } }
+          },
+          "400": {
+            "description": "Invalid request, or the repository is not hosted or its format has no federation (error code validation_failed)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository not found" }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/federation/peers": {
+      "post": {
+        "summary": "Add a federation peer",
+        "description": "Registers a remote instance to pull this repository's changes from. The base URL is validated against the outbound (SSRF) policy. Requires federation to be enabled (409 otherwise) and the repository-scoped manage permission.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateFederationPeerRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Peer added",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
+          },
+          "400": {
+            "description": "Invalid request (error code validation_failed)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository not found" },
+          "409": {
+            "description": "Federation is not enabled, or a peer with this name already exists",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/federation/peers/{id}": {
+      "patch": {
+        "summary": "Update a federation peer",
+        "description": "Changes a peer's name, URL, credentials or enabled flag; absent fields stay unchanged. Same permission as the status read.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateFederationPeerRequest" } } }
+        },
+        "responses": {
+          "200": {
+            "description": "The updated peer",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
+          },
+          "400": {
+            "description": "Invalid request (error code validation_failed)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository or peer not found" },
+          "409": {
+            "description": "A peer with this name already exists",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a federation peer",
+        "description": "Stops pulling from the peer and forgets its cursor and deferred units. Content already applied stays. Same permission as the status read.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+        ],
+        "responses": {
+          "204": { "description": "Peer deleted" },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository or peer not found" }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/federation/peers/{id}/resync": {
+      "post": {
+        "summary": "Resync a federation peer",
+        "description": "Resets the peer's cursor so the next pass re-reads its whole log and merges it idempotently. Returns at once; the peer reports resync_requested until the pass starts. Same permission as the status read.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+        ],
+        "responses": {
+          "202": {
+            "description": "Resync queued",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationPeer" } } }
+          },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository or peer not found" }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/federation/peers/{id}/deferred": {
+      "get": {
+        "summary": "List a peer's deferred units",
+        "description": "Units pulled from the peer that could not be applied yet (for example a dependency has not arrived) and are being retried. Same permission as the status read.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Peer id." }
+        ],
+        "responses": {
+          "200": {
+            "description": "The deferred units",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationDeferredList" } } }
+          },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository or peer not found" }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/federation/tokens": {
+      "post": {
+        "summary": "Create an inbound federation token",
+        "description": "Mints a token a peer presents to pull this repository's log. The clear-text token is returned only in this response. Requires federation to be enabled (409 otherwise) and the repository-scoped manage permission.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": { "application/json": { "schema": { "$ref": "#/components/schemas/CreateFederationTokenRequest" } } }
+        },
+        "responses": {
+          "201": {
+            "description": "Token created",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/FederationTokenCreated" } } }
+          },
+          "400": {
+            "description": "Invalid request (error code validation_failed)",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository not found" },
+          "409": {
+            "description": "Federation is not enabled",
+            "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Error" } } }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/federation/tokens/{id}": {
+      "delete": {
+        "summary": "Revoke an inbound federation token",
+        "description": "The token stops working at once; it stays listed with revoked_at set. Same permission as the status read.",
+        "tags": [
+          "Federation"
+        ],
+        "parameters": [
+          { "name": "name", "in": "path", "required": true, "schema": { "type": "string" } },
+          { "name": "id", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" }, "description": "Token id." }
+        ],
+        "responses": {
+          "204": { "description": "Token revoked" },
+          "403": { "description": "Manage permission on the repository required" },
+          "404": { "description": "Repository or token not found" }
         }
       }
     },

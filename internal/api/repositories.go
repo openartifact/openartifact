@@ -30,6 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/federation"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -99,6 +100,9 @@ type RepositoriesHandler struct {
 	blobStore storage.BlobStore
 	publisher webhook.Publisher
 	groupMeta GroupMetadataNotifier
+	// fed enables creating federated repositories (nil: federation is not
+	// available on this server).
+	fed *federation.Store
 
 	// gc tracks background orphan-blob collections started by repository deletes.
 	gc sync.WaitGroup
@@ -111,6 +115,13 @@ func NewRepositoriesHandler(db database.Database, log *logger.Logger, evaluator 
 // WithBlobStore enables the package download endpoint.
 func (h *RepositoriesHandler) WithBlobStore(store storage.BlobStore) *RepositoriesHandler {
 	h.blobStore = store
+
+	return h
+}
+
+// WithFederation lets repositories be created federated (federation.enabled).
+func (h *RepositoriesHandler) WithFederation(store *federation.Store) *RepositoriesHandler {
+	h.fed = store
 
 	return h
 }
@@ -591,6 +602,9 @@ type createRepositoryBody struct {
 	MergeProxyVersions bool `json:"merge_proxy_versions"`
 	// SignPackages (hosted rpm only) signs uploads with the active GPG key.
 	SignPackages bool `json:"sign_packages"`
+	// Federated (hosted repositories of a federation-capable format) starts the
+	// repository's change log so it can replicate with peer instances.
+	Federated bool `json:"federated"`
 }
 
 // handleCreate is the admin-only POST /api/v1/repositories.
@@ -626,6 +640,25 @@ func (h *RepositoriesHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 // types, name prefix, public, repository cap, readable group members) as that
 // non-admin caller; the admin route passes nil.
 //
+// checkFederated validates the federated flag of a create request: only an
+// administrator (not a delegated project member) may start a federated
+// repository, it must be hosted and of a capable format, and federation must be
+// on for the server. It returns the message and status of the refusal.
+func (h *RepositoriesHandler) checkFederated(body *createRepositoryBody, repoType string, actor *auth.Principal) (string, int) {
+	switch {
+	case !body.Federated:
+		return "", 0
+	case actor != nil:
+		return "only an administrator can create a federated repository", http.StatusForbidden
+	case repoType != repotype.Hosted || !repotype.FederationSupported(body.Format):
+		return "federated is only valid for hosted repositories of a format with federation support: " + repotype.FederationFormats(), http.StatusBadRequest
+	case h.fed == nil:
+		return "federation is turned off on this server (federation.enabled / OPENARTIFACT_FEDERATION_ENABLED)", http.StatusBadRequest
+	}
+
+	return "", 0
+}
+
 //nolint:gocyclo,cyclop // validation-heavy request handler
 func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Request, bodyPtr *createRepositoryBody, project *models.Project, actor *auth.Principal) {
 	body := *bodyPtr
@@ -672,6 +705,11 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 
 	if body.SignPackages && (repoType != "hosted" || body.Format != "rpm") {
 		writeError(w, http.StatusBadRequest, "validation_failed", errSignPackagesRPMOnly)
+		return
+	}
+
+	if msg, status := h.checkFederated(&body, repoType, actor); status != 0 {
+		writeError(w, status, "validation_failed", msg)
 		return
 	}
 
@@ -816,6 +854,18 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
+	}
+
+	if body.Federated {
+		if err := h.fed.Enable(r.Context(), repo.ID, repo.Format); err != nil {
+			h.log.Errorw("create repository: enable federation", "repository", repo.Name, "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error",
+				"the repository was created but federation could not be enabled; enable it from the repository's federation settings")
+
+			return
+		}
+
+		repo.Federated = true
 	}
 
 	h.metadataChanged(repo)
@@ -1734,6 +1784,7 @@ func RepositoryToResponse(r *models.Repository) responses.RepositoryResponse {
 		ImmutableReleases:  r.ImmutableReleases,
 		MergeProxyVersions: r.MergeProxyVersions,
 		SignPackages:       r.SignPackages,
+		Federated:          r.Federated,
 	}
 
 	if r.RepoType == repotype.Proxy {

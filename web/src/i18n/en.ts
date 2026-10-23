@@ -13,6 +13,7 @@ import { enAuth } from './en.auth'
 import { enProjects } from './en.projects'
 import { enTiering } from './en.tiering'
 import { enBundles } from './en.bundles'
+import { enFederation } from './en.federation'
 
 const base = {
   // App / shell
@@ -442,7 +443,7 @@ const base = {
   'settings.tokens.expires': 'Expires',
 } as const
 
-const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles } satisfies Record<string, string>
+const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation } satisfies Record<string, string>
 
 export type TranslationKey = keyof typeof catalog
 

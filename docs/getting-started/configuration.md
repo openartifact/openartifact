@@ -117,6 +117,17 @@ PostgreSQL is the only supported database.
 | `OPENARTIFACT_TRASH_RETENTION` | `trash.retentionDays` | `7` | Days a deleted artifact, version or repository stays restorable before the purge worker removes it; repositories can override it (`trash_retention_days`); `0` disables the trash (deletes are immediate and permanent). Must not be negative. See [Trash](../operations/trash.md) |
 | `OPENARTIFACT_TRASH_PURGE_INTERVAL` | `trash.purgeInterval` | `15m` | Pause between purge passes; `0` disables the schedule (admins can still purge by hand) |
 
+### Federation (`federation`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_FEDERATION_ENABLED` | `federation.enabled` | `false` | Master switch of the pull workers and of the `/federation/v1` peer endpoints. Repositories are federated individually. See [Federation](../operations/federation.md) |
+| `OPENARTIFACT_FEDERATION_POLL_INTERVAL` | `federation.pollInterval` | `30s` | Pause between pulls of one peer |
+| `OPENARTIFACT_FEDERATION_BATCH_SIZE` | `federation.batchSize` | `200` | Log entries requested per `/log` call |
+| `OPENARTIFACT_FEDERATION_MAX_BACKOFF` | `federation.maxBackoff` | `15m` | Ceiling of the retry backoff for a failing peer |
+| `OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT` | `federation.requestTimeout` | `30s` | Timeout of one peer request (blob transfers use an idle timeout instead) |
+| `OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION` | `federation.tombstoneRetention` | `720h` | How long delete tombstones are kept; set it above the longest partition a member must survive |
+
 ### Storage tiers (`tiering`)
 
 Tuning of the background mover; tiers and policies are managed through the admin API ([storage tiers](../operations/storage-tiering.md#configuration)).

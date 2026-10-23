@@ -7,6 +7,7 @@ import { ALL_FORMATS } from '../formats'
 import {
   allowedFormats,
   coerceFormat,
+  federationAvailable,
   formatTtl,
   isFormatAllowed,
   upstreamUrlPlaceholder,
@@ -83,5 +84,26 @@ describe('formatTtl', () => {
     expect(formatTtl(0)).toBe(unit(0, 'second'))
     expect(formatTtl(undefined)).toBe(unit(0, 'second'))
     expect(formatTtl(-5)).toBe(unit(0, 'second'))
+  })
+})
+
+describe('federationAvailable', () => {
+  it('is true for hosted repositories of the nine capable formats', () => {
+    for (const f of ['raw', 'maven', 'npm', 'docker', 'helm', 'pypi', 'cargo', 'go', 'nuget']) {
+      expect(federationAvailable('hosted', f)).toBe(true)
+    }
+  })
+  it('treats a missing type as hosted', () => {
+    expect(federationAvailable(undefined, 'npm')).toBe(true)
+  })
+  it('is false for proxy and group repositories', () => {
+    expect(federationAvailable('proxy', 'npm')).toBe(false)
+    expect(federationAvailable('group', 'maven')).toBe(false)
+  })
+  it('is false for formats without a federation codec', () => {
+    for (const f of ['deb', 'rpm', 'rubygems', 'conda', 'conan', 'ivy', 'sbt']) {
+      expect(federationAvailable('hosted', f)).toBe(false)
+    }
+    expect(federationAvailable('hosted', undefined)).toBe(false)
   })
 })

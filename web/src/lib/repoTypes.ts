@@ -14,6 +14,20 @@ export type RepoType = 'hosted' | 'proxy' | 'group'
 const PROXY_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
 const GROUP_FORMATS: readonly FormatId[] = ['cargo', 'deb', 'docker', 'go', 'helm', 'maven', 'npm', 'nuget', 'pypi', 'raw', 'rpm']
 
+// Formats a hosted repository can federate. Mirrors FederationSupported in
+// internal/repotype; the server stays authoritative.
+const FEDERATION_FORMATS: readonly string[] = ['raw', 'maven', 'npm', 'docker', 'helm', 'pypi', 'cargo', 'go', 'nuget']
+
+/** True when the format has a federation codec (regardless of repository type). */
+export function isFederationFormat(format: string | null | undefined): boolean {
+  return format != null && FEDERATION_FORMATS.includes(format)
+}
+
+/** True when a repository of this type and format can be federated: hosted and a capable format. */
+export function federationAvailable(type: RepoType | null | undefined, format: string | null | undefined): boolean {
+  return (type ?? 'hosted') === 'hosted' && isFederationFormat(format)
+}
+
 /** Docker, pypi, cargo, go and nuget proxies default to Docker Hub / pypi.org / crates.io / proxy.golang.org / nuget.org; every other proxy needs an upstream URL. */
 export function upstreamUrlRequired(format: FormatId): boolean {
   return format !== 'docker' && format !== 'pypi' && format !== 'cargo' && format !== 'go' && format !== 'nuget'

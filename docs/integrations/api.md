@@ -123,6 +123,7 @@ Out-of-range values are clamped rather than rejected. The trash lists (`/trash`,
 | `immutable_releases` | bool | When `true`, deleting or overwriting a released version answers `409` unless an admin passes `?force=true` ([per-format definition](../operations/trash.md#immutable-releases)) |
 | `merge_proxy_versions` | bool | Group repositories only, default `false`; global admins only (`403` for others). By default hosted members win a package name and proxy versions of the same name are hidden; `true` merges them ([semantics](../repositories/hosted-proxy-group.md#hosted-members-win-a-package-name)) |
 | `sign_packages` | bool | Hosted `rpm` repositories only, default `false` (`400` otherwise when `true`). When `true`, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed |
+| `federated` | bool | Hosted repositories of a federation-capable format only, default `false`; global admins only. Starts the replication log ([federation](../operations/federation.md)); `400` when federation is off on the server or the repository is not eligible |
 
 `DELETE /api/v1/repository/{name}` requires the repository name as confirmation, either as a query parameter or a JSON body; without it the answer is `400 confirmation_required`:
 

@@ -94,6 +94,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="activeTab === 'cleanup' && repoAdmin">
         <RepoCleanupTab :repo-name="repoName" />
       </div>
+      <div v-else-if="activeTab === 'federation' && repoAdmin">
+        <RepoFederationTab :repo="repo" @toggled="(enabled) => (repo = { ...repo!, federated: enabled })" />
+      </div>
       <div v-else-if="activeTab === 'configuration' && repoAdmin">
         <RepoSettingsTab :repo="repo" @saved="(r) => (repo = r)" />
       </div>
@@ -290,12 +293,14 @@ import PackageUploadZone from '../components/PackageUploadZone.vue'
 import Pagination from '../components/Pagination.vue'
 import RepoDeleteDialog from '../components/RepoDeleteDialog.vue'
 import RepoCleanupTab from './RepoCleanupTab.vue'
+import RepoFederationTab from './RepoFederationTab.vue'
 import RepoSettingsTab from './RepoSettingsTab.vue'
 import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import { repoBaseUrl } from '../lib/installCommands'
 import { formatDate } from '../lib/datetime'
+import { showsFederation } from '../lib/federation'
 import { formatTtl } from '../lib/repoTypes'
 import { supportsPackageDelete } from '../lib/formats'
 import {
@@ -416,6 +421,7 @@ const tabs = computed(() => {
       { id: 'configuration', label: t('repoDetail.tab.configuration') },
       { id: 'cleanup', label: t('repoDetail.tab.cleanup') },
     )
+    if (repo.value && showsFederation(repo.value)) list.push({ id: 'federation', label: t('federation.tab') })
   }
   return list
 })

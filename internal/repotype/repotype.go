@@ -69,3 +69,18 @@ func ProxyFormats() string { return "cargo, deb, docker, go, helm, maven, npm, n
 
 // GroupFormats lists the group-capable formats for error messages.
 func GroupFormats() string { return "cargo, deb, docker, go, helm, maven, npm, nuget, pypi, raw, rpm" }
+
+// FederationSupported reports whether hosted repositories of format can be
+// federated (docs/design/federation.md): the formats whose units the
+// federation codecs (internal/federation) replicate.
+func FederationSupported(format string) bool {
+	switch format {
+	case "raw", "maven", "npm", "docker", "helm", "pypi", "cargo", "go", "nuget":
+		return true
+	}
+
+	return false
+}
+
+// FederationFormats lists the federation-capable formats for error messages.
+func FederationFormats() string { return "cargo, docker, go, helm, maven, npm, nuget, pypi, raw" }

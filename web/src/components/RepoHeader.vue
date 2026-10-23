@@ -21,6 +21,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <EyeSlashIcon v-else class="w-3.5 h-3.5" aria-hidden="true" />
           {{ repo.public ? t('repos.public') : t('repos.private') }}
         </span>
+        <span
+          v-if="repo.federated"
+          class="inline-flex items-center gap-1 rounded-md bg-surface-hover px-2 py-0.5 text-xs font-medium text-muted"
+          :title="t('federation.badgeTitle')"
+          data-testid="federated-badge"
+        >
+          <ArrowsRightLeftIcon class="w-3 h-3" aria-hidden="true" />
+          {{ t('federation.badge') }}
+        </span>
       </template>
       <template v-if="$slots.actions" #actions>
         <slot name="actions" />
@@ -33,16 +42,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
+import { ArrowsRightLeftIcon, EyeIcon, EyeSlashIcon } from '@heroicons/vue/24/outline'
 import PageHeader from './PageHeader.vue'
 import SectionTabs, { type SectionTab } from './SectionTabs.vue'
 import FormatBadge from './FormatBadge.vue'
 import type { Repository } from '../api/repositories'
 import type { Crumb } from '../lib/crumbs'
+import { showsFederation } from '../lib/federation'
 import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 
-export type RepoSection = 'main' | 'browse' | 'graph' | 'trash' | 'configuration' | 'cleanup'
+export type RepoSection = 'main' | 'browse' | 'graph' | 'trash' | 'configuration' | 'cleanup' | 'federation'
 
 const props = defineProps<{
   name: string
@@ -81,6 +91,9 @@ const sections = computed(() => {
       { id: 'configuration', label: t('repoDetail.tab.configuration'), to: { path: base, query: { tab: 'configuration' } } },
       { id: 'cleanup', label: t('repoDetail.tab.cleanup'), to: { path: base, query: { tab: 'cleanup' } } },
     )
+    if (props.repo && showsFederation(props.repo)) {
+      list.push({ id: 'federation', label: t('federation.tab'), to: { path: base, query: { tab: 'federation' } } })
+    }
   }
   return list
 })

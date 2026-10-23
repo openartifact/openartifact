@@ -112,6 +112,8 @@ type RepositoryResponse struct {
 	MergeProxyVersions bool `json:"merge_proxy_versions"`
 	// SignPackages (hosted rpm only): uploads are signed with the active GPG key.
 	SignPackages bool `json:"sign_packages"`
+	// Federated: the repository replicates with peer instances (hosted only).
+	Federated bool `json:"federated"`
 
 	// Proxy repositories only. The upstream password is never returned.
 	UpstreamURL             string `json:"upstream_url,omitempty"`
