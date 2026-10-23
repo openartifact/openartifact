@@ -75,6 +75,10 @@ type Config struct {
 	Telemetry telemetry.Config `yaml:"telemetry"`
 	Scanners  ScannersConfig   `yaml:"scanners"`
 	BaseURL   string           `yaml:"baseUrl"`
+
+	// StorageReplica is the optional blob replica, the storage.replica block
+	// (decoded by loadReplicaFromYAML, see docs/operations/replication.md).
+	StorageReplica storage.ReplicaConfig `yaml:"-"`
 }
 
 // ProjectsConfig tunes project self-service (see docs/security/projects.md).
@@ -428,6 +432,7 @@ func defaultConfig() *Config {
 			DockerUploadTTL:              24 * time.Hour,
 			WebhookDeliveryRetentionDays: 30,
 		},
+		StorageReplica: defaultReplicaConfig(),
 		Trash: TrashConfig{
 			RetentionDays: 7,
 			PurgeInterval: 15 * time.Minute,
@@ -463,7 +468,7 @@ func loadFromFile(path string, cfg *Config) error {
 		return fmt.Errorf("parse config file: %w", err)
 	}
 
-	return nil
+	return loadReplicaFromYAML(data, cfg)
 }
 
 // applyEnvOverrides applies environment variable overrides to the config.
@@ -603,6 +608,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
 	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
 
+	// Storage replica
+	applyReplicaEnvOverrides(cfg)
+
 	// Storage tiering
 	overrideBool(&cfg.Tiering.Enabled, "OPENARTIFACT_TIERING_ENABLED")
 	overrideDuration(&cfg.Tiering.Interval, "OPENARTIFACT_TIERING_INTERVAL")
@@ -718,6 +726,10 @@ func (c *Config) Validate() error {
 // validateFeatures checks the scanner and presign settings.
 func (c *Config) validateFeatures() error {
 	if err := c.Scanners.validate(); err != nil {
+		return err
+	}
+
+	if err := c.validateReplica(); err != nil {
 		return err
 	}
 

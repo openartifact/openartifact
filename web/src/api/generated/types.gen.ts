@@ -557,6 +557,99 @@ export type TierDryRun = {
     }>;
 };
 
+export type ReplicationVerifyResult = {
+    started_at?: string;
+    /**
+     * Null while the pass runs.
+     */
+    finished_at?: string | null;
+    /**
+     * True when the bytes of both copies were hashed.
+     */
+    deep?: boolean;
+    /**
+     * How the primary store was enumerated: its own listing, or the blobs table when it cannot list.
+     */
+    listing?: 'list' | 'database';
+    /**
+     * False when the replica cannot enumerate its objects, so blobs only it holds were not looked for.
+     */
+    replica_listed?: boolean;
+    /**
+     * Blobs examined.
+     */
+    checked?: number;
+    /**
+     * Blobs missing from the replica (a copy was queued).
+     */
+    missing_replica?: number;
+    /**
+     * Blobs missing from the primary store (restored from the replica).
+     */
+    missing_primary?: number;
+    /**
+     * Blobs whose two copies differ in size (or content, in a deep pass).
+     */
+    mismatched?: number;
+    /**
+     * Blobs fixed or queued for copying.
+     */
+    repaired?: number;
+    /**
+     * Blobs only the replica holds that nothing references.
+     */
+    unreferenced?: number;
+    /**
+     * Blobs the database references that exist on neither side.
+     */
+    lost?: number;
+    /**
+     * Blobs that could not be checked or repaired.
+     */
+    errors?: number;
+};
+
+export type ReplicationStatus = {
+    /**
+     * False when no replica is configured (storage.replica.type is empty); every other field is then empty.
+     */
+    enabled?: boolean;
+    replica?: {
+        type?: string;
+        /**
+         * Directory, bucket or container of the replica; never a credential.
+         */
+        location?: string;
+    } | null;
+    read_fallback?: 'notfound' | 'error' | 'off';
+    /**
+     * Queued copies to the replica.
+     */
+    backlog_copy?: number;
+    /**
+     * Queued deletions on the replica.
+     */
+    backlog_delete?: number;
+    /**
+     * Replication lag: the age of the oldest queued operation.
+     */
+    oldest_pending_age_seconds?: number;
+    /**
+     * Queued operations that failed repeatedly.
+     */
+    failing?: number;
+    replicated_total?: number;
+    replicated_bytes_total?: number;
+    last_error?: string;
+    last_error_at?: string | null;
+    /**
+     * True while an admin-requested verify pass waits to start.
+     */
+    verify_requested?: boolean;
+    verify_running?: ReplicationVerifyResult;
+    last_verify?: ReplicationVerifyResult;
+};
+
 export type TierMoverStatus = {
     enabled?: boolean;
     running?: boolean;
@@ -5527,6 +5620,62 @@ export type GetApiV1AdminTieringStatusResponses = {
 };
 
 export type GetApiV1AdminTieringStatusResponse = GetApiV1AdminTieringStatusResponses[keyof GetApiV1AdminTieringStatusResponses];
+
+export type GetApiV1AdminStorageReplicationData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/storage/replication';
+};
+
+export type GetApiV1AdminStorageReplicationErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminStorageReplicationResponses = {
+    /**
+     * Replication status
+     */
+    200: ReplicationStatus;
+};
+
+export type GetApiV1AdminStorageReplicationResponse = GetApiV1AdminStorageReplicationResponses[keyof GetApiV1AdminStorageReplicationResponses];
+
+export type PostApiV1AdminStorageReplicationVerifyData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/storage/replication/verify';
+};
+
+export type PostApiV1AdminStorageReplicationVerifyErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Blob replication is not configured
+     */
+    404: unknown;
+    /**
+     * A verify pass is already running or requested
+     */
+    409: unknown;
+};
+
+export type PostApiV1AdminStorageReplicationVerifyResponses = {
+    /**
+     * Pass requested
+     */
+    202: {
+        requested?: boolean;
+    };
+};
+
+export type PostApiV1AdminStorageReplicationVerifyResponse = PostApiV1AdminStorageReplicationVerifyResponses[keyof PostApiV1AdminStorageReplicationVerifyResponses];
 
 export type GetApiV1AdminAuditData = {
     body?: never;

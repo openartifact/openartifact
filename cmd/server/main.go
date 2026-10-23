@@ -56,6 +56,7 @@ import (
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/proxy"
+	"github.com/openartifact/openartifact/internal/replication"
 	"github.com/openartifact/openartifact/internal/repodispatch"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/sbom"
@@ -289,6 +290,11 @@ func run(args []string) error {
 	// whichever tier holds it, new blobs land on the primary store. With no
 	// tier besides the primary one the wrapper forwards straight to it.
 	tierRegistry := tiering.NewRegistry(db, rawBlobStore, cfg.Storage, log)
+	if cfg.StorageReplica.Enabled() {
+		// A tier backend must never be the blob replica's location.
+		tierRegistry.Reserve(cfg.StorageReplica.StorageConfig)
+	}
+
 	if err := tierRegistry.Start(context.Background(), cfg.Tiering.RefreshInterval); err != nil {
 		return fail("failed to load storage tiers", err)
 	}
@@ -297,7 +303,29 @@ func run(args []string) error {
 	tierAccess.Start()
 
 	tieredStore := tiering.NewStore(tierRegistry, db, tierAccess, reg, log)
-	blobStore := storage.NewMetricsBlobStore(tieredStore, reg)
+
+	// Blob replication (docs/operations/replication.md): with storage.replica
+	// set, every write and delete is queued for a secondary backend and reads
+	// the primary cannot answer fall back to it. Unset, the stack is unchanged.
+	var (
+		replSvc    *replication.Service
+		primaryTop storage.BlobStore    = tieredStore
+		sweepStore worker.BlobByteStore = tieredStore
+		replAdmin  api.ReplicationService
+		replStop   = func() {}
+	)
+
+	if replSvc, err = newReplication(cfg, db, tieredStore, reg, log); err != nil {
+		return fail("failed to initialize blob replication", err)
+	}
+
+	if replSvc != nil {
+		primaryTop, sweepStore, replAdmin, replStop = replSvc.Store(), replSvc.Store(), replSvc, replSvc.Stop
+
+		log.Infow("Blob replication enabled", "replica", cfg.StorageReplica.Type, "location", cfg.StorageReplica.Summary(), "read_fallback", cfg.StorageReplica.ReadFallback)
+	}
+
+	blobStore := storage.NewMetricsBlobStore(primaryTop, reg)
 
 	log.Infow("Storage initialized", "type", cfg.Storage.Type, "path", cfg.Storage.Path)
 
@@ -423,8 +451,12 @@ func run(args []string) error {
 	// Blob deletion sweeper: removes the bytes of deleted blobs and retired
 	// tier copies after the grace period and once no running backup can still
 	// need them. Every replica may run one (no global lock).
-	blobSweeper := worker.NewBlobDeletionSweeper(db, tieredStore, log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).WithMetrics(reg)
+	blobSweeper := worker.NewBlobDeletionSweeper(db, sweepStore, log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).WithMetrics(reg)
 	blobSweeper.Start()
+
+	if replSvc != nil {
+		replSvc.Start()
+	}
 
 	// stopWorkers stops every background worker exactly once. It runs in the
 	// shutdown sequence (after HTTP stops, before the audit logger flushes) and
@@ -438,7 +470,7 @@ func run(args []string) error {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
 				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, dockerUploadSweeper.Stop, trashPurgeWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
-				tierWorker.Stop, blobSweeper.Stop, tierRegistry.Stop, tierAccess.Stop,
+				tierWorker.Stop, blobSweeper.Stop, replStop, tierRegistry.Stop, tierAccess.Stop,
 			} {
 				stop()
 			}
@@ -789,6 +821,7 @@ func run(args []string) error {
 	api.NewAdminAuditHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminStorageHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminTieringHandler(db, tierRegistry, tierEngine, tierWorker, log, evaluator).Register(authedAPI)
+	api.NewAdminReplicationHandler(replAdmin, log, evaluator).Register(authedAPI)
 	api.NewAdminGPGHandler(db, log, evaluator, gpgKeys).Register(authedAPI)
 	sysInfoHandler.RegisterAuthed(authedAPI)
 

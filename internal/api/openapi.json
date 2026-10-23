@@ -1442,6 +1442,155 @@
           }
         }
       },
+      "ReplicationVerifyResult": {
+        "type": "object",
+        "properties": {
+          "started_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "finished_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Null while the pass runs."
+          },
+          "deep": {
+            "type": "boolean",
+            "description": "True when the bytes of both copies were hashed."
+          },
+          "listing": {
+            "type": "string",
+            "enum": [
+              "list",
+              "database"
+            ],
+            "description": "How the primary store was enumerated: its own listing, or the blobs table when it cannot list."
+          },
+          "replica_listed": {
+            "type": "boolean",
+            "description": "False when the replica cannot enumerate its objects, so blobs only it holds were not looked for."
+          },
+          "checked": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs examined."
+          },
+          "missing_replica": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs missing from the replica (a copy was queued)."
+          },
+          "missing_primary": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs missing from the primary store (restored from the replica)."
+          },
+          "mismatched": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs whose two copies differ in size (or content, in a deep pass)."
+          },
+          "repaired": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs fixed or queued for copying."
+          },
+          "unreferenced": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs only the replica holds that nothing references."
+          },
+          "lost": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs the database references that exist on neither side."
+          },
+          "errors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Blobs that could not be checked or repaired."
+          }
+        }
+      },
+      "ReplicationStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "False when no replica is configured (storage.replica.type is empty); every other field is then empty."
+          },
+          "replica": {
+            "type": "object",
+            "nullable": true,
+            "properties": {
+              "type": {
+                "type": "string"
+              },
+              "location": {
+                "type": "string",
+                "description": "Directory, bucket or container of the replica; never a credential."
+              }
+            }
+          },
+          "read_fallback": {
+            "type": "string",
+            "enum": [
+              "notfound",
+              "error",
+              "off"
+            ]
+          },
+          "backlog_copy": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Queued copies to the replica."
+          },
+          "backlog_delete": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Queued deletions on the replica."
+          },
+          "oldest_pending_age_seconds": {
+            "type": "number",
+            "format": "double",
+            "description": "Replication lag: the age of the oldest queued operation."
+          },
+          "failing": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Queued operations that failed repeatedly."
+          },
+          "replicated_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "replicated_bytes_total": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "last_error_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "verify_requested": {
+            "type": "boolean",
+            "description": "True while an admin-requested verify pass waits to start."
+          },
+          "verify_running": {
+            "$ref": "#/components/schemas/ReplicationVerifyResult",
+            "nullable": true
+          },
+          "last_verify": {
+            "$ref": "#/components/schemas/ReplicationVerifyResult",
+            "nullable": true
+          }
+        }
+      },
       "TierMoverStatus": {
         "type": "object",
         "properties": {
@@ -10400,6 +10549,67 @@
           },
           "403": {
             "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage/replication": {
+      "get": {
+        "summary": "Blob replication status",
+        "description": "Backlog, lag, totals and the last verify pass of the replication to storage.replica (admin only). Reports enabled=false when no replica is configured. This static path takes precedence over /admin/storage/{name}.",
+        "tags": [
+          "Admin",
+          "Storage"
+        ],
+        "responses": {
+          "200": {
+            "description": "Replication status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/ReplicationStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/storage/replication/verify": {
+      "post": {
+        "summary": "Verify the replica now",
+        "description": "Requests a verify pass that compares the primary store with the replica and repairs differences in either direction; it runs in the background on the replica holding the verify lock (admin only)",
+        "tags": [
+          "Admin",
+          "Storage"
+        ],
+        "responses": {
+          "202": {
+            "description": "Pass requested",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "requested": {
+                      "type": "boolean"
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Blob replication is not configured"
+          },
+          "409": {
+            "description": "A verify pass is already running or requested"
           }
         }
       }
