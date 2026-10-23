@@ -258,20 +258,25 @@ func (s *TrivyScanner) Scan(ctx context.Context, packageName, version, ecosystem
 
 func (s *TrivyScanner) writeManifest(dir, packageName, version, ecosystem string) error {
 	switch strings.ToLower(ecosystem) {
+	// Trivy reads lockfiles, not the manifests that declare ranges: a bare
+	// package.json, Cargo.toml, Gemfile or .csproj yields no packages and so a
+	// clean result that means nothing. These ecosystems get a lockfile that
+	// pins exactly the package being scanned.
 	case "npm":
-		content := map[string]any{
-			"name": "scan-pkg",
-			"dependencies": map[string]string{
-				packageName: version,
+		data, err := json.Marshal(map[string]any{
+			"name":            "scan-pkg",
+			"lockfileVersion": 3,
+			"requires":        true,
+			"packages": map[string]any{
+				"":                            map[string]any{"name": "scan-pkg", "dependencies": map[string]string{packageName: version}},
+				"node_modules/" + packageName: map[string]any{"version": version},
 			},
-		}
-
-		data, err := json.Marshal(content)
+		})
 		if err != nil {
 			return err
 		}
 
-		return os.WriteFile(filepath.Join(dir, "package.json"), data, 0600)
+		return os.WriteFile(filepath.Join(dir, "package-lock.json"), data, 0600)
 
 	case "pypi":
 		content := packageName + "==" + version + "\n"
@@ -302,15 +307,9 @@ func (s *TrivyScanner) writeManifest(dir, packageName, version, ecosystem string
 		return os.WriteFile(filepath.Join(dir, "pom.xml"), []byte(content), 0600)
 
 	case "cargo":
-		content := fmt.Sprintf(`[package]
-name = "scan-pkg"
-version = "0.1.0"
+		content := fmt.Sprintf("version = 3\n\n[[package]]\nname = %q\nversion = %q\n", packageName, version)
 
-[dependencies]
-%s = "%s"
-`, packageName, version)
-
-		return os.WriteFile(filepath.Join(dir, "Cargo.toml"), []byte(content), 0600)
+		return os.WriteFile(filepath.Join(dir, "Cargo.lock"), []byte(content), 0600)
 
 	case "go":
 		content := fmt.Sprintf(`module scan-pkg
@@ -323,24 +322,23 @@ require %s %s
 		return os.WriteFile(filepath.Join(dir, "go.mod"), []byte(content), 0600)
 
 	case "rubygems":
-		content := fmt.Sprintf(`source "https://rubygems.org"
+		content := fmt.Sprintf("GEM\n  remote: https://rubygems.org/\n  specs:\n    %s (%s)\n\nPLATFORMS\n  ruby\n\nDEPENDENCIES\n  %s (= %s)\n",
+			packageName, version, packageName, version)
 
-gem "%s", "%s"
-`, packageName, version)
-
-		return os.WriteFile(filepath.Join(dir, "Gemfile"), []byte(content), 0600)
+		return os.WriteFile(filepath.Join(dir, "Gemfile.lock"), []byte(content), 0600)
 
 	case "nuget":
-		content := fmt.Sprintf(`<Project Sdk="Microsoft.NET.Sdk">
-  <PropertyGroup>
-    <TargetFramework>net6.0</TargetFramework>
-  </PropertyGroup>
-  <ItemGroup>
-    <PackageReference Include="%s" Version="%s" />
-  </ItemGroup>
-</Project>`, packageName, version)
+		data, err := json.Marshal(map[string]any{
+			"version": 1,
+			"dependencies": map[string]any{"net6.0": map[string]any{
+				packageName: map[string]any{"type": "Direct", "requested": "[" + version + ", )", "resolved": version},
+			}},
+		})
+		if err != nil {
+			return err
+		}
 
-		return os.WriteFile(filepath.Join(dir, "test.csproj"), []byte(content), 0600)
+		return os.WriteFile(filepath.Join(dir, "packages.lock.json"), data, 0600)
 
 	default:
 		return fmt.Errorf("%w: %s", errUnsupportedEcosystem, ecosystem)
@@ -466,30 +464,23 @@ type grypeArtifact struct {
 	Type    string `json:"type"`
 }
 
-// grypeEcosystemMap maps our ecosystem names to grype package types.
-//
-//nolint:gochecknoglobals // immutable ecosystem mapping table
-var grypeEcosystemMap = map[string]string{
-	"npm":      "npm",
-	"pypi":     "python",
-	"maven":    "java",
-	"cargo":    "rust",
-	"rubygems": "gem",
-	"nuget":    "dotnet",
-	"deb":      "deb",
-	"rpm":      "rpm",
-	"go":       "go",
-}
-
 // Scan runs grype on the given package.
 func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem string) ([]models.Vulnerability, error) {
-	grypeEcosystem, ok := grypeEcosystemMap[strings.ToLower(ecosystem)]
-	if !ok {
-		return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, ecosystem))
+	if !validPackageToken(packageName) || !validPackageToken(version) {
+		return nil, newScanError(s.Name(), FailureInternal, errInvalidPackage)
 	}
 
-	// grype <ecosystem>:<name>@<version> -o json --quiet
-	pkgRef := fmt.Sprintf("%s:%s@%s", grypeEcosystem, packageName, version)
+	// grype takes the package as a Package URL (pkg:pypi/django@3.0). Debian
+	// and RPM packages are not scannable: a name and a version do not say which
+	// distribution they belong to, and grype then reports no match at all.
+	pkgRef, err := buildPURL(ecosystem, packageName, version)
+	if err != nil {
+		if errors.Is(err, errUnsupportedEcosystem) {
+			return nil, newScanError(s.Name(), FailureUnsupported, fmt.Errorf("%w: %q", errUnsupportedEcosystem, ecosystem))
+		}
+
+		return nil, newScanError(s.Name(), FailureInternal, err)
+	}
 
 	bin, pre := s.tool.preflight()
 	if pre != nil {
@@ -499,7 +490,9 @@ func (s *GrypeScanner) Scan(ctx context.Context, packageName, version, ecosystem
 	// The database is managed by the registry (Registry.Start), never fetched by a scan.
 	env := append(s.tool.env(), "GRYPE_DB_AUTO_UPDATE=false")
 
-	stdout, stderr, err := runScanner(ctx, env, bin, pkgRef, "-o", "json", "--quiet")
+	// Without --quiet grype writes its warnings and errors to stderr (stdout
+	// stays pure JSON), which is captured with a cap and logged on failure.
+	stdout, stderr, err := runScanner(ctx, env, bin, pkgRef, "-o", "json")
 	if err != nil {
 		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("grype scan failed",
