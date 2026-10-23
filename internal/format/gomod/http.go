@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -615,6 +616,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 		mod.ZipBlobKey = zipBlobID
 		mod.ModBlobKey = modBlobID
+
+		mod.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateGoModule(ctx, mod); err != nil {
 			return fmt.Errorf("create go module record: %w", err)

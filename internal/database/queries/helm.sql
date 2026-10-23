@@ -1,6 +1,6 @@
 -- name: CreateHelmChart :one
-INSERT INTO helm_charts (repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+INSERT INTO helm_charts (repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 RETURNING id, created_at, updated_at;
 
 -- name: GetHelmChart :one

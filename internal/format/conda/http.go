@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -419,6 +420,8 @@ func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.CondaPackage
 		}
 
 		pkg.BlobKey = blobKey
+
+		pkg.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateCondaPackage(ctx, pkg); err != nil {
 			return fmt.Errorf("create conda package: %w", err)

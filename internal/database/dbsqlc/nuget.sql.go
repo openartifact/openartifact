@@ -12,30 +12,31 @@ import (
 )
 
 const createNuGetPackage = `-- name: CreateNuGetPackage :one
-INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id, dependency_groups)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb)
+INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id, dependency_groups, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17::jsonb, COALESCE($18::timestamptz, NOW()))
 ON CONFLICT (repository_id, package_id, version) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, created_at, updated_at
 `
 
 type CreateNuGetPackageParams struct {
-	RepositoryID             string  `db:"repository_id" json:"repository_id"`
-	PackageID                string  `db:"package_id" json:"package_id"`
-	Version                  string  `db:"version" json:"version"`
-	Title                    *string `db:"title" json:"title"`
-	Description              *string `db:"description" json:"description"`
-	Summary                  *string `db:"summary" json:"summary"`
-	Authors                  *string `db:"authors" json:"authors"`
-	Owners                   *string `db:"owners" json:"owners"`
-	Tags                     *string `db:"tags" json:"tags"`
-	ProjectUrl               *string `db:"project_url" json:"project_url"`
-	LicenseUrl               *string `db:"license_url" json:"license_url"`
-	IconUrl                  *string `db:"icon_url" json:"icon_url"`
-	RequireLicenseAcceptance bool    `db:"require_license_acceptance" json:"require_license_acceptance"`
-	IsPrerelease             bool    `db:"is_prerelease" json:"is_prerelease"`
-	MinClientVersion         *string `db:"min_client_version" json:"min_client_version"`
-	BlobID                   string  `db:"blob_id" json:"blob_id"`
-	DependencyGroups         []byte  `db:"dependency_groups" json:"dependency_groups"`
+	RepositoryID             string     `db:"repository_id" json:"repository_id"`
+	PackageID                string     `db:"package_id" json:"package_id"`
+	Version                  string     `db:"version" json:"version"`
+	Title                    *string    `db:"title" json:"title"`
+	Description              *string    `db:"description" json:"description"`
+	Summary                  *string    `db:"summary" json:"summary"`
+	Authors                  *string    `db:"authors" json:"authors"`
+	Owners                   *string    `db:"owners" json:"owners"`
+	Tags                     *string    `db:"tags" json:"tags"`
+	ProjectUrl               *string    `db:"project_url" json:"project_url"`
+	LicenseUrl               *string    `db:"license_url" json:"license_url"`
+	IconUrl                  *string    `db:"icon_url" json:"icon_url"`
+	RequireLicenseAcceptance bool       `db:"require_license_acceptance" json:"require_license_acceptance"`
+	IsPrerelease             bool       `db:"is_prerelease" json:"is_prerelease"`
+	MinClientVersion         *string    `db:"min_client_version" json:"min_client_version"`
+	BlobID                   string     `db:"blob_id" json:"blob_id"`
+	DependencyGroups         []byte     `db:"dependency_groups" json:"dependency_groups"`
+	CreatedAt                *time.Time `db:"created_at" json:"created_at"`
 }
 
 type CreateNuGetPackageRow struct {
@@ -63,6 +64,7 @@ func (q *Queries) CreateNuGetPackage(ctx context.Context, arg CreateNuGetPackage
 		arg.MinClientVersion,
 		arg.BlobID,
 		arg.DependencyGroups,
+		arg.CreatedAt,
 	)
 	var i CreateNuGetPackageRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

@@ -36,8 +36,8 @@ UPDATE npm_packages SET latest_version = $2, packument_stale = false, updated_at
 WITH touch AS (
     UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
 )
-INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename)
-VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
+INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at)
+VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 RETURNING id, created_at;
 
 -- name: GetNPMVersion :one

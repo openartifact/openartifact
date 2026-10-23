@@ -56,7 +56,12 @@ func (d *conanDB) CreateConanPackage(_ context.Context, p *models.ConanPackage) 
 
 	d.next++
 	p.ID = fmt.Sprintf("row-%d", d.next)
-	p.CreatedAt, p.UpdatedAt = d.clock, d.clock
+	// Like the real INSERT: an origin created_at wins over now.
+	if p.CreatedAt.IsZero() {
+		p.CreatedAt = d.clock
+	}
+
+	p.UpdatedAt = d.clock
 	cp := *p
 	d.rows = append(d.rows, &cp)
 

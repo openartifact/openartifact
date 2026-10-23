@@ -1,6 +1,6 @@
 -- name: CreateGoModule :one
-INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id, mod_blob_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id, mod_blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 RETURNING id, created_at, updated_at;
 
 -- name: GetGoModule :one

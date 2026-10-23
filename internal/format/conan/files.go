@@ -19,6 +19,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -273,6 +274,8 @@ func (h *HTTPHandler) store(ctx context.Context, file *models.ConanPackage, data
 		}
 
 		file.BlobKey = blobKey
+
+		file.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateConanPackage(ctx, file); err != nil {
 			return fmt.Errorf("create conan package: %w", err)

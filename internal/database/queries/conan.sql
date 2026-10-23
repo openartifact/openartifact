@@ -1,8 +1,8 @@
 -- name: CreateConanPackage :one
 -- Upserts one stored file: re-uploading a file replaces its blob (a Conan client
 -- does this for metadata and when a failed upload is retried).
-INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id, md5, sha1)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id, md5, sha1, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 ON CONFLICT (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename) WHERE deleted_at IS NULL DO UPDATE SET
     blob_id = EXCLUDED.blob_id,
     md5 = EXCLUDED.md5,

@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -523,6 +524,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 			return err
 		}
+
+		pkg.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreatePyPIPackage(ctx, pkg); err != nil {
 			if strings.Contains(err.Error(), "23505") || strings.Contains(err.Error(), "duplicate key") {

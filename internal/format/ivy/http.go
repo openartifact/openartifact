@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -271,6 +272,8 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		}
 
 		artifact.BlobKey = blobKey
+
+		artifact.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateIvyArtifact(ctx, artifact); err != nil {
 			return fmt.Errorf("create ivy artifact: %w", err)

@@ -20,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatnpm "github.com/openartifact/openartifact/internal/format/npm"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -703,6 +704,7 @@ func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID st
 			Shasum:          pv.sha1Hex,
 			BlobID:          blobUUID,
 			TarballFilename: pv.filename,
+			CreatedAt:       importmeta.CreatedAt(ctx),
 		}); err != nil {
 			if isUniqueViolation(err) {
 				return errNPMVersionExists

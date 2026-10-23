@@ -1,6 +1,6 @@
 -- name: CreateIvyArtifact :one
-INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_type, artifact_ext, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_type, artifact_ext, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 ON CONFLICT (repository_id, organisation, module, revision, artifact_name, artifact_ext) WHERE deleted_at IS NULL
 DO UPDATE SET artifact_type = EXCLUDED.artifact_type, blob_id = EXCLUDED.blob_id, updated_at = now()
 RETURNING id, created_at, updated_at;

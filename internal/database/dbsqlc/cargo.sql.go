@@ -33,8 +33,8 @@ func (q *Queries) CargoIndexStamp(ctx context.Context, arg CargoIndexStampParams
 }
 
 const createCargoCrate = `-- name: CreateCargoCrate :one
-INSERT INTO cargo_crates (repository_id, name, version, description, homepage, documentation, repository, license, keywords, categories, authors, readme, metadata_json, blob_id, yanked, download_count)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16)
+INSERT INTO cargo_crates (repository_id, name, version, description, homepage, documentation, repository, license, keywords, categories, authors, readme, metadata_json, blob_id, yanked, download_count, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, COALESCE($17::timestamptz, NOW()))
 RETURNING id, created_at, updated_at
 `
 
@@ -55,6 +55,7 @@ type CreateCargoCrateParams struct {
 	BlobID        string          `db:"blob_id" json:"blob_id"`
 	Yanked        bool            `db:"yanked" json:"yanked"`
 	DownloadCount int64           `db:"download_count" json:"download_count"`
+	CreatedAt     *time.Time      `db:"created_at" json:"created_at"`
 }
 
 type CreateCargoCrateRow struct {
@@ -81,6 +82,7 @@ func (q *Queries) CreateCargoCrate(ctx context.Context, arg CreateCargoCratePara
 		arg.BlobID,
 		arg.Yanked,
 		arg.DownloadCount,
+		arg.CreatedAt,
 	)
 	var i CreateCargoCrateRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

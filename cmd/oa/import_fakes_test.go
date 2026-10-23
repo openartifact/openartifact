@@ -56,7 +56,7 @@ type fakeRepo struct {
 // protocol to every fakeOA, keyed by the repository format. The routes are
 // relative to the repository: "/repos/<repo>/..." is registered as "/..." and
 // docker's "/v2/<repo>/..." as "/v2/...". Register from an init function.
-var fakeOARoutes = map[string]func(f *fakeOA, mux *http.ServeMux){}
+var fakeOARoutes = map[string]func(f *fakeOA, mux *http.ServeMux){} //nolint:gochecknoglobals // routes of each format register themselves from init functions
 
 // formatMux picks the per-format mux for /repos/<repo>/... and /v2/<repo>/...
 // requests and strips the repository from the path (stashing it in the

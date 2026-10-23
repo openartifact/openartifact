@@ -1,6 +1,6 @@
 -- name: CreateNuGetPackage :one
-INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id, dependency_groups)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, sqlc.narg(dependency_groups)::jsonb)
+INSERT INTO nuget_packages (repository_id, package_id, version, title, description, summary, authors, owners, tags, project_url, license_url, icon_url, require_license_acceptance, is_prerelease, min_client_version, blob_id, dependency_groups, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, sqlc.narg(dependency_groups)::jsonb, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 ON CONFLICT (repository_id, package_id, version) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, created_at, updated_at;
 

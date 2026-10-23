@@ -12,8 +12,8 @@ import (
 )
 
 const createRubyGem = `-- name: CreateRubyGem :one
-INSERT INTO rubygems_gems (repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, blob_id, yanked, download_count, size)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)
+INSERT INTO rubygems_gems (repository_id, name, version, platform, description, summary, homepage, authors, licenses, dependencies, metadata_json, blob_id, yanked, download_count, size, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, COALESCE($16::timestamptz, NOW()))
 RETURNING id, created_at, updated_at
 `
 
@@ -33,6 +33,7 @@ type CreateRubyGemParams struct {
 	Yanked        bool            `db:"yanked" json:"yanked"`
 	DownloadCount int64           `db:"download_count" json:"download_count"`
 	Size          int64           `db:"size" json:"size"`
+	CreatedAt     *time.Time      `db:"created_at" json:"created_at"`
 }
 
 type CreateRubyGemRow struct {
@@ -58,6 +59,7 @@ func (q *Queries) CreateRubyGem(ctx context.Context, arg CreateRubyGemParams) (C
 		arg.Yanked,
 		arg.DownloadCount,
 		arg.Size,
+		arg.CreatedAt,
 	)
 	var i CreateRubyGemRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

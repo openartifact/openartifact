@@ -1521,6 +1521,7 @@ func (p *PostgresDB) MarkPackumentStale(ctx context.Context, packageID string) e
 
 func (p *PostgresDB) CreateNPMVersion(ctx context.Context, v *models.NPMVersion) (*models.NPMVersion, error) {
 	row, err := p.q.CreateNPMVersion(ctx, dbsqlc.CreateNPMVersionParams{
+		CreatedAt:       createdAtOrNil(v.CreatedAt),
 		PackageID:       v.PackageID,
 		Version:         v.Version,
 		Column3:         v.ManifestJSON,
@@ -2257,6 +2258,7 @@ func (p *PostgresDB) CreateHelmChart(ctx context.Context, chart *models.HelmChar
 	}
 
 	row, err := p.q.CreateHelmChart(ctx, dbsqlc.CreateHelmChartParams{
+		CreatedAt:    createdAtOrNil(chart.CreatedAt),
 		RepositoryID: chart.RepositoryID,
 		Name:         chart.Name,
 		Version:      chart.Version,
@@ -2426,6 +2428,7 @@ func (p *PostgresDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPack
 	}
 
 	row, err := p.q.CreatePyPIPackage(ctx, dbsqlc.CreatePyPIPackageParams{
+		CreatedAt:      createdAtOrNil(pkg.CreatedAt),
 		RepositoryID:   pkg.RepositoryID,
 		Name:           pkg.Name,
 		Version:        pkg.Version,
@@ -2642,6 +2645,7 @@ func (p *PostgresDB) CreateNuGetPackage(ctx context.Context, pkg *models.NuGetPa
 	}
 
 	row, err := p.q.CreateNuGetPackage(ctx, dbsqlc.CreateNuGetPackageParams{
+		CreatedAt:                createdAtOrNil(pkg.CreatedAt),
 		RepositoryID:             pkg.RepositoryID,
 		PackageID:                pkg.PackageID,
 		Version:                  pkg.Version,
@@ -3069,6 +3073,7 @@ func (p *PostgresDB) CreateGoModule(ctx context.Context, mod *models.GoModule) e
 	}
 
 	row, err := p.q.CreateGoModule(ctx, dbsqlc.CreateGoModuleParams{
+		CreatedAt:    createdAtOrNil(mod.CreatedAt),
 		RepositoryID: mod.RepositoryID,
 		ModulePath:   mod.ModulePath,
 		Version:      mod.Version,
@@ -3901,6 +3906,7 @@ func (p *PostgresDB) CreateCargoCrate(ctx context.Context, crate *models.CargoCr
 	}
 
 	row, err := p.q.CreateCargoCrate(ctx, dbsqlc.CreateCargoCrateParams{
+		CreatedAt:     createdAtOrNil(crate.CreatedAt),
 		RepositoryID:  crate.RepositoryID,
 		Name:          crate.Name,
 		Version:       crate.Version,
@@ -4179,6 +4185,7 @@ func (p *PostgresDB) CreateRubyGem(ctx context.Context, gem *models.RubyGem) err
 	}
 
 	row, err := p.q.CreateRubyGem(ctx, dbsqlc.CreateRubyGemParams{
+		CreatedAt:     createdAtOrNil(gem.CreatedAt),
 		RepositoryID:  gem.RepositoryID,
 		Name:          gem.Name,
 		Version:       gem.Version,
@@ -5889,6 +5896,7 @@ func (p *PostgresDB) CreateCondaPackage(ctx context.Context, pkg *models.CondaPa
 	}
 
 	row, err := p.q.CreateCondaPackage(ctx, dbsqlc.CreateCondaPackageParams{
+		CreatedAt:    createdAtOrNil(pkg.CreatedAt),
 		RepositoryID: pkg.RepositoryID,
 		Name:         pkg.Name,
 		Version:      pkg.Version,
@@ -6032,6 +6040,7 @@ func (p *PostgresDB) CreateConanPackage(ctx context.Context, pkg *models.ConanPa
 	}
 
 	row, err := p.q.CreateConanPackage(ctx, dbsqlc.CreateConanPackageParams{
+		CreatedAt:       createdAtOrNil(pkg.CreatedAt),
 		RepositoryID:    pkg.RepositoryID,
 		Name:            pkg.Name,
 		Version:         pkg.Version,
@@ -6195,6 +6204,7 @@ func (p *PostgresDB) CreateIvyArtifact(ctx context.Context, artifact *models.Ivy
 	}
 
 	row, err := p.q.CreateIvyArtifact(ctx, dbsqlc.CreateIvyArtifactParams{
+		CreatedAt:    createdAtOrNil(artifact.CreatedAt),
 		RepositoryID: artifact.RepositoryID,
 		Organisation: artifact.Organisation,
 		Module:       artifact.Module,
@@ -6295,6 +6305,7 @@ func (p *PostgresDB) CreateSBTArtifact(ctx context.Context, artifact *models.SBT
 	}
 
 	row, err := p.q.CreateSBTArtifact(ctx, dbsqlc.CreateSBTArtifactParams{
+		CreatedAt:    createdAtOrNil(artifact.CreatedAt),
 		RepositoryID: artifact.RepositoryID,
 		GroupID:      artifact.GroupID,
 		ArtifactID:   artifact.ArtifactID,

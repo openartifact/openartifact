@@ -148,4 +148,4 @@ There are no top-level `oa upload` / `oa download` commands.
 
 ### Importing from Nexus or Artifactory
 
-`oa import nexus|artifactory --source-url URL --repo SRC[:DST]...` copies hosted Maven, Debian, RPM and raw repositories from a Nexus 3 or Artifactory server. The source password or token is read from a file, stdin or `OA_IMPORT_SOURCE_TOKEN`, never from the command line. Flags, supported formats, resume and checksum behavior are in [Migrating from Nexus or Artifactory](../migration/nexus-artifactory.md).
+`oa import nexus|artifactory --source-url URL --repo SRC[:DST]...` copies hosted repositories from a Nexus 3 or Artifactory server: Maven (also Gradle), Debian, RPM, raw, npm, PyPI, Docker/OCI, Helm, NuGet, RubyGems, Cargo, Go, Conda, Conan, Ivy and sbt, with created-at, properties, checksum verification and resume. The source password or token is read from a file, stdin or `OA_IMPORT_SOURCE_TOKEN`, never from the command line. Flags, supported formats, resume and checksum behavior are in [Migrating from Nexus or Artifactory](../migration/nexus-artifactory.md).

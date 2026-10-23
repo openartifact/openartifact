@@ -74,11 +74,11 @@ type formatDef struct {
 }
 
 var (
-	formatDefs = map[importFormat]formatDef{}
+	formatDefs = map[importFormat]formatDef{} //nolint:gochecknoglobals // registry filled by init functions
 	// nexusFormats and artifactoryFormats map a source repository format name
 	// to the OpenArtifact format it imports into.
-	nexusFormats       = map[string]importFormat{}
-	artifactoryFormats = map[string]importFormat{}
+	nexusFormats       = map[string]importFormat{} //nolint:gochecknoglobals // registry filled by init functions
+	artifactoryFormats = map[string]importFormat{} //nolint:gochecknoglobals // registry filled by init functions
 )
 
 // registerFormat adds a format to the importer. It is called from init
@@ -101,7 +101,7 @@ func lookupSourceFormat(m map[string]importFormat, name string) (importFormat, b
 	return f, ok
 }
 
-func init() {
+func init() { //nolint:gochecknoinits // the built-in formats register themselves with the importer
 	registerFormat(formatDef{
 		format: formatMaven, nexus: []string{"maven2"}, artifactory: []string{"maven", "gradle"},
 		importable: importableMaven, match: matchPath, overwrites: true,

@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/ocimanifest"
@@ -499,7 +500,7 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 		SubjectDigest: subjectDigest,
 		Refs:          &refs,
 		RequiredBlobs: pushedBlobs,
-		CreatedAt:     time.Now(),
+		CreatedAt:     importmeta.CreatedAt(r.Context()),
 		UpdatedAt:     time.Now(),
 	}
 
@@ -529,7 +530,7 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 			Image:          image,
 			Name:           reference,
 			ManifestDigest: digest,
-			CreatedAt:      time.Now(),
+			CreatedAt:      importmeta.CreatedAt(r.Context()),
 			UpdatedAt:      time.Now(),
 		}
 		if err := h.db.UpsertDockerTag(r.Context(), tag); err != nil {

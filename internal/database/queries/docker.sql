@@ -53,8 +53,8 @@ DELETE FROM docker_uploads WHERE updated_at < $1 RETURNING upload_uuid;
 -- Re-pushing a manifest already stored for the image is a no-op refresh, not
 -- an error (OCI distribution: manifest PUT is idempotent). A copy of the same
 -- digest sitting in the trash does not conflict: the push creates a new live row.
-INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest)
-VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
+INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 ON CONFLICT (repository_id, image, digest) WHERE deleted_at IS NULL DO UPDATE
     SET media_type = EXCLUDED.media_type, blob_id = EXCLUDED.blob_id, size = EXCLUDED.size,
         subject_digest = EXCLUDED.subject_digest, updated_at = now()
@@ -72,8 +72,8 @@ WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL;
 DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL;
 
 -- name: UpsertDockerTag :one
-INSERT INTO docker_tags (repository_id, image, name, manifest_digest)
-VALUES ($1, $2, $3, $4)
+INSERT INTO docker_tags (repository_id, image, name, manifest_digest, created_at)
+VALUES ($1, $2, $3, $4, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 ON CONFLICT (repository_id, image, name) WHERE deleted_at IS NULL DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
 RETURNING id, created_at, updated_at;
 

@@ -11,18 +11,19 @@ import (
 )
 
 const createGoModule = `-- name: CreateGoModule :one
-INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id, mod_blob_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO gomod_modules (repository_id, module_path, version, go_mod_content, zip_blob_id, mod_blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
 RETURNING id, created_at, updated_at
 `
 
 type CreateGoModuleParams struct {
-	RepositoryID string  `db:"repository_id" json:"repository_id"`
-	ModulePath   string  `db:"module_path" json:"module_path"`
-	Version      string  `db:"version" json:"version"`
-	GoModContent string  `db:"go_mod_content" json:"go_mod_content"`
-	ZipBlobID    *string `db:"zip_blob_id" json:"zip_blob_id"`
-	ModBlobID    *string `db:"mod_blob_id" json:"mod_blob_id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	ModulePath   string     `db:"module_path" json:"module_path"`
+	Version      string     `db:"version" json:"version"`
+	GoModContent string     `db:"go_mod_content" json:"go_mod_content"`
+	ZipBlobID    *string    `db:"zip_blob_id" json:"zip_blob_id"`
+	ModBlobID    *string    `db:"mod_blob_id" json:"mod_blob_id"`
+	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
 }
 
 type CreateGoModuleRow struct {
@@ -39,6 +40,7 @@ func (q *Queries) CreateGoModule(ctx context.Context, arg CreateGoModuleParams) 
 		arg.GoModContent,
 		arg.ZipBlobID,
 		arg.ModBlobID,
+		arg.CreatedAt,
 	)
 	var i CreateGoModuleRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

@@ -93,8 +93,8 @@ func (q *Queries) CreateDockerBlob(ctx context.Context, arg CreateDockerBlobPara
 }
 
 const createDockerManifest = `-- name: CreateDockerManifest :one
-INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest)
-VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''))
+INSERT INTO docker_manifests (repository_id, image, digest, media_type, blob_id, size, subject_digest, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, NULLIF($7, ''), COALESCE($8::timestamptz, NOW()))
 ON CONFLICT (repository_id, image, digest) WHERE deleted_at IS NULL DO UPDATE
     SET media_type = EXCLUDED.media_type, blob_id = EXCLUDED.blob_id, size = EXCLUDED.size,
         subject_digest = EXCLUDED.subject_digest, updated_at = now()
@@ -109,6 +109,7 @@ type CreateDockerManifestParams struct {
 	BlobID       string      `db:"blob_id" json:"blob_id"`
 	Size         int64       `db:"size" json:"size"`
 	Column7      interface{} `db:"column_7" json:"column_7"`
+	CreatedAt    *time.Time  `db:"created_at" json:"created_at"`
 }
 
 type CreateDockerManifestRow struct {
@@ -130,6 +131,7 @@ func (q *Queries) CreateDockerManifest(ctx context.Context, arg CreateDockerMani
 		arg.BlobID,
 		arg.Size,
 		arg.Column7,
+		arg.CreatedAt,
 	)
 	var i CreateDockerManifestRow
 	err := row.Scan(
@@ -1275,17 +1277,18 @@ func (q *Queries) UpdateDockerUploadOffset(ctx context.Context, arg UpdateDocker
 }
 
 const upsertDockerTag = `-- name: UpsertDockerTag :one
-INSERT INTO docker_tags (repository_id, image, name, manifest_digest)
-VALUES ($1, $2, $3, $4)
+INSERT INTO docker_tags (repository_id, image, name, manifest_digest, created_at)
+VALUES ($1, $2, $3, $4, COALESCE($5::timestamptz, NOW()))
 ON CONFLICT (repository_id, image, name) WHERE deleted_at IS NULL DO UPDATE SET manifest_digest = EXCLUDED.manifest_digest, updated_at = now()
 RETURNING id, created_at, updated_at
 `
 
 type UpsertDockerTagParams struct {
-	RepositoryID   string `db:"repository_id" json:"repository_id"`
-	Image          string `db:"image" json:"image"`
-	Name           string `db:"name" json:"name"`
-	ManifestDigest string `db:"manifest_digest" json:"manifest_digest"`
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	Image          string     `db:"image" json:"image"`
+	Name           string     `db:"name" json:"name"`
+	ManifestDigest string     `db:"manifest_digest" json:"manifest_digest"`
+	CreatedAt      *time.Time `db:"created_at" json:"created_at"`
 }
 
 type UpsertDockerTagRow struct {
@@ -1300,6 +1303,7 @@ func (q *Queries) UpsertDockerTag(ctx context.Context, arg UpsertDockerTagParams
 		arg.Image,
 		arg.Name,
 		arg.ManifestDigest,
+		arg.CreatedAt,
 	)
 	var i UpsertDockerTagRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

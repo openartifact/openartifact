@@ -290,6 +290,7 @@ func (p *PostgresDB) CreateDockerManifest(ctx context.Context, m *models.DockerM
 		BlobID:       m.BlobID,
 		Size:         m.Size,
 		Column7:      m.SubjectDigest,
+		CreatedAt:    createdAtOrNil(m.CreatedAt),
 	}
 
 	if m.Refs == nil {
@@ -493,6 +494,7 @@ func (p *PostgresDB) UpsertDockerTag(ctx context.Context, tag *models.DockerTag)
 		Image:          tag.Image,
 		Name:           tag.Name,
 		ManifestDigest: tag.ManifestDigest,
+		CreatedAt:      createdAtOrNil(tag.CreatedAt),
 	})
 	if err != nil {
 		return fmt.Errorf("failed to upsert docker tag: %w", err)

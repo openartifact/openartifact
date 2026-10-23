@@ -11,20 +11,21 @@ import (
 )
 
 const createSBTArtifact = `-- name: CreateSBTArtifact :one
-INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, filename, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, filename, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, COALESCE($7::timestamptz, NOW()))
 ON CONFLICT (repository_id, group_id, artifact_id, version, filename) WHERE deleted_at IS NULL
 DO UPDATE SET blob_id = EXCLUDED.blob_id, updated_at = now()
 RETURNING id, created_at, updated_at
 `
 
 type CreateSBTArtifactParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	GroupID      string `db:"group_id" json:"group_id"`
-	ArtifactID   string `db:"artifact_id" json:"artifact_id"`
-	Version      string `db:"version" json:"version"`
-	Filename     string `db:"filename" json:"filename"`
-	BlobID       string `db:"blob_id" json:"blob_id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	GroupID      string     `db:"group_id" json:"group_id"`
+	ArtifactID   string     `db:"artifact_id" json:"artifact_id"`
+	Version      string     `db:"version" json:"version"`
+	Filename     string     `db:"filename" json:"filename"`
+	BlobID       string     `db:"blob_id" json:"blob_id"`
+	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
 }
 
 type CreateSBTArtifactRow struct {
@@ -41,6 +42,7 @@ func (q *Queries) CreateSBTArtifact(ctx context.Context, arg CreateSBTArtifactPa
 		arg.Version,
 		arg.Filename,
 		arg.BlobID,
+		arg.CreatedAt,
 	)
 	var i CreateSBTArtifactRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

@@ -11,26 +11,27 @@ import (
 )
 
 const createPyPIPackage = `-- name: CreatePyPIPackage :one
-INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, python_version, requires_python, summary, author, author_email, license, keywords, classifiers, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, python_version, requires_python, summary, author, author_email, license, keywords, classifiers, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE($15::timestamptz, NOW()))
 RETURNING id, created_at, updated_at
 `
 
 type CreatePyPIPackageParams struct {
-	RepositoryID   string   `db:"repository_id" json:"repository_id"`
-	Name           string   `db:"name" json:"name"`
-	Version        string   `db:"version" json:"version"`
-	Filename       string   `db:"filename" json:"filename"`
-	PackageType    string   `db:"package_type" json:"package_type"`
-	PythonVersion  *string  `db:"python_version" json:"python_version"`
-	RequiresPython *string  `db:"requires_python" json:"requires_python"`
-	Summary        *string  `db:"summary" json:"summary"`
-	Author         *string  `db:"author" json:"author"`
-	AuthorEmail    *string  `db:"author_email" json:"author_email"`
-	License        *string  `db:"license" json:"license"`
-	Keywords       *string  `db:"keywords" json:"keywords"`
-	Classifiers    []string `db:"classifiers" json:"classifiers"`
-	BlobID         string   `db:"blob_id" json:"blob_id"`
+	RepositoryID   string     `db:"repository_id" json:"repository_id"`
+	Name           string     `db:"name" json:"name"`
+	Version        string     `db:"version" json:"version"`
+	Filename       string     `db:"filename" json:"filename"`
+	PackageType    string     `db:"package_type" json:"package_type"`
+	PythonVersion  *string    `db:"python_version" json:"python_version"`
+	RequiresPython *string    `db:"requires_python" json:"requires_python"`
+	Summary        *string    `db:"summary" json:"summary"`
+	Author         *string    `db:"author" json:"author"`
+	AuthorEmail    *string    `db:"author_email" json:"author_email"`
+	License        *string    `db:"license" json:"license"`
+	Keywords       *string    `db:"keywords" json:"keywords"`
+	Classifiers    []string   `db:"classifiers" json:"classifiers"`
+	BlobID         string     `db:"blob_id" json:"blob_id"`
+	CreatedAt      *time.Time `db:"created_at" json:"created_at"`
 }
 
 type CreatePyPIPackageRow struct {
@@ -55,6 +56,7 @@ func (q *Queries) CreatePyPIPackage(ctx context.Context, arg CreatePyPIPackagePa
 		arg.Keywords,
 		arg.Classifiers,
 		arg.BlobID,
+		arg.CreatedAt,
 	)
 	var i CreatePyPIPackageRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

@@ -11,25 +11,26 @@ import (
 )
 
 const createHelmChart = `-- name: CreateHelmChart :one
-INSERT INTO helm_charts (repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)
+INSERT INTO helm_charts (repository_id, name, version, app_version, description, keywords, home, sources, maintainers, icon, api_version, type, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, COALESCE($14::timestamptz, NOW()))
 RETURNING id, created_at, updated_at
 `
 
 type CreateHelmChartParams struct {
-	RepositoryID string   `db:"repository_id" json:"repository_id"`
-	Name         string   `db:"name" json:"name"`
-	Version      string   `db:"version" json:"version"`
-	AppVersion   *string  `db:"app_version" json:"app_version"`
-	Description  *string  `db:"description" json:"description"`
-	Keywords     []string `db:"keywords" json:"keywords"`
-	Home         *string  `db:"home" json:"home"`
-	Sources      []string `db:"sources" json:"sources"`
-	Maintainers  []byte   `db:"maintainers" json:"maintainers"`
-	Icon         *string  `db:"icon" json:"icon"`
-	ApiVersion   string   `db:"api_version" json:"api_version"`
-	Type         string   `db:"type" json:"type"`
-	BlobID       string   `db:"blob_id" json:"blob_id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	Name         string     `db:"name" json:"name"`
+	Version      string     `db:"version" json:"version"`
+	AppVersion   *string    `db:"app_version" json:"app_version"`
+	Description  *string    `db:"description" json:"description"`
+	Keywords     []string   `db:"keywords" json:"keywords"`
+	Home         *string    `db:"home" json:"home"`
+	Sources      []string   `db:"sources" json:"sources"`
+	Maintainers  []byte     `db:"maintainers" json:"maintainers"`
+	Icon         *string    `db:"icon" json:"icon"`
+	ApiVersion   string     `db:"api_version" json:"api_version"`
+	Type         string     `db:"type" json:"type"`
+	BlobID       string     `db:"blob_id" json:"blob_id"`
+	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
 }
 
 type CreateHelmChartRow struct {
@@ -53,6 +54,7 @@ func (q *Queries) CreateHelmChart(ctx context.Context, arg CreateHelmChartParams
 		arg.ApiVersion,
 		arg.Type,
 		arg.BlobID,
+		arg.CreatedAt,
 	)
 	var i CreateHelmChartRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

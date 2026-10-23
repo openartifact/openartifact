@@ -51,8 +51,8 @@ const createNPMVersion = `-- name: CreateNPMVersion :one
 WITH touch AS (
     UPDATE npm_packages SET updated_at = NOW() WHERE id = $1
 )
-INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename)
-VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7)
+INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, blob_id, tarball_filename, created_at)
+VALUES ($1, $2, $3::jsonb, $4, $5, $6, $7, COALESCE($8::timestamptz, NOW()))
 RETURNING id, created_at
 `
 
@@ -64,6 +64,7 @@ type CreateNPMVersionParams struct {
 	Shasum          string          `db:"shasum" json:"shasum"`
 	BlobID          string          `db:"blob_id" json:"blob_id"`
 	TarballFilename string          `db:"tarball_filename" json:"tarball_filename"`
+	CreatedAt       *time.Time      `db:"created_at" json:"created_at"`
 }
 
 type CreateNPMVersionRow struct {
@@ -84,6 +85,7 @@ func (q *Queries) CreateNPMVersion(ctx context.Context, arg CreateNPMVersionPara
 		arg.Shasum,
 		arg.BlobID,
 		arg.TarballFilename,
+		arg.CreatedAt,
 	)
 	var i CreateNPMVersionRow
 	err := row.Scan(&i.ID, &i.CreatedAt)

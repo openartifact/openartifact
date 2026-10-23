@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -484,6 +485,8 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		}
 
 		crate.BlobKey = blobKey
+
+		crate.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateCargoCrate(ctx, crate); err != nil {
 			return fmt.Errorf("create cargo crate: %w", err)

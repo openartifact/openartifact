@@ -1,6 +1,6 @@
 -- name: CreateCondaPackage :one
-INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 ON CONFLICT (repository_id, name, version, build_string, platform, extension) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, created_at, updated_at;
 

@@ -1,6 +1,6 @@
 -- name: CreatePyPIPackage :one
-INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, python_version, requires_python, summary, author, author_email, license, keywords, classifiers, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)
+INSERT INTO pypi_packages (repository_id, name, version, filename, package_type, python_version, requires_python, summary, author, author_email, license, keywords, classifiers, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 RETURNING id, created_at, updated_at;
 
 -- name: GetPyPIPackage :one

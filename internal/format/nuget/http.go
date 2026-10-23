@@ -26,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -438,6 +439,8 @@ func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.NuGetPackage
 		}); err != nil {
 			return fmt.Errorf("store blob: %w", err)
 		}
+
+		pkg.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateNuGetPackage(ctx, pkg); err != nil {
 			return fmt.Errorf("create nuget package: %w", err)

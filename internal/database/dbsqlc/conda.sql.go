@@ -32,8 +32,8 @@ func (q *Queries) CondaRepodataStamp(ctx context.Context, arg CondaRepodataStamp
 }
 
 const createCondaPackage = `-- name: CreateCondaPackage :one
-INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)
+INSERT INTO conda_packages (repository_id, name, version, build_string, platform, depends, blob_id, extension, build_number, md5, timestamp_ms, index_extra, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, COALESCE($13::timestamptz, NOW()))
 ON CONFLICT (repository_id, name, version, build_string, platform, extension) WHERE deleted_at IS NULL DO NOTHING
 RETURNING id, created_at, updated_at
 `
@@ -51,6 +51,7 @@ type CreateCondaPackageParams struct {
 	Md5          string          `db:"md5" json:"md5"`
 	TimestampMs  int64           `db:"timestamp_ms" json:"timestamp_ms"`
 	IndexExtra   json.RawMessage `db:"index_extra" json:"index_extra"`
+	CreatedAt    *time.Time      `db:"created_at" json:"created_at"`
 }
 
 type CreateCondaPackageRow struct {
@@ -73,6 +74,7 @@ func (q *Queries) CreateCondaPackage(ctx context.Context, arg CreateCondaPackage
 		arg.Md5,
 		arg.TimestampMs,
 		arg.IndexExtra,
+		arg.CreatedAt,
 	)
 	var i CreateCondaPackageRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

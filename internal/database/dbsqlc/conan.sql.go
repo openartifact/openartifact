@@ -11,8 +11,8 @@ import (
 )
 
 const createConanPackage = `-- name: CreateConanPackage :one
-INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id, md5, sha1)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
+INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id, md5, sha1, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, COALESCE($12::timestamptz, NOW()))
 ON CONFLICT (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename) WHERE deleted_at IS NULL DO UPDATE SET
     blob_id = EXCLUDED.blob_id,
     md5 = EXCLUDED.md5,
@@ -22,17 +22,18 @@ RETURNING id, created_at, updated_at
 `
 
 type CreateConanPackageParams struct {
-	RepositoryID    string  `db:"repository_id" json:"repository_id"`
-	Name            string  `db:"name" json:"name"`
-	Version         string  `db:"version" json:"version"`
-	UserChannel     string  `db:"user_channel" json:"user_channel"`
-	RecipeRevision  string  `db:"recipe_revision" json:"recipe_revision"`
-	PackageID       string  `db:"package_id" json:"package_id"`
-	PackageRevision string  `db:"package_revision" json:"package_revision"`
-	Filename        string  `db:"filename" json:"filename"`
-	BlobID          *string `db:"blob_id" json:"blob_id"`
-	Md5             string  `db:"md5" json:"md5"`
-	Sha1            string  `db:"sha1" json:"sha1"`
+	RepositoryID    string     `db:"repository_id" json:"repository_id"`
+	Name            string     `db:"name" json:"name"`
+	Version         string     `db:"version" json:"version"`
+	UserChannel     string     `db:"user_channel" json:"user_channel"`
+	RecipeRevision  string     `db:"recipe_revision" json:"recipe_revision"`
+	PackageID       string     `db:"package_id" json:"package_id"`
+	PackageRevision string     `db:"package_revision" json:"package_revision"`
+	Filename        string     `db:"filename" json:"filename"`
+	BlobID          *string    `db:"blob_id" json:"blob_id"`
+	Md5             string     `db:"md5" json:"md5"`
+	Sha1            string     `db:"sha1" json:"sha1"`
+	CreatedAt       *time.Time `db:"created_at" json:"created_at"`
 }
 
 type CreateConanPackageRow struct {
@@ -56,6 +57,7 @@ func (q *Queries) CreateConanPackage(ctx context.Context, arg CreateConanPackage
 		arg.BlobID,
 		arg.Md5,
 		arg.Sha1,
+		arg.CreatedAt,
 	)
 	var i CreateConanPackageRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

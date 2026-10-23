@@ -11,22 +11,23 @@ import (
 )
 
 const createIvyArtifact = `-- name: CreateIvyArtifact :one
-INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_type, artifact_ext, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8)
+INSERT INTO ivy_artifacts (repository_id, organisation, module, revision, artifact_name, artifact_type, artifact_ext, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, COALESCE($9::timestamptz, NOW()))
 ON CONFLICT (repository_id, organisation, module, revision, artifact_name, artifact_ext) WHERE deleted_at IS NULL
 DO UPDATE SET artifact_type = EXCLUDED.artifact_type, blob_id = EXCLUDED.blob_id, updated_at = now()
 RETURNING id, created_at, updated_at
 `
 
 type CreateIvyArtifactParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Organisation string `db:"organisation" json:"organisation"`
-	Module       string `db:"module" json:"module"`
-	Revision     string `db:"revision" json:"revision"`
-	ArtifactName string `db:"artifact_name" json:"artifact_name"`
-	ArtifactType string `db:"artifact_type" json:"artifact_type"`
-	ArtifactExt  string `db:"artifact_ext" json:"artifact_ext"`
-	BlobID       string `db:"blob_id" json:"blob_id"`
+	RepositoryID string     `db:"repository_id" json:"repository_id"`
+	Organisation string     `db:"organisation" json:"organisation"`
+	Module       string     `db:"module" json:"module"`
+	Revision     string     `db:"revision" json:"revision"`
+	ArtifactName string     `db:"artifact_name" json:"artifact_name"`
+	ArtifactType string     `db:"artifact_type" json:"artifact_type"`
+	ArtifactExt  string     `db:"artifact_ext" json:"artifact_ext"`
+	BlobID       string     `db:"blob_id" json:"blob_id"`
+	CreatedAt    *time.Time `db:"created_at" json:"created_at"`
 }
 
 type CreateIvyArtifactRow struct {
@@ -45,6 +46,7 @@ func (q *Queries) CreateIvyArtifact(ctx context.Context, arg CreateIvyArtifactPa
 		arg.ArtifactType,
 		arg.ArtifactExt,
 		arg.BlobID,
+		arg.CreatedAt,
 	)
 	var i CreateIvyArtifactRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)

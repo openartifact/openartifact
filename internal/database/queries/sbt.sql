@@ -1,6 +1,6 @@
 -- name: CreateSBTArtifact :one
-INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, filename, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6)
+INSERT INTO sbt_artifacts (repository_id, group_id, artifact_id, version, filename, blob_id, created_at)
+VALUES ($1, $2, $3, $4, $5, $6, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 ON CONFLICT (repository_id, group_id, artifact_id, version, filename) WHERE deleted_at IS NULL
 DO UPDATE SET blob_id = EXCLUDED.blob_id, updated_at = now()
 RETURNING id, created_at, updated_at;

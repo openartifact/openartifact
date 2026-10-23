@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -625,6 +626,8 @@ func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, d
 		}
 
 		chart.BlobKey = blobKey
+
+		chart.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateHelmChart(ctx, chart); err != nil {
 			if errors.Is(err, database.ErrDuplicate) || database.IsUniqueViolation(err) {
