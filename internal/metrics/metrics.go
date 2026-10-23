@@ -51,6 +51,9 @@ type Registry struct {
 	// restart, the age of the database on disk), in Unix seconds.
 	ScannerDBUpdateAttemptsTotal  *prometheus.CounterVec
 	ScannerDBLastSuccessTimestamp *prometheus.GaugeVec
+
+	// Recovery holds the disaster-recovery row journal metrics.
+	Recovery RecoveryMetrics
 }
 
 // NewRegistry creates all metrics, registers them on the default Prometheus
@@ -184,6 +187,8 @@ func NewRegistry() *Registry {
 		r.ScannerDBLastSuccessTimestamp,
 	)
 	prometheus.MustRegister(r.Replication.Collectors()...)
+
+	r.Recovery = newRecoveryMetrics()
 
 	return r
 }

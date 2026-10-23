@@ -139,6 +139,8 @@ Procedure for a new instance:
 
 The compose service runs with a read-only root filesystem and `tmpfs` on `/tmp`. The restore upload and its blob spool land in `/tmp`, so a large restore can exhaust that tmpfs; size it up for big archives. Compose credentials are in [`docker/.env.example`](../../docker/.env.example).
 
+See also: [rebuild from storage](rebuild-from-storage.md) when the database is lost and no backup is usable.
+
 ## Limits
 
 - Blob bytes of deleted packages stay in the store for the [deletion grace period](storage.md#deferred-blob-deletion) (default 24 h), so storage is freed later than the delete.

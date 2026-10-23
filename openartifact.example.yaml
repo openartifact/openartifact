@@ -251,6 +251,18 @@ tiering:
   accessFlushInterval: 30s    # how often recorded downloads are written to the database
   refreshInterval: 30s        # how often each replica reloads the tier list
 
+# Disaster-recovery row journal: package metadata (repository names, paths,
+# dist-tags, trash state, ...) is mirrored as small sidecar blobs in the blob
+# store so `openartifact rebuild` can re-index an empty database from storage.
+# See docs/operations/rebuild-from-storage.md.
+recovery:
+  journal:
+    enabled: true             # capture changes (database triggers) and write the sidecars
+    interval: 10s             # pause between worker passes draining the changed-row queue
+    batch: 200                # rows claimed per drain step
+    concurrency: 4            # sidecar blobs written or deleted at once
+    reconcileInterval: 24h    # re-check every table for missing/stale sidecars (backfill); 0 = only the first complete pass
+
 # Trivy and grype vulnerability scanners (the "trivy" / "grype" scanner names of
 # POST .../vuln/scan). They are separate binaries: install them on PATH, set a
 # path below, or build the image with SCANNERS=trivy|grype|all. The server keeps

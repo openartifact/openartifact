@@ -42,6 +42,8 @@ var (
 	errBlobDeletionBatch        = errors.New("blobDeletion.sweepBatch must be at least 1")
 	errBlobDeletionNegative     = errors.New("blobDeletion.grace must not be negative")
 	errBackupLeaseTTL           = errors.New("backup.leaseTtl must be positive")
+	errRecoveryBatch            = errors.New("recovery.journal.batch and recovery.journal.concurrency must be at least 1")
+	errRecoveryNegative         = errors.New("recovery.journal.interval must be positive when the journal is enabled and recovery.journal.reconcileInterval must not be negative")
 	errTieringBatch             = errors.New("tiering.batch and tiering.concurrency must be at least 1")
 	errTieringNegative          = errors.New("tiering.maxBytesPerSecond, accessFlushInterval and refreshInterval must not be negative")
 	errTieringPoolSize          = errors.New("database.maxOpenConns must be 0 (driver default) or at least 4 while tiering.enabled is true: a mover pass pins one connection for its cluster lock, and blob-lock transactions need two each")
@@ -69,7 +71,10 @@ type Config struct {
 	// BlobDeletion tunes the deferred deletion of blob bytes.
 	BlobDeletion BlobDeletionConfig `yaml:"blobDeletion"`
 	Tiering      TieringConfig      `yaml:"tiering"`
-	Projects     ProjectsConfig     `yaml:"projects"`
+	// Recovery tunes the disaster-recovery row journal (see
+	// docs/operations/rebuild-from-storage.md).
+	Recovery RecoveryConfig `yaml:"recovery"`
+	Projects ProjectsConfig `yaml:"projects"`
 	// Telemetry configures OpenTelemetry export (off by default), see
 	// docs/operations/monitoring.md.
 	Telemetry telemetry.Config `yaml:"telemetry"`
@@ -162,6 +167,30 @@ type TieringConfig struct {
 	// RefreshInterval is how often each replica reloads the tier list, so a tier
 	// created on one replica is used by the others.
 	RefreshInterval time.Duration `yaml:"refreshInterval"`
+}
+
+// RecoveryConfig groups the disaster-recovery settings.
+type RecoveryConfig struct {
+	Journal RecoveryJournalConfig `yaml:"journal"`
+}
+
+// RecoveryJournalConfig tunes the row journal that mirrors package metadata as
+// sidecar blobs in the blob store (see docs/operations/rebuild-from-storage.md).
+type RecoveryJournalConfig struct {
+	// Enabled switches the journal on: the database triggers mark changed rows
+	// and the worker writes their sidecar blobs. Off, nothing is captured and
+	// `openartifact rebuild` cannot restore rows created while it was off.
+	Enabled bool `yaml:"enabled"`
+	// Interval is the pause between worker passes that drain the dirty queue.
+	Interval time.Duration `yaml:"interval"`
+	// Batch is how many dirty rows one drain step claims.
+	Batch int `yaml:"batch"`
+	// Concurrency is how many sidecar blobs are written or deleted at once.
+	Concurrency int `yaml:"concurrency"`
+	// ReconcileInterval is how often every journaled table is re-checked for
+	// rows without a sidecar (backfill) and sidecars without a row. Zero
+	// disables periodic reconciles after the first complete one.
+	ReconcileInterval time.Duration `yaml:"reconcileInterval"`
 }
 
 type AuthConfig struct {
@@ -447,6 +476,13 @@ func defaultConfig() *Config {
 			AccessFlushInterval: 30 * time.Second,
 			RefreshInterval:     30 * time.Second,
 		},
+		Recovery: RecoveryConfig{Journal: RecoveryJournalConfig{
+			Enabled:           true,
+			Interval:          10 * time.Second,
+			Batch:             200,
+			Concurrency:       4,
+			ReconcileInterval: 24 * time.Hour,
+		}},
 		Scanners: ScannersConfig{
 			UpdateInterval:  6 * time.Hour,
 			DownloadBaseURL: DefaultScannerDownloadBaseURL,
@@ -621,6 +657,13 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Tiering.AccessFlushInterval, "OPENARTIFACT_TIERING_ACCESS_FLUSH_INTERVAL")
 	overrideDuration(&cfg.Tiering.RefreshInterval, "OPENARTIFACT_TIERING_REFRESH_INTERVAL")
 
+	// Disaster-recovery row journal
+	overrideBool(&cfg.Recovery.Journal.Enabled, "OPENARTIFACT_RECOVERY_JOURNAL_ENABLED")
+	overrideDuration(&cfg.Recovery.Journal.Interval, "OPENARTIFACT_RECOVERY_JOURNAL_INTERVAL")
+	overrideInt(&cfg.Recovery.Journal.Batch, "OPENARTIFACT_RECOVERY_JOURNAL_BATCH")
+	overrideInt(&cfg.Recovery.Journal.Concurrency, "OPENARTIFACT_RECOVERY_JOURNAL_CONCURRENCY")
+	overrideDuration(&cfg.Recovery.Journal.ReconcileInterval, "OPENARTIFACT_RECOVERY_JOURNAL_RECONCILE_INTERVAL")
+
 	// Vulnerability scanners
 	overrideString(&cfg.Scanners.CacheDir, "OPENARTIFACT_SCANNER_CACHE_DIR")
 	overrideDuration(&cfg.Scanners.UpdateInterval, "OPENARTIFACT_SCANNER_UPDATE_INTERVAL")
@@ -762,6 +805,21 @@ func (c *Config) validateTiering() error {
 	return nil
 }
 
+// validateRecovery checks the row journal settings.
+func (c *Config) validateRecovery() error {
+	j := c.Recovery.Journal
+
+	if j.Batch < 1 || j.Concurrency < 1 {
+		return errRecoveryBatch
+	}
+
+	if j.ReconcileInterval < 0 || j.Interval < 0 || (j.Enabled && j.Interval == 0) {
+		return errRecoveryNegative
+	}
+
+	return nil
+}
+
 // validateBlobRetention checks the deferred blob deletion and backup lease settings.
 // validateBackgroundServices checks the optional subsystems (telemetry,
 // storage tiering, deferred blob deletion).
@@ -771,6 +829,10 @@ func (c *Config) validateBackgroundServices() error {
 	}
 
 	if err := c.validateTiering(); err != nil {
+		return err
+	}
+
+	if err := c.validateRecovery(); err != nil {
 		return err
 	}
 

@@ -1591,6 +1591,63 @@
           }
         }
       },
+      "RecoveryStatus": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean",
+            "description": "The journal switch the database triggers consult (recovery.journal.enabled)"
+          },
+          "backlog": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Changed rows waiting for their sidecar (capped at backlog_cap)"
+          },
+          "backlog_cap": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "oldest_dirty_age_seconds": {
+            "type": "number",
+            "description": "Age of the oldest waiting row; the journal lag, hence the rebuild RPO"
+          },
+          "retrying_rows": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Waiting rows in retry backoff after a failure"
+          },
+          "sidecars_tracked": {
+            "type": "integer",
+            "format": "int64"
+          },
+          "last_error": {
+            "type": "string"
+          },
+          "last_error_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_drain_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "last_reconcile_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When every table last completed a reconcile pass"
+          },
+          "tables_reconciled": {
+            "type": "integer"
+          },
+          "tables_total": {
+            "type": "integer"
+          },
+          "schema_version": {
+            "type": "integer",
+            "description": "Migration number stamped into new sidecars"
+          }
+        }
+      },
       "TierMoverStatus": {
         "type": "object",
         "properties": {
@@ -10610,6 +10667,31 @@
           },
           "409": {
             "description": "A verify pass is already running or requested"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/recovery/status": {
+      "get": {
+        "summary": "Disaster-recovery journal status",
+        "description": "State of the row journal behind `openartifact rebuild`: how many changed package rows still wait for their sidecar blob, how old the oldest is, the last failure and the progress of the backfill reconcile (admin only)",
+        "tags": [
+          "Admin",
+          "Storage"
+        ],
+        "responses": {
+          "200": {
+            "description": "Journal status",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RecoveryStatus"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
           }
         }
       }
