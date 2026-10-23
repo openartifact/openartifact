@@ -53,8 +53,11 @@ func NewHTTPHandler(log *logger.Logger, db database.Database, blobStore storage.
 // RegisterRepoRoutes registers Conan-specific routes on the provided sub-router.
 // It does NOT wrap in r.Route() — callers are responsible for the path prefix.
 //
-// The conan client pings {remote}/v1/ping, then speaks {remote}/v2/....
+// The conan client pings {remote}/v1/ping, then speaks {remote}/v2/... (Conan 2,
+// or Conan 1 with revisions enabled) or {remote}/v1/... (Conan 1, see v1.go).
 func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
+	h.registerV1Routes(r)
+
 	r.Get("/v1/ping", h.handlePing)
 	r.Get("/v2/ping", h.handlePing)
 	r.Get("/v2/users/authenticate", h.handleAuthenticate)
@@ -124,6 +127,20 @@ func (s *scope) key(filename string) models.ConanFileKey {
 		PackageID:       s.pid,
 		PackageRevision: s.prev,
 		Filename:        filename,
+	}
+}
+
+// newFile is a record for the scope's file, ready for its content digests.
+func (s *scope) newFile() *models.ConanPackage {
+	return &models.ConanPackage{
+		RepositoryID:    s.repoID,
+		Name:            s.recipe.Name,
+		Version:         s.recipe.Version,
+		UserChannel:     s.recipe.UserChannel,
+		RecipeRevision:  s.rrev,
+		PackageID:       s.pid,
+		PackageRevision: s.prev,
+		Filename:        s.filename,
 	}
 }
 

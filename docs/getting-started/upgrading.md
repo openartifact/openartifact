@@ -95,6 +95,14 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - Creating or updating a cleanup policy on a repository whose format the cleanup worker cannot process now answers `400 UNSUPPORTED_FORMAT`; such policies previously failed on every run.
 - `POST /api/v1/admin/storage/{name}/test` runs a real bucket or container check for `gcs` and `azure` backends instead of answering `not_implemented`.
 
+#### Conan 1.x clients (migration `057`)
+
+A Conan 1.x client can now use a conan repository (see [Conan](../formats/conan.md#conan-1x)). Migration `057` adds `md5` and `sha1` columns to `conan_packages` and an index on `sha1` (`CREATE INDEX CONCURRENTLY`); it also stops the `updated_at` trigger from firing on a digest-only change, because that column is the revision time. The migration is additive and safe for a rolling upgrade.
+
+- Files stored by earlier versions have no digests. A Conan 1 client's file listing fills in the MD5 on first read; the SHA-1 is recorded then too. Those files only take part in checksum deploy after that, or after being uploaded again.
+- The ping now advertises `revisions,checksum_deploy`. Conan 2 clients start sending an empty `PUT` with `X-Checksum-Deploy: true` before uploads and fall back to the normal upload on `404`; nothing to change on the client.
+- Set `BASE_URL` to the address clients use: Conan 1 URLs in `upload_urls` and `download_urls` are absolute.
+
 ### 0.7.0
 
 Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webhook payload format), `052` (VEX statements) and `053` (license source and unresolved licenses). All are additive; a rolling upgrade from 0.6.0 is fine. Migration `041` is numbered below `051`–`053` on purpose; the migrator applies every file not yet recorded, whatever its number.

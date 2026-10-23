@@ -1024,6 +1024,12 @@ func (m *BaseMockDB) ListConanRecipeFiles(ctx context.Context, repoID, name, ver
 func (m *BaseMockDB) ListConanRecipes(ctx context.Context, repoID string) ([]models.ConanRecipe, error) {
 	return nil, errNotImpl("ListConanRecipes")
 }
+func (m *BaseMockDB) FindConanPackageBySHA1(ctx context.Context, repoID, sha1 string) (*models.ConanPackage, error) {
+	return nil, errNotImpl("FindConanPackageBySHA1")
+}
+func (m *BaseMockDB) SetConanPackageDigests(ctx context.Context, id, md5, sha1 string) error {
+	return errNotImpl("SetConanPackageDigests")
+}
 func (m *BaseMockDB) DeleteConanPackage(ctx context.Context, id string) error {
 	return errNotImpl("DeleteConanPackage")
 }

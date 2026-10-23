@@ -11,10 +11,12 @@ import (
 )
 
 const createConanPackage = `-- name: CreateConanPackage :one
-INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id)
-VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)
+INSERT INTO conan_packages (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename, blob_id, md5, sha1)
+VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11)
 ON CONFLICT (repository_id, name, version, user_channel, recipe_revision, package_id, package_revision, filename) WHERE deleted_at IS NULL DO UPDATE SET
     blob_id = EXCLUDED.blob_id,
+    md5 = EXCLUDED.md5,
+    sha1 = EXCLUDED.sha1,
     updated_at = now()
 RETURNING id, created_at, updated_at
 `
@@ -29,6 +31,8 @@ type CreateConanPackageParams struct {
 	PackageRevision string  `db:"package_revision" json:"package_revision"`
 	Filename        string  `db:"filename" json:"filename"`
 	BlobID          *string `db:"blob_id" json:"blob_id"`
+	Md5             string  `db:"md5" json:"md5"`
+	Sha1            string  `db:"sha1" json:"sha1"`
 }
 
 type CreateConanPackageRow struct {
@@ -50,6 +54,8 @@ func (q *Queries) CreateConanPackage(ctx context.Context, arg CreateConanPackage
 		arg.PackageRevision,
 		arg.Filename,
 		arg.BlobID,
+		arg.Md5,
+		arg.Sha1,
 	)
 	var i CreateConanPackageRow
 	err := row.Scan(&i.ID, &i.CreatedAt, &i.UpdatedAt)
@@ -65,10 +71,72 @@ func (q *Queries) DeleteConanPackage(ctx context.Context, id string) error {
 	return err
 }
 
+const findConanPackageBySHA1 = `-- name: FindConanPackageBySHA1 :one
+SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
+       COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
+       cp.md5, cp.sha1, cp.created_at, cp.updated_at
+FROM conan_packages cp
+JOIN blobs b ON b.id = cp.blob_id
+WHERE cp.repository_id = $1 AND cp.sha1 = $2 AND cp.sha1 <> '' AND cp.deleted_at IS NULL
+ORDER BY cp.created_at, cp.id
+LIMIT 1
+`
+
+type FindConanPackageBySHA1Params struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Sha1         string `db:"sha1" json:"sha1"`
+}
+
+type FindConanPackageBySHA1Row struct {
+	ID              string    `db:"id" json:"id"`
+	RepositoryID    string    `db:"repository_id" json:"repository_id"`
+	Name            string    `db:"name" json:"name"`
+	Version         string    `db:"version" json:"version"`
+	UserChannel     string    `db:"user_channel" json:"user_channel"`
+	RecipeRevision  string    `db:"recipe_revision" json:"recipe_revision"`
+	PackageID       string    `db:"package_id" json:"package_id"`
+	PackageRevision string    `db:"package_revision" json:"package_revision"`
+	Filename        string    `db:"filename" json:"filename"`
+	BlobKey         string    `db:"blob_key" json:"blob_key"`
+	Sha256          string    `db:"sha256" json:"sha256"`
+	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
+	Md5             string    `db:"md5" json:"md5"`
+	Sha1            string    `db:"sha1" json:"sha1"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+}
+
+// Checksum deploy: a live file of the repository whose content has this SHA-1.
+// Scoped to the repository, so a client can only ever reuse content it could
+// already address there.
+func (q *Queries) FindConanPackageBySHA1(ctx context.Context, arg FindConanPackageBySHA1Params) (FindConanPackageBySHA1Row, error) {
+	row := q.db.QueryRow(ctx, findConanPackageBySHA1, arg.RepositoryID, arg.Sha1)
+	var i FindConanPackageBySHA1Row
+	err := row.Scan(
+		&i.ID,
+		&i.RepositoryID,
+		&i.Name,
+		&i.Version,
+		&i.UserChannel,
+		&i.RecipeRevision,
+		&i.PackageID,
+		&i.PackageRevision,
+		&i.Filename,
+		&i.BlobKey,
+		&i.Sha256,
+		&i.SizeBytes,
+		&i.Md5,
+		&i.Sha1,
+		&i.CreatedAt,
+		&i.UpdatedAt,
+	)
+	return i, err
+}
+
 const getConanPackage = `-- name: GetConanPackage :one
 SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
        COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
-       cp.created_at, cp.updated_at
+       cp.md5, cp.sha1, cp.created_at, cp.updated_at
 FROM conan_packages cp
 LEFT JOIN blobs b ON b.id = cp.blob_id
 WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.user_channel = $4 AND cp.recipe_revision = $5
@@ -99,6 +167,8 @@ type GetConanPackageRow struct {
 	BlobKey         string    `db:"blob_key" json:"blob_key"`
 	Sha256          string    `db:"sha256" json:"sha256"`
 	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
+	Md5             string    `db:"md5" json:"md5"`
+	Sha1            string    `db:"sha1" json:"sha1"`
 	CreatedAt       time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
 }
@@ -128,6 +198,8 @@ func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams
 		&i.BlobKey,
 		&i.Sha256,
 		&i.SizeBytes,
+		&i.Md5,
+		&i.Sha1,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)
@@ -137,7 +209,7 @@ func (q *Queries) GetConanPackage(ctx context.Context, arg GetConanPackageParams
 const listConanPackages = `-- name: ListConanPackages :many
 SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
        COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
-       cp.created_at, cp.updated_at
+       cp.md5, cp.sha1, cp.created_at, cp.updated_at
 FROM conan_packages cp
 LEFT JOIN blobs b ON b.id = cp.blob_id
 WHERE cp.repository_id = $1 AND cp.deleted_at IS NULL ORDER BY cp.name ASC, cp.version DESC, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename
@@ -156,6 +228,8 @@ type ListConanPackagesRow struct {
 	BlobKey         string    `db:"blob_key" json:"blob_key"`
 	Sha256          string    `db:"sha256" json:"sha256"`
 	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
+	Md5             string    `db:"md5" json:"md5"`
+	Sha1            string    `db:"sha1" json:"sha1"`
 	CreatedAt       time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
 }
@@ -182,6 +256,8 @@ func (q *Queries) ListConanPackages(ctx context.Context, repositoryID string) ([
 			&i.BlobKey,
 			&i.Sha256,
 			&i.SizeBytes,
+			&i.Md5,
+			&i.Sha1,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -198,7 +274,7 @@ func (q *Queries) ListConanPackages(ctx context.Context, repositoryID string) ([
 const listConanRecipeFiles = `-- name: ListConanRecipeFiles :many
 SELECT cp.id, cp.repository_id, cp.name, cp.version, cp.user_channel, cp.recipe_revision, cp.package_id, cp.package_revision, cp.filename,
        COALESCE(b.blob_key, '') AS blob_key, COALESCE(b.sha256, '') AS sha256, COALESCE(b.size_bytes, 0)::bigint AS size_bytes,
-       cp.created_at, cp.updated_at
+       cp.md5, cp.sha1, cp.created_at, cp.updated_at
 FROM conan_packages cp
 LEFT JOIN blobs b ON b.id = cp.blob_id
 WHERE cp.repository_id = $1 AND cp.name = $2 AND cp.version = $3 AND cp.user_channel = $4 AND cp.deleted_at IS NULL
@@ -225,6 +301,8 @@ type ListConanRecipeFilesRow struct {
 	BlobKey         string    `db:"blob_key" json:"blob_key"`
 	Sha256          string    `db:"sha256" json:"sha256"`
 	SizeBytes       int64     `db:"size_bytes" json:"size_bytes"`
+	Md5             string    `db:"md5" json:"md5"`
+	Sha1            string    `db:"sha1" json:"sha1"`
 	CreatedAt       time.Time `db:"created_at" json:"created_at"`
 	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
 }
@@ -257,6 +335,8 @@ func (q *Queries) ListConanRecipeFiles(ctx context.Context, arg ListConanRecipeF
 			&i.BlobKey,
 			&i.Sha256,
 			&i.SizeBytes,
+			&i.Md5,
+			&i.Sha1,
 			&i.CreatedAt,
 			&i.UpdatedAt,
 		); err != nil {
@@ -301,4 +381,20 @@ func (q *Queries) ListConanRecipes(ctx context.Context, repositoryID string) ([]
 		return nil, err
 	}
 	return items, nil
+}
+
+const setConanPackageDigests = `-- name: SetConanPackageDigests :exec
+UPDATE conan_packages SET md5 = $2, sha1 = $3 WHERE id = $1 AND deleted_at IS NULL
+`
+
+type SetConanPackageDigestsParams struct {
+	ID   string `db:"id" json:"id"`
+	Md5  string `db:"md5" json:"md5"`
+	Sha1 string `db:"sha1" json:"sha1"`
+}
+
+// Records the digests computed for a file stored before they were tracked.
+func (q *Queries) SetConanPackageDigests(ctx context.Context, arg SetConanPackageDigestsParams) error {
+	_, err := q.db.Exec(ctx, setConanPackageDigests, arg.ID, arg.Md5, arg.Sha1)
+	return err
 }

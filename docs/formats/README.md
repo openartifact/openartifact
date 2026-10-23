@@ -38,7 +38,7 @@ Replace `HOST` with your server (for example `http://localhost:8080`) and `REPO`
 | NuGet | `nuget` | `HOST/repos/REPO/v3/index.json` | hosted, proxy, group | `dotnet nuget push` (`PUT /v3/package`) | [nuget](nuget.md) |
 | RubyGems | `rubygems` | `HOST/repos/REPO/` | hosted | `gem push` (`POST /api/v1/gems`) | [rubygems](rubygems.md) |
 | Conda | `conda` | `HOST/repos/REPO/<platform>/repodata.json` | hosted | `POST /<platform>` with `X-Filename` | [conda](conda.md) |
-| Conan (v2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`) | hosted | `conan upload` | [conan](conan.md) |
+| Conan (1.x and 2) | `conan` | `HOST/repos/REPO/` (`v2/conans/...`, `v1/conans/...`) | hosted | `conan upload` | [conan](conan.md) |
 
 Proxy repositories exist for 11 formats (Maven, npm, PyPI, Helm, Go, Cargo, NuGet, Debian, RPM, Docker and raw); group repositories for 9 (all of those except Debian and RPM). Creating any other combination is rejected with `400 validation_failed`. Proxy and group repositories are read-only: writes answer `405`.
 

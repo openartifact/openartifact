@@ -614,7 +614,22 @@ func classifyRoute(r *http.Request) routeScope {
 		action = "delete"
 	}
 
+	if isConanV1Delete(r.Method, artifactPath) {
+		action = "delete"
+	}
+
 	return routeScope{action: action, repoName: repoName, artifactPath: artifactPath}
+}
+
+// isConanV1Delete reports whether the request is one of the Conan 1 POSTs that
+// delete (`packages/delete`, `remove_files`): a POST would otherwise need only
+// "write".
+func isConanV1Delete(method, artifactPath string) bool {
+	if method != http.MethodPost || !strings.HasPrefix(artifactPath, "v1/conans/") {
+		return false
+	}
+
+	return strings.HasSuffix(artifactPath, "/packages/delete") || strings.HasSuffix(artifactPath, "/remove_files")
 }
 
 // repoDataSegments are the sub-resources of /api/v1/repositories/{name}/ that

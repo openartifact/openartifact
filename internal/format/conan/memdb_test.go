@@ -47,7 +47,7 @@ func (d *conanDB) CreateConanPackage(_ context.Context, p *models.ConanPackage) 
 
 	for _, row := range d.rows {
 		if row.RepositoryID == p.RepositoryID && keyOf(row) == keyOf(p) {
-			row.BlobKey, row.SHA256, row.SizeBytes, row.UpdatedAt = p.BlobKey, p.SHA256, p.SizeBytes, d.clock
+			row.BlobKey, row.SHA256, row.SizeBytes, row.MD5, row.SHA1, row.UpdatedAt = p.BlobKey, p.SHA256, p.SizeBytes, p.MD5, p.SHA1, d.clock
 			p.ID, p.CreatedAt, p.UpdatedAt = row.ID, row.CreatedAt, row.UpdatedAt
 
 			return nil
@@ -115,6 +115,37 @@ func (d *conanDB) ListConanRecipes(_ context.Context, repoID string) ([]models.C
 	})
 
 	return out, nil
+}
+
+// FindConanPackageBySHA1 is the first (oldest) live row of the repository with
+// the SHA-1.
+func (d *conanDB) FindConanPackageBySHA1(_ context.Context, repoID, sha1 string) (*models.ConanPackage, error) {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, row := range d.rows {
+		if row.RepositoryID == repoID && row.SHA1 == sha1 && sha1 != "" {
+			cp := *row
+			return &cp, nil
+		}
+	}
+
+	return nil, nil // not found is (nil, nil) in the Database contract
+}
+
+// SetConanPackageDigests records digests without moving the row's time, like
+// the real UPDATE.
+func (d *conanDB) SetConanPackageDigests(_ context.Context, id, md5, sha1 string) error {
+	d.mu.Lock()
+	defer d.mu.Unlock()
+
+	for _, row := range d.rows {
+		if row.ID == id {
+			row.MD5, row.SHA1 = md5, sha1
+		}
+	}
+
+	return nil
 }
 
 func (d *conanDB) DeleteConanPackage(_ context.Context, id string) error {

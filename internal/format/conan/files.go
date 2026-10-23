@@ -126,7 +126,9 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 
 // handleUpload stores one file of a recipe or package revision. Re-uploading
 // the same bytes is a no-op; replacing a file with different bytes is refused
-// in a repository with immutable releases.
+// in a repository with immutable releases. A request with
+// `X-Checksum-Deploy: true` and no body stores a file the repository already
+// holds, by its SHA-1 (see checksum.go).
 func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	s, ok := h.fileScopeOf(w, r)
 	if !ok {
@@ -147,6 +149,11 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
+	if isChecksumDeploy(r) {
+		h.deployByChecksum(w, r, s)
+		return
+	}
+
 	data, err := base.ReadAllLimited(r.Body, maxConanUploadBytes)
 	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
@@ -162,19 +169,21 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	defer func() { _ = r.Body.Close() }()
 
 	sum := sha256.Sum256(data)
-	file := &models.ConanPackage{
-		RepositoryID:    s.repoID,
-		Name:            s.recipe.Name,
-		Version:         s.recipe.Version,
-		UserChannel:     s.recipe.UserChannel,
-		RecipeRevision:  s.rrev,
-		PackageID:       s.pid,
-		PackageRevision: s.prev,
-		Filename:        s.filename,
-		SHA256:          hex.EncodeToString(sum[:]),
-		SizeBytes:       int64(len(data)),
-	}
+	md5Sum, sha1Sum := wireDigests(data)
+	file := s.newFile()
+	file.SHA256 = hex.EncodeToString(sum[:])
+	file.MD5, file.SHA1 = md5Sum, sha1Sum
+	file.SizeBytes = int64(len(data))
 
+	h.commit(w, r, s, file, func(ctx context.Context) error { return h.store(ctx, file, data) })
+}
+
+// commit makes file the content of the scope's file name: same bytes already
+// there is a no-op, different bytes replace them unless the repository has
+// immutable releases, and the quota is reserved before persist runs. persist
+// writes the blob and the row; it returns errChecksumMiss when a deploy finds
+// its source gone, which is a 404 (the client then uploads the bytes).
+func (h *HTTPHandler) commit(w http.ResponseWriter, r *http.Request, s *scope, file *models.ConanPackage, persist func(ctx context.Context) error) {
 	previous, err := h.DB.GetConanPackage(r.Context(), s.repoID, s.key(s.filename))
 	if err != nil {
 		h.fail(w, "failed to look up conan file", err, "path", s.resource()+"/"+s.filename)
@@ -183,7 +192,9 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 
 	if previous != nil {
 		if previous.SHA256 == file.SHA256 {
+			h.keepDigests(r.Context(), previous, file)
 			h.writeStored(w, previous)
+
 			return
 		}
 
@@ -206,9 +217,14 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.store(r.Context(), file, data); err != nil {
+	if err := persist(r.Context()); err != nil {
 		if relErr := quota.Release(r.Context(), h.DB, s.repoID, file.SizeBytes); relErr != nil {
 			h.Log.Warnw("failed to release quota", "repo", s.repoName, "error", relErr)
+		}
+
+		if errors.Is(err, errChecksumMiss) {
+			http.NotFound(w, r)
+			return
 		}
 
 		h.fail(w, "failed to store conan file", err, "path", s.resource()+"/"+s.filename)

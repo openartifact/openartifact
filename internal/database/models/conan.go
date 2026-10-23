@@ -27,6 +27,11 @@ type ConanPackage struct {
 	BlobKey   string
 	SHA256    string
 	SizeBytes int64
+	// MD5 and SHA1 are the lowercase hex digests Conan 1 clients ask for
+	// (snapshots, checksum deploy); empty for files stored before they were
+	// tracked.
+	MD5       string
+	SHA1      string
 	CreatedAt time.Time
 	UpdatedAt time.Time
 }

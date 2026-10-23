@@ -24,7 +24,7 @@ func (h *HTTPHandler) handleDeleteRecipe(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	h.deleteScope(w, r, s, func(*models.ConanPackage) bool { return true })
+	h.deleteScope(w, r, s, false, func(*models.ConanPackage) bool { return true })
 }
 
 // handleDeleteRecipeRevision removes one recipe revision and its packages.
@@ -34,7 +34,7 @@ func (h *HTTPHandler) handleDeleteRecipeRevision(w http.ResponseWriter, r *http.
 		return
 	}
 
-	h.deleteScope(w, r, s, func(f *models.ConanPackage) bool { return f.RecipeRevision == s.rrev })
+	h.deleteScope(w, r, s, false, func(f *models.ConanPackage) bool { return f.RecipeRevision == s.rrev })
 }
 
 // handleDeletePackages removes every package of a recipe revision.
@@ -44,7 +44,7 @@ func (h *HTTPHandler) handleDeletePackages(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	h.deleteScope(w, r, s, func(f *models.ConanPackage) bool {
+	h.deleteScope(w, r, s, false, func(f *models.ConanPackage) bool {
 		return f.RecipeRevision == s.rrev && f.PackageID != ""
 	})
 }
@@ -56,16 +56,16 @@ func (h *HTTPHandler) handleDeletePackageRevision(w http.ResponseWriter, r *http
 		return
 	}
 
-	h.deleteScope(w, r, s, func(f *models.ConanPackage) bool {
+	h.deleteScope(w, r, s, false, func(f *models.ConanPackage) bool {
 		return f.RecipeRevision == s.rrev && f.PackageID == s.pid && f.PackageRevision == s.prev
 	})
 }
 
 // deleteScope deletes the files of the scope's recipe that match: into the
 // trash when the repository keeps one, else for good together with their blobs.
-// Deleting nothing is a 404; a repository with immutable releases refuses. The
+// Deleting nothing is a 404 (a 200 with allowEmpty); a repository with immutable releases refuses. The
 // conan client treats any status but 200 as failure.
-func (h *HTTPHandler) deleteScope(w http.ResponseWriter, r *http.Request, s *scope, match func(*models.ConanPackage) bool) {
+func (h *HTTPHandler) deleteScope(w http.ResponseWriter, r *http.Request, s *scope, allowEmpty bool, match func(*models.ConanPackage) bool) {
 	files, ok := h.recipeFiles(w, r, s)
 	if !ok {
 		return
@@ -80,7 +80,13 @@ func (h *HTTPHandler) deleteScope(w http.ResponseWriter, r *http.Request, s *sco
 	}
 
 	if len(doomed) == 0 {
+		if allowEmpty {
+			w.WriteHeader(http.StatusOK)
+			return
+		}
+
 		http.NotFound(w, r)
+
 		return
 	}
 
