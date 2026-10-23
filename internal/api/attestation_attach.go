@@ -87,52 +87,55 @@ func (a *AttestationAttacher) Enabled(ctx context.Context, repo *models.Reposito
 	return on
 }
 
-// subject resolves the image an artifact id names: its image path, the manifest
-// digest and the name the attestation gives it.
-func (a *AttestationAttacher) subject(ctx context.Context, repo *models.Repository, artifactID string) (image, digest, name string, err error) {
+// attachSubject is the image an artifact id names.
+type attachSubject struct {
+	image  string // image path inside the repository
+	digest string // manifest digest
+	name   string // the name the attestation gives the image (its purl)
+}
+
+// subject resolves the image an artifact id names.
+func (a *AttestationAttacher) subject(ctx context.Context, repo *models.Repository, artifactID string) (attachSubject, error) {
 	if repo.Format != "docker" || repo.RepoType != "hosted" {
-		return "", "", "", errAttachNotDocker
+		return attachSubject{}, errAttachNotDocker
 	}
 
 	id, err := a.gen.Identity(ctx, repo.ID, repo.Format, artifactID)
 	if err != nil {
-		return "", "", "", fmt.Errorf("resolve artifact: %w", err)
+		return attachSubject{}, fmt.Errorf("resolve artifact: %w", err)
+	}
+
+	repoName, image := ocipath.SplitName(id.Name)
+	if uuid.Validate(artifactID) != nil && repoName != repo.Name {
+		return attachSubject{}, errAttachNoSubject
+	}
+
+	out := attachSubject{image: image, name: id.PURL}
+	if out.name == "" {
+		out.name = artifactID
 	}
 
 	_, version := splitDockerArtifact(artifactID)
-	imageName := id.Name
 
 	switch {
 	case id.SHA256 != "":
-		digest = "sha256:" + id.SHA256
+		out.digest = "sha256:" + id.SHA256
 	case strings.HasPrefix(version, "sha256:"):
-		digest = version
+		out.digest = version
 	default:
-		_, image := ocipath.SplitName(imageName)
-
 		tag, tagErr := a.db.GetDockerTag(ctx, repo.ID, image, version)
 		if tagErr != nil {
-			return "", "", "", fmt.Errorf("resolve tag: %w", tagErr)
+			return attachSubject{}, fmt.Errorf("resolve tag: %w", tagErr)
 		}
 
 		if tag == nil {
-			return "", "", "", errAttachNoSubject
+			return attachSubject{}, errAttachNoSubject
 		}
 
-		digest = tag.ManifestDigest
+		out.digest = tag.ManifestDigest
 	}
 
-	repoName, image := ocipath.SplitName(imageName)
-	if uuid.Validate(artifactID) != nil && repoName != repo.Name {
-		return "", "", "", errAttachNoSubject
-	}
-
-	name = id.PURL
-	if name == "" {
-		name = artifactID
-	}
-
-	return image, digest, name, nil
+	return out, nil
 }
 
 func splitDockerArtifact(artifactID string) (string, string) {
@@ -151,11 +154,12 @@ func (a *AttestationAttacher) attach(ctx context.Context, repo *models.Repositor
 		return nil, errAttachNotDocker
 	}
 
-	image, digest, name, err := a.subject(ctx, repo, artifactID)
+	subj, err := a.subject(ctx, repo, artifactID)
 	if err != nil {
 		return nil, err
 	}
 
+	image, digest, name := subj.image, subj.digest, subj.name
 	docSum := sha256.Sum256(doc)
 	annotations := map[string]string{
 		annotationBundleContent:   "dsse-envelope",

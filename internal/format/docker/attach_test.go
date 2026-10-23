@@ -91,16 +91,6 @@ func TestAttachReferrerListsMetersAndReplacesBySlot(t *testing.T) {
 		t.Fatalf("get referrer manifest = %d", rec.Code)
 	}
 
-	// Attaching identical content again changes nothing.
-	again, err := g.h.AttachReferrer(context.Background(), repo, attachReq(subject, `{"v":1}`))
-	if err != nil || again.Created || again.Digest != first.Digest {
-		t.Fatalf("second attach = %+v, %v; want the same referrer, not created", again, err)
-	}
-
-	if db.usage("reg") != after {
-		t.Errorf("an idempotent attach changed the usage")
-	}
-
 	// New content for the same slot replaces the old referrer.
 	next, err := g.h.AttachReferrer(context.Background(), repo, attachReq(subject, `{"v":2}`))
 	if err != nil || !next.Created || next.Replaced != first.Digest {
@@ -114,8 +104,39 @@ func TestAttachReferrerListsMetersAndReplacesBySlot(t *testing.T) {
 	if rec := g.do(http.MethodGet, "/v2/reg/manifests/"+first.Digest, ""); rec.Code != http.StatusNotFound {
 		t.Errorf("replaced referrer manifest = %d; want 404", rec.Code)
 	}
+}
 
-	// A different slot lives next to it.
+func TestAttachReferrerIsIdempotent(t *testing.T) {
+	g, db := quotaRegistry(t, 0, "reg")
+	subject := g.pushImage("1.0")
+	repo := db.repos["reg"]
+
+	first, err := g.h.AttachReferrer(context.Background(), repo, attachReq(subject, `{"v":1}`))
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	used := db.usage("reg")
+
+	again, err := g.h.AttachReferrer(context.Background(), repo, attachReq(subject, `{"v":1}`))
+	if err != nil || again.Created || again.Digest != first.Digest {
+		t.Fatalf("second attach = %+v, %v; want the same referrer, not created", again, err)
+	}
+
+	if db.usage("reg") != used {
+		t.Errorf("an idempotent attach changed the usage")
+	}
+}
+
+func TestAttachReferrerKeepsOtherSlots(t *testing.T) {
+	g, db := quotaRegistry(t, 0, "reg")
+	subject := g.pushImage("1.0")
+	repo := db.repos["reg"]
+
+	if _, err := g.h.AttachReferrer(context.Background(), repo, attachReq(subject, `{"v":1}`)); err != nil {
+		t.Fatal(err)
+	}
+
 	other := attachReq(subject, `{"v":3}`)
 	other.Annotations = map[string]string{"kind": "vex", "predicate": "openvex"}
 
@@ -123,7 +144,7 @@ func TestAttachReferrerListsMetersAndReplacesBySlot(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	if list = g.referrers("reg", subject); len(list.Manifests) != 2 {
+	if list := g.referrers("reg", subject); len(list.Manifests) != 2 {
 		t.Fatalf("referrers = %+v; want the SBOM and the VEX slot", list)
 	}
 }

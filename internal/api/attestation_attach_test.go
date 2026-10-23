@@ -194,7 +194,7 @@ func (f *attachFixture) do(method, target, body string, admin bool) *httptest.Re
 }
 
 // attachedStatement decodes the in-toto statement inside the attached Sigstore bundle.
-func attachedStatement(t *testing.T, req docker.ReferrerRequest) (predicateType string, subjectDigests []string) {
+func attachedStatement(t *testing.T, req docker.ReferrerRequest) (string, []string) {
 	t.Helper()
 
 	var bundle struct {
@@ -217,11 +217,12 @@ func attachedStatement(t *testing.T, req docker.ReferrerRequest) (predicateType 
 
 	require.NoError(t, json.Unmarshal(raw, &st))
 
+	var digests []string
 	for _, s := range st.Subject {
-		subjectDigests = append(subjectDigests, s.Digest["sha256"])
+		digests = append(digests, s.Digest["sha256"])
 	}
 
-	return st.PredicateType, subjectDigests
+	return st.PredicateType, digests
 }
 
 func TestAttestationAttachSetting(t *testing.T) {
