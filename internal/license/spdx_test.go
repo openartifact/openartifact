@@ -5,9 +5,8 @@
 package license_test
 
 import (
+	"slices"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
 
 	"github.com/openartifact/openartifact/internal/license"
 )
@@ -23,16 +22,20 @@ func TestIsSPDXExpression(t *testing.T) {
 
 	invalid := []string{
 		"", "   ", "BSD", "BSD License", "Proprietary", "UNKNOWN", "SEE LICENSE IN LICENSE.md",
-		"MIT OR", "OR MIT", "MIT MIT", "(MIT", "MIT)", "MIT WITH", "MIT WITH Not-An-Exception",
+		"MIT OR", "OR MIT", "MIT BSD-3-Clause", "(MIT", "MIT)", "MIT WITH", "MIT WITH Not-An-Exception",
 		"LicenseRef-custom", "https://example.com/license",
 	}
 
 	for _, expr := range valid {
-		assert.True(t, license.IsSPDXExpression(expr), expr)
+		if !license.IsSPDXExpression(expr) {
+			t.Errorf("IsSPDXExpression(%q) = false, want true", expr)
+		}
 	}
 
 	for _, expr := range invalid {
-		assert.False(t, license.IsSPDXExpression(expr), expr)
+		if license.IsSPDXExpression(expr) {
+			t.Errorf("IsSPDXExpression(%q) = true, want false", expr)
+		}
 	}
 }
 
@@ -46,6 +49,11 @@ func TestUnresolved(t *testing.T) {
 		"MIT OR Apache-2.0", "BSD", "", "License :: OSI Approved :: ISC License (ISCL)",
 	})
 
-	assert.Equal(t, []string{"BSD", "BSD License"}, got, "raw names are flagged once; mapped classifiers are resolved")
-	assert.Empty(t, d.Unresolved(nil))
+	if !slices.Equal(got, []string{"BSD", "BSD License"}) {
+		t.Errorf("Unresolved = %v, want raw names flagged once and mapped classifiers resolved", got)
+	}
+
+	if got := d.Unresolved(nil); len(got) != 0 {
+		t.Errorf("Unresolved(nil) = %v, want none", got)
+	}
 }

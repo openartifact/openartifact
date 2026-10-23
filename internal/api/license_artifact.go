@@ -73,7 +73,7 @@ func (s artifactLicenseSource) fromFile(ctx context.Context, repoID, artifactID 
 		return nil, fmt.Errorf("resolve artifact: %w", err)
 	}
 
-	if blob == nil || blob.SHA256 == "" || !(licensemeta.Supported(blob.Format, blob.Filename) || blob.Format == "rubygems") {
+	if blob == nil || blob.SHA256 == "" || (!licensemeta.Supported(blob.Format, blob.Filename) && blob.Format != "rubygems") {
 		return nil, nil
 	}
 

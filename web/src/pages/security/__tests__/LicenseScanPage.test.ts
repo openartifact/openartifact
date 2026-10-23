@@ -19,13 +19,14 @@ const base = {
 }
 const QUARANTINED = { ...base, id: 'q-scan', artifact_id: 'art-1', licenses: ['GPL-3.0'], quarantined: true, quarantine_approved: false }
 const OK = { ...base, id: 'ok-scan', artifact_id: 'art-2', licenses: ['MIT'], quarantined: false, quarantine_approved: false }
+const RAW = { ...base, id: 'raw-scan', artifact_id: 'art-4', licenses: ['BSD', 'MIT'], unresolved_licenses: ['BSD'], quarantined: false, quarantine_approved: false }
 const APPROVED = { ...base, id: 'a-scan', artifact_id: 'art-3', licenses: ['GPL-3.0'], quarantined: false, quarantine_approved: true }
 
 // PageHeader reads the router; the page tests only need its action slot.
 const PageHeaderStub = { template: '<div><slot name="actions" /></div>' }
 
 async function mountPage(extra?: Parameters<typeof mockSecurityApi>[2]) {
-  const calls = mockSecurityApi(`/api/v1/repositories/${REPO}/license/scans`, [QUARANTINED, OK, APPROVED], extra)
+  const calls = mockSecurityApi(`/api/v1/repositories/${REPO}/license/scans`, [QUARANTINED, OK, APPROVED, RAW], extra)
   const router = await makeRouter('/security/licenses')
   const wrapper = mount(LicenseScanPage, { global: { plugins: [createPinia(), router], stubs: { RouterLink: true, PageHeader: PageHeaderStub } } })
   await selectRepo(wrapper)
@@ -88,5 +89,19 @@ describe('LicenseScanPage quarantine', () => {
     expect(post.path).toBe(`/api/v1/repositories/${REPO}/license/scans/ok-scan/quarantine`)
     expect(post.body).toEqual({ quarantined: true })
     expect(rowOf(wrapper, 'MIT').find('[data-testid="license-quarantined"]').exists()).toBe(true)
+  })
+})
+
+describe('LicenseScanPage unresolved licenses', () => {
+  it('flags licenses that name no single SPDX license and leaves resolved ones alone', async () => {
+    const { wrapper } = await mountPage()
+    const row = rowOf(wrapper, 'BSD')
+    const flagged = row.findAll('[data-testid="license-unresolved"]')
+    expect(flagged).toHaveLength(1)
+    expect(flagged[0]!.text()).toContain('BSD')
+    expect(flagged[0]!.attributes('title')).toContain('SPDX')
+    expect(row.text()).toContain('MIT')
+
+    expect(rowOf(wrapper, 'GPL-3.0').find('[data-testid="license-unresolved"]').exists()).toBe(false)
   })
 })

@@ -57,7 +57,7 @@ License detection and SBOM generation for an artifact id read these keys from it
 
 | Key | Used for |
 |---|---|
-| `license`, `License`, `spdx_id`, `spdxId` | License detection. |
+| `license`, `License`, `spdx_id`, `spdxId` | License detection. Added to the licenses the stored package file declares ([License metadata](../security/licenses.md)); a property cannot hide them. |
 | `licenses`, `Licenses` | Comma-separated list of licenses. |
 | `dependencies` | JSON array of `{"name","version"}` objects: SBOM components. |
 

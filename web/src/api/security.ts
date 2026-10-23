@@ -176,7 +176,7 @@ export async function listLicenseScans(repo: string): Promise<LicenseScan[]> {
   return res.scans ?? []
 }
 
-/** Licenses are derived server-side from the artifact's stored properties. */
+/** Licenses are derived server-side from the stored package file and the artifact's license properties. */
 export function triggerLicenseScan(repo: string, artifactId: string): Promise<LicenseScanRunResult> {
   return request<LicenseScanRunResult>(`${repoBase(repo)}/license/scan`, jsonPost({ artifact_id: artifactId }))
 }

@@ -653,6 +653,8 @@ export const enAdmin = {
   'sec.license.status.failed': 'Failed',
   'sec.license.quarantined': 'Quarantined',
   'sec.license.approved': 'Approved',
+  'sec.license.unresolved': 'unresolved',
+  'sec.license.unresolvedHint': 'Read from the package as written; it does not name a single SPDX license, so policies can only match it by this exact text. Review it.',
   'sec.license.quarantinedHint': 'Downloads are blocked until an administrator approves this artifact.',
   'sec.license.approvedHint': 'An administrator approved this artifact for its current licenses.',
   'sec.license.approve': 'Approve',

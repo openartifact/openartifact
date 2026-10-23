@@ -23,6 +23,7 @@ require (
 	github.com/jackc/pgx/v5 v5.11.0
 	github.com/klauspost/compress v1.20.3
 	github.com/mark3labs/mcp-go v1.3.0
+	github.com/pelletier/go-toml/v2 v2.4.3
 	github.com/prometheus/client_golang v1.25.0
 	github.com/santhosh-tekuri/jsonschema/v6 v6.0.3
 	github.com/testcontainers/testcontainers-go/modules/postgres v0.44.0
@@ -108,7 +109,6 @@ require (
 	github.com/munnerz/goautoneg v0.0.0-20191010083416-a7dc8b61c822 // indirect
 	github.com/opencontainers/go-digest v1.0.0 // indirect
 	github.com/opencontainers/image-spec v1.1.1 // indirect
-	github.com/pelletier/go-toml/v2 v2.4.3 // indirect
 	github.com/power-devops/perfstat v0.0.0-20240221224432-82ca36839d55 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect
 	github.com/prometheus/common v0.72.1 // indirect

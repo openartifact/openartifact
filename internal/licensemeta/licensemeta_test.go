@@ -7,11 +7,9 @@ package licensemeta_test
 import (
 	"context"
 	"errors"
+	"reflect"
 	"strings"
 	"testing"
-
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensemeta/archivetest"
@@ -72,9 +70,9 @@ func TestPyPIWheelPrecedence(t *testing.T) {
 			)
 
 			res, err := read(t, "pypi", "demo-1.0-py3-none-any.whl", wheel)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, res.Licenses)
-			assert.Equal(t, tc.source, res.Source)
+			noError(t, err)
+			equal(t, tc.want, res.Licenses)
+			equal(t, tc.source, res.Source)
 		})
 	}
 }
@@ -94,16 +92,16 @@ func TestPyPISdists(t *testing.T) {
 		)
 
 		res, err := read(t, "pypi", "demo-1.0.tar.gz", data)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"MIT"}, res.Licenses, "the top-level PKG-INFO, not the egg-info copy")
+		noError(t, err)
+		equal(t, []string{"MIT"}, res.Licenses, "the top-level PKG-INFO, not the egg-info copy")
 	})
 
 	t.Run("zip", func(t *testing.T) {
 		t.Parallel()
 
 		res, err := read(t, "pypi", "demo-1.0.zip", buildZip(t, file("demo-1.0/PKG-INFO", pkgInfo)))
-		require.NoError(t, err)
-		assert.Equal(t, []string{"MIT"}, res.Licenses)
+		noError(t, err)
+		equal(t, []string{"MIT"}, res.Licenses)
 	})
 }
 
@@ -132,8 +130,8 @@ func TestNPMTarball(t *testing.T) {
 			)
 
 			res, err := read(t, "npm", "a-1.0.0.tgz", data)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, res.Licenses)
+			noError(t, err)
+			equal(t, tc.want, res.Licenses)
 		})
 	}
 }
@@ -161,8 +159,8 @@ func TestCargoCrate(t *testing.T) {
 			)
 
 			res, err := read(t, "cargo", "c-1.0.0.crate", data)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, res.Licenses)
+			noError(t, err)
+			equal(t, tc.want, res.Licenses)
 		})
 	}
 
@@ -170,8 +168,8 @@ func TestCargoCrate(t *testing.T) {
 		t.Parallel()
 
 		_, err := read(t, "cargo", "c-1.0.0.crate", buildTarGz(t, file("c-1.0.0/Cargo.toml", "[package\nlicense = ")))
-		require.Error(t, err)
-		assert.False(t, licensemeta.Unsafe(err))
+		hasError(t, err)
+		isFalse(t, licensemeta.Unsafe(err))
 	})
 }
 
@@ -206,8 +204,8 @@ func TestNuGetPackage(t *testing.T) {
 			)
 
 			res, err := read(t, "nuget", "demo.1.0.0.nupkg", data)
-			require.NoError(t, err)
-			assert.Equal(t, tc.want, res.Licenses)
+			noError(t, err)
+			equal(t, tc.want, res.Licenses)
 		})
 	}
 }
@@ -225,8 +223,8 @@ func TestMavenPOM(t *testing.T) {
 		t.Parallel()
 
 		res, err := read(t, "maven", "a-1.pom", []byte(pom))
-		require.NoError(t, err)
-		assert.Equal(t, want, res.Licenses)
+		noError(t, err)
+		equal(t, want, res.Licenses)
 	})
 
 	t.Run("pom embedded in a jar", func(t *testing.T) {
@@ -235,8 +233,8 @@ func TestMavenPOM(t *testing.T) {
 		jar := buildZip(t, file("META-INF/MANIFEST.MF", "Manifest-Version: 1.0\n"), file("META-INF/maven/g/a/pom.xml", pom))
 
 		res, err := read(t, "maven", "a-1.jar", jar)
-		require.NoError(t, err)
-		assert.Equal(t, want, res.Licenses)
+		noError(t, err)
+		equal(t, want, res.Licenses)
 	})
 }
 
@@ -244,17 +242,17 @@ func TestUnsupportedAndEmpty(t *testing.T) {
 	t.Parallel()
 
 	_, err := read(t, "pypi", "demo-1.0.exe", []byte("MZ"))
-	require.ErrorIs(t, err, licensemeta.ErrUnsupported)
+	errorIs(t, err, licensemeta.ErrUnsupported)
 
 	_, err = read(t, "docker", "layer.tar", nil)
-	require.ErrorIs(t, err, licensemeta.ErrUnsupported)
+	errorIs(t, err, licensemeta.ErrUnsupported)
 
 	_, err = read(t, "pypi", "demo-1.0-py3-none-any.whl", buildZip(t, file("demo/__init__.py", "")))
-	require.ErrorIs(t, err, licensemeta.ErrNoMetadata)
+	errorIs(t, err, licensemeta.ErrNoMetadata)
 
 	_, err = read(t, "pypi", "demo-1.0-py3-none-any.whl", []byte("not a zip"))
-	require.Error(t, err)
-	assert.False(t, licensemeta.Unsafe(err), "a file that is not an archive is unreadable, not unsafe")
+	hasError(t, err)
+	isFalse(t, licensemeta.Unsafe(err), "a file that is not an archive is unreadable, not unsafe")
 }
 
 func TestHostileArchives(t *testing.T) {
@@ -273,7 +271,7 @@ func TestHostileArchives(t *testing.T) {
 		)
 
 		_, err := read(t, "pypi", "demo-1.0-py3-none-any.whl", wheel)
-		require.ErrorIs(t, err, licensemeta.ErrNoMetadata)
+		errorIs(t, err, licensemeta.ErrNoMetadata)
 
 		tgz := buildTarGz(t,
 			file("../package/package.json", `{"license":"MIT"}`),
@@ -281,7 +279,7 @@ func TestHostileArchives(t *testing.T) {
 		)
 
 		_, err = read(t, "npm", "a-1.0.0.tgz", tgz)
-		require.ErrorIs(t, err, licensemeta.ErrNoMetadata)
+		errorIs(t, err, licensemeta.ErrNoMetadata)
 	})
 
 	t.Run("two METADATA files are ambiguous", func(t *testing.T) {
@@ -293,7 +291,7 @@ func TestHostileArchives(t *testing.T) {
 		)
 
 		_, err := read(t, "pypi", "demo-1.0-py3-none-any.whl", wheel)
-		require.ErrorIs(t, err, licensemeta.ErrUnsafe)
+		errorIs(t, err, licensemeta.ErrUnsafe)
 	})
 
 	t.Run("two package.json files are ambiguous", func(t *testing.T) {
@@ -305,14 +303,14 @@ func TestHostileArchives(t *testing.T) {
 		)
 
 		_, err := read(t, "npm", "a-1.0.0.tgz", tgz)
-		require.ErrorIs(t, err, licensemeta.ErrUnsafe)
+		errorIs(t, err, licensemeta.ErrUnsafe)
 	})
 
 	t.Run("two nuspec files are ambiguous", func(t *testing.T) {
 		t.Parallel()
 
 		_, err := read(t, "nuget", "d.1.0.0.nupkg", buildZip(t, file("a.nuspec", "<package/>"), file("b.nuspec", "<package/>")))
-		require.ErrorIs(t, err, licensemeta.ErrUnsafe)
+		errorIs(t, err, licensemeta.ErrUnsafe)
 	})
 
 	t.Run("a metadata file over the limit is refused", func(t *testing.T) {
@@ -321,12 +319,12 @@ func TestHostileArchives(t *testing.T) {
 		big := "{\"license\":\"MIT\",\"padding\":\"" + strings.Repeat("a", 2<<20) + "\"}"
 
 		_, err := read(t, "npm", "a-1.0.0.tgz", buildTarGz(t, file("package/package.json", big)))
-		require.ErrorIs(t, err, licensemeta.ErrUnsafe)
+		errorIs(t, err, licensemeta.ErrUnsafe)
 
 		wheel := buildZip(t, file("demo-1.0.dist-info/METADATA", metadata+"Description: "+strings.Repeat("a", 2<<20)+"\n"))
 
 		_, err = read(t, "pypi", "demo-1.0-py3-none-any.whl", wheel)
-		require.ErrorIs(t, err, licensemeta.ErrUnsafe, "headers padded past the limit")
+		errorIs(t, err, licensemeta.ErrUnsafe, "headers padded past the limit")
 	})
 
 	t.Run("a zip bomb member is refused without being inflated", func(t *testing.T) {
@@ -336,13 +334,13 @@ func TestHostileArchives(t *testing.T) {
 		wheel := buildZip(t, file("demo-1.0.dist-info/METADATA", metadata+"\n"+strings.Repeat("\x00", 64<<20)))
 
 		res, err := read(t, "pypi", "demo-1.0-py3-none-any.whl", wheel)
-		require.NoError(t, err, "only the header block is read; the body is never inflated past it")
-		assert.Equal(t, []string{"MIT"}, res.Licenses)
+		noError(t, err, "only the header block is read; the body is never inflated past it")
+		equal(t, []string{"MIT"}, res.Licenses)
 
 		bomb := buildZip(t, file("demo-1.0.dist-info/METADATA", strings.Repeat("A", 64<<20)))
 
 		_, err = read(t, "pypi", "demo-1.0-py3-none-any.whl", bomb)
-		require.ErrorIs(t, err, licensemeta.ErrUnsafe)
+		errorIs(t, err, licensemeta.ErrUnsafe)
 	})
 
 	t.Run("bulk data ahead of package.json is skipped, not stored", func(t *testing.T) {
@@ -354,8 +352,8 @@ func TestHostileArchives(t *testing.T) {
 		)
 
 		res, err := read(t, "npm", "a-1.0.0.tgz", tgz)
-		require.NoError(t, err)
-		assert.Equal(t, []string{"MIT"}, res.Licenses, "the 8 MiB member is streamed past, not kept")
+		noError(t, err)
+		equal(t, []string{"MIT"}, res.Licenses, "the 8 MiB member is streamed past, not kept")
 	})
 }
 
@@ -368,13 +366,53 @@ func TestReadHonoursContext(t *testing.T) {
 	data := buildTarGz(t, file("package/package.json", `{"license":"MIT"}`))
 
 	_, err := licensemeta.ReadBytes(ctx, "npm", "a-1.0.0.tgz", data)
-	require.Error(t, err)
-	assert.True(t, errors.Is(err, context.Canceled))
+	hasError(t, err)
+	errorIs(t, err, context.Canceled)
 }
 
 func TestParsePackageJSONFallback(t *testing.T) {
 	t.Parallel()
 
-	assert.Equal(t, []string{"MIT"}, licensemeta.ParsePackageJSON([]byte(`{"license":"MIT"}`)))
-	assert.Nil(t, licensemeta.ParsePackageJSON([]byte(`not json`)))
+	equal(t, []string{"MIT"}, licensemeta.ParsePackageJSON([]byte(`{"license":"MIT"}`)))
+	equal(t, []string(nil), licensemeta.ParsePackageJSON([]byte(`not json`)))
+}
+
+func noError(t *testing.T, err error, _ ...string) {
+	t.Helper()
+
+	if err != nil {
+		t.Fatalf("unexpected error: %v", err)
+	}
+}
+
+func hasError(t *testing.T, err error) {
+	t.Helper()
+
+	if err == nil {
+		t.Fatal("expected an error")
+	}
+}
+
+func errorIs(t *testing.T, err, target error, _ ...string) {
+	t.Helper()
+
+	if !errors.Is(err, target) {
+		t.Fatalf("error = %v, want %v", err, target)
+	}
+}
+
+func equal(t *testing.T, want, got any, msg ...string) {
+	t.Helper()
+
+	if !reflect.DeepEqual(want, got) {
+		t.Errorf("got %#v, want %#v %s", got, want, strings.Join(msg, " "))
+	}
+}
+
+func isFalse(t *testing.T, v bool, msg ...string) {
+	t.Helper()
+
+	if v {
+		t.Errorf("expected false: %s", strings.Join(msg, " "))
+	}
 }

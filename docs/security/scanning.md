@@ -14,10 +14,10 @@ Scans are **API-driven and manual**: vulnerability, secret and SBOM scans never 
 |---|---|---|
 | [Vulnerabilities](#vulnerability-scans) | package name, version, ecosystem | OSV API, or the `trivy` / `grype` binary ([installing them](#installing-trivy-and-grype)) |
 | [Secrets](#secret-scans) | text and/or metadata JSON you send | built-in regex rules |
-| [Licenses](#license-scans-and-policies) | `artifact_id` | the artifact's stored [properties](../repositories/properties.md) |
+| [Licenses](#license-scans-and-policies) | `artifact_id` | the stored package file ([how](licenses.md)) plus the artifact's [properties](../repositories/properties.md) |
 | [SBOM](#sbom) | `artifact_id`, format | `artifact_id` plus the stored `dependencies` property |
 
-The scanners do not open stored package files: vulnerability scans look up the name/version you pass, secret scans inspect only the content you pass, and license and SBOM data come from properties you set.
+Vulnerability scans look up the name/version you pass, secret scans inspect only the content you pass, and SBOM data comes from properties you set. License scans do open the stored package file: they read the licenses it declares itself ([License metadata](licenses.md)) and add the ones in the artifact's properties.
 
 ## Vulnerability scans
 
@@ -225,7 +225,12 @@ The rule set is built in and not configurable.
 
 ## License scans and policies
 
-Licenses are read from the artifact's properties (set them with the properties API, see [properties](../repositories/properties.md)): `license`, `License`, `spdx_id`, `spdxId`, or a comma-separated `licenses` / `Licenses`. Common names are normalized to SPDX ids (for example `MIT License` → `MIT`, `Apache 2.0` → `Apache-2.0`, `gpl-3.0` → `GPL-3.0-only`); anything else is kept as written. A request containing `metadata` is rejected.
+A scan evaluates two sources and uses both:
+
+1. **The stored package file**, when `artifact_id` is the id of a stored package of a format whose file declares licenses (PyPI, npm, Cargo, NuGet, Maven, RubyGems): the licenses the package declares in its own metadata. See [License metadata](licenses.md) for what is read and in which order.
+2. **The artifact's properties** (set them with the properties API, see [properties](../repositories/properties.md)): `license`, `License`, `spdx_id`, `spdxId`, or a comma-separated `licenses` / `Licenses`. This is how a license is recorded for raw, Go, Conan and imported artifacts, and for ids that are not a stored package.
+
+A property can add a license; it cannot hide the one the package file declares. Common names are normalized to SPDX ids (for example `MIT License` → `MIT`, `Apache 2.0` → `Apache-2.0`, `gpl-3.0` → `GPL-3.0-only`); anything else is kept as written. Entries that are not SPDX expressions after normalization (a raw `BSD`, the classifier `BSD License`, free text) are listed in `unresolved_licenses` and flagged in the web UI: they are kept as written because they do not name one license, so a policy can only match them by that exact text. A package file whose metadata is oversized or ambiguous makes the scan answer `422 unsafe_artifact`. A request containing `metadata` is rejected.
 
 | Endpoint | |
 |---|---|
@@ -251,7 +256,7 @@ Only enabled policies count, and a repository's own policies apply together with
 
 ### Blocking licenses
 
-When the repository has an enabled policy with `action: "block"`, an upload is rejected if a license declared in the package metadata is in `denied_licenses`, or if `allowed_licenses` is set and none of the declared licenses is allowed. The check runs after the metadata has been read and validated and before anything is stored, so a rejected upload leaves no package behind:
+When the repository has an enabled policy with `action: "block"`, an upload is rejected if a license declared in the package file itself is in `denied_licenses`, or if `allowed_licenses` is set and none of the declared licenses is allowed. The check runs after the metadata has been read and validated and before anything is stored, so a rejected upload leaves no package behind:
 
 ```http
 HTTP/1.1 403 Forbidden
@@ -262,16 +267,16 @@ HTTP/1.1 403 Forbidden
 
 `licenses` lists the normalized licenses that were read from the package and `policies` the violated blocking policies. If the policies cannot be read the upload is refused rather than admitted unchecked: `500` with `code` `LICENSE_POLICY_UNAVAILABLE`.
 
-The license is read from the upload itself, per format:
+The license is read from the uploaded package file itself, not from what the client says about it (details and precedence in [License metadata](licenses.md)); the client's own fields are only a fallback for a file that declares none. Per format:
 
 | Format | Where the license is read |
 |---|---|
-| npm | `license` (a string or `{"type": …}`) or the legacy `licenses` array, of every version in the publish body. Unpublish (`-rev`) requests are not checked |
-| Cargo | `license` (an SPDX expression) in the publish metadata |
-| RubyGems | the gemspec `licenses`. Checked before the duplicate-version check, so re-pushing a version under a block policy answers 403, not 409 |
-| PyPI | `license_expression`, else a single-line `license` of at most 100 characters (longer free text is not a license name and is ignored), plus the `License ::` classifiers |
-| NuGet | `<license type="expression">` in the `.nuspec`. A package that only has a `licenseUrl` carries no identifier and is not checked |
-| Maven | the `<licenses><license><name>` of an uploaded `.pom`. A rejected `.pom` also quarantines the sibling files of the same group, artifact and version that were already uploaded (best effort), because `mvn deploy` sends the jar first |
+| npm | `license` (a string or `{"type": …}`), else the legacy `licenses` array, of the `package.json` inside the tarball of every version in the publish body; the manifest in the publish JSON is only the fallback. Unpublish (`-rev`) requests are not checked |
+| Cargo | `package.license` of the `Cargo.toml` inside the `.crate`; the publish metadata's `license` is only the fallback. The crate is read before the duplicate-version check |
+| RubyGems | the gemspec `licenses` in the gem's `metadata.gz`. Checked before the duplicate-version check, so re-pushing a version under a block policy answers 403, not 409 |
+| PyPI | the wheel's `METADATA` or the sdist's `PKG-INFO` (`.tar.gz`, `.zip`): `License-Expression`, else a short single-line `License:`, else the `License ::` classifiers. The form fields `license_expression`, `license` and `classifiers` are only the fallback for files that declare none or are not a wheel or sdist |
+| NuGet | `<license type="expression">` in the root `.nuspec`, else a `licenseUrl` that names one license (`https://licenses.nuget.org/<expression>` or a canonical URL such as apache.org or opensource.org). Any other `licenseUrl` carries no identifier and is not checked |
+| Maven | the `<licenses><license><name>` of an uploaded `.pom` (the `<url>` when a license has no name and the URL is a canonical one); licenses are not inherited from a parent pom. A rejected `.pom` also quarantines the sibling files of the same group, artifact and version that were already uploaded (best effort), because `mvn deploy` sends the jar first |
 | Ivy / sbt | `<license name>` of an uploaded `ivy.xml`, or `<licenses>` of a `.pom`; other files of the module are not checked |
 | Debian | the `License:` field of the control file (few `.deb` files have one) |
 | RPM | the `License` tag of the package header |
@@ -280,7 +285,7 @@ The license is read from the upload itself, per format:
 | Docker / OCI | the `org.opencontainers.image.licenses` annotation of the manifest, or the same label in the image config when that blob is already stored in the repository. Checked when the manifest is pushed; layers pushed before it stay stored as unreferenced blobs |
 | Conan, Go, raw | the upload carries no license: not checked at upload. Set the license as a [property](../repositories/properties.md) and the [after-upload path](#quarantine-after-upload) applies |
 
-Names are matched after the normalization described above. Free text that is not a known name or SPDX identifier (a Maven `<name>` such as `Our Company License`) cannot match a deny list, so only an allow list rejects it. Proxy-cache fills and group repositories are not upload paths and are not checked on the way in; an artifact fetched through a proxy can still be quarantined by a license scan or a license property. Creating or changing a policy does not re-examine artifacts that are already stored: scan them again.
+A package whose own metadata cannot be read safely (a metadata file or decompressed stream over the size limits, or two candidate metadata files in one archive) is refused with `422` and code `LICENSE_METADATA_UNSAFE`. Names are matched after the normalization described above. Free text that is not a known name or SPDX identifier (a Maven `<name>` such as `Our Company License`) cannot match a deny list, so only an allow list rejects it. Proxy-cache fills and group repositories are not upload paths and are not checked on the way in; an artifact fetched through a proxy can still be quarantined by a license scan or a license property. Creating or changing a policy does not re-examine artifacts that are already stored: scan them again.
 
 ### Quarantine after upload
 

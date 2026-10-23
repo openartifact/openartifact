@@ -137,8 +137,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <span
                     v-for="lic in scan.licenses"
                     :key="lic"
-                    class="inline-flex items-center px-2 py-0.5 rounded-md text-caption font-mono border border-border text-foreground/80"
-                  >{{ lic }}</span>
+                    :class="[
+                      'inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-caption font-mono border',
+                      isUnresolved(scan, lic) ? 'border-warning/40 bg-warning-soft text-warning' : 'border-border text-foreground/80',
+                    ]"
+                    :title="isUnresolved(scan, lic) ? t('sec.license.unresolvedHint') : undefined"
+                    :data-testid="isUnresolved(scan, lic) ? 'license-unresolved' : undefined"
+                  >{{ lic }}<span v-if="isUnresolved(scan, lic)" class="font-sans">· {{ t('sec.license.unresolved') }}</span></span>
                 </div>
                 <span v-else class="text-xs text-muted">{{ t('sec.license.none') }}</span>
                 <div v-if="violationsFor(scan.id).length" class="mt-2">
@@ -245,6 +250,9 @@ const artifactId = ref('')
 const searchQuery = ref('')
 const statusFilter = ref('all')
 const quarantining = ref<string | null>(null)
+
+// A license read from the artifact that names no single SPDX license ("BSD", "BSD License"): kept raw, flagged for review.
+const isUnresolved = (scan: LicenseScan, lic: string) => scan.unresolved_licenses?.includes(lic) ?? false
 // Policy violations are only reported by the scan run itself (the list endpoint
 // does not carry them), so they are kept per scan id for this session.
 const violations = ref<Record<string, LicensePolicyViolation[]>>({})

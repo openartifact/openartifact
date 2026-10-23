@@ -93,7 +93,7 @@ func collectTar(ctx context.Context, r io.Reader, slots []slot, l limits) ([]sec
 			// A damaged tail is tolerated once something was found, except
 			// the scan limit: the tail of a decompression bomb must not
 			// pass as a valid archive.
-			if anyFound(found) && !(walkAll && errors.Is(err, ErrTooLarge)) {
+			if anyFound(found) && (!walkAll || !errors.Is(err, ErrTooLarge)) {
 				break
 			}
 

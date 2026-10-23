@@ -2576,6 +2576,13 @@
               "type": "string"
             }
           },
+          "unresolved_licenses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Entries of licenses that are not SPDX expressions: raw text read from the artifact (\"BSD\", \"BSD License\"), kept as written and flagged for review."
+          },
           "scan_status": {
             "type": "string",
             "enum": [
@@ -2690,6 +2697,25 @@
           "policies"
         ]
       },
+      "LicenseMetadataUnsafeError": {
+        "type": "object",
+        "description": "Upload rejected (422): the package file's own metadata is oversized or ambiguous (a decompression bomb, or two candidate metadata files), so its licenses cannot be checked.",
+        "properties": {
+          "error": {
+            "type": "string"
+          },
+          "code": {
+            "type": "string",
+            "enum": [
+              "LICENSE_METADATA_UNSAFE"
+            ]
+          }
+        },
+        "required": [
+          "error",
+          "code"
+        ]
+      },
       "LicenseScanRunResult": {
         "type": "object",
         "description": "Result of POST .../license/scan: the recorded license scan plus the policy violations it triggered.",
@@ -2722,6 +2748,13 @@
             "items": {
               "type": "string"
             }
+          },
+          "unresolved_licenses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Entries of licenses that are not SPDX expressions: raw text read from the artifact (\"BSD\", \"BSD License\"), kept as written and flagged for review."
           },
           "scan_status": {
             "type": "string",
@@ -4854,7 +4887,7 @@
     "/api/v1/repositories/{name}/license/scan": {
       "post": {
         "summary": "Scan licenses",
-        "description": "Detect the licenses of an artifact from its stored license properties, evaluate the license policies and record the result. A violated policy with action `block` quarantines the artifact: downloads answer 403 `ARTIFACT_QUARANTINED` until an admin approves it.",
+        "description": "Detect the licenses of an artifact from its stored package file (the wheel METADATA, package.json, Cargo.toml, .nuspec, pom or gemspec it declares) and from its license properties, evaluate the license policies and record the result. A violated policy with action `block` quarantines the artifact: downloads answer 403 `ARTIFACT_QUARANTINED` until an admin approves it.",
         "tags": [
           "Repositories",
           "Scanning"
@@ -4888,6 +4921,9 @@
           },
           "404": {
             "description": "Repository not found"
+          },
+          "422": {
+            "description": "The artifact's metadata is too large or ambiguous to be read safely (`unsafe_artifact`)"
           }
         },
         "requestBody": {

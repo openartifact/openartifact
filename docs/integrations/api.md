@@ -87,6 +87,8 @@ Handler errors share one shape; `details` is only present when a handler adds it
 | `not_implemented` | 501 | endpoint exists but the feature is not available (currently the `/admin/gpg/keys` import, generate and delete endpoints) |
 | `internal_error` | 500 | server error; the cause is logged, never returned |
 | `LICENSE_BLOCKED` | 403 | a package upload was rejected by a [license policy](../security/scanning.md#blocking-licenses) with action `block`; the body adds `licenses` and `policies` |
+| `LICENSE_METADATA_UNSAFE` | 422 | a package upload was refused because its own metadata is oversized or ambiguous, so its licenses cannot be checked ([License metadata](../security/licenses.md#hostile-files)) |
+| `unsafe_artifact` | 422 | a license scan or license property change on a stored package whose metadata cannot be read safely |
 | `LICENSE_POLICY_UNAVAILABLE` | 500 | the license policies could not be read, so the upload was refused |
 | `upstream_error` | 502 | an upstream (LLM, IdP, proxy) failed |
 
