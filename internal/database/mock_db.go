@@ -540,6 +540,18 @@ func (m *BaseMockDB) GetPermissionTargetsForPrincipal(ctx context.Context, userI
 func (m *BaseMockDB) GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error {
 	return errNotImpl("GetOrCreatePermissionAssignment")
 }
+func (m *BaseMockDB) ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error) {
+	return nil, errNotImpl("ListPermissionAssignmentsForTarget")
+}
+func (m *BaseMockDB) ListDeclarativeObjects(ctx context.Context) ([]models.DeclarativeObject, error) {
+	return nil, errNotImpl("ListDeclarativeObjects")
+}
+func (m *BaseMockDB) UpsertDeclarativeObjects(ctx context.Context, items []models.DeclarativeObject) ([]models.DeclarativeObject, error) {
+	return nil, errNotImpl("UpsertDeclarativeObjects")
+}
+func (m *BaseMockDB) DeleteDeclarativeObject(ctx context.Context, kind, name string) (bool, error) {
+	return false, errNotImpl("DeleteDeclarativeObject")
+}
 func (m *BaseMockDB) SyncSSOPermissionsForGroup(ctx context.Context, groupID string, targetIDs []string) error {
 	return errNotImpl("SyncSSOPermissionsForGroup")
 }

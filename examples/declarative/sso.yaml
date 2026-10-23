@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A GitHub login. The client secret is read from the OIDC_CLIENT_SECRET
+# environment variable of the machine that runs oa; it is only sent when the
+# provider is created or when `oa apply --force-secrets` is used, because the
+# server never returns it.
+apiVersion: openartifact.io/v1
+kind: SSOProvider
+metadata:
+  name: github
+spec:
+  kind: oidc
+  display_name: GitHub
+  enabled: true
+  auto_provision_users: true
+  oidc_config:
+    type: github
+    client_id: Iv1.0123456789abcdef
+    client_secret:
+      secretRef: {env: OIDC_CLIENT_SECRET}
+    allowed_orgs: [example-org]
+  group_mapping:
+    example-org/engineering: developers

@@ -41,6 +41,7 @@ func (h *AdminPermissionsHandler) Register(r chi.Router) {
 	r.With(requireUUIDParams("id")).Get("/api/v1/permission-targets/{id}", h.handleGet)
 	r.With(requireUUIDParams("id")).Patch("/api/v1/permission-targets/{id}", h.handlePatch)
 	r.With(requireUUIDParams("id")).Delete("/api/v1/permission-targets/{id}", h.handleDelete)
+	r.With(requireUUIDParams("id")).Get("/api/v1/permission-targets/{id}/assignments", h.handleListAssignments)
 	r.With(requireUUIDParams("id")).Post("/api/v1/permission-targets/{id}/assignments", h.handleAssign)
 	r.With(requireUUIDParams("id")).Delete("/api/v1/permission-targets/{id}/assignments", h.handleUnassign)
 }
@@ -287,6 +288,41 @@ func (h *AdminPermissionsHandler) handleAssign(w http.ResponseWriter, r *http.Re
 	auditAdmin(r, audit.ActionPermissionTargetObjAssigned, "permission_target", id, "assigned to "+body.PrincipalType+" "+body.PrincipalID)
 
 	writeNoContent(w)
+}
+
+func (h *AdminPermissionsHandler) handleListAssignments(w http.ResponseWriter, r *http.Request) {
+	if !requireAdmin(w, r, h.evaluator) {
+		return
+	}
+
+	id := urlparams.Vars(r)["id"]
+	ctx := r.Context()
+
+	target, err := h.db.GetPermissionTargetByID(ctx, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	if target == nil {
+		writeError(w, http.StatusNotFound, "not_found", "permission target not found")
+		return
+	}
+
+	rows, err := h.db.ListPermissionAssignmentsForTarget(ctx, id)
+	if err != nil {
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+		return
+	}
+
+	data := make([]responses.PermissionAssignmentResponse, 0, len(rows))
+	for _, a := range rows {
+		data = append(data, responses.PermissionAssignmentResponse{
+			PrincipalType: a.PrincipalType, PrincipalID: a.PrincipalID, PrincipalName: a.PrincipalName,
+		})
+	}
+
+	writeJSON(w, http.StatusOK, map[string]any{"data": data})
 }
 
 func (h *AdminPermissionsHandler) handleUnassign(w http.ResponseWriter, r *http.Request) {

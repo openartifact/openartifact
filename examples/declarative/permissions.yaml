@@ -1,0 +1,26 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# repository_filter and path_pattern are regular expressions.
+apiVersion: openartifact.io/v1
+kind: PermissionTarget
+metadata:
+  name: developers-npm
+spec:
+  repository_filter: "npm-.*"
+  path_pattern: ".*"
+  actions: [read, write]
+  assignments:
+    groups: [developers]
+---
+apiVersion: openartifact.io/v1
+kind: PermissionTarget
+metadata:
+  name: alice-maintains-npm
+spec:
+  repository_filter: "npm-hosted"
+  path_pattern: ".*"
+  actions: [read, write, delete, manage]
+  assignments:
+    users: [alice]

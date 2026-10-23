@@ -1,0 +1,58 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+apiVersion: openartifact.io/v1
+kind: Repository
+metadata:
+  name: npm-hosted
+spec:
+  format: npm
+  repo_type: hosted
+  description: Internal npm packages
+  immutable_releases: true
+  quota:
+    max_size_bytes: 10737418240
+    warn_threshold_percent: 80
+  cleanup_policies:
+    - name: keep-recent
+      enabled: true
+      keep_last_n: 20
+      schedule_cron: "0 3 * * *"
+---
+apiVersion: openartifact.io/v1
+kind: Repository
+metadata:
+  name: npm-proxy
+spec:
+  format: npm
+  repo_type: proxy
+  description: Cache of the public npm registry
+  upstream_url: https://registry.npmjs.org
+  # Secrets are never written in a manifest; oa reads them from the
+  # environment (or a file) of the machine that runs it.
+  upstream_username: ci-bot
+  upstream_password:
+    secretRef: {env: NPM_UPSTREAM_PASSWORD}
+  cache_ttl_seconds: 3600
+---
+apiVersion: openartifact.io/v1
+kind: Repository
+metadata:
+  name: npm-all
+spec:
+  format: npm
+  repo_type: group
+  description: One URL for hosted and proxied npm packages
+  member_repos: [npm-hosted, npm-proxy]   # priority order
+---
+# A repository inside a project: metadata.project, and the project's prefix.
+apiVersion: openartifact.io/v1
+kind: Repository
+metadata:
+  name: platform-libs
+  project: platform
+spec:
+  format: maven
+  repo_type: hosted
+  description: Platform Java libraries

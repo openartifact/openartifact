@@ -4,6 +4,24 @@ export type ClientOptions = {
     baseUrl: `${string}://${string}` | (string & {});
 };
 
+export type DeclarativeObject = {
+    kind: string;
+    name: string;
+    object_id: string;
+    applied_hash: string;
+    applied_at: string;
+};
+
+export type DeclarativeObjectList = {
+    items: Array<DeclarativeObject>;
+};
+
+export type PermissionAssignment = {
+    principal_type: 'user' | 'group';
+    principal_id: string;
+    principal_name: string;
+};
+
 export type ReleaseBundle = {
     id: string;
     name: string;
@@ -4482,6 +4500,100 @@ export type PostApiV1GroupsByIdMembersByUserIdResponses = {
     200: unknown;
 };
 
+export type DeleteApiV1AdminDeclarativeData = {
+    body?: never;
+    path?: never;
+    query: {
+        kind: string;
+        /**
+         * Object name; may contain `/`
+         */
+        name: string;
+    };
+    url: '/api/v1/admin/declarative';
+};
+
+export type DeleteApiV1AdminDeclarativeErrors = {
+    /**
+     * Validation failed
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * No such marker
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1AdminDeclarativeResponses = {
+    /**
+     * Marker deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1AdminDeclarativeResponse = DeleteApiV1AdminDeclarativeResponses[keyof DeleteApiV1AdminDeclarativeResponses];
+
+export type GetApiV1AdminDeclarativeData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/declarative';
+};
+
+export type GetApiV1AdminDeclarativeErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminDeclarativeResponses = {
+    /**
+     * Ownership markers
+     */
+    200: DeclarativeObjectList;
+};
+
+export type GetApiV1AdminDeclarativeResponse = GetApiV1AdminDeclarativeResponses[keyof GetApiV1AdminDeclarativeResponses];
+
+export type PutApiV1AdminDeclarativeData = {
+    body: {
+        items: Array<{
+            kind: 'User' | 'Project' | 'Group' | 'Repository' | 'PermissionTarget' | 'SSOProvider' | 'Webhook' | 'StorageTier' | 'TierPolicy';
+            name: string;
+            object_id: string;
+            applied_hash?: string;
+        }>;
+    };
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/declarative';
+};
+
+export type PutApiV1AdminDeclarativeErrors = {
+    /**
+     * Validation failed
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type PutApiV1AdminDeclarativeResponses = {
+    /**
+     * Stored markers
+     */
+    200: DeclarativeObjectList;
+};
+
+export type PutApiV1AdminDeclarativeResponse = PutApiV1AdminDeclarativeResponses[keyof PutApiV1AdminDeclarativeResponses];
+
 export type GetApiV1PermissionTargetsData = {
     body?: never;
     path?: never;
@@ -4619,6 +4731,37 @@ export type DeleteApiV1PermissionTargetsByIdAssignmentsResponses = {
 };
 
 export type DeleteApiV1PermissionTargetsByIdAssignmentsResponse = DeleteApiV1PermissionTargetsByIdAssignmentsResponses[keyof DeleteApiV1PermissionTargetsByIdAssignmentsResponses];
+
+export type GetApiV1PermissionTargetsByIdAssignmentsData = {
+    body?: never;
+    path: {
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/permission-targets/{id}/assignments';
+};
+
+export type GetApiV1PermissionTargetsByIdAssignmentsErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Permission target not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1PermissionTargetsByIdAssignmentsResponses = {
+    /**
+     * Assignments sorted by principal type then name
+     */
+    200: {
+        data: Array<PermissionAssignment>;
+    };
+};
+
+export type GetApiV1PermissionTargetsByIdAssignmentsResponse = GetApiV1PermissionTargetsByIdAssignmentsResponses[keyof GetApiV1PermissionTargetsByIdAssignmentsResponses];
 
 export type PostApiV1PermissionTargetsByIdAssignmentsData = {
     body: {

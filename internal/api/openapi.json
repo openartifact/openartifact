@@ -41,6 +41,72 @@
       }
     },
     "schemas": {
+      "DeclarativeObject": {
+        "type": "object",
+        "required": [
+          "kind",
+          "name",
+          "object_id",
+          "applied_hash",
+          "applied_at"
+        ],
+        "properties": {
+          "kind": {
+            "type": "string"
+          },
+          "name": {
+            "type": "string"
+          },
+          "object_id": {
+            "type": "string"
+          },
+          "applied_hash": {
+            "type": "string"
+          },
+          "applied_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
+      "DeclarativeObjectList": {
+        "type": "object",
+        "required": [
+          "items"
+        ],
+        "properties": {
+          "items": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/DeclarativeObject"
+            }
+          }
+        }
+      },
+      "PermissionAssignment": {
+        "type": "object",
+        "required": [
+          "principal_type",
+          "principal_id",
+          "principal_name"
+        ],
+        "properties": {
+          "principal_type": {
+            "type": "string",
+            "enum": [
+              "user",
+              "group"
+            ]
+          },
+          "principal_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "principal_name": {
+            "type": "string"
+          }
+        }
+      },
       "ReleaseBundle": {
         "type": "object",
         "required": [
@@ -8789,6 +8855,152 @@
         }
       }
     },
+    "/api/v1/admin/declarative": {
+      "get": {
+        "summary": "List declarative ownership markers",
+        "description": "List the objects created or adopted by `oa apply` (admin only)",
+        "tags": [
+          "Declarative"
+        ],
+        "responses": {
+          "200": {
+            "description": "Ownership markers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarativeObjectList"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      },
+      "put": {
+        "summary": "Upsert declarative ownership markers",
+        "description": "Upsert markers by (kind, name) in one transaction; at most 1000 items (admin only)",
+        "tags": [
+          "Declarative"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "required": [
+                  "items"
+                ],
+                "properties": {
+                  "items": {
+                    "type": "array",
+                    "maxItems": 1000,
+                    "items": {
+                      "type": "object",
+                      "required": [
+                        "kind",
+                        "name",
+                        "object_id"
+                      ],
+                      "properties": {
+                        "kind": {
+                          "type": "string",
+                          "enum": [
+                            "User",
+                            "Project",
+                            "Group",
+                            "Repository",
+                            "PermissionTarget",
+                            "SSOProvider",
+                            "Webhook",
+                            "StorageTier",
+                            "TierPolicy"
+                          ]
+                        },
+                        "name": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 512
+                        },
+                        "object_id": {
+                          "type": "string",
+                          "minLength": 1,
+                          "maxLength": 256
+                        },
+                        "applied_hash": {
+                          "type": "string",
+                          "maxLength": 128
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Stored markers",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/DeclarativeObjectList"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      },
+      "delete": {
+        "summary": "Delete a declarative ownership marker",
+        "description": "Remove one marker (admin only); the managed object itself is untouched",
+        "tags": [
+          "Declarative"
+        ],
+        "parameters": [
+          {
+            "name": "kind",
+            "in": "query",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "name",
+            "in": "query",
+            "required": true,
+            "description": "Object name; may contain `/`",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Marker deleted"
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "No such marker"
+          }
+        }
+      }
+    },
     "/api/v1/permission-targets": {
       "get": {
         "summary": "List permission targets",
@@ -8998,6 +9210,53 @@
       }
     },
     "/api/v1/permission-targets/{id}/assignments": {
+      "get": {
+        "summary": "List permission assignments",
+        "description": "List the users and groups a permission target is assigned to (admin only)",
+        "tags": [
+          "Permissions"
+        ],
+        "parameters": [
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Assignments sorted by principal type then name",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "required": [
+                    "data"
+                  ],
+                  "properties": {
+                    "data": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/PermissionAssignment"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Permission target not found"
+          }
+        }
+      },
       "post": {
         "summary": "Assign permission",
         "description": "Assign a permission target to a user or group",

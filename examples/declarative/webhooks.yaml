@@ -1,0 +1,25 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Global webhook (no metadata.repository) and a repository-scoped one.
+apiVersion: openartifact.io/v1
+kind: Webhook
+metadata:
+  name: audit-sink
+spec:
+  url: https://hooks.example.com/openartifact
+  events: [artifact.uploaded, artifact.deleted]
+  secret:
+    secretRef: {env: AUDIT_WEBHOOK_SECRET}
+  payload_format: openartifact
+---
+apiVersion: openartifact.io/v1
+kind: Webhook
+metadata:
+  name: chat-notify
+  repository: npm-hosted
+spec:
+  url: https://hooks.example.com/chat
+  events: [artifact.uploaded]
+  payload_format: slack

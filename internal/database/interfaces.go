@@ -336,6 +336,17 @@ type Database interface {
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
 	GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error
 	SyncSSOPermissionsForGroup(ctx context.Context, groupID string, targetIDs []string) error
+	// ListPermissionAssignmentsForTarget returns the assignments of one target
+	// with principal names, ordered by type then name.
+	ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error)
+
+	// Declarative (oa apply) ownership markers.
+	ListDeclarativeObjects(ctx context.Context) ([]models.DeclarativeObject, error)
+	// UpsertDeclarativeObjects stores the markers by (kind, name) in one
+	// transaction and returns them as stored.
+	UpsertDeclarativeObjects(ctx context.Context, items []models.DeclarativeObject) ([]models.DeclarativeObject, error)
+	// DeleteDeclarativeObject removes one marker and reports whether it existed.
+	DeleteDeclarativeObject(ctx context.Context, kind, name string) (bool, error)
 
 	CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
 	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)

@@ -1,0 +1,20 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Needs a storage backend named "cold" (oa storage create --name cold ...).
+apiVersion: openartifact.io/v1
+kind: StorageTier
+metadata:
+  name: cold
+spec:
+  backend: cold
+  rank: 100
+---
+apiVersion: openartifact.io/v1
+kind: TierPolicy
+metadata:
+  name: cooldown
+spec:
+  target_tier: cold
+  min_idle_seconds: 2592000

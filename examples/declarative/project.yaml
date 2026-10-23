@@ -1,0 +1,21 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# A project scopes repositories (by name prefix) and delegates their management.
+apiVersion: openartifact.io/v1
+kind: Project
+metadata:
+  name: platform
+spec:
+  display_name: Platform team
+  description: Shared libraries and base images
+  allowed_formats: null          # null = every format
+  allowed_repo_types: [hosted, proxy, group]
+  repo_name_prefix: platform-
+  allow_public_repos: false
+  members:
+    - {username: alice, role: owner}
+    - {username: bob, role: developer}
+  groups:
+    - {group: developers, role: developer}

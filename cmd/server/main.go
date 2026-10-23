@@ -783,6 +783,7 @@ func run(args []string) error {
 	api.NewAdminUsersHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminGroupsHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminPermissionsHandler(db, log, evaluator).Register(authedAPI)
+	api.NewAdminDeclarativeHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminTokensHandler(db, log, evaluator).Register(authedAPI)
 	api.NewSelfTokensHandler(db, log, evaluator).Register(authedAPI)
 	api.NewAdminAuditHandler(db, log, evaluator).Register(authedAPI)

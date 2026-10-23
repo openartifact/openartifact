@@ -1,0 +1,29 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Users have no password here: they sign in through SSO, or an administrator
+# sets one (oa user ... / the web UI). Apply only creates the account.
+apiVersion: openartifact.io/v1
+kind: User
+metadata:
+  name: alice
+spec:
+  email: alice@example.com
+  full_name: Alice Example
+---
+apiVersion: openartifact.io/v1
+kind: User
+metadata:
+  name: bob
+spec:
+  email: bob@example.com
+  full_name: Bob Example
+---
+apiVersion: openartifact.io/v1
+kind: Group
+metadata:
+  name: developers
+spec:
+  description: Application developers
+  members: [alice, bob]

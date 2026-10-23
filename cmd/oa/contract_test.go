@@ -52,6 +52,7 @@ func realRouter() chi.Router {
 	sys.RegisterAuthed(r)
 	api.NewAdminUsersHandler(nil, nil, nil).Register(r)
 	api.NewAdminGroupsHandler(nil, nil, nil).Register(r)
+	api.NewAdminDeclarativeHandler(nil, nil, nil).Register(r)
 	api.NewAdminTokensHandler(nil, nil, nil).Register(r)
 	api.NewSelfTokensHandler(nil, nil, nil).Register(r)
 	api.NewAdminAuditHandler(nil, nil, nil).Register(r)

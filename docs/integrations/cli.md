@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # CLI (`oa`)
 
-`oa` is a single-binary command-line client for the OpenArtifact REST API: repositories, users, tokens, scans, webhooks, backups and the Nexus/Artifactory importer.
+`oa` is a single-binary command-line client for the OpenArtifact REST API: repositories, users, tokens, scans, webhooks, backups, declarative configuration from manifests (`oa apply`) and the Nexus/Artifactory importer.
 
 ## Install
 
@@ -94,6 +94,7 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `quota` | `show <repo>`, `set <repo> [--limit N [--unit MB\|GB\|TB]] [--max-artifacts N] [--warn-percent P]` (default unit `GB`; at least one flag), `delete <repo>` |
 | `props` | `list <repo> <artifact-id>`, `set <repo> <artifact-id> <key> <value>`, `delete <repo> <artifact-id> <key>`, `search <repo> <key> <value>` |
 | `delta` | `list <repo> <pkg-id>`, `get <repo> <pkg-id> --from <sha256> <dest>` |
+| `apply`, `diff`, `export` *admin* | `apply -f PATH [-R] [--kind K] [--prune] [--prune-all] [--force-secrets] [--continue-on-error] [--validate-only] [-o json]`, `diff` (same flags; exits 2 when there are changes), `export [--kind K] [--with-members] [-o DIR]`: declarative configuration from YAML manifests, see [declarative configuration](declarative.md) |
 | `import` | `nexus\|artifactory ...`, see [Importing](#importing-from-nexus-or-artifactory) |
 | `system` | `info` (version, status, commit, build time, Go version, OS, arch, uptime, database and storage status; admins get the detailed endpoint, other users only version and status) |
 | `version`, `help` | local only, no server call |

@@ -391,6 +391,15 @@ type DebianDistribution struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Objects created or adopted by oa apply; object_id is the server-side id at apply time, so a deleted-and-recreated object is not claimed by a stale marker.
+type DeclarativeObject struct {
+	Kind        string    `db:"kind" json:"kind"`
+	Name        string    `db:"name" json:"name"`
+	ObjectID    string    `db:"object_id" json:"object_id"`
+	AppliedHash string    `db:"applied_hash" json:"applied_hash"`
+	AppliedAt   time.Time `db:"applied_at" json:"applied_at"`
+}
+
 // Last BOM/VEX push of an artifact to Dependency-Track: state, counts and the DT project.
 type DependencyTrackPush struct {
 	RepositoryID   string     `db:"repository_id" json:"repository_id"`

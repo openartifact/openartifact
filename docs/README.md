@@ -68,6 +68,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | Page | Contents |
 |---|---|
 | [CLI](integrations/cli.md) | `oa` commands (including `trash` and repository delete confirmation), login and configuration |
+| [Declarative configuration](integrations/declarative.md) | `oa apply`, `oa diff` and `oa export`: manage users, repositories, permissions and more from YAML manifests, GitOps usage |
 | [MCP server](integrations/mcp.md) | Tools, permissions and client configuration (Claude, Cursor, VS Code, Codex, omp) |
 | [REST API](integrations/api.md) | OpenAPI spec, Swagger UI, authentication, conventions |
 | [AI analysis](integrations/ai-analysis.md) | Optional LLM analysis of package manifests |

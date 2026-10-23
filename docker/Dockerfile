@@ -64,6 +64,12 @@ RUN COMMIT_SHORT="$(printf '%.7s' "${COMMIT}")"; \
     -ldflags "-s -w -X main.version=${VERSION} -X main.commit=${COMMIT_SHORT} -X main.buildTime=${BUILD_TIME_RFC3339}" \
     -o openartifact ./cmd/server
 
+# The oa CLI ships in the image so GitOps hooks (Helm Job, Argo CD PostSync)
+# can run `oa apply` without a second image; see docs/integrations/declarative.md.
+RUN CGO_ENABLED=0 GOOS=${TARGETOS} GOARCH=${TARGETARCH} go build -trimpath \
+    -ldflags "-s -w -X main.version=${VERSION}" \
+    -o oa ./cmd/oa
+
 # Data directories for the runtime image. The final stage has no shell, so
 # they are prepared here and copied in with ownership. The scanner cache holds
 # the Trivy / Grype vulnerability databases (OPENARTIFACT_SCANNER_CACHE_DIR);
@@ -117,6 +123,7 @@ LABEL org.opencontainers.image.title="OpenArtifact" \
 WORKDIR /app
 
 COPY --from=builder --chown=10001:10001 /app/openartifact /app/openartifact
+COPY --from=builder /app/oa /usr/local/bin/oa
 
 # Data directories (blobs + backups), owned by the fixed runtime uid/gid so
 # bind mounts and the chart's fsGroup stay predictable.

@@ -85,6 +85,14 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+Migration `066`.
+
+- New `oa apply`, `oa diff` and `oa export` commands manage users, groups, projects, repositories, permission targets, SSO providers, webhooks, storage tiers and tier policies from YAML manifests; see [declarative configuration](../integrations/declarative.md). Migration `066` adds the `declarative_objects` table that records which objects `oa apply` manages (the ownership marker `--prune` relies on). The table is not part of backups: after a restore, `--prune` deletes nothing until the next `oa apply` records ownership again.
+- New admin endpoints `GET`/`PUT`/`DELETE /api/v1/admin/declarative` (ownership markers) and `GET /api/v1/permission-targets/{id}/assignments`.
+- The container image now ships the `oa` CLI at `/usr/local/bin/oa`, so a Kubernetes Job or Argo CD hook can run `oa apply` from the server image.
+
 ### 0.8.0
 
 Migrations `054`, `056`–`059`, `061`, `063`, `064` and `065`. Multi-tenant Entra identities change their external ID to `<tid>:<sub>` (see [SSO changes](#sso-oidc-and-saml-changes)).
