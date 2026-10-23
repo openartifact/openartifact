@@ -127,7 +127,7 @@ func TestNeedsDistro(t *testing.T) {
 	}
 }
 
-// grype is replaced by osv only for a deb or rpm whose distribution is
+// grype and trivy are replaced by osv only for a deb or rpm whose distribution is
 // unknown; everything else runs as requested.
 func TestScannersFor(t *testing.T) {
 	tests := []struct {
@@ -142,9 +142,15 @@ func TestScannersFor(t *testing.T) {
 		{"rpm without a distro goes to osv", []string{"grype"}, Package{Ecosystem: "rpm"}, []string{"osv"}},
 		{"unusable distro goes to osv", []string{"grype"}, Package{Ecosystem: "deb", Distro: "bookworm"}, []string{"osv"}},
 		{"osv already requested is not duplicated", []string{"grype", "osv"}, Package{Ecosystem: "deb"}, []string{"osv"}},
-		{"other scanners stay", []string{"grype", "trivy"}, Package{Ecosystem: "rpm"}, []string{"osv", "trivy"}},
-		{"result is sorted", []string{"grype", "osv", "trivy"}, Package{Ecosystem: "rpm"}, []string{"osv", "trivy"}},
-		{"without grype nothing changes", []string{"osv", "trivy"}, Package{Ecosystem: "deb"}, []string{"osv", "trivy"}},
+		{"trivy and grype without a distro go to osv", []string{"grype", "trivy"}, Package{Ecosystem: "rpm"}, []string{"osv"}},
+		{"trivy alone without a distro goes to osv", []string{"trivy"}, Package{Ecosystem: "deb"}, []string{"osv"}},
+		{"trivy with a supported distro stays", []string{"trivy"}, Package{Ecosystem: "deb", Distro: "ubuntu-22.04"}, []string{"trivy"}},
+		{"trivy with amazon linux stays", []string{"trivy"}, Package{Ecosystem: "rpm", Distro: "amzn-2023"}, []string{"trivy"}},
+		{"trivy has no fedora advisories", []string{"trivy"}, Package{Ecosystem: "rpm", Distro: "fedora-39"}, []string{"osv"}},
+		{"fedora keeps grype and replaces trivy", []string{"grype", "trivy"}, Package{Ecosystem: "rpm", Distro: "fedora-39"}, []string{"grype", "osv"}},
+		{"result is sorted", []string{"grype", "osv", "trivy"}, Package{Ecosystem: "rpm"}, []string{"osv"}},
+		{"without grype and trivy nothing changes", []string{"osv"}, Package{Ecosystem: "deb"}, []string{"osv"}},
+		{"trivy on npm stays", []string{"trivy"}, Package{Ecosystem: "npm"}, []string{"trivy"}},
 		{"npm keeps grype", []string{"grype"}, Package{Ecosystem: "npm"}, []string{"grype"}},
 		{"ecosystem case does not matter", []string{"grype"}, Package{Ecosystem: "DEB"}, []string{"osv"}},
 	}

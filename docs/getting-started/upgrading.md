@@ -109,7 +109,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 - Migration `061` makes the storage quota counters exact: reservations and deletes leave a short-lived entry in the new `quota_pending` table, package-row triggers consume it, and the reconcile counts rows plus pending entries instead of overwriting the counter, so a recount no longer drifts by the operations in flight. The triggers add a small cost to package inserts and deletes; the index is built concurrently. See [quotas](../repositories/cleanup-and-quotas.md#keeping-the-counters-correct).
 - `POST /api/v1/repositories/{name}/registry-gc` and the docker GC worker no longer have a `501 not_implemented` path; they run on every deployment.
 - Tiered storage now removes the copy a write leaves on the wrong tier when it races a move, and presigned-upload completion follows the blob's placement. See [storage tiering](../operations/storage-tiering.md).
-- Grype scans of deb and rpm packages now run with the distribution release derived from the package, or are routed to osv when it is unknown, instead of failing with `unsupported_ecosystem`. The `scanner` field shows what ran. See [scanning](../security/scanning.md).
+- Grype and Trivy scans of deb and rpm packages now run with the distribution release derived from the package, or are routed to osv when it is unknown (or, for Trivy, a Fedora rpm), instead of failing with `unsupported_ecosystem`. The `scanner` field shows what ran. See [scanning](../security/scanning.md).
 
 #### Conan 1.x clients (migration `057`)
 

@@ -10,6 +10,7 @@ import (
 	"errors"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -172,5 +173,80 @@ func TestRegistryWithoutRowsKeepsPrimaryReachable(t *testing.T) {
 
 	if _, err := reg.PlacementTier("no-such-backend"); !errors.Is(err, ErrUnknownTier) {
 		t.Errorf("PlacementTier(unknown) = %v, want ErrUnknownTier", err)
+	}
+}
+
+// tiersOutageDB fails the tier list, as an unreachable database does.
+type tiersOutageDB struct {
+	*fakeDB
+	err error
+}
+
+func (d *tiersOutageDB) ListStorageTiers(ctx context.Context) ([]*models.StorageTier, error) {
+	if d.err != nil {
+		return nil, d.err
+	}
+
+	return d.fakeDB.ListStorageTiers(ctx)
+}
+
+// A replica must know its tiers before it takes writes: the first load is
+// synchronous and its failure is an error, not a log line, and Ready stays
+// false until a load has succeeded.
+func TestStartRefusesWithoutTierLoad(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	outage := errors.New("database down")
+	db := &tiersOutageDB{fakeDB: r.db, err: outage}
+
+	reg := NewRegistry(db, r.hot, storage.StorageConfig{Type: "filesystem", Path: r.hotDir}, nil)
+	if reg.Ready() {
+		t.Fatal("Ready before any load")
+	}
+
+	if err := reg.Start(context.Background(), 0); !errors.Is(err, outage) {
+		t.Fatalf("Start = %v, want the load error", err)
+	}
+
+	if reg.Ready() {
+		t.Fatal("Ready after a failed first load")
+	}
+
+	db.err = nil
+
+	reg = NewRegistry(db, r.hot, storage.StorageConfig{Type: "filesystem", Path: r.hotDir}, nil)
+	if err := reg.Start(context.Background(), 0); err != nil {
+		t.Fatalf("Start: %v", err)
+	}
+
+	if !reg.Ready() {
+		t.Fatal("not Ready after a successful load")
+	}
+}
+
+// With periodic reloads, a replica whose reloads keep failing stops being
+// ready after three intervals instead of writing with a stale tier list.
+func TestReadyExpiresWhenReloadsFail(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	reg := NewRegistry(r.db, r.hot, storage.StorageConfig{Type: "filesystem", Path: r.hotDir}, nil)
+
+	if err := reg.Refresh(context.Background()); err != nil {
+		t.Fatal(err)
+	}
+
+	reg.interval.Store(int64(time.Minute))
+	reg.lastLoad.Store(time.Now().Add(-2 * time.Minute).UnixNano())
+
+	if !reg.Ready() {
+		t.Fatal("not Ready two intervals after the last load")
+	}
+
+	reg.lastLoad.Store(time.Now().Add(-4 * time.Minute).UnixNano())
+
+	if reg.Ready() {
+		t.Fatal("Ready four intervals after the last load")
 	}
 }

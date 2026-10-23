@@ -237,7 +237,7 @@ func TestVulnScan_DebRPMDistro(t *testing.T) {
 			name:        "rpm release without a distribution tag goes to osv",
 			mutate:      func(db *distroScanDB) { db.components[distroRPMID].Release = "1" },
 			body:        scanBody(distroRPMID, "openssl", "3.0.7", "rpm", `["grype","trivy"]`),
-			wantScanner: "osv,trivy", wantRan: []string{"osv", "trivy"},
+			wantScanner: "osv", wantRan: []string{"osv"},
 			wantPkg:     vuln.Package{Name: "openssl", Version: "3.0.7", Release: "1", Epoch: 1, Ecosystem: "rpm"},
 			wantLookups: []string{"rpm component"},
 		},

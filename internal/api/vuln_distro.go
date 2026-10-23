@@ -15,14 +15,14 @@ import (
 )
 
 // scanPlan returns the package a scan looks up and the scanners that run for
-// it. Only grype needs more than the name and version of a deb or rpm: the
+// it. Only grype and trivy need more than the name and version of a deb or rpm: the
 // distribution release (and an rpm's epoch and release), which are not part of
 // the request. They are read from the stored package the artifact_id names, or
 // from the version itself. When the release stays unknown, grype is replaced
-// by osv, which needs no release, so the scan is neither refused nor reported
+// by osv (as is trivy), which needs no release, so the scan is neither refused nor reported
 // clean on the strength of a database grype could not use.
 func (h *VulnHandler) scanPlan(ctx context.Context, repo *models.Repository, artifactID string, pkg vuln.Package, scanners []string) (vuln.Package, []string, error) {
-	if !vuln.NeedsDistro(pkg.Ecosystem) || !slices.Contains(scanners, "grype") {
+	if !vuln.NeedsDistro(pkg.Ecosystem) || !slices.ContainsFunc(scanners, func(n string) bool { return n == "grype" || n == "trivy" }) {
 		return pkg, scanners, nil
 	}
 
@@ -33,7 +33,7 @@ func (h *VulnHandler) scanPlan(ctx context.Context, repo *models.Repository, art
 
 	routed := vuln.ScannersFor(scanners, pkg)
 	if !slices.Equal(routed, scanners) {
-		h.log.Infow("vuln scan: grype needs the distribution of a deb or rpm and it is unknown, scanning with osv instead",
+		h.log.Infow("vuln scan: grype and trivy need the distribution of a deb or rpm and it is unknown or unsupported, scanning with osv instead",
 			"repository", repo.Name,
 			"ecosystem", pkg.Ecosystem,
 			"package", pkg.Name,

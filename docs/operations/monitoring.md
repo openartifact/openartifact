@@ -17,7 +17,7 @@ The REST API, OpenAPI spec and Swagger UI are covered in [API](../integrations/a
 | Endpoint | Success | Failure |
 |---|---|---|
 | `GET /health` | always `200`, JSON | never fails; a broken dependency shows as `"status":"degraded"` |
-| `GET /ready` | `200 {"status":"ready"}` | `503 {"status":"not ready","reason":"database unavailable"}` or `"storage unavailable"` |
+| `GET /ready` | `200 {"status":"ready"}` | `503 {"status":"not ready","reason":"database unavailable"}`, `"storage unavailable"` or `"storage tiers not loaded"` |
 
 `/health` body:
 

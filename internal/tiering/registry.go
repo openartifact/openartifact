@@ -130,6 +130,11 @@ type Registry struct {
 
 	snap atomic.Pointer[Snapshot]
 
+	// lastLoad is the unix-nano time of the last successful Refresh (0 before
+	// the first one); interval is the reload period given to Start.
+	lastLoad atomic.Int64
+	interval atomic.Int64
+
 	mu     sync.Mutex // serializes Refresh and guards stores and warned
 	stores map[string]cachedStore
 	warned map[string]string // backend id -> last open failure logged
@@ -230,6 +235,7 @@ func (r *Registry) Refresh(ctx context.Context) error {
 	}
 
 	r.snap.Store(newSnapshot(tiers))
+	r.lastLoad.Store(time.Now().UnixNano())
 
 	return nil
 }
@@ -298,17 +304,40 @@ func (r *Registry) resolveStore(b *models.StorageBackend, cl *claims) (storage.B
 	return store, loc, nil
 }
 
-// Start reloads the registry every interval until Stop. It does an initial
-// Refresh first so tiers are usable before the first request.
-func (r *Registry) Start(ctx context.Context, interval time.Duration) {
-	if err := r.Refresh(ctx); err != nil && r.log != nil {
-		r.log.Errorw("initial storage tier load failed", "error", err)
+// Ready reports whether the tier list is current enough to place writes: the
+// first load succeeded and, when reloads are periodic, the last success is no
+// older than three intervals. A replica that cannot reach the database to read
+// the tiers would otherwise write straight to the primary store, unchecked.
+func (r *Registry) Ready() bool {
+	last := r.lastLoad.Load()
+	if last == 0 {
+		return false
 	}
+
+	interval := time.Duration(r.interval.Load())
+	if interval <= 0 {
+		return true
+	}
+
+	return time.Since(time.Unix(0, last)) <= 3*interval
+}
+
+// Start loads the registry, then reloads it every interval until Stop. The
+// first load is synchronous and its failure is returned: the server must not
+// start taking uploads before it knows the tiers (see Ready).
+func (r *Registry) Start(ctx context.Context, interval time.Duration) error {
+	if err := r.Refresh(ctx); err != nil {
+		close(r.done)
+
+		return fmt.Errorf("initial storage tier load: %w", err)
+	}
+
+	r.interval.Store(int64(interval))
 
 	if interval <= 0 {
 		close(r.done)
 
-		return
+		return nil
 	}
 
 	r.started = true
@@ -333,6 +362,8 @@ func (r *Registry) Start(ctx context.Context, interval time.Duration) {
 			}
 		}
 	}()
+
+	return nil
 }
 
 // Stop ends the periodic reload. It is idempotent.

@@ -45,19 +45,30 @@ func distroVendor(distro string) string {
 }
 
 // ScannersFor returns the scanners that run for the package, sorted and
-// without duplicates. grype cannot scan a deb or rpm whose distribution is
-// unknown, so it is replaced by osv, which matches them by name and version
-// alone; every other request runs as asked. The stored scan names the scanners
-// returned here, so the result says what ran.
+// without duplicates. grype and trivy cannot scan a deb or rpm whose
+// distribution is unknown (or, for trivy, one it has no advisories for: fedora),
+// and report no match at all instead of an error, so each is replaced by osv,
+// which matches them by name and version alone; every other request runs as
+// asked. The stored scan names the scanners returned here, so the result says
+// what ran.
 func ScannersFor(requested []string, pkg Package) []string {
-	if !NeedsDistro(pkg.Ecosystem) || validDistro(pkg.Distro) || !slices.Contains(requested, scannerGrype) {
+	if !NeedsDistro(pkg.Ecosystem) {
+		return requested
+	}
+
+	usable := map[string]bool{
+		scannerGrype: validDistro(pkg.Distro),
+		scannerTrivy: trivySBOMSupports(pkg.Distro),
+	}
+
+	if !slices.ContainsFunc(requested, func(n string) bool { ok, known := usable[n]; return known && !ok }) {
 		return requested
 	}
 
 	out := make([]string, 0, len(requested))
 
 	for _, name := range requested {
-		if name == scannerGrype {
+		if ok, known := usable[name]; known && !ok {
 			name = scannerOSV
 		}
 

@@ -289,7 +289,9 @@ func run(args []string) error {
 	// whichever tier holds it, new blobs land on the primary store. With no
 	// tier besides the primary one the wrapper forwards straight to it.
 	tierRegistry := tiering.NewRegistry(db, rawBlobStore, cfg.Storage, log)
-	tierRegistry.Start(context.Background(), cfg.Tiering.RefreshInterval)
+	if err := tierRegistry.Start(context.Background(), cfg.Tiering.RefreshInterval); err != nil {
+		return fail("failed to load storage tiers", err)
+	}
 
 	tierAccess := tiering.NewAccessTracker(db, cfg.Tiering.AccessFlushInterval, log)
 	tierAccess.Start()
@@ -626,6 +628,14 @@ func run(args []string) error {
 
 		// Check storage
 		storageStatus := componentStatus{Status: "ok"}
+
+		if !tierRegistry.Ready() {
+			w.Header().Set("Content-Type", "application/json")
+			w.WriteHeader(http.StatusServiceUnavailable)
+			_, _ = w.Write([]byte(`{"status":"not ready","reason":"storage tiers not loaded"}`))
+
+			return
+		}
 
 		if s3store, ok := rawBlobStore.(*storage.S3BlobStore); ok {
 			if err := s3store.HealthCheck(r.Context()); err != nil {

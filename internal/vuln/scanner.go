@@ -30,10 +30,10 @@ type Package struct {
 	Ecosystem string
 	// Distro is the distribution release a deb or rpm package belongs to, as
 	// "<id>-<version>" ("debian-12", "ubuntu-22.04", "rhel-9"); empty when it is
-	// unknown or the ecosystem has no distributions. Only grype reads it.
+	// unknown or the ecosystem has no distributions. Only grype and trivy read it.
 	Distro string
 	// Release and Epoch complete an rpm's Version when the repository stores
-	// them separately; zero values add nothing. Only grype reads them.
+	// them separately; zero values add nothing. Only grype and trivy read them.
 	Release string
 	Epoch   int
 }
@@ -235,11 +235,25 @@ func (s *TrivyScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerab
 	}
 	defer func() { _ = os.RemoveAll(tmpDir) }()
 
-	if !validPackageToken(packageName) || !validPackageToken(version) {
+	if !validPackageToken(packageName) || !validPackageToken(version) || (pkg.Release != "" && !validPackageToken(pkg.Release)) {
 		return nil, newScanError(s.Name(), FailureInternal, errInvalidPackage)
 	}
 
-	if err := s.writeManifest(tmpDir, packageName, version, ecosystem); err != nil {
+	// A deb or rpm is read from a CycloneDX SBOM with the operating system in
+	// it (`trivy sbom`); every other ecosystem from a generated lockfile.
+	sbom := NeedsDistro(ecosystem)
+
+	if sbom {
+		err = s.writeSBOM(tmpDir, pkg)
+	} else {
+		err = s.writeManifest(tmpDir, packageName, version, ecosystem)
+	}
+
+	if err != nil {
+		if errors.Is(err, errDistroRequired) {
+			err = fmt.Errorf("%w: %q", errUnsupportedEcosystem, ecosystem)
+		}
+
 		if errors.Is(err, errUnsupportedEcosystem) {
 			return nil, newScanError(s.Name(), FailureUnsupported, err)
 		}
@@ -255,10 +269,17 @@ func (s *TrivyScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerab
 	// The database is managed by the registry (Registry.Start), never fetched
 	// by a scan: a download inside the scan deadline would time out on a cold
 	// cache and needs a writable cache on every run.
-	stdout, stderr, err := runScanner(ctx, nil, bin,
-		"fs", "--scanners", "vuln", "--format", "json", "--quiet", "--offline-scan",
+	target := []string{"fs", tmpDir}
+	if sbom {
+		target = []string{"sbom", filepath.Join(tmpDir, trivySBOMFile)}
+	}
+
+	args := append([]string{target[0],
+		"--scanners", "vuln", "--format", "json", "--quiet", "--offline-scan",
 		"--skip-version-check", "--skip-db-update", "--skip-java-db-update",
-		"--cache-dir="+s.tool.cacheDir, tmpDir)
+		"--cache-dir=" + s.tool.cacheDir}, target[1:]...)
+
+	stdout, stderr, err := runScanner(ctx, nil, bin, args...)
 	if err != nil {
 		// stderr is server-side detail only; it is logged, never returned.
 		s.log.Warnw("trivy scan failed",
@@ -273,6 +294,18 @@ func (s *TrivyScanner) Scan(ctx context.Context, pkg Package) ([]models.Vulnerab
 	}
 
 	return s.parseTrivyOutput(stdout)
+}
+
+// trivySBOMFile is the SBOM written for a deb or rpm.
+const trivySBOMFile = "scan.cdx.json"
+
+func (s *TrivyScanner) writeSBOM(dir string, pkg Package) error {
+	data, err := buildTrivySBOM(pkg)
+	if err != nil {
+		return err
+	}
+
+	return os.WriteFile(filepath.Join(dir, trivySBOMFile), data, 0600)
 }
 
 func (s *TrivyScanner) writeManifest(dir, packageName, version, ecosystem string) error {
