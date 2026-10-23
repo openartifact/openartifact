@@ -14,6 +14,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 const (
@@ -51,6 +52,12 @@ func IsSubscribableEvent(name string) bool { return slices.Contains(Subscribable
 // X-Hub-Signature-256 to a host the owner never configured. A 3xx response is
 // recorded as a failed delivery.
 func newWebhookClient(timeout time.Duration) *http.Client {
+	return telemetry.WrapClient(plainWebhookClient(timeout))
+}
+
+// plainWebhookClient is newWebhookClient before instrumentation, so
+// newInsecureClient can still reach the *http.Transport.
+func plainWebhookClient(timeout time.Duration) *http.Client {
 	c := netutil.SafeHTTPClient(timeout)
 	c.CheckRedirect = func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse }
 
@@ -60,12 +67,12 @@ func newWebhookClient(timeout time.Duration) *http.Client {
 // newInsecureClient returns the SSRF-safe client with TLS certificate
 // verification disabled, used for webhooks created with ssl_verify=false.
 func newInsecureClient(timeout time.Duration) *http.Client {
-	c := newWebhookClient(timeout)
+	c := plainWebhookClient(timeout)
 	if tr, ok := c.Transport.(*http.Transport); ok {
 		tr.TLSClientConfig = &tls.Config{MinVersion: tls.VersionTLS12, InsecureSkipVerify: true} //nolint:gosec // explicit per-webhook opt-out (ssl_verify=false)
 	}
 
-	return c
+	return telemetry.WrapClient(c)
 }
 
 // clientFor picks the HTTP client honouring the webhook's ssl_verify setting.

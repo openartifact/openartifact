@@ -36,6 +36,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -354,7 +355,7 @@ func fetchIDPMetadataFromURL(ctx context.Context, metadataURL string, log *logge
 		return fallbackCachedMetadata(metadataURL, fmt.Errorf("build metadata request: %w", err), log)
 	}
 
-	resp, err := netutil.SafeHTTPClient(10 * time.Second).Do(req)
+	resp, err := telemetry.WrapClient(netutil.SafeHTTPClient(10 * time.Second)).Do(req)
 	if err != nil {
 		return fallbackCachedMetadata(metadataURL, err, log)
 	}

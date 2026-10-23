@@ -98,6 +98,21 @@ log:
   format: "json"   # json | text
   output: "stdout"
 
+# OpenTelemetry traces over OTLP, off by default. Every key has an environment
+# override, the standard OTEL_* variables where one exists (see .env.example);
+# /metrics is unaffected.
+telemetry:
+  otlp:
+    enabled: false
+    # endpoint: "otel-collector:4317"   # host:port or http(s) URL; empty = SDK default (localhost)
+    # protocol: "grpc"                  # grpc | http
+    # headers:                          # sent with every export (collector credentials)
+    #   authorization: "Bearer CHANGE_ME"
+    # insecure: false                   # plaintext to the collector (implied by an http:// endpoint)
+    # serviceName: "openartifact"
+    # sampleRatio: 1.0                  # fraction of new traces recorded; sampled incoming traces always are
+    # metrics: false                    # also export the Prometheus registry over OTLP
+
 auth:
   # Anonymous read of private repos (via the "anonymous-read" permission target).
   # Repositories flagged public are always anonymously readable (read-only),

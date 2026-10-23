@@ -19,6 +19,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -51,9 +52,9 @@ type OSVScanner struct {
 func NewOSVScanner(log *logger.Logger) *OSVScanner {
 	return &OSVScanner{
 		log: log,
-		httpClient: &http.Client{
+		httpClient: telemetry.WrapClient(&http.Client{
 			Timeout: 30 * time.Second,
-		},
+		}),
 		osvBaseURL: "https://api.osv.dev/v1",
 	}
 }

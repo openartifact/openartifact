@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 var (
@@ -167,7 +168,7 @@ func LoadOIDCProviderRow(ctx context.Context, row *models.SSOProvider, baseURL s
 // DNS rebinding), so all of it goes through the SSRF dial guard.
 //
 //nolint:gochecknoglobals // shared SSRF-guarded client, reuses connections
-var oidcHTTPClient = netutil.SafeHTTPClient(30 * time.Second)
+var oidcHTTPClient = telemetry.WrapClient(netutil.SafeHTTPClient(30 * time.Second))
 
 // oidcContext attaches oidcHTTPClient to ctx for go-oidc and oauth2.
 func oidcContext(ctx context.Context) context.Context {

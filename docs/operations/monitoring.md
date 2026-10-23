@@ -6,7 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Monitoring and logging
 
-Health and readiness endpoints, Prometheus metrics, the audit log and server logs.
+Health and readiness endpoints, Prometheus metrics, OpenTelemetry tracing, the audit log and server logs.
 
 The REST API, OpenAPI spec and Swagger UI are covered in [API](../integrations/api.md).
 
@@ -99,6 +99,78 @@ increase(openartifact_audit_dropped_total[1h]) > 0
 ```
 
 For allocation and CPU profiling see [performance](performance.md).
+
+## OpenTelemetry tracing
+
+OpenArtifact can export distributed traces over OTLP to any collector (OpenTelemetry Collector, Jaeger, Tempo, Honeycomb, ...). It is **off by default**: while disabled no provider is installed, no span is created and no `traceparent` header is sent.
+
+```yaml
+telemetry:
+  otlp:
+    enabled: true
+    endpoint: "otel-collector:4317"   # host:port or http(s) URL
+    protocol: grpc                    # grpc | http
+    headers: {}                       # sent with every export, e.g. authorization
+    insecure: false                   # plaintext to the collector
+    serviceName: openartifact
+    sampleRatio: 1.0
+    metrics: false
+```
+
+| Key | Environment | Default | Notes |
+|---|---|---|---|
+| `enabled` | `OPENARTIFACT_OTLP_ENABLED` | `false` | the only switch; `OTEL_SDK_DISABLED=true` forces it off |
+| `endpoint` | `OTEL_EXPORTER_OTLP_ENDPOINT` | empty | `host:port` or `http(s)://host:port[/prefix]`; empty uses the SDK default (`localhost:4317` for gRPC, `localhost:4318` for HTTP). For `http` the `/v1/traces` (`/v1/metrics`) suffix is appended to the prefix |
+| `protocol` | `OTEL_EXPORTER_OTLP_PROTOCOL` | `grpc` | `grpc`, or `http` (alias `http/protobuf`) |
+| `headers` | `OTEL_EXPORTER_OTLP_HEADERS` | none | `k=v,k2=v2`, values percent-decoded; merged over the YAML map. Treated as secrets and never logged |
+| `insecure` | `OTEL_EXPORTER_OTLP_INSECURE` | `false` | no TLS to the collector; an `http://` endpoint implies it |
+| `serviceName` | `OTEL_SERVICE_NAME` | `openartifact` | `service.name` resource attribute |
+| `sampleRatio` | `OTEL_TRACES_SAMPLER_ARG` | `1` | fraction of **new** traces recorded (0 to 1). Parent based: a request arriving with a sampled `traceparent` is always recorded, an unsampled one never |
+| `metrics` | `OTEL_METRICS_EXPORTER=otlp` (`none` turns it off) | `false` | also export metrics over OTLP, see below |
+
+Environment variables win over the YAML file. Setting only an `OTEL_EXPORTER_OTLP_*` variable does not enable tracing: set `enabled` too. The SDK also reads the rest of the standard environment where the table says nothing: `OTEL_RESOURCE_ATTRIBUTES` adds resource attributes, `OTEL_METRIC_EXPORT_INTERVAL` sets the metric interval, and the signal-specific `OTEL_EXPORTER_OTLP_TRACES_*` variables apply while `endpoint` is empty. `service.version` and, when `OPENARTIFACT_INSTANCE_ID` is set, `service.instance.id` are filled in. Export failures are logged as a warning at most once a minute.
+
+### What is traced
+
+| Span | Kind | Name | Notes |
+|---|---|---|---|
+| HTTP request | server | `GET /repos/{name}`, `POST /api/v1/repositories/{name}` | the chi route template, never the raw path, so the number of span names is bounded by the route table; a request that matches no route is named after its method only (`GET`), a non-standard method is `_OTHER`. `/health`, `/ready` and `/metrics` are not traced |
+| Outbound HTTP | client | `HTTP GET` | proxy upstreams (including the Go sumdb), webhook deliveries, the OSV vulnerability scanner, AI providers, OIDC and SAML metadata. The span lasts until the response body is read, so it covers the transfer of large downloads |
+| Database | client | sqlc statement name (`GetUserByName`), or the verb (`SELECT`) for hand-written SQL, `batch` | only under a recorded request span, so background workers do not create a trace per query |
+
+Server spans are marked as errors for a `5xx` status (a panic is recorded as `500`), client spans for transport errors and `4xx`/`5xx` responses.
+
+Attributes: `http.request.method`, `url.scheme`, `network.protocol.version`, `http.route`, `http.response.status_code` on server spans; `http.request.method`, `url.scheme`, `server.address`, `server.port`, `http.response.status_code`, `error.type` on client spans; `db.system.name`, `db.operation.name`, `db.query.summary`, `db.response.status_code` (SQLSTATE) on database spans. **Nothing else is recorded**: no path or query string of the request (tokens travel in them), no `Authorization` or any other header, no client IP, no user name, no SQL text or arguments, no error messages (they quote URLs and values; only the Go type or SQLSTATE is kept).
+
+### Propagation
+
+The W3C `traceparent`, `tracestate` and `baggage` headers of an incoming request are honored, so OpenArtifact joins the caller's trace (a CI job, a reverse proxy that traces). The same headers are added to **every outbound request** made under that context, including those to external upstreams, webhook endpoints and AI providers: they identify the trace, but `baggage` carries whatever the caller put in it. Strip `baggage` at your ingress if clients may send values that must not reach third parties. With tracing enabled the `X-Trace-Id` response header carries the W3C trace id (it is otherwise a random id, or the one the client sent).
+
+### Log correlation
+
+With tracing enabled every `HTTP request` log line carries `trace_id` and `span_id`, the same ids as the exported spans and `X-Trace-Id`:
+
+```json
+{"message":"HTTP request","method":"GET","path":"/repos/npm/left-pad","status":200,"trace_id":"4bf92f3577b34da6a3ce929d0e0e4736","span_id":"00f067aa0ba902b7"}
+```
+
+The fields are absent while tracing is disabled.
+
+### Metrics over OTLP
+
+Prometheus stays the primary interface and `/metrics` is unchanged. With `metrics: true` (or `OTEL_METRICS_EXPORTER=otlp`) the same registry (`openartifact_*`, `go_*`, `process_*`) is also pushed to the collector through the OpenTelemetry Prometheus bridge, with the same endpoint, protocol and headers: no second set of instruments exists, so the two views cannot disagree.
+
+### Overhead and binary size
+
+Enabling the OTLP exporters adds the OpenTelemetry SDK and the OTLP protobuf definitions to the server binary (about 13 MB, 32 to 46 MB stripped, and 25 more Go modules in `go.mod`). With tracing disabled the runtime cost is one atomic load per outbound request and database statement; the HTTP middleware is not installed at all. Lower `sampleRatio` on busy instances: every proxied download is a request.
+
+### Trying it locally
+
+```sh
+docker run --rm -d --name jaeger -p 16686:16686 -p 4317:4317 -p 4318:4318 docker.io/jaegertracing/jaeger:latest
+OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317 ./bin/openartifact-server
+# browse http://localhost:16686, service "openartifact"
+```
 
 ## Audit log
 

@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 const defaultPostgresPort = 5432
@@ -100,6 +101,10 @@ func poolConfig(cfg DatabaseConfig) (*pgxpool.Config, error) {
 	if err != nil {
 		return nil, fmt.Errorf("parse database config: %w", err)
 	}
+
+	// Statement-name spans under a request span; inert while telemetry is off.
+	// Both the pgx pool and the database/sql handle are built from this config.
+	pc.ConnConfig.Tracer = telemetry.DBTracer{}
 
 	if cfg.MaxOpenConns > 0 {
 		pc.MaxConns = int32(min(cfg.MaxOpenConns, 1<<30))

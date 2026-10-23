@@ -36,6 +36,7 @@ import (
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -127,7 +128,7 @@ type Service struct {
 // client: blocked destination addresses are refused at dial time and on every
 // redirect hop.
 func NewService(log *logger.Logger, db database.Database, blobStore storage.BlobStore) *Service {
-	client := netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout)
+	client := telemetry.WrapClient(netutil.SafeHTTPClientWithHeaderTimeout(fetchTimeout, responseHeaderTimeout))
 
 	return &Service{
 		log:        log,

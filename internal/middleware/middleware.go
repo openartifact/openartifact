@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -36,7 +37,7 @@ func LoggingMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 			next.ServeHTTP(wrapped, r)
 
 			duration := time.Since(start)
-			log.Infow("HTTP request",
+			fields := []any{
 				"request_id", requestID,
 				"method", r.Method,
 				// Path only: the query string can carry credentials and OAuth
@@ -45,7 +46,10 @@ func LoggingMiddleware(log *logger.Logger) func(http.Handler) http.Handler {
 				"status", wrapped.statusCode,
 				"duration_ms", duration.Milliseconds(),
 				"remote_addr", r.RemoteAddr,
-			)
+			}
+			// trace_id/span_id join the line to its OpenTelemetry trace; absent
+			// while telemetry is disabled.
+			log.Infow("HTTP request", append(fields, telemetry.LogFields(r.Context())...)...)
 		})
 	}
 }

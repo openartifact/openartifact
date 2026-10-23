@@ -58,6 +58,7 @@ import (
 	"github.com/openartifact/openartifact/internal/search"
 	"github.com/openartifact/openartifact/internal/secrets"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/telemetry"
 	"github.com/openartifact/openartifact/internal/tiering"
 	"github.com/openartifact/openartifact/internal/trash"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -65,8 +66,12 @@ import (
 	"github.com/openartifact/openartifact/pkg/gpg"
 	"github.com/openartifact/openartifact/pkg/logger"
 	webhandler "github.com/openartifact/openartifact/web"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 )
+
+// telemetryFlushTimeout bounds the final span/metric export at shutdown.
+const telemetryFlushTimeout = 5 * time.Second
 
 var (
 	version = "dev"
@@ -198,6 +203,32 @@ func run(args []string) error {
 		"server_host", cfg.Server.Host,
 		"server_port", cfg.Server.Port,
 	)
+
+	// OpenTelemetry (off unless telemetry.otlp.enabled): installed before the
+	// database and the HTTP clients are used, flushed on the way out.
+	shutdownTelemetry, err := telemetry.Setup(context.Background(), cfg.Telemetry,
+		telemetry.Build{Version: version, InstanceID: cfg.Server.InstanceID}, prometheus.DefaultGatherer, log)
+	if err != nil {
+		return fail("failed to initialize telemetry", err)
+	}
+
+	defer func() {
+		ctx, cancel := context.WithTimeout(context.Background(), telemetryFlushTimeout)
+		defer cancel()
+
+		if err := shutdownTelemetry(ctx); err != nil {
+			log.Warnw("telemetry shutdown", "error", err)
+		}
+	}()
+
+	if cfg.Telemetry.OTLP.Enabled {
+		log.Infow("OpenTelemetry enabled",
+			"protocol", cfg.Telemetry.OTLP.Protocol,
+			"service_name", cfg.Telemetry.OTLP.ServiceName,
+			"sample_ratio", cfg.Telemetry.OTLP.SampleRatio,
+			"metrics", cfg.Telemetry.OTLP.Metrics,
+		)
+	}
 
 	// Initialize database
 	db, err := database.NewPostgresDB(cfg.Database, log)
@@ -453,8 +484,11 @@ func run(args []string) error {
 	server.AddMiddleware(middleware.SecurityHeadersMiddleware(cfg.Server.TLSEnabled || strings.HasPrefix(strings.ToLower(cfg.BaseURL), "https://")))
 	server.AddMiddleware(middleware.RecoveryMiddleware(log))
 	server.AddMiddleware(middleware.RequestIDMiddleware)
-	server.AddMiddleware(middleware.TracingMiddleware)
 	server.AddMiddleware(middleware.MetricsMiddleware(reg))
+	// OpenTelemetry server spans (no-op while telemetry is disabled); before
+	// TracingMiddleware and LoggingMiddleware, which read the span context.
+	server.AddMiddleware(telemetry.HTTPMiddleware())
+	server.AddMiddleware(middleware.TracingMiddleware)
 	server.AddMiddleware(middleware.LoggingMiddleware(log))
 	server.AddMiddleware(middleware.CORSMiddleware(cfg.Server.CORSOrigins))
 

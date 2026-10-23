@@ -9,6 +9,8 @@ import (
 	"crypto/rand"
 	"encoding/hex"
 	"net/http"
+
+	"go.opentelemetry.io/otel/trace"
 )
 
 type contextKey string
@@ -16,11 +18,16 @@ type contextKey string
 const TraceIDKey contextKey = "trace_id"
 
 // TracingMiddleware generates a trace ID per request if not present in headers
-// and propagates it via X-Trace-ID response header.
+// and propagates it via X-Trace-ID response header. When OpenTelemetry is
+// enabled the request has a W3C trace (telemetry.HTTPMiddleware runs first) and
+// its trace id is used instead, so the header, the logs and the exported spans
+// agree.
 func TracingMiddleware(next http.Handler) http.Handler {
 	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		traceID := r.Header.Get("X-Trace-Id")
-		if traceID == "" {
+		if sc := trace.SpanContextFromContext(r.Context()); sc.IsValid() {
+			traceID = sc.TraceID().String()
+		} else if traceID == "" {
 			traceID = generateTraceID()
 		}
 

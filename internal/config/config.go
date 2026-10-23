@@ -18,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/storage"
+	"github.com/openartifact/openartifact/internal/telemetry"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -67,7 +68,10 @@ type Config struct {
 	BlobDeletion BlobDeletionConfig `yaml:"blobDeletion"`
 	Tiering      TieringConfig      `yaml:"tiering"`
 	Projects     ProjectsConfig     `yaml:"projects"`
-	BaseURL      string             `yaml:"baseUrl"`
+	// Telemetry configures OpenTelemetry export (off by default), see
+	// docs/operations/monitoring.md.
+	Telemetry telemetry.Config `yaml:"telemetry"`
+	BaseURL   string           `yaml:"baseUrl"`
 }
 
 // ProjectsConfig tunes project self-service (see docs/security/projects.md).
@@ -338,6 +342,7 @@ func defaultConfig() *Config {
 			AzureAccountKey:          "",
 			AzureContainerName:       "",
 		},
+		Telemetry: telemetry.DefaultConfig(),
 		Logger: LoggerConfig{
 			Level:      "info",
 			Format:     "json",
@@ -493,6 +498,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Logger.Format, "LOG_FORMAT")
 	overrideString(&cfg.Logger.OutputPath, "LOG_OUTPUT")
 
+	applyTelemetryEnv(&cfg.Telemetry.OTLP)
+
 	// GPG config
 	overrideBool(&cfg.GPG.Enabled, "GPG_ENABLED")
 	overrideString(&cfg.GPG.KeyPath, "GPG_KEY_PATH")
@@ -629,6 +636,10 @@ func (c *Config) Validate() error {
 
 	if c.Trash.RetentionDays < 0 {
 		return errNegativeTrashRetention
+	}
+
+	if err := c.Telemetry.Validate(); err != nil {
+		return err
 	}
 
 	if err := c.validateTiering(); err != nil {

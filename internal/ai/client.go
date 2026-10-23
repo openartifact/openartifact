@@ -19,6 +19,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/telemetry"
 )
 
 var (
@@ -130,7 +131,7 @@ func NewClient(cfg Config) *Client {
 
 	return &Client{
 		cfg:          cfg,
-		httpClient:   netutil.SafeHTTPClient(timeout),
+		httpClient:   telemetry.WrapClient(netutil.SafeHTTPClient(timeout)),
 		baseURL:      baseURL,
 		systemPrompt: systemPrompt,
 	}
