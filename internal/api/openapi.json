@@ -8438,7 +8438,7 @@
       },
       "patch": {
         "summary": "Update user",
-        "description": "Update a user (admin only)",
+        "description": "Update a user (admin only). Setting `disabled: true` keeps the account, blocks login and revokes its sessions and project tokens; `disabled: false` re-enables it.",
         "tags": [
           "Users"
         ],
@@ -8498,8 +8498,8 @@
         }
       },
       "delete": {
-        "summary": "Delete user (soft)",
-        "description": "Soft-delete a user (admin only)",
+        "summary": "Delete user",
+        "description": "Permanently delete a user (admin only). The account row, its API tokens, sessions, project memberships, group links, permission assignments and SSO link are removed; creator/owner references on other objects are cleared. Refused for your own account (400) and for the last enabled admin (409). To keep the account, set `disabled` with PATCH instead. A later SSO login with the same external ID provisions a fresh user.",
         "tags": [
           "Users"
         ],
@@ -8518,8 +8518,14 @@
           "204": {
             "description": "User deleted"
           },
+          "400": {
+            "description": "Cannot delete your own account"
+          },
           "404": {
             "description": "User not found"
+          },
+          "409": {
+            "description": "Cannot delete the last enabled admin"
           }
         }
       }
@@ -8571,7 +8577,7 @@
     "/api/v1/users/{id}/tokens": {
       "get": {
         "summary": "List user's tokens",
-        "description": "List API tokens for a user (admin only)",
+        "description": "List the active (not revoked) API tokens of a user (owner or admin)",
         "tags": [
           "Users",
           "Tokens"

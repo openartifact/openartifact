@@ -186,6 +186,13 @@ export const enAdmin = {
   'adm.users.disabledToast': 'User disabled',
   'adm.users.resetRequired': 'Password change will be required at next login',
   'adm.users.confirmDelete': 'Delete user',
+  'adm.users.confirmDeleteBody':
+    'This permanently deletes the account. Its API tokens, sessions, project memberships, group links and SSO link are removed and cannot be restored. To keep the account, use Disable instead.',
+  'adm.users.deletedToast': 'User deleted',
+  'adm.users.filter': 'Filter users by status',
+  'adm.users.filter.all': 'All',
+  'adm.users.filter.active': 'Active',
+  'adm.users.filter.disabled': 'Disabled',
 
   // Groups
   'adm.groups.description': 'Organise users into groups to grant permissions in bulk.',

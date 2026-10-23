@@ -60,6 +60,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
         />
       </div>
+      <select
+        v-model="statusFilter"
+        :aria-label="t('adm.users.filter')"
+        class="h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground px-2 focus:ring-2 focus:ring-primary/50"
+      >
+        <option value="all">{{ t('adm.users.filter.all') }}</option>
+        <option value="active">{{ t('adm.users.filter.active') }}</option>
+        <option value="disabled">{{ t('adm.users.filter.disabled') }}</option>
+      </select>
     </div>
 
     <!-- TableCard -->
@@ -139,10 +148,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   <button
                     type="button"
                     @click="deleteOne(user)"
-                    :disabled="user.disabled"
                     :title="t('adm.users.deleteTitle')"
                     :aria-label="`${t('adm.users.deleteTitle')}: ${user.username}`"
-                    class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                    class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
                   >
                     <TrashIcon class="w-4 h-4" aria-hidden="true" />
                   </button>
@@ -223,7 +231,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ConfirmDialog
       :open="deleteTarget !== null"
       :title="t('adm.users.confirmDelete')"
-      :description="deleteTarget?.username ?? ''"
+      :description="deleteTarget ? `${deleteTarget.username}: ${t('adm.users.confirmDeleteBody')}` : ''"
       :confirm-label="t('common.delete')"
       :busy="deleting"
       @confirm="confirmDelete"
@@ -279,10 +287,15 @@ const formData = ref({
   must_change_password: false,
 })
 
+const statusFilter = ref<'all' | 'active' | 'disabled'>('all')
+
 const filteredUsers = computed(() => {
-  if (!q.value) return users.value
+  const byStatus = users.value.filter(
+    (u) => statusFilter.value === 'all' || (statusFilter.value === 'disabled') === !!u.disabled,
+  )
+  if (!q.value) return byStatus
   const query = q.value.toLowerCase()
-  return users.value.filter(
+  return byStatus.filter(
     (u) =>
       u.username?.toLowerCase().includes(query) ||
       u.email?.toLowerCase().includes(query) ||
@@ -391,8 +404,7 @@ async function forceReset(id: string | number): Promise<void> {
   }
 }
 
-// The backend soft-deletes: DELETE /users/{id} disables the account and keeps
-// the row, so the confirmation and toast say so instead of claiming removal.
+// DELETE /users/{id} hard-deletes the account; Disable keeps it.
 const deleteTarget = ref<UserItem | null>(null)
 const deleting = ref(false)
 
@@ -406,7 +418,7 @@ async function confirmDelete(): Promise<void> {
   deleting.value = true
   try {
     await deleteUser(user.id)
-    toasts.success(t('adm.users.disabledToast'))
+    toasts.success(t('adm.users.deletedToast'))
     deleteTarget.value = null
     await load()
   } catch (err) {

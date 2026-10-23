@@ -5,6 +5,7 @@
 package api
 
 import (
+	"errors"
 	"net/http"
 	"regexp"
 	"strconv"
@@ -290,6 +291,10 @@ func (h *AdminUsersHandler) handlePatch(w http.ResponseWriter, r *http.Request) 
 
 	auditAdmin(r, audit.ActionUserUpdated, "user", user.ID, "user "+user.Username+" updated: "+strings.Join(changed, ", "))
 
+	if body.Disabled != nil && *body.Disabled && isAdmin {
+		auditAdmin(r, audit.ActionUserDisabled, "user", user.ID, "user "+user.Username+" disabled")
+	}
+
 	// A password reset or a disable must cut off whoever still holds a
 	// session. Failing to do so fails the request: the caller must know the
 	// old sessions may still be alive (the update itself is idempotent, so
@@ -331,22 +336,33 @@ func (h *AdminUsersHandler) handleDelete(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	user.Disabled = true
-
-	user.UpdatedAt = time.Now()
-	if err := h.db.UpdateUser(ctx, user); err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-		return
-	}
-
-	auditAdmin(r, audit.ActionUserDisabled, "user", user.ID, "user "+user.Username+" deleted (disabled)")
-
+	// Cut sessions first so a half-failed delete never leaves a live session.
 	if err := auth.RevokeAllSessions(ctx, h.db, user.ID); err != nil {
 		h.log.Errorw("admin delete user: revoke sessions", "error", err, "user", user.ID)
 		writeError(w, http.StatusInternalServerError, "internal_error", "failed to revoke sessions")
 
 		return
 	}
+
+	deleted, err := h.db.DeleteUser(ctx, user.ID)
+	if errors.Is(err, database.ErrLastAdmin) {
+		writeError(w, http.StatusConflict, "conflict", "cannot delete the last enabled admin")
+		return
+	}
+
+	if err != nil {
+		h.log.Errorw("admin delete user", "error", err, "user", user.ID)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if !deleted {
+		writeError(w, http.StatusNotFound, "not_found", "user not found")
+		return
+	}
+
+	auditAdmin(r, audit.ActionUserDeleted, "user", user.ID, "user "+user.Username+" deleted")
 
 	writeNoContent(w)
 }

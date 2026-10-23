@@ -471,6 +471,10 @@ func (m *BaseMockDB) UpdateSessionLastSeen(ctx context.Context, sessionID string
 func (m *BaseMockDB) ConsumeSAMLAssertion(ctx context.Context, providerSlug, assertionID string, expiresAt time.Time) (bool, error) {
 	return false, errNotImpl("ConsumeSAMLAssertion")
 }
+func (m *BaseMockDB) DeleteUser(ctx context.Context, id string) (bool, error) {
+	return false, errNotImpl("DeleteUser")
+}
+
 func (m *BaseMockDB) DeleteSessionsByUser(ctx context.Context, userID string) error {
 	return errNotImpl("DeleteSessionsByUser")
 }

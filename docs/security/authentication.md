@@ -52,7 +52,7 @@ curl -sS -c jar -X POST HOST/api/v1/auth/login \
 - The server stores only the SHA-256 of the 32-byte random session id.
 - Expiry is sliding: `auth.sessionDurationHours` / `SESSION_DURATION_HOURS` (default 24), extended at most once a minute. A session also ends 30 days after login regardless of activity (fixed, not configurable).
 - Throttling: 10 login requests per minute per client IP and 10 failures per 15 minutes per username; both answer 429 with `Retry-After`. IPv6 clients are counted per /64 network, and a limiter at capacity never evicts an entry that is currently locked out.
-- Disabling a user revokes the user's sessions; disabled users are rejected on every credential type.
+- Disabling a user (`PATCH /api/v1/users/{id}` with `disabled: true`) keeps the account and revokes the user's sessions; disabled users are rejected on every credential type. `DELETE /api/v1/users/{id}` permanently removes the account together with its tokens, sessions, memberships and SSO link; use disable to keep it.
 
 Session cookies (`oa_session`, `oa_csrf`) carry `Max-Age` equal to the absolute session lifetime; the sliding idle expiry is enforced server-side, so an active user is no longer logged out by the browser after the idle window.
 

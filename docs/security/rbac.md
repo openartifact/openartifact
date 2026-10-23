@@ -85,7 +85,7 @@ All of these need admin, except the self-service rows.
 | `POST /api/v1/permission-targets/{id}/assignments` | body `principal_type`, `principal_id` |
 | `DELETE /api/v1/permission-targets/{id}/assignments?principal_type=&principal_id=` | |
 | `POST/GET /api/v1/users` | create body: `username` (3–64 chars), `email`, `full_name`, `password` (optional), `disabled`, `must_change_password` |
-| `GET/PATCH/DELETE /api/v1/users/{id}` | admin PATCH may set `disabled`, `must_change_password`, `password`; disabling revokes sessions and an admin cannot disable themselves. Self-edit (session only) is limited to `email` and `full_name` |
+| `GET/PATCH/DELETE /api/v1/users/{id}` | admin PATCH may set `disabled`, `must_change_password`, `password`; disabling keeps the account, blocks login and revokes sessions, and an admin cannot disable themselves. `DELETE` permanently removes the account with its tokens, sessions, memberships and SSO link (use `disabled` to keep it); it is refused for your own account and for the last enabled admin (`409`). Self-edit (session only) is limited to `email` and `full_name` |
 | `POST/GET /api/v1/groups`, `GET/PATCH/DELETE /api/v1/groups/{id}` | body `name`, `description` |
 | `GET/PUT /api/v1/groups/{id}/members` | `PUT` body `{"members":["<USER_ID>",…]}` replaces the list |
 | `POST/DELETE /api/v1/groups/{id}/members/{userId}` | add / remove one member |

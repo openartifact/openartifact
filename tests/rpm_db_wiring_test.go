@@ -44,6 +44,7 @@ type MockDatabase struct {
 	npmDistTags             map[string]map[string]string
 	authUsers               map[string]*models.User
 	authUsersByName         map[string]*models.User
+	lastAdminID             string
 	authGroups              map[string]*models.Group
 	authUserGroups          map[string]map[string]bool
 	authUserGroupsSSO       map[string]map[string]bool
@@ -709,6 +710,31 @@ func (m *MockDatabase) CreateUser(ctx context.Context, user *models.User) (*mode
 	m.authUsersByName[user.Username] = user
 
 	return user, nil
+}
+
+// DeleteUser mimics PostgresDB.DeleteUser: the row, its sessions and tokens go;
+// lastAdminID names the user the last-admin guard protects.
+func (m *MockDatabase) DeleteUser(ctx context.Context, id string) (bool, error) {
+	u, ok := m.authUsers[id]
+	if !ok || u.IsService() {
+		return false, nil
+	}
+
+	if id == m.lastAdminID {
+		return false, database.ErrLastAdmin
+	}
+
+	delete(m.authUsers, id)
+	delete(m.authUsersByName, u.Username)
+
+	for hash, t := range m.authTokens {
+		if t.UserID == id {
+			delete(m.authTokens, hash)
+			delete(m.authTokensByID, t.ID)
+		}
+	}
+
+	return true, m.DeleteSessionsByUser(ctx, id)
 }
 
 func (m *MockDatabase) GetUserByID(ctx context.Context, id string) (*models.User, error) {

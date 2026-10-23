@@ -13,6 +13,79 @@ import (
 // bootstrapAdvisoryLockKey serialises first-boot admin creation across replicas.
 const bootstrapAdvisoryLockKey = "openartifact:auth-bootstrap"
 
+// adminDeleteAdvisoryLockKey serialises user deletion so the last-admin guard holds.
+const adminDeleteAdvisoryLockKey = "openartifact:auth-user-delete"
+
+// enabledAdminIDsSQL selects the enabled human users holding admin-all, either
+// by a direct assignment or through a group.
+const enabledAdminIDsSQL = `
+	SELECT u.id FROM auth_users u
+	WHERE NOT u.disabled AND u.kind = 'human' AND EXISTS (
+		SELECT 1 FROM permission_assignments pa
+		JOIN permission_targets pt ON pt.id = pa.permission_target_id
+		WHERE pt.name = 'admin-all' AND (
+			(pa.principal_type = 'user' AND pa.principal_id = u.id)
+			OR (pa.principal_type = 'group' AND pa.principal_id IN
+				(SELECT ug.group_id FROM auth_user_groups ug WHERE ug.user_id = u.id))))`
+
+// DeleteUser hard-deletes a human user. Sessions, tokens, project
+// memberships, group links and the SSO link (external_id/provider_slug live on
+// the row) go with it; creator/owner references are set to NULL by their
+// foreign keys. The direct permission assignments carry no foreign key and are
+// removed explicitly. It returns false when the user does not exist and
+// ErrLastAdmin when the user is the last enabled admin.
+func (p *PostgresDB) DeleteUser(ctx context.Context, id string) (bool, error) {
+	// Cached auth lookups must not outlive this write.
+	defer p.authCache.invalidate()
+
+	tx, err := p.db.BeginTx(ctx, nil)
+	if err != nil {
+		return false, fmt.Errorf("begin delete user tx: %w", err)
+	}
+
+	defer func() { _ = tx.Rollback() }()
+
+	// Serialise with other deletes so two admins cannot each remove "the other" admin.
+	if _, err := tx.ExecContext(ctx, `SELECT pg_advisory_xact_lock(hashtext($1))`, adminDeleteAdvisoryLockKey); err != nil {
+		return false, fmt.Errorf("delete user advisory lock: %w", err)
+	}
+
+	var exists bool
+	if err := tx.QueryRowContext(ctx, `SELECT EXISTS (SELECT 1 FROM auth_users WHERE id = $1 AND kind = 'human')`, id).Scan(&exists); err != nil {
+		return false, fmt.Errorf("delete user lookup: %w", err)
+	}
+
+	if !exists {
+		return false, nil
+	}
+
+	var isAdmin, others bool
+	if err := tx.QueryRowContext(ctx,
+		`SELECT EXISTS (SELECT 1 FROM (`+enabledAdminIDsSQL+`) a WHERE a.id = $1),
+		        EXISTS (SELECT 1 FROM (`+enabledAdminIDsSQL+`) a WHERE a.id <> $1)`, id,
+	).Scan(&isAdmin, &others); err != nil {
+		return false, fmt.Errorf("delete user admin check: %w", err)
+	}
+
+	if isAdmin && !others {
+		return false, ErrLastAdmin
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM permission_assignments WHERE principal_type = 'user' AND principal_id = $1`, id); err != nil {
+		return false, fmt.Errorf("delete user assignments: %w", err)
+	}
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM auth_users WHERE id = $1`, id); err != nil {
+		return false, fmt.Errorf("delete user: %w", err)
+	}
+
+	if err := tx.Commit(); err != nil {
+		return false, fmt.Errorf("commit delete user: %w", err)
+	}
+
+	return true, nil
+}
+
 // DeleteSessionsByUser revokes every session of a user.
 func (p *PostgresDB) DeleteSessionsByUser(ctx context.Context, userID string) error {
 	if _, err := p.db.ExecContext(ctx, `DELETE FROM auth_sessions WHERE user_id = $1`, userID); err != nil {

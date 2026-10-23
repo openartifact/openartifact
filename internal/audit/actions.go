@@ -108,6 +108,7 @@ const (
 	ActionUserCreated  = "user.created"
 	ActionUserUpdated  = "user.updated"
 	ActionUserDisabled = "user.disabled"
+	ActionUserDeleted  = "user.deleted"
 
 	ActionGroupCreated       = "group.created"
 	ActionGroupUpdated       = "group.updated"
@@ -174,7 +175,7 @@ var KnownActions = []string{
 
 	ActionHTTPRequest,
 
-	ActionUserCreated, ActionUserUpdated, ActionUserDisabled,
+	ActionUserCreated, ActionUserUpdated, ActionUserDisabled, ActionUserDeleted,
 
 	ActionGroupCreated, ActionGroupUpdated, ActionGroupDeleted,
 	ActionGroupMemberAdded, ActionGroupMemberRemoved, ActionGroupMembersSet,

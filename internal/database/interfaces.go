@@ -14,6 +14,9 @@ import (
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
+// ErrLastAdmin is returned when deleting the last enabled admin user.
+var ErrLastAdmin = errors.New("cannot delete the last enabled admin")
+
 // ErrDuplicate is returned by Create*Package when an insert hits the unique
 // constraint (ON CONFLICT), so callers can distinguish an idempotent duplicate
 // upload (map to HTTP 409) from a real failure. This closes the check-then-insert
@@ -310,6 +313,9 @@ type Database interface {
 	ConsumeSAMLAssertion(ctx context.Context, providerSlug, assertionID string, expiresAt time.Time) (bool, error)
 	// DeleteSessionsByUser revokes every session of a user (password change/reset, disable).
 	DeleteSessionsByUser(ctx context.Context, userID string) error
+	// DeleteUser hard-deletes a human user with its sessions, tokens, memberships
+	// and SSO link. false means not found; ErrLastAdmin refuses the last enabled admin.
+	DeleteUser(ctx context.Context, id string) (bool, error)
 	// DeleteOtherSessionsByUser revokes every session of a user except the one whose
 	// token hash is keepTokenHash (used on self-service password change).
 	DeleteOtherSessionsByUser(ctx context.Context, userID, keepTokenHash string) error

@@ -4237,9 +4237,17 @@ export type DeleteApiV1UsersByIdData = {
 
 export type DeleteApiV1UsersByIdErrors = {
     /**
+     * Cannot delete your own account
+     */
+    400: unknown;
+    /**
      * User not found
      */
     404: unknown;
+    /**
+     * Cannot delete the last enabled admin
+     */
+    409: unknown;
 };
 
 export type DeleteApiV1UsersByIdResponses = {
