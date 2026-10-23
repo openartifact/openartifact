@@ -60,6 +60,13 @@ func (l *quotaLedger) reserve(repoID string, size int64, count int) bool {
 	return true
 }
 
+// charge adds usage past any limit (a row that already exists).
+func (l *quotaLedger) charge(repoID string, size int64, count int) {
+	u := l.row(repoID)
+	u.bytes += size
+	u.artifacts += count
+}
+
 func (l *quotaLedger) release(repoID string, size int64, count int) {
 	u := l.row(repoID)
 	u.bytes = max(0, u.bytes-size)
@@ -92,6 +99,11 @@ func (d *regFakeDB) ReserveStorageUsage(_ context.Context, repoID string, size i
 	return d.ledger.reserve(repoID, size, count), nil
 }
 
+func (d *regFakeDB) ChargeStorageUsage(_ context.Context, repoID string, size int64, count int) error {
+	d.ledger.charge(repoID, size, count)
+	return nil
+}
+
 func (d *regFakeDB) DecrementStorageUsage(_ context.Context, repoID string, size int64, count int) error {
 	d.ledger.release(repoID, size, count)
 	return nil
@@ -101,6 +113,11 @@ func (f *manifestFakeDB) ReserveStorageUsage(_ context.Context, repoID string, s
 	return f.ledger.reserve(repoID, size, count), nil
 }
 
+func (f *manifestFakeDB) ChargeStorageUsage(_ context.Context, repoID string, size int64, count int) error {
+	f.ledger.charge(repoID, size, count)
+	return nil
+}
+
 func (f *manifestFakeDB) DecrementStorageUsage(_ context.Context, repoID string, size int64, count int) error {
 	f.ledger.release(repoID, size, count)
 	return nil
@@ -108,6 +125,11 @@ func (f *manifestFakeDB) DecrementStorageUsage(_ context.Context, repoID string,
 
 func (f *fakeDB) ReserveStorageUsage(_ context.Context, repoID string, size int64, count int) (bool, error) {
 	return f.ledger.reserve(repoID, size, count), nil
+}
+
+func (f *fakeDB) ChargeStorageUsage(_ context.Context, repoID string, size int64, count int) error {
+	f.ledger.charge(repoID, size, count)
+	return nil
 }
 
 func (f *fakeDB) DecrementStorageUsage(_ context.Context, repoID string, size int64, count int) error {

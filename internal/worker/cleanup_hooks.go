@@ -119,7 +119,7 @@ func (w *CleanupWorker) collectDocker(ctx context.Context, repo *models.Reposito
 
 	switch {
 	case err == nil:
-	case errors.Is(err, ErrDockerGCBusy), errors.Is(err, ErrDockerGCUnsupported):
+	case errors.Is(err, ErrDockerGCBusy):
 		w.log.Debugw("cleanup: docker garbage collection skipped", "repository_id", repo.ID, "reason", err)
 	default:
 		w.log.Warnw("cleanup: docker garbage collection failed", "repository_id", repo.ID, "error", fmt.Errorf("run gc: %w", err))
