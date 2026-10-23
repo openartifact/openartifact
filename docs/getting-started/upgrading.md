@@ -85,7 +85,9 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
-### Unreleased
+### 0.8.0
+
+Migrations `054`, `056`–`059`, `061`, `063`, `064` and `065`. Multi-tenant Entra identities change their external ID to `<tid>:<sub>` (see [SSO changes](#sso-oidc-and-saml-changes)).
 
 - Migration `064` flags every hosted RPM repository's metadata stale so the worker regenerates it at the first start (repositories created by 0.7.0 or earlier keep `<Location>` in `primary.xml` until then, and dnf cannot install from them). Every upload to an RPM repository now also flags it stale; before, a package uploaded after the first one was missing from the metadata.
 - Cleanup policies now run on every hosted format (npm, maven, ivy, sbt, cargo, rubygems, conda, conan, raw and docker join deb, rpm, helm, pypi, nuget and go). Policies already stored for these formats, which used to fail on every run, now execute on their next schedule: review their `keep_*` settings, or use the new `POST /api/v1/repositories/{repo}/cleanup-policies/{id}/dry-run` to see what a run would remove. Quarantined packages are now also skipped by cleanup for every format. See [cleanup policies](../repositories/cleanup-and-quotas.md#supported-formats).
