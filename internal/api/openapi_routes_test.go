@@ -74,6 +74,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	attestation.RegisterPublic(r)
 	attestation.RegisterAuthed(r)
 	NewDependencyTrackHandler(nil, nil, nil, nil).RegisterAuthed(r)
+	NewAttestationAttachHandler(nil, nil, nil, nil, nil).RegisterAuthed(r)
 	NewWebhooksHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	NewBackupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	NewLicenseHandler(nil, nil, nil, nil, nil).RegisterRoutes(r)

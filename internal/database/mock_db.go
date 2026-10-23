@@ -1192,6 +1192,12 @@ func (m *BaseMockDB) UpsertRepositoryDependencyTrack(ctx context.Context, c *mod
 func (m *BaseMockDB) DeleteRepositoryDependencyTrack(ctx context.Context, repoID string) (bool, error) {
 	return false, errNotImpl("DeleteRepositoryDependencyTrack")
 }
+func (m *BaseMockDB) GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error) {
+	return false, errNotImpl("GetRepositoryAttestationAttach")
+}
+func (m *BaseMockDB) SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error {
+	return errNotImpl("SetRepositoryAttestationAttach")
+}
 func (m *BaseMockDB) UpsertDependencyTrackPush(ctx context.Context, s *models.DependencyTrackPush) error {
 	return errNotImpl("UpsertDependencyTrackPush")
 }

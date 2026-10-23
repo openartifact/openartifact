@@ -163,3 +163,27 @@ func (p *PostgresDB) CreateSystemSettingIfAbsent(ctx context.Context, key, value
 
 	return n > 0, nil
 }
+
+// GetRepositoryAttestationAttach reports whether the repository attaches signed
+// attestations to its docker images as OCI referrers; false when never set.
+func (p *PostgresDB) GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error) {
+	enabled, err := p.q.GetRepositoryAttestationAttach(ctx, repoID)
+	if errors.Is(err, sql.ErrNoRows) {
+		return false, nil
+	}
+
+	if err != nil {
+		return false, fmt.Errorf("get attestation attach setting: %w", err)
+	}
+
+	return enabled, nil
+}
+
+// SetRepositoryAttestationAttach stores the repository's attach switch.
+func (p *PostgresDB) SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error {
+	if err := p.q.SetRepositoryAttestationAttach(ctx, dbsqlc.SetRepositoryAttestationAttachParams{RepositoryID: repoID, Enabled: enabled}); err != nil {
+		return fmt.Errorf("set attestation attach setting: %w", err)
+	}
+
+	return nil
+}

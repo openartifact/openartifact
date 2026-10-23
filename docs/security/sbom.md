@@ -201,15 +201,40 @@ The signature is over `PAE(payloadType, payload)` = `DSSEv1 <len(type)> <type> <
 
 ### Attaching to an OCI image
 
-The docker registry already implements the OCI 1.1 referrers API, so a document can be attached to an image with standard tools; no OpenArtifact endpoint is involved:
+For a **hosted docker repository** OpenArtifact can sign the SBOM and VEX document of an image and attach them to it as OCI 1.1 referrers: an image manifest with a `subject` pointing at the image, `artifactType` `application/vnd.dev.sigstore.bundle.v0.3+json`, an empty config and one layer holding the Sigstore bundle (the same bundle `?attest=bundle` returns). `cosign tree`, `cosign verify-attestation` and `oras discover` find it next to the image. The attached manifests go through the registry's own paths: they count against the repository's [storage quota](../repositories/cleanup-and-quotas.md), appear in the referrers API with their `artifactType` and annotations (`dev.sigstore.bundle.predicateType`, `dev.openartifact.attestation.kind` = `sbom` or `vex`), and live and die with the image under [registry GC](../formats/docker.md) (deleting the tag and collecting it removes them).
+
+The attestation subject is the image manifest digest. The attachment is idempotent per image, kind and predicate type: attaching the same document again changes nothing, and a changed document replaces the earlier referrer (its blob is reclaimed by registry GC), so an image carries at most one SBOM and one VEX referrer per predicate type.
+
+Attach on demand (admin; needs the [attestation key](#the-signing-key)):
 
 ```sh
-oras attach --artifact-type application/vnd.dev.sigstore.bundle.v0.3+json \
-  HOST/REPO/IMAGE@sha256:<digest> sbom.cdx.json.sigstore.json:application/vnd.dev.sigstore.bundle.v0.3+json
-oras discover HOST/REPO/IMAGE@sha256:<digest>
+# a stored SBOM (cyclonedx, spdx-json or spdx3-json)
+curl -X POST -H "Authorization: Bearer $TOKEN" HOST/api/v1/repositories/REPO/sbom/<report-id>/attach
+# the VEX document of one image (openvex by default, or "format": "cyclonedx")
+curl -X POST -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"artifact_id":"REPO/IMAGE@TAG"}' HOST/api/v1/repositories/REPO/vex/attach
 ```
 
-OpenArtifact does not attach it on its own: doing so would write blobs and manifests into the registry outside the push path, with the quota and garbage-collection accounting of the docker handler, which is deliberately left to the client.
+The answer carries `subject`, `referrer_digest`, `created` (false when it was already attached) and `replaced`. Or attach automatically, per repository (off by default):
+
+```sh
+curl -X PUT -H "Authorization: Bearer $TOKEN" -H 'Content-Type: application/json' \
+  -d '{"enabled":true}' HOST/api/v1/repositories/REPO/attestation-attach
+```
+
+With it on, generating an SBOM for an image attaches it, and a finished vulnerability scan attaches a CycloneDX SBOM and the OpenVEX document; a failure is logged and never fails the scan or the generation.
+
+Discover and verify:
+
+```sh
+oras discover HOST/REPO/IMAGE@sha256:<digest>
+cosign tree HOST/REPO/IMAGE@sha256:<digest>
+curl -O HOST/.well-known/openartifact/attestation-key.pem
+cosign verify-attestation --key attestation-key.pem --type cyclonedx \
+  --insecure-ignore-tlog HOST/REPO/IMAGE@sha256:<digest>
+```
+
+Other formats have no referrers; use `?attest=bundle` and verify the package file with `cosign verify-blob-attestation` as above.
 
 ## Using the documents
 

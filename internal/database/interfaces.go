@@ -752,6 +752,10 @@ type Database interface {
 	UpsertDependencyTrackPush(ctx context.Context, s *models.DependencyTrackPush) error
 	// GetDependencyTrackPush returns the push state of an artifact, nil when never pushed.
 	GetDependencyTrackPush(ctx context.Context, repoID, artifactID string) (*models.DependencyTrackPush, error)
+	// GetRepositoryAttestationAttach reports whether the repository attaches signed attestations to docker images as OCI referrers (false when never set).
+	GetRepositoryAttestationAttach(ctx context.Context, repoID string) (bool, error)
+	// SetRepositoryAttestationAttach stores that switch.
+	SetRepositoryAttestationAttach(ctx context.Context, repoID string, enabled bool) error
 	// ListDependencyTrackPushes lists a repository's pushes, most recently updated first.
 	ListDependencyTrackPushes(ctx context.Context, repoID string, limit int) ([]*models.DependencyTrackPush, error)
 	// CreateSystemSettingIfAbsent stores the setting unless the key exists and reports whether it was stored.

@@ -33,6 +33,14 @@ type SBOMHandler struct {
 	generator *sbom.Generator
 	blobStore storage.BlobStore
 	attest    *attest.Service
+	attacher  *AttestationAttacher
+}
+
+// WithAttacher attaches each generated SBOM to its docker image as an OCI
+// referrer in repositories that enabled it.
+func (h *SBOMHandler) WithAttacher(a *AttestationAttacher) *SBOMHandler {
+	h.attacher = a
+	return h
 }
 
 // WithAttestation enables signed downloads (`?attest=true`).
@@ -241,6 +249,10 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
 
 		return
+	}
+
+	if h.attacher != nil {
+		h.attacher.OnSBOMGenerated(ctx, repo, report, data)
 	}
 
 	writeJSON(w, http.StatusCreated, reportToMap(report))

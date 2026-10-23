@@ -74,6 +74,17 @@ func (q *Queries) GetDependencyTrackPush(ctx context.Context, arg GetDependencyT
 	return i, err
 }
 
+const getRepositoryAttestationAttach = `-- name: GetRepositoryAttestationAttach :one
+SELECT enabled FROM repository_attestation_attach WHERE repository_id = $1
+`
+
+func (q *Queries) GetRepositoryAttestationAttach(ctx context.Context, repositoryID string) (bool, error) {
+	row := q.db.QueryRow(ctx, getRepositoryAttestationAttach, repositoryID)
+	var enabled bool
+	err := row.Scan(&enabled)
+	return enabled, err
+}
+
 const getRepositoryDependencyTrack = `-- name: GetRepositoryDependencyTrack :one
 SELECT repository_id, enabled, base_url, api_key, project_name, project_version,
        auto_push, push_vex, created_at, updated_at
@@ -146,6 +157,22 @@ func (q *Queries) ListDependencyTrackPushes(ctx context.Context, arg ListDepende
 		return nil, err
 	}
 	return items, nil
+}
+
+const setRepositoryAttestationAttach = `-- name: SetRepositoryAttestationAttach :exec
+INSERT INTO repository_attestation_attach (repository_id, enabled)
+VALUES ($1, $2)
+ON CONFLICT (repository_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now()
+`
+
+type SetRepositoryAttestationAttachParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Enabled      bool   `db:"enabled" json:"enabled"`
+}
+
+func (q *Queries) SetRepositoryAttestationAttach(ctx context.Context, arg SetRepositoryAttestationAttachParams) error {
+	_, err := q.db.Exec(ctx, setRepositoryAttestationAttach, arg.RepositoryID, arg.Enabled)
+	return err
 }
 
 const upsertDependencyTrackPush = `-- name: UpsertDependencyTrackPush :one

@@ -942,6 +942,12 @@ type Repository struct {
 	SignPackages bool `db:"sign_packages" json:"sign_packages"`
 }
 
+type RepositoryAttestationAttach struct {
+	RepositoryID string    `db:"repository_id" json:"repository_id"`
+	Enabled      bool      `db:"enabled" json:"enabled"`
+	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
+}
+
 // Per-repository Dependency-Track overrides; empty/NULL fields inherit the global settings. api_key is encrypted.
 type RepositoryDependencyTrack struct {
 	RepositoryID   string    `db:"repository_id" json:"repository_id"`

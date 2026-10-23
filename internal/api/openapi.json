@@ -3650,6 +3650,63 @@
           }
         }
       },
+      "AttestationAttachSettings": {
+        "type": "object",
+        "properties": {
+          "enabled": {
+            "type": "boolean"
+          }
+        },
+        "required": [
+          "enabled"
+        ]
+      },
+      "AttestationAttachResult": {
+        "type": "object",
+        "properties": {
+          "artifact_id": {
+            "type": "string"
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "sbom",
+              "vex"
+            ]
+          },
+          "predicate_type": {
+            "type": "string"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Digest of the image manifest the attestation is attached to"
+          },
+          "artifact_type": {
+            "type": "string",
+            "description": "The referrer's OCI artifactType"
+          },
+          "referrer_digest": {
+            "type": "string"
+          },
+          "created": {
+            "type": "boolean",
+            "description": "False when an identical attestation was already attached"
+          },
+          "replaced": {
+            "type": "string",
+            "description": "Digest of the earlier attestation this one replaced"
+          }
+        },
+        "required": [
+          "artifact_id",
+          "kind",
+          "predicate_type",
+          "subject",
+          "artifact_type",
+          "referrer_digest",
+          "created"
+        ]
+      },
       "DependencyTrackPush": {
         "type": "object",
         "properties": {
@@ -15852,6 +15909,267 @@
           },
           "404": {
             "description": "Repository not found"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/attestation-attach": {
+      "get": {
+        "summary": "Get the referrer-attach setting",
+        "description": "Admin only. Whether SBOM and VEX attestations are attached to the repository's docker images automatically.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Success",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationAttachSettings"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "put": {
+        "summary": "Set the referrer-attach setting",
+        "description": "Admin only; hosted docker repositories only. When on, a generated SBOM and a finished vulnerability scan attach a signed SBOM and VEX attestation to the image as OCI referrers. Off by default.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/AttestationAttachSettings"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Saved",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationAttachSettings"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a hosted docker repository"
+          },
+          "404": {
+            "description": "Repository not found"
+          },
+          "501": {
+            "description": "Attestations are not enabled"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/sbom/{id}/attach": {
+      "post": {
+        "summary": "Attach a signed SBOM to its docker image",
+        "description": "Admin only. Signs the stored SBOM (JSON formats only) and attaches the Sigstore bundle to the image manifest as an OCI referrer; an earlier attachment of the same predicate is replaced.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "An identical attestation was already attached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationAttachResult"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Attached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationAttachResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a hosted docker repository, or not a JSON SBOM"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository, report or image not found"
+          },
+          "507": {
+            "description": "Repository storage quota exceeded"
+          },
+          "default": {
+            "description": "Error",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vex/attach": {
+      "post": {
+        "summary": "Attach a signed VEX document to its docker image",
+        "description": "Admin only. Builds the artifact's VEX document, signs it and attaches the Sigstore bundle to the image manifest as an OCI referrer; an earlier attachment of the same predicate is replaced.",
+        "tags": [
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "artifact_id": {
+                    "type": "string"
+                  },
+                  "format": {
+                    "type": "string",
+                    "enum": [
+                      "openvex",
+                      "cyclonedx"
+                    ]
+                  }
+                },
+                "required": [
+                  "artifact_id"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "An identical attestation was already attached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationAttachResult"
+                }
+              }
+            }
+          },
+          "201": {
+            "description": "Attached",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/AttestationAttachResult"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Not a hosted docker repository, or not a JSON SBOM"
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "404": {
+            "description": "Repository, report or image not found"
+          },
+          "507": {
+            "description": "Repository storage quota exceeded"
           },
           "default": {
             "description": "Error",

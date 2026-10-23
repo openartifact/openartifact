@@ -1527,6 +1527,33 @@ export type DependencyTrackRepository = {
     effective?: DependencyTrackEffective;
 };
 
+export type AttestationAttachSettings = {
+    enabled: boolean;
+};
+
+export type AttestationAttachResult = {
+    artifact_id: string;
+    kind: 'sbom' | 'vex';
+    predicate_type: string;
+    /**
+     * Digest of the image manifest the attestation is attached to
+     */
+    subject: string;
+    /**
+     * The referrer's OCI artifactType
+     */
+    artifact_type: string;
+    referrer_digest: string;
+    /**
+     * False when an identical attestation was already attached
+     */
+    created: boolean;
+    /**
+     * Digest of the earlier attestation this one replaced
+     */
+    replaced?: string;
+};
+
 export type DependencyTrackPush = {
     artifact_id?: string;
     state?: 'queued' | 'running' | 'done' | 'skipped' | 'failed';
@@ -9017,6 +9044,174 @@ export type GetApiV1RepositoriesByNameDependencyTrackPushesResponses = {
 };
 
 export type GetApiV1RepositoriesByNameDependencyTrackPushesResponse = GetApiV1RepositoriesByNameDependencyTrackPushesResponses[keyof GetApiV1RepositoriesByNameDependencyTrackPushesResponses];
+
+export type GetApiV1RepositoriesByNameAttestationAttachData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/attestation-attach';
+};
+
+export type GetApiV1RepositoriesByNameAttestationAttachErrors = {
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type GetApiV1RepositoriesByNameAttestationAttachError = GetApiV1RepositoriesByNameAttestationAttachErrors[keyof GetApiV1RepositoriesByNameAttestationAttachErrors];
+
+export type GetApiV1RepositoriesByNameAttestationAttachResponses = {
+    /**
+     * Success
+     */
+    200: AttestationAttachSettings;
+};
+
+export type GetApiV1RepositoriesByNameAttestationAttachResponse = GetApiV1RepositoriesByNameAttestationAttachResponses[keyof GetApiV1RepositoriesByNameAttestationAttachResponses];
+
+export type PutApiV1RepositoriesByNameAttestationAttachData = {
+    body: AttestationAttachSettings;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/attestation-attach';
+};
+
+export type PutApiV1RepositoriesByNameAttestationAttachErrors = {
+    /**
+     * Not a hosted docker repository
+     */
+    400: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+    /**
+     * Attestations are not enabled
+     */
+    501: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PutApiV1RepositoriesByNameAttestationAttachError = PutApiV1RepositoriesByNameAttestationAttachErrors[keyof PutApiV1RepositoriesByNameAttestationAttachErrors];
+
+export type PutApiV1RepositoriesByNameAttestationAttachResponses = {
+    /**
+     * Saved
+     */
+    200: AttestationAttachSettings;
+};
+
+export type PutApiV1RepositoriesByNameAttestationAttachResponse = PutApiV1RepositoriesByNameAttestationAttachResponses[keyof PutApiV1RepositoriesByNameAttestationAttachResponses];
+
+export type PostApiV1RepositoriesByNameSbomByIdAttachData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/sbom/{id}/attach';
+};
+
+export type PostApiV1RepositoriesByNameSbomByIdAttachErrors = {
+    /**
+     * Not a hosted docker repository, or not a JSON SBOM
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository, report or image not found
+     */
+    404: unknown;
+    /**
+     * Repository storage quota exceeded
+     */
+    507: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameSbomByIdAttachError = PostApiV1RepositoriesByNameSbomByIdAttachErrors[keyof PostApiV1RepositoriesByNameSbomByIdAttachErrors];
+
+export type PostApiV1RepositoriesByNameSbomByIdAttachResponses = {
+    /**
+     * An identical attestation was already attached
+     */
+    200: AttestationAttachResult;
+    /**
+     * Attached
+     */
+    201: AttestationAttachResult;
+};
+
+export type PostApiV1RepositoriesByNameSbomByIdAttachResponse = PostApiV1RepositoriesByNameSbomByIdAttachResponses[keyof PostApiV1RepositoriesByNameSbomByIdAttachResponses];
+
+export type PostApiV1RepositoriesByNameVexAttachData = {
+    body: {
+        artifact_id: string;
+        format?: 'openvex' | 'cyclonedx';
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/vex/attach';
+};
+
+export type PostApiV1RepositoriesByNameVexAttachErrors = {
+    /**
+     * Not a hosted docker repository, or not a JSON SBOM
+     */
+    400: unknown;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Repository, report or image not found
+     */
+    404: unknown;
+    /**
+     * Repository storage quota exceeded
+     */
+    507: unknown;
+    /**
+     * Error
+     */
+    default: Error;
+};
+
+export type PostApiV1RepositoriesByNameVexAttachError = PostApiV1RepositoriesByNameVexAttachErrors[keyof PostApiV1RepositoriesByNameVexAttachErrors];
+
+export type PostApiV1RepositoriesByNameVexAttachResponses = {
+    /**
+     * An identical attestation was already attached
+     */
+    200: AttestationAttachResult;
+    /**
+     * Attached
+     */
+    201: AttestationAttachResult;
+};
+
+export type PostApiV1RepositoriesByNameVexAttachResponse = PostApiV1RepositoriesByNameVexAttachResponses[keyof PostApiV1RepositoriesByNameVexAttachResponses];
 
 export type GetApiV1AdminAttestationData = {
     body?: never;

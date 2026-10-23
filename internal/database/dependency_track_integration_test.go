@@ -153,3 +153,32 @@ func TestCreateSystemSettingIfAbsentKeepsFirstWriter(t *testing.T) {
 		t.Fatalf("stored value = %q; want first", v)
 	}
 }
+
+func TestRepositoryAttestationAttachDefaultsOffAndCascades(t *testing.T) {
+	pg := newQuotaTestDB(t, 4)
+	ctx := context.Background()
+	s := newQuotaSeeder(t, pg, "attach-switch", "docker")
+
+	if on, err := pg.GetRepositoryAttestationAttach(ctx, s.repo); err != nil || on {
+		t.Fatalf("default = %v, %v; want false, nil", on, err)
+	}
+
+	for _, want := range []bool{true, false, true} {
+		if err := pg.SetRepositoryAttestationAttach(ctx, s.repo, want); err != nil {
+			t.Fatal(err)
+		}
+
+		if on, err := pg.GetRepositoryAttestationAttach(ctx, s.repo); err != nil || on != want {
+			t.Fatalf("after set(%v) = %v, %v", want, on, err)
+		}
+	}
+
+	if _, err := pg.pool.Exec(ctx, `DELETE FROM repositories WHERE id = $1`, s.repo); err != nil {
+		t.Fatal(err)
+	}
+
+	var n int
+	if err := pg.pool.QueryRow(ctx, `SELECT count(*) FROM repository_attestation_attach WHERE repository_id = $1`, s.repo).Scan(&n); err != nil || n != 0 {
+		t.Fatalf("setting rows after the repository was deleted = %d, %v; want 0", n, err)
+	}
+}

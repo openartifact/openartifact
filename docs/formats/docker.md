@@ -136,4 +136,6 @@ Both body fields are optional (an empty body is a real run with the configured g
 
 ## Signing
 
+OpenArtifact can also attach the signed SBOM and VEX of an image itself, as referrers: see [Attaching to an OCI image](../security/sbom.md#attaching-to-an-oci-image).
+
 The registry does not verify image signatures; signature artifacts are stored like any other manifest and are listed through `referrers` when they carry a `subject`. GPG signing covers only Debian and RPM ([signing](../security/signing.md)).

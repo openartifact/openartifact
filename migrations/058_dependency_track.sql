@@ -52,3 +52,14 @@ CREATE TABLE dependency_track_pushes (
 );
 
 COMMENT ON TABLE dependency_track_pushes IS 'Last BOM/VEX push of an artifact to Dependency-Track: state, counts and the DT project.';
+
+-- Per-repository switch for attaching signed SBOM / VEX attestations to docker
+-- images as OCI referrers (docs/security/sbom.md). Off by default: a repository
+-- without a row does not attach anything.
+CREATE TABLE repository_attestation_attach (
+    repository_id uuid NOT NULL,
+    enabled boolean DEFAULT false NOT NULL,
+    updated_at timestamp with time zone DEFAULT now() NOT NULL,
+    CONSTRAINT repository_attestation_attach_pkey PRIMARY KEY (repository_id),
+    CONSTRAINT repository_attestation_attach_repository_id_fkey FOREIGN KEY (repository_id) REFERENCES repositories(id) ON DELETE CASCADE
+);

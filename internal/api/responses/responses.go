@@ -734,3 +734,26 @@ type DependencyTrackTestResponse struct {
 	Permissions        []string `json:"permissions"`
 	MissingPermissions []string `json:"missing_permissions"`
 }
+
+// AttestationAttachSettingsResponse is a repository's referrer-attach switch.
+type AttestationAttachSettingsResponse struct {
+	Enabled bool `json:"enabled"`
+}
+
+// AttestationAttachResponse reports an attestation attached to a docker image
+// as an OCI referrer.
+type AttestationAttachResponse struct {
+	ArtifactID    string `json:"artifact_id"`
+	Kind          string `json:"kind"`
+	PredicateType string `json:"predicate_type"`
+	// Subject is the digest of the image manifest the attestation is attached to.
+	Subject string `json:"subject"`
+	// ArtifactType is the referrer's OCI artifactType.
+	ArtifactType string `json:"artifact_type"`
+	// ReferrerDigest is the digest of the referrer manifest.
+	ReferrerDigest string `json:"referrer_digest"`
+	// Created is false when an identical attestation was already attached.
+	Created bool `json:"created"`
+	// Replaced is the digest of the earlier attestation this one replaced.
+	Replaced string `json:"replaced,omitempty"`
+}

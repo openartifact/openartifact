@@ -918,7 +918,9 @@ func run(args []string) error {
 	attestHandler.RegisterAuthed(authedAPI)
 
 	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, blobStore).WithAttestation(attestSvc)
-	sbomHandler.RegisterAuthed(authedAPI)
+	attacher := api.NewAttestationAttacher(db, log, sbomGen, attestSvc, dockerHTTP)
+	sbomHandler.WithAttacher(attacher).RegisterAuthed(authedAPI)
+	api.NewAttestationAttachHandler(db, log, evaluator, attacher, blobStore).RegisterAuthed(authedAPI)
 	api.NewVEXHandler(db, log, evaluator, sbomGen).WithAttestation(attestSvc).RegisterAuthed(authedAPI)
 
 	// Dependency-Track: pushes the BOM on upload and scan, then the VEX decisions.
@@ -957,6 +959,8 @@ func run(args []string) error {
 
 	vulnHandler := api.NewVulnHandler(db, log, evaluator, scannerRegistry).WithScanHook(func(repoID, artifactID string) {
 		dtPusher.EnqueueIfEnabled(context.Background(), dtrack.Job{RepoID: repoID, ArtifactID: artifactID, Trigger: dtrack.TriggerScan})
+
+		go attacher.OnScan(context.Background(), repoID, artifactID)
 	})
 	vulnHandler.RegisterRoutes(authedAPI, "/api/v1/repositories/{name}")
 	vulnHandler.RegisterOverviewRoutes(authedAPI)

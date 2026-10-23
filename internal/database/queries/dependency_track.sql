@@ -60,3 +60,11 @@ LIMIT $2;
 -- name: CreateSystemSettingIfAbsent :execrows
 INSERT INTO system_settings (key, value) VALUES ($1, $2)
 ON CONFLICT (key) DO NOTHING;
+
+-- name: GetRepositoryAttestationAttach :one
+SELECT enabled FROM repository_attestation_attach WHERE repository_id = $1;
+
+-- name: SetRepositoryAttestationAttach :exec
+INSERT INTO repository_attestation_attach (repository_id, enabled)
+VALUES ($1, $2)
+ON CONFLICT (repository_id) DO UPDATE SET enabled = EXCLUDED.enabled, updated_at = now();
