@@ -50,7 +50,6 @@ type TableReport struct {
 // Report is the result of a rebuild run (also written with --report).
 type Report struct {
 	DryRun        bool      `json:"dry_run"`
-	Source        string    `json:"source,omitempty"`
 	StartedAt     time.Time `json:"started_at"`
 	FinishedAt    time.Time `json:"finished_at"`
 	SchemaVersion int       `json:"schema_version"`

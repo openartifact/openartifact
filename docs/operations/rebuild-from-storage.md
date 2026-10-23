@@ -84,7 +84,7 @@ Package bytes are the content-addressed blobs; what the database adds is the map
    /app/openartifact rebuild --report /tmp/rebuild-report.json
    ```
 
-5. **Check the report and the exit status** (below), then start the server. It regenerates the merged metadata of group repositories on startup. Create users with `oa apply` or restore the user tables from a database backup.
+5. **Check the report and the exit status** (below), then start the server. It regenerates the merged metadata of group repositories on startup. Because the users table is empty, the server also creates the bootstrap admin on first start (read its password from the log); create the other users with `oa apply` or restore the user tables from a database backup.
 6. **Verify:** `GET /api/v1/repositories`, download a few packages through the clients, and look at `GET /api/v1/admin/recovery/status` (the journal adopts the recovered rows and rewrites each sidecar once).
 
 The rebuild is **merge-only and idempotent**: it never updates or deletes an existing row, so running it twice, or on a partly populated database, is safe. A row that already exists (the system project, for example) is left as is and re-journaled.
@@ -95,7 +95,6 @@ The rebuild is **merge-only and idempotent**: it never updates or deletes an exi
 |---|---|
 | `--config <file>` | YAML config (default `$OPENARTIFACT_CONFIG`); env overrides apply as for the server |
 | `--dry-run` | Classify and report only |
-| `--source primary\|replica` | Blob store to read sidecars from. `replica` reads the configured `storage.replica` store and fails with `storage.replica is not configured` when there is none |
 | `--concurrency N` | Parallel storage reads (default 8) |
 | `--deep` | Also read the first bytes of objects whose backend metadata lost the sidecar marker (for example after a copy with a tool that drops user metadata). Costs one ranged read per unmarked object |
 | `--prune-superseded` | Delete older sidecars of a row that has a newer one. Never in a dry run |
@@ -116,6 +115,7 @@ Rows that reference missing blobs are *not* inserted; they are listed under `mis
 
 ## Limits
 
+- **Primary store lost too:** if the primary blob store is lost as well, make the replica the primary (see [replication](replication.md)) and rebuild from it.
 - **Listing:** the rebuild lists the store it reads. The OCI registry backend cannot list and is refused with an explicit error. With tiering, only the objects of the store you point it at are seen, so a blob that lives only on a cold tier is reported missing; rebuild with the tier configuration that holds them.
 - **RPO is the journal lag.** A change made less than `interval` (plus queueing time) before the disaster has no sidecar yet; watch `oldest_dirty_age_seconds`. A delete inside that window is not seen either, so the old sidecar can resurrect the deleted row.
 - **Superseded sidecars and deletes.** A sidecar of a deleted row is removed by the worker, but one that outlived a crash or was written to a replica that has since been cut off can bring a deleted row back. Run once with `--prune-superseded` and review the report if that matters; trash items (soft deleted) come back as trash because the deleted marker is part of the row.

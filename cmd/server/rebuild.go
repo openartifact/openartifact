@@ -33,8 +33,6 @@ import (
 const rebuildRegenDrain = 6 * time.Hour
 
 var (
-	errRebuildSource  = errors.New("--source must be primary or replica")
-	errNoReplica      = errors.New("storage.replica is not configured")
 	errRebuildUsage   = errors.New("openartifact rebuild takes no positional arguments")
 	errRebuildAborted = errors.New("rebuild did not complete")
 )
@@ -51,7 +49,6 @@ func (e exitError) Unwrap() error { return e.error }
 
 type rebuildFlags struct {
 	config          string
-	source          string
 	report          string
 	concurrency     int
 	dryRun          bool
@@ -65,7 +62,6 @@ func parseRebuildFlags(args []string) (*rebuildFlags, error) {
 
 	fs := flag.NewFlagSet("openartifact rebuild", flag.ContinueOnError)
 	fs.StringVar(&f.config, "config", os.Getenv("OPENARTIFACT_CONFIG"), "path to YAML config file")
-	fs.StringVar(&f.source, "source", "primary", "blob store to read sidecars from: primary or replica")
 	fs.StringVar(&f.report, "report", "", "write the JSON report to this file")
 	fs.IntVar(&f.concurrency, "concurrency", 8, "parallel storage reads")
 	fs.BoolVar(&f.dryRun, "dry-run", false, "list what would be restored; write nothing")
@@ -92,22 +88,15 @@ func parseRebuildFlags(args []string) (*rebuildFlags, error) {
 	return &f, nil
 }
 
-// rebuildBlobStore opens the blob store sidecars are read from. It is the one
-// place --source is interpreted.
-func rebuildBlobStore(cfg *config.Config, source string) (storage.BlobStore, error) {
-	switch source {
-	case "primary":
-		store, err := storage.NewBlobStore(cfg.Storage)
-		if err != nil {
-			return nil, fmt.Errorf("open primary blob store: %w", err)
-		}
-
-		return store, nil
-	case "replica":
-		return nil, errNoReplica
-	default:
-		return nil, errRebuildSource
+// rebuildBlobStore opens the blob store sidecars are read from: the configured
+// primary store. It is the one place the store is chosen.
+func rebuildBlobStore(cfg *config.Config) (storage.BlobStore, error) {
+	store, err := storage.NewBlobStore(cfg.Storage)
+	if err != nil {
+		return nil, fmt.Errorf("open blob store: %w", err)
 	}
+
+	return store, nil
 }
 
 // runRebuild implements `openartifact rebuild`: it loads the configuration like
@@ -149,8 +138,6 @@ func runRebuild(args []string) error {
 
 	rep, err := executeRebuild(ctx, cfg, f, log)
 	if rep != nil {
-		rep.Source = f.source
-
 		if werr := emitReport(f, rep, os.Stdout, os.Stderr); werr != nil && err == nil {
 			err = werr
 		}
@@ -170,7 +157,7 @@ func runRebuild(args []string) error {
 }
 
 func executeRebuild(ctx context.Context, cfg *config.Config, f *rebuildFlags, log *logger.Logger) (*recovery.Report, error) {
-	store, err := rebuildBlobStore(cfg, f.source)
+	store, err := rebuildBlobStore(cfg)
 	if err != nil {
 		return nil, err
 	}
@@ -395,8 +382,8 @@ func printSummary(w io.Writer, rep *recovery.Report) {
 		mode = "rebuild (dry run: nothing was written)"
 	}
 
-	_, _ = fmt.Fprintf(w, "%s from %s store: %d objects listed, %d sidecars valid, %d invalid, %d superseded (%d pruned), %d unsupported\n",
-		mode, rep.Source, rep.ObjectsListed, rep.SidecarsValid, rep.SidecarsInvalid, rep.Superseded, rep.Pruned, rep.SidecarsUnsupported)
+	_, _ = fmt.Fprintf(w, "%s: %d objects listed, %d sidecars valid, %d invalid, %d superseded (%d pruned), %d unsupported\n",
+		mode, rep.ObjectsListed, rep.SidecarsValid, rep.SidecarsInvalid, rep.Superseded, rep.Pruned, rep.SidecarsUnsupported)
 
 	for _, t := range rep.Tables {
 		_, _ = fmt.Fprintf(w, "  %-28s found %-6d inserted %-6d present %-6d unrecoverable %-4d failed %d\n",

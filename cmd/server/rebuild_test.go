@@ -7,7 +7,6 @@ package main
 import (
 	"bytes"
 	"encoding/json"
-	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -27,10 +26,10 @@ func TestParseRebuildFlags(t *testing.T) {
 		wantErr bool
 		check   func(*rebuildFlags) bool
 	}{
-		{"defaults", nil, false, func(f *rebuildFlags) bool { return f.source == "primary" && f.concurrency == 8 && !f.dryRun }},
-		{"all flags", []string{"--dry-run", "--deep", "--prune-superseded", "--json", "--source", "replica", "--concurrency", "3", "--report", "r.json"}, false,
+		{"defaults", nil, false, func(f *rebuildFlags) bool { return f.concurrency == 8 && !f.dryRun }},
+		{"all flags", []string{"--dry-run", "--deep", "--prune-superseded", "--json", "--concurrency", "3", "--report", "r.json"}, false,
 			func(f *rebuildFlags) bool {
-				return f.dryRun && f.deep && f.pruneSuperseded && f.json && f.source == "replica" && f.concurrency == 3 && f.report == "r.json"
+				return f.dryRun && f.deep && f.pruneSuperseded && f.json && f.concurrency == 3 && f.report == "r.json"
 			}},
 		{"concurrency is clamped", []string{"--concurrency", "0"}, false, func(f *rebuildFlags) bool { return f.concurrency == 1 }},
 		{"positional argument", []string{"extra"}, true, nil},
@@ -56,37 +55,16 @@ func TestParseRebuildFlags(t *testing.T) {
 func TestRebuildBlobStore(t *testing.T) {
 	t.Parallel()
 
-	cfg := &config.Config{Storage: storage.StorageConfig{Type: "filesystem", Path: t.TempDir()}}
-
-	tests := []struct {
-		source  string
-		wantErr error
-	}{
-		{"primary", nil},
-		{"replica", errNoReplica},
-		{"bogus", errRebuildSource},
-	}
-
-	for _, tc := range tests {
-		t.Run(tc.source, func(t *testing.T) {
-			t.Parallel()
-
-			store, err := rebuildBlobStore(cfg, tc.source)
-			if !errors.Is(err, tc.wantErr) || (tc.wantErr == nil) != (store != nil) {
-				t.Fatalf("store=%v err=%v want %v", store, err, tc.wantErr)
-			}
-		})
-	}
-
-	if !strings.Contains(errNoReplica.Error(), "storage.replica is not configured") {
-		t.Fatalf("unexpected message %q", errNoReplica)
+	store, err := rebuildBlobStore(&config.Config{Storage: storage.StorageConfig{Type: "filesystem", Path: t.TempDir()}})
+	if err != nil || store == nil {
+		t.Fatalf("store=%v err=%v", store, err)
 	}
 }
 
 func TestEmitReport(t *testing.T) {
 	t.Parallel()
 
-	rep := &recovery.Report{Source: "primary", DryRun: true}
+	rep := &recovery.Report{DryRun: true}
 
 	tests := []struct {
 		name       string
