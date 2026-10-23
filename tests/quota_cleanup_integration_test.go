@@ -224,6 +224,8 @@ func TestCleanupPolicyReleasesQuota(t *testing.T) {
 				t.Errorf("usage after cleanup = %d / %d, want %d / 2 (only the kept versions)", size, count, wantAfter)
 			}
 
+			sweepQueuedBlobs(t, e.pg, e.store)
+
 			for _, sha := range []string{oldSHA, midSHA} {
 				if _, exists, err := e.store.ExistsBySHA256(ctx, sha); err != nil || exists {
 					t.Errorf("blob %s of a deleted version: exists=%v err=%v; want removed from storage", sha[:12], exists, err)

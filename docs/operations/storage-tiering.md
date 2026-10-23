@@ -59,7 +59,7 @@ Each move owns one row in `storage_tier_moves`, keyed by the blob's sha256, so a
 | 2 `copied` | The source bytes are streamed to the target backend through the throttle, hashing on the way. A hash mismatch (corrupt source) deletes the target object and fails the move. If the target already holds an object of the right size (a resumed move) the copy is skipped. | unchanged |
 | 3 `verified` | The target object must exist with the recorded size, and, with `tiering.verifyReadback` (default on), is read back and its sha256 compared to the blob id. A bad copy is deleted so a retry writes it afresh. | unchanged |
 | 4 `flipped` | One database transaction, taken under the same per-blob advisory lock uploaders and deleters use: re-check that the target copy still exists with the right size, `UPDATE blobs SET storage_backend_id = target, tier_changed_at = now()` only if the placement still equals the move's source, and set the journal row to `flipped`. | **target** |
-| 5 `cleaned` | Under the blob lock, if the placement is still the target, delete the source copy. If the placement moved on or the blob is gone, leave the source alone. | target |
+| 5 `cleaned` | Under the blob lock, if the placement is still the target, **queue** the source copy for [deferred removal](#deferred-removal-of-the-old-copy). If the placement moved on or the blob is gone, leave the source alone. | target |
 | finish | The journal row is deleted. | target |
 
 The flip is the only operation that changes where a blob lives. Everything before it only adds an unreferenced copy; everything after it only removes a superseded copy.
@@ -73,8 +73,8 @@ The flip is the only operation that changes where a blob lives. Everything befor
 | `claimed` | journal row `copying`, no target object | source | Resume copies, verifies and flips. |
 | `copied` | row `copying`, unverified target object | source | Resume finds the object of the right size, verifies, flips. |
 | `verified` | row `copying`, verified target object | source | Resume re-verifies cheaply (existence and size inside the flip) and flips. |
-| `flipped` | row `flipped`, both copies present | target | Resume sees state `flipped`, deletes the source copy, finishes. |
-| `cleaned` | row `flipped`, source already gone | target | Resume finds the source already missing (not an error), finishes. |
+| `flipped` | row `flipped`, both copies present | target | Resume sees state `flipped`, queues the source copy for removal (an entry that already exists is refreshed), finishes. |
+| `cleaned` | row `flipped`, source queued for removal | target | Resume queues it again (idempotent), finishes. |
 
 Exactly one placement is valid in every row: before the flip transaction commits it is the source; after, the target. There is no state in which the database points at a missing copy, because the flip transaction verifies the target copy while holding the lock that serializes it against deleters.
 
@@ -91,7 +91,7 @@ A journal row is retried by every pass while it has attempts left (`5` back to b
 
 - One mover pass runs cluster-wide: the worker takes a session advisory lock (`openartifact:tier-mover`) on a pinned database connection, so a second replica's pass is skipped, not queued.
 - Within a pass, `tiering.concurrency` blobs move at once. Two moves of the same blob are impossible: the journal's primary key makes the second claim return the first row.
-- The flip, the old-copy removal and `SafeDeleteBlob` all hold the per-blob advisory lock, so a delete either completes before the flip (the flip reports the blob gone) or after (the delete removes every tier's copy).
+- The flip, the old-copy removal and `SafeDeleteBlob` all hold the per-blob advisory lock, so a delete either completes before the flip (the flip reports the blob gone) or after (the delete queues every tier's copy for removal).
 
 ## Policies
 
@@ -152,7 +152,7 @@ A pass is bounded to two hours and honors shutdown: an interrupted pass leaves j
 
 All blob access goes through a tiered store that wraps the primary store. A read first tries the tier where the blob is believed to be (a one-minute in-memory cache of recent placements, otherwise the primary store). When that tier reports the object missing, the store asks the database for the placement and reads from there, and finally tries the remaining tiers. Only "not found" moves on to the next tier; any other error (a database failure while looking up the placement, a tier that this server cannot open, a backend error) is returned instead of being reported as a missing blob, so a broken cold tier answers `500`/`503`, never `404`. `Exists` follows the same rule. A flip that happens while a download starts is therefore invisible. The source copy is deleted only after the placement flips; a download that opened the source just before cleanup keeps reading on a filesystem tier (the open file survives the unlink), and on an object-store tier a download that loses that race fails like any interrupted transfer and succeeds on retry.
 
-Uploads always write to the primary store. Deleting a blob removes it from every tier that has a copy; when the blob's placement points at a tier this server cannot resolve, the delete fails and keeps the row rather than orphaning the bytes. Listing and existence checks look at all tiers.
+Uploads always write to the primary store. Deleting a blob removes its row at once and queues the bytes of every tier that has a copy for [deferred removal](#deferred-removal-of-the-old-copy); when the blob's placement points at a tier this server cannot resolve, the delete fails and keeps the row rather than orphaning the bytes. Listing and existence checks look at all tiers.
 
 ### Promote-on-read
 
@@ -254,6 +254,12 @@ Labels are tier names and fixed result strings, so cardinality is bounded by the
 
 The usage gauges come from a whole-table aggregate that is cached: it is recomputed after a pass that moved or promoted blobs, when a tier appears, and at most every 30 minutes otherwise, so an idle installation does not scan `blobs` on every pass. Series are updated in place (they do not vanish between refreshes) and removed when their tier is. The gauges and the pending-moves gauge are published by the replica that runs a pass, so they are leader-only: scrape every replica and take the latest value (for example `max by (tier)`), not the sum. With no cold tier no usage gauges are published.
 
+## Deferred removal of the old copy
+
+Step 5 does not delete the source copy; it adds an entry for it to the `blob_deletions` queue (scope = the source backend, or the primary store). The [blob deletion sweeper](storage.md#deferred-blob-deletion) deletes it after `blobDeletion.grace` and once no running [backup](backup.md#consistency-without-locks) can still need it, and only if the blob's placement is not that backend any more (a blob moved back to it keeps its bytes). A missing object counts as removed. Until then the source tier holds the bytes twice: plan the capacity of a tier you drain accordingly, or lower `blobDeletion.grace`.
+
+The only copy still deleted at once is a target copy the mover itself wrote and then had to abandon (the flip was refused or the blob vanished); no backup can have seen it.
+
 ## Limitations
 
 - **Unlocked writers can leave a stray copy.** The uploaders that bypass the per-blob lock (and S3 staging promotion) always write to the primary store. If such a write races a move of the same blob, a copy can remain on the primary store after the blob moved to a cold tier. It is never read (the placement points at the cold tier), it is bytes-identical by content addressing, and deleting the blob removes it. It only costs space.
@@ -261,6 +267,7 @@ The usage gauges come from a whole-table aggregate that is cached: it is recompu
 - **Stats are computed live** (`GROUP BY storage_backend_id`) when you open the tier list; on very large installations that is a scan of the blobs table.
 - **Access tracking is for native protocol downloads only**, at one-hour resolution; blobs read only through the admin API or by presigned URL are not counted as accessed. Presigned and redirect downloads that go straight to a cold backend work only when that backend supports presigning; otherwise the server streams the object.
 - **Moves are one blob at a time.** Large blobs hold their copy slot for as long as the throttle allows; raise `tiering.concurrency` and `tiering.maxBytesPerSecond` together when moving many large blobs.
-- **Listing during a move.** A blob mid-move can appear on two tiers for the duration of the copy; the tiered `List` may report it twice. Backups remove such repeats from their export, but a listing walks tiers one after another, so a blob that moves from a tier already walked to one not yet walked can still be missed. Run full backups while the mover is idle (for example set `tiering.interval` to `0` around the backup window) when a complete archive matters.
+- **Backups and moves.** A full backup no longer lists tiers: it reads the `blobs` rows of its database snapshot and fetches each blob through the tiered store, so a blob that moves while the backup runs is read from wherever it lives then, and its old copy is not removed until the backup is over. No need to pause the mover around a backup.
+- **Old copies live for the deletion grace period.** Until the sweeper removes them, a moved blob's old copy still occupies the source backend (see below).
 - **`POST /run` lands on one replica.** It is skipped when another replica already holds the mover lock; the scheduled passes continue as usual.
 - **Backends are configured once.** Tier changes made on one replica reach the others within `tiering.refreshInterval`.

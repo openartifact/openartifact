@@ -21,7 +21,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
 | `internal/database` | `Database` interface (`interfaces.go`), Postgres implementation (`postgres*.go`), sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
 | `internal/storage` | Blob stores: filesystem, S3, GCS, Azure, OCI; `SafeDeleteBlob` refcounting |
-| `internal/worker` | Background workers: per-format metadata regeneration, cleanup, Docker registry GC, proxy cache, auth purge, AI analysis |
+| `internal/worker` | Background workers: per-format metadata regeneration, cleanup, Docker registry GC, proxy cache, auth purge, AI analysis, blob deletion sweeper (deferred byte removal, see [storage](../operations/storage.md#deferred-blob-deletion)) |
 | `internal/repodispatch` | Chi middleware that serves proxy and group repositories in front of the per-format routes |
 | `internal/proxy`, `internal/group` | Proxy-repository fetch/cache service; group (ordered, read-only merge of members) service |
 | `internal/pypisimple` | PyPI simple API (PEP 503/691) parsing, rendering, content negotiation and path/name rules shared by the pypi proxy and group |

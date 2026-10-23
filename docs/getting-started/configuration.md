@@ -203,6 +203,17 @@ Signs APT and RPM metadata; see [signing](../security/signing.md).
 | Env | YAML | Default | Meaning |
 |---|---|---|---|
 | `OPENARTIFACT_BACKUP_DIR` | `backupDir` | `/var/lib/openartifact/backups` | Directory for backup files; see [backup](../operations/backup.md) |
+| `OPENARTIFACT_BACKUP_LEASE_TTL` | `leaseTtl` | `5m` | How long a running backup's [lease](../operations/backup.md#consistency-without-locks) lasts without a heartbeat; the lease of a crashed backup stops holding blob deletions after this time. Must be positive |
+
+### Blob deletion (`blobDeletion`)
+
+Bytes of deleted blobs are removed later by a sweeper; see [deferred blob deletion](../operations/storage.md#deferred-blob-deletion).
+
+| Env | YAML | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_BLOB_DELETION_GRACE` | `grace` | `24h` | Minimum time between deleting a blob and removing its bytes. `0` removes them as soon as no running backup needs them. Must not be negative |
+| `OPENARTIFACT_BLOB_DELETION_SWEEP_INTERVAL` | `sweepInterval` | `1m` | Pause between sweeper passes; `0` turns the sweeper off on this replica |
+| `OPENARTIFACT_BLOB_DELETION_SWEEP_BATCH` | `sweepBatch` | `200` | Deletions claimed per pass. Must be positive |
 
 ### Projects (`projects`)
 

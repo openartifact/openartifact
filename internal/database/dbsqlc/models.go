@@ -179,6 +179,15 @@ type BackupJob struct {
 	UpdatedAt    time.Time  `db:"updated_at" json:"updated_at"`
 }
 
+// Running backups; while a lease is live the blob bytes its snapshot may still reference are not deleted (blob_deletions).
+type BackupLease struct {
+	ID          string    `db:"id" json:"id"`
+	Snapshot    *string   `db:"snapshot" json:"snapshot"`
+	SnapshotAt  time.Time `db:"snapshot_at" json:"snapshot_at"`
+	HeartbeatAt time.Time `db:"heartbeat_at" json:"heartbeat_at"`
+	ExpiresAt   time.Time `db:"expires_at" json:"expires_at"`
+}
+
 // Global content-addressed blob store. One row per unique sha256. Cross-format, cross-repo deduplication. GC via ref_count. All format tables reference blobs via blob_id FK.
 type Blob struct {
 	ID        string `db:"id" json:"id"`
@@ -196,6 +205,19 @@ type Blob struct {
 	LastAccessedAt *time.Time `db:"last_accessed_at" json:"last_accessed_at"`
 	// When the mover last flipped the placement; NULL = never moved.
 	TierChangedAt *time.Time `db:"tier_changed_at" json:"tier_changed_at"`
+}
+
+// Blob copies whose bytes are waiting to be deleted: after the grace period and once no live backup snapshot can still need them (backup_leases).
+type BlobDeletion struct {
+	Sha256 string `db:"sha256" json:"sha256"`
+	// '*' = every copy of the blob; '' = the primary store copy; otherwise the storage_backends id of the tier whose copy is retired.
+	Scope    string    `db:"scope" json:"scope"`
+	QueuedAt time.Time `db:"queued_at" json:"queued_at"`
+	// Top-level transaction id of the deleting transaction; compared with backup_leases.snapshot.
+	DeletedXid   int64      `db:"deleted_xid" json:"deleted_xid"`
+	NotBefore    time.Time  `db:"not_before" json:"not_before"`
+	ClaimedUntil *time.Time `db:"claimed_until" json:"claimed_until"`
+	Attempts     int32      `db:"attempts" json:"attempts"`
 }
 
 // Immutable audit trail of every bundle promotion attempt

@@ -207,6 +207,7 @@ func run(args []string) error {
 	defer func() { _ = db.Close() }()
 
 	db.SetTrashRetentionDays(cfg.Trash.RetentionDays)
+	db.SetBlobDeletionGrace(cfg.BlobDeletion.Grace)
 
 	log.Infow("Database connected",
 		"host", cfg.Database.Host,
@@ -353,6 +354,12 @@ func run(args []string) error {
 	tierWorker := worker.NewTierMoverWorker(tierEngine, db.GetDB(), log, cfg.Tiering.Interval, cfg.Tiering.Enabled)
 	tierWorker.Start()
 
+	// Blob deletion sweeper: removes the bytes of deleted blobs and retired
+	// tier copies after the grace period and once no running backup can still
+	// need them. Every replica may run one (no global lock).
+	blobSweeper := worker.NewBlobDeletionSweeper(db, tieredStore, log, cfg.BlobDeletion.SweepInterval, cfg.BlobDeletion.SweepBatch).WithMetrics(reg)
+	blobSweeper.Start()
+
 	// stopWorkers stops every background worker exactly once. It runs in the
 	// shutdown sequence (after HTTP stops, before the audit logger flushes) and
 	// also via defer so early-return paths never leak goroutines.
@@ -365,7 +372,7 @@ func run(args []string) error {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
 				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, dockerUploadSweeper.Stop, trashPurgeWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
-				tierWorker.Stop, tierRegistry.Stop, tierAccess.Stop,
+				tierWorker.Stop, blobSweeper.Stop, tierRegistry.Stop, tierAccess.Stop,
 			} {
 				stop()
 			}
@@ -828,6 +835,7 @@ func run(args []string) error {
 	webhooksHandler.RegisterAuthed(authedAPI)
 
 	backupEngine := backup.NewEngine(db, blobStore, log, cfg.Backup.BackupDir)
+	backupEngine.SetLeaseTTL(cfg.Backup.LeaseTTL)
 	backupEngine.SetRegenerator(api.NewWorkerRegenerator(debWorker, rpmWorker, mavenWorker, npmWorker))
 	backupHandler := api.NewBackupHandler(db, log, evaluator, backupEngine)
 	backupHandler.RegisterAuthed(authedAPI)

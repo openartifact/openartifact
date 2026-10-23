@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
+	"github.com/openartifact/openartifact/internal/storage"
 )
 
 const trashTestOrgID = "00000000-0000-0000-0000-000000000001"
@@ -210,8 +211,27 @@ func (s *purgeSeed) blobRowExists(sha string) bool {
 	return s.count(`SELECT COUNT(*) FROM blobs WHERE sha256 = $1`, sha) == 1
 }
 
+// copyDeleter lets a plain blob store serve as the sweeper's byte store.
+type copyDeleter struct{ storage.BlobStore }
+
+func (c copyDeleter) DeleteCopy(ctx context.Context, _, sha string) error { return c.Delete(ctx, sha) }
+
+// sweep runs the blob deletion sweeper once: deleting a blob only queues its
+// bytes (grace 0 and no running backup here, so everything queued is due).
+func (s *purgeSeed) sweep() {
+	s.t.Helper()
+
+	sw := NewBlobDeletionSweeper(s.pg, copyDeleter{s.blobs}, testLogger(s.t), 0, 500)
+
+	if _, err := sw.RunOnce(context.Background()); err != nil {
+		s.t.Fatalf("sweep queued blob deletions: %v", err)
+	}
+}
+
 func (s *purgeSeed) storedBlob(sha string) bool {
 	s.t.Helper()
+
+	s.sweep()
 
 	ok, err := s.blobs.Exists(context.Background(), sha)
 	if err != nil {

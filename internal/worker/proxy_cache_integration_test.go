@@ -104,6 +104,8 @@ func TestProxyCacheEvictionBatches(t *testing.T) {
 		t.Fatalf("second evict: %v", err)
 	}
 
+	s.sweep()
+
 	if _, ok := s.blobs.Blobs[goneSHA]; ok {
 		t.Fatal("blob with no remaining reference was not deleted from storage")
 	}

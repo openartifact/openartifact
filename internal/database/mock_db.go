@@ -582,6 +582,9 @@ func (m *BaseMockDB) ArtifactExistsBySHA256(ctx context.Context, sha256 string) 
 func (m *BaseMockDB) BlobReferenceCount(ctx context.Context, sha256 string) (int, error) {
 	return 0, nil
 }
+func (m *BaseMockDB) BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (SnapshotReader, error) {
+	return nil, errNotImpl("BeginBackupSnapshot")
+}
 func (m *BaseMockDB) CreateGoModule(ctx context.Context, mod *models.GoModule) error {
 	return errNotImpl("CreateGoModule")
 }
@@ -1186,4 +1189,42 @@ func (m *BaseMockDB) ListRubyGemSpecs(ctx context.Context, repoID string) ([]*mo
 
 func (m *BaseMockDB) CondaRepodataStamp(ctx context.Context, repoID, platform string) (string, error) {
 	return "", errNotImpl("CondaRepodataStamp")
+}
+
+// LiveSnapshot adapts an in-memory Database to SnapshotReader for tests: reads
+// go straight to the wrapped database (an in-memory fake is trivially
+// consistent) and the blobs table is the Blobs slice, which the test keeps
+// sorted by sha256. A fake's BeginBackupSnapshot returns one of these.
+type LiveSnapshot struct {
+	Database
+
+	Blobs []BlobRow
+	// OnRelease, when set, runs on Release (tests assert the snapshot is ended).
+	OnRelease func()
+}
+
+// ListBlobsAfter returns the next page of Blobs.
+func (s *LiveSnapshot) ListBlobsAfter(_ context.Context, after string, limit int) ([]BlobRow, error) {
+	var out []BlobRow
+
+	for _, b := range s.Blobs {
+		if b.SHA256 > after {
+			out = append(out, b)
+			if len(out) == limit {
+				break
+			}
+		}
+	}
+
+	return out, nil
+}
+
+// CountBlobs returns len(Blobs).
+func (s *LiveSnapshot) CountBlobs(context.Context) (int64, error) { return int64(len(s.Blobs)), nil }
+
+// Release runs OnRelease.
+func (s *LiveSnapshot) Release() {
+	if s.OnRelease != nil {
+		s.OnRelease()
+	}
 }

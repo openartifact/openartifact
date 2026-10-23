@@ -32,6 +32,10 @@ type DB interface {
 	// WithBlobLock runs fn under the per-blob advisory lock SafeDeleteBlob and
 	// uploaders take.
 	WithBlobLock(ctx context.Context, sha256 string, fn func(ctx context.Context) error) error
+	// EnqueueBlobDeletion queues the copy on backendID ("" = primary store) of
+	// sha256 for deferred deletion (see database.BlobDeletion). Callers hold the
+	// per-blob lock.
+	EnqueueBlobDeletion(ctx context.Context, sha256, backendID string) error
 	FlipBlobPlacement(ctx context.Context, sha256, from, to string, verify func(ctx context.Context) error) (models.FlipOutcome, error)
 	TouchBlobAccess(ctx context.Context, accessed map[string]time.Time, resolution time.Duration) (int64, error)
 

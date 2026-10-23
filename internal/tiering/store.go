@@ -65,10 +65,9 @@ type placementEntry struct {
 }
 
 var (
-	_ storage.BlobStore       = (*Store)(nil)
-	_ storage.Presigner       = (*Store)(nil)
-	_ storage.StagingStore    = (*Store)(nil)
-	_ storage.RepeatingLister = (*Store)(nil)
+	_ storage.BlobStore    = (*Store)(nil)
+	_ storage.Presigner    = (*Store)(nil)
+	_ storage.StagingStore = (*Store)(nil)
 )
 
 // NewStore creates the tiered store. tracker and reg may be nil.
@@ -466,16 +465,27 @@ func (s *Store) Delete(ctx context.Context, id string) error {
 	return errors.Join(errs...)
 }
 
-// ListMayRepeat reports that List can return the same id more than once (a blob
-// mid-move, or a stray copy left behind by a flip, is on two tiers). Callers
-// that must see each blob once, such as the full backup, deduplicate when it is
-// true. A blob moved while the walk is in progress can also be missed; run full
-// backups while the mover is idle (see docs/operations/storage-tiering.md).
-func (s *Store) ListMayRepeat() bool { return s.reg.Snapshot().HasCold() }
+// DeleteCopy removes the copy of id held by the tier on backendID ("" = the
+// primary store) and no other. The blob deletion sweeper uses it to finish
+// retiring the old copy of a blob a flip moved: the other tier's copy is the
+// authoritative one. A copy that is already gone is storage.ErrBlobNotFound.
+func (s *Store) DeleteCopy(ctx context.Context, backendID, id string) error {
+	snap := s.reg.Snapshot()
+
+	t, _ := s.resolveTier(ctx, snap, backendID)
+	if t == nil || t.Store == nil {
+		return fmt.Errorf("%w: backend %q", ErrTierUnavailable, backendID)
+	}
+
+	s.forget(id)
+
+	return t.Store.Delete(ctx, id) //nolint:wrapcheck // ErrBlobNotFound is matched by the caller
+}
 
 // List implements storage.BlobStore: it walks the tiers in order, primary first.
 // A blob mid-move can appear once per tier. Tiers that cannot list are skipped,
-// except the primary, whose ErrListNotSupported is returned.
+// except the primary, whose ErrListNotSupported is returned. Backups do not use
+// it: they enumerate the blobs table (see internal/backup).
 func (s *Store) List(ctx context.Context, token string, limit int) ([]string, string, error) {
 	snap := s.reg.Snapshot()
 	if !snap.HasCold() {

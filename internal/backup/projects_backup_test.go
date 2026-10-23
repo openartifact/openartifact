@@ -15,6 +15,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -31,6 +32,10 @@ type projectFakeDB struct {
 
 func newProjectFakeDB(salt string) *projectFakeDB {
 	return &projectFakeDB{fakeDB: newFakeDB(salt)}
+}
+
+func (f *projectFakeDB) BeginBackupSnapshot(context.Context, time.Duration) (database.SnapshotReader, error) {
+	return f.snapshotOf(f)
 }
 
 func (f *projectFakeDB) CreateProject(_ context.Context, p *models.Project) error {

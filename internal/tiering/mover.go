@@ -413,15 +413,17 @@ func (m *Mover) abandon(ctx context.Context, row *models.StorageTierMove, dst *T
 	return out, true, nil
 }
 
-// removeOldCopy deletes the source copy of a move whose flip committed. It runs
-// under the per-blob lock and re-reads the placement: the old copy is removed
-// only while the placement is still the move's target, so a blob that was moved
-// again (or deleted) is never stripped of its authoritative copy. While the
-// blob still exists it also re-confirms the target copy under the lock, so the
-// source is never deleted unless the bytes it would leave behind are really
-// there (a target that vanished, or turns out to be the source itself).
+// removeOldCopy retires the source copy of a move whose flip committed: it
+// queues the copy for deletion (database.BlobDeletion, swept after the grace
+// period and once no running backup can still read it). It runs under the
+// per-blob lock and re-reads the placement: the old copy is queued only while
+// the placement is still the move's target, so a blob that was moved again (or
+// deleted) is never stripped of its authoritative copy. While the blob still
+// exists it also re-confirms the target copy under the lock, so the source is
+// never retired unless the bytes it would leave behind are really there (a
+// target that vanished, or turns out to be the source itself).
 func (m *Mover) removeOldCopy(ctx context.Context, row *models.StorageTierMove) error {
-	src, dst, err := m.tiers(row.FromBackendID, row.ToBackendID)
+	_, dst, err := m.tiers(row.FromBackendID, row.ToBackendID)
 	if err != nil {
 		return err
 	}
@@ -443,8 +445,12 @@ func (m *Mover) removeOldCopy(ctx context.Context, row *models.StorageTierMove) 
 			}
 		}
 
-		if derr := src.Store.Delete(ctx, row.SHA256); derr != nil && !errors.Is(derr, storage.ErrBlobNotFound) {
-			return fmt.Errorf("delete old copy: %w", derr)
+		// The bytes are not deleted here: a running backup whose snapshot
+		// predates the flip still reads the source copy. The blob deletion
+		// sweeper removes it after the grace period, once no such backup is
+		// left (and re-checks the placement first).
+		if qerr := m.db.EnqueueBlobDeletion(ctx, row.SHA256, row.FromBackendID); qerr != nil {
+			return fmt.Errorf("queue old copy for deletion: %w", qerr)
 		}
 
 		return nil

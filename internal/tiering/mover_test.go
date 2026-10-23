@@ -37,7 +37,8 @@ func TestMoverCrashAtEveryStep(t *testing.T) {
 		{stepCopied, "", true, true, models.TierMoveCopying},
 		{stepVerified, "", true, true, models.TierMoveCopying},
 		{stepFlipped, testColdBackend, true, true, models.TierMoveFlipped},
-		{stepCleaned, testColdBackend, false, true, models.TierMoveFlipped},
+		// The old copy is queued for deletion, not removed: the sweeper does that.
+		{stepCleaned, testColdBackend, true, true, models.TierMoveFlipped},
 	} {
 		t.Run(tc.step, func(t *testing.T) {
 			t.Parallel()
@@ -87,18 +88,37 @@ func TestMoverCrashAtEveryStep(t *testing.T) {
 				t.Errorf("recovered = %d, want 1 (stats %+v)", st.Recovered, st)
 			}
 
-			hot, cold, placement = r.where(sha)
-			if placement != testColdBackend || hot || !cold {
-				t.Fatalf("after recovery: placement=%q hot=%v cold=%v, want cold only", placement, hot, cold)
-			}
-
-			if len(r.db.moves) != 0 {
-				t.Errorf("journal not empty after recovery: %+v", r.db.moves)
-			}
-
-			r.mustReadable(sha, data)
+			r.assertRecovered(sha, data)
 		})
 	}
+}
+
+// assertRecovered checks the state after a recovery pass: the cold copy is
+// authoritative, the old copy is queued (still there until the sweep, a running
+// backup may be reading it), and the sweep leaves the cold copy only.
+func (r *rig) assertRecovered(sha string, data []byte) {
+	r.t.Helper()
+
+	hot, cold, placement := r.where(sha)
+	if placement != testColdBackend || !cold {
+		r.t.Fatalf("after recovery: placement=%q hot=%v cold=%v, want cold placed", placement, hot, cold)
+	}
+
+	if !r.db.queued(sha, "") {
+		r.t.Fatalf("old primary copy not queued for deletion: %v", r.db.deletions)
+	}
+
+	r.sweep()
+
+	if hot, cold, _ = r.where(sha); hot || !cold {
+		r.t.Fatalf("after sweep: hot=%v cold=%v, want cold only", hot, cold)
+	}
+
+	if len(r.db.moves) != 0 {
+		r.t.Errorf("journal not empty after recovery: %+v", r.db.moves)
+	}
+
+	r.mustReadable(sha, data)
 }
 
 func TestMoverHappyPathBothDirections(t *testing.T) {
@@ -117,6 +137,13 @@ func TestMoverHappyPathBothDirections(t *testing.T) {
 		if err != nil || out != OutcomeMoved {
 			t.Fatalf("Move to %q = %v, %v", step.to, out, err)
 		}
+
+		// Both copies exist until the sweeper retires the old one.
+		if hot, cold, _ := r.where(sha); !hot || !cold {
+			t.Fatalf("right after move to %q: hot=%v cold=%v, want both copies queued for the sweeper", step.to, hot, cold)
+		}
+
+		r.sweep()
 
 		hot, cold, placement := r.where(sha)
 		if placement != step.to || hot != step.hot || cold != step.cold {
@@ -181,6 +208,8 @@ func TestMoverCorruptCopyNeverFlips(t *testing.T) {
 	if out, err := r.mover.Resume(context.Background(), &row); err != nil || out != OutcomeMoved {
 		t.Fatalf("retry = %v, %v; want moved", out, err)
 	}
+
+	r.sweep()
 
 	if hot, cold, placement = r.where(sha); placement != testColdBackend || hot || !cold {
 		t.Fatalf("after retry: placement=%q hot=%v cold=%v", placement, hot, cold)
@@ -287,4 +316,42 @@ func TestMoverKeepsAuthoritativeCopyWhenMovedAgain(t *testing.T) {
 	}
 
 	r.mustReadable(sha, data)
+}
+
+// TestMoverKeepsJournalWhenQueueingOldCopyFails: the old copy is retired through
+// the deletion queue; if queueing fails the move stays journaled as flipped and
+// a retry queues it, so the copy is never silently left behind.
+func TestMoverKeepsJournalWhenQueueingOldCopyFails(t *testing.T) {
+	t.Parallel()
+
+	r := newRig(t)
+	ctx := context.Background()
+	data := []byte("queue me later")
+	sha := r.addBlob(data, 0)
+
+	r.db.enqueueErr = errors.New("database unavailable")
+
+	if _, err := r.mover.Move(ctx, sha, testColdBackend, "test"); err == nil {
+		t.Fatal("Move succeeded although the old copy could not be queued")
+	}
+
+	row := r.db.moves[sha]
+	if row == nil || row.State != models.TierMoveFlipped {
+		t.Fatalf("journal row = %+v, want state flipped", row)
+	}
+
+	r.db.enqueueErr = nil
+
+	retry := *row
+	if out, err := r.mover.Resume(ctx, &retry); err != nil || out != OutcomeMoved {
+		t.Fatalf("Resume = %v, %v; want moved", out, err)
+	}
+
+	if !r.db.queued(sha, "") {
+		t.Errorf("old primary copy not queued after the retry: %v", r.db.deletions)
+	}
+
+	if len(r.db.moves) != 0 {
+		t.Errorf("journal not empty: %+v", r.db.moves)
+	}
 }

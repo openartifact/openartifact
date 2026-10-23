@@ -15,8 +15,14 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 )
 
-// SafeDeleteBlob deletes the blob identified by sha256 from blobStore only if
-// no package-table row still references it (db.BlobReferenceCount == 0).
+// SafeDeleteBlob deletes the blob identified by sha256 only if no package-table
+// row still references it (db.BlobReferenceCount == 0).
+//
+// With the Postgres database "deletes" means: the blobs row is removed at once
+// and the bytes are queued for physical deletion by the blob deletion sweeper,
+// which removes them after the configured grace period and once no running
+// backup can still read them. blobStore is used only by databases without that
+// queue (test doubles), which delete the bytes immediately.
 //
 // Callers MUST delete their own DB row referencing the blob BEFORE calling
 // this function, otherwise BlobReferenceCount will still see that row and
@@ -26,20 +32,18 @@ func SafeDeleteBlob(ctx context.Context, db database.Database, blobStore BlobSto
 		return err
 	}
 
-	// Preferred path: check + blobs-row delete + storage delete under an
-	// advisory lock shared with uploaders (WithBlobLock).
+	// Preferred path: check + blobs-row delete + queueing the bytes for
+	// deletion, in one transaction under an advisory lock shared with uploaders
+	// (WithBlobLock). The bytes themselves are removed later by the blob
+	// deletion sweeper, once the grace period has passed and no running backup
+	// can still need them.
 	if d, ok := db.(blobDeleter); ok {
-		_, err := d.DeleteBlobIfUnreferenced(ctx, sha256, func(ctx context.Context) error {
-			if err := blobStore.Delete(ctx, sha256); err != nil {
-				return fmt.Errorf("failed to delete blob from storage: %w", err)
-			}
-
-			return nil
-		})
+		_, err := d.DeleteBlobIfUnreferenced(ctx, sha256)
 
 		return err
 	}
 
+	// Databases without the queue (test doubles) delete the bytes right away.
 	count, err := db.BlobReferenceCount(ctx, sha256)
 	if err != nil {
 		return fmt.Errorf("failed to check blob reference count: %w", err)
@@ -57,7 +61,7 @@ func SafeDeleteBlob(ctx context.Context, db database.Database, blobStore BlobSto
 }
 
 type blobDeleter interface {
-	DeleteBlobIfUnreferenced(ctx context.Context, sha256 string, deleteStorage func(ctx context.Context) error) (bool, error)
+	DeleteBlobIfUnreferenced(ctx context.Context, sha256 string) (bool, error)
 }
 
 type blobLocker interface {

@@ -16,6 +16,8 @@ import (
 func (e *cleanupQuotaEnv) blobExists(sha string) bool {
 	e.t.Helper()
 
+	sweepQueuedBlobs(e.t, e.pg, e.store)
+
 	_, exists, err := e.store.ExistsBySHA256(context.Background(), sha)
 	if err != nil {
 		e.t.Fatalf("ExistsBySHA256: %v", err)

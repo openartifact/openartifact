@@ -133,6 +133,8 @@ func (e *qrEnv) wantBlobGone(data []byte) {
 
 	sum := sha256.Sum256(data)
 
+	sweepQueuedBlobs(e.t, e.pg, e.bs)
+
 	_, exists, err := e.bs.ExistsBySHA256(context.Background(), hex.EncodeToString(sum[:]))
 	if err != nil {
 		e.t.Fatalf("ExistsBySHA256: %v", err)

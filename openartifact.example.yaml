@@ -117,6 +117,16 @@ gpg:
 
 backup:
   backupDir: "/var/lib/openartifact/backups"
+  # Lease of a running backup without a heartbeat; a crashed backup stops
+  # holding blob deletions after this time. Must be positive.
+  leaseTtl: 5m
+
+# Bytes of deleted blobs are removed by a sweeper after the grace period and only
+# when no running backup can still need them.
+blobDeletion:
+  grace: 24h         # 0 = no grace
+  sweepInterval: 1m  # 0 = sweeper off on this replica
+  sweepBatch: 200    # deletions claimed per pass
 
 projects:
   # Let any authenticated user create a project and become its owner. Off: only global

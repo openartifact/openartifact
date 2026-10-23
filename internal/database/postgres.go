@@ -57,10 +57,15 @@ func idString(v any) string {
 
 // PostgresDB implements the Database interface for PostgreSQL.
 type PostgresDB struct {
-	db   *sql.DB
-	pool *pgxpool.Pool
-	q    *dbsqlc.Queries
-	log  *logger.Logger
+	db *sql.DB
+	// pool is what the pgx-native queries run on: the shared pool, or the single
+	// transaction of a backup snapshot (see BeginBackupSnapshot).
+	pool pgxQuerier
+	// rawPool is the shared pgx pool itself (closed by Close, source of the
+	// connection settings of snapshot connections); nil on a snapshot view.
+	rawPool *pgxpool.Pool
+	q       *dbsqlc.Queries
+	log     *logger.Logger
 
 	// authCache serves the per-request auth lookups (see auth_cache.go).
 	authCache authCache
@@ -68,6 +73,10 @@ type PostgresDB struct {
 	// trashDefaultDays is the retention, in days, of repositories without their
 	// own trash_retention_days (see SetTrashRetentionDays).
 	trashDefaultDays atomic.Int32
+
+	// blobDeletionGrace is how long the bytes of a deleted blob are kept before
+	// the sweeper may remove them, in nanoseconds (see SetBlobDeletionGrace).
+	blobDeletionGrace atomic.Int64
 
 	// lockSlots bounds how many blob-lock transactions (WithBlobLocks,
 	// DeleteBlobIfUnreferenced) may hold a pooled connection at once. The
@@ -113,6 +122,7 @@ func NewPostgresDB(cfg DatabaseConfig, log *logger.Logger) (*PostgresDB, error) 
 	return &PostgresDB{
 		db:        db,
 		pool:      pool,
+		rawPool:   pool,
 		q:         dbsqlc.New(pool),
 		log:       log,
 		lockSlots: lockSlots,
@@ -148,8 +158,8 @@ func (p *PostgresDB) GetDB() *sql.DB {
 
 // Close closes the database connection.
 func (p *PostgresDB) Close() error {
-	if p.pool != nil {
-		p.pool.Close()
+	if p.rawPool != nil {
+		p.rawPool.Close()
 		if p.log != nil {
 			p.log.Debugw("pgx pool closed")
 		}

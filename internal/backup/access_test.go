@@ -9,7 +9,9 @@ import (
 	"errors"
 	"slices"
 	"testing"
+	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -200,6 +202,10 @@ func TestBackup_FailsWhenAccessControlCannotBeListed(t *testing.T) {
 }
 
 type noAssignmentsDB struct{ *fakeDB }
+
+func (d *noAssignmentsDB) BeginBackupSnapshot(context.Context, time.Duration) (database.SnapshotReader, error) {
+	return d.snapshotOf(d)
+}
 
 var errListFailed = errors.New("list failed")
 

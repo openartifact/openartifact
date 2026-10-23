@@ -22,6 +22,8 @@ func (r *rig) moveCold(sha string) {
 	if out, err := r.mover.Move(context.Background(), sha, testColdBackend, "test"); err != nil || out != OutcomeMoved {
 		r.t.Fatalf("move to cold = %v, %v", out, err)
 	}
+
+	r.sweep()
 }
 
 func TestStoreReadsAreTransparentAcrossTiers(t *testing.T) {

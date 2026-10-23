@@ -346,6 +346,13 @@ type Database interface {
 	// calling blobStore.Delete directly.
 	BlobReferenceCount(ctx context.Context, sha256 string) (int, error)
 
+	// BeginBackupSnapshot freezes the database at one instant for a backup and
+	// registers a lease that keeps the blob bytes that instant references from
+	// being deleted until Release. The lease is renewed in the background and
+	// expires leaseTTL after the last renewal, so a crashed backup does not
+	// hold deletions back forever. See SnapshotReader.
+	BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (SnapshotReader, error)
+
 	// Go Module Proxy methods
 	CreateGoModule(ctx context.Context, mod *models.GoModule) error
 	GetGoModule(ctx context.Context, repoID, modulePath, version string) (*models.GoModule, error)

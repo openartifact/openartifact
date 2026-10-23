@@ -38,10 +38,6 @@ var ErrMissingBlobSHA256 = errors.New("record has no blob sha256")
 // big for this would need real pagination added to the Database interface.
 const bulkListLimit = 100000
 
-// blobPageSize is exportBlobs' page size for blobStore.List, which DOES
-// support offset pagination — export loops until the store is exhausted.
-const blobPageSize = 1000
-
 // maxManifestSize bounds the manifest entry read into memory from an
 // untrusted archive.
 const maxManifestSize = 16 << 20
@@ -117,6 +113,10 @@ type Engine struct {
 	log       *logger.Logger
 	backupDir string
 
+	// leaseTTL is how long a running backup's blob-retention lease survives
+	// without a heartbeat (SetLeaseTTL; DefaultLeaseTTL when unset).
+	leaseTTL time.Duration
+
 	// opMu serializes restores against each other and against backups: a
 	// restore holds it exclusively, a backup shares it with other backups.
 	opMu sync.RWMutex
@@ -159,6 +159,12 @@ type BackupManifest struct {
 	CreatedAt   time.Time      `json:"created_at"`
 	Type        string         `json:"type"`
 	TableCounts map[string]int `json:"table_counts"`
+	// SnapshotAt is when the database snapshot every table in the archive was
+	// read from was taken (all tables describe that one instant).
+	SnapshotAt time.Time `json:"snapshot_at"`
+	// BlobCount is the number of blobs the snapshot lists, i.e. how many
+	// blobs/ entries a full backup holds (it fails rather than write fewer).
+	BlobCount int `json:"blob_count,omitempty"`
 }
 
 // ErrRestoreInProgress is returned when a restore is already running (a second
@@ -247,30 +253,15 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 		TableCounts: make(map[string]int),
 	}
 
-	// Export metadata
-	if err := e.exportMetadata(ctx, tarWriter, &manifest); err != nil {
-		e.log.Errorw("failed to export metadata", "job_id", jobID, "error", err)
+	if err := e.exportArchive(ctx, tarWriter, &manifest, backupType); err != nil {
+		e.log.Errorw("failed to export backup", "job_id", jobID, "error", err)
 
 		job.Status = "failed"
-		job.ErrorMessage = fmt.Sprintf("failed to export metadata: %v", err)
+		job.ErrorMessage = err.Error()
 		_ = e.db.UpdateBackupJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
-	}
-
-	// Export blobs if full backup
-	if backupType == "full" {
-		if err := e.exportBlobs(ctx, tarWriter, &manifest); err != nil {
-			e.log.Errorw("failed to export blobs", "job_id", jobID, "error", err)
-
-			job.Status = "failed"
-			job.ErrorMessage = fmt.Sprintf("failed to export blobs: %v", err)
-			_ = e.db.UpdateBackupJob(ctx, job)
-			_ = os.Remove(tempFile)
-
-			return err
-		}
 	}
 
 	// Write manifest
@@ -441,7 +432,7 @@ type packageExport struct {
 // is skipped with its contents and a restore brings back live data only.
 // Repository settings trash_retention_days and immutable_releases round-trip
 // through models.Repository.
-func (e *Engine) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
+func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	repos, err := e.db.ListRepositories(ctx, 1, bulkListLimit, "")
 	if err != nil {
 		return fmt.Errorf("failed to list repositories: %w", err)
@@ -546,7 +537,7 @@ type groupMemberRecord struct {
 
 // exportGroupMembers writes the ordered member list of every group
 // repository. Without it a restored group repository exists but is empty.
-func (e *Engine) exportGroupMembers(ctx context.Context, tw *tar.Writer, manifest *BackupManifest, repos []*models.Repository) error {
+func (e *exporter) exportGroupMembers(ctx context.Context, tw *tar.Writer, manifest *BackupManifest, repos []*models.Repository) error {
 	records := []groupMemberRecord{}
 
 	for _, repo := range repos {
@@ -589,7 +580,7 @@ func collectRepoList[T any](pkg *packageExport, dst *[]T, what, repoID string, v
 // per-repo/format-specific table it can reach via an existing bulk-list (or
 // composable) Database method. Errors from an individual list call are
 // collected in packageExport.errs; exportMetadata fails the backup on any.
-func (e *Engine) exportPackageTables(ctx context.Context, repos []*models.Repository) packageExport {
+func (e *exporter) exportPackageTables(ctx context.Context, repos []*models.Repository) packageExport {
 	var pkg packageExport
 
 	for _, repo := range repos {
@@ -608,7 +599,7 @@ func (e *Engine) exportPackageTables(ctx context.Context, repos []*models.Reposi
 }
 
 // exportFormatTables gathers the format-specific package tables of one repo.
-func (e *Engine) exportFormatTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
+func (e *exporter) exportFormatTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	id := repo.ID
 
 	switch repo.Format {
@@ -675,7 +666,7 @@ func (e *Engine) exportFormatTables(ctx context.Context, repo *models.Repository
 
 // exportRepoScopedTables gathers the tables every repo can have regardless of
 // its format (webhooks, policies, scan results, ...).
-func (e *Engine) exportRepoScopedTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
+func (e *exporter) exportRepoScopedTables(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	id := repo.ID
 
 	webhooks, err := e.db.ListWebhooks(ctx, id)
@@ -705,7 +696,7 @@ func (e *Engine) exportRepoScopedTables(ctx context.Context, repo *models.Reposi
 // is the only listing that returns package rows with a resolved sha256, and
 // it requires a (distribution, component, architecture) name triple, so we
 // enumerate the hierarchy first via the existing bulk-list methods.
-func (e *Engine) exportDebPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
+func (e *exporter) exportDebPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	dists, err := e.db.GetDebianDistributionsByRepo(ctx, repo.ID)
 	if err != nil {
 		pkg.fail("debian distributions", "repo "+repo.ID, err)
@@ -756,7 +747,7 @@ func (e *Engine) exportDebPackages(ctx context.Context, repo *models.Repository,
 // (with the blob's sha256/size resolved via ListNPMVersionsByRepo, not the
 // live blobs.id UUID), and dist tags (dist tags have no bulk-list-by-repo
 // method, so they're composed per package via the existing GetNPMDistTags).
-func (e *Engine) exportNPMPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
+func (e *exporter) exportNPMPackages(ctx context.Context, repo *models.Repository, pkg *packageExport) {
 	packages, err := e.db.ListAllNPMPackages(ctx, repo.ID)
 	if err != nil {
 		pkg.fail("npm packages", "repo "+repo.ID, err)
@@ -790,7 +781,7 @@ func (e *Engine) exportNPMPackages(ctx context.Context, repo *models.Repository,
 
 // writeListedTable writes a listed global table. A failed list call fails the
 // backup: writing the table empty would report success for a partial archive.
-func writeListedTable[T any](e *Engine, tw *tar.Writer, manifest *BackupManifest, name string, v []T, err error) error {
+func writeListedTable[T any](e *exporter, tw *tar.Writer, manifest *BackupManifest, name string, v []T, err error) error {
 	if err != nil {
 		return fmt.Errorf("failed to list %s: %w", name, err)
 	}
@@ -799,7 +790,7 @@ func writeListedTable[T any](e *Engine, tw *tar.Writer, manifest *BackupManifest
 }
 
 // exportGlobalTables backs up tables with no repository scope.
-func (e *Engine) exportGlobalTables(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
+func (e *exporter) exportGlobalTables(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	sso, err := e.db.ListAllSSOProviders(ctx)
 	for i, p := range sso {
 		if p != nil {
@@ -848,7 +839,7 @@ func (e *Engine) exportGlobalTables(ctx context.Context, tw *tar.Writer, manifes
 }
 
 // exportBundles backs up release bundles with their items and promotions.
-func (e *Engine) exportBundles(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
+func (e *exporter) exportBundles(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	bundles, _, err := e.db.ListReleaseBundles(ctx, "", "", 1, bulkListLimit)
 	if err := writeListedTable(e, tw, manifest, "release_bundles", bundles, err); err != nil {
 		return err
@@ -882,7 +873,7 @@ func (e *Engine) exportBundles(ctx context.Context, tw *tar.Writer, manifest *Ba
 }
 
 // exportProjects backs up projects, their members and their group grants.
-func (e *Engine) exportProjects(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
+func (e *exporter) exportProjects(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	projects, err := e.db.ListAllProjects(ctx)
 	if err != nil {
 		return fmt.Errorf("failed to list projects: %w", err)
@@ -944,129 +935,6 @@ func (e *Engine) exportProjects(ctx context.Context, tw *tar.Writer, manifest *B
 	}
 
 	return e.writeTable(tw, manifest, "project_cleanup_policies", policies, len(policies))
-}
-
-// ErrBlobListingUnsupported is returned by a full backup on a storage backend
-// that cannot enumerate its blobs (OCI registries).
-var ErrBlobListingUnsupported = errors.New("storage backend cannot list blobs; a full backup is not possible, use a metadata backup")
-
-// exportBlobs exports every blob in the blob store to the archive. It walks the
-// store with List continuation tokens, so each page costs the same however
-// many blobs were already exported and concurrent deletes cannot shift the
-// window and skip blobs.
-func (e *Engine) exportBlobs(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
-	blobCount := 0
-	token := ""
-	seen := newBlobDeduper(e.blobStore)
-
-	for {
-		blobs, next, err := e.blobStore.List(ctx, token, blobPageSize)
-		if errors.Is(err, storage.ErrListNotSupported) {
-			return ErrBlobListingUnsupported
-		}
-
-		if err != nil {
-			return fmt.Errorf("failed to list blobs: %w", err)
-		}
-
-		for _, blobID := range blobs {
-			if !seen.first(blobID) {
-				continue
-			}
-
-			exported, err := e.exportOneBlob(ctx, tw, blobID)
-			if err != nil {
-				return err
-			}
-
-			if exported {
-				blobCount++
-			}
-		}
-
-		if next == "" {
-			break
-		}
-
-		token = next
-	}
-
-	manifest.TableCounts["blobs"] = blobCount
-
-	return nil
-}
-
-// blobDeduper remembers the blobs a listing already returned, for stores whose
-// List can repeat an id (see storage.RepeatingLister): a blob caught mid-move
-// sits on two tiers, and exporting it twice would write duplicate tar entries
-// and inflate the blob count. Ids are kept as 32-byte digests. For any other
-// store it is a no-op that costs nothing.
-type blobDeduper struct {
-	seen map[[sha256.Size]byte]struct{}
-}
-
-func newBlobDeduper(store storage.BlobStore) *blobDeduper {
-	if r, ok := store.(storage.RepeatingLister); ok && r.ListMayRepeat() {
-		return &blobDeduper{seen: map[[sha256.Size]byte]struct{}{}}
-	}
-
-	return &blobDeduper{}
-}
-
-// first reports whether id has not been seen before, and records it.
-func (d *blobDeduper) first(id string) bool {
-	if d.seen == nil {
-		return true
-	}
-
-	key := sha256.Sum256([]byte(id))
-	if _, dup := d.seen[key]; dup {
-		return false
-	}
-
-	d.seen[key] = struct{}{}
-
-	return true
-}
-
-// exportOneBlob copies one blob into the archive. It reports false when the
-// blob vanished between listing and reading (a concurrent GC or trash purge
-// deleted it): that blob is no longer referenced, so skipping it is correct.
-func (e *Engine) exportOneBlob(ctx context.Context, tw *tar.Writer, blobID string) (bool, error) {
-	reader, err := e.blobStore.Get(ctx, blobID)
-	if errors.Is(err, storage.ErrBlobNotFound) {
-		return false, nil
-	}
-
-	if err != nil {
-		return false, fmt.Errorf("failed to get blob %s: %w", blobID, err)
-	}
-
-	defer func() { _ = reader.Close() }()
-
-	size, err := e.blobStore.GetSize(ctx, blobID)
-	if errors.Is(err, storage.ErrBlobNotFound) {
-		return false, nil
-	}
-
-	if err != nil {
-		return false, fmt.Errorf("failed to get size of blob %s: %w", blobID, err)
-	}
-
-	header := &tar.Header{
-		Name: "blobs/" + blobID,
-		Size: size,
-		Mode: 0o600,
-	}
-	if err := tw.WriteHeader(header); err != nil {
-		return false, fmt.Errorf("failed to write blob header: %w", err)
-	}
-
-	if _, err := io.Copy(tw, reader); err != nil {
-		return false, fmt.Errorf("failed to write blob content: %w", err)
-	}
-
-	return true, nil
 }
 
 // writeTable marshals data as a JSON array under <name>.jsonl in the archive

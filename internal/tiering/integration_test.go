@@ -186,6 +186,49 @@ func (r *pgRig) addBlob(data []byte) string {
 	return sha
 }
 
+// sweep carries out the queued deletions the way the blob deletion sweeper does
+// (grace 0, no backup running): a copy that is authoritative again is kept.
+func (r *pgRig) sweep() {
+	r.t.Helper()
+
+	ctx := context.Background()
+
+	for {
+		batch, err := r.pg.ClaimBlobDeletions(ctx, 100, time.Minute)
+		if err != nil {
+			r.t.Fatalf("ClaimBlobDeletions: %v", err)
+		}
+
+		if len(batch) == 0 {
+			return
+		}
+
+		for _, d := range batch {
+			backend, _, found, err := r.pg.GetBlobPlacement(ctx, d.SHA256)
+			if err != nil {
+				r.t.Fatalf("GetBlobPlacement: %v", err)
+			}
+
+			switch {
+			case found && (d.Scope == database.BlobDeletionScopeAll || backend == d.Scope):
+				// live again: keep the bytes
+			case d.Scope == database.BlobDeletionScopeAll:
+				err = r.store.Delete(ctx, d.SHA256)
+			default:
+				err = r.store.DeleteCopy(ctx, d.Scope, d.SHA256)
+			}
+
+			if err != nil && !errors.Is(err, storage.ErrBlobNotFound) {
+				r.t.Fatalf("sweep %s/%s: %v", d.SHA256, d.Scope, err)
+			}
+
+			if err := r.pg.DeleteBlobDeletion(ctx, d.SHA256, d.Scope); err != nil {
+				r.t.Fatalf("DeleteBlobDeletion: %v", err)
+			}
+		}
+	}
+}
+
 func (r *pgRig) onDisk(sha string) (bool, bool) {
 	r.t.Helper()
 
@@ -274,8 +317,15 @@ func TestIntegrationPassMovesBlobBetweenDirectories(t *testing.T) {
 		t.Fatalf("RunPass = %+v, %v; want exactly the old blob moved", st, err)
 	}
 
+	// The old copy is queued, not removed: a running backup may still be reading it.
+	if hot, cold := r.onDisk(sha); !hot || !cold {
+		t.Errorf("right after the move hot=%v cold=%v, want both copies until the sweep", hot, cold)
+	}
+
+	r.sweep()
+
 	if hot, cold := r.onDisk(sha); hot || !cold {
-		t.Errorf("after the move hot=%v cold=%v, want only the cold directory", hot, cold)
+		t.Errorf("after the sweep hot=%v cold=%v, want only the cold directory", hot, cold)
 	}
 
 	if be := r.placement(sha); be != r.coldID {
@@ -294,13 +344,32 @@ func TestIntegrationPassMovesBlobBetweenDirectories(t *testing.T) {
 		t.Errorf("%d journal rows left after a clean pass", n)
 	}
 
-	// Deleting through the refcount-aware path removes every copy and the row.
+	r.assertSafeDeleteQueuesThenSweeps(sha)
+}
+
+// assertSafeDeleteQueuesThenSweeps deletes through the refcount-aware path: the
+// row goes at once, every copy goes with the sweep.
+func (r *pgRig) assertSafeDeleteQueuesThenSweeps(sha string) {
+	r.t.Helper()
+	t := r.t
+
 	if err := storage.SafeDeleteBlob(context.Background(), r.pg, r.store, sha); err != nil {
 		t.Fatalf("SafeDeleteBlob: %v", err)
 	}
 
+	// The row is gone at once; the bytes are removed by the sweep.
+	if _, _, found, _ := r.pg.GetBlobPlacement(context.Background(), sha); found {
+		t.Error("blob row survived SafeDeleteBlob")
+	}
+
+	if hot, cold := r.onDisk(sha); !hot && !cold {
+		t.Error("SafeDeleteBlob removed bytes immediately instead of queueing them")
+	}
+
+	r.sweep()
+
 	if hot, cold := r.onDisk(sha); hot || cold {
-		t.Errorf("SafeDeleteBlob left a copy: hot=%v cold=%v", hot, cold)
+		t.Errorf("sweep left a copy: hot=%v cold=%v", hot, cold)
 	}
 
 	if _, _, found, _ := r.pg.GetBlobPlacement(context.Background(), sha); found {
@@ -355,6 +424,8 @@ func TestIntegrationCrashAtEveryStep(t *testing.T) {
 			if _, err := r.engine.RunPass(context.Background()); err != nil {
 				t.Fatalf("recovery pass: %v", err)
 			}
+
+			r.sweep()
 
 			if hot, cold := r.onDisk(sha); hot || !cold {
 				t.Errorf("step %s: after recovery hot=%v cold=%v, want only cold", step, hot, cold)

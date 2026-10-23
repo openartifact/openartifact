@@ -14,6 +14,7 @@ import (
 	"fmt"
 	"io"
 	"path/filepath"
+	"slices"
 	"sort"
 	"strings"
 	"testing"
@@ -47,6 +48,11 @@ type fakeDB struct {
 	dockerManifests map[string][]*models.DockerManifest // keyed by repository id
 	extra           *r2State
 	access          *accessState
+
+	blobs       []database.BlobRow // the blobs table
+	snapshotErr error              // fails BeginBackupSnapshot
+	snapshots   int                // snapshots taken
+	released    int                // snapshots released
 }
 
 func newFakeDB(salt string) *fakeDB {
@@ -71,6 +77,34 @@ func newFakeDB(salt string) *fakeDB {
 func (f *fakeDB) newID(prefix string) string {
 	f.nextID++
 	return fmt.Sprintf("%s-%s-%d", f.salt, prefix, f.nextID)
+}
+
+// addBlobRow records a blobs-table row; a full backup exports exactly these.
+func (f *fakeDB) addBlobRow(sha string, size int64) {
+	f.blobs = append(f.blobs, database.BlobRow{SHA256: sha, SizeBytes: size})
+	sort.Slice(f.blobs, func(i, j int) bool { return f.blobs[i].SHA256 < f.blobs[j].SHA256 })
+}
+
+// BeginBackupSnapshot hands out the fake itself as the snapshot (an in-memory
+// fake is trivially consistent) over the recorded blobs rows.
+func (f *fakeDB) BeginBackupSnapshot(context.Context, time.Duration) (database.SnapshotReader, error) {
+	return f.snapshotOf(f)
+}
+
+// snapshotOf is BeginBackupSnapshot for a type that embeds the fake and
+// overrides some reads: the snapshot must read through the outer type.
+func (f *fakeDB) snapshotOf(reader database.Database) (database.SnapshotReader, error) {
+	if f.snapshotErr != nil {
+		return nil, f.snapshotErr
+	}
+
+	f.snapshots++
+
+	return &database.LiveSnapshot{
+		Database:  reader,
+		Blobs:     slices.Clone(f.blobs),
+		OnRelease: func() { f.released++ },
+	}, nil
 }
 
 func (f *fakeDB) CreateBackupJob(_ context.Context, job *models.BackupJob) error {
@@ -258,6 +292,8 @@ func TestBackupRestore_RpmPackageRoundTrips(t *testing.T) {
 		t.Fatalf("failed to seed blob: %v", err)
 	}
 
+	srcDB.addBlobRow(sha, int64(len(blobContent)))
+
 	repo := &models.Repository{Name: "myrepo-rpm", Format: "rpm", RepoType: "hosted"}
 	if err := srcDB.CreateRepository(ctx, repo); err != nil {
 		t.Fatalf("failed to seed repository: %v", err)
@@ -379,6 +415,9 @@ func TestBackupRestore_NPMAndDockerManifestRoundTrip(t *testing.T) {
 	if _, err := srcBlobStore.Put(ctx, strings.NewReader(dockerBlob), map[string]string{"sha256": dockerSHA}); err != nil {
 		t.Fatalf("failed to seed docker blob: %v", err)
 	}
+
+	srcDB.addBlobRow(npmSHA, int64(len(npmTarball)))
+	srcDB.addBlobRow(dockerSHA, int64(len(dockerBlob)))
 
 	npmRepo := &models.Repository{Name: "myrepo-npm", Format: "npm", RepoType: "hosted"}
 	if err := srcDB.CreateRepository(ctx, npmRepo); err != nil {
@@ -533,118 +572,38 @@ func assertRestoredDocker(t *testing.T, dstDB *fakeDB, dstBlobStore storage.Blob
 	}
 }
 
-// TestExportBlobs_PaginatesUntilExhausted proves exportBlobs pages through
-// blobStore.List (offset increasing by blobPageSize each call) rather than
-// a single fixed-limit call that would silently truncate any store with
-// more blobs than the limit. A store with slightly more than one page's worth
-// forces at least two List calls; the exported count must cover all of them.
-func TestExportBlobs_PaginatesUntilExhausted(t *testing.T) {
-	const total = blobPageSize + 5
-
-	fb := newFakeBlobStore(total)
-
-	log, err := logger.New("error", "json", "stderr")
-	if err != nil {
-		t.Fatalf("failed to create logger: %v", err)
-	}
-
-	e := NewEngine(nil, fb, log, t.TempDir())
-
-	var buf bytes.Buffer
-
-	tw := tar.NewWriter(&buf)
-	manifest := &BackupManifest{TableCounts: map[string]int{}}
-
-	if err := e.exportBlobs(context.Background(), tw, manifest); err != nil {
-		t.Fatalf("exportBlobs failed: %v", err)
-	}
-
-	_ = tw.Close()
-
-	if manifest.TableCounts["blobs"] != total {
-		t.Fatalf("exported blob count = %d, want %d (old single-page code would truncate at the page size)",
-			manifest.TableCounts["blobs"], total)
-	}
-
-	if fb.listCalls < 2 {
-		t.Fatalf("blobStore.List called %d time(s), want >= 2 — exportBlobs must page through the store, not stop after one call", fb.listCalls)
-	}
-}
-
-// repeatingBlobStore lists every blob twice, the way a tiered store lists a
-// blob caught mid-move on two tiers.
-type repeatingBlobStore struct {
-	*fakeBlobStore
-
-	mayRepeat bool
-}
-
-func (r *repeatingBlobStore) ListMayRepeat() bool { return r.mayRepeat }
-
-func (r *repeatingBlobStore) List(_ context.Context, token string, _ int) ([]string, string, error) {
-	if token != "" {
-		return nil, "", nil
-	}
-
-	return append(append([]string{}, r.keys...), r.keys...), "", nil
-}
-
-// TestExportBlobs_DeduplicatesRepeatingStores proves a full backup writes each
-// blob once when the store may list an id twice (a tiered store, where a blob
-// mid-move is on two tiers), instead of duplicate tar entries and an inflated
-// blob count.
-func TestExportBlobs_DeduplicatesRepeatingStores(t *testing.T) {
-	log, err := logger.New("error", "json", "stderr")
-	if err != nil {
-		t.Fatalf("failed to create logger: %v", err)
-	}
-
-	store := &repeatingBlobStore{fakeBlobStore: newFakeBlobStore(3), mayRepeat: true}
-	e := NewEngine(nil, store, log, t.TempDir())
-
-	var buf bytes.Buffer
-
-	tw := tar.NewWriter(&buf)
-	manifest := &BackupManifest{TableCounts: map[string]int{}}
-
-	if err := e.exportBlobs(context.Background(), tw, manifest); err != nil {
-		t.Fatalf("exportBlobs failed: %v", err)
-	}
-
-	_ = tw.Close()
-
-	entries := 0
-
-	for tr := tar.NewReader(&buf); ; entries++ {
-		if _, err := tr.Next(); err != nil {
-			break
-		}
-	}
-
-	if manifest.TableCounts["blobs"] != 3 || entries != 3 {
-		t.Errorf("blob count = %d, tar entries = %d, want 3 each", manifest.TableCounts["blobs"], entries)
-	}
-}
-
-// fakeBlobStore is a minimal in-memory storage.BlobStore used only to prove
-// exportBlobs' pagination loop; every method exportBlobs doesn't call
-// returns an error if invoked.
+// fakeBlobStore is a minimal in-memory storage.BlobStore for the blob export
+// tests; every method the export doesn't call returns an error if invoked.
 type fakeBlobStore struct {
-	data      map[string][]byte
-	keys      []string
-	listCalls int
+	data map[string][]byte
+	keys []string
 }
 
 func newFakeBlobStore(n int) *fakeBlobStore {
 	fb := &fakeBlobStore{data: map[string][]byte{}}
 
 	for i := range n {
-		id := fmt.Sprintf("blob-%05d", i)
-		fb.data[id] = []byte("x")
+		content := []byte(fmt.Sprintf("blob number %d", i))
+		sum := sha256.Sum256(content)
+		id := hex.EncodeToString(sum[:])
+		fb.data[id] = content
 		fb.keys = append(fb.keys, id)
 	}
 
+	sort.Strings(fb.keys)
+
 	return fb
+}
+
+// rows are the blobs-table rows describing the store's content.
+func (f *fakeBlobStore) rows() []database.BlobRow {
+	out := make([]database.BlobRow, 0, len(f.keys))
+
+	for _, k := range f.keys {
+		out = append(out, database.BlobRow{SHA256: k, SizeBytes: int64(len(f.data[k]))})
+	}
+
+	return out
 }
 
 func (f *fakeBlobStore) Put(context.Context, io.Reader, map[string]string) (string, error) {
@@ -674,8 +633,6 @@ func (f *fakeBlobStore) GetMetadata(context.Context, string) (map[string]string,
 }
 
 func (f *fakeBlobStore) List(_ context.Context, token string, limit int) ([]string, string, error) {
-	f.listCalls++
-
 	start := 0
 	if token != "" {
 		start = sort.SearchStrings(f.keys, token)

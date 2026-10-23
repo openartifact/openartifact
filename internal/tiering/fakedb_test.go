@@ -10,9 +10,11 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"path/filepath"
 	"slices"
 	"sort"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -38,6 +40,10 @@ type fakeDB struct {
 	placementErr error
 	// usageCalls counts StorageTierUsage calls (the whole-table aggregate).
 	usageCalls int
+	// deletions are the copies queued for deferred deletion, "sha@backend".
+	deletions []string
+	// enqueueErr, when set, fails EnqueueBlobDeletion.
+	enqueueErr error
 
 	lockMu sync.Mutex
 	locks  map[string]*sync.Mutex
@@ -136,6 +142,27 @@ func (f *fakeDB) WithBlobLock(ctx context.Context, sha string, fn func(ctx conte
 	defer l.Unlock()
 
 	return fn(ctx)
+}
+
+func (f *fakeDB) EnqueueBlobDeletion(_ context.Context, sha, backendID string) error {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	if f.enqueueErr != nil {
+		return f.enqueueErr
+	}
+
+	f.deletions = append(f.deletions, sha+"@"+backendID)
+
+	return nil
+}
+
+// queued reports whether the copy of sha on backendID is queued for deletion.
+func (f *fakeDB) queued(sha, backendID string) bool {
+	f.mu.Lock()
+	defer f.mu.Unlock()
+
+	return slices.Contains(f.deletions, sha+"@"+backendID)
 }
 
 func (f *fakeDB) FlipBlobPlacement(ctx context.Context, sha, from, to string, verify func(ctx context.Context) error) (models.FlipOutcome, error) {
@@ -454,6 +481,32 @@ func (r *rig) addBlob(data []byte, age time.Duration) string {
 	r.db.mu.Unlock()
 
 	return sha
+}
+
+// sweep retires the copies the mover queued for deletion, the way the blob
+// deletion sweeper does once the grace period has passed and no backup holds the
+// bytes: a copy that is authoritative again is kept, any other is removed.
+func (r *rig) sweep() {
+	r.t.Helper()
+
+	ctx := context.Background()
+
+	r.db.mu.Lock()
+	queued := slices.Clone(r.db.deletions)
+	r.db.deletions = nil
+	r.db.mu.Unlock()
+
+	for _, q := range queued {
+		sha, backend, _ := strings.Cut(q, "@")
+
+		if placement, _, found, _ := r.db.GetBlobPlacement(ctx, sha); found && placement == backend {
+			continue
+		}
+
+		if err := r.store.DeleteCopy(ctx, backend, sha); err != nil && !errors.Is(err, storage.ErrBlobNotFound) {
+			r.t.Fatalf("sweep %s: %v", q, err)
+		}
+	}
 }
 
 // where reports which tiers hold the bytes and the recorded placement.

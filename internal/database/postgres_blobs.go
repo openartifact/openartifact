@@ -82,11 +82,12 @@ func (p *PostgresDB) WithBlobLocks(ctx context.Context, shas []string, fn func(c
 }
 
 // DeleteBlobIfUnreferenced atomically removes the blobs row for sha256 and
-// calls deleteStorage, but only when no package row still references it. The
-// check, row delete and storage delete run under the blob advisory lock; if
-// storage deletion fails the row delete is rolled back. Returns true when the
-// blob was removed.
-func (p *PostgresDB) DeleteBlobIfUnreferenced(ctx context.Context, sha256 string, deleteStorage func(ctx context.Context) error) (bool, error) {
+// queues its bytes for deletion (BlobDeletionScopeAll), but only when no
+// package row still references it. The check, row delete and enqueue run in
+// one transaction under the blob advisory lock; the bytes are removed later by
+// the sweeper, once the grace period has passed and no running backup can still
+// need them. Returns true when the blob was removed.
+func (p *PostgresDB) DeleteBlobIfUnreferenced(ctx context.Context, sha256 string) (bool, error) {
 	release, err := p.acquireLockSlot(ctx)
 	if err != nil {
 		return false, err
@@ -121,8 +122,8 @@ func (p *PostgresDB) DeleteBlobIfUnreferenced(ctx context.Context, sha256 string
 		return false, fmt.Errorf("delete blobs row: %w", err)
 	}
 
-	if err := deleteStorage(ctx); err != nil {
-		return false, err
+	if _, err := tx.ExecContext(ctx, enqueueBlobDeletionSQL, sha256, BlobDeletionScopeAll, p.deletionGraceSeconds()); err != nil {
+		return false, fmt.Errorf("queue blob bytes for deletion: %w", err)
 	}
 
 	if err := tx.Commit(); err != nil {

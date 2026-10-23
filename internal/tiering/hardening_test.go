@@ -665,20 +665,44 @@ func TestRegistryRetriesFailedBackendOpen(t *testing.T) {
 	}
 }
 
-// --- finding 7: list dedup signal -------------------------------------------
+// --- DeleteCopy: retire one tier's copy -------------------------------------
 
-func TestStoreListMayRepeatOnlyWithColdTier(t *testing.T) {
+func TestStoreDeleteCopyRemovesOnlyThatTiersCopy(t *testing.T) {
 	t.Parallel()
 
 	r := newRig(t)
-	if !r.store.ListMayRepeat() {
-		t.Error("ListMayRepeat = false with a cold tier")
+	ctx := context.Background()
+	data := []byte("copy on two tiers")
+	sha := r.addBlob(data, 0)
+
+	// Copy to cold the way a move does, but keep the hot copy (as the mover
+	// does until the sweeper retires it).
+	rc, err := r.hot.Get(ctx, sha)
+	if err != nil {
+		t.Fatal(err)
 	}
 
-	r.db.tiers, r.db.backends = r.db.tiers[:1], nil
-	r.restart()
+	if _, err := r.cold.Put(ctx, rc, map[string]string{"sha256": sha}); err != nil {
+		t.Fatal(err)
+	}
 
-	if r.store.ListMayRepeat() {
-		t.Error("ListMayRepeat = true with only the primary tier")
+	_ = rc.Close()
+
+	if err := r.store.DeleteCopy(ctx, "", sha); err != nil {
+		t.Fatalf("DeleteCopy(primary): %v", err)
+	}
+
+	if onHot, onCold, _ := r.where(sha); onHot || !onCold {
+		t.Fatalf("after deleting the primary copy: hot=%v cold=%v, want hot=false cold=true", onHot, onCold)
+	}
+
+	// A copy that is already gone is not an error worth failing a sweep for:
+	// the caller treats nil and ErrBlobNotFound alike.
+	if err := r.store.DeleteCopy(ctx, "", sha); err != nil && !errors.Is(err, storage.ErrBlobNotFound) {
+		t.Errorf("DeleteCopy of a missing copy = %v", err)
+	}
+
+	if err := r.store.DeleteCopy(ctx, "99999999-9999-9999-9999-999999999999", sha); !errors.Is(err, ErrTierUnavailable) {
+		t.Errorf("DeleteCopy on an unknown backend = %v, want ErrTierUnavailable", err)
 	}
 }

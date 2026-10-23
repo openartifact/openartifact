@@ -40,7 +40,7 @@ func redactRepositorySecrets(repos []*models.Repository) []*models.Repository {
 
 // exportAccessControl writes permission targets, their assignments, user to
 // group memberships and repository quota limits.
-func (e *Engine) exportAccessControl(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
+func (e *exporter) exportAccessControl(ctx context.Context, tw *tar.Writer, manifest *BackupManifest) error {
 	targets, err := e.db.ListPermissionTargets(ctx)
 	if err := writeListedTable(e, tw, manifest, "permission_targets", targets, err); err != nil {
 		return err

@@ -57,14 +57,6 @@ type BlobStore interface {
 	PresignURL(ctx context.Context, sha256 string, ttl time.Duration) (string, error)
 }
 
-// RepeatingLister is implemented by stores whose List can return the same blob
-// id more than once (a store spanning several tiers, where a blob mid-move is on
-// two of them). Callers that must visit each blob once deduplicate when
-// ListMayRepeat reports true.
-type RepeatingLister interface {
-	ListMayRepeat() bool
-}
-
 // StorageConfig contains configuration for blob storage.
 type StorageConfig struct {
 	// Type selects the storage backend.

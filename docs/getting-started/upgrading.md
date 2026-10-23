@@ -124,6 +124,15 @@ Migrations `028` (delta patch blob index), `029` and `031` (audit actions). Chan
 
 Migration `032` adds `blobs.last_accessed_at` and `blobs.tier_changed_at` (nullable, no rewrite), the tables `storage_tiers`, `storage_policies` and `storage_tier_moves`, and seeds the tier `hot`, which is the configured primary store. `032_storage_tiers_indexes` builds an index with `CREATE INDEX CONCURRENTLY` (re-runnable); migration `034_blobs_tier_promote_index` replaces it with the ordered partial index `idx_blobs_tier_promote` (also concurrent, re-runnable) that serves promote-on-read, and drops the old `idx_blobs_tier_reads`. Reads are recorded only while a cold tier exists. Nothing moves until you add a tier and a policy: with only `hot` the mover is a no-op and every blob keeps its placement. Download times start being recorded after the upgrade, so an idle-based policy treats older blobs as "idle since creation". New settings: `tiering.*` ([configuration](configuration.md)). See [storage tiers](../operations/storage-tiering.md).
 
+#### Consistent backups and deferred blob deletion (migration `035`)
+
+Migration `035` adds the tables `blob_deletions` and `backup_leases` (no rewrite of existing tables). Behaviour changes:
+
+- `full` backups read all records from one database snapshot and the blobs from the `blobs` table of that snapshot instead of listing the store, so they work on S3, GCS, Azure and OCI too. A backup holds a database transaction and up to five connections while it runs; keep `idle_in_transaction_session_timeout` off or longer than your longest backup. The manifest gains `snapshot_at` and `blob_count`.
+- Deleting a blob no longer removes its bytes at once: they are queued and removed by a sweeper after `blobDeletion.grace` (default `24h`) and once no running backup needs them. Disk and bucket usage therefore fall up to a day after a delete or purge. Set `OPENARTIFACT_BLOB_DELETION_GRACE=0` to remove bytes as soon as no backup needs them. The same applies to the old copy left by a storage tier move.
+- New settings: `backup.leaseTtl`, `blobDeletion.grace`, `blobDeletion.sweepInterval`, `blobDeletion.sweepBatch` ([configuration](configuration.md)).
+- Mixed versions during a rolling update: an older replica still deletes bytes at once, so run no full backup until every replica runs this version.
+
 #### Database indexes and the `pg_trgm` extension
 
 Migration `030` needs the PostgreSQL `pg_trgm` extension (`CREATE EXTENSION IF NOT EXISTS pg_trgm`). It is a trusted extension since PostgreSQL 13, so the database owner can create it; it ships in the official `postgres` images and in the `postgresql-contrib` package of distributions that split it. On a managed service, allow-list it first, or run `CREATE EXTENSION pg_trgm` as an administrator before the upgrade. Without it the migration fails and the server exits at startup.

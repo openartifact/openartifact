@@ -64,6 +64,8 @@ func TestPassMovesOnlyWhatPoliciesSelect(t *testing.T) {
 		t.Errorf("stats = %+v, want exactly the old blob moved", st)
 	}
 
+	r.sweep()
+
 	if hot, cold, placement := r.where(oldSha); placement != testColdBackend || hot || !cold {
 		t.Errorf("old blob: placement=%q hot=%v cold=%v", placement, hot, cold)
 	}

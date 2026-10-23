@@ -42,16 +42,14 @@ func TestBlobReferencesCoverMetadataAndDeltas(t *testing.T) {
 			t.Fatalf("%s: BlobReferenceCount = %d, %v; want 1", name, n, err)
 		}
 
-		deleted := false
-
-		removed, err := pg.DeleteBlobIfUnreferenced(ctx, sha, func(context.Context) error {
-			deleted = true
-
-			return nil
-		})
-		if err != nil || removed || deleted {
-			t.Fatalf("%s: DeleteBlobIfUnreferenced = %v, %v (storage deleted: %v); want kept", name, removed, err, deleted)
+		removed, err := pg.DeleteBlobIfUnreferenced(ctx, sha)
+		if err != nil || removed {
+			t.Fatalf("%s: DeleteBlobIfUnreferenced = %v, %v; want kept", name, removed, err)
 		}
+	}
+
+	if n, err := pg.CountBlobDeletions(ctx); err != nil || n != 0 {
+		t.Fatalf("referenced blobs queued %d deletions (err %v), want 0", n, err)
 	}
 
 	// Only the blob nothing points at is an orphan.
@@ -72,14 +70,12 @@ func TestBlobReferencesCoverMetadataAndDeltas(t *testing.T) {
 	}
 
 	ghost := strings.Repeat("f", 64)
-	deleted := false
+	removed, err := pg.DeleteBlobIfUnreferenced(ctx, ghost)
+	if err != nil || !removed {
+		t.Fatalf("unreferenced sha without a blobs row: removed=%v err=%v; want removed", removed, err)
+	}
 
-	removed, err := pg.DeleteBlobIfUnreferenced(ctx, ghost, func(context.Context) error {
-		deleted = true
-
-		return nil
-	})
-	if err != nil || !removed || !deleted {
-		t.Fatalf("unreferenced sha without a blobs row: removed=%v deleted=%v err=%v; want storage delete", removed, deleted, err)
+	if n, err := pg.CountBlobDeletions(ctx); err != nil || n != 1 {
+		t.Fatalf("queued deletions = %d (err %v), want the ghost's bytes queued", n, err)
 	}
 }

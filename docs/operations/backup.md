@@ -15,6 +15,9 @@ Everything is admin only (403 otherwise) and available from the UI (Admin, Backu
 | Environment variable | YAML key | Default |
 |---|---|---|
 | `OPENARTIFACT_BACKUP_DIR` | `backup.backupDir` | `/var/lib/openartifact/backups` |
+| `OPENARTIFACT_BACKUP_LEASE_TTL` | `backup.leaseTtl` | `5m` |
+
+`leaseTtl` is how long a running backup's [lease](#consistency-without-locks) stays valid without a heartbeat. The backup renews it every third of that period; it only matters after a crash, when the lease of the dead backup expires after this time and deferred blob deletions can proceed. Must be positive.
 
 The directory is created with mode `0755`; archives are written `0600` as `backup_<jobID>.tar.gz` (first to a `.tmp` file, then renamed). In the compose file it is the named volume `backups_data` mounted at `/var/lib/openartifact/backups`, and `make docker-run` mounts `openartifact_backups` there. Mount a persistent volume or bind mount in any other deployment, otherwise backups vanish with the container.
 
@@ -24,11 +27,11 @@ The directory is created with mode `0755`; archives are written `0600` as `backu
 |---|---|
 | `<table>.jsonl` | one JSON array per table (despite the extension it is not JSON Lines) |
 | `blobs/<sha256>` | one entry per stored blob, `full` backups only |
-| `manifest.json` | written last: `version` (`1.0`), `created_at`, `type`, `table_counts` |
+| `manifest.json` | written last: `version` (`1.0`), `created_at`, `type`, `table_counts`, and for `full` backups `snapshot_at` (when the database snapshot was taken) and `blob_count` (blobs the snapshot lists) |
 
 Backup types, passed as `type`:
 
-- `full`: records and all blobs. Needs a backend that can list its blobs: filesystem, S3, GCS and Azure can; the OCI backend cannot, and a `full` backup on it fails with a clear error (use `metadata-only` plus your registry's own backup).
+- `full`: records and all blobs. Blobs are taken from the `blobs` table of the backup's database snapshot and read through the configured store (across [storage tiers](storage-tiering.md)), so it works on every backend, including S3, GCS, Azure and OCI. The blob store is never listed.
 - `metadata-only`: records only. Restoring it needs the blobs to be present in the target store already.
 
 There is no incremental backup: every archive is complete for its type, and any other `type` (including `incremental`) is refused with 400.
@@ -41,7 +44,7 @@ Tables exported:
 - Per format: Debian distributions, components and architectures with deb packages; rpm, Helm, PyPI, NuGet, Cargo, RubyGems, Conan, Ivy, sbt, raw, Docker (blobs, manifests, tags), npm (packages, versions, dist-tags), Maven, Conda and Go module records.
 - Per repository: cleanup policies, SBOM, license, secret and vulnerability scan results, AI analyses.
 
-Not included: artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed list call for any exported table (or an unreadable blob that is not simply missing) fails the job instead of producing an archive with silent gaps; the job's `error_message` names the table. A blob that disappeared between listing and reading is skipped. Blobs are enumerated in pages, so memory use does not grow with the blob count. The archive is flushed and closed before the job is marked `completed`; a failed write marks the job `failed` and removes the partial file.
+Not included: artifact properties, sessions, the audit log, webhook delivery history, GPG keys and AI provider settings. Re-create them after a restore. A failed read of any exported table fails the job instead of producing an archive with silent gaps; the job's `error_message` names the table. So does a blob that is missing from the store, a blob whose bytes do not match their sha256, and an archive that holds fewer blobs than the snapshot lists (`blob_count`). Blobs are enumerated in pages ordered by sha256, so memory use does not grow with the blob count. Generated metadata (maven `maven-metadata.xml`, rpm `repodata`, deb `dists/`) has no `blobs` row and is not in the archive; the restore regenerates it. The archive is flushed and closed before the job is marked `completed`; a failed write marks the job `failed` and removes the partial file.
 
 ### Secrets in the archive
 
@@ -89,7 +92,17 @@ Call the create route from an external scheduler and copy the archive off the ho
 
 Use a token owned by an admin user ([authentication](../security/authentication.md)). Prune old `backup_*.tar.gz` files from the backup directory yourself: there is no delete route, and job rows stay in the list.
 
-The export reads table after table; it is not a single database snapshot, so artifacts uploaded while a backup runs may be only partly captured.
+## Consistency without locks
+
+A `full` or `metadata-only` backup reads all records from one PostgreSQL snapshot (a `REPEATABLE READ`, read-only transaction exported with `pg_export_snapshot`), so the tables agree with each other and the manifest's `snapshot_at` is the point in time the archive represents. Uploads, deletes and tier moves keep running while it works: nothing is locked, and anything that happens after the snapshot is simply not in the archive.
+
+The blobs the snapshot lists must still exist when the backup reads them, so physical blob deletion is deferred:
+
+- A backup registers a **lease** (`backup_leases`) with its snapshot, renews it while it runs and removes it when it ends, whether it succeeded or failed. A backup that crashed leaves its lease behind; it expires after `backup.leaseTtl`.
+- Deleting a blob (the last package referencing it was removed, a cleanup or purge) removes its database row at once but only **queues** the bytes (`blob_deletions`). The same goes for the old copy left behind by a [tier move](storage-tiering.md#deferred-removal-of-the-old-copy).
+- The blob deletion sweeper deletes queued bytes after the [grace period](storage.md#deferred-blob-deletion) and only when no live lease's snapshot can still list the blob. It runs on every replica without a global lock (rows are claimed with `FOR UPDATE SKIP LOCKED`) and re-checks, under the per-blob lock, that the blob is still unreferenced before it deletes anything. A blob uploaded again meanwhile keeps its bytes.
+
+A backup holds a database transaction for its whole duration and uses up to five connections: one taken from the pool for the snapshot and up to four dedicated ones, outside the pool limit, that join the same snapshot. Keep `idle_in_transaction_session_timeout` off (the PostgreSQL default) or longer than the longest backup, otherwise the server terminates the snapshot and the job fails. Long backups also hold back the PostgreSQL vacuum horizon, as any long transaction does.
 
 ## Restore
 
@@ -128,7 +141,8 @@ The compose service runs with a read-only root filesystem and `tmpfs` on `/tmp`.
 
 ## Limits
 
-- On S3-family backends (`s3`, `garage`, `seaweedfs`, `gcs`) the blob listing returns keys of the form `ab/cd/<sha256>`, which the blob-ID check rejects, so a `full` backup that reaches the first blob ends as `failed`. On `azure` and `oci` the blob listing is empty, so a `full` backup silently holds no blobs. Only the filesystem backend exports blobs correctly today. For the others, back up the bucket or registry with its own tooling and use `metadata-only` for the records.
+- Blob bytes of deleted packages stay in the store for the [deletion grace period](storage.md#deferred-blob-deletion) (default 24 h), so storage is freed later than the delete.
+- Restore does not compare the archive's blob count with `blob_count`; each blob is checked against its sha256 as before.
 - `oa backup restore <id>` sends JSON, but the server requires the multipart `file` upload described above, so it fails with 400. Use curl or the UI.
 - `oa backup create --help` lists `full|metadata`; the server accepts `metadata-only`.
 - Lists are read in one call of up to 100000 rows per table.

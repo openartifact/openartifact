@@ -86,3 +86,35 @@ func TestCollectOrphanBlobsNoopWithoutLister(t *testing.T) {
 		t.Errorf("removed=%d err=%v; want a no-op", removed, err)
 	}
 }
+
+// queueingDB has the deferred-deletion path: SafeDeleteBlob must hand the blob
+// to it and leave the bytes alone.
+type queueingDB struct {
+	database.BaseMockDB
+
+	queued []string
+}
+
+func (d *queueingDB) DeleteBlobIfUnreferenced(_ context.Context, sha string) (bool, error) {
+	d.queued = append(d.queued, sha)
+
+	return true, nil
+}
+
+func TestSafeDeleteBlobDefersByteRemovalToTheQueue(t *testing.T) {
+	sha := strings.Repeat("a", 64)
+	db := &queueingDB{}
+	store := &deleteRecorder{}
+
+	if err := SafeDeleteBlob(context.Background(), db, store, sha); err != nil {
+		t.Fatalf("SafeDeleteBlob: %v", err)
+	}
+
+	if len(db.queued) != 1 || db.queued[0] != sha {
+		t.Errorf("queued = %v, want [%s]", db.queued, sha)
+	}
+
+	if len(store.deleted) != 0 {
+		t.Errorf("SafeDeleteBlob deleted bytes immediately: %v", store.deleted)
+	}
+}

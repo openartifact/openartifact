@@ -117,11 +117,29 @@ The filesystem store writes to a `blob-upload-*.tmp` file inside `STORAGE_PATH`,
 Identical content is stored once, across all repositories and formats. Rows in the database reference blobs by digest, and a blob is removed only when nothing references it:
 
 - With the default [trash](trash.md) retention, deleting an artifact only marks its row as deleted: the row still references its blob, so nothing is freed until the item is purged (or the repository's retention is `0`). Purging then follows the path below.
-- Permanently deleting an artifact deletes its database row first, then calls `storage.SafeDeleteBlob`, which removes the blob only if its reference count is zero. The check and the delete run under an advisory lock that uploaders also take, so a concurrent upload of the same content cannot lose its blob.
+- Permanently deleting an artifact deletes its database row first, then calls `storage.SafeDeleteBlob`, which removes the `blobs` row only if its reference count is zero and queues the bytes for [deferred deletion](#deferred-blob-deletion). The check and the row delete run in one transaction under an advisory lock that uploaders also take, so a concurrent upload of the same content cannot lose its blob.
 - Docker manifests and layers that lose their tag are reclaimed by [registry garbage collection](../formats/docker.md#garbage-collection), which releases blobs through the same path.
 - The cleanup worker also collects orphans: unreferenced blobs older than 1 hour, in batches of 500. The scan walks the `blobs` table in windows of 20 000 rows with a persistent cursor (a pass covers up to 50 windows, the next pass continues), checking references with an indexed anti-join, so blobs that cannot be deleted never starve the rest and large tables are not rescanned from the start. Only one replica runs it at a time. Superseded and orphaned generated-metadata blobs (maven `maven-metadata.xml`) are freed when they are replaced or when their repository is deleted or purged. Policies that decide which artifacts to delete are in [cleanup and quotas](../repositories/cleanup-and-quotas.md).
 
 Because blobs are shared, deleting a repository frees disk only for content no other repository holds.
+
+### Deferred blob deletion
+
+Deleting a blob's row and deleting its bytes are separate steps. The bytes of an unreferenced blob (and the old copy of a blob [moved between tiers](storage-tiering.md#deferred-removal-of-the-old-copy)) are queued in the `blob_deletions` table and removed by the **blob deletion sweeper**, so a running [backup](backup.md#consistency-without-locks) never finds a blob of its snapshot missing. An entry is deleted when all of this holds:
+
+- `blobDeletion.grace` has passed since it was queued (default 24 h; `0` removes it as soon as the other conditions hold);
+- no live backup lease belongs to a snapshot that may still list the blob (the lease of a crashed backup expires after `backup.leaseTtl`);
+- under the per-blob lock the blob is still unreferenced: no `blobs` row exists again and no package, metadata or delta row references it, or, for an old tier copy, the blob is not placed on that backend. A blob uploaded again during the grace period keeps its bytes and the entry is dropped.
+
+An object that is already gone counts as deleted. A failed delete leaves the entry queued and it is retried after its claim expires (a few minutes). Every replica runs the sweeper; entries are claimed in batches with `FOR UPDATE SKIP LOCKED`, so replicas never process an entry twice and nothing is globally locked.
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_BLOB_DELETION_GRACE` | `blobDeletion.grace` | `24h` | minimum time between deleting a blob and removing its bytes; `0` = no grace; must not be negative |
+| `OPENARTIFACT_BLOB_DELETION_SWEEP_INTERVAL` | `blobDeletion.sweepInterval` | `1m` | how often the sweeper runs; `0` disables it on this replica |
+| `OPENARTIFACT_BLOB_DELETION_SWEEP_BATCH` | `blobDeletion.sweepBatch` | `200` | entries claimed per pass; must be positive |
+
+Consequences: storage is freed after the grace period rather than at the delete (disk usage and bucket size lag behind `delete`), and the repository [storage quota](../repositories/cleanup-and-quotas.md#what-counts), which counts package rows, is released at the delete as before. The queue length is exported as `openartifact_blob_deletions_pending` ([monitoring](monitoring.md#metrics)). Bytes that no row references and that were never queued (a crashed upload) are still found by the orphan collector, which queues them the same way.
 
 ## Presigned URLs
 

@@ -37,6 +37,9 @@ var (
 	errNegativeDockerGCGrace    = errors.New("workers.dockerGcGracePeriod must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
+	errBlobDeletionBatch        = errors.New("blobDeletion.sweepBatch must be at least 1")
+	errBlobDeletionNegative     = errors.New("blobDeletion.grace must not be negative")
+	errBackupLeaseTTL           = errors.New("backup.leaseTtl must be positive")
 	errTieringBatch             = errors.New("tiering.batch and tiering.concurrency must be at least 1")
 	errTieringNegative          = errors.New("tiering.maxBytesPerSecond, accessFlushInterval and refreshInterval must not be negative")
 	errTieringPoolSize          = errors.New("database.maxOpenConns must be 0 (driver default) or at least 4 while tiering.enabled is true: a mover pass pins one connection for its cluster lock, and blob-lock transactions need two each")
@@ -60,9 +63,11 @@ type Config struct {
 	MCP      MCPConfig               `yaml:"mcp"`
 	Workers  WorkersConfig           `yaml:"workers"`
 	Trash    TrashConfig             `yaml:"trash"`
-	Tiering  TieringConfig           `yaml:"tiering"`
-	Projects ProjectsConfig          `yaml:"projects"`
-	BaseURL  string                  `yaml:"baseUrl"`
+	// BlobDeletion tunes the deferred deletion of blob bytes.
+	BlobDeletion BlobDeletionConfig `yaml:"blobDeletion"`
+	Tiering      TieringConfig      `yaml:"tiering"`
+	Projects     ProjectsConfig     `yaml:"projects"`
+	BaseURL      string             `yaml:"baseUrl"`
 }
 
 // ProjectsConfig tunes project self-service (see docs/security/projects.md).
@@ -209,6 +214,27 @@ type GPGConfig struct {
 // BackupConfig contains backup configuration.
 type BackupConfig struct {
 	BackupDir string `yaml:"backupDir"` // Directory to store backup files
+	// LeaseTTL is how long a running backup's hold on deleted blob bytes
+	// survives without a heartbeat. A running backup renews it every third of
+	// this; a crashed backup stops holding deletions back once it expires.
+	LeaseTTL time.Duration `yaml:"leaseTtl"`
+}
+
+// BlobDeletionConfig tunes the deferred deletion of blob bytes (see
+// docs/operations/storage.md). Deleting a blob (or retiring a tier copy)
+// removes its database row at once but queues its bytes, which a sweeper
+// removes after the grace period and once no running backup can still need
+// them; storage is freed then, not at the delete.
+type BlobDeletionConfig struct {
+	// Grace is how long the bytes of a deleted blob are kept before they may be
+	// removed. During it a re-upload of the same content reuses them. Zero
+	// removes them as soon as no running backup needs them.
+	Grace time.Duration `yaml:"grace"`
+	// SweepInterval is the pause between sweeper passes. Zero or negative
+	// disables the schedule (the queue then only grows).
+	SweepInterval time.Duration `yaml:"sweepInterval"`
+	// SweepBatch is how many queued deletions a sweeper claims at a time.
+	SweepBatch int `yaml:"sweepBatch"`
 }
 
 // AIConfig contains AI analysis configuration.
@@ -333,6 +359,12 @@ func defaultConfig() *Config {
 		},
 		Backup: BackupConfig{
 			BackupDir: "/var/lib/openartifact/backups",
+			LeaseTTL:  5 * time.Minute,
+		},
+		BlobDeletion: BlobDeletionConfig{
+			Grace:         24 * time.Hour,
+			SweepInterval: time.Minute,
+			SweepBatch:    200,
 		},
 		AI: AIConfig{
 			Enabled:      false,
@@ -477,6 +509,12 @@ func applyEnvOverrides(cfg *Config) {
 
 	// Backup config
 	overrideString(&cfg.Backup.BackupDir, "OPENARTIFACT_BACKUP_DIR")
+	overrideDuration(&cfg.Backup.LeaseTTL, "OPENARTIFACT_BACKUP_LEASE_TTL")
+
+	// Deferred blob deletion
+	overrideDuration(&cfg.BlobDeletion.Grace, "OPENARTIFACT_BLOB_DELETION_GRACE")
+	overrideDuration(&cfg.BlobDeletion.SweepInterval, "OPENARTIFACT_BLOB_DELETION_SWEEP_INTERVAL")
+	overrideInt(&cfg.BlobDeletion.SweepBatch, "OPENARTIFACT_BLOB_DELETION_SWEEP_BATCH")
 
 	// AI config
 	overrideBool(&cfg.AI.Enabled, "AI_ENABLED")
@@ -597,6 +635,10 @@ func (c *Config) Validate() error {
 		return err
 	}
 
+	if err := c.validateBlobRetention(); err != nil {
+		return err
+	}
+
 	if c.Database.MaxOpenConns < 0 || c.Database.MaxOpenConns == 1 {
 		return errMaxOpenConnsTooSmall
 	}
@@ -633,6 +675,23 @@ func (c *Config) validateTiering() error {
 	// advisory lock) that database.maxOpenConns does not account for.
 	if t.Enabled && c.Database.MaxOpenConns > 0 && c.Database.MaxOpenConns < minTieringOpenConns {
 		return errTieringPoolSize
+	}
+
+	return nil
+}
+
+// validateBlobRetention checks the deferred blob deletion and backup lease settings.
+func (c *Config) validateBlobRetention() error {
+	if c.BlobDeletion.Grace < 0 {
+		return errBlobDeletionNegative
+	}
+
+	if c.BlobDeletion.SweepBatch < 1 {
+		return errBlobDeletionBatch
+	}
+
+	if c.Backup.LeaseTTL <= 0 {
+		return errBackupLeaseTTL
 	}
 
 	return nil

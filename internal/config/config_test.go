@@ -889,3 +889,65 @@ func TestValidate_Tiering(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_BlobDeletionAndBackupLeaseDefaultsAndEnv(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if d := cfg.BlobDeletion; d.Grace != 24*time.Hour || d.SweepInterval != time.Minute || d.SweepBatch != 200 {
+		t.Errorf("unexpected blob deletion defaults: %+v", d)
+	}
+
+	if cfg.Backup.LeaseTTL != 5*time.Minute {
+		t.Errorf("backup lease TTL default = %v, want 5m", cfg.Backup.LeaseTTL)
+	}
+
+	t.Setenv("OPENARTIFACT_BLOB_DELETION_GRACE", "0s")
+	t.Setenv("OPENARTIFACT_BLOB_DELETION_SWEEP_INTERVAL", "10s")
+	t.Setenv("OPENARTIFACT_BLOB_DELETION_SWEEP_BATCH", "7")
+	t.Setenv("OPENARTIFACT_BACKUP_LEASE_TTL", "90s")
+
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if want := (BlobDeletionConfig{Grace: 0, SweepInterval: 10 * time.Second, SweepBatch: 7}); cfg.BlobDeletion != want {
+		t.Errorf("blob deletion = %+v, want %+v", cfg.BlobDeletion, want)
+	}
+
+	if cfg.Backup.LeaseTTL != 90*time.Second {
+		t.Errorf("backup lease TTL = %v, want 90s", cfg.Backup.LeaseTTL)
+	}
+}
+
+func TestValidate_BlobRetention(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(c *Config)
+		ok     bool
+	}{
+		{"defaults", func(*Config) {}, true},
+		{"grace zero means immediate", func(c *Config) { c.BlobDeletion.Grace = 0 }, true},
+		{"negative grace", func(c *Config) { c.BlobDeletion.Grace = -time.Second }, false},
+		{"schedule disabled", func(c *Config) { c.BlobDeletion.SweepInterval = 0 }, true},
+		{"zero batch", func(c *Config) { c.BlobDeletion.SweepBatch = 0 }, false},
+		{"zero lease TTL", func(c *Config) { c.Backup.LeaseTTL = 0 }, false},
+		{"negative lease TTL", func(c *Config) { c.Backup.LeaseTTL = -time.Second }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			tc.mutate(cfg)
+
+			if err := cfg.validateBlobRetention(); (err == nil) != tc.ok {
+				t.Errorf("validateBlobRetention() = %v, want ok=%v", err, tc.ok)
+			}
+		})
+	}
+}

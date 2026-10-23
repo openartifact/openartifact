@@ -31,6 +31,12 @@ type Registry struct {
 	TierMovesTotal      *prometheus.CounterVec
 	TierMovedBytesTotal *prometheus.CounterVec
 	TierMovesPending    prometheus.Gauge
+
+	// Deferred blob deletion: bytes of deleted blobs and retired tier copies
+	// wait in a queue until the grace period has passed and no running backup
+	// can still need them.
+	BlobDeletionsPending prometheus.Gauge
+	BlobDeletionsSwept   *prometheus.CounterVec
 }
 
 // NewRegistry creates all metrics, registers them on the default Prometheus
@@ -113,6 +119,15 @@ func NewRegistry() *Registry {
 			Name: "openartifact_storage_tier_moves_pending",
 			Help: "Tier moves left in the journal (interrupted or failed, awaiting recovery).",
 		}),
+
+		BlobDeletionsPending: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "openartifact_blob_deletions_pending",
+			Help: "Blob copies queued for deletion (in their grace period, or held back by a running backup).",
+		}),
+		BlobDeletionsSwept: prometheus.NewCounterVec(prometheus.CounterOpts{
+			Name: "openartifact_blob_deletions_swept_total",
+			Help: "Queued blob deletions the sweeper finished, by result: deleted (bytes removed) or kept (the blob was re-uploaded or the copy is authoritative again).",
+		}, []string{"result"}),
 	}
 
 	prometheus.MustRegister(
@@ -131,6 +146,8 @@ func NewRegistry() *Registry {
 		r.TierMovesTotal,
 		r.TierMovedBytesTotal,
 		r.TierMovesPending,
+		r.BlobDeletionsPending,
+		r.BlobDeletionsSwept,
 	)
 
 	return r
