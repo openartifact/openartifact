@@ -129,7 +129,7 @@ Indexes that clients read from the database (maven, pypi, nuget, cargo, rubygems
 - **Quarantine.** An item that is quarantined in its source repository is refused with `403 ARTIFACT_QUARANTINED`.
 - A source artifact that no longer exists (deleted, trashed or purged since the bundle was built) is `409 artifact_missing`.
 
-The error body names the offending item (`sha256` and path). Unsupported or mismatched formats are `400 validation_failed`.
+A docker image whose layer references are not indexed yet (registry GC records them), or whose tag changed during the promotion, is `409 conflict`: retry later. The error body names the offending item (`sha256` and path). Unsupported or mismatched formats are `400 validation_failed`.
 
 ### Response and side effects
 

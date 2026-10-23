@@ -155,6 +155,8 @@ func (h *BundlesHandler) writePromoteError(w http.ResponseWriter, bundle *models
 		writeError(w, http.StatusConflict, "conflict", "bundle was changed by a concurrent request; reload it and retry")
 	case errors.Is(err, promote.ErrEmpty):
 		writeError(w, http.StatusConflict, "conflict", "bundle has no items")
+	case errors.Is(err, promote.ErrDockerNotIndexed), errors.Is(err, promote.ErrDockerTagChanged):
+		writeError(w, http.StatusConflict, "conflict", "a docker image is not ready to be promoted (its references are not indexed yet, or a tag changed concurrently); retry later"+which)
 	case errors.Is(err, promote.ErrFormatMismatch), errors.Is(err, promote.ErrNotHosted),
 		errors.Is(err, promote.ErrSameRepository), errors.Is(err, promote.ErrUnsupportedFormat):
 		writeError(w, http.StatusBadRequest, "validation_failed", promoteInvalidMessage(err)+which)

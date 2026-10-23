@@ -45,6 +45,8 @@ func TestWritePromoteErrorMapsEveryFailure(t *testing.T) {
 		{"concurrent change", promote.ErrStageChanged, http.StatusConflict, "conflict", "concurrent"},
 		{"not sealed", promote.ErrBundleState, http.StatusConflict, "conflict", "concurrent"},
 		{"empty", promote.ErrEmpty, http.StatusConflict, "conflict", "no items"},
+		{"docker not indexed", item(promote.ErrDockerNotIndexed), http.StatusConflict, "conflict", "retry later"},
+		{"docker tag changed", item(promote.ErrDockerTagChanged), http.StatusConflict, "conflict", "retry later"},
 		{"format mismatch", item(promote.ErrFormatMismatch), http.StatusBadRequest, "validation_failed", "different formats"},
 		{"not hosted", promote.ErrNotHosted, http.StatusBadRequest, "validation_failed", "hosted"},
 		{"same repository", item(promote.ErrSameRepository), http.StatusBadRequest, "validation_failed", "source repository"},

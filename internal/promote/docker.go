@@ -40,13 +40,13 @@ type dockerPromoter struct{}
 
 func (dockerPromoter) Format() string { return "docker" }
 
-// errDockerNotIndexed: a source manifest whose references registry GC has not
+// ErrDockerNotIndexed: a source manifest whose references registry GC has not
 // recorded yet (pushed before docker_manifest_refs existed or restored from a
 // backup). Promotion cannot know its layers without reading the manifest body.
-var errDockerNotIndexed = errors.New("promote: docker manifest references are not indexed yet (registry GC records them), retry later")
+var ErrDockerNotIndexed = errors.New("promote: docker manifest references are not indexed yet (registry GC records them), retry later")
 
-// errDockerTagChanged: a destination tag vanished while it was being checked.
-var errDockerTagChanged = errors.New("promote: docker tag changed concurrently in the target repository")
+// ErrDockerTagChanged: a destination tag vanished while it was being checked.
+var ErrDockerTagChanged = errors.New("promote: docker tag changed concurrently in the target repository")
 
 type dockerTag struct {
 	ID   string `json:"id"`
@@ -315,7 +315,7 @@ func (r *dockerRun) copyTag(ctx context.Context, root dockerManifest, t dockerTa
 
 	switch {
 	case errors.Is(err, sql.ErrNoRows):
-		return false, fmt.Errorf("docker tag %s:%s: %w", name, t.Name, errDockerTagChanged)
+		return false, fmt.Errorf("docker tag %s:%s: %w", name, t.Name, ErrDockerTagChanged)
 	case err != nil:
 		return false, fmt.Errorf("look up docker tag %s:%s in the target: %w", name, t.Name, err)
 	case digest != root.digest:
@@ -400,7 +400,7 @@ func (r *dockerRun) requireIndexed(ctx context.Context, m dockerManifest) error 
 	}
 
 	if !indexed {
-		return fmt.Errorf("docker manifest %s: %w", m.digest, errDockerNotIndexed)
+		return fmt.Errorf("docker manifest %s: %w", m.digest, ErrDockerNotIndexed)
 	}
 
 	return nil

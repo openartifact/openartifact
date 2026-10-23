@@ -328,8 +328,8 @@ func TestDockerUnindexedSourceIsRefused(t *testing.T) {
 	seedDockerManifest(h, src.ID, blob, dockerSpec{image: dockerTestImage, blobs: []string{"restored layer"}, tags: []string{"1.0"}, unindexed: true})
 
 	_, err := h.promoteOnce(p, Request{Src: src, Dst: dst, SHA256: sha})
-	if !errors.Is(err, errDockerNotIndexed) {
-		t.Fatalf("err = %v, want errDockerNotIndexed", err)
+	if !errors.Is(err, ErrDockerNotIndexed) {
+		t.Fatalf("err = %v, want ErrDockerNotIndexed", err)
 	}
 
 	if n := h.count(`SELECT COUNT(*) FROM docker_manifests WHERE repository_id = $1`, dst.ID); n != 0 {
