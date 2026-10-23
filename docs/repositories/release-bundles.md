@@ -8,9 +8,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 A release bundle is a named, versioned set of artifacts (referenced by SHA-256) that is assembled as a draft, sealed to freeze it, and archived when retired. Promotion pipelines define the ordered stages a bundle is meant to move through.
 
-Promoting a sealed bundle copies its artifacts into the repository of the next pipeline stage ([Promoting a bundle](#promoting-a-bundle)). Sealing can add a GPG signature (see [Signing](#signing-a-bundle)). There is no web UI page for bundles; use the API.
+Promoting a sealed bundle copies its artifacts into the repository of the next pipeline stage ([Promoting a bundle](#promoting-a-bundle)). Sealing can add a GPG signature (see [Signing](#signing-a-bundle)). Everything is also available in the [web UI](#web-ui).
 
 All routes are under `/api/v1` and need an admin principal (`403 forbidden` otherwise). Names and versions are 1-255 bytes, valid UTF-8, without `/`, `\` or control characters.
+
+## Web UI
+
+Administrators find **Release bundles** in the sidebar (`/bundles`).
+
+- **List**: filter by name and state; **New bundle** creates a draft (name, version, description, optional pipeline); **New pipeline** defines the ordered stages, each optionally bound to a repository.
+- **Detail** (`/bundles/{name}/{version}`): summary, the pipeline as a stage trail with the bundle's current stage, the items (format, SHA-256, size, source repository), the vulnerability scan totals of the source repositories (linking to the filtered [vulnerability scans](../security/scanning.md)) and the promotion history.
+- **Draft**: *Add items* (source repository, SHA-256, artifact path, optional format and size), remove items, *Seal* and *Delete*. Sealing offers the registered GPG keys; choosing one signs the manifest.
+- **Sealed**: *Promote* (target stage among the stages after the current one, target repository, notes; a stage bound to a repository fixes the target), *Archive*, and downloads of the *Manifest* and, for a signed bundle, the *Signature*. A server that answers `501` to promotion or signing is reported as unavailable instead of failing silently.
 
 ## Lifecycle
 

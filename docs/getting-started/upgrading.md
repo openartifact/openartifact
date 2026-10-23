@@ -142,6 +142,10 @@ Migration `054` (GPG key management; additive) creates `gpg_keys` and `gpg_key_r
 - `complete` timeouts now scale with the object size (30 minutes plus one second per 20 MiB, at most 6 hours), and promoting an S3 object above 4 GiB uses ranged `UploadPartCopy`.
 - Add an `AbortIncompleteMultipartUpload` lifecycle rule (2 days) to the bucket as defence in depth; the cleanup worker aborts abandoned multipart uploads itself.
 
+#### Release bundles in the web UI
+
+- New admin pages **Release bundles** (`/bundles`, `/bundles/{name}/{version}`): list and filter bundles, create drafts, add and remove items, seal (optionally signing the manifest with a GPG key), promote a sealed bundle to the next pipeline stage, archive, delete drafts, and download the manifest and signature. No API, schema or configuration change. See [release bundles](../repositories/release-bundles.md#web-ui).
+
 ### 0.7.0
 
 Migrations `041` (scan overview index, `CREATE INDEX CONCURRENTLY`), `051` (webhook payload format), `052` (VEX statements) and `053` (license source and unresolved licenses). All are additive; a rolling upgrade from 0.6.0 is fine. Migration `041` is numbered below `051`–`053` on purpose; the migrator applies every file not yet recorded, whatever its number.

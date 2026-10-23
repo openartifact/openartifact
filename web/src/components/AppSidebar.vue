@@ -66,6 +66,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <SidebarLink to="/" :icon="HomeIcon" :label="t('nav.dashboard')" :collapsed="collapsed" />
       <SidebarLink to="/repos" :icon="CubeIcon" :label="t('nav.repositories')" :collapsed="collapsed" />
       <SidebarLink to="/projects" :icon="FolderIcon" :label="t('nav.projects')" :collapsed="collapsed" />
+      <SidebarLink v-if="session.isAdmin" to="/bundles" :icon="TagIcon" :label="t('bundles.nav')" :collapsed="collapsed" />
       <SidebarLink to="/search" :icon="MagnifyingGlassIcon" :label="t('nav.search')" :collapsed="collapsed" />
 
       <!-- SECURITY (admins only: the scan APIs need the manage permission) -->
@@ -179,6 +180,7 @@ import {
   CubeIcon,
   FolderIcon,
   MagnifyingGlassIcon,
+  TagIcon,
   ChevronDownIcon,
   UsersIcon,
   UserGroupIcon,
