@@ -1114,6 +1114,12 @@ func (m *BaseMockDB) AddBundleItems(ctx context.Context, bundleID string, items 
 func (m *BaseMockDB) SealReleaseBundle(ctx context.Context, bundleID, sealedBy string, sealedAt time.Time) (bool, error) {
 	return false, errNotImpl("SealReleaseBundle")
 }
+func (m *BaseMockDB) ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error) {
+	return nil, errNotImpl("ListVulnScanOverview")
+}
+func (m *BaseMockDB) VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error) {
+	return nil, errNotImpl("VulnScanOverviewSummary")
+}
 func (m *BaseMockDB) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
 	return nil, errNotImpl("GetVulnScanResultByID")
 }

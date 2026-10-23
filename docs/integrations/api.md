@@ -156,6 +156,7 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/repositories/{name}/registry-gc` | `POST` (admin): run [Docker registry garbage collection](../formats/docker.md#garbage-collection), optionally as a dry run |
 | `/repositories/{name}/{sbom,vex}` | [SBOMs and VEX](../security/sbom.md) |
 | `/repositories/{name}/{vuln,license,secrets}` | [scanning](../security/scanning.md) (scans, quarantine, license policies) |
+| `/vuln/scans`, `/vuln/scans/summary` | `GET` (admin): [vulnerability scans of all repositories](../security/scanning.md#the-overview-across-repositories), worst first, keyset paging (`cursor`, `has_more`; no total) |
 | `/repositories/{name}/artifacts/...` | [properties](../repositories/properties.md) and property search |
 | `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas |
 | `/repositories/{name}/ai-analysis` | [AI analysis](ai-analysis.md) |

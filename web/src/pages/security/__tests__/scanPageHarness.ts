@@ -5,6 +5,7 @@
 import { spyOn } from 'bun:test'
 import { flushPromises } from '@vue/test-utils'
 import type { VueWrapper } from '@vue/test-utils'
+import { createMemoryHistory, createRouter, type Router } from 'vue-router'
 
 export const REPO = 'main'
 
@@ -14,7 +15,19 @@ const jsonResponse = (body: unknown): Response =>
 export interface RecordedCall {
   method: string
   path: string
+  search: URLSearchParams
   body: unknown
+}
+
+/** A router for a security page, already navigated to `path` (the pages read and write the URL query). */
+export async function makeRouter(path: string): Promise<Router> {
+  const router = createRouter({
+    history: createMemoryHistory(),
+    routes: [{ path: '/:rest(.*)*', component: { template: '<div />' } }],
+  })
+  await router.push(path)
+  await router.isReady()
+  return router
 }
 
 /**
@@ -24,10 +37,12 @@ export interface RecordedCall {
 export function mockSecurityApi(scansPath: string, scans: unknown[], extra: (call: RecordedCall) => unknown = () => ({})) {
   const calls: RecordedCall[] = []
   spyOn(globalThis, 'fetch').mockImplementation(async (input, init) => {
-    const path = new URL(String(input), 'http://localhost').pathname
+    const url = new URL(String(input), 'http://localhost')
+    const path = url.pathname
     const call: RecordedCall = {
       method: (init?.method ?? 'GET').toUpperCase(),
       path,
+      search: url.searchParams,
       body: init?.body ? JSON.parse(String(init.body)) : undefined,
     }
     calls.push(call)

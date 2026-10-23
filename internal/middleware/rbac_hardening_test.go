@@ -87,6 +87,8 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{http.MethodPost, "/api/v1/repositories/app/trash/maven_artifact/restore", routeScope{action: "manage"}, "odd trash shape"},
 		{http.MethodGet, "/api/v1/repositories/a%2Fb/trash", routeScope{action: "manage"}, "escaped repo name falls back to manage"},
 		{http.MethodGet, "/api/v1/trash", routeScope{action: "manage"}, "global trash is administrative"},
+		{http.MethodGet, "/api/v1/vuln/scans", routeScope{action: "manage"}, "the cross-repository scan overview is administrative"},
+		{http.MethodGet, "/api/v1/vuln/scans/summary", routeScope{action: "manage"}, "the overview summary is administrative"},
 		{http.MethodPost, "/api/v1/trash/repository/0b1c2d3e-0000-4000-8000-000000000001/restore", routeScope{action: "manage"}, "global restore is administrative"},
 		{http.MethodDelete, "/api/v1/trash/repository/0b1c2d3e-0000-4000-8000-000000000001", routeScope{action: "manage"}, "global purge is administrative"},
 		{http.MethodGet, "/api/v1/admin/users", routeScope{action: "manage"}, "admin api"},

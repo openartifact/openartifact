@@ -564,3 +564,59 @@ type ProjectActivityPage struct {
 	HasMore    bool                   `json:"has_more"`
 	NextCursor string                 `json:"next_cursor,omitempty"`
 }
+
+// VulnScanOverviewRowResponse is one scan of the cross-repository overview:
+// a VulnScanResultResponse without its findings, with the repository's name
+// and format.
+type VulnScanOverviewRowResponse struct {
+	ID               string  `json:"id"`
+	RepositoryID     string  `json:"repo_id"`
+	RepositoryName   string  `json:"repository_name"`
+	RepositoryFormat string  `json:"repository_format"`
+	ArtifactID       string  `json:"artifact_id"`
+	PackageName      string  `json:"package_name"`
+	PackageVersion   string  `json:"package_version"`
+	Ecosystem        string  `json:"ecosystem"`
+	Scanner          string  `json:"scanner"`
+	ScanStatus       string  `json:"scan_status"`
+	VulnCount        int     `json:"vuln_count"`
+	CriticalCount    int     `json:"critical_count"`
+	HighCount        int     `json:"high_count"`
+	MediumCount      int     `json:"medium_count"`
+	LowCount         int     `json:"low_count"`
+	Quarantined      bool    `json:"quarantined"`
+	CreatedAt        string  `json:"created_at"`
+	UpdatedAt        string  `json:"updated_at"`
+	ScannedAt        *string `json:"scanned_at"`
+	// ScanError is a sanitized summary of the failing scanners.
+	ScanError      *string  `json:"scan_error"`
+	FailedScanners []string `json:"failed_scanners"`
+}
+
+// VulnScanOverviewResponse is one keyset page of the overview.
+type VulnScanOverviewResponse struct {
+	Scans   []VulnScanOverviewRowResponse `json:"scans"`
+	HasMore bool                          `json:"has_more"`
+	// NextCursor is the opaque cursor of the next page, present when HasMore.
+	NextCursor *string `json:"next_cursor,omitempty"`
+}
+
+// VulnScanSeverityCounts counts scans by their worst finding: each field is
+// the number of scans with at least one finding of that severity or worse.
+type VulnScanSeverityCounts struct {
+	Critical int `json:"critical"`
+	High     int `json:"high"`
+	Medium   int `json:"medium"`
+	Low      int `json:"low"`
+}
+
+// VulnScanSummaryResponse counts the scans of the overview.
+type VulnScanSummaryResponse struct {
+	Total           int                    `json:"total"`
+	Completed       int                    `json:"completed"`
+	Partial         int                    `json:"partial"`
+	Failed          int                    `json:"failed"`
+	Scanning        int                    `json:"scanning"`
+	Quarantined     int                    `json:"quarantined"`
+	SeverityAtLeast VulnScanSeverityCounts `json:"severity_at_least"`
+}

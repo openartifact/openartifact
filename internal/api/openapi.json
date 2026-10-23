@@ -2149,6 +2149,139 @@
           }
         }
       },
+      "VulnScanOverviewRow": {
+        "type": "object",
+        "description": "A vulnerability scan without its findings (`vulnerabilities`), with the name and format of its repository. Fetch the findings with GET /api/v1/repositories/{name}/vuln/scans/{id}.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repo_id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "repository_name": {
+            "type": "string"
+          },
+          "repository_format": {
+            "type": "string",
+            "description": "Format of the repository (npm, pypi, maven, ...)."
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "package_version": {
+            "type": "string"
+          },
+          "ecosystem": {
+            "type": "string"
+          },
+          "scanner": {
+            "type": "string",
+            "description": "One scanner name (osv, trivy or grype) or a sorted comma-joined list such as `osv,trivy`."
+          },
+          "scan_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "scanning",
+              "completed",
+              "partial",
+              "failed"
+            ],
+            "description": "Same meaning as on VulnScanResult."
+          },
+          "vuln_count": {
+            "type": "integer"
+          },
+          "critical_count": {
+            "type": "integer"
+          },
+          "high_count": {
+            "type": "integer"
+          },
+          "medium_count": {
+            "type": "integer"
+          },
+          "low_count": {
+            "type": "integer"
+          },
+          "quarantined": {
+            "type": "boolean"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true
+          },
+          "scan_error": {
+            "type": "string",
+            "nullable": true,
+            "description": "Sanitized summary of the failing scanners."
+          },
+          "failed_scanners": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "VulnScanSummary": {
+        "type": "object",
+        "description": "Counts of the scans in the overview.",
+        "properties": {
+          "total": {
+            "type": "integer"
+          },
+          "completed": {
+            "type": "integer"
+          },
+          "partial": {
+            "type": "integer"
+          },
+          "failed": {
+            "type": "integer"
+          },
+          "scanning": {
+            "type": "integer",
+            "description": "Scans still pending or running."
+          },
+          "quarantined": {
+            "type": "integer"
+          },
+          "severity_at_least": {
+            "type": "object",
+            "description": "Scans with at least one finding of that severity or worse: `high` counts the scans with a critical or a high finding, and so on. Matches the `severity` filter of the list.",
+            "properties": {
+              "critical": {
+                "type": "integer"
+              },
+              "high": {
+                "type": "integer"
+              },
+              "medium": {
+                "type": "integer"
+              },
+              "low": {
+                "type": "integer"
+              }
+            }
+          }
+        }
+      },
       "VulnScanResult": {
         "type": "object",
         "description": "Result of one vulnerability scan of an artifact.",
@@ -5268,6 +5401,163 @@
         "responses": {
           "200": {
             "description": "Artifact quarantined"
+          }
+        }
+      }
+    },
+    "/api/v1/vuln/scans": {
+      "get": {
+        "summary": "List vulnerability scans of all repositories",
+        "description": "Overview of the vulnerability scans of every repository (admin only), worst first: most critical findings, then high, medium and low, then newest, then id. Keyset paging: follow `next_cursor` while `has_more` is true; no row is counted. Rows carry no findings. The cursor is bound to the order, not to the filters: send the same filters with it.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the scans of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Only scans with at least one finding of this severity or worse.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only scans in this state; `scanning` is pending or running.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "completed",
+                "partial",
+                "failed",
+                "scanning"
+              ]
+            }
+          },
+          {
+            "name": "scanner",
+            "in": "query",
+            "description": "Only scans run by this scanner (a scan run by several matches each).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "osv",
+                "trivy",
+                "grype"
+              ]
+            }
+          },
+          {
+            "name": "quarantined",
+            "in": "query",
+            "description": "Only quarantined (`true`) or not quarantined (`false`) scans.",
+            "schema": {
+              "type": "boolean"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 25.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 100
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque `next_cursor` of the previous page.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of scans",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "scans": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VulnScanOverviewRow"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "True when scans follow this page."
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "description": "Pass as `cursor` to fetch the next page. Absent when `has_more` is false."
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or cursor (`validation_failed`)"
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/vuln/scans/summary": {
+      "get": {
+        "summary": "Count vulnerability scans of all repositories",
+        "description": "Totals of the overview by status, quarantine and worst severity (admin only), for every repository or the one named by `repo`.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the scans of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VulnScanSummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid repository name (`validation_failed`)"
+          },
+          "403": {
+            "description": "Admin access required"
           }
         }
       }
