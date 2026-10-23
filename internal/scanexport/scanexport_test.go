@@ -176,7 +176,6 @@ func TestVulnSARIF_EmptyIsAValidRun(t *testing.T) {
 	if len(doc.Runs) != 1 || len(doc.Runs[0].Results) != 0 {
 		t.Fatalf("runs = %+v", doc.Runs)
 	}
-
 }
 
 func TestVulnSARIF_TruncatesToGitHubLimitKeepingWorst(t *testing.T) {
