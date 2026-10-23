@@ -211,7 +211,7 @@ Vulnerability and secret scans can be downloaded for other tools. All export rou
 | Secret scans of a repository | `GET /api/v1/repositories/{name}/secrets/scans/export[?flagged=true]` |
 | One secret scan | `GET /api/v1/repositories/{name}/secrets/scans/{id}/export` |
 
-**SARIF** is 2.1.0 (`application/sarif+json`), checked against the official `sarif-schema-2.1.0.json` in the tests:
+**SARIF** is 2.1.0 (`application/sarif+json`), checked against the official `sarif-schema-2.1.0.json` by an integration-tagged test that fetches it from the OASIS repository:
 
 - One **run** per scanner (`osv`, `trivy`, `grype`; the secret export has one run, `openartifact-secrets`). A scan that ran several scanners stores one merged finding list that does not say which scanner found what, so it gets its own run named after all of them (`osv+trivy`) instead of being duplicated across runs. A `partial` scan marks its run `executionSuccessful: false`; failed and pending scans have no findings and add none. With nothing to report the file holds one empty run.
 - One **rule** per vulnerability id (the CVE/GHSA/OSV id; `helpUri` is `https://osv.dev/vulnerability/<id>`) or per secret type. The severity is the result `level` (critical and high are `error`, medium `warning`, low and unknown `note`) and the rule's `security-severity` property, which GitHub turns into its critical/high/medium/low label: the finding's CVSS score when the scanner gave one, otherwise 9.5, 8.0, 5.5, 3.0 (0.1 for unknown).

@@ -55,10 +55,3 @@ path = [".agents/skills/vue-*/**"]
 precedence = "override"
 SPDX-FileCopyrightText = "2025 hyf0, SerKo <https://github.com/serkodev>"
 SPDX-License-Identifier = "MIT"
-
-# OASIS SARIF 2.1.0 JSON schema, vendored unmodified as a test fixture.
-[[annotations]]
-path = "internal/scanexport/testdata/sarif-schema-2.1.0.json"
-precedence = "override"
-SPDX-FileCopyrightText = "2021 OASIS Open"
-SPDX-License-Identifier = "LicenseRef-OASIS-SARIF"
