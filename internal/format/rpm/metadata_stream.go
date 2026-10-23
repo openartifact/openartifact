@@ -285,11 +285,11 @@ func writePrimaryPackage(o *xmlOut, rf *requiresFilter, p *rpm.Package) {
 	o.raw(`"`)
 	o.emptyClose("size")
 
-	// The element name is capitalised: that is what the reflection-based
-	// encoder derived from the field name and clients are served today.
-	o.open("    ", "Location")
+	// The element is lower-case: libdnf and createrepo_c only recognise
+	// <location>, and cannot download a package listed under any other name.
+	o.open("    ", "location")
 	o.attr("href", "Packages/"+url.PathEscape(p.Name+"-"+p.Version+"-"+p.Release+"."+p.Arch+".rpm"))
-	o.emptyClose("Location")
+	o.emptyClose("location")
 
 	writePrimaryFormat(o, rf, p)
 

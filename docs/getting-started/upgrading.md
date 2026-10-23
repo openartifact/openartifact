@@ -120,6 +120,7 @@ Migration `054` (GPG key management; additive) creates `gpg_keys` and `gpg_key_r
 - **GPG keys are managed at runtime.** `/api/v1/admin/gpg/keys`, `oa gpg` and the **Admin → GPG keys** page now work (they were stubs). A key configured with `gpg.keyPath` keeps signing exactly as before and appears as a read-only `config` entry; a key you activate takes precedence over it. Storing keys requires `OPENARTIFACT_SECRET_KEY`; without it the page shows how to enable it.
 - **`gpg.autoGenerate` now works.** With no key configured and none stored, the first start generates an RSA-4096 key (global, active) and logs its fingerprint. It needs `OPENARTIFACT_SECRET_KEY`; without it a warning is logged and nothing is generated. It was a no-op before, so an existing `GPG_AUTO_GENERATE=true` starts producing a key on upgrade.
 - **APT repositories serve `public.key`.** `HOST/repos/REPO/public.key` used to return `404` for Debian repositories; it now returns the key that signs the repository, from the next metadata regeneration (or when a key is activated).
+- **RPM `primary.xml` lists packages under `<location>`** (it was written as `<Location>`, which dnf cannot download from). Fixed; repositories pick it up when their metadata is next regenerated (any upload or delete, or a key change).
 - **Bundles can be sealed with a GPG signature** (`gpg_key_id`, previously `501`), with `GET .../manifest` and `.../manifest.asc` to verify it.
 
 ### 0.7.0

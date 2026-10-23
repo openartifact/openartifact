@@ -57,7 +57,7 @@ gpg --armor --export <FINGERPRINT> > public.key
 | RPM | `repodata/repomd.xml.asc` (detached, armored) | `HOST/repos/REPO/public.key` |
 | Release bundle | the bundle manifest, as a detached armored signature | `GET /api/v1/admin/gpg/keys/{id}/export` |
 
-Signatures are SHA-256 OpenPGP signatures created whenever a repository's metadata is generated. `public.key` is generated together with the signature, from the key that signed it, and follows key changes (a repository whose key is removed stops serving it). Without a signer, `InRelease`, `Release.gpg`, `repomd.xml.asc` and `public.key` return 404. Ed25519 keys (the default of `generate`) need a recent client (APT ≥ 2.0 / GnuPG ≥ 2.1, RPM ≥ 4.14.1 on RHEL 8+ with the `rpm-sign`-era OpenPGP stack); pick `rsa4096` for old distributions.
+Signatures are SHA-256 OpenPGP signatures created whenever a repository's metadata is generated. `public.key` is generated together with the signature, from the key that signed it, and follows key changes (a repository whose key is removed stops serving it). Without a signer, `InRelease`, `Release.gpg`, `repomd.xml.asc` and `public.key` return 404. Ed25519 keys need a recent verifier (APT with `sqv`/GnuPG ≥ 2.1, DNF5/RPM ≥ 4.14 on current Fedora); pick `rsa4096` for old distributions.
 
 ### Client setup
 
@@ -92,7 +92,7 @@ All routes need the global `manage` permission (admin). Mutations are audited as
 |---|---|
 | `GET /api/v1/admin/gpg/keys` | list keys plus the read-only `config` entry; `can_store_keys` is `false` without `OPENARTIFACT_SECRET_KEY` |
 | `POST /api/v1/admin/gpg/keys` | import `{name?, private_key, passphrase?, activate?}`; a protected key is unlocked with the passphrase and stored without it (sealed) |
-| `POST /api/v1/admin/gpg/keys/generate` | generate `{name?, algorithm?: "ed25519"\|"rsa4096", user_name?, email?, comment?, activate?}` |
+| `POST /api/v1/admin/gpg/keys/generate` | generate `{name?, algorithm?: "ed25519"\|"rsa4096" (default `ed25519`), user_name?, email?, comment?, activate?}` |
 | `PUT /api/v1/admin/gpg/keys/{id}/activate` | `{repository?}`: make the key the global signer, or the signer of one hosted deb/rpm repository |
 | `DELETE /api/v1/admin/gpg/keys/{id}/activate?repository=NAME` | stop signing globally / for that repository |
 | `DELETE /api/v1/admin/gpg/keys/{id}?force=true` | delete; an active key needs `force=true` (otherwise `409 key_in_use`) |

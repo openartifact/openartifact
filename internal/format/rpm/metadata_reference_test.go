@@ -33,7 +33,7 @@ type refPrimaryPackageXML struct {
 	URL         string `xml:"url,omitempty"`
 	Time        refPrimaryTimeXML
 	Size        refPrimarySizeXML
-	Location    locationXML
+	Location    locationXML `xml:"location"`
 	Format      refPrimaryFormatXML
 }
 
