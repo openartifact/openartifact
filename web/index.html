@@ -21,21 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <meta name="apple-mobile-web-app-title" content="OpenArtifact" />
     <meta name="apple-mobile-web-app-status-bar-style" content="default" />
     <title>OpenArtifact</title>
-    <script>
-      // FOUC guard: apply theme before Vue mounts.
-      (function () {
-        try {
-          var raw = localStorage.getItem('oa.theme')
-          var mode = raw ? JSON.parse(raw) : 'auto'
-          if (mode !== 'light' && mode !== 'dark') mode = 'auto'
-          var prefersDark = window.matchMedia && window.matchMedia('(prefers-color-scheme: dark)').matches
-          var dark = mode === 'dark' || (mode === 'auto' && prefersDark)
-          if (dark) document.documentElement.classList.add('dark')
-        } catch (_) {
-          // ignore; default light
-        }
-      })()
-    </script>
+    <script src="/theme-init.js"></script>
   </head>
   <body>
     <div id="app"></div>
