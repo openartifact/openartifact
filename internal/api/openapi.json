@@ -507,7 +507,8 @@
                 "artifact.restored",
                 "artifact.purged",
                 "repository.restored",
-                "repository.purged"
+                "repository.purged",
+                "bundle.promoted"
               ]
             }
           },
@@ -4633,7 +4634,8 @@
                         "artifact.restored",
                         "artifact.purged",
                         "repository.restored",
-                        "repository.purged"
+                        "repository.purged",
+                        "bundle.promoted"
                       ]
                     }
                   },
@@ -6961,7 +6963,8 @@
                         "artifact.restored",
                         "artifact.purged",
                         "repository.restored",
-                        "repository.purged"
+                        "repository.purged",
+                        "bundle.promoted"
                       ]
                     }
                   },
@@ -7096,7 +7099,8 @@
                         "artifact.restored",
                         "artifact.purged",
                         "repository.restored",
-                        "repository.purged"
+                        "repository.purged",
+                        "bundle.promoted"
                       ]
                     }
                   },
@@ -12648,7 +12652,7 @@
     },
     "/api/v1/bundles/{name}/{version}/promote": {
       "post": {
-        "summary": "Promote bundle (not implemented, returns 501)",
+        "summary": "Promote bundle",
         "tags": [
           "Bundles"
         ],
@@ -12692,8 +12696,144 @@
           }
         },
         "responses": {
-          "501": {
-            "description": "501"
+          "200": {
+            "description": "Promoted",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "promotion": {
+                      "type": "object",
+                      "description": "The recorded bundle promotion (status success)"
+                    },
+                    "copied": {
+                      "type": "integer",
+                      "description": "Artifacts newly written to the target"
+                    },
+                    "existing": {
+                      "type": "integer",
+                      "description": "Artifacts the target already held with the same content"
+                    },
+                    "items": {
+                      "type": "array",
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "sha256": {
+                            "type": "string"
+                          },
+                          "artifact_path": {
+                            "type": "string"
+                          },
+                          "format": {
+                            "type": "string"
+                          },
+                          "copied": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                },
+                                "size": {
+                                  "type": "integer",
+                                  "format": "int64"
+                                }
+                              }
+                            }
+                          },
+                          "existing": {
+                            "type": "array",
+                            "items": {
+                              "type": "object",
+                              "properties": {
+                                "name": {
+                                  "type": "string"
+                                },
+                                "version": {
+                                  "type": "string"
+                                },
+                                "path": {
+                                  "type": "string"
+                                },
+                                "sha256": {
+                                  "type": "string"
+                                },
+                                "size": {
+                                  "type": "integer",
+                                  "format": "int64"
+                                }
+                              }
+                            }
+                          }
+                        }
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid request, or an item's repository and the target are not hosted repositories of the same format",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Not an admin; an item is quarantined in its source (ARTIFACT_QUARANTINED); or a license policy of the target blocks it (LICENSE_BLOCKED)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Bundle or target repository not found",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "409": {
+            "description": "Bundle not sealed or changed concurrently; to_stage does not follow the current stage; an item no longer exists in its source repository (artifact_missing); the target holds different content at the same coordinates (artifact_conflict), or the target has immutable releases and the version is a release (immutable_release)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "507": {
+            "description": "The target repository's storage quota would be exceeded (quota_exceeded)",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
           },
           "default": {
             "description": "Error",
@@ -12705,7 +12845,8 @@
               }
             }
           }
-        }
+        },
+        "description": "Copies every item of a sealed bundle into target_repo and moves the bundle to to_stage (admin only). Items are copied as metadata that references the same stored blobs (no bytes are duplicated), in one transaction: either every item lands and the promotion is recorded, or nothing changes. The target's storage quota is charged, its license policies and immutable_releases setting are enforced, and quarantined source artifacts are refused. An artifact already present in the target with the same content counts as existing (so a retry is idempotent); different content at the same coordinates is a 409. Emits the bundle.promoted webhook event."
       }
     },
     "/api/v1/bundles/{name}/{version}/archive": {

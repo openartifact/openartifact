@@ -19,7 +19,9 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/promote"
 	"github.com/openartifact/openartifact/internal/urlparams"
+	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -28,6 +30,8 @@ type BundlesHandler struct {
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	keys      BundleKeyResolver
+	promoter  *promote.Engine
+	publisher webhook.Publisher
 }
 
 const (
@@ -118,7 +122,20 @@ func (h *BundlesHandler) validateStages(ctx context.Context, stages []models.Pip
 }
 
 func NewBundlesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *BundlesHandler {
-	return &BundlesHandler{db: db, log: log, evaluator: evaluator}
+	return &BundlesHandler{db: db, log: log, evaluator: evaluator, promoter: promote.NewEngine(db, log, nil)}
+}
+
+// WithPublisher enables the bundle.promoted webhook event.
+func (h *BundlesHandler) WithPublisher(p webhook.Publisher) *BundlesHandler {
+	h.publisher = p
+	return h
+}
+
+// WithRegenerator enqueues the refresh of generated metadata (deb, rpm and npm
+// indexes) in the target repository after a promotion.
+func (h *BundlesHandler) WithRegenerator(r TrashRegenerator) *BundlesHandler {
+	h.promoter = promote.NewEngine(h.db, h.log, r)
+	return h
 }
 
 func (h *BundlesHandler) RegisterAuthed(r chi.Router) {
@@ -1128,13 +1145,7 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Promotion must copy every bundle item into the target repository, which
-	// needs per-format storage logic (each format keeps its metadata in its own
-	// tables) that does not exist. Report that honestly instead of recording a
-	// "successful" promotion that moved nothing: no promotion row is created
-	// and the bundle's current stage is left untouched.
-	writeError(w, http.StatusNotImplemented, "not_implemented",
-		"bundle promotion (copying artifacts into the target repository) is not implemented")
+	h.promoteBundle(w, r, bundle, targetRepo, body.ToStage, body.Notes)
 }
 
 func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {

@@ -82,11 +82,16 @@ Handler errors share one shape; `details` is only present when a handler adds it
 | `admin_required` | 403 | administrator permission needed |
 | `not_found` | 404 | missing resource, or a repository the caller may not see |
 | `conflict` | 409 | duplicate or state conflict |
+| `immutable_release` | 409 | a bundle promotion would overwrite a released version in a repository with immutable releases ([promotion](../repositories/release-bundles.md#promoting-a-bundle)) |
+| `artifact_conflict` | 409 | a bundle promotion found different content at the same coordinates in the target |
+| `artifact_missing` | 409 | a bundle item is no longer stored in its source repository |
+| `quota_exceeded` | 507 | the target repository's [quota](../repositories/cleanup-and-quotas.md) cannot hold the promoted artifacts |
+| `ARTIFACT_QUARANTINED` | 403 | a bundle promotion was refused because a source artifact is quarantined |
 | `payload_too_large` | 413 | body over the endpoint limit |
 | `rate_limited`, `too_many_scans` | 429 | throttled |
 | `not_implemented` | 501 | endpoint exists but the feature is not available |
 | `internal_error` | 500 | server error; the cause is logged, never returned |
-| `LICENSE_BLOCKED` | 403 | a package upload was rejected by a [license policy](../security/scanning.md#blocking-licenses) with action `block`; the body adds `licenses` and `policies` |
+| `LICENSE_BLOCKED` | 403 | a package upload or bundle promotion was rejected by a [license policy](../security/scanning.md#blocking-licenses) with action `block`; the body adds `licenses` and `policies` |
 | `LICENSE_METADATA_UNSAFE` | 422 | a package upload was refused because its own metadata is oversized or ambiguous, so its licenses cannot be checked ([License metadata](../security/licenses.md#hostile-files)) |
 | `LICENSE_METADATA_UNREADABLE` | 422 | a package upload was refused because the repository has a blocking license policy and the package's license cannot be read from its file ([License metadata](../security/licenses.md#files-whose-license-cannot-be-read)) |
 | `unsafe_artifact` | 422 | a license scan or license property change on a stored package whose metadata cannot be read safely |

@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 A release bundle is a named, versioned set of artifacts (referenced by SHA-256) that is assembled as a draft, sealed to freeze it, and archived when retired. Promotion pipelines define the ordered stages a bundle is meant to move through.
 
-**Promotion is not implemented.** `POST .../promote` validates the request and then answers `501 not_implemented`: no artifacts are copied, no promotion record is written and the bundle's `current_stage` does not change. Everything else below works, including sealing with a GPG signature (see [Signing](#signing-a-bundle)). There is no web UI page for bundles; use the API.
+Promoting a sealed bundle copies its artifacts into the repository of the next pipeline stage ([Promoting a bundle](#promoting-a-bundle)). Sealing can add a GPG signature (see [Signing](#signing-a-bundle)). There is no web UI page for bundles; use the API.
 
 All routes are under `/api/v1` and need an admin principal (`403 forbidden` otherwise). Names and versions are 1-255 bytes, valid UTF-8, without `/`, `\` or control characters.
 
@@ -21,7 +21,7 @@ draft --seal--> sealed --archive--> archived
 | State | Allowed |
 |---|---|
 | `draft` | Add and remove items, delete the bundle, seal. |
-| `sealed` | Frozen: no item changes, no delete. Archive; promotion is validated but returns `501`. |
+| `sealed` | Frozen: no item changes, no delete. Archive, or promote through the pipeline stages. |
 | `archived` | Read only. |
 
 An operation in the wrong state is `409 conflict`. Sealing an empty bundle is `400 validation_failed`. A bundle is unique by `(name, version)` (`409` on duplicates).
@@ -41,8 +41,8 @@ An operation in the wrong state is `409 conflict`. Sealing an empty bundle is `4
 | `GET /api/v1/bundles/{name}/{version}/manifest` | The canonical JSON manifest a signature covers (admin). |
 | `GET /api/v1/bundles/{name}/{version}/manifest.asc` | The armored detached signature (admin); `404` when the bundle was sealed without a key. |
 | `POST /api/v1/bundles/{name}/{version}/archive` | Sealed to archived; records `archived_at`/`archived_by`. |
-| `POST /api/v1/bundles/{name}/{version}/promote` | Validates, then `501` (see above). |
-| `GET /api/v1/bundles/{name}/{version}/promotions` | `{"promotions": [...]}`: the promotion history (always empty while promotion is unimplemented). |
+| `POST /api/v1/bundles/{name}/{version}/promote` | Copy the bundle into a stage's repository ([details](#promoting-a-bundle)). |
+| `GET /api/v1/bundles/{name}/{version}/promotions` | `{"promotions": [...]}`: the promotion history, newest first. |
 
 Each item:
 
@@ -96,9 +96,52 @@ A pipeline is a named, ordered list of stages; each stage has a `name` and an op
 | `PATCH /api/v1/pipelines/{name}` | Update `description` and/or replace `stages`. |
 | `DELETE /api/v1/pipelines/{name}` | Delete (bundles referencing it keep existing, with no pipeline). `204`. |
 
-## What the promote request checks
+## Promoting a bundle
 
-`POST .../promote` with `{"to_stage","target_repo","notes"}` requires a sealed bundle and, before answering `501`, validates that the bundle has a pipeline, `to_stage` is one of its stages and comes after the bundle's `current_stage`, `target_repo` (a repository name) exists, and matches the stage's `repo_id` when one is set.
+`POST /api/v1/bundles/{name}/{version}/promote` with `{"to_stage","target_repo","notes"}` copies every item of a sealed bundle into `target_repo`.
+
+Checks before anything is copied: the bundle is sealed and has a pipeline, `to_stage` is one of its stages and comes after the bundle's `current_stage`, `target_repo` (a repository name) exists and matches the stage's `repo_id` when one is set. The target must be a hosted repository (not a proxy or group), not deleted, of the same format as every item's source repository, and different from it.
+
+A promotion is one database transaction. Either every item is copied, the `bundle_promotions` record is written and `current_stage` moves to `to_stage`, or nothing changes at all: a failed promotion leaves no rows, no quota charge and no history entry, and can simply be retried. Concurrent promotions of the same bundle are serialised; the loser gets `409 conflict`.
+
+### What a copy is
+
+Artifact bytes are content-addressed and stored once. Promotion adds metadata rows in the target that reference the **same blob**; no bytes are read, written or duplicated, and the cost of a promotion does not depend on artifact size. Each item is located in its source repository by SHA-256 (`artifact_path` only narrows the match when several artifacts share the content) and the whole logical artifact is copied, so the target can serve it exactly like a direct upload:
+
+| Format | What is copied for an item |
+|---|---|
+| maven, ivy, sbt, pypi, nuget, cargo, rubygems, conda, helm, raw | The artifact row (file, coordinates, metadata). |
+| npm | The version (with its manifest) and the source dist-tags that point at it; the target package is created if missing, gets a `latest` tag when it has none, and its packument is regenerated. |
+| go | The module version: zip, `go.mod` and `.info`. The item may be the zip or the `go.mod` blob. |
+| conan | The whole recipe revision the file belongs to: recipe files and every binary package revision under it. The copy becomes the newest revision in the target. |
+| docker | The manifest, its config and layer references, the manifest's tags and, for an image index, every child manifest. Blobs the target already holds are not charged again. |
+| deb | The package, plus the distribution, component and architecture rows it needs; the Packages/Release indexes are regenerated. |
+| rpm | The package; the repository's metadata is marked stale and regenerated. Signing keys of the source repository are never copied. |
+
+Indexes that clients read from the database (maven, pypi, nuget, cargo, rubygems, conda, helm, go, conan, docker) need no regeneration; the formats with generated index files (deb, rpm, maven metadata, npm packuments) are refreshed by their background workers right after the promotion commits.
+
+### Rules applied in the target
+
+- **Conflicts.** Promotion never overwrites. An item already present with the same content is skipped, so re-promoting is safe (`existing` in the response). The same coordinates with different content answer `409 artifact_conflict`; when the target has [immutable releases](../operations/trash.md#immutable-releases) and the version is a release, `409 immutable_release`. `?force=true` is not honoured by promotion.
+- **Trash.** Items in the target's trash do not count: a live copy is created next to them.
+- **Quota.** The new artifacts and bytes are charged to the target repository's [quota](cleanup-and-quotas.md); `507 quota_exceeded` if they do not fit. Existing items and blobs already referenced by the target are not charged.
+- **License policy.** The target's [license policies](../security/scanning.md#blocking-licenses) are evaluated against the copied packages; a `block` policy gives `403 LICENSE_BLOCKED`.
+- **Quarantine.** An item that is quarantined in its source repository is refused with `403 ARTIFACT_QUARANTINED`.
+- A source artifact that no longer exists (deleted, trashed or purged since the bundle was built) is `409 artifact_missing`.
+
+The error body names the offending item (`sha256` and path). Unsupported or mismatched formats are `400 validation_failed`.
+
+### Response and side effects
+
+`200` with `{"promotion": {...}, "copied": N, "existing": N, "items": [...]}`. `copied` and `existing` count artifacts (one item can be several, for instance an npm version or a docker image); each entry of `items` has `sha256`, `artifact_path`, `format` and the `copied` and `existing` artifact lists (`name`, `version`, `path`, `sha256`, `size`). The same record is listed by `GET .../promotions` (`status: success`, `completed_at`, `item_count`, `notes`).
+
+A successful promotion is written to the [audit log](../operations/monitoring.md) as `bundle.promoted` (repository: the target) and emits the [`bundle.promoted` webhook event](../operations/webhooks.md) to the target repository's and the global webhooks.
+
+```sh
+curl -X POST HOST/api/v1/bundles/shop/2.4.0/promote -H "Authorization: Bearer <TOKEN>" \
+  -H 'Content-Type: application/json' \
+  -d '{"to_stage":"prod","target_repo":"releases","notes":"Release 2.4.0"}'
+```
 
 ## Effects on other features
 

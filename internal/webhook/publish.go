@@ -36,6 +36,36 @@ func Emit(ctx context.Context, p Publisher, repoID, eventType string, payload ma
 	p.Dispatch(ctx, repoID, eventType, payload)
 }
 
+// BundlePromotion describes a completed release bundle promotion.
+type BundlePromotion struct {
+	Repository string // target repository name
+	Format     string // target repository format
+	Bundle     string // bundle name
+	Version    string // bundle version
+	FromStage  string // stage the bundle left ("" when it had none)
+	ToStage    string // stage the bundle reached
+	Items      int    // bundle items promoted
+	Copied     int    // artifacts newly written to the target
+	Existing   int    // artifacts the target already held with the same content
+}
+
+// BundlePromotedPayload builds the JSON payload of a bundle.promoted event.
+func BundlePromotedPayload(b BundlePromotion) map[string]any {
+	return map[string]any{
+		"event":      EventBundlePromoted,
+		"timestamp":  time.Now().UTC().Format(time.RFC3339),
+		"repository": b.Repository,
+		"format":     b.Format,
+		"type":       "hosted",
+		"bundle":     map[string]any{"name": b.Bundle, "version": b.Version},
+		"from_stage": b.FromStage,
+		"to_stage":   b.ToStage,
+		"items":      b.Items,
+		"copied":     b.Copied,
+		"existing":   b.Existing,
+	}
+}
+
 // Artifact describes the artifact an artifact.* event is about.
 type Artifact struct {
 	Repository string // repository name

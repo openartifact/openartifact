@@ -159,6 +159,8 @@ func eventTitle(event string) string {
 		return "Repository restored"
 	case EventRepoPurged:
 		return "Repository purged"
+	case EventBundlePromoted:
+		return "Bundle promoted"
 	case EventWebhookTest:
 		return "Webhook test"
 	default:
@@ -168,7 +170,7 @@ func eventTitle(event string) string {
 
 func eventSeverity(event string) severity {
 	switch event {
-	case EventArtifactUploaded, EventArtifactRestored, EventRepoCreated, EventRepoRestored:
+	case EventArtifactUploaded, EventArtifactRestored, EventRepoCreated, EventRepoRestored, EventBundlePromoted:
 		return severityGood
 	case EventArtifactDeleted, EventArtifactPurged, EventRepoDeleted, EventRepoPurged:
 		return severityBad
@@ -274,6 +276,15 @@ func summarize(d *models.WebhookDelivery) eventSummary {
 		}
 
 		s.headline = strings.TrimSpace(title + ": " + name + " " + version)
+	} else if bundle, ok := p["bundle"].(map[string]any); ok {
+		name := payloadString(bundle, "name")
+		version := payloadString(bundle, "version")
+		facts = addFact(facts, "Bundle", strings.TrimSpace(name+" "+version))
+		facts = addFact(facts, "Stage", payloadString(p, "to_stage"))
+		facts = addFact(facts, "Copied", payloadString(p, "copied"))
+		facts = addFact(facts, "Already present", payloadString(p, "existing"))
+
+		s.headline = strings.TrimSpace(title + ": " + name + " " + version + " to " + repo)
 	} else if repo != "" {
 		s.headline = title + ": " + repo
 	}

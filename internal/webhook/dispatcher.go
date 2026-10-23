@@ -38,6 +38,10 @@ const (
 	EventArtifactPurged   = "artifact.purged"
 	EventRepoRestored     = "repository.restored"
 	EventRepoPurged       = "repository.purged"
+	// EventBundlePromoted fires once a release bundle has been copied into the
+	// target repository of a pipeline stage. It is delivered to the webhooks of
+	// the target repository and the global ones.
+	EventBundlePromoted = "bundle.promoted"
 )
 
 const (

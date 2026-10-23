@@ -901,7 +901,11 @@ func run(args []string) error {
 	// The retention purge worker is started above; the manual purge lives in
 	// TrashHandler.
 
-	api.NewBundlesHandler(db, log, evaluator).WithGPGKeys(gpgKeys).RegisterAuthed(authedAPI)
+	api.NewBundlesHandler(db, log, evaluator).
+		WithGPGKeys(gpgKeys).
+		WithPublisher(webhookDispatcher).
+		WithRegenerator(api.NewWorkerRegenerator(debWorker, rpmWorker, mavenWorker, npmWorker)).
+		RegisterAuthed(authedAPI)
 
 	sbomGen := sbom.NewGenerator(db, log).WithBlobStore(blobStore).WithToolVersion(version).WithBaseURL(cfg.BaseURL)
 	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, blobStore)

@@ -166,3 +166,40 @@ func TestPollPendingClaimsWithLeaseAndQueuesEachOnce(t *testing.T) {
 		t.Errorf("queue length = %d, want 2 (each claimed delivery queued once)", got)
 	}
 }
+
+func TestBundlePromotedIsSubscribableAndSummarized(t *testing.T) {
+	if !IsSubscribableEvent(EventBundlePromoted) {
+		t.Fatal("bundle.promoted must be subscribable")
+	}
+
+	payload := BundlePromotedPayload(BundlePromotion{
+		Repository: "releases", Format: "maven", Bundle: "shop", Version: "2.4.0",
+		FromStage: "qa", ToStage: "prod", Items: 3, Copied: 2, Existing: 1,
+	})
+
+	if payload["event"] != EventBundlePromoted || payload["repository"] != "releases" || payload["to_stage"] != "prod" ||
+		payload["copied"] != 2 || payload["existing"] != 1 || payload["items"] != 3 {
+		t.Errorf("payload = %v", payload)
+	}
+
+	s := summarize(&models.WebhookDelivery{EventType: EventBundlePromoted, Payload: payload})
+
+	if s.title != "Bundle promoted" || s.severity != severityGood {
+		t.Errorf("title %q severity %v", s.title, s.severity)
+	}
+
+	if s.headline != "Bundle promoted: shop 2.4.0 to releases" {
+		t.Errorf("headline = %q", s.headline)
+	}
+
+	facts := map[string]string{}
+	for _, f := range s.facts {
+		facts[f.name] = f.value
+	}
+
+	for name, want := range map[string]string{"Bundle": "shop 2.4.0", "Stage": "prod", "Copied": "2", "Already present": "1", "Repository": "releases"} {
+		if facts[name] != want {
+			t.Errorf("fact %s = %q, want %q (all: %v)", name, facts[name], want, facts)
+		}
+	}
+}

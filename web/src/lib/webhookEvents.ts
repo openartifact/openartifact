@@ -12,6 +12,7 @@ export const WEBHOOK_EVENTS = [
   'artifact.purged',
   'repository.restored',
   'repository.purged',
+  'bundle.promoted',
 ] as const
 
 export type WebhookEvent = (typeof WEBHOOK_EVENTS)[number]

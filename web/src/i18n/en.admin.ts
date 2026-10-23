@@ -50,6 +50,7 @@ export const enAdmin = {
   'adm.webhooks.event.artifact.purged': 'Triggered when an artifact is permanently purged from the trash',
   'adm.webhooks.event.repository.restored': 'Triggered when a repository is restored from the trash',
   'adm.webhooks.event.repository.purged': 'Triggered when a repository is permanently purged from the trash',
+  'adm.webhooks.event.bundle.promoted': 'Triggered when a release bundle is promoted into the repository of a pipeline stage',
   'adm.webhooks.loadFailed': 'Failed to load webhooks',
   'adm.webhooks.created': 'Webhook created',
   'adm.webhooks.createFailed': 'Failed to create webhook',

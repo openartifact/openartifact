@@ -221,7 +221,7 @@ func TestVulnDeleteScanActuallyDeletes(t *testing.T) {
 	}
 }
 
-func TestBundlePromoteIsNotImplemented(t *testing.T) {
+func TestBundlePromoteRejectsUnknownStage(t *testing.T) {
 	pipelineID := "44444444-4444-4444-4444-444444444444"
 	db := &bundlesScansMockDB{
 		bundle: &models.ReleaseBundle{
@@ -233,18 +233,13 @@ func TestBundlePromoteIsNotImplemented(t *testing.T) {
 	log, ev := newBundlesScansEnv(t, db)
 	h := NewBundlesHandler(db, log, ev)
 
-	rw := serveAs(h.RegisterAuthed, http.MethodPost, "/api/v1/bundles/b/1/promote", `{"to_stage":"prod","target_repo":"target"}`)
-	if rw.Code != http.StatusNotImplemented {
-		t.Fatalf("status = %d, want 501 (%s)", rw.Code, rw.Body.String())
+	rw := serveAs(h.RegisterAuthed, http.MethodPost, "/api/v1/bundles/b/1/promote", `{"to_stage":"nope","target_repo":"target"}`)
+	if rw.Code != http.StatusBadRequest {
+		t.Errorf("unknown stage: status = %d, want 400 (%s)", rw.Code, rw.Body.String())
 	}
 
 	if db.createPromotionCalled || db.updateBundleCalled {
-		t.Error("promotion recorded success/state although nothing was copied")
-	}
-
-	rw = serveAs(h.RegisterAuthed, http.MethodPost, "/api/v1/bundles/b/1/promote", `{"to_stage":"nope","target_repo":"target"}`)
-	if rw.Code != http.StatusBadRequest {
-		t.Errorf("unknown stage: status = %d, want 400", rw.Code)
+		t.Error("a rejected promotion was recorded")
 	}
 }
 

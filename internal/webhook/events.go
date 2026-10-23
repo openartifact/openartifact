@@ -40,6 +40,7 @@ func SubscribableEvents() []string {
 		EventArtifactPurged,
 		EventRepoRestored,
 		EventRepoPurged,
+		EventBundlePromoted,
 	}
 }
 

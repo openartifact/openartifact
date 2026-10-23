@@ -243,7 +243,7 @@ export type Webhook = {
     repository_id?: string;
     name?: string;
     url?: string;
-    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+    events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
     content_type?: string;
     /**
      * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -2076,7 +2076,7 @@ export type PostApiV1RepositoriesByNameWebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -3390,7 +3390,7 @@ export type PostApiV1WebhooksData = {
         name: string;
         url: string;
         secret?: string;
-        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+        events: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -3470,7 +3470,7 @@ export type PutApiV1WebhooksByIdData = {
         name?: string;
         url?: string;
         secret?: string;
-        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged'>;
+        events?: Array<'artifact.uploaded' | 'artifact.deleted' | 'repository.created' | 'repository.deleted' | 'artifact.restored' | 'artifact.purged' | 'repository.restored' | 'repository.purged' | 'bundle.promoted'>;
         content_type?: string;
         /**
          * Delivery body format. openartifact is the native JSON; cloudevents is CloudEvents 1.0 structured mode (application/cloudevents+json); slack, teams and discord are the services' incoming-webhook shapes.
@@ -7172,9 +7172,25 @@ export type PostApiV1BundlesByNameByVersionPromoteData = {
 
 export type PostApiV1BundlesByNameByVersionPromoteErrors = {
     /**
-     * 501
+     * Invalid request, or an item's repository and the target are not hosted repositories of the same format
      */
-    501: unknown;
+    400: Error;
+    /**
+     * Not an admin; an item is quarantined in its source (ARTIFACT_QUARANTINED); or a license policy of the target blocks it (LICENSE_BLOCKED)
+     */
+    403: Error;
+    /**
+     * Bundle or target repository not found
+     */
+    404: Error;
+    /**
+     * Bundle not sealed or changed concurrently; to_stage does not follow the current stage; an item no longer exists in its source repository (artifact_missing); the target holds different content at the same coordinates (artifact_conflict), or the target has immutable releases and the version is a release (immutable_release)
+     */
+    409: Error;
+    /**
+     * The target repository's storage quota would be exceeded (quota_exceeded)
+     */
+    507: Error;
     /**
      * Error
      */
@@ -7185,9 +7201,43 @@ export type PostApiV1BundlesByNameByVersionPromoteError = PostApiV1BundlesByName
 
 export type PostApiV1BundlesByNameByVersionPromoteResponses = {
     /**
-     * Error
+     * Promoted
      */
-    default: Error;
+    200: {
+        /**
+         * The recorded bundle promotion (status success)
+         */
+        promotion?: {
+            [key: string]: unknown;
+        };
+        /**
+         * Artifacts newly written to the target
+         */
+        copied?: number;
+        /**
+         * Artifacts the target already held with the same content
+         */
+        existing?: number;
+        items?: Array<{
+            sha256?: string;
+            artifact_path?: string;
+            format?: string;
+            copied?: Array<{
+                name?: string;
+                version?: string;
+                path?: string;
+                sha256?: string;
+                size?: number;
+            }>;
+            existing?: Array<{
+                name?: string;
+                version?: string;
+                path?: string;
+                sha256?: string;
+                size?: number;
+            }>;
+        }>;
+    };
 };
 
 export type PostApiV1BundlesByNameByVersionPromoteResponse = PostApiV1BundlesByNameByVersionPromoteResponses[keyof PostApiV1BundlesByNameByVersionPromoteResponses];

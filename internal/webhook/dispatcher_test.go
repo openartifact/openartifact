@@ -146,6 +146,7 @@ func TestEventTypeValues(t *testing.T) {
 		{"artifact purged", EventArtifactPurged, "artifact.purged"},
 		{"repo restored", EventRepoRestored, "repository.restored"},
 		{"repo purged", EventRepoPurged, "repository.purged"},
+		{"bundle promoted", EventBundlePromoted, "bundle.promoted"},
 	}
 
 	for _, tt := range tests {
