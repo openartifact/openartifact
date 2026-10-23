@@ -25,10 +25,16 @@ type cleanupMockDB struct {
 
 	policy  *models.CleanupPolicy
 	created int
+	format  string // repository format; defaults to rpm
 }
 
 func (db *cleanupMockDB) GetRepositoryByName(_ context.Context, name string) (*models.Repository, error) {
-	return &models.Repository{ID: "repo-1", Name: name, Format: "rpm"}, nil
+	format := db.format
+	if format == "" {
+		format = "rpm"
+	}
+
+	return &models.Repository{ID: "repo-1", Name: name, Format: format}, nil
 }
 
 func (db *cleanupMockDB) CreateCleanupPolicy(_ context.Context, p *models.CleanupPolicy) error {
@@ -51,6 +57,21 @@ func (db *cleanupMockDB) GetCleanupPolicy(_ context.Context, id string) (*models
 func (db *cleanupMockDB) UpdateCleanupPolicy(_ context.Context, p *models.CleanupPolicy) error {
 	db.policy = p
 	return nil
+}
+
+func TestCleanupRejectsUnsupportedFormat(t *testing.T) {
+	db := &cleanupMockDB{format: "npm", policy: &models.CleanupPolicy{ID: "pol-1", RepositoryID: "repo-1", Name: "p"}}
+	base := "/api/v1/repositories/r/cleanup-policies"
+
+	rw := cleanupRequest(t, db, nil, http.MethodPost, base, `{"name":"p","keep_last_n":2}`)
+	if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), codeUnsupportedFormat) || db.created != 0 {
+		t.Fatalf("create: status = %d, body = %s, created = %d", rw.Code, rw.Body.String(), db.created)
+	}
+
+	rw = cleanupRequest(t, db, nil, http.MethodPut, base+"/pol-1", `{"keep_last_n":3}`)
+	if rw.Code != http.StatusBadRequest || !strings.Contains(rw.Body.String(), codeUnsupportedFormat) {
+		t.Fatalf("update: status = %d, body = %s", rw.Code, rw.Body.String())
+	}
 }
 
 type fakeRunner struct {

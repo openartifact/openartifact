@@ -111,6 +111,10 @@ func (h *CleanupHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	if !requireCleanupFormat(w, repo) {
+		return
+	}
+
 	var body struct {
 		Name                    string `json:"name"`
 		Enabled                 bool   `json:"enabled"`
@@ -248,6 +252,22 @@ func (b *cleanupPolicyPatch) onlyDisables(policy *models.CleanupPolicy) bool {
 		b.KeepDownloadedSinceDays == nil && b.NamePattern == nil && b.ScheduleCron == nil
 }
 
+// codeUnsupportedFormat is the error code for operations the repository's format does not support.
+const codeUnsupportedFormat = "UNSUPPORTED_FORMAT"
+
+// requireCleanupFormat answers 400 when the cleanup worker has no support for
+// the repository's format; such a policy would only ever fail at run time.
+func requireCleanupFormat(w http.ResponseWriter, repo *models.Repository) bool {
+	if worker.CleanupFormatSupported(repo.Format) {
+		return true
+	}
+
+	writeError(w, http.StatusBadRequest, codeUnsupportedFormat,
+		"cleanup policies are not supported for "+repo.Format+" repositories")
+
+	return false
+}
+
 func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	name := urlparams.Vars(r)["name"]
 	id := urlparams.Vars(r)["id"]
@@ -267,6 +287,10 @@ func (h *CleanupHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if !requireRepoAdmin(w, r, h.evaluator, repo.Name) {
+		return
+	}
+
+	if !requireCleanupFormat(w, repo) {
 		return
 	}
 

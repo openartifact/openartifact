@@ -566,7 +566,7 @@ func (h *RPMUploadHandler) handleDelete(w http.ResponseWriter, r *http.Request) 
 	// GET /packages but have no deletion path here; refuse instead of
 	// reporting a misleading "package not found".
 	if repo.Format != "rpm" {
-		writeError(w, http.StatusBadRequest, "UNSUPPORTED_FORMAT",
+		writeError(w, http.StatusBadRequest, codeUnsupportedFormat,
 			"deleting packages by id is only supported for deb and rpm repositories")
 
 		return

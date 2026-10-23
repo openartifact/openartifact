@@ -10,6 +10,8 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 
 ## Type and format support
 
+11 formats can be proxied and 9 can be grouped (every proxy format except deb and rpm).
+
 | Format | Hosted | Proxy | Group |
 |---|---|---|---|
 | maven | yes | yes | yes |
@@ -23,7 +25,6 @@ Every repository has a format and a type (`repo_type`): `hosted` (default), `pro
 | cargo | yes | yes | yes |
 | go | yes | yes | yes |
 | helm | yes | yes | yes |
-| nuget | yes | yes | yes |
 | rubygems, conda, conan, ivy, sbt | yes | no | no |
 
 Creating a proxy or group repository of an unsupported format is rejected with `400 validation_failed`. Deb and RPM groups are rejected because their `Packages`/`Release`/`repodata` metadata is generated per repository and cannot be merged across members. Proxy and group repositories are read-only: writes (client uploads and the `/api/v1/repositories/{repo}/{debs,packages}` upload endpoints) answer `405` with `Allow: GET, HEAD`. Client URLs per format are on the [formats](../formats/README.md) pages.

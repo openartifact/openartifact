@@ -863,7 +863,7 @@ func run(args []string) error {
 
 	api.NewBundlesHandler(db, log, evaluator).RegisterAuthed(authedAPI)
 
-	sbomGen := sbom.NewGenerator(db, log).WithToolVersion(version)
+	sbomGen := sbom.NewGenerator(db, log).WithToolVersion(version).WithBaseURL(cfg.BaseURL)
 	sbomHandler := api.NewSBOMHandler(db, log, evaluator, sbomGen, blobStore)
 	sbomHandler.RegisterAuthed(authedAPI)
 	api.NewVEXHandler(db, log, evaluator, sbomGen).RegisterAuthed(authedAPI)

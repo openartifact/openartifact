@@ -25,6 +25,7 @@ type Generator struct {
 	db          database.Database
 	log         *logger.Logger
 	toolVersion string
+	baseURL     string
 	now         func() time.Time
 }
 
@@ -54,6 +55,24 @@ func (g *Generator) WithToolVersion(v string) *Generator {
 	}
 
 	return g
+}
+
+// WithBaseURL sets the instance public URL used to mint document identifiers
+// (SPDX documentNamespace, OpenVEX @id). Empty keeps the urn: fallback.
+func (g *Generator) WithBaseURL(u string) *Generator {
+	g.baseURL = strings.TrimRight(strings.TrimSpace(u), "/")
+
+	return g
+}
+
+// docID returns a unique document identifier for kind ("spdxdocs", "vex"):
+// <baseURL>/<kind>/<suffix>, or urn:openartifact:<kind>:<suffix> without a base URL.
+func (g *Generator) docID(kind, suffix string) string {
+	if g.baseURL == "" {
+		return "urn:openartifact:" + kind + ":" + suffix
+	}
+
+	return g.baseURL + "/" + kind + "/" + suffix
 }
 
 // splitArtifactID splits "name@version" on the LAST '@' after position 0 so

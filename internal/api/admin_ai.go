@@ -79,9 +79,7 @@ func (h *AdminAIHandler) requireAdmin(w http.ResponseWriter, r *http.Request) bo
 }
 
 // loadConfigFromDB reads AI config from system_settings table.
-//
-//nolint:unparam // error return kept for future use
-func (h *AdminAIHandler) loadConfigFromDB(ctx context.Context) (ai.Config, error) {
+func (h *AdminAIHandler) loadConfigFromDB(ctx context.Context) ai.Config {
 	cfg := ai.Config{}
 
 	// Read each setting
@@ -116,7 +114,7 @@ func (h *AdminAIHandler) loadConfigFromDB(ctx context.Context) (ai.Config, error
 	systemPrompt, _ := h.db.GetSystemSetting(ctx, ai.SettingSystemPrompt)
 	cfg.SystemPrompt = systemPrompt
 
-	return cfg, nil
+	return cfg
 }
 
 func (h *AdminAIHandler) handleGetConfig(w http.ResponseWriter, r *http.Request) {
@@ -437,13 +435,7 @@ func (h *AdminAIHandler) handleTest(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 	} else {
-		var err error
-
-		cfg, err = h.loadConfigFromDB(r.Context())
-		if err != nil {
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to load config")
-			return
-		}
+		cfg = h.loadConfigFromDB(r.Context())
 	}
 
 	models, err := ai.NewClient(cfg).ListModels(r.Context())
@@ -468,11 +460,7 @@ func (h *AdminAIHandler) handleGetModels(w http.ResponseWriter, r *http.Request)
 		return
 	}
 
-	cfg, err := h.loadConfigFromDB(r.Context())
-	if err != nil {
-		writeError(w, http.StatusInternalServerError, "internal_error", "failed to load config")
-		return
-	}
+	cfg := h.loadConfigFromDB(r.Context())
 
 	models, err := ai.NewClient(cfg).ListModels(r.Context())
 	if err != nil {

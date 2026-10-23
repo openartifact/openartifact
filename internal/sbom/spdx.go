@@ -228,7 +228,7 @@ func (g *Generator) spdxDocument(in *Input) *spdxDoc {
 		DataLicense:       "CC0-1.0",
 		SPDXID:            "SPDXRef-DOCUMENT",
 		Name:              name,
-		DocumentNamespace: "https://openartifact.io/spdxdocs/" + url.PathEscape(name) + "-" + uuid.NewString(),
+		DocumentNamespace: g.docID("spdxdocs", url.PathEscape(name)+"-"+uuid.NewString()),
 		CreationInfo: spdxCreation{
 			Created:  g.now().UTC().Format(time.RFC3339),
 			Creators: []string{"Tool: OpenArtifact-" + g.toolVersion},

@@ -387,6 +387,15 @@ type formatTable struct {
 	kind models.TrashKind
 }
 
+// CleanupFormatSupported reports whether the cleanup worker can run policies
+// for repositories of the given format; the API uses it to reject policies
+// that could never run.
+func CleanupFormatSupported(format string) bool {
+	_, ok := cleanupFormatTable(format)
+
+	return ok
+}
+
 // cleanupFormatTable covers formats whose packages live in one table with
 // direct blob FKs. npm is intentionally not listed: its tarballs live in
 // npm_versions, joined to npm_packages for name/repository_id — a different

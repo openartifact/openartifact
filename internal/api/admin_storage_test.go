@@ -93,3 +93,60 @@ func TestStorageBackendUpdateConflictsWhenBackendBusy(t *testing.T) {
 		})
 	}
 }
+
+type fakeHealthStore struct{ err error }
+
+func (f fakeHealthStore) HealthCheck(context.Context) error { return f.err }
+
+func TestStorageBackendTestRunsRealChecksForEveryKind(t *testing.T) {
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// gcs and azure used to answer 200 {"error":"not_implemented"}; with
+	// incomplete credentials they must now fail validation of the config.
+	for kind, config := range map[string]string{
+		"gcs":   `{"bucket":"b"}`,
+		"azure": `{"account":"acct","container":"c"}`,
+	} {
+		t.Run(kind, func(t *testing.T) {
+			db := &storageUpdateMockDB{backend: &models.StorageBackend{ID: "b1", Name: "x", Kind: kind, Config: []byte(config)}}
+
+			r := chi.NewRouter()
+			r.Use(func(next http.Handler) http.Handler {
+				return http.HandlerFunc(func(w http.ResponseWriter, req *http.Request) {
+					next.ServeHTTP(w, req.WithContext(middleware.WithPrincipal(req.Context(), &auth.Principal{IsLegacy: true})))
+				})
+			})
+			NewAdminStorageHandler(db, log, nil).Register(r)
+
+			req := httptest.NewRequestWithContext(context.Background(), http.MethodPost, "/api/v1/admin/storage/x/test", nil)
+			rec := httptest.NewRecorder()
+			r.ServeHTTP(rec, req)
+
+			body := rec.Body.String()
+			if rec.Code != http.StatusOK || !strings.Contains(body, `"ok":false`) || !strings.Contains(body, "invalid_config") || strings.Contains(body, "not_implemented") {
+				t.Fatalf("status = %d, body = %s", rec.Code, body)
+			}
+		})
+	}
+}
+
+func TestHealthCheckStoreReportsConnectivity(t *testing.T) {
+	log, err := logger.New("error", "console", "stderr")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	h := NewAdminStorageHandler(&storageUpdateMockDB{}, log, nil)
+
+	if res := h.healthCheckStore(context.Background(), "x", "azure", fakeHealthStore{}); !res.ok {
+		t.Errorf("healthy store: %+v", res)
+	}
+
+	res := h.healthCheckStore(context.Background(), "x", "gcs", fakeHealthStore{err: context.DeadlineExceeded})
+	if res.ok || res.code != "connection_failed" {
+		t.Errorf("failing store: %+v", res)
+	}
+}

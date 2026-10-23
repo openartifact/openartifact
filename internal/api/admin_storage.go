@@ -601,14 +601,12 @@ func (h *AdminStorageHandler) handleTest(w http.ResponseWriter, r *http.Request)
 		result = h.testS3Backend(ctx, backend.Name, cfg)
 	case "oci":
 		result = h.testOCIBackend(ctx, backend.Name, cfg)
+	case "gcs":
+		result = h.testGCSBackend(ctx, backend.Name, cfg)
+	case "azure":
+		result = h.testAzureBackend(ctx, backend.Name, cfg)
 	default:
-		writeJSON(w, http.StatusOK, map[string]any{
-			"ok":      false,
-			"error":   "not_implemented",
-			"message": "testing for this backend type is not yet supported",
-		})
-
-		return
+		result = storageTestResult{false, "invalid_config", "unknown backend kind: " + backend.Kind}
 	}
 
 	if result.ok {
@@ -712,6 +710,63 @@ func (h *AdminStorageHandler) testS3Backend(ctx context.Context, name string, cf
 	if err := store.HealthCheck(ctx); err != nil {
 		h.log.Warnw("storage test: s3 bucket check failed", "backend", name, "error", err)
 		return storageTestResult{false, "connection_failed", "could not access the bucket with the configured endpoint and credentials"}
+	}
+
+	return storageTestResult{ok: true}
+}
+
+// testGCSBackend checks the bucket through the GCS XML API with the stored HMAC credentials.
+func (h *AdminStorageHandler) testGCSBackend(ctx context.Context, name string, cfg map[string]any) storageTestResult {
+	bucket := cfgString(cfg, "bucket")
+	if bucket == "" {
+		return storageTestResult{false, "invalid_config", "bucket is required in config"}
+	}
+
+	hmacKey, err := decryptedSecret(cfg, "hmac_key", "hmacKey")
+	if err != nil {
+		h.log.Errorw("storage test: decrypt failed", "backend", name, "error", err)
+		return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
+	}
+
+	hmacSecret, err := decryptedSecret(cfg, "hmac_secret", "hmacSecret")
+	if err != nil {
+		h.log.Errorw("storage test: decrypt failed", "backend", name, "error", err)
+		return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
+	}
+
+	store, err := storage.NewGCSBlobStore(storage.StorageConfig{GCSBucket: bucket, GCSHMACKey: hmacKey, GCSHMACSecret: hmacSecret})
+	if err != nil {
+		return storageTestResult{false, "invalid_config", err.Error()}
+	}
+
+	return h.healthCheckStore(ctx, name, "gcs", store)
+}
+
+// testAzureBackend checks the container with the stored shared-key credentials.
+func (h *AdminStorageHandler) testAzureBackend(ctx context.Context, name string, cfg map[string]any) storageTestResult {
+	accountKey, err := decryptedSecret(cfg, "account_key", "accountKey")
+	if err != nil {
+		h.log.Errorw("storage test: decrypt failed", "backend", name, "error", err)
+		return storageTestResult{false, "invalid_config", "stored credentials could not be decrypted"}
+	}
+
+	store, err := storage.NewAzureBlobStore(storage.StorageConfig{
+		AzureAccountName:   cfgString(cfg, "account", "account_name", "accountName"),
+		AzureContainerName: cfgString(cfg, "container"),
+		AzureAccountKey:    accountKey,
+	})
+	if err != nil {
+		return storageTestResult{false, "invalid_config", err.Error()}
+	}
+
+	return h.healthCheckStore(ctx, name, "azure", store)
+}
+
+// healthCheckStore runs the backend's own connectivity check.
+func (h *AdminStorageHandler) healthCheckStore(ctx context.Context, name, kind string, store interface{ HealthCheck(context.Context) error }) storageTestResult {
+	if err := store.HealthCheck(ctx); err != nil {
+		h.log.Warnw("storage test: health check failed", "backend", name, "kind", kind, "error", err)
+		return storageTestResult{false, "connection_failed", "could not access the " + kind + " bucket or container with the configured credentials"}
 	}
 
 	return storageTestResult{ok: true}
