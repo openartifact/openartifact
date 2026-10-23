@@ -165,12 +165,26 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' -o sbom.cdx.json.sigstore.json \
   'HOST/api/v1/repositories/REPO/sbom/<ID>/download?attest=bundle'
 cosign verify-blob-attestation --bundle sbom.cdx.json.sigstore.json --key attestation-key.pem \
   --type cyclonedx --insecure-ignore-tlog my-lib-1.2.3.tgz
+# when no package hash is known the stored SBOM file is a subject too: verify the plain download instead
+#   curl ... -o sbom.cdx.json 'HOST/api/v1/repositories/REPO/sbom/<ID>/download'  and pass sbom.cdx.json
 
 # VEX
 curl -sS -H 'Authorization: Bearer <TOKEN>' -o vex.openvex.json.sigstore.json \
   'HOST/api/v1/repositories/REPO/vex?artifact_id=my-lib@1.2.3&attest=bundle'
 cosign verify-blob-attestation --bundle vex.openvex.json.sigstore.json --key attestation-key.pem \
   --type openvex --insecure-ignore-tlog my-lib-1.2.3.tgz
+```
+
+When the VEX speaks about no package whose hash OpenArtifact knows, its subject is the digest of the VEX document itself. Every request generates a new document, so verify it against the predicate carried in the very bundle you downloaded:
+
+```sh
+python3 - <<'EOF'
+import base64, json
+payload = base64.b64decode(json.load(open("vex.openvex.json.sigstore.json"))["dsseEnvelope"]["payload"])
+open("vex.predicate.json", "wb").write(payload[payload.index(b'"predicate":') + len(b'"predicate":'):-1])
+EOF
+cosign verify-blob-attestation --bundle vex.openvex.json.sigstore.json --key attestation-key.pem \
+  --type openvex --insecure-ignore-tlog vex.predicate.json
 ```
 
 `cosign` prints `Verified OK` and exits 0; a modified package fails with `provided artifact digests do not match digests in statement`, and another key fails the signature check. The same bundle also works with `--type https://cyclonedx.org/bom` (the full predicate URI), and for SPDX 3 use the URI as the type.
