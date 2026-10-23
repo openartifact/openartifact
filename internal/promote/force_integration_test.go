@@ -37,8 +37,12 @@ func (h *harness) rowsWithBlob(tables []string, repoID, blobID string, deleted b
 // different content at the same coordinates is replaced (moved to the trash)
 // instead of being a conflict, and a repeat is a no-op.
 func TestForcePromotesOverDifferentContent(t *testing.T) {
+	t.Parallel()
+
 	for _, fx := range fixtures() {
 		t.Run(fx.format, func(t *testing.T) {
+			t.Parallel()
+
 			h := newHarness(t)
 			p := promoterFor(t, fx.format)
 
@@ -128,8 +132,12 @@ func assertForced(t *testing.T, h *harness, fx fixture, dstID, blobA, blobB stri
 // TestForceOffStillConflicts: without Force different content in the
 // destination stays a ConflictError and changes nothing.
 func TestForceOffStillConflicts(t *testing.T) {
+	t.Parallel()
+
 	for _, fx := range fixtures() {
 		t.Run(fx.format, func(t *testing.T) {
+			t.Parallel()
+
 			h := newHarness(t)
 			p := promoterFor(t, fx.format)
 

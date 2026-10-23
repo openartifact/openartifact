@@ -35,8 +35,12 @@ func (h *harness) sameRows(table, src, dst string, ignore []string) (int, int) {
 }
 
 func TestPromotersCopyEveryFormat(t *testing.T) {
+	t.Parallel()
+
 	for _, fx := range fixtures() {
 		t.Run(fx.format, func(t *testing.T) {
+			t.Parallel()
+
 			h := newHarness(t)
 			p := promoterFor(t, fx.format)
 
@@ -166,6 +170,8 @@ func assertTrashedTargetIgnored(t *testing.T, h *harness, p Promoter, src *model
 // the generic promoter copies without the spec learning about it, so a copy
 // can never silently drop metadata.
 func TestRowSpecsCoverEveryColumn(t *testing.T) {
+	t.Parallel()
+
 	h := newHarness(t)
 
 	skipped := map[string]bool{
@@ -175,6 +181,8 @@ func TestRowSpecsCoverEveryColumn(t *testing.T) {
 
 	for _, spec := range rowSpecs() {
 		t.Run(spec.format, func(t *testing.T) {
+			t.Parallel()
+
 			rows, err := h.pg.GetDB().QueryContext(context.Background(),
 				`SELECT column_name FROM information_schema.columns
 				  WHERE table_schema = 'public' AND table_name = $1 AND is_generated = 'NEVER'`, spec.table)

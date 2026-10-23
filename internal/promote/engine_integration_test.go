@@ -92,7 +92,7 @@ func newBundleEnv(t *testing.T, n int) *bundleEnv {
 		env.shas = append(env.shas, sha)
 	}
 
-	if ok, err := h.pg.SealReleaseBundle(ctx, env.bundle.ID, "admin", time.Now()); err != nil || !ok {
+	if ok, err := h.pg.SealReleaseBundle(ctx, env.bundle.ID, "admin", time.Now(), nil); err != nil || !ok {
 		t.Fatalf("SealReleaseBundle = %v, %v", ok, err)
 	}
 
@@ -326,7 +326,7 @@ func (e *bundleEnv) seal(shas []string, format string, paths ...string) {
 		e.items = append(e.items, item)
 	}
 
-	if ok, err := e.h.pg.SealReleaseBundle(ctx, e.bundle.ID, "admin", time.Now()); err != nil || !ok {
+	if ok, err := e.h.pg.SealReleaseBundle(ctx, e.bundle.ID, "admin", time.Now(), nil); err != nil || !ok {
 		e.h.t.Fatalf("SealReleaseBundle = %v, %v", ok, err)
 	}
 

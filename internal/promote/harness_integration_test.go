@@ -157,7 +157,7 @@ func openDB(t *testing.T, dsn, dbName string) (*logger.Logger, *database.Postgre
 
 	pg, err := database.NewPostgresDB(database.DatabaseConfig{
 		Host: u.Hostname(), Port: port, User: u.User.Username(), Password: pw,
-		Database: dbName, SSLMode: sslmode, MaxOpenConns: 8, MaxIdleConns: 8,
+		Database: dbName, SSLMode: sslmode, MaxOpenConns: 8, MaxIdleConns: 2,
 	}, log)
 	if err != nil {
 		t.Fatalf("NewPostgresDB: %v", err)
