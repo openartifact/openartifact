@@ -37,6 +37,8 @@ type npmFake struct {
 	published   []string                     // "package@version", in arrival order
 	unpublished []string
 	conflicts   int
+	tagPuts     int    // dist-tag PUTs that reached the fake, whatever their outcome
+	rejectTags  string // when set, every dist-tag PUT is refused with this message
 }
 
 // npmFakes finds the npm fake of a fakeOA: its route set creates it.
@@ -49,6 +51,7 @@ func init() { //nolint:gochecknoinits // the fake destination's route registry i
 
 		mux.HandleFunc("PUT /{pkg...}", n.publish)
 		mux.HandleFunc("GET /-/package/{rest...}", n.distTags)
+		mux.HandleFunc("PUT /-/package/{rest...}", n.setTag)
 		mux.HandleFunc("DELETE /{rest...}", n.unpublish)
 	}
 }
@@ -240,6 +243,52 @@ func (n *npmFake) distTags(w http.ResponseWriter, r *http.Request) {
 	n.f.reply(w, http.StatusOK, tags)
 }
 
+// setTag is PUT /-/package/<pkg>/dist-tags/<tag> with the JSON string of a
+// version as its body, which must be one the package has and the tag must not
+// be a version itself, as on the real server.
+func (n *npmFake) setTag(w http.ResponseWriter, r *http.Request) {
+	n.f.writes++
+	n.tagPuts++
+
+	repo := r.Header.Get("X-Fake-Repo")
+	rawName, tag, ok := strings.Cut(strings.TrimPrefix(npmRawPath(r), "-/package/"), "/dist-tags/")
+	name, valid := npmSegment(rawName)
+
+	if !ok || !valid || tag == "" || strings.Contains(tag, "/") {
+		n.bad(w, http.StatusBadRequest, "bad dist-tag request: "+npmRawPath(r))
+		return
+	}
+
+	var version string
+	if r.Header.Get("Content-Type") != "application/json" || json.NewDecoder(r.Body).Decode(&version) != nil {
+		n.bad(w, http.StatusBadRequest, "invalid body")
+		return
+	}
+
+	if _, isVersion := npmParseSemver(tag); isVersion {
+		n.bad(w, http.StatusBadRequest, "tag name must not be a valid semver version")
+		return
+	}
+
+	if n.rejectTags != "" {
+		n.bad(w, http.StatusBadRequest, n.rejectTags)
+		return
+	}
+
+	if !n.has(repo, name, version) {
+		n.bad(w, http.StatusNotFound, "version not found")
+		return
+	}
+
+	key := repo + "/" + name
+	if n.tags[key] == nil {
+		n.tags[key] = map[string]string{}
+	}
+
+	n.tags[key][tag] = version
+	n.f.reply(w, http.StatusOK, n.tags[key])
+}
+
 // unpublish is DELETE /<pkg>/-/<file>.tgz/-rev/<rev>.
 func (n *npmFake) unpublish(w http.ResponseWriter, r *http.Request) {
 	n.f.writes++
@@ -397,8 +446,10 @@ func npmNexusFixtures(t *testing.T) ([]fakeFile, []npmWant) {
 	}
 
 	files = append(files,
-		fakeFile{path: "left-pad", data: []byte(`{"name":"left-pad","dist-tags":{"latest":"2.0.0-beta.1"}}`), created: nexusStamp, contentType: "application/json"},
-		fakeFile{path: "@acme/widget", data: []byte(`{"name":"@acme/widget"}`), created: nexusStamp, contentType: "application/json"},
+		// The packuments of Nexus carry the dist-tags; these two name no "latest",
+		// which is then derived from the versions.
+		fakeFile{path: "left-pad", data: []byte(`{"name":"left-pad","dist-tags":{"beta":"2.0.0-beta.1","legacy":"1.0.0"}}`), created: nexusStamp, contentType: "application/json"},
+		fakeFile{path: "@acme/widget", data: []byte(`{"name":"@acme/widget","dist-tags":{"rc":"0.2.0-rc.1"}}`), created: nexusStamp, contentType: "application/json"},
 	)
 
 	return files, wants
@@ -486,13 +537,13 @@ func TestImportNPMNexusPublishesInVersionOrderAndSetsLatest(t *testing.T) {
 	}
 
 	// The prerelease sits above the last stable version but must not take "latest".
-	if got := n.tags["reg/left-pad"]; len(got) != 1 || got["latest"] != "1.1.0" {
-		t.Errorf("left-pad tags = %v, want latest=1.1.0", got)
+	if got, want := n.tags["reg/left-pad"], map[string]string{"latest": "1.1.0", "beta": "2.0.0-beta.1", "legacy": "1.0.0"}; !maps.Equal(got, want) {
+		t.Errorf("left-pad tags = %v, want %v", got, want)
 	}
 
 	// A package with prereleases only ends at its highest one.
-	if got := n.tags["reg/@acme/widget"]; len(got) != 1 || got["latest"] != "0.2.0-rc.2" {
-		t.Errorf("@acme/widget tags = %v, want latest=0.2.0-rc.2", got)
+	if got, want := n.tags["reg/@acme/widget"], map[string]string{"latest": "0.2.0-rc.2", "rc": "0.2.0-rc.1"}; !maps.Equal(got, want) {
+		t.Errorf("@acme/widget tags = %v, want %v", got, want)
 	}
 
 	manifest := n.manifests["reg/left-pad@1.0.0"]
@@ -616,9 +667,15 @@ func TestImportNPMWithoutSourceDigestsRerunSettlesIdenticalVersions(t *testing.T
 	npmCheckPublished(t, oa, wants, nexusWant)
 }
 
+// npmTarballs drops everything but the tarballs from a fixture: no packuments, so
+// no dist-tags to apply.
+func npmTarballs(files []fakeFile) []fakeFile {
+	return slices.DeleteFunc(slices.Clone(files), func(f fakeFile) bool { return f.contentType == "application/json" })
+}
+
 func TestImportNPMResumesFromStateFile(t *testing.T) {
 	files, _ := npmNexusFixtures(t)
-	nexus := npmNexusServer(t, files)
+	nexus := npmNexusServer(t, npmTarballs(files))
 	oa := npmNewOA(t)
 	state := filepath.Join(t.TempDir(), "state.jsonl")
 	cfg := npmNexusCfg(t, nexus, "--state-file", state)
@@ -680,7 +737,7 @@ func TestImportNPMSourceChecksumMismatchRemovesCopy(t *testing.T) {
 
 func TestImportNPMStoredDigestMismatchRemovesCopies(t *testing.T) {
 	files, _ := npmNexusFixtures(t)
-	nexus := npmNexusServer(t, files)
+	nexus := npmNexusServer(t, npmTarballs(files))
 	oa := npmNewOA(t)
 	oa.lieSHA = strings.Repeat("0", 64)
 

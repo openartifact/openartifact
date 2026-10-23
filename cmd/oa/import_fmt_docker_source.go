@@ -97,13 +97,16 @@ func (d ociDescriptor) foreign() bool {
 // manifest and OCI artifact manifest (config plus layers or blobs) and index
 // or manifest list (manifests).
 type ociDocument struct {
-	SchemaVersion int               `json:"schemaVersion"` //nolint:tagliatelle // OCI/Docker wire format is camelCase
-	MediaType     string            `json:"mediaType"`     //nolint:tagliatelle // OCI/Docker wire format is camelCase
-	Config        *ociDescriptor    `json:"config"`
-	Layers        []ociDescriptor   `json:"layers"`
-	Blobs         []ociDescriptor   `json:"blobs"`
-	Manifests     []ociDescriptor   `json:"manifests"`
-	FSLayers      []json.RawMessage `json:"fsLayers"` //nolint:tagliatelle // Docker schema 1 wire format is camelCase
+	SchemaVersion int             `json:"schemaVersion"` //nolint:tagliatelle // OCI/Docker wire format is camelCase
+	MediaType     string          `json:"mediaType"`     //nolint:tagliatelle // OCI/Docker wire format is camelCase
+	Config        *ociDescriptor  `json:"config"`
+	Layers        []ociDescriptor `json:"layers"`
+	Blobs         []ociDescriptor `json:"blobs"`
+	Manifests     []ociDescriptor `json:"manifests"`
+	// Subject is the manifest an OCI 1.1 artifact (signature, SBOM,
+	// attestation) is attached to: the manifest is a referrer of it.
+	Subject  *ociDescriptor    `json:"subject"`
+	FSLayers []json.RawMessage `json:"fsLayers"` //nolint:tagliatelle // Docker schema 1 wire format is camelCase
 }
 
 // payload lists the blobs a client must push for the manifest: the config and
@@ -294,10 +297,20 @@ type ociImage struct {
 // image resolves a tag into its manifest tree: the tagged manifest, the child
 // manifests when it is an index, and the blobs they reference.
 func (r ociRegistry) image(ctx context.Context, image, tag string) (ociImage, error) {
+	root, err := r.manifest(ctx, image, tag)
+	if err != nil {
+		return ociImage{}, err
+	}
+
+	return r.imageOf(ctx, image, tag, root)
+}
+
+// imageOf resolves a manifest that was already fetched as ref: the child
+// manifests when it is an index, and the blobs they reference.
+func (r ociRegistry) imageOf(ctx context.Context, image, ref string, root ociManifest) (ociImage, error) {
 	b := &ociTreeBuilder{reg: r, image: image, manifests: map[string]bool{}, blobs: map[string]bool{}}
 
-	root, err := b.add(ctx, tag, 0)
-	if err != nil {
+	if err := b.addFetched(ctx, ref, root, 0); err != nil {
 		return ociImage{}, err
 	}
 
@@ -312,43 +325,43 @@ type ociTreeBuilder struct {
 	out       ociImage
 }
 
-// add fetches ref, then its children, then records the manifest itself, so
-// children precede their parents in the result.
-func (b *ociTreeBuilder) add(ctx context.Context, ref string, depth int) (ociManifest, error) {
+// addFetched records the manifest m, which was fetched as ref, after its
+// children (fetched here), so children precede their parents in the result.
+func (b *ociTreeBuilder) addFetched(ctx context.Context, ref string, m ociManifest, depth int) error {
 	if depth > ociMaxIndexDepth {
-		return ociManifest{}, fmt.Errorf("%w: %s: manifest lists are nested deeper than %d levels", errOCIManifest, b.image, ociMaxIndexDepth)
-	}
-
-	m, err := b.reg.manifest(ctx, b.image, ref)
-	if err != nil {
-		return ociManifest{}, err
+		return fmt.Errorf("%w: %s: manifest lists are nested deeper than %d levels", errOCIManifest, b.image, ociMaxIndexDepth)
 	}
 
 	b.manifests[m.Digest] = true
 
 	for _, child := range m.doc.Manifests {
 		if !ociValidDigest(child.Digest) {
-			return ociManifest{}, fmt.Errorf("%w: %s:%s lists a child with the invalid digest %q", errOCIManifest, b.image, ref, child.Digest)
+			return fmt.Errorf("%w: %s:%s lists a child with the invalid digest %q", errOCIManifest, b.image, ref, child.Digest)
 		}
 
 		if b.manifests[child.Digest] {
 			continue
 		}
 
-		if _, err := b.add(ctx, child.Digest, depth+1); err != nil {
-			return ociManifest{}, err
+		cm, err := b.reg.manifest(ctx, b.image, child.Digest)
+		if err != nil {
+			return err
+		}
+
+		if err := b.addFetched(ctx, child.Digest, cm, depth+1); err != nil {
+			return err
 		}
 	}
 
 	for _, d := range m.doc.payload() {
 		if err := b.addBlob(ref, d); err != nil {
-			return ociManifest{}, err
+			return err
 		}
 	}
 
 	b.out.manifests = append(b.out.manifests, m)
 
-	return m, nil
+	return nil
 }
 
 func (b *ociTreeBuilder) addBlob(ref string, d ociDescriptor) error {

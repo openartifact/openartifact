@@ -145,7 +145,7 @@ func (fx *dockerFixture) plannedBlobBytes() int64 {
 
 	var n int64
 
-	for _, t := range fx.tags {
+	for _, t := range slices.Concat(fx.tags, fx.loose) {
 		for _, b := range t.img.blobs {
 			if k := t.image + "@" + b; !seen[k] {
 				seen[k] = true
@@ -395,9 +395,8 @@ func TestImportDockerResumesFromStateFile(t *testing.T) {
 		t.Fatalf("first run uploaded %d, failures %+v", rep.Uploaded, rep.Failures)
 	}
 
-	// Wipe the destination: only the state file knows the tags were done.
+	// Forget the tags: only the state file knows they were done.
 	env.oa.repos[dockerDst].items = nil
-	env.fk.images = map[string]*fakeDockerImage{}
 	writes := env.oa.writes
 
 	rep := env.run()
@@ -686,8 +685,15 @@ func TestImportDockerParsePath(t *testing.T) {
 			t.Errorf("dockerParsePath(%q) = %+v, %v; want %s:%s, %v", c.path, id, ok, c.image, c.tag, c.wantMatch)
 		}
 
-		if dockerImportable(c.path) != c.wantMatch {
-			t.Errorf("dockerImportable(%q) = %v, want %v", c.path, !c.wantMatch, c.wantMatch)
+		// Files of manifests stored by digest are importable, but they are not
+		// tags (see TestImportDockerParseDigestPath).
+		_, isDigest := dockerParseDigestPath(c.path)
+		if want := c.wantMatch || isDigest; dockerImportable(c.path) != want {
+			t.Errorf("dockerImportable(%q) = %v, want %v", c.path, !want, want)
+		}
+
+		if c.wantMatch && isDigest {
+			t.Errorf("%q is both a tag and a digest manifest", c.path)
 		}
 	}
 }

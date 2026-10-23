@@ -26,7 +26,15 @@ import (
 // cargoFakes keeps, per fakeOA, the publish metadata its registry received.
 var cargoFakes sync.Map //nolint:gochecknoglobals // per-server state of the fake, looked up by the test that built the server
 
-type cargoFake struct{ published map[string]map[string]any }
+type cargoFake struct {
+	published map[string]map[string]any
+	// yanked holds repo/file of every crate version the registry has yanked;
+	// yankCalls counts the yank requests received and yankStatus, when set,
+	// is the status they are refused with (409: immutable releases).
+	yanked     map[string]bool
+	yankCalls  int
+	yankStatus int
+}
 
 // cargoPublishedMeta is the metadata the fake registry received for a crate file.
 func cargoPublishedMeta(t *testing.T, oa *fakeOA, repo, file string) map[string]any {
@@ -47,10 +55,33 @@ func cargoPublishedMeta(t *testing.T, oa *fakeOA, repo, file string) map[string]
 // version and a 200 {"warnings":[]} answer without any id or digest.
 func init() { //nolint:gochecknoinits // the fake destination route registry is filled by each format tests
 	fakeOARoutes[string(formatCargo)] = func(f *fakeOA, mux *http.ServeMux) {
-		st := &cargoFake{published: map[string]map[string]any{}}
+		st := &cargoFake{published: map[string]map[string]any{}, yanked: map[string]bool{}}
 		cargoFakes.Store(f, st)
 		mux.HandleFunc("PUT /api/v1/crates/new", func(w http.ResponseWriter, r *http.Request) { st.publish(f, w, r) })
+		mux.HandleFunc("DELETE /api/v1/crates/{crate}/{version}/yank", func(w http.ResponseWriter, r *http.Request) { st.yank(f, w, r) })
 	}
+}
+
+// yank is DELETE /api/v1/crates/{crate}/{version}/yank: 200 {"ok":true}, also for
+// a version that is yanked already, 404 for an unknown version.
+func (c *cargoFake) yank(f *fakeOA, w http.ResponseWriter, r *http.Request) {
+	f.writes++
+	c.yankCalls++
+
+	if c.yankStatus != 0 {
+		cargoFakeError(f, w, c.yankStatus, "repository has immutable releases")
+		return
+	}
+
+	repo, file := r.Header.Get("X-Fake-Repo"), r.PathValue("crate")+"-"+r.PathValue("version")+".crate"
+	if f.find(repo, file) == nil {
+		http.NotFound(w, r)
+		return
+	}
+
+	c.yanked[repo+"/"+file] = true
+
+	f.reply(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func cargoFakeError(f *fakeOA, w http.ResponseWriter, code int, detail string) {

@@ -364,6 +364,24 @@ func TestImportRubyGemsYankedCopyStillBlocksARepeatUpload(t *testing.T) {
 	}
 }
 
+// A gem yanked on the destination after an earlier import stays yanked: the
+// importer neither re-pushes it nor has any way to bring it back.
+func TestImportRubyGemsNeverRevivesAYankedGem(t *testing.T) {
+	data := gemFile(t, "rake", "13.0.6", "ruby")
+	nexus, cfg := gemNexus(t, []fakeFile{{path: "gems/rake-13.0.6.gem", data: data, created: nexusStamp}})
+	oa := gemOA(t)
+
+	yanked := oa.store("gems", "rake-13.0.6.gem", data, "")
+	yanked.name, yanked.version = "rake", "13.0.6"
+	yanked.props = map[string]string{gemYankedProp: "true"}
+
+	rep := runImportTest(t, cfg, nexus, oa)
+
+	if rep.failed() || rep.Present != 1 || rep.Uploaded != 0 || oa.writes != 0 || !gemFakeYanked(yanked) {
+		t.Fatalf("report = %+v writes=%d yanked=%v", rep, oa.writes, gemFakeYanked(yanked))
+	}
+}
+
 func TestImportRubyGemsServerDigestMismatchYanksTheCopy(t *testing.T) {
 	nexus, cfg := gemNexus(t, []fakeFile{{path: "gems/rake-13.0.6.gem", data: gemFile(t, "rake", "13.0.6", "ruby"), created: nexusStamp}})
 	oa := gemOA(t)

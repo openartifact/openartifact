@@ -58,6 +58,9 @@ func init() { //nolint:gochecknoinits // every format registers itself with the 
 		format: formatCargo, nexus: []string{"cargo"}, artifactory: []string{"cargo"},
 		importable: importableCargo, match: matchSHA,
 		upload: uploadCargo,
+		// The versions of a crate form one unit so that its yanked state is read
+		// once and applied after each version is stored (import_fmt_cargo_yank.go).
+		units: cargoUnits, transferUnit: cargoTransferUnit,
 		remove: func(context.Context, *importTarget, string, sourceAsset, uploadResult) error {
 			return errNoRemove(formatCargo)
 		},

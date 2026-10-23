@@ -35,12 +35,19 @@ func newDockerCopy(im *importer, j importJob) (*dockerCopy, error) {
 		return nil, fmt.Errorf("%w: %q is not a tagged image", errImportUsage, a.Path)
 	}
 
+	return newDockerCopyOf(im, j, id, a, id.String())
+}
+
+// newDockerCopyOf prepares the transfer of the manifest tree that asset a
+// stands for, reported as path. An id without a tag is a manifest that is only
+// stored by its digest.
+func newDockerCopyOf(im *importer, j importJob, id dockerTagID, a sourceAsset, path string) (*dockerCopy, error) {
 	src, ok := im.src.(ociSource)
 	if !ok {
 		return nil, errOCINoAPI
 	}
 
-	c := &dockerCopy{im: im, j: j, run: dockerRunOf(im), id: id, asset: a, path: id.String()}
+	c := &dockerCopy{im: im, j: j, run: dockerRunOf(im), id: id, asset: a, path: path}
 	c.key = stateKey(j.repo.Name, j.dst, c.path)
 	c.src = src.registry(j.repo.Name)
 	c.dst = newOCIRepo(im.tgt, j.dst, id.Image)
@@ -66,6 +73,8 @@ func (c *dockerCopy) runTag(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
+
+	c.run.reach(c.j.dst, c.id.Image, manifestDigests(img.manifests)...)
 
 	if e, ok := c.listedAs(strings.TrimPrefix(img.root.Digest, ociDigestPrefix)); ok {
 		return c.finishPresent(ctx, e)
@@ -263,11 +272,12 @@ func (c *dockerCopy) transferBlob(ctx context.Context, d ociDescriptor) (int64, 
 }
 
 // pushManifests puts the child manifests by digest and the tagged manifest
-// last; each digest the registry reports must be the source's.
+// last (by digest too when there is no tag); each digest the registry reports
+// must be the source's.
 func (c *dockerCopy) pushManifests(ctx context.Context, a sourceAsset, img ociImage, meta uploadMeta) error {
 	for i, m := range img.manifests {
 		ref := m.Digest
-		if i == len(img.manifests)-1 {
+		if i == len(img.manifests)-1 && c.id.Tag != "" {
 			ref = c.id.Tag
 		}
 
@@ -308,7 +318,9 @@ func (c *dockerCopy) discard(ctx context.Context, a sourceAsset, digest string, 
 // setProperties attaches the source's properties to the tag, which needs the
 // id the destination listed it under.
 func (c *dockerCopy) setProperties(ctx context.Context, a sourceAsset) error {
-	if len(selectProperties(a.Props, c.im.cfg.Properties)) == 0 {
+	// A manifest without a tag is not listed, so there is nothing to attach
+	// properties to.
+	if c.id.Tag == "" || len(selectProperties(a.Props, c.im.cfg.Properties)) == 0 {
 		return nil
 	}
 
@@ -324,4 +336,13 @@ func (c *dockerCopy) setProperties(ctx context.Context, a sourceAsset) error {
 	}
 
 	return c.im.applyProperties(ctx, c.j, a, p.ID)
+}
+
+func manifestDigests(ms []ociManifest) []string {
+	out := make([]string, 0, len(ms))
+	for _, m := range ms {
+		out = append(out, m.Digest)
+	}
+
+	return out
 }

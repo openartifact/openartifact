@@ -50,7 +50,7 @@ func init() { //nolint:gochecknoinits // every format registers itself with the 
 	registerFormat(formatDef{
 		format: formatNPM, nexus: []string{"npm"}, artifactory: []string{"npm"},
 		importable: importableNPM, match: matchSHA,
-		units: npmUnits, upload: npmUpload, remove: npmRemove,
+		units: npmUnits, upload: npmUpload, remove: npmRemove, transferUnit: npmTransferUnit,
 	})
 }
 
@@ -419,18 +419,29 @@ func (p *npmPublish) write(w io.Writer) error {
 	return err
 }
 
-// npmCurrentLatest reads the "latest" dist-tag of a package ("" when the
-// package or the tag does not exist yet).
-func npmCurrentLatest(ctx context.Context, t *importTarget, dst, name string) (string, error) {
+// npmDistTags reads the dist-tags of a package in the destination (none when
+// the package does not exist yet).
+func npmDistTags(ctx context.Context, t *importTarget, dst, name string) (map[string]string, error) {
 	var tags map[string]string
 
 	status, err := t.getJSON(ctx, "/repos/"+url.PathEscape(dst)+"/-/package/"+npmEscapedName(name)+"/dist-tags", &tags)
 
 	switch {
 	case status == http.StatusNotFound:
-		return "", nil
+		return map[string]string{}, nil
 	case err != nil:
-		return "", fmt.Errorf("reading the dist-tags of %s: %w", name, err)
+		return nil, fmt.Errorf("reading the dist-tags of %s: %w", name, err)
+	}
+
+	return tags, nil
+}
+
+// npmCurrentLatest reads the "latest" dist-tag of a package ("" when the
+// package or the tag does not exist yet).
+func npmCurrentLatest(ctx context.Context, t *importTarget, dst, name string) (string, error) {
+	tags, err := npmDistTags(ctx, t, dst, name)
+	if err != nil {
+		return "", err
 	}
 
 	return tags["latest"], nil

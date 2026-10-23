@@ -19,11 +19,14 @@ import (
 // from the source's registry API and pushes them to the destination's, blobs
 // first, children before indexes, the tag last. The digests are preserved.
 //
-// What is imported is every tag. Manifests that no tag points at, referrers
-// (artifacts attached through the OCI 1.1 subject field) and foreign layers are
-// not: a registry's blob and digest assets are reached through the tags that
-// use them. Because the core's per-asset hooks do not fit that shape, the
-// format registers transferUnit and leaves match, present and upload unset.
+// What is imported is every tag, and then every manifest stored by digest that
+// no imported tag leads to: an old image whose tag moved on, and the artifacts
+// attached to an image through the OCI 1.1 subject field (signatures, SBOMs,
+// attestations), which the destination lists as referrers of their subject. A
+// blob, and the manifests a tag reaches, are copied with the tag that uses them,
+// so their own assets are not transfers; foreign layers are never copied.
+// Because the core's per-asset hooks do not fit that shape, the format
+// registers transferUnit and leaves match, present and upload unset.
 
 func init() { //nolint:gochecknoinits // formats register themselves (see registerFormat)
 	registerFormat(formatDef{
@@ -93,22 +96,94 @@ func dockerIdentity(a sourceAsset) (dockerTagID, bool) {
 	return id, true
 }
 
+// dockerDigestID identifies a manifest stored by its digest in a source
+// repository.
+type dockerDigestID struct{ Image, Digest string }
+
+func (id dockerDigestID) String() string { return id.Image + "@" + id.Digest }
+
+// dockerParseDigestPath recognises the files that stand for a manifest stored
+// by digest: v2/<image>/manifests/sha256:<hex> in Nexus, and the manifest.json
+// (or list.manifest.json) in the folder <image>/sha256__<hex>/ of Artifactory.
+func dockerParseDigestPath(p string) (dockerDigestID, bool) {
+	if rest, ok := strings.CutPrefix(p, "v2/"); ok {
+		if i := strings.LastIndex(rest, "/manifests/"); i > 0 {
+			if d := rest[i+len("/manifests/"):]; ociValidDigest(d) {
+				return dockerDigestID{Image: rest[:i], Digest: d}, true
+			}
+		}
+	}
+
+	dir, file := path.Split(p)
+	if file != "manifest.json" && file != "list.manifest.json" {
+		return dockerDigestID{}, false
+	}
+
+	image, folder, ok := strings.CutLast(strings.TrimSuffix(dir, "/"), "/")
+	if !ok || image == "" {
+		return dockerDigestID{}, false
+	}
+
+	hexPart, ok := strings.CutPrefix(folder, "sha256__")
+	if d := ociDigestPrefix + hexPart; ok && ociValidDigest(d) {
+		return dockerDigestID{Image: image, Digest: d}, true
+	}
+
+	return dockerDigestID{}, false
+}
+
+// dockerImportable accepts the files of tags and of manifests stored by digest.
 func dockerImportable(p string) bool {
-	_, ok := dockerParsePath(p)
+	if _, ok := dockerParsePath(p); ok {
+		return true
+	}
+
+	_, ok := dockerParseDigestPath(p)
 
 	return ok
+}
+
+// dockerImageOf names the image a tag or digest manifest file belongs to.
+func dockerImageOf(a sourceAsset) (string, bool) {
+	if id, ok := dockerIdentity(a); ok {
+		return id.Image, true
+	}
+
+	d, ok := dockerParseDigestPath(a.Path)
+
+	return d.Image, ok
 }
 
 // dockerUnits groups the tag files by image and tag, in order of appearance.
 // A tag has two files only when Artifactory keeps both a manifest.json and a
 // list.manifest.json; the list leads, as it is what the tag resolves to.
+//
+// The manifests stored by digest follow, one unit per image, as they can only
+// be told apart from the manifests of the tags once those are copied. Such a
+// unit lists the digest files first and then one file of each tag of the image:
+// the tags it has to wait for.
 func dockerUnits(assets []sourceAsset) [][]sourceAsset {
 	var (
-		units [][]sourceAsset
-		slot  = map[dockerTagID]int{}
+		units  [][]sourceAsset
+		slot   = map[dockerTagID]int{}
+		digest = map[string]int{}
+		loose  [][]sourceAsset
 	)
 
 	for _, a := range assets {
+		if d, ok := dockerParseDigestPath(a.Path); ok {
+			i, seen := digest[d.Image]
+			if !seen {
+				i = len(loose)
+				digest[d.Image] = i
+				loose = append(loose, nil)
+			}
+
+			loose[i] = append(loose[i], a)
+
+			continue
+		}
+
 		id, ok := dockerIdentity(a)
 		if !ok {
 			continue
@@ -130,22 +205,47 @@ func dockerUnits(assets []sourceAsset) [][]sourceAsset {
 		})
 	}
 
-	return units
+	for _, u := range units {
+		id, _ := dockerIdentity(u[0])
+		if i, ok := digest[id.Image]; ok {
+			loose[i] = append(loose[i], u[0])
+		}
+	}
+
+	return append(units, loose...)
 }
 
 // dockerRemove deletes the manifest a verification failure left behind; res.ID
 // is the digest the registry reported for it.
 func dockerRemove(ctx context.Context, t *importTarget, dst string, a sourceAsset, res uploadResult) error {
-	id, ok := dockerIdentity(a)
+	image, ok := dockerImageOf(a)
 	if !ok || res.ID == "" {
 		return fmt.Errorf("%w: cannot determine what to remove", errImportUsage)
 	}
 
-	return newOCIRepo(t, dst, id.Image).removeManifest(ctx, res.ID)
+	return newOCIRepo(t, dst, image).removeManifest(ctx, res.ID)
 }
 
-// dockerTransferUnit copies one tag; a failure fails that tag only.
+// dockerTransferUnit copies one tag, or the manifests of an image that no tag
+// leads to; a failure fails that tag or manifest only.
 func dockerTransferUnit(ctx context.Context, im *importer, j importJob) {
+	if _, ok := dockerParseDigestPath(j.assets[0].Path); ok {
+		dockerUntaggedUnit(ctx, im, j)
+
+		return
+	}
+
+	if id, ok := dockerIdentity(j.assets[0]); ok {
+		run := dockerRunOf(im)
+		defer run.finishTag(j.dst, id)
+
+		// The tag file's checksum names the manifest the tag leads to, which
+		// keeps it from being taken for an untagged one should the tag fail.
+		if d := ociDigestPrefix + j.assets[0].SHA256; ociValidDigest(d) {
+			run.reach(j.dst, id.Image, d)
+		}
+	}
+
 	c, err := newDockerCopy(im, j)
 	if err != nil {
 		im.rep.fail(j.repo.Name, j.assets[0].Path, err)

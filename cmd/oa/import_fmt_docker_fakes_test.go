@@ -51,6 +51,8 @@ type fakeDockerImage struct {
 	manifests map[string][]byte
 	types     map[string]string
 	tags      map[string]string
+	// subjects maps a stored manifest to the digest it names as its subject.
+	subjects map[string]string
 }
 
 type fakeDockerUpload struct{ name string }
@@ -74,12 +76,14 @@ type fakeDocker struct {
 	puts            []fakeManifestPut
 	deletedManifest []string
 	heads           int
+	manifestHeads   int
 	unexpected      []string
 
 	// Behaviour switches.
 	immutable       bool // a tag cannot move to other content (409)
 	mangle          bool // tagged manifests are stored altered
 	failBlobPuts    int  // the next n blob PUTs answer 503
+	ignoreSubject   bool // manifests with a subject are stored without the OCI-Subject answer
 	foreignLocation bool // upload sessions are announced with an absolute URL on another host
 }
 
@@ -88,12 +92,21 @@ func (d *fakeDocker) image(name string) *fakeDockerImage {
 	if img == nil {
 		img = &fakeDockerImage{
 			blobs: map[string][]byte{}, manifests: map[string][]byte{},
-			types: map[string]string{}, tags: map[string]string{},
+			types: map[string]string{}, tags: map[string]string{}, subjects: map[string]string{},
 		}
 		d.images[name] = img
 	}
 
 	return img
+}
+
+// peek looks an image up without creating it, as reads do.
+func (d *fakeDocker) peek(name string) *fakeDockerImage {
+	if img := d.images[name]; img != nil {
+		return img
+	}
+
+	return &fakeDockerImage{blobs: map[string][]byte{}, manifests: map[string][]byte{}, types: map[string]string{}, tags: map[string]string{}, subjects: map[string]string{}}
 }
 
 func (d *fakeDocker) fail(w http.ResponseWriter, code int, errCode string) {
@@ -117,6 +130,10 @@ func (d *fakeDocker) serve(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusNoContent)
 	case req.Kind == ocipath.KindBlob && r.Method == http.MethodHead:
 		d.headBlob(w, name, req.Ref)
+	case req.Kind == ocipath.KindManifest && r.Method == http.MethodHead:
+		d.headManifest(w, name, req.Ref)
+	case req.Kind == ocipath.KindReferrers && r.Method == http.MethodGet:
+		d.referrers(w, name, req.Ref)
 	case req.Kind == ocipath.KindManifest && r.Method == http.MethodPut:
 		d.putManifest(w, r, name, req.Ref)
 	case req.Kind == ocipath.KindManifest && r.Method == http.MethodDelete:
@@ -257,6 +274,18 @@ func (d *fakeDocker) putManifest(w http.ResponseWriter, r *http.Request, name, r
 
 	img.manifests[digest] = body
 	img.types[digest] = ctype
+
+	var doc ociDocument
+	_ = json.Unmarshal(body, &doc)
+
+	if doc.Subject != nil {
+		img.subjects[digest] = doc.Subject.Digest
+
+		if !d.ignoreSubject {
+			w.Header().Set(ociSubjectHeader, doc.Subject.Digest)
+		}
+	}
+
 	d.events = append(d.events, "manifest "+name+" "+ref)
 	d.puts = append(d.puts, fakeManifestPut{name: name, ref: ref, contentType: ctype, created: r.Header.Get(headerImportCreatedAt)})
 
@@ -267,6 +296,58 @@ func (d *fakeDocker) putManifest(w http.ResponseWriter, r *http.Request, name, r
 
 	w.Header().Set(ociDigestHeader, digest)
 	w.WriteHeader(http.StatusCreated)
+}
+
+// headManifest answers whether the image holds a manifest, by digest or tag.
+func (d *fakeDocker) headManifest(w http.ResponseWriter, name, ref string) {
+	d.manifestHeads++
+
+	img := d.peek(name)
+	if dg, ok := img.tags[ref]; ok {
+		ref = dg
+	}
+
+	if _, ok := img.manifests[ref]; !ok {
+		d.fail(w, http.StatusNotFound, "MANIFEST_UNKNOWN")
+		return
+	}
+
+	w.Header().Set(ociDigestHeader, ref)
+	w.WriteHeader(http.StatusOK)
+}
+
+// referrers lists the manifests of the image whose subject is the digest, the
+// way OpenArtifact's referrers endpoint does.
+func (d *fakeDocker) referrers(w http.ResponseWriter, name, digest string) {
+	img := d.peek(name)
+
+	type entry struct {
+		MediaType    string `json:"mediaType"` //nolint:tagliatelle // OCI wire format is camelCase
+		Digest       string `json:"digest"`
+		Size         int    `json:"size"`
+		ArtifactType string `json:"artifactType,omitempty"` //nolint:tagliatelle // OCI wire format is camelCase
+	}
+
+	var entries []entry
+
+	for dg, subject := range img.subjects {
+		if subject != digest {
+			continue
+		}
+
+		var doc struct {
+			ArtifactType string `json:"artifactType"` //nolint:tagliatelle // OCI wire format is camelCase
+		}
+
+		_ = json.Unmarshal(img.manifests[dg], &doc)
+
+		entries = append(entries, entry{MediaType: img.types[dg], Digest: dg, Size: len(img.manifests[dg]), ArtifactType: doc.ArtifactType})
+	}
+
+	slices.SortFunc(entries, func(a, b entry) int { return strings.Compare(a.Digest, b.Digest) })
+
+	w.Header().Set("Content-Type", ociMediaOCIIndex)
+	_ = json.NewEncoder(w).Encode(map[string]any{"schemaVersion": 2, "mediaType": ociMediaOCIIndex, "manifests": entries})
 }
 
 // checkReferences enforces what OpenArtifact enforces: the blobs of an image
@@ -362,6 +443,8 @@ type dockerFixture struct {
 	manifests map[string][]byte
 	blobs     map[string][]byte
 	tags      []dockerFakeTag
+	// loose are manifests stored by digest that no tag leads to.
+	loose []dockerFakeTag
 }
 
 func newDockerFixture() *dockerFixture {
@@ -457,6 +540,80 @@ func (fx *dockerFixture) tag(image, tag string, img dockerFakeImage) {
 	fx.tags = append(fx.tags, dockerFakeTag{image: image, tag: tag, img: img})
 }
 
+// untagged stores the image by digest only, as a registry keeps an image whose
+// tag moved on, or an artifact attached to another image.
+func (fx *dockerFixture) untagged(image string, img dockerFakeImage) {
+	fx.loose = append(fx.loose, dockerFakeTag{image: image, img: img})
+}
+
+const (
+	dockerFakeEmptyType = "application/vnd.oci.empty.v1+json"
+	dockerFakeSigType   = "application/vnd.dev.cosign.artifact.sig.v1+json"
+)
+
+// referrer builds an OCI 1.1 artifact attached to subject: an image manifest
+// with the empty config, one layer of the given media type, and a subject.
+func (fx *dockerFixture) referrer(subject dockerFakeImage, artifactType, payload string) dockerFakeImage {
+	cfg := fx.blob("{}")
+	cfg.MediaType = dockerFakeEmptyType
+
+	layer := fx.blob(payload)
+	layer.MediaType = artifactType
+
+	var doc ociDocument
+	if err := json.Unmarshal(subject.manifest, &doc); err != nil {
+		panic(err)
+	}
+
+	img := fx.manifestDoc(map[string]any{
+		"schemaVersion": 2, "mediaType": ociMediaOCIManifest, "artifactType": artifactType,
+		"config": cfg, "layers": []ociDescriptor{layer},
+		"subject":     map[string]any{"mediaType": doc.MediaType, "digest": subject.digest, "size": len(subject.manifest)},
+		"annotations": map[string]string{"org.opencontainers.image.created": "2025-01-01T00:00:00Z"},
+	})
+	img.blobs = []string{cfg.Digest, layer.Digest}
+
+	return img
+}
+
+// attestation builds a buildx-style attestation manifest of an image: an OCI
+// manifest with an in-toto layer, tied to the image by annotations only.
+func (fx *dockerFixture) attestation(of dockerFakeImage) dockerFakeImage {
+	cfg := fx.blob("{}")
+	cfg.MediaType = "application/vnd.oci.image.config.v1+json"
+
+	layer := fx.blob(`{"predicateType":"https://slsa.dev/provenance/v0.2"}`)
+	layer.MediaType = "application/vnd.in-toto+json"
+
+	img := fx.manifestDoc(map[string]any{
+		"schemaVersion": 2, "mediaType": ociMediaOCIManifest, "config": cfg, "layers": []ociDescriptor{layer},
+		"annotations": map[string]string{"vnd.docker.reference.type": "attestation-manifest", "vnd.docker.reference.digest": of.digest},
+	})
+	img.blobs = []string{cfg.Digest, layer.Digest}
+
+	return img
+}
+
+// referrersIndex builds the index a registry without the referrers API keeps
+// under the referrers tag of an image: one entry per artifact.
+func (fx *dockerFixture) referrersIndex(refs ...dockerFakeImage) dockerFakeImage {
+	var (
+		entries []map[string]any
+		blobs   []string
+	)
+
+	for _, r := range refs {
+		entries = append(entries, map[string]any{"mediaType": ociMediaOCIManifest, "digest": r.digest, "size": len(r.manifest)})
+		blobs = append(blobs, r.blobs...)
+	}
+
+	idx := fx.manifestDoc(map[string]any{"schemaVersion": 2, "mediaType": ociMediaOCIIndex, "manifests": entries})
+	idx.children = refs
+	idx.blobs = blobs
+
+	return idx
+}
+
 // allManifests lists the digests of the image's manifest and its children's.
 func (i dockerFakeImage) allManifests() []string {
 	out := []string{i.digest}
@@ -498,7 +655,26 @@ func (fx *dockerFixture) nexusFiles(created string) []fakeFile {
 		}
 	}
 
+	for _, l := range fx.loose {
+		base := "v2/" + l.image
+
+		for _, m := range l.img.allManifests() {
+			add(fakeFile{path: base + "/manifests/" + m, data: fx.manifests[m], created: created, contentType: fx.mediaTypeOf(m)})
+		}
+
+		for _, b := range l.img.blobs {
+			add(fakeFile{path: base + "/blobs/" + b, data: fx.blobs[b], created: created, contentType: dockerFakeLayerType})
+		}
+	}
+
 	return files
+}
+
+func (fx *dockerFixture) mediaTypeOf(digest string) string {
+	var doc ociDocument
+	_ = json.Unmarshal(fx.manifests[digest], &doc)
+
+	return doc.MediaType
 }
 
 // artifactoryFiles lays the fixture out as Artifactory stores a local docker
@@ -527,6 +703,12 @@ func (fx *dockerFixture) artifactoryFiles(created string, props map[string]map[s
 
 		for _, b := range t.img.blobs {
 			files = append(files, fakeFile{path: dir + strings.Replace(b, ":", "__", 1), data: fx.blobs[b], created: created})
+		}
+	}
+
+	for _, l := range fx.loose {
+		for _, m := range l.img.allManifests() {
+			files = append(files, fakeFile{path: l.image + "/" + strings.Replace(m, ":", "__", 1) + "/manifest.json", data: fx.manifests[m], created: created})
 		}
 	}
 

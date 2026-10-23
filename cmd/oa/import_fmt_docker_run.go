@@ -54,6 +54,8 @@ type dockerRun struct {
 	tags    map[*targetIndex]*dockerListing
 	blobs   map[dockerBlobKey]*dockerFlight
 	holders map[dockerHolderKey]string
+	gates   map[dockerTagKey]*dockerTagGate
+	reached map[dockerManifestKey]bool
 }
 
 func newDockerRun() *dockerRun {
@@ -61,6 +63,8 @@ func newDockerRun() *dockerRun {
 		tags:    map[*targetIndex]*dockerListing{},
 		blobs:   map[dockerBlobKey]*dockerFlight{},
 		holders: map[dockerHolderKey]string{},
+		gates:   map[dockerTagKey]*dockerTagGate{},
+		reached: map[dockerManifestKey]bool{},
 	}
 }
 
@@ -163,4 +167,67 @@ func (r *dockerRun) holder(dst, image, digest string) string {
 	}
 
 	return ""
+}
+
+// dockerTagKey names a tag of an image in a destination repository.
+type dockerTagKey struct{ dst, image, tag string }
+
+// dockerTagGate opens when the unit that copies a tag has finished with it.
+type dockerTagGate struct {
+	once sync.Once
+	done chan struct{}
+}
+
+func (r *dockerRun) gate(dst string, id dockerTagID) *dockerTagGate {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	k := dockerTagKey{dst: dst, image: id.Image, tag: id.Tag}
+
+	g := r.gates[k]
+	if g == nil {
+		g = &dockerTagGate{done: make(chan struct{})}
+		r.gates[k] = g
+	}
+
+	return g
+}
+
+// finishTag tells the units waiting for the tag that it is done, whether it was
+// copied, found present, resumed or failed.
+func (r *dockerRun) finishTag(dst string, id dockerTagID) {
+	g := r.gate(dst, id)
+	g.once.Do(func() { close(g.done) })
+}
+
+// waitTag blocks until the unit of the tag has finished.
+func (r *dockerRun) waitTag(ctx context.Context, dst string, id dockerTagID) error {
+	select {
+	case <-r.gate(dst, id).done:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+// dockerManifestKey identifies a manifest in one image of a destination
+// repository.
+type dockerManifestKey struct{ dst, image, digest string }
+
+// reach records manifests that the tags of this run stand for: they are stored
+// with their tag, not as manifests of their own.
+func (r *dockerRun) reach(dst, image string, digests ...string) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	for _, d := range digests {
+		r.reached[dockerManifestKey{dst: dst, image: image, digest: d}] = true
+	}
+}
+
+func (r *dockerRun) isReached(dst, image, digest string) bool {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+
+	return r.reached[dockerManifestKey{dst: dst, image: image, digest: digest}]
 }

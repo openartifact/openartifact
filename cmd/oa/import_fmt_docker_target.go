@@ -24,6 +24,7 @@ import (
 
 const (
 	ociDigestHeader  = "Docker-Content-Digest"
+	ociSubjectHeader = "Oci-Subject"
 	ociCancelTimeout = 30 * time.Second
 )
 
@@ -197,7 +198,33 @@ func (o ociRepo) putManifest(ctx context.Context, ref string, m ociManifest, met
 		return "", fmt.Errorf("%w: the registry did not report the digest of manifest %s", errImportVerify, ref)
 	}
 
+	// A registry that processed the subject of a referrer says so; one that
+	// did not stored an artifact its referrers listing will never show.
+	if s := m.doc.Subject; s != nil && resp.Header.Get(ociSubjectHeader) != s.Digest {
+		return "", fmt.Errorf("%w: the registry stored manifest %s without linking it to its subject %s", errImportVerify, ref, s.Digest)
+	}
+
 	return got, nil
+}
+
+// hasManifest reports whether the image holds the manifest with the digest,
+// tagged or not.
+func (o ociRepo) hasManifest(ctx context.Context, digest string) (bool, error) {
+	resp, err := o.t.request(ctx, http.MethodHead, o.prefix+"/manifests/"+url.PathEscape(digest), nil, -1, nil)
+	if err != nil {
+		return false, err
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	switch resp.StatusCode {
+	case http.StatusOK:
+		return true, nil
+	case http.StatusNotFound:
+		return false, nil
+	default:
+		return false, serverError(resp, "HEAD "+o.prefix+"/manifests/"+digest)
+	}
 }
 
 // removeManifest deletes the manifest with the given digest, and with it the

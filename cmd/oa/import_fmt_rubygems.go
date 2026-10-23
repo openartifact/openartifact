@@ -22,6 +22,15 @@ var errGemYanked = errors.New("RubyGems has no hard delete: the gem was yanked i
 // Gems are pushed as the raw .gem; the server reads name, version and platform
 // out of the gem's own metadata. Only the gem files move: the specs indexes and
 // the quick/ gemspecs are generated from what is stored.
+//
+// Yanked state is not carried over because no source records it: Nexus's
+// RubyGems documentation knows no yank at all (a gem is simply deleted), and
+// Artifactory's gem API accepts the yank command but its documentation
+// describes no marker, property or listing for yanked gems; the AQL and
+// asset listings the importer reads show only files that still exist. A
+// yanked gem is therefore absent from the listing, and what is listed is
+// live and is imported live. The importer never un-yanks: OpenArtifact has no
+// unyank route and a push of a yanked version is a conflict.
 func init() { //nolint:gochecknoinits // every format registers itself with the importer
 	registerFormat(formatDef{
 		format: formatRubyGems, nexus: []string{"rubygems"}, artifactory: []string{"gems"},
