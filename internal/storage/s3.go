@@ -33,6 +33,11 @@ type S3BlobStore struct {
 	presigner  *s3.PresignClient
 	bucket     string
 	presignTTL time.Duration
+	// gcs marks Google Cloud Storage's XML API, which copies objects of any size
+	// with CopyObject but has no UploadPartCopy.
+	gcs bool
+	// copyOverride replaces the promote copy thresholds (tests).
+	copyOverride *copyLimit
 }
 
 // NewS3BlobStore creates a new S3BlobStore from the provided StorageConfig.

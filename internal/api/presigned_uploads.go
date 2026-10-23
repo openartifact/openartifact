@@ -49,9 +49,15 @@ const (
 	// aborted verification could never be retried to completion.
 	presignedCompleteTimeout = 30 * time.Minute
 
-	// presignedCompleteLease is how long a complete call owns an upload; a
-	// crashed server's lease expires and the upload can be completed again.
-	presignedCompleteLease = presignedCompleteTimeout + time.Minute
+	// presignedCompleteScan is the assumed worst-case speed, in bytes per
+	// second, of reading an object back from the store and copying it: the
+	// complete timeout grows by size / presignedCompleteScan for large objects.
+	presignedCompleteScan = 20 << 20
+
+	// presignedCompleteMaxTimeout caps the complete timeout. The cleanup query
+	// waits longer than this (plus a minute of lease) before it treats a
+	// complete as crashed.
+	presignedCompleteMaxTimeout = 6 * time.Hour
 
 	// presignedRetryAfter is the retry hint, in seconds, for an upload that is
 	// being completed or a user at the pending-upload cap.
@@ -69,7 +75,9 @@ type PresignedUploadHandler struct {
 
 	evaluator *auth.Evaluator
 	// staging is nil when the storage backend has no staging area.
-	staging    storage.StagingStore
+	staging storage.StagingStore
+	// multipart is nil when the staging area cannot take uploads in parts.
+	multipart  storage.MultipartStagingStore
 	urlTTL     time.Duration
 	maxPending int
 	reg        *metrics.Registry
@@ -86,10 +94,16 @@ func NewPresignedUploadHandler(log *logger.Logger, db database.Database, blobSto
 		staging = s
 	}
 
+	var multipart storage.MultipartStagingStore
+	if m, ok := blobStore.(storage.MultipartStagingStore); ok && staging != nil && m.MultipartSupported() {
+		multipart = m
+	}
+
 	return &PresignedUploadHandler{
 		Handler:    base.New(log, db, blobStore, ""),
 		evaluator:  evaluator,
 		staging:    staging,
+		multipart:  multipart,
 		urlTTL:     urlTTL,
 		maxPending: maxPending,
 		reg:        reg,
@@ -100,6 +114,8 @@ func NewPresignedUploadHandler(log *logger.Logger, db database.Database, blobSto
 func (h *PresignedUploadHandler) Register(router chi.Router) {
 	router.Post("/api/v1/repositories/{name}/uploads", h.handleCreate)
 	router.Post("/api/v1/repositories/{name}/uploads/{id}/complete", h.handleComplete)
+	router.Post("/api/v1/repositories/{name}/uploads/{id}/parts", h.handleParts)
+	router.Post("/api/v1/repositories/{name}/uploads/{id}/abort", h.handleAbort)
 }
 
 // CreatePresignedUploadRequest is the body of POST /repositories/{name}/uploads.
@@ -108,18 +124,30 @@ type CreatePresignedUploadRequest struct {
 	Size        int64  `json:"size"`
 	SHA256      string `json:"sha256"`
 	ContentType string `json:"content_type,omitempty"`
+	// Multipart asks for a multipart upload: the client PUTs the object in
+	// parts to URLs fetched from the parts endpoint. Required above the
+	// single-upload limit (5 GiB).
+	Multipart bool `json:"multipart,omitempty"`
+	// PartSize is the part size in bytes of a multipart upload (5 MiB to
+	// 4000 MiB); 0 lets the server choose.
+	PartSize int64 `json:"part_size,omitempty"`
 }
 
 // CreatePresignedUploadResponse tells the client where and how to upload.
 type CreatePresignedUploadResponse struct {
 	ID string `json:"id"`
 	// UploadURL accepts one PUT of exactly Size bytes. Do not log it: the
-	// query string is the credential.
-	UploadURL string `json:"upload_url"`
-	Method    string `json:"method"`
+	// query string is the credential. Absent for a multipart upload.
+	UploadURL string `json:"upload_url,omitempty"`
+	Method    string `json:"method,omitempty"`
 	// Headers must be sent with the PUT.
-	Headers   map[string]string `json:"headers"`
+	Headers   map[string]string `json:"headers,omitempty"`
 	ExpiresAt time.Time         `json:"expires_at"`
+	// Multipart, PartSize and PartCount describe a multipart upload: PUT each
+	// part (all PartSize bytes but the last) to a URL from the parts endpoint.
+	Multipart bool  `json:"multipart,omitempty"`
+	PartSize  int64 `json:"part_size,omitempty"`
+	PartCount int   `json:"part_count,omitempty"`
 }
 
 // CompletePresignedUploadResponse mirrors the response of a raw PUT.
@@ -220,12 +248,12 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 		return
 	}
 
-	if req.Size < 0 || req.Size > formatraw.MaxUploadBytes {
-		writeError(w, http.StatusBadRequest, "invalid_size", "size is negative or above the single-upload limit")
+	partSize, ok := h.planUpload(w, &req)
+	if !ok {
 		return
 	}
 
-	if h.staging == nil {
+	if h.staging == nil || (req.Multipart && h.multipart == nil) {
 		writeError(w, http.StatusNotImplemented, "presign_unsupported", "the storage backend does not support presigned uploads")
 		return
 	}
@@ -255,6 +283,7 @@ func (h *PresignedUploadHandler) handleCreate(w http.ResponseWriter, r *http.Req
 		RepositoryID: repo.ID,
 		Path:         path,
 		SizeBytes:    req.Size,
+		PartSize:     partSize,
 		SHA256:       digest,
 		ContentType:  req.ContentType,
 		CreatedBy:    createdBy,
@@ -285,9 +314,19 @@ func (h *PresignedUploadHandler) createUpload(w http.ResponseWriter, r *http.Req
 		return
 	}
 
+	if up.PartSize > 0 {
+		h.startMultipart(w, r, repo, up)
+		return
+	}
+
 	put, err := h.staging.PresignStagingPut(ctx, up.ID, up.SizeBytes, h.urlTTL)
 	if err != nil {
 		h.forgetUpload(up.ID)
+
+		if errors.Is(err, storage.ErrSingleUploadTooLarge) {
+			writeError(w, http.StatusBadRequest, "invalid_size", "size is too large for a single upload on this storage backend; set multipart")
+			return
+		}
 
 		if errors.Is(err, storage.ErrPresignNotSupported) {
 			writeError(w, http.StatusNotImplemented, "presign_unsupported", "the storage backend does not support presigned uploads")
@@ -471,7 +510,7 @@ func (h *PresignedUploadHandler) handleComplete(w http.ResponseWriter, r *http.R
 	// Claim before anything else, even for an expired upload: a complete that
 	// started earlier may still be verifying the staging object, and deleting
 	// it from under that call would fail it. Only the claim holder may discard.
-	claimed, err := h.DB.ClaimPresignedUpload(r.Context(), repo.ID, up.ID, presignedCompleteLease)
+	claimed, err := h.DB.ClaimPresignedUpload(r.Context(), repo.ID, up.ID, completeTimeout(up.SizeBytes)+time.Minute)
 	if err != nil {
 		h.Log.Errorw("presigned upload: failed to claim upload", "upload_id", up.ID, "error", err)
 		writeError(w, http.StatusInternalServerError, "internal_error", "internal error")
@@ -495,7 +534,7 @@ func (h *PresignedUploadHandler) handleComplete(w http.ResponseWriter, r *http.R
 
 	// The work outlives the request: a client that gives up (or times out
 	// waiting for headers) must not abort a verification in progress.
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), presignedCompleteTimeout)
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(r.Context()), completeTimeout(up.SizeBytes))
 	defer cancel()
 
 	// Commit reads the principal and ?force from the request; keep both while
@@ -565,6 +604,10 @@ func failMissing() *completeFailure {
 // principal and query but a context detached from the HTTP request.
 func (h *PresignedUploadHandler) complete(req *http.Request, repo *models.Repository, up *models.PresignedUpload) (CompletePresignedUploadResponse, *completeFailure) {
 	ctx := req.Context()
+
+	if fail := h.assembleParts(ctx, up); fail != nil {
+		return CompletePresignedUploadResponse{}, fail
+	}
 
 	verified, err := h.verifyStaged(ctx, up)
 

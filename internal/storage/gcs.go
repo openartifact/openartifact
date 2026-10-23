@@ -37,5 +37,12 @@ func NewGCSBlobStore(cfg StorageConfig) (*S3BlobStore, error) {
 	gcsCfg.Region = "auto"
 	gcsCfg.ForcePathStyle = true
 
-	return NewS3BlobStore(gcsCfg)
+	store, err := NewS3BlobStore(gcsCfg)
+	if err != nil {
+		return nil, err
+	}
+
+	store.gcs = true
+
+	return store, nil
 }

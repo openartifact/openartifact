@@ -65,9 +65,10 @@ type placementEntry struct {
 }
 
 var (
-	_ storage.BlobStore    = (*Store)(nil)
-	_ storage.Presigner    = (*Store)(nil)
-	_ storage.StagingStore = (*Store)(nil)
+	_ storage.BlobStore             = (*Store)(nil)
+	_ storage.Presigner             = (*Store)(nil)
+	_ storage.StagingStore          = (*Store)(nil)
+	_ storage.MultipartStagingStore = (*Store)(nil)
 )
 
 // NewStore creates the tiered store. tracker and reg may be nil.
@@ -608,4 +609,48 @@ func (s *Store) WalkStaging(ctx context.Context, olderThan time.Time, fn func(id
 	}
 
 	return st.WalkStaging(ctx, olderThan, fn)
+}
+
+// primaryMultipart returns the primary store's multipart staging capability.
+func (s *Store) primaryMultipart() (storage.MultipartStagingStore, bool) {
+	st, ok := s.reg.Primary().(storage.MultipartStagingStore)
+
+	return st, ok
+}
+
+// MultipartSupported implements storage.MultipartStagingStore.
+func (s *Store) MultipartSupported() bool {
+	st, ok := s.primaryMultipart()
+
+	return ok && st.MultipartSupported()
+}
+
+// InitiateMultipart implements storage.MultipartStagingStore.
+func (s *Store) InitiateMultipart(ctx context.Context, id string, size, partSize int64) (string, error) {
+	st, ok := s.primaryMultipart()
+	if !ok {
+		return "", storage.ErrPresignNotSupported
+	}
+
+	return st.InitiateMultipart(ctx, id, size, partSize)
+}
+
+// PresignStagingPart implements storage.MultipartStagingStore.
+func (s *Store) PresignStagingPart(ctx context.Context, id, handle string, number int, length int64, ttl time.Duration) (storage.PresignedPut, error) {
+	st, ok := s.primaryMultipart()
+	if !ok {
+		return storage.PresignedPut{}, storage.ErrPresignNotSupported
+	}
+
+	return st.PresignStagingPart(ctx, id, handle, number, length, ttl)
+}
+
+// CompleteMultipart implements storage.MultipartStagingStore.
+func (s *Store) CompleteMultipart(ctx context.Context, id, handle string, size, partSize int64) error {
+	st, ok := s.primaryMultipart()
+	if !ok {
+		return storage.ErrPresignNotSupported
+	}
+
+	return st.CompleteMultipart(ctx, id, handle, size, partSize)
 }

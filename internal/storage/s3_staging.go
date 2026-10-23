@@ -9,16 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"net/http"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/aws/aws-sdk-go-v2/aws"
 	awshttp "github.com/aws/aws-sdk-go-v2/aws/transport/http"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
-	"github.com/aws/aws-sdk-go-v2/service/s3/types"
 	"github.com/aws/smithy-go"
 	"github.com/google/uuid"
 )
@@ -70,18 +67,7 @@ func (s *S3BlobStore) PresignStagingPut(ctx context.Context, id string, size int
 		return PresignedPut{}, fmt.Errorf("s3: presign put %s: %w", key, err)
 	}
 
-	headers := make(map[string]string, len(req.SignedHeader))
-
-	for name, values := range req.SignedHeader {
-		// Host is implied by the URL; Content-Length is set by the HTTP client.
-		if len(values) == 0 || name == "Host" || name == "host" || name == "Content-Length" || name == "content-length" {
-			continue
-		}
-
-		headers[name] = values[0]
-	}
-
-	return PresignedPut{URL: req.URL, Headers: headers, Expires: time.Now().Add(ttl)}, nil
+	return PresignedPut{URL: req.URL, Headers: presignedHeaders(req.SignedHeader), Expires: time.Now().Add(ttl)}, nil
 }
 
 // StagingSupported reports that the S3 backend has a staging area.
@@ -159,32 +145,7 @@ func (s *S3BlobStore) PromoteStaging(ctx context.Context, id, sha256, version st
 		return nil
 	}
 
-	md := map[string]string{"sha256": sha256}
-	maps.Copy(md, metadata)
-	md["sha256"] = sha256
-
-	dst := objectKey(sha256)
-
-	_, err = s.client.CopyObject(ctx, &s3.CopyObjectInput{
-		Bucket:            aws.String(s.bucket),
-		Key:               aws.String(dst),
-		CopySource:        aws.String(s.bucket + "/" + url.PathEscape(src)),
-		CopySourceIfMatch: aws.String(version),
-		Metadata:          md,
-		MetadataDirective: types.MetadataDirectiveReplace,
-	})
-	if err != nil {
-		switch {
-		case isNotFound(err):
-			return ErrStagingNotFound
-		case isPreconditionFailed(err):
-			return ErrStagingChanged
-		}
-
-		return fmt.Errorf("s3: copy %s to %s: %w", src, dst, err)
-	}
-
-	return nil
+	return s.copyStaging(ctx, src, objectKey(sha256), version, promoteMetadata(sha256, metadata))
 }
 
 // isPreconditionFailed reports an S3 412 (a failed If-Match / x-amz-copy-source-if-match).
@@ -235,10 +196,23 @@ func (s *S3BlobStore) WalkStaging(ctx context.Context, olderThan time.Time, fn f
 		}
 	}
 
-	return nil
+	return s.walkStagingMultipart(ctx, olderThan, fn)
 }
 
-// DeleteStaging removes a staging object; a missing object is not an error.
+// walkStagingMultipart reports unfinished multipart uploads older than
+// olderThan: their parts are invisible to the object listing and are billed
+// until aborted (DeleteStaging aborts them).
+func (s *S3BlobStore) walkStagingMultipart(ctx context.Context, olderThan time.Time, fn func(ids []string) error) error {
+	ids, err := s.stagingMultipartIDs(ctx, olderThan)
+	if err != nil || len(ids) == 0 {
+		return err
+	}
+
+	return fn(ids)
+}
+
+// DeleteStaging removes a staging object and aborts any unfinished multipart
+// upload of it; a missing object is not an error.
 func (s *S3BlobStore) DeleteStaging(ctx context.Context, id string) error {
 	key, err := stagingKey(id)
 	if err != nil {
@@ -250,5 +224,5 @@ func (s *S3BlobStore) DeleteStaging(ctx context.Context, id string) error {
 		return fmt.Errorf("s3: delete %s: %w", key, err)
 	}
 
-	return nil
+	return s.abortStagingMultipart(ctx, key)
 }

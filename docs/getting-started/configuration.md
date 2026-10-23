@@ -179,6 +179,8 @@ Backends: `filesystem`, `s3`, `gcs`, `azure`, `garage`, `seaweedfs`, `oci`. `gar
 | `OPENARTIFACT_AZURE_ACCOUNT_NAME` | `azureAccountName` | empty | Azure storage account |
 | `OPENARTIFACT_AZURE_ACCOUNT_KEY` | `azureAccountKey` | empty | Azure account key (**secret**) |
 | `OPENARTIFACT_AZURE_CONTAINER_NAME` | `azureContainerName` | empty | Azure container |
+| `OPENARTIFACT_AZURE_ENDPOINT` | `azureEndpoint` | empty | Azure blob service URL (Azurite, sovereign clouds); empty uses `https://<account>.blob.core.windows.net` |
+| `STORAGE_STAGING_PATH` | `stagingPath` | empty | Spool directory for server-relayed presigned uploads on `oci` storage (default `<tmp>/openartifact-staging`) |
 | `STORAGE_OCI_USERNAME` | `ociUsername` | empty | OCI registry user |
 | `STORAGE_OCI_PASSWORD` | `ociPassword` | empty | OCI registry password (**secret**) |
 | `STORAGE_OCI_INSECURE` | `ociInsecure` | `false` | Plain HTTP to the registry (dev/test only) |

@@ -422,6 +422,7 @@ func ConfigFromBackend(kind string, raw []byte) (storage.StorageConfig, error) {
 	case "azure":
 		out.AzureAccountName = str("account", "account_name", "accountName")
 		out.AzureContainerName = str("container")
+		out.AzureEndpoint = str("endpoint")
 		out.AzureAccountKey, err = secret("account_key", "accountKey")
 	default:
 		return out, fmt.Errorf("%w: unsupported kind %q", errBackendConfig, kind)

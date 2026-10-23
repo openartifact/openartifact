@@ -26,6 +26,7 @@ func (p *PostgresDB) CreatePresignedUpload(ctx context.Context, u *models.Presig
 		ContentType:  u.ContentType,
 		CreatedBy:    u.CreatedBy,
 		ExpiresAt:    u.ExpiresAt,
+		PartSize:     u.PartSize,
 	})
 	if err != nil {
 		return fmt.Errorf("failed to create presigned upload: %w", err)
@@ -65,6 +66,8 @@ func (p *PostgresDB) GetPresignedUpload(ctx context.Context, repoID, id string) 
 		CreatedBy:       row.CreatedBy,
 		CreatedAt:       row.CreatedAt,
 		ExpiresAt:       row.ExpiresAt,
+		PartSize:        row.PartSize,
+		MultipartID:     row.MultipartID,
 	}, nil
 }
 
@@ -169,9 +172,9 @@ func (p *PostgresDB) CreatePresignedUploadCapped(ctx context.Context, u *models.
 	}
 
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO presigned_uploads (repository_id, path, size_bytes, sha256, content_type, created_by, expires_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7) RETURNING id, created_at`,
-		u.RepositoryID, u.Path, u.SizeBytes, u.SHA256, u.ContentType, u.CreatedBy, u.ExpiresAt,
+		`INSERT INTO presigned_uploads (repository_id, path, size_bytes, sha256, content_type, created_by, expires_at, part_size)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8) RETURNING id, created_at`,
+		u.RepositoryID, u.Path, u.SizeBytes, u.SHA256, u.ContentType, u.CreatedBy, u.ExpiresAt, u.PartSize,
 	).Scan(&u.ID, &u.CreatedAt); err != nil {
 		return fmt.Errorf("failed to create presigned upload: %w", err)
 	}
@@ -204,4 +207,31 @@ func (p *PostgresDB) ExistingPresignedUploadIDs(ctx context.Context, ids []strin
 	}
 
 	return found, nil
+}
+
+// SetPresignedUploadMultipartID records the backend handle of the upload's open multipart upload.
+func (p *PostgresDB) SetPresignedUploadMultipartID(ctx context.Context, id, multipartID string) error {
+	if !isUUID(id) {
+		return nil
+	}
+
+	if err := p.q.SetPresignedUploadMultipartID(ctx, dbsqlc.SetPresignedUploadMultipartIDParams{ID: id, MultipartID: multipartID}); err != nil {
+		return fmt.Errorf("failed to set presigned upload multipart id: %w", err)
+	}
+
+	return nil
+}
+
+// ExtendPresignedUploadExpiry moves the complete deadline of a pending upload
+// forward to expiresAt; it never shortens it.
+func (p *PostgresDB) ExtendPresignedUploadExpiry(ctx context.Context, id string, expiresAt time.Time) error {
+	if !isUUID(id) {
+		return nil
+	}
+
+	if err := p.q.ExtendPresignedUploadExpiry(ctx, dbsqlc.ExtendPresignedUploadExpiryParams{ID: id, ExpiresAt: expiresAt}); err != nil {
+		return fmt.Errorf("failed to extend presigned upload expiry: %w", err)
+	}
+
+	return nil
 }

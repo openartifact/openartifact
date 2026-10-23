@@ -4,7 +4,10 @@
 
 package storage
 
-import "fmt"
+import (
+	"fmt"
+	"path/filepath"
+)
 
 // NewBlobStore creates a BlobStore from the given config, selecting the backend by Type.
 func NewBlobStore(cfg StorageConfig) (BlobStore, error) {
@@ -36,5 +39,12 @@ func NewBlobStore(cfg StorageConfig) (BlobStore, error) {
 
 // NewFilesystemBlobStore creates a FilesystemStore from the given config.
 func NewFilesystemBlobStore(cfg StorageConfig) (*FilesystemStore, error) {
-	return NewFilesystemStore(cfg.Path)
+	store, err := NewFilesystemStore(cfg.Path)
+	if err != nil {
+		return nil, err
+	}
+
+	store.relay = newRelay(filepath.Join(cfg.Path, filesystemStagingDir), cfg.PublicURL)
+
+	return store, nil
 }

@@ -467,6 +467,13 @@ type Database interface {
 	CreatePresignedUploadCapped(ctx context.Context, u *models.PresignedUpload, maxPending int) error
 	// ExistingPresignedUploadIDs returns the subset of ids that have a row.
 	ExistingPresignedUploadIDs(ctx context.Context, ids []string) ([]string, error)
+	// SetPresignedUploadMultipartID records the backend handle of the upload's
+	// open multipart upload.
+	SetPresignedUploadMultipartID(ctx context.Context, id, multipartID string) error
+	// ExtendPresignedUploadExpiry moves the complete deadline of a pending
+	// upload forward to expiresAt (it never shortens it), so an upload that is
+	// still receiving parts does not expire under the client.
+	ExtendPresignedUploadExpiry(ctx context.Context, id string, expiresAt time.Time) error
 	ListExpiredPresignedUploads(ctx context.Context, limit int) ([]string, error)
 
 	// SBOM methods

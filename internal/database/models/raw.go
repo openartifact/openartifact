@@ -43,4 +43,9 @@ type PresignedUpload struct {
 	// id the complete call returned.
 	CompletedAt *time.Time
 	ArtifactID  string
+	// PartSize is the planned size of every part but the last of a multipart
+	// upload; 0 for a single-PUT upload.
+	PartSize int64
+	// MultipartID is the backend's handle of the open multipart upload.
+	MultipartID string
 }

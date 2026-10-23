@@ -3083,8 +3083,8 @@
             "type": "integer",
             "format": "int64",
             "minimum": 0,
-            "maximum": 5368709120,
-            "description": "Exact size in bytes; signed into the upload URL"
+            "maximum": 5497558138880,
+            "description": "Exact size in bytes; signed into the upload URL. Above 5 GiB (5368709120) `multipart` must be true; the limit is 5 TiB."
           },
           "sha256": {
             "type": "string",
@@ -3094,6 +3094,17 @@
           "content_type": {
             "type": "string",
             "description": "Content type to record; detected from the content when omitted"
+          },
+          "multipart": {
+            "type": "boolean",
+            "description": "Upload the object in parts: PUT each part to a URL from the parts endpoint, then call complete. Required above 5 GiB; not allowed for an empty file."
+          },
+          "part_size": {
+            "type": "integer",
+            "format": "int64",
+            "minimum": 5242880,
+            "maximum": 4194304000,
+            "description": "Part size in bytes of a multipart upload (5 MiB to 4000 MiB, at most 10000 parts); the server picks one (64 MiB or more) when omitted"
           }
         }
       },
@@ -3101,9 +3112,6 @@
         "type": "object",
         "required": [
           "id",
-          "upload_url",
-          "method",
-          "headers",
           "expires_at"
         ],
         "properties": {
@@ -3111,9 +3119,22 @@
             "type": "string",
             "format": "uuid"
           },
+          "multipart": {
+            "type": "boolean",
+            "description": "True for a multipart upload: no upload_url is returned, fetch part URLs from the parts endpoint"
+          },
+          "part_size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Multipart only: size of every part but the last"
+          },
+          "part_count": {
+            "type": "integer",
+            "description": "Multipart only: number of parts, numbered from 1"
+          },
           "upload_url": {
             "type": "string",
-            "description": "Presigned URL accepting one PUT of exactly `size` bytes. The query string is a credential: do not log it."
+            "description": "Single upload only: presigned URL accepting one PUT of exactly `size` bytes. The query string is a credential: do not log it."
           },
           "method": {
             "type": "string",
@@ -3132,6 +3153,82 @@
             "type": "string",
             "format": "date-time",
             "description": "When the URL stops working"
+          }
+        }
+      },
+      "PresignedPartsRequest": {
+        "type": "object",
+        "required": [
+          "part_numbers"
+        ],
+        "properties": {
+          "part_numbers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "uniqueItems": true,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "1-based numbers of the parts to sign, at most the upload's part_count"
+          }
+        }
+      },
+      "PresignedPart": {
+        "type": "object",
+        "required": [
+          "part_number",
+          "upload_url",
+          "method",
+          "headers",
+          "size"
+        ],
+        "properties": {
+          "part_number": {
+            "type": "integer"
+          },
+          "upload_url": {
+            "type": "string",
+            "description": "Presigned URL accepting one PUT of exactly `size` bytes. The query string is a credential: do not log it."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "PUT"
+            ]
+          },
+          "headers": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Headers that must be sent with the PUT"
+          },
+          "size": {
+            "type": "integer",
+            "format": "int64",
+            "description": "Exact size of the part in bytes"
+          }
+        }
+      },
+      "PresignedParts": {
+        "type": "object",
+        "required": [
+          "parts",
+          "expires_at"
+        ],
+        "properties": {
+          "parts": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/PresignedPart"
+            }
+          },
+          "expires_at": {
+            "type": "string",
+            "format": "date-time",
+            "description": "When the part URLs stop working"
           }
         }
       },
@@ -13572,7 +13669,7 @@
     "/api/v1/repositories/{name}/uploads": {
       "post": {
         "summary": "Start a presigned upload",
-        "description": "Hosted raw repositories on S3/GCS storage only. Returns a short-lived presigned PUT URL to a staging object; upload the bytes directly to it, then call the complete endpoint. Requires write permission on the repository and on the path. The response carries a bearer credential and is sent with Cache-Control: no-store. A user may have at most storage.presignMaxPendingUploads uploads outstanding (not completed, not expired).",
+        "description": "Hosted raw repositories on any storage backend with a staging area: S3-compatible and GCS (presigned URLs), Azure (SAS URLs), and the filesystem and OCI registry backends (short-lived HMAC-signed URLs served by this server, which need `baseUrl` to be set). Returns a short-lived presigned PUT URL to a staging object; upload the bytes directly to it, then call the complete endpoint. Files above 5 GiB (up to 5 TiB) must set `multipart`: the response then carries the part plan instead of a URL, and each part URL comes from the parts endpoint. Requires write permission on the repository and on the path. The response carries a bearer credential and is sent with Cache-Control: no-store. A user may have at most storage.presignMaxPendingUploads uploads outstanding (not completed, not expired).",
         "tags": [
           "Repositories",
           "Packages"
@@ -13609,7 +13706,7 @@
             }
           },
           "400": {
-            "description": "Invalid path, size or sha256, or the repository is not a hosted raw repository",
+            "description": "Invalid path, size, part size or sha256 (code invalid_size also when a size above 5 GiB lacks `multipart`, or is too large for a single upload on Azure), or the repository is not a hosted raw repository",
             "content": {
               "application/json": {
                 "schema": {
@@ -13653,7 +13750,7 @@
     "/api/v1/repositories/{name}/uploads/{id}/complete": {
       "post": {
         "summary": "Complete a presigned upload",
-        "description": "Verifies that the staged object has the declared size and sha256, moves it to its content-addressed key, records the artifact (overwriting an existing path, like a raw PUT) and deletes the staging object. Only the creator of the upload or an administrator may complete it. The server reads the object back (up to 5 GiB) in a detached 30 minute job that survives a client disconnect; the read and the move are conditional on the object version seen at verification, so an object re-uploaded in between is refused. The call is idempotent: the first success returns 201, a retry returns 200 with the same body, and a retry while a verification is running returns 409 upload_in_progress. On a size or sha256 mismatch, or when the object changed during verification, the staging object and the upload are discarded and nothing is recorded. The repository's storage quota is enforced (507 quota_exceeded: the upload stays pending, nothing is recorded, and completing again after freeing space works); license and secret scanning are not applied, as for a raw PUT.",
+        "description": "Verifies that the staged object has the declared size and sha256, moves it to its content-addressed key, records the artifact (overwriting an existing path, like a raw PUT) and deletes the staging object. Only the creator of the upload or an administrator may complete it. The server reads the object back (up to 5 TiB) in a detached job (30 minutes plus about one second per 20 MiB, at most 6 hours) that survives a client disconnect; the read and the move are conditional on the object version seen at verification, so an object re-uploaded in between is refused. The call is idempotent: the first success returns 201, a retry returns 200 with the same body, and a retry while a verification is running returns 409 upload_in_progress. On a size or sha256 mismatch, or when the object changed during verification, the staging object and the upload are discarded and nothing is recorded. The repository's storage quota is enforced (507 quota_exceeded: the upload stays pending, nothing is recorded, and completing again after freeing space works); license and secret scanning are not applied, as for a raw PUT.",
         "tags": [
           "Repositories",
           "Packages"
@@ -13727,7 +13824,7 @@
             "description": "Repository or upload not found (or expired and swept)"
           },
           "409": {
-            "description": "Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_changed: the staged object was overwritten during verification; the upload was discarded. Code immutable_release: the path already exists in a repository with `immutable_releases`; nothing was recorded and the upload stays pending (retry with `force=true` as an administrator)",
+            "description": "Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_incomplete: a part of a multipart upload is missing or has the wrong size (the message names the part numbers; upload them and call complete again). Code upload_changed: the staged object was overwritten during verification; the upload was discarded. Code immutable_release: the path already exists in a repository with `immutable_releases`; nothing was recorded and the upload stays pending (retry with `force=true` as an administrator)",
             "content": {
               "application/json": {
                 "schema": {
@@ -13758,6 +13855,169 @@
           },
           "507": {
             "description": "Code quota_exceeded: the repository's storage quota would be exceeded; nothing was recorded and the upload stays pending",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The storage backend does not support presigned uploads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/uploads/{id}/parts": {
+      "post": {
+        "summary": "Sign the parts of a multipart upload",
+        "description": "Returns presigned PUT URLs for up to 100 parts of a multipart upload, each for exactly the returned size. Call it as often as needed (URLs live as long as the single-upload URL, and every call extends the upload's deadline), PUT the parts in any order and in parallel, then call complete. A part may be re-uploaded. The response carries bearer credentials and is sent with Cache-Control: no-store. Only the creator of the upload or an administrator may call it.",
+        "tags": [
+          "Repositories",
+          "Packages"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/PresignedPartsRequest"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Part upload targets",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/PresignedParts"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Code invalid_part_numbers: empty, duplicate, more than 100 or out-of-range part numbers. Code not_multipart: the upload is a single upload",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Write permission denied, or the caller is neither the creator of the upload nor an administrator"
+          },
+          "404": {
+            "description": "Repository or upload not found (or expired and swept)"
+          },
+          "409": {
+            "description": "Code upload_completed: the upload is already completed",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "410": {
+            "description": "The upload expired",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "501": {
+            "description": "The storage backend does not support multipart uploads",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/uploads/{id}/abort": {
+      "post": {
+        "summary": "Abort a presigned upload",
+        "description": "Discards an upload that will not be completed: the staging object, the parts uploaded so far and the upload record. Only the creator of the upload or an administrator may abort it. Abandoned uploads are also swept automatically after they expire.",
+        "tags": [
+          "Repositories",
+          "Packages"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "The upload was discarded"
+          },
+          "401": {
+            "description": "Authentication required"
+          },
+          "403": {
+            "description": "Write permission denied, or the caller is neither the creator of the upload nor an administrator"
+          },
+          "404": {
+            "description": "Repository or upload not found (or expired and swept)"
+          },
+          "409": {
+            "description": "Code upload_completed: the upload is already completed. Code upload_in_progress: a complete is running (retry after the Retry-After header)",
             "content": {
               "application/json": {
                 "schema": {

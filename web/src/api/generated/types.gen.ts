@@ -1263,7 +1263,7 @@ export type PresignedUploadRequest = {
      */
     path: string;
     /**
-     * Exact size in bytes; signed into the upload URL
+     * Exact size in bytes; signed into the upload URL. Above 5 GiB (5368709120) `multipart` must be true; the limit is 5 TiB.
      */
     size: number;
     /**
@@ -1274,10 +1274,56 @@ export type PresignedUploadRequest = {
      * Content type to record; detected from the content when omitted
      */
     content_type?: string;
+    /**
+     * Upload the object in parts: PUT each part to a URL from the parts endpoint, then call complete. Required above 5 GiB; not allowed for an empty file.
+     */
+    multipart?: boolean;
+    /**
+     * Part size in bytes of a multipart upload (5 MiB to 4000 MiB, at most 10000 parts); the server picks one (64 MiB or more) when omitted
+     */
+    part_size?: number;
 };
 
 export type PresignedUpload = {
     id: string;
+    /**
+     * True for a multipart upload: no upload_url is returned, fetch part URLs from the parts endpoint
+     */
+    multipart?: boolean;
+    /**
+     * Multipart only: size of every part but the last
+     */
+    part_size?: number;
+    /**
+     * Multipart only: number of parts, numbered from 1
+     */
+    part_count?: number;
+    /**
+     * Single upload only: presigned URL accepting one PUT of exactly `size` bytes. The query string is a credential: do not log it.
+     */
+    upload_url?: string;
+    method?: 'PUT';
+    /**
+     * Headers that must be sent with the PUT
+     */
+    headers?: {
+        [key: string]: string;
+    };
+    /**
+     * When the URL stops working
+     */
+    expires_at: string;
+};
+
+export type PresignedPartsRequest = {
+    /**
+     * 1-based numbers of the parts to sign, at most the upload's part_count
+     */
+    part_numbers: Array<number>;
+};
+
+export type PresignedPart = {
+    part_number: number;
     /**
      * Presigned URL accepting one PUT of exactly `size` bytes. The query string is a credential: do not log it.
      */
@@ -1290,7 +1336,15 @@ export type PresignedUpload = {
         [key: string]: string;
     };
     /**
-     * When the URL stops working
+     * Exact size of the part in bytes
+     */
+    size: number;
+};
+
+export type PresignedParts = {
+    parts: Array<PresignedPart>;
+    /**
+     * When the part URLs stop working
      */
     expires_at: string;
 };
@@ -7769,7 +7823,7 @@ export type PostApiV1RepositoriesByNameUploadsData = {
 
 export type PostApiV1RepositoriesByNameUploadsErrors = {
     /**
-     * Invalid path, size or sha256, or the repository is not a hosted raw repository
+     * Invalid path, size, part size or sha256 (code invalid_size also when a size above 5 GiB lacks `multipart`, or is too large for a single upload on Azure), or the repository is not a hosted raw repository
      */
     400: Error;
     /**
@@ -7838,7 +7892,7 @@ export type PostApiV1RepositoriesByNameUploadsByIdCompleteErrors = {
      */
     404: unknown;
     /**
-     * Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_changed: the staged object was overwritten during verification; the upload was discarded. Code immutable_release: the path already exists in a repository with `immutable_releases`; nothing was recorded and the upload stays pending (retry with `force=true` as an administrator)
+     * Code upload_missing: nothing has been uploaded to the upload URL yet. Code upload_in_progress: another complete is verifying this upload (retry after the Retry-After header). Code upload_incomplete: a part of a multipart upload is missing or has the wrong size (the message names the part numbers; upload them and call complete again). Code upload_changed: the staged object was overwritten during verification; the upload was discarded. Code immutable_release: the path already exists in a repository with `immutable_releases`; nothing was recorded and the upload stays pending (retry with `force=true` as an administrator)
      */
     409: Error;
     /**
@@ -7873,6 +7927,102 @@ export type PostApiV1RepositoriesByNameUploadsByIdCompleteResponses = {
 };
 
 export type PostApiV1RepositoriesByNameUploadsByIdCompleteResponse = PostApiV1RepositoriesByNameUploadsByIdCompleteResponses[keyof PostApiV1RepositoriesByNameUploadsByIdCompleteResponses];
+
+export type PostApiV1RepositoriesByNameUploadsByIdPartsData = {
+    body: PresignedPartsRequest;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/uploads/{id}/parts';
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdPartsErrors = {
+    /**
+     * Code invalid_part_numbers: empty, duplicate, more than 100 or out-of-range part numbers. Code not_multipart: the upload is a single upload
+     */
+    400: Error;
+    /**
+     * Authentication required
+     */
+    401: unknown;
+    /**
+     * Write permission denied, or the caller is neither the creator of the upload nor an administrator
+     */
+    403: unknown;
+    /**
+     * Repository or upload not found (or expired and swept)
+     */
+    404: unknown;
+    /**
+     * Code upload_completed: the upload is already completed
+     */
+    409: Error;
+    /**
+     * The upload expired
+     */
+    410: Error;
+    /**
+     * The storage backend does not support multipart uploads
+     */
+    501: Error;
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdPartsError = PostApiV1RepositoriesByNameUploadsByIdPartsErrors[keyof PostApiV1RepositoriesByNameUploadsByIdPartsErrors];
+
+export type PostApiV1RepositoriesByNameUploadsByIdPartsResponses = {
+    /**
+     * Part upload targets
+     */
+    200: PresignedParts;
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdPartsResponse = PostApiV1RepositoriesByNameUploadsByIdPartsResponses[keyof PostApiV1RepositoriesByNameUploadsByIdPartsResponses];
+
+export type PostApiV1RepositoriesByNameUploadsByIdAbortData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/uploads/{id}/abort';
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdAbortErrors = {
+    /**
+     * Authentication required
+     */
+    401: unknown;
+    /**
+     * Write permission denied, or the caller is neither the creator of the upload nor an administrator
+     */
+    403: unknown;
+    /**
+     * Repository or upload not found (or expired and swept)
+     */
+    404: unknown;
+    /**
+     * Code upload_completed: the upload is already completed. Code upload_in_progress: a complete is running (retry after the Retry-After header)
+     */
+    409: Error;
+    /**
+     * The storage backend does not support presigned uploads
+     */
+    501: Error;
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdAbortError = PostApiV1RepositoriesByNameUploadsByIdAbortErrors[keyof PostApiV1RepositoriesByNameUploadsByIdAbortErrors];
+
+export type PostApiV1RepositoriesByNameUploadsByIdAbortResponses = {
+    /**
+     * The upload was discarded
+     */
+    204: void;
+};
+
+export type PostApiV1RepositoriesByNameUploadsByIdAbortResponse = PostApiV1RepositoriesByNameUploadsByIdAbortResponses[keyof PostApiV1RepositoriesByNameUploadsByIdAbortResponses];
 
 export type GetApiV1TrashData = {
     body?: never;

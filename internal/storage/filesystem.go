@@ -9,8 +9,10 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -20,9 +22,17 @@ import (
 
 // FilesystemStore implements the BlobStore interface for filesystem storage.
 type FilesystemStore struct {
+	// relay is the server-relayed staging area (<basePath>/staging); nil when
+	// no public URL is configured. See relay.go.
+	*relay
+
 	basePath string
 	aliases  aliasIndex
 }
+
+// filesystemStagingDir is the staging directory under the blob root. It lives
+// on the same filesystem as the blobs so promotion is a link, not a copy.
+const filesystemStagingDir = "staging"
 
 // staleUploadTempAge is how old a blob-upload-*.tmp file must be before the
 // startup sweep removes it: anything younger may belong to a live Put.
@@ -358,6 +368,10 @@ func (fs *FilesystemStore) List(ctx context.Context, token string, limit int) ([
 		}
 
 		if d.IsDir() {
+			if rel == filesystemStagingDir {
+				return filepath.SkipDir
+			}
+
 			// Two-character shard dirs sorting before the token's shard hold no id after it.
 			if token != "" && rel != "." && !strings.Contains(rel, string(os.PathSeparator)) && rel < token[:min(len(rel), len(token))] {
 				return filepath.SkipDir
@@ -472,3 +486,122 @@ func (fs *FilesystemStore) getBlobPath(id string) (string, error) {
 
 // isBlobID reports whether id is a well-formed blob id.
 func isBlobID(id string) bool { return ValidateBlobID(id) == nil }
+
+var (
+	_ StagingStore          = (*FilesystemStore)(nil)
+	_ MultipartStagingStore = (*FilesystemStore)(nil)
+	_ RelayServer           = (*FilesystemStore)(nil)
+)
+
+// PromoteStaging implements StagingStore. The staging area is on the blob
+// filesystem, so the exact checked staging object is hard-linked into place
+// (atomic, no copy) with the same ".meta" sidecar Put writes; a copy is the
+// fallback when the filesystem cannot link. An existing blob is left untouched.
+func (fs *FilesystemStore) PromoteStaging(ctx context.Context, id, sha256hex, version string, metadata map[string]string) error {
+	if fs.relay == nil {
+		return ErrPresignNotSupported
+	}
+
+	if err := ValidateBlobID(sha256hex); err != nil {
+		return err
+	}
+
+	blobPath, err := fs.getBlobPath(sha256hex)
+	if err != nil {
+		return err
+	}
+
+	if _, statErr := os.Stat(blobPath); statErr == nil {
+		return nil
+	}
+
+	src, err := fs.openVerified(id, version)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = src.Close() }()
+
+	dir := filepath.Dir(blobPath)
+	if err := os.MkdirAll(dir, 0o755); err != nil {
+		return fmt.Errorf("failed to create blob directory: %w", err)
+	}
+
+	if err := os.Link(fs.objectPath(id), blobPath); err != nil {
+		if errors.Is(err, os.ErrExist) {
+			return nil
+		}
+
+		if err := copyIntoBlob(src, dir, blobPath); err != nil {
+			return err
+		}
+	}
+
+	if err := syncDir(dir); err != nil {
+		return fmt.Errorf("failed to sync blob directory: %w", err)
+	}
+
+	meta := make(map[string]string, len(metadata)+2)
+	maps.Copy(meta, metadata)
+
+	info, err := src.Stat()
+	if err != nil {
+		return fmt.Errorf("failed to stat staging object: %w", err)
+	}
+
+	meta["_size"] = strconv.FormatInt(info.Size(), 10)
+	meta["_sha256"] = sha256hex
+
+	data, err := json.Marshal(meta)
+	if err != nil {
+		return fmt.Errorf("failed to encode blob metadata: %w", err)
+	}
+
+	if err := writeFileAtomic(dir, blobPath+".meta", data); err != nil {
+		return fmt.Errorf("failed to write blob metadata: %w", err)
+	}
+
+	return nil
+}
+
+// copyIntoBlob is the PromoteStaging fallback for filesystems without hard
+// links: it copies src to a temp file in dir and renames it to blobPath unless
+// the blob appeared meanwhile.
+func copyIntoBlob(src io.ReadSeeker, dir, blobPath string) error {
+	if _, err := src.Seek(0, io.SeekStart); err != nil {
+		return fmt.Errorf("failed to rewind staging object: %w", err)
+	}
+
+	tmp, err := os.CreateTemp(dir, "blob-upload-*.tmp")
+	if err != nil {
+		return fmt.Errorf("failed to create temp file: %w", err)
+	}
+
+	defer func() { _ = os.Remove(tmp.Name()) }()
+
+	if _, err := io.Copy(tmp, src); err != nil {
+		_ = tmp.Close()
+
+		return fmt.Errorf("failed to copy staging object: %w", err)
+	}
+
+	if err := tmp.Sync(); err != nil {
+		_ = tmp.Close()
+
+		return fmt.Errorf("failed to sync blob file: %w", err)
+	}
+
+	if err := tmp.Close(); err != nil {
+		return fmt.Errorf("failed to close blob file: %w", err)
+	}
+
+	if _, err := os.Stat(blobPath); err == nil {
+		return nil
+	}
+
+	if err := os.Rename(tmp.Name(), blobPath); err != nil {
+		return fmt.Errorf("failed to move blob to final path: %w", err)
+	}
+
+	return nil
+}

@@ -716,6 +716,10 @@ type PresignedUpload struct {
 	CompletingSince *time.Time `db:"completing_since" json:"completing_since"`
 	CompletedAt     *time.Time `db:"completed_at" json:"completed_at"`
 	ArtifactID      string     `db:"artifact_id" json:"artifact_id"`
+	// Planned size of each part of a multipart upload; 0 for a single-PUT upload.
+	PartSize int64 `db:"part_size" json:"part_size"`
+	// Backend handle (S3 upload id) of the open multipart upload; empty when the backend needs none.
+	MultipartID string `db:"multipart_id" json:"multipart_id"`
 }
 
 // Projects (formerly organizations): own repositories; members hold a role on them

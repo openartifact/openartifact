@@ -169,7 +169,7 @@ func TestAzurePutSignsMetadataAndEmptyBlob(t *testing.T) {
 		t.Error("missing Authorization header")
 	}
 
-	if got := canonicalizedMSHeaders(map[string]string{"x-ms-b": "2", "X-Ms-A": " 1 ", "Content-Type": "x"}); got != "x-ms-a:1\nx-ms-b:2\n" {
+	if got := canonicalizedMSHeaders(http.Header{"X-Ms-B": {"2"}, "X-Ms-A": {" 1 "}, "Content-Type": {"x"}}); got != "x-ms-a:1\nx-ms-b:2\n" {
 		t.Errorf("canonicalizedMSHeaders = %q", got)
 	}
 }

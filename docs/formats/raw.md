@@ -46,7 +46,7 @@ Relative to `HOST/repos/raw/REPO`:
 
 ## Presigned uploads
 
-On hosted raw repositories backed by S3 or GCS, large files can skip the server: `POST /api/v1/repositories/{repo}/uploads` returns a presigned `PUT` URL, the client uploads straight to the bucket, and `POST .../uploads/{id}/complete` (creator or admin only, idempotent) reads the object back, verifies size and sha256 and records the file like a normal `PUT`. The CLI wraps this as `oa artifact upload --presigned <repo> <file>`. Up to 5 GiB per file. Flow, errors, cleanup and the quota exception: [Presigned uploads](../operations/storage.md#presigned-uploads). Raw downloads can likewise be redirected, see [Presigned URLs](../operations/storage.md#presigned-urls).
+On hosted raw repositories (every storage backend), large files can skip the API path of the server: `POST /api/v1/repositories/{repo}/uploads` returns a presigned `PUT` URL, the client uploads straight to the bucket, and `POST .../uploads/{id}/complete` (creator or admin only, idempotent) reads the object back, verifies size and sha256 and records the file like a normal `PUT`. The CLI wraps this as `oa artifact upload --presigned <repo> <file>`. Up to 5 GiB per file in one request and up to 5 TiB with multipart upload (the CLI switches by itself above 5 GiB). Flow, errors, cleanup and the quota exception: [Presigned uploads](../operations/storage.md#presigned-uploads). Raw downloads can likewise be redirected, see [Presigned URLs](../operations/storage.md#presigned-urls).
 
 ## Proxy and group
 

@@ -954,6 +954,15 @@ func run(args []string) error {
 	// repo route serve the Vue SPA (client-side routing). RBAC is bypassed for
 	// these paths by the early-exit in RBACMiddleware below.
 	authedAPI.NotFound(spaHandler.ServeHTTP)
+
+	// Filesystem and OCI registry backends cannot hand out presigned URLs, so
+	// they serve their own: short-lived HMAC-signed PUT URLs for presigned
+	// uploads. The signature in the URL is the credential, so the route sits
+	// outside the authenticated router.
+	if relay, ok := rawBlobStore.(storage.RelayServer); ok {
+		router.Put(storage.RelayRoute, relay.RelayHandler().ServeHTTP)
+	}
+
 	router.Mount("/", authedAPI)
 
 	// Start server

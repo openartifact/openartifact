@@ -349,6 +349,8 @@ func defaultConfig() *Config {
 			AzureAccountName:         "",
 			AzureAccountKey:          "",
 			AzureContainerName:       "",
+			AzureEndpoint:            "",
+			StagingPath:              "",
 		},
 		Telemetry: telemetry.DefaultConfig(),
 		Logger: LoggerConfig{
@@ -504,6 +506,8 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Storage.AzureAccountName, "OPENARTIFACT_AZURE_ACCOUNT_NAME")
 	overrideString(&cfg.Storage.AzureAccountKey, "OPENARTIFACT_AZURE_ACCOUNT_KEY")
 	overrideString(&cfg.Storage.AzureContainerName, "OPENARTIFACT_AZURE_CONTAINER_NAME")
+	overrideString(&cfg.Storage.AzureEndpoint, "OPENARTIFACT_AZURE_ENDPOINT")
+	overrideString(&cfg.Storage.StagingPath, "STORAGE_STAGING_PATH")
 	overrideString(&cfg.Storage.OCIUsername, "STORAGE_OCI_USERNAME")
 	overrideString(&cfg.Storage.OCIPassword, "STORAGE_OCI_PASSWORD")
 	overrideBool(&cfg.Storage.OCIInsecure, "STORAGE_OCI_INSECURE")
@@ -603,6 +607,10 @@ func finalizeConfig(cfg *Config) error {
 
 		fmt.Fprintln(os.Stderr, "WARN: BASE_URL not set, defaulting to localhost — SSO callbacks will not work behind a proxy")
 	}
+
+	// Server-relayed presigned uploads (filesystem and oci storage) point
+	// clients at this server.
+	cfg.Storage.PublicURL = cfg.BaseURL
 
 	// Handle HMAC key generation
 	if cfg.Auth.HMACKey == "" {

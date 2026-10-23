@@ -26,10 +26,12 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"net/http"
 	"net/url"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 )
@@ -44,6 +46,10 @@ var (
 
 // OCIBlobStore stores blobs in an OCI-compliant registry.
 type OCIBlobStore struct {
+	// relay is the server-relayed staging area; nil when no public URL is
+	// configured. See relay.go.
+	*relay
+
 	client   *http.Client
 	base     string // registry base URL, e.g. "https://registry.example.com"
 	repo     string // OCI repository, e.g. "openartifact/blobs"
@@ -68,7 +74,13 @@ func NewOCIBlobStore(cfg StorageConfig) (*OCIBlobStore, error) {
 		transport = insecureTransport()
 	}
 
+	stagingDir := cfg.StagingPath
+	if stagingDir == "" {
+		stagingDir = filepath.Join(os.TempDir(), "openartifact-staging")
+	}
+
 	return &OCIBlobStore{
+		relay:    newRelay(stagingDir, cfg.PublicURL),
 		client:   newStreamingHTTPClient(transport),
 		base:     strings.TrimRight(cfg.Endpoint, "/"),
 		repo:     cfg.Bucket,
@@ -426,4 +438,45 @@ func insecureTransport() http.RoundTripper {
 		DialContext:           (&net.Dialer{Timeout: storageDialTimeout}).DialContext,
 		ResponseHeaderTimeout: storageResponseHeaderTimeout,
 	}
+}
+
+var (
+	_ StagingStore          = (*OCIBlobStore)(nil)
+	_ MultipartStagingStore = (*OCIBlobStore)(nil)
+	_ RelayServer           = (*OCIBlobStore)(nil)
+)
+
+// PromoteStaging implements StagingStore: the exact checked staging object is
+// pushed to the registry through Put, which verifies its SHA-256. A blob the
+// registry already has is left untouched.
+func (o *OCIBlobStore) PromoteStaging(ctx context.Context, id, sha256hex, version string, metadata map[string]string) error {
+	if o.relay == nil {
+		return ErrPresignNotSupported
+	}
+
+	if err := ValidateBlobID(sha256hex); err != nil {
+		return err
+	}
+
+	if _, found, err := o.ExistsBySHA256(ctx, sha256hex); err != nil {
+		return err
+	} else if found {
+		return nil
+	}
+
+	src, err := o.openVerified(id, version)
+	if err != nil {
+		return err
+	}
+
+	defer func() { _ = src.Close() }()
+
+	meta := make(map[string]string, len(metadata)+1)
+	maps.Copy(meta, metadata)
+
+	meta["sha256"] = sha256hex
+
+	_, err = o.Put(ctx, src, meta)
+
+	return err
 }
