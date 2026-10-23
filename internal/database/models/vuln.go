@@ -15,6 +15,8 @@ type Vulnerability struct {
 	FixedIn     string   `json:"fixed_in"` // version that fixes it
 	References  []string `json:"references"`
 	PublishedAt string   `json:"published_at"`
+	// CWEs are the weakness ids ("CWE-79") the scanner reported; empty when it gave none.
+	CWEs []string `json:"cwes,omitempty"`
 }
 
 // VulnScanResult represents a vulnerability scan result for an artifact.

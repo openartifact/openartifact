@@ -97,7 +97,8 @@ type osvVulnerability struct {
 	} `json:"references"`
 	Published        string `json:"published"`
 	DatabaseSpecific struct {
-		Severity string `json:"severity"`
+		Severity string   `json:"severity"`
+		CWEIDs   []string `json:"cwe_ids"`
 	} `json:"database_specific"`
 }
 
@@ -161,6 +162,7 @@ func (s *OSVScanner) Scan(ctx context.Context, packageName, version, ecosystem s
 			Summary:     osvVuln.Summary,
 			PublishedAt: osvVuln.Published,
 			References:  extractReferencesFromOSV(osvVuln.References),
+			CWEs:        osvVuln.DatabaseSpecific.CWEIDs,
 		}
 
 		// Extract severity and CVSS
@@ -209,6 +211,7 @@ type trivyVulnerability struct {
 	FixedVersion    string               `json:"FixedVersion"`
 	References      []string             `json:"References"`
 	PublishedDate   string               `json:"PublishedDate"`
+	CweIDs          []string             `json:"CweIDs"`
 }
 
 type trivyCVSS struct {
@@ -368,6 +371,7 @@ func (s *TrivyScanner) parseTrivyOutput(data []byte) ([]models.Vulnerability, er
 				FixedIn:     tv.FixedVersion,
 				PublishedAt: tv.PublishedDate,
 				References:  tv.References,
+				CWEs:        tv.CweIDs,
 			}
 
 			// Extract CVSS score

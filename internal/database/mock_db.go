@@ -1135,6 +1135,15 @@ func (m *BaseMockDB) ListGlobalLicensePolicies(ctx context.Context) ([]*models.L
 func (m *BaseMockDB) GetSBOMReportByID(ctx context.Context, repoID, id string) (*models.SBOMReport, error) {
 	return nil, errNotImpl("GetSBOMReportByID")
 }
+func (m *BaseMockDB) UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error {
+	return errNotImpl("UpsertVEXStatement")
+}
+func (m *BaseMockDB) ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error) {
+	return nil, errNotImpl("ListVEXStatements")
+}
+func (m *BaseMockDB) DeleteVEXStatement(ctx context.Context, repoID, id string) error {
+	return errNotImpl("DeleteVEXStatement")
+}
 func (m *BaseMockDB) DeleteSBOMReportInRepo(ctx context.Context, repoID, id string) (string, error) {
 	return "", errNotImpl("DeleteSBOMReportInRepo")
 }

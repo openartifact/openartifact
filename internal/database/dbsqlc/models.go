@@ -1097,6 +1097,21 @@ type SystemSetting struct {
 	UpdatedAt time.Time `db:"updated_at" json:"updated_at"`
 }
 
+// Admin VEX decisions per (repository, artifact, vulnerability). justification is the OpenVEX enum.
+type VexStatement struct {
+	ID              string    `db:"id" json:"id"`
+	RepositoryID    string    `db:"repository_id" json:"repository_id"`
+	ArtifactID      string    `db:"artifact_id" json:"artifact_id"`
+	VulnID          string    `db:"vuln_id" json:"vuln_id"`
+	Status          string    `db:"status" json:"status"`
+	Justification   string    `db:"justification" json:"justification"`
+	ImpactStatement string    `db:"impact_statement" json:"impact_statement"`
+	ActionStatement string    `db:"action_statement" json:"action_statement"`
+	CreatedBy       string    `db:"created_by" json:"created_by"`
+	CreatedAt       time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt       time.Time `db:"updated_at" json:"updated_at"`
+}
+
 // Vulnerability scan payloads. FK to scan_jobs.
 type VulnResult struct {
 	ID              string          `db:"id" json:"id"`

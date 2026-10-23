@@ -669,6 +669,12 @@ type Database interface {
 	SetLicenseScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error
 	ListGlobalLicensePolicies(ctx context.Context) ([]*models.LicensePolicy, error)
 	GetSBOMReportByID(ctx context.Context, repoID, id string) (*models.SBOMReport, error)
+	// UpsertVEXStatement records or replaces the admin VEX decision for (repo, artifact, vuln) and fills the stored row back.
+	UpsertVEXStatement(ctx context.Context, s *models.VEXStatement) error
+	// ListVEXStatements lists a repository's VEX decisions, only one artifact's when artifactID != "".
+	ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error)
+	// DeleteVEXStatement deletes a decision scoped to repoID; ErrVEXStatementNotFound when absent.
+	DeleteVEXStatement(ctx context.Context, repoID, id string) error
 	// DeleteSBOMReportInRepo deletes the report and returns the sha256 of its blob ("" if none).
 	DeleteSBOMReportInRepo(ctx context.Context, repoID, id string) (string, error)
 
