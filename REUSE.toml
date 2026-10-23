@@ -11,6 +11,7 @@ path = [
   "internal/database/queries/**",
   "web/src/api/generated/**",
   "internal/api/openapi.json",
+  "internal/vuln/scanners_manifest.json",
   "go.sum",
   "tools/go.sum",
   "web/bun.lock",
