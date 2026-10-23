@@ -75,7 +75,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	NewLicenseHandler(nil, nil, nil, nil).RegisterRoutes(r)
 	NewPresignedUploadHandler(nil, nil, nil, nil, 0, 0, nil).Register(r)
 	NewSecretsHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
-	NewVulnHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
+	NewVulnHandler(nil, nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	NewQuotasHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	NewPropertiesHandler(nil, nil).RegisterRoutes(r, repoPrefix)
 	NewAIHandler(nil, nil, nil, nil).RegisterRoutes(r, repoPrefix)

@@ -91,6 +91,16 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 - The `path` label of `openartifact_http_requests_total` and `openartifact_http_request_duration_seconds` was always `unknown` (the middleware could not see the matched route). It now holds the route pattern (`/api/v1/repositories/{name}`, trailing `/*` removed), and `unmatched` for requests that match no route. Dashboards and alerts that select `path="unknown"` must be updated; series cardinality stays bounded by the route table.
 
+#### Trivy and Grype scanner setup
+
+| Area | Change |
+|---|---|
+| Scan behavior | `trivy` and `grype` scans no longer download their vulnerability database themselves. A background task downloads it at start and every `OPENARTIFACT_SCANNER_UPDATE_INTERVAL` (default `6h`) into `OPENARTIFACT_SCANNER_CACHE_DIR`; a scan whose database is not there yet fails at once with `scanner_db_unavailable`. If you already run `trivy` / `grype` on `PATH`, expect an outbound download of several GB after the upgrade (Trivy about 1.6 GB, Grype about 3.3 GB), or set `OPENARTIFACT_SCANNER_OFFLINE=true` and provide the databases. |
+| Errors | A scan that selects a scanner that is not installed now reports `scanner is not available on the server (scanner_unavailable), setup guide: <url>`; the first part is unchanged, so matching on the old prefix still works. New failure kind `database_unavailable`. |
+| API | New admin endpoint `GET /api/v1/repositories/{name}/vuln/scanners` reporting per-scanner readiness; the web UI disables scanners that are not ready. |
+| Config | New `scanners` section (`cacheDir`, `updateInterval`, `offline`, `trivy.{path,dbRepository,javaDbRepository}`, `grype.{path,dbUrl}`) with `OPENARTIFACT_SCANNER_*`, `OPENARTIFACT_TRIVY_*` and `OPENARTIFACT_GRYPE_*` environment overrides; see [configuration](configuration.md#vulnerability-scanners-scanners). |
+| Docker | New build argument `SCANNERS` (`none` default, `trivy`, `grype`, `all`) and a `scanner_cache` volume in the compose file. The image now sets `OPENARTIFACT_SCANNER_CACHE_DIR=/var/cache/openartifact/scanners` (owned by uid 10001, declared a `VOLUME`) and `PATH`; the default image otherwise holds the same files. |
+
 #### Search ranking, grouping and the command palette
 
 - **`GET /api/v1/search` no longer returns the `results` key.** It was a copy of `packages` kept from before 0.5.0; read `packages`. `oa search` is updated and its own `--format json` output keeps `results`.
@@ -240,7 +250,7 @@ Migrations `017` and `018` run at first start: `017` adds the soft-delete column
 | Image base | The runtime image is now a shell-less hardened base (`dhi.io/static`, Debian 13): it has no `sh`, `wget`, `nc` or `apk`. It still runs as uid/gid 10001 with the binary at `/app/openartifact`; the health check is `openartifact-server -healthcheck` (a `GET` on `127.0.0.1:<configured port>/health`, exit 0 on 200). |
 | Troubleshooting | Use `kubectl debug -it <pod> --image=busybox --target=openartifact` (an ephemeral container sharing the process namespace) or `docker run --rm -it --network container:openartifact busybox`; `exec` into the container no longer works. |
 | Custom CAs | Mount the CA bundle into the container and point `SSL_CERT_FILE` (one file) or `SSL_CERT_DIR` (a directory) at it; `update-ca-certificates` cannot run in the image. |
-| trivy / grype | The `trivy` and `grype` vulnerability scanner backends need those static binaries on the server's `PATH`; build a derived image `FROM` the release image that copies them in, or use the default `osv` scanner. |
+| trivy / grype | The `trivy` and `grype` vulnerability scanner backends need those static binaries; see [Installing Trivy and Grype](../security/scanning.md#installing-trivy-and-grype) (the Docker build argument `SCANNERS` bundles them), or use the default `osv` scanner. |
 | Helm chart | Chart `<= 0.1.4` runs a wait-for-database init container that needs `sh` and `nc` from this image and fails with the new image. Upgrade the chart, or set `database.waitForDatabase=false`: the server now waits itself, retrying the initial database connection with capped backoff for `DB_CONNECT_TIMEOUT` (`database.connectTimeout`, default `60s`, `0` fails immediately). |
 | Database startup | New `DB_CONNECT_TIMEOUT` / `database.connectTimeout`: the server retries the first database connection for up to this long (each wait is logged at info level) instead of exiting at once. |
 | Security (Go) | Go module zips are served only when their blob has a real sha256 (`404` otherwise), and every blob upsert (all formats) rejects a sha256 that is not 64 lowercase hex characters. Versions published on 0.4.1 and earlier are repaired automatically at start, or with `openartifact-server -repair-gomod`; see the security note above. |

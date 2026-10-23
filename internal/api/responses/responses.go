@@ -354,6 +354,31 @@ type VulnScanResultResponse struct {
 	FailedScanners []string `json:"failed_scanners"`
 }
 
+// VulnScannerResponse reports whether one vulnerability scanner can run on the
+// server. Fixed, client-safe text only: no paths, versions or scanner output.
+type VulnScannerResponse struct {
+	// Name is osv, trivy or grype.
+	Name string `json:"name"`
+	// Available is false when the scanner binary cannot be started.
+	Available bool `json:"available"`
+	// Ready is true when a scan with this scanner can run now (available and,
+	// for trivy and grype, a vulnerability database is present).
+	Ready bool `json:"ready"`
+	// DBState is ready, updating, failed or missing for trivy and grype when
+	// the binary is available; null otherwise.
+	DBState *string `json:"db_state"`
+	// DBUpdatedAt is when the vulnerability database was last refreshed; null
+	// when there is none or the time is unknown.
+	DBUpdatedAt *string `json:"db_updated_at"`
+	// Code is scanner_unavailable or scanner_db_unavailable when the scanner is
+	// not ready, else null.
+	Code *string `json:"code"`
+	// Message says what the operator must do when the scanner is not ready.
+	Message *string `json:"message"`
+	// DocsURL links the installation guide when the scanner is not ready.
+	DocsURL *string `json:"docs_url"`
+}
+
 // SecretScanResultResponse represents a secret scan result.
 type SecretScanResultResponse struct {
 	ID           string  `json:"id"`

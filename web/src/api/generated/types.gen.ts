@@ -905,13 +905,48 @@ export type VulnScanResult = {
     updated_at: string;
     scanned_at: string | null;
     /**
-     * Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server; osv: scan timed out`. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`.
+     * Sanitized summary of the failing scanners, for example `trivy: scanner is not available on the server (scanner_unavailable), setup guide: <url>; osv: scan timed out`. A scanner that is not installed or has no vulnerability database names its code (`scanner_unavailable`, `scanner_db_unavailable`) and the setup guide. It never contains raw scanner output or upstream error text. Null unless `scan_status` is `partial` or `failed`.
      */
     scan_error: string | null;
     /**
      * Scanners that produced no result. Empty unless `scan_status` is `partial` or `failed`.
      */
     failed_scanners: Array<'osv' | 'trivy' | 'grype'>;
+};
+
+/**
+ * Whether one vulnerability scanner can run on the server. Fixed, client-safe text only.
+ */
+export type VulnScanner = {
+    name: 'osv' | 'trivy' | 'grype';
+    /**
+     * False when the `trivy` / `grype` binary is not installed or not executable.
+     */
+    available: boolean;
+    /**
+     * True when a scan can run now: `osv` always; `trivy` and `grype` when the binary is available and its vulnerability database is present.
+     */
+    ready: boolean;
+    /**
+     * State of the vulnerability database of an available `trivy` / `grype`; null otherwise.
+     */
+    db_state: 'ready' | 'updating' | 'failed' | 'missing';
+    /**
+     * When the vulnerability database was last refreshed; null when there is none or the time is unknown.
+     */
+    db_updated_at: string | null;
+    /**
+     * Why the scanner is not ready; null when it is.
+     */
+    code: 'scanner_unavailable' | 'scanner_db_unavailable';
+    /**
+     * What the operator must do when the scanner is not ready.
+     */
+    message: string | null;
+    /**
+     * Link to the scanner installation guide when the scanner is not ready.
+     */
+    docs_url: string | null;
 };
 
 export type VulnScanRequest = {
@@ -2457,6 +2492,33 @@ export type PostApiV1RepositoriesByNameVulnScanResponses = {
 };
 
 export type PostApiV1RepositoriesByNameVulnScanResponse = PostApiV1RepositoriesByNameVulnScanResponses[keyof PostApiV1RepositoriesByNameVulnScanResponses];
+
+export type GetApiV1RepositoriesByNameVulnScannersData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/vuln/scanners';
+};
+
+export type GetApiV1RepositoriesByNameVulnScannersErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1RepositoriesByNameVulnScannersResponses = {
+    /**
+     * Scanners in the order osv, trivy, grype
+     */
+    200: {
+        scanners: Array<VulnScanner>;
+    };
+};
+
+export type GetApiV1RepositoriesByNameVulnScannersResponse = GetApiV1RepositoriesByNameVulnScannersResponses[keyof GetApiV1RepositoriesByNameVulnScannersResponses];
 
 export type GetApiV1RepositoriesByNameVulnScansData = {
     body?: never;

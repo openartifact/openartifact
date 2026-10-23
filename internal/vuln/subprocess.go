@@ -9,6 +9,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"os/exec"
 )
 
@@ -66,11 +67,14 @@ func (c *cappedBuffer) Write(p []byte) (int, error) {
 // runScanner runs a scanner binary and returns its bounded stdout and stderr.
 // Stdout beyond maxScannerStdout kills the process and yields
 // ErrScannerOutputTooLarge; stderr beyond maxScannerStderr is truncated.
-func runScanner(ctx context.Context, name string, args ...string) ([]byte, string, error) {
-	return runCapped(ctx, maxScannerStdout, maxScannerStderr, name, args...)
+//
+// env lists extra KEY=VALUE variables added to the server's environment (a
+// later entry wins over an earlier one with the same key).
+func runScanner(ctx context.Context, env []string, name string, args ...string) ([]byte, string, error) {
+	return runCapped(ctx, maxScannerStdout, maxScannerStderr, env, name, args...)
 }
 
-func runCapped(ctx context.Context, stdoutLimit, stderrLimit int, name string, args ...string) ([]byte, string, error) {
+func runCapped(ctx context.Context, stdoutLimit, stderrLimit int, env []string, name string, args ...string) ([]byte, string, error) {
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
 
@@ -78,6 +82,10 @@ func runCapped(ctx context.Context, stdoutLimit, stderrLimit int, name string, a
 	errOut := &cappedBuffer{limit: stderrLimit}
 
 	cmd := exec.CommandContext(ctx, name, args...)
+	if len(env) > 0 {
+		cmd.Env = append(os.Environ(), env...)
+	}
+
 	cmd.Stdout = out
 	cmd.Stderr = errOut
 

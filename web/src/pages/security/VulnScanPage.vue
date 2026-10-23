@@ -219,17 +219,36 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <fieldset>
           <legend class="block text-xs font-medium text-muted mb-1.5">{{ t('sec.vuln.scannersLabel') }}</legend>
           <div class="flex items-center gap-4 flex-wrap">
-            <label v-for="s in scanners" :key="s.value" class="inline-flex items-center gap-2 text-sm text-foreground">
+            <label
+              v-for="s in scanners"
+              :key="s.value"
+              class="inline-flex items-center gap-2 text-sm"
+              :class="scannerReady(s.value) ? 'text-foreground' : 'text-muted'"
+            >
               <input
                 v-model="selectedScanners"
                 type="checkbox"
                 :value="s.value"
+                :disabled="!scannerReady(s.value)"
                 :data-testid="`scanner-${s.value}`"
                 class="h-4 w-4 rounded border-border-strong accent-primary"
               />
               {{ s.label }}
             </label>
           </div>
+          <ul v-if="unavailableScanners.length" class="mt-2 space-y-1.5" data-testid="scanner-unavailable">
+            <li v-for="u in unavailableScanners" :key="u.name" class="text-xs text-muted" :data-testid="`scanner-note-${u.name}`">
+              <span class="font-medium text-foreground">{{ scannerLabel(u.name) }}</span>:
+              {{ u.message || t('sec.vuln.scannerNotReady') }}
+              <a
+                v-if="safeDocsUrl(u.docs_url)"
+                :href="safeDocsUrl(u.docs_url)"
+                target="_blank"
+                rel="noopener noreferrer"
+                class="text-primary underline"
+              >{{ t('sec.vuln.scannerSetupGuide') }}</a>
+            </li>
+          </ul>
           <p class="text-xs text-muted mt-1">
             {{ selectedScanners.length ? t('sec.vuln.scannersHint') : t('sec.vuln.scannersRequired') }}
           </p>
@@ -287,11 +306,13 @@ import { useToastStore } from '../../stores/toast'
 import { useRepoPackages } from '../../composables/useRepoPackages'
 import {
   listVulnScans,
+  listVulnScanners,
   startVulnScan,
   setVulnQuarantine,
   VULN_ECOSYSTEMS,
   type VulnScan,
   type VulnScanner,
+  type VulnScannerStatus,
 } from '../../api/security'
 import { formatLabel } from '../../lib/formats'
 import { normalizeScannerSelection, vulnCountsState } from '../../lib/scanStatus'
@@ -324,6 +345,40 @@ const selectedScannerLabels = computed(() =>
     .map((s) => s.label)
     .join(', '),
 )
+
+// Server-side readiness per scanner, loaded when the scan form opens. A scanner
+// without an entry (list not loaded yet or failed) stays selectable: the server
+// still reports a failed scan with the reason.
+const scannerStatuses = ref<VulnScannerStatus[]>([])
+
+function scannerReady(name: VulnScanner): boolean {
+  const status = scannerStatuses.value.find((x) => x.name === name)
+  return !status || status.ready
+}
+
+const unavailableScanners = computed(() => scannerStatuses.value.filter((x) => !x.ready))
+
+function scannerLabel(name: string): string {
+  return scanners.find((x) => x.value === name)?.label ?? name
+}
+
+// The link comes from the server; only follow https URLs.
+function safeDocsUrl(url: string | null | undefined): string | undefined {
+  return url && url.startsWith('https://') ? url : undefined
+}
+
+async function loadScannerStatuses(): Promise<void> {
+  const repo = selectedRepo.value
+  if (!repo) return
+  try {
+    const statuses = await listVulnScanners(repo)
+    if (!showDrawer.value || repo !== selectedRepo.value) return
+    scannerStatuses.value = statuses
+    selectedScanners.value = selectedScanners.value.filter((name) => scannerReady(name))
+  } catch {
+    scannerStatuses.value = []
+  }
+}
 
 const form = ref({ artifactId: '', ecosystem: '' })
 
@@ -408,7 +463,9 @@ async function loadScans(silent = false): Promise<void> {
 function openDrawer(): void {
   form.value = { artifactId: '', ecosystem: '' }
   selectedScanners.value = ['osv']
+  scannerStatuses.value = []
   showDrawer.value = true
+  void loadScannerStatuses()
 }
 
 function onPackageChange(): void {

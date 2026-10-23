@@ -212,3 +212,20 @@ tiering:
   verifyReadback: true        # re-hash each copy on the target tier before flipping
   accessFlushInterval: 30s    # how often recorded downloads are written to the database
   refreshInterval: 30s        # how often each replica reloads the tier list
+
+# Trivy and grype vulnerability scanners (the "trivy" / "grype" scanner names of
+# POST .../vuln/scan). They are separate binaries: install them on PATH, set a
+# path below, or build the image with SCANNERS=trivy|grype|all. The server keeps
+# their vulnerability databases in cacheDir, downloading them in the background;
+# scans never download. See docs/security/scanning.md.
+scanners:
+  cacheDir: ""             # absolute; default <user cache dir>/openartifact/scanners (the image sets /var/cache/openartifact/scanners)
+  updateInterval: 6h       # database refresh interval, at least 1h; 0 downloads once and stops
+  offline: false           # never download; the databases must already be in cacheDir
+  trivy:
+    path: ""               # command name or absolute path; default "trivy" on PATH
+    dbRepository: ""       # OCI repository to download trivy-db from (a mirror); default Trivy's built-in list
+    javaDbRepository: ""   # also download the Java index database from this repository; empty skips it
+  grype:
+    path: ""               # command name or absolute path; default "grype" on PATH
+    dbUrl: ""              # http(s) URL of a grype database listing.json (a mirror); default grype's built-in

@@ -66,7 +66,7 @@ func realRouter() chi.Router {
 	api.NewBackupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewLicenseHandler(nil, nil, nil, nil).RegisterRoutes(r)
 	api.NewSecretsHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
-	api.NewVulnHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
+	api.NewVulnHandler(nil, nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	api.NewQuotasHandler(nil, nil, nil).RegisterRoutes(r, repoPrefix)
 	api.NewPropertiesHandler(nil, nil).RegisterRoutes(r, repoPrefix)
 	log, err := logger.New("error", "json", "stderr")

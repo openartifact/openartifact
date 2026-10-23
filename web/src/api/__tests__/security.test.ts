@@ -4,6 +4,7 @@
 
 import { describe, it, expect, spyOn, afterEach } from 'bun:test'
 import {
+  listVulnScanners,
   startVulnScan,
   triggerLicenseScan,
   triggerSecretScan,
@@ -27,6 +28,15 @@ function lastUrl(): string {
 }
 
 describe('security api', () => {
+  it('lists scanner readiness from the repository-scoped endpoint', async () => {
+    const osv = { name: 'osv', available: true, ready: true }
+    spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ scanners: [osv] }))
+    expect(await listVulnScanners('my repo')).toEqual([osv as never])
+    expect(lastUrl()).toBe('/api/v1/repositories/my%20repo/vuln/scanners')
+    spy.mockResolvedValue(json({}))
+    expect(await listVulnScanners('r')).toEqual([])
+  })
+
   it('license scans send only artifact_id', async () => {
     spy = spyOn(globalThis, 'fetch').mockResolvedValue(json({ id: 's' }))
     await triggerLicenseScan('my repo', 'art-1')

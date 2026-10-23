@@ -18,7 +18,7 @@ func TestRunCappedCollectsOutputUnderLimit(t *testing.T) {
 		t.Skip("sh not available")
 	}
 
-	out, stderr, err := runCapped(context.Background(), 1024, 1024, "sh", "-c", "printf hello; printf oops >&2")
+	out, stderr, err := runCapped(context.Background(), 1024, 1024, nil, "sh", "-c", "printf hello; printf oops >&2")
 	if err != nil {
 		t.Fatalf("runCapped: %v", err)
 	}
@@ -36,7 +36,7 @@ func TestRunCappedKillsRunawayStdout(t *testing.T) {
 	start := time.Now()
 
 	// `yes` never stops on its own: the cap must kill it.
-	out, _, err := runCapped(context.Background(), 4096, 1024, "sh", "-c", "yes")
+	out, _, err := runCapped(context.Background(), 4096, 1024, nil, "sh", "-c", "yes")
 	if !errors.Is(err, ErrScannerOutputTooLarge) {
 		t.Fatalf("err = %v, want ErrScannerOutputTooLarge", err)
 	}
@@ -55,7 +55,7 @@ func TestRunCappedTruncatesStderr(t *testing.T) {
 		t.Skip("sh not available")
 	}
 
-	_, stderr, err := runCapped(context.Background(), 1024, 16, "sh", "-c", "printf '%0200d' 0 >&2; printf ok")
+	_, stderr, err := runCapped(context.Background(), 1024, 16, nil, "sh", "-c", "printf '%0200d' 0 >&2; printf ok")
 	if err != nil {
 		t.Fatalf("runCapped: %v", err)
 	}

@@ -71,6 +71,7 @@ type Config struct {
 	// Telemetry configures OpenTelemetry export (off by default), see
 	// docs/operations/monitoring.md.
 	Telemetry telemetry.Config `yaml:"telemetry"`
+	Scanners  ScannersConfig   `yaml:"scanners"`
 	BaseURL   string           `yaml:"baseUrl"`
 }
 
@@ -407,6 +408,9 @@ func defaultConfig() *Config {
 			AccessFlushInterval: 30 * time.Second,
 			RefreshInterval:     30 * time.Second,
 		},
+		Scanners: ScannersConfig{
+			UpdateInterval: 6 * time.Hour,
+		},
 		BaseURL: "http://localhost:8080",
 	}
 }
@@ -562,6 +566,16 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Tiering.AccessFlushInterval, "OPENARTIFACT_TIERING_ACCESS_FLUSH_INTERVAL")
 	overrideDuration(&cfg.Tiering.RefreshInterval, "OPENARTIFACT_TIERING_REFRESH_INTERVAL")
 
+	// Vulnerability scanners
+	overrideString(&cfg.Scanners.CacheDir, "OPENARTIFACT_SCANNER_CACHE_DIR")
+	overrideDuration(&cfg.Scanners.UpdateInterval, "OPENARTIFACT_SCANNER_UPDATE_INTERVAL")
+	overrideBool(&cfg.Scanners.Offline, "OPENARTIFACT_SCANNER_OFFLINE")
+	overrideString(&cfg.Scanners.Trivy.Path, "OPENARTIFACT_TRIVY_PATH")
+	overrideString(&cfg.Scanners.Trivy.DBRepository, "OPENARTIFACT_TRIVY_DB_REPOSITORY")
+	overrideString(&cfg.Scanners.Trivy.JavaDBRepository, "OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY")
+	overrideString(&cfg.Scanners.Grype.Path, "OPENARTIFACT_GRYPE_PATH")
+	overrideString(&cfg.Scanners.Grype.DBURL, "OPENARTIFACT_GRYPE_DB_URL")
+
 	// Base URL
 	overrideString(&cfg.BaseURL, "BASE_URL")
 }
@@ -652,6 +666,15 @@ func (c *Config) Validate() error {
 
 	if _, err := netutil.ParseNetworks(c.Server.IPAllowlist); err != nil {
 		return fmt.Errorf("server.ipAllowlist: %w", err)
+	}
+
+	return c.validateFeatures()
+}
+
+// validateFeatures checks the scanner and presign settings.
+func (c *Config) validateFeatures() error {
+	if err := c.Scanners.validate(); err != nil {
+		return err
 	}
 
 	return c.validatePresign()

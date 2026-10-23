@@ -12,7 +12,7 @@ Scans are **API-driven and manual**: vulnerability, secret and SBOM scans never 
 
 | Scan | Input | Source of data |
 |---|---|---|
-| [Vulnerabilities](#vulnerability-scans) | package name, version, ecosystem | OSV API, or the `trivy` / `grype` binary |
+| [Vulnerabilities](#vulnerability-scans) | package name, version, ecosystem | OSV API, or the `trivy` / `grype` binary ([installing them](#installing-trivy-and-grype)) |
 | [Secrets](#secret-scans) | text and/or metadata JSON you send | built-in regex rules |
 | [Licenses](#license-scans-and-policies) | `artifact_id` | the artifact's stored [properties](../repositories/properties.md) |
 | [SBOM](#sbom) | `artifact_id`, format | `artifact_id` plus the stored `dependencies` property |
@@ -31,6 +31,7 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 | Endpoint | |
 |---|---|
 | `POST …/vuln/scan` | body `artifact_id`, `package_name`, `package_version`, `ecosystem` (all required), `scanner` (`osv` default, `trivy`, `grype`) and/or `scanners` (a list of those names, to run several at once); an unknown name is `400 validation_failed` |
+| `GET …/vuln/scanners` | which scanners can run now and, if not, why ([readiness](#checking-scanner-readiness)) |
 | `GET …/vuln/scans[?vulnerable=true]` | list results |
 | `GET/DELETE …/vuln/scans/{id}` | read / delete one result |
 | `POST …/vuln/scans/{id}/quarantine` | body `{"quarantined":true\|false}` |
@@ -38,7 +39,7 @@ curl -sS -H 'Authorization: Bearer <TOKEN>' 'HOST/api/v1/repositories/REPO/vuln/
 - `POST` returns at once with `scan_status: "scanning"`; the scan runs in the background (120 s limit). Poll `GET …/vuln/scans/{id}` until the status is `completed`, `partial` or `failed`. At most 4 scans run at a time per server; further requests get 429 `too_many_scans` with `Retry-After: 10`.
 - A result carries `vulnerabilities` (id, summary, severity, CVSS, fixed-in version, references, published date), the counts `vuln_count`, `critical_count`, `high_count`, `medium_count`, `low_count`, the `scanner` that ran (several are stored sorted and comma-joined, for example `osv,trivy`) and `failed_scanners`.
 - `ecosystem` uses these names: `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`, `deb`, `rpm`, `helm` (OSV); the other backends support a subset: Trivy `npm`, `pypi`, `maven`, `cargo`, `go`, `rubygems`, `nuget`; Grype `npm`, `pypi`, `maven`, `cargo`, `rubygems`, `nuget`, `deb`, `rpm`, `go`.
-- `osv` needs outbound HTTPS to `api.osv.dev`. `trivy` and `grype` run the CLI found on the server's `PATH`; the release image is shell-less and does not contain them; build a derived image that copies the static binaries in.
+- `osv` needs outbound HTTPS to `api.osv.dev` and nothing else. `trivy` and `grype` are separate programs that the **release image does not contain**; see [Installing Trivy and Grype](#installing-trivy-and-grype). A scan that selects one that is not installed (or has no vulnerability database yet) is recorded as failed with an actionable `scan_error`.
 
 ### Scanner failures
 
@@ -50,11 +51,12 @@ A scanner that cannot produce a result is never reported as "no vulnerabilities"
 | `partial` | several scanners were requested and some failed; `vulnerabilities` holds the findings of the ones that ran and `failed_scanners` names the others |
 | `failed` | no scanner produced a result; `vulnerabilities` is empty and the counts are 0, which means *not scanned*, not *clean* |
 
-For `partial` and `failed` results `scan_error` summarizes each failed scanner as `<scanner>: <reason>`, separated by `; `, for example `trivy: scanner is not available on the server; osv: scan timed out`. The reason is one of a fixed set, so the response never contains command lines, paths, stderr or upstream bodies (those are written to the server log only):
+For `partial` and `failed` results `scan_error` summarizes each failed scanner as `<scanner>: <reason>`, separated by `; `, for example `trivy: scanner is not available on the server (scanner_unavailable), setup guide: <url>; osv: scan timed out`. The reason is one of a fixed set, so the response never contains command lines, paths, stderr or upstream bodies (those are written to the server log only):
 
 | Cause | `scan_error` reason |
 |---|---|
-| `trivy`/`grype` not installed or not startable | `scanner is not available on the server` |
+| `trivy`/`grype` not installed or not startable | `scanner is not available on the server (scanner_unavailable), setup guide: <url>` |
+| `trivy`/`grype` installed but its vulnerability database is not downloaded yet, or the CLI reports a missing/corrupt database | `scanner vulnerability database is not ready (scanner_db_unavailable), setup guide: <url>` |
 | 120 s limit reached | `scan timed out` |
 | the scan was canceled | `scan was canceled` |
 | the CLI exited with an error | `scanner exited with an error` |
@@ -67,6 +69,90 @@ For `partial` and `failed` results `scan_error` summarizes each failed scanner a
 Failed vulnerability scans stored before this behavior (which kept the raw scanner error) have their `scan_error` replaced by `scan failed` when the database is migrated. The web UI shows them as *Not scanned* and *Partial* instead of as clean.
 
 The MCP tool `get_vulnerabilities` summarizes stored results and counts `failed` and `partial` scans in `failed_scans` ([MCP](../integrations/mcp.md)).
+
+## Installing Trivy and Grype
+
+`osv` works out of the box. `trivy` and `grype` are external programs: the server runs them as subprocesses and keeps their vulnerability databases in a cache directory. Neither is part of the release image (it is shell-less and holds only the server), so enable them with one of:
+
+| Where the server runs | How |
+|---|---|
+| Binary / VM | install `trivy` and/or `grype` so they are on the server's `PATH`, or set [`OPENARTIFACT_TRIVY_PATH` / `OPENARTIFACT_GRYPE_PATH`](../getting-started/configuration.md#vulnerability-scanners-scanners) |
+| Docker Compose | `OPENARTIFACT_SCANNERS=trivy` (or `grype`, `all`) in `docker/.env`, then `docker compose build openartifact`; the compose file already mounts a `scanner_cache` volume |
+| Your own build | `docker build -f docker/Dockerfile --build-arg SCANNERS=trivy .` (`none` default, `trivy`, `grype`, `all`) |
+| Released image, Kubernetes | build a derived image (below), and give the pod a writable volume for the cache directory |
+
+The server resolves the binaries when it starts and logs, per scanner, the path it found (`vulnerability scanner available`, with `binary`, `cache_dir`, `db_state`) or a warning when it is missing. A binary installed later is found on the next request (no restart), but its database download only starts at server start.
+
+### Databases and the cache directory
+
+- **Scans never download.** A scan runs the CLI offline against the databases already in the cache directory (`trivy --skip-db-update --offline-scan`, `GRYPE_DB_AUTO_UPDATE=false`), so a slow or blocked network cannot eat the 120 s scan limit. If the database is not there, the scan fails at once with `scanner_db_unavailable`.
+- **A background updater downloads them.** At startup (and then every `OPENARTIFACT_SCANNER_UPDATE_INTERVAL`, default 6h, at least 1h, `0` = once) the server runs `trivy image --download-db-only` and `grype db update` for each scanner that is installed. A failure is logged and retried with exponential backoff (1 minute up to 1 hour). The first download takes from under a minute (Trivy) to a few minutes (Grype); until it finishes the scanner is `updating` (see [readiness](#checking-scanner-readiness)).
+- **Cache directory**: `OPENARTIFACT_SCANNER_CACHE_DIR` (`scanners.cacheDir`, an absolute path). Trivy uses `<dir>/trivy`, Grype `<dir>/grype`. The default is `<user cache dir>/openartifact/scanners` (`$XDG_CACHE_HOME` or `~/.cache`, else the temp directory). The image sets `/var/cache/openartifact/scanners`, owned by uid 10001, and declares it a `VOLUME`; keep it on a volume when the root filesystem is read-only, and persist it so a restart does not download again. In the image the environment variable is already set, so change it with the variable rather than the YAML file.
+- **Disk**: measured with Trivy 0.76.1 and Grype 0.121.0, the Trivy database takes about 1.6 GB on disk and the Grype database about 3.3 GB; a Grype download takes a few minutes on a fast link. Size the cache volume for both (plus headroom for the replacement file while updating). The Java index (`trivy-java-db`, several hundred MB) is **not** downloaded unless `OPENARTIFACT_TRIVY_JAVA_DB_REPOSITORY` is set: OpenArtifact scans package names and versions, not JARs.
+
+### Network access
+
+| Scanner | Needs outbound HTTPS to | Used for |
+|---|---|---|
+| `osv` | `api.osv.dev` | every scan |
+| `trivy` | `mirror.gcr.io` (tried first) and `ghcr.io` | database download, by the background updater only |
+| `grype` | `grype.anchore.io` | database download, by the background updater only |
+
+The scan itself needs no network for `trivy` and `grype`. In a restricted network, either allow those hosts or point the updater at a mirror: `OPENARTIFACT_TRIVY_DB_REPOSITORY` (an OCI repository holding a copy of `trivy-db`) and `OPENARTIFACT_GRYPE_DB_URL` (the URL of a grype `listing.json`). An HTTP(S) proxy configured in the server's environment (`HTTPS_PROXY`, `NO_PROXY`) is passed to the CLIs.
+
+### Offline (air-gapped) mode
+
+`OPENARTIFACT_SCANNER_OFFLINE=true` stops the updater from ever contacting the network. Fill the cache directory yourself, for example:
+
+```sh
+trivy image --download-db-only --cache-dir /srv/scanners/trivy            # on a connected host
+GRYPE_DB_CACHE_DIR=/srv/scanners/grype grype db update                    # on a connected host
+# copy /srv/scanners to the server's OPENARTIFACT_SCANNER_CACHE_DIR, owned by the server's user
+```
+
+With offline mode on and no database in the directory, the scanner reports `missing` and scans fail with `scanner_db_unavailable`. Refresh the files by hand to update; the server notices new database files on the next request.
+
+### Docker and Kubernetes
+
+Build the image with the scanners bundled (the binaries are copied, digest-pinned, from the upstream `aquasec/trivy` and `anchore/grype` images; the final stage still has no shell):
+
+```sh
+docker build -f docker/Dockerfile --build-arg RUNTIME=distroless --build-arg SCANNERS=trivy -t openartifact:trivy .
+```
+
+To keep using a released image, derive from it:
+
+```dockerfile
+FROM ghcr.io/openartifact/openartifact:X.Y.Z
+COPY --from=docker.io/aquasec/trivy:0.76.1@sha256:790fd66d1697395d8693d1acaa1ea702406a20f109b6fc7bac8db623eca6c06c /usr/local/bin/trivy /usr/local/bin/trivy
+# grype: COPY --from=docker.io/anchore/grype:v0.121.0@sha256:621d56d1d68106b787022c81546f7e0a36202a25d1239f0c20195fab8c16f7ea /grype /usr/local/bin/grype
+```
+
+Kubernetes and Helm: mount a writable volume (an `emptyDir` is enough, a PVC avoids re-downloading after a restart) at the cache directory, writable by uid/gid 10001 (set the pod's `fsGroup: 10001`). Allow egress to the hosts above (or set the mirror variables), and run with a read-only root filesystem as usual. With several replicas each pod downloads its own copy.
+
+### Checking scanner readiness
+
+`GET /api/v1/repositories/{name}/vuln/scanners` (admin only) reports each scanner in the order `osv`, `trivy`, `grype`:
+
+```json
+{"scanners":[
+  {"name":"osv","available":true,"ready":true,"db_state":null,"db_updated_at":null,"code":null,"message":null,"docs_url":null},
+  {"name":"trivy","available":true,"ready":false,"db_state":"updating","db_updated_at":null,
+   "code":"scanner_db_unavailable","message":"The vulnerability database is being downloaded: retry in a few minutes.","docs_url":"…"},
+  {"name":"grype","available":false,"ready":false,"db_state":null,"db_updated_at":null,
+   "code":"scanner_unavailable","message":"grype was not found on the server's PATH: …","docs_url":"…"}]}
+```
+
+`available` is whether the binary starts; `ready` is whether a scan can run now. `db_state` is `ready`, `updating`, `failed` (the last download failed: see the server log) or `missing`. The response never contains filesystem paths. The web UI uses it to disable scanners that are not ready in the *Scan package* form and to show `message` with a link to this section.
+
+| `code` | Meaning | Fix |
+|---|---|---|
+| `scanner_unavailable` | the binary was not found or is not executable | install it, or set `OPENARTIFACT_TRIVY_PATH` / `OPENARTIFACT_GRYPE_PATH` |
+| `scanner_db_unavailable` | no vulnerability database yet (still downloading, download failing, or offline without one) | wait, allow egress / set a mirror, or fill the cache in offline mode |
+
+### Why external binaries
+
+The design follows [zot](https://zotregistry.dev/)'s CVE scanning: scans run offline against a database that a background task refreshes on an interval with backoff, with a configurable database repository and readiness reporting. zot embeds Trivy as a Go library; OpenArtifact runs the CLIs instead, because that keeps the server binary at its current size and its module graph and vulnerability surface free of Trivy's, lets operators upgrade Trivy independently of the server, and is the only way to offer Grype too. Embedding would be reconsidered if Trivy exposed a stable library API.
 
 ## Secret scans
 
