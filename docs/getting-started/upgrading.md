@@ -85,7 +85,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
-### Unreleased
+### 0.8.1
 
 Migration `066`.
 
