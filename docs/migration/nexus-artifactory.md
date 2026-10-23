@@ -67,7 +67,7 @@ Syntax: `oa [global flags] import <nexus|artifactory> --source-url URL --repo SR
 | `--state-file F` | Append-only resume file (JSON lines, mode `0600`). Completed assets are skipped on the next run when their source SHA-256 is unchanged. |
 | `--properties` | Properties to copy: comma-separated keys or `prefix*` patterns. Default `deb.*,rpm.*,build.name,build.number,vcs.*`; `none` disables. |
 | `--deb-distribution`, `--deb-component` | Fallback Debian placement, see [Debian placement](#debian-placement). |
-| `--artifactory-listing aql\|storage` | How Artifactory is enumerated. `aql` (default) uses one AQL query per 1000 files and carries creation time and properties; `storage` uses the storage API with extra calls per file. |
+| `--artifactory-listing aql\|storage` | How Artifactory is enumerated. `aql` (default) uses one AQL query per 1000 files and carries creation time and properties; `storage` uses the storage API with extra calls per file. Artifactory OSS rejects AQL sorting, so the importer repeats the query unsorted there; the storage API is Pro-only. |
 | `--path-prefix P` | Only import assets whose repository path starts with `P` (for example `com/acme/`), to migrate or test in slices. |
 | `--retries N` | Retries after a transient failure of a source request or an upload (default `3`; `0` disables). See [Retries](#retries). |
 | `--retry-max-wait D` | Longest wait between retries, a Go duration (default `30s`, must be positive). |

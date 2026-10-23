@@ -7,7 +7,10 @@ package main
 import (
 	"context"
 	"io"
+	"net/http"
 	"net/http/httptest"
+	"net/http/httputil"
+	"net/url"
 	"os"
 	"path/filepath"
 	"strings"
@@ -293,6 +296,59 @@ func TestImportArtifactoryAQLCopiesProperties(t *testing.T) {
 		if it.props[k] != v {
 			t.Fatalf("prop %s = %q, want %q", k, it.props[k], v)
 		}
+	}
+}
+
+// TestImportArtifactoryOSSRefusesAQLSorting covers Artifactory OSS, which
+// answers 400 to any AQL query with a sort clause: the listing must repeat the
+// page without it, and the later pages must stay unsorted.
+func TestImportArtifactoryOSSRefusesAQLSorting(t *testing.T) {
+	arti := newFakeArtifactory(t, artifactoryRepos()...)
+	target, err := url.Parse(arti.URL)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	proxy := httputil.NewSingleHostReverseProxy(target)
+
+	var sortedQueries, unsortedQueries int
+
+	oss := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path == "/api/search/aql" {
+			body, _ := io.ReadAll(r.Body)
+			r.Body = io.NopCloser(strings.NewReader(string(body)))
+
+			if strings.Contains(string(body), ".sort(") {
+				sortedQueries++
+
+				http.Error(w, `{"errors":[{"status":400,"message":"Sorting is not supported by AQL in the open source version\n"}]}`, http.StatusBadRequest)
+
+				return
+			}
+
+			unsortedQueries++
+		}
+
+		proxy.ServeHTTP(w, r)
+	}))
+	t.Cleanup(oss.Close)
+
+	oa := newFakeOA(t, map[string]*fakeRepo{"rpms": {format: "rpm", repoType: "hosted"}})
+
+	cfg := artifactoryCfg(t, oss)
+	cfg.SourceToken = "secret"
+
+	rep := runImportTest(t, cfg, oss, oa)
+	if rep.failed() || rep.Uploaded != 1 {
+		t.Fatalf("report = %+v", rep)
+	}
+
+	if sortedQueries != 1 || unsortedQueries != 1 {
+		t.Fatalf("sorted queries = %d, unsorted = %d; want one of each", sortedQueries, unsortedQueries)
+	}
+
+	if oa.find("rpms", "foo-1.0-1.x86_64.rpm") == nil {
+		t.Fatal("the package was not imported")
 	}
 }
 

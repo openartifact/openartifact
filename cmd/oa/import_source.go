@@ -505,17 +505,40 @@ type aqlItem struct {
 	} `json:"properties"`
 }
 
-func aqlQuery(repo string, offset int) string {
+// aqlQuery pages through a repository. The sort keeps pages stable while the
+// source changes; Artifactory OSS rejects it, so listAQL falls back to the
+// unsorted query (the server's native order).
+func aqlQuery(repo string, offset int, sorted bool) string {
+	order := ""
+	if sorted {
+		order = `.sort({"$asc":["path","name"]})`
+	}
+
 	return fmt.Sprintf(
-		`items.find({"repo":%s,"type":"file"}).include("repo","path","name","size","created","modified","sha256","actual_sha1","property.*").sort({"$asc":["path","name"]}).offset(%d).limit(%d)`,
-		strconv.Quote(repo), offset, aqlPageSize)
+		`items.find({"repo":%s,"type":"file"}).include("repo","path","name","size","created","modified","sha256","actual_sha1","property.*")%s.offset(%d).limit(%d)`,
+		strconv.Quote(repo), order, offset, aqlPageSize)
+}
+
+// errAQLUnsorted is Artifactory OSS refusing the sort clause.
+func errAQLUnsorted(err error) bool {
+	var se *httpStatusError
+
+	return errors.As(err, &se) && se.status == http.StatusBadRequest &&
+		strings.Contains(se.msg, "Sorting is not supported")
 }
 
 func (a *artifactorySource) listAQL(ctx context.Context, repo sourceRepo) ([]sourceAsset, error) {
 	var out []sourceAsset
 
+	sorted := true
+
 	for offset := 0; ; offset += aqlPageSize {
-		page, err := a.aqlPage(ctx, repo.Name, offset)
+		page, err := a.aqlPage(ctx, repo.Name, offset, sorted)
+		if sorted && errAQLUnsorted(err) {
+			sorted = false
+			page, err = a.aqlPage(ctx, repo.Name, offset, sorted)
+		}
+
 		if err != nil {
 			return nil, err
 		}
@@ -534,14 +557,14 @@ type aqlResponse struct {
 	Results []aqlItem `json:"results"`
 }
 
-func (a *artifactorySource) aqlPage(ctx context.Context, repo string, offset int) (aqlResponse, error) {
+func (a *artifactorySource) aqlPage(ctx context.Context, repo string, offset int, sorted bool) (aqlResponse, error) {
 	var page aqlResponse
 
 	// The AQL POST only reads, so it is safe to repeat like a GET.
 	err := a.http.retry.do(ctx, "AQL listing of "+strconv.Quote(repo), func(int) error {
 		var err error
 
-		page, err = a.aqlPageOnce(ctx, repo, offset)
+		page, err = a.aqlPageOnce(ctx, repo, offset, sorted)
 
 		return err
 	})
@@ -549,11 +572,11 @@ func (a *artifactorySource) aqlPage(ctx context.Context, repo string, offset int
 	return page, err
 }
 
-func (a *artifactorySource) aqlPageOnce(ctx context.Context, repo string, offset int) (aqlResponse, error) {
+func (a *artifactorySource) aqlPageOnce(ctx context.Context, repo string, offset int, sorted bool) (aqlResponse, error) {
 	what := "AQL listing of " + strconv.Quote(repo)
 
 	resp, err := a.http.do(ctx, http.MethodPost, a.http.resolve("/api/search/aql"),
-		strings.NewReader(aqlQuery(repo, offset)), "text/plain")
+		strings.NewReader(aqlQuery(repo, offset, sorted)), "text/plain")
 	if err != nil {
 		return aqlResponse{}, fmt.Errorf("%s: %w", what, err)
 	}
