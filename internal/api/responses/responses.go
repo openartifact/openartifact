@@ -384,6 +384,20 @@ type SBOMReportResponse struct {
 	SBOMData       any    `json:"sbom_data,omitempty"`
 }
 
+// VEXStatementResponse is an admin VEX decision in API responses.
+type VEXStatementResponse struct {
+	ID              string `json:"id"`
+	ArtifactID      string `json:"artifact_id"`
+	VulnID          string `json:"vuln_id"`
+	Status          string `json:"status"`
+	Justification   string `json:"justification"`
+	ImpactStatement string `json:"impact_statement"`
+	ActionStatement string `json:"action_statement"`
+	CreatedBy       string `json:"created_by"`
+	CreatedAt       string `json:"created_at"`
+	UpdatedAt       string `json:"updated_at"`
+}
+
 // LicenseScanResultResponse represents a license scan result.
 type LicenseScanResultResponse struct {
 	ID              string   `json:"id"`

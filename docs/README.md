@@ -45,7 +45,8 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | [Single sign-on](security/sso.md) | OIDC and SAML providers, provisioning, group mapping |
 | [RBAC](security/rbac.md) | Users, groups, permission targets, request-to-action mapping, projects (repository ownership, member and group access) |
 | [Projects](security/projects.md) | Project roles, member and group self-service, who may create projects, audit events, API |
-| [Scanning](security/scanning.md) | Vulnerability, secret and license scans, SBOM, quarantine |
+| [Scanning](security/scanning.md) | Vulnerability, secret and license scans, quarantine |
+| [SBOM and VEX](security/sbom.md) | CycloneDX / SPDX SBOMs, OpenVEX / CycloneDX VEX, Dependency-Track, Trivy, Grype |
 | [Signing](security/signing.md) | GPG signing of APT/RPM metadata; verifying release archives and images |
 
 ## Operations

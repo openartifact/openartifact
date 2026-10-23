@@ -154,7 +154,8 @@ Prefix `/api/v1`. Most groups are admin-only (the gate above); see the spec for 
 | `/projects/{project}/activity/export` | the same events as a JSONL or CSV download (`format`, `since`, `until`, `actor`, `action`) for every member, with the same token-event and client-address rules; see [audit export](../operations/monitoring.md#export) |
 | `/projects/{project}/{usage,quota,cleanup-policies}` | project storage usage, the project [quota](../repositories/cleanup-and-quotas.md#project-quotas) (`PUT` is global-admin only) and [default cleanup policies](../repositories/cleanup-and-quotas.md#project-default-cleanup-policies); access follows the caller's [project role](../security/projects.md) |
 | `/repositories/{name}/registry-gc` | `POST` (admin): run [Docker registry garbage collection](../formats/docker.md#garbage-collection), optionally as a dry run |
-| `/repositories/{name}/{sbom,vuln,license,secrets}` | SBOMs and [scanning](../security/scanning.md) (scans, quarantine, license policies) |
+| `/repositories/{name}/{sbom,vex}` | [SBOMs and VEX](../security/sbom.md) |
+| `/repositories/{name}/{vuln,license,secrets}` | [scanning](../security/scanning.md) (scans, quarantine, license policies) |
 | `/repositories/{name}/artifacts/...` | [properties](../repositories/properties.md) and property search |
 | `/repositories/{name}/packages/{id}/{delta,deltas}` | binary deltas |
 | `/repositories/{name}/ai-analysis` | [AI analysis](ai-analysis.md) |

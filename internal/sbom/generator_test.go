@@ -38,8 +38,8 @@ func TestGenerateCycloneDX(t *testing.T) {
 			t.Errorf("Format = %q, want cyclonedx", result.Format)
 		}
 
-		if result.SpecVersion != "1.4" {
-			t.Errorf("SpecVersion = %q, want 1.4", result.SpecVersion)
+		if result.SpecVersion != "1.5" {
+			t.Errorf("SpecVersion = %q, want 1.5", result.SpecVersion)
 		}
 
 		if result.ContentType != "application/json" {
@@ -94,8 +94,8 @@ func TestGenerateCycloneDX(t *testing.T) {
 			t.Errorf("name = %v, want justname", comp["name"])
 		}
 
-		if comp["version"] != "unknown" {
-			t.Errorf("version = %v, want unknown", comp["version"])
+		if _, has := comp["version"]; has {
+			t.Errorf("version = %v, want no version for an unversioned artifact", comp["version"])
 		}
 	})
 

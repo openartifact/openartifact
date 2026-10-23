@@ -84,7 +84,8 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `backup` *admin* | `list`, `create [--type full\|metadata-only]`, `show <id>`, `download <id> <dest>`, `restore <archive-file>` (uploads an archive written by `backup download`) |
 | `audit` *admin* | `list [--limit N] [--action A] [--actor A]` (default limit 50; pages through the server's 100-row pages); `export [--format jsonl\|csv] [--since T] [--until T] [--actor A] [--action A] [-o FILE]` streams the whole log, see [audit export](../operations/monitoring.md#export) |
 | `webhook` | `list`, `create --name N --url U --events E,E [--secret-file F\|-] [--active=false]`, `show <id>`, `update <id> [--name N] [--url U] [--events E,E] [--active[=false]]`, `delete <id>`, `test <id>`, `deliveries <id>`, `repo list <repo>`, `repo create <repo> --name N --url U --events E,E [--secret-file F\|-]` |
-| `sbom` | `list <repo>`, `generate <repo> --artifact-id ID [--format cyclonedx\|spdx]`, `show <repo> <id>`, `download <repo> <id> <dest>`, `delete <repo> <id>` |
+| `sbom` | `list <repo>`, `generate <repo> --artifact-id ID [--format cyclonedx\|spdx\|spdx-json] [--spec-version V]`, `show <repo> <id>`, `download <repo> <id> <dest>`, `delete <repo> <id>` |
+| `vex` | `get <repo> [--artifact-id ID] [--format openvex\|cyclonedx] [--spec-version V] [--output FILE]`, `list <repo> [--artifact-id ID]`, `set <repo> --artifact-id ID --vuln CVE --status S [--justification J] [--impact T] [--action T]`, `delete <repo> <id>` |
 | `vuln` | `scan <repo> --artifact-id ID --package P --version V --ecosystem E [--scanner osv\|trivy\|grype]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |
 | `license` | `scan <repo> --artifact-id ID`, `list <repo>`, `show <repo> <id>` |
 | `secret` | `scan <repo> --artifact-id ID [--content-file FILE\|-]`, `list <repo>`, `show <repo> <id>`, `quarantine <repo> <id>`, `delete <repo> <id>` |

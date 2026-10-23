@@ -61,6 +61,7 @@ func realRouter() chi.Router {
 	api.NewRepositoriesHandler(nil, nil, nil).RegisterAuthed(r)
 	api.NewCleanupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewSBOMHandler(nil, nil, nil, nil, nil).RegisterAuthed(r)
+	api.NewVEXHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewWebhooksHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewBackupHandler(nil, nil, nil, nil).RegisterAuthed(r)
 	api.NewLicenseHandler(nil, nil, nil, nil).RegisterRoutes(r)
@@ -871,6 +872,42 @@ func TestContractScans(t *testing.T) {
 			replies: map[string]reply{"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s1","component_count":3}`}},
 			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/sbom/generate", body: m{"artifact_id": "a1", "format": "spdx", "spec_version": "2.3"}}},
 			out:     "s1",
+		},
+		{
+			name:    "sbom generate spdx-json with spec version",
+			args:    []string{"sbom", "generate", "r", "--artifact-id", "a1", "--format", "cyclonedx", "--spec-version", "1.6"},
+			replies: map[string]reply{"POST /api/v1/repositories/{name}/sbom/generate": {status: 201, body: `{"id":"s2","component_count":0}`}},
+			calls:   []call{{method: "POST", pattern: "/api/v1/repositories/{name}/sbom/generate", body: m{"artifact_id": "a1", "format": "cyclonedx", "spec_version": "1.6"}}},
+			out:     "s2",
+		},
+		{
+			name:    "vex set",
+			args:    []string{"vex", "set", "r", "--artifact-id", "a1", "--vuln", "CVE-1", "--status", "not_affected", "--justification", "component_not_present"},
+			replies: map[string]reply{"PUT /api/v1/repositories/{name}/vex/statements": ok(`{"id":"x1","status":"not_affected"}`)},
+			calls: []call{{method: "PUT", pattern: "/api/v1/repositories/{name}/vex/statements",
+				body: m{"artifact_id": "a1", "vuln_id": "CVE-1", "status": "not_affected", "justification": "component_not_present", "impact_statement": "", "action_statement": ""}}},
+			out: "x1",
+		},
+		{
+			name:    "vex list",
+			args:    []string{"vex", "list", "r"},
+			replies: map[string]reply{"GET /api/v1/repositories/{name}/vex/statements": ok(`{"statements":[{"id":"x1","vuln_id":"CVE-1","status":"affected"}]}`)},
+			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/vex/statements"}},
+			out:     "CVE-1",
+		},
+		{
+			name:    "vex get",
+			args:    []string{"vex", "get", "r", "--format", "openvex"},
+			replies: map[string]reply{"GET /api/v1/repositories/{name}/vex": ok(`{"@context":"https://openvex.dev/ns/v0.2.0"}`)},
+			calls:   []call{{method: "GET", pattern: "/api/v1/repositories/{name}/vex"}},
+			out:     "openvex.dev",
+		},
+		{
+			name:    "vex delete",
+			args:    []string{"vex", "delete", "r", "x1"},
+			replies: map[string]reply{"DELETE /api/v1/repositories/{name}/vex/statements/{id}": {status: 204}},
+			calls:   []call{{method: "DELETE", pattern: "/api/v1/repositories/{name}/vex/statements/{id}"}},
+			out:     "deleted",
 		},
 		{
 			name:    "sbom list",

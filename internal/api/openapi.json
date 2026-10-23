@@ -1849,6 +1849,50 @@
           }
         }
       },
+      "VEXStatement": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "artifact_id": {
+            "type": "string"
+          },
+          "vuln_id": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "affected",
+              "not_affected",
+              "fixed",
+              "under_investigation"
+            ]
+          },
+          "justification": {
+            "type": "string"
+          },
+          "impact_statement": {
+            "type": "string"
+          },
+          "action_statement": {
+            "type": "string"
+          },
+          "created_by": {
+            "type": "string"
+          },
+          "created_at": {
+            "type": "string",
+            "format": "date-time"
+          },
+          "updated_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        }
+      },
       "ProjectQuota": {
         "type": "object",
         "properties": {
@@ -4163,10 +4207,13 @@
                     "format": "uuid"
                   },
                   "format": {
-                    "type": "string"
+                    "type": "string",
+                    "enum": ["cyclonedx", "spdx", "spdx-json"],
+                    "description": "`cyclonedx` (JSON), `spdx` (2.3 tag-value) or `spdx-json` (2.3 JSON)."
                   },
                   "spec_version": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "CycloneDX 1.4, 1.5 (default) or 1.6; SPDX 2.3. Optional."
                   },
                   "metadata": {
                     "type": "object"
@@ -4347,6 +4394,244 @@
           },
           "404": {
             "description": "SBOM report not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vex": {
+      "get": {
+        "summary": "Download a VEX document",
+        "description": "Build an OpenVEX 0.2.0 (default) or CycloneDX VEX document from the latest vulnerability scans and the recorded VEX decisions. With `artifact_id` it covers one artifact, otherwise every scanned artifact of the repository. Status per vulnerability: the recorded decision; else `fixed` when the scan's `fixed_in` is at or below the artifact version; else `affected` when the scan quarantined the artifact; else `under_investigation`. `not_affected` only comes from a recorded decision. Admin only.",
+        "tags": [
+          "Repositories",
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "openvex",
+                "cyclonedx"
+              ],
+              "default": "openvex"
+            }
+          },
+          {
+            "name": "spec_version",
+            "in": "query",
+            "description": "CycloneDX spec version (1.4, 1.5 or 1.6; default 1.5). CycloneDX only.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifact_id",
+            "in": "query",
+            "description": "Restrict the document to one artifact (`name@version`).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VEX document",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid format, spec_version or artifact_id"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vex/statements": {
+      "get": {
+        "summary": "List VEX decisions",
+        "description": "List the VEX decisions recorded for a repository, optionally for one artifact. Admin only.",
+        "tags": [
+          "Repositories",
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "artifact_id",
+            "in": "query",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "VEX decisions",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "statements": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/VEXStatement"
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      },
+      "put": {
+        "summary": "Record a VEX decision",
+        "description": "Record (or replace) the decision for one vulnerability of one artifact. `not_affected` requires a `justification`; other statuses must not carry one. Admin only.",
+        "tags": [
+          "Repositories",
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "type": "object",
+                "properties": {
+                  "artifact_id": {
+                    "type": "string"
+                  },
+                  "vuln_id": {
+                    "type": "string",
+                    "description": "e.g. CVE-2024-1234 or GHSA-xxxx"
+                  },
+                  "status": {
+                    "type": "string",
+                    "enum": [
+                      "affected",
+                      "not_affected",
+                      "fixed",
+                      "under_investigation"
+                    ]
+                  },
+                  "justification": {
+                    "type": "string",
+                    "enum": [
+                      "component_not_present",
+                      "vulnerable_code_not_present",
+                      "vulnerable_code_not_in_execute_path",
+                      "vulnerable_code_cannot_be_controlled_by_adversary",
+                      "inline_mitigations_already_exist"
+                    ]
+                  },
+                  "impact_statement": {
+                    "type": "string"
+                  },
+                  "action_statement": {
+                    "type": "string"
+                  }
+                },
+                "required": [
+                  "artifact_id",
+                  "vuln_id",
+                  "status"
+                ]
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Recorded decision",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/VEXStatement"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Validation failed"
+          },
+          "404": {
+            "description": "Repository not found"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/vex/statements/{id}": {
+      "delete": {
+        "summary": "Delete a VEX decision",
+        "description": "Delete a recorded VEX decision; the vulnerability falls back to its derived status. Admin only.",
+        "tags": [
+          "Repositories",
+          "SBOM"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "id",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "format": "uuid"
+            }
+          }
+        ],
+        "responses": {
+          "204": {
+            "description": "Decision deleted"
+          },
+          "404": {
+            "description": "Repository or decision not found"
           }
         }
       }

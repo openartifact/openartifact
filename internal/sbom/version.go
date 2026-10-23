@@ -18,7 +18,7 @@ import (
 // the Maven comparator; everything else compares dot/dash separated tokens
 // numerically, with a trailing alphabetic tail ("rc1", "beta") sorting before
 // the bare release.
-func versionAtLeast(format, version, fixed string) (atLeast, ok bool) {
+func versionAtLeast(format, version, fixed string) (bool, bool) {
 	version, fixed = strings.TrimSpace(version), strings.TrimSpace(fixed)
 	if version == "" || fixed == "" || version == "unknown" {
 		return false, false

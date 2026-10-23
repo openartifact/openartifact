@@ -14,7 +14,7 @@ import (
 	"github.com/google/uuid"
 )
 
-// SPDX is the only SPDX spec version generated.
+// SPDX23 is the only SPDX spec version generated.
 const SPDX23 = "2.3"
 
 const noAssertion = "NOASSERTION"
@@ -31,7 +31,7 @@ type spdxDoc struct {
 	CreationInfo      spdxCreation    `json:"creationInfo"`
 	Packages          []spdxPackage   `json:"packages"`
 	Relationships     []spdxRel       `json:"relationships"`
-	ExtractedLicenses []spdxExtracted `json:"hasExtractedLicenseInfos,omitempty"`
+	ExtractedLicenses []spdxExtracted `json:"hasExtractedLicensingInfos,omitempty"`
 }
 
 type spdxCreation struct {

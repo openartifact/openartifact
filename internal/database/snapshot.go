@@ -105,6 +105,7 @@ type SnapshotReader interface {
 	ListRepositories(ctx context.Context, page, limit int, formatFilter string) ([]*models.Repository, error)
 	ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error)
 	ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error)
+	ListVEXStatements(ctx context.Context, repoID, artifactID string) ([]*models.VEXStatement, error)
 	ListSBTArtifacts(ctx context.Context, repoID string) ([]*models.SBTArtifact, error)
 	ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error)
 	ListStorageBackends(ctx context.Context) ([]*models.StorageBackend, error)

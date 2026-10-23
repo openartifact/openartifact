@@ -766,6 +766,19 @@ export type SbomReport = {
     sbom_data?: unknown;
 };
 
+export type VexStatement = {
+    id?: string;
+    artifact_id?: string;
+    vuln_id?: string;
+    status?: 'affected' | 'not_affected' | 'fixed' | 'under_investigation';
+    justification?: string;
+    impact_statement?: string;
+    action_statement?: string;
+    created_by?: string;
+    created_at?: string;
+    updated_at?: string;
+};
+
 export type ProjectQuota = {
     project?: string;
     max_size_bytes?: number;
@@ -1837,7 +1850,13 @@ export type PostApiV1RepositoriesByNameWebhooksResponse = PostApiV1RepositoriesB
 export type PostApiV1RepositoriesByNameSbomGenerateData = {
     body: {
         artifact_id: string;
-        format: string;
+        /**
+         * `cyclonedx` (JSON), `spdx` (2.3 tag-value) or `spdx-json` (2.3 JSON).
+         */
+        format: 'cyclonedx' | 'spdx' | 'spdx-json';
+        /**
+         * CycloneDX 1.4, 1.5 (default) or 1.6; SPDX 2.3. Optional.
+         */
         spec_version?: string;
         metadata?: {
             [key: string]: unknown;
@@ -1954,6 +1973,141 @@ export type GetApiV1RepositoriesByNameSbomByIdDownloadResponses = {
 };
 
 export type GetApiV1RepositoriesByNameSbomByIdDownloadResponse = GetApiV1RepositoriesByNameSbomByIdDownloadResponses[keyof GetApiV1RepositoriesByNameSbomByIdDownloadResponses];
+
+export type GetApiV1RepositoriesByNameVexData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        format?: 'openvex' | 'cyclonedx';
+        /**
+         * CycloneDX spec version (1.4, 1.5 or 1.6; default 1.5). CycloneDX only.
+         */
+        spec_version?: string;
+        /**
+         * Restrict the document to one artifact (`name@version`).
+         */
+        artifact_id?: string;
+    };
+    url: '/api/v1/repositories/{name}/vex';
+};
+
+export type GetApiV1RepositoriesByNameVexErrors = {
+    /**
+     * Invalid format, spec_version or artifact_id
+     */
+    400: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameVexResponses = {
+    /**
+     * VEX document
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetApiV1RepositoriesByNameVexResponse = GetApiV1RepositoriesByNameVexResponses[keyof GetApiV1RepositoriesByNameVexResponses];
+
+export type GetApiV1RepositoriesByNameVexStatementsData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        artifact_id?: string;
+    };
+    url: '/api/v1/repositories/{name}/vex/statements';
+};
+
+export type GetApiV1RepositoriesByNameVexStatementsErrors = {
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameVexStatementsResponses = {
+    /**
+     * VEX decisions
+     */
+    200: {
+        statements?: Array<VexStatement>;
+    };
+};
+
+export type GetApiV1RepositoriesByNameVexStatementsResponse = GetApiV1RepositoriesByNameVexStatementsResponses[keyof GetApiV1RepositoriesByNameVexStatementsResponses];
+
+export type PutApiV1RepositoriesByNameVexStatementsData = {
+    body: {
+        artifact_id: string;
+        /**
+         * e.g. CVE-2024-1234 or GHSA-xxxx
+         */
+        vuln_id: string;
+        status: 'affected' | 'not_affected' | 'fixed' | 'under_investigation';
+        justification?: 'component_not_present' | 'vulnerable_code_not_present' | 'vulnerable_code_not_in_execute_path' | 'vulnerable_code_cannot_be_controlled_by_adversary' | 'inline_mitigations_already_exist';
+        impact_statement?: string;
+        action_statement?: string;
+    };
+    path: {
+        name: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/vex/statements';
+};
+
+export type PutApiV1RepositoriesByNameVexStatementsErrors = {
+    /**
+     * Validation failed
+     */
+    400: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type PutApiV1RepositoriesByNameVexStatementsResponses = {
+    /**
+     * Recorded decision
+     */
+    200: VexStatement;
+};
+
+export type PutApiV1RepositoriesByNameVexStatementsResponse = PutApiV1RepositoriesByNameVexStatementsResponses[keyof PutApiV1RepositoriesByNameVexStatementsResponses];
+
+export type DeleteApiV1RepositoriesByNameVexStatementsByIdData = {
+    body?: never;
+    path: {
+        name: string;
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/vex/statements/{id}';
+};
+
+export type DeleteApiV1RepositoriesByNameVexStatementsByIdErrors = {
+    /**
+     * Repository or decision not found
+     */
+    404: unknown;
+};
+
+export type DeleteApiV1RepositoriesByNameVexStatementsByIdResponses = {
+    /**
+     * Decision deleted
+     */
+    204: void;
+};
+
+export type DeleteApiV1RepositoriesByNameVexStatementsByIdResponse = DeleteApiV1RepositoriesByNameVexStatementsByIdResponses[keyof DeleteApiV1RepositoriesByNameVexStatementsByIdResponses];
 
 export type PostApiV1RepositoriesByNameLicenseScanData = {
     body: {

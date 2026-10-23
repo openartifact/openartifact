@@ -710,6 +710,10 @@ func (d *fakeDB) ListSBOMReports(context.Context, string) ([]*models.SBOMReport,
 	return nil, nil
 }
 
+func (d *fakeDB) ListVEXStatements(context.Context, string, string) ([]*models.VEXStatement, error) {
+	return nil, nil
+}
+
 func (d *fakeDB) ListLicenseScanResults(context.Context, string) ([]*models.LicenseScanResult, error) {
 	return nil, nil
 }

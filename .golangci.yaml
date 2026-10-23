@@ -190,6 +190,10 @@ linters:
       - path: "internal/vuln/scanner\\.go"
         linters:
           - tagliatelle
+      # CycloneDX, SPDX and OpenVEX documents use the camelCase / @-prefixed names of their specs
+      - path: "internal/sbom/(cyclonedx|spdx|vex)\\.go"
+        linters:
+          - tagliatelle
       # Nexus / Artifactory REST payloads are camelCase by contract
       - path: "cmd/oa/import_source\\.go"
         linters:

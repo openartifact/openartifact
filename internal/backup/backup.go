@@ -436,6 +436,7 @@ type packageExport struct {
 	webhooks        []*models.Webhook
 	cleanupPolicies []*models.CleanupPolicy
 	sbomReports     []*models.SBOMReport
+	vexStatements   []*models.VEXStatement
 	licenseResults  []*models.LicenseScanResult
 	secretResults   []*models.SecretScanResult
 	vulnResults     []*models.VulnScanResult
@@ -535,6 +536,7 @@ func (e *exporter) exportMetadata(ctx context.Context, tw *tar.Writer, manifest 
 		{"webhooks", pkg.webhooks, len(pkg.webhooks)},
 		{"cleanup_policies", pkg.cleanupPolicies, len(pkg.cleanupPolicies)},
 		{"sbom_reports", pkg.sbomReports, len(pkg.sbomReports)},
+		{"vex_statements", pkg.vexStatements, len(pkg.vexStatements)},
 		{"license_scan_results", pkg.licenseResults, len(pkg.licenseResults)},
 		{"secret_scan_results", pkg.secretResults, len(pkg.secretResults)},
 		{"vuln_scan_results", pkg.vulnResults, len(pkg.vulnResults)},
@@ -700,6 +702,9 @@ func (e *exporter) exportRepoScopedTables(ctx context.Context, repo *models.Repo
 
 	sboms, err := e.db.ListSBOMReports(ctx, id)
 	collectRepoList(pkg, &pkg.sbomReports, "sbom reports", id, sboms, err)
+
+	vexes, err := e.db.ListVEXStatements(ctx, id, "")
+	collectRepoList(pkg, &pkg.vexStatements, "vex statements", id, vexes, err)
 
 	licenses, err := e.db.ListLicenseScanResults(ctx, id)
 	collectRepoList(pkg, &pkg.licenseResults, "license scan results", id, licenses, err)
@@ -1372,6 +1377,11 @@ func (e *Engine) restoreEntry(ctx context.Context, r io.Reader, name string, st 
 			func(c *models.SBOMReport) string { return c.RepositoryID },
 			func(c *models.SBOMReport, id string) { c.RepositoryID = id },
 			false, e.db.CreateSBOMReport)
+	case "vex_statements.jsonl":
+		return restoreRepoScoped(ctx, r, st, e.log, "vex statement",
+			func(c *models.VEXStatement) string { return c.RepositoryID },
+			func(c *models.VEXStatement, id string) { c.RepositoryID = id },
+			false, e.db.UpsertVEXStatement)
 	case "license_scan_results.jsonl":
 		return restoreRepoScoped(ctx, r, st, e.log, "license scan result",
 			func(c *models.LicenseScanResult) string { return c.RepositoryID },

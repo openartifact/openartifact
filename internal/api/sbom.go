@@ -9,7 +9,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"io"
 	"net/http"
@@ -53,7 +52,8 @@ func (h *SBOMHandler) RegisterAuthed(r chi.Router) {
 }
 
 // validateSBOMRequest returns a validation message for an invalid SBOM
-// generation request, or "" when the request is valid.
+// generation request, or "" when the request is valid. An empty specVersion is
+// accepted and means the format's default (see defaultSpecVersion).
 func validateSBOMRequest(artifactID, format, specVersion string) string {
 	if msg := validateArtifactID(artifactID); msg != "" {
 		return msg
@@ -62,17 +62,29 @@ func validateSBOMRequest(artifactID, format, specVersion string) string {
 	switch {
 	case format == "":
 		return "format is required"
-	case specVersion == "":
-		return "spec_version is required"
-	case format != "cyclonedx" && format != "spdx":
-		return "format must be 'cyclonedx' or 'spdx'"
-	case format == "cyclonedx" && specVersion != "1.4":
-		return "CycloneDX spec_version must be '1.4'"
-	case format == "spdx" && specVersion != "2.3":
+	case format != "cyclonedx" && format != "spdx" && format != "spdx-json":
+		return "format must be 'cyclonedx', 'spdx' or 'spdx-json'"
+	case format == "cyclonedx" && specVersion != "" && !sbom.CycloneDXVersionSupported(specVersion):
+		return "CycloneDX spec_version must be '1.4', '1.5' or '1.6'"
+	case format != "cyclonedx" && specVersion != "" && specVersion != sbom.SPDX23:
 		return "SPDX spec_version must be '2.3'"
 	}
 
 	return ""
+}
+
+// sbomFileExtension is the download file extension of a stored SBOM format.
+func sbomFileExtension(format string) string {
+	switch format {
+	case "cyclonedx":
+		return "cdx.json"
+	case "spdx-json":
+		return "spdx.json"
+	case "spdx":
+		return "spdx"
+	default:
+		return format
+	}
 }
 
 func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
@@ -139,9 +151,12 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		genErr error
 	)
 
-	if body.Format == "cyclonedx" {
-		result, genErr = h.generator.GenerateCycloneDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
-	} else {
+	switch body.Format {
+	case "cyclonedx":
+		result, genErr = h.generator.GenerateCycloneDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata, body.SpecVersion)
+	case "spdx-json":
+		result, genErr = h.generator.GenerateSPDXJSON(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
+	default:
 		result, genErr = h.generator.GenerateSPDX(ctx, repo.ID, body.ArtifactID, repo.Format, metadata)
 	}
 
@@ -152,22 +167,10 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Serialize the generated SBOM to the exact bytes handleDownload will
-	// later serve, and store them in the blob store content-addressed by
-	// sha256 — sbom_results only carries a blob_id pointer (see
-	// CreateSBOMReport), it has no inline sbom_data/sbom_text column.
-	var data []byte
-	if result.Data != nil {
-		data, err = json.Marshal(result.Data)
-		if err != nil {
-			h.log.Errorw("generate SBOM: failed to marshal SBOM data", "error", err)
-			writeError(w, http.StatusInternalServerError, "internal_error", "failed to marshal SBOM")
-
-			return
-		}
-	} else {
-		data = []byte(result.Text)
-	}
+	// The generator returns the exact bytes handleDownload will later serve;
+	// they are stored in the blob store content-addressed by sha256 —
+	// sbom_results only carries a blob_id pointer (see CreateSBOMReport).
+	data := result.Body
 
 	sum := sha256.Sum256(data)
 	sha256Hex := hex.EncodeToString(sum[:])
@@ -380,7 +383,7 @@ func (h *SBOMHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	// time (JSON for cyclonedx, plain text for spdx), so stream it as-is
 	// instead of re-decoding/re-encoding.
 	w.Header().Set("Content-Type", report.ContentType)
-	w.Header().Set("Content-Disposition", "attachment; filename=sbom."+report.Format)
+	w.Header().Set("Content-Disposition", "attachment; filename=sbom."+sbomFileExtension(report.Format))
 	w.WriteHeader(http.StatusOK)
 
 	if _, err := io.Copy(w, rc); err != nil {

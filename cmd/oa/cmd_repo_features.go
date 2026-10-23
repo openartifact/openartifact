@@ -206,10 +206,10 @@ func webhookRepo(args []string, client *Client, outFmt string) {
 // SBOM
 // ═══════════════════════════════════════════════════════════════════════════════
 
-// sbomSpecVersions maps an SBOM format to the only spec version the server accepts.
+// sbomSpecVersions maps an SBOM format to the spec version used when --spec-version is not given.
 //
 //nolint:gochecknoglobals // immutable lookup table
-var sbomSpecVersions = map[string]string{"cyclonedx": "1.4", "spdx": "2.3"}
+var sbomSpecVersions = map[string]string{"cyclonedx": "1.5", "spdx": "2.3", "spdx-json": "2.3"}
 
 func handleSBOM(args []string, client *Client, outFmt string) {
 	if len(args) < 2 {
@@ -225,12 +225,17 @@ func handleSBOM(args []string, client *Client, outFmt string) {
 	case "generate":
 		fs := flag.NewFlagSet("sbom generate", flag.ExitOnError)
 		artifactID := fs.String("artifact-id", "", "Artifact (package) id to build the SBOM for")
-		format := fs.String("format", "cyclonedx", "SBOM format: cyclonedx|spdx")
+		format := fs.String("format", "cyclonedx", "SBOM format: cyclonedx|spdx|spdx-json")
+		specVersion := fs.String("spec-version", "", "Spec version (CycloneDX 1.4|1.5|1.6, SPDX 2.3); default 1.5 / 2.3")
 		_ = fs.Parse(args[2:])
 
 		spec, ok := sbomSpecVersions[*format]
 		if !ok {
-			dief("--format must be cyclonedx or spdx")
+			dief("--format must be cyclonedx, spdx or spdx-json")
+		}
+
+		if *specVersion != "" {
+			spec = *specVersion
 		}
 
 		if *artifactID == "" {
