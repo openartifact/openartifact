@@ -56,3 +56,43 @@ CLA is required. The project is [REUSE](https://reuse.software/) compliant:
 new source files need the SPDX header used by existing files
 (`reuse annotate --copyright "The OpenArtifact Authors" --license
 AGPL-3.0-or-later --exclude-year <file>`), and CI runs `reuse lint`.
+
+## Contribution requirements
+
+- **Coding standards.** Go code is formatted with `gofmt` and must pass
+  `golangci-lint` with the repository's `.golangci.yaml` (which also enforces
+  cyclomatic complexity and static analysis); the web UI must pass
+  `bun run typecheck`. Conventions are listed in
+  [docs/development](docs/development/README.md#conventions) and the area
+  rules in `.agents/rules/`. CI enforces all of this on every pull request, and
+  compiler/linter warnings must be fixed, not suppressed.
+- **Test policy.** Every behavior change or bug fix needs an automated test
+  that fails without it (unit tests next to the code, integration tests under
+  `tests/` with the `integration` build tag). CI runs the suite with the race
+  detector; pull requests that add functionality without tests are not merged.
+- **Review.** Changes go through a pull request that must pass CI (tests, lint,
+  `govulncheck`, Trivy, CodeQL, REUSE, workflow lint) and be reviewed by a
+  maintainer who checks correctness, security impact and documentation.
+- **Language.** Issues, pull requests, code comments and documentation are in
+  English.
+- **Behavior.** All participants follow the
+  [Code of Conduct](CODE_OF_CONDUCT.md); project roles and decision making are
+  described in [GOVERNANCE.md](GOVERNANCE.md).
+
+## Reporting bugs and requesting features
+
+Use GitHub issues. Bug reports should include the version, configuration,
+steps to reproduce and logs. Issues are triaged by maintainers, and bug reports
+and enhancement requests receive a response (label, question or decision)
+within about 14 days. All issues and pull requests are publicly archived on
+GitHub.
+
+## Releases
+
+The version lives in the `VERSION` file; a release is a unique SemVer tag
+`vX.Y.Z` that matches it. Pushing the tag runs the release workflow (tests,
+GoReleaser binaries, container image, signatures, provenance). Release notes
+are generated from Conventional Commits and list user-visible fixes, naming
+the CVE/GHSA id of any fixed publicly known vulnerability. Details:
+[docs/development](docs/development/README.md#releases-releaseyml) and
+[signing](docs/security/signing.md#verifying-openartifact-releases).
