@@ -248,7 +248,7 @@ func TestPanicIsRecordedAndRepanicked(t *testing.T) {
 	}
 }
 
-func TestTraceContextAndBaggagePropagation(t *testing.T) {
+func TestTraceContextPropagationAndBaggageContainment(t *testing.T) {
 	rec := install(t)
 
 	// Downstream service reached through the instrumented client.
@@ -305,8 +305,9 @@ func TestTraceContextAndBaggagePropagation(t *testing.T) {
 		t.Errorf("downstream traceparent %q does not name the client span", down.Get("Traceparent"))
 	}
 
-	if down.Get("Baggage") != "tenant=acme" {
-		t.Errorf("downstream baggage %q", down.Get("Baggage"))
+	// Inbound baggage is untrusted and must not leak to third parties.
+	if down.Get("Baggage") != "" {
+		t.Errorf("baggage forwarded downstream: %q", down.Get("Baggage"))
 	}
 
 	// The client span holds the host, never the path, query or credentials.

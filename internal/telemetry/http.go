@@ -23,6 +23,11 @@ import (
 	"go.opentelemetry.io/otel/trace"
 )
 
+// outboundPropagator is what client requests carry: W3C trace context only.
+// The process-wide propagator also extracts baggage from incoming requests,
+// which is deliberately not forwarded.
+var outboundPropagator propagation.TextMapPropagator = propagation.TraceContext{} //nolint:gochecknoglobals // stateless
+
 // methodOther replaces request methods outside the standard set so a client
 // cannot mint span names or attribute values.
 const methodOther = "_OTHER"
@@ -178,7 +183,7 @@ func (w *statusWriter) Flush() {
 }
 
 // WrapClient instruments c in place: every request through it becomes a client
-// span ("HTTP <METHOD>") and carries the traceparent/baggage headers of the
+// span ("HTTP <METHOD>") and carries the traceparent/tracestate headers (never baggage) of the
 // calling context. Attributes are limited to method, scheme, host and port
 // (never the path or query, which may hold tokens or presigned signatures) and
 // the status code. It is a no-op at request time while telemetry is disabled.
@@ -219,7 +224,9 @@ func (t *transport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// RoundTrippers must not mutate the caller's request.
 	req = req.Clone(ctx)
-	otel.GetTextMapPropagator().Inject(ctx, propagation.HeaderCarrier(req.Header))
+	// Trace context only: baggage comes from untrusted clients and must not
+	// reach upstreams, webhook endpoints or AI providers.
+	outboundPropagator.Inject(ctx, propagation.HeaderCarrier(req.Header))
 
 	resp, err := t.base.RoundTrip(req)
 	if err != nil {

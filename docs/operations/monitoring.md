@@ -144,7 +144,7 @@ Attributes: `http.request.method`, `url.scheme`, `network.protocol.version`, `ht
 
 ### Propagation
 
-The W3C `traceparent`, `tracestate` and `baggage` headers of an incoming request are honored, so OpenArtifact joins the caller's trace (a CI job, a reverse proxy that traces). The same headers are added to **every outbound request** made under that context, including those to external upstreams, webhook endpoints and AI providers: they identify the trace, but `baggage` carries whatever the caller put in it. Strip `baggage` at your ingress if clients may send values that must not reach third parties. With tracing enabled the `X-Trace-Id` response header carries the W3C trace id (it is otherwise a random id, or the one the client sent).
+The W3C `traceparent`, `tracestate` and `baggage` headers of an incoming request are honored, so OpenArtifact joins the caller's trace (a CI job, a reverse proxy that traces). Only `traceparent` and `tracestate` are added to **outbound requests** made under that context (proxy upstreams, webhook endpoints, scanners, AI providers, OIDC and SAML): they identify the trace and nothing else. `baggage` comes from untrusted clients and is never forwarded; it is only available in-process. With tracing enabled the `X-Trace-Id` response header carries the W3C trace id (it is otherwise a random id, or the one the client sent).
 
 ### Log correlation
 
