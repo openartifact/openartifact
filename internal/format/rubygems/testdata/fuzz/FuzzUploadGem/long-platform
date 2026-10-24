@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"name\":\"a\",\"version\":\"1\",\"platform\":\"pppppppppppppppppppppppppppppppppppppppppppppppppppppppppppp\"}")

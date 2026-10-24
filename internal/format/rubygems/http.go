@@ -24,6 +24,7 @@ import (
 	"strings"
 	"time"
 	"unicode"
+	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
@@ -403,7 +404,7 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 	name, _ := metadata["name"].(string)
 	version, _ := metadata["version"].(string)
 
-	if !validGemIdent(name) || !validGemVersion(version) {
+	if !validGemName(name) || !validGemVersion(version) {
 		http.Error(w, "gem metadata is missing a valid name or version", http.StatusBadRequest)
 		return
 	}
@@ -413,8 +414,13 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 		platform = "ruby"
 	}
 
-	if !validGemIdent(platform) {
+	if !validGemPlatform(platform) {
 		http.Error(w, "invalid gem platform", http.StatusBadRequest)
+		return
+	}
+
+	if !storableText(metadata) {
+		http.Error(w, "gem metadata holds text that is not valid UTF-8 or contains NUL", http.StatusBadRequest)
 		return
 	}
 
@@ -1064,15 +1070,29 @@ func (h *HTTPHandler) gemFileNameTaken(w http.ResponseWriter, r *http.Request, r
 	return false
 }
 
+// Widths of the rubygems_gems name, version and platform columns
+// (migrations/001_initial_schema.sql); a longer value fails the insert.
+const (
+	maxGemNameLen     = 255
+	maxGemVersionLen  = 100
+	maxGemPlatformLen = 50
+)
+
+func validGemName(s string) bool { return validGemIdent(s, maxGemNameLen) }
+
+func validGemPlatform(s string) bool { return validGemIdent(s, maxGemPlatformLen) }
+
 // validGemVersion accepts the canonical RubyGems version spelling: it starts
 // with a digit, as findGem requires to locate the name/version boundary, and
 // never holds a hyphen (Gem::Version rewrites "-" to ".pre.").
 func validGemVersion(s string) bool {
-	return validGemIdent(s) && s[0] >= '0' && s[0] <= '9' && !strings.Contains(s, "-")
+	return validGemIdent(s, maxGemVersionLen) && s[0] >= '0' && s[0] <= '9' && !strings.Contains(s, "-")
 }
 
-func validGemIdent(s string) bool {
-	if s == "" || len(s) > 255 {
+// validGemIdent accepts a non-empty UTF-8 token of at most maxLen bytes with
+// no separators, whitespace or control characters.
+func validGemIdent(s string, maxLen int) bool {
+	if s == "" || len(s) > maxLen || !utf8.ValidString(s) {
 		return false
 	}
 
@@ -1083,6 +1103,28 @@ func validGemIdent(s string) bool {
 	}
 
 	return s != "." && s != ".."
+}
+
+// storableText reports whether every string in v, map keys included, fits the
+// text, text[] and jsonb columns the metadata is stored in: valid UTF-8 and no
+// NUL (a jsonb string cannot hold \u0000 either).
+func storableText(v any) bool {
+	switch t := v.(type) {
+	case string:
+		return utf8.ValidString(t) && !strings.ContainsRune(t, 0)
+	case []any:
+		return !slices.ContainsFunc(t, func(e any) bool { return !storableText(e) })
+	case []map[string]any:
+		return !slices.ContainsFunc(t, func(e map[string]any) bool { return !storableText(e) })
+	case map[string]any:
+		for k, e := range t {
+			if !storableText(k) || !storableText(e) {
+				return false
+			}
+		}
+	}
+
+	return true
 }
 
 // marshalSpecsList creates a Ruby Marshal 4.8 encoded array of gem specs:

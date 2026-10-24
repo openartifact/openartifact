@@ -501,14 +501,8 @@ func checkAcceptedGem(t *testing.T, h *HTTPHandler, db *fuzzGemsDB, gem []byte) 
 
 	g := db.gems[0]
 
-	for _, s := range []string{g.Name, g.Version, g.Platform} {
-		if !validGemIdent(s) || !utf8.ValidString(s) {
-			t.Fatalf("accepted gem has the invalid identity part %q (%s %s %s)", s, g.Name, g.Version, g.Platform)
-		}
-	}
-
-	if !validGemVersion(g.Version) {
-		t.Fatalf("accepted version %q", g.Version)
+	if !validGemName(g.Name) || !validGemVersion(g.Version) || !validGemPlatform(g.Platform) {
+		t.Fatalf("accepted gem has an invalid identity: %q %q %q", g.Name, g.Version, g.Platform)
 	}
 
 	file := strings.TrimSuffix(gemFilename(g), ".gem")
@@ -655,13 +649,11 @@ func FuzzGemIdentity(f *testing.F) {
 	f.Add("a b", "1", "ruby")
 
 	f.Fuzz(func(t *testing.T, name, version, platform string) {
-		if validGemVersion(version) {
-			if !validGemIdent(version) || version[0] < '0' || version[0] > '9' || strings.Contains(version, "-") {
-				t.Fatalf("validGemVersion(%q) accepts a version findGem cannot split on", version)
-			}
+		if validGemVersion(version) && (version[0] < '0' || version[0] > '9' || strings.Contains(version, "-")) {
+			t.Fatalf("validGemVersion(%q) accepts a version findGem cannot split on", version)
 		}
 
-		if !validGemIdent(name) || !validGemVersion(version) || !validGemIdent(platform) {
+		if !validGemName(name) || !validGemVersion(version) || !validGemPlatform(platform) {
 			return
 		}
 
