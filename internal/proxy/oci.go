@@ -523,12 +523,18 @@ func manifestType(header string, body io.Reader) (string, error) {
 		return "", fmt.Errorf("read manifest: %w", err)
 	}
 
-	var doc struct {
+	// A pointer, so that the JSON value null (which decodes into a struct without
+	// error) is told apart from an object.
+	var doc *struct {
 		MediaType string `json:"mediaType"` //nolint:tagliatelle // OCI manifest field name
 	}
 
 	if err := json.NewDecoder(bytes.NewReader(data)).Decode(&doc); err != nil {
 		return "", fmt.Errorf("%w: %w", errBadManifest, err)
+	}
+
+	if doc == nil {
+		return "", fmt.Errorf("%w: not a JSON object", errBadManifest)
 	}
 
 	// Both candidates are upstream controlled: only registry JSON types may be
