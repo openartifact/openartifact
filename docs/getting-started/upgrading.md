@@ -85,7 +85,9 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
-### Unreleased
+### 0.10.0
+
+No migrations.
 
 - New optional [white-label branding](../operations/branding.md): `branding.*` (`OPENARTIFACT_BRANDING_*`) and Administration > Branding set the product name, logos, favicon, accent colour, login message, support link and source-code link; the unauthenticated `GET /api/v1/branding` and `/manifest.webmanifest` serve them. With nothing configured the UI shows the OpenArtifact brand, now with the new logo lockups, favicon, app icons and self-hosted Inter and JetBrains Mono fonts (no request to a font CDN). A "Powered by OpenArtifact" line and a source-code link stay visible in the About dialog and on the login page. `web/public/manifest.webmanifest` is no longer a static file: the server generates it, so a reverse proxy that serves it directly must forward the path. No migration; settings live in `system_settings`.
 - S3 staging promotion no longer depends on the backend enforcing `If-Match` / `x-amz-copy-source-if-match`: OpenArtifact now also compares the ETag returned by the read or copy and discards the copy on a mismatch. This closes the post-verification overwrite window on backends that ignore conditional reads (for example Garage 1.x). No action required.
