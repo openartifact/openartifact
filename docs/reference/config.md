@@ -254,6 +254,21 @@ This page lists every configuration key with its type, built-in default and the 
 |---|---|---|---|---|
 | `docs.baseUrl` | `OPENARTIFACT_DOCS_BASE_URL` | string | `https://openartifact.github.io/` | `baseUrl` is the root of the published documentation site; the web UI links to the version matching the server (release builds) or to the latest docs (development builds). Point it at an internal mirror for air-gapped installs; empty hides every documentation link. |
 
+## branding
+
+`branding` white-labels the UI: product name, logos, favicon, colour, login message and support/source links (see [operations/branding.md](../operations/branding.md)). Administrators can override every value at runtime.
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `branding.productName` | `OPENARTIFACT_BRANDING_PRODUCT_NAME` | string | `empty` | `productName` replaces "OpenArtifact" in the UI (title, sidebar, login). |
+| `branding.logoLight` | `OPENARTIFACT_BRANDING_LOGO_LIGHT` | string | `empty` | `logoLight` is the path of a PNG or SVG logo shown on light surfaces; when only one logo is set it is used for both themes. |
+| `branding.logoDark` | `OPENARTIFACT_BRANDING_LOGO_DARK` | string | `empty` | `logoDark` is the path of a PNG or SVG logo shown on dark surfaces. |
+| `branding.favicon` | `OPENARTIFACT_BRANDING_FAVICON` | string | `empty` | `favicon` is a PNG or SVG file. |
+| `branding.primaryColor` | `OPENARTIFACT_BRANDING_PRIMARY_COLOR` | string | `empty` | `primaryColor` is the accent colour as #rrggbb. |
+| `branding.loginMessage` | `OPENARTIFACT_BRANDING_LOGIN_MESSAGE` | string | `empty` | `loginMessage` is shown on the login page (plain text with a tiny markdown subset). |
+| `branding.supportUrl` | `OPENARTIFACT_BRANDING_SUPPORT_URL` | string | `empty` | `supportUrl` is an http(s) or mailto link shown in the About dialog. |
+| `branding.sourceUrl` | `OPENARTIFACT_BRANDING_SOURCE_URL` | string | `empty` | `sourceUrl` is where users can get the source of the running version (AGPL-3.0 section 13); it defaults to the upstream repository and cannot be hidden. |
+
 ## blobDeletion
 
 `blobDeletion` tunes the deferred deletion of blob bytes (see [operations/storage.md](../operations/storage.md)).

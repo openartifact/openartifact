@@ -9,7 +9,7 @@ export const enFederation = {
   'federation.badgeTitle': 'This repository is federated with other instances.',
   'federation.title': 'Federation',
   'federation.description':
-    'Keep this repository in sync with the same repository on other OpenArtifact instances. Each instance pulls the changes of its peers; there is no leader.',
+    'Keep this repository in sync with the same repository on other instances. Each instance pulls the changes of its peers; there is no leader.',
   'federation.loadFailed': 'Could not load the federation status.',
   'federation.enable': 'Federate this repository',
   'federation.enableHint':

@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <div class="min-h-screen flex items-center justify-center bg-bg py-12 px-4">
     <div class="max-w-md w-full space-y-8">
       <div class="text-center">
-        <h1 class="text-3xl font-bold text-primary">{{ t('app.name') }}</h1>
+        <div class="flex justify-center"><BrandLogo variant="stacked" :size="144" /></div>
         <h2 class="mt-2 text-xl text-foreground">{{ t('auth.changePassword') }}</h2>
         <p class="mt-2 text-sm text-muted">
           {{ t('auth.changePasswordRequired') }}
@@ -55,6 +55,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ t('auth.signOut') }}
         </AppButton>
       </form>
+      <div class="flex justify-center"><PoweredBy /></div>
     </div>
   </div>
 </template>
@@ -69,6 +70,8 @@ import { useToastStore } from '../stores/toast'
 import { useSignOut } from '../composables/useSignOut'
 import { safeNextPath } from '../lib/safeRedirect'
 import FormField from '../components/FormField.vue'
+import BrandLogo from '../components/BrandLogo.vue'
+import PoweredBy from '../components/PoweredBy.vue'
 import { t } from '../i18n/en'
 
 const router = useRouter()

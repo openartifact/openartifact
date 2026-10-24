@@ -14,11 +14,10 @@ import { enProjects } from './en.projects'
 import { enTiering } from './en.tiering'
 import { enBundles } from './en.bundles'
 import { enFederation } from './en.federation'
+import { enBranding } from './en.branding'
 
 const base = {
   // App / shell
-  'app.name': 'OpenArtifact',
-  'app.tagline': 'Sign in to your account',
 
   // Auth
   'auth.signIn': 'Sign in',
@@ -115,7 +114,7 @@ const base = {
   'common.copied': 'Copied',
   'common.actions': 'Actions',
   'common.notAvailable': 'Not yet available',
-  'common.notAvailableHint': 'This admin endpoint is not yet implemented in your OpenArtifact build.',
+  'common.notAvailableHint': 'This admin endpoint is not yet implemented in this build.',
   'common.viewDocs': 'View documentation',
   'common.optional': 'optional',
   'common.required': 'required',
@@ -454,13 +453,22 @@ const base = {
   'docs.trash': 'How the trash and retention work',
 } as const
 
-const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation } satisfies Record<string, string>
+const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation, ...enBranding } satisfies Record<string, string>
 
 export type TranslationKey = keyof typeof catalog
 
 /** Typed lookup: unknown keys are a compile error. */
 export function t(key: TranslationKey): string {
   return catalog[key]
+}
+
+/**
+ * Typed lookup with `{name}` placeholders filled from `params`. Use it for
+ * strings that carry the product name or other runtime values, instead of
+ * concatenating translated fragments.
+ */
+export function tp(key: TranslationKey, params: Record<string, string>): string {
+  return catalog[key].replace(/\{(\w+)\}/g, (match, name: string) => params[name] ?? match)
 }
 
 /** Lookup for keys assembled at runtime (e.g. `status.${state}`); falls back to the key itself. */

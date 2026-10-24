@@ -2,10 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { createRouter, createWebHistory, type RouteRecordRaw } from 'vue-router'
+import { createRouter, createWebHistory, type RouteLocationNormalizedLoaded, type RouteRecordRaw } from 'vue-router'
 import { useSessionStore } from '../stores/session'
+import { useBrandingStore } from '../stores/branding'
 import { safeNextPath } from '../lib/safeRedirect'
-import type { CrumbSpec } from '../lib/crumbs'
+import { resolveCrumbs, type CrumbSpec } from '../lib/crumbs'
 import type { TranslationKey } from '../i18n/en'
 
 const reposTrail: CrumbSpec[] = [{ key: 'nav.repositories', to: '/repos' }]
@@ -231,6 +232,12 @@ const routes: RouteRecordRaw[] = [
     meta: { crumbs: adminTrail('adm.ai.title'), requiresAuth: true, requiresAdmin: true },
   },
   {
+    path: '/admin/branding',
+    name: 'admin-branding',
+    component: () => import('../pages/admin/BrandingPage.vue'),
+    meta: { crumbs: adminTrail('nav.branding'), requiresAuth: true, requiresAdmin: true },
+  },
+  {
     path: '/admin/dependency-track',
     name: 'admin-dependency-track',
     component: () => import('../pages/admin/DependencyTrackPage.vue'),
@@ -377,6 +384,13 @@ router.beforeEach(async (to, from) => {
   if (to.meta.requiresRepoCreate && !session.canCreateRepo) {
     return { name: 'dashboard' }
   }
+})
+
+// The window title is `<page> · <product name>`: the page is the last breadcrumb
+// of the route, the product name comes from the branding store.
+router.afterEach((to) => {
+  const trail = resolveCrumbs(to as RouteLocationNormalizedLoaded)
+  useBrandingStore().setPageTitle(trail[trail.length - 1]?.label ?? '')
 })
 
 export default router

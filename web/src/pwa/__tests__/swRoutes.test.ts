@@ -6,7 +6,7 @@ import { describe, it, expect } from 'bun:test'
 import { classifyRequest, isBypassPath, type RequestInfo } from '../swRoutes'
 
 const ORIGIN = 'https://oa.example.com'
-const PRECACHED = new Set(['/assets/index-AbCd1234.js', '/offline.html', '/icons/icon-192.png', '/manifest.webmanifest'])
+const PRECACHED = new Set(['/assets/index-AbCd1234.js', '/offline.html', '/icons/icon-192.png'])
 
 function req(path: string, over: Partial<RequestInfo> = {}): RequestInfo {
   return { method: 'GET', url: ORIGIN + path, mode: 'cors', accept: '*/*', ...over }
@@ -31,11 +31,12 @@ describe('isBypassPath', () => {
     '/mcp',
     '/auth/callback',
     '/sso/start',
+    '/manifest.webmanifest',
   ])('%s is never handled by the worker', (p) => {
     expect(isBypassPath(p)).toBe(true)
   })
 
-  it.each(['/', '/login', '/search', '/projects/demo', '/admin/users', '/apiary', '/reposition', '/v22', '/healthy', '/assets/x.js'])(
+  it.each(['/', '/login', '/search', '/projects/demo', '/admin/users', '/apiary', '/reposition', '/v22', '/healthy', '/manifest.webmanifest.bak', '/assets/x.js'])(
     '%s is not excluded',
     (p) => {
       expect(isBypassPath(p)).toBe(false)
@@ -52,6 +53,12 @@ describe('classifyRequest', () => {
 
   it('does not match a precached path carrying a query string', () => {
     expect(classifyRequest(req('/assets/index-AbCd1234.js?x=1'), ORIGIN, PRECACHED)).toBe('bypass')
+  })
+
+  it('never answers the dynamic manifest, even if it were precached', () => {
+    const withManifest = new Set([...PRECACHED, '/manifest.webmanifest'])
+    expect(classifyRequest(req('/manifest.webmanifest'), ORIGIN, withManifest)).toBe('bypass')
+    expect(classifyRequest(req('/manifest.webmanifest'), ORIGIN, PRECACHED)).toBe('bypass')
   })
 
   it('falls back to the offline page for SPA navigations', () => {

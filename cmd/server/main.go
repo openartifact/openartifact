@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
+	"github.com/openartifact/openartifact/internal/branding"
 	"github.com/openartifact/openartifact/internal/config"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
@@ -628,7 +629,13 @@ func run(args []string) error {
 
 	// One SPA handler for both the RBAC page-load bypass and the router
 	// fallback: building it hashes and precompresses every embedded asset.
-	spaHandler := webhandler.Handler()
+	brandDefaults, err := cfg.Branding.Defaults()
+	if err != nil {
+		return fail("invalid branding configuration", err)
+	}
+
+	brandManager := branding.NewManager(db, brandDefaults, log)
+	spaHandler := webhandler.Handler(brandManager)
 
 	evaluator := auth.NewEvaluator(db, log, cfg.Auth.AllowAnonymousRead)
 	trash.SetEvaluator(evaluator)
@@ -817,6 +824,11 @@ func run(args []string) error {
 	sysInfoHandler := api.NewSystemInfoHandler(version, commit, buildTime, db, blobStore, cfg.Storage.Type).WithDocsBaseURL(cfg.Docs.BaseURL)
 	sysInfoHandler.RegisterPublic(router)
 
+	// Public branding (no auth required: the login page and the app shell need
+	// it before anyone is signed in).
+	brandingHandler := api.NewBrandingHandler(brandManager, log, evaluator)
+	brandingHandler.RegisterPublic(router)
+
 	// Public SSO provider list (no auth required — used by login page)
 	api.NewAdminSSOHandler(db, log, evaluator, cfg.BaseURL, cfg).RegisterPublic(router)
 
@@ -859,6 +871,7 @@ func run(args []string) error {
 	api.NewAdminRecoveryHandler(journal, log, evaluator).Register(authedAPI)
 	api.NewAdminGPGHandler(db, log, evaluator, gpgKeys).Register(authedAPI)
 	sysInfoHandler.RegisterAuthed(authedAPI)
+	brandingHandler.RegisterAuthed(authedAPI)
 
 	if cfg.Server.PprofEnabled {
 		registerPprof(authedAPI)

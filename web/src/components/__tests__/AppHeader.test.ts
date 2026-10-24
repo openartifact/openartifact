@@ -13,7 +13,7 @@ describe('AppHeader palette trigger', () => {
 
   it('is a real button that opens the palette and advertises the hotkey', async () => {
     const ui = useUIStore()
-    const wrapper = mount(AppHeader, { global: { stubs: { ThemeToggle: true } } })
+    const wrapper = mount(AppHeader, { global: { stubs: { ThemeToggle: true, RouterLink: true } } })
     const trigger = wrapper.get('button[aria-label="Open command palette"]')
     expect(trigger.attributes('type')).toBe('button')
     expect(trigger.attributes('aria-keyshortcuts')).toMatch(/^(Meta|Control)\+K$/)
@@ -29,7 +29,7 @@ describe('AppHeader mobile navigation toggle', () => {
 
   it('opens and closes the off-canvas drawer and reflects it in aria-expanded', async () => {
     const ui = useUIStore()
-    const wrapper = mount(AppHeader, { global: { stubs: { ThemeToggle: true } } })
+    const wrapper = mount(AppHeader, { global: { stubs: { ThemeToggle: true, RouterLink: true } } })
     const btn = wrapper.get('button[aria-label="Open navigation"]')
     expect(btn.attributes('aria-controls')).toBe('app-sidebar')
     expect(btn.attributes('aria-expanded')).toBe('false')

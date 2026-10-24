@@ -84,3 +84,16 @@ path = "**/testdata/fuzz/**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Official brand artwork (openartifact/brand): lockups, marks, favicon and the icons derived from the mark.
+# Later annotations win over the generic web/public/** entry above.
+[[annotations]]
+path = [
+  "web/src/assets/brand/**",
+  "web/public/favicon.svg",
+  "web/public/favicon-32.png",
+  "web/public/icons/**",
+]
+precedence = "override"
+SPDX-FileCopyrightText = "The OpenArtifact Authors"
+SPDX-License-Identifier = "CC-BY-SA-4.0"

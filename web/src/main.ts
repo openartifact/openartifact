@@ -9,6 +9,7 @@ import router from './router'
 import './style.css'
 import { useThemeStore } from './stores/theme'
 import { useToastStore } from './stores/toast'
+import { useBrandingStore } from './stores/branding'
 import { isSessionExpired } from './api/client'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 import { startServiceWorker } from './pwa/register'
@@ -21,6 +22,12 @@ app.use(createPinia())
 // stays in sync with the persisted mode (the FOUC guard applied an initial
 // value already from index.html).
 useThemeStore().init()
+
+// The server embeds the effective branding in index.html: apply it before the
+// first render so the name, colours and icon never flash the defaults. The
+// revalidation after mount picks up changes made since the page was served.
+const branding = useBrandingStore()
+branding.initFromDocument()
 
 app.use(router)
 
@@ -48,6 +55,7 @@ window.addEventListener('unhandledrejection', (event) => {
 captureInstallPrompt()
 
 app.mount('#app')
+void branding.refresh()
 
 // Not in dev: Vite serves modules the worker would otherwise have to ignore.
 if (import.meta.env.PROD) startServiceWorker()

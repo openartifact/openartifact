@@ -2109,6 +2109,123 @@ export type DependencyTrackTest = {
 };
 
 /**
+ * Contrast-adjusted colours of one theme, derived from primary_color so text on the surface and on the button fill stays readable (WCAG AA).
+ */
+export type BrandingPalette = {
+    primary: string;
+    /**
+     * Text colour on a primary fill
+     */
+    primary_contrast: string;
+    /**
+     * Tinted background that primary text stays readable on
+     */
+    primary_soft: string;
+};
+
+export type BrandingTheme = {
+    light: BrandingPalette;
+    dark: BrandingPalette;
+};
+
+/**
+ * Effective white-label settings (admin overrides layered over the branding.* configuration). Public: it carries nothing secret.
+ */
+export type Branding = {
+    product_name: string;
+    /**
+     * #rrggbb, empty for the built-in colour
+     */
+    primary_color: string;
+    /**
+     * Present only with a custom primary_color
+     */
+    theme?: BrandingTheme | null;
+    /**
+     * Logo for light surfaces; empty means the built-in lockup. Falls back to the dark logo when only that one is set.
+     */
+    logo_light_url: string;
+    /**
+     * Logo for dark surfaces; empty means the built-in lockup.
+     */
+    logo_dark_url: string;
+    favicon_url: string;
+    /**
+     * Plain text with a tiny markdown subset (**bold**, *italic*, `code`, [text](https://...)); render it without innerHTML.
+     */
+    login_message: string;
+    /**
+     * http(s) or mailto URL; empty hides the link
+     */
+    support_url: string;
+    /**
+     * Where the running source is offered (AGPL-3.0 section 13); never empty
+     */
+    source_url: string;
+    /**
+     * Changes whenever any value or image changes; used as the cache-busting query of the image URLs
+     */
+    revision: string;
+};
+
+/**
+ * Values the instance falls back to when no runtime override is set (configuration, else built-in).
+ */
+export type BrandingDefaults = {
+    product_name: string;
+    primary_color: string;
+    login_message: string;
+    support_url: string;
+    source_url: string;
+};
+
+/**
+ * Which fields currently come from a runtime (admin) override rather than the configuration.
+ */
+export type BrandingOverrides = {
+    product_name: boolean;
+    primary_color: boolean;
+    login_message: boolean;
+    support_url: boolean;
+    source_url: boolean;
+    logo_light: boolean;
+    logo_dark: boolean;
+    favicon: boolean;
+};
+
+export type BrandingAdmin = {
+    effective: Branding;
+    defaults: BrandingDefaults;
+    overrides: BrandingOverrides;
+};
+
+/**
+ * Partial update: an absent field is left alone, a string sets the runtime override, null removes the override (back to the configured default).
+ */
+export type BrandingUpdate = {
+    /**
+     * 1-64 characters, no control characters
+     */
+    product_name?: string | null;
+    /**
+     * #rrggbb
+     */
+    primary_color?: string | null;
+    /**
+     * Up to 2000 characters
+     */
+    login_message?: string | null;
+    /**
+     * http(s) or mailto URL; empty string hides the link
+     */
+    support_url?: string | null;
+    /**
+     * http(s) URL; cannot be empty
+     */
+    source_url?: string | null;
+};
+
+/**
  * OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry has_secret instead.
  */
 export type OidcConfigWritable = {
@@ -10512,3 +10629,181 @@ export type GetWellKnownOpenartifactAttestationKeyPemResponses = {
 };
 
 export type GetWellKnownOpenartifactAttestationKeyPemResponse = GetWellKnownOpenartifactAttestationKeyPemResponses[keyof GetWellKnownOpenartifactAttestationKeyPemResponses];
+
+export type GetApiV1BrandingData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/branding';
+};
+
+export type GetApiV1BrandingResponses = {
+    /**
+     * Effective branding
+     */
+    200: Branding;
+};
+
+export type GetApiV1BrandingResponse = GetApiV1BrandingResponses[keyof GetApiV1BrandingResponses];
+
+export type GetApiV1BrandingByAssetData = {
+    body?: never;
+    path: {
+        asset: 'logo-light' | 'logo-dark' | 'favicon';
+    };
+    query?: never;
+    url: '/api/v1/branding/{asset}';
+};
+
+export type GetApiV1BrandingByAssetErrors = {
+    /**
+     * No image configured
+     */
+    404: Error;
+};
+
+export type GetApiV1BrandingByAssetError = GetApiV1BrandingByAssetErrors[keyof GetApiV1BrandingByAssetErrors];
+
+export type GetApiV1BrandingByAssetResponses = {
+    /**
+     * Image
+     */
+    200: Blob | File;
+};
+
+export type GetApiV1BrandingByAssetResponse = GetApiV1BrandingByAssetResponses[keyof GetApiV1BrandingByAssetResponses];
+
+export type DeleteApiV1AdminBrandingData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/branding';
+};
+
+export type DeleteApiV1AdminBrandingErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type DeleteApiV1AdminBrandingResponses = {
+    /**
+     * Branding state
+     */
+    200: BrandingAdmin;
+};
+
+export type DeleteApiV1AdminBrandingResponse = DeleteApiV1AdminBrandingResponses[keyof DeleteApiV1AdminBrandingResponses];
+
+export type GetApiV1AdminBrandingData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/branding';
+};
+
+export type GetApiV1AdminBrandingErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1AdminBrandingResponses = {
+    /**
+     * Branding state
+     */
+    200: BrandingAdmin;
+};
+
+export type GetApiV1AdminBrandingResponse = GetApiV1AdminBrandingResponses[keyof GetApiV1AdminBrandingResponses];
+
+export type PutApiV1AdminBrandingData = {
+    body: BrandingUpdate;
+    path?: never;
+    query?: never;
+    url: '/api/v1/admin/branding';
+};
+
+export type PutApiV1AdminBrandingErrors = {
+    /**
+     * Invalid value
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type PutApiV1AdminBrandingError = PutApiV1AdminBrandingErrors[keyof PutApiV1AdminBrandingErrors];
+
+export type PutApiV1AdminBrandingResponses = {
+    /**
+     * Branding state
+     */
+    200: BrandingAdmin;
+};
+
+export type PutApiV1AdminBrandingResponse = PutApiV1AdminBrandingResponses[keyof PutApiV1AdminBrandingResponses];
+
+export type DeleteApiV1AdminBrandingByAssetData = {
+    body?: never;
+    path: {
+        asset: 'logo-light' | 'logo-dark' | 'favicon';
+    };
+    query?: never;
+    url: '/api/v1/admin/branding/{asset}';
+};
+
+export type DeleteApiV1AdminBrandingByAssetErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type DeleteApiV1AdminBrandingByAssetResponses = {
+    /**
+     * Branding state
+     */
+    200: BrandingAdmin;
+};
+
+export type DeleteApiV1AdminBrandingByAssetResponse = DeleteApiV1AdminBrandingByAssetResponses[keyof DeleteApiV1AdminBrandingByAssetResponses];
+
+export type PutApiV1AdminBrandingByAssetData = {
+    body: Blob | File;
+    path: {
+        asset: 'logo-light' | 'logo-dark' | 'favicon';
+    };
+    query?: never;
+    url: '/api/v1/admin/branding/{asset}';
+};
+
+export type PutApiV1AdminBrandingByAssetErrors = {
+    /**
+     * Not a valid PNG or SVG, or the SVG is unsafe
+     */
+    400: Error;
+    /**
+     * Admin access required
+     */
+    403: unknown;
+    /**
+     * Image larger than 512 KiB
+     */
+    413: Error;
+};
+
+export type PutApiV1AdminBrandingByAssetError = PutApiV1AdminBrandingByAssetErrors[keyof PutApiV1AdminBrandingByAssetErrors];
+
+export type PutApiV1AdminBrandingByAssetResponses = {
+    /**
+     * Branding state
+     */
+    200: BrandingAdmin;
+};
+
+export type PutApiV1AdminBrandingByAssetResponse = PutApiV1AdminBrandingByAssetResponses[keyof PutApiV1AdminBrandingByAssetResponses];

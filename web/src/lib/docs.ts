@@ -57,6 +57,8 @@ export const ROUTE_DOCS: Readonly<Record<string, DocsPath>> = {
   'admin-webhooks': 'operations/webhooks',
   'admin-backup': 'operations/backup',
   'admin-ai': 'integrations/ai-analysis',
+  // No docs page yet.
+  'admin-branding': 'operations/branding',
   'admin-dependency-track': 'security/dependency-track',
 
   // Security

@@ -36,7 +36,7 @@ func testSPA() (http.Handler, fstest.MapFS) {
 		"assets/plain.js":             {Data: []byte(text)},
 	}
 
-	return newSPAHandler(fsys), fsys
+	return newSPAHandler(fsys, nil), fsys
 }
 
 func do(h http.Handler, method, path string, hdr map[string]string) *httptest.ResponseRecorder {
@@ -157,7 +157,7 @@ func pwaSPA() http.Handler {
 		"offline.html":               {Data: []byte("<!doctype html><title>Offline</title>")},
 		"icons/icon-192.png":         {Data: append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)},
 		"icons/apple-touch-icon.png": {Data: append([]byte("\x89PNG\r\n\x1a\n"), make([]byte, 64)...)},
-	})
+	}, nil)
 }
 
 func TestSPA_PWAFiles(t *testing.T) {
@@ -248,7 +248,7 @@ func TestSPA_PWAFilesAreGETOnly(t *testing.T) {
 
 	// A worker that was not built (fresh clone, dev) is a 404, not the SPA shell:
 	// registering HTML as a worker script would fail loudly in the browser.
-	bare := newSPAHandler(fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}})
+	bare := newSPAHandler(fstest.MapFS{"index.html": {Data: []byte("<!doctype html>")}}, nil)
 	if rw := do(bare, http.MethodGet, "/sw.js", nil); rw.Code != http.StatusNotFound {
 		t.Errorf("GET /sw.js without a worker = %d, want 404", rw.Code)
 	}
@@ -410,7 +410,7 @@ func TestCompressible(t *testing.T) {
 // TestSPA_UnbuiltUI covers a fresh clone: the embedded dist/ holds only the
 // .gitkeep placeholder, so every page is 404 and the placeholder is not served.
 func TestSPA_UnbuiltUI(t *testing.T) {
-	h := newSPAHandler(fstest.MapFS{".gitkeep": {}})
+	h := newSPAHandler(fstest.MapFS{".gitkeep": {}}, nil)
 
 	for _, p := range []string{"/", "/repos/x", "/.gitkeep"} {
 		if rw := do(h, http.MethodGet, p, nil); rw.Code != http.StatusNotFound {

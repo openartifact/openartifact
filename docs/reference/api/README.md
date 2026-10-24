@@ -10,7 +10,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Enterprise-grade artifact repository manager with support for multiple package formats
 
-This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 262 endpoints in 27 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
+This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 269 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
 
 ## Security
 
@@ -34,6 +34,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | [Audit](audit.md) | 2 | - |
 | [Authentication](authentication.md) | 8 | - |
 | [Backup](backup.md) | 5 | - |
+| [Branding](branding.md) | 7 | - |
 | [Bundles](bundles.md) | 18 | - |
 | [Cleanup](cleanup.md) | 8 | - |
 | [Declarative](declarative.md) | 3 | - |
@@ -59,4 +60,4 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 
 ## Schemas
 
-All 118 named request and response objects are on the [schemas page](schemas.md).
+All 125 named request and response objects are on the [schemas page](schemas.md).

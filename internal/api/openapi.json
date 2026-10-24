@@ -4626,6 +4626,227 @@
             }
           }
         }
+      },
+      "BrandingPalette": {
+        "type": "object",
+        "description": "Contrast-adjusted colours of one theme, derived from primary_color so text on the surface and on the button fill stays readable (WCAG AA).",
+        "required": [
+          "primary",
+          "primary_contrast",
+          "primary_soft"
+        ],
+        "properties": {
+          "primary": {
+            "type": "string",
+            "example": "#4f46e5"
+          },
+          "primary_contrast": {
+            "type": "string",
+            "description": "Text colour on a primary fill"
+          },
+          "primary_soft": {
+            "type": "string",
+            "description": "Tinted background that primary text stays readable on"
+          }
+        }
+      },
+      "BrandingTheme": {
+        "type": "object",
+        "required": [
+          "light",
+          "dark"
+        ],
+        "properties": {
+          "light": {
+            "$ref": "#/components/schemas/BrandingPalette"
+          },
+          "dark": {
+            "$ref": "#/components/schemas/BrandingPalette"
+          }
+        }
+      },
+      "Branding": {
+        "type": "object",
+        "description": "Effective white-label settings (admin overrides layered over the branding.* configuration). Public: it carries nothing secret.",
+        "required": [
+          "product_name",
+          "primary_color",
+          "logo_light_url",
+          "logo_dark_url",
+          "favicon_url",
+          "login_message",
+          "support_url",
+          "source_url",
+          "revision"
+        ],
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "example": "OpenArtifact"
+          },
+          "primary_color": {
+            "type": "string",
+            "description": "#rrggbb, empty for the built-in colour"
+          },
+          "theme": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/BrandingTheme"
+              }
+            ],
+            "nullable": true,
+            "description": "Present only with a custom primary_color"
+          },
+          "logo_light_url": {
+            "type": "string",
+            "description": "Logo for light surfaces; empty means the built-in lockup. Falls back to the dark logo when only that one is set."
+          },
+          "logo_dark_url": {
+            "type": "string",
+            "description": "Logo for dark surfaces; empty means the built-in lockup."
+          },
+          "favicon_url": {
+            "type": "string"
+          },
+          "login_message": {
+            "type": "string",
+            "description": "Plain text with a tiny markdown subset (**bold**, *italic*, `code`, [text](https://...)); render it without innerHTML."
+          },
+          "support_url": {
+            "type": "string",
+            "description": "http(s) or mailto URL; empty hides the link"
+          },
+          "source_url": {
+            "type": "string",
+            "description": "Where the running source is offered (AGPL-3.0 section 13); never empty",
+            "example": "https://github.com/openartifact/openartifact"
+          },
+          "revision": {
+            "type": "string",
+            "description": "Changes whenever any value or image changes; used as the cache-busting query of the image URLs"
+          }
+        }
+      },
+      "BrandingDefaults": {
+        "type": "object",
+        "description": "Values the instance falls back to when no runtime override is set (configuration, else built-in).",
+        "required": [
+          "product_name",
+          "primary_color",
+          "login_message",
+          "support_url",
+          "source_url"
+        ],
+        "properties": {
+          "product_name": {
+            "type": "string"
+          },
+          "primary_color": {
+            "type": "string"
+          },
+          "login_message": {
+            "type": "string"
+          },
+          "support_url": {
+            "type": "string"
+          },
+          "source_url": {
+            "type": "string"
+          }
+        }
+      },
+      "BrandingOverrides": {
+        "type": "object",
+        "description": "Which fields currently come from a runtime (admin) override rather than the configuration.",
+        "required": [
+          "product_name",
+          "primary_color",
+          "login_message",
+          "support_url",
+          "source_url",
+          "logo_light",
+          "logo_dark",
+          "favicon"
+        ],
+        "properties": {
+          "product_name": {
+            "type": "boolean"
+          },
+          "primary_color": {
+            "type": "boolean"
+          },
+          "login_message": {
+            "type": "boolean"
+          },
+          "support_url": {
+            "type": "boolean"
+          },
+          "source_url": {
+            "type": "boolean"
+          },
+          "logo_light": {
+            "type": "boolean"
+          },
+          "logo_dark": {
+            "type": "boolean"
+          },
+          "favicon": {
+            "type": "boolean"
+          }
+        }
+      },
+      "BrandingAdmin": {
+        "type": "object",
+        "required": [
+          "effective",
+          "defaults",
+          "overrides"
+        ],
+        "properties": {
+          "effective": {
+            "$ref": "#/components/schemas/Branding"
+          },
+          "defaults": {
+            "$ref": "#/components/schemas/BrandingDefaults"
+          },
+          "overrides": {
+            "$ref": "#/components/schemas/BrandingOverrides"
+          }
+        }
+      },
+      "BrandingUpdate": {
+        "type": "object",
+        "description": "Partial update: an absent field is left alone, a string sets the runtime override, null removes the override (back to the configured default).",
+        "properties": {
+          "product_name": {
+            "type": "string",
+            "nullable": true,
+            "description": "1-64 characters, no control characters",
+            "maxLength": 64
+          },
+          "primary_color": {
+            "type": "string",
+            "nullable": true,
+            "description": "#rrggbb",
+            "example": "#0f766e"
+          },
+          "login_message": {
+            "type": "string",
+            "nullable": true,
+            "description": "Up to 2000 characters",
+            "maxLength": 2000
+          },
+          "support_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "http(s) or mailto URL; empty string hides the link"
+          },
+          "source_url": {
+            "type": "string",
+            "nullable": true,
+            "description": "http(s) URL; cannot be empty"
+          }
+        }
       }
     }
   },
@@ -17759,6 +17980,296 @@
           },
           "501": {
             "description": "Attestations are not enabled"
+          }
+        }
+      }
+    },
+    "/api/v1/branding": {
+      "get": {
+        "summary": "Get branding",
+        "description": "Unauthenticated: the login page needs it before sign-in. Answers ETag/304; shared caches may store it only for requests that carry no credentials.",
+        "tags": [
+          "Branding"
+        ],
+        "security": [],
+        "responses": {
+          "200": {
+            "description": "Effective branding",
+            "headers": {
+              "ETag": {
+                "schema": {
+                  "type": "string"
+                }
+              }
+            },
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Branding"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          }
+        }
+      }
+    },
+    "/api/v1/branding/{asset}": {
+      "get": {
+        "summary": "Get a branding image",
+        "description": "The effective logo-light, logo-dark or favicon (PNG or sanitised SVG). 404 when none is configured. Served with a restrictive Content-Security-Policy and nosniff.",
+        "tags": [
+          "Branding"
+        ],
+        "security": [],
+        "parameters": [
+          {
+            "name": "asset",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "logo-light",
+                "logo-dark",
+                "favicon"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Image",
+            "content": {
+              "image/png": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              },
+              "image/svg+xml": {
+                "schema": {
+                  "type": "string",
+                  "format": "binary"
+                }
+              }
+            }
+          },
+          "304": {
+            "description": "Not modified"
+          },
+          "404": {
+            "description": "No image configured",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "/api/v1/admin/branding": {
+      "get": {
+        "summary": "Get branding settings",
+        "description": "Global admins only. Effective values plus the configured defaults and which fields are runtime overrides.",
+        "tags": [
+          "Branding"
+        ],
+        "responses": {
+          "200": {
+            "description": "Branding state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingAdmin"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      },
+      "put": {
+        "summary": "Update branding settings",
+        "description": "Global admins only. Runtime overrides win over the branding.* configuration until reset.",
+        "tags": [
+          "Branding"
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "application/json": {
+              "schema": {
+                "$ref": "#/components/schemas/BrandingUpdate"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Branding state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingAdmin"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "400": {
+            "description": "Invalid value",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Reset branding to the defaults",
+        "description": "Global admins only. Removes every runtime override, including uploaded images.",
+        "tags": [
+          "Branding"
+        ],
+        "responses": {
+          "200": {
+            "description": "Branding state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingAdmin"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/admin/branding/{asset}": {
+      "put": {
+        "summary": "Upload a branding image",
+        "description": "Global admins only. The raw request body is the image: Content-Type image/png or image/svg+xml, at most 512 KiB (PNG at most 2048x2048). SVG is sanitised (scripts, event handlers, external references, foreignObject and anything outside an allowlist are removed) and rejected when it cannot be made safe.",
+        "tags": [
+          "Branding"
+        ],
+        "parameters": [
+          {
+            "name": "asset",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "logo-light",
+                "logo-dark",
+                "favicon"
+              ]
+            }
+          }
+        ],
+        "requestBody": {
+          "required": true,
+          "content": {
+            "image/png": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            },
+            "image/svg+xml": {
+              "schema": {
+                "type": "string",
+                "format": "binary"
+              }
+            }
+          }
+        },
+        "responses": {
+          "200": {
+            "description": "Branding state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingAdmin"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          },
+          "400": {
+            "description": "Not a valid PNG or SVG, or the SVG is unsafe",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          },
+          "413": {
+            "description": "Image larger than 512 KiB",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/Error"
+                }
+              }
+            }
+          }
+        }
+      },
+      "delete": {
+        "summary": "Remove an uploaded branding image",
+        "description": "Global admins only. Falls back to the configured file, else the built-in image.",
+        "tags": [
+          "Branding"
+        ],
+        "parameters": [
+          {
+            "name": "asset",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string",
+              "enum": [
+                "logo-light",
+                "logo-dark",
+                "favicon"
+              ]
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "Branding state",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/BrandingAdmin"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
           }
         }
       }

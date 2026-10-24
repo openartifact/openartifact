@@ -116,6 +116,21 @@ PostgreSQL is the only supported database.
 |---|---|---|---|
 | `OPENARTIFACT_DOCS_BASE_URL` | `docs.baseUrl` | `https://openartifact.github.io/` | Root of the published documentation the web UI links to. The server appends `vX.Y/` for a release build (`MAJOR.MINOR.PATCH`) and `latest/` otherwise, and reports the result as `docs_url` in `GET /api/v1/system/info`. Point it at a mirror for air-gapped installs; empty hides every documentation link |
 
+### Branding (`branding`)
+
+White-label name, logos, colour and links; administrators can override each value at runtime (Administration > Branding), and a runtime value wins. Details, image rules and the attribution that cannot be hidden: [White-label branding](../operations/branding.md).
+
+| Environment variable | YAML key | Default | Description |
+|---|---|---|---|
+| `OPENARTIFACT_BRANDING_PRODUCT_NAME` | `branding.productName` | empty (`OpenArtifact`) | Product name shown in the title, sidebar, login page and installed-app name; 1 to 64 characters |
+| `OPENARTIFACT_BRANDING_LOGO_LIGHT` | `branding.logoLight` | empty | Path of a PNG or SVG logo (max 512 KiB) for light surfaces; used for both themes when `logoDark` is unset |
+| `OPENARTIFACT_BRANDING_LOGO_DARK` | `branding.logoDark` | empty | Path of a PNG or SVG logo for dark surfaces |
+| `OPENARTIFACT_BRANDING_FAVICON` | `branding.favicon` | empty | Path of a PNG or SVG favicon (at least 192x192 for an installable app) |
+| `OPENARTIFACT_BRANDING_PRIMARY_COLOR` | `branding.primaryColor` | empty | Accent colour as `#rrggbb`; a contrast-adjusted variant is derived per theme |
+| `OPENARTIFACT_BRANDING_LOGIN_MESSAGE` | `branding.loginMessage` | empty | Text shown on the login page (up to 2000 bytes; bold, italic, code and links only) |
+| `OPENARTIFACT_BRANDING_SUPPORT_URL` | `branding.supportUrl` | empty | `http(s)` or `mailto:` link shown in the About dialog |
+| `OPENARTIFACT_BRANDING_SOURCE_URL` | `branding.sourceUrl` | `https://github.com/openartifact/openartifact` | Target of the always-visible "Source code" link (AGPL-3.0 section 13): point it at the source of the build you run |
+
 ### Trash (`trash`)
 
 | Environment variable | YAML key | Default | Meaning |

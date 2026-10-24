@@ -20,6 +20,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <Bars3Icon class="w-5 h-5" aria-hidden="true" />
     </button>
 
+    <!-- Mobile: the sidebar (and its lockup) is off-canvas, so the mark keeps the brand visible -->
+    <router-link to="/" class="md:hidden shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary" :aria-label="branding.productName">
+      <BrandLogo variant="mark" :size="24" />
+    </router-link>
+
     <!-- Search trigger: pill centred on md+, fills the free space on mobile -->
     <button
       type="button"
@@ -48,9 +53,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { Bars3Icon, MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
 import { useUIStore } from '../stores/ui'
 import ThemeToggle from './ThemeToggle.vue'
+import BrandLogo from './BrandLogo.vue'
+import { useBrandingStore } from '../stores/branding'
 import { isApplePlatform, paletteHotkeyLabel, paletteHotkeyShortcut } from '../lib/paletteHotkey'
 import { t } from '../i18n/en'
 
 const ui = useUIStore()
+const branding = useBrandingStore()
 const apple = isApplePlatform()
 </script>

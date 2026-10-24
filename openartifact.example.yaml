@@ -265,6 +265,22 @@ trash:
 docs:
   baseUrl: https://openartifact.github.io/
 
+# White-label branding of the web UI (docs/operations/branding.md). All keys
+# are optional; administrators can override each of them at runtime in
+# Administration > Branding, and a runtime value wins over this file.
+# logoLight/logoDark/favicon are file paths to a PNG or SVG (max 512 KiB). The
+# "Powered by OpenArtifact" attribution and the source-code link stay visible
+# whatever you set (AGPL-3.0 section 13); sourceUrl is where that link points.
+#branding:
+#  productName: Acme Artifacts
+#  logoLight: /etc/openartifact/brand/logo-light.svg
+#  logoDark: /etc/openartifact/brand/logo-dark.svg
+#  favicon: /etc/openartifact/brand/favicon.png
+#  primaryColor: "#0f766e"          # #rrggbb; contrast-adjusted per theme
+#  loginMessage: "Internal use only. Contact **IT** for access."
+#  supportUrl: https://support.example.com   # http(s) or mailto:
+#  sourceUrl: https://github.com/openartifact/openartifact
+
 # Federated repositories: peer-to-peer replication of hosted repositories
 # between instances. enabled is the master switch of the pull workers and of
 # the /federation/v1 peer endpoints. See docs/operations/federation.md.

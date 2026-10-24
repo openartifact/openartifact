@@ -85,6 +85,87 @@ Includes all fields of [Token](#token).
 | `status` | string | no | One of: `pending`, `in_progress`, `completed`, `failed`. |
 | `type` | string | no | One of: `full`, `metadata-only`. |
 
+### Branding
+
+Effective white-label settings (admin overrides layered over the branding.* configuration). Public: it carries nothing secret.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `favicon_url` | string | yes | - |
+| `login_message` | string | yes | Plain text with a tiny markdown subset (**bold**, *italic*, `code`, [text](https://...)); render it without innerHTML. |
+| `logo_dark_url` | string | yes | Logo for dark surfaces; empty means the built-in lockup. |
+| `logo_light_url` | string | yes | Logo for light surfaces; empty means the built-in lockup. Falls back to the dark logo when only that one is set. |
+| `primary_color` | string | yes | \#rrggbb, empty for the built-in colour |
+| `product_name` | string | yes | - |
+| `revision` | string | yes | Changes whenever any value or image changes; used as the cache-busting query of the image URLs |
+| `source_url` | string | yes | Where the running source is offered (AGPL-3.0 section 13); never empty |
+| `support_url` | string | yes | http(s) or mailto URL; empty hides the link |
+| `theme` | [BrandingTheme](#brandingtheme) | no | Present only with a custom primary_color. Nullable. |
+
+### BrandingAdmin
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `defaults` | [BrandingDefaults](#brandingdefaults) | yes | - |
+| `effective` | [Branding](#branding) | yes | - |
+| `overrides` | [BrandingOverrides](#brandingoverrides) | yes | - |
+
+### BrandingDefaults
+
+Values the instance falls back to when no runtime override is set (configuration, else built-in).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `login_message` | string | yes | - |
+| `primary_color` | string | yes | - |
+| `product_name` | string | yes | - |
+| `source_url` | string | yes | - |
+| `support_url` | string | yes | - |
+
+### BrandingOverrides
+
+Which fields currently come from a runtime (admin) override rather than the configuration.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `favicon` | boolean | yes | - |
+| `login_message` | boolean | yes | - |
+| `logo_dark` | boolean | yes | - |
+| `logo_light` | boolean | yes | - |
+| `primary_color` | boolean | yes | - |
+| `product_name` | boolean | yes | - |
+| `source_url` | boolean | yes | - |
+| `support_url` | boolean | yes | - |
+
+### BrandingPalette
+
+Contrast-adjusted colours of one theme, derived from primary_color so text on the surface and on the button fill stays readable (WCAG AA).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `primary` | string | yes | - |
+| `primary_contrast` | string | yes | Text colour on a primary fill |
+| `primary_soft` | string | yes | Tinted background that primary text stays readable on |
+
+### BrandingTheme
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `dark` | [BrandingPalette](#brandingpalette) | yes | - |
+| `light` | [BrandingPalette](#brandingpalette) | yes | - |
+
+### BrandingUpdate
+
+Partial update: an absent field is left alone, a string sets the runtime override, null removes the override (back to the configured default).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `login_message` | string | no | Up to 2000 characters. Nullable. Maximum length: 2000. |
+| `primary_color` | string | no | \#rrggbb. Nullable. |
+| `product_name` | string | no | 1-64 characters, no control characters. Nullable. Maximum length: 64. |
+| `source_url` | string | no | http(s) URL; cannot be empty. Nullable. |
+| `support_url` | string | no | http(s) or mailto URL; empty string hides the link. Nullable. |
+
 ### BundlePromotion
 
 | Field | Type | Required | Description |

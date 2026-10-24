@@ -135,24 +135,29 @@ func loadAssets(sub fs.FS) map[string]*asset {
 			ctyp = http.DetectContentType(body)
 		}
 
-		a := &asset{
-			ctyp:      ctyp,
-			immutable: strings.HasPrefix(p, "assets/") && hashedName.MatchString(p),
-			plain:     variant{body: body, etag: etagOf(body, "")},
-		}
-
-		if compressible(ctyp) {
-			if gz := gzipBytes(body); gz != nil && len(gz) < len(body) {
-				a.gzip = &variant{body: gz, etag: etagOf(body, "-gzip")}
-			}
-		}
-
-		assets[p] = a
+		assets[p] = newAsset(ctyp, body, strings.HasPrefix(p, "assets/") && hashedName.MatchString(p))
 
 		return nil
 	})
 
 	return assets
+}
+
+// newAsset hashes body and precompresses it when worthwhile.
+func newAsset(ctyp string, body []byte, immutable bool) *asset {
+	a := &asset{
+		ctyp:      ctyp,
+		immutable: immutable,
+		plain:     variant{body: body, etag: etagOf(body, "")},
+	}
+
+	if compressible(ctyp) {
+		if gz := gzipBytes(body); gz != nil && len(gz) < len(body) {
+			a.gzip = &variant{body: gz, etag: etagOf(body, "-gzip")}
+		}
+	}
+
+	return a
 }
 
 // acceptsGzip reports whether an Accept-Encoding header allows gzip: an
@@ -234,6 +239,7 @@ func serveAsset(w http.ResponseWriter, r *http.Request, a *asset) {
 	w.WriteHeader(http.StatusOK)
 
 	if r.Method != http.MethodHead {
+		//nolint:gosec // G705: embedded build output and the sanitised branded shell, not request data
 		_, _ = w.Write(v.body)
 	}
 }

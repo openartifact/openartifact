@@ -8,8 +8,9 @@
 /**
  * Paths the worker never touches: the REST API (which includes the login and
  * SSO endpoints under /api/v1/auth), repository and registry traffic, MCP, and
- * the operational endpoints. Requests to them go straight to the network
- * without respondWith(), so no response can ever be stored or replayed.
+ * the operational endpoints, and the web app manifest (rendered per request by
+ * the server from the branding settings, so it must never be precached).
+ * Requests to them go straight to the network without respondWith(), so no response can ever be stored or replayed.
  * Matched on whole path segments: `/api` and `/api/x` match, `/apiary` does not.
  */
 export const BYPASS_PREFIXES = [
@@ -22,6 +23,7 @@ export const BYPASS_PREFIXES = [
   '/ready',
   '/auth',
   '/sso',
+  '/manifest.webmanifest',
 ] as const
 
 export function isBypassPath(pathname: string): boolean {

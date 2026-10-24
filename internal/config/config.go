@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/branding"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -92,6 +93,10 @@ type Config struct {
 	Audit AuditConfig `yaml:"audit"`
 	// Docs configures the links from the web UI to the published documentation.
 	Docs DocsConfig `yaml:"docs"`
+	// Branding white-labels the UI: product name, logos, favicon, colour, login
+	// message and support/source links (see docs/operations/branding.md).
+	// Administrators can override every value at runtime.
+	Branding branding.Config `yaml:"branding"`
 	// BlobDeletion tunes the deferred deletion of blob bytes (see
 	// docs/operations/storage.md).
 	BlobDeletion BlobDeletionConfig `yaml:"blobDeletion"`
@@ -781,6 +786,16 @@ func applyEnvOverrides(cfg *Config) {
 	overrideInt(&cfg.AI.TimeoutSecs, "AI_TIMEOUT_SECS")
 	overrideString(&cfg.AI.SystemPrompt, "AI_SYSTEM_PROMPT")
 
+	// Branding
+	overrideString(&cfg.Branding.ProductName, "OPENARTIFACT_BRANDING_PRODUCT_NAME")
+	overrideString(&cfg.Branding.LogoLight, "OPENARTIFACT_BRANDING_LOGO_LIGHT")
+	overrideString(&cfg.Branding.LogoDark, "OPENARTIFACT_BRANDING_LOGO_DARK")
+	overrideString(&cfg.Branding.Favicon, "OPENARTIFACT_BRANDING_FAVICON")
+	overrideString(&cfg.Branding.PrimaryColor, "OPENARTIFACT_BRANDING_PRIMARY_COLOR")
+	overrideString(&cfg.Branding.LoginMessage, "OPENARTIFACT_BRANDING_LOGIN_MESSAGE")
+	overrideString(&cfg.Branding.SupportURL, "OPENARTIFACT_BRANDING_SUPPORT_URL")
+	overrideString(&cfg.Branding.SourceURL, "OPENARTIFACT_BRANDING_SOURCE_URL")
+
 	// Projects config
 	overrideBool(&cfg.Projects.SelfCreate, "OPENARTIFACT_PROJECTS_SELF_CREATE")
 
@@ -1012,6 +1027,10 @@ func (c *Config) validateRecovery() error {
 func (c *Config) validateBackgroundServices() error {
 	if err := c.Telemetry.Validate(); err != nil {
 		return err
+	}
+
+	if err := c.Branding.Validate(); err != nil {
+		return fmt.Errorf("invalid branding configuration: %w", err)
 	}
 
 	if err := c.validateTiering(); err != nil {

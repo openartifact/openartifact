@@ -55,6 +55,7 @@ function makeRouter() {
       { path: '/admin/system', name: 'admin-system', component: { template: '<div/>' } },
       { path: '/admin/dependency-track', name: 'admin-dependency-track', component: { template: '<div/>' } },
       { path: '/admin/ai', name: 'admin-ai', component: { template: '<div/>' } },
+      { path: '/admin/branding', name: 'admin-branding', component: { template: '<div/>' } },
       { path: '/security/vulns', name: 'security-vulns', component: { template: '<div/>' } },
       { path: '/security/licenses', name: 'security-licenses', component: { template: '<div/>' } },
       { path: '/security/secrets', name: 'security-secrets', component: { template: '<div/>' } },

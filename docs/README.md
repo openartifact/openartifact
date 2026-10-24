@@ -69,6 +69,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [Rebuild from storage](operations/rebuild-from-storage.md) | Row journal sidecars in the blob store and `openartifact rebuild`: re-index an empty database from storage |
 | [Monitoring](operations/monitoring.md) | Health, Prometheus metrics, audit log, logging |
 | [Audit log retention](operations/audit-retention.md) | Delete audit entries older than N days in paced batches, one replica at a time; export first |
+| [White-label branding](operations/branding.md) | Product name, logos, favicon, accent colour, login message and support link: configuration, admin UI, API, SVG sanitising, the source-code attribution that stays |
 | [Webhooks](operations/webhooks.md) | Events, HMAC signatures, retries, delivery log |
 | [Performance](operations/performance.md) | Benchmarks, load tests, pprof, auth cache and other tuning |
 

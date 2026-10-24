@@ -1,0 +1,6 @@
+<!--
+SPDX-FileCopyrightText: The OpenArtifact Authors
+
+SPDX-License-Identifier: CC-BY-SA-4.0
+-->
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" width="32" height="32"><title>OpenArtifact</title><g transform="translate(0 0) scale(1)"><rect x="13" y="10" width="10" height="10" fill="#C7D2FE"/><path d="M5 11v15.25h22V11" fill="none" stroke="#818CF8" stroke-width="3.5"/><path d="M3.5 9.5L13 3" fill="none" stroke="#818CF8" stroke-width="3.5"/></g></svg>

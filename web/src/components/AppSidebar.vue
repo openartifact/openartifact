@@ -24,13 +24,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="flex items-center gap-2.5 h-14 border-b border-border/60 shrink-0"
       :class="collapsed ? 'justify-center px-0' : 'px-3'"
     >
-      <div class="w-8 h-8 rounded-md bg-primary flex items-center justify-center shrink-0">
-        <AppLogo class="w-5 h-5 text-primary-contrast" />
-      </div>
-      <div v-if="!collapsed" class="leading-none min-w-0 flex-1">
-        <div class="text-lead font-semibold tracking-tight">OpenArtifact</div>
-        <div class="mt-1 text-caption text-muted font-mono">{{ versionLabel }}</div>
-      </div>
+      <router-link
+        to="/"
+        class="min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        :class="collapsed && 'flex-none'"
+        :aria-label="store.productName"
+      >
+        <BrandLogo :variant="collapsed ? 'mark' : 'horizontal'" />
+      </router-link>
       <button
         v-if="isMobile"
         type="button"
@@ -114,6 +115,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <SidebarLink to="/admin/system" :icon="Cog6ToothIcon" :label="t('nav.system')" :collapsed="collapsed" />
           <SidebarLink to="/admin/dependency-track" :icon="ShieldExclamationIcon" :label="t('nav.dependencyTrack')" :collapsed="collapsed" />
           <SidebarLink to="/admin/ai" :icon="SparklesIcon" :label="t('shell.aiSettings')" :collapsed="collapsed" />
+          <SidebarLink to="/admin/branding" :icon="SwatchIcon" :label="t('nav.branding')" :collapsed="collapsed" />
         </div>
       </template>
 
@@ -130,7 +132,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- User footer -->
     <div
       class="border-t border-border px-3 py-3 flex items-center gap-2"
-      :class="collapsed && 'justify-center'"
+      :class="collapsed && 'flex-col'"
     >
       <!-- Avatar -->
       <div class="w-8 h-8 rounded-full bg-primary/20 flex items-center justify-center shrink-0">
@@ -163,7 +165,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArrowRightOnRectangleIcon class="w-4 h-4" aria-hidden="true" />
         </button>
       </template>
+      <button
+        type="button"
+        class="shrink-0 text-muted hover:text-foreground transition-colors"
+        :aria-label="t('about.open')"
+        :title="t('about.open')"
+        data-testid="about-open"
+        @click="aboutOpen = true"
+      >
+        <InformationCircleIcon class="w-4 h-4" aria-hidden="true" />
+      </button>
     </div>
+    <AboutDialog :open="aboutOpen" @close="aboutOpen = false" />
   </aside>
 </template>
 
@@ -199,22 +212,26 @@ import {
   ChevronRightIcon,
   ArrowDownTrayIcon,
   ArrowRightOnRectangleIcon,
+  InformationCircleIcon,
   BellAlertIcon,
   ShieldExclamationIcon,
   DocumentTextIcon,
   EyeSlashIcon,
   SparklesIcon,
+  SwatchIcon,
   TrashIcon,
   XMarkIcon,
 } from '@heroicons/vue/24/outline'
 import SidebarLink from './SidebarLink.vue'
 import { t } from '../i18n/en'
-import { useAppVersion, formatVersion } from '../composables/useAppVersion'
-import AppLogo from './AppLogo.vue'
+import AboutDialog from './AboutDialog.vue'
+import BrandLogo from './BrandLogo.vue'
+import { useBrandingStore } from '../stores/branding'
 
 const session = useSessionStore()
 const ui = useUIStore()
-const version = useAppVersion()
+const store = useBrandingStore()
+const aboutOpen = ref(false)
 const route = useRoute()
 
 // Below md the sidebar is an off-canvas drawer: always expanded, toggled from
@@ -230,8 +247,6 @@ watch(
     asideEl.value?.focus()
   },
 )
-
-const versionLabel = computed(() => (version.value ? formatVersion(version.value) : t('shell.versionUnknown')))
 
 const ADMIN_OPEN_KEY = 'openartifact.sidebar.adminOpen'
 function readAdminOpen(): boolean {

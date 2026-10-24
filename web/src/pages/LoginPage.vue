@@ -14,16 +14,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       class="relative hidden lg:flex flex-col justify-between p-10 overflow-hidden bg-surface border-r border-border"
     >
 
-       <!-- Top — brand mark -->
-       <div class="relative flex items-center gap-3">
-         <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center shrink-0">
-          <AppLogo class="w-5 h-5 text-primary-contrast" />
-         </div>
-        <div>
-          <span class="text-lead font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></span>
-          <p class="text-micro text-muted font-mono leading-none mt-0.5">{{ version ? formatVersion(version) : t('shell.versionUnknown') }}</p>
-        </div>
-      </div>
+       <!-- Top — brand logo -->
+       <div class="relative">
+         <BrandLogo variant="stacked" :size="160" />
+       </div>
 
       <!-- Middle — hero text -->
       <div class="relative">
@@ -36,14 +30,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p class="mt-4 text-sm text-muted leading-relaxed max-w-sm">
           {{ t('login.heroBody') }}
         </p>
-        <div class="mt-6 flex flex-wrap gap-1.5">
-          <FormatBadge v-for="fmt in ALL_FORMATS" :key="fmt" :format="fmt" />
-        </div>
       </div>
 
-      <!-- Bottom — footer -->
-      <div class="relative text-caption text-muted font-mono">
-        <span>© {{ new Date().getFullYear() }} OpenArtifact · {{ t('login.license') }}</span>
+      <!-- Bottom — supported formats -->
+      <div class="relative flex flex-wrap gap-1.5">
+        <FormatBadge v-for="fmt in ALL_FORMATS" :key="fmt" :format="fmt" />
       </div>
     </div>
 
@@ -53,18 +44,24 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="relative flex items-center justify-center p-6 sm:p-10">
       <div class="w-full max-w-sm">
 
-         <!-- Mobile brand mark (hidden on lg+) -->
-         <div class="lg:hidden flex items-center gap-2.5 mb-8 justify-center">
-           <div class="w-8 h-8 bg-primary rounded-lg flex items-center justify-center">
-            <AppLogo class="w-5 h-5 text-primary-contrast" />
-           </div>
-          <span class="text-lead font-semibold tracking-tight">Open<span class="text-primary">Artifact</span></span>
+         <!-- Mobile brand logo (hidden on lg+) -->
+         <div class="lg:hidden flex justify-center mb-8">
+           <BrandLogo variant="stacked" :size="144" />
         </div>
 
         <!-- Page heading -->
         <div class="mb-7">
-          <h2 class="text-2xl font-bold tracking-tight text-foreground">{{ t('login.heading') }}</h2>
+          <h2 class="text-2xl font-bold tracking-tight text-foreground">{{ tp('login.headingProduct', { product: branding.productName }) }}</h2>
           <p class="mt-1 text-sm text-muted">{{ t('login.subheading') }}</p>
+        </div>
+
+        <!-- Operator message (markdown subset, rendered without HTML) -->
+        <div
+          v-if="branding.loginMessage.trim()"
+          class="mb-5 rounded-md border border-border bg-surface-hover/40 p-3 text-sm text-muted"
+          data-testid="login-message"
+        >
+          <MiniMarkdown :source="branding.loginMessage" />
         </div>
 
         <!-- Login form -->
@@ -175,7 +172,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
         </template>
 
-
+        <!-- Attribution: always shown, independent of the branding -->
+        <div class="mt-10">
+          <PoweredBy />
+        </div>
       </div>
     </div>
 
@@ -195,19 +195,21 @@ import { login, listSSOProviders } from '../api/auth'
 import type { SSOProvider } from '../api/auth'
 import { useSessionStore } from '../stores/session'
 import FormatBadge from '../components/FormatBadge.vue'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 import { ssoBrandIcon } from '../lib/brandIcons'
 import { ALL_FORMATS } from '../lib/formats'
-import { useAppVersion, formatVersion } from '../composables/useAppVersion'
+import { useBrandingStore } from '../stores/branding'
 import { ssoProviderColor } from '../lib/brandColors'
 import { safeNextPath } from '../lib/safeRedirect'
 import AppButton from '../components/AppButton.vue'
-import AppLogo from '../components/AppLogo.vue'
+import BrandLogo from '../components/BrandLogo.vue'
+import MiniMarkdown from '../components/MiniMarkdown'
+import PoweredBy from '../components/PoweredBy.vue'
 
 const router = useRouter()
 const route = useRoute()
 const session = useSessionStore()
-const version = useAppVersion()
+const branding = useBrandingStore()
 
 const form = ref({ username: '', password: '' })
 const loading = ref(false)

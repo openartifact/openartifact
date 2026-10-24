@@ -9,8 +9,6 @@ export const enAuth = {
   'login.heroTitleLine2': 'build artifact your team ships.',
   'login.heroBody':
     'Host, version, and distribute Docker images, npm packages, Maven artifacts, Python wheels, Helm charts, and more — all from a single, self-hosted registry your team already trusts.',
-  'login.license': 'AGPL-3.0-or-later',
-  'login.heading': 'Sign in',
   'login.subheading': 'Welcome back. Sign in to manage your repositories.',
   'login.showPassword': 'Show password',
   'login.hidePassword': 'Hide password',
