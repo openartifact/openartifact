@@ -99,7 +99,7 @@ FROM scanners-${SCANNERS} AS scanners
 
 # ---- Runtime bases (shell-less, digest-pinned) ------------------------------
 FROM dhi.io/static:20250419-debian13@sha256:620157c61ee0377151d3e11a7dd4d2ec6da34488f8c63a2706916f88f5f814fd AS runtime-dhi
-FROM gcr.io/distroless/static-debian13:nonroot@sha256:d62067879de890a1def9da0e7766b7d20810a5e5555cef8506b752437d7a3e88 AS runtime-distroless
+FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-distroless
 
 # ---- Runtime stage ----------------------------------------------------------
 FROM runtime-${RUNTIME}
