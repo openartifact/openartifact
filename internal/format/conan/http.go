@@ -267,9 +267,10 @@ func validRef(parts ...string) bool {
 }
 
 // validRevision reports whether s is a revision or package id; empty (absent
-// from the route) is fine.
+// from the route) is fine. "." and ".." fit the charset but are no revision:
+// as URL segments they name the directory.
 func validRevision(s string) bool {
-	if len(s) > maxRevisionLen {
+	if len(s) > maxRevisionLen || s == "." || s == ".." {
 		return false
 	}
 
