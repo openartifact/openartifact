@@ -54,7 +54,8 @@ const (
 	pushFormMemory = 32 << 20
 )
 
-// validPackageID is the id charset NuGet accepts; anything else (notably "/")
+// validPackageID is the id charset NuGet accepts (pushedPackage also refuses
+// the dot segments it admits); anything else (notably "/")
 // would be stored but never retrievable through the URL routes.
 var validPackageID = regexp.MustCompile(`^[A-Za-z0-9._-]{1,100}$`)
 
@@ -257,7 +258,9 @@ func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request, 
 // package without a usable id or version.
 func pushedPackage(repoID string, metadata map[string]any, part *base.Part, sum512 hash.Hash) (*models.NuGetPackage, error) {
 	id, _ := metadata["id"].(string)
-	if !validPackageID.MatchString(id) {
+	// "." and ".." fit the charset but are no id: as a URL segment they name the
+	// directory, so no client can fetch the package.
+	if !validPackageID.MatchString(id) || id == "." || id == ".." {
 		return nil, fmt.Errorf("invalid package id %q", id) //nolint:err113 // reported to the log only
 	}
 
