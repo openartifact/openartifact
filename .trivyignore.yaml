@@ -10,3 +10,13 @@ secrets:
     statement: >-
       UI input placeholder text showing the shape of a GCS service-account key
       (a JSON stub with an ellipsis); it contains no credential.
+
+# Documented exceptions for `trivy config`.
+misconfigurations:
+  - id: DS-0002
+    paths:
+      - .clusterfuzzlite/Dockerfile
+    statement: >-
+      Build-only image of the OSS-Fuzz toolchain (never published or run as a
+      service): its `compile` entrypoint writes the fuzzers to the root-owned
+      /out bind mount.
