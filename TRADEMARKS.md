@@ -6,8 +6,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Trademark policy
 
-> **DRAFT for maintainer review.** This policy was drafted together with the white-label branding feature. It is not legal advice and has not been reviewed by a lawyer. Until a maintainer approves it, treat it as a proposal.
-
 "OpenArtifact", the OpenArtifact logo and the OpenArtifact mark (together, the **marks**) identify the software released by The OpenArtifact Authors. The source code is licensed under the [GNU Affero General Public License v3.0](LICENSES/AGPL-3.0-or-later.txt). That license grants you the right to use, modify and redistribute the code. It does **not** grant any right to use the marks, except what applicable law allows (see [Fair use](#fair-use)).
 
 The goal of this policy is that people can tell whether the software they run is the real thing, not to stop anyone from using, forking or selling services around OpenArtifact.

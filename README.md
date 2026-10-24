@@ -110,4 +110,4 @@ The documentation is published, per release, at <https://openartifact.github.io/
 - Contributing: [CONTRIBUTING.md](CONTRIBUTING.md); conventions for humans and coding agents: [AGENTS.md](AGENTS.md)
 - Security: report issues privately as described in [SECURITY.md](SECURITY.md)
 - License: AGPL-3.0-or-later, see [LICENSE](LICENSE)
-- Name and logo: see the [trademark policy](TRADEMARKS.md) (draft); to run under your own name use [white-label branding](docs/operations/branding.md)
+- Name and logo: see the [trademark policy](TRADEMARKS.md); to run under your own name use [white-label branding](docs/operations/branding.md)
