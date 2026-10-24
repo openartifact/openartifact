@@ -1,0 +1,5 @@
+go test fuzz v1
+string("MIT\tAND\tGPL-3.0")
+string("MIT")
+string("")
+bool(true)

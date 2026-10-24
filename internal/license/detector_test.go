@@ -187,6 +187,36 @@ func TestEvaluatePolicy_CompoundExpressionDenied(t *testing.T) {
 	}
 }
 
+// A license string is free metadata text: an expression whose words are
+// separated by a newline, a tab or only by parentheses is the same expression,
+// and must neither slip a denied license past the deny list nor an
+// unlisted one past an AND of the allow list.
+func TestEvaluatePolicy_ExpressionSeparators(t *testing.T) {
+	d := NewDetector(nil)
+
+	for _, expr := range []string{
+		"MIT AND GPL-3.0", "MIT\nAND\nGPL-3.0", "MIT\r\nAND\r\nGPL-3.0", "MIT\tAND\tGPL-3.0",
+		"MIT\u00a0AND\u00a0GPL-3.0", "(MIT)AND(GPL-3.0)", "MIT\vAND\fGPL-3.0", "mit\nand\ngpl-3.0",
+	} {
+		deny := &models.LicensePolicy{Enabled: true, DeniedLicenses: []string{"GPL-3.0"}}
+		if ok, _ := d.EvaluatePolicy([]string{expr}, deny); ok {
+			t.Errorf("%q must be denied", expr)
+		}
+
+		allow := &models.LicensePolicy{Enabled: true, AllowedLicenses: []string{"MIT"}}
+		if ok, _ := d.EvaluatePolicy([]string{expr}, allow); ok {
+			t.Errorf("%q must not be allowed by [MIT]: GPL-3.0 is not listed", expr)
+		}
+	}
+
+	allow := &models.LicensePolicy{Enabled: true, AllowedLicenses: []string{"MIT"}}
+	for _, expr := range []string{"MIT OR GPL-3.0", "MIT\nOR\nGPL-3.0", "(MIT)OR(GPL-3.0)"} {
+		if ok, v := d.EvaluatePolicy([]string{expr}, allow); !ok {
+			t.Errorf("%q must be allowed by [MIT]: %v", expr, v)
+		}
+	}
+}
+
 // A policy written with one SPDX spelling must cover the others: the deny list
 // says "GPL-3.0" while the detector normalizes artifacts to "GPL-3.0-only".
 func TestEvaluatePolicy_SpellingsOfOneLicenseMatch(t *testing.T) {

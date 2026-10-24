@@ -7,6 +7,7 @@ package license
 import (
 	"slices"
 	"strings"
+	"unicode"
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -272,12 +273,20 @@ func normalizeSet(list []string) map[string]struct{} {
 	return m
 }
 
+// expressionFields splits a license expression into its words: on whitespace
+// of any kind (a license string is free metadata text, "MIT\nAND\nGPL-3.0" and
+// "MIT\tAND\tGPL-3.0" are conjunctions too), parentheses ("(MIT)AND(GPL-3.0)")
+// and commas.
+func expressionFields(expr string) []string {
+	return strings.FieldsFunc(expr, func(r rune) bool {
+		return unicode.IsSpace(r) || r == '(' || r == ')' || r == ','
+	})
+}
+
 // spdxIdentifiers returns the normalized license identifiers of an SPDX
 // expression, dropping parentheses and the AND/OR/WITH operators.
 func spdxIdentifiers(expr string) []string {
-	fields := strings.FieldsFunc(expr, func(r rune) bool {
-		return r == ' ' || r == '\t' || r == '(' || r == ')' || r == ','
-	})
+	fields := expressionFields(expr)
 
 	ids := make([]string, 0, len(fields)+1)
 	ids = append(ids, normalizeID(expr)) // the whole string, for plain (even odd) names
@@ -306,7 +315,7 @@ func expressionAllowed(expr string, allowed map[string]struct{}) bool {
 		return false
 	}
 
-	requireAll := strings.Contains(" "+strings.ToUpper(expr)+" ", " AND ")
+	requireAll := slices.ContainsFunc(expressionFields(expr), func(f string) bool { return strings.EqualFold(f, "AND") })
 
 	for _, id := range ids {
 		_, ok := allowed[id]
