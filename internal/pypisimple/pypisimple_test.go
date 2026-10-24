@@ -205,6 +205,19 @@ func TestParseProject_FragmentOnlyLinkIsNotAFile(t *testing.T) {
 	}
 }
 
+// Digest names that differ only in case collide; which one is kept must not
+// depend on map iteration order.
+func TestLowerHashes_ConflictIsDeterministic(t *testing.T) {
+	in := map[string]string{"sha256": "aa", "SHA256": "BB", "Sha256": "cc", "sHA256": "AB", "md5": "01"}
+	want := map[string]string{"sha256": "cc", "md5": "01"}
+
+	for range 50 {
+		if got := lowerHashes(in); !reflect.DeepEqual(got, want) {
+			t.Fatalf("lowerHashes = %v, want %v", got, want)
+		}
+	}
+}
+
 func TestParseIndex_HTMLAndJSON(t *testing.T) {
 	html := `<html><body><a href="/simple/Foo_Bar/">Foo_Bar</a><a href="/simple/baz/">baz</a><a href="/simple/bad%2Fname/">bad/name</a></body></html>`
 	js := `{"meta":{"api-version":"1.0"},"projects":[{"name":"Foo_Bar"},{"name":"baz"}]}`

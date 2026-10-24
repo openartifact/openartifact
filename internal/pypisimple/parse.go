@@ -157,8 +157,15 @@ func lowerHashes(in map[string]string) map[string]string {
 	}
 
 	out := make(map[string]string, len(in))
+
 	for k, v := range in {
-		out[strings.ToLower(k)] = strings.ToLower(v)
+		// Spellings that differ only in case name one algorithm and map
+		// iteration order is random: on a conflict keep the greater digest so
+		// the result does not depend on it.
+		k, v = strings.ToLower(k), strings.ToLower(v)
+		if prev, dup := out[k]; !dup || v > prev {
+			out[k] = v
+		}
 	}
 
 	return out
