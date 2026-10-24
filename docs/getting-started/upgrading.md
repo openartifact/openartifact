@@ -88,6 +88,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 ### Unreleased
 
 - S3 staging promotion no longer depends on the backend enforcing `If-Match` / `x-amz-copy-source-if-match`: OpenArtifact now also compares the ETag returned by the read or copy and discards the copy on a mismatch. This closes the post-verification overwrite window on backends that ignore conditional reads (for example Garage 1.x). No action required.
+- Uploads no longer hold a database connection and advisory lock while the object store `PUT` runs. Bytes are written first (content-addressed, idempotent), then the per-blob lock covers only the database rows, after re-checking that the object still exists. Concurrent uploads per pod are no longer capped by the connection pool, and a large upload no longer blocks other uploads or deletes of the same blob. No configuration change.
 
 ### 0.9.0
 
