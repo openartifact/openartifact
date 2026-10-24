@@ -66,6 +66,8 @@ func ParseIndex(doc []byte) (*Index, error) {
 		return nil, fmt.Errorf("%w: apiVersion missing", ErrNotIndex)
 	}
 
+	writable(root)
+
 	ix := &Index{root: root}
 
 	if e := mapValue(root, "entries"); e != nil && !isNull(e) {
@@ -92,6 +94,25 @@ func hasAlias(n *yaml.Node) bool {
 	}
 
 	return slices.ContainsFunc(n.Content, hasAlias)
+}
+
+// writable rewrites the tree into a form the yaml encoder writes back as the
+// document it was read from. It drops every comment: the encoder cannot place
+// one attached to a key that is a flow collection ("[]: #c" comes out as "[]
+// #c" with the ": null" on the next line, which is not YAML). And it writes
+// every empty null out as "null": the encoder renders an empty plain scalar
+// inside a flow collection as a quoted empty string, so "entries: {app: }"
+// would marshal with a string where the null was.
+func writable(n *yaml.Node) {
+	n.HeadComment, n.LineComment, n.FootComment = "", "", ""
+
+	if n.Kind == yaml.ScalarNode && n.Tag == "!!null" && n.Value == "" {
+		n.Value = "null"
+	}
+
+	for _, c := range n.Content {
+		writable(c)
+	}
 }
 
 func isNull(n *yaml.Node) bool { return n.Kind == yaml.ScalarNode && n.Tag == "!!null" }
