@@ -5,7 +5,6 @@
 package docker
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -237,7 +236,22 @@ func (h *HTTPHandler) FindReferrer(ctx context.Context, repo *models.Repository,
 func (h *HTTPHandler) ensureBlob(ctx context.Context, repo *models.Repository, image, digest, mediaType string, content []byte) error {
 	shaHex := manifestBlobKey(digest)
 
-	return storage.WithBlobLock(ctx, h.db, shaHex, func(ctx context.Context) error {
+	blob := &models.DockerBlob{
+		ID:           uuid.New().String(),
+		RepositoryID: repo.ID,
+		Digest:       digest,
+		MediaType:    mediaType,
+		Size:         int64(len(content)),
+		Image:        &image,
+		CreatedAt:    time.Now(),
+	}
+
+	stored := storage.BytesBlob(shaHex, content, map[string]string{
+		"sha256": shaHex,
+		"digest": digest,
+	})
+
+	err := storage.CommitBlob(ctx, h.db, h.blobStore, stored, func(ctx context.Context, _ string) error {
 		held, err := h.blobAlreadyHeld(ctx, repo.ID, image, digest)
 		if err != nil {
 			return err
@@ -247,18 +261,13 @@ func (h *HTTPHandler) ensureBlob(ctx context.Context, repo *models.Repository, i
 			return nil
 		}
 
-		blob := &models.DockerBlob{
-			ID:           uuid.New().String(),
-			RepositoryID: repo.ID,
-			Digest:       digest,
-			MediaType:    mediaType,
-			Size:         int64(len(content)),
-			Image:        &image,
-			CreatedAt:    time.Now(),
-		}
-
-		return h.storeNewBlob(ctx, bytes.NewReader(content), blob, shaHex)
+		return h.storeNewBlob(ctx, blob, shaHex)
 	})
+	if err != nil {
+		h.discardOrphan(ctx, shaHex)
+	}
+
+	return err
 }
 
 func (h *HTTPHandler) storeReferrerManifest(ctx context.Context, repo *models.Repository, req ReferrerRequest, body []byte, digest, manifestHex string) error {

@@ -148,7 +148,7 @@ func TestCommitQuota(t *testing.T) {
 		}
 	}
 	commit := func(h *HTTPHandler, putBlob func(context.Context) error) error {
-		_, err := Commit(formattest.Request(http.MethodPut, quotaTarget, nil), h.Handler, "myrepo", newArtifact(), putBlob)
+		_, err := CommitPromoted(formattest.Request(http.MethodPut, quotaTarget, nil), h.Handler, "myrepo", newArtifact(), putBlob)
 		return err
 	}
 

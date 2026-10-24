@@ -584,37 +584,28 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store both blobs and insert the referencing row under the per-blob locks
-	// so a concurrent unpublish cannot delete either blob in between. Locks
-	// are taken in a fixed (sorted) order to avoid deadlocks between uploads.
-	first, second := zipSHA, modSHA
-	if second < first {
-		first, second = second, first
-	}
-
-	store := func(ctx context.Context) error {
-		zipBlobID, err := h.BlobStore.Put(ctx, spool.Reader(), map[string]string{
+	// Both blobs are stored first; their existence is re-checked and the
+	// referencing row inserted under the per-blob locks (DB work only) so a
+	// concurrent unpublish cannot delete either blob in between. CommitBlobs
+	// orders the locks itself.
+	blobs := []storage.Blob{
+		storage.SeekerBlob(zipSHA, spool.Reader(), map[string]string{
 			"sha256":  zipSHA,
 			"module":  modulePath,
 			"version": version,
 			"type":    "zip",
-		})
-		if err != nil {
-			return fmt.Errorf("store zip blob: %w", err)
-		}
-
-		modBlobID, err := h.BlobStore.Put(ctx, strings.NewReader(goModContent), map[string]string{
+		}),
+		storage.BytesBlob(modSHA, []byte(goModContent), map[string]string{
 			"sha256":  modSHA,
 			"module":  modulePath,
 			"version": version,
 			"type":    "mod",
-		})
-		if err != nil {
-			return fmt.Errorf("store mod blob: %w", err)
-		}
+		}),
+	}
 
-		mod.ZipBlobKey = zipBlobID
-		mod.ModBlobKey = modBlobID
+	store := func(ctx context.Context, keys []string) error {
+		mod.ZipBlobKey = keys[0]
+		mod.ModBlobKey = keys[1]
 
 		mod.CreatedAt = importmeta.CreatedAt(ctx)
 
@@ -625,7 +616,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return nil
 	}
 
-	lockErr := storage.WithBlobLocks(r.Context(), h.DB, []string{first, second}, store)
+	lockErr := storage.CommitBlobs(r.Context(), h.DB, h.BlobStore, blobs, store)
 	if lockErr != nil {
 		if err := quota.Release(r.Context(), h.DB, repoID, usage); err != nil {
 			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)

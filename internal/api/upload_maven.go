@@ -340,33 +340,15 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		insertErr error
 	)
 
-	lockErr := storage.WithBlobLock(r.Context(), h.db, sha256Hex, func(ctx context.Context) error {
-		blobKey, exists, existsErr := h.blobStore.ExistsBySHA256(ctx, sha256Hex)
-		if existsErr != nil {
-			stage = "check blob"
+	// The bytes are stored first; existence is re-checked under the blob lock,
+	// which covers only the DB work below.
+	blob := storage.SeekerBlob(sha256Hex, tmp, map[string]string{
+		"sha256":    sha256Hex,
+		"format":    "maven",
+		"repo_name": repoName,
+	})
 
-			return existsErr
-		}
-
-		if !exists {
-			if _, seekErr := tmp.Seek(0, io.SeekStart); seekErr != nil {
-				stage = "rewind"
-
-				return seekErr
-			}
-
-			blobKey, existsErr = h.blobStore.Put(ctx, tmp, map[string]string{
-				"sha256":    sha256Hex,
-				"format":    "maven",
-				"repo_name": repoName,
-			})
-			if existsErr != nil {
-				stage = "store blob"
-
-				return existsErr
-			}
-		}
-
+	lockErr := storage.CommitBlob(r.Context(), h.db, h.blobStore, blob, func(ctx context.Context, blobKey string) error {
 		// maven_artifacts.blob_id references blobs(id); register the blob row.
 		blobID, upsertErr := h.db.UpsertBlob(ctx, sha256Hex, blobKey, size)
 		if upsertErr != nil {
@@ -399,6 +381,14 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 			writeMavenConflict(w, "artifact already exists")
 
 			return
+		}
+
+		var storeErr *storage.StoreError
+		if errors.As(lockErr, &storeErr) {
+			stage = "store blob"
+			if storeErr.Op == "check" {
+				stage = "check blob"
+			}
 		}
 
 		h.log.Errorw("maven upload failed", "stage", stage, "path", artPath, "error", lockErr)

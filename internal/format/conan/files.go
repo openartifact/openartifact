@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"mime"
 	"net/http"
 	"path"
@@ -258,19 +259,17 @@ func (h *HTTPHandler) commit(w http.ResponseWriter, r *http.Request, s *scope, f
 	h.writeStored(w, file)
 }
 
-// store writes the blob and the referencing row under the per-blob lock, so a
-// concurrent delete cannot remove the blob in between.
+// store writes the blob, then the referencing row under the per-blob lock
+// (the existence of the blob is re-checked under it, so a concurrent delete
+// cannot remove the blob in between).
 func (h *HTTPHandler) store(ctx context.Context, file *models.ConanPackage, body *base.Spool) error {
-	return storage.WithBlobLock(ctx, h.DB, file.SHA256, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, body.Reader(), map[string]string{
-			"sha256":   file.SHA256,
-			"filename": file.Filename,
-			"package":  file.Name,
-		})
-		if err != nil {
-			return fmt.Errorf("store blob: %w", err)
-		}
+	blob := storage.ReaderBlob(file.SHA256, map[string]string{
+		"sha256":   file.SHA256,
+		"filename": file.Filename,
+		"package":  file.Name,
+	}, func() io.Reader { return body.Reader() })
 
+	return storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
 		file.BlobKey = blobKey
 
 		file.CreatedAt = importmeta.CreatedAt(ctx)

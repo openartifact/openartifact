@@ -202,21 +202,70 @@ func (e *Engine) repairBlobs(ctx context.Context, pc *pullCtx, entry Entry) (out
 		return outcomeSkipped, nil
 	}
 
-	shas := make([]string, 0, len(staged))
-	for _, sb := range staged {
-		shas = append(shas, sb.ref.SHA256)
-	}
-
-	err = storage.WithBlobLocks(ctx, e.DB, shas, func(ctx context.Context) error {
-		_, err := e.storeBlobs(ctx, content.Blobs, staged)
-
-		return err
-	})
+	blobs, closeBlobs, err := blobSources(content.Blobs, staged)
 	if err != nil {
 		return 0, err
 	}
 
+	defer closeBlobs()
+
+	err = storage.CommitBlobs(ctx, e.DB, e.Blobs, blobs, func(ctx context.Context, _ []string) error {
+		_, err := e.recordBlobs(ctx, content.Blobs)
+
+		return err
+	})
+	if err != nil {
+		if errors.Is(err, storage.ErrBlobGone) {
+			return outcomeDeferred, deferred("blob_gone", err)
+		}
+
+		return 0, err
+	}
+
 	return outcomeApplied, nil
+}
+
+// blobSources turns the blobs of a unit into CommitBlobs sources: a staged
+// blob is read from its temp file, any other (already in the local store) has
+// no source and must still exist when the rows are committed. The temp files
+// are opened once; the returned func closes them.
+func blobSources(refs []BlobRef, staged []stagedBlob) ([]storage.Blob, func(), error) {
+	files := make(map[string]*os.File, len(staged))
+
+	closeAll := func() {
+		for _, f := range files {
+			_ = f.Close()
+		}
+	}
+
+	for _, s := range staged {
+		if _, ok := files[s.ref.SHA256]; ok {
+			continue
+		}
+
+		f, err := os.Open(s.path)
+		if err != nil {
+			closeAll()
+
+			return nil, nil, fmt.Errorf("open staged blob: %w", err)
+		}
+
+		files[s.ref.SHA256] = f
+	}
+
+	blobs := make([]storage.Blob, 0, len(refs))
+
+	for _, ref := range refs {
+		if f, ok := files[ref.SHA256]; ok {
+			blobs = append(blobs, storage.SeekerBlob(ref.SHA256, f, nil))
+
+			continue
+		}
+
+		blobs = append(blobs, storage.Blob{SHA256: ref.SHA256})
+	}
+
+	return blobs, closeAll, nil
 }
 
 // superseded reports whether the local log already holds the unit at or past
@@ -441,17 +490,22 @@ func (e *Engine) applyLive(ctx context.Context, pc *pullCtx, ur *UnitResponse, d
 	return outcomeApplied, nil
 }
 
-// commitLive stores the staged blobs and applies the unit's rows, all under
-// the blob locks so a concurrent delete cannot remove a blob between its
-// storage and the row that references it.
+// commitLive stores the staged blobs and applies the unit's rows. The bytes
+// are stored first; under the blob locks every blob's presence is checked
+// again (a blob that has no staged copy and vanished since staging fails the
+// unit with storage.ErrBlobGone, which defers it for a retry), so a concurrent
+// delete cannot remove a blob between its storage and the row that references
+// it. The locks cover only the database work.
 func (e *Engine) commitLive(ctx context.Context, pc *pullCtx, entry Entry, content *Content, staged []stagedBlob, out **Change) error {
-	shas := make([]string, 0, len(content.Blobs))
-	for _, b := range content.Blobs {
-		shas = append(shas, b.SHA256)
+	blobs, closeBlobs, err := blobSources(content.Blobs, staged)
+	if err != nil {
+		return err
 	}
 
-	return storage.WithBlobLocks(ctx, e.DB, shas, func(ctx context.Context) error {
-		blobIDs, err := e.storeBlobs(ctx, content.Blobs, staged)
+	defer closeBlobs()
+
+	err = storage.CommitBlobs(ctx, e.DB, e.Blobs, blobs, func(ctx context.Context, _ []string) error {
+		blobIDs, err := e.recordBlobs(ctx, content.Blobs)
 		if err != nil {
 			return err
 		}
@@ -484,6 +538,11 @@ func (e *Engine) commitLive(ctx context.Context, pc *pullCtx, entry Entry, conte
 
 		return nil
 	})
+	if errors.Is(err, storage.ErrBlobGone) {
+		return deferred("blob_gone", err)
+	}
+
+	return err //nolint:wrapcheck // commit errors and *storage.StoreError pass through
 }
 
 // enterApplyMode silences the capture triggers for the transaction: applied
@@ -517,25 +576,11 @@ func (e *Engine) recordUnit(ctx context.Context, tx *sql.Tx, repoID string, entr
 	return nil
 }
 
-// storeBlobs puts the staged blobs into the blob store and makes sure every
-// blob of the unit has a blobs row; it returns sha256 -> blobs.id.
-func (e *Engine) storeBlobs(ctx context.Context, refs []BlobRef, staged []stagedBlob) (map[string]string, error) {
+// recordBlobs makes sure every blob of the unit has a blobs row; it returns
+// sha256 -> blobs.id. It is database work only, run by the CommitBlobs commit
+// once the objects are in the store.
+func (e *Engine) recordBlobs(ctx context.Context, refs []BlobRef) (map[string]string, error) {
 	ids := make(map[string]string, len(refs))
-
-	for _, s := range staged {
-		f, err := os.Open(s.path)
-		if err != nil {
-			return nil, fmt.Errorf("open staged blob: %w", err)
-		}
-
-		_, err = e.Blobs.Put(ctx, f, map[string]string{"sha256": s.ref.SHA256})
-
-		_ = f.Close()
-
-		if err != nil {
-			return nil, fmt.Errorf("store blob %s: %w", s.ref.SHA256, err)
-		}
-	}
 
 	for _, ref := range refs {
 		media := ref.MediaType

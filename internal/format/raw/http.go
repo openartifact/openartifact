@@ -5,7 +5,6 @@
 package raw
 
 import (
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
@@ -148,20 +147,11 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		CreatedAt: importmeta.CreatedAt(r.Context()),
 	}
 
-	previous, err := Commit(r, h.Handler, repoName, artifact, func(ctx context.Context) error {
-		blobID, err := h.BlobStore.Put(ctx, io.NewSectionReader(tmp, 0, size), map[string]string{
-			"sha256": sha256Hex,
-			"format": "raw",
-			"path":   path,
-		})
-		if err != nil {
-			return fmt.Errorf("store blob: %w", err)
-		}
-
-		artifact.BlobKey = blobID
-
-		return nil
-	})
+	previous, err := Commit(r, h.Handler, repoName, artifact, storage.ReaderBlob(sha256Hex, map[string]string{
+		"sha256": sha256Hex,
+		"format": "raw",
+		"path":   path,
+	}, func() io.Reader { return io.NewSectionReader(tmp, 0, size) }))
 	if err != nil {
 		if errors.Is(err, trash.ErrImmutableRelease) {
 			h.writeGuardError(w, err, "overwrite", path)

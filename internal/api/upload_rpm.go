@@ -5,7 +5,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -258,34 +257,6 @@ func (h *RPMUploadHandler) spoolUpload(file io.Reader) (*rpmSpool, error) {
 	return sp, nil
 }
 
-// storeBlobDeduped stores the temp file in the blob store unless a blob with
-// the same sha256 already exists, and reports whether it pre-existed.
-func (h *RPMUploadHandler) storeBlobDeduped(ctx context.Context, sp *rpmSpool, repoName string) (string, bool, error) {
-	blobID, blobExists, err := h.blobStore.ExistsBySHA256(ctx, sp.sha256)
-	if err != nil {
-		return "", false, fmt.Errorf("failed to check blob existence: %w", err)
-	}
-
-	if blobExists {
-		return blobID, true, nil
-	}
-
-	if _, err := sp.file.Seek(0, io.SeekStart); err != nil {
-		return "", false, fmt.Errorf("failed to seek temp file: %w", err)
-	}
-
-	blobID, err = h.blobStore.Put(ctx, sp.file, map[string]string{
-		"format":    "rpm",
-		"repo_name": repoName,
-		"sha256":    sp.sha256,
-	})
-	if err != nil {
-		return "", false, fmt.Errorf("failed to store blob: %w", err)
-	}
-
-	return blobID, false, nil
-}
-
 // isInvalidRPMError reports whether err means the uploaded file is not a valid rpm.
 func isInvalidRPMError(err error) bool {
 	return errors.Is(err, pkgrpm.ErrInvalidHeader) || errors.Is(err, pkgrpm.ErrInvalidHeaderMagic) ||
@@ -388,15 +359,15 @@ func (h *RPMUploadHandler) dropOrphanBlob(ctx context.Context, sha256sum, reason
 	}
 }
 
-// persistPackage stores the blob and inserts the package row under the
-// per-blob lock so a concurrent unpublish/cleanup cannot delete the blob in
+// persistPackage stores the blob bytes first, then inserts the package row
+// under the per-blob lock (existence is re-checked there, the lock covers only
+// the DB work) so a concurrent unpublish/cleanup cannot delete the blob in
 // between. The caller holds the quota reservation and releases it unless the
 // package was created.
 func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repository, sp *rpmSpool, pkg *pkgrpm.Package, extra []byte) (*formatrpm.UploadResult, error) {
 	var (
-		blobID   string
-		storedBy bool // this upload put the blob (it did not pre-exist)
-		created  bool
+		blobID  string
+		created bool
 	)
 
 	filename := rpmFilename(pkg)
@@ -404,13 +375,14 @@ func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repo
 	createdAt := importmeta.CreatedAt(ctx)
 	comp := newComponent(repo.ID, "", filename, sp.size, pkg, extra, createdAt)
 
-	err := storage.WithBlobLock(ctx, h.db, sp.sha256, func(ctx context.Context) error {
-		id, existed, err := h.storeBlobDeduped(ctx, sp, repo.Name)
-		if err != nil {
-			return err
-		}
+	blob := storage.SeekerBlob(sp.sha256, sp.file, map[string]string{
+		"format":    "rpm",
+		"repo_name": repo.Name,
+		"sha256":    sp.sha256,
+	})
 
-		blobID, storedBy = id, !existed
+	err := storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, key string) error {
+		blobID = key
 
 		// Upsert into blobs table to get the UUID for blob_id FK reference.
 		blobUUID, err := h.db.UpsertBlob(ctx, sp.sha256, sp.sha256, sp.size)
@@ -441,14 +413,13 @@ func (h *RPMUploadHandler) persistPackage(ctx context.Context, repo *models.Repo
 		}, nil
 	}
 
-	if storedBy {
-		reason := "DB error"
-		if errors.Is(err, database.ErrDuplicate) {
-			reason = "duplicate"
-		}
-
-		h.dropOrphanBlob(ctx, sp.sha256, reason)
+	// SafeDeleteBlob keeps a blob some row still references.
+	reason := "DB error"
+	if errors.Is(err, database.ErrDuplicate) {
+		reason = "duplicate"
 	}
+
+	h.dropOrphanBlob(ctx, sp.sha256, reason)
 
 	// Lost the check-then-insert race: another concurrent upload of the same
 	// package won (HTTP 409).
@@ -824,19 +795,17 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 
 	var blobID string
 
-	// Store the blob and commit its row under the per-blob lock, so a concurrent
-	// reclaim of identical content cannot delete it in between.
-	err = storage.WithBlobLock(r.Context(), h.db, compsSHA, func(ctx context.Context) error {
-		id, putErr := h.blobStore.Put(ctx, bytes.NewReader(body), map[string]string{
-			"format":    "rpm",
-			"type":      "comps",
-			"repo_name": repoName,
-			"sha256":    compsSHA,
-		})
-		if putErr != nil {
-			return &compsStoreError{status: http.StatusInternalServerError, code: "STORAGE_ERROR", msg: "failed to store comps XML", err: putErr}
-		}
+	// The bytes are stored first; the row is committed under the per-blob lock
+	// (existence re-checked there), so a concurrent reclaim of identical
+	// content cannot delete the blob in between.
+	blob := storage.BytesBlob(compsSHA, body, map[string]string{
+		"format":    "rpm",
+		"type":      "comps",
+		"repo_name": repoName,
+		"sha256":    compsSHA,
+	})
 
+	err = storage.CommitBlob(r.Context(), h.db, h.blobStore, blob, func(ctx context.Context, id string) error {
 		blobID = id
 
 		meta := &models.RepoMetadata{
@@ -858,6 +827,8 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 
 			return
 		}
+
+		// A *storage.StoreError (blob put/check failure) maps to STORAGE_ERROR.
 
 		h.log.Errorw("failed to store comps", "repo_id", repoID, "error", err)
 		writeError(w, http.StatusInternalServerError, "STORAGE_ERROR", "failed to store comps XML")

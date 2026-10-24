@@ -69,12 +69,12 @@ func (s *lockAwareStore) Put(ctx context.Context, data io.Reader, meta map[strin
 	return id, err
 }
 
-func (s *lockAwareStore) Exists(ctx context.Context, id string) (bool, error) {
+func (s *lockAwareStore) ExistsBySHA256(ctx context.Context, sha string) (string, bool, error) {
 	s.mu.Lock()
 	s.existsHeld = append(s.existsHeld, s.db.held.Load())
 	s.mu.Unlock()
 
-	return s.BlobStore.Exists(ctx, id)
+	return s.BlobStore.ExistsBySHA256(ctx, sha)
 }
 
 func newLockedFixture(t *testing.T, handler http.HandlerFunc) (*fixture, *lockAwareStore, *lockingDB) {
@@ -107,9 +107,10 @@ func TestServe_BlobUploadRunsOutsideTheBlobLock(t *testing.T) {
 		t.Errorf("blob lock taken %d times, want once around the database work", got)
 	}
 
-	// The blob must be confirmed present while the lock excludes deleters.
-	if len(store.existsHeld) != 1 || !store.existsHeld[0] {
-		t.Errorf("Exists calls under lock = %v, want one, inside the lock", store.existsHeld)
+	// The blob is looked up before the Put and confirmed present again while
+	// the lock excludes deleters.
+	if len(store.existsHeld) != 2 || store.existsHeld[0] || !store.existsHeld[1] {
+		t.Errorf("Exists calls under lock = %v, want [false true]", store.existsHeld)
 	}
 
 	if f.db.entry("repo-1", "g/a/1.0/a-1.0.jar") == nil || f.db.blobs[sum("jar-bytes")] == 0 {

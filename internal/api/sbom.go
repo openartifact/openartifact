@@ -5,7 +5,6 @@
 package api
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -221,25 +220,22 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		UpdatedAt:      time.Now(),
 	}
 
-	// Store the blob and insert the referencing row under the per-blob lock so
-	// a concurrent SafeDeleteBlob (e.g. deleting an identical report) cannot
-	// remove the blob between the two steps.
-	var putFailed bool
+	// Store the bytes first, then insert the referencing row under the
+	// per-blob lock (existence is re-checked there) so a concurrent
+	// SafeDeleteBlob (e.g. deleting an identical report) cannot remove the blob
+	// between the two steps.
+	blob := storage.BytesBlob(sha256Hex, data, map[string]string{
+		"sha256":       sha256Hex,
+		"content-type": result.ContentType,
+		"format":       "sbom",
+	})
 
-	err = storage.WithBlobLock(ctx, h.db, sha256Hex, func(ctx context.Context) error {
-		if _, err := h.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
-			"sha256":       sha256Hex,
-			"content-type": result.ContentType,
-			"format":       "sbom",
-		}); err != nil {
-			putFailed = true
-			return err //nolint:wrapcheck // logged by the caller below
-		}
-
+	err = storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
 		return h.db.CreateSBOMReport(ctx, report)
 	})
 	if err != nil {
-		if putFailed {
+		var storeErr *storage.StoreError
+		if errors.As(err, &storeErr) {
 			h.log.Errorw("generate SBOM: failed to store blob", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to store SBOM content")
 

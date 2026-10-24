@@ -636,7 +636,7 @@ func (h *PresignedUploadHandler) complete(req *http.Request, repo *models.Reposi
 		Metadata:     make(map[string]any),
 	}
 
-	previous, err := formatraw.Commit(req, h.Handler, repo.Name, artifact, func(ctx context.Context) error {
+	previous, err := formatraw.CommitPromoted(req, h.Handler, repo.Name, artifact, func(ctx context.Context) error {
 		return h.staging.PromoteStaging(ctx, up.ID, up.SHA256, verified.version, map[string]string{
 			"sha256": up.SHA256,
 			"format": "raw",

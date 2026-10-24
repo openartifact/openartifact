@@ -508,25 +508,20 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the blob and insert the referencing row under the per-blob lock
-	// so a concurrent unpublish cannot delete the blob in between.
+	// The blob is stored first; its existence is re-checked and the
+	// referencing row inserted under the per-blob lock (DB work only) so a
+	// concurrent unpublish cannot delete the blob in between.
 	var (
 		status int
 		msg    string
 	)
 
-	lockErr := storage.WithBlobLock(r.Context(), h.DB, sha256Digest, func(ctx context.Context) error {
-		if _, err := h.BlobStore.Put(ctx, upload.Reader(), map[string]string{
-			"sha256": sha256Digest,
-			"format": "pypi",
-		}); err != nil {
-			h.Log.Errorw("failed to store blob", "error", err)
+	blob := storage.SeekerBlob(sha256Digest, upload.Reader(), map[string]string{
+		"sha256": sha256Digest,
+		"format": "pypi",
+	})
 
-			status, msg = http.StatusInternalServerError, "failed to store file"
-
-			return err
-		}
-
+	lockErr := storage.CommitBlob(r.Context(), h.DB, h.BlobStore, blob, func(ctx context.Context, _ string) error {
 		pkg.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreatePyPIPackage(ctx, pkg); err != nil {
@@ -546,7 +541,15 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return nil
 	})
 	if lockErr != nil {
-		if status == 0 {
+		var storeErr *storage.StoreError
+
+		switch {
+		case status != 0:
+		case errors.As(lockErr, &storeErr):
+			h.Log.Errorw("failed to store blob", "error", lockErr)
+
+			status, msg = http.StatusInternalServerError, "failed to store file"
+		default:
 			h.Log.Errorw("blob lock failed", "error", lockErr)
 
 			status, msg = http.StatusInternalServerError, "failed to create package"

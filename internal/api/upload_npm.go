@@ -636,25 +636,6 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 	})
 }
 
-// putNPMTarball stores the spooled tarball of a prepared version.
-func (h *NPMUploadHandler) putNPMTarball(ctx context.Context, pv *npmPreparedVersion) error {
-	f, err := os.Open(pv.att.path)
-	if err != nil {
-		return fmt.Errorf("failed to open spooled tarball: %w", err)
-	}
-
-	defer func() { _ = f.Close() }()
-
-	if _, err := h.blobStore.Put(ctx, f, map[string]string{
-		"sha256": pv.sha256Hex,
-		"format": "npm",
-	}); err != nil {
-		return fmt.Errorf("failed to store tarball blob: %w", err)
-	}
-
-	return nil
-}
-
 var errNPMVersionExists = errors.New("npm version already exists")
 
 func (h *NPMUploadHandler) releaseQuota(ctx context.Context, repoID string, size int64) {
@@ -664,8 +645,9 @@ func (h *NPMUploadHandler) releaseQuota(ctx context.Context, repoID string, size
 }
 
 // storeNPMVersion reserves quota for one tarball and persists its blob and
-// version row. The dedup check, blob write and referencing insert run under the
-// blob lock so a concurrent unpublish cannot delete the blob in between. The
+// version row. The tarball bytes are stored first; existence is re-checked
+// under the blob lock, which covers only the blob record and the referencing
+// insert, so a concurrent unpublish cannot delete the blob in between. The
 // reservation is released on every failure path.
 func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID string, pv *npmPreparedVersion) error {
 	size := pv.att.size
@@ -674,22 +656,21 @@ func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID st
 		return err
 	}
 
-	newBlob := false
+	f, err := os.Open(pv.att.path)
+	if err != nil {
+		h.releaseQuota(ctx, repoID, size)
 
-	err := storage.WithBlobLock(ctx, h.db, pv.sha256Hex, func(ctx context.Context) error {
-		_, exists, err := h.blobStore.ExistsBySHA256(ctx, pv.sha256Hex)
-		if err != nil {
-			return fmt.Errorf("failed to check tarball blob: %w", err)
-		}
+		return fmt.Errorf("failed to open spooled tarball: %w", err)
+	}
 
-		if !exists {
-			if err := h.putNPMTarball(ctx, pv); err != nil {
-				return err
-			}
+	defer func() { _ = f.Close() }()
 
-			newBlob = true
-		}
+	blob := storage.SeekerBlob(pv.sha256Hex, f, map[string]string{
+		"sha256": pv.sha256Hex,
+		"format": "npm",
+	})
 
+	err = storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
 		// Upsert into blobs table to get UUID for npm_versions.blob_id FK.
 		blobUUID, err := h.db.UpsertBlob(ctx, pv.sha256Hex, pv.sha256Hex, size)
 		if err != nil {
@@ -718,11 +699,9 @@ func (h *NPMUploadHandler) storeNPMVersion(ctx context.Context, repoID, pkgID st
 	if err != nil {
 		h.releaseQuota(ctx, repoID, size)
 
-		// Drop the blob we just wrote unless a row references it.
-		if newBlob {
-			if delErr := storage.SafeDeleteBlob(context.WithoutCancel(ctx), h.db, h.blobStore, pv.sha256Hex); delErr != nil {
-				h.log.Warnw("failed to clean up npm blob after failed publish", "sha256", pv.sha256Hex, "error", delErr)
-			}
+		// Drop the blob we may have written unless a row references it.
+		if delErr := storage.SafeDeleteBlob(context.WithoutCancel(ctx), h.db, h.blobStore, pv.sha256Hex); delErr != nil {
+			h.log.Warnw("failed to clean up npm blob after failed publish", "sha256", pv.sha256Hex, "error", delErr)
 		}
 
 		return err

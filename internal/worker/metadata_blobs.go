@@ -5,7 +5,6 @@
 package worker
 
 import (
-	"bytes"
 	"context"
 	"fmt"
 	"sort"
@@ -37,26 +36,15 @@ type metadataBlobs struct {
 }
 
 // ensure re-stores any blob of the committed set that is missing from the blob
-// store. Under the per-blob lock this serializes with reclaim. attrs builds the
-// Put metadata for one path.
+// store. A missing blob is written first, then its presence is checked again
+// under the per-blob lock, which serializes with reclaim (the lock covers no
+// blob store write; the commit is empty because the rows already exist).
+// attrs builds the Put metadata for one path.
 func (m metadataBlobs) ensure(ctx context.Context, repoID string, blobs map[string][]byte, newSHA map[string]string, attrs func(path, sum string) map[string]string) {
 	for path, data := range blobs {
 		sum := newSHA[path]
 
-		err := storage.WithBlobLock(ctx, m.db, sum, func(ctx context.Context) error {
-			_, exists, err := m.store.ExistsBySHA256(ctx, sum)
-			if err != nil {
-				return fmt.Errorf("check blob: %w", err)
-			}
-
-			if exists {
-				return nil
-			}
-
-			if _, err := m.store.Put(ctx, bytes.NewReader(data), attrs(path, sum)); err != nil {
-				return fmt.Errorf("restore blob: %w", err)
-			}
-
+		err := storage.CommitBlob(ctx, m.db, m.store, storage.BytesBlob(sum, data, attrs(path, sum)), func(context.Context, string) error {
 			return nil
 		})
 		if err != nil {

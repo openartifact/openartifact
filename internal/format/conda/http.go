@@ -404,21 +404,19 @@ func newPackage(repoID, platform string, file packageFile, idx packageIndex, bod
 	}
 }
 
-// storePackage stores the blob and inserts the referencing row under the
-// per-blob lock so a concurrent unpublish cannot delete the blob in between.
-// When the row is not created (a concurrent upload of the same file won) the
-// blob is dropped again unless something else references it.
+// storePackage stores the blob first, then re-checks its existence and inserts
+// the referencing row under the per-blob lock (DB work only) so a concurrent
+// unpublish cannot delete the blob in between. When the row is not created (a
+// concurrent upload of the same file won) the blob is dropped again unless
+// something else references it.
 func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.CondaPackage, filename string, body *base.Spool) error {
-	err := storage.WithBlobLock(ctx, h.DB, pkg.SHA256, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, body.Reader(), map[string]string{
-			"sha256":   pkg.SHA256,
-			"filename": filename,
-			"platform": pkg.Platform,
-		})
-		if err != nil {
-			return fmt.Errorf("store blob: %w", err)
-		}
+	blob := storage.SeekerBlob(pkg.SHA256, body.Reader(), map[string]string{
+		"sha256":   pkg.SHA256,
+		"filename": filename,
+		"platform": pkg.Platform,
+	})
 
+	err := storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
 		pkg.BlobKey = blobKey
 
 		pkg.CreatedAt = importmeta.CreatedAt(ctx)

@@ -432,21 +432,20 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 	w.WriteHeader(http.StatusCreated)
 }
 
-// storePackage stores the blob and inserts the referencing row under the
-// per-blob lock so a concurrent unpublish cannot delete the blob in between.
+// storePackage stores the blob, then inserts the referencing row under the
+// per-blob lock (the blob's existence is re-checked under it, so a concurrent
+// unpublish cannot delete the blob in between).
 // When the row is not created (a concurrent push of the same version won) the
 // blob is dropped again unless something else references it.
 func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.NuGetPackage, part *base.Part) error {
-	err := storage.WithBlobLock(ctx, h.DB, pkg.BlobKey, func(ctx context.Context) error {
-		if _, err := h.BlobStore.Put(ctx, part.Reader(), map[string]string{
-			"sha256":   pkg.BlobKey,
-			"filename": nupkgName(pkg.PackageID, pkg.Version),
-			"package":  pkg.PackageID,
-			"version":  pkg.Version,
-		}); err != nil {
-			return fmt.Errorf("store blob: %w", err)
-		}
+	blob := storage.ReaderBlob(pkg.BlobKey, map[string]string{
+		"sha256":   pkg.BlobKey,
+		"filename": nupkgName(pkg.PackageID, pkg.Version),
+		"package":  pkg.PackageID,
+		"version":  pkg.Version,
+	}, func() io.Reader { return part.Reader() })
 
+	err := storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, _ string) error {
 		pkg.CreatedAt = importmeta.CreatedAt(ctx)
 
 		if err := h.DB.CreateNuGetPackage(ctx, pkg); err != nil {

@@ -705,50 +705,19 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 	return entry, nil
 }
 
-// persist stores the spooled body (rewound, hashing to sum) in the blob store
-// and records the blobs row and cache entry.
-//
-// The object-store upload runs OUTSIDE the per-blob lock. The lock is a
-// database transaction holding a pooled connection and one of the bounded lock
-// slots (postgres lockSlots) until it ends; held across an upload of up to
-// maxBody bytes it would let a handful of slow transfers exhaust the slots and
-// stall every upload, delete and cache fill. The blob is content-addressed and
-// Put is idempotent (the same bytes under the same id), so storing it first is
-// safe by itself.
-//
-// What the lock must still guarantee is that the blob is in the store when the
-// referencing row is committed, because the only remover racing with us is
-// storage.SafeDeleteBlob / DeleteBlobIfUnreferenced (also used by the orphan
-// collector), which delete the object under this same lock when no row
-// references the sha. The collector never sees an object without a blobs row,
-// and a fresh row is protected by storage.OrphanMinAge, but a blob whose
-// previous references were just removed (a deleted hosted package with
-// identical bytes, an orphan older than the grace) can be deleted between our
-// Put and the lock. So the existence of the object is re-checked under the
-// lock, after EnsureBlob and before the cache entry (a reference) is written;
-// if it vanished it is stored again, now under the lock, which is rare and
-// keeps the delete from ever leaving a cache row without its blob.
+// persist stores the spooled body (hashing to sum) in the blob store and
+// records the blobs row and cache entry. The upload runs outside the per-blob
+// lock; see storage.CommitBlobs.
 func (s *Service) persist(ctx context.Context, spool *os.File, sum, mediaType string, entry *models.ProxyCacheEntry) error {
-	meta := map[string]string{"sha256": sum, "content-type": mediaType}
+	blob := storage.SeekerBlob(sum, spool, map[string]string{"sha256": sum, "content-type": mediaType})
 
-	if perr := s.putBlob(ctx, spool, sum, meta); perr != nil {
-		return perr
-	}
+	return storage.CommitBlob(ctx, s.db, s.blobStore, blob, func(ctx context.Context, key string) error {
+		if key != sum {
+			return fmt.Errorf("%w: blob store returned id %q for sha256 %s", errInternal, key, sum)
+		}
 
-	return storage.WithBlobLock(ctx, s.db, sum, func(ctx context.Context) error {
 		if _, eerr := s.db.EnsureBlob(ctx, sum, mediaType, entry.SizeBytes); eerr != nil {
 			return fmt.Errorf("record blob: %w", eerr)
-		}
-
-		present, xerr := s.blobStore.Exists(ctx, sum)
-		if xerr != nil {
-			return fmt.Errorf("check blob: %w", xerr)
-		}
-
-		if !present {
-			if perr := s.putBlob(ctx, spool, sum, meta); perr != nil {
-				return perr
-			}
 		}
 
 		if uerr := s.db.UpsertProxyCacheEntry(ctx, entry); uerr != nil {
@@ -757,24 +726,6 @@ func (s *Service) persist(ctx context.Context, spool *os.File, sum, mediaType st
 
 		return nil
 	})
-}
-
-// putBlob uploads the spool (from its start) as the blob sum.
-func (s *Service) putBlob(ctx context.Context, spool io.ReadSeeker, sum string, meta map[string]string) error {
-	if _, err := spool.Seek(0, io.SeekStart); err != nil {
-		return fmt.Errorf("rewind spool: %w", err)
-	}
-
-	blobID, err := s.blobStore.Put(ctx, spool, meta)
-	if err != nil {
-		return fmt.Errorf("store blob: %w", err)
-	}
-
-	if blobID != sum {
-		return fmt.Errorf("%w: blob store returned id %q for sha256 %s", errInternal, blobID, sum)
-	}
-
-	return nil
 }
 
 func (s *Service) recordNegative(ctx context.Context, repo *models.Repository, key string) {

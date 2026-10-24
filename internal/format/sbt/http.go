@@ -249,18 +249,16 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		return
 	}
 
-	// Store the blob and insert the referencing row under the per-blob lock so
-	// a concurrent unpublish cannot delete the blob in between.
-	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, spool.Reader(), map[string]string{
-			"sha256":   sha256Hex,
-			"filename": cur.Filename,
-			"group":    cur.Group,
-		})
-		if err != nil {
-			return fmt.Errorf("store blob: %w", err)
-		}
+	// The blob is stored first; its existence is re-checked and the
+	// referencing row inserted under the per-blob lock (DB work only) so a
+	// concurrent unpublish cannot delete the blob in between.
+	blob := storage.SeekerBlob(sha256Hex, spool.Reader(), map[string]string{
+		"sha256":   sha256Hex,
+		"filename": cur.Filename,
+		"group":    cur.Group,
+	})
 
+	if err := storage.CommitBlob(r.Context(), h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
 		artifact.BlobKey = blobKey
 
 		artifact.CreatedAt = importmeta.CreatedAt(ctx)

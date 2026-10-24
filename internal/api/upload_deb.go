@@ -336,36 +336,22 @@ func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 	}
 
 	var (
-		blobID     string
-		blobExists bool
-		duplicate  bool
-		record     *models.Component
+		blobID    string
+		duplicate bool
+		record    *models.Component
 	)
 
-	// Dedup check, blob store, blob record and referencing row happen under the
-	// blob lock so a concurrent unpublish cannot delete the blob in between.
-	lockErr := storage.WithBlobLock(r.Context(), h.db, sha256sum, func(ctx context.Context) error {
-		var err error
+	// The bytes are stored first; existence is re-checked under the blob lock,
+	// which then covers only the blob record and the referencing row, so a
+	// concurrent unpublish cannot delete the blob in between.
+	blob := storage.SeekerBlob(sha256sum, tmpFile, map[string]string{
+		"sha256":    sha256sum,
+		"format":    "deb",
+		"repo_name": repoName,
+	})
 
-		blobID, blobExists, err = h.blobStore.ExistsBySHA256(ctx, sha256sum)
-		if err != nil {
-			return fmt.Errorf("failed to check blob existence: %w", err)
-		}
-
-		if !blobExists {
-			if _, err := tmpFile.Seek(0, io.SeekStart); err != nil {
-				return fmt.Errorf("failed to seek temp file: %w", err)
-			}
-
-			blobID, err = h.blobStore.Put(ctx, tmpFile, map[string]string{
-				"sha256":    sha256sum,
-				"format":    "deb",
-				"repo_name": repoName,
-			})
-			if err != nil {
-				return fmt.Errorf("failed to store blob: %w", err)
-			}
-		}
+	lockErr := storage.CommitBlob(r.Context(), h.db, h.blobStore, blob, func(ctx context.Context, key string) error {
+		blobID = key
 
 		// Upsert into blobs table to get the UUID for blob_id FK reference.
 		blobUUID, err := h.db.UpsertBlob(ctx, sha256sum, sha256sum, written)
@@ -414,10 +400,9 @@ func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 	if lockErr != nil || duplicate {
 		releaseQuota()
 
-		if !blobExists {
-			if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, sha256sum); delErr != nil {
-				h.log.Warnw("failed to clean up blob after failed upload", "sha256", sha256sum, "error", delErr)
-			}
+		// SafeDeleteBlob keeps a blob some row still references.
+		if delErr := storage.SafeDeleteBlob(r.Context(), h.db, h.blobStore, sha256sum); delErr != nil {
+			h.log.Warnw("failed to clean up blob after failed upload", "sha256", sha256sum, "error", delErr)
 		}
 
 		if lockErr != nil {

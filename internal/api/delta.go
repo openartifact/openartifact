@@ -17,7 +17,6 @@ package api
 //        Lists all available deltas targeting the package identified by "id".
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -354,15 +353,15 @@ func (h *DeltaHandler) generateDelta(r *http.Request, repoID, fromSHA256, fromFi
 	}
 
 	// Store the blob, register it in the blobs table (so the orphan sweep and
-	// SafeDeleteBlob see it) and insert the referencing row under the blob lock.
-	err = storage.WithBlobLock(r.Context(), h.db, patchSHA256, func(ctx context.Context) error {
-		if _, err := h.blobStore.Put(ctx, bytes.NewReader(patch), map[string]string{
-			"sha256": patchSHA256,
-			"type":   "delta",
-		}); err != nil {
-			return fmt.Errorf("store delta blob: %w", err)
-		}
+	// SafeDeleteBlob see it) and insert the referencing row. The bytes are
+	// stored first; existence is re-checked under the blob lock, which covers
+	// only the DB work.
+	blob := storage.BytesBlob(patchSHA256, patch, map[string]string{
+		"sha256": patchSHA256,
+		"type":   "delta",
+	})
 
+	err = storage.CommitBlob(r.Context(), h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
 		if _, err := h.db.UpsertBlob(ctx, patchSHA256, patchSHA256, d.DeltaSize); err != nil {
 			return fmt.Errorf("register delta blob: %w", err)
 		}

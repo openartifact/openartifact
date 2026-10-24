@@ -592,39 +592,22 @@ func (h *HTTPHandler) handleListCharts(w http.ResponseWriter, r *http.Request) {
 
 // Helper functions
 
-// storeChart persists the chart blob and its row under the per-blob lock so a
-// concurrent delete cannot remove the blob between the dedup check, the Put and
-// the insert. It returns a zero status on success, otherwise the HTTP status
-// and message to report; the caller releases the quota reservation.
+// storeChart stores the chart blob first, then re-checks its existence and
+// inserts the row under the per-blob lock (DB work only) so a concurrent delete
+// cannot remove the blob before the row exists. It returns a zero status on
+// success, otherwise the HTTP status and message to report; the caller releases
+// the quota reservation.
 func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, body *base.Spool) (int, string) {
 	status, msg := 0, ""
 
-	lockErr := storage.WithBlobLock(ctx, h.DB, chart.Digest, func(ctx context.Context) error {
-		blobKey, exists, err := h.BlobStore.ExistsBySHA256(ctx, chart.Digest)
-		if err != nil {
-			h.Log.Errorw("failed to check chart blob", "error", err)
+	blob := storage.SeekerBlob(chart.Digest, body.Reader(), map[string]string{
+		"sha256":   chart.Digest,
+		"filename": fmt.Sprintf("%s-%s.tgz", chart.Name, chart.Version),
+		"chart":    chart.Name,
+		"version":  chart.Version,
+	})
 
-			status, msg = http.StatusInternalServerError, "internal error"
-
-			return err
-		}
-
-		if !exists {
-			blobKey, err = h.BlobStore.Put(ctx, body.Reader(), map[string]string{
-				"sha256":   chart.Digest,
-				"filename": fmt.Sprintf("%s-%s.tgz", chart.Name, chart.Version),
-				"chart":    chart.Name,
-				"version":  chart.Version,
-			})
-			if err != nil {
-				h.Log.Errorw("failed to store chart blob", "error", err)
-
-				status, msg = http.StatusInternalServerError, "internal error"
-
-				return err
-			}
-		}
-
+	lockErr := storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
 		chart.BlobKey = blobKey
 
 		chart.CreatedAt = importmeta.CreatedAt(ctx)
@@ -650,7 +633,15 @@ func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, b
 	}
 
 	if status == 0 {
-		h.Log.Errorw("chart blob lock failed", "chart", chart.Name, "error", lockErr)
+		var storeErr *storage.StoreError
+
+		if errors.As(lockErr, &storeErr) && storeErr.Op == "check" {
+			h.Log.Errorw("failed to check chart blob", "error", lockErr)
+		} else if storeErr != nil {
+			h.Log.Errorw("failed to store chart blob", "error", lockErr)
+		} else {
+			h.Log.Errorw("chart blob lock failed", "chart", chart.Name, "error", lockErr)
+		}
 
 		status, msg = http.StatusInternalServerError, "internal error"
 	}

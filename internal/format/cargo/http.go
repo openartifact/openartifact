@@ -476,18 +476,16 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	// Store the blob and insert the referencing row under the per-blob lock so
-	// a concurrent unpublish cannot delete the blob in between.
-	if err := storage.WithBlobLock(r.Context(), h.DB, checksum, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, crateBytes.Reader(), map[string]string{
-			"sha256":        checksum,
-			"cargo-name":    crateName,
-			"cargo-version": version,
-		})
-		if err != nil {
-			return fmt.Errorf("store crate blob: %w", err)
-		}
+	// The blob is stored first; its existence is re-checked and the
+	// referencing row inserted under the per-blob lock (DB work only) so a
+	// concurrent unpublish cannot delete the blob in between.
+	blob := storage.SeekerBlob(checksum, crateBytes.Reader(), map[string]string{
+		"sha256":        checksum,
+		"cargo-name":    crateName,
+		"cargo-version": version,
+	})
 
+	if err := storage.CommitBlob(r.Context(), h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
 		crate.BlobKey = blobKey
 
 		crate.CreatedAt = importmeta.CreatedAt(ctx)

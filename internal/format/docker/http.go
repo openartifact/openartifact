@@ -5,7 +5,6 @@
 package docker
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
@@ -569,18 +568,17 @@ func (h *HTTPHandler) handlePutManifest(w http.ResponseWriter, r *http.Request) 
 // storeManifest persists the manifest content in the blob store
 // (content-addressed by sha256), ensures a row exists for it in the global
 // blobs table (the docker_manifests row has a NOT NULL blob_id FK) and inserts
-// the manifest, all under the per-blob lock so a concurrent unpublish cannot
-// delete the blob in between. Both the store and the insert are idempotent, so
+// the manifest. The bytes are stored first; the existence of the blob is
+// re-checked under the per-blob lock, which covers only the row work, so a
+// concurrent unpublish cannot delete the blob in between. Both the store and the insert are idempotent, so
 // a re-push of the same manifest is a refresh.
 func (h *HTTPHandler) storeManifest(ctx context.Context, manifest *models.DockerManifest, digestHex, contentType string, body []byte) error {
-	return storage.WithBlobLock(ctx, h.db, digestHex, func(ctx context.Context) error {
-		if _, err := h.blobStore.Put(ctx, bytes.NewReader(body), map[string]string{
-			"sha256":       digestHex,
-			"content-type": contentType,
-		}); err != nil {
-			return fmt.Errorf("store manifest blob: %w", err)
-		}
+	blob := storage.BytesBlob(digestHex, body, map[string]string{
+		"sha256":       digestHex,
+		"content-type": contentType,
+	})
 
+	return storage.CommitBlob(ctx, h.db, h.blobStore, blob, func(ctx context.Context, _ string) error {
 		// The blobs row is keyed by the sha256 computed above from the pushed
 		// bytes, never by a value the store or client reports.
 		blobID, err := h.db.EnsureBlob(ctx, digestHex, contentType, int64(len(body)))
@@ -1801,12 +1799,18 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		CreatedAt:    time.Now(),
 	}
 
-	// The request body is already spooled and verified, so the per-blob lock is
-	// only held for the existence check + store + insert: a concurrent unpublish cannot delete the
-	// blob in between. Content-addressed by sha256: every BlobStore backend keys
+	// The request body is already spooled and verified: the bytes are stored
+	// first and the per-blob lock covers only the existence re-check, quota
+	// reservation and insert, so a concurrent unpublish cannot delete the blob
+	// in between. Content-addressed by sha256: every BlobStore backend keys
 	// (and some, like S3/Azure/OCI, require) storage on the "sha256" metadata
 	// entry — not the OCI-prefixed "digest" string.
-	if err := storage.WithBlobLock(r.Context(), h.db, computedDigestHex, func(ctx context.Context) error {
+	spooled := storage.SeekerBlob(computedDigestHex, f, map[string]string{
+		"sha256": computedDigestHex,
+		"digest": digest,
+	})
+
+	if err := storage.CommitBlob(r.Context(), h.db, h.blobStore, spooled, func(ctx context.Context, _ string) error {
 		// A blob the repository already holds is not stored again: pushing an
 		// existing digest completes with 201, as the distribution spec requires.
 		held, err := h.blobAlreadyHeld(ctx, repo.ID, image, digest)
@@ -1818,7 +1822,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 			return nil
 		}
 
-		return h.storeNewBlob(ctx, f, blob, computedDigestHex)
+		return h.storeNewBlob(ctx, blob, computedDigestHex)
 	}); err != nil {
 		if errors.Is(err, storage.ErrDigestMismatch) {
 			h.digestChanged(w, r, repo.ID, uploadUUID, tempFile, err)
@@ -1826,8 +1830,11 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 		}
 
 		if errors.Is(err, quota.ErrExceeded) {
-			// Nothing was stored; the staged bytes would only wait for the
-			// stale-session sweep, so discard the session as a digest mismatch does.
+			// No row was recorded; the object stored ahead of the commit is
+			// unreferenced and the staged bytes would only wait for the
+			// stale-session sweep, so drop both and discard the session as a
+			// digest mismatch does.
+			h.discardOrphan(r.Context(), computedDigestHex)
 			h.quotaExceeded(w)
 
 			_ = os.Remove(tempFile)
@@ -1836,6 +1843,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 			return
 		}
 
+		h.discardOrphan(r.Context(), computedDigestHex)
 		h.log.Errorw("failed to store blob", "digest", digest, "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 
@@ -1852,21 +1860,14 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 	w.WriteHeader(http.StatusCreated)
 }
 
-// storeNewBlob stores the verified bytes of a blob the repository does not hold
-// and records its row. The blob's bytes are reserved first (quota.ErrExceeded
-// when they do not fit, with nothing stored) and returned when storing or
-// inserting fails. The caller holds the blob lock.
-func (h *HTTPHandler) storeNewBlob(ctx context.Context, content io.Reader, blob *models.DockerBlob, shaHex string) error {
+// storeNewBlob records the row of a verified blob the repository does not hold,
+// whose bytes are already in the blob store. The blob's bytes are reserved first
+// (quota.ErrExceeded when they do not fit, with no row recorded) and returned
+// when inserting fails. The caller holds the blob lock; on failure the object
+// may be left unreferenced (see discardOrphan).
+func (h *HTTPHandler) storeNewBlob(ctx context.Context, blob *models.DockerBlob, shaHex string) error {
 	if err := quota.EnforceN(ctx, h.db, blob.RepositoryID, blob.Size, 0); err != nil {
 		return fmt.Errorf("reserve blob quota: %w", err)
-	}
-
-	if _, err := h.blobStore.Put(ctx, content, map[string]string{
-		"sha256": shaHex,
-		"digest": blob.Digest,
-	}); err != nil {
-		h.releaseQuota(ctx, blob.RepositoryID, blob.Size, 0)
-		return fmt.Errorf("store blob: %w", err)
 	}
 
 	// Keyed by the sha256 computed from the spooled bytes, never by a value the
@@ -1881,6 +1882,15 @@ func (h *HTTPHandler) storeNewBlob(ctx context.Context, content io.Reader, blob 
 	h.settleQuota(ctx, blob.RepositoryID, blob.Size, 0, true, blob.Inserted)
 
 	return nil
+}
+
+// discardOrphan best-effort removes the object a failed commit stored ahead of
+// its row. It is a no-op while any row references the blob, and survives a
+// cancelled request context.
+func (h *HTTPHandler) discardOrphan(ctx context.Context, shaHex string) {
+	if err := storage.SafeDeleteBlob(context.WithoutCancel(ctx), h.db, h.blobStore, shaHex); err != nil {
+		h.log.Warnw("failed to clean up unreferenced blob", "sha256", shaHex, "error", err)
+	}
 }
 
 // appendFinalChunk appends the request body to the staged file (after

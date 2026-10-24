@@ -247,21 +247,18 @@ func (w *MavenMetadataWorker) storeMetadata(ctx context.Context, repoID, path, p
 		}
 	}
 
-	err = storage.WithBlobLock(ctx, w.db, sha, func(ctx context.Context) error {
-		blobID, err := w.blobStore.Put(ctx, bytes.NewReader(data), map[string]string{
-			"sha256":    sha,
-			"format":    "maven",
-			"repo_id":   repoID,
-			"path_type": pathType,
-		})
-		if err != nil {
-			return fmt.Errorf("storing blob: %w", err)
-		}
+	blob := storage.BytesBlob(sha, data, map[string]string{
+		"sha256":    sha,
+		"format":    "maven",
+		"repo_id":   repoID,
+		"path_type": pathType,
+	})
 
+	err = storage.CommitBlob(ctx, w.db, w.blobStore, blob, func(ctx context.Context, key string) error {
 		if err := w.db.UpsertRepoMetadata(ctx, &models.RepoMetadata{
 			RepositoryID:  repoID,
 			Path:          path,
-			BlobSHA256:    blobID,
+			BlobSHA256:    key,
 			BlobSize:      int64(len(data)),
 			LastGenerated: generated,
 		}); err != nil {

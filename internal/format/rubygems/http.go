@@ -497,38 +497,21 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 	}
 }
 
-// storeGem persists the gem blob and its row under the per-blob lock so a
-// concurrent cleanup cannot remove the blob between the dedup check, the Put
-// and the insert. It returns a zero status on success, otherwise the HTTP
-// status and message to report; the caller releases the quota reservation.
+// storeGem stores the gem blob first, then re-checks its existence and inserts
+// the row under the per-blob lock (DB work only) so a concurrent cleanup cannot
+// remove the blob before the row exists. It returns a zero status on success,
+// otherwise the HTTP status and message to report; the caller releases the
+// quota reservation.
 func (h *HTTPHandler) storeGem(ctx context.Context, gem *models.RubyGem, body *base.Spool) (int, string) {
 	status, msg := 0, ""
 
-	lockErr := storage.WithBlobLock(ctx, h.DB, gem.ChecksumSHA256, func(ctx context.Context) error {
-		blobKey, exists, err := h.BlobStore.ExistsBySHA256(ctx, gem.ChecksumSHA256)
-		if err != nil {
-			h.Log.Errorw("failed to check gem blob", "error", err)
+	blob := storage.SeekerBlob(gem.ChecksumSHA256, body.Reader(), map[string]string{
+		"sha256":   gem.ChecksumSHA256,
+		"gem_name": gem.Name,
+		"version":  gem.Version,
+	})
 
-			status, msg = http.StatusInternalServerError, "internal error"
-
-			return err
-		}
-
-		if !exists {
-			blobKey, err = h.BlobStore.Put(ctx, body.Reader(), map[string]string{
-				"sha256":   gem.ChecksumSHA256,
-				"gem_name": gem.Name,
-				"version":  gem.Version,
-			})
-			if err != nil {
-				h.Log.Errorw("failed to store blob", "error", err)
-
-				status, msg = http.StatusInternalServerError, "internal error"
-
-				return err
-			}
-		}
-
+	lockErr := storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, func(ctx context.Context, blobKey string) error {
 		gem.BlobKey = blobKey
 
 		gem.CreatedAt = importmeta.CreatedAt(ctx)
@@ -554,7 +537,16 @@ func (h *HTTPHandler) storeGem(ctx context.Context, gem *models.RubyGem, body *b
 	}
 
 	if status == 0 {
-		h.Log.Errorw("gem blob lock failed", "name", gem.Name, "error", lockErr)
+		var storeErr *storage.StoreError
+
+		switch {
+		case errors.As(lockErr, &storeErr) && storeErr.Op == "check":
+			h.Log.Errorw("failed to check gem blob", "error", lockErr)
+		case storeErr != nil:
+			h.Log.Errorw("failed to store blob", "error", lockErr)
+		default:
+			h.Log.Errorw("gem blob lock failed", "name", gem.Name, "error", lockErr)
+		}
 
 		status, msg = http.StatusInternalServerError, "internal error"
 	}

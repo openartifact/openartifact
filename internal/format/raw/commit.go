@@ -24,8 +24,8 @@ type ifAbsentInserter interface {
 	InsertRawArtifactIfAbsent(ctx context.Context, artifact *models.RawArtifact) (bool, error)
 }
 
-// Commit records a raw artifact: it runs putBlob (which must make the blob
-// a.SHA256 present in the blob store and set a.BlobKey) and upserts the
+// Commit records a raw artifact: it stores blob (the content a.SHA256, see
+// storage.CommitBlob), sets a.BlobKey to its storage key and upserts the
 // artifact row under the per-blob lock, so a concurrent unpublish cannot delete
 // the blob in between; then it releases the blob an overwrite left
 // unreferenced and publishes artifact.uploaded. It returns the artifact row
@@ -35,14 +35,39 @@ type ifAbsentInserter interface {
 // It is the single write path shared by the streaming PUT and the presigned
 // upload completion, so both behave identically after the bytes are in place,
 // and both enforce immutable_releases: overwriting an existing path of such a
-// repository fails with trash.ErrImmutableRelease, before putBlob runs, unless
-// req carries an admin's ?force=true. Storage quota is reserved after those
-// checks and before putBlob runs: a reservation that does not fit fails with
+// repository fails with trash.ErrImmutableRelease, before the blob is stored,
+// unless req carries an admin's ?force=true. Storage quota is reserved after
+// those checks and before the blob is stored: a reservation that does not fit fails with
 // quota.ErrExceeded, any later failure returns the reservation, and an
 // overwrite releases the replaced row's usage. req supplies the principal and the force
 // flag; its context is used for every operation, so a caller that must outlive
 // the HTTP request passes a request carrying a detached context.
-func Commit(req *http.Request, h *base.Handler, repoName string, a *models.RawArtifact, putBlob func(ctx context.Context) error) (*models.RawArtifact, error) {
+func Commit(req *http.Request, h *base.Handler, repoName string, a *models.RawArtifact, blob storage.Blob) (*models.RawArtifact, error) {
+	return commitWith(req, h, repoName, a, func(ctx context.Context, commit func(ctx context.Context, key string) error) error {
+		return storage.CommitBlob(ctx, h.DB, h.BlobStore, blob, commit)
+	})
+}
+
+// CommitPromoted is Commit for content already in the blob store's staging
+// area (the presigned upload completion): promote makes the blob a.SHA256
+// present under the per-blob lock instead of a stored Blob.
+func CommitPromoted(req *http.Request, h *base.Handler, repoName string, a *models.RawArtifact, promote func(ctx context.Context) error) (*models.RawArtifact, error) {
+	return commitWith(req, h, repoName, a, func(ctx context.Context, commit func(ctx context.Context, key string) error) error {
+		return storage.WithBlobLock(ctx, h.DB, a.SHA256, func(ctx context.Context) error {
+			if err := promote(ctx); err != nil {
+				return err
+			}
+
+			return commit(ctx, a.BlobKey)
+		})
+	})
+}
+
+// stageFunc makes the artifact's blob present and runs commit (the row write)
+// with its storage key under the per-blob lock.
+type stageFunc func(ctx context.Context, commit func(ctx context.Context, key string) error) error
+
+func commitWith(req *http.Request, h *base.Handler, repoName string, a *models.RawArtifact, stage stageFunc) (*models.RawArtifact, error) {
 	ctx := req.Context()
 
 	previous, err := h.DB.GetRawArtifact(ctx, a.RepositoryID, a.Path)
@@ -84,7 +109,7 @@ func Commit(req *http.Request, h *base.Handler, repoName string, a *models.RawAr
 		only = inserter
 	}
 
-	if err := persist(ctx, h, a, putBlob, only); err != nil {
+	if err := persist(ctx, h, a, stage, only); err != nil {
 		if reserved {
 			releaseQuota(ctx, h, repoName, a.RepositoryID, a.SizeBytes)
 		}
@@ -115,14 +140,12 @@ func Commit(req *http.Request, h *base.Handler, repoName string, a *models.RawAr
 	return previous, nil
 }
 
-// persist runs putBlob and writes the artifact row under the per-blob lock.
-// With inserter set the row is only inserted when its path is free
+// persist stores the blob and writes the artifact row under the per-blob lock
+// (bytes first, the lock covering only the row write). With inserter set the row is only inserted when its path is free
 // (trash.ErrImmutableRelease otherwise), else it is upserted.
-func persist(ctx context.Context, h *base.Handler, a *models.RawArtifact, putBlob func(ctx context.Context) error, inserter ifAbsentInserter) error {
-	return storage.WithBlobLock(ctx, h.DB, a.SHA256, func(ctx context.Context) error {
-		if err := putBlob(ctx); err != nil {
-			return err
-		}
+func persist(ctx context.Context, h *base.Handler, a *models.RawArtifact, stage stageFunc, inserter ifAbsentInserter) error {
+	return stage(ctx, func(ctx context.Context, key string) error {
+		a.BlobKey = key
 
 		if inserter != nil {
 			inserted, err := inserter.InsertRawArtifactIfAbsent(ctx, a)

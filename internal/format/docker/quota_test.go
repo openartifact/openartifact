@@ -5,7 +5,6 @@
 package docker
 
 import (
-	"bytes"
 	"context"
 	"encoding/json"
 	"errors"
@@ -546,7 +545,7 @@ func TestQuotaStoreFailureReleasesBlobReservation(t *testing.T) {
 	layer := []byte("layer-bytes")
 	blob := &models.DockerBlob{RepositoryID: "repo-1", Digest: digestOf(layer), Size: int64(len(layer))}
 
-	err := h.storeNewBlob(context.Background(), bytes.NewReader(layer), blob, strings.TrimPrefix(digestOf(layer), "sha256:"))
+	err := h.storeNewBlob(context.Background(), blob, strings.TrimPrefix(digestOf(layer), "sha256:"))
 	if !errors.Is(err, errCreateFailed) {
 		t.Fatalf("storeNewBlob error = %v, want the insert failure", err)
 	}
