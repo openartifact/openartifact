@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/url"
@@ -69,25 +70,11 @@ func (s *Service) serveOCITags(w http.ResponseWriter, r *http.Request, repo *mod
 
 	defer release()
 
-	var doc map[string]json.RawMessage
-	if err := json.Unmarshal(body, &doc); err != nil {
+	out, err := rewriteTagList(body, req.Name)
+	if err != nil {
 		s.log.Warnw("docker proxy upstream tag list unreadable", "repo", repo.Name, "error", err)
 		ocipath.WriteError(w, http.StatusBadGateway, "UNAVAILABLE", "upstream registry error")
 
-		return
-	}
-
-	name, err := json.Marshal(req.Name)
-	if err != nil {
-		ocipath.WriteError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
-		return
-	}
-
-	doc["name"] = name
-
-	out, err := json.Marshal(doc)
-	if err != nil {
-		ocipath.WriteError(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
 		return
 	}
 
@@ -98,6 +85,30 @@ func (s *Service) serveOCITags(w http.ResponseWriter, r *http.Request, repo *mod
 	}
 
 	writeList(w, r, "application/json", out)
+}
+
+// rewriteTagList names the repository of an upstream tag listing the way the
+// client addressed it, leaving the rest of the document (the tags, whatever
+// else the upstream sends) as it is.
+func rewriteTagList(body []byte, name string) ([]byte, error) {
+	var doc map[string]json.RawMessage
+	if err := json.Unmarshal(body, &doc); err != nil {
+		return nil, fmt.Errorf("decode tag list: %w", err)
+	}
+
+	quoted, err := json.Marshal(name)
+	if err != nil {
+		return nil, fmt.Errorf("encode name: %w", err)
+	}
+
+	doc["name"] = quoted
+
+	out, err := json.Marshal(doc)
+	if err != nil {
+		return nil, fmt.Errorf("encode tag list: %w", err)
+	}
+
+	return out, nil
 }
 
 // serveOCIReferrers passes the referrers listing of a digest through.
