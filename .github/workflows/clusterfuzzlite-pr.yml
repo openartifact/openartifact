@@ -1,0 +1,63 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Code-change fuzzing: builds every native Go fuzz target (see
+# .clusterfuzzlite/build.sh) and fuzzes them for 10 minutes on pull requests
+# that touch Go code. A crash fails the check and is uploaded as an artifact;
+# SARIF goes to code scanning. Batch fuzzing and corpus pruning:
+# clusterfuzzlite-batch.yml. Local runs: docs/development/fuzzing.md.
+name: ClusterFuzzLite PR
+
+on:
+  pull_request:
+    paths:
+      - "**.go"
+      - "go.mod"
+      - "go.sum"
+      - ".clusterfuzzlite/**"
+      - ".github/workflows/clusterfuzzlite-pr.yml"
+
+concurrency:
+  group: clusterfuzzlite-pr-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  fuzz:
+    name: fuzz (code change)
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    permissions:
+      contents: read
+      actions: read # download the corpus of the last batch run
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - name: Build fuzzers
+        id: build
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: go
+          sanitizer: address # the only sanitizer ClusterFuzzLite supports for Go
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run fuzzers
+        id: run
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 600
+          mode: code-change
+          sanitizer: address
+          output-sarif: true
+          parallel-fuzzing: true
+
+      - name: Upload SARIF
+        # A fork's token cannot write code scanning alerts.
+        if: ${{ !cancelled() && github.event.pull_request.head.repo.full_name == github.repository && hashFiles('cifuzz-sarif/results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: cifuzz-sarif/results.sarif
+          category: clusterfuzzlite

@@ -95,6 +95,39 @@ make test-integration
 
 Write tests that assert behavior, not mock round-trips; poll with deadlines instead of fixed sleeps. gocyclo limit 20 applies to tests too, so prefer table-driven subtests.
 
+## Fuzzing
+
+Parsers of untrusted input (uploaded archives and metadata, proxied upstream indexes, SBOM documents, headers) have native Go fuzz targets, `func FuzzX(f *testing.F)` in `fuzz_test.go` files next to the code. Under `make test` they run over their seed corpus only, so they double as regression tests.
+
+Run one target locally with the Go fuzzer:
+
+```sh
+grep -rn --include='*_test.go' '^func Fuzz' .                     # list the targets
+go test -run='^$' -fuzz='^FuzzParseTarball$' -fuzztime=60s ./pkg/npm
+```
+
+When the fuzzer finds a failing input it writes it to `testdata/fuzz/FuzzX/<hash>` of the package and the next plain `go test` fails on it. Fix the code, keep that file as a regression seed (commit it with the fix) and do not commit anything else the fuzzer generated. A target should assert invariants that must always hold (round trips, size caps, no path escaping the root), not only "does not panic", stay fast (a few ms per input) and bound memory itself: archives are expanded through the size-capped readers the production code uses.
+
+[ClusterFuzzLite](https://google.github.io/clusterfuzzlite/) fuzzes the same targets in CI with libFuzzer and AddressSanitizer (the only sanitizer it supports for Go):
+
+| Workflow | Trigger | Does |
+|---|---|---|
+| `clusterfuzzlite-pr.yml` | pull requests touching Go files, `go.mod`/`go.sum` or `.clusterfuzzlite/` | Builds all targets and fuzzes them for 10 minutes in `code-change` mode; a crash fails the check and is uploaded as an artifact, SARIF goes to code scanning (same-repository PRs) |
+| `clusterfuzzlite-batch.yml` | weekly (Sun), manual | 1 hour of `batch` fuzzing of `main` that grows the corpus (kept in GitHub Actions artifacts), then corpus pruning |
+
+The build is defined in [`.clusterfuzzlite/`](../../.clusterfuzzlite): `Dockerfile` (the OSS-Fuzz Go builder image, pinned by digest and bumped by Dependabot), `build.sh` and `project.yaml` (`language: go`). `build.sh` finds every `func FuzzX(f *testing.F)` in a non-build-tagged `*_test.go` file and compiles it with `compile_native_go_fuzzer_v2` into a binary named `<package path>_<FuzzX>`, so a new target needs no registration. The compiler needs each fuzz function to be defined in exactly one file of its package directory.
+
+To build and run the exact CI binaries locally (docker or podman):
+
+```sh
+docker build -f .clusterfuzzlite/Dockerfile -t oa-cfl .
+mkdir -p out && docker run --rm -e FUZZING_ENGINE=libfuzzer -e SANITIZER=address -e ARCHITECTURE=x86_64 \
+  -e FUZZING_LANGUAGE=go -e PROJECT_NAME=openartifact -v "$PWD/out:/out" oa-cfl compile
+mkdir -p corpus && ./out/pkg_npm_FuzzParseTarball corpus -max_total_time=60
+```
+
+A crash artifact from CI reproduces with `./out/<binary> <crash-file>`. Convert it into a regression seed by adding the input to the target's seed corpus (`f.Add`) or as a `testdata/fuzz/FuzzX/` file.
+
 ## Conventions
 
 The full list lives in [AGENTS.md](../../AGENTS.md); the ones that most often matter:
@@ -132,6 +165,7 @@ Workflows live in [`.github/workflows`](../../.github/workflows). All actions ar
 |---|---|---|
 | `codeql.yml` | push to `main`, PRs, weekly (Mon) | CodeQL for Go and JavaScript/TypeScript |
 | `scorecard.yml` | push to `main`, branch-protection changes, weekly (Tue) | OpenSSF Scorecard, results published and uploaded as SARIF |
+| `clusterfuzzlite-pr.yml`, `clusterfuzzlite-batch.yml` | PRs touching Go, weekly (Sun) | ClusterFuzzLite fuzzing of the Go fuzz targets, see [Fuzzing](#fuzzing) |
 | `scheduled-scan.yml` | weekly (Mon), manual | Trivy scan of the *published* `latest` and latest stable semver images on ghcr.io, so new CVEs in released images are noticed |
 
 ### Documentation site

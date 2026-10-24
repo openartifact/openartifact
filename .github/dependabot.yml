@@ -81,6 +81,18 @@ updates:
         patterns: ["*"]
         update-types: [minor, patch]
 
+  # ClusterFuzzLite builder image (FROM tag@sha256).
+  - package-ecosystem: docker
+    directory: /.clusterfuzzlite
+    schedule:
+      interval: weekly
+    cooldown:
+      default-days: 7
+    groups:
+      fuzz-image:
+        patterns: ["*"]
+        update-types: [minor, patch]
+
   # docker-compose.yml images (tag@sha256).
   - package-ecosystem: docker-compose
     directory: /docker

@@ -1,0 +1,80 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Weekly batch fuzzing of main (builds up the corpus PR fuzzing starts from)
+# followed by corpus pruning. The corpus lives in GitHub Actions artifacts.
+# Pull-request fuzzing: clusterfuzzlite-pr.yml. Local runs:
+# docs/development/fuzzing.md.
+name: ClusterFuzzLite batch
+
+on:
+  schedule:
+    - cron: "41 2 * * 0" # weekly, Sunday 02:41 UTC
+  workflow_dispatch:
+
+concurrency:
+  group: clusterfuzzlite-batch
+  cancel-in-progress: false # never prune while a batch run writes the corpus
+
+permissions:
+  contents: read
+
+jobs:
+  batch:
+    name: batch fuzzing
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    permissions:
+      contents: read
+      actions: read # download the previous corpus
+      security-events: write # upload SARIF to code scanning
+    steps:
+      - name: Build fuzzers
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: go
+          sanitizer: address
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Run fuzzers
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 3600
+          mode: batch
+          sanitizer: address
+          output-sarif: true
+          parallel-fuzzing: true
+
+      - name: Upload SARIF
+        if: ${{ !cancelled() && hashFiles('cifuzz-sarif/results.sarif') != '' }}
+        uses: github/codeql-action/upload-sarif@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
+        with:
+          sarif_file: cifuzz-sarif/results.sarif
+          category: clusterfuzzlite
+
+  prune:
+    name: corpus pruning
+    needs: batch
+    if: ${{ !cancelled() }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: read
+      actions: read
+    steps:
+      - name: Build fuzzers
+        uses: google/clusterfuzzlite/actions/build_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          language: go
+          sanitizer: address
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Prune corpus
+        uses: google/clusterfuzzlite/actions/run_fuzzers@884713a6c30a92e5e8544c39945cd7cb630abcd1 # v1
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          fuzz-seconds: 1200
+          mode: prune
+          sanitizer: address
