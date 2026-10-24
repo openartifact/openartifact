@@ -2,7 +2,7 @@
 #
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
-# Documented false positives for `trivy fs` (see .github/workflows/ci.yml, job "security").
+# Documented exceptions for `trivy fs` and `trivy config` (see .github/workflows/ci.yml, job "security").
 secrets:
   - id: gcp-service-account
     paths:

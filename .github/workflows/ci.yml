@@ -354,6 +354,7 @@ jobs:
           scan-type: config
           scan-ref: .
           severity: HIGH,CRITICAL
+          trivyignores: .trivyignore.yaml
           limit-severities-for-sarif: true
           format: sarif
           output: trivy-config.sarif
@@ -374,6 +375,7 @@ jobs:
           scan-type: config
           scan-ref: .
           severity: HIGH,CRITICAL
+          trivyignores: .trivyignore.yaml
           format: table
           exit-code: "1"
 
