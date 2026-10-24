@@ -128,6 +128,29 @@ func TestNuGetGroup_VersionListsAreUnited(t *testing.T) {
 	}
 }
 
+func TestNuGetGroup_UnreadableVersionListLeavesTheMemberOut(t *testing.T) {
+	f := nugetGroup(t)
+	f.set("hosted", "v3/package/lib/index.json", 200, `{"versions":["1.0.0"]}`)
+	// JSON, but not a version list.
+	f.set("mirror", "v3/package/lib/index.json", 200, `{"versions":[1]}`)
+
+	w := f.get(http.MethodGet, "v3/package/lib/index.json")
+	if w.Code != http.StatusOK || strings.Join(nugetVersionsOf(t, w.Body.Bytes()), " ") != "1.0.0" {
+		t.Fatalf("answer %d %s, want the hosted member's versions", w.Code, w.Body.String())
+	}
+
+	if cc := w.Header().Get("Cache-Control"); !strings.Contains(cc, "no-store") {
+		t.Errorf("Cache-Control = %q, want no-store for an answer that lacks a member", cc)
+	}
+
+	// Nothing readable at all.
+	f.set("hosted", "v3/package/lib/index.json", 404, "")
+
+	if w := f.get(http.MethodGet, "v3/package/lib/index.json"); w.Code != http.StatusBadGateway {
+		t.Errorf("only an unreadable list = %d, want 502", w.Code)
+	}
+}
+
 func TestNuGetGroup_RegistrationsAreMergedAndRewritten(t *testing.T) {
 	f := nugetGroup(t)
 	f.set("hosted", "v3/registration/lib/index.json", 200, nugetInlineIndex("hosted", "lib", "1.0.0", "1.1.0"))

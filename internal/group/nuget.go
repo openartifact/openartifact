@@ -204,25 +204,38 @@ func (n *nugetRequest) serveLeaf(w http.ResponseWriter, r *http.Request, relPath
 
 func (n *nugetRequest) serveVersions(w http.ResponseWriter, r *http.Request, relPath string) {
 	var (
-		docs   [][]byte
+		lists  [][]string
 		failed bool
 	)
 
 	for _, m := range n.members {
 		d := n.ask(m, relPath)
-		if d.found {
-			docs = append(docs, d.body)
+		failed = failed || d.failed
+
+		if !d.found {
+			continue
 		}
 
-		failed = failed || d.failed
+		// A member whose list cannot be read is left out, as one whose
+		// registration cannot be, instead of failing the others' versions.
+		list, err := pkgnuget.ParseVersionList(d.body)
+		if err != nil {
+			n.h.log.Warnw("unreadable nuget version list from group member", "group", n.grp.Name, "member", m.Name, "path", relPath, "error", err)
+
+			failed = true
+
+			continue
+		}
+
+		lists = append(lists, list)
 	}
 
-	if len(docs) == 0 {
+	if len(lists) == 0 {
 		n.write(w, r, nil, failed)
 		return
 	}
 
-	body, err := pkgnuget.MergeVersionLists(docs...)
+	body, err := pkgnuget.MergeVersions(lists...)
 	if err != nil {
 		n.h.log.Errorw("failed to merge nuget version lists", "group", n.grp.Name, "error", err)
 		http.Error(w, "member repository error", http.StatusBadGateway)

@@ -438,24 +438,48 @@ func MergeRegistrationItems(indexURL string, sources ...[]json.RawMessage) ([]by
 	return out, nil
 }
 
+// ParseVersionList returns the versions of a flat-container version list
+// ({"versions":[...]}).
+func ParseVersionList(doc []byte) ([]string, error) {
+	var in struct {
+		Versions []string `json:"versions"`
+	}
+
+	if err := json.Unmarshal(doc, &in); err != nil {
+		return nil, fmt.Errorf("parse version list: %w", err)
+	}
+
+	return in.Versions, nil
+}
+
 // MergeVersionLists unites flat-container version lists ({"versions":[...]}):
-// one entry per version, ordered by version.
+// one entry per version, ordered by version. A list that cannot be read fails
+// the merge; MergeVersions merges the ones that were.
 func MergeVersionLists(docs ...[]byte) ([]byte, error) {
+	lists := make([][]string, len(docs))
+
+	for i, doc := range docs {
+		list, err := ParseVersionList(doc)
+		if err != nil {
+			return nil, err
+		}
+
+		lists[i] = list
+	}
+
+	return MergeVersions(lists...)
+}
+
+// MergeVersions unites lists of versions into a flat-container version list:
+// one normalized entry per version, ordered by version.
+func MergeVersions(lists ...[]string) ([]byte, error) {
 	var (
 		versions []string
 		seen     = map[string]bool{}
 	)
 
-	for _, doc := range docs {
-		var in struct {
-			Versions []string `json:"versions"`
-		}
-
-		if err := json.Unmarshal(doc, &in); err != nil {
-			return nil, fmt.Errorf("parse version list: %w", err)
-		}
-
-		for _, v := range in.Versions {
+	for _, list := range lists {
+		for _, v := range list {
 			n, _ := Normalize(v)
 			if !seen[n] {
 				seen[n] = true
