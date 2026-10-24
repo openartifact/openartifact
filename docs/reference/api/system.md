@@ -37,14 +37,7 @@ Returns the public version and health status. Detailed build and runtime informa
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | System information | `application/json`: object |
-
-Fields of the `200` response (`application/json`):
-
-| Field | Type | Required | Description |
-|---|---|---|---|
-| `status` | string | no | - |
-| `version` | string | no | - |
+| `200` | System information | `application/json`: [PublicSystemInfo](schemas.md#publicsysteminfo) |
 
 ### `GET /health`
 

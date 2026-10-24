@@ -4,12 +4,12 @@
 
 import { request, ApiError } from './client'
 import { pagedResponse, type PagedResult } from './transform'
-import type { User, Group, PermissionTarget, SystemInfo } from './generated/types.gen'
+import type { User, Group, PermissionTarget, PublicSystemInfo, SystemInfo } from './generated/types.gen'
 
 export type UserItem = User
 export type GroupItem = Group
 export type PermissionItem = PermissionTarget
-export type { SystemInfo }
+export type { PublicSystemInfo, SystemInfo }
 
 /** Actions understood by the permission-target handler (validActions in Go). */
 export const PERMISSION_ACTIONS = ['read', 'write', 'delete', 'manage', 'annotate'] as const
@@ -143,9 +143,9 @@ export const revokePermission = (id: string | number) =>
   request<void>(`/api/v1/permission-targets/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
 
 // System
-export async function getSystemInfo(): Promise<SystemInfo | null> {
+export async function getSystemInfo(): Promise<PublicSystemInfo | null> {
   try {
-    return await request<SystemInfo>('/api/v1/system/info')
+    return await request<PublicSystemInfo>('/api/v1/system/info')
   } catch (err) {
     if (err instanceof ApiError && (err.status === 404 || err.status === 501)) {
       return null

@@ -110,6 +110,12 @@ PostgreSQL is the only supported database.
 | `OPENARTIFACT_DOCKER_UPLOAD_DIR` | `workers.dockerUploadDir` | `/tmp/openartifact/docker-uploads` | Directory where in-progress Docker blob uploads are staged; use a persistent volume that all replicas handling one upload share |
 | `OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS` | `workers.webhookDeliveryRetentionDays` | `30` | Days finished (success or failed) webhook delivery records are kept; the hourly purge deletes older ones. `0` keeps them forever. Must not be negative |
 
+### Documentation links (`docs`)
+
+| Environment variable | YAML key | Default | Description |
+|---|---|---|---|
+| `OPENARTIFACT_DOCS_BASE_URL` | `docs.baseUrl` | `https://openartifact.github.io/` | Root of the published documentation the web UI links to. The server appends `vX.Y/` for a release build (`MAJOR.MINOR.PATCH`) and `latest/` otherwise, and reports the result as `docs_url` in `GET /api/v1/system/info`. Point it at a mirror for air-gapped installs; empty hides every documentation link |
+
 ### Trash (`trash`)
 
 | Environment variable | YAML key | Default | Meaning |

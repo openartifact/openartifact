@@ -28,6 +28,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <PlusIcon class="w-4 h-4" aria-hidden="true" />
         {{ t('admin.sso.add') }}
       </AppButton>
+      <DocsLink :url="docsUrl" class="mt-3">{{ t('docs.sso') }}</DocsLink>
     </div>
 
     <!-- Provider Cards Grid -->
@@ -295,8 +296,10 @@ import {
 } from '../../lib/ssoOidcForm'
 import AppButton from '../../components/AppButton.vue'
 import AppToggle from '../../components/AppToggle.vue'
+import DocsLink from '../../components/DocsLink.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import AdminDialog from '../../components/AdminDialog.vue'
+import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import { formatDate, formatTime } from '../../lib/datetime'
@@ -327,6 +330,7 @@ interface TestOutcome {
 }
 
 const toasts = useToastStore()
+const docsUrl = useDocsLink('admin-sso')
 
 const providers = ref<SSOProvider[]>([])
 const loading = ref(true)

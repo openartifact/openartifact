@@ -10,6 +10,12 @@ import { GlobalRegistrator } from '@happy-dom/global-registrator'
 // DOM setup
 GlobalRegistrator.register({ url: 'http://localhost/' })
 
+// No test talks to a server: a component that loads data on mount (the docs
+// base behind every page header, the version in the sidebar) must be answered
+// by a spy or fail at once instead of dialling localhost:80. isolation.ts
+// restores this stub after each test.
+globalThis.fetch = (() => Promise.reject(new TypeError('network disabled in tests: spy on fetch'))) as typeof fetch
+
 // Vue SFC loader for `*.vue` imports under `bun test`.
 plugin({
   name: 'vue-sfc',

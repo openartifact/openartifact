@@ -30,7 +30,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
-      <div v-else-if="tokens.length === 0" class="px-4 py-8 text-center text-muted">{{ t('adm.tokens.empty') }}</div>
+      <EmptyState
+        v-else-if="tokens.length === 0"
+        :title="t('adm.tokens.empty')"
+        :description="t('adm.tokens.emptyHint')"
+        :docs-url="docsUrl"
+        :docs-label="t('docs.tokens')"
+      />
       <div v-else class="overflow-x-auto">
         <DataTable :columns="columns" :rows="tokens as Record<string, unknown>[]" row-key="id">
           <template #cell-name="{ value }">
@@ -103,6 +109,8 @@ import { ref, computed, onMounted, watch } from 'vue'
 import AppButton from '../../components/AppButton.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import DataTable, { type Column } from '../../components/DataTable.vue'
+import EmptyState from '../../components/EmptyState.vue'
+import { useDocsLink } from '../../composables/useDocsLink'
 import { listTokens, revokeToken, type AdminToken } from '../../api/tokens'
 import { listAllUsers, type UserItem } from '../../api/admin'
 import { useToastStore } from '../../stores/toast'
@@ -131,6 +139,7 @@ const loading = ref(false)
 const loadError = ref('')
 const page = ref(1)
 const toasts = useToastStore()
+const docsUrl = useDocsLink('admin-tokens')
 
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 

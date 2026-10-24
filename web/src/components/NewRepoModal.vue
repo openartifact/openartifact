@@ -56,6 +56,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                       <div class="mt-0.5 text-caption text-muted leading-snug">{{ ty.desc }}</div>
                     </button>
                   </div>
+                  <p class="mt-1.5 text-xs text-muted" data-testid="immutable-hint">{{ t('wizard.immutable') }}</p>
                 </fieldset>
   
                 <!-- Proxy: upstream -->

@@ -106,6 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           v-else-if="members.length === 0"
           :title="t('repoDetail.group.emptyTitle')"
           :description="t('repoDetail.group.emptyHint')"
+          :docs-url="repoTypesDocs"
         />
         <section v-else class="rounded-xl border border-border bg-surface overflow-hidden">
           <div class="px-4 py-3 border-b border-border">
@@ -149,6 +150,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <EmptyState
             :title="t('repoDetail.proxy.emptyTitle')"
             :description="t('repoDetail.proxy.emptyHint')"
+            :docs-url="repoTypesDocs"
           />
         </div>
         <div v-else-if="packages.length === 0" class="space-y-6">
@@ -296,6 +298,7 @@ import RepoCleanupTab from './RepoCleanupTab.vue'
 import RepoFederationTab from './RepoFederationTab.vue'
 import RepoSettingsTab from './RepoSettingsTab.vue'
 import { useSessionStore } from '../stores/session'
+import { useDocsLink } from '../composables/useDocsLink'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import { repoBaseUrl } from '../lib/installCommands'
@@ -315,6 +318,8 @@ const route = useRoute()
 const router = useRouter()
 const toasts = useToastStore()
 const session = useSessionStore()
+// Proxy caches and group members are explained next to the repository list, not with the client setup.
+const repoTypesDocs = useDocsLink('repos')
 const repo = ref<Repository | null>(null)
 const packages = ref<PackageItem[]>([])
 const totalPackages = ref(0)

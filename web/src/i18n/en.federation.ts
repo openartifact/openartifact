@@ -14,6 +14,8 @@ export const enFederation = {
   'federation.enable': 'Federate this repository',
   'federation.enableHint':
     'Turning it on records every change in a log that peers pull, and adds the content already stored to that log.',
+  'federation.disableHint':
+    'Turning it off deletes this repository\'s change log and its peers here. The other instances keep their copy of the content.',
   'federation.enabled': 'Federation enabled',
   'federation.disabled': 'Federation disabled',
   'federation.toggleFailed': 'Could not change federation.',

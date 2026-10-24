@@ -13,6 +13,7 @@
 //   - globals replaced by assignment (fetch, XMLHttpRequest)
 //   - spies created with spyOn()
 //   - the active Pinia
+//   - the shared system info (version, docs base) of useAppVersion
 //   - fake timers
 //   - DOM state shared through the one happy-dom window: body, <html>
 //     attributes, localStorage/sessionStorage, cookies, window.location
@@ -24,6 +25,7 @@
 import { afterEach, jest, mock } from 'bun:test'
 import { setActivePinia } from 'pinia'
 import { enableAutoUnmount } from '@vue/test-utils'
+import { resetAppInfo } from '../src/composables/useAppVersion'
 
 const originalFetch = globalThis.fetch
 const originalXMLHttpRequest = globalThis.XMLHttpRequest
@@ -39,6 +41,8 @@ afterEach(() => {
   globalThis.XMLHttpRequest = originalXMLHttpRequest
 
   setActivePinia(undefined)
+  // The server version and docs base are fetched once per process; start every test unloaded.
+  resetAppInfo()
 
   document.body.innerHTML = ''
   document.documentElement.removeAttribute('class')

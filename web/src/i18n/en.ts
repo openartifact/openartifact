@@ -438,9 +438,20 @@ const base = {
   'settings.tokens.subtitle': 'Tokens grant API access on your behalf. Keep them secret.',
   'settings.theme': 'Theme',
   'settings.tokens.empty': 'You have no active tokens.',
+  'settings.tokens.emptyHint': 'Package clients and CI jobs sign in with a token; your account password only works for the web UI.',
   'settings.tokens.create': 'Create token',
   'settings.tokens.label': 'Label',
   'settings.tokens.expires': 'Expires',
+
+  // Documentation links
+  'docs.helpPage': 'Open the documentation for this page (new tab)',
+  'docs.readMore': 'Read the documentation',
+  'docs.sso': 'Set up single sign-on',
+  'docs.tokens': 'About API tokens',
+  'docs.rbac': 'How permission targets work',
+  'docs.projects': 'About projects',
+  'docs.webhooks': 'Webhook events and signatures',
+  'docs.trash': 'How the trash and retention work',
 } as const
 
 const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation } satisfies Record<string, string>

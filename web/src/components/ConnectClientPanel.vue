@@ -8,7 +8,17 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <section class="rounded-lg border border-border bg-surface">
     <div class="px-4 py-3 border-b border-border">
       <h2 class="text-sm font-semibold text-foreground">{{ t('repoDetail.connect.title') }}</h2>
-      <p class="text-xs text-muted mt-0.5">{{ t('repoDetail.connect.hint') }}</p>
+      <p class="text-xs text-muted mt-0.5">
+        {{ t('repoDetail.connect.hint') }}
+        <a
+          v-if="docsUrl"
+          :href="docsUrl"
+          target="_blank"
+          rel="noopener"
+          data-testid="connect-docs"
+          class="whitespace-nowrap underline underline-offset-2 hover:text-foreground"
+        >{{ t('repoDetail.connect.docs') }}</a>
+      </p>
     </div>
 
     <div
@@ -63,10 +73,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
 import { clientSetup } from '../lib/installCommands'
+import { useDocsLink } from '../composables/useDocsLink'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 
 const props = defineProps<{ format: string; repo: string }>()
+
+// The client-setup page lists the configure and publish commands of every client.
+const docsUrl = useDocsLink('repo-detail')
 
 const toasts = useToastStore()
 const active = ref(0)

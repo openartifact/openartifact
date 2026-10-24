@@ -439,6 +439,21 @@
           }
         }
       },
+      "PublicSystemInfo": {
+        "type": "object",
+        "properties": {
+          "version": {
+            "type": "string"
+          },
+          "status": {
+            "type": "string"
+          },
+          "docs_url": {
+            "type": "string",
+            "description": "Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled."
+          }
+        }
+      },
       "SystemInfo": {
         "type": "object",
         "properties": {
@@ -4708,15 +4723,7 @@
             "content": {
               "application/json": {
                 "schema": {
-                  "type": "object",
-                  "properties": {
-                    "version": {
-                      "type": "string"
-                    },
-                    "status": {
-                      "type": "string"
-                    }
-                  }
+                  "$ref": "#/components/schemas/PublicSystemInfo"
                 }
               }
             }

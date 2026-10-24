@@ -52,7 +52,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
 
       <div v-else-if="webhooks.length === 0" class="bg-surface rounded-xl border-0">
-        <EmptyState :title="t('adm.webhooks.empty')" :description="t('adm.webhooks.emptyHint')" />
+        <EmptyState
+          :title="t('adm.webhooks.empty')"
+          :description="t('adm.webhooks.emptyHint')"
+          :docs-url="docsUrl"
+          :docs-label="t('docs.webhooks')"
+        />
       </div>
 
       <div v-else class="overflow-x-auto">
@@ -254,6 +259,7 @@ import PageHeader from '../../components/PageHeader.vue'
 import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import { request } from '../../api/client'
+import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t, tDynamic } from '../../i18n/en'
 import {
@@ -296,6 +302,7 @@ interface WebhookListResponse {
 }
 
 const toasts = useToastStore()
+const docsUrl = useDocsLink('admin-webhooks')
 
 const webhooks = ref<Webhook[]>([])
 const loading = ref(false)

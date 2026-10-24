@@ -148,6 +148,19 @@ describe('RepoFederationTab', () => {
     expect(w.find('[data-testid="federation-peers"]').exists()).toBe(false)
   })
 
+  it('says what enabling does while off and what disabling drops while on', async () => {
+    serve(baseStatus({ enabled: false }))
+    const off = await mountTab()
+    expect(off.text()).toContain('records every change in a log')
+    expect(off.find('[data-testid="federation-disable-hint"]').exists()).toBe(false)
+    off.unmount()
+
+    serve(baseStatus({ enabled: true }))
+    const on = await mountTab()
+    expect(on.get('[data-testid="federation-disable-hint"]').text()).toContain('deletes this repository')
+    expect(on.text()).not.toContain('records every change in a log')
+  })
+
   it('enables federation with a PUT and tells the parent', async () => {
     const server = serve(baseStatus({ enabled: false }))
     const w = await mountTab()

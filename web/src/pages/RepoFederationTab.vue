@@ -35,6 +35,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ t('federation.unsupported.hint') }}
         </p>
         <p v-else-if="!status.enabled" class="text-xs text-muted">{{ t('federation.enableHint') }}</p>
+        <p v-else class="text-xs text-muted" data-testid="federation-disable-hint">{{ t('federation.disableHint') }}</p>
 
         <dl v-if="status.enabled" class="grid grid-cols-2 sm:grid-cols-5 gap-4 text-xs" data-testid="federation-stats">
           <div class="min-w-0">

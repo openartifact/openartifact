@@ -49,6 +49,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else-if="items.length === 0" class="px-4 py-10 text-center">
         <p class="text-foreground font-medium">{{ t('trash.empty') }}</p>
         <p class="mt-1 text-sm text-muted">{{ t('trash.emptyHint') }}</p>
+        <DocsLink :url="docsUrl" class="mt-3">{{ t('docs.trash') }}</DocsLink>
       </div>
       <div v-else class="overflow-x-auto">
         <table class="w-full text-left">
@@ -149,6 +150,7 @@ import { useRoute } from 'vue-router'
 import { ArrowUturnLeftIcon, TrashIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import DocsLink from '../components/DocsLink.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import Pagination from '../components/Pagination.vue'
 import { ApiError } from '../api/client'
@@ -157,6 +159,7 @@ import { emptyRepoTrash, listTrash, purgeTrash, restoreTrash, type TrashItem, ty
 import { formatDateTime } from '../lib/datetime'
 import { emptyTrashResultText, purgeInText, trashCapabilities, type RepoPermissions } from '../lib/trash'
 import { useSessionStore } from '../stores/session'
+import { useDocsLink } from '../composables/useDocsLink'
 import { useToastStore } from '../stores/toast'
 import { t, tDynamic } from '../i18n/en'
 
@@ -165,6 +168,8 @@ const PAGE_SIZE = 50
 const route = useRoute()
 const session = useSessionStore()
 const toasts = useToastStore()
+// The repository and the global trash share one docs page.
+const docsUrl = useDocsLink('repo-trash')
 
 // Per-repository view when the route carries :name; global admin view otherwise.
 const repo = computed(() => (route.params.name ? String(route.params.name) : ''))

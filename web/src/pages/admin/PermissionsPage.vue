@@ -25,7 +25,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
-      <div v-else-if="permissions.length === 0" class="px-4 py-8 text-center text-muted">{{ t('adm.permissions.empty') }}</div>
+      <EmptyState
+        v-else-if="permissions.length === 0"
+        :title="t('adm.permissions.empty')"
+        :description="t('adm.permissions.emptyHint')"
+        :docs-url="docsUrl"
+        :docs-label="t('docs.rbac')"
+      />
       <div v-else class="overflow-x-auto">
         <table class="w-full text-sm">
           <thead>
@@ -191,11 +197,14 @@ import {
   type GroupItem,
 } from '../../api/admin'
 import AdminDialog from '../../components/AdminDialog.vue'
+import EmptyState from '../../components/EmptyState.vue'
+import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import { TrashIcon } from '@heroicons/vue/24/outline'
 
 const toasts = useToastStore()
+const docsUrl = useDocsLink('admin-permissions')
 
 const permissions = ref<PermissionItem[]>([])
 const users = ref<UserItem[]>([])

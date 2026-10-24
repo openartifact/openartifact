@@ -236,6 +236,14 @@ This page lists every configuration key with its type, built-in default and the 
 | `trash.retentionDays` | `OPENARTIFACT_TRASH_RETENTION` | int | `7` | `retentionDays` is how many days a deleted artifact, version or repository stays restorable before the purge worker removes it for good. It applies to repositories without their own trash_retention_days; 0 disables the trash (deletes are immediate and permanent). |
 | `trash.purgeInterval` | `OPENARTIFACT_TRASH_PURGE_INTERVAL` | duration | `15m` | `purgeInterval` is the pause between purge passes. Zero or negative disables the schedule: nothing expires until an admin purges by hand. |
 
+## docs
+
+`docs` configures the links from the web UI to the published documentation.
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `docs.baseUrl` | `OPENARTIFACT_DOCS_BASE_URL` | string | `https://openartifact.github.io/` | `baseUrl` is the root of the published documentation site; the web UI links to the version matching the server (release builds) or to the latest docs (development builds). Point it at an internal mirror for air-gapped installs; empty hides every documentation link. |
+
 ## blobDeletion
 
 `blobDeletion` tunes the deferred deletion of blob bytes (see [operations/storage.md](../operations/storage.md)).

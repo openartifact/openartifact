@@ -21,7 +21,11 @@ const MINE = {
 }
 
 let fetchSpy: Mock<typeof fetch>
-const requests = () => fetchSpy.mock.calls.map((c) => `${(c[1] as RequestInit | undefined)?.method ?? 'GET'} ${String(c[0])}`)
+// The shared system info (docs base behind the empty-state link) is not part of what these tests assert.
+const requests = () =>
+  fetchSpy.mock.calls
+    .map((c) => `${(c[1] as RequestInit | undefined)?.method ?? 'GET'} ${String(c[0])}`)
+    .filter((r) => r !== 'GET /api/v1/system/info')
 
 function makeRouter() {
   return createRouter({

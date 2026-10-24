@@ -29,6 +29,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       v-else-if="projects.length === 0"
       :title="t('projects.empty')"
       :description="showAll ? t('projects.emptyAll') : canCreate ? t('projects.emptyCanCreate') : t('projects.emptyHint')"
+      :docs-url="docsUrl"
+      :docs-label="t('docs.projects')"
     />
 
     <div v-else class="rounded-xl border border-border bg-surface overflow-hidden">
@@ -118,12 +120,14 @@ import ProjectRoleBadge from '../components/ProjectRoleBadge.vue'
 import { createProject, listProjects, type Project } from '../api/projects'
 import { errorStatus } from '../lib/projectAccess'
 import { useSessionStore } from '../stores/session'
+import { useDocsLink } from '../composables/useDocsLink'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 
 const router = useRouter()
 const session = useSessionStore()
 const toasts = useToastStore()
+const docsUrl = useDocsLink('projects')
 
 const projects = ref<Project[]>([])
 const canCreate = ref(false)

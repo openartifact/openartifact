@@ -87,6 +87,8 @@ type Config struct {
 	// registry garbage collection and upload staging, webhook retention.
 	Workers WorkersConfig `yaml:"workers"`
 	Trash   TrashConfig   `yaml:"trash"`
+	// Docs configures the links from the web UI to the published documentation.
+	Docs DocsConfig `yaml:"docs"`
 	// BlobDeletion tunes the deferred deletion of blob bytes (see
 	// docs/operations/storage.md).
 	BlobDeletion BlobDeletionConfig `yaml:"blobDeletion"`
@@ -152,6 +154,15 @@ type WorkersConfig struct {
 	// failed) webhook delivery records are kept before the hourly purge deletes
 	// them. 0 keeps them forever. Pending deliveries are never purged.
 	WebhookDeliveryRetentionDays int `yaml:"webhookDeliveryRetentionDays"`
+}
+
+// DocsConfig configures the documentation links shown in the web UI.
+type DocsConfig struct {
+	// BaseURL is the root of the published documentation site; the web UI
+	// links to the version matching the server (release builds) or to the
+	// latest docs (development builds). Point it at an internal mirror for
+	// air-gapped installs; empty hides every documentation link.
+	BaseURL string `yaml:"baseUrl"`
 }
 
 // TrashConfig tunes soft delete (see docs/operations/trash.md).
@@ -573,6 +584,7 @@ func defaultConfig() *Config {
 			WebhookDeliveryRetentionDays: 30,
 		},
 		StorageReplica: defaultReplicaConfig(),
+		Docs:           DocsConfig{BaseURL: "https://openartifact.github.io/"},
 		Trash: TrashConfig{
 			RetentionDays: 7,
 			PurgeInterval: 15 * time.Minute,
@@ -759,6 +771,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Workers.DockerUploadTTL, "OPENARTIFACT_DOCKER_UPLOAD_TTL")
 	overrideString(&cfg.Workers.DockerUploadDir, "OPENARTIFACT_DOCKER_UPLOAD_DIR")
 	overrideInt(&cfg.Workers.WebhookDeliveryRetentionDays, "OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS")
+	overrideString(&cfg.Docs.BaseURL, "OPENARTIFACT_DOCS_BASE_URL")
 	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
 	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
 

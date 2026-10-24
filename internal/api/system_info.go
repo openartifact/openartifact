@@ -7,7 +7,9 @@ package api
 import (
 	"context"
 	"net/http"
+	"regexp"
 	"runtime"
+	"strings"
 	"sync"
 	"time"
 
@@ -15,6 +17,8 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/storage"
 )
+
+var releaseVersionRe = regexp.MustCompile(`^v?(\d+)\.(\d+)\.\d+$`)
 
 const (
 	// healthCacheTTL bounds how often the DB and storage are probed, so
@@ -32,6 +36,7 @@ type SystemInfoHandler struct {
 	db          database.Database
 	blobStore   storage.BlobStore
 	storageType string
+	docsURL     string
 
 	mu            sync.Mutex
 	checkedAt     time.Time
@@ -49,6 +54,32 @@ func NewSystemInfoHandler(version, commit, buildTime string, db database.Databas
 		blobStore:   blobStore,
 		storageType: storageType,
 	}
+}
+
+// WithDocsBaseURL sets the documentation site root the public info endpoint
+// advertises as docs_url, resolved against the server version.
+func (h *SystemInfoHandler) WithDocsBaseURL(base string) *SystemInfoHandler {
+	h.docsURL = docsURL(base, h.version)
+
+	return h
+}
+
+// docsURL returns base (normalised to one trailing slash) followed by vX.Y/
+// when version is a plain MAJOR.MINOR.PATCH release (optional leading "v"),
+// else latest/. An empty base yields "".
+func docsURL(base, version string) string {
+	base = strings.TrimSpace(base)
+	if base == "" {
+		return ""
+	}
+
+	base = strings.TrimRight(base, "/") + "/"
+
+	if m := releaseVersionRe.FindStringSubmatch(version); m != nil {
+		return base + "v" + m[1] + "." + m[2] + "/"
+	}
+
+	return base + "latest/"
 }
 
 // RegisterPublic registers the unauthenticated, trimmed endpoint: version and
@@ -110,10 +141,15 @@ func (h *SystemInfoHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 		status = "degraded"
 	}
 
-	writeJSON(w, http.StatusOK, map[string]any{
+	body := map[string]any{
 		"version": h.version,
 		"status":  status,
-	})
+	}
+	if h.docsURL != "" {
+		body["docs_url"] = h.docsURL
+	}
+
+	writeJSON(w, http.StatusOK, body)
 }
 
 func (h *SystemInfoHandler) handleDetails(w http.ResponseWriter, _ *http.Request) {

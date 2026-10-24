@@ -923,6 +923,14 @@ Partial update: omitted fields stay unchanged.
 | `stages` | array of [PipelineStage](#pipelinestage) | yes | - |
 | `updated_at` | string (date-time) | yes | - |
 
+### PublicSystemInfo
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `docs_url` | string | no | Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled. |
+| `status` | string | no | - |
+| `version` | string | no | - |
+
 ### Quota
 
 | Field | Type | Required | Description |

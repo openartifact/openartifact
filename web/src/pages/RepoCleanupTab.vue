@@ -12,6 +12,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div>
         <h2 class="text-base font-semibold text-foreground">{{ t('cleanup.title') }}</h2>
         <p class="text-sm text-muted mt-0.5">{{ t('cleanup.subtitle') }}</p>
+        <p class="text-xs text-muted mt-1 max-w-2xl" data-testid="cleanup-warning">{{ t('cleanup.deletesHint') }}</p>
       </div>
       <AppButton size="sm" class="shrink-0" @click="openDrawer('create')">
         <PlusIcon class="w-4 h-4" aria-hidden="true" />

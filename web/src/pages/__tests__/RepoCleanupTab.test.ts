@@ -45,3 +45,19 @@ describe('RepoCleanupTab dry run', () => {
     expect(document.querySelector('[data-testid="dryrun-item"]')?.textContent).toContain('org.a:lib')
   })
 })
+
+describe('RepoCleanupTab warning', () => {
+  it('says that enabled policies delete on a schedule and point at the dry run and the trash', async () => {
+    spy = spyOn(globalThis, 'fetch').mockImplementation(async () => json({ policies: [] }))
+    const wrapper = mount(RepoCleanupTab, {
+      props: { repoName: 'r' },
+      global: { plugins: [createPinia()] },
+      attachTo: document.body,
+    })
+    await flushPromises()
+    const warning = wrapper.get('[data-testid="cleanup-warning"]').text()
+    expect(warning).toContain('on its schedule')
+    expect(warning).toContain('dry run')
+    expect(warning).toContain('trash')
+  })
+})

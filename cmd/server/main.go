@@ -808,7 +808,7 @@ func run(args []string) error {
 	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(trustedProxies).RegisterPublic(router)
 	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(trustedProxies).RegisterPublic(router)
 
-	sysInfoHandler := api.NewSystemInfoHandler(version, commit, buildTime, db, blobStore, cfg.Storage.Type)
+	sysInfoHandler := api.NewSystemInfoHandler(version, commit, buildTime, db, blobStore, cfg.Storage.Type).WithDocsBaseURL(cfg.Docs.BaseURL)
 	sysInfoHandler.RegisterPublic(router)
 
 	// Public SSO provider list (no auth required — used by login page)

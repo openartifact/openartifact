@@ -106,6 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <PlusIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('adm.projects.new') }}
         </AppButton>
+        <div class="mt-3"><DocsLink :url="docsUrl">{{ t('docs.projects') }}</DocsLink></div>
       </div>
 
       <table v-else class="w-full">
@@ -597,9 +598,11 @@ import {
   type ProjectMemberRole,
   type ProjectRepoType,
 } from '../../api/projects'
+import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import AdminDialog from '../../components/AdminDialog.vue'
+import DocsLink from '../../components/DocsLink.vue'
 import {
   BuildingOfficeIcon,
   UsersIcon,
@@ -624,6 +627,7 @@ interface ProjectForm {
 }
 
 const toasts = useToastStore()
+const docsUrl = useDocsLink('admin-projects')
 const items = ref<Project[]>([])
 const users = ref<UserItem[]>([])
 const allGroups = ref<GroupItem[]>([])

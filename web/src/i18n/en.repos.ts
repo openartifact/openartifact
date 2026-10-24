@@ -159,6 +159,8 @@ export const enRepos = {
   'dashboard.kpi.proxyGroup': 'Proxy / group',
   'cleanup.title': 'Cleanup policies',
   'cleanup.subtitle': 'Automatically remove old artifacts based on retention rules.',
+  'cleanup.deletesHint':
+    'An enabled policy removes matching versions on its schedule, not only when you run it. Preview it with a dry run first. Removed versions go to the trash and can be restored until the trash retention period ends; with the trash off they are gone at once.',
   'cleanup.empty': 'No cleanup policies',
   'cleanup.emptyHint': 'Add a policy to automatically prune old artifact versions.',
   'cleanup.never': 'Never',
@@ -225,6 +227,7 @@ export const enRepos = {
   'repoDetail.copied': 'Copied',
   'repoDetail.connect.title': 'Connect a client',
   'repoDetail.connect.hint': 'No packages yet. Configure your client, then publish. Replace the placeholders with your own credentials.',
+  'repoDetail.connect.docs': 'All client commands in the docs',
   'repoDetail.connect.configure': 'Configure',
   'repoDetail.connect.publish': 'Publish',
   'repoDetail.connect.clients': 'Clients',

@@ -113,7 +113,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
           <!-- Step 1: Format -->
           <template v-else-if="step === 1">
-            <p v-if="isEdit" class="mb-3 text-xs text-muted">{{ t('wizard.immutable') }}</p>
+            <p class="mb-3 text-xs text-muted" data-testid="immutable-hint">{{ t('wizard.immutable') }}</p>
             <p v-if="form.type === 'proxy'" class="mb-3 text-xs text-muted">{{ t('repos.new.proxyFormatsHint') }}</p>
             <p v-else-if="form.type === 'group'" class="mb-3 text-xs text-muted">{{ t('repos.new.groupFormatsHint') }}</p>
             <div class="grid grid-cols-3 gap-3">
@@ -138,7 +138,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
           <!-- Step 2: Type -->
           <template v-else-if="step === 2">
-            <p v-if="isEdit" class="mb-3 text-xs text-muted">{{ t('wizard.immutable') }}</p>
+            <p class="mb-3 text-xs text-muted" data-testid="immutable-hint">{{ t('wizard.immutable') }}</p>
             <div class="grid grid-cols-1 gap-3">
               <button
                 v-for="ty in types"

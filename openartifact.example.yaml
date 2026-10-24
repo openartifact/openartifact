@@ -249,6 +249,12 @@ trash:
   retentionDays: 7
   purgeInterval: 15m
 
+# Documentation links in the web UI. baseUrl is the root of the published
+# docs; the UI appends the version (vX.Y/ for releases, latest/ otherwise).
+# Point it at a mirror for air-gapped installs; empty hides the links.
+docs:
+  baseUrl: https://openartifact.github.io/
+
 # Federated repositories: peer-to-peer replication of hosted repositories
 # between instances. enabled is the master switch of the pull workers and of
 # the /federation/v1 peer endpoints. See docs/operations/federation.md.

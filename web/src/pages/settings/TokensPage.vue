@@ -17,7 +17,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <!-- Token List -->
     <div v-if="!loading" class="mt-5">
-      <EmptyState v-if="tokens.length === 0" :title="t('settings.tokens.empty')" />
+      <EmptyState
+        v-if="tokens.length === 0"
+        :title="t('settings.tokens.empty')"
+        :description="t('settings.tokens.emptyHint')"
+        :docs-url="docsUrl"
+        :docs-label="t('docs.tokens')"
+      />
       <div v-else class="bg-surface rounded-xl border border-border overflow-hidden">
         <!-- List Header -->
         <div class="px-6 py-4 border-b border-border">
@@ -128,6 +134,7 @@ import AdminDialog from '../../components/AdminDialog.vue'
 import { listMyTokens, createMyToken, revokeMyToken, type ApiToken, type CreatedToken } from '../../api/tokens'
 import EmptyState from '../../components/EmptyState.vue'
 import TokenSecretDialog from '../../components/TokenSecretDialog.vue'
+import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
@@ -139,6 +146,7 @@ const createOpen = ref(false)
 const newToken = ref({ label: '' })
 const revealed = ref<CreatedToken | null>(null)
 const toasts = useToastStore()
+const docsUrl = useDocsLink('settings-tokens')
 
 function isExpired(token: ApiToken): boolean {
   return !!(token.expires_at && new Date(token.expires_at) < new Date())

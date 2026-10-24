@@ -32,6 +32,18 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div class="flex flex-wrap items-center gap-2.5">
         <h1 class="min-w-0 break-words text-2xl font-bold tracking-tight">{{ title }}</h1>
         <slot name="meta" />
+        <a
+          v-if="helpUrl"
+          :href="helpUrl"
+          target="_blank"
+          rel="noopener"
+          :aria-label="t('docs.helpPage')"
+          :title="t('docs.helpPage')"
+          data-testid="page-help"
+          class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        >
+          <QuestionMarkCircleIcon class="h-5 w-5" aria-hidden="true" />
+        </a>
       </div>
       <p v-if="description" class="mt-1 max-w-3xl text-sm text-muted">{{ description }}</p>
     </div>
@@ -45,7 +57,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { ChevronRightIcon } from '@heroicons/vue/20/solid'
+import { QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
 import { resolveCrumbs, type Crumb } from '../lib/crumbs'
+import { useDocsLink } from '../composables/useDocsLink'
 import { t } from '../i18n/en'
 
 const props = defineProps<{
@@ -57,4 +71,5 @@ const props = defineProps<{
 
 const route = useRoute()
 const trail = computed(() => props.crumbs ?? resolveCrumbs(route))
+const helpUrl = useDocsLink(() => route.name)
 </script>

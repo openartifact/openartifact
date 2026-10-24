@@ -134,6 +134,15 @@ export type ReadyResponse = {
     reason?: string;
 };
 
+export type PublicSystemInfo = {
+    version?: string;
+    status?: string;
+    /**
+     * Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled.
+     */
+    docs_url?: string;
+};
+
 export type SystemInfo = {
     version?: string;
     commit?: string;
@@ -2298,10 +2307,7 @@ export type GetApiV1SystemInfoResponses = {
     /**
      * System information
      */
-    200: {
-        version?: string;
-        status?: string;
-    };
+    200: PublicSystemInfo;
 };
 
 export type GetApiV1SystemInfoResponse = GetApiV1SystemInfoResponses[keyof GetApiV1SystemInfoResponses];
