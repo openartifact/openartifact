@@ -151,7 +151,7 @@ func ExtractParts(ctx context.Context, src Source) ([]Part, error) {
 	parts := make([]Part, 0, len(sections))
 
 	for _, sec := range sections {
-		body := strings.ReplaceAll(strings.ToValidUTF8(sec.body, "\uFFFD"), "\x00", "")
+		body := sanitize(sec.body)
 		if strings.TrimSpace(body) != "" {
 			parts = append(parts, Part{Label: sec.label, Body: body})
 		}
@@ -184,10 +184,14 @@ func Extract(ctx context.Context, src Source) (string, error) {
 	return text, nil
 }
 
-// clean makes the text valid UTF-8 without NULs and trims it to MaxBytes.
+// sanitize makes the text valid UTF-8 without NULs.
+func sanitize(s string) string {
+	return strings.ReplaceAll(strings.ToValidUTF8(s, "\uFFFD"), "\x00", "")
+}
+
+// clean sanitizes the text and trims it to MaxBytes.
 func clean(s string) string {
-	s = strings.ToValidUTF8(s, "\uFFFD")
-	s = strings.ReplaceAll(s, "\x00", "")
+	s = sanitize(s)
 
 	if len(s) > MaxBytes {
 		s = s[:MaxBytes]
@@ -215,12 +219,15 @@ func render(sections []section) string {
 	return join(sections...)
 }
 
-// join renders sections; a single unlabelled section is returned bare.
+// join renders sections; a single unlabelled section is returned bare. A
+// section that is blank once sanitized (a body of NULs) is left out, as
+// ExtractParts leaves it out, not rendered as a bare heading.
 func join(parts ...section) string {
 	var b strings.Builder
 
 	for _, p := range parts {
-		if strings.TrimSpace(p.body) == "" {
+		body := sanitize(p.body)
+		if strings.TrimSpace(body) == "" {
 			continue
 		}
 
@@ -228,9 +235,9 @@ func join(parts ...section) string {
 			fmt.Fprintf(&b, "### %s\n", p.label)
 		}
 
-		b.WriteString(p.body)
+		b.WriteString(body)
 
-		if !strings.HasSuffix(p.body, "\n") {
+		if !strings.HasSuffix(body, "\n") {
 			b.WriteByte('\n')
 		}
 
