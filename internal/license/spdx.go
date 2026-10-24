@@ -85,8 +85,13 @@ func tokenizeSPDX(expr string) []string {
 type spdxParser struct {
 	tokens []string
 	pos    int
+	depth  int // open parentheses
 	table  spdxSets
 }
+
+// maxSPDXDepth bounds the parenthesis nesting of an expression; real ones
+// nest a few levels.
+const maxSPDXDepth = 64
 
 func (p *spdxParser) peek() string {
 	if p.pos < len(p.tokens) {
@@ -119,13 +124,21 @@ func (p *spdxParser) term() bool {
 	tok := p.peek()
 
 	if tok == "(" {
+		// A license string is uploaded metadata: without a cap, a few MiB of "("
+		// recurse past the 1 GB goroutine stack limit, which kills the process.
+		if p.depth >= maxSPDXDepth {
+			return false
+		}
+
 		p.pos++
+		p.depth++
 
 		if !p.expression() || p.peek() != ")" {
 			return false
 		}
 
 		p.pos++
+		p.depth--
 
 		return true
 	}

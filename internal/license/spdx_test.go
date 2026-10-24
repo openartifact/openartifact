@@ -6,6 +6,7 @@ package license_test
 
 import (
 	"slices"
+	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/internal/license"
@@ -55,5 +56,24 @@ func TestUnresolved(t *testing.T) {
 
 	if got := d.Unresolved(nil); len(got) != 0 {
 		t.Errorf("Unresolved(nil) = %v, want none", got)
+	}
+}
+
+// TestIsSPDXExpressionNesting: the license of an npm package.json can be 4 MiB
+// of "(" (the size cap of the file); the parser must refuse deep nesting
+// instead of recursing past the goroutine stack limit, which is fatal to the
+// whole process.
+func TestIsSPDXExpressionNesting(t *testing.T) {
+	t.Parallel()
+
+	if license.IsSPDXExpression(strings.Repeat("(", 4<<20)) {
+		t.Error("4 MiB of parentheses is an expression")
+	}
+
+	for depth, want := range map[int]bool{1: true, 32: true, 64: true, 65: false, 1000: false} {
+		expr := strings.Repeat("(", depth) + "MIT" + strings.Repeat(")", depth)
+		if got := license.IsSPDXExpression(expr); got != want {
+			t.Errorf("%d nested parentheses: IsSPDXExpression = %v, want %v", depth, got, want)
+		}
 	}
 }
