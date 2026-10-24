@@ -143,7 +143,12 @@ func (h *HTTPHandler) renderIndex(ctx context.Context, repoID, repoName string) 
 func (h *HTTPHandler) handleDownloadChart(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	filename := vars["filename"]
+
+	filename, ok := chartFilename(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -443,7 +448,12 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 func (h *HTTPHandler) handleDeleteChart(w http.ResponseWriter, r *http.Request) {
 	vars := urlparams.Vars(r)
 	repoName := vars["name"]
-	filename := vars["filename"]
+
+	filename, ok := chartFilename(r)
+	if !ok {
+		http.NotFound(w, r)
+		return
+	}
 
 	repoID, err := h.ResolveRepoID(r.Context(), repoName)
 	if err != nil {
@@ -653,6 +663,19 @@ func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, b
 	}
 
 	return status, msg
+}
+
+// chartFilename returns the chart file name of a charts/{filename} request.
+// The index lists the URL of the chart "a;b" as ".../a%3Bb-1.0.0.tgz", and chi
+// hands out the {filename} parameter encoded or decoded depending on whether
+// the request's escaping is the one Go would produce itself, so the parameter
+// cannot be used as is: the last segment of the escaped path is decoded here.
+func chartFilename(r *http.Request) (string, bool) {
+	esc := r.URL.EscapedPath()
+
+	filename, err := url.PathUnescape(esc[strings.LastIndexByte(esc, '/')+1:])
+
+	return filename, err == nil && filename != "" && !strings.ContainsAny(filename, "/\\")
 }
 
 // findChart resolves "{name}-{version}.tgz". Both chart names and versions may

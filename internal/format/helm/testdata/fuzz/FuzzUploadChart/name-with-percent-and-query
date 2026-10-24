@@ -1,0 +1,2 @@
+go test fuzz v1
+string("apiVersion: v2\nname: \"é%2F?#\"\nversion: 1.0.0\n")
