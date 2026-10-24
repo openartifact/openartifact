@@ -116,14 +116,7 @@ func (s *memStore) Put(_ context.Context, r io.Reader, meta map[string]string) (
 	return "key-" + sha, nil
 }
 
-func (s *memStore) remove(sha string) {
-	s.mu.Lock()
-	defer s.mu.Unlock()
-
-	delete(s.objects, sha)
-}
-
-var testSHA = strings.Repeat("ab", 32)
+const testSHA = "abababababababababababababababababababababababababababababababab"
 
 func TestCommitBlobStoresBeforeTheLockAndCommitsUnderIt(t *testing.T) {
 	db := &lockDB{}

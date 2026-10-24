@@ -234,8 +234,7 @@ func (h *SBOMHandler) handleGenerate(w http.ResponseWriter, r *http.Request) {
 		return h.db.CreateSBOMReport(ctx, report)
 	})
 	if err != nil {
-		var storeErr *storage.StoreError
-		if errors.As(err, &storeErr) {
+		if _, isStore := errors.AsType[*storage.StoreError](err); isStore {
 			h.log.Errorw("generate SBOM: failed to store blob", "error", err)
 			writeError(w, http.StatusInternalServerError, "internal_error", "failed to store SBOM content")
 

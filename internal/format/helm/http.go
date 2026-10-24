@@ -633,13 +633,14 @@ func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, b
 	}
 
 	if status == 0 {
-		var storeErr *storage.StoreError
+		storeErr, isStore := errors.AsType[*storage.StoreError](lockErr)
 
-		if errors.As(lockErr, &storeErr) && storeErr.Op == "check" {
+		switch {
+		case isStore && storeErr.Op == "check":
 			h.Log.Errorw("failed to check chart blob", "error", lockErr)
-		} else if storeErr != nil {
+		case isStore:
 			h.Log.Errorw("failed to store chart blob", "error", lockErr)
-		} else {
+		default:
 			h.Log.Errorw("chart blob lock failed", "chart", chart.Name, "error", lockErr)
 		}
 

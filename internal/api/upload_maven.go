@@ -383,8 +383,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		var storeErr *storage.StoreError
-		if errors.As(lockErr, &storeErr) {
+		if storeErr, isStore := errors.AsType[*storage.StoreError](lockErr); isStore {
 			stage = "store blob"
 			if storeErr.Op == "check" {
 				stage = "check blob"

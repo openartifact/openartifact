@@ -8,6 +8,7 @@ package worker
 
 import (
 	"context"
+	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
 	"fmt"
@@ -36,7 +37,6 @@ type hookStore struct {
 	inPut func()
 
 	lookups, puts int
-	lockedPuts    int
 }
 
 func (s *hookStore) ExistsBySHA256(ctx context.Context, sha string) (string, bool, error) {
@@ -95,8 +95,6 @@ func contentSHA(content string) string {
 	return hex.EncodeToString(sum[:])
 }
 
-var commitRowSeq atomic.Int64
-
 // commitUpload is what an upload handler does with CommitBlob: it stores the
 // content and, under the lock, registers the blobs row and a maven row of
 // repoID that references it.
@@ -110,12 +108,12 @@ func (s *purgeSeed) commitUpload(ctx context.Context, store storage.BlobStore, r
 				return fmt.Errorf("upsert blob: %w", err)
 			}
 
-			n := commitRowSeq.Add(1)
+			n := rand.Text()
 
 			_, err = s.pg.GetDB().ExecContext(ctx,
 				`INSERT INTO maven_artifacts (repository_id, group_id, artifact_id_coord, version, extension, repo_path, blob_id)
 				 VALUES ($1, 'g', $2, '1.0', 'jar', $3, $4)`,
-				repoID, fmt.Sprintf("c%d", n), fmt.Sprintf("g/c%d/1.0/c%d-1.0.jar", n, n), blobID)
+				repoID, "c"+n, fmt.Sprintf("g/c%[1]s/1.0/c%[1]s-1.0.jar", n), blobID)
 			if err != nil {
 				return fmt.Errorf("insert row: %w", err)
 			}
@@ -375,72 +373,11 @@ func TestCommitBlobVersusDeleteAndSweepStress(t *testing.T) {
 	}
 
 	// The sweeper and the invariant checker run until the writers are done.
-	bgWG.Add(2)
-
-	go func() {
-		defer bgWG.Done()
-
-		sw := NewBlobDeletionSweeper(s.pg, copyDeleter{s.blobs}, testLogger(t), 0, 100)
-
-		for {
-			select {
-			case <-stop:
-				return
-			default:
-			}
-
-			if _, err := sw.RunOnce(ctx); err != nil {
-				fail("sweep: %v", err)
-
-				return
-			}
-		}
-	}()
-
-	go func() {
-		defer bgWG.Done()
-
-		for {
-			for _, sha := range shas {
-				select {
-				case <-stop:
-					return
-				default:
-				}
-
-				// Under the blob lock nothing is half done: a referenced blob has its object.
-				err := storage.WithBlobLock(ctx, s.pg, sha, func(ctx context.Context) error {
-					var refs int
-					if err := s.pg.GetDB().QueryRowContext(ctx,
-						`SELECT COUNT(*) FROM maven_artifacts m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha).Scan(&refs); err != nil {
-						return err
-					}
-
-					if refs == 0 {
-						return nil
-					}
-
-					if ok, _ := s.blobs.Exists(ctx, sha); !ok {
-						fail("blob %s referenced by %d rows has no object", sha, refs)
-					}
-
-					return nil
-				})
-				if err != nil {
-					fail("check: %v", err)
-
-					return
-				}
-			}
-		}
-	}()
+	bgWG.Go(func() { s.sweepUntil(t, ctx, stop, fail) })
+	bgWG.Go(func() { s.checkInvariantUntil(ctx, stop, shas, fail) })
 
 	for u := range uploaders {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for r := range rounds {
 				if err := s.commitUpload(ctx, store, repo, contents[(u+r)%len(contents)]); err != nil {
 					fail("upload: %v", err)
@@ -448,15 +385,11 @@ func TestCommitBlobVersusDeleteAndSweepStress(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	for d := range deleters {
-		wg.Add(1)
-
-		go func() {
-			defer wg.Done()
-
+		wg.Go(func() {
 			for r := range rounds {
 				sha := shas[(d+r)%len(shas)]
 
@@ -474,7 +407,7 @@ func TestCommitBlobVersusDeleteAndSweepStress(t *testing.T) {
 					return
 				}
 			}
-		}()
+		})
 	}
 
 	wg.Wait()
@@ -506,5 +439,63 @@ func TestCommitBlobVersusDeleteAndSweepStress(t *testing.T) {
 
 	if n := s.count(`SELECT COUNT(*) FROM blob_deletions`); n != 0 {
 		t.Errorf("deletions still queued: %d", n)
+	}
+}
+
+// sweepUntil runs the deletion sweeper in a loop until stop is closed.
+func (s *purgeSeed) sweepUntil(t *testing.T, ctx context.Context, stop <-chan struct{}, fail func(string, ...any)) {
+	t.Helper()
+
+	sw := NewBlobDeletionSweeper(s.pg, copyDeleter{s.blobs}, testLogger(t), 0, 100)
+
+	for {
+		select {
+		case <-stop:
+			return
+		default:
+		}
+
+		if _, err := sw.RunOnce(ctx); err != nil {
+			fail("sweep: %v", err)
+
+			return
+		}
+	}
+}
+
+// checkInvariantUntil checks, under each blob's lock, that a referenced blob
+// has its object, until stop is closed.
+func (s *purgeSeed) checkInvariantUntil(ctx context.Context, stop <-chan struct{}, shas []string, fail func(string, ...any)) {
+	for {
+		for _, sha := range shas {
+			select {
+			case <-stop:
+				return
+			default:
+			}
+
+			err := storage.WithBlobLock(ctx, s.pg, sha, func(ctx context.Context) error {
+				var refs int
+				if err := s.pg.GetDB().QueryRowContext(ctx,
+					`SELECT COUNT(*) FROM maven_artifacts m JOIN blobs b ON b.id = m.blob_id WHERE b.sha256 = $1`, sha).Scan(&refs); err != nil {
+					return err
+				}
+
+				if refs == 0 {
+					return nil
+				}
+
+				if ok, _ := s.blobs.Exists(ctx, sha); !ok {
+					fail("blob %s referenced by %d rows has no object", sha, refs)
+				}
+
+				return nil
+			})
+			if err != nil {
+				fail("check: %v", err)
+
+				return
+			}
+		}
 	}
 }
