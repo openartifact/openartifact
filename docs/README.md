@@ -8,6 +8,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Self-hosted artifact repository for 16 package formats. The [project README](../README.md) is the short overview; the details are here.
 
+These pages are also published, one version per release, at <https://openartifact.github.io/> with search and a version switcher; the markdown stays readable on GitHub. `latest` follows `main`.
+
 ## Getting started
 
 | Page | Contents |
@@ -21,6 +23,7 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | Page | Contents |
 |---|---|
 | [Format matrix](formats/README.md) | Client URLs, hosted/proxy/group support, upload methods, authentication |
+| [Client setup](formats/client-setup.md) | Configure and publish commands for every client, generated from the same source as the web UI |
 | [Maven](formats/maven.md) · [npm](formats/npm.md) · [PyPI](formats/pypi.md) · [Docker/OCI](formats/docker.md) | Client setup and publishing |
 | [Helm](formats/helm.md) · [Debian](formats/debian.md) · [RPM](formats/rpm.md) · [Go](formats/go.md) | Client setup and publishing |
 | [Cargo](formats/cargo.md) · [NuGet](formats/nuget.md) · [RubyGems](formats/rubygems.md) · [Conda](formats/conda.md) | Client setup and publishing |
@@ -78,6 +81,18 @@ Self-hosted artifact repository for 16 package formats. The [project README](../
 | [REST API](integrations/api.md) | OpenAPI spec, Swagger UI, authentication, conventions |
 | [AI analysis](integrations/ai-analysis.md) | Optional LLM analysis of package manifests |
 | [yap](integrations/yap.md) | Build deb/rpm packages with yap, publish them and install from clients |
+
+## Reference
+
+Generated from the code (`make docs-gen`), never hand-edited.
+
+| Page | Contents |
+|---|---|
+| [Overview](reference/README.md) | What is generated and how |
+| [Configuration keys](reference/config.md) | Every YAML key with env var, type, default and description |
+| [Metrics](reference/metrics.md) | Every Prometheus metric with type, labels and help |
+| [CLI commands](reference/cli.md) | `oa` command and flag reference |
+| [REST API](reference/api/README.md) | Endpoints per tag with parameters, bodies and responses, rendered from `openapi.json` |
 
 ## Development
 

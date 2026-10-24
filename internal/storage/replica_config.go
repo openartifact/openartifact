@@ -27,12 +27,13 @@ const (
 // described by the same keys as the primary one (storage.type, storage.path,
 // storage.bucket, ...); the presign and upload-relay keys are ignored: a
 // replica is never presigned or uploaded to by clients. Replication is active
-// when Type is not empty.
+// when type is not empty.
 type ReplicaConfig struct {
 	StorageConfig `yaml:",inline"`
 
 	// ReadFallback is what a read does when the primary cannot answer:
-	// ReadFallbackNotFound (default), ReadFallbackError or ReadFallbackOff.
+	// notfound (the default: the primary says the blob does not exist), error
+	// (also when the primary fails) or off (never read from the replica).
 	ReadFallback string `yaml:"readFallback"`
 	// Interval is the pause between replication passes (queued blobs are also
 	// picked up as soon as they are enqueued).

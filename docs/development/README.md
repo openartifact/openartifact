@@ -51,6 +51,7 @@ bun, golangci-lint and Trivy versions are not tracked by Dependabot; bump them b
 | `make vet` | `go vet ./...` |
 | `make check` | `fmt` + `vet` + `lint`; run before opening a PR |
 | `make generate` | sqlc generate; run after editing `internal/database/queries/*.sql` or the schema, and commit `internal/database/dbsqlc/` |
+| `make docs-gen` | Regenerates the pages under `docs/reference/` (configuration keys, metrics, CLI commands, REST API) from the code; run after changing config keys, metrics, `oa` help or `internal/api/openapi.json`, and commit the result. `make docs-check` fails when they are stale |
 | `make migrate` | `go run ./cmd/server -migrate` (apply migrations and exit) |
 | `make bench`, `make bench-load` | Benchmarks, see [performance](../operations/performance.md) |
 | `make docker-build` | Builds `openartifact:latest` from `docker/Dockerfile`; the runtime base is `RUNTIME=dhi` (default, needs `docker login dhi.io`) or `RUNTIME=distroless` (anonymous) |
@@ -121,6 +122,7 @@ Workflows live in [`.github/workflows`](../../.github/workflows). All actions ar
 | `sqlc` | `sqlc generate` leaves no diff in `internal/database/dbsqlc` |
 | `web` | `bun install --frozen-lockfile`, typecheck, generated API client up to date, `bun test`, build, bundle-size check |
 | `security` | Builds the image, then Trivy: image, filesystem (Go and bun lockfiles, secrets) and config (Dockerfile, compose) scans. Each runs twice: a SARIF upload to code scanning, then a gate that fails on fixable HIGH/CRITICAL findings (config gate: any HIGH/CRITICAL). Fork and Dependabot PRs skip the upload but keep the gate. Ignores in `.trivyignore.yaml` |
+| `docs` | `go run ./cmd/docgen -check` (generated reference up to date; `.env.example` and `openartifact.example.yaml` list every config key), then builds the docs site from this checkout with the VitePress project of [openartifact.github.io](https://github.com/openartifact/openartifact.github.io); a dead internal link fails the build |
 | `workflow-lint` | `actionlint` and zizmor (rules in [`.github/zizmor.yml`](../../.github/zizmor.yml)) |
 | `dependency-review` | PRs only; fails on high-severity dependency changes |
 
@@ -131,6 +133,10 @@ Workflows live in [`.github/workflows`](../../.github/workflows). All actions ar
 | `codeql.yml` | push to `main`, PRs, weekly (Mon) | CodeQL for Go and JavaScript/TypeScript |
 | `scorecard.yml` | push to `main`, branch-protection changes, weekly (Tue) | OpenSSF Scorecard, results published and uploaded as SARIF |
 | `scheduled-scan.yml` | weekly (Mon), manual | Trivy scan of the *published* `latest` and latest stable semver images on ghcr.io, so new CVEs in released images are noticed |
+
+### Documentation site (`docs-dispatch.yml`)
+
+The site at <https://openartifact.github.io/> is built by the separate repository [openartifact.github.io](https://github.com/openartifact/openartifact.github.io), which renders this repository's `docs/` in place (README.md is a directory index; links to files outside `docs/` become GitHub links): `/latest/` is `main`, `/vX.Y/` the newest stable tag of each of the last five minor lines. The text, generated reference and the drift and link checks stay here, versioned with the code. `docs-dispatch.yml` asks the site to rebuild on pushes to `main` that touch `docs/` and on `v*.*.*` tags; it needs the repository secret `SITE_DISPATCH_TOKEN` (fine-grained, limited to the site repository, `Actions: write` and `Contents: read`) and is skipped without it, in which case the site's daily schedule picks changes up. Write docs as plain relative-link markdown that reads well on GitHub; do not put `{{ }}` or bare `<tags>` outside code spans.
 
 ### Releases (`release.yml`)
 

@@ -142,6 +142,12 @@ linters:
           - nolintlint
           - perfsprint
           - usestdlibvars
+      # cmd/docgen is a build-time generator: generators register themselves in
+      # init and failures are one-off messages, not an error API
+      - path: "^cmd/docgen/"
+        linters:
+          - err113
+          - gochecknoinits
       # Test files get more relaxed rules
       - path: "_test\\.go"
         linters:

@@ -401,6 +401,53 @@ jobs:
           advanced-security: false
           annotations: true
 
+  docs:
+    name: docs (generated reference + site build)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: |
+            go.sum
+            tools/go.sum
+
+      # docs/reference is generated from the code (config keys, metrics, CLI, OpenAPI);
+      # the same run checks .env.example and openartifact.example.yaml list every config key.
+      - name: Generated reference is up to date
+        run: go run ./cmd/docgen -check
+
+      # The site (VitePress theme, navigation, landing page) lives in its own repository
+      # and renders this checkout's docs/. A dead internal link fails the build.
+      - name: Check out the site
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          repository: openartifact/openartifact.github.io
+          path: site
+          persist-credentials: false
+
+      - uses: oven-sh/setup-bun@0c5077e51419868618aeaa5fe8019c62421857d6 # v2.2.0
+        with:
+          bun-version: ${{ env.BUN_VERSION }}
+
+      - name: Install site dependencies
+        working-directory: site
+        run: bun install --frozen-lockfile
+
+      - name: Build docs (dead links fail the build)
+        working-directory: site
+        env:
+          OA_TARGET: docs
+          OA_SRC_DIR: ${{ github.workspace }}
+          OA_OUT_DIR: ${{ runner.temp }}/docs-site
+        run: bun run build:docs
+
   dependency-review:
     name: dependency review
     if: ${{ github.event_name == 'pull_request' }}

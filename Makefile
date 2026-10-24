@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 .PHONY: help build run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
-        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate bench bench-load
+        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate docs-gen docs-check bench bench-load
 
 # Variables
 BINARY_NAME=openartifact
@@ -46,6 +46,8 @@ help:
 	@echo "  sec             - Run gosec security scanner"
 	@echo "  check           - Run fmt + vet + lint (pre-commit gate)"
 	@echo "  generate        - Run sqlc generate (DB codegen)"
+	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
+	@echo "  docs-check      - Fail when docs/reference is out of date"
 	@echo "  deps            - Download and tidy dependencies"
 	@echo "  docker-build    - Build Docker image"
 	@echo "  docker-run      - Run Docker container"
@@ -126,6 +128,12 @@ check: fmt vet lint
 generate:
 	@echo "Running sqlc generate..."
 	$(GO) tool -modfile=tools/go.mod sqlc generate
+
+docs-gen:
+	$(GO) run ./cmd/docgen
+
+docs-check:
+	$(GO) run ./cmd/docgen -check
 
 bench:
 	@echo "Running benchmarks..."

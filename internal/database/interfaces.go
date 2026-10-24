@@ -821,21 +821,40 @@ type Transaction interface {
 
 // DatabaseConfig contains database connection configuration.
 type DatabaseConfig struct {
-	Driver                 string            `yaml:"driver"` // "postgres", "mysql", "sqlite"
-	Host                   string            `yaml:"host"`
-	Port                   int               `yaml:"port"`
-	User                   string            `yaml:"user"`
-	Password               string            `yaml:"password"`
-	Database               string            `yaml:"database"`
-	SSLMode                string            `yaml:"sslMode"` // For PostgreSQL
-	Options                map[string]string `yaml:"options"`
-	MaxOpenConns           int               `yaml:"maxOpenConns"`           // Maximum number of open connections (default: 25)
-	MaxIdleConns           int               `yaml:"maxIdleConns"`           // Maximum number of idle connections (default: 5)
-	ConnMaxLifetimeMinutes int               `yaml:"connMaxLifetimeMinutes"` // Maximum lifetime of a connection in minutes (default: 30)
-	// AuthCacheTTLMillis is how long per-request authentication lookups (token,
-	// user, groups, permission targets, repository by name) are served from
-	// memory. Writes through this process invalidate immediately; other
-	// replicas observe a change after at most this long. 0 disables the cache.
+	// Driver names the database driver. It must be non-empty; PostgreSQL is
+	// the only supported database and the server always connects to it.
+	Driver string `yaml:"driver"`
+	// Host is the database host.
+	Host string `yaml:"host"`
+	// Port is the database port.
+	Port int `yaml:"port"`
+	// User is the database user.
+	User string `yaml:"user"`
+	// Password is the database password. The CHANGE_ME placeholder of the
+	// example files is rejected at startup.
+	Password string `yaml:"password"`
+	// Database is the database name.
+	Database string `yaml:"database"`
+	// SSLMode is the PostgreSQL sslmode; disable only for local development
+	// without TLS.
+	SSLMode string `yaml:"sslMode"`
+	// Options are extra libpq connection parameters. The environment form is
+	// comma-separated key=value pairs, merged over the YAML keys.
+	Options map[string]string `yaml:"options"`
+	// MaxOpenConns is the size of the connection pool. 0 means the driver
+	// default; otherwise at least 2 (a blob-lock transaction pins one
+	// connection and its callback needs another), and at least 4 while
+	// tiering.enabled is true.
+	MaxOpenConns int `yaml:"maxOpenConns"`
+	// MaxIdleConns is how many idle connections the pool keeps warm.
+	MaxIdleConns int `yaml:"maxIdleConns"`
+	// ConnMaxLifetimeMinutes is the maximum lifetime of a connection, in minutes.
+	ConnMaxLifetimeMinutes int `yaml:"connMaxLifetimeMinutes"`
+	// AuthCacheTTLMillis is how long, in milliseconds, per-request
+	// authentication lookups (token, user, groups, permission targets,
+	// repository by name) are served from memory. Writes through this process
+	// invalidate immediately; other replicas observe a change after at most
+	// this long. 0 disables the cache.
 	AuthCacheTTLMillis int `yaml:"authCacheTtlMs"`
 	// ConnectTimeout is how long startup keeps retrying the initial database
 	// connection (capped exponential backoff) before giving up. 0 fails at the

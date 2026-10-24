@@ -59,34 +59,80 @@ type BlobStore interface {
 
 // StorageConfig contains configuration for blob storage.
 type StorageConfig struct {
-	// Type selects the storage backend.
-	// Supported values: "filesystem", "s3", "gcs", "azure", "garage", "seaweedfs", "oci".
-	Type                     string            `yaml:"type"`                     // "s3", "filesystem", "gcs", "azure", "garage", "seaweedfs", "oci"
-	Endpoint                 string            `yaml:"endpoint"`                 // For S3-compatible services (s3, garage, seaweedfs) or OCI registry URL
-	Bucket                   string            `yaml:"bucket"`                   // Bucket/container name (s3, garage, seaweedfs) or OCI repository prefix
-	Region                   string            `yaml:"region"`                   // AWS region or equivalent
-	AccessKey                string            `yaml:"accessKey"`                // Access credentials
-	SecretKey                string            `yaml:"secretKey"`                // Secret credentials
-	Path                     string            `yaml:"path"`                     // Local filesystem path
-	Options                  map[string]string `yaml:"options"`                  // Additional options
-	ForcePathStyle           bool              `yaml:"forcePathStyle"`           // Use path-style S3 addressing (required for MinIO, Garage, SeaweedFS)
-	PresignTTL               time.Duration     `yaml:"presignTtl"`               // Lifetime of presigned download URLs (clamped to 1m-1h)
-	PresignUploadTTL         time.Duration     `yaml:"presignUploadTtl"`         // Lifetime of presigned upload URLs (clamped to 1m-12h)
-	PresignMaxPendingUploads int               `yaml:"presignMaxPendingUploads"` // Outstanding presigned uploads allowed per user; 0 = unlimited
-	PresignDownloads         bool              `yaml:"presignDownloads"`         // Redirect blob downloads (307) to presigned URLs
-	PresignMinSize           int64             `yaml:"presignMinSize"`           // Blobs smaller than this many bytes are always streamed
-	PresignEndpoint          string            `yaml:"presignEndpoint"`          // Public base URL presigned URLs are signed against (S3 family); empty = Endpoint
-	GCSBucket                string            `yaml:"gcsBucket"`                // GCS bucket name
-	GCSHMACKey               string            `yaml:"gcsHmacKey"`               // GCS HMAC access key
-	GCSHMACSecret            string            `yaml:"gcsHmacSecret"`            // GCS HMAC secret key
-	AzureAccountName         string            `yaml:"azureAccountName"`         // Azure storage account name
-	AzureAccountKey          string            `yaml:"azureAccountKey"`          // Azure storage account key
-	AzureContainerName       string            `yaml:"azureContainerName"`       // Azure container name
-	AzureEndpoint            string            `yaml:"azureEndpoint"`            // Azure blob service URL (Azurite or a sovereign cloud); empty = https://<account>.blob.core.windows.net
-	StagingPath              string            `yaml:"stagingPath"`              // Spool directory for server-relayed presigned uploads on oci storage (filesystem uses <path>/staging); empty = <tmp>/openartifact-staging
-	PublicURL                string            `yaml:"-"`                        // Public base URL of this server (BASE_URL), set by the config loader; server-relayed upload URLs point at it
-	// OCI-specific fields
-	OCIInsecure bool   `yaml:"ociInsecure"` // Allow plain HTTP for OCI registry (dev/testing only)
-	OCIUsername string `yaml:"ociUsername"` // OCI registry username
-	OCIPassword string `yaml:"ociPassword"` // OCI registry password
+	// Type selects the storage backend: filesystem, s3, gcs, azure, garage,
+	// seaweedfs or oci. garage and seaweedfs reuse the S3 client with
+	// path-style addressing forced on.
+	Type string `yaml:"type"`
+	// Endpoint is the endpoint URL of an S3-compatible service (s3, garage,
+	// seaweedfs) or the URL of the OCI registry.
+	Endpoint string `yaml:"endpoint"`
+	// Bucket is the bucket name (s3, garage, seaweedfs) or the OCI repository
+	// prefix.
+	Bucket string `yaml:"bucket"`
+	// Region is the AWS region or equivalent.
+	Region string `yaml:"region"`
+	// AccessKey is the S3 access key. It is used only when both keys are set,
+	// otherwise the AWS credential chain applies.
+	AccessKey string `yaml:"accessKey"`
+	// SecretKey is the S3 secret key.
+	SecretKey string `yaml:"secretKey"`
+	// Path is the directory of the filesystem backend.
+	Path string `yaml:"path"`
+	// Options are free-form backend options. The environment form is
+	// comma-separated key=value pairs, merged over the YAML keys. None of the
+	// built-in backends reads any key yet.
+	Options map[string]string `yaml:"options"`
+	// ForcePathStyle uses path-style S3 addressing (required for MinIO, Garage
+	// and SeaweedFS).
+	ForcePathStyle bool `yaml:"forcePathStyle"`
+	// PresignTTL is the lifetime of presigned download URLs (s3, gcs), clamped
+	// to 1m-1h. It only applies while presignDownloads is on.
+	PresignTTL time.Duration `yaml:"presignTtl"`
+	// PresignUploadTTL is the lifetime of presigned PUT upload URLs, clamped to
+	// 1m-12h.
+	PresignUploadTTL time.Duration `yaml:"presignUploadTtl"`
+	// PresignMaxPendingUploads is how many outstanding (not completed, not
+	// expired) presigned uploads one user may hold; 0 means unlimited. Beyond
+	// it, creating an upload answers 429.
+	PresignMaxPendingUploads int `yaml:"presignMaxPendingUploads"`
+	// PresignDownloads answers blob downloads with a 307 redirect to a
+	// presigned URL (s3 and gcs only) instead of streaming them. A repository
+	// can override it with presign_downloads.
+	PresignDownloads bool `yaml:"presignDownloads"`
+	// PresignMinSize is the size in bytes below which blobs are always
+	// streamed; 0 redirects everything and a negative value is rejected at
+	// startup.
+	PresignMinSize int64 `yaml:"presignMinSize"`
+	// PresignEndpoint is the public base URL (absolute http(s), no query or
+	// fragment) that presigned URLs are signed against (S3 family); empty uses
+	// the endpoint. Set it when the endpoint is not reachable by clients.
+	PresignEndpoint string `yaml:"presignEndpoint"`
+	// GCSBucket is the GCS bucket (reached through the S3-compatible XML API).
+	GCSBucket string `yaml:"gcsBucket"`
+	// GCSHMACKey is the GCS HMAC access key (required for gcs).
+	GCSHMACKey string `yaml:"gcsHmacKey"`
+	// GCSHMACSecret is the GCS HMAC secret.
+	GCSHMACSecret string `yaml:"gcsHmacSecret"`
+	// AzureAccountName is the Azure storage account name.
+	AzureAccountName string `yaml:"azureAccountName"`
+	// AzureAccountKey is the Azure storage account key.
+	AzureAccountKey string `yaml:"azureAccountKey"`
+	// AzureContainerName is the Azure container name.
+	AzureContainerName string `yaml:"azureContainerName"`
+	// AzureEndpoint is the blob service URL, for Azurite or a sovereign cloud;
+	// empty uses https://<account>.blob.core.windows.net.
+	AzureEndpoint string `yaml:"azureEndpoint"`
+	// StagingPath is the spool directory for server-relayed presigned uploads
+	// on oci storage (filesystem uses <path>/staging); empty means
+	// <tmp>/openartifact-staging.
+	StagingPath string `yaml:"stagingPath"`
+	// PublicURL is the public base URL of this server (BASE_URL), set by the
+	// config loader; server-relayed upload URLs point at it.
+	PublicURL string `yaml:"-"`
+	// OCIInsecure allows plain HTTP to the OCI registry (dev and testing only).
+	OCIInsecure bool `yaml:"ociInsecure"`
+	// OCIUsername is the OCI registry user.
+	OCIUsername string `yaml:"ociUsername"`
+	// OCIPassword is the OCI registry password.
+	OCIPassword string `yaml:"ociPassword"`
 }

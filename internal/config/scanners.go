@@ -46,7 +46,7 @@ const DefaultScannerDownloadBaseURL = "https://github.com"
 // used by on-demand scans (see docs/security/scanning.md). OSV needs none of it.
 type ScannersConfig struct {
 	// CacheDir is where the scanners keep their vulnerability databases
-	// (<cacheDir>/trivy, <cacheDir>/grype). It must be writable unless Offline
+	// (<cacheDir>/trivy, <cacheDir>/grype). It must be writable unless offline
 	// is set. Empty means a directory under the user cache dir; the container
 	// image sets /var/cache/openartifact/scanners.
 	CacheDir string `yaml:"cacheDir"`
@@ -54,7 +54,7 @@ type ScannersConfig struct {
 	// when the server starts and never again; otherwise at least 1h.
 	UpdateInterval time.Duration `yaml:"updateInterval"`
 	// Offline stops the server from downloading databases: scans use what
-	// CacheDir already holds and fail while it holds none.
+	// cacheDir already holds and fail while it holds none.
 	Offline bool `yaml:"offline"`
 	// DownloadBaseURL is the https origin the pinned release archives are
 	// downloaded from when a scanner's install mode is "auto". A mirror must
@@ -70,7 +70,7 @@ type TrivyScanner struct {
 	// path. Empty means "trivy".
 	Path string `yaml:"path"`
 	// Install is "none" (default) or "auto": download the pinned trivy release
-	// into the cache directory when Path is empty and trivy is not on PATH.
+	// into the cache directory when path is empty and trivy is not on PATH.
 	Install string `yaml:"install"`
 	// DBRepository is an OCI repository mirroring ghcr.io/aquasecurity/trivy-db.
 	// Empty is the upstream default.
@@ -87,7 +87,7 @@ type GrypeScanner struct {
 	// path. Empty means "grype".
 	Path string `yaml:"path"`
 	// Install is "none" (default) or "auto": download the pinned grype release
-	// into the cache directory when Path is empty and grype is not on PATH.
+	// into the cache directory when path is empty and grype is not on PATH.
 	Install string `yaml:"install"`
 	// DBURL is the database listing URL of a mirror (GRYPE_DB_UPDATE_URL).
 	// Empty is the upstream default.

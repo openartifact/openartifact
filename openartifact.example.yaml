@@ -105,6 +105,18 @@ storage:
   #   secretKey: CHANGE_ME
   #   # endpoint: http://garage:3900
   #   # forcePathStyle: true
+  #   # path: /mnt/replica/artifacts   # filesystem replica
+  #   # options: {}                    # free-form backend options
+  #   # gcsBucket: my-replica-bucket
+  #   # gcsHmacKey: CHANGE_ME
+  #   # gcsHmacSecret: CHANGE_ME
+  #   # azureAccountName: myaccount
+  #   # azureAccountKey: CHANGE_ME
+  #   # azureContainerName: artifacts-replica
+  #   # azureEndpoint: http://azurite:10000/devstoreaccount1   # Azurite / sovereign cloud; empty = public cloud
+  #   # ociUsername: user
+  #   # ociPassword: CHANGE_ME
+  #   # ociInsecure: false
   #   readFallback: notfound    # notfound | error | off: when reads fall back to the replica
   #   interval: 5s              # pause between queue passes
   #   batch: 100                # operations claimed per pass
@@ -138,7 +150,7 @@ auth:
   # Repositories flagged public are always anonymously readable (read-only),
   # regardless of this setting.
   allowAnonymousRead: false
-  legacyApiKeyEnabled: true  # default true; set false to disable the legacy API key
+  legacyApiKeyEnabled: false  # default false; true accepts server.apiKey (deprecated, full admin)
   sessionDurationHours: 24
   # hmacKey: "CHANGE_ME"  # optional; unset = random key generated once, persisted in system_settings
   # samlSpCert: ""         # PEM SAML SP certificate; unset = self-signed pair generated once, persisted encrypted

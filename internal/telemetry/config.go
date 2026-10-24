@@ -46,9 +46,8 @@ type Config struct {
 }
 
 // OTLPConfig configures the OTLP exporters. The standard OTEL_* environment
-// variables override the file (see internal/config for the mapping); signal
-// specific OTEL_EXPORTER_OTLP_TRACES_* variables only apply while Endpoint is
-// empty.
+// variables override the file; signal specific OTEL_EXPORTER_OTLP_TRACES_*
+// variables only apply while endpoint is empty.
 type OTLPConfig struct {
 	// Enabled turns tracing on. Off by default; OTEL_SDK_DISABLED=true forces
 	// it off.
@@ -59,7 +58,8 @@ type OTLPConfig struct {
 	// Protocol is "grpc" (default) or "http" (OTLP/HTTP protobuf).
 	Protocol string `yaml:"protocol"`
 	// Headers are sent with every export request (collector credentials).
-	// Never logged.
+	// Never logged. The environment form is comma-separated key=value pairs
+	// with percent-encoded values.
 	Headers map[string]string `yaml:"headers"`
 	// Insecure disables TLS towards the collector. An http:// endpoint implies it.
 	Insecure bool `yaml:"insecure"`
@@ -70,7 +70,8 @@ type OTLPConfig struct {
 	SampleRatio float64 `yaml:"sampleRatio"`
 	// Metrics additionally exports the Prometheus registry (Go runtime and
 	// openartifact_* families) over OTLP to the same endpoint. /metrics is
-	// unaffected.
+	// unaffected. The environment form is OTEL_METRICS_EXPORTER: otlp turns it
+	// on, none turns it off.
 	Metrics bool `yaml:"metrics"`
 }
 

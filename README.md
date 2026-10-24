@@ -26,7 +26,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   <a href="#quickstart">Quickstart</a> ·
   <a href="docs/formats/README.md">Formats</a> ·
   <a href="docs/getting-started/configuration.md">Configuration</a> ·
-  <a href="docs/README.md">Documentation</a> ·
+  <a href="https://openartifact.github.io/">Website</a> ·
+  <a href="https://openartifact.github.io/latest/">Documentation</a> ·
   <a href="CONTRIBUTING.md">Contributing</a>
 </p>
 
@@ -102,7 +103,7 @@ More: [installation](docs/getting-started/installation.md),
 | [Integrations](docs/integrations/cli.md) | [`oa` CLI](docs/integrations/cli.md), [MCP server](docs/integrations/mcp.md), [REST API](docs/integrations/api.md), [AI analysis](docs/integrations/ai-analysis.md) |
 | [Development](docs/development/README.md) | [Build, test, CI](docs/development/README.md), [architecture](docs/development/architecture.md) |
 
-The full page index is [docs/README.md](docs/README.md).
+The documentation is published, per release, at <https://openartifact.github.io/> (search, version switcher, generated configuration, metrics, CLI and REST API reference). The same pages are readable here: the full page index is [docs/README.md](docs/README.md).
 
 ## Contributing, security, license
 

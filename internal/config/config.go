@@ -57,23 +57,41 @@ var (
 )
 
 type Config struct {
-	Server   ServerConfig            `yaml:"server"`
+	// Server configures the HTTP listener, TLS, timeouts and request limits.
+	Server ServerConfig `yaml:"server"`
+	// Database configures the PostgreSQL connection and its pool.
 	Database database.DatabaseConfig `yaml:"database"`
-	Storage  storage.StorageConfig   `yaml:"storage"`
-	Logger   LoggerConfig            `yaml:"log"`
-	GPG      GPGConfig               `yaml:"gpg"`
-	Attest   AttestationConfig       `yaml:"attestation"`
-	Auth     AuthConfig              `yaml:"auth"`
-	Backup   BackupConfig            `yaml:"backup"`
-	AI       AIConfig                `yaml:"ai"`
-	MCP      MCPConfig               `yaml:"mcp"`
-	Workers  WorkersConfig           `yaml:"workers"`
-	Trash    TrashConfig             `yaml:"trash"`
-	// BlobDeletion tunes the deferred deletion of blob bytes.
+	// Storage selects and configures the blob store (see
+	// docs/operations/storage.md). Its replica block adds an asynchronous
+	// second copy of every blob (see docs/operations/replication.md).
+	Storage storage.StorageConfig `yaml:"storage"`
+	// Logger configures the log level, format and destination.
+	Logger LoggerConfig `yaml:"log"`
+	// GPG configures the key file that signs APT and RPM metadata and release
+	// bundle manifests (see docs/security/signing.md).
+	GPG GPGConfig `yaml:"gpg"`
+	// Attest configures the signing key of SBOM and VEX attestations (see
+	// docs/security/sbom.md).
+	Attest AttestationConfig `yaml:"attestation"`
+	// Auth configures sessions, anonymous reads and the login-state and SAML
+	// service provider keys (see docs/security/authentication.md).
+	Auth AuthConfig `yaml:"auth"`
+	// Backup configures where backups are written and how long a running
+	// backup holds back blob deletions (see docs/operations/backup.md).
+	Backup BackupConfig `yaml:"backup"`
+	// AI configures AI-assisted package analysis (see docs/integrations/ai-analysis.md).
+	AI AIConfig `yaml:"ai"`
+	// MCP configures the embedded Model Context Protocol server (see docs/integrations/mcp.md).
+	MCP MCPConfig `yaml:"mcp"`
+	// Workers tunes the background workers: metadata regeneration, Docker
+	// registry garbage collection and upload staging, webhook retention.
+	Workers WorkersConfig `yaml:"workers"`
+	Trash   TrashConfig   `yaml:"trash"`
+	// BlobDeletion tunes the deferred deletion of blob bytes (see
+	// docs/operations/storage.md).
 	BlobDeletion BlobDeletionConfig `yaml:"blobDeletion"`
 	Tiering      TieringConfig      `yaml:"tiering"`
-	// Recovery tunes the disaster-recovery row journal (see
-	// docs/operations/rebuild-from-storage.md).
+	// Recovery groups the disaster-recovery settings.
 	Recovery   RecoveryConfig   `yaml:"recovery"`
 	Projects   ProjectsConfig   `yaml:"projects"`
 	Federation FederationConfig `yaml:"federation"`
@@ -81,10 +99,15 @@ type Config struct {
 	// docs/operations/monitoring.md.
 	Telemetry telemetry.Config `yaml:"telemetry"`
 	Scanners  ScannersConfig   `yaml:"scanners"`
-	BaseURL   string           `yaml:"baseUrl"`
+	// BaseURL is the public URL of the server; it is used for generated links
+	// and SSO callbacks, so set it when the server runs behind a reverse proxy.
+	BaseURL string `yaml:"baseUrl"`
 
-	// StorageReplica is the optional blob replica, the storage.replica block
-	// (decoded by loadReplicaFromYAML, see docs/operations/replication.md).
+	// The replica lives under storage.replica in the YAML file; loadReplicaFromYAML
+	// decodes it, which is why the field itself carries no yaml key.
+
+	// StorageReplica is the optional blob replica: an asynchronous second copy
+	// of every blob on another backend (see docs/operations/replication.md).
 	StorageReplica storage.ReplicaConfig `yaml:"-"`
 }
 
@@ -217,46 +240,77 @@ type RecoveryJournalConfig struct {
 }
 
 type AuthConfig struct {
-	AllowAnonymousRead   bool   `yaml:"allowAnonymousRead"`
-	LegacyAPIKeyEnabled  bool   `yaml:"legacyApiKeyEnabled"`
-	SessionDurationHours int    `yaml:"sessionDurationHours"`
-	HMACKey              string `yaml:"hmacKey"`
-	SAMLSPCertPEM        string `yaml:"samlSpCert"` // OPENARTIFACT_SAML_SP_CERT: PEM-encoded certificate
-	SAMLSPKeyPEM         string `yaml:"samlSpKey"`  // OPENARTIFACT_SAML_SP_KEY: PEM-encoded private key
+	// AllowAnonymousRead lets anonymous clients read private repositories (via
+	// the "anonymous-read" permission target). Repositories flagged public are
+	// always anonymously readable, never writable, whatever this says.
+	AllowAnonymousRead bool `yaml:"allowAnonymousRead"`
+	// LegacyAPIKeyEnabled accepts the deprecated server.apiKey on write
+	// endpoints.
+	LegacyAPIKeyEnabled bool `yaml:"legacyApiKeyEnabled"`
+	// SessionDurationHours is the lifetime of a web session, in hours.
+	SessionDurationHours int `yaml:"sessionDurationHours"`
+	// HMACKey signs OIDC and SAML login state. Unset: a random key is
+	// generated once and persisted in system_settings (shared by replicas); a
+	// configured value wins.
+	HMACKey string `yaml:"hmacKey"`
+	// SAMLSPCertPEM is the PEM certificate of the SAML service provider. Unset:
+	// a self-signed pair is generated once and persisted encrypted in
+	// system_settings (shared by replicas); regenerating it means
+	// re-registering the certificate at the identity provider.
+	SAMLSPCertPEM string `yaml:"samlSpCert"`
+	// SAMLSPKeyPEM is the PEM private key of the SAML service provider. Unset
+	// together with the certificate: a self-signed pair is generated (see
+	// samlSpCert). Stored unencrypted while OPENARTIFACT_SECRET_KEY is unset.
+	SAMLSPKeyPEM string `yaml:"samlSpKey"`
 }
 
 // ServerConfig contains HTTP server configuration.
 type ServerConfig struct {
+	// Host is the listen address.
 	Host string `yaml:"host"`
-	Port int    `yaml:"port"`
-	// ReadTimeout bounds an entire request (headers + body). Defaults to 0
-	// (no limit) so large artifact uploads are never truncated; slowloris
-	// protection instead comes from ReadHeaderTimeout below.
-	ReadTimeout int `yaml:"readTimeout"` // seconds, 0 = no limit
-	// WriteTimeout bounds writing the response. Defaults to 0 (no limit) —
-	// large artifact downloads/streams rely on per-handler deadlines
-	// instead of one server-wide cutoff (see api.HTTPServer).
-	WriteTimeout int `yaml:"writeTimeout"` // seconds, 0 = no limit
-	// ReadHeaderTimeout bounds only the time to read request headers, kept
-	// short regardless of ReadTimeout to still mitigate slowloris-style
-	// attacks even when body reads are unbounded.
-	ReadHeaderTimeout int `yaml:"readHeaderTimeout"` // seconds
+	// Port is the listen port.
+	Port int `yaml:"port"`
+	// ReadTimeout bounds an entire request (headers + body), in seconds. 0
+	// (the default) means no limit so large artifact uploads are never
+	// truncated; slowloris protection instead comes from readHeaderTimeout.
+	ReadTimeout int `yaml:"readTimeout"`
+	// WriteTimeout bounds writing the response, in seconds. 0 (the default)
+	// means no limit: large artifact downloads and streams rely on per-handler
+	// deadlines instead of one server-wide cutoff.
+	WriteTimeout int `yaml:"writeTimeout"`
+	// ReadHeaderTimeout bounds only the time to read request headers, in
+	// seconds. It stays short regardless of readTimeout to still mitigate
+	// slowloris-style attacks even when body reads are unbounded.
+	ReadHeaderTimeout int `yaml:"readHeaderTimeout"`
 	// MaxBodyBytes caps the body of every request (http.MaxBytesReader), a
 	// last line of defence behind the per-handler limits so no endpoint can be
 	// made to spool or buffer an unbounded body. 0 disables the cap.
-	MaxBodyBytes    int64    `yaml:"maxBodyBytes"`
-	ShutdownTimeout int      `yaml:"shutdownTimeout"` // seconds
-	TLSEnabled      bool     `yaml:"tlsEnabled"`
-	TLSCert         string   `yaml:"tlsCert"`
-	TLSKey          string   `yaml:"tlsKey"`
-	APIKey          string   `yaml:"apiKey"`       // API key for write endpoint authentication (empty = auth disabled)
-	CORSOrigins     []string `yaml:"corsOrigins"`  // Allowed CORS origins (default: none)
-	InstanceID      string   `yaml:"instanceId"`   // Instance identifier for HA deployments
-	IPAllowlist     []string `yaml:"ipAllowlist"`  // Allowed CIDR blocks (empty = allow all)
-	RateLimitRPS    int      `yaml:"rateLimitRps"` // Rate limit in requests per second (0 = disabled)
+	MaxBodyBytes int64 `yaml:"maxBodyBytes"`
+	// ShutdownTimeout is how many seconds in-flight requests get to finish
+	// during a graceful shutdown.
+	ShutdownTimeout int `yaml:"shutdownTimeout"`
+	// TLSEnabled serves HTTPS and sends HSTS; it requires tlsCert and tlsKey.
+	TLSEnabled bool `yaml:"tlsEnabled"`
+	// TLSCert is the path of the PEM certificate file.
+	TLSCert string `yaml:"tlsCert"`
+	// TLSKey is the path of the PEM private key file.
+	TLSKey string `yaml:"tlsKey"`
+	// APIKey is a deprecated static key accepted on write endpoints while
+	// auth.legacyApiKeyEnabled is true. It authenticates as
+	// system/legacy-api-key and logs a warning on each use; empty disables it.
+	APIKey string `yaml:"apiKey"`
+	// CORSOrigins lists the browser origins allowed by CORS; none by default.
+	CORSOrigins []string `yaml:"corsOrigins"`
+	// InstanceID names this instance in HA deployments; /health reports it
+	// (omitted when empty, the hostname is never disclosed).
+	InstanceID string `yaml:"instanceId"`
+	// IPAllowlist lists the CIDR blocks allowed to connect; empty allows all.
+	IPAllowlist []string `yaml:"ipAllowlist"`
+	// RateLimitRPS caps requests per second per client IP; 0 disables the limit.
+	RateLimitRPS int `yaml:"rateLimitRps"`
 	// TrustedProxies lists CIDR blocks of reverse proxies allowed to set
 	// X-Forwarded-For/X-Real-IP. Empty (default) means no proxy is trusted —
-	// the immediate TCP peer (RemoteAddr) is always used as the client IP,
+	// the immediate TCP peer is always used as the client IP,
 	// so a client can never spoof its own IP via those headers.
 	TrustedProxies []string `yaml:"trustedProxies"`
 	// PprofEnabled mounts Go's runtime profiler under /api/v1/admin/pprof/
@@ -268,16 +322,26 @@ type ServerConfig struct {
 
 // LoggerConfig contains logging configuration.
 type LoggerConfig struct {
-	Level      string `yaml:"level"`  // "debug", "info", "warn", "error"
-	Format     string `yaml:"format"` // "json", "text"
-	OutputPath string `yaml:"output"` // "stdout", "stderr", or file path
+	// Level is the minimum severity logged: debug, info, warn or error.
+	// Unknown values fall back to info.
+	Level string `yaml:"level"`
+	// Format is json or text; any other value gives console text.
+	Format string `yaml:"format"`
+	// OutputPath is stdout, stderr or a file path (appended to).
+	OutputPath string `yaml:"output"`
 }
 
 type GPGConfig struct {
-	Enabled      bool   `yaml:"enabled"`
-	KeyPath      string `yaml:"keyPath"`
-	Passphrase   string `yaml:"passphrase"`
-	AutoGenerate bool   `yaml:"autoGenerate"`
+	// Enabled loads the file key at keyPath. Keys managed through the admin
+	// API sign regardless.
+	Enabled bool `yaml:"enabled"`
+	// KeyPath is the private key file (the read-only fallback key).
+	KeyPath string `yaml:"keyPath"`
+	// Passphrase unlocks the key at keyPath.
+	Passphrase string `yaml:"passphrase"`
+	// AutoGenerate generates an RSA-4096 global signing key at startup when
+	// no key exists yet. It needs OPENARTIFACT_SECRET_KEY and is replica-safe.
+	AutoGenerate bool `yaml:"autoGenerate"`
 }
 
 // AttestationConfig configures the signing key of SBOM and VEX attestations.
@@ -289,7 +353,8 @@ type AttestationConfig struct {
 
 // BackupConfig contains backup configuration.
 type BackupConfig struct {
-	BackupDir string `yaml:"backupDir"` // Directory to store backup files
+	// BackupDir is the directory backup files are written to.
+	BackupDir string `yaml:"backupDir"`
 	// LeaseTTL is how long a running backup's hold on deleted blob bytes
 	// survives without a heartbeat. A running backup renews it every third of
 	// this; a crashed backup stops holding deletions back once it expires.
@@ -315,24 +380,43 @@ type BlobDeletionConfig struct {
 
 // AIConfig contains AI analysis configuration.
 type AIConfig struct {
-	Enabled      bool   `yaml:"enabled"`
-	AutoAnalyze  bool   `yaml:"autoAnalyze"` // analyse every upload without being asked (default off)
-	Provider     string `yaml:"provider"`    // "openai", "azure", "ollama", "custom"
-	BaseURL      string `yaml:"baseUrl"`     // API base URL (for Azure/Ollama/custom)
-	APIKey       string `yaml:"apiKey"`
-	Model        string `yaml:"model"` // e.g. "gpt-4o-mini", "llama3"
-	MaxTokens    int    `yaml:"maxTokens"`
-	TimeoutSecs  int    `yaml:"timeoutSecs"`
-	SystemPrompt string `yaml:"systemPrompt"` // override default system prompt
+	// Enabled turns AI-assisted artifact analysis on (metadata tagging,
+	// license check, security notes).
+	Enabled bool `yaml:"enabled"`
+	// AutoAnalyze analyses every upload without being asked. Off: analyses
+	// start only on request (UI, API or MCP). Needs enabled.
+	AutoAnalyze bool `yaml:"autoAnalyze"`
+	// Provider is the LLM backend: openai, azure, ollama or custom (any
+	// OpenAI-compatible endpoint; needs baseUrl).
+	Provider string `yaml:"provider"`
+	// BaseURL overrides the API base URL (Azure OpenAI, Ollama or a custom
+	// endpoint).
+	BaseURL string `yaml:"baseUrl"`
+	// APIKey authenticates to the provider; required for openai and azure,
+	// leave it empty for a local ollama.
+	APIKey string `yaml:"apiKey"`
+	// Model is the model to use, for example gpt-4o-mini or llama3; it must be
+	// available on the configured provider.
+	Model string `yaml:"model"`
+	// MaxTokens caps the completion tokens of one analysis request.
+	MaxTokens int `yaml:"maxTokens"`
+	// TimeoutSecs is the HTTP timeout of an AI API call, in seconds.
+	TimeoutSecs int `yaml:"timeoutSecs"`
+	// SystemPrompt overrides the built-in system prompt; empty uses it.
+	SystemPrompt string `yaml:"systemPrompt"`
 }
 
 // MCPConfig contains MCP server configuration.
 type MCPConfig struct {
-	Enabled   bool   `yaml:"enabled"`
-	Transport string `yaml:"transport"` // only "http" is supported
-	HTTPPath  string `yaml:"httpPath"`  // mount path of the HTTP endpoint, default "/mcp"
+	// Enabled mounts the MCP server on the main HTTP listener.
+	Enabled bool `yaml:"enabled"`
+	// Transport must be http (the only supported transport; stdio is
+	// rejected). The endpoint requires an "Authorization: Bearer" token.
+	Transport string `yaml:"transport"`
+	// HTTPPath is the mount path of the HTTP endpoint.
+	HTTPPath string `yaml:"httpPath"`
 	// AllowedOrigins are the browser origins (scheme://host[:port]) accepted in
-	// the Origin header of MCP requests, besides the BASE_URL origin. A request
+	// the Origin header of MCP requests, besides the origin of baseUrl. A request
 	// with any other Origin is refused with 403; requests without an Origin
 	// header (non-browser clients) are unaffected.
 	AllowedOrigins []string `yaml:"allowedOrigins"`
@@ -367,6 +451,10 @@ func Load(filePath string) (*Config, error) {
 
 	return cfg, nil
 }
+
+// Defaults returns the built-in default configuration, the starting point of
+// Load before the YAML file and the environment are applied.
+func Defaults() *Config { return defaultConfig() }
 
 // defaultConfig returns a Config with all default values.
 func defaultConfig() *Config {
