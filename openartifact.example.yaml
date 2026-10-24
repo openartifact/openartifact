@@ -238,6 +238,16 @@ workers:
   # purged).
   webhookDeliveryRetentionDays: 30
 
+# Audit log retention. Entries older than retentionDays are deleted by a
+# background worker in paced batches of purgeBatchSize, one replica at a time,
+# every purgeInterval. 0 (the default) keeps the audit log forever. Nothing is
+# exported before deletion: archive with `oa audit export` first. See
+# docs/operations/audit-retention.md.
+audit:
+  retentionDays: 0
+  purgeInterval: 1h
+  purgeBatchSize: 5000
+
 # Trash (soft delete). Deleted artifacts, versions and repositories stay
 # restorable for retentionDays before the purge worker removes them for good.
 # A repository can override this with its own trash_retention_days; 0 (here or

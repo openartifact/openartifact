@@ -14,6 +14,7 @@ import (
 	"math/rand/v2"
 	"net"
 	"net/http"
+	"runtime/debug"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/netutil"
@@ -119,7 +120,24 @@ func (e *Engine) PullPeer(ctx context.Context, peerID, repoID string) (err error
 
 	defer func() { e.recordOutcome(peer, repo, err) }()
 
+	// Registered after recordOutcome so it runs first: a panic in a codec or
+	// the engine becomes this pull's error, which recordOutcome stores as the
+	// peer's last error (state "error", with backoff) like any other failure.
+	defer func() {
+		if r := recover(); r != nil {
+			e.logPanic("pull", r, "repo", repo.Name, "peer", peer.Name)
+
+			err = fmt.Errorf("%w: %v", errPullPanic, r)
+		}
+	}()
+
 	return e.pull(ctx, peer, repo)
+}
+
+// logPanic reports a recovered panic with its stack. It must be called from
+// the deferred function that recovered, so the stack still shows the panic.
+func (e *Engine) logPanic(what string, recovered any, kv ...any) {
+	e.Log.Errorw("federation: panic in "+what, append(kv, "panic", recovered, "stack", string(debug.Stack()))...)
 }
 
 // recordOutcome stores the result of a pull; it runs on a fresh context so a

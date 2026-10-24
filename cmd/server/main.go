@@ -440,6 +440,12 @@ func run(args []string) error {
 	trashPurgeWorker.SetPublisher(webhookDispatcher)
 	trashPurgeWorker.Start()
 
+	// Audit log retention: deletes entries older than audit.retentionDays in
+	// paced batches, one replica at a time (advisory lock). Off by default (see
+	// docs/operations/audit-retention.md).
+	auditRetentionWorker := worker.NewAuditRetentionWorker(db, log, cfg.Audit.RetentionDays, cfg.Audit.PurgeInterval, cfg.Audit.PurgeBatchSize).WithMetrics(reg)
+	auditRetentionWorker.Start()
+
 	// Storage tier mover: relocates blobs between tiers per policy, crash-safe
 	// and throttled; one replica at a time (advisory lock).
 	tierMover := tiering.NewMover(db, tierRegistry, tieredStore, tiering.NewThrottle(cfg.Tiering.MaxBytesPerSecond),
@@ -487,7 +493,7 @@ func run(args []string) error {
 	stopWorkers := func() {
 		stopWorkersOnce.Do(func() {
 			for _, stop := range []func(){
-				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, dockerUploadSweeper.Stop, trashPurgeWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
+				webhookDispatcher.Stop, cleanupWorker.Stop, presignedUploadWorker.Stop, dockerGCWorker.Stop, dockerUploadSweeper.Stop, trashPurgeWorker.Stop, auditRetentionWorker.Stop, authPurgeWorker.Stop, proxyCacheWorker.Stop,
 				tierWorker.Stop, blobSweeper.Stop, replStop, tierRegistry.Stop, tierAccess.Stop, journalWorker.Stop,
 			} {
 				stop()

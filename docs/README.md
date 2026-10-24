@@ -68,6 +68,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [PostgreSQL point-in-time recovery](operations/postgres-pitr.md) | WAL archiving, base backups and restore to a chosen time with CloudNativePG and the Helm chart |
 | [Rebuild from storage](operations/rebuild-from-storage.md) | Row journal sidecars in the blob store and `openartifact rebuild`: re-index an empty database from storage |
 | [Monitoring](operations/monitoring.md) | Health, Prometheus metrics, audit log, logging |
+| [Audit log retention](operations/audit-retention.md) | Delete audit entries older than N days in paced batches, one replica at a time; export first |
 | [Webhooks](operations/webhooks.md) | Events, HMAC signatures, retries, delivery log |
 | [Performance](operations/performance.md) | Benchmarks, load tests, pprof, auth cache and other tuning |
 

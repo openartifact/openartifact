@@ -6,6 +6,7 @@ package search
 
 import (
 	"context"
+	"strings"
 	"testing"
 	"time"
 
@@ -299,14 +300,98 @@ func TestSearchRepositoriesPostFilterRemovesUnreadableRepo(t *testing.T) {
 func TestBuildWhereClauseTreatsLikeMetacharactersLiterally(t *testing.T) {
 	repoID := uuid.New()
 
-	where, args := buildWhereClause(SearchFilter{FreeText: `ui_kit%`, SHA256Prefix: `ab_`}, map[uuid.UUID]struct{}{repoID: {}})
+	where, join, args := buildWhereClause(SearchFilter{FreeText: `ui_kit%`, SHA256Prefix: `ab_`}, map[uuid.UUID]struct{}{repoID: {}})
 
 	if want := `s.name ILIKE $1 AND s.sha256 LIKE $2 AND s.repository_id = ANY($3::uuid[])`; where != want {
 		t.Errorf("where = %q, want %q", where, want)
 	}
 
+	if join != "" {
+		t.Errorf("join = %q, want none for a small readable set", join)
+	}
+
 	if args[0] != `%ui\_kit\%%` || args[1] != `ab\_%` {
 		t.Errorf("args = %q, %q; LIKE metacharacters must be escaped", args[0], args[1])
+	}
+}
+
+func readableSet(n int) map[uuid.UUID]struct{} {
+	set := make(map[uuid.UUID]struct{}, n)
+	for range n {
+		set[uuid.New()] = struct{}{}
+	}
+
+	return set
+}
+
+// A large readable set scopes the query with a join over the id array rather
+// than a constant ANY list, which the planner prices per element.
+func TestBuildWhereClauseLargeReadableSetJoinsUnnest(t *testing.T) {
+	readable := readableSet(readableJoinThreshold + 1)
+
+	where, join, args := buildWhereClause(SearchFilter{FreeText: "lodash"}, readable)
+
+	if want := `s.name ILIKE $1`; where != want {
+		t.Errorf("where = %q, want %q", where, want)
+	}
+
+	if want := ` JOIN unnest($2::uuid[]) AS ru(id) ON ru.id = s.repository_id`; join != want {
+		t.Errorf("join = %q, want %q", join, want)
+	}
+
+	if len(args) != 2 {
+		t.Fatalf("got %d args, want the name pattern and the id array", len(args))
+	}
+
+	if got := strings.Count(args[1].(string), ",") + 1; got != len(readable) {
+		t.Errorf("array carries %d ids, want %d", got, len(readable))
+	}
+
+	where, join, _ = buildWhereClause(SearchFilter{}, readable)
+	if where != "" || join != ` JOIN unnest($1::uuid[]) AS ru(id) ON ru.id = s.repository_id` {
+		t.Errorf("unfiltered large scope: where = %q, join = %q", where, join)
+	}
+
+	_, join, _ = buildWhereClause(SearchFilter{}, readableSet(readableJoinThreshold))
+	if join != "" {
+		t.Errorf("a set at the threshold must stay an ANY predicate, got join %q", join)
+	}
+}
+
+func TestSearchQueriesPlaceLargeReadableJoinBeforeRepositories(t *testing.T) {
+	readable := readableSet(readableJoinThreshold + 1)
+
+	q, _ := buildSearchQuery(SearchFilter{Repos: []string{"r1"}}, 20, 0, readable, true, PageOptions{})
+
+	unnest := strings.Index(q, "JOIN unnest($2::uuid[])")
+	repos := strings.Index(q, "JOIN repositories r ON r.id = s.repository_id")
+
+	if unnest < 0 || repos < 0 || unnest > repos {
+		t.Errorf("want the readable join then the repositories join in:\n%s", q)
+	}
+
+	if strings.Contains(q, "= ANY(") {
+		t.Errorf("a large scope must not use an ANY list:\n%s", q)
+	}
+}
+
+func TestSearchRepositoriesLargeReadableSetNoFilters(t *testing.T) {
+	db, mock, err := sqlmock.New()
+	if err != nil {
+		t.Fatalf("open sqlmock: %v", err)
+	}
+	defer func() { _ = db.Close() }()
+
+	mock.ExpectQuery(`FROM repositories r JOIN unnest\(\$1::uuid\[\]\) AS ru\(id\) ON ru.id = r.id\s+WHERE r.deleted_at IS NULL\s+ORDER BY`).
+		WillReturnRows(sqlmock.NewRows([]string{"id", "name", "format", "description"}))
+
+	_, err = NewExecutor(db).SearchRepositories(context.Background(), SearchFilter{}, 10, 0, readableSet(readableJoinThreshold+1))
+	if err != nil {
+		t.Fatalf("SearchRepositories: %v", err)
+	}
+
+	if err := mock.ExpectationsWereMet(); err != nil {
+		t.Errorf("unmet expectations: %v", err)
 	}
 }
 

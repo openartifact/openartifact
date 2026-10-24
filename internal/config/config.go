@@ -39,6 +39,7 @@ var (
 	errNegativeDigestTTL        = errors.New("workers.proxyDockerDigestTtl must not be negative")
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
+	errAuditRetention           = errors.New("audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive")
 	errFederationSettings       = errors.New("federation.pollInterval, batchSize, maxBackoff and requestTimeout must be positive, tombstoneRetention must not be negative")
 	errBlobDeletionBatch        = errors.New("blobDeletion.sweepBatch must be at least 1")
 	errBlobDeletionNegative     = errors.New("blobDeletion.grace must not be negative")
@@ -87,6 +88,8 @@ type Config struct {
 	// registry garbage collection and upload staging, webhook retention.
 	Workers WorkersConfig `yaml:"workers"`
 	Trash   TrashConfig   `yaml:"trash"`
+	// Audit tunes the retention of the audit log (see docs/operations/audit-retention.md).
+	Audit AuditConfig `yaml:"audit"`
 	// Docs configures the links from the web UI to the published documentation.
 	Docs DocsConfig `yaml:"docs"`
 	// BlobDeletion tunes the deferred deletion of blob bytes (see
@@ -175,6 +178,29 @@ type TrashConfig struct {
 	// PurgeInterval is the pause between purge passes. Zero or negative
 	// disables the schedule: nothing expires until an admin purges by hand.
 	PurgeInterval time.Duration `yaml:"purgeInterval"`
+}
+
+func (c *Config) validateAudit() error {
+	if c.Audit.RetentionDays < 0 || c.Audit.PurgeInterval <= 0 || c.Audit.PurgeBatchSize <= 0 {
+		return errAuditRetention
+	}
+
+	return nil
+}
+
+// AuditConfig tunes the retention of the audit log (see
+// docs/operations/audit-retention.md).
+type AuditConfig struct {
+	// RetentionDays is how many days audit entries are kept before the
+	// retention worker deletes them in batches. 0 keeps them forever (the
+	// default): export them with `oa audit export` before enabling a limit.
+	RetentionDays int `yaml:"retentionDays"`
+	// PurgeInterval is the pause between retention passes. Only used when
+	// RetentionDays is positive.
+	PurgeInterval time.Duration `yaml:"purgeInterval"`
+	// PurgeBatchSize is how many entries one delete statement removes; a pass
+	// repeats it, paced, until nothing older than the retention is left.
+	PurgeBatchSize int `yaml:"purgeBatchSize"`
 }
 
 // FederationConfig tunes federated repositories (see docs/operations/federation.md).
@@ -589,6 +615,10 @@ func defaultConfig() *Config {
 			RetentionDays: 7,
 			PurgeInterval: 15 * time.Minute,
 		},
+		Audit: AuditConfig{
+			PurgeInterval:  time.Hour,
+			PurgeBatchSize: 5000,
+		},
 		Federation: FederationConfig{
 			PollInterval:       30 * time.Second,
 			BatchSize:          200,
@@ -774,6 +804,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Docs.BaseURL, "OPENARTIFACT_DOCS_BASE_URL")
 	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
 	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
+	overrideInt(&cfg.Audit.RetentionDays, "OPENARTIFACT_AUDIT_RETENTION_DAYS")
+	overrideDuration(&cfg.Audit.PurgeInterval, "OPENARTIFACT_AUDIT_PURGE_INTERVAL")
+	overrideInt(&cfg.Audit.PurgeBatchSize, "OPENARTIFACT_AUDIT_PURGE_BATCH_SIZE")
 
 	// Federation
 	overrideBool(&cfg.Federation.Enabled, "OPENARTIFACT_FEDERATION_ENABLED")
@@ -989,7 +1022,11 @@ func (c *Config) validateBackgroundServices() error {
 		return err
 	}
 
-	return c.validateBlobRetention()
+	if err := c.validateBlobRetention(); err != nil {
+		return err
+	}
+
+	return c.validateAudit()
 }
 
 func (c *Config) validateBlobRetention() error {

@@ -89,6 +89,8 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 - S3 staging promotion no longer depends on the backend enforcing `If-Match` / `x-amz-copy-source-if-match`: OpenArtifact now also compares the ETag returned by the read or copy and discards the copy on a mismatch. This closes the post-verification overwrite window on backends that ignore conditional reads (for example Garage 1.x). No action required.
 - Uploads no longer hold a database connection and advisory lock while the object store `PUT` runs. Bytes are written first (content-addressed, idempotent), then the per-blob lock covers only the database rows, after re-checking that the object still exists. Concurrent uploads per pod are no longer capped by the connection pool, and a large upload no longer blocks other uploads or deletes of the same blob. No configuration change.
+- New optional [audit log retention](../operations/audit-retention.md): `audit.retentionDays` (`OPENARTIFACT_AUDIT_RETENTION_DAYS`) deletes audit entries older than that many days in small paced batches, one replica at a time, with `openartifact_audit_retention_*` metrics. The default `0` keeps the log forever, so nothing changes unless you set it; nothing is exported before deletion (use `oa audit export`). No migration.
+- Package search no longer slows down as the set of repositories a user can read grows: planning a query took about 11 ms at 2000 readable repositories and about 50 ms at 10000, and is now about 1.5 ms at any size (a set of up to 1000 repositories is unchanged). Results, their order and totals are unchanged; no migration, nothing to do on upgrade.
 
 ### 0.9.0
 

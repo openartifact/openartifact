@@ -51,7 +51,7 @@ func BenchmarkBuildWhereClause(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				_, _ = buildWhereClause(filter, readable)
+				_, _, _ = buildWhereClause(filter, readable)
 			}
 		})
 	}

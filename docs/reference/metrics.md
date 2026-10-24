@@ -19,6 +19,8 @@ The Go runtime (`go_*`) and process (`process_*`) metrics of the standard client
 | Metric | Type | Labels | Help |
 |---|---|---|---|
 | `openartifact_audit_dropped_total` | counter | none | Total number of audit events dropped due to backpressure. |
+| `openartifact_audit_retention_deleted_total` | counter | none | Total number of audit log entries deleted for being older than audit.retentionDays. |
+| `openartifact_audit_retention_last_run_timestamp_seconds` | gauge | none | Unix time the last audit retention pass finished without error on this replica (a pass that found nothing to delete counts). |
 
 ## Blob store
 
