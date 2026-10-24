@@ -113,8 +113,10 @@ func parseGemspecMetadata(data []byte) map[string]any {
 		return gemspecToMetadata(spec)
 	}
 
+	// A JSON null decodes without error but leaves the map nil: not an object,
+	// so not a gemspec.
 	metadata := make(map[string]any)
-	if err := json.Unmarshal(data, &metadata); err == nil {
+	if err := json.Unmarshal(data, &metadata); err == nil && metadata != nil {
 		return metadata
 	}
 
