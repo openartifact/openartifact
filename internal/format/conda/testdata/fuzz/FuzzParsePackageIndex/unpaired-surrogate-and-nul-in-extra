@@ -1,0 +1,2 @@
+go test fuzz v1
+[]byte("{\"license\":\"\\ud800\",\"noarch\":\"\\u0000\"}")

@@ -60,6 +60,18 @@ func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
 	h.Log.Infow("conda handler registered", "prefix", prefix)
 }
 
+// platformOf returns the platform the URL names. One the conda_packages column
+// cannot hold is answered 400 here, instead of failing in the database as a 500.
+func platformOf(w http.ResponseWriter, r *http.Request) (string, bool) {
+	platform := urlparams.Vars(r)["platform"]
+	if !validPlatform(platform) {
+		http.Error(w, "invalid platform", http.StatusBadRequest)
+		return "", false
+	}
+
+	return platform, true
+}
+
 // resolveRepo returns the ID of the repository named in the URL. When there is
 // none (unknown repository or a lookup failure) it writes the response and
 // returns "".
@@ -124,9 +136,12 @@ func repodataEntry(pkg *models.CondaPackage, platform string) map[string]any {
 const repodataMaxAge = 60
 
 func (h *HTTPHandler) handleRepodata(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	platform := vars["platform"]
+	repoName := urlparams.Vars(r)["name"]
+
+	platform, ok := platformOf(w, r)
+	if !ok {
+		return
+	}
 
 	repo, err := h.ResolveRepo(r.Context(), repoName)
 	if err != nil {
@@ -209,9 +224,12 @@ func (h *HTTPHandler) renderRepodata(ctx context.Context, repoID, platform strin
 }
 
 func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	platform := vars["platform"]
-	filename := vars["filename"]
+	platform, ok := platformOf(w, r)
+	if !ok {
+		return
+	}
+
+	filename := urlparams.Vars(r)["filename"]
 
 	file, ok := parsePackageFilename(filename)
 	if !ok {
@@ -273,9 +291,12 @@ func uploadFilename(r *http.Request) string {
 }
 
 func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	platform := vars["platform"]
+	repoName := urlparams.Vars(r)["name"]
+
+	platform, ok := platformOf(w, r)
+	if !ok {
+		return
+	}
 
 	repoID := h.resolveRepo(w, r)
 	if repoID == "" {
@@ -439,10 +460,14 @@ func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.CondaPackage
 }
 
 func (h *HTTPHandler) handleDelete(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	repoName := vars["name"]
-	platform := vars["platform"]
-	filename := vars["filename"]
+	repoName := urlparams.Vars(r)["name"]
+
+	platform, ok := platformOf(w, r)
+	if !ok {
+		return
+	}
+
+	filename := urlparams.Vars(r)["filename"]
 
 	file, ok := parsePackageFilename(filename)
 	if !ok {

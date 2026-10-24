@@ -7,11 +7,13 @@ package conda
 import (
 	"archive/tar"
 	"archive/zip"
+	"bytes"
 	"compress/bzip2"
 	"encoding/json"
 	"io"
 	"math"
 	"path"
+	"slices"
 	"strings"
 
 	"github.com/klauspost/compress/zstd"
@@ -77,7 +79,7 @@ func parsePackageIndex(raw []byte) packageIndex {
 	}
 
 	var depends []string
-	if json.Unmarshal(fields["depends"], &depends) == nil && depends != nil {
+	if json.Unmarshal(fields["depends"], &depends) == nil && depends != nil && !slices.ContainsFunc(depends, hasNUL) {
 		idx.Depends = depends
 	}
 
@@ -100,7 +102,9 @@ func parsePackageIndex(raw []byte) packageIndex {
 
 	for _, k := range repodataExtraKeys() {
 		if v, ok := fields[k]; ok && string(v) != "null" {
-			extra[k] = v
+			if v, ok = storableJSON(v); ok {
+				extra[k] = v
+			}
 		}
 	}
 
@@ -109,6 +113,44 @@ func parsePackageIndex(raw []byte) packageIndex {
 	}
 
 	return idx
+}
+
+// hasNUL reports whether s holds a NUL, which PostgreSQL text cannot.
+func hasNUL(s string) bool { return strings.ContainsRune(s, 0) }
+
+// storableJSON returns v re-encoded the way PostgreSQL jsonb accepts it, and
+// false for a value jsonb cannot hold (a NUL in a string or key). Re-encoding
+// replaces invalid UTF-8 and unpaired surrogate escapes, which jsonb refuses, by
+// U+FFFD, as the decoder reads them.
+func storableJSON(v json.RawMessage) (json.RawMessage, bool) {
+	dec := json.NewDecoder(bytes.NewReader(v))
+	dec.UseNumber()
+
+	var decoded any
+	if dec.Decode(&decoded) != nil || jsonHasNUL(decoded) {
+		return nil, false
+	}
+
+	out, err := json.Marshal(decoded)
+
+	return out, err == nil
+}
+
+func jsonHasNUL(v any) bool {
+	switch v := v.(type) {
+	case string:
+		return hasNUL(v)
+	case []any:
+		return slices.ContainsFunc(v, jsonHasNUL)
+	case map[string]any:
+		for k, e := range v {
+			if hasNUL(k) || jsonHasNUL(e) {
+				return true
+			}
+		}
+	}
+
+	return false
 }
 
 // indexFromConda reads info/index.json from the info-*.tar.zst member of a
