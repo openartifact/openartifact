@@ -347,6 +347,10 @@ func (s *S3BlobStore) copyStaging(ctx context.Context, src, dst, version string,
 			return mapCopyError(err, src, dst)
 		}
 
+		if head.ETag != nil && !sameETag(*head.ETag, version) {
+			return ErrStagingChanged
+		}
+
 		if head.ContentLength != nil {
 			size = *head.ContentLength
 		}
@@ -354,7 +358,7 @@ func (s *S3BlobStore) copyStaging(ctx context.Context, src, dst, version string,
 
 	// An unknown size is only possible on GCS without the compose client (tests).
 	if size < 0 || size <= s.copyLimits().single {
-		_, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
+		out, err := s.client.CopyObject(ctx, &s3.CopyObjectInput{
 			Bucket:            aws.String(s.bucket),
 			Key:               aws.String(dst),
 			CopySource:        aws.String(s.bucket + "/" + url.PathEscape(src)),
@@ -366,10 +370,42 @@ func (s *S3BlobStore) copyStaging(ctx context.Context, src, dst, version string,
 			return mapCopyError(err, src, dst)
 		}
 
+		// Backends that ignore x-amz-copy-source-if-match copy whatever is
+		// there; the result carries the ETag of the copied bytes.
+		if out.CopyObjectResult != nil && out.CopyObjectResult.ETag != nil && !sameETag(*out.CopyObjectResult.ETag, version) {
+			return s.discardUnverifiedCopy(ctx, dst)
+		}
+
 		return nil
 	}
 
-	return s.copyStagingMultipart(ctx, src, dst, version, size, md)
+	if err := s.copyStagingMultipart(ctx, src, dst, version, size, md); err != nil {
+		return err
+	}
+
+	// Part ETags say nothing about the source, so a backend that ignores the
+	// precondition is caught by re-reading the source ETag after the copy.
+	head, err := s.client.HeadObject(ctx, &s3.HeadObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(src)})
+	if err != nil {
+		return mapCopyError(err, src, dst)
+	}
+
+	if head.ETag == nil || !sameETag(*head.ETag, version) {
+		return s.discardUnverifiedCopy(ctx, dst)
+	}
+
+	return nil
+}
+
+// discardUnverifiedCopy removes a destination object copied from a staging
+// object whose ETag was not the verified one, and reports ErrStagingChanged.
+func (s *S3BlobStore) discardUnverifiedCopy(ctx context.Context, dst string) error {
+	_, err := s.client.DeleteObject(ctx, &s3.DeleteObjectInput{Bucket: aws.String(s.bucket), Key: aws.String(dst)})
+	if err != nil && !isNotFound(err) {
+		return fmt.Errorf("s3: remove unverified copy %s: %w", dst, err)
+	}
+
+	return ErrStagingChanged
 }
 
 // mapCopyError maps a failed copy to the staging sentinel errors.

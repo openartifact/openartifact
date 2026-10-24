@@ -60,6 +60,10 @@ Defaults: type `filesystem`, bucket `artifacts`, region `us-east-1`, path `/var/
 
 The Azure account endpoint defaults to `https://<account>.blob.core.windows.net/<container>`; `azureEndpoint` overrides the service URL (Azurite, sovereign clouds). Azure and OCI clients use a 30 s HTTP timeout.
 
+### Conditional requests
+
+Presigned uploads are verified and then promoted with conditional requests (`If-Match`, `x-amz-copy-source-if-match`) so bytes overwritten through the still-valid upload URL cannot be promoted. Backends that ignore these preconditions (Garage 1.x does) are still safe: OpenArtifact also compares the ETag reported by the read or copy and discards the copy on a mismatch. Backends that enforce the preconditions (Garage 2.x, AWS S3, MinIO-compatible servers) reject the request directly.
+
 ### Credentials
 
 - S3 family: if both `accessKey` and `secretKey` are set, they are used as static credentials. Otherwise the AWS default credential chain applies (environment, shared config, instance metadata or IRSA).

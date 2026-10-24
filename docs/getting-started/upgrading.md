@@ -85,6 +85,10 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+- S3 staging promotion no longer depends on the backend enforcing `If-Match` / `x-amz-copy-source-if-match`: OpenArtifact now also compares the ETag returned by the read or copy and discards the copy on a mismatch. This closes the post-verification overwrite window on backends that ignore conditional reads (for example Garage 1.x). No action required.
+
 ### 0.9.0
 
 Migrations `067` to `071` and `080`.
