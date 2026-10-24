@@ -198,8 +198,8 @@ func (s *ServiceIndex) Render(repoURL string) ([]byte, error) {
 // URLPrefix replaces the URL prefix From with To.
 type URLPrefix struct{ From, To string }
 
-// RewriteURLs replaces, in every string value of the JSON document doc, a
-// leading From by To. Keys are left alone.
+// RewriteURLs replaces, in every string value of the JSON document doc, the
+// longest leading From of pairs by its To. Keys are left alone.
 func RewriteURLs(doc []byte, pairs ...URLPrefix) ([]byte, error) {
 	v, err := decodeJSON(doc)
 	if err != nil {
@@ -238,11 +238,7 @@ func RewriteRegistrationIndex(doc []byte, pagePrefix string, pairs ...URLPrefix)
 func rewrite(v any, pairs []URLPrefix) any {
 	switch t := v.(type) {
 	case string:
-		for _, p := range pairs {
-			if p.From != "" && strings.HasPrefix(t, p.From) {
-				return p.To + t[len(p.From):]
-			}
-		}
+		return rewriteString(t, pairs)
 	case map[string]any:
 		for k, e := range t {
 			t[k] = rewrite(e, pairs)
@@ -254,6 +250,26 @@ func rewrite(v any, pairs []URLPrefix) any {
 	}
 
 	return v
+}
+
+// rewriteString replaces the leading From of s that is the longest by its To:
+// when one base URL lies below another (GitHub Packages serves the flat
+// container at <registrations>download/), a URL below the inner base is the
+// inner one's, whatever the order of pairs.
+func rewriteString(s string, pairs []URLPrefix) string {
+	best := -1
+
+	for i, p := range pairs {
+		if p.From != "" && strings.HasPrefix(s, p.From) && (best < 0 || len(p.From) > len(pairs[best].From)) {
+			best = i
+		}
+	}
+
+	if best < 0 {
+		return s
+	}
+
+	return pairs[best].To + s[len(pairs[best].From):]
 }
 
 func decodeJSON(doc []byte) (any, error) {

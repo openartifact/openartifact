@@ -126,6 +126,25 @@ func TestRewriteURLs_ByPrefixOnlyAndKeepsNumbersAndMarkup(t *testing.T) {
 	}
 }
 
+func TestRewriteURLs_TheInnerBaseWinsWhateverTheOrder(t *testing.T) {
+	// GitHub Packages serves the flat container below the registrations.
+	in := `{"reg":"https://nuget.example/owner/lib/index.json","pkg":"https://nuget.example/owner/download/lib/1.0.0/lib.1.0.0.nupkg"}`
+	outer := URLPrefix{From: "https://nuget.example/owner/", To: "http://oa/v3/registration/"}
+	inner := URLPrefix{From: "https://nuget.example/owner/download/", To: "http://oa/v3/package/"}
+
+	for name, pairs := range map[string][]URLPrefix{"outer first": {outer, inner}, "inner first": {inner, outer}} {
+		out, err := RewriteURLs([]byte(in), pairs...)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		want := `{"pkg":"http://oa/v3/package/lib/1.0.0/lib.1.0.0.nupkg","reg":"http://oa/v3/registration/lib/index.json"}`
+		if string(out) != want {
+			t.Errorf("%s: %s, want %s", name, out, want)
+		}
+	}
+}
+
 func TestRewriteRegistrationIndex_PagesGoThroughTheRepository(t *testing.T) {
 	in := `{"@id":"https://up/reg/x/index.json","count":3,"items":[` +
 		`{"@id":"https://up/reg/x/page/1.0.0/2.0.0.json","lower":"1.0.0","upper":"2.0.0","count":2,"parent":"https://up/reg/x/index.json"},` +

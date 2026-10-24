@@ -1,0 +1,5 @@
+go test fuzz v1
+[]byte("{\"resources\":[{\"@id\":\"UPSTREAM/reg\",\"@type\":\"RegistrationsBaseUrl\"},{\"@id\":\"UPSTREAM/reg/download\",\"@type\":\"PackageBaseAddress/3.0.0\"}]}")
+[]byte("{\"@id\":\"UPSTREAM/reg/lib/index.json\",\"items\":[{\"@id\":\"UPSTREAM/reg/lib/1.0.0.json\",\"packageContent\":\"UPSTREAM/reg/download/lib/1.0.0/lib.1.0.0.nupkg\"}]}")
+[]byte("{\"versions\":[\"1.0.0\"]}")
+bool(false)

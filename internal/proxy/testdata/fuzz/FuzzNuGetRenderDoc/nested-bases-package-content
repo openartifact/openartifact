@@ -1,0 +1,4 @@
+go test fuzz v1
+[]byte("{\"resources\":[{\"@id\":\"https://nuget.example/owner\",\"@type\":\"RegistrationsBaseUrl\"},{\"@id\":\"https://nuget.example/owner/download\",\"@type\":\"PackageBaseAddress/3.0.0\"}]}")
+[]byte("{\"@id\":\"https://nuget.example/owner/lib/index.json\",\"items\":[{\"@id\":\"https://nuget.example/owner/lib/1.0.0.json\",\"packageContent\":\"https://nuget.example/owner/download/lib/1.0.0/lib.1.0.0.nupkg\",\"registration\":\"https://nuget.example/owner/lib/index.json\"}]}")
+byte('\x02')
