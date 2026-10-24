@@ -233,7 +233,17 @@ func TestSearchMatchesLegacyQuery(t *testing.T) {
 	repoB := seedSearchEquivalence(t, pg, "search-eq-b")
 	exec := search.NewExecutor(pg.GetDB())
 
-	scopes := map[string][]string{"both": {repoA, repoB}, "only A": {repoA}}
+	// A scope past search.readableJoinThreshold ids (1000) is applied as a join
+	// over the id array rather than an ANY list; the ids around that size and
+	// well beyond it must select exactly what the small scopes do, and the
+	// legacy ANY query is the oracle for all of them.
+	scopes := map[string][]string{
+		"both":                     {repoA, repoB},
+		"only A":                   {repoA},
+		"both and 998 strangers":   padReadable(repoA, repoB, 998), // 1000 ids: still an ANY list
+		"both and 999 strangers":   padReadable(repoA, repoB, 999), // 1001 ids: a join
+		"only A and 2500 unknowns": padReadable(repoA, "", 2500),   // a join, most ids unknown
+	}
 
 	for scopeName, ids := range scopes {
 		readable := map[uuid.UUID]struct{}{}
@@ -287,4 +297,19 @@ func TestSearchMatchesLegacyQuery(t *testing.T) {
 			}
 		}
 	}
+}
+
+// padReadable returns the repositories a and b (b may be empty) plus n ids of
+// repositories that do not exist, deterministic so a failure reproduces.
+func padReadable(a, b string, n int) []string {
+	ids := []string{a}
+	if b != "" {
+		ids = append(ids, b)
+	}
+
+	for i := range n {
+		ids = append(ids, uuid.NewSHA1(uuid.NameSpaceOID, fmt.Appendf(nil, "stranger-%d", i)).String())
+	}
+
+	return ids
 }

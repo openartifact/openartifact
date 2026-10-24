@@ -171,7 +171,7 @@ func (e *Executor) countResults(ctx context.Context, filter SearchFilter, readab
 		return 0, nil
 	}
 
-	where, args := buildWhereClause(filter, readableRepos)
+	where, readableJoin, args := buildWhereClause(filter, readableRepos)
 
 	source, joinRepo := searchSource(filter)
 
@@ -185,7 +185,7 @@ func (e *Executor) countResults(ctx context.Context, filter SearchFilter, readab
 		cols = "s.repository_id, s.format, s.name"
 	}
 
-	inner := `SELECT ` + cols + ` FROM ` + source + ` AS s` + repoJoin(joinRepo)
+	inner := `SELECT ` + cols + ` FROM ` + source + ` AS s` + repoJoin(joinRepo, readableJoin)
 	if where != "" {
 		inner += " WHERE " + where
 	}
@@ -207,12 +207,14 @@ func (e *Executor) countResults(ctx context.Context, filter SearchFilter, readab
 	return count, nil
 }
 
-func repoJoin(join bool) string {
+// repoJoin renders the joins of a match: the readable-set join of a large
+// scope (see whereBuilder.addReadable) and, for repo: filters, repositories.
+func repoJoin(join bool, readableJoin string) string {
 	if !join {
-		return ""
+		return readableJoin
 	}
 
-	return " JOIN repositories r ON r.id = s.repository_id AND r.deleted_at IS NULL"
+	return readableJoin + " JOIN repositories r ON r.id = s.repository_id AND r.deleted_at IS NULL"
 }
 
 // Search runs the filter scoped to readableRepos. Repo scoping is enforced
@@ -283,7 +285,7 @@ func buildSearchQuery(
 	capped bool,
 	opts PageOptions,
 ) (string, []any) {
-	where, args := buildWhereClause(filter, readableRepos)
+	where, readableJoin, args := buildWhereClause(filter, readableRepos)
 
 	// The capped paths rank the matched rows as they come out of the match
 	// (only when the set is within the cap: above it the page is discarded),
@@ -312,7 +314,7 @@ func buildSearchQuery(
 	)
 
 	matches := fmt.Sprintf(`FROM %s AS s%s
-		%s`, source, repoJoin(joinRepo), whereClause(where))
+		%s`, source, repoJoin(joinRepo, readableJoin), whereClause(where))
 
 	var pageCTE, totalExpr string
 
@@ -515,12 +517,17 @@ func (e *Executor) SearchRepositories(
 	limitN := len(b.args) + 1
 	b.args = append(b.args, limit, offset)
 
+	andWhere := ""
+	if w := b.String(); w != "" {
+		andWhere = " AND " + w
+	}
+
 	//nolint:gosec // G201: the predicate is built from constant fragments and $n placeholders only; every user value is a bound argument
 	q := fmt.Sprintf(`SELECT r.id, r.name, r.format, COALESCE(r.description, '')
-	FROM repositories r
-	WHERE r.deleted_at IS NULL AND %s
+	FROM repositories r%s
+	WHERE r.deleted_at IS NULL%s
 	ORDER BY %s, r.name, r.id
-	LIMIT $%d OFFSET $%d`, b.String(), rank, limitN, limitN+1)
+	LIMIT $%d OFFSET $%d`, b.join, andWhere, rank, limitN, limitN+1)
 
 	rows, err := e.db.QueryContext(ctx, q, b.args...)
 	if err != nil {
@@ -654,6 +661,7 @@ func whereClause(where string) string {
 type whereBuilder struct {
 	clauses []string
 	args    []any
+	join    string // joins a large readable scope, set by addReadable
 }
 
 // add appends a predicate whose single %d is replaced by the placeholder
@@ -687,14 +695,37 @@ func (b *whereBuilder) addNameMatch(nameExpr string, filter SearchFilter) {
 	}
 }
 
-// addReadable restricts repoIDExpr to the caller's readable repositories.
+// readableJoinThreshold is the readable-set size above which the scope is a
+// join rather than an ANY predicate. The planner prices a constant array
+// element by element against the statistics of every table of the search view
+// (about 5µs per id: ~10ms at 2000 repositories, ~50ms at 10000), but below
+// this size that is cheap and it picks the repository_id index lookups that
+// beat a join for a small scope.
+//
+//nolint:gochecknoglobals // a tunable constant; only the equivalence test reassigns it, to run one set through both forms
+var readableJoinThreshold = 1000
+
+// addReadable restricts repoIDExpr to the caller's readable repositories: an
+// `= ANY($n::uuid[])` predicate for a small set, and for a large one a join
+// over unnest($n::uuid[]) (b.join), which the planner prices as one function
+// scan instead of one comparison per id. The set holds distinct ids, so the
+// join never duplicates a row and both forms select the same rows.
 func (b *whereBuilder) addReadable(repoIDExpr string, readableRepos map[uuid.UUID]struct{}) {
 	idStrs := make([]string, 0, len(readableRepos))
 	for id := range readableRepos {
 		idStrs = append(idStrs, id.String())
 	}
 
-	b.add(repoIDExpr+" = ANY($%d::uuid[])", "{"+strings.Join(idStrs, ",")+"}")
+	arr := "{" + strings.Join(idStrs, ",") + "}"
+
+	if len(readableRepos) <= readableJoinThreshold {
+		b.add(repoIDExpr+" = ANY($%d::uuid[])", arr)
+
+		return
+	}
+
+	b.args = append(b.args, arr)
+	b.join = fmt.Sprintf(" JOIN unnest($%d::uuid[]) AS ru(id) ON ru.id = %s", len(b.args), repoIDExpr)
 }
 
 func (b *whereBuilder) String() string {
@@ -712,11 +743,13 @@ func escapeLike(s string) string {
 	return likeEscaper.Replace(s)
 }
 
-// buildWhereClause builds the filter predicate for both CountResults and
-// Search. readableRepos must be non-empty (callers short-circuit before
-// calling this) — its keys are always ANDed in as an explicit repository_id
-// scope so a caller can never see rows from a repository they can't read.
-func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (string, []any) {
+// buildWhereClause returns the filter predicate for both CountResults and
+// Search, the join that scopes a large readable set (empty otherwise; see
+// whereBuilder.addReadable) and the positional arguments of both.
+// readableRepos must be non-empty (callers short-circuit before calling this)
+// — its keys are always applied as an explicit repository_id scope so a caller
+// can never see rows from a repository they can't read.
+func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{}) (string, string, []any) {
 	var b whereBuilder
 
 	b.addNameMatch("s.name", filter)
@@ -735,5 +768,5 @@ func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{})
 
 	b.addReadable("s.repository_id", readableRepos)
 
-	return b.String(), b.args
+	return b.String(), b.join, b.args
 }

@@ -32,4 +32,5 @@ var (
 	errBlobDigestMismatch  = errors.New("blob digest mismatch at the peer")
 	errUnitKindMismatch    = errors.New("unit content kind differs from the log kind")
 	errTableNoColumns      = errors.New("federation: table has no columns")
+	errPullPanic           = errors.New("federation: pull panicked")
 )

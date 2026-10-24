@@ -24,6 +24,7 @@ import (
 	"slices"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -2004,6 +2005,102 @@ func TestEngineWorkerPullsPeersAndCollectsTombstones(t *testing.T) {
 	engEqual(t, "applied_total", got.AppliedTotal, int64(2))
 	engEqual(t, "cursor", got.CursorSeq, a.state(t).HeadSeq)
 	engEqual(t, "error count", got.ErrorCount, 0)
+}
+
+// ---------------------------------------------------------------------------
+// Panic recovery
+
+// engPanicCodec wraps the codec of a format and panics in Import while armed.
+type engPanicCodec struct {
+	Codec
+
+	armed atomic.Bool
+}
+
+func (c *engPanicCodec) Import(ctx context.Context, tx *sql.Tx, repoID, key string, content *Content, blobIDs map[string]string) (*Change, error) {
+	if c.armed.Load() {
+		panic("injected codec panic")
+	}
+
+	return c.Codec.Import(ctx, tx, repoID, key, content, blobIDs)
+}
+
+// engInjectPanics swaps the codec of format for a panicking wrapper (armed)
+// until the test ends.
+func engInjectPanics(t *testing.T, format string) *engPanicCodec {
+	t.Helper()
+
+	orig := codecs[format]
+	pc := &engPanicCodec{Codec: orig}
+	pc.armed.Store(true)
+	codecs[format] = pc
+
+	t.Cleanup(func() { codecs[format] = orig })
+
+	return pc
+}
+
+func TestEnginePanicInAPullIsRecordedAsPeerErrorAndTheEngineRecovers(t *testing.T) {
+	a, b := newEngSite(t, "site-a", "raw"), newEngSite(t, "site-b", "raw")
+
+	a.put(t, "u1", "one")
+
+	pc := engInjectPanics(t, "raw")
+	peer := b.addPeer(t, a)
+
+	err := b.pull(t, peer)
+	if !errors.Is(err, errPullPanic) || !strings.Contains(err.Error(), "injected codec panic") {
+		t.Fatalf("pull error = %v, want the recovered panic", err)
+	}
+
+	got := b.peer(t, peer)
+	engEqual(t, "error count", got.ErrorCount, 1)
+
+	if !strings.Contains(got.LastError, "panicked") || !strings.Contains(got.LastError, "injected codec panic") ||
+		got.NextAttemptAt == nil || got.State() != PeerError {
+		t.Errorf("peer = state %s, error %q, next attempt %v; want an error naming the panic, with a backoff", got.State(), got.LastError, got.NextAttemptAt)
+	}
+
+	b.mustBeAbsent(t, "u1")
+
+	// The same engine pulls again once the cause is gone.
+	pc.armed.Store(false)
+	b.mustPull(t, peer)
+
+	got = b.peer(t, peer)
+	engEqual(t, "error count after recovery", got.ErrorCount, 0)
+
+	if got.LastError != "" || got.State() != PeerOK {
+		t.Errorf("peer after recovery = state %s, error %q; want ok", got.State(), got.LastError)
+	}
+
+	b.mustRead(t, "u1", "one")
+}
+
+func TestEngineWorkerSurvivesAPanickingPullAndKeepsPulling(t *testing.T) {
+	a, b := newEngSite(t, "site-a", "raw"), newEngSite(t, "site-b", "raw")
+
+	a.put(t, "w1", "first")
+
+	pc := engInjectPanics(t, "raw")
+	peer := b.addPeer(t, a)
+	b.eng.PollInterval = 50 * time.Millisecond
+
+	w := b.eng.StartWorker(context.Background())
+	t.Cleanup(w.Stop)
+
+	engEventually(t, "the panic to be recorded on the peer", func() bool {
+		p := b.peer(t, peer)
+
+		return p.State() == PeerError && strings.Contains(p.LastError, "injected codec panic")
+	})
+
+	pc.armed.Store(false)
+
+	engEventually(t, "the worker to pull after the panic", func() bool { _, ok := b.read(t, "w1"); return ok })
+	engEventually(t, "the peer to be healthy again", func() bool { return b.peer(t, peer).State() == PeerOK })
+
+	w.Stop()
 }
 
 // ---------------------------------------------------------------------------
