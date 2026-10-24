@@ -88,6 +88,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 ### Unreleased
 
 - S3 staging promotion no longer depends on the backend enforcing `If-Match` / `x-amz-copy-source-if-match`: OpenArtifact now also compares the ETag returned by the read or copy and discards the copy on a mismatch. This closes the post-verification overwrite window on backends that ignore conditional reads (for example Garage 1.x). No action required.
+- Package search no longer slows down as the set of repositories a user can read grows: planning a query took about 11 ms at 2000 readable repositories and about 50 ms at 10000, and is now about 1.5 ms at any size (a set of up to 1000 repositories is unchanged). Results, their order and totals are unchanged; no migration, nothing to do on upgrade.
 
 ### 0.9.0
 
