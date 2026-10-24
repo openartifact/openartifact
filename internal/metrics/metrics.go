@@ -24,6 +24,11 @@ type Registry struct {
 	AuditDroppedTotal                   prometheus.Counter
 	TrashPurgedTotal                    *prometheus.CounterVec
 
+	// Audit log retention (audit.retentionDays): rows deleted past the window
+	// and when the last pass finished.
+	AuditRetentionDeletedTotal   prometheus.Counter
+	AuditRetentionLastRunSeconds prometheus.Gauge
+
 	// Storage tiering. The tier/from/to labels are tier names: a handful of
 	// admin-defined values, never blob or repository identifiers.
 	TierBlobs           *prometheus.GaugeVec
@@ -127,6 +132,16 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 			Help: "Total number of trashed items permanently removed by the retention purge, by kind.",
 		}, []string{"kind"}),
 
+		AuditRetentionDeletedTotal: prometheus.NewCounter(prometheus.CounterOpts{
+			Name: "openartifact_audit_retention_deleted_total",
+			Help: "Total number of audit log entries deleted for being older than audit.retentionDays.",
+		}),
+
+		AuditRetentionLastRunSeconds: prometheus.NewGauge(prometheus.GaugeOpts{
+			Name: "openartifact_audit_retention_last_run_timestamp_seconds",
+			Help: "Unix time the last audit retention pass finished without error on this replica (a pass that found nothing to delete counts).",
+		}),
+
 		TierBlobs: prometheus.NewGaugeVec(prometheus.GaugeOpts{
 			Name: "openartifact_storage_tier_blobs",
 			Help: "Blobs placed on each storage tier, refreshed by the tier mover.",
@@ -195,6 +210,8 @@ func NewRegistryOn(reg prometheus.Registerer) *Registry {
 		r.MetadataRegenerationDurationSeconds,
 		r.AuditDroppedTotal,
 		r.TrashPurgedTotal,
+		r.AuditRetentionDeletedTotal,
+		r.AuditRetentionLastRunSeconds,
 		r.TierBlobs,
 		r.TierBytes,
 		r.TierReadsTotal,

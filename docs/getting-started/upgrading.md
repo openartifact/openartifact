@@ -85,6 +85,10 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+- New optional [audit log retention](../operations/audit-retention.md): `audit.retentionDays` (`OPENARTIFACT_AUDIT_RETENTION_DAYS`) deletes audit entries older than that many days in small paced batches, one replica at a time, with `openartifact_audit_retention_*` metrics. The default `0` keeps the log forever, so nothing changes unless you set it; nothing is exported before deletion (use `oa audit export`). No migration.
+
 ### 0.9.0
 
 Migrations `067` to `071` and `080`.

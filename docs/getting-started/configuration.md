@@ -123,6 +123,14 @@ PostgreSQL is the only supported database.
 | `OPENARTIFACT_TRASH_RETENTION` | `trash.retentionDays` | `7` | Days a deleted artifact, version or repository stays restorable before the purge worker removes it; repositories can override it (`trash_retention_days`); `0` disables the trash (deletes are immediate and permanent). Must not be negative. See [Trash](../operations/trash.md) |
 | `OPENARTIFACT_TRASH_PURGE_INTERVAL` | `trash.purgeInterval` | `15m` | Pause between purge passes; `0` disables the schedule (admins can still purge by hand) |
 
+### Audit log (`audit`)
+
+| Environment variable | YAML key | Default | Meaning |
+|---|---|---|---|
+| `OPENARTIFACT_AUDIT_RETENTION_DAYS` | `audit.retentionDays` | `0` | Days audit entries are kept before the retention worker deletes them in batches; `0` keeps them forever. Nothing is exported first: use `oa audit export`. Must not be negative. See [audit log retention](../operations/audit-retention.md) |
+| `OPENARTIFACT_AUDIT_PURGE_INTERVAL` | `audit.purgeInterval` | `1h` | Pause between retention passes. Must be positive |
+| `OPENARTIFACT_AUDIT_PURGE_BATCH_SIZE` | `audit.purgeBatchSize` | `5000` | Entries one delete statement removes. Must be positive |
+
 ### Federation (`federation`)
 
 | Environment variable | YAML key | Default | Meaning |

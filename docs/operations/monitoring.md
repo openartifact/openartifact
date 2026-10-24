@@ -76,6 +76,8 @@ scrape_configs:
 | `openartifact_metadata_regenerations_total` | counter | `format` | `rpm`, `maven`, `npm` |
 | `openartifact_metadata_regeneration_duration_seconds` | histogram | `format` | same buckets as the request histogram |
 | `openartifact_audit_dropped_total` | counter | | audit events lost to backpressure or after shutdown |
+| `openartifact_audit_retention_deleted_total` | counter | | audit entries deleted for being older than [`audit.retentionDays`](audit-retention.md) (stays 0 while retention is off) |
+| `openartifact_audit_retention_last_run_timestamp_seconds` | gauge | | Unix time the last audit retention pass finished without error on this replica; 0 until one has |
 | `openartifact_trash_purged_total` | counter | `kind` | trashed items (and repositories, `kind="repository"`) permanently removed by the retention purge; `kind` is the trash kind, e.g. `maven_artifact`, `docker_manifest` |
 | `openartifact_storage_tier_blobs`, `openartifact_storage_tier_bytes` | gauge | `tier` | blobs and bytes placed on each [storage tier](storage-tiering.md#metrics), refreshed after every mover pass |
 | `openartifact_storage_tier_reads_total` | counter | `tier` | blob reads served by each tier |
@@ -348,7 +350,7 @@ oa audit export --since 1h \
 Behaviour to know:
 
 - Writes go through a buffered queue (1000 events). When it is full a request waits up to 2 s, then the event is dropped and `openartifact_audit_dropped_total` increases. The queue is flushed on graceful shutdown (5 s).
-- There is no retention or purge: `audit_logs` grows until you delete rows yourself (for example with a scheduled SQL `DELETE ... WHERE created_at < now() - interval '1 year'`).
+- Entries are kept forever unless you set `audit.retentionDays` (`OPENARTIFACT_AUDIT_RETENTION_DAYS`): a worker then deletes older ones in paced batches. Nothing is exported first, so run `oa audit export` beforehand; see [audit log retention](audit-retention.md).
 - Audit logs are not part of [backups](backup.md).
 
 ## Logging

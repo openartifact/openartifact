@@ -9,6 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"net/netip"
+	"time"
 )
 
 const insertAuditLog = `-- name: InsertAuditLog :exec
@@ -41,4 +42,35 @@ func (q *Queries) InsertAuditLog(ctx context.Context, arg InsertAuditLogParams) 
 		arg.IpAddress,
 	)
 	return err
+}
+
+const purgeAuditLogsBefore = `-- name: PurgeAuditLogsBefore :execrows
+WITH doomed AS (
+    SELECT id FROM audit_logs
+    WHERE created_at < $1::timestamptz
+    ORDER BY created_at, id
+    LIMIT $2::int
+    FOR UPDATE SKIP LOCKED
+)
+DELETE FROM audit_logs a
+USING doomed d
+WHERE a.id = d.id
+`
+
+type PurgeAuditLogsBeforeParams struct {
+	Cutoff time.Time `db:"cutoff" json:"cutoff"`
+	Batch  int32     `db:"batch" json:"batch"`
+}
+
+// Deletes the oldest audit entries created before @cutoff, at most @batch of
+// them (the retention worker calls it until it returns fewer). Oldest first
+// by the (created_at, id) keyset, so idx_audit_logs_created_at drives the
+// scan. SKIP LOCKED keeps a row another transaction is touching out of the
+// batch instead of stalling on it. Rows without created_at are never purged.
+func (q *Queries) PurgeAuditLogsBefore(ctx context.Context, arg PurgeAuditLogsBeforeParams) (int64, error) {
+	result, err := q.db.Exec(ctx, purgeAuditLogsBefore, arg.Cutoff, arg.Batch)
+	if err != nil {
+		return 0, err
+	}
+	return result.RowsAffected(), nil
 }

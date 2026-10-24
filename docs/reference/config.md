@@ -236,6 +236,16 @@ This page lists every configuration key with its type, built-in default and the 
 | `trash.retentionDays` | `OPENARTIFACT_TRASH_RETENTION` | int | `7` | `retentionDays` is how many days a deleted artifact, version or repository stays restorable before the purge worker removes it for good. It applies to repositories without their own trash_retention_days; 0 disables the trash (deletes are immediate and permanent). |
 | `trash.purgeInterval` | `OPENARTIFACT_TRASH_PURGE_INTERVAL` | duration | `15m` | `purgeInterval` is the pause between purge passes. Zero or negative disables the schedule: nothing expires until an admin purges by hand. |
 
+## audit
+
+`audit` tunes the retention of the audit log (see [operations/audit-retention.md](../operations/audit-retention.md)).
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `audit.retentionDays` | `OPENARTIFACT_AUDIT_RETENTION_DAYS` | int | `0` | `retentionDays` is how many days audit entries are kept before the retention worker deletes them in batches. 0 keeps them forever (the default): export them with `oa audit export` before enabling a limit. |
+| `audit.purgeInterval` | `OPENARTIFACT_AUDIT_PURGE_INTERVAL` | duration | `1h` | `purgeInterval` is the pause between retention passes. Only used when RetentionDays is positive. |
+| `audit.purgeBatchSize` | `OPENARTIFACT_AUDIT_PURGE_BATCH_SIZE` | int | `5000` | `purgeBatchSize` is how many entries one delete statement removes; a pass repeats it, paced, until nothing older than the retention is left. |
+
 ## docs
 
 `docs` configures the links from the web UI to the published documentation.

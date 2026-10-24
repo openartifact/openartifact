@@ -1111,3 +1111,54 @@ func TestRecoveryJournalConfig(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_AuditRetentionDefaultsAndEnv(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if want := (AuditConfig{RetentionDays: 0, PurgeInterval: time.Hour, PurgeBatchSize: 5000}); cfg.Audit != want {
+		t.Errorf("audit defaults = %+v, want %+v (retention 0 keeps the log forever)", cfg.Audit, want)
+	}
+
+	t.Setenv("OPENARTIFACT_AUDIT_RETENTION_DAYS", "90")
+	t.Setenv("OPENARTIFACT_AUDIT_PURGE_INTERVAL", "10m")
+	t.Setenv("OPENARTIFACT_AUDIT_PURGE_BATCH_SIZE", "250")
+
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if want := (AuditConfig{RetentionDays: 90, PurgeInterval: 10 * time.Minute, PurgeBatchSize: 250}); cfg.Audit != want {
+		t.Errorf("audit = %+v, want %+v", cfg.Audit, want)
+	}
+}
+
+func TestValidate_Audit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		mutate func(c *Config)
+		ok     bool
+	}{
+		{"defaults keep forever", func(*Config) {}, true},
+		{"retention set", func(c *Config) { c.Audit.RetentionDays = 365 }, true},
+		{"negative retention", func(c *Config) { c.Audit.RetentionDays = -1 }, false},
+		{"zero interval", func(c *Config) { c.Audit.PurgeInterval = 0 }, false},
+		{"zero batch", func(c *Config) { c.Audit.PurgeBatchSize = 0 }, false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg, err := Load("")
+			if err != nil {
+				t.Fatalf("Load() failed: %v", err)
+			}
+
+			tc.mutate(cfg)
+
+			if err := cfg.validateAudit(); (err == nil) != tc.ok {
+				t.Errorf("validateAudit() = %v, want ok=%v", err, tc.ok)
+			}
+		})
+	}
+}
