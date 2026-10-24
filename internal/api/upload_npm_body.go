@@ -16,6 +16,7 @@ import (
 	"strconv"
 	"unicode/utf8"
 
+	"github.com/openartifact/openartifact/internal/iocopy"
 	pkgnpm "github.com/openartifact/openartifact/pkg/npm"
 )
 
@@ -191,7 +192,7 @@ func (a *npmAttachment) readData(br *bufio.Reader) error {
 
 	src := &jsonStringReader{br: br}
 
-	n, copyErr := io.Copy(f, base64.NewDecoder(base64.StdEncoding, src))
+	n, copyErr := iocopy.Copy(f, base64.NewDecoder(base64.StdEncoding, src))
 	if closeErr := f.Close(); copyErr == nil {
 		copyErr = closeErr
 	}
@@ -204,7 +205,7 @@ func (a *npmAttachment) readData(br *bufio.Reader) error {
 	case copyErr != nil:
 		a.dataErr = fmt.Errorf("%w: base64 decode: %w", pkgnpm.ErrInvalidAttachment, copyErr)
 		// Drain the rest of the string so parsing can continue.
-		_, _ = io.Copy(io.Discard, src)
+		_, _ = iocopy.Copy(io.Discard, src)
 
 		return src.err
 	}

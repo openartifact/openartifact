@@ -53,6 +53,23 @@ func (m *BlobStore) Put(_ context.Context, data io.Reader, metadata map[string]s
 	return id, nil
 }
 
+// DiscardBlobStore is a BlobStore that reads and drops what it is given, for
+// benchmarks that must measure a handler rather than the fake's own copy of
+// every blob.
+type DiscardBlobStore struct{ *BlobStore }
+
+// NewDiscardBlobStore returns an empty DiscardBlobStore.
+func NewDiscardBlobStore() *DiscardBlobStore { return &DiscardBlobStore{NewBlobStore()} }
+
+// Put drains data and returns metadata["sha256"] without keeping anything.
+func (m *DiscardBlobStore) Put(_ context.Context, data io.Reader, metadata map[string]string) (string, error) {
+	if _, err := io.Copy(io.Discard, data); err != nil {
+		return "", err
+	}
+
+	return metadata["sha256"], nil
+}
+
 // Get returns the blob stored under id.
 func (m *BlobStore) Get(_ context.Context, id string) (io.ReadCloser, error) {
 	m.mu.Lock()

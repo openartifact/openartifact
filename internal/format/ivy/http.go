@@ -5,14 +5,10 @@
 package ivy
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"path"
 	"strconv"
@@ -23,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -159,7 +156,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request, rep
 	defer func() { _ = blob.Close() }()
 
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, blob)
+	_, _ = iocopy.Copy(w, blob)
 }
 
 // lookupForUpload returns the row an upload replaces (previous: current
@@ -187,7 +184,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		return
 	}
 
-	data, err := base.ReadAllLimited(r.Body, maxIvyUploadBytes)
+	spool, err := base.SpoolLimited(r.Body, maxIvyUploadBytes)
 	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
 			http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
@@ -199,14 +196,13 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		return
 	}
 	defer func() { _ = r.Body.Close() }()
+	defer spool.Close()
 
-	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, base.DescriptorLicenses(cur.Filename, data)...) {
+	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, base.SpoolDescriptorLicenses(cur.Filename, spool)...) {
 		return
 	}
 
-	sha256Hash := sha256.Sum256(data)
-
-	sha256Hex := hex.EncodeToString(sha256Hash[:])
+	sha256Hex := spool.SHA256Hex()
 
 	artifact := &models.IvyArtifact{
 		RepositoryID: repoID,
@@ -216,7 +212,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 		ArtifactName: cur.Filename,
 		ArtifactType: "jar",
 		ArtifactExt:  extOf(cur.Filename),
-		SizeBytes:    int64(len(data)),
+		SizeBytes:    spool.Size(),
 		SHA256:       sha256Hex,
 	}
 
@@ -262,7 +258,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request, repoI
 	// Store the blob and insert the referencing row under the per-blob lock so
 	// a concurrent unpublish cannot delete the blob in between.
 	if err := storage.WithBlobLock(r.Context(), h.DB, sha256Hex, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+		blobKey, err := h.BlobStore.Put(ctx, spool.Reader(), map[string]string{
 			"sha256":   sha256Hex,
 			"filename": cur.Filename,
 			"org":      cur.Group,

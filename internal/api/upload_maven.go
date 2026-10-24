@@ -25,6 +25,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -149,7 +150,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	checksumSuffixes := []string{".md5", ".sha1", ".sha256", ".sha512"}
 	for _, suffix := range checksumSuffixes {
 		if strings.HasSuffix(filename, suffix) {
-			_, _ = io.Copy(io.Discard, http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
+			_, _ = iocopy.Copy(io.Discard, http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
 			w.WriteHeader(http.StatusOK)
 
 			return
@@ -159,7 +160,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	// maven-metadata.xml (and its checksums) is generated server-side from
 	// the stored artifacts; a client-supplied copy is acknowledged and dropped.
 	if filename == "maven-metadata.xml" {
-		_, _ = io.Copy(io.Discard, http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
+		_, _ = iocopy.Copy(io.Discard, http.MaxBytesReader(w, r.Body, MaxMavenUploadBytes))
 		w.WriteHeader(http.StatusOK)
 
 		return
@@ -217,7 +218,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 		limit = pkgmaven.MaxPOMBytes
 	}
 
-	size, err := io.Copy(io.MultiWriter(tmp, hMD5, hSHA1, hSHA256, hSHA512), http.MaxBytesReader(w, r.Body, limit))
+	size, err := iocopy.Copy(io.MultiWriter(tmp, hMD5, hSHA1, hSHA256, hSHA512), http.MaxBytesReader(w, r.Body, limit))
 	if err != nil {
 		uploadResult = "error"
 

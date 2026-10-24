@@ -7,7 +7,6 @@ package deb
 import (
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strings"
@@ -16,6 +15,7 @@ import (
 	db "github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -123,7 +123,7 @@ func (h *HTTPHandler) tryServeRepoBlob(w http.ResponseWriter, r *http.Request, r
 
 	w.Header().Set("Content-Type", contentType)
 
-	if _, err := io.Copy(w, reader); err != nil {
+	if _, err := iocopy.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write response", "path", path, "error", err)
 	}
 
@@ -331,7 +331,7 @@ func (h *HTTPHandler) handlePoolFile(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Type", "application/vnd.debian.binary-package")
 	w.Header().Set("Content-Disposition", `attachment; filename="`+filename+`"`)
 
-	if _, err := io.Copy(w, reader); err != nil {
+	if _, err := iocopy.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write pool file response", "filename", filename, "error", err)
 	}
 }

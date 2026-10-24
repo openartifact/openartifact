@@ -50,24 +50,24 @@ func (h *GoModHandler) GetFileExtension() string {
 
 // Validate checks if the artifact is a valid zip containing a root go.mod.
 func (h *GoModHandler) Validate(ctx context.Context, r io.Reader) error {
-	data, err := base.ReadAllLimited(r, maxGoModUploadBytes)
+	ra, size, err := base.ReaderAtLimited(r, maxGoModUploadBytes)
 	if err != nil {
 		return fmt.Errorf("failed to read zip: %w", err)
 	}
 
-	_, err = parseModuleZip(data)
+	_, err = parseModuleZipAt(ra, size)
 
 	return err
 }
 
 // Parse extracts the module path and go.mod from the module zip.
 func (h *GoModHandler) Parse(ctx context.Context, r io.Reader) (map[string]any, error) {
-	data, err := base.ReadAllLimited(r, maxGoModUploadBytes)
+	ra, size, err := base.ReaderAtLimited(r, maxGoModUploadBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read zip: %w", err)
 	}
 
-	mf, err := parseModuleZip(data)
+	mf, err := parseModuleZipAt(ra, size)
 	if err != nil {
 		return nil, err
 	}
@@ -88,7 +88,13 @@ type moduleFile struct {
 
 // parseModuleZip opens a module zip held in memory and reads its root go.mod.
 func parseModuleZip(data []byte) (*moduleFile, error) {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	return parseModuleZipAt(bytes.NewReader(data), int64(len(data)))
+}
+
+// parseModuleZipAt is parseModuleZip for a zip read in place, so an upload
+// spooled to disk is not loaded into memory to find its go.mod.
+func parseModuleZipAt(r io.ReaderAt, size int64) (*moduleFile, error) {
+	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return nil, fmt.Errorf("invalid zip file: %w", err)
 	}

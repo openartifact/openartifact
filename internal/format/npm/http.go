@@ -8,7 +8,6 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -17,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -311,7 +311,7 @@ func (h *HTTPHandler) handleTarball(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.Header().Set("ETag", `"`+blob.sha256+`"`)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write tarball response", "filename", tarball, "error", err)
 	}
 }

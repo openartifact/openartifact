@@ -20,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -430,7 +431,7 @@ func (h *SBOMHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Disposition", "attachment; filename=sbom."+sbomFileExtension(report.Format))
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.log.Warnw("download SBOM: failed to stream content", "sha256", report.BlobSHA256, "error", err)
 	}
 }

@@ -28,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/ocimanifest"
@@ -384,7 +385,7 @@ func (h *HTTPHandler) handleGetManifest(w http.ResponseWriter, r *http.Request) 
 	w.Header().Set("Content-Length", strconv.FormatInt(manifest.Size, 10))
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, content); err != nil {
+	if _, err := iocopy.Copy(w, content); err != nil {
 		h.log.Errorw("failed to write manifest response", "digest", manifest.Digest, "error", err)
 	}
 }
@@ -930,7 +931,7 @@ func (h *HTTPHandler) handleGetBlob(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(size, 10))
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.log.Errorw("failed to write blob response", "digest", digest, "error", err)
 	}
 }
@@ -1580,7 +1581,7 @@ func (h *HTTPHandler) handleUploadChunk(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	written, err := io.Copy(f, body)
+	written, err := iocopy.Copy(f, body)
 	if err != nil {
 		_ = f.Close()
 
@@ -1759,7 +1760,7 @@ func (h *HTTPHandler) handleCompleteBlobUpload(w http.ResponseWriter, r *http.Re
 
 	hash := sha256.New()
 
-	size, err := io.Copy(hash, f)
+	size, err := iocopy.Copy(hash, f)
 	if err != nil {
 		h.log.Errorw("failed to hash temp file", "error", err)
 		h.errorResponse(w, http.StatusInternalServerError, "UNKNOWN", "internal error")
@@ -1900,7 +1901,7 @@ func (h *HTTPHandler) appendFinalChunk(w http.ResponseWriter, r *http.Request, r
 		return false
 	}
 
-	if _, err := io.Copy(f, body); err != nil {
+	if _, err := iocopy.Copy(f, body); err != nil {
 		_ = f.Close()
 
 		if _, over := errors.AsType[*http.MaxBytesError](err); over {

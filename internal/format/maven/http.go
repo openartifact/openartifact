@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"context"
 	"fmt"
-	"io"
 	"net/http"
 	"path/filepath"
 	"strconv"
@@ -17,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -103,7 +103,7 @@ func (h *HTTPHandler) serveArtifactBlob(w http.ResponseWriter, r *http.Request, 
 
 	w.Header().Set("Content-Type", contentType)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write response", "path", art.RepoPath, "error", err)
 	}
 }

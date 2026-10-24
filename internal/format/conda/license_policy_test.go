@@ -57,10 +57,15 @@ func condaArchive(t *testing.T, indexJSON string) []byte {
 	return buf.Bytes()
 }
 
+// indexOf reads the package index of an in-memory archive.
+func indexOf(ext string, data []byte) packageIndex {
+	return readPackageIndex(ext, bytes.NewReader(data), int64(len(data)))
+}
+
 func TestDeclaredLicense(t *testing.T) {
 	const index = `{"name":"demo","license":"GPL-3.0-only","license_family":"GPL"}`
 
-	if got := readPackageIndex(models.CondaExtConda, condaArchive(t, index)).License; got != "GPL-3.0-only" {
+	if got := indexOf(models.CondaExtConda, condaArchive(t, index)).License; got != "GPL-3.0-only" {
 		t.Errorf(".conda license = %q", got)
 	}
 
@@ -68,7 +73,7 @@ func TestDeclaredLicense(t *testing.T) {
 		models.CondaExtTarBz2: []byte("not an archive"),
 		models.CondaExtConda:  []byte("not an archive"),
 	} {
-		if got := readPackageIndex(ext, data).License; got != "" {
+		if got := indexOf(ext, data).License; got != "" {
 			t.Errorf("garbage %s: license = %q, want empty", ext, got)
 		}
 	}

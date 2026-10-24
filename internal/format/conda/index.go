@@ -7,7 +7,6 @@ package conda
 import (
 	"archive/tar"
 	"archive/zip"
-	"bytes"
 	"compress/bzip2"
 	"encoding/json"
 	"io"
@@ -56,14 +55,14 @@ type packageIndex struct {
 // readPackageIndex returns the parsed info/index.json of a package file, or
 // the zero packageIndex when the archive cannot be read or has none: the upload
 // is still accepted, with empty dependencies and no license.
-func readPackageIndex(ext string, data []byte) packageIndex {
+func readPackageIndex(ext string, r io.ReaderAt, size int64) packageIndex {
 	var raw []byte
 
 	switch ext {
 	case models.CondaExtTarBz2:
-		raw = indexFromTar(bzip2.NewReader(bytes.NewReader(data)), defaultTarLimits())
+		raw = indexFromTar(bzip2.NewReader(io.NewSectionReader(r, 0, size)), defaultTarLimits())
 	case models.CondaExtConda:
-		raw = indexFromConda(data)
+		raw = indexFromConda(r, size)
 	}
 
 	return parsePackageIndex(raw)
@@ -114,8 +113,8 @@ func parsePackageIndex(raw []byte) packageIndex {
 
 // indexFromConda reads info/index.json from the info-*.tar.zst member of a
 // .conda (zip) archive.
-func indexFromConda(data []byte) []byte {
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+func indexFromConda(r io.ReaderAt, size int64) []byte {
+	zr, err := zip.NewReader(r, size)
 	if err != nil {
 		return nil
 	}

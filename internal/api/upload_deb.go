@@ -22,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -250,7 +251,7 @@ func (h *DebUploadHandler) uploadPipeline(w http.ResponseWriter, r *http.Request
 
 	hasher := sha256.New()
 
-	written, err := io.Copy(tmpFile, io.TeeReader(file, hasher))
+	written, err := iocopy.Copy(tmpFile, io.TeeReader(file, hasher))
 	if err != nil {
 		return nil, fmt.Errorf("failed to buffer upload: %w", err)
 	}

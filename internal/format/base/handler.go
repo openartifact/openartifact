@@ -15,6 +15,7 @@ import (
 	"sync/atomic"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -123,7 +124,7 @@ func (h *Handler) StreamBlob(w http.ResponseWriter, r *http.Request, blobID, con
 		w.Header().Set("Content-Type", contentType)
 	}
 	w.Header().Set("Cache-Control", "public, max-age=31536000, immutable")
-	_, err = io.Copy(w, rc)
+	_, err = iocopy.Copy(w, rc)
 	return err == nil
 }
 

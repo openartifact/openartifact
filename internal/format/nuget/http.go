@@ -14,6 +14,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"net/url"
@@ -27,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -202,9 +204,10 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 	writeJSON(w, index)
 }
 
-// readPushedPackage reads the "package" part of a push request. On failure it
+// readPushedPackage reads the "package" part of a push request, hashed with
+// SHA-512 (sum512 receives it) besides the SHA-256 of the part. On failure it
 // writes the response and returns false.
-func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) ([]byte, bool) {
+func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request, sum512 hash.Hash) (*base.Part, bool) {
 	// Cap the whole body: ParseMultipartForm only bounds the in-memory part and
 	// spools the rest to disk.
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxPush+pushFormOverhead)
@@ -221,21 +224,23 @@ func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) 
 		return nil, false
 	}
 
-	file, _, err := r.FormFile("package")
+	file, header, err := r.FormFile("package")
 	if err != nil {
 		h.Log.Errorw("failed to get package file", "error", err)
 		http.Error(w, "package file required", http.StatusBadRequest)
 
 		return nil, false
 	}
-	defer func() { _ = file.Close() }()
 
-	data, err := base.ReadAllLimited(file, h.maxPush)
-	if errors.Is(err, base.ErrContentTooLarge) {
+	if header.Size > h.maxPush {
+		_ = file.Close()
+
 		http.Error(w, "package too large", http.StatusRequestEntityTooLarge)
+
 		return nil, false
 	}
 
+	part, err := base.HashPart(file, header.Size, sum512)
 	if err != nil {
 		h.Log.Errorw("failed to read package data", "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -243,14 +248,14 @@ func (h *HTTPHandler) readPushedPackage(w http.ResponseWriter, r *http.Request) 
 		return nil, false
 	}
 
-	return data, true
+	return part, true
 }
 
 // pushedPackage builds the database record for a pushed .nupkg from its
 // nuspec metadata. The id is lower-cased and the version normalized (see
 // pkgnuget.Normalize), the form clients request. It returns an error for a
 // package without a usable id or version.
-func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models.NuGetPackage, error) {
+func pushedPackage(repoID string, metadata map[string]any, part *base.Part, sum512 hash.Hash) (*models.NuGetPackage, error) {
 	id, _ := metadata["id"].(string)
 	if !validPackageID.MatchString(id) {
 		return nil, fmt.Errorf("invalid package id %q", id) //nolint:err113 // reported to the log only
@@ -263,9 +268,6 @@ func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models
 		return nil, fmt.Errorf("invalid package version %q", rawVersion) //nolint:err113 // reported to the log only
 	}
 
-	hash := sha512.Sum512(data)
-	sum256 := sha256.Sum256(data)
-
 	str := func(key string) string {
 		s, _ := metadata[key].(string)
 		return s
@@ -276,7 +278,7 @@ func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models
 	// has to open the package again. A package whose nuspec cannot be read
 	// again leaves the column empty; it is then derived on first use.
 	var depGroups json.RawMessage
-	if nuspec, err := parseNuspec(bytes.NewReader(data)); err == nil {
+	if nuspec, err := parseNuspec(part.Reader()); err == nil {
 		depGroups = marshalDependencyGroups(nuspec.Metadata.Dependencies.DependencyGroups())
 	}
 
@@ -296,10 +298,10 @@ func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models
 		IconURL:                  str("iconUrl"),
 		RequireLicenseAcceptance: requireLicenseAcceptance,
 		MinClientVersion:         str("minClientVersion"),
-		BlobKey:                  hex.EncodeToString(sum256[:]),
-		PackageHash:              base64.StdEncoding.EncodeToString(hash[:]),
+		BlobKey:                  part.SHA256Hex(),
+		PackageHash:              base64.StdEncoding.EncodeToString(sum512.Sum(nil)),
 		PackageHashAlgorithm:     "SHA512",
-		PackageSize:              int64(len(data)),
+		PackageSize:              part.Size(),
 	}, nil
 }
 
@@ -309,8 +311,10 @@ func pushedPackage(repoID string, metadata map[string]any, data []byte) (*models
 // archive cannot be read safely (two .nuspec files, an oversized one) is
 // refused, and so is one whose .nuspec cannot be read while the repository has
 // a blocking policy (false, response written).
-func (h *HTTPHandler) pushedLicenses(w http.ResponseWriter, r *http.Request, repoID string, pkg *models.NuGetPackage, data []byte, metadata map[string]any) ([]string, bool) {
-	res, err := licensemeta.ReadBytes(r.Context(), "nuget", pkg.PackageID+"."+pkg.Version+".nupkg", data)
+func (h *HTTPHandler) pushedLicenses(w http.ResponseWriter, r *http.Request, repoID string, pkg *models.NuGetPackage, part *base.Part, metadata map[string]any) ([]string, bool) {
+	res, err := licensemeta.Read(r.Context(), "nuget", pkg.PackageID+"."+pkg.Version+".nupkg", func() (io.ReadCloser, error) {
+		return io.NopCloser(part.Reader()), nil
+	})
 
 	switch {
 	case licensemeta.Unsafe(err):
@@ -343,12 +347,15 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	data, ok := h.readPushedPackage(w, r)
+	sum512 := sha512.New()
+
+	part, ok := h.readPushedPackage(w, r, sum512)
 	if !ok {
 		return
 	}
+	defer part.Close()
 
-	metadata, err := NewNuGetHandler().Parse(r.Context(), bytes.NewReader(data))
+	metadata, err := NewNuGetHandler().Parse(r.Context(), part.Reader())
 	if err != nil {
 		h.Log.Errorw("failed to parse package metadata", "error", err)
 		http.Error(w, "invalid package", http.StatusBadRequest)
@@ -356,7 +363,7 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	pkg, err := pushedPackage(repoID, metadata, data)
+	pkg, err := pushedPackage(repoID, metadata, part, sum512)
 	if err != nil {
 		h.Log.Errorw("rejected nuget package", "error", err)
 		http.Error(w, "invalid package", http.StatusBadRequest)
@@ -364,7 +371,7 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	licenses, ok := h.pushedLicenses(w, r, repoID, pkg, data, metadata)
+	licenses, ok := h.pushedLicenses(w, r, repoID, pkg, part, metadata)
 	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
 		return
 	}
@@ -396,7 +403,7 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if err := h.storePackage(r.Context(), pkg, data); err != nil {
+	if err := h.storePackage(r.Context(), pkg, part); err != nil {
 		if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.PackageSize); relErr != nil {
 			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
 		}
@@ -429,9 +436,9 @@ func (h *HTTPHandler) handlePushPackage(w http.ResponseWriter, r *http.Request) 
 // per-blob lock so a concurrent unpublish cannot delete the blob in between.
 // When the row is not created (a concurrent push of the same version won) the
 // blob is dropped again unless something else references it.
-func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.NuGetPackage, data []byte) error {
+func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.NuGetPackage, part *base.Part) error {
 	err := storage.WithBlobLock(ctx, h.DB, pkg.BlobKey, func(ctx context.Context) error {
-		if _, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+		if _, err := h.BlobStore.Put(ctx, part.Reader(), map[string]string{
 			"sha256":   pkg.BlobKey,
 			"filename": nupkgName(pkg.PackageID, pkg.Version),
 			"package":  pkg.PackageID,
@@ -682,7 +689,7 @@ func (h *HTTPHandler) handleDownloadPackage(w http.ResponseWriter, r *http.Reque
 	w.Header().Set("Content-Length", strconv.FormatInt(pkg.PackageSize, 10))
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write package response", "id", packageID, "version", pkg.Version, "error", err)
 	}
 }

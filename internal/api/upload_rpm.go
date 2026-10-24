@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -246,7 +247,7 @@ func (h *RPMUploadHandler) spoolUpload(file io.Reader) (*rpmSpool, error) {
 	sp := &rpmSpool{file: tmpFile}
 	hasher := sha256.New()
 
-	sp.size, err = io.Copy(tmpFile, io.TeeReader(file, hasher))
+	sp.size, err = iocopy.Copy(tmpFile, io.TeeReader(file, hasher))
 	if err != nil {
 		sp.close(h.log)
 		return nil, fmt.Errorf("failed to buffer upload: %w", err)

@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -272,7 +273,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("ETag", `"`+crate.Checksum+`"`)
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write crate response", "name", crateName, "version", version, "error", err)
 	}
 }
@@ -291,8 +292,10 @@ const (
 // be read safely is refused, and so is one that cannot be read at all while the
 // repository has a blocking policy (false, response written). A crate that
 // only declares license_file has no enforceable license.
-func (h *HTTPHandler) publishLicenses(w http.ResponseWriter, r *http.Request, repoID, name, version string, crate []byte, metadata map[string]any) ([]string, bool) {
-	res, err := licensemeta.ReadBytes(r.Context(), "cargo", name+"-"+version+".crate", crate)
+func (h *HTTPHandler) publishLicenses(w http.ResponseWriter, r *http.Request, repoID, name, version string, crate *base.Spool, metadata map[string]any) ([]string, bool) {
+	res, err := licensemeta.Read(r.Context(), "cargo", name+"-"+version+".crate", func() (io.ReadCloser, error) {
+		return io.NopCloser(crate.Reader()), nil
+	})
 
 	switch {
 	case licensemeta.Unsafe(err):
@@ -410,15 +413,16 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read crate file and compute checksum
-	crateBytes, err := readDeclared(r.Body, crateLen)
+	crateBytes, err := readDeclaredSpool(r.Body, crateLen)
 	if err != nil {
 		h.Log.Errorw("failed to read crate file", "error", err)
 		http.Error(w, "invalid request body", http.StatusBadRequest)
 
 		return
 	}
+	defer crateBytes.Close()
 
-	checksum := fmt.Sprintf("%x", sha256.Sum256(crateBytes))
+	checksum := crateBytes.SHA256Hex()
 
 	licenses, ok := h.publishLicenses(w, r, repoID, crateName, version, crateBytes, metadata)
 	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
@@ -453,7 +457,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		Readme:        readme,
 		MetadataJSON:  metadataBytes,
 		Checksum:      checksum,
-		SizeBytes:     int64(len(crateBytes)),
+		SizeBytes:     crateBytes.Size(),
 		Yanked:        false,
 		DownloadCount: 0,
 	}
@@ -475,7 +479,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	// Store the blob and insert the referencing row under the per-blob lock so
 	// a concurrent unpublish cannot delete the blob in between.
 	if err := storage.WithBlobLock(r.Context(), h.DB, checksum, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(crateBytes), map[string]string{
+		blobKey, err := h.BlobStore.Put(ctx, crateBytes.Reader(), map[string]string{
 			"sha256":        checksum,
 			"cargo-name":    crateName,
 			"cargo-version": version,
@@ -517,7 +521,7 @@ func (h *HTTPHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 		Version:    version,
 		Path:       fmt.Sprintf("%s-%s.crate", crateName, version),
 		SHA256:     checksum,
-		Size:       int64(len(crateBytes)),
+		Size:       crateBytes.Size(),
 	}))
 
 	// Return success response

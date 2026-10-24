@@ -24,6 +24,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -288,7 +289,7 @@ func writeOCIEntry(w http.ResponseWriter, req ocipath.Request, res *resolution, 
 
 	if body != nil {
 		// The status line is already out: a failed copy can only abort the body.
-		_, _ = io.Copy(w, body)
+		_, _ = iocopy.Copy(w, body)
 	}
 }
 
@@ -444,7 +445,7 @@ func (s *Service) storeOCI(ctx context.Context, repo *models.Repository, key str
 	headerDigest := resp.Header.Get("Docker-Content-Digest")
 	sums := newDigester(spec.digest, headerDigest)
 
-	size, err := io.Copy(io.MultiWriter(spool, sums), io.LimitReader(resp.Body, spec.limit+1))
+	size, err := iocopy.Copy(io.MultiWriter(spool, sums), io.LimitReader(resp.Body, spec.limit+1))
 	if err != nil {
 		s.log.Warnw("docker proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
 		return nil, errUpstreamDown

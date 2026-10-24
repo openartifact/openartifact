@@ -9,7 +9,6 @@ import (
 	"crypto/subtle"
 	"encoding/json"
 	"errors"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -18,6 +17,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -379,7 +379,7 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Length", strconv.FormatInt(ref.Size, 10))
 	}
 
-	_, _ = io.Copy(w, body) // a peer that hangs up mid-transfer retries
+	_, _ = iocopy.Copy(w, body) // a peer that hangs up mid-transfer retries
 }
 
 func (s *Server) fail(w http.ResponseWriter, what string, err error) {

@@ -10,7 +10,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"net/url"
@@ -31,6 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/federation"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/repotype"
@@ -1591,7 +1591,7 @@ func (h *RepositoriesHandler) handleDownloadPackage(w http.ResponseWriter, r *ht
 		w.Header().Set("Content-Length", strconv.FormatInt(blob.Size, 10))
 	}
 
-	if _, err := io.Copy(w, reader); err != nil && !errors.Is(err, context.Canceled) {
+	if _, err := iocopy.Copy(w, reader); err != nil && !errors.Is(err, context.Canceled) {
 		h.log.Errorw("download package: write failed", "package_id", blob.ID, "error", err)
 	}
 }

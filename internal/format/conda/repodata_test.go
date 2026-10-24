@@ -301,7 +301,7 @@ func TestUploadInvalidFilename(t *testing.T) {
 }
 
 func TestPackageIndexFields(t *testing.T) {
-	idx := readPackageIndex(models.CondaExtTarBz2, decodeTarBz2(t))
+	idx := indexOf(models.CondaExtTarBz2, decodeTarBz2(t))
 
 	if idx.BuildNumber != 3 || idx.Timestamp != 1700000000123 || idx.License != "BSD-3-Clause" {
 		t.Errorf("index = %+v", idx)

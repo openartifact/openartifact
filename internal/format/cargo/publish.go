@@ -15,6 +15,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/format/base"
 	"golang.org/x/mod/semver"
 )
 
@@ -160,4 +161,23 @@ func highestVersion(versions []string, stableOnly bool) string {
 	}
 
 	return best
+}
+
+// readDeclaredSpool is readDeclared for the crate file: exactly n bytes, spooled
+// (memory when small, a temp file otherwise) rather than held on the heap. A
+// body that ends before n bytes is io.ErrUnexpectedEOF.
+func readDeclaredSpool(r io.Reader, n uint32) (*base.Spool, error) {
+	s, err := base.SpoolLimited(io.LimitReader(r, int64(n)), int64(n))
+	if err != nil {
+		return nil, fmt.Errorf("read %d declared bytes: %w", n, err)
+	}
+
+	if s.Size() != int64(n) {
+		got := s.Size()
+		s.Close()
+
+		return nil, fmt.Errorf("read %d declared bytes, got %d: %w", n, got, io.ErrUnexpectedEOF)
+	}
+
+	return s, nil
 }

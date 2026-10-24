@@ -11,6 +11,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"hash"
 	"io"
 	"net/http"
 	"strings"
@@ -39,12 +40,20 @@ func isChecksumDeploy(r *http.Request) bool {
 	return strings.EqualFold(r.Header.Get(checksumDeployHeader), "true")
 }
 
-// wireDigests returns the lowercase hex MD5 and SHA-1 of data.
-func wireDigests(data []byte) (string, string) {
-	m := md5.Sum(data)  //nolint:gosec // see the import
-	s := sha1.Sum(data) //nolint:gosec // see the import
+// wireHashes are the MD5 and SHA-1 a Conan 1 client expects, computed while an
+// upload is spooled.
+type wireHashes struct{ md5, sha1 hash.Hash }
 
-	return hex.EncodeToString(m[:]), hex.EncodeToString(s[:])
+func newWireHashes() wireHashes {
+	return wireHashes{md5: md5.New(), sha1: sha1.New()} //nolint:gosec // see the imports
+}
+
+// all lists the hashes to feed with the body.
+func (w wireHashes) all() []hash.Hash { return []hash.Hash{w.md5, w.sha1} }
+
+// hex returns the lowercase hex MD5 and SHA-1 of what was written.
+func (w wireHashes) hex() (string, string) {
+	return hex.EncodeToString(w.md5.Sum(nil)), hex.EncodeToString(w.sha1.Sum(nil))
 }
 
 // validSHA1 reports whether s is a lowercase or uppercase hex SHA-1.

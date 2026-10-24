@@ -23,6 +23,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -106,7 +107,7 @@ func (h *HTTPHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 
 	hasher := sha256.New()
 
-	size, err := io.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(r.Body, maxRawUploadBytes+1))
+	size, err := iocopy.Copy(io.MultiWriter(tmp, hasher), io.LimitReader(r.Body, maxRawUploadBytes+1))
 	if err != nil {
 		h.Log.Errorw("failed to read upload", "path", path, "error", err)
 		http.Error(w, "failed to read upload", http.StatusBadRequest)
@@ -256,7 +257,7 @@ func (h *HTTPHandler) handleGet(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("X-Checksum-Sha256", artifact.SHA256)
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write response", "path", path, "error", err)
 	}
 }

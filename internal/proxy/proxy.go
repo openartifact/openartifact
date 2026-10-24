@@ -32,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -336,7 +337,7 @@ func writeEntry(w http.ResponseWriter, r *http.Request, entry *models.ProxyCache
 	}
 
 	// The status line is already out: a failed copy can only abort the body.
-	_, _ = io.Copy(w, body)
+	_, _ = iocopy.Copy(w, body)
 }
 
 // resolution is the outcome of resolve.
@@ -634,7 +635,7 @@ func (s *Service) store(ctx context.Context, repo *models.Repository, key string
 
 	hasher := sha256.New()
 
-	size, err := io.Copy(io.MultiWriter(spool, hasher), io.LimitReader(resp.Body, limit+1))
+	size, err := iocopy.Copy(io.MultiWriter(spool, hasher), io.LimitReader(resp.Body, limit+1))
 	if err != nil {
 		s.log.Warnw("proxy upstream body read failed", "repo", repo.Name, "path", key, "error", err)
 		return nil, errUpstreamDown

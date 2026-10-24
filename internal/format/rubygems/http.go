@@ -15,7 +15,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"maps"
 	"mime"
 	"net/http"
@@ -31,6 +30,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -352,7 +352,7 @@ func (h *HTTPHandler) handleGemDownload(w http.ResponseWriter, r *http.Request) 
 
 	w.Header().Set("Content-Type", "application/octet-stream")
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": nameVersion + ".gem"}))
-	_, _ = io.Copy(w, blob)
+	_, _ = iocopy.Copy(w, blob)
 }
 
 // handleUploadGem handles gem uploads.
@@ -374,7 +374,7 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read gem file from request body
-	gemData, err := base.ReadAllLimited(r.Body, maxGemUploadBytes)
+	spool, err := base.SpoolLimited(r.Body, maxGemUploadBytes)
 	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
 			http.Error(w, "gem too large", http.StatusRequestEntityTooLarge)
@@ -387,11 +387,12 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = r.Body.Close() }()
+	defer spool.Close()
 
 	// Parse gem metadata
 	handler := NewRubyGemsHandler()
 
-	metadata, err := handler.Parse(r.Context(), bytes.NewReader(gemData))
+	metadata, err := handler.Parse(r.Context(), spool.Reader())
 	if err != nil {
 		h.Log.Errorw("failed to parse gem", "error", err)
 		http.Error(w, "invalid gem file", http.StatusBadRequest)
@@ -438,9 +439,8 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	digestSum := sha256.Sum256(gemData)
-	digest := hex.EncodeToString(digestSum[:])
-	size := int64(len(gemData))
+	digest := spool.SHA256Hex()
+	size := spool.Size()
 
 	gem := &models.RubyGem{
 		RepositoryID:   repoID,
@@ -473,7 +473,7 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if status, msg := h.storeGem(r.Context(), gem, gemData); status != 0 {
+	if status, msg := h.storeGem(r.Context(), gem, spool); status != 0 {
 		if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
 			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
 		}
@@ -501,7 +501,7 @@ func (h *HTTPHandler) handleUploadGem(w http.ResponseWriter, r *http.Request) {
 // concurrent cleanup cannot remove the blob between the dedup check, the Put
 // and the insert. It returns a zero status on success, otherwise the HTTP
 // status and message to report; the caller releases the quota reservation.
-func (h *HTTPHandler) storeGem(ctx context.Context, gem *models.RubyGem, data []byte) (int, string) {
+func (h *HTTPHandler) storeGem(ctx context.Context, gem *models.RubyGem, body *base.Spool) (int, string) {
 	status, msg := 0, ""
 
 	lockErr := storage.WithBlobLock(ctx, h.DB, gem.ChecksumSHA256, func(ctx context.Context) error {
@@ -515,7 +515,7 @@ func (h *HTTPHandler) storeGem(ctx context.Context, gem *models.RubyGem, data []
 		}
 
 		if !exists {
-			blobKey, err = h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			blobKey, err = h.BlobStore.Put(ctx, body.Reader(), map[string]string{
 				"sha256":   gem.ChecksumSHA256,
 				"gem_name": gem.Name,
 				"version":  gem.Version,

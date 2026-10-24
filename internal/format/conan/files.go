@@ -5,13 +5,9 @@
 package conan
 
 import (
-	"bytes"
 	"context"
-	"crypto/sha256"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"path"
@@ -20,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -122,7 +119,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	defer base.CloseLog(blob, h.Log)
 
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, blob)
+	_, _ = iocopy.Copy(w, blob)
 }
 
 // handleUpload stores one file of a recipe or package revision. Re-uploading
@@ -155,7 +152,9 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	data, err := base.ReadAllLimited(r.Body, maxConanUploadBytes)
+	wire := newWireHashes()
+
+	spool, err := base.SpoolLimited(r.Body, maxConanUploadBytes, wire.all()...)
 	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
 			http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
@@ -168,15 +167,14 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = r.Body.Close() }()
+	defer spool.Close()
 
-	sum := sha256.Sum256(data)
-	md5Sum, sha1Sum := wireDigests(data)
 	file := s.newFile()
-	file.SHA256 = hex.EncodeToString(sum[:])
-	file.MD5, file.SHA1 = md5Sum, sha1Sum
-	file.SizeBytes = int64(len(data))
+	file.SHA256 = spool.SHA256Hex()
+	file.MD5, file.SHA1 = wire.hex()
+	file.SizeBytes = spool.Size()
 
-	h.commit(w, r, s, file, func(ctx context.Context) error { return h.store(ctx, file, data) })
+	h.commit(w, r, s, file, func(ctx context.Context) error { return h.store(ctx, file, spool) })
 }
 
 // commit makes file the content of the scope's file name: same bytes already
@@ -262,9 +260,9 @@ func (h *HTTPHandler) commit(w http.ResponseWriter, r *http.Request, s *scope, f
 
 // store writes the blob and the referencing row under the per-blob lock, so a
 // concurrent delete cannot remove the blob in between.
-func (h *HTTPHandler) store(ctx context.Context, file *models.ConanPackage, data []byte) error {
+func (h *HTTPHandler) store(ctx context.Context, file *models.ConanPackage, body *base.Spool) error {
 	return storage.WithBlobLock(ctx, h.DB, file.SHA256, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+		blobKey, err := h.BlobStore.Put(ctx, body.Reader(), map[string]string{
 			"sha256":   file.SHA256,
 			"filename": file.Filename,
 			"package":  file.Name,

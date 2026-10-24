@@ -5,14 +5,12 @@
 package gomod
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"strconv"
 	"strings"
@@ -23,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -425,7 +424,7 @@ func (h *HTTPHandler) handleZip(w http.ResponseWriter, r *http.Request) {
 
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write zip response", "module", modulePath, "version", version, "error", err)
 	}
 }
@@ -503,7 +502,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read the zip file from request body
-	zipData, err := base.ReadAllLimited(r.Body, maxGoModUploadBytes)
+	spool, err := base.SpoolLimited(r.Body, maxGoModUploadBytes)
 	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
 			http.Error(w, "body too large", http.StatusRequestEntityTooLarge)
@@ -516,10 +515,11 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = r.Body.Close() }()
+	defer spool.Close()
 
 	// The module zip must be the one the URL names: its files live under
 	// "<module>@<version>/" and its go.mod declares that same module path.
-	mf, err := parseModuleZip(zipData)
+	mf, err := parseModuleZipAt(spool, spool.Size())
 	if err != nil {
 		h.Log.Errorw("failed to parse go module", "error", err)
 		http.Error(w, "invalid go module", http.StatusBadRequest)
@@ -552,8 +552,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	zipSum := sha256.Sum256(zipData)
-	zipSHA := hex.EncodeToString(zipSum[:])
+	zipSHA := spool.SHA256Hex()
 	modSum := sha256.Sum256([]byte(goModContent))
 	modSHA := hex.EncodeToString(modSum[:])
 
@@ -562,7 +561,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		ModulePath:   modulePath,
 		Version:      version,
 		GoModContent: goModContent,
-		ZipSizeBytes: int64(len(zipData)),
+		ZipSizeBytes: spool.Size(),
 		// The database keys the zip blob row by this digest; left empty, every
 		// module version of the instance would share the first zip stored.
 		ZipHash: zipSHA,
@@ -594,7 +593,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	store := func(ctx context.Context) error {
-		zipBlobID, err := h.BlobStore.Put(ctx, bytes.NewReader(zipData), map[string]string{
+		zipBlobID, err := h.BlobStore.Put(ctx, spool.Reader(), map[string]string{
 			"sha256":  zipSHA,
 			"module":  modulePath,
 			"version": version,

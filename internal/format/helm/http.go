@@ -5,14 +5,12 @@
 package helm
 
 import (
-	"bytes"
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -24,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -194,7 +193,7 @@ func (h *HTTPHandler) handleDownloadChart(w http.ResponseWriter, r *http.Request
 	w.Header().Set("ETag", `"`+chart.Digest+`"`)
 	w.WriteHeader(http.StatusOK)
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write chart response", "filename", filename, "error", err)
 	}
 }
@@ -218,7 +217,7 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 	}
 
 	// Read the chart data
-	chartData, err := base.ReadAllLimited(r.Body, maxHelmUploadBytes)
+	spool, err := base.SpoolLimited(r.Body, maxHelmUploadBytes)
 	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
 			http.Error(w, "chart too large", http.StatusRequestEntityTooLarge)
@@ -231,9 +230,10 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 	defer func() { _ = r.Body.Close() }()
+	defer spool.Close()
 
 	// Parse the chart to extract metadata
-	metadata, err := pkghelm.ParseChart(bytes.NewReader(chartData))
+	metadata, err := pkghelm.ParseChart(spool.Reader())
 	if err != nil {
 		h.Log.Errorw("failed to parse chart", "error", err)
 		http.Error(w, "invalid chart", http.StatusBadRequest)
@@ -297,8 +297,8 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	digest := calculateSHA256(chartData)
-	size := int64(len(chartData))
+	digest := spool.SHA256Hex()
+	size := spool.Size()
 
 	// Extract optional fields
 	appVersion, _ := metadata["appVersion"].(string)
@@ -406,7 +406,7 @@ func (h *HTTPHandler) handleUploadChart(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	if status, msg := h.storeChart(r.Context(), chart, chartData); status != 0 {
+	if status, msg := h.storeChart(r.Context(), chart, spool); status != 0 {
 		if err := quota.Release(r.Context(), h.DB, repoID, size); err != nil {
 			h.Log.Warnw("failed to release quota", "repo", repoName, "error", err)
 		}
@@ -596,7 +596,7 @@ func (h *HTTPHandler) handleListCharts(w http.ResponseWriter, r *http.Request) {
 // concurrent delete cannot remove the blob between the dedup check, the Put and
 // the insert. It returns a zero status on success, otherwise the HTTP status
 // and message to report; the caller releases the quota reservation.
-func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, data []byte) (int, string) {
+func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, body *base.Spool) (int, string) {
 	status, msg := 0, ""
 
 	lockErr := storage.WithBlobLock(ctx, h.DB, chart.Digest, func(ctx context.Context) error {
@@ -610,7 +610,7 @@ func (h *HTTPHandler) storeChart(ctx context.Context, chart *models.HelmChart, d
 		}
 
 		if !exists {
-			blobKey, err = h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+			blobKey, err = h.BlobStore.Put(ctx, body.Reader(), map[string]string{
 				"sha256":   chart.Digest,
 				"filename": fmt.Sprintf("%s-%s.tgz", chart.Name, chart.Version),
 				"chart":    chart.Name,
@@ -754,11 +754,6 @@ func validChartIdent(s string) bool {
 	}
 
 	return s != "." && s != ".."
-}
-
-func calculateSHA256(data []byte) string {
-	hash := sha256.Sum256(data)
-	return hex.EncodeToString(hash[:])
 }
 
 // HelmIndex represents the Helm repository index.yaml structure.

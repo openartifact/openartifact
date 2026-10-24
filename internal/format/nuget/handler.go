@@ -6,7 +6,6 @@ package nuget
 
 import (
 	"archive/zip"
-	"bytes"
 	"context"
 	"encoding/xml"
 	"errors"
@@ -196,14 +195,14 @@ func isRootNuspec(name string) bool {
 
 // readNuspec returns the raw .nuspec XML of a .nupkg (zip) file.
 func readNuspec(r io.Reader) ([]byte, error) {
-	// Read the entire content into memory for zip reading
-	data, err := base.ReadAllLimited(r, maxNuGetPackageBytes)
+	// Zip reading needs random access: a reader that has it is used in place.
+	ra, size, err := base.ReaderAtLimited(r, maxNuGetPackageBytes)
 	if err != nil {
 		return nil, fmt.Errorf("failed to read package: %w", err)
 	}
 
 	// Open as zip
-	zr, err := zip.NewReader(bytes.NewReader(data), int64(len(data)))
+	zr, err := zip.NewReader(ra, size)
 	if err != nil {
 		return nil, fmt.Errorf("failed to open as zip: %w", err)
 	}

@@ -5,7 +5,6 @@
 package pypi
 
 import (
-	"bytes"
 	"context"
 	"crypto/md5" //nolint:gosec // required by protocol specification
 	"crypto/sha256"
@@ -27,6 +26,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
@@ -336,14 +336,15 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(pkg.SizeBytes, 10))
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": pkg.Filename}))
 
-	if _, err := io.Copy(w, rc); err != nil {
+	if _, err := iocopy.Copy(w, rc); err != nil {
 		h.Log.Errorw("failed to write file response", "filename", filename, "error", err)
 	}
 }
 
 // readUploadedFile parses the multipart upload and returns the "content" part
-// with its file name. On failure it writes the response and returns false.
-func (h *HTTPHandler) readUploadedFile(w http.ResponseWriter, r *http.Request) ([]byte, string, bool) {
+// with its MD5 and file name, hashed. The caller closes it. On failure it writes the
+// response and returns false.
+func (h *HTTPHandler) readUploadedFile(w http.ResponseWriter, r *http.Request) (*base.Part, string, string, bool) {
 	// Cap the whole body: ParseMultipartForm only bounds the in-memory part and
 	// spools the rest to disk.
 	r.Body = http.MaxBytesReader(w, r.Body, h.maxUpload+uploadFormOverhead)
@@ -351,13 +352,13 @@ func (h *HTTPHandler) readUploadedFile(w http.ResponseWriter, r *http.Request) (
 	if err := r.ParseMultipartForm(uploadFormMemory); err != nil { //nolint:gosec // r.Body is bounded by http.MaxBytesReader above
 		if _, tooBig := errors.AsType[*http.MaxBytesError](err); tooBig {
 			http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
-			return nil, "", false
+			return nil, "", "", false
 		}
 
 		h.Log.Errorw("failed to parse form", "error", err)
 		http.Error(w, "invalid form", http.StatusBadRequest)
 
-		return nil, "", false
+		return nil, "", "", false
 	}
 
 	file, fileHeader, err := r.FormFile("content")
@@ -365,24 +366,28 @@ func (h *HTTPHandler) readUploadedFile(w http.ResponseWriter, r *http.Request) (
 		h.Log.Errorw("failed to get file from form", "error", err)
 		http.Error(w, "missing file", http.StatusBadRequest)
 
-		return nil, "", false
+		return nil, "", "", false
 	}
-	defer func() { _ = file.Close() }()
 
-	data, err := base.ReadAllLimited(file, h.maxUpload)
-	if errors.Is(err, base.ErrContentTooLarge) {
+	if fileHeader.Size > h.maxUpload {
+		_ = file.Close()
+
 		http.Error(w, "file too large", http.StatusRequestEntityTooLarge)
-		return nil, "", false
+
+		return nil, "", "", false
 	}
 
+	md5Sum := md5.New() //nolint:gosec // required by protocol specification
+
+	part, err := base.HashPart(file, fileHeader.Size, md5Sum)
 	if err != nil {
 		h.Log.Errorw("failed to read file", "error", err)
 		http.Error(w, "failed to read file", http.StatusBadRequest)
 
-		return nil, "", false
+		return nil, "", "", false
 	}
 
-	return data, fileHeader.Filename, true
+	return part, hex.EncodeToString(md5Sum.Sum(nil)), fileHeader.Filename, true
 }
 
 // filenameTaken reports, after writing the response, whether the repository
@@ -423,16 +428,13 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	fileData, filename, ok := h.readUploadedFile(w, r)
+	upload, md5Digest, filename, ok := h.readUploadedFile(w, r)
 	if !ok {
 		return
 	}
+	defer upload.Close()
 
-	// Calculate hashes
-	md5Hash := md5.Sum(fileData) //nolint:gosec // required by protocol specification
-	sha256Hash := sha256.Sum256(fileData)
-	md5Digest := hex.EncodeToString(md5Hash[:])
-	sha256Digest := hex.EncodeToString(sha256Hash[:])
+	sha256Digest := upload.SHA256Hex()
 
 	// Get form fields
 	name := strings.TrimSpace(r.FormValue("name"))
@@ -458,7 +460,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	licenses, ok := h.uploadLicenses(w, r, repoID, filename, fileData)
+	licenses, ok := h.uploadLicenses(w, r, repoID, filename, upload)
 	if !ok || licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, licenses...) {
 		return
 	}
@@ -489,7 +491,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		BlobKey:        blobKey,
 		MD5Digest:      md5Digest,
 		SHA256Digest:   sha256Digest,
-		SizeBytes:      int64(len(fileData)),
+		SizeBytes:      upload.Size(),
 	}
 
 	// Reserve quota before anything is persisted; every failure path below
@@ -514,7 +516,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	)
 
 	lockErr := storage.WithBlobLock(r.Context(), h.DB, sha256Digest, func(ctx context.Context) error {
-		if _, err := h.BlobStore.Put(ctx, bytes.NewReader(fileData), map[string]string{
+		if _, err := h.BlobStore.Put(ctx, upload.Reader(), map[string]string{
 			"sha256": sha256Digest,
 			"format": "pypi",
 		}); err != nil {
@@ -566,7 +568,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		Version:    version,
 		Path:       filename,
 		SHA256:     sha256Digest,
-		Size:       int64(len(fileData)),
+		Size:       upload.Size(),
 	}))
 
 	// Return 200 OK (twine expects 200, not 201)
@@ -770,8 +772,10 @@ func (h *HTTPHandler) handleJSON(w http.ResponseWriter, r *http.Request) {
 // cannot be read at all (not a wheel or sdist, a damaged archive) when the
 // repository has a blocking policy: only the client's claims would decide it
 // (false, response written).
-func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, repoID, filename string, data []byte) ([]string, bool) {
-	res, err := licensemeta.ReadBytes(r.Context(), "pypi", filename, data)
+func (h *HTTPHandler) uploadLicenses(w http.ResponseWriter, r *http.Request, repoID, filename string, upload *base.Part) ([]string, bool) {
+	res, err := licensemeta.Read(r.Context(), "pypi", filename, func() (io.ReadCloser, error) {
+		return io.NopCloser(upload.Reader()), nil
+	})
 
 	switch {
 	case licensemeta.Unsafe(err):

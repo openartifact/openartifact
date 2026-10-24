@@ -33,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/httpcache"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -420,7 +421,7 @@ func (h *DeltaHandler) serveDeltaBlob(w http.ResponseWriter, r *http.Request, re
 	w.Header().Set("Cache-Control", httpcache.CacheControl(base.SharedCacheable(r, repoPublic), 86400))
 	w.Header().Add("Vary", "Authorization")
 
-	if _, err := io.Copy(w, reader); err != nil {
+	if _, err := iocopy.Copy(w, reader); err != nil {
 		h.log.Errorw("failed to write delta response", "error", err)
 	}
 }

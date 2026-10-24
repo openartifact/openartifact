@@ -18,6 +18,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
@@ -393,7 +394,7 @@ func (h *Handler) writeGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 		return
 	}
 
-	if _, err := io.Copy(w, body); err != nil {
+	if _, err := iocopy.Copy(w, body); err != nil {
 		h.log.Debugw("failed to write group metadata", "group", grp.Name, "error", err)
 	}
 }

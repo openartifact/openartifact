@@ -13,6 +13,27 @@ import (
 // maxLicenseXMLBytes bounds the descriptors inspected for declared licenses.
 const maxLicenseXMLBytes = 1 << 20
 
+// SpoolDescriptorLicenses is DescriptorLicenses for an uploaded body: only a
+// descriptor small enough to be parsed is read back from the spool.
+func SpoolDescriptorLicenses(filename string, s *Spool) []string {
+	switch strings.ToLower(path.Ext(filename)) {
+	case ".xml", ".pom":
+	default:
+		return nil
+	}
+
+	if s.Size() > maxLicenseXMLBytes {
+		return nil
+	}
+
+	data, err := s.Bytes()
+	if err != nil {
+		return nil
+	}
+
+	return DescriptorLicenses(filename, data)
+}
+
 // DescriptorLicenses returns the licenses declared by a published Ivy module
 // descriptor (<info><license name="..."/></info>) or Maven POM
 // (<licenses><license><name>). Files that are not a .xml/.pom descriptor, are

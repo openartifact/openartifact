@@ -13,7 +13,6 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
-	"io"
 	"mime"
 	"net/http"
 	"strconv"
@@ -23,6 +22,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/importmeta"
+	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
@@ -259,7 +259,7 @@ func (h *HTTPHandler) handleDownload(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Content-Length", strconv.FormatInt(pkg.SizeBytes, 10))
 	w.Header().Set("Content-Disposition", mime.FormatMediaType("attachment", map[string]string{"filename": filename}))
 	w.WriteHeader(http.StatusOK)
-	_, _ = io.Copy(w, blob)
+	_, _ = iocopy.Copy(w, blob)
 }
 
 // uploadFilename returns the file name an upload request names (query
@@ -295,7 +295,9 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 	}
 
 	// Read and hash the file
-	data, err := base.ReadAllLimited(r.Body, maxCondaUploadBytes)
+	md5Sum := md5.New() //nolint:gosec // required by protocol specification
+
+	spool, err := base.SpoolLimited(r.Body, maxCondaUploadBytes, md5Sum)
 	if err != nil {
 		if errors.Is(err, base.ErrContentTooLarge) {
 			http.Error(w, "upload too large", http.StatusRequestEntityTooLarge)
@@ -308,8 +310,9 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	defer func() { _ = r.Body.Close() }()
+	defer spool.Close()
 
-	idx := readPackageIndex(file.ext, data)
+	idx := readPackageIndex(file.ext, spool, spool.Size())
 	if licensepolicy.Enforce(w, r, h.DB, h.Log, repoID, idx.License) {
 		return
 	}
@@ -327,7 +330,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	pkg := newPackage(repoID, platform, file, idx, data)
+	pkg := newPackage(repoID, platform, file, idx, spool, hex.EncodeToString(md5Sum.Sum(nil)))
 
 	// Reserve quota before anything is persisted; every failure path below
 	// returns the reservation.
@@ -343,7 +346,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if err := h.storePackage(r.Context(), pkg, filename, data); err != nil {
+	if err := h.storePackage(r.Context(), pkg, filename, spool); err != nil {
 		if relErr := quota.Release(r.Context(), h.DB, repoID, pkg.SizeBytes); relErr != nil {
 			h.Log.Warnw("failed to release quota", "repo", repoName, "error", relErr)
 		}
@@ -383,10 +386,7 @@ func (h *HTTPHandler) handleUpload(w http.ResponseWriter, r *http.Request) {
 }
 
 // newPackage builds the database record for an uploaded package file.
-func newPackage(repoID, platform string, file packageFile, idx packageIndex, data []byte) *models.CondaPackage {
-	sha := sha256.Sum256(data)
-	sum := md5.Sum(data) //nolint:gosec // required by protocol specification
-
+func newPackage(repoID, platform string, file packageFile, idx packageIndex, body *base.Spool, md5Hex string) *models.CondaPackage {
 	return &models.CondaPackage{
 		RepositoryID: repoID,
 		Name:         file.name,
@@ -398,9 +398,9 @@ func newPackage(repoID, platform string, file packageFile, idx packageIndex, dat
 		Timestamp:    idx.Timestamp,
 		Depends:      idx.Depends,
 		Extra:        idx.Extra,
-		SizeBytes:    int64(len(data)),
-		SHA256:       hex.EncodeToString(sha[:]),
-		MD5:          hex.EncodeToString(sum[:]),
+		SizeBytes:    body.Size(),
+		SHA256:       body.SHA256Hex(),
+		MD5:          md5Hex,
 	}
 }
 
@@ -408,9 +408,9 @@ func newPackage(repoID, platform string, file packageFile, idx packageIndex, dat
 // per-blob lock so a concurrent unpublish cannot delete the blob in between.
 // When the row is not created (a concurrent upload of the same file won) the
 // blob is dropped again unless something else references it.
-func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.CondaPackage, filename string, data []byte) error {
+func (h *HTTPHandler) storePackage(ctx context.Context, pkg *models.CondaPackage, filename string, body *base.Spool) error {
 	err := storage.WithBlobLock(ctx, h.DB, pkg.SHA256, func(ctx context.Context) error {
-		blobKey, err := h.BlobStore.Put(ctx, bytes.NewReader(data), map[string]string{
+		blobKey, err := h.BlobStore.Put(ctx, body.Reader(), map[string]string{
 			"sha256":   pkg.SHA256,
 			"filename": filename,
 			"platform": pkg.Platform,
