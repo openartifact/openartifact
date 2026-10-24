@@ -95,11 +95,15 @@ func ParseProjectJSON(body []byte) ([]File, error) {
 
 	for i := range doc.Files {
 		jf := &doc.Files[i]
-		if jf.Filename == "" || jf.URL == "" {
+
+		// A link that is only a fragment names no file: resolved against the
+		// page it would be the page itself.
+		u := stripFragment(jf.URL)
+		if jf.Filename == "" || u == "" {
 			continue
 		}
 
-		f := File{Filename: jf.Filename, URL: stripFragment(jf.URL), Hashes: lowerHashes(jf.Hashes), UploadTime: jf.UploadTime}
+		f := File{Filename: jf.Filename, URL: u, Hashes: lowerHashes(jf.Hashes), UploadTime: jf.UploadTime}
 
 		if jf.RequiresPython != nil {
 			f.RequiresPython = *jf.RequiresPython

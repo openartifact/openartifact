@@ -187,6 +187,24 @@ func TestParseProject_Errors(t *testing.T) {
 	}
 }
 
+// A link that is only a fragment resolves to the page that holds it: it names
+// no file, in either serialization.
+func TestParseProject_FragmentOnlyLinkIsNotAFile(t *testing.T) {
+	for _, tt := range []struct{ body, ct string }{
+		{`<a href="#sha256=` + sha1hex + `">foo-1.0.tar.gz</a><a href="  #x ">foo-1.1.tar.gz</a>`, "text/html"},
+		{`{"files":[{"filename":"foo-1.0.tar.gz","url":"#sha256=` + sha1hex + `"}]}`, ContentTypeJSON},
+	} {
+		files, err := ParseProject([]byte(tt.body), tt.ct)
+		if err != nil {
+			t.Fatal(err)
+		}
+
+		if len(files) != 0 {
+			t.Errorf("%s: fragment-only links kept: %+v", tt.ct, files)
+		}
+	}
+}
+
 func TestParseIndex_HTMLAndJSON(t *testing.T) {
 	html := `<html><body><a href="/simple/Foo_Bar/">Foo_Bar</a><a href="/simple/baz/">baz</a><a href="/simple/bad%2Fname/">bad/name</a></body></html>`
 	js := `{"meta":{"api-version":"1.0"},"projects":[{"name":"Foo_Bar"},{"name":"baz"}]}`

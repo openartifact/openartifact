@@ -95,7 +95,8 @@ func ParseIndexHTML(r io.Reader) ([]string, error) {
 }
 
 // ParseProjectHTML returns the files of a PEP 503 project page. Anchors
-// without an href are ignored; the filename is the anchor text.
+// without an href, or whose href is only a fragment, are ignored; the filename
+// is the anchor text.
 func ParseProjectHTML(r io.Reader) ([]File, error) {
 	var files []File
 
@@ -121,6 +122,12 @@ func fileFromAnchor(attrs []html.Attribute, text string) (File, bool) {
 
 	f.RequiresPython, _ = attr(attrs, "data-requires-python")
 	f.URL, f.Hashes = splitFragment(strings.TrimSpace(href))
+
+	// A link that is only a fragment names no file: resolved against the page
+	// it would be the page itself.
+	if f.URL == "" {
+		return File{}, false
+	}
 
 	f.Filename = strings.TrimSpace(text)
 	if f.Filename == "" {
