@@ -33,7 +33,7 @@ func TestRelevanceTermPrefersNameQualifier(t *testing.T) {
 }
 
 func TestRelevanceExprWithoutTermRanksEverythingEqually(t *testing.T) {
-	expr, args := relevanceExpr("s.name", "", 3, true)
+	expr, args := relevanceExpr("s.name", "", 3)
 
 	// Cast, because the expression is also an ORDER BY item, where a bare 0
 	// would be read as a column position.
@@ -43,7 +43,7 @@ func TestRelevanceExprWithoutTermRanksEverythingEqually(t *testing.T) {
 }
 
 func TestRelevanceExprBindsEscapedTermAndPrefix(t *testing.T) {
-	expr, args := relevanceExpr("s.name", `a_b%`, 7, false)
+	expr, args := relevanceExpr("s.name", `a_b%`, 7)
 
 	if want := []any{`a\_b\%`, `a\_b\%%`}; !slices.Equal(args, want) {
 		t.Errorf("args = %v, want %v", args, want)
@@ -60,11 +60,90 @@ func TestRelevanceExprBindsEscapedTermAndPrefix(t *testing.T) {
 	}
 }
 
-func TestRelevanceExprSegmentsMatchQualifiedNames(t *testing.T) {
-	expr, _ := relevanceExpr("s.name", "lodash", 1, true)
+func TestPackageRankingWithoutTermRanksEverythingEqually(t *testing.T) {
+	r := packageRanking("name", "", 3, "")
 
-	if strings.Count(expr, `substring(s.name from '[^/:]*$')`) != 2 {
-		t.Errorf("exact and prefix arms must both look at the last segment, got %q", expr)
+	if r.expr != "0::int" || r.cols != "" || r.names != "" || len(r.args) != 0 {
+		t.Errorf("got %+v, want a constant rank, no columns and no arguments", r)
+	}
+}
+
+// The rank binds the raw term once: it is lowered in SQL, with the same
+// lower() as the name, and compared with = and starts_with, which take no
+// pattern to escape.
+func TestPackageRankingBindsTermOnce(t *testing.T) {
+	r := packageRanking("s.name", `a_b%`, 7, "")
+
+	if want := []any{`a_b%`}; !slices.Equal(r.args, want) {
+		t.Errorf("args = %v, want %v", r.args, want)
+	}
+
+	if !strings.Contains(r.cols, "lower($7::text) AS lt") || strings.Contains(r.cols, "$8") {
+		t.Errorf("columns %q must bind the term as $7 and nothing else", r.cols)
+	}
+
+	if strings.Contains(r.expr, "ILIKE") || strings.Contains(r.expr, "$") {
+		t.Errorf("rank %q must read the columns, not the arguments or ILIKE", r.expr)
+	}
+}
+
+// A qualified name ranks by its last segment too, cut once per row and only
+// for names that have a separator.
+func TestPackageRankingSegmentsMatchQualifiedNames(t *testing.T) {
+	r := packageRanking("s.name", "lodash", 1, "")
+
+	if n := strings.Count(r.cols, `substring(lower(s.name) from '[^/:]*$')`); n != 1 {
+		t.Errorf("the segment must be cut once per row, got %d in %q", n, r.cols)
+	}
+
+	for _, want := range []string{"strpos(s.name, '/') > 0", "strpos(s.name, ':') > 0", "lower(s.name) AS ln"} {
+		if !strings.Contains(r.cols, want) {
+			t.Errorf("columns %q do not contain %q", r.cols, want)
+		}
+	}
+
+	for _, want := range []string{"ln = lt OR tl = lt THEN 0", "starts_with(ln, lt) OR starts_with(tl, lt) THEN 1", "ELSE 2"} {
+		if !strings.Contains(r.expr, want) {
+			t.Errorf("rank %q does not contain %q", r.expr, want)
+		}
+	}
+
+	if r.names != ", lt, ln, tl" {
+		t.Errorf("names = %q, want the three rank columns", r.names)
+	}
+}
+
+func TestPackageRankingRankIfSkipsOtherRows(t *testing.T) {
+	r := packageRanking("name", "x", 1, "count(*) OVER () <= 10")
+
+	for _, want := range []string{
+		"CASE WHEN count(*) OVER () <= 10 THEN lower($1::text) END AS lt",
+		"CASE WHEN count(*) OVER () <= 10 THEN lower(name) END AS ln",
+		"CASE WHEN (count(*) OVER () <= 10) AND (strpos(name",
+	} {
+		if !strings.Contains(r.cols, want) {
+			t.Errorf("columns %q do not contain %q", r.cols, want)
+		}
+	}
+}
+
+// The rank columns are computed in the match, once per row and only below the
+// cap, and the page reads them: no other ranking work in the page.
+func TestSearchQueryComputesRankColumnsOnce(t *testing.T) {
+	readable := map[uuid.UUID]struct{}{uuid.New(): {}}
+
+	for name, opts := range map[string]PageOptions{"flat": {}, "grouped": {GroupByPackage: true}} {
+		t.Run(name, func(t *testing.T) {
+			q, _ := buildSearchQuery(SearchFilter{FreeText: "lodash"}, 25, 0, readable, true, opts)
+
+			if n := strings.Count(q, "AS ln"); n != 1 {
+				t.Errorf("ln computed %d times, want once:\n%s", n, q)
+			}
+
+			if strings.Contains(q, "LATERAL") || strings.Contains(q, "ILIKE $3") {
+				t.Errorf("the page must rank from the match's columns:\n%s", q)
+			}
+		})
 	}
 }
 
@@ -76,9 +155,9 @@ func TestSearchPageRanksBeforeRecencyAndBindsRankArguments(t *testing.T) {
 
 	defer func() { _ = db.Close() }()
 
-	// where: name, readable; rank: exact, prefix; then limit and offset.
+	// where: name, readable; rank: the term; then limit and offset.
 	mock.ExpectQuery(`(?s)ORDER BY relevance, created_at DESC, id.*ORDER BY p\.relevance, p\.created_at DESC, p\.id`).
-		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), `lodash`, `lodash%`, 5, 0).
+		WithArgs(sqlmock.AnyArg(), sqlmock.AnyArg(), `lodash`, 5, 0).
 		WillReturnRows(sqlmock.NewRows(pageCols()))
 
 	readable := map[uuid.UUID]struct{}{uuid.New(): {}}

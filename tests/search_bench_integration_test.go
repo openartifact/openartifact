@@ -39,20 +39,31 @@ func TestSearchRequestLatency(t *testing.T) {
 	log := newTestLogger(t)
 	h := search.NewHandler(pg.GetDB(), auth.NewEvaluator(pg, log, false), log, search.WithAuthCache(pg))
 	alice := searchUser(t, pg, "alice", ".*")
+	// A user who reads the one repository holding the packages: the readable
+	// set is a single id, so what is left is the cost of matching and ranking
+	// (a small deployment's search is this shape, whoever asks).
+	bob := searchUser(t, pg, "bob", "charts")
 
-	for _, req := range []struct{ name, target string }{
-		{"palette_selective", "/api/v1/search?q=chart-1234&limit=8&group=package"},
-		{"palette_broad", "/api/v1/search?q=chart-12&limit=8&group=package"},
-		{"page_broad", "/api/v1/search?q=chart-12&limit=25"},
-		{"palette_widest", "/api/v1/search?q=chart-&limit=8&group=package"},
-		{"repo_name", "/api/v1/search?q=repo-77&limit=8"},
+	for _, req := range []struct {
+		name, target string
+		user         *auth.Principal
+	}{
+		{"palette_selective", "/api/v1/search?q=chart-1234&limit=8&group=package", alice},
+		{"palette_broad", "/api/v1/search?q=chart-12&limit=8&group=package", alice},
+		{"page_broad", "/api/v1/search?q=chart-12&limit=25", alice},
+		{"palette_widest", "/api/v1/search?q=chart-&limit=8&group=package", alice},
+		{"repo_name", "/api/v1/search?q=repo-77&limit=8", alice},
+		{"one_repo_selective", "/api/v1/search?q=chart-1234&limit=25", bob},
+		{"one_repo_page_broad", "/api/v1/search?q=chart-12&limit=25", bob},
+		{"one_repo_page_widest", "/api/v1/search?q=chart-1&limit=25", bob},
+		{"one_repo_palette_broad", "/api/v1/search?q=chart-12&limit=8&group=package", bob},
 	} {
 		res := testing.Benchmark(func(b *testing.B) {
 			b.Helper()
 
 			for b.Loop() {
 				r := httptest.NewRequestWithContext(context.Background(), http.MethodGet, req.target, nil)
-				r = r.WithContext(middleware.WithPrincipal(r.Context(), alice))
+				r = r.WithContext(middleware.WithPrincipal(r.Context(), req.user))
 				w := httptest.NewRecorder()
 				h.ServeHTTP(w, r)
 

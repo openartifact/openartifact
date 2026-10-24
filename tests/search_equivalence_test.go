@@ -126,6 +126,9 @@ func searchEquivalenceCases() []searchEquivalenceCase {
 	return []searchEquivalenceCase{
 		{"free text", search.SearchFilter{FreeText: "art1"}, `s.name ILIKE $1`, []any{"%art1%"}},
 		{"broad text", search.SearchFilter{FreeText: "p"}, `s.name ILIKE $1`, []any{"%p%"}},
+		{"exact segment of a qualified name", search.SearchFilter{FreeText: "f1"}, `s.name ILIKE $1`, []any{"%f1%"}},
+		{"mixed case term", search.SearchFilter{FreeText: "NU1"}, `s.name ILIKE $1`, []any{"%NU1%"}},
+		{"mixed case name qualifier", search.SearchFilter{Name: "Org.G1"}, `s.name ILIKE $1`, []any{"%Org.G1%"}},
 		{"name filter", search.SearchFilter{Name: "org.g1"}, `s.name ILIKE $1`, []any{"%org.g1%"}},
 		{"format", search.SearchFilter{Formats: []string{"docker"}}, `s.format IN ($1)`, []any{"docker"}},
 		{"two formats and text", search.SearchFilter{Formats: []string{"maven", "npm"}, FreeText: "1"}, `s.name ILIKE $1 AND s.format IN ($2,$3)`, []any{"%1%", "maven", "npm"}},

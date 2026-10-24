@@ -275,33 +275,26 @@ func (e *Executor) SearchPage(
 	return results, total, nil
 }
 
-// runSearch builds and runs the staged page query. With capped the page is
-// taken from the at most MaxSearchResults+1 matching rows and every returned
-// row carries their count; otherwise the page is the best-ranked rows of all
-// matches and the count is 0. opts.GroupByPackage requires capped.
-func (e *Executor) runSearch(
-	ctx context.Context,
+// buildSearchQuery renders the staged page query and its arguments; see Search.
+func buildSearchQuery(
 	filter SearchFilter,
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 	capped bool,
 	opts PageOptions,
-) ([]SearchResult, int64, error) {
-	if len(readableRepos) == 0 {
-		return nil, 0, nil
-	}
-
+) (string, []any) {
 	where, args := buildWhereClause(filter, readableRepos)
 
-	// The capped paths rank the already matched rows (and only when the set is
-	// within the cap), the uncapped one ranks while matching.
-	nameCol := "s.name"
+	// The capped paths rank the matched rows as they come out of the match
+	// (only when the set is within the cap: above it the page is discarded),
+	// the uncapped one ranks while matching.
+	nameCol, rankIf := "s.name", ""
 	if capped {
-		nameCol = "name"
+		nameCol, rankIf = "name", fmt.Sprintf("count(*) OVER () <= %d", MaxSearchResults)
 	}
 
-	rank, rankArgs := relevanceExpr(nameCol, relevanceTerm(filter), len(args)+1, true)
-	args = append(args, rankArgs...)
+	rank := packageRanking(nameCol, relevanceTerm(filter), len(args)+1, rankIf)
+	args = append(args, rank.args...)
 
 	limitN := len(args) + 1
 	offsetN := len(args) + 2
@@ -332,10 +325,10 @@ func (e *Executor) runSearch(
 		// carries the capped row count, which is how the caller sees that the
 		// query is too broad.
 		pageCTE = fmt.Sprintf(`WITH matched AS MATERIALIZED (
-		SELECT %[1]s, count(*) OVER () AS matched_total
+		SELECT %[1]s, count(*) OVER () AS matched_total%[9]s
 		FROM (SELECT %[2]s %[3]s LIMIT %[4]d) AS capped
 	), latest AS (
-		SELECT DISTINCT ON (repository_id, format, name) %[1]s
+		SELECT DISTINCT ON (repository_id, format, name) %[1]s%[10]s
 		FROM matched
 		WHERE matched_total <= %[7]d
 		ORDER BY repository_id, format, name, created_at DESC, id
@@ -349,13 +342,13 @@ func (e *Executor) runSearch(
 		FROM matched
 		WHERE matched_total > %[7]d
 		LIMIT $%[5]d)
-	)`, matchColumns, sourceColumns, matches, MaxSearchResults+1, limitN, offsetN, MaxSearchResults, rank)
+	)`, matchColumns, sourceColumns, matches, MaxSearchResults+1, limitN, offsetN, MaxSearchResults, rank.expr, rank.cols, rank.names)
 		totalExpr = "p.total"
 	case capped:
 		// The window count is evaluated before ORDER BY/LIMIT, over the capped
 		// set; above the cap the rows are not ranked, as above.
 		pageCTE = fmt.Sprintf(`WITH matched AS MATERIALIZED (
-		SELECT %[1]s, count(*) OVER () AS matched_total
+		SELECT %[1]s, count(*) OVER () AS matched_total%[9]s
 		FROM (SELECT %[2]s %[3]s LIMIT %[4]d) AS capped
 	), page AS (
 		SELECT %[1]s,
@@ -364,19 +357,26 @@ func (e *Executor) runSearch(
 		FROM matched
 		ORDER BY relevance, created_at DESC, id
 		LIMIT $%[5]d OFFSET $%[6]d
-	)`, matchColumns, sourceColumns, matches, MaxSearchResults+1, limitN, offsetN, MaxSearchResults, rank)
+	)`, matchColumns, sourceColumns, matches, MaxSearchResults+1, limitN, offsetN, MaxSearchResults, rank.expr, rank.cols)
 		totalExpr = "p.total"
 	default:
+		// The rank columns come from a subquery of their own, fenced by
+		// OFFSET 0: inlined, their expressions would be evaluated again at
+		// every use in the rank.
+		from := matches
+		if rank.cols != "" {
+			from = fmt.Sprintf("FROM (SELECT %s%s %s OFFSET 0) AS s", sourceColumns, rank.cols, matches)
+		}
+
 		pageCTE = fmt.Sprintf(`WITH page AS (
 		SELECT %s, %s AS relevance
 		%s
 		ORDER BY relevance, s.created_at DESC, s.id
 		LIMIT $%d OFFSET $%d
-	)`, sourceColumns, rank, matches, limitN, offsetN)
+	)`, sourceColumns, rank.expr, from, limitN, offsetN)
 		totalExpr = "0::bigint"
 	}
 
-	//nolint:gosec // G201: every formatted fragment is a constant or built from constants; user values are bound $n arguments
 	q := fmt.Sprintf(`%s
 	SELECT
 		p.repository_id,
@@ -402,6 +402,27 @@ func (e *Executor) runSearch(
 		totalExpr,
 		fmt.Sprintf(searchBlobJoins, "p"),
 	)
+
+	return q, args
+}
+
+// runSearch builds and runs the staged page query. With capped the page is
+// taken from the at most MaxSearchResults+1 matching rows and every returned
+// row carries their count; otherwise the page is the best-ranked rows of all
+// matches and the count is 0. opts.GroupByPackage requires capped.
+func (e *Executor) runSearch(
+	ctx context.Context,
+	filter SearchFilter,
+	limit, offset int,
+	readableRepos map[uuid.UUID]struct{},
+	capped bool,
+	opts PageOptions,
+) ([]SearchResult, int64, error) {
+	if len(readableRepos) == 0 {
+		return nil, 0, nil
+	}
+
+	q, args := buildSearchQuery(filter, limit, offset, readableRepos, capped, opts)
 
 	rows, err := e.db.QueryContext(ctx, q, args...)
 	if err != nil {
@@ -488,7 +509,7 @@ func (e *Executor) SearchRepositories(
 
 	b.addReadable("r.id", readableRepos)
 
-	rank, rankArgs := relevanceExpr("r.name", relevanceTerm(filter), len(b.args)+1, false)
+	rank, rankArgs := relevanceExpr("r.name", relevanceTerm(filter), len(b.args)+1)
 	b.args = append(b.args, rankArgs...)
 
 	limitN := len(b.args) + 1
@@ -547,15 +568,13 @@ func relevanceTerm(filter SearchFilter) string {
 
 // relevanceExpr returns a SQL expression ranking nameExpr against term, lowest
 // first: 0 exact (case-insensitive) match, 1 prefix, 2 any other substring
-// match. With segments, the last segment of a qualified name counts as the
-// name itself ("lodash" is an exact match for "@scope/lodash" and for
-// "org.acme:lodash", the way a user types the artifact rather than the
-// coordinate); a repository name has no segments. Without a term every row
-// ranks 0, leaving the caller's recency tie-break in charge.
+// match. Without a term every row ranks 0, leaving the caller's recency
+// tie-break in charge. It ranks repository names; packageRanking is the
+// package counterpart.
 //
 // The expression binds two arguments starting at placeholder firstArg: the
 // escaped term and the escaped term as a prefix pattern, returned as args.
-func relevanceExpr(nameExpr, term string, firstArg int, segments bool) (string, []any) {
+func relevanceExpr(nameExpr, term string, firstArg int) (string, []any) {
 	if term == "" {
 		// Cast: a bare integer in ORDER BY is a column position, not a constant.
 		return "0::int", nil
@@ -563,18 +582,63 @@ func relevanceExpr(nameExpr, term string, firstArg int, segments bool) (string, 
 
 	exact, prefix := fmt.Sprintf("$%d", firstArg), fmt.Sprintf("$%d", firstArg+1)
 	escaped := escapeLike(term)
-	args := []any{escaped, escaped + "%"}
 
-	exactMatch := nameExpr + " ILIKE " + exact
-	prefixMatch := nameExpr + " ILIKE " + prefix
+	return "CASE WHEN " + nameExpr + " ILIKE " + exact + " THEN 0 WHEN " + nameExpr + " ILIKE " + prefix + " THEN 1 ELSE 2 END",
+		[]any{escaped, escaped + "%"}
+}
 
-	if segments {
-		tail := "substring(" + nameExpr + ` from '[^/:]*$')`
-		exactMatch += " OR " + tail + " ILIKE " + exact
-		prefixMatch += " OR " + tail + " ILIKE " + prefix
+// ranking is the SQL of a relevance rank: cols are select-list items (each
+// led by a comma) that compute the rank's inputs, names the same columns to
+// carry them through another select, expr the rank over those columns, and
+// args the arguments they bind.
+type ranking struct {
+	cols  string
+	names string
+	expr  string
+	args  []any
+}
+
+// packageRanking ranks a package name like relevanceExpr ranks a repository
+// name (0 exact case-insensitive match, 1 prefix, 2 any other substring match)
+// except that the last "/" or ":" segment of a qualified name counts as the
+// name itself: "lodash" is an exact match for "@scope/lodash" and for
+// "org.acme:lodash", the way a user types the artifact rather than the
+// coordinate. Without a term every row ranks 0.
+//
+// It runs once per matching row, so it is built to be cheap. The lowered
+// term lt, the lowered name ln and its segment tl are computed once per row,
+// as columns, and compared with = and starts_with (ILIKE would lower the name
+// and the pattern again for every comparison). The segment is cut out with a
+// regular expression only for names that contain a separator; for the others
+// tl is NULL, which makes the segment tests NULL (not true) and leaves the
+// whole-name tests, the segment being the name.
+//
+// nameExpr is the name column of the select the columns go in; rankIf, when
+// not empty, is a condition that rows must meet to be ranked: for the others
+// the columns are NULL, the work skipped (the caller does not read their
+// rank). The only argument, at placeholder firstArg, is the unescaped term.
+func packageRanking(nameExpr, term string, firstArg int, rankIf string) ranking {
+	if term == "" {
+		return ranking{expr: "0::int"}
 	}
 
-	return "CASE WHEN " + exactMatch + " THEN 0 WHEN " + prefixMatch + " THEN 1 ELSE 2 END", args
+	lt := fmt.Sprintf("lower($%d::text)", firstArg)
+	ln := "lower(" + nameExpr + ")"
+	separated := "strpos(" + nameExpr + ", '/') > 0 OR strpos(" + nameExpr + ", ':') > 0"
+	tl := "CASE WHEN " + separated + " THEN substring(" + ln + ` from '[^/:]*$') END`
+
+	if rankIf != "" {
+		lt = "CASE WHEN " + rankIf + " THEN " + lt + " END"
+		ln = "CASE WHEN " + rankIf + " THEN " + ln + " END"
+		tl = "CASE WHEN (" + rankIf + ") AND (" + separated + ") THEN substring(lower(" + nameExpr + `) from '[^/:]*$') END`
+	}
+
+	return ranking{
+		cols:  ",\n\t\t" + lt + " AS lt, " + ln + " AS ln, " + tl + " AS tl",
+		names: ", lt, ln, tl",
+		expr:  "CASE WHEN ln = lt OR tl = lt THEN 0 WHEN starts_with(ln, lt) OR starts_with(tl, lt) THEN 1 ELSE 2 END",
+		args:  []any{term},
+	}
 }
 
 func whereClause(where string) string {

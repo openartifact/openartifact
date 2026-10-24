@@ -75,12 +75,12 @@ func BenchmarkEscapeLike(b *testing.B) {
 	}
 }
 
-// BenchmarkRelevanceExpr renders the ranking CASE added to every search.
-func BenchmarkRelevanceExpr(b *testing.B) {
+// BenchmarkPackageRanking renders the ranking added to every search.
+func BenchmarkPackageRanking(b *testing.B) {
 	b.ReportAllocs()
 
 	for b.Loop() {
-		_, _ = relevanceExpr("s.name", "lodash", 3, true)
+		_ = packageRanking("s.name", "lodash", 3, "")
 	}
 }
 
