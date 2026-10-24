@@ -32,6 +32,10 @@ type Index struct {
 
 // ChartVersion is the part of one index entry that proxying and merging need.
 type ChartVersion struct {
+	// Name is the key of the entry's list under "entries": the name helm
+	// resolves, whatever the entry's own "name" field says. Merging and the
+	// hosted-wins rule go by it, so an upstream cannot list a version of a
+	// chart it does not own under another name.
 	Name    string
 	Version string
 	// Digest is the entry's "digest" field verbatim (SHA-256 hex for charts
@@ -143,13 +147,9 @@ func chartVersion(listName string, e *yaml.Node) (ChartVersion, bool) {
 	}
 
 	cv := ChartVersion{
-		Name:    scalarOf(e, "name"),
+		Name:    listName,
 		Version: scalarOf(e, "version"),
 		Digest:  scalarOf(e, "digest"),
-	}
-
-	if cv.Name == "" {
-		cv.Name = listName
 	}
 
 	if u := mapValue(e, "urls"); u != nil && u.Kind == yaml.SequenceNode {
