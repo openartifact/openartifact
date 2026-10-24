@@ -111,9 +111,14 @@ func tokenizeExpr(s string) []string {
 // exprParser is a recursive-descent parser: or := and ("OR" and)*,
 // and := atom ("AND" atom)*, atom := "(" or ")" | id ["+"] ["WITH" exception].
 type exprParser struct {
-	toks []string
-	pos  int
+	toks  []string
+	pos   int
+	depth int // open parentheses
 }
+
+// maxExprDepth bounds the parenthesis nesting of an expression; real ones
+// nest a few levels.
+const maxExprDepth = 64
 
 func (p *exprParser) peekOp(op string) bool {
 	return p.pos < len(p.toks) && strings.EqualFold(p.toks[p.pos], op)
@@ -163,7 +168,14 @@ func (p *exprParser) parseAtom(b *strings.Builder) bool {
 	tok := p.toks[p.pos]
 
 	if tok == "(" {
+		// A license string is uploaded metadata: without a cap, a few MiB of "("
+		// recurse past the 1 GB goroutine stack limit, which kills the process.
+		if p.depth >= maxExprDepth {
+			return false
+		}
+
 		p.pos++
+		p.depth++
 
 		b.WriteByte('(')
 
@@ -172,6 +184,7 @@ func (p *exprParser) parseAtom(b *strings.Builder) bool {
 		}
 
 		p.pos++
+		p.depth--
 
 		b.WriteByte(')')
 
