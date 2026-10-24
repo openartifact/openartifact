@@ -119,7 +119,21 @@ func (s *S3BlobStore) OpenStaging(ctx context.Context, id, version string) (io.R
 		return nil, fmt.Errorf("s3: get %s: %w", key, err)
 	}
 
+	// Some S3-compatible backends (e.g. Garage 1.x) ignore If-Match on GET.
+	// The response carries the ETag of the bytes actually served, so compare
+	// it instead of trusting that the precondition was enforced.
+	if out.ETag != nil && !sameETag(*out.ETag, version) {
+		_ = out.Body.Close()
+
+		return nil, ErrStagingChanged
+	}
+
 	return out.Body, nil
+}
+
+// sameETag compares two ETags ignoring surrounding quotes.
+func sameETag(a, b string) bool {
+	return strings.Trim(a, `"`) == strings.Trim(b, `"`)
 }
 
 // PromoteStaging copies a staging object to the content-addressed key with a
