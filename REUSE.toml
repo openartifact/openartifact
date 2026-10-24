@@ -29,7 +29,7 @@ precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
 
-# Binary rpm test fixture (built from a trivial spec with rpmbuild).
+# Binary rpm test fixture (built from testdata/weakdeps.spec).
 [[annotations]]
 path = "pkg/rpm/testdata/weakdeps.rpm"
 precedence = "aggregate"

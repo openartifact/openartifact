@@ -32,10 +32,10 @@ func TestParseRPM_WeakDependencies(t *testing.T) {
 	}
 
 	checks := map[string][]Dependency{
-		"carbonio-recommended":  pkg.Recommends,
-		"carbonio-suggested":    pkg.Suggests,
-		"carbonio-supplemented": pkg.Supplements,
-		"carbonio-enhanced":     pkg.Enhances,
+		"oa-recommended":  pkg.Recommends,
+		"oa-suggested":    pkg.Suggests,
+		"oa-supplemented": pkg.Supplements,
+		"oa-enhanced":     pkg.Enhances,
 	}
 	for name, deps := range checks {
 		if _, ok := depByName(deps, name); !ok {
@@ -43,7 +43,7 @@ func TestParseRPM_WeakDependencies(t *testing.T) {
 		}
 	}
 
-	sug, _ := depByName(pkg.Suggests, "carbonio-suggested")
+	sug, _ := depByName(pkg.Suggests, "oa-suggested")
 	if sug.Flags&SENSE_GREATEREQUAL != SENSE_GREATEREQUAL || sug.Version != "1.0" {
 		t.Errorf("suggests flags/version = %#x/%q, want GE 1.0", sug.Flags, sug.Version)
 	}

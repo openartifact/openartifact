@@ -59,7 +59,7 @@ func TestBackfillWeakDepsReadsBlob(t *testing.T) {
 
 	w.backfillFromBlob(context.Background(), "repo1", pkgs)
 
-	if len(pkgs[0].Recommends) != 1 || pkgs[0].Recommends[0].Name != "carbonio-recommended" || !pkgs[0].WeakDepsParsed {
+	if len(pkgs[0].Recommends) != 1 || pkgs[0].Recommends[0].Name != "oa-recommended" || !pkgs[0].WeakDepsParsed {
 		t.Errorf("recommends not backfilled: %+v", pkgs[0])
 	}
 
