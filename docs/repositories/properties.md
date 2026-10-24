@@ -13,7 +13,7 @@ Properties are free-form string key/value pairs attached to an artifact. They ca
 - A property belongs to one artifact of one repository. The artifact is identified by `artifact_id`, a string of at most 1024 bytes (valid UTF-8, no control characters), URL-escaped in the path. The web UI and `oa import` use the package's id as shown in the package list (the `id` of the package, or the id returned by an upload: the `X-OA-Artifact-Id` response header on Maven `PUT`, `id` in the JSON body of Debian, RPM and raw uploads). The server does not check that the id names an existing package; properties are stored against `(repository, artifact_id)` and are deleted with the repository.
 - Keys: 1-255 bytes, valid UTF-8, no control characters. Values: strings of at most 4096 bytes, valid UTF-8, no NUL. At most 100 properties per request. A non-string value is `400 bad_request`.
 - A request body is a flat JSON map of strings, or the same map wrapped as `{"properties": {...}}` (the shape the web UI sends).
-- All routes are management endpoints (`/api/v1/*`): they need the global `manage` permission (admin), not the repository's read/write permissions. Deploy tokens cannot use them. See [RBAC](../security/rbac.md).
+- Permissions are those of the repository, not the global `manage` permission: reading properties and searching need `read` on the repository, setting, replacing and removing them need `write`. Deploy tokens can use them, which is what `oa upload` does to record build properties from CI. See [RBAC](../security/rbac.md).
 
 ## API
 

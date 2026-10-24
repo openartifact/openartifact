@@ -77,6 +77,12 @@ type routeScope struct {
 	// passes for a caller who satisfies the scope above (global manage, or the
 	// repo-scoped one when repoName is set) or administers that repository.
 	delegateRepo string
+	// bundles marks a release-bundle route (/api/v1/bundles/{name}/{version}...).
+	// The repositories involved live in the request body or the stored items,
+	// so RBAC only requires a real principal; the handler authorizes against
+	// each repository (read on the sources, write on the target) and the
+	// bundle's owner.
+	bundles bool
 }
 
 func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evaluator, log *logger.Logger) func(http.Handler) http.Handler {
@@ -134,7 +140,7 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 
 			// A project token's service account is a repository credential
 			// only: it gets no /api/v1 list endpoint, not even a filtered one.
-			if ((scope.anyAuthenticated && principal.ServiceProjectID == "") || isDockerRootless(r)) && !principal.IsAnonymous {
+			if (((scope.anyAuthenticated || scope.bundles) && principal.ServiceProjectID == "") || isDockerRootless(r)) && !principal.IsAnonymous {
 				next.ServeHTTP(w, r)
 				return
 			}
@@ -684,6 +690,8 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete:
 			return routeScope{action: actionForMethod(method), repoName: segs[1]}
 		}
+	case isCIRoute(method, segs):
+		return classifyCIRoute(method, segs)
 	case isRepoTrashEmptyRoute(method, segs):
 		// Emptying a repository's trash destroys data for good: repo `manage`,
 		// or the repository's project maintainers and owners.
@@ -728,6 +736,86 @@ func delegatedRepoName(method string, segs []string) string {
 	}
 
 	return segs[1]
+}
+
+// isCIRoute reports whether segs (of an /api/v1/ path) is one of the routes
+// the CI commands of oa use with a repository-scoped token: artifact
+// properties and the per-bundle routes.
+func isCIRoute(method string, segs []string) bool {
+	return isRepoPropertiesRoute(method, segs) || isBundleRoute(method, segs)
+}
+
+// classifyCIRoute scopes an isCIRoute route. Artifact properties are metadata of
+// the repository's own artifacts: reading needs `read` on the repository,
+// changing them `write`. A bundle route is decided by its handler, because the
+// repositories involved are in the request body or the stored items; the
+// middleware only lets an authenticated principal through.
+func classifyCIRoute(method string, segs []string) routeScope {
+	if isBundleRoute(method, segs) {
+		return routeScope{action: "manage", bundles: true}
+	}
+
+	return routeScope{action: actionForMethod(propertiesMethod(method)), repoName: segs[1]}
+}
+
+// isRepoPropertiesRoute reports whether segs (of an /api/v1/ path) is one of the
+// artifact-property routes of a repository: GET/PUT/PATCH
+// repositories/{name}/artifacts/{id}/properties, DELETE
+// repositories/{name}/artifacts/{id}/properties/{key} and GET
+// repositories/{name}/artifacts/search.
+func isRepoPropertiesRoute(method string, segs []string) bool {
+	if len(segs) < 4 || segs[0] != "repositories" || !isPlainName(segs[1]) || segs[2] != "artifacts" {
+		return false
+	}
+
+	switch {
+	case len(segs) == 4 && segs[3] == "search":
+		return isSafeMethod(method)
+	case len(segs) == 5 && isSingleSegment(segs[3]) && segs[4] == "properties":
+		return isSafeMethod(method) || method == http.MethodPut || method == http.MethodPatch
+	case len(segs) == 6 && isSingleSegment(segs[3]) && segs[4] == "properties" && isSingleSegment(segs[5]):
+		return method == http.MethodDelete
+	}
+
+	return false
+}
+
+// propertiesMethod maps a property route's method to the one that decides its
+// action: removing a property edits metadata (`write`), it is not a package delete.
+func propertiesMethod(method string) string {
+	if method == http.MethodDelete {
+		return http.MethodPut
+	}
+
+	return method
+}
+
+// isBundleRoute reports whether segs (of an /api/v1/ path) is a per-bundle
+// route: everything under bundles/{name}/{version}. The bundle list
+// (GET bundles), pipelines and any other shape stay administrative; POST
+// bundles (create) is part of the delegated set.
+func isBundleRoute(method string, segs []string) bool {
+	if len(segs) < 1 || segs[0] != "bundles" || slices.Contains(segs, "") {
+		return false
+	}
+
+	switch len(segs) {
+	case 1:
+		return method == http.MethodPost
+	case 3:
+		return method == http.MethodGet || method == http.MethodDelete
+	case 4:
+		switch segs[3] {
+		case "items", "promotions", "manifest", "manifest.asc":
+			return isSafeMethod(method) || (segs[3] == "items" && method == http.MethodPost)
+		case "seal", "promote", "archive":
+			return method == http.MethodPost
+		}
+	case 5:
+		return segs[3] == "items" && method == http.MethodDelete
+	}
+
+	return false
 }
 
 // isRepoTrashEmptyRoute reports whether segs is DELETE repositories/{name}/trash

@@ -94,6 +94,7 @@ type declServer struct {
 	url      string
 	password string
 	token    string
+	sess     *session // admin cookie session, for the calls API tokens cannot make
 	root     string
 	oaBin    string
 	home     string
@@ -271,6 +272,7 @@ func (s *declServer) mintToken(t *testing.T) string {
 
 	jar, _ := cookiejar.New(nil)
 	sess := &session{c: &http.Client{Jar: jar, Timeout: 30 * time.Second}, base: s.url}
+	s.sess = sess
 
 	var user struct {
 		MustChangePassword bool `json:"must_change_password"`

@@ -15,7 +15,6 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/gpgkeys"
-	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/gpg"
 )
 
@@ -132,28 +131,9 @@ func (h *BundlesHandler) signBundle(ctx context.Context, ref string, b *models.R
 
 // loadBundleForRead resolves {name}/{version} for the read-only signing routes.
 func (h *BundlesHandler) loadBundleForRead(w http.ResponseWriter, r *http.Request) (*models.ReleaseBundle, bool) {
-	ctx := r.Context()
+	bundle, _, ok := h.loadBundle(w, r, bundleNeedView)
 
-	isAdmin, err := principalIsAdmin(ctx, currentPrincipal(r), h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return nil, false
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, urlparams.Vars(r)["name"], urlparams.Vars(r)["version"])
-	if err != nil {
-		h.log.Errorw("bundle manifest: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return nil, false
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
-		return nil, false
-	}
-
-	return bundle, true
+	return bundle, ok
 }
 
 // handleGetManifest serves the exact bytes a bundle signature covers.

@@ -65,7 +65,7 @@ On `/api/v1/*` every POST/PUT/PATCH/DELETE made with a session must send `X-CSRF
 | Prefix | `kind` | Rights |
 |---|---|---|
 | `oa_pat_` | `access` | everything the owner can do, including the management API |
-| `oa_dep_` | `deploy` | the owner's repository data actions only: the `manage` action is denied, so `/api/v1/*` management routes are unreachable (can read/write/delete package data) |
+| `oa_dep_` | `deploy` | the owner's repository data actions only: the `manage` action is denied, so `/api/v1/*` management routes are unreachable (can read/write/delete package data). Two groups of `/api/v1` routes are decided per repository instead of by `manage` and therefore work with a deploy token: artifact [properties](../repositories/properties.md) and [release bundles](../repositories/release-bundles.md#permissions), which is what the [CI commands](../integrations/ci.md) of `oa` use |
 
 A token is 32 random bytes in hex after the prefix; only its SHA-256 is stored, and the plain value is shown once in the creation response. Revoked, expired and disabled-owner tokens are rejected; `last_used` is updated at most once a minute.
 

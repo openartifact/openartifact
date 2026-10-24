@@ -10,11 +10,11 @@ A release bundle is a named, versioned set of artifacts (referenced by SHA-256) 
 
 Promoting a sealed bundle copies its artifacts into the repository of the next pipeline stage ([Promoting a bundle](#promoting-a-bundle)). Sealing can add a GPG signature (see [Signing](#signing-a-bundle)). Everything is also available in the [web UI](#web-ui).
 
-All routes are under `/api/v1` and need an admin principal (`403 forbidden` otherwise). Names and versions are 1-255 bytes, valid UTF-8, without `/`, `\` or control characters.
+All routes are under `/api/v1`. Administrators can do everything; other authenticated callers, including CI [deploy tokens](../security/authentication.md#api-tokens), are limited by [Permissions](#permissions). Listing bundles and the pipelines routes are administrator-only (`403 forbidden` otherwise). `oa` drives the whole flow for CI: see [CI integration](../integrations/ci.md). Names and versions are 1-255 bytes, valid UTF-8, without `/`, `\` or control characters.
 
 ## Web UI
 
-Administrators find **Release bundles** in the sidebar (`/bundles`).
+Administrators find **Release bundles** in the sidebar (`/bundles`); the pages need an administrator, whereas the API and `oa` also serve non-admin callers ([Permissions](#permissions)).
 
 - **List**: filter by name and state; **New bundle** creates a draft (name, version, description, optional pipeline); **New pipeline** defines the ordered stages, each optionally bound to a repository.
 - **Detail** (`/bundles/{name}/{version}`): summary, the pipeline as a stage trail with the bundle's current stage, the items (format, SHA-256, size, source repository), the vulnerability scan totals of the source repositories (linking to the filtered [vulnerability scans](../security/scanning.md)) and the promotion history.
@@ -40,15 +40,15 @@ An operation in the wrong state is `409 conflict`. Sealing an empty bundle is `4
 | Method and path | Purpose |
 |---|---|
 | `GET /api/v1/bundles?name=&state=&page=&limit=` | List (`limit` 1-100, default 25) as `{total, page, limit, bundles}`. |
-| `POST /api/v1/bundles` | Create a draft: `{"name","version","description","pipeline_id"}` (`pipeline_id` optional, must be an existing pipeline's UUID). `201`. |
+| `POST /api/v1/bundles` | Create a draft: `{"name","version","description","pipeline_id"}` or, instead of `pipeline_id`, `"pipeline": "<name>"` (both optional, mutually exclusive; the pipeline must exist). The caller becomes the bundle's creator. `201`. |
 | `GET /api/v1/bundles/{name}/{version}` | One bundle: `id, name, version, description, state, pipeline_id, current_stage, created_by, sealed_at, sealed_by, archived_at, archived_by, gpg_key_id, gpg_signature, created_at, updated_at`. |
 | `DELETE /api/v1/bundles/{name}/{version}` | Delete; draft only. `204`. |
 | `GET /api/v1/bundles/{name}/{version}/items` | `{"items": [...]}`. |
 | `POST /api/v1/bundles/{name}/{version}/items` | Add 1-500 items atomically (draft only); `201` with the stored items. |
 | `DELETE /api/v1/bundles/{name}/{version}/items/{sha256}` | Remove one item (draft only). `204`. |
 | `POST /api/v1/bundles/{name}/{version}/seal` | Draft to sealed; records `sealed_at`/`sealed_by`. Optional body `{"gpg_key_id"}` signs the manifest. |
-| `GET /api/v1/bundles/{name}/{version}/manifest` | The canonical JSON manifest a signature covers (admin). |
-| `GET /api/v1/bundles/{name}/{version}/manifest.asc` | The armored detached signature (admin); `404` when the bundle was sealed without a key. |
+| `GET /api/v1/bundles/{name}/{version}/manifest` | The canonical JSON manifest a signature covers (visible to whoever can see the bundle). |
+| `GET /api/v1/bundles/{name}/{version}/manifest.asc` | The armored detached signature (same visibility); `404` when the bundle was sealed without a key. |
 | `POST /api/v1/bundles/{name}/{version}/archive` | Sealed to archived; records `archived_at`/`archived_by`. |
 | `POST /api/v1/bundles/{name}/{version}/promote` | Copy the bundle into a stage's repository ([details](#promoting-a-bundle)). |
 | `GET /api/v1/bundles/{name}/{version}/promotions` | `{"promotions": [...]}`: the promotion history, newest first. |
@@ -93,6 +93,23 @@ gpg --verify manifest.json.asc manifest.json
 
 The bundle's `gpg_key_id` is the signer's fingerprint (it stays meaningful after the key is deleted) and `gpg_signature` the armored signature. An unknown key answers `400 validation_failed` and leaves the bundle a draft. The seal fails with `409` if an item changed while the manifest was being signed.
 
+## Permissions
+
+Bundles involve several repositories (the sources of the items and the target of a promotion), so the middleware lets any authenticated user or token through (project service accounts and anonymous callers are refused) and the handlers decide from the repositories involved. The repository checks use the caller's [permission targets](../security/rbac.md) at repository level (empty path).
+
+| Operation | Needs |
+|---|---|
+| Create a draft | An administrator, or `read` on at least one repository. The caller becomes the bundle's owner. |
+| See a bundle, its items, promotions and manifest | The owner or an administrator, or `read` on every source repository of the bundle (and at least one item). Everybody else gets `404`. |
+| Add or remove items | The owner or an administrator, and `read` on each source repository added. |
+| Seal, archive, delete | The owner or an administrator; sealing also needs `read` on every source repository. |
+| Promote | `read` on every source repository and `write` on the target repository. No ownership is needed, so a release engineer can promote a bundle a build job created. `?force=true` stays administrator-only. |
+| List all bundles (`GET /api/v1/bundles`), every `/api/v1/pipelines` route | Administrator. |
+
+Pipelines are the operator's gate: a bundle can only be promoted when it has a pipeline and a stage defined by an administrator. A CI token attaches a pipeline by name (`pipeline` on create) without being allowed to list or edit pipelines. Signing at seal time (`gpg_key_id`) is allowed to whoever can seal; hand out the key id to the jobs that should sign, since listing keys is administrator-only.
+
+A deploy token with `read` and `write` on the build and release repositories is therefore enough for a CI job to upload, assemble, seal and promote; see [CI integration](../integrations/ci.md#least-privilege-ci-token).
+
 ## Pipelines API
 
 A pipeline is a named, ordered list of stages; each stage has a `name` and an optional `repo_id` (UUID of an existing repository that the stage must promote into).
@@ -109,7 +126,7 @@ A pipeline is a named, ordered list of stages; each stage has a `name` and an op
 
 `POST /api/v1/bundles/{name}/{version}/promote` with `{"to_stage","target_repo","notes"}` copies every item of a sealed bundle into `target_repo`.
 
-Checks before anything is copied: the bundle is sealed and has a pipeline, `to_stage` is one of its stages and comes after the bundle's `current_stage`, `target_repo` (a repository name) exists and matches the stage's `repo_id` when one is set. The target must be a hosted repository (not a proxy or group), not deleted, of the same format as every item's source repository, and different from it.
+Checks before anything is copied: the bundle is sealed and has a pipeline, `to_stage` is one of its stages and comes after the bundle's `current_stage`, `target_repo` (a repository name) exists and matches the stage's `repo_id` when one is set. `target_repo` may be omitted when the stage has a `repo_id`: that repository is the target. A stage without one needs `target_repo` (`400 validation_failed` otherwise). The target must be a hosted repository (not a proxy or group), not deleted, of the same format as every item's source repository, and different from it.
 
 A promotion is one database transaction. Either every item is copied, the `bundle_promotions` record is written and `current_stage` moves to `to_stage`, or nothing changes at all: a failed promotion leaves no rows, no quota charge and no history entry, and can simply be retried. Concurrent promotions of the same bundle are serialised; the loser gets `409 conflict`.
 

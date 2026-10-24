@@ -340,3 +340,43 @@ func (d *projectRBACDB) CreateProjectToken(_ context.Context, spec database.Proj
 func ptSpec(projectID string) database.ProjectTokenSpec {
 	return database.ProjectTokenSpec{ProjectID: projectID, Name: "ci", Role: models.ProjectRoleDeveloper, CreatedBy: "user-1"}
 }
+
+// TestRBACBundleAndPropertyRoutes drives the CI routes through the real
+// middleware for a caller that only holds `read` everywhere: property reads and
+// every per-bundle route reach the handler (which authorizes per bundle), while
+// property writes, the bundle list and pipelines stay refused.
+func TestRBACBundleAndPropertyRoutes(t *testing.T) {
+	reader := projectCaller{kind: auth.TokenKindAccess}
+	deploy := projectCaller{kind: auth.TokenKindDeploy}
+
+	tests := []struct {
+		caller       projectCaller
+		method, path string
+		want         int
+	}{
+		{reader, http.MethodGet, "/api/v1/repositories/app/artifacts/a1/properties", http.StatusOK},
+		{reader, http.MethodGet, "/api/v1/repositories/app/artifacts/search", http.StatusOK},
+		{reader, http.MethodPatch, "/api/v1/repositories/app/artifacts/a1/properties", http.StatusForbidden},
+		{reader, http.MethodPut, "/api/v1/repositories/app/artifacts/a1/properties", http.StatusForbidden},
+		{reader, http.MethodDelete, "/api/v1/repositories/app/artifacts/a1/properties/k", http.StatusForbidden},
+		{reader, http.MethodPost, "/api/v1/bundles", http.StatusOK},
+		{reader, http.MethodGet, "/api/v1/bundles/shop/1", http.StatusOK},
+		{reader, http.MethodPost, "/api/v1/bundles/shop/1/promote", http.StatusOK},
+		{reader, http.MethodGet, "/api/v1/bundles", http.StatusForbidden},
+		{reader, http.MethodGet, "/api/v1/pipelines", http.StatusForbidden},
+		{reader, http.MethodPost, "/api/v1/pipelines", http.StatusForbidden},
+		{reader, http.MethodPut, "/api/v1/bundles/shop/1", http.StatusForbidden},
+		{deploy, http.MethodPost, "/api/v1/bundles/shop/1/seal", http.StatusOK},
+		{deploy, http.MethodGet, "/api/v1/bundles", http.StatusForbidden},
+		{projectCaller{kind: auth.TokenKindAccess, admin: true}, http.MethodGet, "/api/v1/bundles", http.StatusOK},
+		{projectCaller{kind: auth.TokenKindAccess, admin: true}, http.MethodPatch, "/api/v1/repositories/app/artifacts/a1/properties", http.StatusOK},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.caller.kind+" "+tc.method+" "+tc.path, func(t *testing.T) {
+			if got := projectStatus(t, tc.caller, "", tc.method, tc.path); got != tc.want {
+				t.Fatalf("status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}

@@ -93,6 +93,9 @@ Commands marked *admin* need the global `manage` permission. IDs are the values 
 | `cleanup` | `list <repo>`, `create <repo> --name N (--keep-count N \| --keep-days N) [--name-pattern REGEX] [--schedule CRON] [--enabled=false]`, `show <repo> <id>`, `update <repo> <id> [same flags]` (only the flags you pass are sent), `delete <repo> <id>`, `run <repo> <id>` |
 | `quota` | `show <repo>`, `set <repo> [--limit N [--unit MB\|GB\|TB]] [--max-artifacts N] [--warn-percent P]` (default unit `GB`; at least one flag), `delete <repo>` |
 | `props` | `list <repo> <artifact-id>`, `set <repo> <artifact-id> <key> <value>`, `delete <repo> <artifact-id> <key>`, `search <repo> <key> <value>` |
+| `upload` | `<repo> <file\|glob>... [--target-path P] [--flat] [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]`: upload files with build properties, see [CI commands](#ci-commands) |
+| `bundle` | `create <name> <version> [--description D] [--pipeline P]`, `add <name> <version> (--repo R --path P... \| --from-build NAME/NUMBER [--repo R]...)`, `seal <name> <version> [--gpg-key K]`, `show <name> <version>`: [release bundles](../repositories/release-bundles.md) for CI, see [CI commands](#ci-commands) |
+| `promote` | `<name> <version> --stage S [--target-repo R] [--notes T]`: promote a sealed bundle, see [CI commands](#ci-commands) |
 | `delta` | `list <repo> <pkg-id>`, `get <repo> <pkg-id> --from <sha256> <dest>` |
 | `apply`, `diff`, `export` *admin* | `apply -f PATH [-R] [--kind K] [--prune] [--prune-all] [--force-secrets] [--continue-on-error] [--validate-only] [-o json]`, `diff` (same flags; exits 2 when there are changes), `export [--kind K] [--with-members] [-o DIR]`: declarative configuration from YAML manifests, see [declarative configuration](declarative.md) |
 | `import` | `nexus\|artifactory ...`, see [Importing](#importing-from-nexus-or-artifactory) |
@@ -146,6 +149,107 @@ Uploads and downloads stream through the CLI without buffering whole files:
 | `oa delta get <repo> <pkg-id> --from <sha256> <dest>` | same; downloads the delta patch from the given base version |
 
 There are no top-level `oa upload` / `oa download` commands.
+
+### CI commands
+
+`oa upload`, `oa bundle` and `oa promote` are made for CI jobs: they print one JSON document with `--format json` (put the global flags before the command) and exit `0` on success, `1` on any failure, with `Error: <message>` on stderr. Setup, a non-admin token and plugin usage are in [CI integration](ci.md). They need `oa` 0.10.0 or newer; `oa --format json version` prints `{"version","go","os","arch"}` (`version` is `dev` for an unstamped build).
+
+#### `oa upload`
+
+```sh
+oa --format json upload <repo> <file|glob>... [--target-path P] [--flat] \
+   [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]
+```
+
+Uploads to a hosted `raw`, `maven`, `ivy`, `sbt`, `deb` or `rpm` repository and records [properties](../repositories/properties.md) on every uploaded artifact: `build.name`, `build.number`, `build.url`, `vcs.revision` from the flags and any `--property k=v` (a custom property wins over a build flag of the same key). Other formats are refused with a hint to use the native client (`npm publish`, `docker push`, `twine`, ...), and so are proxy and group repositories. Needs `read` and `write` on the repository.
+
+Arguments are files or globs (`*`, `?`, `[...]`, and `**` for any depth); quote globs to keep the shell out of it. A pattern without a match, a directory or a missing file is an error before anything is uploaded.
+
+Remote path (raw, maven, ivy, sbt; deb and rpm keep the name the server derives from the package and reject `--target-path`):
+
+| Flags | Remote path of `dist/a/b.tgz` |
+|---|---|
+| none | `dist/a/b.tgz` (the path as given, relative to the working directory) |
+| `--flat` | `b.tgz` |
+| `--target-path rel/1.0/` | `rel/1.0/dist/a/b.tgz` (a trailing `/` makes it a directory prefix) |
+| `--target-path rel/1.0/ --flat` | `rel/1.0/b.tgz` |
+| `--target-path rel/b-1.0.tgz`, a single file | `rel/b-1.0.tgz` (exact path) |
+| `--target-path rel`, several files | `rel/<path>` (a directory) |
+
+An absolute path or one that climbs out of the working directory (`..`) needs `--flat`. A Maven, Ivy or sbt path must be the repository layout (`com/acme/lib/1.0/lib-1.0.jar`).
+
+Every file is hashed locally and the digest the server stored is compared with it (Maven through the `.sha256` sidecar); a mismatch fails the upload. Files are uploaded in order and the command stops at the first failure.
+
+```json
+{
+  "uploaded": [
+    {
+      "repo": "releases",
+      "path": "builds/42/dist/app.tar.gz",
+      "sha256": "4be899fc...",
+      "size": 7,
+      "url": "https://oa.example.com/repos/raw/releases/builds/42/dist/app.tar.gz",
+      "id": "659e256b-bbb2-4ef7-8daa-b4065fa505e0"
+    }
+  ]
+}
+```
+
+`url` is the download URL (for deb and rpm the package download endpoint) and `id` the artifact id used by [properties](../repositories/properties.md). For deb and rpm `path` is the local file name; the stored file name, which `bundle add --path` and the bundle items use, comes from the package metadata. On failure, with `--format json`, stdout still carries what was uploaded before the error, plus the message:
+
+```json
+{"uploaded": [ ... ], "error": "unexpected response: PUT /repos/raw/releases/a.txt: HTTP 403: forbidden"}
+```
+
+#### `oa bundle` and `oa promote`
+
+```sh
+oa --format json bundle create <name> <version> [--description D] [--pipeline NAME]
+oa --format json bundle add    <name> <version> --repo R --path P [--path P]...
+oa --format json bundle add    <name> <version> --from-build NAME/NUMBER [--repo R]...
+oa --format json bundle seal   <name> <version> [--gpg-key K]
+oa --format json bundle show   <name> <version>
+oa --format json promote       <name> <version> --stage S [--target-repo R] [--notes T]
+```
+
+- `create` makes a [draft bundle](../repositories/release-bundles.md); `--pipeline` attaches an existing pipeline by name.
+- `add --repo R --path P...` adds artifacts of one repository by their path as `oa upload` printed it (raw: the path; Maven: the repository path; Ivy and sbt: the repository path; deb and rpm: the stored file name). A path that matches nothing, or more than one artifact, is an error.
+- `add --from-build NAME/NUMBER` adds every artifact whose properties are `build.name=NAME` and `build.number=NUMBER` (split at the **last** `/`, so `NAME` may contain slashes such as a Jenkins `folder/job/main`). It searches the hosted repositories the token can read, or only the `--repo` ones (repeatable). It is an error when nothing carries both properties. The same content added twice (by repository and SHA-256) counts once.
+- `seal` freezes the bundle; `--gpg-key` signs its manifest with a key id, fingerprint or `config` (the operator hands the id to the job, the key list is admin-only).
+- `promote` copies a sealed bundle into the repository of `--stage`. `--target-repo` is optional when the pipeline stage is bound to a repository.
+
+All bundle commands print the bundle:
+
+```json
+{
+  "bundle": "shop",
+  "version": "1.0.0",
+  "state": "sealed",
+  "url": "https://oa.example.com/bundles/shop/1.0.0",
+  "description": "shop 1.0.0",
+  "pipeline_id": "c8bafcff-1f5b-4665-bd51-ab6240c1e1cc",
+  "current_stage": "prod",
+  "created_by": "ci-bot",
+  "sealed_at": "2026-10-24T12:02:14+02:00",
+  "added": 3,
+  "items": [{"repo": "ci-dev", "path": "builds/42/dist/app.tar.gz", "sha256": "4be899fc...", "size": 7, "format": "raw"}],
+  "promoted": {"stage": "prod", "target_repo": "ci-prod", "items": 3, "copied": 3, "existing": 0, "replaced": 0}
+}
+```
+
+| Field | Present |
+|---|---|
+| `bundle`, `version`, `state` (`draft`, `sealed`, `archived`), `url` | always; `url` is the web UI page `<server>/bundles/<name>/<version>`, which needs an administrator |
+| `description`, `pipeline_id`, `current_stage`, `created_by`, `sealed_at`, `gpg_key_id` | when set |
+| `added` | `bundle add`: the number of items sent (after removing duplicates) |
+| `items` | `bundle add` (the items it added) and `bundle show` (all items) |
+| `promoted` | `promote`: `items` = items in the bundle, `copied`/`existing`/`replaced` as in the [promotion response](../repositories/release-bundles.md#response-and-side-effects) |
+
+Without `--format json` each command prints a one-line summary instead.
+
+#### Permissions
+
+None of these commands needs an administrator: a token with `read` and `write` on the repositories involved is enough. See [CI integration](ci.md#least-privilege-ci-token) and the [bundle permissions](../repositories/release-bundles.md#permissions).
 
 ### Importing from Nexus or Artifactory
 

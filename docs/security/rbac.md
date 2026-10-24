@@ -40,6 +40,9 @@ Two targets are seeded by the first migration:
 | `GET/HEAD /api/v1/repositories`, `/api/v1/search` | any authenticated principal | results are filtered per repository by `read` |
 | `GET/HEAD /api/v1/repository/{name}` | `read` | `{name}` |
 | `/api/v1/repositories/{name}/debs…`, `…/packages…`, `…/comps…` (Debian/RPM upload), `…/uploads…` (presigned raw upload: create and complete) | GET/HEAD `read`, POST/PUT `write`, DELETE `delete` | `{name}`, empty path |
+| `GET/PUT/PATCH /api/v1/repositories/{name}/artifacts/{id}/properties`, `DELETE …/properties/{key}`, `GET …/artifacts/search` (artifact properties) | GET `read`; PUT, PATCH and DELETE `write` | `{name}`, empty path |
+| `POST /api/v1/bundles`, `/api/v1/bundles/{name}/{version}…` (release bundles) | any authenticated principal, then decided per bundle by the handler, see [bundle permissions](../repositories/release-bundles.md#permissions) | the bundle's source and target repositories |
+| `GET /api/v1/bundles` (list), `/api/v1/pipelines…` | `manage` | global |
 | `GET /api/v1/repositories/{name}/trash`, `POST /api/v1/repositories/{name}/trash/{kind}/{id}/restore` | `delete` | `{name}`, empty path |
 | `DELETE /api/v1/repositories/{name}/trash` (empty the repository trash) | `manage` | `{name}`, empty path |
 | `GET /api/v1/trash`, `POST /api/v1/trash/{kind}/{id}/restore`, `DELETE /api/v1/trash/{kind}/{id}` | `manage` | global |

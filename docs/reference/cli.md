@@ -458,6 +458,78 @@ props delete <repo> <artifact-id> <key>       Delete property
 props search <repo> <key> <value>  Search artifacts by property
 ```
 
+## CI (see docs/integrations/ci.md)
+
+```text
+upload <repo> <file|glob>... [--target-path P] [--flat] [--property k=v]... [--build-name N] [--build-number M] [--build-url U] [--vcs-revision SHA]
+                                   Upload files to a raw/maven/ivy/sbt/deb/rpm repository and set build properties
+bundle create <name> <version> [--description D] [--pipeline P]
+                                   Create a draft release bundle
+bundle add <name> <version> --repo R --path P... | --from-build NAME/NUMBER [--repo R]...
+                                   Add artifacts to a draft bundle, by path or by the build that produced them
+bundle seal <name> <version> [--gpg-key K]  Seal a bundle (optionally sign its manifest)
+bundle show <name> <version>       Show a bundle and its items
+promote <name> <version> --stage S [--target-repo R] [--notes T]
+                                   Promote a sealed bundle to a pipeline stage
+```
+
+### `oa upload`
+
+| Flag | Value | Description |
+|---|---|---|
+| `-build-name` | `string` | Build name, recorded as property build.name |
+| `-build-number` | `string` | Build number, recorded as property build.number |
+| `-build-url` | `string` | Build URL, recorded as property build.url |
+| `-flat` | none | Drop the local directories: upload every file by its name |
+| `-property` | `value` | Property k=v set on every uploaded artifact (repeatable) |
+| `-target-path` | `string` | Path in the repository; a trailing / makes it a directory (default: the file's path) |
+| `-vcs-revision` | `string` | Source revision, recorded as property vcs.revision |
+
+### `oa bundle`
+
+```text
+Usage: oa bundle <create|add|seal|show> <name> <version> [flags]
+  oa bundle create <name> <version> [--description D] [--pipeline P]
+  oa bundle add <name> <version> --repo R --path P... | --from-build NAME/NUMBER [--repo R]...
+  oa bundle seal <name> <version> [--gpg-key K]
+  oa bundle show <name> <version>
+```
+
+### `oa bundle create`
+
+| Flag | Value | Description |
+|---|---|---|
+| `-description` | `string` | Bundle description |
+| `-pipeline` | `string` | Promotion pipeline, by name (needed to promote the bundle later) |
+
+### `oa bundle add`
+
+| Flag | Value | Description |
+|---|---|---|
+| `-from-build` | `string` | Add every artifact recorded for build NAME/NUMBER (properties build.name and build.number) |
+| `-path` | `value` | Artifact path in --repo (repeatable) |
+| `-repo` | `value` | Repository of the artifacts (repeatable with --from-build to limit the search) |
+
+### `oa bundle seal`
+
+| Flag | Value | Description |
+|---|---|---|
+| `-gpg-key` | `string` | Sign the manifest with this GPG key (id as the server lists it) |
+
+### `oa bundle show`
+
+```text
+Usage of bundle show:
+```
+
+### `oa promote`
+
+| Flag | Value | Description |
+|---|---|---|
+| `-notes` | `string` | Promotion notes |
+| `-stage` | `string` | Pipeline stage to promote to (required) |
+| `-target-repo` | `string` | Repository to promote into (default: the one the stage fixes) |
+
 ## Migration
 
 ```text
@@ -551,7 +623,7 @@ system info                        Show system information
 ## Utility
 
 ```text
-version                            Show CLI version
+version                            Show CLI version (--format json for machine use)
 help                               Show this help
 ```
 

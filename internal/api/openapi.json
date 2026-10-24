@@ -13759,6 +13759,7 @@
       },
       "post": {
         "summary": "Create bundle",
+        "description": "Creates a draft bundle owned by the caller. Allowed for administrators and for any principal that can read at least one repository; the other bundle routes authorize per bundle (see the release bundles documentation).",
         "tags": [
           "Bundles"
         ],
@@ -13778,6 +13779,10 @@
                   },
                   "description": {
                     "type": "string"
+                  },
+                  "pipeline": {
+                    "type": "string",
+                    "description": "Name of the promotion pipeline; exclusive with pipeline_id."
                   },
                   "pipeline_id": {
                     "type": "string"
@@ -14273,7 +14278,8 @@
                     "type": "string"
                   },
                   "target_repo": {
-                    "type": "string"
+                    "type": "string",
+                    "description": "Repository to promote into. May be omitted when the pipeline stage fixes a repository."
                   },
                   "notes": {
                     "type": "string"

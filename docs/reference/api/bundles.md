@@ -45,6 +45,8 @@ Fields of the `200` response (`application/json`):
 
 Create bundle
 
+Creates a draft bundle owned by the caller. Allowed for administrators and for any principal that can read at least one repository; the other bundle routes authorize per bundle (see the release bundles documentation).
+
 **Request body** (required)
 
 `application/json`: object
@@ -53,6 +55,7 @@ Create bundle
 |---|---|---|---|
 | `description` | string | no | - |
 | `name` | string | no | - |
+| `pipeline` | string | no | Name of the promotion pipeline; exclusive with pipeline_id. |
 | `pipeline_id` | string | no | - |
 | `version` | string | no | - |
 
@@ -255,7 +258,7 @@ Copies every item of a sealed bundle into target_repo and moves the bundle to to
 | Field | Type | Required | Description |
 |---|---|---|---|
 | `notes` | string | no | - |
-| `target_repo` | string | no | - |
+| `target_repo` | string | no | Repository to promote into. May be omitted when the pipeline stage fixes a repository. |
 | `to_stage` | string | no | - |
 
 **Responses**

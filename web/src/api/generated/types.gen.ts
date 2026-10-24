@@ -7948,6 +7948,10 @@ export type PostApiV1BundlesData = {
         name?: string;
         version?: string;
         description?: string;
+        /**
+         * Name of the promotion pipeline; exclusive with pipeline_id.
+         */
+        pipeline?: string;
         pipeline_id?: string;
     };
     path?: never;
@@ -8217,6 +8221,9 @@ export type GetApiV1BundlesByNameByVersionManifestAscResponse = GetApiV1BundlesB
 export type PostApiV1BundlesByNameByVersionPromoteData = {
     body: {
         to_stage?: string;
+        /**
+         * Repository to promote into. May be omitted when the pipeline stage fixes a repository.
+         */
         target_repo?: string;
         notes?: string;
     };

@@ -478,9 +478,7 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
+	if !h.requireBundleCreator(w, r) {
 		return
 	}
 
@@ -489,6 +487,8 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 		Version     string  `json:"version"`
 		Description string  `json:"description"`
 		PipelineID  *string `json:"pipeline_id"`
+		// Pipeline names the pipeline instead of its UUID; the two are exclusive.
+		Pipeline string `json:"pipeline"`
 	}
 	if err := decodeJSON(r, &body); err != nil {
 		writeError(w, http.StatusBadRequest, "bad_request", "invalid JSON body")
@@ -510,7 +510,27 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 		return
 	}
 
-	if body.PipelineID != nil {
+	if body.Pipeline != "" {
+		if body.PipelineID != nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", "pipeline and pipeline_id are exclusive")
+			return
+		}
+
+		pipeline, err := h.db.GetPromotionPipelineByName(ctx, body.Pipeline)
+		if err != nil {
+			h.log.Errorw("create bundle: db error getting pipeline", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+			return
+		}
+
+		if pipeline == nil {
+			writeError(w, http.StatusBadRequest, "validation_failed", "pipeline does not reference an existing pipeline")
+			return
+		}
+
+		body.PipelineID = &pipeline.ID
+	} else if body.PipelineID != nil {
 		if !isUUIDString(*body.PipelineID) {
 			writeError(w, http.StatusBadRequest, "validation_failed", "pipeline_id must be a valid UUID")
 			return
@@ -562,28 +582,8 @@ func (h *BundlesHandler) handleCreateBundle(w http.ResponseWriter, r *http.Reque
 }
 
 func (h *BundlesHandler) handleGetBundle(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
-	ctx := r.Context()
-
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("get bundle: db error", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, _, ok := h.loadBundle(w, r, bundleNeedView)
+	if !ok {
 		return
 	}
 
@@ -591,28 +591,10 @@ func (h *BundlesHandler) handleGetBundle(w http.ResponseWriter, r *http.Request)
 }
 
 func (h *BundlesHandler) handleDeleteBundle(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("delete bundle: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, _, ok := h.loadBundle(w, r, bundleNeedOwn)
+	if !ok {
 		return
 	}
 
@@ -635,30 +617,11 @@ func (h *BundlesHandler) handleDeleteBundle(w http.ResponseWriter, r *http.Reque
 // Bundle Item Handlers
 // ============================================================================
 
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *BundlesHandler) handleListItems(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("list items: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, _, ok := h.loadBundle(w, r, bundleNeedView)
+	if !ok {
 		return
 	}
 
@@ -735,8 +698,10 @@ func validateBundleItemFields(itemData *bundleItemInput, seenSHA map[string]stru
 }
 
 // buildBundleItems validates every item before touching the database so the
-// request is all-or-nothing, and verifies each source repository once.
-func (h *BundlesHandler) buildBundleItems(ctx context.Context, bundleID, username string, in []bundleItemInput) ([]*models.ReleaseBundleItem, *apiFailure) {
+// request is all-or-nothing, and verifies each source repository once. canRead,
+// when set, limits the source repositories to the ones the caller may read: any
+// other answers as an unknown repository.
+func (h *BundlesHandler) buildBundleItems(ctx context.Context, bundleID, username string, in []bundleItemInput, canRead func(*models.Repository) (bool, error)) ([]*models.ReleaseBundleItem, *apiFailure) {
 	knownRepos := make(map[string]*models.Repository, len(in))
 	items := make([]*models.ReleaseBundleItem, 0, len(in))
 	seenSHA := make(map[string]struct{}, len(in))
@@ -758,6 +723,18 @@ func (h *BundlesHandler) buildBundleItems(ctx context.Context, bundleID, usernam
 			if err != nil {
 				h.log.Errorw("add items: db error getting source repo", "error", err)
 				return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "database error"}
+			}
+
+			if srcRepo != nil && canRead != nil {
+				readable, err := canRead(srcRepo)
+				if err != nil {
+					h.log.Errorw("add items: auth evaluation error", "error", err)
+					return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "auth evaluation failed"}
+				}
+
+				if !readable {
+					srcRepo = nil
+				}
 			}
 
 			knownRepos[itemData.SourceRepoID] = srcRepo
@@ -793,34 +770,33 @@ func (h *BundlesHandler) buildBundleItems(ctx context.Context, bundleID, usernam
 }
 
 func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	ctx := r.Context()
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("add items: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, access, ok := h.loadBundle(w, r, bundleNeedOwn)
+	if !ok {
 		return
 	}
 
 	if bundle.State != models.BundleStateDraft {
 		writeError(w, http.StatusConflict, "conflict", "can only add items to draft bundles")
 		return
+	}
+
+	// An administrator may reference any repository; anyone else only the ones
+	// they can read.
+	var canRead func(*models.Repository) (bool, error)
+
+	if !access.admin {
+		var err error
+
+		if canRead, err = h.evaluator.RepoReadFilter(ctx, *p); err != nil {
+			h.log.Errorw("add items: auth evaluation error", "error", err)
+			writeError(w, http.StatusInternalServerError, "internal_error", "auth evaluation failed")
+
+			return
+		}
 	}
 
 	var body struct {
@@ -838,7 +814,7 @@ func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
-	items, fail := h.buildBundleItems(ctx, bundle.ID, p.Username, body.Items)
+	items, fail := h.buildBundleItems(ctx, bundle.ID, p.Username, body.Items, canRead)
 	if fail != nil {
 		writeError(w, fail.status, fail.code, fail.msg)
 		return
@@ -873,29 +849,11 @@ func (h *BundlesHandler) handleAddItems(w http.ResponseWriter, r *http.Request) 
 }
 
 func (h *BundlesHandler) handleRemoveItem(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	sha256 := urlparams.Vars(r)["sha256"]
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("remove item: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, _, ok := h.loadBundle(w, r, bundleNeedOwn)
+	if !ok {
 		return
 	}
 
@@ -937,28 +895,12 @@ func (h *BundlesHandler) handleRemoveItem(w http.ResponseWriter, r *http.Request
 // ============================================================================
 
 func (h *BundlesHandler) handleSeal(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	ctx := r.Context()
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("seal bundle: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, access, ok := h.loadBundle(w, r, bundleNeedOwn)
+	if !ok || !requireSourceReads(w, access) {
 		return
 	}
 
@@ -1080,29 +1022,74 @@ func (h *BundlesHandler) validatePromotionStage(ctx context.Context, bundle *mod
 	return nil
 }
 
+// resolvePromotionTarget finds the repository a promotion writes to: the named
+// one, or, when the name is empty, the repository the pipeline fixes for toStage.
+func (h *BundlesHandler) resolvePromotionTarget(ctx context.Context, bundle *models.ReleaseBundle, toStage, name string) (*models.Repository, *apiFailure) {
+	var (
+		repo *models.Repository
+		err  error
+	)
+
+	if name != "" {
+		repo, err = h.db.GetRepositoryByName(ctx, name)
+	} else {
+		repoID, fail := h.stageRepositoryID(ctx, bundle, toStage)
+		if fail != nil {
+			return nil, fail
+		}
+
+		repo, err = h.db.GetRepositoryByID(ctx, repoID)
+	}
+
+	if err != nil {
+		h.log.Errorw("promote bundle: db error getting target repo", "error", err)
+		return nil, &apiFailure{http.StatusInternalServerError, "internal_error", "database error"}
+	}
+
+	if repo == nil {
+		return nil, &apiFailure{http.StatusNotFound, "not_found", "target repository not found"}
+	}
+
+	return repo, nil
+}
+
+// stageRepositoryID returns the repository id the bundle's pipeline fixes for
+// toStage, or a validation failure when target_repo has to be given instead.
+func (h *BundlesHandler) stageRepositoryID(ctx context.Context, bundle *models.ReleaseBundle, toStage string) (string, *apiFailure) {
+	if bundle.PipelineID == nil {
+		return "", validationFailure("bundle has no pipeline; cannot promote")
+	}
+
+	pipeline, err := h.db.GetPromotionPipelineByID(ctx, *bundle.PipelineID)
+	if err != nil {
+		h.log.Errorw("promote bundle: db error getting pipeline", "error", err)
+		return "", &apiFailure{http.StatusInternalServerError, "internal_error", "database error"}
+	}
+
+	if pipeline == nil {
+		return "", &apiFailure{http.StatusConflict, "conflict", "bundle's pipeline no longer exists"}
+	}
+
+	for _, stage := range pipeline.Stages {
+		if stage.Name != toStage {
+			continue
+		}
+
+		if stage.RepositoryID == "" {
+			return "", validationFailure("target_repo is required: stage " + toStage + " does not fix a repository")
+		}
+
+		return stage.RepositoryID, nil
+	}
+
+	return "", validationFailure("to_stage is not a stage of the bundle's pipeline")
+}
+
 func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("promote bundle: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, access, ok := h.loadBundle(w, r, bundleNeedView)
+	if !ok || !requireSourceReads(w, access) {
 		return
 	}
 
@@ -1121,22 +1108,18 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if body.ToStage == "" || body.TargetRepo == "" {
-		writeError(w, http.StatusBadRequest, "validation_failed", "to_stage and target_repo are required")
+	if body.ToStage == "" {
+		writeError(w, http.StatusBadRequest, "validation_failed", "to_stage is required")
 		return
 	}
 
-	// Look up target repo by name
-	targetRepo, err := h.db.GetRepositoryByName(ctx, body.TargetRepo)
-	if err != nil {
-		h.log.Errorw("promote bundle: db error getting target repo", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
+	targetRepo, fail := h.resolvePromotionTarget(ctx, bundle, body.ToStage, body.TargetRepo)
+	if fail != nil {
+		writeError(w, fail.status, fail.code, fail.msg)
 		return
 	}
 
-	if targetRepo == nil {
-		writeError(w, http.StatusNotFound, "not_found", "target repository not found")
+	if !h.requireTargetWrite(w, r, access, targetRepo) {
 		return
 	}
 
@@ -1149,28 +1132,12 @@ func (h *BundlesHandler) handlePromote(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	ctx := r.Context()
 
 	p := currentPrincipal(r)
 
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("archive bundle: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, _, ok := h.loadBundle(w, r, bundleNeedOwn)
+	if !ok {
 		return
 	}
 
@@ -1199,30 +1166,11 @@ func (h *BundlesHandler) handleArchive(w http.ResponseWriter, r *http.Request) {
 // Promotion History Handler
 // ============================================================================
 
-//nolint:dupl // handler boilerplate: identical structure, different entities
 func (h *BundlesHandler) handleListPromotions(w http.ResponseWriter, r *http.Request) {
-	name := urlparams.Vars(r)["name"]
-	version := urlparams.Vars(r)["version"]
 	ctx := r.Context()
 
-	p := currentPrincipal(r)
-
-	isAdmin, err := principalIsAdmin(ctx, p, h.evaluator)
-	if err != nil || !isAdmin {
-		writeError(w, http.StatusForbidden, "forbidden", "admin access required")
-		return
-	}
-
-	bundle, err := h.db.GetReleaseBundle(ctx, name, version)
-	if err != nil {
-		h.log.Errorw("list promotions: db error getting bundle", "error", err)
-		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
-
-		return
-	}
-
-	if bundle == nil {
-		writeError(w, http.StatusNotFound, "not_found", "bundle not found")
+	bundle, _, ok := h.loadBundle(w, r, bundleNeedView)
+	if !ok {
 		return
 	}
 

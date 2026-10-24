@@ -83,6 +83,14 @@ func realRouter() chi.Router {
 
 	registerTrashRoutes(r)
 
+	api.NewBundlesHandler(nil, nil, nil).RegisterAuthed(r)
+
+	// path-addressed upload endpoints, mounted by the format handlers
+	for _, f := range []string{"raw", "maven", "ivy", "sbt"} {
+		r.Put("/repos/"+f+"/{name}/*", func(http.ResponseWriter, *http.Request) {})
+		r.Get("/repos/"+f+"/{name}/*", func(http.ResponseWriter, *http.Request) {})
+	}
+
 	// registered by internal/search
 	r.Get("/api/v1/search", func(http.ResponseWriter, *http.Request) {})
 
