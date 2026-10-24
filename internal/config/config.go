@@ -919,10 +919,6 @@ func (c *Config) Validate() error {
 		return errNegativeTrashRetention
 	}
 
-	if err := c.validateAudit(); err != nil {
-		return err
-	}
-
 	if err := c.validateFederation(); err != nil {
 		return err
 	}
@@ -1026,7 +1022,11 @@ func (c *Config) validateBackgroundServices() error {
 		return err
 	}
 
-	return c.validateBlobRetention()
+	if err := c.validateBlobRetention(); err != nil {
+		return err
+	}
+
+	return c.validateAudit()
 }
 
 func (c *Config) validateBlobRetention() error {
