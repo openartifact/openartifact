@@ -87,6 +87,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ### Unreleased
 
+- S3 staging promotion no longer depends on the backend enforcing `If-Match` / `x-amz-copy-source-if-match`: OpenArtifact now also compares the ETag returned by the read or copy and discards the copy on a mismatch. This closes the post-verification overwrite window on backends that ignore conditional reads (for example Garage 1.x). No action required.
 - New optional [audit log retention](../operations/audit-retention.md): `audit.retentionDays` (`OPENARTIFACT_AUDIT_RETENTION_DAYS`) deletes audit entries older than that many days in small paced batches, one replica at a time, with `openartifact_audit_retention_*` metrics. The default `0` keeps the log forever, so nothing changes unless you set it; nothing is exported before deletion (use `oa audit export`). No migration.
 
 ### 0.9.0
