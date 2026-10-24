@@ -17,8 +17,21 @@ cd "$SRC/openartifact"
 module=$(go list -m)
 built=0
 
-# <file>:func FuzzX(f *testing.F)  -> one line per target. Files behind a build
-# tag (integration tests) are not compiled without it and are skipped.
+# <file>:func FuzzX(f *testing.F)  -> one line per target.
+targets=$(mktemp)
+grep -rHoE --include='*_test.go' --exclude-dir=web --exclude-dir=node_modules --exclude-dir=.git \
+  '^func Fuzz[A-Za-z0-9_]*\([A-Za-z_]+ \*testing\.F\)' . | sort > "$targets"
+
+# The fuzz builder compiles the package's test files as ordinary sources, which
+# fails when the directory also holds an external test package (`package x_test`).
+# The fuzz targets live in the package itself, so those files are not needed here
+# (this is the image's copy of the tree, not the checkout).
+while IFS= read -r dir; do
+  grep -lE --include='*_test.go' '^package [A-Za-z0-9_]+_test$' "$dir"/*_test.go 2>/dev/null | xargs -r rm -v
+done < <(cut -d: -f1 "$targets" | xargs -n1 dirname | sort -u)
+
+# Files behind a build tag (integration tests) are not compiled without it and
+# are skipped.
 while IFS=: read -r file decl; do
   if grep -q '^//go:build' "$file"; then
     echo "skip $file: build-tagged"
@@ -37,8 +50,9 @@ while IFS=: read -r file decl; do
 
   compile_native_go_fuzzer_v2 "$pkg" "$fn" "$name"
   built=$((built + 1))
-done < <(grep -rHoE --include='*_test.go' --exclude-dir=web --exclude-dir=node_modules --exclude-dir=.git \
-  '^func Fuzz[A-Za-z0-9_]*\([A-Za-z_]+ \*testing\.F\)' . | sort)
+done < "$targets"
+
+rm -f "$targets"
 
 if [ "$built" -eq 0 ]; then
   echo "no fuzz targets found" >&2
