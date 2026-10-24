@@ -886,10 +886,17 @@ func isPrerelease(version string) bool {
 	return strings.ContainsFunc(version, unicode.IsLetter)
 }
 
-// gemVersionSegments splits a version into numeric (int) and string segments.
-func gemVersionSegments(v string) []any {
+// gemSegment is one run of a version: a number (ASCII digits, kept as text
+// without leading zeros so it has no size limit) or a string.
+type gemSegment struct {
+	text string
+	num  bool
+}
+
+// gemVersionSegments splits a version into numeric and string segments.
+func gemVersionSegments(v string) []gemSegment {
 	var (
-		segs []any
+		segs []gemSegment
 		cur  strings.Builder
 		num  bool
 	)
@@ -900,14 +907,9 @@ func gemVersionSegments(v string) []any {
 		}
 
 		if num {
-			n, err := strconv.Atoi(cur.String())
-			if err != nil {
-				n = 1<<31 - 1
-			}
-
-			segs = append(segs, n)
+			segs = append(segs, gemSegment{text: strings.TrimLeft(cur.String(), "0"), num: true})
 		} else {
-			segs = append(segs, cur.String())
+			segs = append(segs, gemSegment{text: cur.String()})
 		}
 
 		cur.Reset()
@@ -917,7 +919,7 @@ func gemVersionSegments(v string) []any {
 		switch {
 		case r == '.' || r == '-':
 			flush()
-		case unicode.IsDigit(r):
+		case r >= '0' && r <= '9':
 			if !num {
 				flush()
 			}
@@ -947,7 +949,8 @@ func compareVersions(v1, v2 string) int {
 	a, b := gemVersionSegments(v1), gemVersionSegments(v2)
 
 	for i := 0; i < len(a) || i < len(b); i++ {
-		var x, y any = 0, 0
+		// A missing segment is the number 0.
+		x, y := gemSegment{num: true}, gemSegment{num: true}
 		if i < len(a) {
 			x = a[i]
 		}
@@ -956,33 +959,26 @@ func compareVersions(v1, v2 string) int {
 			y = b[i]
 		}
 
-		xs, xIsStr := x.(string)
-		ys, yIsStr := y.(string)
-
-		switch {
-		case xIsStr && yIsStr:
-			if c := strings.Compare(xs, ys); c != 0 {
-				return c
-			}
-		case xIsStr:
-			return -1
-		case yIsStr:
-			return 1
-		default:
-			xi, _ := x.(int)
-			yi, _ := y.(int)
-
-			if xi != yi {
-				if xi < yi {
-					return -1
-				}
-
-				return 1
-			}
+		if c := compareSegments(x, y); c != 0 {
+			return c
 		}
 	}
 
 	return 0
+}
+
+func compareSegments(x, y gemSegment) int {
+	switch {
+	case !x.num && !y.num:
+		return strings.Compare(x.text, y.text)
+	case !x.num:
+		return -1
+	case !y.num:
+		return 1
+	default:
+		// Numbers without leading zeros: the longer one is larger.
+		return cmp.Or(cmp.Compare(len(x.text), len(y.text)), strings.Compare(x.text, y.text))
+	}
 }
 
 // errAmbiguousGemFile means several gems of one repository share a
