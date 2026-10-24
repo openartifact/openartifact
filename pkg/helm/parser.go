@@ -147,9 +147,13 @@ func ParseChart(r io.Reader) (map[string]any, error) {
 	return result, nil
 }
 
+// isRootChartYAML reports whether a tar member name is <chart>/Chart.yaml. The
+// directory must be a relative one: helm refuses archives with absolute paths,
+// so "/Chart.yaml" (or "/../Chart.yaml", which cleans to it) is not a chart's
+// manifest.
 func isRootChartYAML(name string) bool {
 	name = path.Clean(strings.TrimPrefix(name, "./"))
 	parts := strings.Split(name, "/")
 
-	return len(parts) == 2 && parts[0] != "." && parts[0] != ".." && parts[1] == "Chart.yaml"
+	return len(parts) == 2 && parts[0] != "" && parts[0] != "." && parts[0] != ".." && parts[1] == "Chart.yaml"
 }
