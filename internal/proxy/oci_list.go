@@ -31,6 +31,7 @@ var (
 	linkNextRE = regexp.MustCompile(`^<([^>]*)>\s*;\s*rel="?next"?`)
 
 	errListTooLarge = errors.New("upstream listing too large")
+	errNotObject    = errors.New("upstream tag list is not a JSON object")
 )
 
 // serveOCITags passes tags/list through to the upstream, forwarding the
@@ -94,6 +95,11 @@ func rewriteTagList(body []byte, name string) ([]byte, error) {
 	var doc map[string]json.RawMessage
 	if err := json.Unmarshal(body, &doc); err != nil {
 		return nil, fmt.Errorf("decode tag list: %w", err)
+	}
+
+	// null decodes into a nil map without error; assigning to it would panic.
+	if doc == nil {
+		return nil, errNotObject
 	}
 
 	quoted, err := json.Marshal(name)
