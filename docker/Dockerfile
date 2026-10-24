@@ -98,7 +98,7 @@ COPY --from=grype-src /grype /scanners/grype
 FROM scanners-${SCANNERS} AS scanners
 
 # ---- Runtime bases (shell-less, digest-pinned) ------------------------------
-FROM dhi.io/static:20250419-debian13@sha256:620157c61ee0377151d3e11a7dd4d2ec6da34488f8c63a2706916f88f5f814fd AS runtime-dhi
+FROM dhi.io/static:20250419-debian13@sha256:c60b3fcad8bfbe3f056c3214057ddf562ef3d6d080dee033532261ce50c37e55 AS runtime-dhi
 FROM gcr.io/distroless/static-debian13:nonroot@sha256:18f4cc26c9ffa7f20a359298be7deadac5c607c8e03a02b8119f1a5fc2f82c99 AS runtime-distroless
 
 # ---- Runtime stage ----------------------------------------------------------
