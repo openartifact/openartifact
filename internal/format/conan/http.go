@@ -173,12 +173,46 @@ func conanPath(pkg, version, userChannel, filename string) string {
 	return p
 }
 
+// routeVars returns the route parameters of r with the escaping of the request
+// path undone exactly once. chi matches on URL.RawPath when the request has one
+// (its escaping differs from the canonical form of the decoded path, as the
+// %3B that url.PathEscape writes for a ';' does), so the parameters are then
+// still escaped; without it they come from the decoded URL.Path and are final,
+// and decoding them again would turn an escaped "%" into an escape of its own.
+// The repository name is left as routed, as in the other formats. false means an
+// escape is malformed.
+func routeVars(r *http.Request) (map[string]string, bool) {
+	vars := urlparams.Vars(r)
+	if r.URL.RawPath == "" {
+		return vars, true
+	}
+
+	for key, val := range vars {
+		if key == "name" {
+			continue
+		}
+
+		dec, err := url.PathUnescape(val)
+		if err != nil {
+			return nil, false
+		}
+
+		vars[key] = dec
+	}
+
+	return vars, true
+}
+
 // scopeOf resolves the repository and validates the URL parameters; when it
 // returns false the response has been written. Nothing in the parameters ever
 // reaches a file system, but they become database keys, so they are bounded
 // and stripped of anything that is not a plain name.
 func (h *HTTPHandler) scopeOf(w http.ResponseWriter, r *http.Request) (*scope, bool) {
-	vars := urlparams.Vars(r)
+	vars, ok := routeVars(r)
+	if !ok {
+		http.Error(w, "invalid reference", http.StatusBadRequest)
+		return nil, false
+	}
 
 	s := &scope{
 		repoName: vars["name"],
@@ -208,11 +242,13 @@ func (h *HTTPHandler) scopeOf(w http.ResponseWriter, r *http.Request) (*scope, b
 // fileScopeOf is scopeOf for the routes that end in a `files/*` wildcard: it
 // also validates the file path (which may hold subdirectories, e.g. metadata/).
 func (h *HTTPHandler) fileScopeOf(w http.ResponseWriter, r *http.Request) (*scope, bool) {
-	name, err := url.PathUnescape(urlparams.Vars(r)["*"])
-	if err != nil || !validFilename(name) {
+	vars, ok := routeVars(r)
+	if !ok || !validFilename(vars["*"]) {
 		http.Error(w, "invalid file name", http.StatusBadRequest)
 		return nil, false
 	}
+
+	name := vars["*"]
 
 	s, ok := h.scopeOf(w, r)
 	if !ok {

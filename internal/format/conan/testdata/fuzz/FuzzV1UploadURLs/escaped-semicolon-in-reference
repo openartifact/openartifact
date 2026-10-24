@@ -1,0 +1,8 @@
+go test fuzz v1
+string("a;b")
+string("1.0")
+string("_")
+string("_")
+bool(true)
+bool(false)
+[]byte("{\"conanfile.py\":1}")
