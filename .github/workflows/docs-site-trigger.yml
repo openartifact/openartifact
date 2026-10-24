@@ -1,0 +1,68 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# The docs site (https://openartifact.github.io/) is built from this repository's
+# docs/ by openartifact/openartifact.github.io. GITHUB_TOKEN cannot start a
+# workflow in another repository, so this job force-pushes one trigger commit to
+# the site's `rebuild` branch with a write deploy key; the site's Pages workflow
+# builds and deploys on every push to that branch. Needs the repository secret
+# SITE_DEPLOY_KEY (private half of the deploy key titled openartifact-docs-trigger
+# on the site repository). Without it the job is skipped; the site also polls
+# every 15 minutes and picks the change up.
+name: Docs site trigger
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "docs/**"
+      - "web/src/lib/installCommands.ts"
+      - ".github/workflows/docs-site-trigger.yml"
+    tags: ["v*.*.*"]
+
+permissions: {}
+
+concurrency:
+  group: docs-site-trigger
+  cancel-in-progress: false
+
+jobs:
+  trigger:
+    name: rebuild openartifact.github.io
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Push the trigger commit
+        env:
+          SITE_DEPLOY_KEY: ${{ secrets.SITE_DEPLOY_KEY }}
+          SOURCE_REF: ${{ github.ref_name }}
+          SOURCE_SHA: ${{ github.sha }}
+        run: |
+          if [ -z "$SITE_DEPLOY_KEY" ]; then
+            echo "::notice::SITE_DEPLOY_KEY is not set; the site picks the change up on its 15-minute poll"
+            exit 0
+          fi
+          umask 077
+          printf '%s\n' "$SITE_DEPLOY_KEY" > "$RUNNER_TEMP/site_key"
+          # GitHub's published SSH host key (https://api.github.com/meta), pinned.
+          printf '%s\n' 'github.com ssh-ed25519 AAAAC3NzaC1lZDI1NTE5AAAAIOMqqnkVzrm0SdG6UOoqKLsabgH5C9okWi0dh2l9GKJl' > "$RUNNER_TEMP/known_hosts"
+          export GIT_SSH_COMMAND="ssh -i $RUNNER_TEMP/site_key -o IdentitiesOnly=yes -o StrictHostKeyChecking=yes -o UserKnownHostsFile=$RUNNER_TEMP/known_hosts"
+
+          git clone --quiet --depth 1 --branch main git@github.com:openartifact/openartifact.github.io.git "$RUNNER_TEMP/site"
+          cd "$RUNNER_TEMP/site"
+          git checkout --quiet -B rebuild
+          # REUSE-IgnoreStart (the SPDX lines below belong to the generated file)
+          {
+            echo "# SPDX-FileCopyrightText: The OpenArtifact Authors"
+            echo "#"
+            echo "# SPDX-License-Identifier: AGPL-3.0-or-later"
+            echo "# Written by openartifact/openartifact (docs-site-trigger.yml); its content only makes the commit unique."
+            echo "source: openartifact/openartifact@$SOURCE_SHA ($SOURCE_REF)"
+          } > rebuild.txt
+          # REUSE-IgnoreEnd
+          git add rebuild.txt
+          git -c user.name=github-actions -c user.email=41898282+github-actions[bot]@users.noreply.github.com \
+            commit --quiet -m "rebuild: openartifact/openartifact@${SOURCE_SHA:0:7} ($SOURCE_REF)"
+          git push --force --quiet origin rebuild
+          rm -f "$RUNNER_TEMP/site_key"
