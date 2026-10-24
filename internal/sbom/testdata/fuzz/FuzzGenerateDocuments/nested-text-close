@@ -1,0 +1,5 @@
+go test fuzz v1
+string("npm")
+string("a@1")
+string("{\"license\":\"Custom </te</text>xt> x\"}")
+byte('\x00')

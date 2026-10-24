@@ -5,6 +5,7 @@
 package sbom
 
 import (
+	"bytes"
 	"context"
 	"fmt"
 	"net/url"
@@ -281,6 +282,25 @@ func (g *Generator) GenerateSPDX(ctx context.Context, repoID, artifactID, format
 	}, nil
 }
 
+// stripTextClose removes every "</text>" from s, including the ones that
+// removing another one would complete ("</te</text>xt>"), so the result cannot
+// end a <text> element early. One pass: the output is checked as it grows.
+func stripTextClose(s string) string {
+	const closing = "</text>"
+
+	out := make([]byte, 0, len(s))
+
+	for i := range len(s) {
+		out = append(out, s[i])
+
+		if bytes.HasSuffix(out, []byte(closing)) {
+			out = out[:len(out)-len(closing)]
+		}
+	}
+
+	return string(out)
+}
+
 func renderTagValue(d *spdxDoc) string {
 	var b strings.Builder
 
@@ -333,7 +353,7 @@ func renderTagValue(d *spdxDoc) string {
 	for _, x := range d.ExtractedLicenses {
 		b.WriteString("\n")
 		w("LicenseID", x.LicenseID)
-		fmt.Fprintf(&b, "ExtractedText: <text>%s</text>\n", strings.ReplaceAll(spdxSafe(x.ExtractedText), "</text>", ""))
+		fmt.Fprintf(&b, "ExtractedText: <text>%s</text>\n", stripTextClose(spdxSafe(x.ExtractedText)))
 		w("LicenseName", x.Name)
 	}
 
