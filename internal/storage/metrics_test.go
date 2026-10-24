@@ -12,6 +12,7 @@ import (
 	"io"
 	"testing"
 
+	"github.com/prometheus/client_golang/prometheus"
 	dto "github.com/prometheus/client_model/go"
 
 	"github.com/openartifact/openartifact/internal/metrics"
@@ -39,7 +40,7 @@ func TestMetricsBlobStoreRecordsOperationLatency(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	reg := metrics.NewRegistry()
+	reg := metrics.NewRegistryOn(prometheus.NewRegistry())
 	store := NewMetricsBlobStore(inner, reg)
 	ctx := context.Background()
 

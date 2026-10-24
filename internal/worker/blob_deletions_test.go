@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/openartifact/openartifact/internal/database"
@@ -347,7 +348,7 @@ func TestSweeperPublishesMetrics(t *testing.T) {
 
 	db := newQueueDB()
 	store := &byteStore{db: db}
-	reg := metrics.NewRegistry()
+	reg := metrics.NewRegistryOn(prometheus.NewRegistry())
 
 	db.enqueue(sha("a"), database.BlobDeletionScopeAll)
 	db.enqueue(sha("b"), database.BlobDeletionScopeAll)
