@@ -147,14 +147,15 @@ func compareTokens(a, b []vtoken) int {
 
 // tailOrder is +1 when the extra tokens make the longer version newer
 // (a further number, "1.0" < "1.0.1"), -1 when they mark a pre-release
-// ("1.0.0-rc1" < "1.0.0"), 0 for trailing zeros.
+// ("1.0.0-rc1" < "1.0.0"), 0 for trailing zeros. The first token that is not a
+// zero decides: zeros before a label do not make the version newer ("1.0.0-rc"
+// is older than "1.0").
 func tailOrder(rest []vtoken) int {
-	if !rest[0].isNum {
-		return -1
-	}
-
 	for _, t := range rest {
-		if !t.isNum || t.num != 0 {
+		switch {
+		case !t.isNum:
+			return -1
+		case t.num != 0:
 			return 1
 		}
 	}
