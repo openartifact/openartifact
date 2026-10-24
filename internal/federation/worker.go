@@ -48,61 +48,28 @@ func (w *Worker) Stop() {
 	<-w.done
 }
 
-func (e *Engine) run(ctx context.Context) {
-	var (
-		wg       sync.WaitGroup
-		mu       sync.Mutex
-		inflight = map[string]bool{}
-		sem      = make(chan struct{}, maxConcurrentPulls)
-	)
+// scheduler is the state of one run of the pull scheduler.
+type scheduler struct {
+	e  *Engine
+	wg sync.WaitGroup
 
-	defer wg.Wait()
+	mu       sync.Mutex
+	inflight map[string]bool
+	// sem bounds the pulls in flight (maxConcurrentPulls).
+	sem    chan struct{}
+	lastGC time.Time
+}
+
+func (e *Engine) run(ctx context.Context) {
+	s := &scheduler{e: e, inflight: map[string]bool{}, sem: make(chan struct{}, maxConcurrentPulls)}
+
+	defer s.wg.Wait()
 
 	tick := time.NewTicker(min(e.PollInterval, schedulerTick))
 	defer tick.Stop()
 
-	lastGC := time.Time{}
-
 	for {
-		peers, err := e.Store.DuePeers(ctx, e.PollInterval)
-		if err != nil && ctx.Err() == nil {
-			e.Log.Warnw("federation: list due peers", "error", err)
-		}
-
-		for _, p := range peers {
-			mu.Lock()
-			busy := inflight[p.ID]
-
-			if !busy {
-				select {
-				case sem <- struct{}{}:
-					inflight[p.ID] = true
-				default:
-					busy = true
-				}
-			}
-			mu.Unlock()
-
-			if busy {
-				continue
-			}
-
-			wg.Go(func() {
-				_ = e.PullPeer(ctx, p.ID, p.RepoID) // failures are recorded on the peer
-
-				mu.Lock()
-				delete(inflight, p.ID)
-				mu.Unlock()
-
-				<-sem
-			})
-		}
-
-		if time.Since(lastGC) >= gcInterval {
-			lastGC = time.Now()
-
-			e.purgeTombstones(ctx)
-		}
+		s.pass(ctx)
 
 		select {
 		case <-ctx.Done():
@@ -111,6 +78,79 @@ func (e *Engine) run(ctx context.Context) {
 		case <-e.wake:
 		}
 	}
+}
+
+// pass starts a pull for every due peer that has no pull in flight and a free
+// slot, and purges expired tombstones now and then. A panic ends this pass
+// only: the scheduler keeps running.
+func (s *scheduler) pass(ctx context.Context) {
+	e := s.e
+
+	defer func() {
+		if r := recover(); r != nil {
+			e.logPanic("scheduler", r)
+		}
+	}()
+
+	peers, err := e.Store.DuePeers(ctx, e.PollInterval)
+	if err != nil && ctx.Err() == nil {
+		e.Log.Warnw("federation: list due peers", "error", err)
+	}
+
+	for _, p := range peers {
+		if !s.claim(p.ID) {
+			continue
+		}
+
+		s.wg.Go(func() {
+			defer s.release(p.ID)
+
+			// PullPeer turns a panic inside the pull into a recorded peer
+			// error; this catches the rest (locking, bookkeeping) so the
+			// slot is released and the process survives.
+			defer func() {
+				if r := recover(); r != nil {
+					e.logPanic("pull worker", r, "peer_id", p.ID)
+				}
+			}()
+
+			_ = e.PullPeer(ctx, p.ID, p.RepoID) // failures are recorded on the peer
+		})
+	}
+
+	if time.Since(s.lastGC) >= gcInterval {
+		s.lastGC = time.Now()
+
+		e.purgeTombstones(ctx)
+	}
+}
+
+// claim reserves a pull slot for the peer; false when it is already being
+// pulled or all slots are taken.
+func (s *scheduler) claim(peerID string) bool {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+
+	if s.inflight[peerID] {
+		return false
+	}
+
+	select {
+	case s.sem <- struct{}{}:
+		s.inflight[peerID] = true
+
+		return true
+	default:
+		return false
+	}
+}
+
+func (s *scheduler) release(peerID string) {
+	s.mu.Lock()
+	delete(s.inflight, peerID)
+	s.mu.Unlock()
+
+	<-s.sem
 }
 
 func (e *Engine) purgeTombstones(ctx context.Context) {
