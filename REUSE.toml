@@ -76,3 +76,11 @@ path = "internal/webhook/testdata/golden/**"
 precedence = "aggregate"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "AGPL-3.0-or-later"
+
+# Go fuzz corpus entries (testdata/fuzz/FuzzX/<hash>, "go test fuzz v1" files written by `go test`) are
+# regression inputs found by fuzzing; the format has no room for a comment header.
+[[annotations]]
+path = "**/testdata/fuzz/**"
+precedence = "aggregate"
+SPDX-FileCopyrightText = "The OpenArtifact Authors"
+SPDX-License-Identifier = "AGPL-3.0-or-later"
