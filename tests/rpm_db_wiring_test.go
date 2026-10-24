@@ -1964,14 +1964,24 @@ func newMockBlobStore() *MockBlobStore {
 }
 
 func (m *MockBlobStore) Put(ctx context.Context, data io.Reader, metadata map[string]string) (string, error) {
-	id := fmt.Sprintf("blob-%d", time.Now().UnixNano())
 	b, _ := io.ReadAll(data)
 
 	m.mu.Lock()
 	defer m.mu.Unlock()
 
+	// Like every real backend the store is content addressed: a Put of the
+	// same sha256 overwrites the one object instead of creating another.
+	sha, hasSHA := metadata["sha256"]
+	if id, ok := m.sha256Map[sha]; hasSHA && ok {
+		m.blobs[id] = b
+
+		return id, nil
+	}
+
+	id := fmt.Sprintf("blob-%d", time.Now().UnixNano())
 	m.blobs[id] = b
-	if sha, ok := metadata["sha256"]; ok {
+
+	if hasSHA {
 		m.sha256Map[sha] = id
 	}
 
@@ -1995,6 +2005,12 @@ func (m *MockBlobStore) Delete(ctx context.Context, id string) error {
 	defer m.mu.Unlock()
 
 	delete(m.blobs, id)
+
+	for sha, mapped := range m.sha256Map {
+		if mapped == id {
+			delete(m.sha256Map, sha)
+		}
+	}
 
 	return nil
 }
