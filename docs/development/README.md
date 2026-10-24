@@ -134,9 +134,9 @@ Workflows live in [`.github/workflows`](../../.github/workflows). All actions ar
 | `scorecard.yml` | push to `main`, branch-protection changes, weekly (Tue) | OpenSSF Scorecard, results published and uploaded as SARIF |
 | `scheduled-scan.yml` | weekly (Mon), manual | Trivy scan of the *published* `latest` and latest stable semver images on ghcr.io, so new CVEs in released images are noticed |
 
-### Documentation site (`docs-dispatch.yml`)
+### Documentation site
 
-The site at <https://openartifact.github.io/> is built by the separate repository [openartifact.github.io](https://github.com/openartifact/openartifact.github.io), which renders this repository's `docs/` in place (README.md is a directory index; links to files outside `docs/` become GitHub links): `/latest/` is `main`, `/vX.Y/` the newest stable tag of each of the last five minor lines. The text, generated reference and the drift and link checks stay here, versioned with the code. `docs-dispatch.yml` asks the site to rebuild on pushes to `main` that touch `docs/` and on `v*.*.*` tags; it needs the repository secret `SITE_DISPATCH_TOKEN` (fine-grained, limited to the site repository, `Actions: write` and `Contents: read`) and is skipped without it, in which case the site's daily schedule picks changes up. Write docs as plain relative-link markdown that reads well on GitHub; do not put `{{ }}` or bare `<tags>` outside code spans.
+The site at <https://openartifact.github.io/> is built by the separate repository [openartifact.github.io](https://github.com/openartifact/openartifact.github.io), which renders this repository's `docs/` in place (README.md is a directory index; links to files outside `docs/` become GitHub links): `/latest/` is `main`, `/vX.Y/` the newest stable tag of each of the last five minor lines. The text, generated reference and the drift and link checks stay here, versioned with the code. The site repository polls every 15 minutes and rebuilds only when `docs/` or `web/src/lib/installCommands.ts` changed on `main` or a release tag appeared, so a docs change is live about 15 minutes after the merge; no secret or token is involved. To publish immediately, run the `Pages` workflow of the site repository by hand (`gh workflow run pages.yml -R openartifact/openartifact.github.io`).
 
 ### Releases (`release.yml`)
 
