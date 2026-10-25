@@ -86,7 +86,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             :key="tab.key"
             class="relative h-11 px-3 text-sm font-medium transition-colors cursor-pointer shrink-0"
             :class="activeTab === tab.key ? 'text-foreground' : 'text-muted hover:text-foreground'"
-            @click="activeTab = tab.key"
+            @click="selectTab(tab.key)"
           >
             <span class="inline-flex items-center gap-1.5">
               {{ tab.label }}
@@ -382,7 +382,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import PageHeader from '../components/PageHeader.vue'
 import { formatDate, formatDateTime } from '../lib/datetime'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
-import { useRoute } from 'vue-router'
+import { useRoute, useRouter } from 'vue-router'
 import {
   ClipboardDocumentIcon,
   ShieldCheckIcon,
@@ -395,6 +395,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import { getRepository, listPackageVersions } from '../api/repositories'
 import type { Repository, PackageItem } from '../api/repositories'
+import { packageTabQuery, resolvePackageTab, type PackageTab } from '../lib/packageTabs'
 import { pullCommand as buildPullCommand, repoBaseUrl } from '../lib/installCommands'
 import { useSessionStore } from '../stores/session'
 import { t, tp } from '../i18n/en'
@@ -415,9 +416,10 @@ const tabs = [
   { key: 'versions', label: t('pkg.tab.versions') },
   { key: 'properties', label: t('pkg.tab.properties') },
   { key: 'security', label: t('pkg.tab.security') },
-] as const
+] as const satisfies readonly { key: PackageTab; label: string }[]
 
 const route = useRoute()
+const router = useRouter()
 
 const repoName = computed(() => route.params.name as string)
 const format = computed(() => route.params.format as string)
@@ -429,7 +431,14 @@ const repo = ref<Repository | null>(null)
 const packages = ref<PackageItem[]>([])
 const loading = ref(true)
 const loadError = ref('')
-const activeTab = ref('overview')
+// The active tab lives in the URL (?tab=), like the repository page's, so it is
+// deep-linkable and the back button steps through the tabs.
+const activeTab = computed(() => resolvePackageTab(route.query.tab))
+
+function selectTab(tab: PackageTab): void {
+  if (tab === activeTab.value) return
+  void router.push({ query: packageTabQuery(route.query, tab) })
+}
 const copied = ref(false)
 
 // ─── Properties state ─────────────────────────────────────────────────────────
@@ -668,7 +677,6 @@ async function load(): Promise<void> {
 watch(
   () => [repoName.value, format.value, pkgName.value],
   () => {
-    activeTab.value = 'overview'
     propsGeneration++
     propsLoading.value = false
     properties.value = {}
