@@ -99,6 +99,7 @@ var NotJournaled = map[string]string{
 	"bundle_promotions":             "release bundle history; operational data covered by database backups",
 	"cleanup_policies":              "operator policy configuration; recreated with `oa apply` or restored from a database backup (a restored policy could start deleting packages)",
 	"dependency_track_pushes":       "integration state, regenerated on the next push",
+	"federation_repos":              "federation log state; a rebuilt instance starts a new log (new log_id), so peers reset their cursor and run a full merge",
 	"group_metadata_state":          "regenerated group metadata bookkeeping",
 	"group_package_owners":          "derived from the group members; regenerated",
 	"gpg_key_repositories":          "signing key assignment; keys themselves are secrets outside the journal",
