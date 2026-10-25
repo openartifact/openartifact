@@ -28,6 +28,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatmaven "github.com/openartifact/openartifact/internal/format/maven"
@@ -94,10 +95,15 @@ func tpoNewEnv(t *testing.T) *tpoEnv {
 	router := chi.NewRouter()
 	router.Use(tpoPrincipalMiddleware(principals))
 
+	// Detached orphan sweeps must not outlive the test: the next test resets
+	// the tables they read. Shutdown cancels and awaits them.
+	tasks := bgtask.New(t.Context())
+	t.Cleanup(func() { tasks.Shutdown(time.Minute) })
+
 	env := &tpoEnv{
 		router: router,
-		repos:  api.NewRepositoriesHandler(pg, harness.Log, evaluator).WithBlobStore(harness.BlobStore),
-		trash:  api.NewTrashHandler(pg, harness.Log, evaluator).WithBlobStore(harness.BlobStore),
+		repos:  api.NewRepositoriesHandler(pg, harness.Log, evaluator).WithBlobStore(harness.BlobStore).WithTasks(tasks),
+		trash:  api.NewTrashHandler(pg, harness.Log, evaluator).WithBlobStore(harness.BlobStore).WithTasks(tasks),
 		writer: writer,
 	}
 
@@ -112,13 +118,6 @@ func tpoNewEnv(t *testing.T) *tpoEnv {
 
 	rawHTTP := formatraw.NewHTTPHandler(harness.Log, pg, harness.BlobStore, "")
 	router.Route("/repos/raw/{name}", func(r chi.Router) { rawHTTP.RegisterRepoRoutes(r) })
-
-	// Detached orphan sweeps must not outlive the test: the next test resets
-	// the tables they read.
-	t.Cleanup(func() {
-		env.repos.WaitBackground()
-		env.trash.WaitBackground()
-	})
 
 	return env
 }
@@ -425,12 +424,22 @@ func tpoBlobRows(t *testing.T, sha string) int {
 	return tpoCount(t, `SELECT COUNT(*) FROM blobs WHERE sha256 = $1`, sha)
 }
 
+// tpoAssertBlobFreed waits (bounded) for the blob to leave the store and the
+// blobs table: repository deletes and purges free blobs in a detached sweep.
 func tpoAssertBlobFreed(t *testing.T, label string, content []byte) {
 	t.Helper()
 
 	sha := tpoSHA(content)
-	if tpoBlobStored(t, sha) || tpoBlobRows(t, sha) != 0 {
-		t.Errorf("%s: blob still in the blob store or the blobs table, want freed", label)
+	deadline := time.Now().Add(10 * time.Second)
+
+	for tpoBlobStored(t, sha) || tpoBlobRows(t, sha) != 0 {
+		if time.Now().After(deadline) {
+			t.Errorf("%s: blob still in the blob store or the blobs table, want freed", label)
+
+			return
+		}
+
+		time.Sleep(10 * time.Millisecond)
 	}
 }
 
@@ -863,7 +872,6 @@ func TestTrashPolicies_RepositoryRetentionZeroHardDeletes(t *testing.T) {
 	}
 
 	tpoExpect(t, tpoSend(t, env, tpoAdmin, http.MethodDelete, del, body), http.StatusNoContent, "delete with a confirm body")
-	env.repos.WaitBackground()
 
 	if n := tpoCount(t, `SELECT COUNT(*) FROM repositories WHERE name = $1`, repo); n != 0 {
 		t.Errorf("repository row survived a retention-0 delete (%d rows, trashed or not)", n)

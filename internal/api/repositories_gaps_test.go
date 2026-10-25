@@ -140,6 +140,21 @@ func (s *memBlobs) Delete(_ context.Context, id string) error {
 	return nil
 }
 
+// waitUntil polls cond until it holds, failing the test after a deadline.
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+
+	deadline := time.Now().Add(10 * time.Second)
+
+	for !cond() {
+		if time.Now().After(deadline) {
+			t.Fatalf("timed out waiting for %s", what)
+		}
+
+		time.Sleep(5 * time.Millisecond)
+	}
+}
+
 func (s *memBlobs) deletedIDs() []string {
 	s.mu.Lock()
 	defer s.mu.Unlock()
@@ -173,7 +188,7 @@ func TestRepositoryCreateAndDeleteEmitEventsAndCollectOrphans(t *testing.T) {
 		t.Fatalf("delete status = %d; body = %s", rw.Code, rw.Body.String())
 	}
 
-	h.WaitBackground()
+	waitUntil(t, "the orphan sweep to delete the blob", func() bool { return len(blobs.deletedIDs()) > 0 })
 
 	events := pub.all()
 	if len(events) != 2 || events[0].event != "repository.created" || events[1].event != "repository.deleted" {

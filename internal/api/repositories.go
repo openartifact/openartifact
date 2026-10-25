@@ -19,13 +19,13 @@ import (
 	"sort"
 	"strconv"
 	"strings"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
@@ -105,12 +105,21 @@ type RepositoriesHandler struct {
 	// available on this server).
 	fed *federation.Store
 
-	// gc tracks background orphan-blob collections started by repository deletes.
-	gc sync.WaitGroup
+	// tasks runs the detached orphan-blob collections started by repository
+	// deletes; they are cancelled at server shutdown.
+	tasks *bgtask.Runner
 }
 
 func NewRepositoriesHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *RepositoriesHandler {
-	return &RepositoriesHandler{db: db, log: log, evaluator: evaluator}
+	return &RepositoriesHandler{db: db, log: log, evaluator: evaluator, tasks: bgtask.New(context.Background())}
+}
+
+// WithTasks runs the background orphan-blob collections under the server
+// lifecycle: they are cancelled and awaited when the runner shuts down.
+func (h *RepositoriesHandler) WithTasks(tasks *bgtask.Runner) *RepositoriesHandler {
+	h.tasks = tasks
+
+	return h
 }
 
 // WithBlobStore enables the package download endpoint.
@@ -169,9 +178,6 @@ func notifyGroupMetadata(n GroupMetadataNotifier, repo *models.Repository) {
 
 	n.NotifyMemberChanged(repo.ID)
 }
-
-// WaitBackground blocks until background orphan-blob collections finish.
-func (h *RepositoriesHandler) WaitBackground() { h.gc.Wait() }
 
 func (h *RepositoriesHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/repositories", h.handleList)
@@ -1384,19 +1390,17 @@ const maxOrphanPasses = 100
 // deletes) and is best-effort: failures are logged and retried by the cleanup
 // worker's periodic pass.
 func (h *RepositoriesHandler) collectOrphansAsync() {
-	collectOrphansAsync(&h.gc, h.db, h.blobStore, h.log)
+	collectOrphansAsync(h.tasks, h.db, h.blobStore, h.log)
 }
 
-// collectOrphansAsync starts the detached orphan-blob sweep on wg (shared by
+// collectOrphansAsync starts the detached orphan-blob sweep on tasks (shared by
 // repository delete and the trash purge). A nil store is a no-op.
-func collectOrphansAsync(wg *sync.WaitGroup, db database.Database, store storage.BlobStore, log *logger.Logger) {
+func collectOrphansAsync(tasks *bgtask.Runner, db database.Database, store storage.BlobStore, log *logger.Logger) {
 	if store == nil {
 		return
 	}
 
-	ctx := context.WithoutCancel(context.Background())
-
-	wg.Go(func() {
+	tasks.Go(func(ctx context.Context) {
 		for range maxOrphanPasses {
 			removed, err := storage.CollectOrphanBlobs(ctx, db, store, storage.OrphanMinAge, storage.OrphanBatch)
 			if err != nil {

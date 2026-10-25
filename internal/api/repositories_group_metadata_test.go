@@ -103,8 +103,6 @@ func TestDeletingAMemberRegeneratesItsGroups(t *testing.T) {
 		t.Fatalf("delete: %d %s", rw.Code, rw.Body.String())
 	}
 
-	h.WaitBackground()
-
 	if !slices.Equal(rec.stale, []string{"group-1", "group-2"}) {
 		t.Errorf("groups notified = %v, want both groups the member was in", rec.stale)
 	}
@@ -122,7 +120,6 @@ func TestDeletingANonDebRepositoryDoesNotTouchGroupMetadata(t *testing.T) {
 
 	rw = httptest.NewRecorder()
 	router.ServeHTTP(rw, adminRequest(nil, http.MethodDelete, "/api/v1/repositories/files?confirm=files", ""))
-	h.WaitBackground()
 
 	if len(rec.stale) != 0 || len(rec.members) != 0 {
 		t.Errorf("notified %v %v for a raw repository", rec.stale, rec.members)

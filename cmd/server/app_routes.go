@@ -355,7 +355,7 @@ func (a *app) registerRepositoryRoutes() {
 	w := &a.workers
 	regenerator := func() api.TrashRegenerator { return api.NewWorkerRegenerator(w.deb, w.rpm, w.maven, w.npm) }
 
-	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(a.store.blobs).WithPublisher(w.webhook).WithGroupMetadata(w.groupMeta)
+	repoHandler := api.NewRepositoriesHandler(db, log, evaluator).WithBlobStore(a.store.blobs).WithPublisher(w.webhook).WithGroupMetadata(w.groupMeta).WithTasks(a.tasks)
 	if a.cfg.Federation.Enabled {
 		repoHandler.WithFederation(a.feat.fed.store)
 	}
@@ -373,6 +373,7 @@ func (a *app) registerRepositoryRoutes() {
 		WithPublisher(w.webhook).
 		WithRegenerator(regenerator()).
 		WithGroupMetadata(w.groupMeta).
+		WithTasks(a.tasks).
 		RegisterAuthed(authedAPI)
 	// The retention purge worker is started above; the manual purge lives in
 	// TrashHandler.

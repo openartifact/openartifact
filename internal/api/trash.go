@@ -8,13 +8,13 @@ import (
 	"context"
 	"errors"
 	"net/http"
-	"sync"
 	"time"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -50,12 +50,21 @@ type TrashHandler struct {
 	regen     TrashRegenerator
 	groupMeta GroupMetadataNotifier
 
-	// gc tracks background orphan-blob collections started by repository purges.
-	gc sync.WaitGroup
+	// tasks runs the detached orphan-blob collections started by repository
+	// purges; they are cancelled at server shutdown.
+	tasks *bgtask.Runner
 }
 
 func NewTrashHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator) *TrashHandler {
-	return &TrashHandler{db: db, log: log, evaluator: evaluator}
+	return &TrashHandler{db: db, log: log, evaluator: evaluator, tasks: bgtask.New(context.Background())}
+}
+
+// WithTasks runs the background orphan-blob collections under the server
+// lifecycle: they are cancelled and awaited when the runner shuts down.
+func (h *TrashHandler) WithTasks(tasks *bgtask.Runner) *TrashHandler {
+	h.tasks = tasks
+
+	return h
 }
 
 // WithBlobStore enables freeing blobs when an item is purged.
@@ -86,9 +95,6 @@ func (h *TrashHandler) WithGroupMetadata(n GroupMetadataNotifier) *TrashHandler 
 
 	return h
 }
-
-// WaitBackground blocks until background orphan-blob collections finish.
-func (h *TrashHandler) WaitBackground() { h.gc.Wait() }
 
 func (h *TrashHandler) RegisterAuthed(r chi.Router) {
 	r.Get("/api/v1/trash", h.handleListGlobal)
@@ -546,7 +552,7 @@ func (h *TrashHandler) purgeBatch(ctx context.Context, store database.TrashStore
 func (h *TrashHandler) afterPurge(ctx context.Context, res *models.TrashPurgeResult) {
 	if res.Kind == models.TrashKindRepository {
 		h.reclaimMetadataBlobs(ctx, res.RepositoryName, res.MetadataBlobSHA256)
-		collectOrphansAsync(&h.gc, h.db, h.blobStore, h.log)
+		collectOrphansAsync(h.tasks, h.db, h.blobStore, h.log)
 
 		return
 	}
