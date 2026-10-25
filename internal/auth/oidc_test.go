@@ -23,11 +23,12 @@ import (
 
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type oidcRowDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	row *models.SSOProvider
 }

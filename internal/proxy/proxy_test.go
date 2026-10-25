@@ -19,7 +19,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -29,7 +29,7 @@ const allowPrivateEnv = "OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS"
 
 // memDB is the slice of the database the proxy service touches.
 type memDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	mu      sync.Mutex
 	entries map[string]*models.ProxyCacheEntry

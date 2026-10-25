@@ -15,13 +15,13 @@ import (
 
 	"github.com/openartifact/openartifact/internal/audit"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 // authAuditDB captures audit rows and serves a minimal user/session store.
 type authAuditDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	events   chan *models.AuditLog
 	sessions map[string]*models.Session

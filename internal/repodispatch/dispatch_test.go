@@ -16,7 +16,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/proxy"
@@ -25,7 +25,7 @@ import (
 )
 
 type fakeDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	mu      sync.Mutex
 	repos   map[string]*models.Repository // by name

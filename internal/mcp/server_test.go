@@ -20,7 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/search"
@@ -39,7 +39,7 @@ const (
 var errDB = errors.New("pq: password authentication failed for user \"oa_internal\" at 10.1.2.3:5432")
 
 type mockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repos      []*models.Repository
 	components []*models.Component

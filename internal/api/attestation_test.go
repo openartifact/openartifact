@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/attest"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/sbom"
@@ -41,7 +42,7 @@ const (
 )
 
 type attestDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	report *models.SBOMReport
 }

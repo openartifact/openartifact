@@ -18,13 +18,13 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type mavenMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repo *models.Repository
 	meta *models.RepoMetadata

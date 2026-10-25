@@ -17,6 +17,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/backup"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -38,7 +39,7 @@ func (b *backupMockDB) GetBackupJob(ctx context.Context, id string) (*models.Bac
 }
 
 func (b *backupMockDB) BeginBackupSnapshot(context.Context, time.Duration) (database.SnapshotReader, error) {
-	return &database.LiveSnapshot{Database: b}, nil
+	return &databasetest.LiveSnapshot{Database: b}, nil
 }
 
 func (b *backupMockDB) UpdateBackupJob(ctx context.Context, job *models.BackupJob) error {

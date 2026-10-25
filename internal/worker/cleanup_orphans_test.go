@@ -10,13 +10,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type orphanListerDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	calls  int
 	minAge time.Duration
@@ -75,7 +75,7 @@ func TestCollectOrphansIfDueIsThrottled(t *testing.T) {
 }
 
 type reconcileCountingDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	calls     int
 	corrected int64

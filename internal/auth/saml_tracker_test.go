@@ -13,7 +13,7 @@ import (
 
 	"github.com/crewjam/saml"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
 func TestSAMLRequestTracker_RoundTrip(t *testing.T) {
@@ -57,7 +57,7 @@ func TestSAMLRequestTracker_Rejects(t *testing.T) {
 }
 
 type assertionDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	mu   sync.Mutex
 	seen map[string]bool

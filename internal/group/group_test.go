@@ -14,13 +14,13 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type groupDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	links []*models.RepositoryGroupMember
 	repos map[string]*models.Repository

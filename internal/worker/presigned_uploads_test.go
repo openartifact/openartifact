@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type expiredUploadsDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	rows    []string
 	deleted []string

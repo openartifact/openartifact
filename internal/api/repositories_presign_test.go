@@ -15,12 +15,12 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type repoPresignDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repo    *models.Repository
 	targets []*models.PermissionTarget

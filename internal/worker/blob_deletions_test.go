@@ -17,6 +17,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/metrics"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -27,7 +28,7 @@ const sweepBackend = "11111111-1111-1111-1111-111111111111"
 // queueDB is an in-memory deletion queue with the claim, hold and per-blob lock
 // semantics the sweeper relies on.
 type queueDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	mu      sync.Mutex
 	rows    map[string]*database.BlobDeletion // "sha|scope"
@@ -456,7 +457,7 @@ func TestSweeperWithoutQueueDoesNothing(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	w := NewBlobDeletionSweeper(&database.BaseMockDB{}, &byteStore{db: newQueueDB()}, log, time.Millisecond, 10)
+	w := NewBlobDeletionSweeper(&databasetest.BaseMockDB{}, &byteStore{db: newQueueDB()}, log, time.Millisecond, 10)
 	w.Start()
 	w.Stop()
 

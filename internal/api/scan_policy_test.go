@@ -21,6 +21,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -34,7 +35,7 @@ var errScannerBroke = errors.New("exec /usr/bin/trivy: permission denied (db tok
 // scanPolicyDB is an in-memory database for the vuln scan and license policy
 // handler tests.
 type scanPolicyDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	mu sync.Mutex
 

@@ -18,7 +18,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 )
@@ -49,7 +49,7 @@ func (p *recordingPublisher) all() []recordedEvent {
 
 // repoLifecycleDB models a repository whose delete orphans one blob.
 type repoLifecycleDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repo        *models.Repository
 	blobs       map[string]*models.ComponentBlob // listing row id -> blob, all in repo

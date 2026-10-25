@@ -2,9 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Package database provides a base mock for the Database interface.
-// Embed BaseMockDB in test mocks and override only the methods you need.
-package database
+// Package databasetest provides test doubles for the database.Database
+// interface: embed BaseMockDB in a test mock and override only the methods you
+// need. It is imported by tests only.
+package databasetest
 
 import (
 	"context"
@@ -15,6 +16,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
@@ -25,7 +27,7 @@ type BaseMockDB struct{}
 func (m *BaseMockDB) GetDB() *sql.DB                 { return nil }
 func (m *BaseMockDB) Close() error                   { return nil }
 func (m *BaseMockDB) Ping(ctx context.Context) error { return nil }
-func (m *BaseMockDB) BeginTx(ctx context.Context) (Transaction, error) {
+func (m *BaseMockDB) BeginTx(ctx context.Context) (database.Transaction, error) {
 	return nil, errNotImpl("BeginTx")
 }
 func (m *BaseMockDB) Migrate(ctx context.Context) error { return nil }
@@ -585,7 +587,7 @@ func (m *BaseMockDB) ArtifactExists(ctx context.Context, sha256 string, reposito
 func (m *BaseMockDB) BlobReferenceCount(ctx context.Context, sha256 string) (int, error) {
 	return 0, nil
 }
-func (m *BaseMockDB) BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (SnapshotReader, error) {
+func (m *BaseMockDB) BeginBackupSnapshot(ctx context.Context, leaseTTL time.Duration) (database.SnapshotReader, error) {
 	return nil, errNotImpl("BeginBackupSnapshot")
 }
 func (m *BaseMockDB) CreateGoModule(ctx context.Context, mod *models.GoModule) error {
@@ -940,10 +942,10 @@ func (m *BaseMockDB) GetProjectGroup(ctx context.Context, projectID, groupID str
 func (m *BaseMockDB) SetProjectGroup(ctx context.Context, projectID, groupID, role string, createdBy *string) error {
 	return errNotImpl("SetProjectGroup")
 }
-func (m *BaseMockDB) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard ProjectRoleGuard) error {
+func (m *BaseMockDB) ChangeProjectGroup(ctx context.Context, projectID, groupID, newRole string, createdBy *string, guard database.ProjectRoleGuard) error {
 	return errNotImpl("ChangeProjectGroup")
 }
-func (m *BaseMockDB) CreateProjectToken(ctx context.Context, spec ProjectTokenSpec) (*models.Token, error) {
+func (m *BaseMockDB) CreateProjectToken(ctx context.Context, spec database.ProjectTokenSpec) (*models.Token, error) {
 	return nil, errNotImpl("CreateProjectToken")
 }
 
@@ -955,7 +957,7 @@ func (m *BaseMockDB) RevokeProjectToken(ctx context.Context, projectID, tokenID 
 	return false, errNotImpl("RevokeProjectToken")
 }
 
-func (m *BaseMockDB) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard ProjectRoleGuard) error {
+func (m *BaseMockDB) ChangeProjectMember(ctx context.Context, projectID, userID, newRole string, guard database.ProjectRoleGuard) error {
 	return errNotImpl("ChangeProjectMember")
 }
 func (m *BaseMockDB) ListProjectRepositories(ctx context.Context, projectID string, page, limit int) ([]*models.Repository, int, error) {
@@ -1228,16 +1230,16 @@ func (m *BaseMockDB) CondaRepodataStamp(ctx context.Context, repoID, platform st
 // consistent) and the blobs table is the Blobs slice, which the test keeps
 // sorted by sha256. A fake's BeginBackupSnapshot returns one of these.
 type LiveSnapshot struct {
-	Database
+	database.Database
 
-	Blobs []BlobRow
+	Blobs []database.BlobRow
 	// OnRelease, when set, runs on Release (tests assert the snapshot is ended).
 	OnRelease func()
 }
 
 // ListBlobsAfter returns the next page of Blobs.
-func (s *LiveSnapshot) ListBlobsAfter(_ context.Context, after string, limit int) ([]BlobRow, error) {
-	var out []BlobRow
+func (s *LiveSnapshot) ListBlobsAfter(_ context.Context, after string, limit int) ([]database.BlobRow, error) {
+	var out []database.BlobRow
 
 	for _, b := range s.Blobs {
 		if b.SHA256 > after {

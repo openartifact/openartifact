@@ -15,7 +15,7 @@ import (
 
 	"github.com/jackc/pgx/v5/pgconn"
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -52,7 +52,7 @@ func TestValidFormatsMatchDatabaseConstraint(t *testing.T) {
 }
 
 type repoCreateMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	createErr error
 	targets   []*models.PermissionTarget

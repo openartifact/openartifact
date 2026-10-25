@@ -16,14 +16,14 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 // tarballMockDB provides just enough of database.Database for handleTarball.
 type tarballMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repo     *models.Repository
 	pkg      *models.NPMPackage

@@ -12,11 +12,11 @@ import (
 	"strings"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
 type reserveMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	ok       bool
 	err      error

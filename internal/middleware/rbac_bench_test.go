@@ -14,13 +14,13 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type benchRBACDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	targets  []*models.PermissionTarget
 	repos    map[string]*models.Repository

@@ -21,6 +21,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/ai"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -37,7 +38,7 @@ var errBlobGone = errors.New("blob gone: /secret/internal/path")
 
 // aiFakeDB records analyses and serves a fixed package listing.
 type aiFakeDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	mu       sync.Mutex
 	blobs    map[string]*models.ComponentBlob

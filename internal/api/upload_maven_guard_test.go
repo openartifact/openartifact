@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -27,7 +28,7 @@ var errMavenGuardDB = errors.New("pq: connection refused to 10.0.0.5:5432")
 // lookup of the immutable-releases guard is the second one of a delete (the
 // first resolves the repository id); failGuardLookup makes it fail.
 type mavenGuardDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	immutable       bool
 	failGuardLookup bool

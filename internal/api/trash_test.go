@@ -20,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
@@ -34,7 +35,7 @@ const (
 // fakeTrashDB is a database.Database + database.TrashStore double. It records
 // what the handlers asked of it.
 type fakeTrashDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	targets []*models.PermissionTarget
 	repos   map[string]*models.Repository

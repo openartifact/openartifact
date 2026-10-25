@@ -17,14 +17,14 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 var errSettingWrite = errors.New("setting write failed")
 
-type failingSettingsDB struct{ database.BaseMockDB }
+type failingSettingsDB struct{ databasetest.BaseMockDB }
 
 func (failingSettingsDB) SetSystemSetting(context.Context, string, string) error {
 	return errSettingWrite

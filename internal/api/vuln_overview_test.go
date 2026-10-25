@@ -20,6 +20,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
@@ -27,7 +28,7 @@ import (
 const overviewScanID = "44444444-4444-4444-4444-444444444444"
 
 type vulnOverviewMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	page       *models.VulnScanOverviewPage
 	summary    *models.VulnScanSummary

@@ -12,7 +12,7 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/scanexport"
 )
@@ -20,7 +20,7 @@ import (
 const exportScanID = "55555555-5555-5555-5555-555555555555"
 
 type scanExportMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	// pages is served in order, one per ListVulnScanOverview call.
 	pages     []*models.VulnScanOverviewPage

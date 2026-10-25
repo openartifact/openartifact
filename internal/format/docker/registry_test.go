@@ -19,6 +19,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/middleware"
@@ -32,7 +33,7 @@ var errDuplicateKey = errors.New("duplicate key value violates unique constraint
 // not insert one) while manifest create/tag upsert are idempotent like the
 // real ON CONFLICT queries.
 type regFakeDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 	formattest.Quarantine
 
 	repos     map[string]*models.Repository

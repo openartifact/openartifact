@@ -24,6 +24,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -121,7 +122,7 @@ func (s *stagingBlobStore) WalkStaging(context.Context, time.Time, func([]string
 }
 
 type presignUploadDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repo      *models.Repository
 	uploads   map[string]*models.PresignedUpload

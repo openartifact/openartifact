@@ -13,7 +13,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -57,7 +57,7 @@ func (f *fakeStore) PresignGet(_ context.Context, id string, _ time.Duration, op
 }
 
 type repoDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repo *models.Repository
 	err  error

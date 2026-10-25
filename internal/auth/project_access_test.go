@@ -8,7 +8,7 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -19,7 +19,7 @@ const (
 
 // projMockDB serves one user's project grants, targets and a fixed repository set.
 type projMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	grants  []*models.ProjectGrant
 	targets []*models.PermissionTarget

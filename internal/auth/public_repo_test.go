@@ -8,12 +8,12 @@ import (
 	"context"
 	"testing"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type publicRepoMockDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	repos  map[string]*models.Repository
 	target *models.PermissionTarget

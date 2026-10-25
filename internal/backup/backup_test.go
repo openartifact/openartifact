@@ -21,18 +21,19 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
-// fakeDB embeds database.BaseMockDB (stub-everything) and overrides only the
+// fakeDB embeds databasetest.BaseMockDB (stub-everything) and overrides only the
 // handful of methods this test actually drives. Every other Database method
 // returns BaseMockDB's "not implemented" error, which every backup/restore
 // helper here already treats as "log a warning and skip" — exactly the
 // caveat behavior described in the assignment.
 type fakeDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	salt   string
 	nextID int64
@@ -100,7 +101,7 @@ func (f *fakeDB) snapshotOf(reader database.Database) (database.SnapshotReader, 
 
 	f.snapshots++
 
-	return &database.LiveSnapshot{
+	return &databasetest.LiveSnapshot{
 		Database:  reader,
 		Blobs:     slices.Clone(f.blobs),
 		OnRelease: func() { f.released++ },

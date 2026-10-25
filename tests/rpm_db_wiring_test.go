@@ -21,6 +21,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/rpm"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -28,7 +29,7 @@ import (
 )
 
 type MockDatabase struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	mu                      sync.Mutex
 	repositories            map[string]*models.Repository
@@ -495,7 +496,7 @@ func (m *MockDatabase) ListMavenGARefs(ctx context.Context, repoID, groupID, art
 		}
 	}
 
-	return database.MavenGARefsFromArtifacts(result), nil
+	return databasetest.MavenGARefsFromArtifacts(result), nil
 }
 
 func (m *MockDatabase) GetLatestSnapshot(ctx context.Context, repoID, groupID, artifactID, version string) (*models.MavenArtifact, error) {

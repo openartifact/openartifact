@@ -12,13 +12,14 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 const testSHA = "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
 
 type fakeDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	lic   *models.LicenseScanResult
 	vuln  *models.VulnScanResult

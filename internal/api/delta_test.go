@@ -13,14 +13,14 @@ import (
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type deltaTestDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	comps       []models.Component
 	quarantined map[string]bool

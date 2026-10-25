@@ -9,12 +9,13 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 // gcDB satisfies DockerGCDB; Stop never reaches the GC store.
 type gcDB struct {
-	*database.BaseMockDB
+	*databasetest.BaseMockDB
 	database.DockerGCStore
 }
 
@@ -25,7 +26,7 @@ func TestWorkerStopWithoutStartAndTwice(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	db := &database.BaseMockDB{}
+	db := &databasetest.BaseMockDB{}
 
 	stoppers := map[string]func(){
 		"cleanup":   NewCleanupWorker(db, nil, log).Stop,

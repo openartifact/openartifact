@@ -11,7 +11,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -21,7 +21,7 @@ var benchTargetCounts = []int{1, 10, 100}
 // benchAuthDB serves the lookups the permission evaluator and token validation
 // make on the request path.
 type benchAuthDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	targets []*models.PermissionTarget
 	repos   map[string]*models.Repository
@@ -300,7 +300,7 @@ func BenchmarkValidateSession(b *testing.B) {
 }
 
 type benchSessionDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	sessions map[string]*models.Session
 }

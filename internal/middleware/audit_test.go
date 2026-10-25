@@ -12,12 +12,12 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/audit"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
 type auditCaptureDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	events chan *models.AuditLog
 }

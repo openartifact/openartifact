@@ -20,7 +20,7 @@ import (
 	"time"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -193,7 +193,7 @@ func (q *Quarantine) IsArtifactQuarantined(_ context.Context, _ string, keys []s
 // lookups and a zero blob reference count (so SafeDeleteBlob removes blobs).
 // Embed it in a per-format mock that adds the format's package methods.
 type DB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 	Quarantine
 
 	Repo *models.Repository

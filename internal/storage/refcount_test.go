@@ -11,13 +11,13 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 )
 
 // orphanDB lists a fixed set of unreferenced blobs; BlobReferenceCount reports
 // zero, so SafeDeleteBlob takes its blobStore.Delete path.
 type orphanDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	shas       []string
 	gotMinAge  time.Duration
@@ -81,7 +81,7 @@ func TestCollectOrphanBlobsSurvivesPoisonedBlob(t *testing.T) {
 }
 
 func TestCollectOrphanBlobsNoopWithoutLister(t *testing.T) {
-	removed, err := CollectOrphanBlobs(context.Background(), &database.BaseMockDB{}, &deleteRecorder{}, time.Hour, 10)
+	removed, err := CollectOrphanBlobs(context.Background(), &databasetest.BaseMockDB{}, &deleteRecorder{}, time.Hour, 10)
 	if removed != 0 || err != nil {
 		t.Errorf("removed=%d err=%v; want a no-op", removed, err)
 	}
@@ -90,7 +90,7 @@ func TestCollectOrphanBlobsNoopWithoutLister(t *testing.T) {
 // queueingDB has the deferred-deletion path: SafeDeleteBlob must hand the blob
 // to it and leave the bytes alone.
 type queueingDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	queued []string
 }

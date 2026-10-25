@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -87,7 +87,7 @@ func TestArtifactPayload(t *testing.T) {
 
 // claimDB hands out one pending delivery and records new ones.
 type claimDB struct {
-	*database.BaseMockDB
+	*databasetest.BaseMockDB
 
 	mu       sync.Mutex
 	hooks    []*models.Webhook
@@ -129,7 +129,7 @@ func newTestLogger(t *testing.T) *logger.Logger {
 }
 
 func TestDispatchInsertsLeasedDeliveries(t *testing.T) {
-	db := &claimDB{BaseMockDB: &database.BaseMockDB{}, hooks: []*models.Webhook{{ID: "w1"}, {ID: "w2"}}}
+	db := &claimDB{BaseMockDB: &databasetest.BaseMockDB{}, hooks: []*models.Webhook{{ID: "w1"}, {ID: "w2"}}}
 	d := NewDispatcher(db, newTestLogger(t))
 
 	before := time.Now()
@@ -152,7 +152,7 @@ func TestDispatchInsertsLeasedDeliveries(t *testing.T) {
 }
 
 func TestPollPendingClaimsWithLeaseAndQueuesEachOnce(t *testing.T) {
-	db := &claimDB{BaseMockDB: &database.BaseMockDB{}, claimed: []*models.WebhookDelivery{{ID: "a"}, {ID: "b"}}}
+	db := &claimDB{BaseMockDB: &databasetest.BaseMockDB{}, claimed: []*models.WebhookDelivery{{ID: "a"}, {ID: "b"}}}
 	d := NewDispatcher(db, newTestLogger(t))
 
 	d.pollPending()
