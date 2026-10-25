@@ -686,8 +686,8 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 		// pass-through does not cover, can never satisfy it (the handlers'
 		// anonymous branch is unfiltered).
 		return routeScope{action: "manage", anyAuthenticated: true}
-	case isSafeMethod(method) && len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]):
-		return routeScope{action: "read", repoName: segs[1]}
+	case isReadOnlyRoute(method, segs):
+		return classifyReadOnlyRoute(segs)
 	case len(segs) >= 3 && segs[0] == "repositories" && isPlainName(segs[1]) && slices.Contains(repoDataSegments(), segs[2]):
 		switch method {
 		case http.MethodGet, http.MethodHead, http.MethodPost, http.MethodPut, http.MethodDelete:
@@ -714,6 +714,45 @@ func classifyAPIRoute(method, escapedPath string) routeScope {
 	}
 
 	return manage
+}
+
+// isReadOnlyRoute reports whether (method, segs) is a read-only route with its
+// own scope: GET repository/{name}, the security findings routes or the
+// counts-only repository security summary.
+func isReadOnlyRoute(method string, segs []string) bool {
+	return isSafeMethod(method) && (len(segs) == 2 && segs[0] == "repository" && isPlainName(segs[1]) ||
+		isSecurityFindingsRoute(method, segs) || isRepoSecuritySummaryRoute(method, segs))
+}
+
+// classifyReadOnlyRoute is the scope of a route isReadOnlyRoute accepted.
+func classifyReadOnlyRoute(segs []string) routeScope {
+	if segs[0] == "security" {
+		// The findings handlers scope the result to the repositories of the
+		// projects the caller maintains or owns (all of them for a global
+		// admin) and answer 403 to everyone else; "manage" keeps anonymous
+		// callers out, as for the repository lists.
+		return routeScope{action: "manage", anyAuthenticated: true}
+	}
+
+	// A repository, or its counts-only security summary: anyone who can read it.
+	return routeScope{action: "read", repoName: segs[1]}
+}
+
+// isSecurityFindingsRoute reports whether segs (of an /api/v1/ path) is the
+// cross-type findings list, its summary or its export (read-only).
+func isSecurityFindingsRoute(method string, segs []string) bool {
+	if !isSafeMethod(method) || len(segs) < 2 || len(segs) > 3 || segs[0] != "security" || segs[1] != "findings" {
+		return false
+	}
+
+	return len(segs) == 2 || segs[2] == "summary" || segs[2] == "export"
+}
+
+// isRepoSecuritySummaryRoute reports whether segs (of an /api/v1/ path) is
+// GET repositories/{name}/security/summary, the counts-only security summary.
+func isRepoSecuritySummaryRoute(method string, segs []string) bool {
+	return isSafeMethod(method) && len(segs) == 4 && segs[0] == "repositories" && isPlainName(segs[1]) &&
+		segs[2] == "security" && segs[3] == "summary"
 }
 
 // delegatedRepoName returns the repository of a route whose administration is

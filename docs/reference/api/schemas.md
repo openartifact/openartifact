@@ -1122,6 +1122,27 @@ Partial update: omitted fields stay unchanged.
 | `started_at` | string (date-time) | no | - |
 | `unreferenced` | integer (int64) | no | Blobs only the replica holds that nothing references. |
 
+### RepoSecuritySummary
+
+Counts only; no finding ids, titles or other details.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ai` | object | yes | - |
+| `ai.quarantine_recommended` | integer | yes | - |
+| `ai.review_required` | integer | yes | - |
+| `license` | object | yes | - |
+| `license.violations` | integer | yes | License findings that are not suppressed. |
+| `quarantined` | boolean | yes | True when a result of the selection is quarantined. |
+| `scanned_at` | string (date-time) | yes | Latest completed scan of the selection; null when nothing was scanned. Nullable. |
+| `secret` | object | yes | - |
+| `secret.count` | integer | yes | - |
+| `vuln` | object | yes | - |
+| `vuln.critical` | integer | yes | - |
+| `vuln.high` | integer | yes | - |
+| `vuln.low` | integer | yes | - |
+| `vuln.medium` | integer | yes | - |
+
 ### Repository
 
 | Field | Type | Required | Description |
@@ -1244,6 +1265,94 @@ Partial update: omitted fields stay unchanged.
 | `packages` | array of [SearchPackageHit](#searchpackagehit) | no | Matching packages/artifacts, best match first (exact name, prefix, other substring), then newest first. With group=package, one entry per package: its latest version |
 | `repositories` | array of [SearchRepositoryHit](#searchrepositoryhit) | no | Repositories whose own name matches the query, ordered by name |
 | `total` | integer | no | Number of matching packages (repositories are not counted); with group=package, the number of distinct packages |
+
+### SecurityFinding
+
+One stored scan result (a package version of one type) that reports something.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `artifact_id` | string | yes | The artifact the result belongs to, `name@version`. |
+| `counts` | [SecurityFindingCounts](#securityfindingcounts) | yes | What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium. |
+| `format` | string | yes | Format of the repository (npm, pypi, maven, ...). |
+| `id` | string (uuid) | yes | - |
+| `package_name` | string | yes | - |
+| `package_version` | string | yes | - |
+| `quarantined` | boolean | yes | - |
+| `repository` | string | yes | Repository name. |
+| `scanned_at` | string (date-time) | yes | - |
+| `scanner` | string | yes | Scanner of a vulnerability result (`osv`, `trivy`, `grype` or a comma-joined list); empty for the other types. |
+| `severity` | string | yes | Highest severity of the finding; `none` when it has none. One of: `critical`, `high`, `medium`, `low`, `none`. |
+| `status` | string | yes | `quarantined` when the result's quarantine flag is set; `suppressed` when every vulnerability has a `not_affected` or `fixed` VEX decision or an admin approved a license quarantine. One of: `open`, `quarantined`, `suppressed`. |
+| `title` | string | yes | One line: the worst vulnerability id, the licenses, the worst secret finding or the AI note. |
+| `type` | string | yes | One of: `vuln`, `license`, `secret`, `ai`. |
+| `vex_status` | string | no | Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies. One of: `affected`, `under_investigation`, `fixed`, `not_affected`. |
+
+### SecurityFindingCounts
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `critical` | integer | yes | - |
+| `high` | integer | yes | - |
+| `low` | integer | yes | - |
+| `medium` | integer | yes | - |
+
+### SecurityHealth
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `ai` | object | yes | - |
+| `ai.enabled` | boolean | yes | - |
+| `dependency_track` | object | yes | - |
+| `dependency_track.enabled` | boolean | yes | The global Dependency-Track integration is enabled. |
+| `dependency_track.last_push_at` | string (date-time) | no | When that push finished; absent when none did. |
+| `dependency_track.last_push_ok` | boolean | no | Whether the latest finished push succeeded; absent when none finished. |
+| `last_scan_at` | string (date-time) | yes | When the latest vulnerability, license, secret or AI scan finished; null when none did. Nullable. |
+| `scanners` | array of object | yes | - |
+| `scanners[].docs_url` | string | no | Installation guide of a scanner that is not ready. |
+| `scanners[].message` | string | no | What an operator should do; absent for a ready scanner. |
+| `scanners[].name` | string | yes | osv, trivy or grype. |
+| `scanners[].ready` | boolean | yes | - |
+| `scans_failed_24h` | integer | yes | Scans that failed in the last 24 hours. |
+| `scans_pending` | integer | yes | Scans that are pending or running. |
+| `unscanned_repositories` | integer | yes | Repositories that hold artifacts (group repositories excluded) with no completed scan of any type. |
+
+### SecuritySummary
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `by_type` | object | yes | - |
+| `by_type.ai` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.ai.critical` | integer | yes | - |
+| `by_type.ai.high` | integer | yes | - |
+| `by_type.ai.low` | integer | yes | - |
+| `by_type.ai.medium` | integer | yes | - |
+| `by_type.ai.quarantined` | integer | yes | - |
+| `by_type.ai.total` | integer | yes | - |
+| `by_type.license` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.license.critical` | integer | yes | - |
+| `by_type.license.high` | integer | yes | - |
+| `by_type.license.low` | integer | yes | - |
+| `by_type.license.medium` | integer | yes | - |
+| `by_type.license.quarantined` | integer | yes | - |
+| `by_type.license.total` | integer | yes | - |
+| `by_type.secret` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.secret.critical` | integer | yes | - |
+| `by_type.secret.high` | integer | yes | - |
+| `by_type.secret.low` | integer | yes | - |
+| `by_type.secret.medium` | integer | yes | - |
+| `by_type.secret.quarantined` | integer | yes | - |
+| `by_type.secret.total` | integer | yes | - |
+| `by_type.vuln` | object | yes | Findings of one type; the severities count by each finding's highest severity. |
+| `by_type.vuln.critical` | integer | yes | - |
+| `by_type.vuln.high` | integer | yes | - |
+| `by_type.vuln.low` | integer | yes | - |
+| `by_type.vuln.medium` | integer | yes | - |
+| `by_type.vuln.quarantined` | integer | yes | - |
+| `by_type.vuln.total` | integer | yes | - |
+| `last_scan_at` | string (date-time) | yes | When the latest scan of the scope finished; null when none did. Nullable. |
+| `scanned_repositories` | integer | yes | Repositories that hold artifacts (group repositories excluded) with a completed scan of any type. |
+| `total_repositories` | integer | yes | Repositories of the scope that hold artifacts. |
 
 ### StorageBackend
 

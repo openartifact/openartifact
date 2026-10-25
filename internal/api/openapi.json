@@ -2897,6 +2897,475 @@
           }
         }
       },
+      "SecurityFinding": {
+        "type": "object",
+        "description": "One stored scan result (a package version of one type) that reports something.",
+        "properties": {
+          "id": {
+            "type": "string",
+            "format": "uuid"
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "vuln",
+              "license",
+              "secret",
+              "ai"
+            ]
+          },
+          "repository": {
+            "type": "string",
+            "description": "Repository name."
+          },
+          "format": {
+            "type": "string",
+            "description": "Format of the repository (npm, pypi, maven, ...)."
+          },
+          "package_name": {
+            "type": "string"
+          },
+          "package_version": {
+            "type": "string"
+          },
+          "artifact_id": {
+            "type": "string",
+            "description": "The artifact the result belongs to, `name@version`."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low",
+              "none"
+            ],
+            "description": "Highest severity of the finding; `none` when it has none."
+          },
+          "counts": {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/SecurityFindingCounts"
+              }
+            ],
+            "description": "What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium."
+          },
+          "title": {
+            "type": "string",
+            "description": "One line: the worst vulnerability id, the licenses, the worst secret finding or the AI note."
+          },
+          "scanner": {
+            "type": "string",
+            "description": "Scanner of a vulnerability result (`osv`, `trivy`, `grype` or a comma-joined list); empty for the other types."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "quarantined",
+              "suppressed"
+            ],
+            "description": "`quarantined` when the result's quarantine flag is set; `suppressed` when every vulnerability has a `not_affected` or `fixed` VEX decision or an admin approved a license quarantine."
+          },
+          "quarantined": {
+            "type": "boolean"
+          },
+          "vex_status": {
+            "type": "string",
+            "enum": [
+              "affected",
+              "under_investigation",
+              "fixed",
+              "not_affected"
+            ],
+            "description": "Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies."
+          },
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time"
+          }
+        },
+        "required": [
+          "id",
+          "type",
+          "repository",
+          "format",
+          "package_name",
+          "package_version",
+          "artifact_id",
+          "severity",
+          "counts",
+          "title",
+          "scanner",
+          "status",
+          "quarantined",
+          "scanned_at"
+        ]
+      },
+      "SecurityFindingCounts": {
+        "type": "object",
+        "properties": {
+          "critical": {
+            "type": "integer"
+          },
+          "high": {
+            "type": "integer"
+          },
+          "medium": {
+            "type": "integer"
+          },
+          "low": {
+            "type": "integer"
+          }
+        },
+        "required": [
+          "critical",
+          "high",
+          "medium",
+          "low"
+        ]
+      },
+      "SecuritySummary": {
+        "type": "object",
+        "properties": {
+          "by_type": {
+            "type": "object",
+            "properties": {
+              "vuln": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              },
+              "license": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              },
+              "secret": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              },
+              "ai": {
+                "type": "object",
+                "description": "Findings of one type; the severities count by each finding's highest severity.",
+                "properties": {
+                  "total": {
+                    "type": "integer"
+                  },
+                  "critical": {
+                    "type": "integer"
+                  },
+                  "high": {
+                    "type": "integer"
+                  },
+                  "medium": {
+                    "type": "integer"
+                  },
+                  "low": {
+                    "type": "integer"
+                  },
+                  "quarantined": {
+                    "type": "integer"
+                  }
+                },
+                "required": [
+                  "total",
+                  "critical",
+                  "high",
+                  "medium",
+                  "low",
+                  "quarantined"
+                ]
+              }
+            },
+            "required": [
+              "vuln",
+              "license",
+              "secret",
+              "ai"
+            ]
+          },
+          "scanned_repositories": {
+            "type": "integer",
+            "description": "Repositories that hold artifacts (group repositories excluded) with a completed scan of any type."
+          },
+          "total_repositories": {
+            "type": "integer",
+            "description": "Repositories of the scope that hold artifacts."
+          },
+          "last_scan_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the latest scan of the scope finished; null when none did."
+          }
+        },
+        "required": [
+          "by_type",
+          "scanned_repositories",
+          "total_repositories",
+          "last_scan_at"
+        ]
+      },
+      "SecurityHealth": {
+        "type": "object",
+        "properties": {
+          "scanners": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "osv, trivy or grype."
+                },
+                "ready": {
+                  "type": "boolean"
+                },
+                "message": {
+                  "type": "string",
+                  "description": "What an operator should do; absent for a ready scanner."
+                },
+                "docs_url": {
+                  "type": "string",
+                  "description": "Installation guide of a scanner that is not ready."
+                }
+              },
+              "required": [
+                "name",
+                "ready"
+              ]
+            }
+          },
+          "last_scan_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "When the latest vulnerability, license, secret or AI scan finished; null when none did."
+          },
+          "scans_pending": {
+            "type": "integer",
+            "description": "Scans that are pending or running."
+          },
+          "scans_failed_24h": {
+            "type": "integer",
+            "description": "Scans that failed in the last 24 hours."
+          },
+          "dependency_track": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean",
+                "description": "The global Dependency-Track integration is enabled."
+              },
+              "last_push_ok": {
+                "type": "boolean",
+                "description": "Whether the latest finished push succeeded; absent when none finished."
+              },
+              "last_push_at": {
+                "type": "string",
+                "format": "date-time",
+                "description": "When that push finished; absent when none did."
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          },
+          "ai": {
+            "type": "object",
+            "properties": {
+              "enabled": {
+                "type": "boolean"
+              }
+            },
+            "required": [
+              "enabled"
+            ]
+          },
+          "unscanned_repositories": {
+            "type": "integer",
+            "description": "Repositories that hold artifacts (group repositories excluded) with no completed scan of any type."
+          }
+        },
+        "required": [
+          "scanners",
+          "last_scan_at",
+          "scans_pending",
+          "scans_failed_24h",
+          "dependency_track",
+          "ai",
+          "unscanned_repositories"
+        ]
+      },
+      "RepoSecuritySummary": {
+        "type": "object",
+        "description": "Counts only; no finding ids, titles or other details.",
+        "properties": {
+          "scanned_at": {
+            "type": "string",
+            "format": "date-time",
+            "nullable": true,
+            "description": "Latest completed scan of the selection; null when nothing was scanned."
+          },
+          "vuln": {
+            "type": "object",
+            "properties": {
+              "critical": {
+                "type": "integer"
+              },
+              "high": {
+                "type": "integer"
+              },
+              "medium": {
+                "type": "integer"
+              },
+              "low": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ]
+          },
+          "license": {
+            "type": "object",
+            "properties": {
+              "violations": {
+                "type": "integer",
+                "description": "License findings that are not suppressed."
+              }
+            },
+            "required": [
+              "violations"
+            ]
+          },
+          "secret": {
+            "type": "object",
+            "properties": {
+              "count": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "count"
+            ]
+          },
+          "ai": {
+            "type": "object",
+            "properties": {
+              "quarantine_recommended": {
+                "type": "integer"
+              },
+              "review_required": {
+                "type": "integer"
+              }
+            },
+            "required": [
+              "quarantine_recommended",
+              "review_required"
+            ]
+          },
+          "quarantined": {
+            "type": "boolean",
+            "description": "True when a result of the selection is quarantined."
+          }
+        },
+        "required": [
+          "scanned_at",
+          "vuln",
+          "license",
+          "secret",
+          "ai",
+          "quarantined"
+        ]
+      },
       "VulnScanOverviewRow": {
         "type": "object",
         "description": "A vulnerability scan without its findings (`vulnerabilities`), with the name and format of its repository. Fetch the findings with GET /api/v1/repositories/{name}/vuln/scans/{id}.",
@@ -7375,6 +7844,369 @@
           },
           "403": {
             "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/security/findings": {
+      "get": {
+        "summary": "List security findings of all repositories",
+        "description": "Vulnerability, license, secret and AI findings across repositories, worst first: highest severity, then newest scan, then id. One finding is one stored scan result (a package version of one type) that reports something; clean results are not listed. Keyset paging: follow `next_cursor` while `has_more` is true. The cursor is bound to the order, not to the filters: send the same filters with it. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the findings of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only the findings of the repositories of this project (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Only findings whose highest severity is exactly this one (the summary strip counts the same way).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only findings in this state.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "quarantined",
+                "suppressed"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring of the repository name or of `name@version`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "limit",
+            "in": "query",
+            "description": "Page size, default 50.",
+            "schema": {
+              "type": "integer",
+              "minimum": 1,
+              "maximum": 200
+            }
+          },
+          {
+            "name": "cursor",
+            "in": "query",
+            "description": "Opaque `next_cursor` of the previous page.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "One page of findings",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "type": "object",
+                  "properties": {
+                    "findings": {
+                      "type": "array",
+                      "items": {
+                        "$ref": "#/components/schemas/SecurityFinding"
+                      }
+                    },
+                    "has_more": {
+                      "type": "boolean",
+                      "description": "True when findings follow this page."
+                    },
+                    "next_cursor": {
+                      "type": "string",
+                      "description": "Pass as `cursor` to fetch the next page. Absent when `has_more` is false."
+                    }
+                  },
+                  "required": [
+                    "findings",
+                    "has_more"
+                  ]
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter or cursor (`validation_failed`)"
+          },
+          "403": {
+            "description": "Neither a global administrator nor a project maintainer or owner"
+          }
+        }
+      }
+    },
+    "/api/v1/security/findings/summary": {
+      "get": {
+        "summary": "Count security findings by type",
+        "description": "Findings per type (total, by highest severity, quarantined) and how many of the repositories that hold artifacts have a completed scan, within the caller's scope. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the findings of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only the findings of the repositories of this project (by name).",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecuritySummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Invalid filter (`validation_failed`)"
+          },
+          "403": {
+            "description": "Neither a global administrator nor a project maintainer or owner"
+          }
+        }
+      }
+    },
+    "/api/v1/security/findings/export": {
+      "get": {
+        "summary": "Export security findings",
+        "description": "Every finding the list's filters select (no paging), as CSV, JSON or a CycloneDX VEX document. CSV and JSON hold at most 10000 findings; `vex` speaks about the artifacts of the vulnerability findings (at most 500 of them) with all their vulnerabilities and VEX decisions: the type filter is ignored, the other filters pick the artifacts, and an artifact hosted in several repositories appears once, keyed by its package URL. `X-Export-Truncated: true` means findings were held back. Global administrators see every repository; a project maintainer or owner sees the repositories of the projects they maintain or own. Everyone else (viewers and developers, anonymous callers, scoped and deploy tokens) gets 403: they use `GET /api/v1/repositories/{name}/security/summary` instead.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "type",
+            "in": "query",
+            "description": "Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "repo",
+            "in": "query",
+            "description": "Only the findings of this repository (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "project",
+            "in": "query",
+            "description": "Only the findings of the repositories of this project (by name).",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "severity",
+            "in": "query",
+            "description": "Only findings whose highest severity is exactly this one (the summary strip counts the same way).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "critical",
+                "high",
+                "medium",
+                "low"
+              ]
+            }
+          },
+          {
+            "name": "status",
+            "in": "query",
+            "description": "Only findings in this state.",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "open",
+                "quarantined",
+                "suppressed"
+              ]
+            }
+          },
+          {
+            "name": "q",
+            "in": "query",
+            "description": "Case-insensitive substring of the repository name or of `name@version`.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "format",
+            "in": "query",
+            "description": "`csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings).",
+            "schema": {
+              "type": "string",
+              "enum": [
+                "csv",
+                "json",
+                "vex"
+              ],
+              "default": "json"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The export as a download. CSV is `text/csv`, JSON `application/json` (`{findings, truncated}`), VEX `application/vnd.cyclonedx+json`.",
+            "content": {
+              "text/csv": {
+                "schema": {
+                  "type": "string"
+                }
+              },
+              "application/json": {
+                "schema": {
+                  "type": "object"
+                }
+              },
+              "application/vnd.cyclonedx+json": {
+                "schema": {
+                  "type": "object"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "Unknown `format` or filter (`validation_failed`)"
+          },
+          "403": {
+            "description": "Neither a global administrator nor a project maintainer or owner"
+          }
+        }
+      }
+    },
+    "/api/v1/security/health": {
+      "get": {
+        "summary": "Security health",
+        "description": "Scanner readiness, the scan queue, the Dependency-Track and AI integrations and the scan coverage in one call (admin only).",
+        "tags": [
+          "Scanning"
+        ],
+        "responses": {
+          "200": {
+            "description": "The health aggregate",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/SecurityHealth"
+                }
+              }
+            }
+          },
+          "403": {
+            "description": "Admin access required"
+          }
+        }
+      }
+    },
+    "/api/v1/repositories/{name}/security/summary": {
+      "get": {
+        "summary": "Security summary of a repository, package or version",
+        "description": "Counts only: vulnerabilities by severity, license violations, secret findings, AI flags and whether a result is quarantined. It carries no finding ids, titles or other details, so it needs only read access to the repository: it is what viewers, developers and tokens that cannot list findings show. Narrow it to a package with `package_name` and to one version with `version`.",
+        "tags": [
+          "Scanning"
+        ],
+        "parameters": [
+          {
+            "name": "name",
+            "in": "path",
+            "required": true,
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "package_name",
+            "in": "query",
+            "description": "Only this package.",
+            "schema": {
+              "type": "string"
+            }
+          },
+          {
+            "name": "version",
+            "in": "query",
+            "description": "Only this version of the package; needs `package_name`.",
+            "schema": {
+              "type": "string"
+            }
+          }
+        ],
+        "responses": {
+          "200": {
+            "description": "The counts",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/RepoSecuritySummary"
+                }
+              }
+            }
+          },
+          "400": {
+            "description": "`version` without `package_name`, or a value that is too long (`validation_failed`)"
+          },
+          "403": {
+            "description": "No read access to the repository"
+          },
+          "404": {
+            "description": "Repository not found"
           }
         }
       }
