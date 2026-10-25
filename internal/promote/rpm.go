@@ -76,7 +76,7 @@ const rpmDestinationQuery = `SELECT d.id::text, db.sha256, db.size_bytes, d.name
 	     OR ($7::text <> '' AND d.filename = $7::text))`
 
 // rpmCopyQuery copies every metadata column of a package row; id, the
-// timestamps and the soft-delete markers take their
+// timestamps, the soft-delete markers and the generated search_tsv take their
 // defaults.
 const rpmCopyQuery = `INSERT INTO rpm_packages (repository_id, blob_id, name, version, release, epoch, arch,
 	       summary, description, license, url, vendor, group_name, packager, source_rpm, build_host, build_time,

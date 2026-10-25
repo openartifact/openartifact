@@ -209,7 +209,7 @@ func fedcLiveRow(t *testing.T, in *fedcInstance, tc *tableCodec, key string) map
 		t.Fatalf("malformed key %q", key)
 	}
 
-	drop := slices.Concat(alwaysLocal, tc.spec.exclude, tc.spec.blobCols)
+	drop := slices.Concat(alwaysLocal, tc.spec.exclude, tc.spec.blobCols, []string{"search_tsv"})
 
 	var raw []byte
 

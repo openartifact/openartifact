@@ -380,6 +380,7 @@ type DebPackage struct {
 	Homepage       *string         `db:"homepage" json:"homepage"`
 	Filename       *string         `db:"filename" json:"filename"`
 	InstalledSize  *int64          `db:"installed_size" json:"installed_size"`
+	SearchTsv      interface{}     `db:"search_tsv" json:"search_tsv"`
 	CreatedAt      time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt      time.Time       `db:"updated_at" json:"updated_at"`
 	ControlFields  json.RawMessage `db:"control_fields" json:"control_fields"`
@@ -726,17 +727,18 @@ type MavenArtifact struct {
 	// Snapshot timestamp string (e.g. "20240101.120000"). NULL for release artifacts.
 	SnapshotTimestamp *string `db:"snapshot_timestamp" json:"snapshot_timestamp"`
 	// Snapshot build number. 0 = not a snapshot or build number not tracked. NULL would be cleaner but 0 is kept for backward compatibility.
-	SnapshotBuildNumber int32      `db:"snapshot_build_number" json:"snapshot_build_number"`
-	IsSnapshot          bool       `db:"is_snapshot" json:"is_snapshot"`
-	RepoPath            string     `db:"repo_path" json:"repo_path"`
-	CreatedAt           time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt           time.Time  `db:"updated_at" json:"updated_at"`
-	BlobID              string     `db:"blob_id" json:"blob_id"`
-	Md5                 string     `db:"md5" json:"md5"`
-	Sha1                string     `db:"sha1" json:"sha1"`
-	Sha512              string     `db:"sha512" json:"sha512"`
-	DeletedAt           *time.Time `db:"deleted_at" json:"deleted_at"`
-	DeletedBy           *string    `db:"deleted_by" json:"deleted_by"`
+	SnapshotBuildNumber int32       `db:"snapshot_build_number" json:"snapshot_build_number"`
+	IsSnapshot          bool        `db:"is_snapshot" json:"is_snapshot"`
+	RepoPath            string      `db:"repo_path" json:"repo_path"`
+	CreatedAt           time.Time   `db:"created_at" json:"created_at"`
+	UpdatedAt           time.Time   `db:"updated_at" json:"updated_at"`
+	SearchTsv           interface{} `db:"search_tsv" json:"search_tsv"`
+	BlobID              string      `db:"blob_id" json:"blob_id"`
+	Md5                 string      `db:"md5" json:"md5"`
+	Sha1                string      `db:"sha1" json:"sha1"`
+	Sha512              string      `db:"sha512" json:"sha512"`
+	DeletedAt           *time.Time  `db:"deleted_at" json:"deleted_at"`
+	DeletedBy           *string     `db:"deleted_by" json:"deleted_by"`
 }
 
 // Distribution tags for npm packages, e.g. latest, next, beta
@@ -774,11 +776,12 @@ type NpmVersion struct {
 	// Full package.json manifest as stored in the packument
 	ManifestJson json.RawMessage `db:"manifest_json" json:"manifest_json"`
 	// Subresource Integrity string, e.g. sha512-<base64>
-	Integrity       string    `db:"integrity" json:"integrity"`
-	Shasum          string    `db:"shasum" json:"shasum"`
-	TarballFilename string    `db:"tarball_filename" json:"tarball_filename"`
-	CreatedAt       time.Time `db:"created_at" json:"created_at"`
-	BlobID          string    `db:"blob_id" json:"blob_id"`
+	Integrity       string      `db:"integrity" json:"integrity"`
+	Shasum          string      `db:"shasum" json:"shasum"`
+	TarballFilename string      `db:"tarball_filename" json:"tarball_filename"`
+	CreatedAt       time.Time   `db:"created_at" json:"created_at"`
+	SearchTsv       interface{} `db:"search_tsv" json:"search_tsv"`
+	BlobID          string      `db:"blob_id" json:"blob_id"`
 	// Auto-updated by trigger on every UPDATE.
 	UpdatedAt time.Time  `db:"updated_at" json:"updated_at"`
 	DeletedAt *time.Time `db:"deleted_at" json:"deleted_at"`
@@ -1183,6 +1186,7 @@ type RpmPackage struct {
 	PackageSize   *int64          `db:"package_size" json:"package_size"`
 	InstalledSize *int64          `db:"installed_size" json:"installed_size"`
 	ArchiveSize   *int64          `db:"archive_size" json:"archive_size"`
+	SearchTsv     interface{}     `db:"search_tsv" json:"search_tsv"`
 	CreatedAt     time.Time       `db:"created_at" json:"created_at"`
 	UpdatedAt     time.Time       `db:"updated_at" json:"updated_at"`
 	HeaderStart   int64           `db:"header_start" json:"header_start"`
@@ -1193,12 +1197,14 @@ type RpmPackage struct {
 }
 
 type RpmRepo struct {
-	ID            string    `db:"id" json:"id"`
-	RepositoryID  string    `db:"repository_id" json:"repository_id"`
-	BaseArch      string    `db:"base_arch" json:"base_arch"`
-	MetadataStale bool      `db:"metadata_stale" json:"metadata_stale"`
-	CreatedAt     time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt     time.Time `db:"updated_at" json:"updated_at"`
+	ID                    string    `db:"id" json:"id"`
+	RepositoryID          string    `db:"repository_id" json:"repository_id"`
+	BaseArch              string    `db:"base_arch" json:"base_arch"`
+	MetadataStale         bool      `db:"metadata_stale" json:"metadata_stale"`
+	CreatedAt             time.Time `db:"created_at" json:"created_at"`
+	UpdatedAt             time.Time `db:"updated_at" json:"updated_at"`
+	SigningKeyID          *string   `db:"signing_key_id" json:"signing_key_id"`
+	SigningKeyFingerprint *string   `db:"signing_key_fingerprint" json:"signing_key_fingerprint"`
 }
 
 type RubygemsGem struct {

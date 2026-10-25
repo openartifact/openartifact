@@ -13,7 +13,6 @@ import (
 	"net/http/httptest"
 	"path/filepath"
 	"regexp"
-	"slices"
 	"strings"
 	"testing"
 	"time"
@@ -60,7 +59,8 @@ func newREEnv(t *testing.T, srcDB, dstDB *database.PostgresDB, bs storage.BlobSt
 func reRows(t *testing.T, pg *database.PostgresDB, tbl *recovery.Table) string {
 	t.Helper()
 
-	cols := slices.Clone(tbl.Exclude)
+	cols := []string{"search_tsv"}
+	cols = append(cols, tbl.Exclude...)
 	where := ""
 
 	if tbl.Name == "projects" {

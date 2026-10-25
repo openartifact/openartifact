@@ -36,7 +36,7 @@ func (npmCodec) Format() string { return kindNPM }
 
 // npmVersionData is the replicated state of an npm_versions row. blob_id
 // carries the tarball's sha256, not the local blobs.id; package_id, id,
-// updated_at and the trash marks stay local.
+// search_tsv, updated_at and the trash marks stay local.
 type npmVersionData struct {
 	FullName        string          `json:"full_name"`
 	Version         string          `json:"version"`
