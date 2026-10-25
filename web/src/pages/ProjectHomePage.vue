@@ -6,144 +6,127 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div>
-    <ProjectHeader
-      :name="projectName"
-      :project="project"
-      :active="activeTab"
-      :counts="counts"
-      :crumbs="crumbs"
-    />
+    <PageHeader :title="project?.display_name || projectName">
+      <template v-if="project" #meta>
+        <ProjectRoleBadge :role="project.my_role" />
+        <span v-if="project.is_system" class="text-xs text-muted">{{ t('projects.builtIn') }}</span>
+        <span v-if="project.display_name && project.display_name !== projectName" class="font-mono text-xs text-muted">{{ projectName }}</span>
+      </template>
+    </PageHeader>
 
-    <div v-if="loading" class="text-muted">{{ t('common.loading') }}</div>
+    <div v-if="loading" class="text-muted" role="status">{{ t('common.loading') }}</div>
 
-    <EmptyState
-      v-else-if="state === 'not-found'"
-      :title="t('projects.notFound.title')"
-      :description="t('projects.notFound.hint')"
-      :action-label="t('projects.back')"
-      action-to="/projects"
-    />
-    <EmptyState
-      v-else-if="state === 'forbidden'"
-      :title="t('projects.forbidden.title')"
-      :description="t('projects.forbidden.hint')"
-      :action-label="t('projects.back')"
-      action-to="/projects"
-    />
-    <div v-else-if="state === 'error'" class="rounded-xl border border-danger/30 bg-surface p-8 text-center" role="alert">
-      <p class="text-sm text-danger">{{ t('projects.detail.loadFailed') }}</p>
-      <AppButton variant="secondary" size="sm" class="mt-3" @click="load">{{ t('browser.retry') }}</AppButton>
+    <div v-else-if="state !== 'ok'" class="rounded-lg border border-border bg-surface">
+      <StateBlock
+        :variant="state === 'forbidden' ? 'forbidden' : state === 'error' ? 'error' : 'empty'"
+        :title="state === 'not-found' ? t('projects.notFound.title') : state === 'forbidden' ? t('projects.forbidden.title') : undefined"
+        :hint="state === 'not-found' ? t('projects.notFound.hint') : state === 'forbidden' ? t('projects.forbidden.hint') : t('projects.detail.loadFailed')"
+      >
+        <template #action>
+          <AppButton v-if="state === 'error'" variant="secondary" @click="load">{{ t('ui.state.retry') }}</AppButton>
+          <AppButton v-else variant="secondary" to="/projects">{{ t('projects.back') }}</AppButton>
+        </template>
+      </StateBlock>
     </div>
 
-    <template v-else-if="project">
-      <!-- Overview -->
-      <div v-if="activeTab === 'overview'" class="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
-        <section class="rounded-xl border border-border bg-surface p-4 sm:p-5" :aria-label="t('projects.overview.facts')">
-          <h2 class="text-sm font-semibold text-foreground mb-3">{{ t('projects.overview.facts') }}</h2>
-          <p v-if="project.description" class="text-sm text-foreground mb-4">{{ project.description }}</p>
-          <p v-else class="text-sm text-muted italic mb-4">{{ t('projects.overview.noDescription') }}</p>
-          <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-sm" data-testid="project-facts">
-            <dt class="text-muted">{{ t('projects.overview.name') }}</dt>
-            <dd class="font-mono text-foreground">{{ project.name }}</dd>
-            <dt class="text-muted">{{ t('projects.overview.yourRole') }}</dt>
-            <dd><ProjectRoleBadge :role="project.my_role" /></dd>
-            <dt class="text-muted">{{ t('projects.overview.repositories') }}</dt>
-            <dd class="text-foreground tabular-nums" data-testid="fact-repositories">{{ project.repository_count ?? repoTotal }}</dd>
-            <dt class="text-muted">{{ t('projects.overview.members') }}</dt>
-            <dd class="text-foreground tabular-nums" data-testid="fact-members">{{ members.length }}</dd>
-            <dt class="text-muted">{{ t('projects.overview.groups') }}</dt>
-            <dd class="text-foreground tabular-nums">{{ groups.length }}</dd>
-            <dt class="text-muted">{{ t('projects.overview.created') }}</dt>
-            <dd class="text-foreground">{{ formatDate(project.created_at) }}</dd>
-          </dl>
-        </section>
-
-        <section class="rounded-xl border border-border bg-surface overflow-hidden" :aria-label="t('projects.overview.recent')">
-          <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-2">
-            <h2 class="text-sm font-semibold text-foreground">{{ t('projects.overview.recent') }}</h2>
-            <router-link
-              v-if="repoTotal > 0"
-              :to="{ path: base, query: { tab: 'repositories' } }"
-              class="text-xs text-primary hover:underline"
-            >{{ t('projects.overview.viewAll') }}</router-link>
+    <AppTabs v-else-if="project" :tabs="tabs" :label="t('projects.tabs')">
+      <template #panel-overview>
+        <div class="grid gap-6 lg:grid-cols-[minmax(0,2fr)_minmax(0,3fr)]">
+          <div class="space-y-6">
+            <section class="rounded-lg border border-border bg-surface p-4 sm:p-5" :aria-label="t('projects.overview.facts')">
+              <h2 class="mb-3 text-sm font-semibold text-foreground">{{ t('projects.overview.facts') }}</h2>
+              <p v-if="project.description" class="mb-4 text-sm text-foreground">{{ project.description }}</p>
+              <p v-else class="mb-4 text-sm italic text-muted">{{ t('projects.overview.noDescription') }}</p>
+              <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-sm" data-testid="project-facts">
+                <dt class="text-muted">{{ t('projects.overview.name') }}</dt>
+                <dd class="font-mono text-foreground">{{ project.name }}</dd>
+                <dt class="text-muted">{{ t('projects.overview.yourRole') }}</dt>
+                <dd><ProjectRoleBadge :role="project.my_role" /></dd>
+                <dt class="text-muted">{{ t('projects.overview.repositories') }}</dt>
+                <dd class="tabular-nums text-foreground" data-testid="fact-repositories">{{ project.repository_count ?? repoTotal }}</dd>
+                <dt class="text-muted">{{ t('projects.overview.members') }}</dt>
+                <dd class="tabular-nums text-foreground" data-testid="fact-members">{{ members.length }}</dd>
+                <dt class="text-muted">{{ t('projects.overview.groups') }}</dt>
+                <dd class="tabular-nums text-foreground">{{ groups.length }}</dd>
+                <dt class="text-muted">{{ t('projects.overview.created') }}</dt>
+                <dd class="text-foreground" :title="formatDateTime(project.created_at)">{{ formatDate(project.created_at) }}</dd>
+              </dl>
+            </section>
+            <ProjectTokensLink :project="projectName" />
           </div>
-          <p v-if="reposError" class="px-4 py-6 text-sm text-danger">{{ reposError }}</p>
-          <p v-else-if="repos.length === 0" class="px-4 py-6 text-sm text-muted">{{ t('projects.overview.noRepos') }}</p>
-          <ul v-else class="divide-y divide-border">
-            <li v-for="r in repos.slice(0, RECENT_LIMIT)" :key="r.id" class="flex items-center justify-between gap-3 px-4 py-2.5">
-              <router-link :to="`/repos/${encodeURIComponent(r.name)}`" class="font-mono text-sm font-medium text-foreground hover:text-primary truncate">{{ r.name }}</router-link>
-              <FormatBadge :format="r.format" size="sm" />
-            </li>
-          </ul>
-        </section>
-      </div>
 
-      <!-- Repositories -->
-      <template v-else-if="activeTab === 'repositories'">
+          <section class="overflow-hidden rounded-lg border border-border bg-surface" :aria-label="t('projects.overview.recent')">
+            <div class="flex items-center justify-between gap-2 border-b border-border px-4 py-3">
+              <h2 class="text-sm font-semibold text-foreground">{{ t('projects.overview.recent') }}</h2>
+              <router-link
+                v-if="repoTotal > 0"
+                :to="{ path: base, query: { tab: 'repositories' } }"
+                class="text-xs text-primary hover:underline"
+              >{{ t('projects.overview.viewAll') }}</router-link>
+            </div>
+            <p v-if="reposError" class="px-4 py-6 text-sm text-danger">{{ reposError }}</p>
+            <p v-else-if="repos.length === 0" class="px-4 py-6 text-sm text-muted">{{ t('projects.overview.noRepos') }}</p>
+            <ul v-else class="divide-y divide-border">
+              <li v-for="r in repos.slice(0, RECENT_LIMIT)" :key="r.id" class="flex items-center justify-between gap-3 px-4 py-2.5">
+                <router-link :to="`/repos/${encodeURIComponent(r.name)}`" class="truncate font-mono text-sm font-medium text-foreground hover:text-primary">{{ r.name }}</router-link>
+                <FormatBadge :format="r.format" size="sm" />
+              </li>
+            </ul>
+          </section>
+        </div>
+      </template>
+
+      <template #panel-repositories>
         <div v-if="canCreateRepo" class="mb-4 flex justify-end">
           <AppButton :to="{ path: '/repos', query: { new: '1', project: projectName } }" data-testid="new-repo">{{ t('repos.new') }}</AppButton>
         </div>
-        <p v-if="reposError" class="text-sm text-danger" role="alert">{{ reposError }}</p>
-        <EmptyState
-          v-else-if="repoTotal === 0"
-          :title="t('projects.repos.empty')"
-          :description="t('projects.repos.emptyHint')"
-        />
-        <section v-else class="rounded-xl border border-border bg-surface overflow-hidden" :aria-label="t('projects.repos.title')">
-          <div class="overflow-x-auto">
-            <table class="w-full">
-              <thead>
-                <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
-                  <th scope="col" class="text-left px-4 py-2.5">{{ t('repos.column.name') }}</th>
-                  <th scope="col" class="text-left px-4 py-2.5">{{ t('repos.column.format') }}</th>
-                  <th scope="col" class="text-left px-4 py-2.5">{{ t('repos.column.type') }}</th>
-                  <th scope="col" class="text-left px-4 py-2.5">{{ t('repos.column.visibility') }}</th>
-                  <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.repos.column.created') }}</th>
-                </tr>
-              </thead>
-              <tbody class="divide-y divide-border">
-                <tr v-for="r in repos" :key="r.id" class="hover:bg-surface-hover/40 transition-colors" data-testid="repo-row">
-                  <td class="px-4 py-3">
-                    <router-link :to="`/repos/${encodeURIComponent(r.name)}`" class="font-mono text-sm font-semibold text-foreground hover:text-primary">{{ r.name }}</router-link>
-                  </td>
-                  <td class="px-4 py-3"><FormatBadge :format="r.format" /></td>
-                  <td class="px-4 py-3 text-sm text-muted">{{ r.repo_type || 'hosted' }}</td>
-                  <td class="px-4 py-3 text-sm text-muted">{{ r.public ? t('repos.public') : t('repos.private') }}</td>
-                  <td class="px-4 py-3 text-xs text-muted">{{ formatDate(r.created_at) }}</td>
-                </tr>
-              </tbody>
-            </table>
-          </div>
-          <Pagination :total="repoTotal" :page="repoPage" :limit="PAGE_SIZE" @change="onRepoPage" />
-        </section>
+        <ListTable
+          :columns="repoColumns"
+          :caption="t('projects.repos.title')"
+          :rows="repos"
+          :total="repoTotal"
+          :page="repoPage"
+          :limit="PAGE_SIZE"
+          :error="reposError"
+          :empty-title="t('projects.repos.empty')"
+          :empty-hint="t('projects.repos.emptyHint')"
+          @update:page="onRepoPage"
+          @retry="loadRepos"
+        >
+          <template #cell-name="{ row }">
+            <router-link :to="`/repos/${encodeURIComponent(row.name)}`" class="font-mono text-sm font-semibold text-foreground hover:text-primary">{{ row.name }}</router-link>
+          </template>
+          <template #cell-format="{ row }"><FormatBadge :format="row.format" /></template>
+          <template #cell-type="{ row }"><span class="text-muted">{{ row.repo_type || 'hosted' }}</span></template>
+          <template #cell-visibility="{ row }"><span class="text-muted">{{ row.public ? t('repos.public') : t('repos.private') }}</span></template>
+          <template #cell-created="{ row }">
+            <time :datetime="row.created_at" :title="formatDateTime(row.created_at)" class="text-xs text-muted">{{ timeAgo(row.created_at) }}</time>
+          </template>
+          <template v-if="canCreateRepo" #empty-action>
+            <AppButton :to="{ path: '/repos', query: { new: '1', project: projectName } }">{{ t('repos.new') }}</AppButton>
+          </template>
+        </ListTable>
       </template>
 
-      <!-- Usage -->
-      <ProjectUsageTab v-else-if="activeTab === 'usage'" :project="projectName" />
+      <template #panel-members>
+        <MemberTable :project="project" :members="members" :groups="groups" @changed="loadAccess" />
+      </template>
 
-      <!-- Members -->
-      <MemberTable
-        v-else-if="activeTab === 'members'"
-        :project="project"
-        :members="members"
-        :groups="groups"
-        @changed="loadAccess"
-      />
+      <template #panel-activity>
+        <ProjectActivityTab :project="projectName" />
+      </template>
 
-      <!-- Tokens -->
-      <ProjectTokensTab v-else-if="activeTab === 'tokens'" :project="project" />
+      <template #panel-usage>
+        <div class="space-y-6">
+          <ProjectUsageTab :project="projectName" />
+          <ProjectQuotaEditor :project="projectName" :editable="session.isAdmin" />
+        </div>
+      </template>
 
-      <!-- Activity -->
-      <ProjectActivityTab v-else-if="activeTab === 'activity'" :project="projectName" />
-
-      <!-- Settings -->
-      <ProjectSettingsTab
-        v-else-if="activeTab === 'settings'"
-        :project="project"
-        @saved="onSaved"
-        @deleted="onDeleted"
-      />
-    </template>
+      <template #panel-settings>
+        <ProjectSettingsTab :project="project" @saved="onSaved" @deleted="onDeleted" />
+      </template>
+    </AppTabs>
   </div>
 </template>
 
@@ -151,11 +134,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import { useRoute, useRouter } from 'vue-router'
 import AppButton from '../components/AppButton.vue'
-import EmptyState from '../components/EmptyState.vue'
 import FormatBadge from '../components/FormatBadge.vue'
-import Pagination from '../components/Pagination.vue'
-import ProjectHeader from '../components/ProjectHeader.vue'
+import PageHeader from '../components/PageHeader.vue'
 import ProjectRoleBadge from '../components/ProjectRoleBadge.vue'
+import ProjectTokensLink from '../components/ProjectTokensLink.vue'
+import AppTabs from '../components/ui/AppTabs.vue'
+import ListTable, { type ListColumn } from '../components/ui/ListTable.vue'
+import StateBlock from '../components/ui/StateBlock.vue'
 import {
   getProject,
   listProjectGroups,
@@ -166,17 +151,18 @@ import {
   type ProjectMember,
 } from '../api/projects'
 import type { Repository } from '../api/repositories'
+import type { TabDef } from '../composables/useUrlTab'
 import { asyncTab } from '../lib/asyncTab'
-import { resolveCrumbs, type Crumb } from '../lib/crumbs'
-import { formatDate } from '../lib/datetime'
+import { formatDate, formatDateTime, timeAgo } from '../lib/datetime'
 import { atLeast, errorStatus, visibleProjectTabs, type ProjectTab } from '../lib/projectAccess'
+import { useSessionStore } from '../stores/session'
 import { t } from '../i18n/en'
 
-// Overview and Repositories render inline; every other panel loads on first use.
+// Overview and Repositories render here; every other panel loads on first use.
 const MemberTable = asyncTab(() => import('../components/MemberTable.vue'))
 const ProjectActivityTab = asyncTab(() => import('../components/ProjectActivityTab.vue'))
+const ProjectQuotaEditor = asyncTab(() => import('../components/ProjectQuotaEditor.vue'))
 const ProjectSettingsTab = asyncTab(() => import('../components/ProjectSettingsTab.vue'))
-const ProjectTokensTab = asyncTab(() => import('../components/ProjectTokensTab.vue'))
 const ProjectUsageTab = asyncTab(() => import('../components/ProjectUsageTab.vue'))
 
 const PAGE_SIZE = 20
@@ -184,6 +170,7 @@ const RECENT_LIMIT = 5
 
 const route = useRoute()
 const router = useRouter()
+const session = useSessionStore()
 
 const project = ref<Project | null>(null)
 const loading = ref(true)
@@ -201,23 +188,26 @@ const canCreateRepo = computed(() => atLeast(project.value?.my_role, 'maintainer
 const projectName = computed(() => route.params.project as string)
 const base = computed(() => `/projects/${encodeURIComponent(projectName.value)}`)
 
-const counts = computed<Partial<Record<ProjectTab, number>>>(() =>
-  project.value ? { repositories: repoTotal.value, members: members.value.length } : {},
-)
-
-// The active tab lives in the URL (?tab=) so it is deep-linkable and back-button
-// safe. Unknown or not-permitted values fall back to the overview.
-const activeTab = computed<ProjectTab>(() => {
-  const wanted = typeof route.query.tab === 'string' ? route.query.tab : ''
+const tabs = computed<TabDef[]>(() => {
   const allowed = visibleProjectTabs(project.value?.my_role)
-  return (allowed as string[]).includes(wanted) ? (wanted as ProjectTab) : 'overview'
+  const defs: Record<ProjectTab, TabDef> = {
+    overview: { id: 'overview', label: t('projects.tab.overview') },
+    repositories: { id: 'repositories', label: t('projects.tab.repositories'), count: repoTotal.value },
+    members: { id: 'members', label: t('projects.tab.members'), count: members.value.length + groups.value.length },
+    activity: { id: 'activity', label: t('projects.tab.activity') },
+    usage: { id: 'usage', label: t('projects.tab.usage') },
+    settings: { id: 'settings', label: t('projects.tab.settings') },
+  }
+  return allowed.map((id) => defs[id])
 })
 
-const crumbs = computed<Crumb[]>(() => {
-  const trail = resolveCrumbs(route)
-  if (!project.value || activeTab.value === 'overview') return trail
-  return [...trail, { label: t(`projects.tab.${activeTab.value}`) }]
-})
+const repoColumns = computed<ListColumn[]>(() => [
+  { key: 'name', label: t('repos.column.name') },
+  { key: 'format', label: t('repos.column.format') },
+  { key: 'type', label: t('repos.column.type') },
+  { key: 'visibility', label: t('repos.column.visibility') },
+  { key: 'created', label: t('projects.repos.column.created') },
+])
 
 async function loadRepos(): Promise<void> {
   try {

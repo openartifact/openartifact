@@ -2,14 +2,11 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Form model of the admin project create/edit drawer and its mapping to the API policy.
+// Form model of the project policy drawer and its mapping to the API policy.
 
 import { PROJECT_REPO_TYPES, type Project, type ProjectRepoType } from '../api/projects'
 
 export interface ProjectForm {
-  name: string
-  display_name: string
-  description: string
   all_formats: boolean
   allowed_formats: string[]
   allowed_repo_types: ProjectRepoType[]
@@ -21,9 +18,6 @@ export interface ProjectForm {
 
 export function emptyProjectForm(): ProjectForm {
   return {
-    name: '',
-    display_name: '',
-    description: '',
     all_formats: true,
     allowed_formats: [],
     allowed_repo_types: [...PROJECT_REPO_TYPES],
@@ -36,9 +30,6 @@ export function emptyProjectForm(): ProjectForm {
 
 export function projectToForm(project: Project): ProjectForm {
   return {
-    name: project.name ?? '',
-    display_name: project.display_name ?? '',
-    description: project.description ?? '',
     all_formats: project.allowed_formats == null,
     allowed_formats: [...(project.allowed_formats ?? [])],
     allowed_repo_types: [...(project.allowed_repo_types ?? PROJECT_REPO_TYPES)],

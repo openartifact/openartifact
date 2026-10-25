@@ -10,7 +10,6 @@ import type { Component } from 'vue'
 import SSOPage from '../settings/sections/SSOPage.vue'
 import PermissionsPage from '../settings/sections/PermissionsPage.vue'
 import AdminTokensPage from '../admin/TokensPage.vue'
-import AdminProjectsPage from '../admin/ProjectsPage.vue'
 import WebhooksPage from '../settings/sections/WebhooksPage.vue'
 import SettingsTokensPage from '../settings/TokensPage.vue'
 import ProjectListPage from '../ProjectListPage.vue'
@@ -47,7 +46,6 @@ const CASES: { name: string; page: Component; route: string; path: string; docs:
   { name: 'no permission targets', page: PermissionsPage, route: 'admin-permissions', path: '/admin/permissions', docs: 'security/rbac', label: 'How permission targets work' },
   { name: 'no API tokens (admin)', page: AdminTokensPage, route: 'admin-tokens', path: '/admin/tokens', docs: 'security/authentication', label: 'About API tokens' },
   { name: 'no API tokens (settings)', page: SettingsTokensPage, route: 'settings-tokens', path: '/settings/tokens', docs: 'security/authentication', label: 'About API tokens' },
-  { name: 'no projects (admin)', page: AdminProjectsPage, route: 'admin-projects', path: '/admin/projects', docs: 'security/projects', label: 'About projects' },
   { name: 'no projects', page: ProjectListPage, route: 'projects', path: '/projects', docs: 'security/projects', label: 'About projects' },
   { name: 'no webhooks', page: WebhooksPage, route: 'admin-webhooks', path: '/admin/webhooks', docs: 'operations/webhooks', label: 'Webhook events and signatures' },
 ]

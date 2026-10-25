@@ -6,9 +6,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <!--
   Settings of a project. Display name and description are editable by owners;
-  the policy is always read-only here (global admins change it in the
-  administration area); deleting needs an owner and never applies to the
-  system project.
+  the policy is shown read-only and global admins edit it in a drawer; cleanup
+  defaults follow the owner rule; access tokens link to the token settings;
+  deleting needs an owner, a typed name, and never applies to the system project.
 -->
 <template>
   <div class="space-y-6">
@@ -54,7 +54,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <h2 class="text-sm font-semibold text-foreground">{{ t('projects.settings.policy') }}</h2>
       <p class="text-xs text-muted mt-0.5 mb-3">
         {{ t('projects.settings.policyManaged') }}
-        <router-link v-if="session.isAdmin" to="/settings/project-policy" class="text-primary hover:underline">{{ t('projects.settings.policyAdminLink') }}</router-link>
       </p>
       <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-sm">
         <dt class="text-muted">{{ t('projects.settings.allowedFormats') }}</dt>
@@ -72,13 +71,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ project.token_max_ttl_days ? `${project.token_max_ttl_days} ${t('projects.settings.days')}` : t('projects.settings.noCap') }}
         </dd>
       </dl>
+      <AppButton v-if="session.isAdmin" variant="secondary" size="sm" class="mt-3" data-testid="edit-policy" @click="policyOpen = true">
+        {{ t('projects.settings.policyEdit') }}
+      </AppButton>
     </section>
-
-    <!-- Quota: edited by global admins only -->
-    <ProjectQuotaEditor v-if="project.name" :project="project.name" :editable="session.isAdmin" />
 
     <!-- Cleanup defaults -->
     <ProjectCleanupDefaults v-if="project.name" :project="project.name" :can-edit="isOwner || session.isAdmin" />
+
+    <ProjectTokensLink v-if="project.name" :project="project.name" />
 
     <!-- Delete -->
     <section v-if="isOwner" class="rounded-xl border border-danger/30 bg-surface p-4 sm:p-5" :aria-label="t('projects.settings.danger')" data-testid="project-danger">
@@ -89,6 +90,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <AppButton variant="danger-outline" size="sm" @click="openDelete">{{ t('projects.settings.deleteAction') }}</AppButton>
       </template>
     </section>
+
+    <ProjectPolicyDrawer :open="policyOpen" :project="project" @close="policyOpen = false" @saved="(p) => emit('saved', p)" />
 
     <ConfirmDialog
       :open="deleteOpen"
@@ -120,7 +123,8 @@ import { computed, ref, watch } from 'vue'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import ProjectCleanupDefaults from './ProjectCleanupDefaults.vue'
-import ProjectQuotaEditor from './ProjectQuotaEditor.vue'
+import ProjectPolicyDrawer from './ProjectPolicyDrawer.vue'
+import ProjectTokensLink from './ProjectTokensLink.vue'
 import { deleteProject, updateProject, PROJECT_REPO_TYPES, type Project } from '../api/projects'
 import { formatLabel } from '../lib/formats'
 import { errorStatus } from '../lib/projectAccess'
@@ -181,6 +185,7 @@ async function save(): Promise<void> {
   }
 }
 
+const policyOpen = ref(false)
 const deleteOpen = ref(false)
 const confirmName = ref('')
 const deleting = ref(false)

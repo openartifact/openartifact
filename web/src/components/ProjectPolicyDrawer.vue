@@ -5,49 +5,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <AdminDialog
+  <Drawer
     :open="open"
-    drawer
-    max-width="max-w-lg"
-    :eyebrow="mode === 'create' ? t('adm.projects.new') : t('adm.projects.edit')"
-    :title="mode === 'create' ? t('adm.projects.createTitle') : tp('adm.projects.editTitle', { name: project?.name ?? '' })"
+    :eyebrow="t('adm.projects.edit')"
+    :title="tp('adm.projects.editTitle', { name: project?.name ?? '' })"
+    :busy="saving"
     @close="emit('close')"
   >
     <form id="project-form" class="space-y-4" @submit.prevent="save">
-      <div v-if="mode === 'create'">
-        <label for="project-name" class="block text-xs font-semibold text-foreground mb-1.5">
-          {{ t('adm.projects.field.name') }} <span class="text-danger ml-0.5">*</span>
-        </label>
-        <input
-          id="project-name"
-          v-model="form.name"
-          type="text"
-          required
-          placeholder="my-project"
-          class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
-        />
-        <p class="text-caption text-muted mt-1 font-mono">{{ t('adm.projects.field.nameHint') }}</p>
-      </div>
       <div>
-        <label for="project-display-name" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.projects.field.displayName') }}</label>
-        <input
-          id="project-display-name"
-          v-model="form.display_name"
-          type="text"
-          class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors"
-        />
-      </div>
-      <div>
-        <label for="project-description" class="block text-xs font-semibold text-foreground mb-1.5">{{ t('adm.projects.field.description') }}</label>
-        <textarea
-          id="project-description"
-          v-model="form.description"
-          rows="3"
-          class="w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm placeholder:text-muted focus:ring-2 focus:ring-primary resize-none transition-colors"
-        />
-      </div>
-
-      <div class="pt-2 border-t border-border">
         <p class="text-sm font-semibold text-foreground">{{ t('adm.projects.policy.title') }}</p>
         <p class="text-caption text-muted mt-0.5">{{ t('adm.projects.policy.hint') }}</p>
       </div>
@@ -121,84 +87,58 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
     </form>
     <template #footer>
-      <button
-        type="button"
-        class="px-3 py-1.5 rounded-lg text-sm font-medium text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-        @click="emit('close')"
-      >
-        {{ t('common.cancel') }}
-      </button>
-      <AppButton variant="primary" size="sm" type="submit" form="project-form" :loading="saving" :disabled="(mode === 'create' && !form.name.trim())">
-        {{ mode === 'create' ? t('adm.projects.createAction') : t('adm.projects.saveAction') }}
-      </AppButton>
+      <AppButton variant="secondary" size="sm" :disabled="saving" @click="emit('close')">{{ t('common.cancel') }}</AppButton>
+      <AppButton variant="primary" size="sm" type="submit" form="project-form" :loading="saving">{{ t('adm.projects.saveAction') }}</AppButton>
     </template>
-  </AdminDialog>
+  </Drawer>
 </template>
 
 <script setup lang="ts">
 import { ref, watch } from 'vue'
-import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
-import { PROJECT_REPO_TYPES, createProject, updateProject, type Project } from '../api/projects'
+import Drawer from './ui/Drawer.vue'
+import { PROJECT_REPO_TYPES, updateProject, type Project } from '../api/projects'
 import { t, tp } from '../i18n/en'
 import { ALL_FORMATS, formatLabel } from '../lib/formats'
-import { emptyProjectForm, formPolicy, projectToForm } from '../lib/projectForm'
+import { formPolicy, projectToForm } from '../lib/projectForm'
+import { errorStatus } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
 
 const props = defineProps<{
   open: boolean
-  mode: 'create' | 'edit'
-  /** The project being edited; unused in create mode. */
+  /** The project whose policy is edited. */
   project: Project | null
 }>()
 
 const emit = defineEmits<{
   close: []
-  /** The project was created or updated on the server. */
-  saved: []
+  /** The policy was saved on the server. */
+  saved: [project: Project]
 }>()
 
 const toasts = useToastStore()
 const saving = ref(false)
-const form = ref(emptyProjectForm())
+const form = ref(projectToForm({}))
 
-// Each opening starts from a fresh form (create) or the project's current values (edit).
+// Each opening starts from the project's current policy.
 watch(
   () => props.open,
   (open) => {
-    if (!open) return
-    form.value = props.mode === 'create' || !props.project ? emptyProjectForm() : projectToForm(props.project)
+    if (open && props.project) form.value = projectToForm(props.project)
   },
 )
 
 async function save(): Promise<void> {
-  if (saving.value) return
-  const current = form.value
-  if (props.mode === 'create' && !current.name.trim()) return
+  if (saving.value || !props.project?.name) return
   saving.value = true
-  const policy = formPolicy(current)
   try {
-    if (props.mode === 'create') {
-      await createProject({
-        name: current.name.trim(),
-        display_name: current.display_name.trim() || undefined,
-        description: current.description.trim() || undefined,
-        ...policy,
-      })
-      toasts.success(t('adm.projects.created'))
-    } else if (props.project?.name) {
-      // Empty strings are sent on purpose so a field can be cleared.
-      await updateProject(props.project.name, {
-        display_name: current.display_name.trim(),
-        description: current.description.trim(),
-        ...policy,
-      })
-      toasts.success(t('adm.projects.updated'))
-    }
+    // Only the policy: name and description are edited by owners in General.
+    const updated = await updateProject(props.project.name, formPolicy(form.value))
+    toasts.success(t('adm.projects.updated'))
+    emit('saved', updated)
     emit('close')
-    emit('saved')
   } catch (err) {
-    toasts.error(err instanceof Error ? err.message : t('adm.projects.saveFailed'))
+    toasts.error(errorStatus(err) === 403 ? t('projects.settings.forbidden') : t('adm.projects.saveFailed'))
   } finally {
     saving.value = false
   }

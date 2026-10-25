@@ -51,6 +51,16 @@ export type Project = GeneratedProject & {
   is_system?: boolean
 }
 
+/** A project row of the list: the project plus the counters the list endpoint computes. */
+export type ProjectListItem = Project & {
+  /** Users with a direct role in the project. */
+  member_count?: number
+  /** Stored bytes across the project's repositories. */
+  usage?: { size_bytes?: number }
+  /** Present only when a size limit is set. */
+  quota?: { limit_bytes?: number }
+}
+
 export type ProjectMember = GeneratedProjectMember & { username?: string }
 
 /** One `/auth/me` entry: a project the caller holds a role in. */
@@ -60,7 +70,7 @@ export interface ProjectMembership {
 }
 
 interface ProjectList {
-  projects: Project[]
+  projects: ProjectListItem[]
   /** The caller may create projects (global admin, or self-service creation is enabled). */
   can_create: boolean
 }
@@ -97,7 +107,7 @@ function send<T>(path: string, method: string, body: unknown): Promise<T> {
 
 /** Projects the caller belongs to; `all` lists every project (global admins only, others get 403). */
 export async function listProjects(opts: { all?: boolean } = {}): Promise<ProjectList> {
-  const res = await request<{ projects?: Project[]; can_create?: boolean }>(
+  const res = await request<{ projects?: ProjectListItem[]; can_create?: boolean }>(
     `/api/v1/projects${opts.all ? '?all=true' : ''}`,
   )
   return { projects: res?.projects ?? [], can_create: res?.can_create === true }

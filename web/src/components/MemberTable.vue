@@ -12,36 +12,130 @@ SPDX-License-Identifier: AGPL-3.0-or-later
   the page; this component mutates through the API and asks it to reload.
 -->
 <template>
-  <div class="space-y-6">
+  <div class="space-y-8">
     <p v-if="project.is_system" class="text-sm text-muted" data-testid="members-system">{{ t('projects.members.system') }}</p>
     <p v-else-if="!canManage" class="text-sm text-muted" data-testid="members-readonly">{{ t('projects.members.readOnly') }}</p>
 
     <!-- Members -->
-    <section class="rounded-xl border border-border bg-surface overflow-hidden" :aria-label="t('projects.members.title')">
-      <div class="px-4 py-3 border-b border-border">
-        <h2 class="text-sm font-semibold text-foreground">{{ t('projects.members.title') }}</h2>
-        <p class="text-xs text-muted mt-0.5">{{ t('projects.members.hint') }}</p>
+    <section :aria-label="t('projects.members.title')">
+      <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-foreground">{{ t('projects.members.title') }}</h2>
+          <p class="mt-0.5 text-xs text-muted">{{ t('projects.members.hint') }}</p>
+        </div>
+        <AppButton v-if="canManage" variant="primary" size="sm" data-testid="member-add" @click="memberDrawer = true">
+          {{ t('projects.members.add') }}
+        </AppButton>
       </div>
-
-      <form
-        v-if="canManage"
-        class="px-4 py-3 border-b border-border bg-surface-hover/20 flex flex-wrap items-end gap-2"
-        data-testid="member-add"
-        @submit.prevent="addMember"
+      <ListTable
+        :columns="memberColumns"
+        :caption="t('projects.members.title')"
+        :rows="members"
+        row-key="user_id"
+        :total="members.length"
+        :limit="Math.max(members.length, 1)"
+        :empty-title="t('projects.members.empty')"
       >
-        <div class="flex-1 min-w-40">
-          <label for="member-username" class="block text-xs font-semibold text-foreground mb-1">{{ t('projects.members.username') }}</label>
+        <template #cell-user="{ row }">
+          <span class="font-mono text-sm text-foreground" data-testid="member-row">{{ memberName(row) }}</span>
+        </template>
+        <template #cell-role="{ row }">
+          <RoleSelect
+            v-if="canManage"
+            :model-value="row.role ?? 'viewer'"
+            :roles="MEMBER_ROLES_ASC"
+            :grantable="memberGrantable"
+            :disabled="!memberEditable(row)"
+            :title="memberProtected(row) ? t('projects.members.protected') : undefined"
+            :label="`${t('projects.members.roleOf')} ${memberName(row)}`"
+            @update:model-value="(role) => changeMemberRole(row, role as ProjectMemberRole)"
+          />
+          <ProjectRoleBadge v-else :role="row.role" />
+        </template>
+        <template #cell-joined="{ row }">
+          <time :datetime="row.created_at" :title="formatDateTime(row.created_at)" class="text-xs text-muted">{{ timeAgo(row.created_at) }}</time>
+        </template>
+        <template #cell-actions="{ row }">
+          <button
+            type="button"
+            :title="t('projects.members.remove')"
+            :aria-label="`${t('projects.members.remove')}: ${memberName(row)}`"
+            :disabled="!memberEditable(row)"
+            class="rounded-md p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:pointer-events-none disabled:opacity-40 max-md:h-11 max-md:w-11"
+            @click="removeMemberTarget = row"
+          >
+            <TrashIcon class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </template>
+      </ListTable>
+    </section>
+
+    <!-- Groups -->
+    <section :aria-label="t('projects.groups.title')" data-testid="project-groups">
+      <div class="mb-3 flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <h2 class="text-sm font-semibold text-foreground">{{ t('projects.groups.title') }}</h2>
+          <p class="mt-0.5 text-xs text-muted">{{ t('projects.groups.hint') }}</p>
+        </div>
+        <AppButton v-if="canManage" variant="secondary" size="sm" data-testid="group-attach" @click="groupDrawer = true">
+          {{ t('projects.groups.attach') }}
+        </AppButton>
+      </div>
+      <ListTable
+        :columns="groupColumns"
+        :caption="t('projects.groups.title')"
+        :rows="groups"
+        row-key="group_id"
+        :total="groups.length"
+        :limit="Math.max(groups.length, 1)"
+        :empty-title="t('projects.groups.empty')"
+      >
+        <template #cell-group="{ row }">
+          <span class="font-mono text-sm text-foreground" data-testid="group-row">{{ groupName(row) }}</span>
+        </template>
+        <template #cell-role="{ row }">
+          <RoleSelect
+            v-if="canManage"
+            :model-value="row.role ?? 'viewer'"
+            :roles="GROUP_ROLES_ASC"
+            :grantable="groupGrantable"
+            :disabled="!canModifyEntry(myRole, row.role)"
+            :label="`${t('projects.groups.roleOf')} ${groupName(row)}`"
+            @update:model-value="(role) => changeGroupRole(row, role as ProjectGroupRole)"
+          />
+          <ProjectRoleBadge v-else :role="row.role" />
+        </template>
+        <template #cell-attached="{ row }">
+          <time :datetime="row.created_at" :title="formatDateTime(row.created_at)" class="text-xs text-muted">{{ timeAgo(row.created_at) }}</time>
+        </template>
+        <template #cell-actions="{ row }">
+          <button
+            type="button"
+            :title="t('projects.groups.remove')"
+            :aria-label="`${t('projects.groups.remove')}: ${groupName(row)}`"
+            :disabled="!canModifyEntry(myRole, row.role)"
+            class="rounded-md p-1.5 text-muted transition-colors hover:bg-danger/10 hover:text-danger disabled:pointer-events-none disabled:opacity-40 max-md:h-11 max-md:w-11"
+            @click="removeGroupTarget = row"
+          >
+            <TrashIcon class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </template>
+      </ListTable>
+    </section>
+
+    <Drawer :open="memberDrawer" :title="t('projects.members.add')" :eyebrow="t('projects.members.title')" :busy="adding" @close="memberDrawer = false">
+      <form id="member-add-form" class="space-y-4" @submit.prevent="addMember">
+        <FormField :label="t('projects.members.username')" id="member-username">
           <input
             id="member-username"
             v-model="newUsername"
             type="text"
             autocomplete="off"
             :placeholder="t('projects.members.usernamePlaceholder')"
-            class="w-full px-3 py-1.5 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary"
+            :class="[INPUT_CLASS, 'font-mono']"
           />
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-foreground mb-1" for="member-new-role">{{ t('projects.role.label') }}</label>
+        </FormField>
+        <FormField :label="t('projects.role.label')" id="member-new-role">
           <RoleSelect
             id="member-new-role"
             v-model="newRole"
@@ -49,85 +143,30 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             :grantable="memberGrantable"
             :label="t('projects.role.label')"
           />
-        </div>
-        <AppButton variant="primary" size="sm" type="submit" :loading="adding" :disabled="!newUsername.trim()">
+        </FormField>
+        <p v-if="myRole !== 'owner'" class="text-caption text-muted">{{ t('projects.members.escalation') }}</p>
+      </form>
+      <template #footer>
+        <AppButton variant="secondary" size="sm" :disabled="adding" @click="memberDrawer = false">{{ t('common.cancel') }}</AppButton>
+        <AppButton variant="primary" size="sm" type="submit" form="member-add-form" :loading="adding" :disabled="!newUsername.trim()">
           {{ t('projects.members.addAction') }}
         </AppButton>
-        <p v-if="myRole !== 'owner'" class="basis-full text-caption text-muted">{{ t('projects.members.escalation') }}</p>
-      </form>
+      </template>
+    </Drawer>
 
-      <EmptyState v-if="members.length === 0" :title="t('projects.members.empty')" />
-      <div v-else class="overflow-x-auto">
-        <table class="w-full">
-          <thead>
-            <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.members.column.user') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.members.column.role') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.members.column.joined') }}</th>
-              <th v-if="canManage" scope="col" class="w-12 px-4 py-2.5"><span class="sr-only">{{ t('common.actions') }}</span></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="member in members" :key="member.user_id" data-testid="member-row">
-              <td class="px-4 py-3 font-mono text-sm text-foreground">{{ memberName(member) }}</td>
-              <td class="px-4 py-3">
-                <RoleSelect
-                  v-if="canManage"
-                  :model-value="member.role ?? 'viewer'"
-                  :roles="MEMBER_ROLES_ASC"
-                  :grantable="memberGrantable"
-                  :disabled="!memberEditable(member)"
-                  :title="memberProtected(member) ? t('projects.members.protected') : undefined"
-                  :label="`${t('projects.members.roleOf')} ${memberName(member)}`"
-                  @update:model-value="(role) => changeMemberRole(member, role as ProjectMemberRole)"
-                />
-                <ProjectRoleBadge v-else :role="member.role" />
-              </td>
-              <td class="px-4 py-3 text-xs text-muted">{{ formatDate(member.created_at) }}</td>
-              <td v-if="canManage" class="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  :title="t('projects.members.remove')"
-                  :aria-label="`${t('projects.members.remove')}: ${memberName(member)}`"
-                  :disabled="!memberEditable(member)"
-                  class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                  @click="removeMemberTarget = member"
-                >
-                  <TrashIcon class="w-4 h-4" aria-hidden="true" />
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
-
-    <!-- Groups -->
-    <section class="rounded-xl border border-border bg-surface overflow-hidden" :aria-label="t('projects.groups.title')" data-testid="project-groups">
-      <div class="px-4 py-3 border-b border-border">
-        <h2 class="text-sm font-semibold text-foreground">{{ t('projects.groups.title') }}</h2>
-        <p class="text-xs text-muted mt-0.5">{{ t('projects.groups.hint') }}</p>
-      </div>
-
-      <form
-        v-if="canManage"
-        class="px-4 py-3 border-b border-border bg-surface-hover/20 flex flex-wrap items-end gap-2"
-        data-testid="group-attach"
-        @submit.prevent="attachGroup"
-      >
-        <div class="flex-1 min-w-40">
-          <label for="group-name" class="block text-xs font-semibold text-foreground mb-1">{{ t('projects.groups.name') }}</label>
+    <Drawer :open="groupDrawer" :title="t('projects.groups.attach')" :eyebrow="t('projects.groups.title')" :busy="attaching" @close="groupDrawer = false">
+      <form id="group-attach-form" class="space-y-4" @submit.prevent="attachGroup">
+        <FormField :label="t('projects.groups.name')" id="group-name">
           <input
             id="group-name"
             v-model="newGroupName"
             type="text"
             autocomplete="off"
             :placeholder="t('projects.groups.namePlaceholder')"
-            class="w-full px-3 py-1.5 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary"
+            :class="[INPUT_CLASS, 'font-mono']"
           />
-        </div>
-        <div>
-          <label class="block text-xs font-semibold text-foreground mb-1" for="group-new-role">{{ t('projects.role.label') }}</label>
+        </FormField>
+        <FormField :label="t('projects.role.label')" id="group-new-role">
           <RoleSelect
             id="group-new-role"
             v-model="newGroupRole"
@@ -135,56 +174,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             :grantable="groupGrantable"
             :label="t('projects.role.label')"
           />
-        </div>
-        <AppButton variant="primary" size="sm" type="submit" :loading="attaching" :disabled="!newGroupName.trim()">
+        </FormField>
+      </form>
+      <template #footer>
+        <AppButton variant="secondary" size="sm" :disabled="attaching" @click="groupDrawer = false">{{ t('common.cancel') }}</AppButton>
+        <AppButton variant="primary" size="sm" type="submit" form="group-attach-form" :loading="attaching" :disabled="!newGroupName.trim()">
           {{ t('projects.groups.attachAction') }}
         </AppButton>
-      </form>
-
-      <EmptyState v-if="groups.length === 0" :title="t('projects.groups.empty')" />
-      <div v-else class="overflow-x-auto">
-        <table class="w-full">
-          <thead>
-            <tr class="border-b border-border bg-surface-hover text-xs font-semibold text-muted">
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.groups.column.group') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.groups.column.role') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5">{{ t('projects.groups.column.attached') }}</th>
-              <th v-if="canManage" scope="col" class="w-12 px-4 py-2.5"><span class="sr-only">{{ t('common.actions') }}</span></th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="grant in groups" :key="grant.group_id" data-testid="group-row">
-              <td class="px-4 py-3 font-mono text-sm text-foreground">{{ groupName(grant) }}</td>
-              <td class="px-4 py-3">
-                <RoleSelect
-                  v-if="canManage"
-                  :model-value="grant.role ?? 'viewer'"
-                  :roles="GROUP_ROLES_ASC"
-                  :grantable="groupGrantable"
-                  :disabled="!canModifyEntry(myRole, grant.role)"
-                  :label="`${t('projects.groups.roleOf')} ${groupName(grant)}`"
-                  @update:model-value="(role) => changeGroupRole(grant, role as ProjectGroupRole)"
-                />
-                <ProjectRoleBadge v-else :role="grant.role" />
-              </td>
-              <td class="px-4 py-3 text-xs text-muted">{{ formatDate(grant.created_at) }}</td>
-              <td v-if="canManage" class="px-4 py-3 text-right">
-                <button
-                  type="button"
-                  :title="t('projects.groups.remove')"
-                  :aria-label="`${t('projects.groups.remove')}: ${groupName(grant)}`"
-                  :disabled="!canModifyEntry(myRole, grant.role)"
-                  class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors disabled:opacity-40 disabled:pointer-events-none"
-                  @click="removeGroupTarget = grant"
-                >
-                  <TrashIcon class="w-4 h-4" aria-hidden="true" />
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </section>
+      </template>
+    </Drawer>
 
     <ConfirmDialog
       :open="!!removeMemberTarget"
@@ -212,9 +210,11 @@ import { computed, ref } from 'vue'
 import { TrashIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
-import EmptyState from './EmptyState.vue'
+import FormField from './FormField.vue'
 import ProjectRoleBadge from './ProjectRoleBadge.vue'
 import RoleSelect from './RoleSelect.vue'
+import Drawer from './ui/Drawer.vue'
+import ListTable, { type ListColumn } from './ui/ListTable.vue'
 import {
   addProjectMember,
   removeProjectGroup,
@@ -227,7 +227,8 @@ import {
   type ProjectMember,
   type ProjectMemberRole,
 } from '../api/projects'
-import { formatDate } from '../lib/datetime'
+import { formatDateTime, timeAgo } from '../lib/datetime'
+import { INPUT_CLASS } from '../lib/formClasses'
 import {
   GROUP_ROLES_ASC,
   MEMBER_ROLES_ASC,
@@ -256,6 +257,22 @@ const myRole = computed(() => props.project.my_role)
 const canManage = computed(() => !props.project.is_system && atLeast(myRole.value, 'maintainer'))
 const memberGrantable = computed(() => grantableRoles(myRole.value, 'member'))
 const groupGrantable = computed(() => grantableRoles(myRole.value, 'group'))
+
+const memberColumns = computed<ListColumn[]>(() => [
+  { key: 'user', label: t('projects.members.column.user') },
+  { key: 'role', label: t('projects.members.column.role') },
+  { key: 'joined', label: t('projects.members.column.joined') },
+  ...(canManage.value ? [{ key: 'actions', label: t('common.actions'), actions: true }] : []),
+])
+const groupColumns = computed<ListColumn[]>(() => [
+  { key: 'group', label: t('projects.groups.column.group') },
+  { key: 'role', label: t('projects.groups.column.role') },
+  { key: 'attached', label: t('projects.groups.column.attached') },
+  ...(canManage.value ? [{ key: 'actions', label: t('common.actions'), actions: true }] : []),
+])
+
+const memberDrawer = ref(false)
+const groupDrawer = ref(false)
 
 const ownerCount = computed(() => props.members.filter((m) => m.role === 'owner').length)
 
@@ -289,6 +306,7 @@ async function addMember(): Promise<void> {
   try {
     await addProjectMember(name.value, { username, role: newRole.value })
     newUsername.value = ''
+    memberDrawer.value = false
     toasts.success(t('projects.members.added'))
     emit('changed')
   } catch (err) {
@@ -357,6 +375,7 @@ async function attachGroup(): Promise<void> {
   try {
     await setProjectGroup(name.value, group, { role: newGroupRole.value })
     newGroupName.value = ''
+    groupDrawer.value = false
     toasts.success(t('projects.groups.attached'))
     emit('changed')
   } catch (err) {

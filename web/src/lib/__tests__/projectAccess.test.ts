@@ -34,9 +34,9 @@ describe('project role rules', () => {
     expect(canModifyEntry('developer', 'viewer')).toBe(false)
   })
 
-  it('shows the project sections only to roles that may read them', () => {
-    expect(visibleProjectTabs('viewer')).toEqual(['overview', 'repositories', 'usage', 'members', 'tokens', 'activity', 'settings'])
-    expect(visibleProjectTabs('owner')).toEqual(['overview', 'repositories', 'usage', 'members', 'tokens', 'activity', 'settings'])
+  it('shows the project sections only to roles that may read them, with no tokens tab (tokens live under settings)', () => {
+    expect(visibleProjectTabs('viewer')).toEqual(['overview', 'repositories', 'members', 'activity', 'usage', 'settings'])
+    expect(visibleProjectTabs('owner')).toEqual(['overview', 'repositories', 'members', 'activity', 'usage', 'settings'])
     expect(visibleProjectTabs(undefined)).toEqual(['overview'])
   })
 
