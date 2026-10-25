@@ -34,7 +34,7 @@ func TestMigrateWaiterDoesNotDeadlockConcurrentIndex(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	waiter := NewMigratorWithFS(db, fstest.MapFS{
+	waiter := newMigratorWithFS(db, fstest.MapFS{
 		"001_noop.sql": {Data: []byte(`SELECT 1;`)},
 	})
 

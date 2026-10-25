@@ -17,35 +17,6 @@ import (
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
-func TestObjectKey(t *testing.T) {
-	sha := "aabbccdd1234567890abcdef1234567890abcdef1234567890abcdef12345678"
-	want := "blobs/aa/bb/" + sha
-
-	got := storage.ExportedObjectKey(sha)
-	if got != want {
-		t.Errorf("objectKey(%q) = %q, want %q", sha, got, want)
-	}
-}
-
-func TestClampTTL(t *testing.T) {
-	cases := []struct {
-		in   time.Duration
-		want time.Duration
-	}{
-		{10 * time.Second, time.Minute},
-		{30 * time.Minute, 30 * time.Minute},
-		{2 * time.Hour, time.Hour},
-		{time.Minute, time.Minute},
-		{time.Hour, time.Hour},
-	}
-	for _, tc := range cases {
-		got := storage.ExportedClampTTL(tc.in)
-		if got != tc.want {
-			t.Errorf("clampTTL(%v) = %v, want %v", tc.in, got, tc.want)
-		}
-	}
-}
-
 func newFakeS3Server(t *testing.T, responses map[string]func(w http.ResponseWriter, r *http.Request)) *httptest.Server {
 	t.Helper()
 

@@ -10,7 +10,6 @@ import (
 	"database/sql/driver"
 	"fmt"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -40,8 +39,6 @@ type Worker struct {
 	// lock takes the cluster-wide lock; tests replace it to simulate another replica.
 	lock func(ctx context.Context) (release func(), acquired bool, err error)
 
-	trigger   chan struct{}
-	running   atomic.Bool
 	startOnce sync.Once
 	stopOnce  sync.Once
 	stopCh    chan struct{}
@@ -56,8 +53,7 @@ func NewWorker(j *Journal, log *logger.Logger, interval time.Duration) *Worker {
 
 	w := &Worker{
 		j: j, db: j.db, log: log, interval: interval,
-		trigger: make(chan struct{}, 1),
-		stopCh:  make(chan struct{}), doneCh: make(chan struct{}),
+		stopCh: make(chan struct{}), doneCh: make(chan struct{}),
 		runCtx: runCtx, cancel: cancel,
 	}
 	w.lock = func(ctx context.Context) (func(), bool, error) { return tryAdvisoryLock(ctx, w.db, journalLockKey) }
@@ -87,19 +83,6 @@ func (w *Worker) Stop() {
 	<-w.doneCh
 }
 
-// Trigger queues an immediate pass; false when one is already queued.
-func (w *Worker) Trigger() bool {
-	select {
-	case w.trigger <- struct{}{}:
-		return true
-	default:
-		return false
-	}
-}
-
-// Running reports whether a pass is in flight on this replica.
-func (w *Worker) Running() bool { return w.running.Load() }
-
 func (w *Worker) loop() {
 	defer close(w.doneCh)
 
@@ -111,8 +94,6 @@ func (w *Worker) loop() {
 	for {
 		select {
 		case <-tick.C:
-			w.runPass()
-		case <-w.trigger:
 			w.runPass()
 		case <-w.stopCh:
 			return
@@ -135,9 +116,6 @@ func (w *Worker) RunPass(ctx context.Context) bool {
 	}
 
 	defer release()
-
-	w.running.Store(true)
-	defer w.running.Store(false)
 
 	ctx, cancel := context.WithTimeout(ctx, passTimeout)
 	defer cancel()

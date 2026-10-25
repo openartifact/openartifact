@@ -163,10 +163,6 @@ func RevokeOtherSessions(ctx context.Context, db database.Database, userID, keep
 	return db.DeleteOtherSessionsByUser(ctx, userID, hex.EncodeToString(hashBytes[:]))
 }
 
-func ExtendSession(ctx context.Context, db database.Database, sessionID string) error {
-	return db.UpdateSessionLastSeen(ctx, sessionID, time.Now().Add(SessionDuration))
-}
-
 func DeleteSession(ctx context.Context, db database.Database, cookieValue string) error {
 	raw, ok := decodeSessionCookie(cookieValue)
 	if !ok {

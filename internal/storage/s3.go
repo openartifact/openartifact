@@ -113,9 +113,6 @@ func objectKey(sha256 string) string {
 	return "blobs/" + sha256[:2] + "/" + sha256[2:4] + "/" + sha256
 }
 
-// ExportedObjectKey is the exported form of objectKey for testing.
-func ExportedObjectKey(sha256 string) string { return objectKey(sha256) }
-
 // clampTTL clamps a presign TTL to [1 minute, 1 hour].
 func clampTTL(ttl time.Duration) time.Duration {
 	if ttl < time.Minute {
@@ -128,9 +125,6 @@ func clampTTL(ttl time.Duration) time.Duration {
 
 	return ttl
 }
-
-// ExportedClampTTL is the exported form of clampTTL for testing.
-func ExportedClampTTL(ttl time.Duration) time.Duration { return clampTTL(ttl) }
 
 // isNotFound reports whether an S3 error represents a missing object.
 // HeadObject returns *types.NotFound; GetObject/DeleteObject return *types.NoSuchKey.

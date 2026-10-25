@@ -45,18 +45,11 @@ type DependencyTrackHandler struct {
 	log       *logger.Logger
 	evaluator *auth.Evaluator
 	pusher    DTrackPusher
-	newClient dtrack.ClientFactory
 }
 
 // NewDependencyTrackHandler creates the handler; pusher may be nil (manual pushes then answer 501).
 func NewDependencyTrackHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, pusher DTrackPusher) *DependencyTrackHandler {
-	return &DependencyTrackHandler{db: db, log: log, evaluator: evaluator, pusher: pusher, newClient: dtrack.NewClient}
-}
-
-// WithClientFactory replaces the Dependency-Track client constructor (tests).
-func (h *DependencyTrackHandler) WithClientFactory(f dtrack.ClientFactory) *DependencyTrackHandler {
-	h.newClient = f
-	return h
+	return &DependencyTrackHandler{db: db, log: log, evaluator: evaluator, pusher: pusher}
 }
 
 // RegisterAuthed registers the admin routes.
@@ -232,7 +225,7 @@ func (h *DependencyTrackHandler) testConnection(w http.ResponseWriter, r *http.R
 		return
 	}
 
-	cl, err := h.newClient(baseURL, apiKey)
+	cl, err := dtrack.NewClient(baseURL, apiKey)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return

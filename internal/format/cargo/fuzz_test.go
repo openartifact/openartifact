@@ -12,6 +12,7 @@ import (
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
+	"io"
 	"net/http"
 	"os"
 	"strings"
@@ -159,7 +160,9 @@ func FuzzPublishFrame(f *testing.F) {
 
 		want := fuzzPublishWant(body)
 		if want.status == http.StatusOK {
-			if _, err := licensemeta.ReadBytes(t.Context(), "cargo", want.name+"-"+want.version+".crate", want.crate); licensemeta.Unsafe(err) {
+			open := func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(want.crate)), nil }
+
+			if _, err := licensemeta.Read(t.Context(), "cargo", want.name+"-"+want.version+".crate", open); licensemeta.Unsafe(err) {
 				want.status = http.StatusUnprocessableEntity
 			}
 		}

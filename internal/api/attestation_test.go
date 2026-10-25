@@ -7,6 +7,7 @@ package api
 import (
 	"bytes"
 	"context"
+	"crypto/ecdsa"
 	"crypto/sha256"
 	"crypto/x509"
 	"encoding/base64"
@@ -179,10 +180,40 @@ func (f *attestFixture) decodeEnvelope(t *testing.T, body []byte) *attest.Statem
 
 	var env attest.Envelope
 	mustNoError(t, json.Unmarshal(body, &env))
-	st, err := attest.Verify(&env, f.pubKey)
-	mustNoError(t, err, "signature must verify with the published public key")
 
-	return st
+	return f.verifyEnvelope(t, &env)
+}
+
+// verifyEnvelope checks that env carries a signature over its DSSE
+// pre-authentication encoding that verifies with the published public key (the
+// service only signs; consumers verify with cosign) and returns its statement.
+func (f *attestFixture) verifyEnvelope(t *testing.T, env *attest.Envelope) *attest.Statement {
+	t.Helper()
+
+	payload, err := base64.StdEncoding.DecodeString(env.Payload)
+	mustNoError(t, err)
+
+	pub, ok := f.pubKey.(*ecdsa.PublicKey)
+	if !ok {
+		t.Fatalf("published key is %T, want the generated ECDSA key", f.pubKey)
+	}
+
+	sum := sha256.Sum256(attest.PAE(env.PayloadType, payload))
+	verified := false
+
+	for _, sg := range env.Signatures {
+		raw, err := base64.StdEncoding.DecodeString(sg.Sig)
+		if err == nil && ecdsa.VerifyASN1(pub, sum[:], raw) {
+			verified = true
+		}
+	}
+
+	expectTrue(t, verified, "signature must verify with the published public key")
+
+	var st attest.Statement
+	mustNoError(t, json.Unmarshal(payload, &st))
+
+	return &st
 }
 
 func TestSBOMDownloadAttestEnvelopeSignsStoredDocument(t *testing.T) {
@@ -231,8 +262,7 @@ func TestSBOMDownloadAttestBundleIsSigstoreBundle(t *testing.T) {
 	expectEqual(t, attest.BundleMediaType, bundle.MediaType)
 	mustNoError(t, json.Unmarshal(bundle.DSSEEnvelopeJSON, &bundle.DSSEEnvelope))
 
-	st, err := attest.Verify(&bundle.DSSEEnvelope, f.pubKey)
-	mustNoError(t, err)
+	st := f.verifyEnvelope(t, &bundle.DSSEEnvelope)
 	expectEqual(t, attest.PredicateSPDX3, st.PredicateType)
 }
 

@@ -15,6 +15,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"math/big"
 	"net"
 	"net/http"
@@ -432,6 +433,9 @@ func TestHTTPErrorFatal(t *testing.T) {
 	}
 }
 
+// registeredFormats lists the formats with a registered codec, sorted.
+func registeredFormats() []string { return slices.Sorted(maps.Keys(codecs)) }
+
 func TestRegistryCoversFederationSupportedFormats(t *testing.T) {
 	t.Parallel()
 
@@ -443,7 +447,7 @@ func TestRegistryCoversFederationSupportedFormats(t *testing.T) {
 		"deb", "rpm", "apt", "yum", "conan", "terraform", "generic", "", "RAW", "unknown",
 	}
 
-	registered := SupportedFormats()
+	registered := registeredFormats()
 
 	for _, f := range registered {
 		if !repotype.FederationSupported(f) {
@@ -470,7 +474,7 @@ func TestRegistryCoversFederationSupportedFormats(t *testing.T) {
 		}
 
 		if supported && !slices.Contains(registered, f) {
-			t.Errorf("format %q supported but absent from SupportedFormats %v", f, registered)
+			t.Errorf("format %q supported but absent from the registered codecs %v", f, registered)
 		}
 	}
 }
@@ -481,11 +485,7 @@ func TestRegistryFederationFormatsListsExactlyTheCodecs(t *testing.T) {
 	listed := strings.Split(repotype.FederationFormats(), ", ")
 	slices.Sort(listed)
 
-	registered := SupportedFormats()
-	if !slices.IsSorted(registered) {
-		t.Fatalf("SupportedFormats() = %v is not sorted", registered)
-	}
-
+	registered := registeredFormats()
 	if !slices.Equal(listed, registered) {
 		t.Fatalf("repotype.FederationFormats() lists %v, registered codecs are %v", listed, registered)
 	}

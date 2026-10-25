@@ -103,7 +103,7 @@ func TestToken_ValidateRevoked(t *testing.T) {
 		t.Fatalf("CreateToken: %v", err)
 	}
 
-	if err := auth.RevokeToken(ctx, db, record.ID); err != nil {
+	if err := db.RevokeToken(ctx, record.ID); err != nil {
 		t.Fatalf("RevokeToken: %v", err)
 	}
 

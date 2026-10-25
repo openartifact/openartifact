@@ -8,7 +8,6 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
-	"sort"
 )
 
 // Querier is the part of *sql.DB, *sql.Tx and *sql.Conn the codecs read with.
@@ -123,16 +122,4 @@ func CodecFor(format string) (Codec, error) {
 	}
 
 	return c, nil
-}
-
-// SupportedFormats lists the formats federation can replicate, sorted.
-func SupportedFormats() []string {
-	out := make([]string, 0, len(codecs))
-	for f := range codecs {
-		out = append(out, f)
-	}
-
-	sort.Strings(out)
-
-	return out
 }

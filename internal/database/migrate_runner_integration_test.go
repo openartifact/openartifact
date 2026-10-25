@@ -4,52 +4,21 @@
 
 //go:build integration
 
-package integration_test
+package database
 
 import (
 	"context"
 	"database/sql"
 	"io/fs"
-	"os"
 	"strings"
 	"sync"
 	"testing"
 	"testing/fstest"
-
-	_ "github.com/jackc/pgx/v5/stdlib"
-
-	"github.com/openartifact/openartifact/internal/database"
 )
 
-func setupTestDB(t *testing.T) *sql.DB {
-	t.Helper()
-
-	if testing.Short() {
-		t.Skip("skipping integration test in short mode")
-	}
-
-	dsn := os.Getenv("TEST_DATABASE_URL")
-	if dsn == "" {
-		skipOrFailMissingEnv(t, "TEST_DATABASE_URL")
-	}
-
-	db, err := sql.Open("pgx", dsn)
-	if err != nil {
-		t.Fatalf("sql.Open: %v", err)
-	}
-
-	if err := db.PingContext(context.Background()); err != nil {
-		_ = db.Close()
-
-		t.Fatalf("db.Ping: %v", err)
-	}
-
-	t.Cleanup(func() {
-		_, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS schema_migrations`)
-		_ = db.Close()
-	})
-
-	return db
+// newMigratorWithFS returns a Migrator over a custom migrations FS.
+func newMigratorWithFS(db *sql.DB, fsys fs.ReadDirFS) *Migrator {
+	return &Migrator{db: db, fs: fsys}
 }
 
 func makeFakeFS(files map[string]string) fs.ReadDirFS {
@@ -62,13 +31,13 @@ func makeFakeFS(files map[string]string) fs.ReadDirFS {
 }
 
 func TestApplyIdempotent(t *testing.T) {
-	db := setupTestDB(t)
+	db := scratchDB(t)
 	ctx := context.Background()
 
 	fsys := makeFakeFS(map[string]string{
 		"001_create_test.sql": `CREATE TABLE IF NOT EXISTS migration_test_a (id SERIAL PRIMARY KEY)`,
 	})
-	m := database.NewMigratorWithFS(db, fsys)
+	m := newMigratorWithFS(db, fsys)
 
 	if err := m.Apply(ctx); err != nil {
 		t.Fatalf("first Apply: %v", err)
@@ -89,19 +58,17 @@ func TestApplyIdempotent(t *testing.T) {
 	if count1 != count2 {
 		t.Errorf("row count changed after idempotent apply: %d → %d", count1, count2)
 	}
-
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_a`)
 }
 
 func TestChecksumDrift(t *testing.T) {
-	db := setupTestDB(t)
+	db := scratchDB(t)
 	ctx := context.Background()
 
 	fsys := makeFakeFS(map[string]string{
 		"001_drift_test.sql": `CREATE TABLE IF NOT EXISTS migration_test_b (id SERIAL PRIMARY KEY)`,
 	})
 
-	m := database.NewMigratorWithFS(db, fsys)
+	m := newMigratorWithFS(db, fsys)
 	if err := m.Apply(ctx); err != nil {
 		t.Fatalf("initial apply: %v", err)
 	}
@@ -113,62 +80,17 @@ func TestChecksumDrift(t *testing.T) {
 	} else {
 		t.Logf("got expected error: %v", err)
 	}
-
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_b`)
-}
-
-func TestStatusPending(t *testing.T) {
-	db := setupTestDB(t)
-	ctx := context.Background()
-
-	fsys := makeFakeFS(map[string]string{
-		"001_status_a.sql": `CREATE TABLE IF NOT EXISTS migration_test_c (id SERIAL PRIMARY KEY)`,
-		"002_status_b.sql": `CREATE TABLE IF NOT EXISTS migration_test_d (id SERIAL PRIMARY KEY)`,
-	})
-	m := database.NewMigratorWithFS(db, fsys)
-
-	fsys1 := makeFakeFS(map[string]string{
-		"001_status_a.sql": `CREATE TABLE IF NOT EXISTS migration_test_c (id SERIAL PRIMARY KEY)`,
-		"002_status_b.sql": `CREATE TABLE IF NOT EXISTS migration_test_d (id SERIAL PRIMARY KEY)`,
-	})
-
-	m1 := database.NewMigratorWithFS(db, fsys1)
-	if err := m1.Apply(ctx); err != nil {
-		t.Fatalf("apply 001 only: %v", err)
-	}
-
-	_, _ = db.ExecContext(ctx, `DELETE FROM schema_migrations WHERE version='002_status_b.sql'`)
-
-	statuses, err := m.Status(ctx)
-	if err != nil {
-		t.Fatalf("Status: %v", err)
-	}
-
-	var pendingCount int
-
-	for _, s := range statuses {
-		if s.Version == "002_status_b.sql" && s.Pending {
-			pendingCount++
-		}
-	}
-
-	if pendingCount == 0 {
-		t.Error("expected 002_status_b.sql to be pending")
-	}
-
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_c`)
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_d`)
 }
 
 func TestTransactionRollback(t *testing.T) {
-	db := setupTestDB(t)
+	db := scratchDB(t)
 	ctx := context.Background()
 
 	fsys := makeFakeFS(map[string]string{
 		"001_rollback_test.sql": `CREATE TABLE IF NOT EXISTS migration_test_e (id SERIAL PRIMARY KEY); INVALID SQL THAT FAILS;`,
 	})
 
-	m := database.NewMigratorWithFS(db, fsys)
+	m := newMigratorWithFS(db, fsys)
 	if err := m.Apply(ctx); err == nil {
 		t.Fatal("expected error from invalid SQL, got nil")
 	}
@@ -182,14 +104,14 @@ func TestTransactionRollback(t *testing.T) {
 }
 
 func TestNoTxDetection(t *testing.T) {
-	db := setupTestDB(t)
+	db := scratchDB(t)
 	ctx := context.Background()
 
 	fsys := makeFakeFS(map[string]string{
 		"001_notx.no_tx.sql": `CREATE TABLE IF NOT EXISTS migration_test_f (id SERIAL PRIMARY KEY)`,
 	})
 
-	m := database.NewMigratorWithFS(db, fsys)
+	m := newMigratorWithFS(db, fsys)
 	if err := m.Apply(ctx); err != nil {
 		t.Fatalf("Apply with no_tx file: %v", err)
 	}
@@ -200,20 +122,14 @@ func TestNoTxDetection(t *testing.T) {
 	if count != 1 {
 		t.Errorf("expected no_tx migration recorded, got %d", count)
 	}
-
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_f`)
 }
 
 // A no_tx file with several statements, a dollar-quoted body holding semicolons
 // and CREATE INDEX CONCURRENTLY: each statement must reach the server as its own
 // query, since a multi-statement query runs in one implicit transaction.
 func TestNoTxRunsStatementsSeparately(t *testing.T) {
-	db := setupTestDB(t)
+	db := scratchDB(t)
 	ctx := context.Background()
-
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_h`)
-
-	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS migration_test_h`) })
 
 	fsys := makeFakeFS(map[string]string{
 		"001_multi.no_tx.sql": `-- comment; with a semicolon
@@ -224,7 +140,7 @@ CREATE UNIQUE INDEX CONCURRENTLY IF NOT EXISTS migration_test_h_id ON migration_
 INSERT INTO migration_test_h VALUES (1, NULL), (1, 2)`,
 	})
 
-	if err := database.NewMigratorWithFS(db, fsys).Apply(ctx); err != nil {
+	if err := newMigratorWithFS(db, fsys).Apply(ctx); err != nil {
 		t.Fatalf("Apply multi-statement no_tx file: %v", err)
 	}
 
@@ -246,18 +162,14 @@ INSERT INTO migration_test_h VALUES (1, NULL), (1, 2)`,
 // A failing statement of a no_tx file stops the file, names the statement and
 // leaves the version unrecorded so the next start retries it.
 func TestNoTxFailureIsNotRecorded(t *testing.T) {
-	db := setupTestDB(t)
+	db := scratchDB(t)
 	ctx := context.Background()
-
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_i`)
-
-	t.Cleanup(func() { _, _ = db.ExecContext(context.Background(), `DROP TABLE IF EXISTS migration_test_i`) })
 
 	fsys := makeFakeFS(map[string]string{
 		"001_fail.no_tx.sql": `CREATE TABLE migration_test_i (id int); SELECT * FROM migration_test_missing; CREATE INDEX CONCURRENTLY migration_test_i_id ON migration_test_i (id)`,
 	})
 
-	err := database.NewMigratorWithFS(db, fsys).Apply(ctx)
+	err := newMigratorWithFS(db, fsys).Apply(ctx)
 	if err == nil || !strings.Contains(err.Error(), "statement 2") {
 		t.Fatalf("Apply = %v, want an error naming statement 2", err)
 	}
@@ -271,7 +183,7 @@ func TestNoTxFailureIsNotRecorded(t *testing.T) {
 }
 
 func TestAdvisoryLockConcurrent(t *testing.T) {
-	db := setupTestDB(t)
+	db := scratchDB(t)
 	ctx := context.Background()
 
 	fsys := makeFakeFS(map[string]string{
@@ -287,8 +199,7 @@ func TestAdvisoryLockConcurrent(t *testing.T) {
 		go func(idx int) {
 			defer wg.Done()
 
-			m := database.NewMigratorWithFS(db, fsys)
-			errs[idx] = m.Apply(ctx)
+			errs[idx] = newMigratorWithFS(db, fsys).Apply(ctx)
 		}(i)
 	}
 
@@ -306,6 +217,4 @@ func TestAdvisoryLockConcurrent(t *testing.T) {
 	if count != 1 {
 		t.Errorf("expected exactly 1 schema_migrations row for concurrent test, got %d", count)
 	}
-
-	_, _ = db.ExecContext(ctx, `DROP TABLE IF EXISTS migration_test_g`)
 }

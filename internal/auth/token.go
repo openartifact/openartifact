@@ -184,7 +184,3 @@ func TouchToken(ctx context.Context, db database.Database, token *models.Token) 
 	tokenLastTouch.Store(token.ID, now)
 	UpdateLastUsed(ctx, db, token.ID)
 }
-
-func RevokeToken(ctx context.Context, db database.Database, tokenID string) error {
-	return db.RevokeToken(ctx, tokenID)
-}

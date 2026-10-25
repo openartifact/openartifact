@@ -20,7 +20,6 @@
 package licensemeta
 
 import (
-	"bytes"
 	"context"
 	"errors"
 	"fmt"
@@ -95,13 +94,6 @@ func Expected(format, filename string) bool {
 	}
 
 	return false
-}
-
-// ReadBytes reads the licenses of an artifact held in memory.
-func ReadBytes(ctx context.Context, format, filename string, data []byte) (Result, error) {
-	return Read(ctx, format, filename, func() (io.ReadCloser, error) {
-		return io.NopCloser(bytes.NewReader(data)), nil
-	})
 }
 
 // Read reads the licenses of an artifact; open returns a fresh reader over its

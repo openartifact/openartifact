@@ -21,6 +21,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/crypto"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/sbom"
 	"github.com/openartifact/openartifact/internal/webhook"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -224,19 +225,21 @@ func newFakeDT(t *testing.T) *fakeDT {
 	return f
 }
 
+// allowLoopback lets the production client reach the fake server, which listens
+// on loopback (cloud metadata addresses stay blocked).
+func allowLoopback(t *testing.T) {
+	t.Helper()
+	t.Setenv(netutil.EnvAllowPrivate, "true")
+}
+
 func (f *fakeDT) client(t *testing.T, key string) *Client {
 	t.Helper()
+	allowLoopback(t)
 
-	c, err := NewClientWithHTTP(f.srv.URL, key, f.srv.Client())
+	c, err := NewClient(f.srv.URL, key)
 	mustNoErr(t, err)
 
 	return c
-}
-
-func (f *fakeDT) factory() ClientFactory {
-	return func(baseURL, apiKey string) (*Client, error) {
-		return NewClientWithHTTP(baseURL, apiKey, f.srv.Client())
-	}
 }
 
 func (f *fakeDT) upload(bom bool) http.HandlerFunc {
@@ -304,10 +307,11 @@ func (f *fakeDT) findings(w http.ResponseWriter, _ *http.Request) {
 	  "analysis":` + analysis + `}]`))
 }
 
-func newTestPusher(t *testing.T, st *fakeStore, src Sources, dt *fakeDT) *Pusher {
+func newTestPusher(t *testing.T, st *fakeStore, src Sources) *Pusher {
 	t.Helper()
+	allowLoopback(t)
 
-	p := NewPusher(st, src, testLogger(t)).WithTimings(time.Millisecond, 5*time.Second).WithClientFactory(dt.factory())
+	p := NewPusher(st, src, testLogger(t)).WithTimings(time.Millisecond, 5*time.Second)
 	p.Start(context.Background())
 	t.Cleanup(p.Stop)
 
@@ -324,7 +328,7 @@ func TestPusherPushesBOMThenVEXWithDependencyTrackIdentities(t *testing.T) {
 
 	dt.busyPolls = 2
 	src := &fakeSources{vexCount: 1}
-	p := newTestPusher(t, st, src, dt)
+	p := newTestPusher(t, st, src)
 
 	mustTrue(t, p.Enqueue(Job{RepoID: "r1", ArtifactID: "left-pad@1.3.0", Trigger: TriggerManual}))
 
@@ -359,7 +363,7 @@ func TestPusherWithoutDecisionsSkipsVEXUpload(t *testing.T) {
 	st, dt := newFakeStore(), newFakeDT(t)
 	st.enableGlobal(t, dt.srv.URL, true)
 
-	p := newTestPusher(t, st, &fakeSources{vexCount: 0}, dt)
+	p := newTestPusher(t, st, &fakeSources{vexCount: 0})
 	mustTrue(t, p.Enqueue(Job{RepoID: "r1", ArtifactID: "left-pad@1.3.0"}))
 
 	got := st.waitState(t, "r1", "left-pad@1.3.0", models.DTrackPushDone, models.DTrackPushFailed)
@@ -375,7 +379,7 @@ func TestPusherDoesNotPushVEXWhenDisabled(t *testing.T) {
 	st, dt := newFakeStore(), newFakeDT(t)
 	st.enableGlobal(t, dt.srv.URL, false)
 
-	p := newTestPusher(t, st, &fakeSources{vexCount: 1}, dt)
+	p := newTestPusher(t, st, &fakeSources{vexCount: 1})
 	mustTrue(t, p.Enqueue(Job{RepoID: "r1", ArtifactID: "left-pad@1.3.0"}))
 
 	got := st.waitState(t, "r1", "left-pad@1.3.0", models.DTrackPushDone, models.DTrackPushFailed)
@@ -391,7 +395,7 @@ func TestPusherFailureDetailNeverLeaksUpstreamBody(t *testing.T) {
 	st.enableGlobal(t, dt.srv.URL, true)
 
 	dt.failBOM = http.StatusForbidden
-	p := newTestPusher(t, st, &fakeSources{}, dt)
+	p := newTestPusher(t, st, &fakeSources{})
 	mustTrue(t, p.Enqueue(Job{RepoID: "r1", ArtifactID: "left-pad@1.3.0"}))
 
 	got := st.waitState(t, "r1", "left-pad@1.3.0", models.DTrackPushDone, models.DTrackPushFailed)
@@ -402,9 +406,9 @@ func TestPusherFailureDetailNeverLeaksUpstreamBody(t *testing.T) {
 }
 
 func TestPusherSkipsWhenNotConfigured(t *testing.T) {
-	st, dt := newFakeStore(), newFakeDT(t)
+	st := newFakeStore()
 
-	p := newTestPusher(t, st, &fakeSources{}, dt)
+	p := newTestPusher(t, st, &fakeSources{})
 	mustTrue(t, p.Enqueue(Job{RepoID: "r1", ArtifactID: "left-pad@1.3.0"}))
 
 	got := st.waitState(t, "r1", "left-pad@1.3.0", models.DTrackPushSkipped, models.DTrackPushFailed)
@@ -419,7 +423,7 @@ func TestPusherCoalescesAndRerunsRequestsMadeWhileRunning(t *testing.T) {
 	st.enableGlobal(t, dt.srv.URL, false)
 
 	src := &fakeSources{gate: make(chan struct{})}
-	p := newTestPusher(t, st, src, dt)
+	p := newTestPusher(t, st, src)
 	job := Job{RepoID: "r1", ArtifactID: "left-pad@1.3.0"}
 
 	mustTrue(t, p.Enqueue(job))
@@ -448,7 +452,7 @@ func TestUploadPublisherEnqueuesOnlyUploadsOfEnabledRepos(t *testing.T) {
 
 	st, dt := newFakeStore(), newFakeDT(t)
 	src := &fakeSources{}
-	p := newTestPusher(t, st, src, dt)
+	p := newTestPusher(t, st, src)
 	next := &recordingPublisher{}
 	pub := NewUploadPublisher(next, p)
 	payload := map[string]any{"artifact": map[string]any{"name": "left-pad", "version": "1.3.0"}}
@@ -519,10 +523,12 @@ func TestClientRejectsBadKeyAndBadURL(t *testing.T) {
 }
 
 func TestClientMapsNotFound(t *testing.T) {
+	allowLoopback(t)
+
 	srv := httptest.NewServer(http.NotFoundHandler())
 	t.Cleanup(srv.Close)
 
-	c, err := NewClientWithHTTP(srv.URL, "k", srv.Client())
+	c, err := NewClient(srv.URL, "k")
 	mustNoErr(t, err)
 
 	_, err = c.ProjectUUID(context.Background(), "x", "1")

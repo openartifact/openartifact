@@ -79,7 +79,7 @@ func TestSession_Validate_MalformedCookie(t *testing.T) {
 	}
 }
 
-func TestSession_Extend(t *testing.T) {
+func TestSession_TouchSlidesExpiry(t *testing.T) {
 	ctx := context.Background()
 	db := newMockDatabase()
 
@@ -88,19 +88,22 @@ func TestSession_Extend(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	originalExpiry := session.ExpiresAt
+	// Last seen long enough ago for the throttled write to happen.
+	originalExpiry := time.Now().Add(time.Minute)
+	session.ExpiresAt = originalExpiry
+	session.LastSeenAt = time.Now().Add(-2 * time.Minute)
 
-	if err := auth.ExtendSession(ctx, db, session.ID); err != nil {
-		t.Fatalf("ExtendSession: %v", err)
+	if err := auth.TouchSession(ctx, db, session); err != nil {
+		t.Fatalf("TouchSession: %v", err)
 	}
 
 	got, err := auth.ValidateSession(ctx, db, cookieValue)
 	if err != nil {
-		t.Fatalf("ValidateSession after extend: %v", err)
+		t.Fatalf("ValidateSession after touch: %v", err)
 	}
 
 	if got == nil {
-		t.Fatal("expected non-nil session after extend")
+		t.Fatal("expected non-nil session after touch")
 	}
 
 	if !got.ExpiresAt.After(originalExpiry) {

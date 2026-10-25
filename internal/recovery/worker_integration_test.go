@@ -110,8 +110,10 @@ func TestWorkerStartDrainsAndStops(t *testing.T) {
 	w.Stop()
 	w.Stop() // idempotent
 
-	if w.Running() {
-		t.Fatal("worker still running after Stop")
+	select {
+	case <-w.doneCh:
+	default:
+		t.Fatal("worker loop still running after Stop")
 	}
 
 	var nilWorker *Worker

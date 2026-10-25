@@ -160,8 +160,6 @@ type npmPublishError struct {
 	msg    string
 }
 
-func (e *npmPublishError) Error() string { return e.msg }
-
 var (
 	errEmptyDistTag     = errors.New("empty dist-tag")
 	errDistTagIsVersion = errors.New("dist-tag must not be a valid semver version")

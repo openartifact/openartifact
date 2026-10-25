@@ -103,7 +103,7 @@ func (m migrationsThrough) ReadDir(name string) ([]fs.DirEntry, error) {
 func migrateThrough(t *testing.T, db *sql.DB, last string) {
 	t.Helper()
 
-	if err := NewMigratorWithFS(db, migrationsThrough{last}).Apply(context.Background()); err != nil {
+	if err := newMigratorWithFS(db, migrationsThrough{last}).Apply(context.Background()); err != nil {
 		t.Fatalf("apply migrations through %s: %v", last, err)
 	}
 }

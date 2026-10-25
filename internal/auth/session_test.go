@@ -823,7 +823,7 @@ func TestValidateSession_Expired(t *testing.T) {
 	}
 }
 
-func TestExtendSession(t *testing.T) {
+func TestTouchSessionSlidesExpiry(t *testing.T) {
 	db := newSessionMockDB()
 	ctx := context.Background()
 
@@ -832,13 +832,17 @@ func TestExtendSession(t *testing.T) {
 		t.Fatalf("CreateSession: %v", err)
 	}
 
-	before := sess.ExpiresAt
-	if err := ExtendSession(ctx, db, sess.ID); err != nil {
-		t.Fatalf("ExtendSession: %v", err)
+	// Last seen long enough ago for the throttled write to happen.
+	before := time.Now().Add(time.Minute)
+	sess.ExpiresAt = before
+	sess.LastSeenAt = time.Now().Add(-2 * sessionTouchInterval)
+
+	if err := TouchSession(ctx, db, sess); err != nil {
+		t.Fatalf("TouchSession: %v", err)
 	}
 
 	if !sess.ExpiresAt.After(before) {
-		t.Error("expected ExpiresAt to be extended")
+		t.Error("expected ExpiresAt to slide forward")
 	}
 }
 

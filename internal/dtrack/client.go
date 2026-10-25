@@ -68,21 +68,12 @@ type Client struct {
 // NewClient validates baseURL and returns a client that refuses to connect to
 // internal addresses (netutil's SSRF guard, enforced at dial time).
 func NewClient(baseURL, apiKey string) (*Client, error) {
-	return newClient(baseURL, apiKey, telemetry.WrapClient(netutil.SafeHTTPClient(requestTimeout)))
-}
-
-// NewClientWithHTTP is NewClient with a caller-supplied HTTP client (tests).
-func NewClientWithHTTP(baseURL, apiKey string, hc *http.Client) (*Client, error) {
-	return newClient(baseURL, apiKey, hc)
-}
-
-func newClient(baseURL, apiKey string, hc *http.Client) (*Client, error) {
 	u, err := url.Parse(strings.TrimRight(strings.TrimSpace(baseURL), "/"))
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" || u.RawQuery != "" || u.Fragment != "" {
 		return nil, ErrInvalidURL
 	}
 
-	return &Client{base: u, key: apiKey, hc: hc}, nil
+	return &Client{base: u, key: apiKey, hc: telemetry.WrapClient(netutil.SafeHTTPClient(requestTimeout))}, nil
 }
 
 func (c *Client) endpoint(path string, q url.Values) string {

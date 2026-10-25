@@ -170,10 +170,7 @@ func newDTFixture(t *testing.T) *dtFixture {
 	pusher := &fakePusher{}
 
 	r := chi.NewRouter()
-	NewDependencyTrackHandler(db, log, auth.NewEvaluator(db, log, false), pusher).
-		WithClientFactory(func(baseURL, apiKey string) (*dtrack.Client, error) {
-			return dtrack.NewClientWithHTTP(baseURL, apiKey, dt.Client())
-		}).RegisterAuthed(r)
+	NewDependencyTrackHandler(db, log, auth.NewEvaluator(db, log, false), pusher).RegisterAuthed(r)
 
 	return &dtFixture{router: r, db: db, pusher: pusher, dt: dt}
 }

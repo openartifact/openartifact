@@ -661,7 +661,7 @@ func TestSimpleCodecColumnDrift(t *testing.T) {
 
 	specs := map[string]*tableCodec{}
 
-	for _, f := range SupportedFormats() {
+	for _, f := range registeredFormats() {
 		c, _ := CodecFor(f)
 		if tc, ok := c.(*tableCodec); ok {
 			specs[tc.spec.table] = tc

@@ -60,9 +60,6 @@ type Job struct {
 
 func (j Job) key() string { return j.RepoID + "\x00" + j.ArtifactID }
 
-// ClientFactory builds the Dependency-Track client of a configuration (tests inject a plain one).
-type ClientFactory func(baseURL, apiKey string) (*Client, error)
-
 // Pusher pushes BOMs and VEX statements in the background. Jobs are
 // de-duplicated per artifact: one waiting job absorbs further requests, and a
 // request arriving while the artifact is being pushed runs again afterwards.
@@ -70,7 +67,6 @@ type Pusher struct {
 	db      Store
 	src     Sources
 	log     *logger.Logger
-	newCl   ClientFactory
 	poll    time.Duration
 	maxWait time.Duration
 
@@ -87,7 +83,7 @@ type Pusher struct {
 // NewPusher creates a stopped pusher; Start launches its workers.
 func NewPusher(db Store, src Sources, log *logger.Logger) *Pusher {
 	return &Pusher{
-		db: db, src: src, log: log, newCl: NewClient,
+		db: db, src: src, log: log,
 		poll: defaultPollEvery, maxWait: defaultMaxWait,
 		jobs:    make(chan Job, queueSize),
 		waiting: map[string]struct{}{}, running: map[string]*Job{},
@@ -97,12 +93,6 @@ func NewPusher(db Store, src Sources, log *logger.Logger) *Pusher {
 // WithTimings overrides how often and for how long the processing token is polled.
 func (p *Pusher) WithTimings(poll, maxWait time.Duration) *Pusher {
 	p.poll, p.maxWait = poll, maxWait
-	return p
-}
-
-// WithClientFactory replaces the Dependency-Track client constructor.
-func (p *Pusher) WithClientFactory(f ClientFactory) *Pusher {
-	p.newCl = f
 	return p
 }
 
@@ -298,7 +288,7 @@ func (p *Pusher) run(ctx context.Context, j Job, rec *models.DependencyTrackPush
 		return skipError("Dependency-Track is not enabled or not fully configured for this repository")
 	}
 
-	cl, err := p.newCl(eff.BaseURL, eff.APIKey)
+	cl, err := NewClient(eff.BaseURL, eff.APIKey)
 	if err != nil {
 		return err
 	}

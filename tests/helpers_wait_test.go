@@ -5,7 +5,6 @@
 package integration_test
 
 import (
-	"os"
 	"testing"
 	"time"
 )
@@ -28,16 +27,4 @@ func waitUntil(t *testing.T, timeout time.Duration, msg string, cond func() bool
 	}
 
 	t.Fatalf("timed out waiting for: %s", msg)
-}
-
-// skipOrFailMissingEnv skips locally but fails in CI, so a misconfigured
-// pipeline cannot silently skip the integration tests.
-func skipOrFailMissingEnv(t *testing.T, name string) {
-	t.Helper()
-
-	if os.Getenv("CI") != "" {
-		t.Fatalf("%s not set in CI; integration services are required", name)
-	}
-
-	t.Skipf("%s not set", name)
 }

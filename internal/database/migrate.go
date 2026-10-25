@@ -34,22 +34,9 @@ type Migrator struct {
 	fs fs.ReadDirFS
 }
 
-// MigrationStatus describes the state of a single migration file.
-type MigrationStatus struct {
-	Version   string
-	AppliedAt *time.Time
-	Checksum  string
-	Pending   bool
-}
-
 // NewMigrator returns a Migrator backed by the embedded migrations FS.
 func NewMigrator(db *sql.DB) *Migrator {
 	return &Migrator{db: db, fs: migrations.FS}
-}
-
-// NewMigratorWithFS returns a Migrator using a custom FS, intended for testing.
-func NewMigratorWithFS(db *sql.DB, fsys fs.ReadDirFS) *Migrator {
-	return &Migrator{db: db, fs: fsys}
 }
 
 func migratorChecksum(data []byte) string {
@@ -233,64 +220,4 @@ func (m *Migrator) Apply(ctx context.Context) error {
 	}
 
 	return nil
-}
-
-// Status returns the state of every embedded migration.
-func (m *Migrator) Status(ctx context.Context) ([]MigrationStatus, error) {
-	conn, err := m.db.Conn(ctx)
-	if err != nil {
-		return nil, fmt.Errorf("status: get conn: %w", err)
-	}
-	defer func() { _ = conn.Close() }()
-
-	rows, err := conn.QueryContext(ctx, `SELECT version, applied_at, checksum FROM schema_migrations`)
-	if err != nil {
-		return nil, fmt.Errorf("status: query: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-
-	applied := make(map[string]MigrationStatus)
-
-	for rows.Next() {
-		var (
-			ms MigrationStatus
-			t  time.Time
-		)
-		if err := rows.Scan(&ms.Version, &t, &ms.Checksum); err != nil {
-			return nil, fmt.Errorf("status: scan: %w", err)
-		}
-
-		ms.AppliedAt = &t
-		applied[ms.Version] = ms
-	}
-
-	if err := rows.Err(); err != nil {
-		return nil, fmt.Errorf("status: iterate: %w", err)
-	}
-
-	entries, err := m.fs.ReadDir(".")
-	if err != nil {
-		return nil, fmt.Errorf("status: read embedded fs: %w", err)
-	}
-
-	sort.Slice(entries, func(i, j int) bool {
-		return entries[i].Name() < entries[j].Name()
-	})
-
-	var result []MigrationStatus
-
-	for _, e := range entries {
-		if e.IsDir() {
-			continue
-		}
-
-		version := e.Name()
-		if ms, ok := applied[version]; ok {
-			result = append(result, ms)
-		} else {
-			result = append(result, MigrationStatus{Version: version, Pending: true})
-		}
-	}
-
-	return result, nil
 }

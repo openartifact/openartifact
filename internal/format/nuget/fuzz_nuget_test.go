@@ -195,10 +195,12 @@ func nuspecAgree(t *testing.T, nuspec string, layout uint8) {
 		return
 	}
 
+	open := func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil }
+
 	deps, err := pkgdeps.Read(context.Background(), pkgdeps.Source{
 		Format:   "nuget",
 		Filename: nuspecAgreeFileName,
-		Open:     func() (io.ReadCloser, error) { return io.NopCloser(bytes.NewReader(data)), nil },
+		Open:     open,
 	})
 	if err != nil {
 		t.Fatalf("the handler reads the package, pkgdeps does not: %v\n%s", err, nuspec)
@@ -206,7 +208,7 @@ func nuspecAgree(t *testing.T, nuspec string, layout uint8) {
 
 	nuspecAgreeCheckDeps(t, nuspecAgreeDeps(spec), deps.Deps)
 
-	lic, err := licensemeta.ReadBytes(context.Background(), "nuget", nuspecAgreeFileName, data)
+	lic, err := licensemeta.Read(context.Background(), "nuget", nuspecAgreeFileName, open)
 	if err != nil {
 		t.Fatalf("the handler reads the package, licensemeta does not: %v\n%s", err, nuspec)
 	}
