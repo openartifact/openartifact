@@ -529,8 +529,6 @@ func (p *PostgresDB) GetRPMRepo(ctx context.Context, repositoryID string) (*mode
 		RepositoryID:          row.RepositoryID,
 		BaseArch:              row.BaseArch,
 		MetadataStale:         row.MetadataStale,
-		SigningKeyID:          row.SigningKeyID,
-		SigningKeyFingerprint: row.SigningKeyFingerprint,
 		CreatedAt:             row.CreatedAt,
 		UpdatedAt:             row.UpdatedAt,
 	}, nil

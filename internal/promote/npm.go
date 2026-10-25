@@ -68,8 +68,7 @@ const npmEnsurePackageQuery = `INSERT INTO npm_packages AS d (repository_id, sco
 	RETURNING d.id::text`
 
 // npmCopyVersionQuery copies version row $2 into package $1. Every column of
-// npm_versions is copied except the id, the timestamps, the soft-delete marks
-// and the generated search_tsv.
+// npm_versions is copied except the id, the timestamps, the soft-delete marks.
 const npmCopyVersionQuery = `INSERT INTO npm_versions (package_id, version, manifest_json, integrity, shasum, tarball_filename, blob_id)
 	SELECT $1::uuid, s.version, s.manifest_json, s.integrity, s.shasum, s.tarball_filename, s.blob_id
 	  FROM npm_versions s WHERE s.id = $2::uuid`

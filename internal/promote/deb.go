@@ -84,7 +84,7 @@ const debEnsureArchitecture = `INSERT INTO debian_architectures (distribution_id
 	ON CONFLICT (distribution_id, name) DO NOTHING`
 
 // debCopyQuery copies every metadata column of a package row; id, the
-// timestamps, the soft-delete markers and the generated search_tsv take their
+// timestamps and the soft-delete markers take their
 // defaults.
 const debCopyQuery = `INSERT INTO deb_packages (repository_id, distribution_id, component_id, blob_id, name, version, arch,
 	       summary, description, license, maintainer, homepage, filename, installed_size, control_fields)

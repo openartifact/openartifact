@@ -36,34 +36,19 @@ func (q *Queries) CreateRPMRepo(ctx context.Context, arg CreateRPMRepoParams) (C
 
 const getRPMRepo = `-- name: GetRPMRepo :one
 SELECT id, repository_id, base_arch, metadata_stale,
-       COALESCE(signing_key_id, '') AS signing_key_id,
-       COALESCE(signing_key_fingerprint, '') AS signing_key_fingerprint,
        created_at, updated_at
 FROM rpm_repos
 WHERE repository_id = $1
 `
 
-type GetRPMRepoRow struct {
-	ID                    string    `db:"id" json:"id"`
-	RepositoryID          string    `db:"repository_id" json:"repository_id"`
-	BaseArch              string    `db:"base_arch" json:"base_arch"`
-	MetadataStale         bool      `db:"metadata_stale" json:"metadata_stale"`
-	SigningKeyID          string    `db:"signing_key_id" json:"signing_key_id"`
-	SigningKeyFingerprint string    `db:"signing_key_fingerprint" json:"signing_key_fingerprint"`
-	CreatedAt             time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt             time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetRPMRepo(ctx context.Context, repositoryID string) (GetRPMRepoRow, error) {
+func (q *Queries) GetRPMRepo(ctx context.Context, repositoryID string) (RpmRepo, error) {
 	row := q.db.QueryRow(ctx, getRPMRepo, repositoryID)
-	var i GetRPMRepoRow
+	var i RpmRepo
 	err := row.Scan(
 		&i.ID,
 		&i.RepositoryID,
 		&i.BaseArch,
 		&i.MetadataStale,
-		&i.SigningKeyID,
-		&i.SigningKeyFingerprint,
 		&i.CreatedAt,
 		&i.UpdatedAt,
 	)

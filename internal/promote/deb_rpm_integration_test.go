@@ -266,7 +266,7 @@ func TestRPMKeepsTheTargetRepodataRow(t *testing.T) {
 	blobA, shaA := h.blob("rpm A")
 
 	seedRPMPackage(h, src.ID, blobA, 2, rpmTestFilename)
-	h.exec(`INSERT INTO rpm_repos (repository_id, base_arch, metadata_stale, signing_key_id) VALUES ($1, 'aarch64', false, 'DSTKEY')`, dst.ID)
+	h.exec(`INSERT INTO rpm_repos (repository_id, base_arch, metadata_stale) VALUES ($1, 'aarch64', false)`, dst.ID)
 
 	if _, err := h.promoteOnce(p, Request{Src: src, Dst: dst, SHA256: shaA}); err != nil {
 		t.Fatalf("promotion: %v", err)
@@ -276,8 +276,8 @@ func TestRPMKeepsTheTargetRepodataRow(t *testing.T) {
 		t.Errorf("target has %d rpm_repos rows, want its own one reused", got)
 	}
 
-	if got := h.str(`SELECT base_arch || '/' || metadata_stale::text || '/' || signing_key_id FROM rpm_repos WHERE repository_id = $1`, dst.ID); got != "aarch64/true/DSTKEY" {
-		t.Errorf("target rpm_repos row is %q, want it flagged stale with its own key kept", got)
+	if got := h.str(`SELECT base_arch || '/' || metadata_stale::text FROM rpm_repos WHERE repository_id = $1`, dst.ID); got != "aarch64/true" {
+		t.Errorf("target rpm_repos row is %q, want it flagged stale", got)
 	}
 }
 

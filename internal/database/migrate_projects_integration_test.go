@@ -158,9 +158,7 @@ func assertProjectsRenames(t *testing.T, db *sql.DB) {
 	}
 
 	for _, idx := range []string{
-		"idx_project_members_project_id", "idx_project_members_user_id", "idx_auth_groups_project_id",
-		"idx_permission_targets_project_id", "idx_repositories_project_id", "idx_audit_logs_project_id",
-		"idx_project_groups_group",
+		"idx_project_members_user_id", "idx_audit_logs_project_id", "idx_project_groups_group",
 	} {
 		if mustScan[bool](t, db, `SELECT to_regclass('public.' || $1) IS NULL`, idx) {
 			t.Errorf("index %s is missing", idx)

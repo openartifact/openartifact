@@ -1,7 +1,5 @@
 -- name: GetRPMRepo :one
 SELECT id, repository_id, base_arch, metadata_stale,
-       COALESCE(signing_key_id, '') AS signing_key_id,
-       COALESCE(signing_key_fingerprint, '') AS signing_key_fingerprint,
        created_at, updated_at
 FROM rpm_repos
 WHERE repository_id = $1;

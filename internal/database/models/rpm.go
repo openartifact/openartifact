@@ -53,8 +53,6 @@ type RPMRepo struct {
 	RepositoryID          string
 	BaseArch              string
 	MetadataStale         bool
-	SigningKeyID          string
-	SigningKeyFingerprint string
 	CreatedAt             time.Time
 	UpdatedAt             time.Time
 }

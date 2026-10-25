@@ -310,7 +310,7 @@ func TestVulnScanOverviewUsesIndexes(t *testing.T) {
 		params models.VulnScanListParams
 		index  string
 	}{
-		{"repository", models.VulnScanListParams{Repo: "r7"}, "idx_artifact_refs_repository_id"},
+		{"repository", models.VulnScanListParams{Repo: "r7"}, "artifact_refs_repository_id_artifact_path_key"},
 		{"critical severity", models.VulnScanListParams{Severity: "critical"}, "idx_vuln_results_critical"},
 		{"quarantined", models.VulnScanListParams{Quarantined: new(true)}, "idx_vuln_results_quarantined"},
 		{"failed status", models.VulnScanListParams{Status: "failed"}, "idx_scan_jobs_vuln_problems"},

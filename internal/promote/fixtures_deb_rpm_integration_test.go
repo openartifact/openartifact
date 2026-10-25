@@ -80,12 +80,11 @@ func debFixture() fixture {
 }
 
 // seedRPMPackage stores an rpm package of repoID with the given epoch and
-// file name, and the repository's rpm_repos row (flagged fresh and holding a
-// signing key, which a promotion must not carry over). Every package column
+// file name, and the repository's rpm_repos row (flagged fresh). Every package column
 // holds a non-default value. It returns the package row id.
 func seedRPMPackage(h *harness, repoID, blobID string, epoch int, filename string) string {
-	h.exec(`INSERT INTO rpm_repos (repository_id, base_arch, metadata_stale, signing_key_id, signing_key_fingerprint)
-		VALUES ($1, 'x86_64', false, 'SRCKEYID', 'SRCKEYFINGERPRINT')
+	h.exec(`INSERT INTO rpm_repos (repository_id, base_arch, metadata_stale)
+		VALUES ($1, 'x86_64', false)
 		ON CONFLICT (repository_id, base_arch) DO NOTHING`, repoID)
 
 	return h.row("rpm_packages", repoID, "blob_id", blobID, map[string]any{
@@ -111,17 +110,13 @@ func rpmFixture() fixture {
 		verify: func(h *harness, src, dst string) {
 			h.t.Helper()
 
-			if got := h.count(`SELECT COUNT(*) FROM rpm_repos WHERE repository_id = $1 AND signing_key_id = 'SRCKEYID'`, src); got != 1 {
-				h.t.Fatalf("source repository has %d signing keys, the fixture should set one", got)
-			}
-
 			if got := h.count(`SELECT COUNT(*) FROM rpm_repos WHERE repository_id = $1`, dst); got != 1 {
 				h.t.Errorf("target has %d rpm_repos rows, want 1", got)
 			}
 
 			if got := h.count(`SELECT COUNT(*) FROM rpm_repos
-				WHERE repository_id = $1 AND metadata_stale AND signing_key_id IS NULL AND signing_key_fingerprint IS NULL`, dst); got != 1 {
-				h.t.Errorf("target has %d stale rpm_repos rows without a signing key, want 1", got)
+				WHERE repository_id = $1 AND metadata_stale`, dst); got != 1 {
+				h.t.Errorf("target has %d stale rpm_repos rows, want 1", got)
 			}
 		},
 	}
