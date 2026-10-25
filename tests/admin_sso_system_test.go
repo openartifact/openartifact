@@ -468,7 +468,7 @@ func TestSystemInfo_Get(t *testing.T) {
 		t.Fatalf("expected 200, got %d", rw.Code)
 	}
 
-	var resp map[string]string
+	var resp map[string]any
 	if err := json.NewDecoder(rw.Body).Decode(&resp); err != nil {
 		t.Fatalf("decode body: %v", err)
 	}
@@ -484,7 +484,7 @@ func TestSystemInfo_Get(t *testing.T) {
 		}
 	}
 
-	if resp["status"] == "" {
+	if resp["status"] == "" || resp["status"] == nil {
 		t.Errorf("missing status")
 	}
 }

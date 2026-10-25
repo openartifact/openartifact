@@ -10,11 +10,10 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 
 	"github.com/go-chi/chi/v5"
-	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 	"go.yaml.in/yaml/v3"
 )
 
@@ -40,7 +39,6 @@ func TestOpenAPISpecMetadataPatched(t *testing.T) {
 
 	var doc struct {
 		Info struct {
-			Title       string `json:"title"`
 			Version     string `json:"version"`
 			Description string `json:"description"`
 			License     struct {
@@ -59,30 +57,60 @@ func TestOpenAPISpecMetadataPatched(t *testing.T) {
 	}
 
 	rec := serveOpenAPI(t, "1.2.3", true, "/api/v1/openapi.json")
-	require.Equal(t, http.StatusOK, rec.Code)
-	require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &doc))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
 
-	assert.Equal(t, "1.2.3", doc.Info.Version)
-	assert.Equal(t, "AGPL-3.0-or-later", doc.Info.License.Name)
-	assert.Equal(t, "https://www.gnu.org/licenses/agpl-3.0.html", doc.Info.License.URL)
-	assert.NotContains(t, doc.Info.Description, "Enterprise")
-	assert.Equal(t, "oa_session", doc.Components.SecuritySchemes["cookieAuth"].Name)
-	require.Len(t, doc.Servers, 1)
-	assert.Equal(t, "/", doc.Servers[0].URL)
+	if err := json.Unmarshal(rec.Body.Bytes(), &doc); err != nil {
+		t.Fatal(err)
+	}
+
+	if doc.Info.Version != "1.2.3" {
+		t.Errorf("info.version = %q", doc.Info.Version)
+	}
+
+	if doc.Info.License.Name != "AGPL-3.0-or-later" || doc.Info.License.URL != "https://www.gnu.org/licenses/agpl-3.0.html" {
+		t.Errorf("info.license = %+v", doc.Info.License)
+	}
+
+	if strings.Contains(doc.Info.Description, "Enterprise") {
+		t.Errorf("stale description: %q", doc.Info.Description)
+	}
+
+	if got := doc.Components.SecuritySchemes["cookieAuth"].Name; got != "oa_session" {
+		t.Errorf("cookieAuth name = %q, want oa_session", got)
+	}
+
+	if len(doc.Servers) != 1 || doc.Servers[0].URL != "/" {
+		t.Errorf("servers = %+v, want one relative server", doc.Servers)
+	}
 
 	yamlRec := serveOpenAPI(t, "1.2.3", true, "/api/v1/openapi.yaml")
-	require.Equal(t, http.StatusOK, yamlRec.Code)
+	if yamlRec.Code != http.StatusOK {
+		t.Fatalf("yaml status = %d", yamlRec.Code)
+	}
 
-	var y map[string]any
-	require.NoError(t, yaml.Unmarshal(yamlRec.Body.Bytes(), &y))
-	assert.Equal(t, "1.2.3", y["info"].(map[string]any)["version"])
+	var y struct {
+		Info struct {
+			Version string `yaml:"version"`
+		} `yaml:"info"`
+	}
+	if err := yaml.Unmarshal(yamlRec.Body.Bytes(), &y); err != nil {
+		t.Fatal(err)
+	}
+
+	if y.Info.Version != "1.2.3" {
+		t.Errorf("yaml info.version = %q", y.Info.Version)
+	}
 }
 
 func TestOpenAPISpecServedWhenDocsDisabled(t *testing.T) {
 	t.Parallel()
 
 	for _, p := range []string{"/api/v1/openapi.json", "/api/v1/openapi.yaml"} {
-		assert.Equal(t, http.StatusOK, serveOpenAPI(t, "dev", false, p).Code, p)
+		if code := serveOpenAPI(t, "dev", false, p).Code; code != http.StatusOK {
+			t.Errorf("%s = %d, want 200", p, code)
+		}
 	}
 }
 
@@ -90,50 +118,87 @@ func TestAPIReferencePage(t *testing.T) {
 	t.Parallel()
 
 	rec := serveOpenAPI(t, "dev", true, "/api/reference")
-	require.Equal(t, http.StatusOK, rec.Code)
-	assert.Contains(t, rec.Header().Get("Content-Type"), "text/html")
+	if rec.Code != http.StatusOK {
+		t.Fatalf("status = %d", rec.Code)
+	}
+
+	if !strings.Contains(rec.Header().Get("Content-Type"), "text/html") {
+		t.Errorf("content type = %q", rec.Header().Get("Content-Type"))
+	}
 
 	csp := rec.Header().Get("Content-Security-Policy")
 	for _, d := range []string{"default-src 'self'", "script-src 'self'", "connect-src 'self'", "frame-ancestors 'none'"} {
-		assert.Contains(t, csp, d)
+		if !strings.Contains(csp, d) {
+			t.Errorf("CSP %q lacks %q", csp, d)
+		}
 	}
 
-	assert.NotContains(t, csp, "unsafe-eval")
-	assert.NotContains(t, csp, "http")
+	for _, bad := range []string{"unsafe-eval", "http"} {
+		if strings.Contains(csp, bad) {
+			t.Errorf("CSP %q must not contain %q", csp, bad)
+		}
+	}
 
 	body := rec.Body.String()
-	assert.Contains(t, body, `src="/api/reference/assets/scalar-1.76.0.js"`)
-	assert.Contains(t, body, `src="/api/reference/assets/init.js"`)
+	for _, want := range []string{`src="/api/reference/assets/scalar-1.76.0.js"`, `src="/api/reference/assets/init.js"`} {
+		if !strings.Contains(body, want) {
+			t.Errorf("page lacks %s", want)
+		}
+	}
+
 	// no inline script and nothing from another origin
-	assert.NotContains(t, body, "<script>")
-	assert.NotContains(t, body, "http://")
-	assert.NotContains(t, body, "https://")
+	for _, bad := range []string{"<script>", "http://", "https://"} {
+		if strings.Contains(body, bad) {
+			t.Errorf("page must not contain %q", bad)
+		}
+	}
 }
 
 func TestAPIReferenceAssets(t *testing.T) {
 	t.Parallel()
 
-	init := serveOpenAPI(t, "dev", true, "/api/reference/assets/init.js")
-	require.Equal(t, http.StatusOK, init.Code)
-	assert.Contains(t, init.Body.String(), "X-CSRF-Token")
-	assert.Contains(t, init.Body.String(), "oa_csrf")
+	initJS := serveOpenAPI(t, "dev", true, "/api/reference/assets/init.js")
+	if initJS.Code != http.StatusOK {
+		t.Fatalf("init.js status = %d", initJS.Code)
+	}
+
+	for _, want := range []string{"X-CSRF-Token", "oa_csrf"} {
+		if !strings.Contains(initJS.Body.String(), want) {
+			t.Errorf("init.js lacks %s", want)
+		}
+	}
 
 	gz := serveOpenAPI(t, "dev", true, "/api/reference/assets/scalar-1.76.0.js", "Accept-Encoding", "gzip")
-	require.Equal(t, http.StatusOK, gz.Code)
-	assert.Equal(t, "gzip", gz.Header().Get("Content-Encoding"))
-	assert.Contains(t, gz.Header().Get("Cache-Control"), "immutable")
+	if gz.Code != http.StatusOK || gz.Header().Get("Content-Encoding") != "gzip" {
+		t.Fatalf("gzip bundle: status %d, encoding %q", gz.Code, gz.Header().Get("Content-Encoding"))
+	}
+
+	if !strings.Contains(gz.Header().Get("Cache-Control"), "immutable") {
+		t.Errorf("bundle Cache-Control = %q", gz.Header().Get("Cache-Control"))
+	}
 
 	zr, err := gzip.NewReader(gz.Body)
-	require.NoError(t, err)
+	if err != nil {
+		t.Fatal(err)
+	}
 
-	plainFromGzip, err := io.ReadAll(zr)
-	require.NoError(t, err)
-	assert.Contains(t, string(plainFromGzip), "createApiReference")
+	fromGzip, err := io.ReadAll(zr)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if !strings.Contains(string(fromGzip), "createApiReference") {
+		t.Error("bundle does not expose createApiReference")
+	}
 
 	plain := serveOpenAPI(t, "dev", true, "/api/reference/assets/scalar-1.76.0.js")
-	require.Equal(t, http.StatusOK, plain.Code)
-	assert.Empty(t, plain.Header().Get("Content-Encoding"))
-	assert.Equal(t, string(plainFromGzip), plain.Body.String())
+	if plain.Code != http.StatusOK || plain.Header().Get("Content-Encoding") != "" {
+		t.Fatalf("plain bundle: status %d, encoding %q", plain.Code, plain.Header().Get("Content-Encoding"))
+	}
+
+	if plain.Body.String() != string(fromGzip) {
+		t.Error("identity response differs from the decompressed gzip response")
+	}
 }
 
 func TestSwaggerRedirects(t *testing.T) {
@@ -141,8 +206,9 @@ func TestSwaggerRedirects(t *testing.T) {
 
 	for _, p := range []string{"/swagger", "/swagger/"} {
 		rec := serveOpenAPI(t, "dev", true, p)
-		assert.Equal(t, http.StatusMovedPermanently, rec.Code, p)
-		assert.Equal(t, "/api/reference", rec.Header().Get("Location"), p)
+		if rec.Code != http.StatusMovedPermanently || rec.Header().Get("Location") != "/api/reference" {
+			t.Errorf("%s = %d -> %q", p, rec.Code, rec.Header().Get("Location"))
+		}
 	}
 }
 
@@ -154,8 +220,13 @@ func TestAPIReferenceDisabled(t *testing.T) {
 		"/api/reference/assets/init.js", "/api/reference/assets/scalar-1.76.0.js",
 	} {
 		rec := serveOpenAPI(t, "dev", false, p)
-		assert.Equal(t, http.StatusNotFound, rec.Code, p)
-		assert.NotContains(t, rec.Body.String(), "<html", p)
+		if rec.Code != http.StatusNotFound {
+			t.Errorf("%s = %d, want 404", p, rec.Code)
+		}
+
+		if strings.Contains(rec.Body.String(), "<html") {
+			t.Errorf("%s served HTML while disabled", p)
+		}
 	}
 }
 
@@ -168,7 +239,12 @@ func TestSystemInfoAdvertisesAPIReference(t *testing.T) {
 		h.ServeHTTP(rec, httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/system/info", nil))
 
 		var body map[string]any
-		require.NoError(t, json.Unmarshal(rec.Body.Bytes(), &body))
-		assert.Equal(t, on, body["api_reference_enabled"])
+		if err := json.Unmarshal(rec.Body.Bytes(), &body); err != nil {
+			t.Fatal(err)
+		}
+
+		if body["api_reference_enabled"] != on {
+			t.Errorf("api_reference_enabled = %v, want %v", body["api_reference_enabled"], on)
+		}
 	}
 }
