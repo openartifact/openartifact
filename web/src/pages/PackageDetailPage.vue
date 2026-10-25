@@ -25,7 +25,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <ClipboardDocumentIcon class="w-4 h-4 text-muted" aria-hidden="true" />
             {{ t('repoDetail.copyUrl') }}
           </AppButton>
-          <AppButton v-if="session.isAdmin" variant="secondary" :to="`/repos/${encodeURIComponent(repoName)}/edit`">
+          <AppButton v-if="session.isAdmin" variant="secondary" :to="{ path: `/repos/${encodeURIComponent(repoName)}`, query: { tab: 'settings' } }">
             <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
             {{ t('nav.settings') }}
           </AppButton>
@@ -421,8 +421,9 @@ const tabs = [
 const route = useRoute()
 const router = useRouter()
 
-const repoName = computed(() => route.params.name as string)
-const format = computed(() => route.params.format as string)
+const repoName = computed(() => route.params.repo as string)
+// The URL carries no format (`/repos/:repo/packages/:pkg`): it is the repository's.
+const format = computed(() => repo.value?.format ?? '')
 const pkgName = computed(() => route.params.pkg as string)
 
 const toasts = useToastStore()
@@ -672,7 +673,7 @@ async function load(): Promise<void> {
   }
 }
 
-// The router reuses this component across /repos/:name/packages/:format/:pkg
+// The router reuses this component across /repos/:repo/packages/:pkg
 // navigations, so reload (and reset per-package state) on any param change.
 watch(
   () => [repoName.value, format.value, pkgName.value],

@@ -23,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArrowUpTrayIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('repoDetail.upload') }}
         </AppButton>
-        <AppButton v-if="repoAdmin" variant="secondary" :to="`/repos/${encodeURIComponent(repo.name)}/edit`">
+        <AppButton v-if="repoAdmin" variant="secondary" :to="{ path: `/repos/${encodeURIComponent(repo.name)}`, query: { tab: 'settings' } }">
           <Cog6ToothIcon class="w-4 h-4 text-muted" aria-hidden="true" />
           {{ t('common.edit') }}
         </AppButton>
@@ -197,7 +197,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 </td>
                 <td class="px-4 py-2.5 text-sm font-medium">
                   <router-link
-                    :to="`/repos/${encodeURIComponent(repo!.name)}/packages/${encodeURIComponent(pkg.format)}/${encodeURIComponent(pkg.name)}`"
+                    :to="artifactPath(repo!.name, pkg.name)"
                     class="text-foreground hover:text-primary transition-colors"
                   >{{ pkg.name }}</router-link>
                 </td>
@@ -295,6 +295,7 @@ import PackageUploadZone from '../components/PackageUploadZone.vue'
 import Pagination from '../components/Pagination.vue'
 import RepoDeleteDialog from '../components/RepoDeleteDialog.vue'
 import { asyncTab } from '../lib/asyncTab'
+import { artifactPath } from '../lib/artifactPath'
 import { useSessionStore } from '../stores/session'
 import { useDocsLink } from '../composables/useDocsLink'
 import { t, tp } from '../i18n/en'
@@ -336,7 +337,7 @@ const deleting = ref(false)
 const members = ref<RepositoryMember[]>([])
 const membersError = ref('')
 
-const repoName = computed(() => route.params.name as string)
+const repoName = computed(() => route.params.repo as string)
 
 function onFederationToggled(enabled: boolean): void {
   if (repo.value) repo.value = { ...repo.value, federated: enabled }
@@ -445,7 +446,9 @@ const tabs = computed(() => {
 // The active tab lives in the URL (?tab=) so it is deep-linkable and back-button
 // safe. Unknown or not-permitted values fall back to the repo's default tab.
 const activeTab = computed(() => {
-  const wanted = typeof route.query.tab === 'string' ? route.query.tab : ''
+  const raw = typeof route.query.tab === 'string' ? route.query.tab : ''
+  // `?tab=settings` is the new name of the configuration tab (legacy /edit and /settings links land here).
+  const wanted = raw === 'settings' ? 'configuration' : raw
   return tabs.value.some((tb) => tb.id === wanted) ? wanted : defaultTab.value
 })
 

@@ -144,7 +144,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
         <DataTable :columns="scanColumns" :rows="scanRows as unknown as Record<string, unknown>[]" row-key="repo">
           <template #cell-repo="{ row }">
-            <router-link :to="{ path: '/security/vulns', query: { repo: row.repo as string } }" class="text-primary hover:underline">
+            <router-link :to="{ path: '/security', query: { type: 'vuln', repo: row.repo as string } }" class="text-primary hover:underline">
               {{ row.repo }}
             </router-link>
           </template>

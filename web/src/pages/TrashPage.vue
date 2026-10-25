@@ -170,7 +170,7 @@ const route = useRoute()
 const session = useSessionStore()
 const toasts = useToastStore()
 // The repository and the global trash share one docs page.
-const docsUrl = useDocsLink('repo-trash')
+const docsUrl = useDocsLink('settings-trash')
 
 // Per-repository view when the route carries :name; global admin view otherwise.
 const repo = computed(() => (route.params.name ? String(route.params.name) : ''))

@@ -73,7 +73,7 @@ async function mountPage(opts: { role?: string; status?: number; query?: string;
       { path: '/projects', component: { template: '<div />' } },
       { path: '/projects/:project', component: ProjectHomePage },
       { path: '/repos/:name', component: { template: '<div />' } },
-      { path: '/admin/projects', component: { template: '<div />' } },
+      { path: '/settings/project-policy', component: { template: '<div />' } },
     ],
   })
   await router.push(`/projects/alpha${opts.query ?? ''}`)
@@ -185,7 +185,7 @@ describe('ProjectHomePage', () => {
         query: '?tab=settings',
         user: { id: 'a', username: 'root', is_admin: true },
       })
-      expect(wrapper.find('[data-testid="project-policy"] a').attributes('href')).toBe('/admin/projects')
+      expect(wrapper.find('[data-testid="project-policy"] a').attributes('href')).toBe('/settings/project-policy')
     })
   })
 

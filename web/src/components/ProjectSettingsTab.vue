@@ -54,7 +54,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <h2 class="text-sm font-semibold text-foreground">{{ t('projects.settings.policy') }}</h2>
       <p class="text-xs text-muted mt-0.5 mb-3">
         {{ t('projects.settings.policyManaged') }}
-        <router-link v-if="session.isAdmin" to="/admin/projects" class="text-primary hover:underline">{{ t('projects.settings.policyAdminLink') }}</router-link>
+        <router-link v-if="session.isAdmin" to="/settings/project-policy" class="text-primary hover:underline">{{ t('projects.settings.policyAdminLink') }}</router-link>
       </p>
       <dl class="grid grid-cols-[max-content_1fr] gap-x-6 gap-y-1.5 text-sm">
         <dt class="text-muted">{{ t('projects.settings.allowedFormats') }}</dt>

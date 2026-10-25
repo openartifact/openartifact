@@ -139,7 +139,7 @@ const loading = ref(false)
 const loadError = ref('')
 const page = ref(1)
 const toasts = useToastStore()
-const docsUrl = useDocsLink('admin-tokens')
+const docsUrl = useDocsLink('settings-tokens')
 
 const pageCount = computed(() => Math.max(1, Math.ceil(total.value / PAGE_SIZE)))
 

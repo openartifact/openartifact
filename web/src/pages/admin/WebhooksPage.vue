@@ -288,7 +288,7 @@ import {
 } from '../../lib/webhookEvents'
 
 const toasts = useToastStore()
-const docsUrl = useDocsLink('admin-webhooks')
+const docsUrl = useDocsLink('settings-webhooks')
 
 const webhooks = ref<Webhook[]>([])
 const loading = ref(false)

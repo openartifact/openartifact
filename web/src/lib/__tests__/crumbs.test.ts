@@ -19,7 +19,6 @@ describe('route crumb trails', () => {
 
   it('lists repositories', () => {
     expect(trail('/repos')).toEqual([{ label: 'Repositories', to: '/repos' }])
-    expect(trail('/repos/new').map((c) => c.label)).toEqual(['Repositories', 'New repository'])
   })
 
   it('resolves the repo name param, encoded in links, raw in labels', () => {
@@ -38,27 +37,24 @@ describe('route crumb trails', () => {
   })
 
   it.each([
-    ['/repos/demo/edit', ['Repositories', 'demo', 'Edit']],
-    ['/repos/demo/browse', ['Repositories', 'demo', 'Browse']],
-    ['/repos/demo/graph', ['Repositories', 'demo', 'Dependency graph']],
-    ['/repos/demo/trash', ['Repositories', 'demo', 'Trash']],
-    ['/repos/demo/packages/npm/left-pad', ['Repositories', 'demo', 'left-pad']],
-    ['/search', ['Search']],
-    ['/admin/users', ['Administration', 'Users']],
-    ['/admin/projects', ['Administration', 'Projects']],
-    ['/admin/trash', ['Administration', 'Trash']],
-    ['/admin/ai', ['Administration', 'AI settings']],
-    ['/security/vulns', ['Security', 'Vulnerability scan']],
-    ['/security/ai-analysis', ['Security', 'AI analysis']],
+    ['/repos/demo/packages/left-pad', ['Repositories', 'demo', 'left-pad']],
+    ['/repos/demo/packages/@scope/left-pad', ['Repositories', 'demo', '@scope/left-pad']],
+    ['/repos/demo/packages/left-pad/versions/1.0.0', ['Repositories', 'demo', 'left-pad']],
+    ['/packages', ['Search']],
+    ['/security', ['Security']],
+    ['/settings', ['Settings']],
     ['/settings/profile', ['Settings', 'Profile']],
     ['/settings/password', ['Settings', 'Password']],
-    ['/settings/tokens', ['Settings', 'Personal access tokens']],
+    ['/settings/tokens', ['Settings', 'Access tokens']],
+    ['/settings/users', ['Settings', 'Users']],
+    ['/settings/health', ['Settings', 'System health']],
+    ['/settings/dependency-track', ['Settings', 'Dependency-Track']],
   ])('%s -> %j', (path, labels) => {
     expect(trail(path).map((c) => c.label)).toEqual(labels)
   })
 
   it('links every crumb except the current page to a real route', () => {
-    for (const path of ['/repos/demo/trash', '/admin/system', '/security/secrets', '/settings/tokens']) {
+    for (const path of ['/repos/demo/packages/left-pad', '/settings/users', '/settings/tokens', '/projects/demo']) {
       const crumbs = trail(path)
       for (const c of crumbs.slice(0, -1)) {
         expect(c.to).toBeDefined()
@@ -75,15 +71,5 @@ describe('route crumb trails', () => {
       .filter((r) => !r.meta.crumbs?.length)
       .map((r) => String(r.name))
     expect(missing).toEqual([])
-  })
-
-  it('keeps /repos/:name/settings redirecting to the configuration tab', () => {
-    const record = router.getRoutes().find((r) => r.name === 'repo-settings')!
-    const redirect = record.redirect as (to: { params: Record<string, string> }) => unknown
-    expect(redirect({ params: { name: 'demo' } })).toEqual({
-      name: 'repo-detail',
-      params: { name: 'demo' },
-      query: { tab: 'configuration' },
-    })
   })
 })

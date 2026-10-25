@@ -171,7 +171,7 @@ describe('router beforeEach guards', () => {
   })
 
   describe('admin access', () => {
-    it.each(['/security/vulns', '/security/licenses', '/security/secrets', '/security/ai-analysis'])(
+    it.each(['/security', '/security?type=license', '/security/vulns', '/security/licenses', '/security/secrets', '/security/ai-analysis'])(
       'non-admin cannot open %s',
       async (path) => {
         signIn({ is_admin: false })
@@ -180,23 +180,48 @@ describe('router beforeEach guards', () => {
       },
     )
 
-    it('admin can open the security pages', async () => {
+    it('admin can open the security page and the legacy URLs land on it', async () => {
       signIn({ is_admin: true })
-      await push('/security/vulns')
-      expect(router.currentRoute.value.path).toBe('/security/vulns')
+      await push('/security')
+      expect(router.currentRoute.value.path).toBe('/security')
+      await push('/security/licenses')
+      expect(router.currentRoute.value.fullPath).toBe('/security?type=license')
     })
 
-    it('non-admin cannot access /admin/users', async () => {
+    it('non-admin cannot open an admin settings section, nor its legacy /admin URL', async () => {
       signIn({ is_admin: false })
+      await push('/settings/users')
+      expect(router.currentRoute.value.path).toBe('/')
       await push('/admin/users')
-      // Should redirect away from admin route
-      expect(router.currentRoute.value.path).not.toBe('/admin/users')
+      expect(router.currentRoute.value.path).toBe('/')
     })
 
-    it('admin can access /admin/users', async () => {
+    it('non-admin can open the personal settings sections', async () => {
+      signIn({ is_admin: false })
+      await push('/settings/profile')
+      expect(router.currentRoute.value.path).toBe('/settings/profile')
+      await push('/settings')
+      expect(router.currentRoute.value.name).toBe('settings-hub')
+    })
+
+    it('admin can open an admin settings section; /admin/users redirects to it', async () => {
       signIn({ is_admin: true })
       await push('/admin/users')
-      expect(router.currentRoute.value.path).toBe('/admin/users')
+      expect(router.currentRoute.value.path).toBe('/settings/users')
+    })
+
+    it('the access-token section opens on personal tokens unless a type is chosen', async () => {
+      signIn({ is_admin: false })
+      await push('/settings/tokens')
+      expect(router.currentRoute.value.fullPath).toBe('/settings/tokens?type=personal')
+      await push('/settings/tokens?type=project')
+      expect(router.currentRoute.value.fullPath).toBe('/settings/tokens?type=project')
+    })
+
+    it('an unknown settings section resolves (the page shows its own not-found state)', async () => {
+      signIn({ is_admin: false })
+      await push('/settings/nope')
+      expect(router.currentRoute.value.name).toBe('settings-section')
     })
   })
 })

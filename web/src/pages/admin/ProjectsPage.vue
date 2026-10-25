@@ -242,7 +242,7 @@ import { formatDate } from '../../lib/datetime'
 import { useToastStore } from '../../stores/toast'
 
 const toasts = useToastStore()
-const docsUrl = useDocsLink('admin-projects')
+const docsUrl = useDocsLink('settings-project-policy')
 const items = ref<Project[]>([])
 const users = ref<UserItem[]>([])
 const allGroups = ref<GroupItem[]>([])

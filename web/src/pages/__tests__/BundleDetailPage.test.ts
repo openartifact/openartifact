@@ -86,7 +86,7 @@ async function mountPage() {
   )
   const router = createRouter({
     history: createMemoryHistory(),
-    routes: [{ path: '/bundles/:name/:version', component: BundleDetailPage }, { path: '/bundles', component: { template: '<div/>' } }, { path: '/security/vulns', component: { template: '<div/>' } }],
+    routes: [{ path: '/bundles/:name/:version', component: BundleDetailPage }, { path: '/bundles', component: { template: '<div/>' } }, { path: '/security', component: { template: '<div/>' } }],
   })
   await router.push('/bundles/shop/1.0.0')
   await router.isReady()
@@ -115,7 +115,7 @@ describe('BundleDetailPage', () => {
     expect(wrapper.text()).toContain('maven-dev')
     expect(wrapper.get('[data-testid="stage-trail"]').text()).toContain('qa')
     expect(wrapper.text()).toContain('Security scans')
-    expect(wrapper.find('a[href="/security/vulns?repo=maven-dev"]').exists()).toBe(true)
+    expect(wrapper.find('a[href="/security?type=vuln&repo=maven-dev"]').exists()).toBe(true)
     expect(sent()).toContain('GET /api/v1/vuln/scans/summary?repo=maven-dev')
     expect(wrapper.text()).toContain('Remove')
     wrapper.unmount()

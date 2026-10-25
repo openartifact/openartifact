@@ -319,7 +319,7 @@ interface TestOutcome {
 }
 
 const toasts = useToastStore()
-const docsUrl = useDocsLink('admin-sso')
+const docsUrl = useDocsLink('settings-sso')
 
 const providers = ref<SSOProvider[]>([])
 const loading = ref(true)

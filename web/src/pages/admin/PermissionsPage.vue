@@ -204,7 +204,7 @@ import { t } from '../../i18n/en'
 import { TrashIcon } from '@heroicons/vue/24/outline'
 
 const toasts = useToastStore()
-const docsUrl = useDocsLink('admin-permissions')
+const docsUrl = useDocsLink('settings-permissions')
 
 const permissions = ref<PermissionItem[]>([])
 const users = ref<UserItem[]>([])

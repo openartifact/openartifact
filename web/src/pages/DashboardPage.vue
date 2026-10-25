@@ -13,7 +13,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <ArrowPathIcon v-if="!syncing" class="w-4 h-4" aria-hidden="true" />
           {{ t('dashboard.refresh') }}
         </AppButton>
-        <AppButton v-if="session.canCreateRepo" to="/repos/new">
+        <AppButton v-if="session.canCreateRepo" to="/repos?new=1">
           {{ t('repos.new') }}
         </AppButton>
       </template>
@@ -101,7 +101,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <section v-if="session.isAdmin" class="rounded-lg border border-border bg-surface self-start">
         <div class="px-5 h-11 flex items-center justify-between border-b border-border">
           <h2 class="text-ui font-semibold">{{ t('dashboard.activity') }}</h2>
-          <router-link to="/admin/audit" class="text-xs text-primary hover:underline">{{ t('dashboard.viewAll') }}</router-link>
+          <router-link to="/settings/audit" class="text-xs text-primary hover:underline">{{ t('dashboard.viewAll') }}</router-link>
         </div>
         <div v-if="auditLoading" class="px-5 py-3 space-y-3">
           <div v-for="i in 5" :key="i" class="h-8 rounded skel" />

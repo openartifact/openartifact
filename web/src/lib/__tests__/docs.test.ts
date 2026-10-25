@@ -6,22 +6,34 @@ import { describe, it, expect } from 'bun:test'
 import { existsSync } from 'node:fs'
 import { resolve } from 'node:path'
 import router from '../../router'
-import { ROUTE_DOCS, docsUrlFor } from '../docs'
+import { SETTINGS_SECTIONS } from '../settingsSections'
+import { ROUTE_DOCS, docsKey, docsUrlFor } from '../docs'
 
 const DOCS_ROOT = resolve(import.meta.dir, '../../../../docs')
 const BASE = 'https://openartifact.github.io/latest/'
 
+// The generic /settings/:section route is keyed per section (`settings-<id>`, see docsKey).
+function docKeys(): Set<string> {
+  const keys = new Set(router.getRoutes().map((r) => r.name).filter((n): n is string => typeof n === 'string' && n !== 'settings-section'))
+  for (const s of SETTINGS_SECTIONS) keys.add(`settings-${s.id}`)
+  return keys
+}
+
 describe('ROUTE_DOCS', () => {
-  it('has an entry (a page or an explicit null) for every named route', () => {
-    const names = router.getRoutes().map((r) => r.name).filter((n): n is string => typeof n === 'string')
-    expect(names.length).toBeGreaterThan(30)
-    const missing = names.filter((n) => !Object.hasOwn(ROUTE_DOCS, n))
-    expect(missing).toEqual([])
+  it('has an entry (a page or an explicit null) for every named route and settings section', () => {
+    const keys = docKeys()
+    expect(keys.size).toBeGreaterThan(30)
+    expect([...keys].filter((n) => !Object.hasOwn(ROUTE_DOCS, n))).toEqual([])
   })
 
-  it('has no entry for a route that does not exist', () => {
-    const names = new Set(router.getRoutes().map((r) => r.name))
-    expect(Object.keys(ROUTE_DOCS).filter((n) => !names.has(n))).toEqual([])
+  it('has no entry for a route or section that does not exist', () => {
+    const keys = docKeys()
+    expect(Object.keys(ROUTE_DOCS).filter((n) => !keys.has(n))).toEqual([])
+  })
+
+  it('keys the settings section route by section id', () => {
+    expect(docsKey({ name: 'settings-section', params: { section: 'sso' } })).toBe('settings-sso')
+    expect(docsKey({ name: 'repos', params: {} })).toBe('repos')
   })
 
   it('maps only to pages that exist under docs/', () => {
@@ -44,18 +56,18 @@ describe('ROUTE_DOCS', () => {
 
 describe('docsUrlFor', () => {
   it('joins the docs base and the page path', () => {
-    expect(docsUrlFor(BASE, 'admin-sso')).toBe(`${BASE}security/sso`)
-    expect(docsUrlFor(BASE, 'repo-browse')).toBe(`${BASE}formats/`)
+    expect(docsUrlFor(BASE, 'settings-sso')).toBe(`${BASE}security/sso`)
+    expect(docsUrlFor(BASE, 'artifact')).toBe(`${BASE}formats/`)
   })
 
   it('tolerates a base without a trailing slash', () => {
-    expect(docsUrlFor('https://docs.example.com/v1.2', 'admin-sso')).toBe('https://docs.example.com/v1.2/security/sso')
+    expect(docsUrlFor('https://docs.example.com/v1.2', 'settings-sso')).toBe('https://docs.example.com/v1.2/security/sso')
   })
 
   it('is null when the base is empty or missing (docs links disabled)', () => {
-    expect(docsUrlFor('', 'admin-sso')).toBeNull()
-    expect(docsUrlFor(null, 'admin-sso')).toBeNull()
-    expect(docsUrlFor(undefined, 'admin-sso')).toBeNull()
+    expect(docsUrlFor('', 'settings-sso')).toBeNull()
+    expect(docsUrlFor(null, 'settings-sso')).toBeNull()
+    expect(docsUrlFor(undefined, 'settings-sso')).toBeNull()
   })
 
   it('is null for routes mapped to null, unknown or unnamed routes', () => {

@@ -81,7 +81,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <!-- Repositories -->
       <template v-else-if="activeTab === 'repositories'">
         <div v-if="canCreateRepo" class="mb-4 flex justify-end">
-          <AppButton :to="{ path: '/repos/new', query: { project: projectName } }" data-testid="new-repo">{{ t('repos.new') }}</AppButton>
+          <AppButton :to="{ path: '/repos', query: { new: '1', project: projectName } }" data-testid="new-repo">{{ t('repos.new') }}</AppButton>
         </div>
         <p v-if="reposError" class="text-sm text-danger" role="alert">{{ reposError }}</p>
         <EmptyState

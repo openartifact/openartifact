@@ -63,7 +63,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           <router-link
             v-for="(pkg, idx) in packageResults"
             :key="`${pkg.repository}:${pkg.format}:${pkg.name}:${pkg.version}`"
-            :to="`/repos/${encodeURIComponent(pkg.repository)}/packages/${encodeURIComponent(pkg.format)}/${encodeURIComponent(pkg.name)}`"
+            :to="artifactPath(pkg.repository, pkg.name)"
             :class="[
               'px-5 py-3 hover:bg-surface-hover transition-colors flex items-center gap-3',
               idx > 0 ? 'border-t border-border' : ''
@@ -98,6 +98,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { watch } from 'vue'
 import { useRoute } from 'vue-router'
 import PageHeader from '../components/PageHeader.vue'
+import { artifactPath } from '../lib/artifactPath'
 import { useSearch } from '../composables/useSearch'
 import AppButton from '../components/AppButton.vue'
 import EmptyState from '../components/EmptyState.vue'
