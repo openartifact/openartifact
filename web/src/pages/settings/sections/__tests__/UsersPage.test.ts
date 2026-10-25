@@ -33,9 +33,11 @@ function mockApi(): Call[] {
   return calls
 }
 
-const mountPage = () => {
+const mountPage = async (path = '/settings/users') => {
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/:rest(.*)*', component: { template: '<div />' } }] })
-  return mount(UsersPage, { attachTo: document.body, global: { plugins: [router] } })
+  await router.push(path)
+  const wrapper = mount(UsersPage, { attachTo: document.body, global: { plugins: [router] } })
+  return Object.assign(wrapper, { router })
 }
 
 describe('UsersPage', () => {
@@ -46,17 +48,20 @@ describe('UsersPage', () => {
 
   it('shows a Disabled badge for disabled users and filters by status', async () => {
     mockApi()
-    const wrapper = mountPage()
+    const wrapper = await mountPage()
     await flushPromises()
 
     expect(wrapper.findAll('tbody tr')).toHaveLength(2)
     expect(wrapper.findAll('tbody tr')[1]!.text()).toContain('Disabled')
 
     await wrapper.find('select').setValue('disabled')
+    await flushPromises()
+    expect(wrapper.router.currentRoute.value.query.status).toBe('disabled')
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.find('tbody tr').text()).toContain('bob')
 
     await wrapper.find('select').setValue('active')
+    await flushPromises()
     expect(wrapper.findAll('tbody tr')).toHaveLength(1)
     expect(wrapper.find('tbody tr').text()).toContain('alice')
     wrapper.unmount()
@@ -64,7 +69,7 @@ describe('UsersPage', () => {
 
   it('Disable PATCHes disabled=true and never deletes', async () => {
     const calls = mockApi()
-    const wrapper = mountPage()
+    const wrapper = await mountPage()
     await flushPromises()
 
     await wrapper.find('button[aria-label="Disable alice"]').trigger('click')
@@ -76,7 +81,7 @@ describe('UsersPage', () => {
 
   it('Enable PATCHes disabled=false on a disabled user', async () => {
     const calls = mockApi()
-    const wrapper = mountPage()
+    const wrapper = await mountPage()
     await flushPromises()
 
     await wrapper.find('button[aria-label="Enable bob"]').trigger('click')
@@ -88,7 +93,7 @@ describe('UsersPage', () => {
 
   it('Delete asks for a destructive confirmation before calling DELETE, also for disabled users', async () => {
     const calls = mockApi()
-    const wrapper = mountPage()
+    const wrapper = await mountPage()
     await flushPromises()
 
     const del = wrapper.find('button[aria-label="Delete user: bob"]')
@@ -105,6 +110,25 @@ describe('UsersPage', () => {
     await flushPromises()
 
     expect(calls).toEqual([{ method: 'DELETE', url: '/api/v1/users/u2', body: undefined }])
+    wrapper.unmount()
+  })
+
+  it('restores the search from ?q= (palette links) and opens the create drawer from ?new=1', async () => {
+    mockApi()
+    const wrapper = await mountPage('/settings/users?q=bob&new=1')
+    await flushPromises()
+    expect(wrapper.findAll('tbody tr')).toHaveLength(1)
+    expect(wrapper.find('tbody tr').text()).toContain('bob')
+    expect((wrapper.find('input[type="search"]').element as HTMLInputElement).value).toBe('bob')
+    expect(document.body.querySelector('#user-form')).not.toBeNull()
+    wrapper.unmount()
+  })
+
+  it('counts users from the whole list, not the filtered page', async () => {
+    mockApi()
+    const wrapper = await mountPage('/settings/users?status=disabled')
+    await flushPromises()
+    expect(wrapper.get('[data-testid="user-counts"]').text()).toBe('2 users, 1 active, 1 disabled')
     wrapper.unmount()
   })
 })

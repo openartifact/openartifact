@@ -38,4 +38,8 @@ export const enSettings = {
   'settings.page.loadFailed.title': 'This page failed to load',
   'settings.page.loadFailed.hint': 'The page could not be downloaded. Check your connection and try again.',
   'settings.page.retry': 'Try again',
+
+  // Users
+  'settings.users.counts': '{total} users, {active} active, {disabled} disabled',
+  'settings.users.emptyHint': 'Create a user to give someone access, or let people sign in through single sign-on.',
 } as const

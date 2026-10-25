@@ -5,226 +5,115 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="space-y-5">
-    <!-- PageHead -->
+  <div class="space-y-4">
     <SectionActions>
-        <div class="flex items-center gap-2">
-          <AppButton variant="primary" size="sm" @click="openCreate">
-            {{ t('admin.users.create') }}
-          </AppButton>
-        </div>
-      </SectionActions>
+      <AppButton size="sm" class="max-md:h-11" @click="openCreate">
+        <PlusIcon class="h-4 w-4" aria-hidden="true" />
+        {{ t('admin.users.create') }}
+      </AppButton>
+    </SectionActions>
 
-    <!-- StatRow -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
-        <span class="w-9 h-9 rounded-lg flex items-center justify-center text-primary bg-primary-soft">
-          <UsersIcon class="w-4 h-4" aria-hidden="true" />
-        </span>
-        <div>
-          <div class="text-micro font-semibold text-muted">{{ t('adm.users.stat.total') }}</div>
-          <div class="text-xl font-bold tabular-nums">{{ total }}</div>
-        </div>
-      </div>
-      <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
-        <span class="w-9 h-9 rounded-lg flex items-center justify-center text-success bg-success-soft/60">
-          <CheckIcon class="w-4 h-4" aria-hidden="true" />
-        </span>
-        <div>
-          <div class="text-micro font-semibold text-muted">{{ t('adm.users.stat.active') }}</div>
-          <div class="text-xl font-bold tabular-nums">{{ activeCount }}</div>
-        </div>
-      </div>
-      <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
-        <span class="w-9 h-9 rounded-lg flex items-center justify-center text-danger bg-danger-soft/60">
-          <NoSymbolIcon class="w-4 h-4" aria-hidden="true" />
-        </span>
-        <div>
-          <div class="text-micro font-semibold text-muted">{{ t('adm.users.stat.disabled') }}</div>
-          <div class="text-xl font-bold tabular-nums">{{ disabledCount }}</div>
-        </div>
-      </div>
-    </div>
-
-    <!-- Search -->
-    <div class="flex items-center gap-2">
-      <div class="relative flex-1 max-w-sm">
-        <MagnifyingGlassIcon class="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-muted" aria-hidden="true" />
-        <input
-          v-model="q"
-          type="search"
-          :aria-label="t('adm.users.search')"
-          :placeholder="t('adm.users.search')"
-          class="w-full pl-9 pr-3 h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
-        />
-      </div>
+    <FilterBar
+      :search="list.text.q"
+      :search-label="t('adm.users.search')"
+      :placeholder="t('adm.users.search')"
+      :active="list.filtered.value"
+      @update:search="list.setFilter('q', $event)"
+      @clear="list.clear()"
+    >
       <select
-        v-model="statusFilter"
+        :value="list.filters.value.status"
         :aria-label="t('adm.users.filter')"
-        class="h-9 text-sm rounded-lg bg-surface-hover/40 border border-border-strong text-foreground px-2 focus:ring-2 focus:ring-primary/50"
+        class="h-9 rounded-lg border border-border-strong bg-surface px-2 text-sm text-foreground max-md:h-11"
+        @change="list.setFilter('status', ($event.target as HTMLSelectElement).value as StatusFilter)"
       >
         <option value="all">{{ t('adm.users.filter.all') }}</option>
         <option value="active">{{ t('adm.users.filter.active') }}</option>
         <option value="disabled">{{ t('adm.users.filter.disabled') }}</option>
       </select>
-    </div>
+      <template v-if="counts" #after>
+        <span class="text-xs text-muted" data-testid="user-counts">{{ tp('settings.users.counts', { total: String(counts.total), active: String(counts.active), disabled: String(counts.disabled) }) }}</span>
+      </template>
+    </FilterBar>
 
-    <!-- TableCard -->
-    <div class="bg-surface rounded-xl border border-border overflow-hidden">
-      <div class="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.users.listTitle') }}</h3>
-        <span class="text-caption font-mono text-muted">{{ filteredUsers.length }} {{ t('adm.common.total') }}</span>
-      </div>
-      <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
-      <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
-      <div v-else-if="filteredUsers.length === 0" class="px-4 py-8 text-center text-muted">{{ t('adm.users.empty') }}</div>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.users.column.username') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.users.column.email') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.users.column.status') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.users.column.created') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('common.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="user in filteredUsers" :key="user.id" class="hover:bg-surface-hover/40 transition-colors">
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-2">
-                  <div class="w-7 h-7 rounded-full bg-primary/20 text-primary text-xs font-bold flex items-center justify-center" aria-hidden="true">
-                    {{ (user.username || '?')[0].toUpperCase() }}
-                  </div>
-                  <span class="font-mono text-ui font-medium">{{ user.username }}</span>
-                </div>
-              </td>
-              <td class="px-4 py-3 text-muted text-sm">{{ user.email || '—' }}</td>
-              <td class="px-4 py-3">
-                <span
-                  v-if="user.disabled"
-                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium bg-danger-soft/40 text-danger"
-                >
-                  <span class="w-1.5 h-1.5 rounded-full bg-danger" />
-                  {{ t('adm.users.statusDisabled') }}
-                </span>
-                <span v-else class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-caption font-medium bg-success-soft/40 text-success">
-                  <span class="w-1.5 h-1.5 rounded-full bg-success" />
-                  {{ t('adm.users.statusActive') }}
-                </span>
-              </td>
-              <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(user.created_at) }}</td>
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-1">
-                  <button
-                    type="button"
-                    @click="openEdit(user)"
-                    :title="t('common.edit')"
-                    :aria-label="`${t('common.edit')} ${user.username}`"
-                    class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                  >
-                    <PencilIcon class="w-4 h-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    @click="toggleDisable(user)"
-                    :title="user.disabled ? t('admin.users.enable') : t('admin.users.disable')"
-                    :aria-label="`${user.disabled ? t('admin.users.enable') : t('admin.users.disable')} ${user.username}`"
-                    class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                  >
-                    <component :is="user.disabled ? CheckIcon : NoSymbolIcon" class="w-4 h-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    @click="forceReset(user.id)"
-                    :title="t('admin.users.forceReset')"
-                    :aria-label="`${t('admin.users.forceReset')} ${user.username}`"
-                    class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                  >
-                    <KeyIcon class="w-4 h-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    @click="deleteOne(user)"
-                    :title="t('adm.users.deleteTitle')"
-                    :aria-label="`${t('adm.users.deleteTitle')}: ${user.username}`"
-                    class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                  >
-                    <TrashIcon class="w-4 h-4" aria-hidden="true" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <ListTable :columns="columns" :caption="t('adm.users.listTitle')" :query="list" :empty-title="t('adm.users.empty')" :empty-hint="t('settings.users.emptyHint')">
+      <template #cell-username="{ row }">
+        <div class="flex items-center gap-2">
+          <span class="flex h-7 w-7 items-center justify-center rounded-full bg-primary/20 text-xs font-bold text-primary" aria-hidden="true">{{ (row.username || '?')[0]!.toUpperCase() }}</span>
+          <span class="font-mono text-ui font-medium">{{ row.username }}</span>
+        </div>
+      </template>
+      <template #cell-email="{ row }"><span class="text-muted">{{ row.email || '—' }}</span></template>
+      <template #cell-status="{ row }">
+        <span
+          class="inline-flex items-center gap-1.5 rounded-full px-2 py-0.5 text-caption font-medium"
+          :class="row.disabled ? 'bg-danger-soft/40 text-danger' : 'bg-success-soft/40 text-success'"
+        >
+          <span class="h-1.5 w-1.5 rounded-full" :class="row.disabled ? 'bg-danger' : 'bg-success'" aria-hidden="true" />
+          {{ row.disabled ? t('adm.users.statusDisabled') : t('adm.users.statusActive') }}
+        </span>
+      </template>
+      <template #cell-created_at="{ row }"><RelativeTime :value="row.created_at" /></template>
+      <template #cell-actions="{ row }">
+        <div class="flex items-center gap-1">
+          <button type="button" :class="iconButton" :title="t('common.edit')" :aria-label="`${t('common.edit')} ${row.username}`" @click="openEdit(row)">
+            <PencilIcon class="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            :class="iconButton"
+            :title="row.disabled ? t('admin.users.enable') : t('admin.users.disable')"
+            :aria-label="`${row.disabled ? t('admin.users.enable') : t('admin.users.disable')} ${row.username}`"
+            @click="toggleDisable(row)"
+          >
+            <component :is="row.disabled ? CheckIcon : NoSymbolIcon" class="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button type="button" :class="iconButton" :title="t('admin.users.forceReset')" :aria-label="`${t('admin.users.forceReset')} ${row.username}`" @click="forceReset(row)">
+            <KeyIcon class="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button
+            type="button"
+            :class="[iconButton, 'hover:!text-danger']"
+            :title="t('adm.users.deleteTitle')"
+            :aria-label="`${t('adm.users.deleteTitle')}: ${row.username}`"
+            @click="deleteTarget = row"
+          >
+            <TrashIcon class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      </template>
+    </ListTable>
 
-    <!-- Create/Edit Drawer -->
-    <AdminDialog
-      :open="drawerOpen"
-      drawer
-      :eyebrow="t('adm.users.eyebrow')"
-      :title="editingUser ? t('adm.users.editTitle') : t('adm.users.addTitle')"
-      @close="closeDrawer"
-    >
+    <Drawer :open="drawerOpen" :busy="saving" :eyebrow="t('adm.users.eyebrow')" :title="editingUser ? t('adm.users.editTitle') : t('adm.users.addTitle')" @close="closeDrawer">
       <form id="user-form" class="space-y-5" @submit.prevent="submitForm">
         <div>
-          <label for="user-full-name" class="block text-sm font-medium text-foreground mb-1.5">{{ t('adm.users.field.name') }}</label>
-          <input
-            id="user-full-name"
-            v-model="formData.full_name"
-            type="text"
-            :placeholder="t('adm.users.field.namePlaceholder')"
-            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
-          />
+          <label for="user-full-name" class="mb-1.5 block text-sm font-medium text-foreground">{{ t('adm.users.field.name') }}</label>
+          <input id="user-full-name" v-model="form.full_name" type="text" :placeholder="t('adm.users.field.namePlaceholder')" :class="inputClass" />
         </div>
         <div>
-          <label for="user-username" class="block text-sm font-medium text-foreground mb-1.5">{{ t('admin.users.column.username') }}</label>
-          <input
-            id="user-username"
-            v-model="formData.username"
-            type="text"
-            placeholder="username"
-            :disabled="!!editingUser"
-            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50 disabled:opacity-50 disabled:cursor-not-allowed"
-          />
+          <label for="user-username" class="mb-1.5 block text-sm font-medium text-foreground">{{ t('admin.users.column.username') }}</label>
+          <input id="user-username" v-model="form.username" type="text" placeholder="username" :disabled="!!editingUser" :class="[inputClass, 'disabled:cursor-not-allowed disabled:opacity-50']" />
         </div>
         <div>
-          <label for="user-email" class="block text-sm font-medium text-foreground mb-1.5">{{ t('admin.users.column.email') }}</label>
-          <input
-            id="user-email"
-            v-model="formData.email"
-            type="email"
-            placeholder="user@example.com"
-            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
-          />
+          <label for="user-email" class="mb-1.5 block text-sm font-medium text-foreground">{{ t('admin.users.column.email') }}</label>
+          <input id="user-email" v-model="form.email" type="email" placeholder="user@example.com" :class="inputClass" />
         </div>
         <div v-if="!editingUser">
-          <label for="user-password" class="block text-sm font-medium text-foreground mb-1.5">{{ t('auth.password') }}</label>
-          <input
-            id="user-password"
-            v-model="formData.password"
-            type="password"
-            autocomplete="new-password"
-            :placeholder="t('auth.passwordMin')"
-            class="w-full px-3 py-2 border border-border-strong rounded-lg bg-surface-hover/40 text-foreground placeholder-muted focus:ring-2 focus:ring-primary/50"
-          />
+          <label for="user-password" class="mb-1.5 block text-sm font-medium text-foreground">{{ t('auth.password') }}</label>
+          <input id="user-password" v-model="form.password" type="password" autocomplete="new-password" :placeholder="t('auth.passwordMin')" :class="inputClass" />
         </div>
-        <label class="flex items-center gap-2 text-sm text-foreground cursor-pointer">
-          <input v-model="formData.must_change_password" type="checkbox" class="rounded" />
+        <label class="flex min-h-11 cursor-pointer items-center gap-2 text-sm text-foreground">
+          <input v-model="form.must_change_password" type="checkbox" class="rounded" />
           <span>{{ t('adm.users.field.forceChange') }}</span>
         </label>
       </form>
       <template #footer>
-        <AppButton variant="secondary" size="sm" @click="closeDrawer">
-          {{ t('common.cancel') }}
-        </AppButton>
+        <AppButton variant="secondary" size="sm" :disabled="saving" @click="closeDrawer">{{ t('common.cancel') }}</AppButton>
         <AppButton variant="primary" size="sm" type="submit" form="user-form" :loading="saving">
           {{ editingUser ? t('adm.users.update') : t('common.create') }}
         </AppButton>
       </template>
-    </AdminDialog>
+    </Drawer>
 
     <ConfirmDialog
       :open="deleteTarget !== null"
@@ -239,143 +128,131 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
+import { computed, ref, watch } from 'vue'
+import { CheckIcon, KeyIcon, NoSymbolIcon, PencilIcon, PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
+import { createUser, deleteUser, forceUserPasswordReset, listAllUsers, setUserDisabled, updateUser } from '../../../api/admin'
+import type { User } from '../../../api/generated/types.gen'
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import SectionActions from '../../../components/SectionActions.vue'
-import { formatDate } from '../../../lib/datetime'
-import { ref, computed, onMounted } from 'vue'
-import {
-  listAllUsers,
-  createUser,
-  updateUser,
-  deleteUser,
-  setUserDisabled,
-  forceUserPasswordReset,
-} from '../../../api/admin'
-import type { User } from '../../../api/generated/types.gen'
-import AdminDialog from '../../../components/AdminDialog.vue'
-type UserItem = User & { id: string }
+import Drawer from '../../../components/ui/Drawer.vue'
+import FilterBar from '../../../components/ui/FilterBar.vue'
+import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RelativeTime from '../../../components/ui/RelativeTime.vue'
+import { useListQuery } from '../../../composables/useListQuery'
+import { useUrlFlag } from '../../../composables/useUrlFlag'
+import { enumParam, strParam } from '../../../composables/useUrlState'
+import { filterUsers, userCounts, type StatusFilter } from '../../../lib/users'
 import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
-import {
-  UsersIcon,
-  CheckIcon,
-  NoSymbolIcon,
-  MagnifyingGlassIcon,
-  PencilIcon,
-  KeyIcon,
-  TrashIcon,
-} from '@heroicons/vue/24/outline'
+import { t, tp } from '../../../i18n/en'
+
+type UserItem = User & { id: string }
 
 const toasts = useToastStore()
+const inputClass = 'w-full rounded-lg border border-border-strong bg-surface px-3 py-2 text-foreground placeholder:text-muted focus:ring-2 focus:ring-primary/50 max-md:min-h-11'
+const iconButton = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-foreground max-md:h-11 max-md:w-11'
 
-const users = ref<UserItem[]>([])
-const loading = ref(false)
-const loadError = ref('')
-const saving = ref(false)
-const q = ref('')
-const drawerOpen = ref(false)
+const columns: ListColumn[] = [
+  { key: 'username', label: t('admin.users.column.username'), sortable: true },
+  { key: 'email', label: t('admin.users.column.email') },
+  { key: 'status', label: t('adm.users.column.status') },
+  { key: 'created_at', label: t('admin.users.column.created'), sortable: true },
+  { key: 'actions', label: t('common.actions'), actions: true },
+]
+
+// The server pages /users but does not filter by status or sort, so the page walks every user once and
+// filters, sorts and pages in memory: user lists are short and the counts stay exact.
+let cache: UserItem[] | null = null
+const counts = ref<{ total: number; active: number; disabled: number } | null>(null)
+
+const list = useListQuery({
+  filters: { q: strParam(), status: enumParam(['all', 'active', 'disabled'] as const, 'all') },
+  debounce: ['q'],
+  sorts: ['username', 'created_at'],
+  limit: 25,
+  async fetch(req) {
+    if (!cache) {
+      cache = (await listAllUsers()).items as UserItem[]
+      counts.value = userCounts(cache)
+    }
+    const rows = filterUsers(cache, req.filters.q, req.filters.status, req.sort, req.dir)
+    const start = (req.page - 1) * req.limit
+    return { rows: rows.slice(start, start + req.limit), total: rows.length }
+  },
+})
+
+async function refresh(): Promise<void> {
+  cache = null
+  await list.reload()
+}
+
+// Create / edit drawer. `?new=1` opens the create form (palette action, reload, Back closes it).
+const newFlag = useUrlFlag('new')
 const editingUser = ref<UserItem | null>(null)
+const editOpen = ref(false)
+const drawerOpen = computed(() => newFlag.on.value || editOpen.value)
+const saving = ref(false)
+const form = ref({ username: '', full_name: '', email: '', password: '', must_change_password: false })
 
-const formData = ref({
-  username: '',
-  full_name: '',
-  email: '',
-  password: '',
-  must_change_password: false,
-})
+watch(
+  newFlag.on,
+  (on) => {
+    if (on) resetForm()
+  },
+  { immediate: true },
+)
 
-const statusFilter = ref<'all' | 'active' | 'disabled'>('all')
-
-const filteredUsers = computed(() => {
-  const byStatus = users.value.filter(
-    (u) => statusFilter.value === 'all' || (statusFilter.value === 'disabled') === !!u.disabled,
-  )
-  if (!q.value) return byStatus
-  const query = q.value.toLowerCase()
-  return byStatus.filter(
-    (u) =>
-      u.username?.toLowerCase().includes(query) ||
-      u.email?.toLowerCase().includes(query) ||
-      u.full_name?.toLowerCase().includes(query),
-  )
-})
-
-const total = computed(() => users.value.length)
-const activeCount = computed(() => users.value.filter((u) => !u.disabled).length)
-const disabledCount = computed(() => users.value.filter((u) => u.disabled).length)
-
-
-async function load(): Promise<void> {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const res = await listAllUsers()
-    users.value = res.items as UserItem[]
-  } catch (err) {
-    loadError.value = err instanceof Error ? err.message : t('adm.users.loadFailed')
-    toasts.error(loadError.value)
-  } finally {
-    loading.value = false
-  }
-}
-
-function openCreate(): void {
+function resetForm(): void {
   editingUser.value = null
-  formData.value = {
-    username: '',
-    full_name: '',
-    email: '',
-    password: '',
-    must_change_password: false,
-  }
-  drawerOpen.value = true
+  form.value = { username: '', full_name: '', email: '', password: '', must_change_password: false }
 }
-
+function openCreate(): void {
+  void newFlag.set(true)
+}
 function openEdit(user: UserItem): void {
   editingUser.value = user
-  formData.value = {
+  form.value = {
     username: user.username || '',
     full_name: user.full_name || '',
     email: user.email || '',
     password: '',
     must_change_password: !!user.must_change_password,
   }
-  drawerOpen.value = true
+  editOpen.value = true
 }
-
 function closeDrawer(): void {
-  drawerOpen.value = false
-  editingUser.value = null
+  editOpen.value = false
+  if (newFlag.on.value) void newFlag.set(false)
 }
 
 async function submitForm(): Promise<void> {
   if (saving.value) return
   saving.value = true
+  const f = form.value
   try {
     if (editingUser.value) {
       await updateUser(editingUser.value.id, {
-        full_name: formData.value.full_name || undefined,
-        email: formData.value.email || undefined,
-        must_change_password: formData.value.must_change_password,
+        full_name: f.full_name || undefined,
+        email: f.email || undefined,
+        must_change_password: f.must_change_password,
       })
       toasts.success(t('adm.users.updated'))
     } else {
-      if (!formData.value.username || !formData.value.password) {
+      if (!f.username || !f.password) {
         toasts.error(t('adm.users.credentialsRequired'))
         return
       }
       await createUser({
-        username: formData.value.username,
-        full_name: formData.value.full_name || undefined,
-        email: formData.value.email || undefined,
-        password: formData.value.password,
-        must_change_password: formData.value.must_change_password,
+        username: f.username,
+        full_name: f.full_name || undefined,
+        email: f.email || undefined,
+        password: f.password,
+        must_change_password: f.must_change_password,
       })
       toasts.success(t('adm.users.created'))
     }
     closeDrawer()
-    await load()
+    await refresh()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.users.operationFailed'))
   } finally {
@@ -383,32 +260,29 @@ async function submitForm(): Promise<void> {
   }
 }
 
+// Reversible: a toast, no confirmation.
 async function toggleDisable(user: UserItem): Promise<void> {
   try {
     await setUserDisabled(user.id, !user.disabled)
     toasts.success(user.disabled ? t('adm.users.enabled') : t('adm.users.disabledToast'))
-    await load()
+    await refresh()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.users.operationFailed'))
   }
 }
 
-async function forceReset(id: string | number): Promise<void> {
+async function forceReset(user: UserItem): Promise<void> {
   try {
-    await forceUserPasswordReset(id)
+    await forceUserPasswordReset(user.id)
     toasts.success(t('adm.users.resetRequired'))
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.users.operationFailed'))
   }
 }
 
-// DELETE /users/{id} hard-deletes the account; Disable keeps it.
+// DELETE /users/{id} removes the account for good; Disable keeps it. Only this one asks.
 const deleteTarget = ref<UserItem | null>(null)
 const deleting = ref(false)
-
-function deleteOne(user: UserItem): void {
-  deleteTarget.value = user
-}
 
 async function confirmDelete(): Promise<void> {
   const user = deleteTarget.value
@@ -418,13 +292,11 @@ async function confirmDelete(): Promise<void> {
     await deleteUser(user.id)
     toasts.success(t('adm.users.deletedToast'))
     deleteTarget.value = null
-    await load()
+    await refresh()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('adm.users.operationFailed'))
   } finally {
     deleting.value = false
   }
 }
-
-onMounted(load)
 </script>
