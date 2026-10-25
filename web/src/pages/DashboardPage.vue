@@ -118,7 +118,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </span>
               <span class="shrink-0 text-xs text-muted tabular-nums">{{ timeAgo(entry.timestamp) }}</span>
             </div>
-            <div v-if="entryTarget(entry)" class="mt-0.5 text-xs font-mono text-muted truncate">{{ entryTarget(entry) }}</div>
+            <div v-if="auditSubject(entry)" class="mt-0.5 text-xs font-mono text-muted truncate">{{ auditSubject(entry) }}</div>
           </li>
         </ul>
       </section>
@@ -135,6 +135,7 @@ import { listAllRepositories } from '../api/repositories'
 import { listAudit } from '../api/audit'
 import type { Repository } from '../api/repositories'
 import type { AuditEntry } from '../api/audit'
+import { auditSubject } from '../lib/auditSubject'
 import { useToastStore } from '../stores/toast'
 import { useSessionStore } from '../stores/session'
 import FormatBadge from '../components/FormatBadge.vue'
@@ -183,11 +184,6 @@ function actionLabel(action?: string): string {
   return (action ?? '').replace(/[._]/g, ' ')
 }
 
-function entryTarget(entry: AuditEntry): string {
-  if (entry.target) return entry.target
-  const path = entry.details?.path
-  return typeof path === 'string' ? path : ''
-}
 
 async function loadRepos(): Promise<void> {
   loadError.value = ''
