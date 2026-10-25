@@ -4181,7 +4181,8 @@
         "type": "object",
         "properties": {
           "enabled": { "type": "boolean", "description": "Federation is on: the repository keeps a change log." },
-          "supported": { "type": "boolean", "description": "The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget)." },
+          "supported": { "type": "boolean", "description": "Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server." },
+          "server_enabled": { "type": "boolean", "description": "Federation is enabled on the server (federation.enabled); when false no repository can be federated." },
           "instance_id": { "type": "string", "description": "Identifier of this instance." },
           "log_id": { "type": "string", "description": "Identifier of this repository's log; changes when federation is disabled and enabled again." },
           "head_seq": { "type": "integer", "format": "int64", "description": "Highest sequence in the log." },
@@ -4190,7 +4191,7 @@
           "peers": { "type": "array", "items": { "$ref": "#/components/schemas/FederationPeer" } },
           "tokens": { "type": "array", "items": { "$ref": "#/components/schemas/FederationToken" } }
         },
-        "required": ["enabled", "supported", "instance_id", "log_id", "head_seq", "units", "tombstones", "peers", "tokens"]
+        "required": ["enabled", "supported", "server_enabled", "instance_id", "log_id", "head_seq", "units", "tombstones", "peers", "tokens"]
       },
       "UpdateFederationRequest": {
         "type": "object",

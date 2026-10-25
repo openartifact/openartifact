@@ -30,7 +30,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       </div>
       <p v-else-if="error && !status" role="alert" class="text-sm text-danger">{{ error }}</p>
       <template v-else-if="status">
-        <p v-if="!status.supported" class="rounded-lg border border-border bg-surface-hover/40 p-3 text-xs text-muted" data-testid="federation-unsupported">
+        <p v-if="!status.server_enabled" class="rounded-lg border border-border bg-surface-hover/40 p-3 text-xs text-muted" data-testid="federation-server-off">
+          <span class="block text-sm font-medium text-foreground">{{ t('federation.serverOff.title') }}</span>
+          {{ t('federation.serverOff.hint') }}
+        </p>
+        <p v-else-if="!status.supported" class="rounded-lg border border-border bg-surface-hover/40 p-3 text-xs text-muted" data-testid="federation-unsupported">
           <span class="block text-sm font-medium text-foreground">{{ t('federation.unsupported.title') }}</span>
           {{ t('federation.unsupported.hint') }}
         </p>

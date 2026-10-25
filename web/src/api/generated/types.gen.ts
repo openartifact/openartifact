@@ -1862,9 +1862,13 @@ export type FederationStatus = {
      */
     enabled: boolean;
     /**
-     * The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget).
+     * Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server.
      */
     supported: boolean;
+    /**
+     * Federation is enabled on the server (federation.enabled); when false no repository can be federated.
+     */
+    server_enabled: boolean;
     /**
      * Identifier of this instance.
      */

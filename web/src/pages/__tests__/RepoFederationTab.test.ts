@@ -39,6 +39,7 @@ const peer = (over: Partial<FederationPeer> = {}): FederationPeer => ({
 const baseStatus = (over: Partial<FederationStatus> = {}): FederationStatus => ({
   enabled: true,
   supported: true,
+  server_enabled: true,
   instance_id: 'inst-1',
   log_id: 'log-1',
   head_seq: 42,
@@ -140,6 +141,14 @@ afterEach(() => {
 })
 
 describe('RepoFederationTab', () => {
+  it('says the server has federation off instead of blaming the repository', async () => {
+    serve(baseStatus({ enabled: false, supported: false, server_enabled: false }))
+    const w = await mountTab()
+    expect(w.get('[data-testid="federation-server-off"]').text()).toContain('turned off on this server')
+    expect(w.find('[data-testid="federation-unsupported"]').exists()).toBe(false)
+    expect(w.get('[data-testid="federation-toggle"]').attributes('disabled')).toBeDefined()
+  })
+
   it('explains why federation is unavailable and disables the toggle', async () => {
     serve(baseStatus({ enabled: false, supported: false }))
     const w = await mountTab()

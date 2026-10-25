@@ -445,7 +445,8 @@ A remote instance this repository pulls changes from. Secrets (token, client key
 | `instance_id` | string | yes | Identifier of this instance. |
 | `log_id` | string | yes | Identifier of this repository's log; changes when federation is disabled and enabled again. |
 | `peers` | array of [FederationPeer](#federationpeer) | yes | - |
-| `supported` | boolean | yes | The repository is hosted and of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget). |
+| `server_enabled` | boolean | yes | Federation is enabled on the server (federation.enabled); when false no repository can be federated. |
+| `supported` | boolean | yes | Federation can be turned on for the repository: it is hosted, of a federation-capable format (raw, maven, npm, docker, helm, pypi, cargo, go, nuget), and federation is enabled on the server. |
 | `tokens` | array of [FederationToken](#federationtoken) | yes | - |
 | `tombstones` | integer (int64) | yes | Logged deletions. |
 | `units` | integer (int64) | yes | Logged units. |
