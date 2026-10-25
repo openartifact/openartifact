@@ -19,7 +19,7 @@ import (
 // PackageDeleter deletes a package row of any hosted format by its listing id.
 // It is satisfied by *worker.CleanupWorker.
 type PackageDeleter interface {
-	DeletePackage(ctx context.Context, repo *models.Repository, id string, guard func(worker.DeletedPackage) error) (*worker.DeletedPackage, error)
+	DeletePackage(ctx context.Context, repo *models.Repository, id string, guard func(worker.DeletedPackage) error, actor string) (*worker.DeletedPackage, error)
 }
 
 // SetPackageDeleter wires the deleter behind DELETE /repositories/{name}/packages/{id}
@@ -42,7 +42,7 @@ func (h *RPMUploadHandler) deleteOtherFormat(w http.ResponseWriter, r *http.Requ
 
 	res, err := h.packageDeleter.DeletePackage(r.Context(), repo, packageID, func(p worker.DeletedPackage) error {
 		return trash.GuardRelease(r, repo, repo.Format, p.Version)
-	})
+	}, trash.Actor(r.Context()))
 	if err != nil {
 		if errors.Is(err, worker.ErrPackageNotFound) {
 			writeError(w, http.StatusNotFound, "NOT_FOUND", "package not found")

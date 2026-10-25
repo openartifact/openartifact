@@ -40,8 +40,9 @@ type DeletedPackage struct {
 // addressed row before anything changes (the immutable-release check, which
 // needs the request); its error is returned as is. Unlike a policy run, it
 // applies no release-bundle or quarantine protection: an administrator chose
-// this row.
-func (w *CleanupWorker) DeletePackage(ctx context.Context, repo *models.Repository, id string, guard func(DeletedPackage) error) (*DeletedPackage, error) {
+// this row. actor is the username recorded as the trash entry's deleted_by (the
+// requester, never the cleanup policy).
+func (w *CleanupWorker) DeletePackage(ctx context.Context, repo *models.Repository, id string, guard func(DeletedPackage) error, actor string) (*DeletedPackage, error) {
 	t, ok := cleanupFormatTable(repo.Format)
 	if !ok {
 		return nil, fmt.Errorf("%w: %s", errUnsupportedCleanupFormat, repo.Format)
@@ -75,7 +76,7 @@ func (w *CleanupWorker) DeletePackage(ctx context.Context, repo *models.Reposito
 
 	run := newCleanupRun()
 
-	outcome, err := w.moveToTrash(ctx, repo.ID, t, rows)
+	outcome, err := w.moveToTrash(ctx, repo.ID, t, rows, actor)
 
 	switch {
 	case errors.Is(err, database.ErrTrashNotFound):

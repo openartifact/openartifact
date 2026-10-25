@@ -491,11 +491,11 @@ func TestDeletePackageEveryFormat(t *testing.T) {
 			a := e.seedFormat(repoID, format, "pkg", "1.0.0", 5)
 			b := e.seedFormat(repoID, format, "pkg", "1.1.0", 4)
 
-			if _, err := e.worker.DeletePackage(ctx, repo, "not-a-uuid", nil); !errors.Is(err, worker.ErrPackageNotFound) {
+			if _, err := e.worker.DeletePackage(ctx, repo, "not-a-uuid", nil, ""); !errors.Is(err, worker.ErrPackageNotFound) {
 				t.Fatalf("bad id: err = %v, want ErrPackageNotFound", err)
 			}
 
-			res, err := e.worker.DeletePackage(ctx, repo, a.id, nil)
+			res, err := e.worker.DeletePackage(ctx, repo, a.id, nil, "")
 			if err != nil {
 				t.Fatalf("DeletePackage: %v", err)
 			}
@@ -512,7 +512,7 @@ func TestDeletePackageEveryFormat(t *testing.T) {
 				t.Error("blob of the deleted package is still in storage")
 			}
 
-			if _, err := e.worker.DeletePackage(ctx, repo, a.id, nil); !errors.Is(err, worker.ErrPackageNotFound) {
+			if _, err := e.worker.DeletePackage(ctx, repo, a.id, nil, ""); !errors.Is(err, worker.ErrPackageNotFound) {
 				t.Fatalf("second delete: err = %v, want ErrPackageNotFound", err)
 			}
 
@@ -539,7 +539,7 @@ func TestDeletePackageGuardAndTrash(t *testing.T) {
 		}
 
 		return errGuard
-	}); !errors.Is(err, errGuard) {
+	}, "alice"); !errors.Is(err, errGuard) {
 		t.Fatalf("err = %v, want the guard's", err)
 	}
 
@@ -547,9 +547,14 @@ func TestDeletePackageGuardAndTrash(t *testing.T) {
 		t.Fatal("a guarded delete removed the row")
 	}
 
-	res, err := e.worker.DeletePackage(ctx, repo, a.id, nil)
+	res, err := e.worker.DeletePackage(ctx, repo, a.id, nil, "alice")
 	if err != nil || !res.Trashed {
 		t.Fatalf("DeletePackage = %+v, %v; want trashed", res, err)
+	}
+
+	// The trash entry names the requester, not the cleanup policy.
+	if n := e.countRows(`SELECT count(*) FROM cargo_crates WHERE id = $1 AND deleted_by = 'alice'`, a.id); n != 1 {
+		t.Errorf("explicit delete: %d trashed rows attributed to the requester, want 1", n)
 	}
 
 	if e.live("cargo", a.id) || e.gone("cargo", a.id) || !e.blobExists(a.sha) {
@@ -568,7 +573,7 @@ func TestDeletePackageNPMDropsDistTags(t *testing.T) {
 	pkg := e.queryID(`SELECT package_id FROM npm_versions WHERE id = $1`, v.id)
 	e.exec(`INSERT INTO npm_dist_tags (package_id, tag, version) VALUES ($1, 'latest', '1.0.0')`, pkg)
 
-	if _, err := e.worker.DeletePackage(ctx, npmRepo, v.id, nil); err != nil {
+	if _, err := e.worker.DeletePackage(ctx, npmRepo, v.id, nil, ""); err != nil {
 		t.Fatal(err)
 	}
 
