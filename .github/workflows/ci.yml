@@ -130,7 +130,13 @@ jobs:
           $G bucket allow --read --write --owner "$TEST_S3_BUCKET" --key ci
 
       - name: go test (integration tag, race)
-        run: go test -race -tags integration -count=1 -timeout 15m ./tests/... ./internal/database/... ./internal/worker/... ./internal/storage/... ./internal/replication/... ./internal/format/gomod/... ./internal/promote/... ./internal/search/...
+        # Every package with an integration-tagged test file, so a new one can't be missed.
+        run: |
+          pkgs=$(grep -rl --include='*_test.go' -E '^//go:build .*integration' cmd internal pkg tests \
+            | xargs -n1 dirname | sort -u | sed 's#^#./#')
+          echo "$pkgs"
+          # shellcheck disable=SC2086
+          go test -race -tags integration -count=1 -timeout 25m $pkgs
 
   lint:
     name: golangci-lint
