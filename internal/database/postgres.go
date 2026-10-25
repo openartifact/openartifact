@@ -525,12 +525,12 @@ func (p *PostgresDB) GetRPMRepo(ctx context.Context, repositoryID string) (*mode
 	}
 
 	return &models.RPMRepo{
-		ID:                    row.ID,
-		RepositoryID:          row.RepositoryID,
-		BaseArch:              row.BaseArch,
-		MetadataStale:         row.MetadataStale,
-		CreatedAt:             row.CreatedAt,
-		UpdatedAt:             row.UpdatedAt,
+		ID:            row.ID,
+		RepositoryID:  row.RepositoryID,
+		BaseArch:      row.BaseArch,
+		MetadataStale: row.MetadataStale,
+		CreatedAt:     row.CreatedAt,
+		UpdatedAt:     row.UpdatedAt,
 	}, nil
 }
 

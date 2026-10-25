@@ -49,12 +49,12 @@ type Repository struct {
 }
 
 type RPMRepo struct {
-	ID                    string
-	RepositoryID          string
-	BaseArch              string
-	MetadataStale         bool
-	CreatedAt             time.Time
-	UpdatedAt             time.Time
+	ID            string
+	RepositoryID  string
+	BaseArch      string
+	MetadataStale bool
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 // ComponentBlob locates the downloadable blob behind one row of the
