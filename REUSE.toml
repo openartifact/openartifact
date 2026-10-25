@@ -23,6 +23,8 @@ path = [
   "docs/**.png",
   "web/public/**",
   "web/src/**/__snapshots__/**",
+  "internal/clientsetup/testdata/web_parity.json",
+  "internal/repotype/testdata/web_parity.json",
   "VERSION",
 ]
 precedence = "aggregate"
