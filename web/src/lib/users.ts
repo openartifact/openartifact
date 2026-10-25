@@ -6,23 +6,12 @@ import type { User } from '../api/generated/types.gen'
 
 export type StatusFilter = 'all' | 'active' | 'disabled'
 
-/** Users matching the text (username, email, full name), the status and ordered by `sort`. */
-export function filterUsers<U extends User>(
-  users: readonly U[],
-  q: string,
-  status: StatusFilter,
-  sort: string,
-  dir: 'asc' | 'desc',
-): U[] {
+/** Whether a user passes the status filter and the text (username, email, full name; case-insensitive). */
+export function matchesUser(u: User, q: string, status: StatusFilter): boolean {
+  if (status !== 'all' && (status === 'disabled') !== !!u.disabled) return false
   const needle = q.trim().toLowerCase()
-  const out = users.filter((u) => {
-    if (status !== 'all' && (status === 'disabled') !== !!u.disabled) return false
-    if (!needle) return true
-    return [u.username, u.email, u.full_name].some((v) => v?.toLowerCase().includes(needle))
-  })
-  const key = sort === 'created_at' ? 'created_at' : 'username'
-  const sign = dir === 'desc' ? -1 : 1
-  return out.sort((a, b) => sign * String(a[key] ?? '').localeCompare(String(b[key] ?? '')))
+  if (!needle) return true
+  return [u.username, u.email, u.full_name].some((v) => v?.toLowerCase().includes(needle))
 }
 
 export function userCounts(users: readonly User[]): { total: number; active: number; disabled: number } {

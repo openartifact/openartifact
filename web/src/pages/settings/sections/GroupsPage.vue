@@ -5,105 +5,56 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="space-y-5">
-    <!-- PageHead -->
+  <div class="space-y-4">
     <SectionActions>
-        <div class="flex items-center gap-2">
-          <AppButton variant="primary" size="sm" @click="openCreate">
-            {{ t('admin.groups.create') }}
-          </AppButton>
-        </div>
-      </SectionActions>
+      <AppButton size="sm" class="max-md:h-11" @click="openCreate">
+        <PlusIcon class="h-4 w-4" aria-hidden="true" />
+        {{ t('admin.groups.create') }}
+      </AppButton>
+    </SectionActions>
 
-    <!-- StatRow -->
-    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
-      <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
-        <span class="w-9 h-9 rounded-lg flex items-center justify-center text-primary bg-primary-soft">
-          <FolderIcon class="w-4 h-4" aria-hidden="true" />
-        </span>
-        <div>
-          <div class="text-micro font-semibold text-muted">{{ t('adm.groups.stat.groups') }}</div>
-          <div class="text-xl font-bold tabular-nums">{{ groups.length }}</div>
-        </div>
-      </div>
-      <div class="bg-surface rounded-xl border border-border p-4 flex items-center gap-3">
-        <span class="w-9 h-9 rounded-lg flex items-center justify-center text-success bg-success-soft/60">
-          <UsersIcon class="w-4 h-4" aria-hidden="true" />
-        </span>
-        <div>
-          <div class="text-micro font-semibold text-muted">{{ t('adm.groups.stat.memberships') }}</div>
-          <div class="text-xl font-bold tabular-nums">{{ totalMembers }}</div>
-        </div>
-      </div>
-    </div>
+    <FilterBar
+      :search="list.text.q"
+      :search-label="t('settings.groups.search')"
+      :placeholder="t('settings.groups.search')"
+      :active="list.filtered.value"
+      @update:search="list.setFilter('q', $event)"
+      @clear="list.clear()"
+    >
+      <template v-if="all.length" #after>
+        <span class="text-xs text-muted" data-testid="group-counts">{{ tp('settings.groups.counts', { groups: String(all.length), memberships: String(totalMembers) }) }}</span>
+      </template>
+    </FilterBar>
 
-    <!-- TableCard -->
-    <div class="bg-surface rounded-xl border border-border overflow-hidden">
-      <div class="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.groups.listTitle') }}</h3>
-        <span class="text-caption font-mono text-muted">{{ groups.length }} {{ t('adm.common.total') }}</span>
-      </div>
-      <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
-      <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
-      <div v-else-if="groups.length === 0" class="px-4 py-8 text-center text-muted">{{ t('adm.groups.empty') }}</div>
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.name') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.members') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('admin.groups.column.created') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('common.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="group in groups" :key="group.id" class="hover:bg-surface-hover/40 transition-colors">
-              <td class="px-4 py-3">
-                <span class="font-semibold text-foreground">{{ group.name }}</span>
-              </td>
-              <td class="px-4 py-3">
-                <button
-                  type="button"
-                  @click="openMembers(group)"
-                  :aria-label="`${t('admin.groups.manageMembers')}: ${group.name}`"
-                  class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-xs font-mono bg-surface-hover text-foreground hover:bg-surface-hover/80 transition-colors"
-                >
-                  {{ memberCounts[String(group.id)] ?? '—' }}
-                </button>
-              </td>
-              <td class="px-4 py-3 text-xs text-muted font-mono">{{ formatDate(group.created_at) }}</td>
-              <td class="px-4 py-3">
-                <div class="flex items-center gap-1">
-                  <button
-                    type="button"
-                    @click="openMembers(group)"
-                    :title="t('admin.groups.manageMembers')"
-                    :aria-label="`${t('admin.groups.manageMembers')}: ${group.name}`"
-                    class="p-1.5 rounded-md text-muted hover:text-foreground hover:bg-surface-hover transition-colors"
-                  >
-                    <UsersIcon class="w-4 h-4" aria-hidden="true" />
-                  </button>
-                  <button
-                    type="button"
-                    @click="deleteOne(group)"
-                    :title="t('common.delete')"
-                    :aria-label="`${t('common.delete')}: ${group.name}`"
-                    class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                  >
-                    <TrashIcon class="w-4 h-4" aria-hidden="true" />
-                  </button>
-                </div>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <ListTable :columns="columns" :caption="t('adm.groups.listTitle')" :query="list" :empty-title="t('adm.groups.empty')" :empty-hint="t('settings.groups.emptyHint')">
+      <template #cell-name="{ row }"><span class="font-semibold text-foreground">{{ row.name }}</span></template>
+      <template #cell-members="{ row }">
+        <button
+          type="button"
+          :aria-label="`${t('admin.groups.manageMembers')}: ${row.name}`"
+          class="inline-flex min-h-8 items-center gap-1.5 rounded-full bg-surface-hover px-2 py-0.5 font-mono text-xs text-foreground hover:bg-surface-hover/80 max-md:min-h-11"
+          @click="openMembers(row)"
+        >
+          {{ memberCounts[String(row.id)] ?? '—' }}
+        </button>
+      </template>
+      <template #cell-created_at="{ row }"><RelativeTime :value="row.created_at" /></template>
+      <template #cell-actions="{ row }">
+        <div class="flex items-center gap-1">
+          <button type="button" :class="iconButton" :title="t('admin.groups.manageMembers')" :aria-label="`${t('admin.groups.manageMembers')}: ${row.name}`" @click="openMembers(row)">
+            <UsersIcon class="h-4 w-4" aria-hidden="true" />
+          </button>
+          <button type="button" :class="[iconButton, 'hover:!text-danger']" :title="t('common.delete')" :aria-label="`${t('common.delete')}: ${row.name}`" @click="deleteTarget = row">
+            <TrashIcon class="h-4 w-4" aria-hidden="true" />
+          </button>
+        </div>
+      </template>
+    </ListTable>
 
     <!-- Create Drawer -->
-    <AdminDialog
+    <Drawer
       :open="createDrawerOpen"
-      drawer
+      :busy="saving"
       :eyebrow="t('adm.groups.eyebrow')"
       :title="t('adm.groups.createTitle')"
       @close="closeCreateDrawer"
@@ -130,12 +81,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ t('common.create') }}
         </AppButton>
       </template>
-    </AdminDialog>
+    </Drawer>
 
     <!-- Members Drawer -->
-    <AdminDialog
+    <Drawer
       :open="membersDrawerOpen"
-      drawer
       :eyebrow="t('admin.groups.column.members')"
       :title="selectedGroup?.name ?? ''"
       @close="closeMembersDrawer"
@@ -197,7 +147,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ t('common.close') }}
         </AppButton>
       </template>
-    </AdminDialog>
+    </Drawer>
 
     <ConfirmDialog
       :open="deleteTarget !== null"
@@ -215,8 +165,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import SectionActions from '../../../components/SectionActions.vue'
-import { formatDate } from '../../../lib/datetime'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   listGroups,
   createGroup,
@@ -228,11 +177,17 @@ import {
   type GroupItem,
   type UserItem,
 } from '../../../api/admin'
-import AdminDialog from '../../../components/AdminDialog.vue'
+import Drawer from '../../../components/ui/Drawer.vue'
+import FilterBar from '../../../components/ui/FilterBar.vue'
+import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import RelativeTime from '../../../components/ui/RelativeTime.vue'
+import { useLocalList } from '../../../composables/useLocalList'
+import { useUrlFlag } from '../../../composables/useUrlFlag'
+import { strParam } from '../../../composables/useUrlState'
 import { useToastStore } from '../../../stores/toast'
-import { t } from '../../../i18n/en'
+import { t, tp } from '../../../i18n/en'
 import {
-  FolderIcon,
+  PlusIcon,
   UsersIcon,
   TrashIcon,
   XMarkIcon,
@@ -241,13 +196,9 @@ import {
 
 const toasts = useToastStore()
 
-const groups = ref<GroupItem[]>([])
 const memberCounts = ref<Record<string, number>>({})
 const allUsers = ref<UserItem[]>([])
-const loading = ref(false)
-const loadError = ref('')
 const saving = ref(false)
-const createDrawerOpen = ref(false)
 const membersDrawerOpen = ref(false)
 const membersLoading = ref(false)
 const busyMember = ref<string | null>(null)
@@ -255,6 +206,35 @@ const selectedGroup = ref<GroupItem | null>(null)
 const newGroupName = ref('')
 const memberSearch = ref('')
 const currentMembers = ref<UserItem[]>([])
+
+const iconButton = 'inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-surface-hover hover:text-foreground max-md:h-11 max-md:w-11'
+const columns: ListColumn[] = [
+  { key: 'name', label: t('admin.groups.column.name'), sortable: true },
+  { key: 'members', label: t('admin.groups.column.members') },
+  { key: 'created_at', label: t('admin.groups.column.created'), sortable: true },
+  { key: 'actions', label: t('common.actions'), actions: true },
+]
+
+// /groups returns every group at once and carries no member count, so the page loads the groups, the users
+// (for the member picker) and one membership list per group, then filters and sorts in memory.
+const { list, all, refresh: load } = useLocalList({
+  filters: { q: strParam() },
+  debounce: ['q'],
+  sorts: ['name', 'created_at'],
+  limit: 25,
+  async load() {
+    const [groupsRes, usersRes] = await Promise.all([listGroups(), listAllUsers()])
+    allUsers.value = usersRes.items
+    const lists = await Promise.all(groupsRes.items.map((g) => listGroupMembers(String(g.id))))
+    memberCounts.value = Object.fromEntries(groupsRes.items.map((g, i) => [String(g.id), lists[i]!.items.length]))
+    return groupsRes.items
+  },
+  match: (g, f) => !f.q.trim() || (g.name ?? '').toLowerCase().includes(f.q.trim().toLowerCase()),
+  compare: (a, b, sort) => {
+    const key = sort === 'created_at' ? 'created_at' : 'name'
+    return String(a[key] ?? '').localeCompare(String(b[key] ?? ''))
+  },
+})
 
 const totalMembers = computed(() => Object.values(memberCounts.value).reduce((sum, n) => sum + n, 0))
 
@@ -270,33 +250,19 @@ const filteredAvailableUsers = computed(() => {
   )
 })
 
-
-async function load(): Promise<void> {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const [groupsRes, usersRes] = await Promise.all([listGroups(), listAllUsers()])
-    groups.value = groupsRes.items
-    allUsers.value = usersRes.items
-    // The group payload carries no member count, so derive it from the
-    // membership lists (one small request per group).
-    const lists = await Promise.all(groupsRes.items.map((g) => listGroupMembers(String(g.id))))
-    memberCounts.value = Object.fromEntries(groupsRes.items.map((g, i) => [String(g.id), lists[i].items.length]))
-  } catch (err) {
-    loadError.value = err instanceof Error ? err.message : t('adm.groups.loadFailed')
-    toasts.error(loadError.value)
-  } finally {
-    loading.value = false
-  }
-}
+// `?new=1` opens the create drawer (palette link, reload; Back closes it).
+const newFlag = useUrlFlag('new')
+const createDrawerOpen = computed(() => newFlag.on.value)
+watch(newFlag.on, (on) => {
+  if (on) newGroupName.value = ''
+})
 
 function openCreate(): void {
-  newGroupName.value = ''
-  createDrawerOpen.value = true
+  void newFlag.set(true)
 }
 
 function closeCreateDrawer(): void {
-  createDrawerOpen.value = false
+  void newFlag.set(false)
   newGroupName.value = ''
 }
 
@@ -383,10 +349,6 @@ async function removeMember(member: UserItem): Promise<void> {
 const deleteTarget = ref<GroupItem | null>(null)
 const deleting = ref(false)
 
-function deleteOne(group: GroupItem): void {
-  deleteTarget.value = group
-}
-
 async function confirmDelete(): Promise<void> {
   const group = deleteTarget.value
   if (!group) return
@@ -402,6 +364,4 @@ async function confirmDelete(): Promise<void> {
     deleting.value = false
   }
 }
-
-onMounted(load)
 </script>

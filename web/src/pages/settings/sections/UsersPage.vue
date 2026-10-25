@@ -139,10 +139,10 @@ import Drawer from '../../../components/ui/Drawer.vue'
 import FilterBar from '../../../components/ui/FilterBar.vue'
 import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
 import RelativeTime from '../../../components/ui/RelativeTime.vue'
-import { useListQuery } from '../../../composables/useListQuery'
+import { useLocalList } from '../../../composables/useLocalList'
 import { useUrlFlag } from '../../../composables/useUrlFlag'
 import { enumParam, strParam } from '../../../composables/useUrlState'
-import { filterUsers, userCounts, type StatusFilter } from '../../../lib/users'
+import { matchesUser, userCounts, type StatusFilter } from '../../../lib/users'
 import { useToastStore } from '../../../stores/toast'
 import { t, tp } from '../../../i18n/en'
 
@@ -162,29 +162,19 @@ const columns: ListColumn[] = [
 
 // The server pages /users but does not filter by status or sort, so the page walks every user once and
 // filters, sorts and pages in memory: user lists are short and the counts stay exact.
-let cache: UserItem[] | null = null
-const counts = ref<{ total: number; active: number; disabled: number } | null>(null)
-
-const list = useListQuery({
+const { list, all, refresh } = useLocalList({
   filters: { q: strParam(), status: enumParam(['all', 'active', 'disabled'] as const, 'all') },
   debounce: ['q'],
   sorts: ['username', 'created_at'],
   limit: 25,
-  async fetch(req) {
-    if (!cache) {
-      cache = (await listAllUsers()).items as UserItem[]
-      counts.value = userCounts(cache)
-    }
-    const rows = filterUsers(cache, req.filters.q, req.filters.status, req.sort, req.dir)
-    const start = (req.page - 1) * req.limit
-    return { rows: rows.slice(start, start + req.limit), total: rows.length }
+  load: async () => (await listAllUsers()).items as UserItem[],
+  match: (u, f) => matchesUser(u, f.q, f.status),
+  compare: (a, b, sort) => {
+    const key = sort === 'created_at' ? 'created_at' : 'username'
+    return String(a[key] ?? '').localeCompare(String(b[key] ?? ''))
   },
 })
-
-async function refresh(): Promise<void> {
-  cache = null
-  await list.reload()
-}
+const counts = computed(() => (all.value.length ? userCounts(all.value) : null))
 
 // Create / edit drawer. `?new=1` opens the create form (palette action, reload, Back closes it).
 const newFlag = useUrlFlag('new')

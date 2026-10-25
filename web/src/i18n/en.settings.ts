@@ -42,4 +42,9 @@ export const enSettings = {
   // Users
   'settings.users.counts': '{total} users, {active} active, {disabled} disabled',
   'settings.users.emptyHint': 'Create a user to give someone access, or let people sign in through single sign-on.',
+
+  // Groups
+  'settings.groups.search': 'Search groups',
+  'settings.groups.counts': '{groups} groups, {memberships} memberships',
+  'settings.groups.emptyHint': 'Create a group to grant access to several people at once.',
 } as const
