@@ -1195,7 +1195,6 @@ func TestLoad_BootstrapConfig(t *testing.T) {
 	}
 }
 
-
 func TestLoad_APIDocsEnabled(t *testing.T) {
 	t.Run("default is on", func(t *testing.T) {
 		cfg, err := Load("")
