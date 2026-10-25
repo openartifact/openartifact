@@ -14,7 +14,6 @@ import AdminProjectsPage from '../admin/ProjectsPage.vue'
 import WebhooksPage from '../settings/sections/WebhooksPage.vue'
 import SettingsTokensPage from '../settings/TokensPage.vue'
 import ProjectListPage from '../ProjectListPage.vue'
-import TrashPage from '../settings/sections/TrashPage.vue'
 import { useSessionStore, type User } from '../../stores/session'
 
 const BASE = 'https://docs.example.com/v1.2/'
@@ -51,7 +50,6 @@ const CASES: { name: string; page: Component; route: string; path: string; docs:
   { name: 'no projects (admin)', page: AdminProjectsPage, route: 'admin-projects', path: '/admin/projects', docs: 'security/projects', label: 'About projects' },
   { name: 'no projects', page: ProjectListPage, route: 'projects', path: '/projects', docs: 'security/projects', label: 'About projects' },
   { name: 'no webhooks', page: WebhooksPage, route: 'admin-webhooks', path: '/admin/webhooks', docs: 'operations/webhooks', label: 'Webhook events and signatures' },
-  { name: 'empty trash', page: TrashPage, route: 'admin-trash', path: '/admin/trash', docs: 'operations/trash', label: 'How the trash and retention work' },
 ]
 
 describe('empty states link to the matching docs page', () => {

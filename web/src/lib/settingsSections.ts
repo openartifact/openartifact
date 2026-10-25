@@ -110,7 +110,7 @@ export const SETTINGS_SECTIONS: readonly SettingsSection[] = [
   section('tiers', 'storage', true, () => import('../pages/settings/sections/StorageTiersPage.vue'), ['cold', 'hot', 'mover', 'placement', 'age', 'policy']),
   section('quotas', 'storage', true, placeholder, ['limit', 'usage', 'over quota', 'size']),
   section('cleanup', 'storage', true, placeholder, ['retention', 'keep last', 'age', 'prune', 'dry run']),
-  section('trash', 'storage', true, () => import('../pages/settings/sections/TrashPage.vue'), ['restore', 'purge', 'retention', 'deleted', 'recover']),
+  section('trash', 'storage', true, () => import('../pages/settings/sections/TrashSection.vue'), ['restore', 'purge', 'retention', 'deleted', 'recover']),
   section('backup', 'storage', true, () => import('../pages/settings/sections/BackupPage.vue'), ['snapshot', 'restore', 'schedule', 'download']),
   section('scanners', 'security', true, placeholder, ['trivy', 'osv', 'scan schedule', 'severity threshold', 'auto scan']),
   section('policies', 'security', true, placeholder, ['license policy', 'quarantine', 'block', 'deny list', 'allow list', 'copyleft']),
