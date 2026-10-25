@@ -63,8 +63,9 @@ export function pullCommand(
   const q = shellQuote
   switch (format) {
     case 'docker':
-      // The registry resolves the whole image name to a repository.
-      return `docker pull ${q(`${hostOf(origin)}/${repo}:${version}`)}`
+      // The listed package name already is the registry name, `<repo>` or
+      // `<repo>/<image path>` (internal/ocipath), so it is the pull path.
+      return `docker pull ${q(`${hostOf(origin)}/${pkg}:${version}`)}`
     case 'npm':
       return `npm install ${q(`${pkg}@${version}`)} ${q(`--registry=${base}/`)}`
     case 'pypi':

@@ -20,6 +20,18 @@ describe('installCommands', () => {
   })
 })
 
+describe('pullCommand docker', () => {
+  it('keeps the image path after the repository', () => {
+    expect(pullCommand('docker', 'https://oa.example:8080', 'platform-docker', 'platform-docker/base/alpine', 'latest')).toBe(
+      'docker pull oa.example:8080/platform-docker/base/alpine:latest',
+    )
+  })
+
+  it('pulls the default image from the bare repository name', () => {
+    expect(pullCommand('docker', 'https://oa.example', 'r1', 'r1', '1.0')).toBe('docker pull oa.example/r1:1.0')
+  })
+})
+
 describe('pullCommand quoting', () => {
   const origin = 'https://oa.example'
 
