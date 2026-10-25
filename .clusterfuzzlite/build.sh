@@ -17,6 +17,13 @@ cd "$SRC/openartifact"
 module=$(go list -m)
 built=0
 
+# Every fuzzer links this object (compile_native_go_fuzzer_v2 links
+# $LIB_FUZZING_ENGINE into each binary): it makes libFuzzer wait for the Go
+# runtime before it reads the coverage counters, see wait_go_runtime.c.
+wait_obj="$(mktemp -d)/wait_go_runtime.o"
+$CC $CFLAGS -c .clusterfuzzlite/wait_go_runtime.c -o "$wait_obj"
+export LIB_FUZZING_ENGINE="$LIB_FUZZING_ENGINE $wait_obj"
+
 # <file>:func FuzzX(f *testing.F)  -> one line per target.
 targets=$(mktemp)
 grep -rHoE --include='*_test.go' --exclude-dir=web --exclude-dir=node_modules --exclude-dir=.git \
