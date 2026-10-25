@@ -161,6 +161,8 @@ type AuthUser struct {
 	Kind string `db:"kind" json:"kind"`
 	// The only project a service user belongs to.
 	ProjectID *string `db:"project_id" json:"project_id"`
+	// After this instant the password is rejected at login (generated bootstrap password); NULL = never. Cleared whenever the password changes.
+	PasswordExpiresAt *time.Time `db:"password_expires_at" json:"password_expires_at"`
 }
 
 // Many-to-many membership between users and groups
