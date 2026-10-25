@@ -7,7 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <header class="mb-5 flex flex-wrap items-start justify-between gap-3">
     <div class="min-w-0">
-      <nav v-if="trail.length > 1" :aria-label="t('shell.breadcrumbs')" class="mb-1">
+      <nav :aria-label="t('shell.breadcrumbs')" class="mb-1">
         <ol class="flex flex-wrap items-center gap-x-1.5 gap-y-0.5 text-xs text-muted">
           <li
             v-for="(crumb, i) in trail"
@@ -60,6 +60,7 @@ import { ChevronRightIcon } from '@heroicons/vue/20/solid'
 import { QuestionMarkCircleIcon } from '@heroicons/vue/24/outline'
 import { resolveCrumbs, type Crumb } from '../lib/crumbs'
 import { useDocsLink } from '../composables/useDocsLink'
+import { docsKey } from '../lib/docs'
 import { t } from '../i18n/en'
 
 const props = defineProps<{
@@ -70,6 +71,10 @@ const props = defineProps<{
 }>()
 
 const route = useRoute()
-const trail = computed(() => props.crumbs ?? resolveCrumbs(route))
-const helpUrl = useDocsLink(() => route.name)
+// Always a trail: a page whose route declares none still shows itself as the current crumb.
+const trail = computed<Crumb[]>(() => {
+  const declared = props.crumbs ?? resolveCrumbs(route)
+  return declared.length > 0 ? declared : [{ label: props.title }]
+})
+const helpUrl = useDocsLink(() => docsKey(route))
 </script>

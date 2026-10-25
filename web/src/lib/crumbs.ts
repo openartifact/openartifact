@@ -7,12 +7,14 @@ import { t, type TranslationKey } from '../i18n/en'
 
 /**
  * Breadcrumb declared on a route record (`meta.crumbs`). The label is either
- * an i18n key or the value of a route param (`param`); `to` may reference
- * route params as `:name` and is URL-encoded on resolution.
+ * an i18n key, the value of a route param (`param`) or computed from the route
+ * (`dynamic`, e.g. a settings section title); `to` may reference route params
+ * as `:name` and is URL-encoded on resolution.
  */
 export interface CrumbSpec {
   key?: TranslationKey
   param?: string
+  dynamic?: (route: RouteLocationNormalizedLoaded) => string
   to?: string
 }
 
@@ -37,7 +39,7 @@ function paramValue(route: RouteLocationNormalizedLoaded, name: string): string 
 export function resolveCrumbs(route: RouteLocationNormalizedLoaded): Crumb[] {
   const specs = route.meta.crumbs ?? []
   return specs.map((spec) => ({
-    label: spec.key ? t(spec.key) : paramValue(route, spec.param ?? ''),
+    label: spec.dynamic ? spec.dynamic(route) : spec.key ? t(spec.key) : paramValue(route, spec.param ?? ''),
     to: spec.to?.replace(/:(\w+)/g, (_, p: string) => encodeURIComponent(paramValue(route, p))),
   }))
 }
