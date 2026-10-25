@@ -7,14 +7,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('admin.sso.title')" :description="t('admin.sso.description')">
-      <template #actions>
+    <SectionActions>
         <AppButton size="sm" @click="openAddDrawer">
           <PlusIcon class="w-4 h-4" aria-hidden="true" />
           {{ t('admin.sso.add') }}
         </AppButton>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <div v-if="loading" class="text-muted">{{ t('common.loading') }}</div>
 
@@ -280,7 +278,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import { ref, computed, onMounted } from 'vue'
 import {
   BoltIcon,

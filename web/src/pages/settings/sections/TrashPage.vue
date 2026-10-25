@@ -10,7 +10,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <RepoHeader :name="repo" :repo="repoInfo" active="trash" />
       <p class="-mt-2 text-sm text-muted">{{ t('trash.descriptionRepo') }}</p>
     </div>
-    <PageHeader v-else :title="t('trash.title')" :description="t('trash.description')" />
 
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
       <div class="px-4 py-3 border-b border-border flex items-center justify-between gap-3 flex-wrap">
@@ -143,7 +142,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../../components/PageHeader.vue'
 import RepoHeader from '../../../components/RepoHeader.vue'
 import { computed, onMounted, ref, watch } from 'vue'
 import { useRoute } from 'vue-router'

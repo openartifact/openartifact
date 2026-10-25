@@ -7,8 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- Page Head -->
-    <PageHeader :title="t('adm.backup.title')" :description="t('adm.backup.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
           <AppButton variant="secondary" size="sm" @click="openRestoreModal">
             <ArrowUpTrayIcon class="w-4 h-4" aria-hidden="true" />
@@ -19,8 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {{ t('adm.backup.create') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <!-- Stat Tiles -->
     <div class="grid grid-cols-2 md:grid-cols-3 gap-3">
@@ -227,7 +225,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import { formatDate, timeAgo } from '../../../lib/datetime'
 import { formatBytes } from '../../../lib/quota'
 import { ref, computed, onMounted, onUnmounted } from 'vue'

@@ -6,8 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <PageHeader :title="t('adm.branding.title')" :description="t('adm.branding.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
           <AppButton variant="danger-outline" size="sm" :disabled="loading || !admin || saving" data-testid="reset-all" @click="confirmReset = true">
             <ArrowUturnLeftIcon class="w-4 h-4" aria-hidden="true" />
@@ -18,8 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {{ saving ? t('common.saving') : t('adm.branding.save') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <div v-if="loading" class="bg-surface rounded-xl border border-border p-12 flex flex-col items-center gap-3 text-muted" role="status">
       <ArrowPathIcon class="w-6 h-6 animate-spin" aria-hidden="true" />
@@ -280,7 +278,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ArrowPathIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon, CheckIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import BrandingFieldState from '../../../components/BrandingFieldState.vue'

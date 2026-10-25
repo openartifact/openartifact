@@ -7,8 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('admin.storage.title')" :description="t('adm.storage.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
           <AppButton variant="secondary" size="sm" :loading="testingAll" :disabled="items.length === 0" @click="testAll">
             <ArrowPathIcon v-if="!testingAll" class="w-4 h-4" aria-hidden="true" />
@@ -19,8 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {{ t('adm.storage.addTitle') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <!-- ─── Stat Tiles ──────────────────────────────────────────────────────── -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mt-5">
@@ -119,7 +117,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ServerIcon, PlusIcon, CheckIcon, ArrowPathIcon, ExclamationCircleIcon } from '@heroicons/vue/24/outline'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import AppButton from '../../../components/AppButton.vue'
 import StorageBackendsTable from '../../../components/StorageBackendsTable.vue'
 import StorageBackendDrawer from '../../../components/StorageBackendDrawer.vue'

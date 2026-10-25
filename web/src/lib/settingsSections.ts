@@ -136,11 +136,3 @@ export function settingsSectionTitle(id: unknown): string {
   const s = findSettingsSection(id)
   return s ? t(s.titleKey) : typeof id === 'string' ? id : t('ui.settings.hub')
 }
-
-/** Sections a user may open, grouped in hub order; empty groups are dropped. */
-export function visibleSettingsGroups(isAdmin: boolean): { group: (typeof SETTINGS_GROUPS)[number]; sections: SettingsSection[] }[] {
-  return SETTINGS_GROUPS.map((group) => ({
-    group,
-    sections: SETTINGS_SECTIONS.filter((s) => s.group === group.id && (isAdmin || !s.adminOnly)),
-  })).filter((g) => g.sections.length > 0)
-}

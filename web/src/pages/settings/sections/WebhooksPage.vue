@@ -7,16 +7,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('adm.webhooks.title')" :description="t('adm.webhooks.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2">
           <AppButton size="sm" @click="openCreate">
             <PlusIcon class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.webhooks.add') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <!-- Stat tiles (derived from the loaded list only) -->
     <div class="grid grid-cols-2 gap-3">
@@ -255,7 +253,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import { formatDate } from '../../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import {

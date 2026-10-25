@@ -6,14 +6,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <PageHeader :title="t('tiering.title')" :description="t('tiering.description')">
-      <template #actions>
+    <SectionActions>
         <AppButton variant="secondary" size="sm" :loading="refreshing" @click="reload">
           <ArrowPathIcon v-if="!refreshing" class="w-4 h-4" aria-hidden="true" />
           {{ t('common.refresh') }}
         </AppButton>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <div v-if="loading" class="bg-surface rounded-xl border border-border p-5 space-y-3" data-testid="tiering-loading">
       <div class="h-4 w-40 rounded skel" />
@@ -43,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { onMounted, ref } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
 import AppButton from '../../../components/AppButton.vue'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import TierMoverStatus from '../../../components/TierMoverStatus.vue'
 import TierPlacementTable from '../../../components/TierPlacementTable.vue'
 import TierPolicyTable from '../../../components/TierPolicyTable.vue'

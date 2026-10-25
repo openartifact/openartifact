@@ -7,15 +7,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('admin.permissions.title')" :description="t('adm.permissions.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2">
           <AppButton variant="primary" size="sm" @click="openGrant">
             {{ t('adm.permissions.create') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <!-- TableCard -->
     <div class="bg-surface rounded-xl border border-border overflow-hidden">
@@ -181,7 +179,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import { ref, computed, onMounted } from 'vue'
 import {
   listPermissions,

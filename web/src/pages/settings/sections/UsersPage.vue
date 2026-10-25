@@ -7,15 +7,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('admin.users.title')" :description="t('adm.users.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2">
           <AppButton variant="primary" size="sm" @click="openCreate">
             {{ t('admin.users.create') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <!-- StatRow -->
     <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
@@ -243,7 +241,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import { formatDate } from '../../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import {

@@ -7,11 +7,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('admin.audit.title')" :description="t('adm.audit.description')">
-      <template #actions>
+    <SectionActions>
         <AuditExportButtons :download="exportAudit" />
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <!-- Filter Panel (the server filters by actor and action) -->
     <div class="grid grid-cols-1 md:grid-cols-2 gap-3">
@@ -131,7 +129,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import AppButton from '../../../components/AppButton.vue'
 import AuditExportButtons from '../../../components/AuditExportButtons.vue'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import { formatTimestamp } from '../../../lib/datetime'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
 import { downloadAuditExport, listAudit, type AuditEntry, type ExportFormat } from '../../../api/audit'

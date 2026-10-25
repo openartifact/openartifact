@@ -7,7 +7,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- PageHead -->
-    <PageHeader :title="t('admin.system.title')" :description="t('adm.system.description')" />
 
     <div v-if="loading" class="text-muted" role="status">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="bg-surface rounded-xl border border-border py-12 text-center" role="alert">
@@ -72,7 +71,6 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import AppButton from '../../../components/AppButton.vue'
-import PageHeader from '../../../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import { getAdminSystemInfo, type AdminSystemInfo } from '../../../api/admin'
 import UnavailableStub from '../../../components/UnavailableStub.vue'

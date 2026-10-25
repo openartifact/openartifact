@@ -8,6 +8,7 @@
 // item a role cannot use is locked the same way everywhere.
 
 import { t, type TranslationKey } from '../i18n/en'
+import { SETTINGS_SECTIONS, type SettingsGroupId } from './settingsSections'
 
 export type NavIcon = 'home' | 'repos' | 'packages' | 'projects' | 'bundles' | 'security' | 'settings'
 
@@ -75,11 +76,9 @@ export function activeAreaId(path: string): NavAreaId | null {
   return null
 }
 
-type SectionGroupId = 'account' | 'access' | 'storage' | 'security' | 'integrations' | 'appearance' | 'system'
-
 export interface SettingsSection {
   id: string
-  group: SectionGroupId
+  group: SettingsGroupId
   title: string
   groupTitle: string
   keywords: string
@@ -87,45 +86,15 @@ export interface SettingsSection {
   adminOnly: boolean
 }
 
-type SectionDef = readonly [id: string, group: SectionGroupId, keywords: string, adminOnly?: false]
-
-// Mirrors the settings registry; the ids are the final /settings/:section routes.
-const SECTION_DEFS: readonly SectionDef[] = [
-  ['profile', 'account', 'username email groups display name', false],
-  ['password', 'account', 'change password credentials', false],
-  ['users', 'access', 'sign-in disable invite email password reset create user'],
-  ['groups', 'access', 'members team'],
-  ['permissions', 'access', 'acl roles targets'],
-  ['sso', 'access', 'single sign-on oidc google okta login provider saml issuer client id'],
-  ['tokens', 'access', 'personal ci deploy service api key project token federation token expiry rotate revoke', false],
-  ['project-policy', 'access', 'project creation self-create'],
-  ['backends', 'storage', 's3 bucket filesystem gcs azure endpoint credentials region'],
-  ['tiers', 'storage', 'cold hot mover placement age policy'],
-  ['quotas', 'storage', 'limit usage over quota size'],
-  ['cleanup', 'storage', 'retention keep last age prune dry run'],
-  ['trash', 'storage', 'restore purge retention deleted recover'],
-  ['backup', 'storage', 'snapshot restore schedule download'],
-  ['scanners', 'security', 'trivy osv scan schedule severity threshold auto scan'],
-  ['policies', 'security', 'license policy quarantine block deny list allow list copyleft'],
-  ['signing', 'security', 'gpg key sign packages public key fingerprint'],
-  ['dependency-track', 'security', 'dt sbom push api key url project'],
-  ['webhooks', 'integrations', 'events secret delivery url payload'],
-  ['federation', 'integrations', 'peers replicate sync inbound token'],
-  ['ai', 'integrations', 'llm provider model api key openai anthropic endpoint'],
-  ['branding', 'appearance', 'logo colour color accent product name login message favicon white label support url'],
-  ['audit', 'system', 'events export retention actor csv http requests'],
-  ['health', 'system', 'version database uptime status build commit'],
-]
-
-/** Settings sections with their titles, for palette search. */
+/** Settings sections with their titles, for palette search; read from the settings registry. */
 export function settingsSections(): SettingsSection[] {
-  return SECTION_DEFS.map(([id, group, keywords, open]) => ({
-    id,
-    group,
-    keywords,
-    adminOnly: open !== false,
-    title: t(`shell.section.${id}` as TranslationKey),
-    groupTitle: t(`shell.sectionGroup.${group}` as TranslationKey),
+  return SETTINGS_SECTIONS.map((s) => ({
+    id: s.id,
+    group: s.group,
+    keywords: s.keywords.join(' '),
+    adminOnly: s.adminOnly,
+    title: t(s.titleKey),
+    groupTitle: t(`ui.settings.group.${s.group}` as TranslationKey),
   }))
 }
 

@@ -6,8 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <PageHeader :title="t('adm.dt.title')" :description="t('adm.dt.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
           <AppButton variant="secondary" size="sm" :loading="testing" :disabled="loading || !!loadError" @click="runTest">
             {{ t('adm.dt.test') }}
@@ -16,8 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {{ saving ? t('common.saving') : t('adm.dt.save') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <div v-if="loading" class="text-muted" role="status">{{ t('common.loading') }}</div>
     <div v-else-if="loadError" class="bg-surface rounded-xl border border-border p-8 text-center text-danger" role="alert">{{ loadError }}</div>
@@ -108,7 +106,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import AppButton from '../../../components/AppButton.vue'
 import AppToggle from '../../../components/AppToggle.vue'
 import DependencyTrackTestResult from './DependencyTrackTestResult.vue'

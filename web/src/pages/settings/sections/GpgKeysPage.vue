@@ -6,8 +6,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <template>
   <div class="space-y-5">
-    <PageHeader :title="t('admin.gpg.title')" :description="t('admin.gpg.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2">
           <AppButton variant="secondary" size="sm" :disabled="!canStoreKeys" @click="openImport">
             {{ t('admin.gpg.import') }}
@@ -16,8 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {{ t('admin.gpg.generate') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <div
       v-if="loaded && !canStoreKeys"
@@ -281,7 +279,7 @@ import DataTable from '../../../components/DataTable.vue'
 import type { Column } from '../../../components/DataTable.vue'
 import EmptyState from '../../../components/EmptyState.vue'
 import FormField from '../../../components/FormField.vue'
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import {
   activateGpgKey,
   deactivateGpgKey,

@@ -7,8 +7,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <template>
   <div class="space-y-5">
     <!-- Page Header -->
-    <PageHeader :title="t('adm.ai.title')" :description="t('adm.ai.description')">
-      <template #actions>
+    <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
           <AppButton variant="secondary" size="sm" :loading="testing" :disabled="loading" @click="testConnection">
             <ArrowPathIcon v-if="!testing" class="w-4 h-4" aria-hidden="true" />
@@ -19,8 +18,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             {{ saving ? t('common.saving') : t('adm.ai.saveChanges') }}
           </AppButton>
         </div>
-      </template>
-    </PageHeader>
+      </SectionActions>
 
     <!-- Loading state -->
     <div v-if="loading" class="bg-surface rounded-xl border border-border p-12 flex flex-col items-center gap-3 text-muted" role="status">
@@ -298,7 +296,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../../components/PageHeader.vue'
+import SectionActions from '../../../components/SectionActions.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import type { Component } from 'vue'
 import {
