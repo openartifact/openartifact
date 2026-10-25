@@ -25,7 +25,6 @@ import (
 )
 
 type HTTPHandler struct {
-	name      string
 	log       *logger.Logger
 	db        db.Database
 	blobStore storage.BlobStore
@@ -33,15 +32,10 @@ type HTTPHandler struct {
 
 func NewHTTPHandler(log *logger.Logger, database db.Database, blobStore storage.BlobStore) *HTTPHandler {
 	return &HTTPHandler{
-		name:      "debian-repository",
 		log:       log,
 		db:        database,
 		blobStore: blobStore,
 	}
-}
-
-func (h *HTTPHandler) Name() string {
-	return h.name
 }
 
 // RegisterRepoRoutes registers Debian-specific routes on the provided sub-router.
@@ -55,16 +49,6 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/dists/{dist}/{comp}/binary-{arch}/Packages.xz", h.handlePackagesXz)
 	r.Get("/pool/{comp}/{prefix}/{pkg}/{filename}", h.handlePoolFile)
 	r.Get("/public.key", h.handlePublicKey)
-}
-
-// RegisterRoutes registers the Debian handler under a chi router prefix.
-//
-// Deprecated: prefer using RegisterRepoRoutes inside a caller-managed r.Route().
-func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
-	r.Route(prefix, func(r chi.Router) {
-		h.RegisterRepoRoutes(r)
-	})
-	h.log.Infow("Debian repository HTTP handler registered", "prefix", prefix)
 }
 
 func (h *HTTPHandler) resolveRepo(ctx context.Context, name string) (*models.Repository, error) {

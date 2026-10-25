@@ -111,11 +111,19 @@ func TestStreamedXMLMatchesReflectionEncoder(t *testing.T) {
 	}{
 		{
 			"primary",
-			func(p []pkgrpm.Package) ([]byte, error) { return GeneratePrimaryXML(p, "") },
+			func(p []pkgrpm.Package) ([]byte, error) { return renderXML(WritePrimaryXML, p) },
 			func(p []pkgrpm.Package) ([]byte, error) { return refGeneratePrimaryXML(p, "") },
 		},
-		{"filelists", GenerateFilelistsXML, refGenerateFilelistsXML},
-		{"other", GenerateOtherXML, refGenerateOtherXML},
+		{
+			"filelists",
+			func(p []pkgrpm.Package) ([]byte, error) { return renderXML(WriteFilelistsXML, p) },
+			refGenerateFilelistsXML,
+		},
+		{
+			"other",
+			func(p []pkgrpm.Package) ([]byte, error) { return renderXML(WriteOtherXML, p) },
+			refGenerateOtherXML,
+		},
 	}
 
 	for fixture, pkgs := range equivalenceFixtures() {

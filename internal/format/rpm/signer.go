@@ -8,7 +8,6 @@ import (
 	"bytes"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/openartifact/openartifact/pkg/gpg"
 )
@@ -42,20 +41,4 @@ func PublicKey(signer gpg.Signer) ([]byte, error) {
 	}
 
 	return signer.PublicKey()
-}
-
-func KeyFingerprint(signer gpg.Signer) (string, error) {
-	if signer == nil {
-		return "", ErrSignerNil
-	}
-
-	return signer.KeyFingerprint(), nil
-}
-
-func CleartextSign(signer gpg.Signer, data []byte) (io.Reader, error) {
-	if signer == nil {
-		return nil, ErrSignerNil
-	}
-
-	return signer.CleartextSign(bytes.NewReader(data))
 }

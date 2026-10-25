@@ -114,9 +114,9 @@ func writeFile(t *testing.T, dir, name string, data []byte) string {
 // (RSA-4096 generation is slow) and checks every signature flavour the server
 // publishes with the binaries that real package clients use.
 func TestSignaturesVerifyWithRealClients(t *testing.T) {
-	entity, err := GenerateKey("OpenArtifact Test", "", "test@example.com")
+	entity, err := GenerateEntity("OpenArtifact Test", "", "test@example.com", AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey: %v", err)
+		t.Fatalf("GenerateEntity: %v", err)
 	}
 
 	s := &LocalSigner{entity: entity}

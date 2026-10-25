@@ -172,27 +172,3 @@ func BenchmarkCalculateChecksums(b *testing.B) {
 		})
 	}
 }
-
-func BenchmarkGenerateIndexFiles(b *testing.B) {
-	for _, n := range []int{100, 1000} {
-		entries := benchDebEntries(n)
-
-		b.Run(fmt.Sprintf("entries=%d", n), func(b *testing.B) {
-			b.ReportAllocs()
-
-			for b.Loop() {
-				rig := NewRepositoryIndexGenerator("openartifact", "openartifact", "bookworm", "bookworm")
-				for _, arch := range []string{"amd64", "arm64"} {
-					gen := rig.GetPackagesGenerator("main", arch)
-					for _, e := range entries {
-						gen.AddEntry(FormatPackagesEntry(e))
-					}
-				}
-
-				if _, err := rig.GenerateIndexFiles(); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}

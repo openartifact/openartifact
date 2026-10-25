@@ -25,7 +25,7 @@ func sha256Hex(b []byte) string {
 func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 	pkgs := benchRPMPackages(120)
 
-	want, err := GeneratePrimaryXML(pkgs, "")
+	want, err := renderXML(WritePrimaryXML, pkgs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -35,7 +35,7 @@ func TestCompressMetadataStreamRoundTrip(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	buffered, err := CompressMetadata(want)
+	buffered, err := compressXML(want)
 	if err != nil {
 		t.Fatal(err)
 	}

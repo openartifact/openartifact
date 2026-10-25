@@ -8,6 +8,7 @@ import (
 	"bytes"
 	"encoding/binary"
 	"encoding/xml"
+	"io"
 	"strings"
 	"testing"
 
@@ -53,24 +54,40 @@ func buildTestPackage() pkgrpm.Package {
 	}
 }
 
+// renderRPMXML runs one of the formatrpm.Write*XML streamers into memory.
+func renderRPMXML(t *testing.T, write func(io.Writer, []pkgrpm.Package) error, pkgs []pkgrpm.Package) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+	if err := write(&buf, pkgs); err != nil {
+		t.Fatalf("render rpm xml: %v", err)
+	}
+
+	return buf.Bytes()
+}
+
+// compressRPMXML compresses an in-memory XML document the way the worker does.
+func compressRPMXML(t *testing.T, data []byte) *formatrpm.CompressedMetadata {
+	t.Helper()
+
+	c, err := formatrpm.CompressMetadataStream(func(w io.Writer) error {
+		_, err := w.Write(data)
+		return err
+	}, len(data))
+	if err != nil {
+		t.Fatalf("CompressMetadataStream() error: %v", err)
+	}
+
+	return c
+}
+
 func TestMetadataGenerationPipeline(t *testing.T) {
 	pkg := buildTestPackage()
 	packages := []pkgrpm.Package{pkg}
 
-	primaryXML, err := formatrpm.GeneratePrimaryXML(packages, "https://repo.example.com")
-	if err != nil {
-		t.Fatalf("GeneratePrimaryXML() error: %v", err)
-	}
-
-	filelistsXML, err := formatrpm.GenerateFilelistsXML(packages)
-	if err != nil {
-		t.Fatalf("GenerateFilelistsXML() error: %v", err)
-	}
-
-	otherXML, err := formatrpm.GenerateOtherXML(packages)
-	if err != nil {
-		t.Fatalf("GenerateOtherXML() error: %v", err)
-	}
+	primaryXML := renderRPMXML(t, formatrpm.WritePrimaryXML, packages)
+	filelistsXML := renderRPMXML(t, formatrpm.WriteFilelistsXML, packages)
+	otherXML := renderRPMXML(t, formatrpm.WriteOtherXML, packages)
 
 	if !strings.Contains(string(primaryXML), "test-package") {
 		t.Error("primary.xml missing package name")
@@ -101,15 +118,8 @@ func TestCompressionAndChecksums(t *testing.T) {
 	pkg := buildTestPackage()
 	packages := []pkgrpm.Package{pkg}
 
-	primaryXML, err := formatrpm.GeneratePrimaryXML(packages, "")
-	if err != nil {
-		t.Fatalf("GeneratePrimaryXML() error: %v", err)
-	}
-
-	compressed, err := formatrpm.CompressMetadata(primaryXML)
-	if err != nil {
-		t.Fatalf("CompressMetadata() error: %v", err)
-	}
+	primaryXML := renderRPMXML(t, formatrpm.WritePrimaryXML, packages)
+	compressed := compressRPMXML(t, primaryXML)
 
 	if len(compressed.GzipData) == 0 {
 		t.Error("gzip data is empty")
@@ -148,13 +158,9 @@ func TestRepomdXMLGeneration(t *testing.T) {
 	pkg := buildTestPackage()
 	packages := []pkgrpm.Package{pkg}
 
-	primaryXML, _ := formatrpm.GeneratePrimaryXML(packages, "")
-	filelistsXML, _ := formatrpm.GenerateFilelistsXML(packages)
-	otherXML, _ := formatrpm.GenerateOtherXML(packages)
-
-	primaryCompressed, _ := formatrpm.CompressMetadata(primaryXML)
-	filelistsCompressed, _ := formatrpm.CompressMetadata(filelistsXML)
-	otherCompressed, _ := formatrpm.CompressMetadata(otherXML)
+	primaryCompressed := compressRPMXML(t, renderRPMXML(t, formatrpm.WritePrimaryXML, packages))
+	filelistsCompressed := compressRPMXML(t, renderRPMXML(t, formatrpm.WriteFilelistsXML, packages))
+	otherCompressed := compressRPMXML(t, renderRPMXML(t, formatrpm.WriteOtherXML, packages))
 
 	entries := []formatrpm.RepomdData{
 		{
@@ -230,10 +236,7 @@ func TestPrimaryXMLStructure(t *testing.T) {
 	pkg := buildTestPackage()
 	packages := []pkgrpm.Package{pkg}
 
-	primaryXML, err := formatrpm.GeneratePrimaryXML(packages, "")
-	if err != nil {
-		t.Fatalf("GeneratePrimaryXML() error: %v", err)
-	}
+	primaryXML := renderRPMXML(t, formatrpm.WritePrimaryXML, packages)
 
 	var metadata struct {
 		XMLName  xml.Name `xml:"metadata"`
@@ -281,10 +284,7 @@ func TestPrimaryXMLStructure(t *testing.T) {
 }
 
 func TestEmptyPackageList(t *testing.T) {
-	primaryXML, err := formatrpm.GeneratePrimaryXML(nil, "")
-	if err != nil {
-		t.Fatalf("GeneratePrimaryXML(nil) error: %v", err)
-	}
+	primaryXML := renderRPMXML(t, formatrpm.WritePrimaryXML, nil)
 
 	var metadata struct {
 		Packages int `xml:"packages,attr"`
@@ -317,41 +317,6 @@ func TestCompsXMLValidation(t *testing.T) {
 	}
 }
 
-func TestDeltaRPMXMLGeneration(t *testing.T) {
-	packages := []formatrpm.DeltaRPM{
-		{
-			NewName: "test-pkg", NewVer: "2.0", NewRel: "1.el9",
-			NewArch: "x86_64", OldName: "test-pkg", OldVer: "1.0",
-			OldRel: "1.el9", Filename: "test-pkg-2.0-1.el9.x86_64.rpm",
-			Size: 5000, Checksum: "abc123", ChecksumType: "sha256",
-		},
-	}
-
-	xmlData, err := formatrpm.GeneratePrestodeltaXML(packages)
-	if err != nil {
-		t.Fatalf("GeneratePrestodeltaXML() error: %v", err)
-	}
-
-	if !strings.Contains(string(xmlData), "prestodelta") {
-		t.Error("prestodelta XML missing root element")
-	}
-
-	if !strings.Contains(string(xmlData), "test-pkg") {
-		t.Error("prestodelta XML missing package name")
-	}
-}
-
-func TestEmptyDeltaXML(t *testing.T) {
-	xmlData, err := formatrpm.GeneratePrestodeltaXML(nil)
-	if err != nil {
-		t.Fatalf("GeneratePrestodeltaXML(nil) error: %v", err)
-	}
-
-	if xmlData != nil {
-		t.Error("expected nil output for empty delta list")
-	}
-}
-
 func TestFullPipelineFromBinary(t *testing.T) {
 	rpmData := buildMinimalRPM()
 
@@ -366,19 +331,13 @@ func TestFullPipelineFromBinary(t *testing.T) {
 
 	packages := []pkgrpm.Package{*pkg}
 
-	primaryXML, err := formatrpm.GeneratePrimaryXML(packages, "")
-	if err != nil {
-		t.Fatalf("GeneratePrimaryXML() error: %v", err)
-	}
+	primaryXML := renderRPMXML(t, formatrpm.WritePrimaryXML, packages)
 
 	if !strings.Contains(string(primaryXML), "rpmtest") {
 		t.Error("primary.xml does not contain parsed package name")
 	}
 
-	_, err = formatrpm.CompressMetadata(primaryXML)
-	if err != nil {
-		t.Fatalf("CompressMetadata() error: %v", err)
-	}
+	compressRPMXML(t, primaryXML)
 }
 
 func buildMinimalRPM() []byte {

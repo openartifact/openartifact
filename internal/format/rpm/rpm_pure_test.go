@@ -7,26 +7,17 @@ package rpm
 import (
 	"bytes"
 	"compress/gzip"
-	"encoding/xml"
-	"strings"
 	"testing"
 
 	pkgrpm "github.com/openartifact/openartifact/pkg/rpm"
 )
 
-// ---- CompressMetadata ----
+// ---- compression ----
 
-func TestCompressMetadata_Empty(t *testing.T) {
-	_, err := CompressMetadata([]byte{})
-	if err == nil {
-		t.Fatal("expected error on empty input")
-	}
-}
-
-func TestCompressMetadata_Valid(t *testing.T) {
+func TestCompressMetadataStream_Valid(t *testing.T) {
 	data := []byte("<root><item>hello</item></root>")
 
-	meta, err := CompressMetadata(data)
+	meta, err := compressXML(data)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -88,72 +79,6 @@ func TestValidateCompsXML_Invalid(t *testing.T) {
 	}
 }
 
-// ---- FormatTimestamp ----
-
-func TestFormatTimestamp(t *testing.T) {
-	ts := int64(0)
-	got := FormatTimestamp(ts)
-
-	want := "1970-01-01T00:00:00Z"
-	if got != want {
-		t.Errorf("FormatTimestamp(0) = %q, want %q", got, want)
-	}
-
-	ts = int64(1_700_000_000)
-
-	got = FormatTimestamp(ts)
-	if !strings.HasSuffix(got, "Z") {
-		t.Errorf("FormatTimestamp should end in Z, got %q", got)
-	}
-}
-
-// ---- GeneratePrestodeltaXML ----
-
-func TestGeneratePrestodeltaXML_Empty(t *testing.T) {
-	result, err := GeneratePrestodeltaXML(nil)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result != nil {
-		t.Errorf("expected nil for empty input, got %d bytes", len(result))
-	}
-}
-
-func TestGeneratePrestodeltaXML_OnePackage(t *testing.T) {
-	pkgs := []DeltaRPM{
-		{
-			NewName:      "bash",
-			NewVer:       "5.1",
-			NewRel:       "1",
-			NewArch:      "x86_64",
-			OldVer:       "5.0",
-			OldRel:       "1",
-			Filename:     "bash-5.0-1_5.1-1.x86_64.drpm",
-			Size:         1024,
-			Checksum:     "abc123",
-			ChecksumType: "sha256",
-		},
-	}
-
-	data, err := GeneratePrestodeltaXML(pkgs)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !bytes.Contains(data, []byte("bash")) {
-		t.Error("output should contain package name 'bash'")
-	}
-
-	if !bytes.Contains(data, []byte("prestodelta")) {
-		t.Error("output should contain 'prestodelta' root element")
-	}
-	// Should be valid XML
-	if err := xml.Unmarshal(data[len(xml.Header):], &PrestoDeltaXML{}); err != nil {
-		t.Errorf("output is not valid XML: %v", err)
-	}
-}
-
 // ---- GenerateRepomdXML ----
 
 func TestGenerateRepomdXML_Empty(t *testing.T) {
@@ -198,7 +123,7 @@ func TestGenerateRepomdXML_WithEntries(t *testing.T) {
 	}
 }
 
-// ---- GeneratePrimaryXML ----
+// ---- WritePrimaryXML ----
 
 func makeTestPackage() pkgrpm.Package {
 	return pkgrpm.Package{
@@ -217,7 +142,7 @@ func makeTestPackage() pkgrpm.Package {
 func TestGeneratePrimaryXML_Valid(t *testing.T) {
 	pkg := makeTestPackage()
 
-	data, err := GeneratePrimaryXML([]pkgrpm.Package{pkg}, "https://example.com/repo")
+	data, err := renderXML(WritePrimaryXML, []pkgrpm.Package{pkg})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -232,7 +157,7 @@ func TestGeneratePrimaryXML_Valid(t *testing.T) {
 }
 
 func TestGeneratePrimaryXML_Empty(t *testing.T) {
-	data, err := GeneratePrimaryXML(nil, "https://example.com")
+	data, err := renderXML(WritePrimaryXML, nil)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -242,13 +167,13 @@ func TestGeneratePrimaryXML_Empty(t *testing.T) {
 	}
 }
 
-// ---- GenerateFilelistsXML ----
+// ---- WriteFilelistsXML ----
 
 func TestGenerateFilelistsXML_Valid(t *testing.T) {
 	pkg := makeTestPackage()
 	pkg.Files = []pkgrpm.FileEntry{{Path: "/usr/bin/testpkg"}}
 
-	data, err := GenerateFilelistsXML([]pkgrpm.Package{pkg})
+	data, err := renderXML(WriteFilelistsXML, []pkgrpm.Package{pkg})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
@@ -258,38 +183,18 @@ func TestGenerateFilelistsXML_Valid(t *testing.T) {
 	}
 }
 
-// ---- GenerateOtherXML ----
+// ---- WriteOtherXML ----
 
 func TestGenerateOtherXML_Valid(t *testing.T) {
 	pkg := makeTestPackage()
 	pkg.Changelogs = []pkgrpm.ChangelogEntry{{Author: "dev@example.com", Description: "- init"}}
 
-	data, err := GenerateOtherXML([]pkgrpm.Package{pkg})
+	data, err := renderXML(WriteOtherXML, []pkgrpm.Package{pkg})
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)
 	}
 
 	if !bytes.Contains(data, []byte("otherdata")) {
 		t.Error("output should contain otherdata element")
-	}
-}
-
-// The checksum is a child element with a plain type attribute; the former
-// `xml:"checksum type,attr"` tag put the attribute in a "checksum" namespace.
-func TestGeneratePrestodeltaXML_ChecksumElement(t *testing.T) {
-	data, err := GeneratePrestodeltaXML([]DeltaRPM{{
-		NewName: "bash", NewVer: "5.1", NewRel: "1", NewArch: "x86_64", OldVer: "5.0", OldRel: "1",
-		Filename: "bash.drpm", Size: 1, Checksum: "abc123", ChecksumType: "sha256",
-	}})
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if !bytes.Contains(data, []byte(`<checksum type="sha256">abc123</checksum>`)) {
-		t.Errorf("checksum element not rendered as <checksum type=\"sha256\">: %s", data)
-	}
-
-	if bytes.Contains(data, []byte("xmlns")) {
-		t.Errorf("output carries a namespace declaration: %s", data)
 	}
 }

@@ -24,7 +24,7 @@ func TestGeneratePrimaryXML_WeakDepsAndOrder(t *testing.T) {
 		Enhances:    []pkgrpm.Dependency{{Name: "enh"}},
 	}
 
-	out, err := GeneratePrimaryXML([]pkgrpm.Package{pkg}, "")
+	out, err := renderXML(WritePrimaryXML, []pkgrpm.Package{pkg})
 	if err != nil {
 		t.Fatal(err)
 	}

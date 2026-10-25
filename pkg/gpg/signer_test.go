@@ -14,29 +14,10 @@ import (
 	"github.com/ProtonMail/go-crypto/openpgp/clearsign"
 )
 
-func TestGenerateKey(t *testing.T) {
-	entity, err := GenerateKey("Test User", "Test Comment", "test@example.com")
-	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
-	}
-
-	if entity == nil {
-		t.Fatal("GenerateKey returned nil entity")
-	}
-
-	if entity.PrimaryKey == nil {
-		t.Fatal("Generated key has no primary key")
-	}
-
-	if len(entity.Identities) == 0 {
-		t.Fatal("Generated key has no identities")
-	}
-}
-
 func TestLocalSigner(t *testing.T) {
-	entity, err := GenerateKey("Test User", "", "test@example.com")
+	entity, err := GenerateEntity("Test User", "", "test@example.com", AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
+		t.Fatalf("GenerateEntity failed: %v", err)
 	}
 
 	var keyBuf bytes.Buffer
@@ -68,9 +49,9 @@ func TestLocalSigner(t *testing.T) {
 }
 
 func TestDetachedSign(t *testing.T) {
-	entity, err := GenerateKey("Test User", "", "test@example.com")
+	entity, err := GenerateEntity("Test User", "", "test@example.com", AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
+		t.Fatalf("GenerateEntity failed: %v", err)
 	}
 
 	var keyBuf bytes.Buffer
@@ -109,9 +90,9 @@ func TestDetachedSign(t *testing.T) {
 }
 
 func TestPublicKey(t *testing.T) {
-	entity, err := GenerateKey("Test User", "", "test@example.com")
+	entity, err := GenerateEntity("Test User", "", "test@example.com", AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
+		t.Fatalf("GenerateEntity failed: %v", err)
 	}
 
 	var keyBuf bytes.Buffer
@@ -148,9 +129,9 @@ func TestPublicKey(t *testing.T) {
 }
 
 func TestCleartextSign(t *testing.T) {
-	entity, err := GenerateKey("Test User", "", "test@example.com")
+	entity, err := GenerateEntity("Test User", "", "test@example.com", AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
+		t.Fatalf("GenerateEntity failed: %v", err)
 	}
 
 	var keyBuf bytes.Buffer
@@ -202,9 +183,9 @@ func TestCleartextSign(t *testing.T) {
 }
 
 func TestExportPrivateKey(t *testing.T) {
-	entity, err := GenerateKey("Test User", "", "test@example.com")
+	entity, err := GenerateEntity("Test User", "", "test@example.com", AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
+		t.Fatalf("GenerateEntity failed: %v", err)
 	}
 
 	var keyBuf bytes.Buffer
@@ -241,9 +222,9 @@ func TestExportPrivateKey(t *testing.T) {
 }
 
 func TestCleartextSignVerifiesAsTextSignature(t *testing.T) {
-	entity, err := GenerateKey("Test User", "", "test@example.com")
+	entity, err := GenerateEntity("Test User", "", "test@example.com", AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey failed: %v", err)
+		t.Fatalf("GenerateEntity failed: %v", err)
 	}
 
 	signer := &LocalSigner{entity: entity}

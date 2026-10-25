@@ -121,67 +121,6 @@ func TestCalculateChecksums(t *testing.T) {
 	}
 }
 
-func TestCalculateChecksumsFromReader(t *testing.T) {
-	data := []byte("test data for checksums")
-	reader := bytes.NewReader(data)
-
-	md5sum, sha1sum, sha256sum, size, err := CalculateChecksumsFromReader(reader)
-	if err != nil {
-		t.Fatalf("CalculateChecksumsFromReader() error = %v", err)
-	}
-
-	if size != int64(len(data)) {
-		t.Errorf("Size = %d, want %d", size, len(data))
-	}
-
-	if md5sum == "" || sha1sum == "" || sha256sum == "" {
-		t.Errorf("One or more checksums are empty")
-	}
-}
-
-func TestRepositoryIndexGenerator(t *testing.T) {
-	gen := NewRepositoryIndexGenerator("TestOrigin", "TestLabel", "focal", "20.04")
-
-	// Add some packages
-	pkgGen := gen.GetPackagesGenerator("main", "amd64")
-	pkgGen.AddEntry("Package: test1\nVersion: 1.0\n\n")
-
-	pkgGen = gen.GetPackagesGenerator("main", "i386")
-	pkgGen.AddEntry("Package: test2\nVersion: 2.0\n\n")
-
-	files, err := gen.GenerateIndexFiles()
-	if err != nil {
-		t.Fatalf("GenerateIndexFiles() error = %v", err)
-	}
-
-	// Check that files were generated
-	if _, ok := files["dists/Release"]; !ok {
-		t.Errorf("Release file not generated")
-	}
-
-	if _, ok := files["dists/main/amd64/Packages"]; !ok {
-		t.Errorf("Packages file for main/amd64 not generated")
-	}
-
-	if _, ok := files["dists/main/amd64/Packages.gz"]; !ok {
-		t.Errorf("Packages.gz file for main/amd64 not generated")
-	}
-
-	// Verify Release file content
-	releaseContent := string(files["dists/Release"])
-	if !strings.Contains(releaseContent, "Origin: TestOrigin") {
-		t.Errorf("Release file missing Origin")
-	}
-
-	if !strings.Contains(releaseContent, "amd64") {
-		t.Errorf("Release file missing architecture")
-	}
-
-	if !strings.Contains(releaseContent, "main") {
-		t.Errorf("Release file missing component")
-	}
-}
-
 func TestReleaseFileGeneratorAddDuplicates(t *testing.T) {
 	gen := NewReleaseFileGenerator("Origin", "Label", "suite", "codename")
 

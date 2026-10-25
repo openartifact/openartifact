@@ -123,7 +123,7 @@ func BenchmarkGeneratePrimaryXML(b *testing.B) {
 		var size int
 
 		for b.Loop() {
-			out, err := GeneratePrimaryXML(pkgs, "")
+			out, err := renderXML(WritePrimaryXML, pkgs)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -142,7 +142,7 @@ func BenchmarkGenerateFilelistsXML(b *testing.B) {
 		var size int
 
 		for b.Loop() {
-			out, err := GenerateFilelistsXML(pkgs)
+			out, err := renderXML(WriteFilelistsXML, pkgs)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -161,7 +161,7 @@ func BenchmarkGenerateOtherXML(b *testing.B) {
 		var size int
 
 		for b.Loop() {
-			out, err := GenerateOtherXML(pkgs)
+			out, err := renderXML(WriteOtherXML, pkgs)
 			if err != nil {
 				b.Fatal(err)
 			}
@@ -233,7 +233,7 @@ func BenchmarkCompressMetadata(b *testing.B) {
 			continue
 		}
 
-		xmlData, err := GeneratePrimaryXML(benchRPMPackages(n), "")
+		xmlData, err := renderXML(WritePrimaryXML, benchRPMPackages(n))
 		if err != nil {
 			b.Fatal(err)
 		}
@@ -243,7 +243,7 @@ func BenchmarkCompressMetadata(b *testing.B) {
 			b.SetBytes(int64(len(xmlData)))
 
 			for b.Loop() {
-				if _, err := CompressMetadata(xmlData); err != nil {
+				if _, err := compressXML(xmlData); err != nil {
 					b.Fatal(err)
 				}
 			}
@@ -267,12 +267,12 @@ func BenchmarkPrimaryPipeline(b *testing.B) {
 			b.ReportAllocs()
 
 			for b.Loop() {
-				xmlData, err := GeneratePrimaryXML(pkgs, "")
+				xmlData, err := renderXML(WritePrimaryXML, pkgs)
 				if err != nil {
 					b.Fatal(err)
 				}
 
-				if _, err := CompressMetadata(xmlData); err != nil {
+				if _, err := compressXML(xmlData); err != nil {
 					b.Fatal(err)
 				}
 			}

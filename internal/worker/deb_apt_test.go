@@ -112,9 +112,9 @@ func TestDebMetadataVerifiesWithApt(t *testing.T) {
 		t.Skip("gpgv not installed")
 	}
 
-	entity, err := gpg.GenerateKey("OpenArtifact Test", "", "test@example.com")
+	entity, err := gpg.GenerateEntity("OpenArtifact Test", "", "test@example.com", gpg.AlgorithmRSA4096)
 	if err != nil {
-		t.Fatalf("GenerateKey: %v", err)
+		t.Fatalf("GenerateEntity: %v", err)
 	}
 
 	var priv bytes.Buffer

@@ -91,11 +91,6 @@ func NewLocalSignerFromFile(keyPath string, passphrase []byte) (*LocalSigner, er
 	return NewLocalSigner(file, passphrase)
 }
 
-// GenerateKey generates a new RSA-4096 PGP key pair.
-func GenerateKey(name, comment, email string) (*openpgp.Entity, error) {
-	return GenerateEntity(name, comment, email, AlgorithmRSA4096)
-}
-
 // CleartextSign implements Signer.CleartextSign.
 func (s *LocalSigner) CleartextSign(data io.Reader) (io.Reader, error) {
 	var msgBuf bytes.Buffer

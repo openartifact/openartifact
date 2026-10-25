@@ -11,18 +11,6 @@ import (
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
 )
 
-func TestCompressEmptyData(t *testing.T) {
-	_, err := formatrpm.CompressMetadata(nil)
-	if err == nil {
-		t.Error("CompressMetadata(nil) expected error, got nil")
-	}
-
-	_, err = formatrpm.CompressMetadata([]byte{})
-	if err == nil {
-		t.Error("CompressMetadata(empty) expected error, got nil")
-	}
-}
-
 func TestSignerNilSigner(t *testing.T) {
 	_, err := formatrpm.SignRepomdXML(nil, []byte("<repomd/>"))
 	if err == nil {
@@ -32,16 +20,6 @@ func TestSignerNilSigner(t *testing.T) {
 	_, err = formatrpm.PublicKey(nil)
 	if err == nil {
 		t.Error("PublicKey(nil signer) expected error, got nil")
-	}
-
-	_, err = formatrpm.KeyFingerprint(nil)
-	if err == nil {
-		t.Error("KeyFingerprint(nil signer) expected error, got nil")
-	}
-
-	_, err = formatrpm.CleartextSign(nil, []byte("data"))
-	if err == nil {
-		t.Error("CleartextSign(nil signer) expected error, got nil")
 	}
 }
 

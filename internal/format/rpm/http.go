@@ -25,7 +25,6 @@ import (
 )
 
 type HTTPHandler struct {
-	name      string
 	log       *logger.Logger
 	db        db.Database
 	blobStore storage.BlobStore
@@ -33,15 +32,10 @@ type HTTPHandler struct {
 
 func NewHTTPHandler(log *logger.Logger, database db.Database, blobStore storage.BlobStore) *HTTPHandler {
 	return &HTTPHandler{
-		name:      "rpm-repository",
 		log:       log,
 		db:        database,
 		blobStore: blobStore,
 	}
-}
-
-func (h *HTTPHandler) Name() string {
-	return h.name
 }
 
 func (h *HTTPHandler) resolveRepo(ctx context.Context, name string) (*models.Repository, error) {
@@ -115,16 +109,6 @@ func (h *HTTPHandler) RegisterRepoRoutes(r chi.Router) {
 	r.Get("/repodata/{checksum}-{type}.xml.xz", h.handleMetadataFile)
 	r.Get("/Packages/{filename}", h.handlePackageDownload)
 	r.Get("/public.key", h.handlePublicKey)
-}
-
-// RegisterRoutes registers the RPM handler under a chi router prefix.
-//
-// Deprecated: prefer using RegisterRepoRoutes inside a caller-managed r.Route().
-func (h *HTTPHandler) RegisterRoutes(r chi.Router, prefix string) {
-	r.Route(prefix, func(r chi.Router) {
-		h.RegisterRepoRoutes(r)
-	})
-	h.log.Infow("RPM repository HTTP handler registered", "prefix", prefix)
 }
 
 func (h *HTTPHandler) handleRepomdXML(w http.ResponseWriter, r *http.Request) {

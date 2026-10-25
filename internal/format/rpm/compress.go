@@ -27,19 +27,6 @@ type CompressedMetadata struct {
 	OpenSize int64
 }
 
-// CompressMetadata compresses an in-memory XML document; see
-// CompressMetadataStream for the streaming form.
-func CompressMetadata(xmlData []byte) (*CompressedMetadata, error) {
-	if len(xmlData) == 0 {
-		return nil, errors.New("rpm: empty xml data") //nolint:err113 // static error
-	}
-
-	return CompressMetadataStream(func(w io.Writer) error {
-		_, err := w.Write(xmlData)
-		return err
-	}, len(xmlData))
-}
-
 // hashedBuffer collects compressed output and hashes it on the way.
 type hashedBuffer struct {
 	buf bytes.Buffer

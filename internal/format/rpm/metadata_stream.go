@@ -5,8 +5,6 @@
 package rpm
 
 import (
-	"bytes"
-	"fmt"
 	"io"
 	"net/url"
 	"strconv"
@@ -499,30 +497,4 @@ func writePackageRef(o *xmlOut, p *rpm.Package) {
 	o.attr("arch", p.Arch)
 	o.raw(">")
 	o.version("    ", p)
-}
-
-func generateXML(kind string, write func(io.Writer) error) ([]byte, error) {
-	var buf bytes.Buffer
-
-	if err := write(&buf); err != nil {
-		return nil, fmt.Errorf("rpm: marshaling %s.xml: %w", kind, err)
-	}
-
-	return buf.Bytes(), nil
-}
-
-// GeneratePrimaryXML renders primary.xml in memory; see WritePrimaryXML to
-// stream it instead. baseURL is unused and kept for API compatibility.
-func GeneratePrimaryXML(packages []rpm.Package, _ string) ([]byte, error) {
-	return generateXML("primary", func(w io.Writer) error { return WritePrimaryXML(w, packages) })
-}
-
-// GenerateFilelistsXML renders filelists.xml in memory.
-func GenerateFilelistsXML(packages []rpm.Package) ([]byte, error) {
-	return generateXML("filelists", func(w io.Writer) error { return WriteFilelistsXML(w, packages) })
-}
-
-// GenerateOtherXML renders other.xml in memory.
-func GenerateOtherXML(packages []rpm.Package) ([]byte, error) {
-	return generateXML("other", func(w io.Writer) error { return WriteOtherXML(w, packages) })
 }
