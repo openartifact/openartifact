@@ -252,4 +252,16 @@ describe('AppSidebar', () => {
     const { wrapper } = mountSidebar()
     expect(wrapper.text()).not.toContain('testuser')
   })
+
+  it('keeps sign-out reachable and working in the collapsed rail', async () => {
+    session.user = makeUser({ username: 'testuser' })
+    ui.sidebarCollapsed = true
+    const { wrapper, router } = mountSidebar()
+    const logoutBtn = wrapper.find('button[aria-label="Sign out"]')
+    expect(logoutBtn.exists()).toBe(true)
+    await logoutBtn.trigger('click')
+    await flushPromises()
+    expect(mockLogout).toHaveBeenCalled()
+    expect(router.currentRoute.value.path).toBe('/login')
+  })
 })

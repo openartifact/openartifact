@@ -141,30 +141,29 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </span>
       </div>
 
-      <!-- Username + logout button (hidden when collapsed) -->
-      <template v-if="!collapsed">
-        <span class="flex-1 text-sm font-medium text-foreground truncate">
-          {{ session.user?.username }}
-        </span>
-        <button
-          v-if="canInstall"
-          type="button"
-          class="shrink-0 text-muted hover:text-foreground transition-colors"
-          :aria-label="t('pwa.install')"
-          :title="t('pwa.install')"
-          @click="install"
-        >
-          <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
-        </button>
-        <button
-          type="button"
-          class="shrink-0 text-muted hover:text-foreground transition-colors"
-          :aria-label="t('auth.signOut')"
-          @click="handleLogout"
-        >
-          <ArrowRightOnRectangleIcon class="w-4 h-4" aria-hidden="true" />
-        </button>
-      </template>
+      <!-- The name needs the width; install and sign-out stay in the collapsed rail. -->
+      <span v-if="!collapsed" class="flex-1 text-sm font-medium text-foreground truncate">
+        {{ session.user?.username }}
+      </span>
+      <button
+        v-if="canInstall"
+        type="button"
+        class="shrink-0 text-muted hover:text-foreground transition-colors"
+        :aria-label="t('pwa.install')"
+        :title="t('pwa.install')"
+        @click="install"
+      >
+        <ArrowDownTrayIcon class="w-4 h-4" aria-hidden="true" />
+      </button>
+      <button
+        type="button"
+        class="shrink-0 text-muted hover:text-foreground transition-colors"
+        :aria-label="t('auth.signOut')"
+        :title="t('auth.signOut')"
+        @click="handleLogout"
+      >
+        <ArrowRightOnRectangleIcon class="w-4 h-4" aria-hidden="true" />
+      </button>
       <button
         type="button"
         class="shrink-0 text-muted hover:text-foreground transition-colors"
