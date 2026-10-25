@@ -1242,6 +1242,206 @@ export type LicensePolicy = {
 };
 
 /**
+ * One stored scan result (a package version of one type) that reports something.
+ */
+export type SecurityFinding = {
+    id: string;
+    type: 'vuln' | 'license' | 'secret' | 'ai';
+    /**
+     * Repository name.
+     */
+    repository: string;
+    /**
+     * Format of the repository (npm, pypi, maven, ...).
+     */
+    format: string;
+    package_name: string;
+    package_version: string;
+    /**
+     * The artifact the result belongs to, `name@version`.
+     */
+    artifact_id: string;
+    /**
+     * Highest severity of the finding; `none` when it has none.
+     */
+    severity: 'critical' | 'high' | 'medium' | 'low' | 'none';
+    /**
+     * What the result holds per severity. Secret findings count by their own severity (an unknown one as low); a license quarantine is one high and each unresolved license one low; an AI quarantine recommendation is one high and a license review one medium.
+     */
+    counts: SecurityFindingCounts;
+    /**
+     * One line: the worst vulnerability id, the licenses, the worst secret finding or the AI note.
+     */
+    title: string;
+    /**
+     * Scanner of a vulnerability result (`osv`, `trivy`, `grype` or a comma-joined list); empty for the other types.
+     */
+    scanner: string;
+    /**
+     * `quarantined` when the result's quarantine flag is set; `suppressed` when every vulnerability has a `not_affected` or `fixed` VEX decision or an admin approved a license quarantine.
+     */
+    status: 'open' | 'quarantined' | 'suppressed';
+    quarantined: boolean;
+    /**
+     * Least resolved VEX decision on the vulnerabilities of a vuln finding; absent when none applies.
+     */
+    vex_status?: 'affected' | 'under_investigation' | 'fixed' | 'not_affected';
+    scanned_at: string;
+};
+
+export type SecurityFindingCounts = {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+};
+
+export type SecuritySummary = {
+    by_type: {
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        vuln: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        license: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        secret: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+        /**
+         * Findings of one type; the severities count by each finding's highest severity.
+         */
+        ai: {
+            total: number;
+            critical: number;
+            high: number;
+            medium: number;
+            low: number;
+            quarantined: number;
+        };
+    };
+    /**
+     * Repositories that hold artifacts (group repositories excluded) with a completed scan of any type.
+     */
+    scanned_repositories: number;
+    /**
+     * Repositories of the scope that hold artifacts.
+     */
+    total_repositories: number;
+    /**
+     * When the latest scan of the scope finished; null when none did.
+     */
+    last_scan_at: string | null;
+};
+
+export type SecurityHealth = {
+    scanners: Array<{
+        /**
+         * osv, trivy or grype.
+         */
+        name: string;
+        ready: boolean;
+        /**
+         * What an operator should do; absent for a ready scanner.
+         */
+        message?: string;
+        /**
+         * Installation guide of a scanner that is not ready.
+         */
+        docs_url?: string;
+    }>;
+    /**
+     * When the latest vulnerability, license, secret or AI scan finished; null when none did.
+     */
+    last_scan_at: string | null;
+    /**
+     * Scans that are pending or running.
+     */
+    scans_pending: number;
+    /**
+     * Scans that failed in the last 24 hours.
+     */
+    scans_failed_24h: number;
+    dependency_track: {
+        /**
+         * The global Dependency-Track integration is enabled.
+         */
+        enabled: boolean;
+        /**
+         * Whether the latest finished push succeeded; absent when none finished.
+         */
+        last_push_ok?: boolean;
+        /**
+         * When that push finished; absent when none did.
+         */
+        last_push_at?: string;
+    };
+    ai: {
+        enabled: boolean;
+    };
+    /**
+     * Repositories that hold artifacts (group repositories excluded) with no completed scan of any type.
+     */
+    unscanned_repositories: number;
+};
+
+/**
+ * Counts only; no finding ids, titles or other details.
+ */
+export type RepoSecuritySummary = {
+    /**
+     * Latest completed scan of the selection; null when nothing was scanned.
+     */
+    scanned_at: string | null;
+    vuln: {
+        critical: number;
+        high: number;
+        medium: number;
+        low: number;
+    };
+    license: {
+        /**
+         * License findings that are not suppressed.
+         */
+        violations: number;
+    };
+    secret: {
+        count: number;
+    };
+    ai: {
+        quarantine_recommended: number;
+        review_required: number;
+    };
+    /**
+     * True when a result of the selection is quarantined.
+     */
+    quarantined: boolean;
+};
+
+/**
  * A vulnerability scan without its findings (`vulnerabilities`), with the name and format of its repository. Fetch the findings with GET /api/v1/repositories/{name}/vuln/scans/{id}.
  */
 export type VulnScanOverviewRow = {
@@ -3775,6 +3975,235 @@ export type GetApiV1VulnScansResponses = {
 };
 
 export type GetApiV1VulnScansResponse = GetApiV1VulnScansResponses[keyof GetApiV1VulnScansResponses];
+
+export type GetApiV1SecurityFindingsData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.
+         */
+        type?: string;
+        /**
+         * Only the findings of this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Only the findings of the repositories of this project (by name).
+         */
+        project?: string;
+        /**
+         * Only findings whose highest severity is exactly this one (the summary strip counts the same way).
+         */
+        severity?: 'critical' | 'high' | 'medium' | 'low';
+        /**
+         * Only findings in this state.
+         */
+        status?: 'open' | 'quarantined' | 'suppressed';
+        /**
+         * Case-insensitive substring of the repository name or of `name@version`.
+         */
+        q?: string;
+        /**
+         * Page size, default 50.
+         */
+        limit?: number;
+        /**
+         * Opaque `next_cursor` of the previous page.
+         */
+        cursor?: string;
+    };
+    url: '/api/v1/security/findings';
+};
+
+export type GetApiV1SecurityFindingsErrors = {
+    /**
+     * Invalid filter or cursor (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Neither a global administrator nor a project maintainer or owner
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityFindingsResponses = {
+    /**
+     * One page of findings
+     */
+    200: {
+        findings: Array<SecurityFinding>;
+        /**
+         * True when findings follow this page.
+         */
+        has_more: boolean;
+        /**
+         * Pass as `cursor` to fetch the next page. Absent when `has_more` is false.
+         */
+        next_cursor?: string;
+    };
+};
+
+export type GetApiV1SecurityFindingsResponse = GetApiV1SecurityFindingsResponses[keyof GetApiV1SecurityFindingsResponses];
+
+export type GetApiV1SecurityFindingsSummaryData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Only the findings of this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Only the findings of the repositories of this project (by name).
+         */
+        project?: string;
+    };
+    url: '/api/v1/security/findings/summary';
+};
+
+export type GetApiV1SecurityFindingsSummaryErrors = {
+    /**
+     * Invalid filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Neither a global administrator nor a project maintainer or owner
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityFindingsSummaryResponses = {
+    /**
+     * The counts
+     */
+    200: SecuritySummary;
+};
+
+export type GetApiV1SecurityFindingsSummaryResponse = GetApiV1SecurityFindingsSummaryResponses[keyof GetApiV1SecurityFindingsSummaryResponses];
+
+export type GetApiV1SecurityFindingsExportData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * Comma-separated finding types to include: `vuln`, `license`, `secret`, `ai`. Default: all four.
+         */
+        type?: string;
+        /**
+         * Only the findings of this repository (by name).
+         */
+        repo?: string;
+        /**
+         * Only the findings of the repositories of this project (by name).
+         */
+        project?: string;
+        /**
+         * Only findings whose highest severity is exactly this one (the summary strip counts the same way).
+         */
+        severity?: 'critical' | 'high' | 'medium' | 'low';
+        /**
+         * Only findings in this state.
+         */
+        status?: 'open' | 'quarantined' | 'suppressed';
+        /**
+         * Case-insensitive substring of the repository name or of `name@version`.
+         */
+        q?: string;
+        /**
+         * `csv`, `json` (default) or `vex` (CycloneDX VEX of the vulnerability findings).
+         */
+        format?: 'csv' | 'json' | 'vex';
+    };
+    url: '/api/v1/security/findings/export';
+};
+
+export type GetApiV1SecurityFindingsExportErrors = {
+    /**
+     * Unknown `format` or filter (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * Neither a global administrator nor a project maintainer or owner
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityFindingsExportResponses = {
+    /**
+     * The export as a download. CSV is `text/csv`, JSON `application/json` (`{findings, truncated}`), VEX `application/vnd.cyclonedx+json`.
+     */
+    200: {
+        [key: string]: unknown;
+    };
+};
+
+export type GetApiV1SecurityFindingsExportResponse = GetApiV1SecurityFindingsExportResponses[keyof GetApiV1SecurityFindingsExportResponses];
+
+export type GetApiV1SecurityHealthData = {
+    body?: never;
+    path?: never;
+    query?: never;
+    url: '/api/v1/security/health';
+};
+
+export type GetApiV1SecurityHealthErrors = {
+    /**
+     * Admin access required
+     */
+    403: unknown;
+};
+
+export type GetApiV1SecurityHealthResponses = {
+    /**
+     * The health aggregate
+     */
+    200: SecurityHealth;
+};
+
+export type GetApiV1SecurityHealthResponse = GetApiV1SecurityHealthResponses[keyof GetApiV1SecurityHealthResponses];
+
+export type GetApiV1RepositoriesByNameSecuritySummaryData = {
+    body?: never;
+    path: {
+        name: string;
+    };
+    query?: {
+        /**
+         * Only this package.
+         */
+        package_name?: string;
+        /**
+         * Only this version of the package; needs `package_name`.
+         */
+        version?: string;
+    };
+    url: '/api/v1/repositories/{name}/security/summary';
+};
+
+export type GetApiV1RepositoriesByNameSecuritySummaryErrors = {
+    /**
+     * `version` without `package_name`, or a value that is too long (`validation_failed`)
+     */
+    400: unknown;
+    /**
+     * No read access to the repository
+     */
+    403: unknown;
+    /**
+     * Repository not found
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNameSecuritySummaryResponses = {
+    /**
+     * The counts
+     */
+    200: RepoSecuritySummary;
+};
+
+export type GetApiV1RepositoriesByNameSecuritySummaryResponse = GetApiV1RepositoriesByNameSecuritySummaryResponses[keyof GetApiV1RepositoriesByNameSecuritySummaryResponses];
 
 export type GetApiV1VulnScansExportData = {
     body?: never;
