@@ -12,6 +12,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 )
 
@@ -31,7 +32,7 @@ func FuzzValidateUploadIdentity(f *testing.F) {
 			fuzzCheckAcceptedIdentity(t, name, version, filename)
 		}
 
-		if strings.ContainsAny(name+version, `/\`) || strings.Trim(name, "-_.") == "" || version == "" {
+		if strings.ContainsAny(name+version, "/\\\x00") || strings.Trim(name, "-_.") == "" || version == "" {
 			return
 		}
 
@@ -51,7 +52,7 @@ func FuzzValidateUploadIdentity(f *testing.F) {
 func fuzzCheckAcceptedIdentity(t *testing.T, name, version, filename string) {
 	t.Helper()
 
-	if strings.ContainsAny(filename, `/\`) || filename == "" || filename == "." || filename == ".." ||
+	if !pathseg.Name(filename) ||
 		strings.Trim(name, "-_.") == "" || version == "" {
 		t.Fatalf("validateUploadIdentity accepted (%q, %q, %q)", name, version, filename)
 	}
