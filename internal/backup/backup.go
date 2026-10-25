@@ -271,13 +271,15 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	gzipWriter := gzip.NewWriter(file)
 	tarWriter := tar.NewWriter(gzipWriter)
 
-	// The success path closes (and checks) the writers itself; this only
-	// releases them when a failure returns early.
+	// The success path closes (and checks) the writers itself. Any failure
+	// (a cancelled export at shutdown included) returns with a partial
+	// archive nobody will read: drop it without flushing or syncing, which
+	// for a large archive would otherwise hold the process up.
 	archiveClosed := false
 
 	defer func() {
 		if !archiveClosed {
-			_ = closeArchive(tarWriter, gzipWriter, file)
+			abandonArchive(file)
 		}
 	}()
 
@@ -397,6 +399,13 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	e.log.Infow("backup completed successfully", "job_id", jobID, "size_bytes", fileInfo.Size(), "path", finalPath)
 
 	return nil
+}
+
+// abandonArchive discards a partial archive: it closes the file without
+// finishing the tar and gzip streams or syncing, and removes it.
+func abandonArchive(f *os.File) {
+	_ = f.Close()
+	_ = os.Remove(f.Name())
 }
 
 // closeArchive finishes the tar and gzip streams, flushes the file to disk

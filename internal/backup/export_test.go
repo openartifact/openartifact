@@ -326,3 +326,41 @@ func readArchive(t *testing.T, path string) (BackupManifest, map[string]string) 
 		}
 	}
 }
+
+// TestRunBackup_CancelledExportIsDiscarded: a backup cancelled mid-export
+// (server shutdown) fails its job and leaves no partial archive behind.
+func TestRunBackup_CancelledExportIsDiscarded(t *testing.T) {
+	db := newFakeDB("src")
+	eng, store := newTestEngine(t, db)
+
+	if _, err := store.Put(t.Context(), strings.NewReader("payload"), map[string]string{"sha256": shaOf("payload")}); err != nil {
+		t.Fatal(err)
+	}
+
+	db.addBlobRow(shaOf("payload"), int64(len("payload")))
+
+	job := &models.BackupJob{ID: "job-cancelled", Status: "pending", Type: "full"}
+	if err := db.CreateBackupJob(t.Context(), job); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+
+	if err := eng.RunBackup(ctx, job.ID, "full"); !errors.Is(err, context.Canceled) {
+		t.Fatalf("RunBackup = %v, want context.Canceled", err)
+	}
+
+	if got := db.jobs[job.ID]; got.Status != "failed" || got.StoragePath != "" {
+		t.Errorf("job = %q (path %q), want failed without an archive", got.Status, got.StoragePath)
+	}
+
+	left, err := os.ReadDir(eng.backupDir)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	if len(left) != 0 {
+		t.Errorf("backup dir holds %d leftover file(s), want none", len(left))
+	}
+}
