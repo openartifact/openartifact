@@ -7,6 +7,8 @@ package clientsetup
 import (
 	"strings"
 	"testing"
+
+	"github.com/openartifact/openartifact/internal/middleware"
 )
 
 const origin = "https://artifacts.example.com"
@@ -81,5 +83,34 @@ func TestDockerSnippetUsesRepoNameAsImage(t *testing.T) {
 
 	if !strings.Contains(s.Publish, "localhost:8080/team/app:latest") {
 		t.Errorf("publish = %q", s.Publish)
+	}
+}
+
+// sbt only sends credentials when the realm in Credentials(...) equals the
+// realm of the server's WWW-Authenticate challenge.
+func TestSBTSnippetUsesServerAuthRealm(t *testing.T) {
+	want := `Credentials("` + middleware.AuthRealm + `", "`
+
+	snips := Snippets("sbt", "https://artifacts.example.com", "repo1")
+	if len(snips) != 1 || !strings.Contains(snips[0].Configure, want) {
+		t.Errorf("sbt snippet = %+v, want it to contain %s", snips, want)
+	}
+}
+
+// sbt looks credentials up by host name alone: a host:port entry is never found.
+func TestSBTSnippetCredentialsHostHasNoPort(t *testing.T) {
+	tests := []struct{ origin, host string }{
+		{"https://artifacts.example.com", "artifacts.example.com"},
+		{"http://127.0.0.1:18098", "127.0.0.1"},
+		{"https://artifacts.example.com:8443/", "artifacts.example.com"},
+		{"http://[::1]:8080", "[::1]"},
+	}
+
+	for _, tt := range tests {
+		want := `, "` + tt.host + `", "<USERNAME>"`
+
+		if got := Snippets("sbt", tt.origin, "repo1")[0].Configure; !strings.Contains(got, want) {
+			t.Errorf("origin %s: configure = %q, want it to contain %s", tt.origin, got, want)
+		}
 	}
 }

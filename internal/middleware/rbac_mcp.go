@@ -95,7 +95,7 @@ func resolveMCPPrincipal(ctx context.Context, r *http.Request, cfg RBACConfig, d
 // read tools. It reports whether the request may proceed.
 func gateMCP(w http.ResponseWriter, r *http.Request, cfg RBACConfig, log *logger.Logger, principal *auth.Principal, credential string) bool {
 	if principal.IsAnonymous {
-		challenge := `Bearer realm="openartifact"`
+		challenge := `Bearer realm="` + AuthRealm + `"`
 
 		if cfg.BaseURL != "" {
 			challenge += `, resource_metadata="` + ProtectedResourceMetadataURL(cfg.BaseURL, cfg.MCPPath) + `"`

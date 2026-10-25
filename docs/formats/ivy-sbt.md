@@ -22,7 +22,7 @@ Proxy and group are not supported for either format (see the [format matrix](REA
 ```scala
 // build.sbt
 resolvers += "REPO" at "HOST/repos/sbt/REPO"
-credentials += Credentials("OpenArtifact", "HOST_AND_PORT", "<USERNAME>", "<TOKEN>")
+credentials += Credentials("openartifact", "HOST", "<USERNAME>", "<TOKEN>")
 ThisBuild / publishTo := Some("REPO" at "HOST/repos/sbt/REPO")  // then: sbt publish
 ```
 
@@ -35,7 +35,7 @@ ThisBuild / publishTo := Some("REPO" at "HOST/repos/sbt/REPO")  // then: sbt pub
 </ivy:publish>
 ```
 
-`HOST_AND_PORT` is the `host[:port]` of the server (the credentials realm host). Credentials are Basic with the token as password.
+`HOST` is the host name of the server without a port (sbt matches credentials on the host alone, so `host:port` finds none). Credentials are Basic with the token as password. The realm must be exactly `openartifact`, the realm of the server's `WWW-Authenticate` challenge; sbt sends no credentials under any other realm and the publish fails with `401`.
 
 ## Routes and layout
 

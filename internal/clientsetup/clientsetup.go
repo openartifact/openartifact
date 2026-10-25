@@ -25,6 +25,7 @@ type Snippet struct {
 type target struct {
 	origin string // server origin without trailing slash
 	host   string // host[:port] of origin
+	name   string // host of origin without the port (what sbt matches credentials on)
 	repo   string // raw repository name
 	esc    string // URL-path-escaped repository name
 	base   string // native repository base URL
@@ -63,6 +64,7 @@ func Snippets(format, origin, repo string) []Snippet {
 	c := target{
 		origin: origin,
 		host:   hostOf(origin),
+		name:   hostnameOf(origin),
 		repo:   repo,
 		esc:    url.PathEscape(repo),
 		base:   RepoBaseURL(format, origin, repo),
@@ -83,6 +85,26 @@ func hostOf(origin string) string {
 	origin = strings.TrimPrefix(origin, "https://")
 
 	return strings.TrimPrefix(origin, "http://")
+}
+
+// hostnameOf is the host of origin without its port, as java.net.URL.getHost
+// reports it (an IPv6 literal keeps its brackets).
+func hostnameOf(origin string) string {
+	if u, err := url.Parse(origin); err == nil && u.Hostname() != "" {
+		h := u.Hostname()
+		if strings.Contains(h, ":") {
+			h = "[" + h + "]"
+		}
+
+		return h
+	}
+
+	host := hostOf(origin)
+	if i := strings.LastIndex(host, ":"); i >= 0 && !strings.Contains(host[i:], "]") {
+		return host[:i]
+	}
+
+	return host
 }
 
 // builderFor returns the snippet builder for a format, or nil when unknown.
@@ -269,8 +291,8 @@ func conanSnippets(c target) []Snippet {
 func sbtSnippets(c target) []Snippet {
 	return []Snippet{{
 		Client: "sbt",
-		Configure: fmt.Sprintf("// build.sbt\nresolvers += \"%[1]s\" at \"%[2]s\"\ncredentials += Credentials(\"OpenArtifact\", \"%[3]s\", \"<USERNAME>\", \"<TOKEN>\")",
-			c.repo, c.base, c.host),
+		Configure: fmt.Sprintf("// build.sbt\nresolvers += \"%[1]s\" at \"%[2]s\"\ncredentials += Credentials(\"openartifact\", \"%[3]s\", \"<USERNAME>\", \"<TOKEN>\")",
+			c.repo, c.base, c.name),
 		Publish: fmt.Sprintf("ThisBuild / publishTo := Some(\"%s\" at \"%s\")\n// then: sbt publish", c.repo, c.base),
 	}}
 }

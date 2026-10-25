@@ -20,6 +20,11 @@ import (
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
+// AuthRealm is the realm of the Basic and Bearer challenges. It is a protocol
+// identifier: clients that select credentials by realm (sbt's Credentials, for
+// one) must be given exactly this value, so client snippets quote it.
+const AuthRealm = "openartifact"
+
 type principalCtxKey struct{}
 
 func WithPrincipal(ctx context.Context, p *auth.Principal) context.Context {
@@ -341,14 +346,14 @@ func writeAccessDenied(w http.ResponseWriter, r *http.Request, cfg RBACConfig, d
 		// docker/podman fetch a token from the realm, which is not a URL, and
 		// fail. Offer only Basic on /v2/ so clients send their credentials.
 		if !strings.HasPrefix(r.URL.Path, "/v2/") && r.URL.Path != "/v2" {
-			w.Header().Add("WWW-Authenticate", `Bearer realm="openartifact"`)
+			w.Header().Add("WWW-Authenticate", `Bearer realm="`+AuthRealm+`"`)
 		}
 
 		// Package managers (maven, pip, helm, docker) only send credentials
 		// after a Basic challenge. Never challenge /api/ with Basic: browsers
 		// would pop a native login dialog over the SPA on every expired session.
 		if !strings.HasPrefix(r.URL.Path, "/api/") {
-			w.Header().Add("WWW-Authenticate", `Basic realm="openartifact"`)
+			w.Header().Add("WWW-Authenticate", `Basic realm="`+AuthRealm+`"`)
 		}
 
 		// Cargo only sends its token after a challenge naming its login page

@@ -25,6 +25,15 @@ function hostOf(origin: string): string {
   }
 }
 
+// sbt matches credentials on the host alone, so the port is left out.
+function hostnameOf(origin: string): string {
+  try {
+    return new URL(origin).hostname
+  } catch {
+    return hostOf(origin).replace(/:\d+$/, '')
+  }
+}
+
 const SHELL_SAFE = /^[A-Za-z0-9._@/+:=-]+$/
 
 /**
@@ -235,7 +244,7 @@ export function clientSetup(format: string, origin: string, repo: string): Clien
       return [
         {
           client: 'sbt',
-          configure: `// build.sbt\nresolvers += "${repo}" at "${base}"\ncredentials += Credentials("OpenArtifact", "${host}", "<USERNAME>", "<TOKEN>")`,
+          configure: `// build.sbt\nresolvers += "${repo}" at "${base}"\ncredentials += Credentials("openartifact", "${hostnameOf(origin)}", "<USERNAME>", "<TOKEN>")`,
           publish: `ThisBuild / publishTo := Some("${repo}" at "${base}")\n// then: sbt publish`,
         },
       ]

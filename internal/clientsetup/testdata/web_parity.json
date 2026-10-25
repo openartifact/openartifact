@@ -397,7 +397,7 @@
     "snippets": [
       {
         "client": "sbt",
-        "configure": "// build.sbt\nresolvers += \"repo1\" at \"https://artifacts.example.com:8443/repos/sbt/repo1\"\ncredentials += Credentials(\"OpenArtifact\", \"artifacts.example.com:8443\", \"\u003cUSERNAME\u003e\", \"\u003cTOKEN\u003e\")",
+        "configure": "// build.sbt\nresolvers += \"repo1\" at \"https://artifacts.example.com:8443/repos/sbt/repo1\"\ncredentials += Credentials(\"openartifact\", \"artifacts.example.com\", \"\u003cUSERNAME\u003e\", \"\u003cTOKEN\u003e\")",
         "publish": "ThisBuild / publishTo := Some(\"repo1\" at \"https://artifacts.example.com:8443/repos/sbt/repo1\")\n// then: sbt publish"
       }
     ]
@@ -410,7 +410,7 @@
     "snippets": [
       {
         "client": "sbt",
-        "configure": "// build.sbt\nresolvers += \"my repo\" at \"https://artifacts.example.com:8443/repos/sbt/my%20repo\"\ncredentials += Credentials(\"OpenArtifact\", \"artifacts.example.com:8443\", \"\u003cUSERNAME\u003e\", \"\u003cTOKEN\u003e\")",
+        "configure": "// build.sbt\nresolvers += \"my repo\" at \"https://artifacts.example.com:8443/repos/sbt/my%20repo\"\ncredentials += Credentials(\"openartifact\", \"artifacts.example.com\", \"\u003cUSERNAME\u003e\", \"\u003cTOKEN\u003e\")",
         "publish": "ThisBuild / publishTo := Some(\"my repo\" at \"https://artifacts.example.com:8443/repos/sbt/my%20repo\")\n// then: sbt publish"
       }
     ]
