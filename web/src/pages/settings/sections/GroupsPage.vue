@@ -214,10 +214,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import AppButton from '../../components/AppButton.vue'
-import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import PageHeader from '../../components/PageHeader.vue'
-import { formatDate } from '../../lib/datetime'
+import AppButton from '../../../components/AppButton.vue'
+import ConfirmDialog from '../../../components/ConfirmDialog.vue'
+import PageHeader from '../../../components/PageHeader.vue'
+import { formatDate } from '../../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import {
   listGroups,
@@ -229,10 +229,10 @@ import {
   listAllUsers,
   type GroupItem,
   type UserItem,
-} from '../../api/admin'
-import AdminDialog from '../../components/AdminDialog.vue'
-import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+} from '../../../api/admin'
+import AdminDialog from '../../../components/AdminDialog.vue'
+import { useToastStore } from '../../../stores/toast'
+import { t } from '../../../i18n/en'
 import {
   FolderIcon,
   UsersIcon,

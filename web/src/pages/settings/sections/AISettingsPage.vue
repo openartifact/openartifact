@@ -298,7 +298,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../components/PageHeader.vue'
+import PageHeader from '../../../components/PageHeader.vue'
 import { ref, reactive, computed, onMounted } from 'vue'
 import type { Component } from 'vue'
 import {
@@ -311,14 +311,14 @@ import {
   CloudIcon,
   PuzzlePieceIcon,
 } from '@heroicons/vue/24/outline'
-import { useToastStore } from '../../stores/toast'
-import { getAIConfig, saveAIConfig, testAIConfig } from '../../api/adminAi'
-import type { AIConfig, TestResult } from '../../api/adminAi'
-import AppButton from '../../components/AppButton.vue'
-import AppToggle from '../../components/AppToggle.vue'
-import { aiProviderColor, tint } from '../../lib/brandColors'
-import { aiBrandIcon } from '../../lib/brandIcons'
-import { t } from '../../i18n/en'
+import { useToastStore } from '../../../stores/toast'
+import { getAIConfig, saveAIConfig, testAIConfig } from '../../../api/adminAi'
+import type { AIConfig, TestResult } from '../../../api/adminAi'
+import AppButton from '../../../components/AppButton.vue'
+import AppToggle from '../../../components/AppToggle.vue'
+import { aiProviderColor, tint } from '../../../lib/brandColors'
+import { aiBrandIcon } from '../../../lib/brandIcons'
+import { t } from '../../../i18n/en'
 
 interface ProviderMeta {
   label: string

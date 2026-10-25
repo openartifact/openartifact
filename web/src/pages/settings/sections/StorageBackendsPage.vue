@@ -119,15 +119,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
 import { ServerIcon, PlusIcon, CheckIcon, ArrowPathIcon, ExclamationCircleIcon } from '@heroicons/vue/24/outline'
-import PageHeader from '../../components/PageHeader.vue'
-import AppButton from '../../components/AppButton.vue'
-import StorageBackendsTable from '../../components/StorageBackendsTable.vue'
-import StorageBackendDrawer from '../../components/StorageBackendDrawer.vue'
-import StorageBackendDeleteDialog from '../../components/StorageBackendDeleteDialog.vue'
-import { useStorageBackends } from '../../composables/useStorageBackends'
-import type { DrawerMode } from '../../composables/useStorageBackendForm'
-import { t } from '../../i18n/en'
-import type { StorageBackend } from '../../lib/storageBackends'
+import PageHeader from '../../../components/PageHeader.vue'
+import AppButton from '../../../components/AppButton.vue'
+import StorageBackendsTable from '../../../components/StorageBackendsTable.vue'
+import StorageBackendDrawer from '../../../components/StorageBackendDrawer.vue'
+import StorageBackendDeleteDialog from '../../../components/StorageBackendDeleteDialog.vue'
+import { useStorageBackends } from '../../../composables/useStorageBackends'
+import type { DrawerMode } from '../../../composables/useStorageBackendForm'
+import { t } from '../../../i18n/en'
+import type { StorageBackend } from '../../../lib/storageBackends'
 
 const {
   items,

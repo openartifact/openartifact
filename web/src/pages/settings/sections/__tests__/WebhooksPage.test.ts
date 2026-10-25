@@ -7,7 +7,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import WebhooksPage from '../WebhooksPage.vue'
-import { WEBHOOK_EVENTS, WEBHOOK_PAYLOAD_FORMATS } from '../../../lib/webhookEvents'
+import { WEBHOOK_EVENTS, WEBHOOK_PAYLOAD_FORMATS } from '../../../../lib/webhookEvents'
 
 const LIST = {
   webhooks: [

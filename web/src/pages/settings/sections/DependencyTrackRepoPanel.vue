@@ -177,13 +177,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, onMounted, onUnmounted, reactive, ref } from 'vue'
-import AppButton from '../../components/AppButton.vue'
-import AppToggle from '../../components/AppToggle.vue'
-import StatusBadge from '../../components/StatusBadge.vue'
+import AppButton from '../../../components/AppButton.vue'
+import AppToggle from '../../../components/AppToggle.vue'
+import StatusBadge from '../../../components/StatusBadge.vue'
 import DependencyTrackTestResult from './DependencyTrackTestResult.vue'
-import { useToastStore } from '../../stores/toast'
-import { listAllRepositories } from '../../api/repositories'
-import type { Repository } from '../../api/repositories'
+import { useToastStore } from '../../../stores/toast'
+import { listAllRepositories } from '../../../api/repositories'
+import type { Repository } from '../../../api/repositories'
 import {
   getRepoDependencyTrack,
   saveRepoDependencyTrack,
@@ -191,14 +191,14 @@ import {
   testRepoDependencyTrack,
   pushRepoDependencyTrack,
   listRepoDependencyTrackPushes,
-} from '../../api/dependencyTrack'
+} from '../../../api/dependencyTrack'
 import type {
   DependencyTrackRepository,
   DependencyTrackPush,
   DependencyTrackTest,
-} from '../../api/dependencyTrack'
-import { formatDateTime } from '../../lib/datetime'
-import { t } from '../../i18n/en'
+} from '../../../api/dependencyTrack'
+import { formatDateTime } from '../../../lib/datetime'
+import { t } from '../../../i18n/en'
 
 const inputClass =
   'w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors'

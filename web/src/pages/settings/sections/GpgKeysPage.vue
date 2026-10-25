@@ -274,14 +274,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
-import AdminDialog from '../../components/AdminDialog.vue'
-import AppButton from '../../components/AppButton.vue'
-import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import DataTable from '../../components/DataTable.vue'
-import type { Column } from '../../components/DataTable.vue'
-import EmptyState from '../../components/EmptyState.vue'
-import FormField from '../../components/FormField.vue'
-import PageHeader from '../../components/PageHeader.vue'
+import AdminDialog from '../../../components/AdminDialog.vue'
+import AppButton from '../../../components/AppButton.vue'
+import ConfirmDialog from '../../../components/ConfirmDialog.vue'
+import DataTable from '../../../components/DataTable.vue'
+import type { Column } from '../../../components/DataTable.vue'
+import EmptyState from '../../../components/EmptyState.vue'
+import FormField from '../../../components/FormField.vue'
+import PageHeader from '../../../components/PageHeader.vue'
 import {
   activateGpgKey,
   deactivateGpgKey,
@@ -292,12 +292,12 @@ import {
   listGpgKeys,
   type GpgAlgorithm,
   type GpgKey,
-} from '../../api/gpg'
-import { listAllRepositories } from '../../api/repositories'
-import { ApiError } from '../../api/client'
-import { formatDate } from '../../lib/datetime'
-import { useToastStore } from '../../stores/toast'
-import { t, tDynamic } from '../../i18n/en'
+} from '../../../api/gpg'
+import { listAllRepositories } from '../../../api/repositories'
+import { ApiError } from '../../../api/client'
+import { formatDate } from '../../../lib/datetime'
+import { useToastStore } from '../../../stores/toast'
+import { t, tDynamic } from '../../../i18n/en'
 
 const ALGORITHMS: GpgAlgorithm[] = ['ed25519', 'rsa4096']
 const inputClass =

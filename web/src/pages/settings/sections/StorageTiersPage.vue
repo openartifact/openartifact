@@ -42,15 +42,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { onMounted, ref } from 'vue'
 import { ArrowPathIcon } from '@heroicons/vue/24/outline'
-import AppButton from '../../components/AppButton.vue'
-import PageHeader from '../../components/PageHeader.vue'
-import TierMoverStatus from '../../components/TierMoverStatus.vue'
-import TierPlacementTable from '../../components/TierPlacementTable.vue'
-import TierPolicyTable from '../../components/TierPolicyTable.vue'
-import TierSimulatePanel from '../../components/TierSimulatePanel.vue'
-import { listPolicies, listTiers, type StoragePolicy, type StorageTier } from '../../api/tiering'
-import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import AppButton from '../../../components/AppButton.vue'
+import PageHeader from '../../../components/PageHeader.vue'
+import TierMoverStatus from '../../../components/TierMoverStatus.vue'
+import TierPlacementTable from '../../../components/TierPlacementTable.vue'
+import TierPolicyTable from '../../../components/TierPolicyTable.vue'
+import TierSimulatePanel from '../../../components/TierSimulatePanel.vue'
+import { listPolicies, listTiers, type StoragePolicy, type StorageTier } from '../../../api/tiering'
+import { useToastStore } from '../../../stores/toast'
+import { t } from '../../../i18n/en'
 
 const tiers = ref<StorageTier[]>([])
 const policies = ref<StoragePolicy[]>([])

@@ -7,10 +7,10 @@ import { flushPromises, mount, type VueWrapper } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import BrandingPage from '../BrandingPage.vue'
-import { normalizeBranding } from '../../../lib/branding'
-import type { BrandingAdmin } from '../../../api/branding'
-import { useBrandingStore } from '../../../stores/branding'
-import { useToastStore } from '../../../stores/toast'
+import { normalizeBranding } from '../../../../lib/branding'
+import type { BrandingAdmin } from '../../../../api/branding'
+import { useBrandingStore } from '../../../../stores/branding'
+import { useToastStore } from '../../../../stores/toast'
 
 const json = (body: unknown, status = 200): Response =>
   new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } })

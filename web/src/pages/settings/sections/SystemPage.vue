@@ -71,14 +71,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import AppButton from '../../components/AppButton.vue'
-import PageHeader from '../../components/PageHeader.vue'
+import AppButton from '../../../components/AppButton.vue'
+import PageHeader from '../../../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
-import { getAdminSystemInfo, type AdminSystemInfo } from '../../api/admin'
-import UnavailableStub from '../../components/UnavailableStub.vue'
-import { formatBuildTime, formatCommit } from '../../lib/buildInfo'
-import { formatVersion } from '../../composables/useAppVersion'
-import { t } from '../../i18n/en'
+import { getAdminSystemInfo, type AdminSystemInfo } from '../../../api/admin'
+import UnavailableStub from '../../../components/UnavailableStub.vue'
+import { formatBuildTime, formatCommit } from '../../../lib/buildInfo'
+import { formatVersion } from '../../../composables/useAppVersion'
+import { t } from '../../../i18n/en'
 
 const sysInfo = ref<AdminSystemInfo | null>(null)
 const loading = ref(false)

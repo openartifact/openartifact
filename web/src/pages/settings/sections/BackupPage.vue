@@ -227,16 +227,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../components/PageHeader.vue'
-import { formatDate, timeAgo } from '../../lib/datetime'
-import { formatBytes } from '../../lib/quota'
+import PageHeader from '../../../components/PageHeader.vue'
+import { formatDate, timeAgo } from '../../../lib/datetime'
+import { formatBytes } from '../../../lib/quota'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { backupDownloadUrl, createBackup, listBackups, restoreBackup, type BackupJob, type BackupType } from '../../api/backup'
-import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
-import AppButton from '../../components/AppButton.vue'
-import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import AdminDialog from '../../components/AdminDialog.vue'
+import { backupDownloadUrl, createBackup, listBackups, restoreBackup, type BackupJob, type BackupType } from '../../../api/backup'
+import { useToastStore } from '../../../stores/toast'
+import { t } from '../../../i18n/en'
+import AppButton from '../../../components/AppButton.vue'
+import ConfirmDialog from '../../../components/ConfirmDialog.vue'
+import AdminDialog from '../../../components/AdminDialog.vue'
 import {
   PlusIcon,
   ArrowDownTrayIcon,

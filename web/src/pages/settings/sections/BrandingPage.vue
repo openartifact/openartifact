@@ -280,11 +280,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import { computed, onMounted, reactive, ref } from 'vue'
 import { ArrowPathIcon, ArrowUpTrayIcon, ArrowUturnLeftIcon, CheckIcon, TrashIcon } from '@heroicons/vue/24/outline'
-import PageHeader from '../../components/PageHeader.vue'
-import AppButton from '../../components/AppButton.vue'
-import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import BrandingFieldState from '../../components/BrandingFieldState.vue'
-import MiniMarkdown from '../../components/MiniMarkdown'
+import PageHeader from '../../../components/PageHeader.vue'
+import AppButton from '../../../components/AppButton.vue'
+import ConfirmDialog from '../../../components/ConfirmDialog.vue'
+import BrandingFieldState from '../../../components/BrandingFieldState.vue'
+import MiniMarkdown from '../../../components/MiniMarkdown'
 import {
   deleteBrandingAsset,
   getAdminBranding,
@@ -293,10 +293,10 @@ import {
   uploadBrandingAsset,
   type BrandingAdmin,
   type BrandingAsset,
-} from '../../api/branding'
-import { useBrandingStore } from '../../stores/branding'
-import { useToastStore } from '../../stores/toast'
-import { isHexColor } from '../../lib/branding'
+} from '../../../api/branding'
+import { useBrandingStore } from '../../../stores/branding'
+import { useToastStore } from '../../../stores/toast'
+import { isHexColor } from '../../../lib/branding'
 import {
   BUILTIN_PRIMARY,
   LOGIN_MESSAGE_MAX,
@@ -308,8 +308,8 @@ import {
   type BrandingForm,
   type BrandingFormErrors,
   type BrandingFormField,
-} from '../../lib/brandingForm'
-import { t, tp, type TranslationKey } from '../../i18n/en'
+} from '../../../lib/brandingForm'
+import { t, tp, type TranslationKey } from '../../../i18n/en'
 
 const THEMES = ['light', 'dark'] as const
 

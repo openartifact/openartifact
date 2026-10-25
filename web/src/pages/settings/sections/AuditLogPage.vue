@@ -129,15 +129,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import AppButton from '../../components/AppButton.vue'
-import AuditExportButtons from '../../components/AuditExportButtons.vue'
-import PageHeader from '../../components/PageHeader.vue'
-import { formatTimestamp } from '../../lib/datetime'
+import AppButton from '../../../components/AppButton.vue'
+import AuditExportButtons from '../../../components/AuditExportButtons.vue'
+import PageHeader from '../../../components/PageHeader.vue'
+import { formatTimestamp } from '../../../lib/datetime'
 import { ref, onMounted, onUnmounted, watch } from 'vue'
-import { downloadAuditExport, listAudit, type AuditEntry, type ExportFormat } from '../../api/audit'
+import { downloadAuditExport, listAudit, type AuditEntry, type ExportFormat } from '../../../api/audit'
 import { ChevronRightIcon } from '@heroicons/vue/24/outline'
-import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
+import { useToastStore } from '../../../stores/toast'
+import { t } from '../../../i18n/en'
 
 const PAGE_SIZE = 25
 

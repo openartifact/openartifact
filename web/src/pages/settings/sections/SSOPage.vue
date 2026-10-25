@@ -280,7 +280,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../components/PageHeader.vue'
+import PageHeader from '../../../components/PageHeader.vue'
 import { ref, computed, onMounted } from 'vue'
 import {
   BoltIcon,
@@ -289,7 +289,7 @@ import {
   PlusIcon,
   ShieldCheckIcon,
 } from '@heroicons/vue/24/outline'
-import { ApiError } from '../../api/client'
+import { ApiError } from '../../../api/client'
 import {
   deleteSSOProvider,
   listAdminSSOProviders,
@@ -298,19 +298,19 @@ import {
   updateSSOProvider,
   type SSOConfigInput,
   type SSOProvider,
-} from '../../api/sso'
+} from '../../../api/sso'
 import {
   buildOIDCPayload, oidcFormFrom, emptyOIDCForm, type OIDCTextKey,
-} from '../../lib/ssoOidcForm'
-import AppButton from '../../components/AppButton.vue'
-import AppToggle from '../../components/AppToggle.vue'
-import DocsLink from '../../components/DocsLink.vue'
-import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import AdminDialog from '../../components/AdminDialog.vue'
-import { useDocsLink } from '../../composables/useDocsLink'
-import { useToastStore } from '../../stores/toast'
-import { t } from '../../i18n/en'
-import { formatTime, timeAgo } from '../../lib/datetime'
+} from '../../../lib/ssoOidcForm'
+import AppButton from '../../../components/AppButton.vue'
+import AppToggle from '../../../components/AppToggle.vue'
+import DocsLink from '../../../components/DocsLink.vue'
+import ConfirmDialog from '../../../components/ConfirmDialog.vue'
+import AdminDialog from '../../../components/AdminDialog.vue'
+import { useDocsLink } from '../../../composables/useDocsLink'
+import { useToastStore } from '../../../stores/toast'
+import { t } from '../../../i18n/en'
+import { formatTime, timeAgo } from '../../../lib/datetime'
 
 interface TestOutcome {
   ok: boolean

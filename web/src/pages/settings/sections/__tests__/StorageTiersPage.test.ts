@@ -6,7 +6,7 @@ import { describe, it, expect, spyOn, afterEach, type Mock } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import TierMoverStatus from '../../../components/TierMoverStatus.vue'
+import TierMoverStatus from '../../../../components/TierMoverStatus.vue'
 import StorageTiersPage from '../StorageTiersPage.vue'
 
 const json = (body: unknown, status = 200): Response =>

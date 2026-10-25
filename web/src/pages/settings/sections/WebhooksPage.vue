@@ -255,8 +255,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import PageHeader from '../../components/PageHeader.vue'
-import { formatDate } from '../../lib/datetime'
+import PageHeader from '../../../components/PageHeader.vue'
+import { formatDate } from '../../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
 import {
   createWebhook,
@@ -265,27 +265,27 @@ import {
   updateWebhook,
   type Webhook,
   type WebhookCreateInput,
-} from '../../api/webhooks'
-import { useDocsLink } from '../../composables/useDocsLink'
-import { useToastStore } from '../../stores/toast'
-import { t, tDynamic } from '../../i18n/en'
+} from '../../../api/webhooks'
+import { useDocsLink } from '../../../composables/useDocsLink'
+import { useToastStore } from '../../../stores/toast'
+import { t, tDynamic } from '../../../i18n/en'
 import {
   PlusIcon,
   BellAlertIcon,
   PaperAirplaneIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
-import EmptyState from '../../components/EmptyState.vue'
-import AppButton from '../../components/AppButton.vue'
-import AppToggle from '../../components/AppToggle.vue'
-import ConfirmDialog from '../../components/ConfirmDialog.vue'
-import AdminDialog from '../../components/AdminDialog.vue'
+import EmptyState from '../../../components/EmptyState.vue'
+import AppButton from '../../../components/AppButton.vue'
+import AppToggle from '../../../components/AppToggle.vue'
+import ConfirmDialog from '../../../components/ConfirmDialog.vue'
+import AdminDialog from '../../../components/AdminDialog.vue'
 import {
   WEBHOOK_EVENTS,
   WEBHOOK_PAYLOAD_FORMATS,
   type WebhookEvent,
   type WebhookPayloadFormat,
-} from '../../lib/webhookEvents'
+} from '../../../lib/webhookEvents'
 
 const toasts = useToastStore()
 const docsUrl = useDocsLink('settings-webhooks')

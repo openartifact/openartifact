@@ -108,19 +108,19 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { reactive, ref, onMounted } from 'vue'
-import PageHeader from '../../components/PageHeader.vue'
-import AppButton from '../../components/AppButton.vue'
-import AppToggle from '../../components/AppToggle.vue'
+import PageHeader from '../../../components/PageHeader.vue'
+import AppButton from '../../../components/AppButton.vue'
+import AppToggle from '../../../components/AppToggle.vue'
 import DependencyTrackTestResult from './DependencyTrackTestResult.vue'
 import DependencyTrackRepoPanel from './DependencyTrackRepoPanel.vue'
-import { useToastStore } from '../../stores/toast'
+import { useToastStore } from '../../../stores/toast'
 import {
   getDependencyTrackSettings,
   saveDependencyTrackSettings,
   testDependencyTrack,
-} from '../../api/dependencyTrack'
-import type { DependencyTrackSettings, DependencyTrackTest } from '../../api/dependencyTrack'
-import { t } from '../../i18n/en'
+} from '../../../api/dependencyTrack'
+import type { DependencyTrackSettings, DependencyTrackTest } from '../../../api/dependencyTrack'
+import { t } from '../../../i18n/en'
 
 const inputClass =
   'w-full px-3 py-2 rounded-lg border border-border-strong bg-bg text-foreground text-sm font-mono placeholder:text-muted focus:ring-2 focus:ring-primary transition-colors'

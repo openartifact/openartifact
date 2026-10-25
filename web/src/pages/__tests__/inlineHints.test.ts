@@ -7,7 +7,7 @@ import { mount, flushPromises } from '@vue/test-utils'
 import { createPinia, setActivePinia } from 'pinia'
 import { createMemoryHistory, createRouter } from 'vue-router'
 import RepoWizardPage from '../RepoWizardPage.vue'
-import PermissionsPage from '../admin/PermissionsPage.vue'
+import PermissionsPage from '../settings/sections/PermissionsPage.vue'
 import NewRepoModal from '../../components/NewRepoModal.vue'
 import { useSessionStore, type User } from '../../stores/session'
 
