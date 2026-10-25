@@ -51,7 +51,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
         <!-- Page heading -->
         <div class="mb-7">
-          <h2 class="text-2xl font-bold tracking-tight text-foreground">{{ tp('login.headingProduct', { product: branding.productName }) }}</h2>
+          <h2 class="text-2xl font-bold tracking-tight text-foreground [overflow-wrap:anywhere]">{{ tp('login.headingProduct', { product: branding.productName }) }}</h2>
           <p class="mt-1 text-sm text-muted">{{ t('login.subheading') }}</p>
         </div>
 

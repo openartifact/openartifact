@@ -4,9 +4,16 @@ SPDX-FileCopyrightText: The OpenArtifact Authors
 SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
+<!--
+  The command palette: the primary way to move around. A combobox (the input)
+  controlling a listbox of grouped results; the focus never leaves the input,
+  the active result is announced through aria-activedescendant. Pages, settings
+  and actions are static and appear at once; repositories, packages, projects,
+  bundles and users are fetched and added as they arrive. Loaded lazily by App.
+-->
 <template>
-  <TransitionRoot appear :show="ui.commandPaletteOpen" as="template">
-    <Dialog as="div" class="relative z-50" :aria-label="t('palette.dialogLabel')" @close="close">
+  <TransitionRoot appear :show="ui.commandPaletteOpen" as="template" @after-leave="onAfterLeave">
+    <Dialog as="div" class="relative z-50" :aria-label="t('shell.palette.dialogLabel')" @close="close">
       <TransitionChild
         as="template"
         enter="motion-safe:duration-150 motion-safe:ease-out"
@@ -16,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         leave-from="opacity-100"
         leave-to="opacity-0"
       >
-        <div class="fixed inset-0 bg-foreground/40" />
+        <div class="fixed inset-0 bg-foreground/40" aria-hidden="true" />
       </TransitionChild>
 
       <div class="fixed inset-0 overflow-y-auto">
@@ -30,146 +37,95 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             leave-from="opacity-100 scale-100"
             leave-to="opacity-0 scale-95"
           >
-            <DialogPanel
-              class="w-full max-w-xl transform rounded-lg bg-surface border border-border shadow-2xl overflow-hidden"
-            >
-              <Combobox
-                :model-value="null"
-                @update:model-value="onSelect"
+            <DialogPanel class="w-full max-w-xl transform overflow-hidden rounded-lg border border-border bg-surface shadow-2xl" data-testid="palette">
+              <div class="flex items-center gap-2 border-b border-border px-3 py-2">
+                <MagnifyingGlassIcon class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+                <input
+                  v-model="query"
+                  type="text"
+                  role="combobox"
+                  class="min-h-9 flex-1 bg-transparent py-1 text-sm text-foreground placeholder:text-muted focus:outline-none"
+                  :placeholder="t('shell.palette.placeholder')"
+                  :aria-label="t('shell.palette.inputLabel')"
+                  :aria-expanded="flat.length > 0"
+                  aria-controls="palette-list"
+                  aria-autocomplete="list"
+                  :aria-activedescendant="activeItem ? optionId(activeItem) : undefined"
+                  autocomplete="off"
+                  spellcheck="false"
+                  data-testid="palette-input"
+                  @keydown="onKeydown"
+                />
+                <kbd class="rounded border border-border px-1 text-micro text-muted" aria-hidden="true">{{ t('shell.palette.esc') }}</kbd>
+              </div>
+
+              <!-- Announces the result count (and why a locked result did nothing) to screen readers. -->
+              <p class="sr-only" role="status" aria-live="polite" aria-atomic="true" data-testid="palette-status">{{ announcement }}</p>
+
+              <div
+                id="palette-list"
+                role="listbox"
+                :aria-label="t('shell.palette.resultsLabel')"
+                class="nice-scroll max-h-96 overflow-y-auto py-1"
               >
-                <div class="flex items-center gap-2 border-b border-border px-3 py-2">
-                  <MagnifyingGlassIcon class="w-4 h-4 text-muted" aria-hidden="true" />
-                  <ComboboxInput
-                    class="flex-1 bg-transparent text-sm text-foreground placeholder:text-muted focus:outline-none py-1"
-                    :placeholder="t('palette.placeholder')"
-                    :display-value="() => ''"
-                    autocomplete="off"
-                    @change="onQueryChange(($event.target as HTMLInputElement).value)"
-                  />
-                  <kbd class="text-micro text-muted border border-border rounded px-1">{{ t('palette.esc') }}</kbd>
-                </div>
-
-                <!-- Announces progress and the result count to screen readers. -->
-                <p class="sr-only" role="status" aria-live="polite" aria-atomic="true">{{ announcement }}</p>
-
-                <ComboboxOptions
-                  v-if="hasOptions"
-                  static
-                  class="max-h-80 overflow-y-auto py-1"
-                  role="listbox"
-                  :aria-label="t('palette.resultsLabel')"
-                >
-                  <template v-if="commandResults.length">
-                    <p class="px-3 pt-2 pb-1 text-xs text-muted">
-                      {{ t('palette.group.commands') }}
-                    </p>
-                    <ComboboxOption
-                      v-for="cmd in commandResults"
-                      :key="`cmd:${cmd.id}`"
-                      v-slot="{ active }"
-                      :value="`cmd:${cmd.id}`"
-                    >
-                      <div
-                        class="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between"
-                        :class="active ? 'bg-surface-hover text-foreground' : 'text-foreground'"
-                      >
-                        <span>{{ cmd.title }}</span>
-                        <span v-if="cmd.hint" class="text-xs text-muted">{{ cmd.hint }}</span>
-                      </div>
-                    </ComboboxOption>
-                  </template>
-
-                  <template v-if="packages.length">
-                    <p class="px-3 pt-2 pb-1 text-xs text-muted">
-                      {{ t('palette.group.packages') }}
-                    </p>
-                    <ComboboxOption
-                      v-for="pkg in packages"
-                      :key="packageKey(pkg)"
-                      v-slot="{ active }"
-                      :value="packageKey(pkg)"
-                    >
-                      <div
-                        class="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between"
-                        :class="active ? 'bg-surface-hover text-foreground' : 'text-foreground'"
-                      >
-                        <span class="flex items-center gap-2 min-w-0">
-                          <FormatBadge :format="pkg.format" size="sm" />
-                          <span class="truncate">{{ pkg.name }} <span class="text-muted">{{ pkg.version }}</span></span>
-                        </span>
-                        <span class="text-xs text-muted">{{ pkg.repository }}</span>
-                      </div>
-                    </ComboboxOption>
-                  </template>
-
-                  <template v-if="repositories.length">
-                    <p class="px-3 pt-2 pb-1 text-xs text-muted">
-                      {{ t('palette.group.repositories') }}
-                    </p>
-                    <ComboboxOption
-                      v-for="repo in repositories"
-                      :key="`repo:${repo.name}`"
-                      v-slot="{ active }"
-                      :value="`repo:${repo.name}`"
-                    >
-                      <div
-                        class="px-3 py-1.5 text-sm cursor-pointer flex items-center justify-between"
-                        :class="active ? 'bg-surface-hover text-foreground' : 'text-foreground'"
-                      >
-                        <span class="truncate">{{ repo.name }}</span>
-                        <FormatBadge :format="repo.format" size="sm" />
-                      </div>
-                    </ComboboxOption>
-                  </template>
-
-                  <ComboboxOption
-                    v-if="hasQuery"
-                    v-slot="{ active }"
-                    :value="VIEW_ALL"
+                <div v-for="g in rows" :key="g.id" role="group" :aria-labelledby="`palette-group-${g.id}`">
+                  <p :id="`palette-group-${g.id}`" class="px-3 pb-1 pt-2 text-xs text-muted">{{ t(GROUP_TITLE[g.id]) }}</p>
+                  <div
+                    v-for="row in g.items"
+                    :id="optionId(row.item)"
+                    :key="row.item.id"
+                    role="option"
+                    :aria-selected="row.index === active"
+                    :aria-disabled="row.item.locked ? 'true' : undefined"
+                    class="flex min-h-11 cursor-pointer items-center gap-2.5 px-3 py-1.5 text-sm md:min-h-9"
+                    :class="[
+                      row.index === active ? 'bg-surface-hover' : '',
+                      row.item.locked ? 'text-muted' : 'text-foreground',
+                    ]"
+                    :data-testid="`palette-option-${row.item.id}`"
+                    @mousedown.prevent
+                    @mousemove="active = row.index"
+                    @click="activate(row.item)"
                   >
-                    <div
-                      class="mt-1 px-3 py-1.5 text-sm cursor-pointer flex items-center gap-2 border-t border-border"
-                      :class="active ? 'bg-surface-hover text-foreground' : 'text-muted'"
-                    >
-                      <MagnifyingGlassIcon class="w-4 h-4 shrink-0" aria-hidden="true" />
-                      <span class="truncate">{{ viewAllLabel }}</span>
-                    </div>
-                  </ComboboxOption>
-                </ComboboxOptions>
-
-                <p
-                  v-if="status === 'loading'"
-                  class="px-4 py-3 text-sm text-muted"
-                >
-                  {{ t('palette.searching') }}
-                </p>
-                <p
-                  v-else-if="status === 'tooBroad'"
-                  class="px-4 py-3 text-sm text-muted"
-                >
-                  {{ t('palette.tooBroad') }}
-                </p>
-                <div
-                  v-else-if="status === 'error'"
-                  class="flex items-center justify-between gap-3 px-4 py-3 text-sm"
-                  role="alert"
-                >
-                  <span class="text-danger">{{ t('palette.error') }}</span>
-                  <button
-                    type="button"
-                    class="rounded px-2 py-1 text-xs font-medium text-foreground border border-border hover:bg-surface-hover"
-                    @click="retry"
-                  >
-                    {{ t('palette.retry') }}
-                  </button>
+                    <FormatBadge v-if="row.item.format" :format="row.item.format" size="sm" class="shrink-0" />
+                    <component :is="paletteIcon(row.item.icon)" v-else class="h-4 w-4 shrink-0 text-muted" aria-hidden="true" />
+                    <span class="min-w-0 flex-1">
+                      <span class="block truncate" :class="row.item.mono && 'font-mono'">
+                        <template v-for="(part, i) in highlightParts(row.item.title, parsed.text)" :key="i">
+                          <mark v-if="part.match" class="bg-transparent font-semibold text-foreground underline decoration-primary underline-offset-2">{{ part.text }}</mark>
+                          <template v-else>{{ part.text }}</template>
+                        </template>
+                      </span>
+                      <span v-if="row.item.description" class="block truncate text-xs text-muted" :class="row.item.id === 'search:checksum' && 'font-mono'">{{ row.item.description }}</span>
+                    </span>
+                    <span v-if="itemHint(row.item)" class="shrink-0 text-xs text-muted">{{ itemHint(row.item) }}</span>
+                  </div>
                 </div>
-                <p
-                  v-else-if="!hasAny"
-                  class="px-4 py-6 text-center text-sm text-muted"
-                >
-                  {{ t('palette.noResults') }}
-                </p>
-              </Combobox>
+              </div>
+
+              <p v-if="flat.length === 0 && search.status.value !== 'loading'" class="px-4 py-6 text-center text-sm text-muted">
+                <template v-if="parsed.mode === 'actions'">{{ t('shell.palette.noActions') }}</template>
+                <template v-else>
+                  <strong class="block font-medium text-foreground">{{ t('shell.palette.noResults') }}</strong>
+                  {{ t('shell.palette.noResultsHint') }}
+                </template>
+              </p>
+              <p v-if="search.status.value === 'loading'" class="px-4 py-2 text-xs text-muted">{{ t('shell.palette.searching') }}</p>
+              <p v-else-if="search.status.value === 'tooBroad'" class="px-4 py-2 text-xs text-muted">{{ t('shell.palette.tooBroad') }}</p>
+              <div v-else-if="search.status.value === 'error'" class="flex items-center justify-between gap-3 px-4 py-2 text-xs" role="alert">
+                <span class="text-danger">{{ t('shell.palette.partialError') }}</span>
+                <button
+                  type="button"
+                  class="min-h-11 rounded border border-border px-2 py-1 font-medium text-foreground hover:bg-surface-hover md:min-h-7"
+                  @click="search.retry()"
+                >{{ t('shell.palette.retry') }}</button>
+              </div>
+
+              <div class="hidden items-center gap-4 border-t border-border px-3 py-2 text-xs text-muted sm:flex" aria-hidden="true">
+                <span><kbd class="mr-0.5 rounded border border-border px-1">↑</kbd><kbd class="mr-1 rounded border border-border px-1">↓</kbd>{{ t('shell.palette.footNavigate') }}</span>
+                <span><kbd class="mr-1 rounded border border-border px-1">↵</kbd>{{ t('shell.palette.footOpen') }}</span>
+                <span><kbd class="mr-1 rounded border border-border px-1">&gt;</kbd>{{ t('shell.palette.footActions') }}</span>
+              </div>
             </DialogPanel>
           </TransitionChild>
         </div>
@@ -179,118 +135,148 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch } from 'vue'
+import { computed, nextTick, ref, watch } from 'vue'
 import { useRouter } from 'vue-router'
-import {
-  Dialog,
-  DialogPanel,
-  Combobox,
-  ComboboxInput,
-  ComboboxOptions,
-  ComboboxOption,
-  TransitionRoot,
-  TransitionChild,
-} from '@headlessui/vue'
+import { Dialog, DialogPanel, TransitionRoot, TransitionChild } from '@headlessui/vue'
 import { MagnifyingGlassIcon } from '@heroicons/vue/24/outline'
-import { useUIStore } from '../stores/ui'
-import { listCommands, type CommandEntry } from '../composables/useCommands'
-import { usePaletteSearch } from '../composables/usePaletteSearch'
-import type { SearchPackageHit } from '../api/search'
 import FormatBadge from './FormatBadge.vue'
-import { t, tp } from '../i18n/en'
+import { paletteIcon } from './navIcons'
+import { useUIStore } from '../stores/ui'
+import { useSessionStore } from '../stores/session'
+import { useThemeStore } from '../stores/theme'
+import { useSignOut } from '../composables/useSignOut'
+import { usePaletteSearch } from '../composables/usePaletteSearch'
+import {
+  buildGroups,
+  flattenGroups,
+  highlightParts,
+  itemHint,
+  moveActive,
+  parseQuery,
+  type PaletteGroupId,
+  type PaletteItem,
+} from '../lib/palette'
+import { loadRecent, recentStorageKey, type RecentItem } from '../lib/paletteRecent'
+import { t, tp, type TranslationKey } from '../i18n/en'
 
 const ui = useUIStore()
+const session = useSessionStore()
+const theme = useThemeStore()
 const router = useRouter()
+const signOut = useSignOut()
 
-const VIEW_ALL = 'viewall'
+const GROUP_TITLE: Record<PaletteGroupId, TranslationKey> = {
+  recent: 'shell.palette.group.recent',
+  pages: 'shell.palette.group.pages',
+  repositories: 'shell.palette.group.repositories',
+  packages: 'shell.palette.group.packages',
+  projects: 'shell.palette.group.projects',
+  bundles: 'shell.palette.group.bundles',
+  settings: 'shell.palette.group.settings',
+  users: 'shell.palette.group.users',
+  actions: 'shell.palette.group.actions',
+  search: 'shell.palette.group.search',
+}
 
 const query = ref('')
-const { status, packages, repositories, setQuery, retry, reset } = usePaletteSearch()
+const active = ref(0)
+const recent = ref<RecentItem[]>([])
+const lockedMessage = ref('')
 
-const commandResults = computed<CommandEntry[]>(() => {
-  const q = query.value.trim().toLowerCase()
-  const all = listCommands().filter((c) => c.group === 'commands')
-  if (!q) return all
-  return all.filter((c) => c.title.toLowerCase().includes(q))
-})
+const search = usePaletteSearch({ isAdmin: () => session.isAdmin })
+const parsed = computed(() => parseQuery(query.value))
 
-const hasQuery = computed(() => query.value.trim().length > 0)
-
-const resultCount = computed(
-  () => commandResults.value.length + packages.value.length + repositories.value.length,
+const groups = computed(() =>
+  buildGroups({
+    query: parsed.value,
+    context: { isAdmin: session.isAdmin, canCreateRepo: session.canCreateRepo },
+    recent: recent.value,
+    entities: search.entities.value,
+  }),
 )
-const hasAny = computed(() => resultCount.value > 0)
+const flat = computed(() => flattenGroups(groups.value))
+const activeItem = computed<PaletteItem | undefined>(() => flat.value[active.value])
 
-// The "view all" row is an option too, so the list exists whenever there is a query.
-const hasOptions = computed(() => hasAny.value || hasQuery.value)
-
-const viewAllLabel = computed(() => tp('palette.viewAll', { q: query.value.trim() }))
-
-// What the polite live region says: progress, the refusal of a too broad
-// query, else how many entries are listed. Errors have their own alert.
-const announcement = computed(() => {
-  switch (status.value) {
-    case 'loading':
-      return t('palette.searching')
-    case 'tooBroad':
-      return t('palette.tooBroad')
-    case 'error':
-      return ''
-    default:
-      if (resultCount.value === 0) return t('palette.noResults')
-      return resultCount.value === 1
-        ? t('palette.count.one')
-        : tp('palette.count.other', { n: String(resultCount.value) })
-  }
+// Each row knows its index in the flat list, which is what `active` points at.
+const rows = computed(() => {
+  let index = 0
+  return groups.value.map((g) => ({ id: g.id, items: g.items.map((item) => ({ item, index: index++ })) }))
 })
 
-function onQueryChange(value: string): void {
-  query.value = value
-  setQuery(value)
-}
+const optionId = (item: PaletteItem): string => `palette-opt-${item.id.replace(/[^a-zA-Z0-9_-]/g, '_')}`
+
+const announcement = computed(() => {
+  if (lockedMessage.value) return lockedMessage.value
+  if (search.status.value === 'loading') return t('shell.palette.searching')
+  const n = flat.value.length
+  if (n === 0) return t('shell.palette.noResults')
+  return n === 1 ? t('shell.palette.count.one') : tp('shell.palette.count.other', { n: String(n) })
+})
+
+watch(query, (text) => {
+  lockedMessage.value = ''
+  active.value = 0
+  const p = parseQuery(text)
+  search.setQuery(p.text, p.checksum !== null || p.mode === 'actions')
+})
+
+// Results that arrive later must not move the user's selection: keep the same item active.
+watch(flat, (now, before) => {
+  const id = before[active.value]?.id
+  if (!id || now[active.value]?.id === id) return
+  const i = now.findIndex((item) => item.id === id)
+  active.value = i >= 0 ? i : Math.min(active.value, Math.max(now.length - 1, 0))
+})
+
+watch(active, async () => {
+  await nextTick()
+  const item = activeItem.value
+  if (item) document.getElementById(optionId(item))?.scrollIntoView?.({ block: 'nearest' })
+})
 
 watch(
   () => ui.commandPaletteOpen,
   (open) => {
-    if (!open) {
-      reset()
-      query.value = ''
-    }
+    if (!open) return
+    recent.value = loadRecent(window.localStorage, recentStorageKey(session.user?.id))
+    active.value = 0
   },
+  { immediate: true },
 )
+
+function onAfterLeave(): void {
+  query.value = ''
+  search.reset()
+}
 
 function close(): void {
   ui.closeCommandPalette()
 }
 
-// One row per package version: the key includes the version so rows of a
-// package never collide, even where the server lists several.
-function packageKey(pkg: SearchPackageHit): string {
-  return `pkg:${pkg.repository}:${pkg.format}:${pkg.name}:${pkg.version}`
+function onKeydown(e: KeyboardEvent): void {
+  if (e.isComposing) return
+  if (e.key === 'Enter') {
+    e.preventDefault()
+    void activate(activeItem.value)
+    return
+  }
+  const next = moveActive(e.key, active.value, flat.value.length)
+  if (next !== null) {
+    e.preventDefault()
+    active.value = next
+    lockedMessage.value = ''
+  }
 }
 
-// Option values are primitive keys: Headless UI compares values by reference,
-// so object literals built in the template would change identity on every
-// render and make each option re-register, re-rendering without end.
-async function onSelect(key: string | null): Promise<void> {
-  if (!key) return
-  const command = commandResults.value.find((c) => `cmd:${c.id}` === key)
-  const pkg = packages.value.find((p) => packageKey(p) === key)
-  const repo = repositories.value.find((r) => `repo:${r.name}` === key)
-  const searchText = query.value.trim()
-  close()
-  if (command) {
-    await command.run()
-  } else if (pkg) {
-    await router.push(
-      `/repos/${encodeURIComponent(pkg.repository)}/packages/${encodeURIComponent(
-        pkg.format,
-      )}/${encodeURIComponent(pkg.name)}`,
-    )
-  } else if (repo) {
-    await router.push(`/repos/${encodeURIComponent(repo.name)}`)
-  } else if (key === VIEW_ALL && searchText) {
-    await router.push({ path: '/search', query: { q: searchText } })
+async function activate(item: PaletteItem | undefined): Promise<void> {
+  if (!item) return
+  if (item.locked) {
+    lockedMessage.value = tp('shell.palette.lockedAnnounce', { title: item.title })
+    return
   }
+  close()
+  if (item.action === 'toggle-theme') theme.setMode(theme.resolved === 'dark' ? 'light' : 'dark')
+  else if (item.action === 'sign-out') await signOut()
+  else if (item.to) await router.push(item.to)
 }
 </script>

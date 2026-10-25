@@ -2,66 +2,28 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// AppSidebar tests.
-// The component runs against the real session and UI stores, each living in a
-// per-test Pinia, so state changes are tracked by the template exactly as in
-// the app. Only the logout API call is stubbed, with spyOn() on the module's
-// export (reverted by mock.restore() in the global afterEach, see
-// test/isolation.ts) — mock.module() would instead replace the module for every
-// test file that runs afterwards.
-import { describe, it, expect, beforeEach, spyOn, type Mock } from 'bun:test'
+// The sidebar runs against the real session and UI stores, each living in a
+// per-test Pinia. Sign-out lives in the header's user menu (UserMenu.test.ts).
+import { describe, it, expect, beforeEach } from 'bun:test'
 import { mount, flushPromises } from '@vue/test-utils'
 import { createRouter, createMemoryHistory } from 'vue-router'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
-import * as authApi from '../../api/auth'
-import { ApiError } from '../../api/client'
-import { useToastStore } from '../../stores/toast'
 import { useSessionStore, type User } from '../../stores/session'
 import { useUIStore } from '../../stores/ui'
+import { useBrandingStore } from '../../stores/branding'
 import AppSidebar from '../AppSidebar.vue'
 
 let session: StoreGeneric
 let ui: StoreGeneric
-let toasts: StoreGeneric
-let mockLogout: Mock<typeof authApi.logout>
-let sessionActions: string[]
 
-function makeUser(overrides: Record<string, unknown> = {}): User {
-  return { id: 'u1', username: 'testuser', is_admin: false, groups: [], ...overrides } as User
-}
+const makeUser = (overrides: Record<string, unknown> = {}): User =>
+  ({ id: 'u1', username: 'testuser', is_admin: false, groups: [], ...overrides }) as User
 
 function makeRouter() {
+  const page = { template: '<div/>' }
   return createRouter({
     history: createMemoryHistory(),
-    routes: [
-      { path: '/', name: 'dashboard', component: { template: '<div/>' } },
-      { path: '/login', name: 'login', component: { template: '<div/>' } },
-      { path: '/repos', name: 'repos', component: { template: '<div/>' } },
-      { path: '/projects', name: 'projects', component: { template: '<div/>' } },
-      { path: '/search', name: 'search', component: { template: '<div/>' } },
-      { path: '/stats', name: 'stats', component: { template: '<div/>' } },
-      { path: '/admin/users', name: 'admin-users', component: { template: '<div/>' } },
-      { path: '/admin/groups', name: 'admin-groups', component: { template: '<div/>' } },
-      { path: '/admin/projects', name: 'admin-projects', component: { template: '<div/>' } },
-      { path: '/admin/permissions', name: 'admin-permissions', component: { template: '<div/>' } },
-      { path: '/admin/sso', name: 'admin-sso', component: { template: '<div/>' } },
-      { path: '/admin/gpg', name: 'admin-gpg', component: { template: '<div/>' } },
-      { path: '/admin/tokens', name: 'admin-tokens', component: { template: '<div/>' } },
-      { path: '/admin/audit', name: 'admin-audit', component: { template: '<div/>' } },
-      { path: '/admin/storage', name: 'admin-storage', component: { template: '<div/>' } },
-      { path: '/admin/storage/tiers', name: 'admin-storage-tiers', component: { template: '<div/>' } },
-      { path: '/admin/backup', name: 'admin-backup', component: { template: '<div/>' } },
-      { path: '/admin/webhooks', name: 'admin-webhooks', component: { template: '<div/>' } },
-      { path: '/admin/system', name: 'admin-system', component: { template: '<div/>' } },
-      { path: '/admin/dependency-track', name: 'admin-dependency-track', component: { template: '<div/>' } },
-      { path: '/admin/ai', name: 'admin-ai', component: { template: '<div/>' } },
-      { path: '/admin/branding', name: 'admin-branding', component: { template: '<div/>' } },
-      { path: '/security/vulns', name: 'security-vulns', component: { template: '<div/>' } },
-      { path: '/security/licenses', name: 'security-licenses', component: { template: '<div/>' } },
-      { path: '/security/secrets', name: 'security-secrets', component: { template: '<div/>' } },
-      { path: '/security/ai-analysis', name: 'security-ai', component: { template: '<div/>' } },
-      { path: '/settings/profile', name: 'settings-profile', component: { template: '<div/>' } },
-    ],
+    routes: ['/', '/repos', '/repos/:repo', '/repos/:repo/packages/:pkg(.+)', '/packages', '/projects', '/bundles', '/security', '/settings/:section?'].map((path) => ({ path, component: page })),
   })
 }
 
@@ -74,194 +36,104 @@ describe('AppSidebar', () => {
     setActivePinia(createPinia())
     session = useSessionStore()
     ui = useUIStore()
-    toasts = useToastStore()
-    sessionActions = []
-    session.$onAction(({ name }) => {
-      sessionActions.push(name)
-    })
-    // The sidebar reads the server version from /system/info; keep the network out of it.
-    spyOn(globalThis, 'fetch').mockResolvedValue(
-      new Response(JSON.stringify({ version: '9.9.9' }), { status: 200, headers: { 'Content-Type': 'application/json' } }),
-    )
-    mockLogout = spyOn(authApi, 'logout').mockResolvedValue(undefined)
+    ui.sidebarCollapsed = false
   })
 
-  // Browse links
-  it('renders Browse section links', () => {
-    const { wrapper } = mountSidebar()
-    const text = wrapper.text()
-    expect(text).toContain('Dashboard')
-    expect(text).toContain('Repositories')
-    expect(text).toContain('Search')
-    expect(text).not.toContain('Statistics')
-  })
-
-  it('links Projects for every authenticated user, not only admins', () => {
-    session.user = makeUser({ is_admin: false })
-    const { wrapper } = mountSidebar()
-    expect(wrapper.text()).toContain('Projects')
-    expect(wrapper.find('a[href="/projects"]').exists()).toBe(true)
-    // The admin area keeps its own entry, hidden for non-admins.
-    expect(wrapper.html()).not.toContain('/admin/projects')
-  })
-
-  it('renders Security section links for admins', () => {
+  it('renders the seven areas as links in a labelled primary navigation', () => {
     session.user = makeUser({ is_admin: true })
     const { wrapper } = mountSidebar()
-    expect(wrapper.text()).toContain('Vulnerabilities')
-    expect(wrapper.text()).toContain('Licenses')
-    expect(wrapper.text()).toContain('Secrets')
-    expect(wrapper.find('a[href="/security/ai-analysis"]').exists()).toBe(true)
+    expect(wrapper.find('nav').attributes('aria-label')).toBe('Primary')
+    const hrefs = wrapper.findAll('nav a').map((a) => a.attributes('href'))
+    expect(hrefs).toEqual(['/', '/repos', '/packages', '/projects', '/bundles', '/security', '/settings'])
+    expect(wrapper.text()).toContain('Repositories')
+    expect(wrapper.text()).not.toContain('Requires administrator')
   })
 
-  it('hides the Security section from non-admins (the scan APIs need manage rights)', () => {
+  it('keeps Bundles and Security visible but disabled, with the reason, for a developer', () => {
     session.user = makeUser({ is_admin: false })
     const { wrapper } = mountSidebar()
-    expect(wrapper.text()).not.toContain('Vulnerabilities')
-    expect(wrapper.html()).not.toContain('/security/')
+    for (const id of ['bundles', 'security']) {
+      const el = wrapper.get(`[data-testid="nav-${id}"]`)
+      expect(el.element.tagName).toBe('SPAN')
+      expect(el.attributes('aria-disabled')).toBe('true')
+      expect(el.attributes('href')).toBeUndefined()
+      expect(el.get('[data-testid="nav-reason"]').text()).toBe('Requires administrator')
+    }
+    expect(wrapper.findAll('nav a').map((a) => a.attributes('href'))).toEqual(['/', '/repos', '/packages', '/projects', '/settings'])
   })
 
-  it('renders Settings section link', () => {
-    const { wrapper } = mountSidebar()
-    expect(wrapper.text()).toContain('Profile')
-  })
-
-  // Admin visibility — controlled by reactive session.isAdmin
-  it('shows Admin section when user.is_admin is true', async () => {
-    session.user = makeUser({ is_admin: true })
-    const { wrapper } = mountSidebar()
-    expect(wrapper.html()).toContain('/admin/users')
-  })
-
-  it('links Storage Tiers next to Storage Backends and highlights only the matching one', async () => {
-    session.user = makeUser({ is_admin: true })
-    const { wrapper, router } = mountSidebar()
-    await router.push('/admin/storage/tiers')
-    await flushPromises()
-    expect(wrapper.text()).toContain('Storage Tiers')
-    expect(wrapper.find('a[href="/admin/storage/tiers"]').classes()).toContain('bg-surface-hover')
-    expect(wrapper.find('a[href="/admin/storage"]').classes()).not.toContain('bg-surface-hover')
-  })
-
-  it('hides Admin section when user is not admin', async () => {
+  it('tells developers that instance settings are managed by administrators', () => {
     session.user = makeUser({ is_admin: false })
     const { wrapper } = mountSidebar()
-    expect(wrapper.html()).not.toContain('/admin/users')
+    expect(wrapper.get('[data-testid="nav-settings"]').text()).toContain('Instance settings are managed by administrators')
   })
 
-  it('shows Admin section when user belongs to admin group', async () => {
+  it('treats membership of the admin group as admin', () => {
     session.user = makeUser({ is_admin: false, groups: [{ name: 'admin' }] })
     const { wrapper } = mountSidebar()
-    expect(wrapper.html()).toContain('/admin/users')
+    expect(wrapper.find('a[href="/bundles"]').exists()).toBe(true)
   })
 
-  it('hides Admin section when user is null', async () => {
-    session.user = null  // already null from beforeEach
-    const { wrapper } = mountSidebar()
-    expect(wrapper.html()).not.toContain('/admin/users')
+  it('marks the active area from the route prefix, Repositories included on artifact pages', async () => {
+    session.user = makeUser({ is_admin: true })
+    const { wrapper, router } = mountSidebar()
+    await router.push('/repos/web-npm/packages/@acme/ui-kit')
+    await flushPromises()
+    const current = wrapper.findAll('nav a[aria-current="page"]')
+    expect(current).toHaveLength(1)
+    expect(current[0]!.attributes('href')).toBe('/repos')
+
+    await router.push('/settings/tokens')
+    await flushPromises()
+    expect(wrapper.get('nav a[aria-current="page"]').attributes('href')).toBe('/settings')
   })
 
-  // Avatar/username
-  it('displays username in footer', async () => {
+  it('shows no account controls: the user menu owns them', () => {
     session.user = makeUser({ username: 'testuser' })
-    const { wrapper } = mountSidebar()
-    expect(wrapper.text()).toContain('testuser')
-  })
-
-  it('renders first-letter avatar from username', async () => {
-    session.user = makeUser({ username: 'bob' })
-    const { wrapper } = mountSidebar()
-    const avatar = wrapper.find('.rounded-full span')
-    expect(avatar.text()).toBe('B')
-  })
-
-  it('renders "?" avatar when user is null', async () => {
-    session.user = null
-    const { wrapper } = mountSidebar()
-    const avatar = wrapper.find('.rounded-full span')
-    expect(avatar.text()).toBe('?')
-  })
-
-  // Logout
-  it('calls apiLogout, clears session, and navigates to /login', async () => {
-    session.user = makeUser({ username: 'test' })
-    const { wrapper, router } = mountSidebar()
-    const logoutBtn = wrapper.find('button[aria-label="Sign out"]')
-    expect(logoutBtn.exists()).toBe(true)
-    await logoutBtn.trigger('click')
-    await flushPromises()
-    expect(mockLogout).toHaveBeenCalled()
-    expect(sessionActions).toEqual(['logout'])
-    expect(session.user).toBeNull()
-    expect(router.currentRoute.value.path).toBe('/login')
-  })
-
-  it('stays signed in and reports the failure when apiLogout throws', async () => {
-    mockLogout.mockRejectedValueOnce(new Error('network fail'))
-    session.user = makeUser({ username: 'test' })
-    const { wrapper, router } = mountSidebar()
-    await router.push('/repos')
-    await wrapper.find('button[aria-label="Sign out"]').trigger('click')
-    await flushPromises()
-    expect(session.user).not.toBeNull()
-    expect(router.currentRoute.value.path).toBe('/repos')
-    expect(toasts.queue.map((x: { title: string }) => x.title)).toContain('Could not sign out')
-  })
-
-  it('signs out locally when the server says the session is already gone', async () => {
-    mockLogout.mockRejectedValueOnce(new ApiError('Unauthorized', 401))
-    session.user = makeUser({ username: 'test' })
-    const { wrapper, router } = mountSidebar()
-    await wrapper.find('button[aria-label="Sign out"]').trigger('click')
-    await flushPromises()
-    expect(session.user).toBeNull()
-    expect(router.currentRoute.value.path).toBe('/login')
-  })
-
-  // Collapse toggle
-  it('toggles collapsed state when toggle button clicked', async () => {
-    ui.sidebarCollapsed = false
-    const { wrapper } = mountSidebar()
-    const btn = wrapper.find('button[aria-label="Collapse sidebar"]')
-    expect(btn.exists()).toBe(true)
-    await btn.trigger('click')
-    expect(ui.sidebarCollapsed).toBe(true)
-  })
-
-  it('shows expand button when sidebar is already collapsed', () => {
-    ui.sidebarCollapsed = true
-    const { wrapper } = mountSidebar()
-    expect(wrapper.find('button[aria-label="Expand sidebar"]').exists()).toBe(true)
-  })
-
-  it('applies collapsed width class when collapsed', () => {
-    ui.sidebarCollapsed = true
-    const { wrapper } = mountSidebar()
-    expect(wrapper.find('aside').classes()).toContain('w-16')
-  })
-
-  it('applies expanded width class when not collapsed', () => {
-    ui.sidebarCollapsed = false
-    const { wrapper } = mountSidebar()
-    expect(wrapper.find('aside').classes()).toContain('w-60')
-  })
-
-  it('hides username text when collapsed', () => {
-    session.user = makeUser({ username: 'testuser' })
-    ui.sidebarCollapsed = true
     const { wrapper } = mountSidebar()
     expect(wrapper.text()).not.toContain('testuser')
+    expect(wrapper.find('button[aria-label="Sign out"]').exists()).toBe(false)
   })
 
-  it('keeps sign-out reachable and working in the collapsed rail', async () => {
-    session.user = makeUser({ username: 'testuser' })
-    ui.sidebarCollapsed = true
-    const { wrapper, router } = mountSidebar()
-    const logoutBtn = wrapper.find('button[aria-label="Sign out"]')
-    expect(logoutBtn.exists()).toBe(true)
-    await logoutBtn.trigger('click')
-    await flushPromises()
-    expect(mockLogout).toHaveBeenCalled()
-    expect(router.currentRoute.value.path).toBe('/login')
+  describe('collapsible rail', () => {
+    it('toggles and persists the preference', async () => {
+      const { wrapper } = mountSidebar()
+      await wrapper.get('button[aria-label="Collapse sidebar"]').trigger('click')
+      expect(ui.sidebarCollapsed).toBe(true)
+      expect(wrapper.find('button[aria-label="Expand sidebar"]').exists()).toBe(true)
+      expect(JSON.parse(localStorage.getItem('oa.sidebar.collapsed') ?? 'null')).toBe(true)
+    })
+
+    it('narrows the rail and keeps accessible names and tooltips when collapsed', () => {
+      session.user = makeUser({ is_admin: false })
+      ui.sidebarCollapsed = true
+      const { wrapper } = mountSidebar()
+      expect(wrapper.get('#app-sidebar').classes()).toContain('md:w-16')
+      const repos = wrapper.get('[data-testid="nav-repos"]')
+      expect(repos.get('.sr-only').text()).toBe('Repositories')
+      expect(repos.get('[role="tooltip"]').text()).toBe('Repositories')
+      // A locked item carries its reason in the name and the tooltip.
+      const security = wrapper.get('[data-testid="nav-security"]')
+      expect(security.get('.sr-only').text()).toContain('Requires administrator')
+      expect(security.get('[role="tooltip"]').text()).toContain('Requires administrator')
+    })
+
+    it('uses the full width when expanded', () => {
+      const { wrapper } = mountSidebar()
+      expect(wrapper.get('#app-sidebar').classes()).toContain('md:w-60')
+    })
+  })
+
+  describe('white-label name', () => {
+    it('lets a long product name wrap instead of truncating it', async () => {
+      const branding = useBrandingStore()
+      const long = 'Acme Corporation Internal Artifact Hub'
+      branding.set({ product_name: long, source_url: 'https://github.com/openartifact/openartifact' })
+      const { wrapper } = mountSidebar()
+      const name = wrapper.findAll('span').filter((s) => s.text() === long).at(-1)!
+      expect(name.exists()).toBe(true)
+      expect(name.classes()).not.toContain('truncate')
+      expect(name.classes()).toContain('[overflow-wrap:anywhere]')
+    })
   })
 })

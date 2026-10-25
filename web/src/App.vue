@@ -5,8 +5,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="h-screen bg-bg text-foreground flex overflow-hidden">
-    <!-- Sidebar first (left); off-canvas drawer below md -->
+  <div class="flex h-screen overflow-hidden bg-bg text-foreground">
+    <a
+      v-if="showShell"
+      href="#main-content"
+      class="sr-only focus:not-sr-only focus:fixed focus:left-3 focus:top-3 focus:z-[60] focus:rounded-md focus:bg-surface focus:px-3 focus:py-2 focus:text-sm focus:font-medium focus:text-foreground focus:shadow-lg focus:outline-none focus:ring-2 focus:ring-primary"
+      data-testid="skip-link"
+      @click.prevent="focusMain"
+    >{{ t('shell.skipToContent') }}</a>
+
+    <!-- Sidebar first (left); off-canvas menu below md -->
     <AppSidebar v-if="showShell" />
     <div
       v-if="showShell && ui.mobileNavOpen"
@@ -15,12 +23,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       @click="ui.closeMobileNav()"
     />
 
-    <!-- Main area: header + scrollable content -->
-    <div class="flex-1 flex flex-col min-w-0">
+    <!-- While the off-canvas menu is open nothing behind it can take focus. -->
+    <div class="flex min-w-0 flex-1 flex-col" :inert="showShell && isMobile && ui.mobileNavOpen">
       <AppHeader v-if="showShell" />
       <main
-        class="flex-1 overflow-auto nice-scroll"
         id="main-content"
+        class="nice-scroll flex-1 overflow-auto outline-none"
         tabindex="-1"
       >
         <div v-if="session.ready" class="mx-auto max-w-[1400px] px-4 py-5 md:px-8 md:py-7">
@@ -32,123 +40,89 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </Suspense>
         </div>
       </main>
+      <!-- The attribution is fixed text: it never takes the white-label product name. -->
+      <footer v-if="showShell" class="shrink-0 border-t border-border bg-surface px-4 py-2 md:px-8">
+        <PoweredBy />
+      </footer>
     </div>
 
     <ToastHost />
-    <CommandPalette v-if="showShell" />
+    <!-- The palette is a separate chunk, requested the first time it opens. -->
+    <CommandPalette v-if="showShell && ui.commandPaletteLoaded" />
   </div>
 </template>
 
 <script setup lang="ts">
-import { computed, onMounted, onBeforeUnmount, watch } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
-import { useEventListener } from '@vueuse/core'
+import { computed, defineAsyncComponent, watch } from 'vue'
+import { useRoute } from 'vue-router'
+import { useEventListener, useMediaQuery } from '@vueuse/core'
 import AppHeader from './components/AppHeader.vue'
 import AppSidebar from './components/AppSidebar.vue'
+import PoweredBy from './components/PoweredBy.vue'
 import ToastHost from './components/ToastHost.vue'
-import CommandPalette from './components/CommandPalette.vue'
 import PageLoadingFallback from './components/PageLoadingFallback.vue'
 import { useUIStore } from './stores/ui'
-import { useThemeStore } from './stores/theme'
 import { useSessionStore } from './stores/session'
-import { registerCommand, unregisterCommand } from './composables/useCommands'
-import { useSignOut } from './composables/useSignOut'
-import { isPaletteHotkey } from './lib/paletteHotkey'
+import { isPaletteHotkey, isPaletteSlashHotkey } from './lib/paletteHotkey'
+import { loadRecent, pushRecent, recentFromPath, recentStorageKey, saveRecent } from './lib/paletteRecent'
 import { t } from './i18n/en'
 
+const CommandPalette = defineAsyncComponent(() => import('./components/CommandPalette.vue'))
+
 const route = useRoute()
-const router = useRouter()
 const ui = useUIStore()
-const theme = useThemeStore()
 const session = useSessionStore()
-const signOut = useSignOut()
 
 const showShell = computed(() => route.meta.layout !== 'blank')
+const isMobile = useMediaQuery('(max-width: 767px)')
 
-// The mobile drawer closes on navigation and on Escape.
-watch(() => route.fullPath, () => ui.closeMobileNav())
+function focusMain(): void {
+  document.getElementById('main-content')?.focus()
+}
+
+// The off-canvas menu closes on navigation (the new page takes focus), on Escape
+// and when the viewport grows past the mobile breakpoint.
+watch(() => route.fullPath, () => ui.closeMobileNav(false))
+watch(isMobile, (mobile) => {
+  if (!mobile) ui.closeMobileNav(false)
+})
 useEventListener('keydown', (e: KeyboardEvent) => {
-  if (e.key === 'Escape' && ui.mobileNavOpen) ui.closeMobileNav()
+  if (e.key === 'Escape' && ui.mobileNavOpen && !ui.commandPaletteOpen) ui.closeMobileNav()
 })
 
-// Ctrl/Cmd+K toggles the command palette wherever it is mounted (not on the
-// blank layout, where the key stays the browser's). Esc is handled by the
-// Headless UI Dialog itself.
+// Ctrl/Cmd+K toggles the palette and a bare "/" opens it (never while typing in
+// a field or over another dialog), wherever the shell is mounted. The blank
+// layout (login) keeps the keys for the browser.
 useEventListener(
   'keydown',
   (e: KeyboardEvent) => {
-    if (showShell.value && isPaletteHotkey(e)) {
+    if (!showShell.value) return
+    if (isPaletteHotkey(e)) {
       e.preventDefault()
       if (ui.commandPaletteOpen) ui.closeCommandPalette()
       else ui.openCommandPalette()
+    } else if (
+      !ui.commandPaletteOpen &&
+      isPaletteSlashHotkey(e) &&
+      !(e.target as Element | null)?.closest?.('[role="dialog"]')
+    ) {
+      e.preventDefault()
+      ui.openCommandPalette()
     }
   },
   { passive: false },
 )
 
-const COMMAND_IDS = [
-  'nav.dashboard',
-  'nav.repos',
-  'nav.search',
-  'nav.settings',
-  'theme.light',
-  'theme.dark',
-  'theme.auto',
-  'auth.logout',
-]
-
-onMounted(() => {
-  registerCommand({
-    id: 'nav.dashboard',
-    title: t('palette.command.dashboard'),
-    group: 'commands',
-    run: () => { router.push('/') },
-  })
-  registerCommand({
-    id: 'nav.repos',
-    title: t('palette.command.repos'),
-    group: 'commands',
-    run: () => { router.push('/repos') },
-  })
-  registerCommand({
-    id: 'nav.search',
-    title: t('palette.command.search'),
-    group: 'commands',
-    run: () => { router.push('/search') },
-  })
-  registerCommand({
-    id: 'nav.settings',
-    title: t('palette.command.settings'),
-    group: 'commands',
-    run: () => { router.push('/settings/profile') },
-  })
-  registerCommand({
-    id: 'theme.light',
-    title: t('palette.command.theme.light'),
-    group: 'commands',
-    run: () => theme.setMode('light'),
-  })
-  registerCommand({
-    id: 'theme.dark',
-    title: t('palette.command.theme.dark'),
-    group: 'commands',
-    run: () => theme.setMode('dark'),
-  })
-  registerCommand({
-    id: 'theme.auto',
-    title: t('palette.command.theme.auto'),
-    group: 'commands',
-    run: () => theme.setMode('auto'),
-  })
-  registerCommand({
-    id: 'auth.logout',
-    title: t('palette.command.logout'),
-    group: 'commands',
-    run: signOut,
-  })
-})
-
-onBeforeUnmount(() => {
-  for (const id of COMMAND_IDS) unregisterCommand(id)
-})
+// The palette's Recent list: what the signed-in user visited, kept per user.
+watch(
+  () => [route.path, session.user?.id, route.meta.layout] as const,
+  ([path, userId, layout]) => {
+    if (!userId || layout === 'blank') return
+    const item = recentFromPath(path)
+    if (!item) return
+    const key = recentStorageKey(userId)
+    saveRecent(window.localStorage, key, pushRecent(loadRecent(window.localStorage, key), item))
+  },
+  { immediate: true },
+)
 </script>

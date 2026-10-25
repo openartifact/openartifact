@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <img :src="markUrl" alt="" aria-hidden="true" class="h-full w-full dark:hidden" />
         <img :src="markDarkUrl" alt="" aria-hidden="true" class="hidden h-full w-full dark:block" />
       </span>
-      <span v-if="variant !== 'mark'" class="min-w-0 truncate text-lead font-semibold tracking-tight text-foreground">{{ name }}</span>
+      <span v-if="variant !== 'mark'" class="min-w-0 text-lead font-semibold leading-tight tracking-tight text-foreground [overflow-wrap:anywhere]">{{ name }}</span>
       <span v-else class="sr-only">{{ name }}</span>
     </template>
   </span>

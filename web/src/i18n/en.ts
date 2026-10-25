@@ -75,9 +75,7 @@ const base = {
   'nav.secrets': 'Secrets',
 
   // Sidebar groups
-  'sidebar.browse': 'Browse',
   'sidebar.admin': 'Administration',
-  'sidebar.settings': 'Settings',
   'sidebar.collapse': 'Collapse sidebar',
   'sidebar.expand': 'Expand sidebar',
   'sidebar.open': 'Open navigation',
@@ -173,29 +171,6 @@ const base = {
   'search.results.repositories': 'Repositories',
 
   // Command palette
-  'palette.placeholder': 'Type a command, search packages or repositories...',
-  'palette.dialogLabel': 'Command palette',
-  'palette.resultsLabel': 'Results',
-  'palette.noResults': 'No matches',
-  'palette.searching': 'Searching...',
-  'palette.tooBroad': 'Too many matches. Refine your query, for example with name:, format: or repo:.',
-  'palette.error': 'Search failed.',
-  'palette.retry': 'Retry',
-  'palette.count.one': '1 result',
-  'palette.count.other': '{n} results',
-  'palette.viewAll': 'View all results for "{q}"',
-  'palette.esc': 'Esc',
-  'palette.group.commands': 'Commands',
-  'palette.group.packages': 'Packages',
-  'palette.group.repositories': 'Repositories',
-  'palette.command.dashboard': 'Go to dashboard',
-  'palette.command.repos': 'Go to repositories',
-  'palette.command.search': 'Open search',
-  'palette.command.settings': 'Open settings',
-  'palette.command.theme.light': 'Switch to light theme',
-  'palette.command.theme.dark': 'Switch to dark theme',
-  'palette.command.theme.auto': 'Match system theme',
-  'palette.command.logout': 'Log out',
 
   // Toasts
 
