@@ -16,7 +16,6 @@ import (
 	"fmt"
 	"hash"
 	"io"
-	"path"
 	"regexp"
 	"slices"
 	"sort"
@@ -25,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	formatdeb "github.com/openartifact/openartifact/internal/format/deb"
 	"github.com/openartifact/openartifact/internal/group"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/proxy"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/xzutil"
@@ -555,8 +555,8 @@ func (j *groupJob) addDebStanza(idx *debIndex, seen map[string]struct{}, m *mode
 		}
 	}
 
-	file := path.Clean(st.Filename)
-	if st.Filename == "" || file != st.Filename || !strings.HasPrefix(file, "pool/") || strings.Contains(file, "..") {
+	file := st.Filename
+	if !strings.HasPrefix(file, "pool/") || !pathseg.Path(file) {
 		return nil
 	}
 

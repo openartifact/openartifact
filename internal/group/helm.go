@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 )
@@ -93,7 +94,7 @@ func (h *Handler) collectHelmIndexes(grp *models.Repository, members []*models.R
 func (h *Handler) serveHelm(w http.ResponseWriter, r *http.Request, grp *models.Repository, relPath string, members []*models.Repository, be Backend) bool {
 	rel := strings.TrimPrefix(relPath, "/")
 
-	if file, ok := strings.CutPrefix(rel, helmChartsDir); ok && file != "" && !strings.Contains(file, "/") {
+	if file, ok := strings.CutPrefix(rel, helmChartsDir); ok && pathseg.Name(file) {
 		return false
 	}
 

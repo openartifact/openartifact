@@ -32,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -252,7 +253,7 @@ func pushedPackage(repoID string, metadata map[string]any, part *base.Part, sum5
 	id, _ := metadata["id"].(string)
 	// "." and ".." fit the charset but are no id: as a URL segment they name the
 	// directory, so no client can fetch the package.
-	if !validPackageID.MatchString(id) || id == "." || id == ".." {
+	if !validPackageID.MatchString(id) || !pathseg.Name(id) {
 		return nil, fmt.Errorf("invalid package id %q", id) //nolint:err113 // reported to the log only
 	}
 

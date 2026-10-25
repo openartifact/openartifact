@@ -32,6 +32,7 @@ import (
 	"github.com/openartifact/openartifact/internal/federation"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -1630,7 +1631,7 @@ func downloadFilename(blob *models.ComponentBlob) string {
 		return r
 	}, name)
 
-	if name == "" || name == "." || name == ".." || name == "/" {
+	if !pathseg.Name(name) {
 		return blob.ID
 	}
 

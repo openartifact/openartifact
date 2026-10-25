@@ -11,6 +11,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/ocipath"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/pypisimple"
 	"github.com/openartifact/openartifact/internal/repotype"
 	pkgcargo "github.com/openartifact/openartifact/pkg/cargo"
@@ -213,7 +214,7 @@ func mavenRef(relPath string) (pkgRef, bool) {
 
 func helmRef(relPath string) (pkgRef, bool) {
 	file, ok := strings.CutPrefix(strings.TrimPrefix(relPath, "/"), helmChartsDir)
-	if !ok || file == "" || strings.Contains(file, "/") {
+	if !ok || !pathseg.Name(file) {
 		return pkgRef{}, false
 	}
 

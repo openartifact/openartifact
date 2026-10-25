@@ -29,6 +29,7 @@ import (
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -100,7 +101,7 @@ func validateUploadIdentity(name, version, filename string) error {
 		return errPyPIMissingName
 	case version == "":
 		return errPyPIMissingVersion
-	case filename == "" || strings.ContainsAny(filename, `/\`) || filename == "." || filename == "..":
+	case !pathseg.Name(filename):
 		return errPyPIBadFilename
 	}
 

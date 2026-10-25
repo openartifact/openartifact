@@ -9,7 +9,8 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
-	"strings"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 var errInsecureInstall = errors.New("install location is not private to the server's user")
@@ -21,7 +22,7 @@ var errInsecureInstall = errors.New("install location is not private to the serv
 // returns the binary's stat.
 func checkInstallTree(root, bin string) (os.FileInfo, error) {
 	rel, err := filepath.Rel(root, bin)
-	if err != nil || rel == "." || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || rel == "." || pathseg.Escapes(rel) {
 		return nil, fmt.Errorf("%w: outside the install directory", errInsecureInstall)
 	}
 

@@ -16,6 +16,7 @@ import (
 	"path"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/pathseg"
 	pkgnuget "github.com/openartifact/openartifact/pkg/nuget"
 )
 
@@ -222,7 +223,7 @@ func nugetIdentity(r io.ReaderAt, size int64) (string, string, error) {
 // nugetRootNuspec reports whether a zip entry is a .nuspec at the package root;
 // nested ones are package content.
 func nugetRootNuspec(name string) bool {
-	return len(name) > len(".nuspec") && !strings.ContainsAny(name, `/\`) && strings.HasSuffix(strings.ToLower(name), ".nuspec")
+	return len(name) > len(".nuspec") && pathseg.Name(name) && strings.HasSuffix(strings.ToLower(name), ".nuspec")
 }
 
 // nugetRemove deletes the version the upload created, addressed by the id and

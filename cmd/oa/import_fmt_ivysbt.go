@@ -14,7 +14,7 @@ import (
 	"strings"
 	"sync"
 
-	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // Ivy and sbt repositories are Artifactory-only sources (Nexus has neither
@@ -89,10 +89,10 @@ type ivySBTCoords struct {
 // with): Maven layout when the file name starts with <module>-<version>,
 // otherwise the first three segments are group, module and version and the
 // rest is the file name. It fails below four segments or on a segment
-// base.ValidArtifactSegments rejects (empty, ".", "..", backslash).
+// pathseg.Segments rejects (empty, ".", "..", backslash, NUL).
 func splitIvySBTPath(p string) (ivySBTCoords, bool) {
 	parts := strings.Split(p, "/")
-	if len(parts) < 4 || !base.ValidArtifactSegments(parts) {
+	if len(parts) < 4 || !pathseg.Segments(parts) {
 		return ivySBTCoords{}, false
 	}
 

@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 const (
@@ -638,17 +639,7 @@ func writeBinary(r io.Reader, dir, want string, limit int64) (string, error) {
 // unsafeEntry reports a tar entry name that is absolute or climbs out of the
 // archive root.
 func unsafeEntry(name string) bool {
-	if name == "" || strings.HasPrefix(name, "/") || strings.Contains(name, "\\") || strings.ContainsRune(name, 0) {
-		return true
-	}
-
-	for part := range strings.SplitSeq(name, "/") {
-		if part == ".." {
-			return true
-		}
-	}
-
-	return false
+	return name == "" || strings.HasPrefix(name, "/") || strings.ContainsAny(name, "\\\x00") || pathseg.HasParent(name)
 }
 
 // fileSHA256 returns the hex sha256 of the regular file at p.

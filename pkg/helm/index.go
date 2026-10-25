@@ -15,6 +15,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // ErrNotIndex is returned for a document that is not a Helm repository index.
@@ -328,7 +330,7 @@ func ChartFile(u *url.URL) (string, bool) {
 // fileOfPath returns the last path segment when it is a usable file name.
 func fileOfPath(p string) (string, bool) {
 	file := path.Base(p)
-	if strings.HasSuffix(p, "/") || file == "." || file == "/" || file == ".." || strings.ContainsAny(file, "\\/") {
+	if strings.HasSuffix(p, "/") || !pathseg.Name(file) {
 		return "", false
 	}
 

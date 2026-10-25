@@ -7,6 +7,8 @@ package pypisimple
 import (
 	"net/url"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // MetadataSuffix is appended to a file URL to address its PEP 658 core
@@ -20,7 +22,7 @@ const maxFilenameLen = 255
 // name, no separators, dot segments or control characters, and not itself a
 // ".metadata" name (those address the core metadata of another file).
 func SafeFilename(name string) bool {
-	if name == "" || name == "." || name == ".." || len(name) > maxFilenameLen || strings.HasSuffix(name, MetadataSuffix) {
+	if len(name) > maxFilenameLen || !pathseg.Name(name) || strings.HasSuffix(name, MetadataSuffix) {
 		return false
 	}
 

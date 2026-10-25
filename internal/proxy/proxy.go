@@ -34,6 +34,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -930,18 +931,12 @@ func isHTMLForPackage(format, key string, resp *http.Response) bool {
 // the path is appended to the upstream URL and must not be able to escape it.
 func CleanPath(p string) (string, bool) {
 	p = strings.TrimPrefix(p, "/")
-	if p == "" || len(p) > maxPathLen || strings.HasSuffix(p, "/") {
+	if len(p) > maxPathLen || !pathseg.Path(p) {
 		return "", false
 	}
 
 	for _, r := range p {
-		if r < 0x20 || r == 0x7f || r == '\\' {
-			return "", false
-		}
-	}
-
-	for seg := range strings.SplitSeq(p, "/") {
-		if seg == "" || seg == "." || seg == ".." {
+		if r < 0x20 || r == 0x7f {
 			return "", false
 		}
 	}

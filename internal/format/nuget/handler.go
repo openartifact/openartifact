@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 const (
@@ -167,7 +168,7 @@ func parseNuspec(r io.Reader) (*Nuspec, error) {
 // isRootNuspec reports whether a zip entry name is a .nuspec at the package root.
 func isRootNuspec(name string) bool {
 	return len(name) > len(".nuspec") &&
-		!strings.ContainsAny(name, `/\`) &&
+		pathseg.Name(name) &&
 		strings.EqualFold(name[len(name)-len(".nuspec"):], ".nuspec")
 }
 

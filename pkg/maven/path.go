@@ -23,19 +23,6 @@ func RepositoryPath(c Coordinate) string {
 		c.ArtifactID + "-" + c.Version + maybeClassifier + "." + c.Extension
 }
 
-// CleanSegments reports whether every segment of a repository path is a real
-// name: no empty, "." or ".." segment (which would alias coordinates, e.g.
-// "a//b" and "a/b" deriving the same group id).
-func CleanSegments(path string) bool {
-	for seg := range strings.SplitSeq(path, "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			return false
-		}
-	}
-
-	return true
-}
-
 func ParseRepositoryPath(path string) (string, string, string, string, error) {
 	parts := strings.Split(path, "/")
 	if len(parts) < 3 {

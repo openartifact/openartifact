@@ -40,6 +40,9 @@ func TestRemotePath(t *testing.T) {
 		{name: "outside the tree", file: "../a.txt", wantErr: true},
 		{name: "dotdot in target", file: "a.txt", opts: ciUploadOptions{targetPath: "x/../y/"}, wantErr: true},
 		{name: "double slash in target", file: "a.txt", opts: ciUploadOptions{targetPath: "x//y/"}, wantErr: true},
+		{name: "backslash in target", file: "a.txt", opts: ciUploadOptions{targetPath: "x\\y/"}, wantErr: true},
+		{name: "dotdot-prefixed name is fine", file: "..a.txt", want: "..a.txt"},
+		{name: "dotdot only", file: "..", wantErr: true},
 	}
 
 	for _, tc := range tests {

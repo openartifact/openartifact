@@ -11,10 +11,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"path/filepath"
 	"reflect"
 	"regexp"
-	"slices"
 	"strings"
 	"time"
 
@@ -26,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -220,7 +219,7 @@ func validateStorageConfig(kind string, cfg map[string]any) error {
 			return validationError("config.path is required for filesystem backends")
 		}
 
-		if slices.Contains(strings.Split(filepath.ToSlash(path), "/"), "..") {
+		if pathseg.HasParent(path) {
 			return validationError("config.path must not contain '..'")
 		}
 	case "s3", "garage", "seaweedfs":

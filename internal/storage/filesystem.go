@@ -18,6 +18,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // FilesystemStore implements the BlobStore interface for filesystem storage.
@@ -477,7 +479,7 @@ func (fs *FilesystemStore) getBlobPath(id string) (string, error) {
 	p := filepath.Join(fs.basePath, id[:2], id[2:])
 
 	rel, err := filepath.Rel(fs.basePath, p)
-	if err != nil || rel == ".." || strings.HasPrefix(rel, ".."+string(filepath.Separator)) {
+	if err != nil || pathseg.Escapes(rel) {
 		return "", ErrInvalidBlobID
 	}
 

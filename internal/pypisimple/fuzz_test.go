@@ -15,6 +15,8 @@ import (
 	"unicode/utf8"
 
 	"golang.org/x/net/html"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // fuzzHTMLText is the normalization the HTML tokenizer applies to text:
@@ -678,7 +680,7 @@ func FuzzParsePath(f *testing.F) {
 			}
 
 			stem := strings.TrimSuffix(filename, MetadataSuffix)
-			if !SafeFilename(stem) || strings.ContainsAny(filename, `/\`) || filename == ".." || filename == "." {
+			if !SafeFilename(stem) || !pathseg.Name(filename) {
 				t.Fatalf("ParsePath(%q) filename = %q", relPath, filename)
 			}
 		default:

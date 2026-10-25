@@ -14,13 +14,13 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/url"
-	"strings"
 	"unicode/utf8"
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/urlparams"
 	"github.com/openartifact/openartifact/pkg/logger"
@@ -294,7 +294,7 @@ func (h *HTTPHandler) resolveRepo(w http.ResponseWriter, r *http.Request, s *sco
 // reference components ("_" stands for an absent user or channel).
 func validRef(parts ...string) bool {
 	for _, p := range parts {
-		if p == "" || len(p) > maxRefPart || p == "." || p == ".." || !plainText(p) || strings.ContainsAny(p, `/\`) {
+		if len(p) > maxRefPart || !pathseg.Name(p) || !plainText(p) {
 			return false
 		}
 	}
@@ -306,7 +306,7 @@ func validRef(parts ...string) bool {
 // from the route) is fine. "." and ".." fit the charset but are no revision:
 // as URL segments they name the directory.
 func validRevision(s string) bool {
-	if len(s) > maxRevisionLen || s == "." || s == ".." {
+	if len(s) > maxRevisionLen || !pathseg.OptionalName(s) {
 		return false
 	}
 
@@ -324,17 +324,7 @@ func validRevision(s string) bool {
 // validFilename reports whether name is a relative path of plain segments, as
 // conan names its files (conanfile.py, metadata/sign/signature.json).
 func validFilename(name string) bool {
-	if name == "" || len(name) > maxFilenameLen || !plainText(name) || strings.Contains(name, `\`) {
-		return false
-	}
-
-	for seg := range strings.SplitSeq(name, "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			return false
-		}
-	}
-
-	return true
+	return len(name) <= maxFilenameLen && plainText(name) && pathseg.Path(name)
 }
 
 // plainText reports whether s is valid UTF-8 without control characters.

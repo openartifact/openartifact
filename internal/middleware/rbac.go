@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/ocipath"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -280,11 +281,8 @@ func isSPANavigation(r *http.Request) bool {
 func hasAmbiguousPath(u *url.URL) bool {
 	escaped := u.EscapedPath()
 
-	for seg := range strings.SplitSeq(escaped, "/") {
-		dec, err := url.PathUnescape(seg)
-		if err != nil || dec == ".." || (strings.Contains(dec, `\`) && strings.Contains(dec, "..")) {
-			return true
-		}
+	if pathseg.HasParentRaw(escaped) {
+		return true
 	}
 
 	if strings.HasPrefix(u.Path, "/v2/") {

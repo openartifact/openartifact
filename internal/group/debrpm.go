@@ -11,7 +11,6 @@ import (
 	"io"
 	"net/http"
 	"net/url"
-	"path"
 	"strconv"
 	"strings"
 	"time"
@@ -19,6 +18,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
@@ -163,6 +163,10 @@ func classifyDebRPM(format, relPath string) debRPMPath {
 
 func classifyDeb(relPath string) debRPMPath {
 	if strings.HasPrefix(relPath, "pool/") {
+		if !pathseg.Path(relPath) {
+			return debRPMPath{}
+		}
+
 		return debRPMPath{class: classFile}
 	}
 
@@ -172,7 +176,7 @@ func classifyDeb(relPath string) debRPMPath {
 	}
 
 	dist, file, ok := strings.Cut(rest, "/")
-	if !ok || dist == "" || strings.Contains(file, "..") {
+	if !ok || !pathseg.Name(dist) || !pathseg.Path(file) {
 		return debRPMPath{}
 	}
 
@@ -199,6 +203,10 @@ func classifyDeb(relPath string) debRPMPath {
 func classifyRPM(relPath string) debRPMPath {
 	file, ok := strings.CutPrefix(relPath, "repodata/")
 	if !ok {
+		if !pathseg.Path(relPath) {
+			return debRPMPath{}
+		}
+
 		return debRPMPath{class: classFile}
 	}
 
@@ -217,7 +225,7 @@ func classifyRPM(relPath string) debRPMPath {
 		return debRPMPath{}
 	}
 
-	if strings.Contains(file, "/") {
+	if !pathseg.Name(file) {
 		return debRPMPath{}
 	}
 
@@ -403,7 +411,8 @@ func (h *Handler) writeGroupMetadata(w http.ResponseWriter, r *http.Request, grp
 // it for. A file the index does not list, or whose owner the caller cannot
 // read, does not exist for this caller.
 func (h *Handler) serveGroupFile(w http.ResponseWriter, r *http.Request, grp *models.Repository, readable []*models.Repository, scope, relPath string, be Backend) {
-	key := path.Clean(relPath)
+	// classifyDeb and classifyRPM only admit relative paths of plain segments.
+	key := relPath
 
 	owner, ok, err := h.db.GetGroupPackageOwner(r.Context(), grp.ID, scope+key)
 	if err != nil {

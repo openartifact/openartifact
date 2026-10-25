@@ -11,6 +11,7 @@ import (
 	"path/filepath"
 	"strings"
 
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/storage"
 )
 
@@ -129,7 +130,7 @@ func fsOverlap(a, b string) bool {
 func within(dir, path string) bool {
 	rel, err := filepath.Rel(dir, path)
 
-	return err == nil && rel != ".." && !strings.HasPrefix(rel, ".."+string(filepath.Separator))
+	return err == nil && !pathseg.Escapes(rel)
 }
 
 // claims records the locations taken so far while a snapshot is built, primary

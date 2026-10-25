@@ -32,6 +32,10 @@ func TestHasAmbiguousPath(t *testing.T) {
 		{"encoded slash in isolated namespace repo", "/repos/raw/a%2fb/x", true},
 		{"encoded slash anywhere in OCI path", "/v2/a%2Fb/manifests/latest", true},
 		{"dot-dot in api path", "/api/v1/../v2/x", true},
+		{"mixed-case encoded dot-dot", "/repos/public/%2E%2e/private/x", true},
+		{"dot-dot behind an encoded backslash", "/repos/public/a%5C..%5Cb", true},
+		{"dot-dot before an encoded slash", "/repos/public/..%2fprivate/x", true},
+		{"dot-dot lookalike names are plain", "/repos/public/..foo/bar..", false},
 	}
 
 	for _, tc := range tests {

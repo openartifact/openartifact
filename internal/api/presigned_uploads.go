@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatraw "github.com/openartifact/openartifact/internal/format/raw"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/trash"
@@ -161,14 +162,8 @@ type CompletePresignedUploadResponse struct {
 // cleanPresignedPath validates and normalises an artifact path.
 func cleanPresignedPath(p string) (string, bool) {
 	p = strings.TrimPrefix(p, "/")
-	if p == "" || len(p) > maxPresignedPathBytes || strings.HasSuffix(p, "/") || strings.ContainsRune(p, 0) {
+	if len(p) > maxPresignedPathBytes || !pathseg.Path(p) {
 		return "", false
-	}
-
-	for seg := range strings.SplitSeq(p, "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			return "", false
-		}
 	}
 
 	return p, true

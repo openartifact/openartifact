@@ -89,6 +89,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 - Ivy and sbt paths with a `.` or `..` segment or a backslash are now rejected with 404 on upload, download and delete (before, they were stored under those literal coordinates). `oa import` skips such source paths the same way. Clients never publish them; no action required.
 - Web UI: revoking an API token and deleting a package property now ask for confirmation in the app's dialog instead of the browser's native prompt; downloading a GPG public key signs you out cleanly when the session has expired. No action required.
+- One shared rule now decides what a path segment may be (not empty, not `.` or `..`, no `/`, backslash or NUL) in every format handler, proxy, group and upload path. Requests that were accepted before and are now refused with 404: a deb, rpm or Helm file URL whose name is a percent-encoded `.` or `..`; a Debian group request whose distribution is `..` or empty, or an RPM or Debian group package path with an empty, `.` or `..` segment or a backslash. A package path or CI upload `--target-path` with a backslash is also refused. Names that merely contain two dots (`foo..bar`, `..hidden`) are now accepted where they were refused before (RPM header fields, Debian pool paths). Clients do not send the refused shapes; no action required.
 
 ### 0.10.0
 

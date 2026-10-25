@@ -14,6 +14,8 @@ import (
 	"strings"
 
 	"go.yaml.in/yaml/v3"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 const maxChartYAMLSize = 1 << 20 // 1 MiB
@@ -155,5 +157,5 @@ func isRootChartYAML(name string) bool {
 	name = path.Clean(strings.TrimPrefix(name, "./"))
 	parts := strings.Split(name, "/")
 
-	return len(parts) == 2 && parts[0] != "" && parts[0] != "." && parts[0] != ".." && parts[1] == "Chart.yaml"
+	return len(parts) == 2 && pathseg.Name(parts[0]) && parts[1] == "Chart.yaml"
 }

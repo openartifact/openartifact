@@ -19,6 +19,8 @@ import (
 	"net/url"
 	"path"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // This file holds the registry-protocol helpers shared by proxy and group
@@ -90,7 +92,7 @@ func ParsePath(rel string) (Path, error) {
 	switch {
 	case len(rest) == 0:
 		return Path{Kind: KindPackument, Package: pkg}, nil
-	case len(rest) == 1 && rest[0] != "" && rest[0] != "-":
+	case len(rest) == 1 && rest[0] != "-" && pathseg.Name(rest[0]):
 		return Path{Kind: KindVersion, Package: pkg, Version: rest[0]}, nil
 	case len(rest) == 2 && rest[0] == "-" && validFilename(rest[1]):
 		return Path{Kind: KindTarball, Package: pkg, File: rest[1]}, nil
@@ -138,7 +140,7 @@ func validRemoteSegment(seg string, allowEmpty bool) bool {
 }
 
 func validFilename(f string) bool {
-	return f != "" && f != "." && f != ".." && !strings.ContainsAny(f, `/\`) && !strings.ContainsFunc(f, func(r rune) bool { return r < 0x20 || r == 0x7f })
+	return pathseg.Name(f) && !strings.ContainsFunc(f, func(r rune) bool { return r < 0x20 || r == 0x7f })
 }
 
 // WantsAbbreviated reports whether the Accept header asks for the install-v1
@@ -155,7 +157,7 @@ func TarballFileOf(tarballURL string) string {
 	}
 
 	f := path.Base(u.Path)
-	if f == "." || f == "/" || !validFilename(f) {
+	if !validFilename(f) {
 		return ""
 	}
 

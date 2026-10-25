@@ -18,6 +18,8 @@ import (
 	"regexp"
 	"slices"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 const ciUploadUsage = "Usage: oa upload <repo> <file|glob>... [--target-path P] [--flat] [--property k=v]... " +
@@ -332,7 +334,7 @@ func remotePath(file string, o ciUploadOptions, single bool) (string, error) {
 		rel = path.Base(rel)
 	}
 
-	if path.IsAbs(rel) || rel == ".." || strings.HasPrefix(rel, "../") {
+	if path.IsAbs(rel) || pathseg.Escapes(rel) {
 		return "", fmt.Errorf("%w: %s lies outside the working directory; give a relative path or use --flat", errUploadPath, file)
 	}
 
@@ -351,10 +353,8 @@ func remotePath(file string, o ciUploadOptions, single bool) (string, error) {
 		p = target + "/" + rel
 	}
 
-	for seg := range strings.SplitSeq(p, "/") {
-		if seg == "" || seg == "." || seg == ".." {
-			return "", fmt.Errorf("%w: %q has an empty, . or .. segment", errUploadPath, p)
-		}
+	if !pathseg.Path(p) {
+		return "", fmt.Errorf("%w: %q has an empty, ., .. or backslash segment", errUploadPath, p)
 	}
 
 	return p, nil

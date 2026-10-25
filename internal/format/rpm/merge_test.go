@@ -200,6 +200,7 @@ func TestSafeLocation(t *testing.T) {
 		"Packages/f/foo%2B1-1.rpm":       "Packages/f/foo+1-1.rpm",
 		"./Packages//foo-1.rpm":          "Packages/foo-1.rpm",
 		"Packages/../Packages/foo-1.rpm": "Packages/foo-1.rpm",
+		"Packages/..x/foo-1.rpm":         "Packages/..x/foo-1.rpm",
 	} {
 		if got, ok := SafeLocation(in); !ok || got != want {
 			t.Errorf("SafeLocation(%q) = %q, %v; want %q", in, got, ok, want)
@@ -212,7 +213,7 @@ func TestSafeLocation(t *testing.T) {
 		}
 	}
 
-	for _, in := range []string{"", "..", "../etc/passwd", "/abs/path.rpm", "a/../../b.rpm", "a\\b.rpm", "a%00b.rpm", "%zz"} {
+	for _, in := range []string{"", "..", "../etc/passwd", "/abs/path.rpm", "a/../../b.rpm", "a\\b.rpm", "a%00b.rpm", "%zz", "a%5Cb.rpm", ".", "./", "Packages/..", "%2e%2e/x.rpm", "a/%2e%2e/%2e%2e/b.rpm"} {
 		if _, ok := SafeLocation(in); ok {
 			t.Errorf("SafeLocation(%q) must be rejected", in)
 		}

@@ -29,6 +29,7 @@ import (
 	"github.com/openartifact/openartifact/internal/licensemeta"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
 	"github.com/openartifact/openartifact/internal/metrics"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/quota"
 	"github.com/openartifact/openartifact/internal/repotype"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -139,7 +140,7 @@ func (h *MavenUploadHandler) handlePut(w http.ResponseWriter, r *http.Request) {
 	filename := filepath.Base(artPath)
 
 	groupPath, artifactIDCoord, version, _, parseErr := pkgmaven.ParseRepositoryPath(artPath)
-	if parseErr != nil || groupPath == "" || version == "" || !pkgmaven.CleanSegments(artPath) {
+	if parseErr != nil || groupPath == "" || version == "" || !pathseg.Path(artPath) {
 		uploadResult = "error"
 
 		http.Error(w, "invalid maven repository path", http.StatusBadRequest)

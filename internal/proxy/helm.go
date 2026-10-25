@@ -20,6 +20,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	pkghelm "github.com/openartifact/openartifact/pkg/helm"
 )
 
@@ -69,7 +70,7 @@ func (s *Service) serveHelm(w http.ResponseWriter, r *http.Request, repo *models
 	}
 
 	file, ok := strings.CutPrefix(rel, helmChartsDir)
-	if !ok || strings.Contains(file, "/") {
+	if !ok || !pathseg.Name(file) {
 		http.NotFound(w, r)
 		return
 	}

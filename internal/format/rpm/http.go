@@ -16,6 +16,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/iocopy"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -201,7 +202,7 @@ func (h *HTTPHandler) handlePackageDownload(w http.ResponseWriter, r *http.Reque
 	repoID := repo.ID
 	// chi hands out the raw path; primary.xml hrefs are percent-encoded.
 	filename, err := url.PathUnescape(vars["filename"])
-	if err != nil || filename == "" || strings.ContainsAny(filename, "/\\") {
+	if err != nil || !pathseg.Name(filename) {
 		http.NotFound(w, r)
 		return
 	}

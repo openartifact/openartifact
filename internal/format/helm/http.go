@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -675,7 +676,7 @@ func chartFilename(r *http.Request) (string, bool) {
 
 	filename, err := url.PathUnescape(esc[strings.LastIndexByte(esc, '/')+1:])
 
-	return filename, err == nil && filename != "" && !strings.ContainsAny(filename, "/\\")
+	return filename, err == nil && pathseg.Name(filename)
 }
 
 // findChart resolves "{name}-{version}.tgz". Both chart names and versions may
@@ -758,17 +759,17 @@ func startsVersion(s string) bool {
 // validChartIdent rejects empty values and anything that could escape a
 // filename or URL path segment.
 func validChartIdent(s string) bool {
-	if s == "" || len(s) > 255 {
+	if len(s) > 255 || !pathseg.Name(s) {
 		return false
 	}
 
 	for _, r := range s {
-		if r == '/' || r == '\\' || r <= ' ' || r == 0x7f {
+		if r <= ' ' || r == 0x7f {
 			return false
 		}
 	}
 
-	return s != "." && s != ".."
+	return true
 }
 
 // HelmIndex represents the Helm repository index.yaml structure.

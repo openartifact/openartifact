@@ -20,6 +20,8 @@ import (
 	"github.com/klauspost/compress/zstd"
 	"github.com/ulikunitz/xz"
 	"go.yaml.in/yaml/v3"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // maxUpstreamDocument caps the decompressed size of one upstream repodata
@@ -258,12 +260,15 @@ func qname(n xml.Name) string {
 // is absolute or leaves the repository.
 func SafeLocation(href string) (string, bool) {
 	p, err := url.PathUnescape(href)
-	if err != nil || p == "" || strings.ContainsAny(p, "\\\x00") {
+	if err != nil || p == "" {
 		return "", false
 	}
 
+	// Clean folds the "." and ".." segments a href may carry; what is left must
+	// be a relative path of plain segments (it is "." for an empty result, "..x"
+	// or an absolute path when the href leaves the repository).
 	p = path.Clean(p)
-	if p == "." || p == ".." || strings.HasPrefix(p, "../") || strings.HasPrefix(p, "/") {
+	if !pathseg.Path(p) {
 		return "", false
 	}
 

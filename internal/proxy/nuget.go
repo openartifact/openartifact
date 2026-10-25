@@ -24,6 +24,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	"github.com/openartifact/openartifact/internal/netutil"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	pkgnuget "github.com/openartifact/openartifact/pkg/nuget"
 )
 
@@ -116,7 +117,7 @@ func (p nugetPath) key() string {
 // safeNuGetSegment reports whether s may be one path segment of an id or
 // version: the characters NuGet allows in them, and never "." or "..".
 func safeNuGetSegment(s string) bool {
-	if s == "" || len(s) > 256 || s == "." || s == ".." {
+	if len(s) > 256 || !pathseg.Name(s) {
 		return false
 	}
 

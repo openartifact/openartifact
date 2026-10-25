@@ -9,6 +9,8 @@ import (
 	"fmt"
 	"io"
 	"strings"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 // MaxFileListBytes bounds the total size of the strings (path, digest, link
@@ -208,7 +210,7 @@ func validateRequired(p *Package) error {
 			return fmt.Errorf("%w: missing %s tag", ErrInvalidHeader, name)
 		}
 
-		if strings.ContainsAny(v, "/\\\x00 \t\r\n") || strings.Contains(v, "..") {
+		if !pathseg.Name(v) || strings.ContainsAny(v, " \t\r\n") {
 			return fmt.Errorf("%w: invalid characters in %s tag", ErrInvalidHeader, name)
 		}
 	}

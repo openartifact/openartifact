@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	pkgnuget "github.com/openartifact/openartifact/pkg/nuget"
 )
 
@@ -86,7 +87,7 @@ func (h *Handler) serveNuGet(w http.ResponseWriter, r *http.Request, grp *models
 
 // nugetSegment reports whether s is a plain id/version path segment.
 func nugetSegment(s string) bool {
-	return s != "" && s != "." && s != ".." && !strings.ContainsAny(s, "/\\\x00")
+	return pathseg.Name(s)
 }
 
 // nugetRequest is one NuGet metadata request of a group.

@@ -33,6 +33,7 @@ import (
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
+	"github.com/openartifact/openartifact/internal/pathseg"
 	"github.com/openartifact/openartifact/internal/presign"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/quota"
@@ -1092,17 +1093,17 @@ func validGemVersion(s string) bool {
 // validGemIdent accepts a non-empty UTF-8 token of at most maxLen bytes with
 // no separators, whitespace or control characters.
 func validGemIdent(s string, maxLen int) bool {
-	if s == "" || len(s) > maxLen || !utf8.ValidString(s) {
+	if len(s) > maxLen || !utf8.ValidString(s) || !pathseg.Name(s) {
 		return false
 	}
 
 	for _, r := range s {
-		if r == '/' || r == '\\' || r <= ' ' || r == 0x7f {
+		if r <= ' ' || r == 0x7f {
 			return false
 		}
 	}
 
-	return s != "." && s != ".."
+	return true
 }
 
 // storableText reports whether every string in v, map keys included, fits the

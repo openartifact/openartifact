@@ -21,6 +21,8 @@ import (
 	"path"
 	"strings"
 	"unicode/utf8"
+
+	"github.com/openartifact/openartifact/internal/pathseg"
 )
 
 const (
@@ -496,7 +498,7 @@ func hasAnySuffix(s string, suffixes ...string) bool {
 // parent-escaping names.
 func topLevel(name string) (string, bool) {
 	name = strings.TrimPrefix(path.Clean(strings.ReplaceAll(name, "\\", "/")), "./")
-	if name == "." || strings.HasPrefix(name, "/") || strings.HasPrefix(name, "../") {
+	if name == "." || strings.HasPrefix(name, "/") || pathseg.Escapes(name) {
 		return "", false
 	}
 

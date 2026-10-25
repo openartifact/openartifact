@@ -23,6 +23,8 @@ func FuzzSplitArtifactPath(f *testing.F) {
 		"com/example/lib/1.0/lib-1.0.jar",
 		"com/example/lib/1.0-SNAPSHOT/lib-1.0-20240101.120000-1.jar",
 		"a/b/c",
+		"a/b/c/d\x00",
+		"a/b/c/..\\d",
 		"a//c/d",
 		"/a/b/c/d",
 		"a/b/c/d/",
@@ -37,7 +39,7 @@ func FuzzSplitArtifactPath(f *testing.F) {
 		parts := strings.Split(p, "/")
 
 		plain := !slices.ContainsFunc(parts, func(s string) bool {
-			return s == "" || s == "." || s == ".." || strings.Contains(s, `\`)
+			return s == "" || s == "." || s == ".." || strings.ContainsAny(s, "\\\x00")
 		})
 		if want := len(parts) >= 4 && plain; ok != want {
 			t.Fatalf("SplitArtifactPath(%q) ok = %v, want %v", p, ok, want)
