@@ -120,11 +120,11 @@ func resetPassword(ctx context.Context, db *sql.DB, username, hash string) error
 	defer func() { _ = tx.Rollback() }()
 
 	// Same semantics as before: the operator chose this password, so the
-	// forced-change flag is cleared.
+	// forced-change flag and any password expiry are cleared.
 	var userID string
 
 	err = tx.QueryRowContext(ctx,
-		`UPDATE auth_users SET password_hash = $1, must_change_password = false WHERE username = $2 RETURNING id`,
+		`UPDATE auth_users SET password_hash = $1, must_change_password = false, password_expires_at = NULL WHERE username = $2 RETURNING id`,
 		hash, username,
 	).Scan(&userID)
 	if errors.Is(err, sql.ErrNoRows) {

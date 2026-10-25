@@ -98,9 +98,24 @@ type declServer struct {
 	root     string
 	oaBin    string
 	home     string
+	// dbName and dbURL locate the server's database on the TEST_DATABASE_URL server.
+	dbName string
+	dbURL  *url.URL
 }
 
 func startDeclServer(t *testing.T) *declServer {
+	t.Helper()
+
+	s, stderr := startServerProc(t, nil)
+	s.password = waitBootstrapPassword(t, stderr)
+	s.token = s.mintToken(t)
+
+	return s
+}
+
+// startServerProc builds and starts a server on a fresh database with extraEnv
+// added and waits until it is healthy. It does not log in.
+func startServerProc(t *testing.T, extraEnv []string) (*declServer, *syncBuffer) {
 	t.Helper()
 
 	admin := setupTestDB(t)
@@ -145,6 +160,7 @@ func startDeclServer(t *testing.T) *declServer {
 		// Webhook URLs are resolved by the server; the test points them at loopback.
 		"OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true",
 	)
+	cmd.Env = append(cmd.Env, extraEnv...)
 
 	if err := cmd.Start(); err != nil {
 		t.Fatalf("start server: %v", err)
@@ -155,12 +171,10 @@ func startDeclServer(t *testing.T) *declServer {
 		_ = cmd.Wait()
 	})
 
-	s := &declServer{url: "http://127.0.0.1:" + strconv.Itoa(port), root: root, oaBin: oaBin, home: t.TempDir()}
+	s := &declServer{url: "http://127.0.0.1:" + strconv.Itoa(port), root: root, oaBin: oaBin, home: t.TempDir(), dbName: dbName, dbURL: dsn}
 	s.waitHealthy(t, stderr)
-	s.password = waitBootstrapPassword(t, stderr)
-	s.token = s.mintToken(t)
 
-	return s
+	return s, stderr
 }
 
 // poll runs fn until it returns true or the deadline passes.

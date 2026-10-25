@@ -116,4 +116,4 @@ Docs live in `docs/` (index `docs/README.md`); the README stays a short overview
 
 ## Bootstrap
 
-First start with an empty DB creates user `admin` with a random password printed to stderr (`OPENARTIFACT BOOTSTRAP` block); password change is forced on first login.
+First start with an empty DB creates user `admin`. Default: a random password printed to stderr (`OPENARTIFACT BOOTSTRAP` block), change forced on first login, rejected at login after `bootstrap.generatedPasswordTtl` (24h; column `auth_users.password_expires_at`, cleared by any password change and `cmd/resetpw`). `bootstrap.adminPasswordFile`/`adminPassword` and `bootstrap.adminTokenFile` supply the password and an access token named `bootstrap` instead (nothing printed); all of it is created in the `CreateBootstrapAdmin` transaction and ignored on a non-empty instance.

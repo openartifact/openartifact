@@ -156,6 +156,15 @@ auth:
   # samlSpCert: ""         # PEM SAML SP certificate; unset = self-signed pair generated once, persisted encrypted
   # samlSpKey: ""          # PEM SAML SP key; regenerating means re-registering the cert at the IdP
 
+# First admin account, applied only to an empty instance (see docs/getting-started/installation.md).
+bootstrap:
+  # adminPasswordFile: /run/secrets/admin-password  # preferred; unset = random password printed once to stderr
+  # adminPassword: ""             # the password itself (compose convenience; prefer adminPasswordFile)
+  forcePasswordChange: false      # force a change at the first login of a supplied password
+  # adminTokenFile: /run/secrets/admin-token        # oa_pat_ + 32..128 chars; created as the access token "bootstrap"
+  adminTokenTtl: 0s               # lifetime of the bootstrap token; 0 = none
+  generatedPasswordTtl: 24h       # a generated, printed password stops working after this; 0 = never
+
 gpg:
   enabled: false
   # keyPath: /etc/openartifact/gpg/private.key

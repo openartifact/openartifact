@@ -280,6 +280,12 @@ See [authentication](../security/authentication.md) and [RBAC](../security/rbac.
 | `API_KEY` | `server.apiKey` | empty | Deprecated static write key; authenticates as `system/legacy-api-key` and logs a warning on each use |
 | `LEGACY_API_KEY_ENABLED` | `legacyApiKeyEnabled` | `false` | Accept `API_KEY` at all |
 | `SESSION_DURATION_HOURS` | `sessionDurationHours` | `24` | Web session lifetime |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE` | `bootstrap.adminPasswordFile` | empty | File with the initial admin password, used only on an empty instance; nothing is printed. Preferred over the plain value (see [first login](installation.md#first-login)) |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD` | `bootstrap.adminPassword` | empty | The initial admin password itself (**secret**; compose convenience, prefer the `_FILE` form) |
+| `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE` | `bootstrap.forcePasswordChange` | `false` | Force a password change at the first login of a supplied password (a generated one always forces it) |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE` | `bootstrap.adminTokenFile` | empty | File with an admin API token secret (`oa_pat_` + 32 to 128 characters), created as the token `bootstrap` on an empty instance |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_TTL` | `bootstrap.adminTokenTtl` | `0` | Lifetime of the bootstrap token; `0` = no expiry |
+| `OPENARTIFACT_BOOTSTRAP_GENERATED_PASSWORD_TTL` | `bootstrap.generatedPasswordTtl` | `24h` | How long a generated (printed) admin password is accepted at login; `0` = never expires |
 | `AUTH_HMAC_KEY` | `hmacKey` | generated once, persisted | Signs OIDC/SAML login state. Unset: a random key is generated once and stored in `system_settings` (shared by replicas); a configured value wins (**secret**) |
 | `OPENARTIFACT_SAML_SP_CERT` | `samlSpCert` | empty | PEM certificate of the SAML service provider. Unset: a self-signed pair is generated once and persisted encrypted in `system_settings` (shared by replicas); regenerating it means re-registering the SP certificate at the IdP |
 | `OPENARTIFACT_SAML_SP_KEY` | `samlSpKey` | empty | PEM private key of the SAML service provider (**secret**). Unset together with the certificate: see above. Stored unencrypted when `OPENARTIFACT_SECRET_KEY` is unset |

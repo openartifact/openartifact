@@ -6,6 +6,8 @@ package database
 
 import (
 	"context"
+	"database/sql"
+	"errors"
 	"fmt"
 	"time"
 )
@@ -108,11 +110,28 @@ func (p *PostgresDB) DeleteOtherSessionsByUser(ctx context.Context, userID, keep
 	return nil
 }
 
-// CreateBootstrapAdmin creates the first admin user and binds it to the
-// admin-all permission target in one transaction guarded by an advisory lock.
-// It returns false (and creates nothing) when a user already exists, which is
-// what a replica that lost the first-boot race observes.
-func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, username, passwordHash string) (bool, error) {
+// BootstrapAdmin describes the first admin account created on an empty instance.
+type BootstrapAdmin struct {
+	Username     string
+	PasswordHash string
+	// MustChangePassword forces a password change at first login.
+	MustChangePassword bool
+	// PasswordExpiresAt, when set, is the instant after which the password is
+	// rejected at login.
+	PasswordExpiresAt *time.Time
+	// TokenHash is the lookup digest of an access token to create for the
+	// admin; empty creates none.
+	TokenHash      string
+	TokenName      string
+	TokenExpiresAt *time.Time
+}
+
+// CreateBootstrapAdmin creates the first admin user, binds it to the
+// admin-all permission target and creates its optional access token in one
+// transaction guarded by an advisory lock. It returns false (and creates
+// nothing) when a user already exists, which is what a replica that lost the
+// first-boot race observes.
+func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, spec BootstrapAdmin) (bool, error) {
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
@@ -138,9 +157,9 @@ func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, username, passwor
 
 	var userID string
 	if err := tx.QueryRowContext(ctx,
-		`INSERT INTO auth_users (username, password_hash, must_change_password)
-		VALUES ($1, $2, true) RETURNING id`,
-		username, passwordHash,
+		`INSERT INTO auth_users (username, password_hash, must_change_password, password_expires_at)
+		VALUES ($1, $2, $3, $4) RETURNING id`,
+		spec.Username, spec.PasswordHash, spec.MustChangePassword, spec.PasswordExpiresAt,
 	).Scan(&userID); err != nil {
 		return false, fmt.Errorf("bootstrap create admin user: %w", err)
 	}
@@ -159,11 +178,45 @@ func (p *PostgresDB) CreateBootstrapAdmin(ctx context.Context, username, passwor
 		return false, fmt.Errorf("bootstrap assign admin-all: permission target %q not found", "admin-all") //nolint:err113 // dynamic error with runtime context
 	}
 
+	if spec.TokenHash != "" {
+		if _, err := tx.ExecContext(ctx,
+			`INSERT INTO auth_tokens (user_id, name, kind, token_hash, scopes, expires_at)
+			VALUES ($1, $2, 'access', $3, '[]'::jsonb, $4)`,
+			userID, spec.TokenName, spec.TokenHash, spec.TokenExpiresAt,
+		); err != nil {
+			return false, fmt.Errorf("bootstrap create admin token: %w", err)
+		}
+	}
+
 	if err := tx.Commit(); err != nil {
 		return false, fmt.Errorf("commit bootstrap tx: %w", err)
 	}
 
 	return true, nil
+}
+
+// GetPasswordExpiry returns the password expiry of a user that must still
+// change its password; nil when there is none.
+func (p *PostgresDB) GetPasswordExpiry(ctx context.Context, userID string) (*time.Time, error) {
+	var at sql.NullTime
+
+	err := p.db.QueryRowContext(ctx,
+		`SELECT password_expires_at FROM auth_users WHERE id = $1 AND must_change_password`,
+		userID,
+	).Scan(&at)
+	if errors.Is(err, sql.ErrNoRows) {
+		return nil, nil //nolint:nilnil // no expiry applies
+	}
+
+	if err != nil {
+		return nil, fmt.Errorf("get password expiry: %w", err)
+	}
+
+	if !at.Valid {
+		return nil, nil //nolint:nilnil // never expires
+	}
+
+	return &at.Time, nil
 }
 
 // RepairBootstrapAdmin re-binds the named local admin user to admin-all when no

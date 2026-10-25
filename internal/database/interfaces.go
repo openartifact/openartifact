@@ -274,9 +274,14 @@ type Database interface {
 	ListUsers(ctx context.Context, page, perPage int) ([]*models.User, int, error)
 	CountUsers(ctx context.Context) (int, error)
 	// CreateBootstrapAdmin atomically (advisory-locked transaction) creates the first
-	// admin user and binds it to the admin-all permission target. It reports false
-	// without creating anything when another replica already created a user.
-	CreateBootstrapAdmin(ctx context.Context, username, passwordHash string) (bool, error)
+	// admin user, binds it to the admin-all permission target and, when the spec
+	// carries a token hash, creates its access token. It reports false without
+	// creating anything when another replica already created a user.
+	CreateBootstrapAdmin(ctx context.Context, spec BootstrapAdmin) (bool, error)
+	// GetPasswordExpiry returns when the user's password stops being accepted
+	// at login, or nil when it does not expire (or the user has none). It is
+	// only meaningful while the account is flagged must_change_password.
+	GetPasswordExpiry(ctx context.Context, userID string) (*time.Time, error)
 	// RepairBootstrapAdmin re-binds the bootstrap admin to admin-all when no principal
 	// holds that target (a previously interrupted bootstrap). Reports whether it repaired.
 	RepairBootstrapAdmin(ctx context.Context, username string) (bool, error)

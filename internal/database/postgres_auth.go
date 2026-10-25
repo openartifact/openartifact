@@ -151,7 +151,8 @@ func (p *PostgresDB) UpdateUser(ctx context.Context, user *models.User) error {
 	defer func() { _ = tx.Rollback() }()
 
 	_, err = tx.ExecContext(ctx,
-		`UPDATE auth_users SET username=$2, email=$3, password_hash=$4, full_name=$5, disabled=$6, must_change_password=$7, last_login_at=$8, external_id=$9, provider_slug=$10, sso_managed_groups=$11
+		`UPDATE auth_users SET username=$2, email=$3, password_hash=$4, full_name=$5, disabled=$6, must_change_password=$7, last_login_at=$8, external_id=$9, provider_slug=$10, sso_managed_groups=$11,
+		password_expires_at = CASE WHEN password_hash IS DISTINCT FROM $4 THEN NULL ELSE password_expires_at END
 		WHERE id=$1`,
 		user.ID, user.Username, user.Email, user.PasswordHash, user.FullName, user.Disabled, user.MustChangePassword, user.LastLoginAt,
 		user.ExternalID, user.ProviderSlug, user.SSOManagedGroups,
@@ -200,7 +201,7 @@ func (p *PostgresDB) UpdateUserPassword(ctx context.Context, id, passwordHash st
 	// Cached auth lookups must not outlive this write.
 	defer p.authCache.invalidate()
 
-	if _, err := p.db.ExecContext(ctx, `UPDATE auth_users SET password_hash=$2, must_change_password=$3 WHERE id=$1`, id, passwordHash, mustChange); err != nil {
+	if _, err := p.db.ExecContext(ctx, `UPDATE auth_users SET password_hash=$2, must_change_password=$3, password_expires_at=NULL WHERE id=$1`, id, passwordHash, mustChange); err != nil {
 		return fmt.Errorf("failed to update user password: %w", err)
 	}
 

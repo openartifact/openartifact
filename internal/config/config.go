@@ -78,6 +78,9 @@ type Config struct {
 	// Auth configures sessions, anonymous reads and the login-state and SAML
 	// service provider keys (see docs/security/authentication.md).
 	Auth AuthConfig `yaml:"auth"`
+	// Bootstrap configures the first admin account and API token created on an
+	// empty instance (see docs/getting-started/installation.md).
+	Bootstrap BootstrapConfig `yaml:"bootstrap"`
 	// Backup configures where backups are written and how long a running
 	// backup holds back blob deletions (see docs/operations/backup.md).
 	Backup BackupConfig `yaml:"backup"`
@@ -128,6 +131,29 @@ type ProjectsConfig struct {
 	// administrator can change it at runtime (system setting projects.self_create),
 	// which then takes precedence over this default.
 	SelfCreate bool `yaml:"selfCreate"`
+}
+
+// BootstrapConfig controls how the first admin account is provisioned. It only
+// applies to an empty instance: an existing admin is never reset.
+type BootstrapConfig struct {
+	// AdminPasswordFile is a file holding the initial admin password (a
+	// trailing newline is trimmed). Preferred over AdminPassword.
+	AdminPasswordFile string `yaml:"adminPasswordFile"`
+	// AdminPassword is the initial admin password itself (compose
+	// convenience; AdminPasswordFile wins when both are set).
+	AdminPassword string `yaml:"adminPassword"`
+	// ForcePasswordChange forces a password change at the first login of a
+	// supplied password. A generated password always forces it.
+	ForcePasswordChange bool `yaml:"forcePasswordChange"`
+	// AdminTokenFile is a file holding an admin API token secret
+	// (oa_pat_ followed by 32 to 128 characters from A-Za-z0-9_-), created as
+	// the access token "bootstrap" of the admin user.
+	AdminTokenFile string `yaml:"adminTokenFile"`
+	// AdminTokenTTL is the lifetime of the bootstrap token; 0 means none.
+	AdminTokenTTL time.Duration `yaml:"adminTokenTtl"`
+	// GeneratedPasswordTTL is how long a generated (printed) admin password
+	// stays valid for login; 0 means it never expires.
+	GeneratedPasswordTTL time.Duration `yaml:"generatedPasswordTtl"`
 }
 
 // WorkersConfig contains background worker tuning.
@@ -624,6 +650,9 @@ func defaultConfig() *Config {
 			PurgeInterval:  time.Hour,
 			PurgeBatchSize: 5000,
 		},
+		Bootstrap: BootstrapConfig{
+			GeneratedPasswordTTL: 24 * time.Hour,
+		},
 		Federation: FederationConfig{
 			PollInterval:       30 * time.Second,
 			BatchSize:          200,
@@ -795,6 +824,14 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Branding.LoginMessage, "OPENARTIFACT_BRANDING_LOGIN_MESSAGE")
 	overrideString(&cfg.Branding.SupportURL, "OPENARTIFACT_BRANDING_SUPPORT_URL")
 	overrideString(&cfg.Branding.SourceURL, "OPENARTIFACT_BRANDING_SOURCE_URL")
+
+	// Bootstrap config
+	overrideString(&cfg.Bootstrap.AdminPasswordFile, "OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE")
+	overrideString(&cfg.Bootstrap.AdminPassword, "OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD")
+	overrideBool(&cfg.Bootstrap.ForcePasswordChange, "OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE")
+	overrideString(&cfg.Bootstrap.AdminTokenFile, "OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE")
+	overrideDuration(&cfg.Bootstrap.AdminTokenTTL, "OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_TTL")
+	overrideDuration(&cfg.Bootstrap.GeneratedPasswordTTL, "OPENARTIFACT_BOOTSTRAP_GENERATED_PASSWORD_TTL")
 
 	// Projects config
 	overrideBool(&cfg.Projects.SelfCreate, "OPENARTIFACT_PROJECTS_SELF_CREATE")

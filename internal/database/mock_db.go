@@ -465,8 +465,11 @@ func (m *BaseMockDB) DeleteSessionsByUser(ctx context.Context, userID string) er
 func (m *BaseMockDB) DeleteOtherSessionsByUser(ctx context.Context, userID, keepTokenHash string) error {
 	return errNotImpl("DeleteOtherSessionsByUser")
 }
-func (m *BaseMockDB) CreateBootstrapAdmin(ctx context.Context, username, passwordHash string) (bool, error) {
+func (m *BaseMockDB) CreateBootstrapAdmin(ctx context.Context, spec BootstrapAdmin) (bool, error) {
 	return false, errNotImpl("CreateBootstrapAdmin")
+}
+func (m *BaseMockDB) GetPasswordExpiry(ctx context.Context, userID string) (*time.Time, error) {
+	return nil, nil //nolint:nilnil // no expiry
 }
 func (m *BaseMockDB) RepairBootstrapAdmin(ctx context.Context, username string) (bool, error) {
 	return false, errNotImpl("RepairBootstrapAdmin")

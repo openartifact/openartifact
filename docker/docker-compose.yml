@@ -70,6 +70,9 @@ services:
       # at rest. Empty means they are stored in plaintext. Keep it stable: a
       # changed key cannot decrypt what the old one sealed. Set in docker/.env.
       OPENARTIFACT_SECRET_KEY: ${OPENARTIFACT_SECRET_KEY:-}
+      # First admin password; empty generates one and prints it once (24h validity).
+      # Prefer a file mount plus OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE for real deployments.
+      OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD: ${OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD:-}
       # Public URL clients and SSO callbacks use (e.g. https://artifacts.example.com).
       BASE_URL: ${BASE_URL:-}
       OPENARTIFACT_BACKUP_DIR: /var/lib/openartifact/backups

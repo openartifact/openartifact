@@ -152,7 +152,16 @@ func (a *app) migrate() (bool, error) {
 func (a *app) initCore() error {
 	auth.ConfigureSessionDuration(time.Duration(a.cfg.Auth.SessionDurationHours) * time.Hour)
 
-	if err := auth.BootstrapIfEmpty(context.Background(), a.db, a.log); err != nil {
+	bootstrap := a.cfg.Bootstrap
+
+	if err := auth.BootstrapIfEmpty(context.Background(), a.db, a.log, auth.BootstrapOptions{
+		AdminPasswordFile:    bootstrap.AdminPasswordFile,
+		AdminPassword:        bootstrap.AdminPassword,
+		ForcePasswordChange:  bootstrap.ForcePasswordChange,
+		AdminTokenFile:       bootstrap.AdminTokenFile,
+		AdminTokenTTL:        bootstrap.AdminTokenTTL,
+		GeneratedPasswordTTL: bootstrap.GeneratedPasswordTTL,
+	}); err != nil {
 		return a.fail("bootstrap failed", err)
 	}
 

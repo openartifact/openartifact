@@ -1162,3 +1162,35 @@ func TestValidate_Audit(t *testing.T) {
 		})
 	}
 }
+
+func TestLoad_BootstrapConfig(t *testing.T) {
+	cfg, err := Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	if cfg.Bootstrap.GeneratedPasswordTTL != 24*time.Hour || cfg.Bootstrap.ForcePasswordChange || cfg.Bootstrap.AdminTokenTTL != 0 {
+		t.Errorf("unexpected defaults: %+v", cfg.Bootstrap)
+	}
+
+	t.Setenv("OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE", "/run/secrets/pw")
+	t.Setenv("OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE", "/run/secrets/token")
+	t.Setenv("OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_TTL", "720h")
+	t.Setenv("OPENARTIFACT_BOOTSTRAP_GENERATED_PASSWORD_TTL", "0s")
+	t.Setenv("OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE", "true")
+
+	cfg, err = Load("")
+	if err != nil {
+		t.Fatalf("Load() failed: %v", err)
+	}
+
+	want := BootstrapConfig{
+		AdminPasswordFile:   "/run/secrets/pw",
+		AdminTokenFile:      "/run/secrets/token",
+		AdminTokenTTL:       720 * time.Hour,
+		ForcePasswordChange: true,
+	}
+	if cfg.Bootstrap != want {
+		t.Errorf("Bootstrap = %+v, want %+v", cfg.Bootstrap, want)
+	}
+}

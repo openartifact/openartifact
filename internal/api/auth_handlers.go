@@ -6,6 +6,7 @@ package api
 
 import (
 	"context"
+	"fmt"
 	"math"
 	"net/http"
 	"strconv"
@@ -255,6 +256,8 @@ type AuthHandler struct {
 	loginAnyIPLimiter *slidingWindowLimiter
 	trustedProxies    *middleware.TrustedProxies
 	baseURL           string
+	// now is the clock behind password expiry (time.Now outside tests).
+	now func() time.Time
 
 	proxyWarnOnce sync.Once
 }
@@ -269,6 +272,7 @@ func NewAuthHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		loginPairLimiter:  newSlidingWindowLimiter(loginUserFailureLimit, loginUserFailureWindow),
 		loginAnyIPLimiter: newSlidingWindowLimiter(loginDistributedFailureLimit, loginUserFailureWindow),
 		trustedProxies:    trustedProxies,
+		now:               time.Now,
 	}
 }
 
@@ -408,6 +412,24 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	// Only a caller who proved the password learns (in the server log, never
+	// in the response) that it expired, so the state does not leak.
+	expired, err := h.passwordExpired(ctx, user.ID)
+	if err != nil {
+		h.log.Errorw("login: db error", "error", err)
+		writeError(w, http.StatusInternalServerError, "internal_error", "database error")
+
+		return
+	}
+
+	if expired {
+		h.log.Warnw("login rejected: the generated bootstrap password has expired; reset it with cmd/resetpw",
+			"username", user.Username)
+		invalid()
+
+		return
+	}
+
 	h.loginPairLimiter.reset(pairKey)
 	h.loginAnyIPLimiter.reset(userKey)
 
@@ -436,6 +458,16 @@ func (h *AuthHandler) handleLogin(w http.ResponseWriter, r *http.Request) {
 	_ = h.db.UpdateUserLastLogin(ctx, user.ID, now)
 
 	writeJSON(w, http.StatusOK, userToResponse(user))
+}
+
+// passwordExpired reports whether the user's password has passed its expiry.
+func (h *AuthHandler) passwordExpired(ctx context.Context, userID string) (bool, error) {
+	at, err := h.db.GetPasswordExpiry(ctx, userID)
+	if err != nil {
+		return false, fmt.Errorf("get password expiry: %w", err)
+	}
+
+	return at != nil && !h.now().Before(*at), nil
 }
 
 // handleLogout ends the local session. For a session created by an OIDC

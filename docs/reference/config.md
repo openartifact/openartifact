@@ -174,6 +174,19 @@ This page lists every configuration key with its type, built-in default and the 
 | `auth.samlSpCert` | `OPENARTIFACT_SAML_SP_CERT` | string | `empty` | `samlSpCert` is the PEM certificate of the SAML service provider. Unset: a self-signed pair is generated once and persisted encrypted in system_settings (shared by replicas); regenerating it means re-registering the certificate at the identity provider. |
 | `auth.samlSpKey` | `OPENARTIFACT_SAML_SP_KEY` | string | `empty` | **Secret.** `samlSpKey` is the PEM private key of the SAML service provider. Unset together with the certificate: a self-signed pair is generated (see samlSpCert). Stored unencrypted while `OPENARTIFACT_SECRET_KEY` is unset. |
 
+## bootstrap
+
+`bootstrap` configures the first admin account and API token created on an empty instance (see [getting-started/installation.md](../getting-started/installation.md)).
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `bootstrap.adminPasswordFile` | `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE` | string | `empty` | **Secret.** `adminPasswordFile` is a file holding the initial admin password (a trailing newline is trimmed). Preferred over AdminPassword. |
+| `bootstrap.adminPassword` | `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD` | string | `empty` | **Secret.** `adminPassword` is the initial admin password itself (compose convenience; AdminPasswordFile wins when both are set). |
+| `bootstrap.forcePasswordChange` | `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE` | bool | `false` | **Secret.** `forcePasswordChange` forces a password change at the first login of a supplied password. A generated password always forces it. |
+| `bootstrap.adminTokenFile` | `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE` | string | `empty` | `adminTokenFile` is a file holding an admin API token secret (oa_pat_ followed by 32 to 128 characters from A-Za-z0-9_-), created as the access token "bootstrap" of the admin user. |
+| `bootstrap.adminTokenTtl` | `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_TTL` | duration | `0` | `adminTokenTtl` is the lifetime of the bootstrap token; 0 means none. |
+| `bootstrap.generatedPasswordTtl` | `OPENARTIFACT_BOOTSTRAP_GENERATED_PASSWORD_TTL` | duration | `24h` | **Secret.** `generatedPasswordTtl` is how long a generated (printed) admin password stays valid for login; 0 means it never expires. |
+
 ## backup
 
 `backup` configures where backups are written and how long a running backup holds back blob deletions (see [operations/backup.md](../operations/backup.md)).

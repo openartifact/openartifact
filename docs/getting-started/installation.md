@@ -58,22 +58,49 @@ Released images are published to `ghcr.io/openartifact/openartifact` (`linux/amd
 
 ### First login
 
-On first start with an empty user table, OpenArtifact creates the user `admin` with a random 32-character password and prints it once to **stderr** (not through the structured logger, so it is not in a `LOG_OUTPUT` file):
+On first start with an empty user table, OpenArtifact creates the user `admin`. There are two ways to choose its credentials; without either, it generates a password.
+
+**Supplied credentials (recommended for automation).** Provide the password and, optionally, an admin API token before the first start. Nothing is printed and no password change is forced (set `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE=true` to force one):
+
+| Environment variable | YAML key | Meaning |
+|---|---|---|
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE` | `bootstrap.adminPasswordFile` | File holding the admin password (a trailing newline is trimmed). **Preferred**: a secret mounted as a file never shows up in `docker inspect`, process environments or compose files |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD` | `bootstrap.adminPassword` | The password itself, a convenience for compose and local trials. The file wins when both are set |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_FILE` | `bootstrap.adminTokenFile` | File holding an admin API token secret; created as the access token `bootstrap` of `admin`, so `oa apply` works on the first sync |
+| `OPENARTIFACT_BOOTSTRAP_ADMIN_TOKEN_TTL` | `bootstrap.adminTokenTtl` | Lifetime of that token (for example `720h`); `0` (default) means no expiry |
+| `OPENARTIFACT_BOOTSTRAP_FORCE_PASSWORD_CHANGE` | `bootstrap.forcePasswordChange` | Force a change at the first login of a supplied password (default `false`; a generated password always forces it) |
+
+```sh
+umask 077
+openssl rand -base64 24 > admin-password
+echo "oa_pat_$(openssl rand -hex 32)" > admin-token
+```
+
+- The password must satisfy the normal policy (12 to 1024 characters). An invalid password, an unreadable file or an invalid token makes the server **refuse to start** with an error naming the setting; the value itself is never logged.
+- The token secret must be `oa_pat_` followed by 32 to 128 characters from `A-Za-z0-9_-` with at least 12 distinct characters (the shape of a token the server generates; `oa_pat_$(openssl rand -hex 32)` always qualifies). Only its SHA-256 is stored, like every other token. It carries the global `manage` permission of the admin user and can be revoked in the UI.
+- The settings apply **only to an empty instance**. They never reset an existing admin or add a token later; on a non-empty database the server logs an info line and ignores them (they are not even read). With several replicas starting at once, the admin, its password and its token are created in one transaction, so exactly one admin and one token exist. Use [`resetpw`](#reset-the-admin-password) to change an existing password.
+
+**Generated password.** Without these settings the server generates a random 32-character password and prints it once to **stderr** (not through the structured logger, so it is not in a `LOG_OUTPUT` file):
 
 ```text
 ===== OPENARTIFACT BOOTSTRAP =====
  admin password: <random>
+ valid for 24h0m0s (after that, reset it with cmd/resetpw)
  Change immediately at /api/v1/auth/change-password
+ To choose the password instead, set OPENARTIFACT_BOOTSTRAP_ADMIN_PASSWORD_FILE
+ (bootstrap.adminPasswordFile) before the first start.
 ===================================
 ```
 
 Read it from the container output:
 
 ```sh
-docker compose -f docker/docker-compose.yml logs openartifact | grep -A3 'OPENARTIFACT BOOTSTRAP'
+docker compose -f docker/docker-compose.yml logs openartifact | grep -A6 'OPENARTIFACT BOOTSTRAP'
 ```
 
-The account is flagged `must_change_password`: until the password is changed, every API call except `POST /api/v1/auth/change-password` and `POST /api/v1/auth/logout` is rejected, and the UI redirects to the change-password page. New passwords must be at least 12 characters. With several replicas starting on an empty database, only the replica that creates the user prints a password.
+A generated password stops working for login after `OPENARTIFACT_BOOTSTRAP_GENERATED_PASSWORD_TTL` (`bootstrap.generatedPasswordTtl`, default `24h`, `0` = never), so a banner that ended up in a log aggregator does not stay a credential. Changing the password, or running `resetpw`, removes the expiry. An expired password is rejected exactly like a wrong one (`401 invalid_credentials`); the server log then says `login rejected: the generated bootstrap password has expired; reset it with cmd/resetpw`, and only after the correct password was presented. Run [`resetpw`](#reset-the-admin-password) to get back in.
+
+The generated account is flagged `must_change_password`: until the password is changed, every API call except `POST /api/v1/auth/change-password` and `POST /api/v1/auth/logout` is rejected, and the UI redirects to the change-password page. New passwords must be at least 12 characters. With several replicas starting on an empty database, only the replica that creates the user prints a password.
 
 Next: create a repository, then an API token for clients ([authentication](../security/authentication.md), [RBAC](../security/rbac.md)).
 
@@ -95,7 +122,7 @@ OPENARTIFACT_RESET_PASSWORD='<new-password>' go run ./cmd/resetpw
 ```
 
 - The password must be 12 to 1024 characters; the tool fails if the user does not exist.
-- In one transaction it sets the new Argon2id hash, **clears** `must_change_password` (you chose the password, so no forced change follows) and deletes all of the user's sessions.
+- In one transaction it sets the new Argon2id hash, **clears** `must_change_password` and any generated-password expiry (you chose the password, so no forced change follows) and deletes all of the user's sessions.
 - A running server may take up to `DB_AUTH_CACHE_TTL_MS` (default 2000 ms) to see the change, because `resetpw` bypasses its auth cache.
 - With the default compose file PostgreSQL is only on the compose network. To reach it from the host, add `ports: ["127.0.0.1:5432:5432"]` to the `postgres` service, then use `DB_HOST=127.0.0.1 DB_USER=… DB_PASSWORD=… DB_NAME=… DB_SSLMODE=disable` (the bundled database has no TLS).
 
