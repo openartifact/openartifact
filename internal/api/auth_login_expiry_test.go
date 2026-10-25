@@ -13,13 +13,13 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/auth"
-	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 type loginExpiryDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	user      *models.User
 	expiresAt *time.Time

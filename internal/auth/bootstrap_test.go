@@ -15,12 +15,13 @@ import (
 	"time"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/database/databasetest"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
 // bootstrapDB records what BootstrapIfEmpty asks the database to create.
 type bootstrapDB struct {
-	database.BaseMockDB
+	databasetest.BaseMockDB
 
 	users    int
 	specs    []database.BootstrapAdmin
