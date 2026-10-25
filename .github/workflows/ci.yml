@@ -99,6 +99,18 @@ jobs:
             go.sum
             tools/go.sum
 
+      # Integration packages run in parallel, each with its own pools; the default
+      # 100 connections runs out. Service containers take no command line, so set
+      # it with ALTER SYSTEM and restart.
+      - name: raise Postgres max_connections
+        env:
+          PG_CONTAINER: ${{ job.services.postgres.id }}
+        run: |
+          docker exec "$PG_CONTAINER" psql -U postgres -c "ALTER SYSTEM SET max_connections = 500"
+          docker restart "$PG_CONTAINER"
+          for _ in $(seq 1 30); do docker exec "$PG_CONTAINER" pg_isready -U postgres && break; sleep 1; done
+          docker exec "$PG_CONTAINER" psql -U postgres -Atc "SHOW max_connections"
+
       # MinIO no longer publishes container images; Garage is the S3 test backend.
       - name: start Garage
         run: |
