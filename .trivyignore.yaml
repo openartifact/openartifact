@@ -6,7 +6,7 @@
 secrets:
   - id: gcp-service-account
     paths:
-      - web/src/pages/admin/StorageBackendsPage.vue
+      - web/src/lib/storageBackends.ts
     statement: >-
       UI input placeholder text showing the shape of a GCS service-account key
       (a JSON stub with an ellipsis); it contains no credential.
