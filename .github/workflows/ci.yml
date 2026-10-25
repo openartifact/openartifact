@@ -61,7 +61,7 @@ jobs:
       - name: govulncheck
         run: go tool -modfile=tools/go.mod govulncheck ./...
 
-      - name: deadcode (unreachable code outside scripts/deadcode-baseline.txt)
+      - name: deadcode (no unreachable Go code)
         run: scripts/deadcode-check.sh
 
       - name: go test (race, unit packages)

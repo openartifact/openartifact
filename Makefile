@@ -48,7 +48,7 @@ help:
 	@echo "  generate        - Run sqlc generate (DB codegen)"
 	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
 	@echo "  docs-check      - Fail when docs/reference is out of date"
-	@echo "  deadcode        - Fail on unreachable Go code not in scripts/deadcode-baseline.txt"
+	@echo "  deadcode        - Fail on Go code that no main package reaches (deadcode)"
 	@echo "  deps            - Download and tidy dependencies"
 	@echo "  docker-build    - Build Docker image"
 	@echo "  docker-run      - Run Docker container"

@@ -53,7 +53,7 @@ bun, golangci-lint and Trivy versions are not tracked by Dependabot; bump them b
 | `make check` | `fmt` + `vet` + `lint`; run before opening a PR |
 | `make generate` | sqlc generate; run after editing `internal/database/queries/*.sql` or the schema, and commit `internal/database/dbsqlc/` |
 | `make docs-gen` | Regenerates the pages under `docs/reference/` (configuration keys, metrics, CLI commands, REST API) from the code; run after changing config keys, metrics, `oa` help or `internal/api/openapi.json`, and commit the result. `make docs-check` fails when they are stale |
-| `make deadcode` | Fails when Go code is unreachable from every `main` package and not allowlisted in `scripts/deadcode-baseline.txt`, see [Dead-code gate](#dead-code-gate) |
+| `make deadcode` | Fails when Go code is unreachable from every `main` package see [Dead-code gate](#dead-code-gate) |
 | `make migrate` | `go run ./cmd/server -migrate` (apply migrations and exit) |
 | `make bench`, `make bench-load` | Benchmarks, see [performance](../operations/performance.md) |
 | `make docker-build` | Builds `openartifact:latest` from `docker/Dockerfile`; the runtime base is `RUNTIME=dhi` (default, needs `docker login dhi.io`) or `RUNTIME=distroless` (anonymous) |
@@ -144,36 +144,23 @@ The full list lives in [AGENTS.md](../../AGENTS.md); the ones that most often ma
 
 ## Dead-code gate
 
-`make deadcode` (`scripts/deadcode-check.sh`, CI job `go`) runs [`deadcode`](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode) (pinned in `tools/go.mod`) with `-tags integration` over every `main` package and compares the report with the allowlist `scripts/deadcode-baseline.txt`. It deliberately runs **without** `-test`: with `-test` every test function is a root, so a production function that only tests call would count as live. Without it such functions are reported, so test-only helpers cannot hide in production files.
+`make deadcode` (`scripts/deadcode-check.sh`, CI job `go`) runs [`deadcode`](https://pkg.go.dev/golang.org/x/tools/cmd/deadcode) (pinned in `tools/go.mod`) with `-tags integration` over every `main` package and fails on any function that none of them reaches. There is no allowlist: the expected result is zero findings. It deliberately runs **without** `-test`: with `-test` every test function is a root, so a production function that only tests call would count as live. Without it such functions are reported, so test-only helpers cannot hide in production files.
 
-The script normalises the report to `file symbol` pairs (sorted, line numbers dropped) so the result is deterministic and an unrelated edit above a symbol does not change it. It fails on:
+The report is reduced to `file  symbol` lines (sorted, line numbers dropped), so the output is deterministic.
 
-- **new unreachable code**: a symbol that is reported and not in the baseline;
-- **stale entries**: a baseline entry whose symbol was deleted or became reachable.
+### Test support packages
+
+Helpers shared by tests of several packages cannot live in a `_test.go` file. Put them in a package whose directory name ends in `test`, following the standard library (`httptest`, `iotest`): `internal/database/databasetest`, `internal/format/formattest`, `internal/gpgkeys/gpgkeystest`, `internal/licensemeta/archivetest`, `internal/licensepolicy/policytest`. That naming is the only exclusion: the script skips a package of this module whose directory name ends in `test` and that production code does not import (`internal/attest` ends in `test` too, but production imports it, so it is checked). Production code must never import a `*test` package.
 
 ### Reading a failure
 
-The failure lists `file  Symbol` lines (`Type.Method` for methods). Handle each in this order:
+The failure lists `file  Symbol` lines (`Type.Method` for methods). Handle each one:
 
 1. **Dead everywhere**: delete it, together with its tests.
-2. **Only tests use it**: move it into a `_test.go` file of the same package. Helpers shared by several packages go in a test-support package (`internal/format/formattest`, `internal/gpgkeys/gpgkeystest`, `internal/database/databasetest`, ...), which is allowlisted as a whole. Do not keep test helpers in production files.
-3. **Reached in a way the analysis cannot see** (reflection, templates, `go:linkname`, a build tag the gate does not set) or a deliberate seam that must stay exported (for example a hook the external `tests/` package needs): allowlist it.
+2. **Only tests use it**: move it into a `_test.go` file of the same package, or into a `*test` package when several packages share it. If a test only needs to wait for or observe background work, poll the observable outcome with a deadline instead of exporting a hook, or use a production lifecycle API that already exists (for example `WithTasks(bgtask.Runner)` and `Shutdown`).
+3. **Reached only through reflection, templates or `go:linkname`**: make the call visible to the analysis, or give the code a real production caller; there is no allowlist.
 
-`deadcode` needs no setup beyond Go; to look at a symbol's callers yourself run `go tool -modfile=tools/go.mod deadcode -tags integration -whylive=<pkg>.<Func> ./...`.
-
-### Allowlisting with a reason
-
-Run `scripts/deadcode-check.sh --update`. It drops stale entries and appends the new ones under a `# REASON REQUIRED` comment; replace that comment with the reason, then commit the baseline. The check rejects an entry without a reason comment and a leftover placeholder. Format of `scripts/deadcode-baseline.txt`:
-
-```text
-# Why this is intentionally kept. One comment block covers the entries below it
-# up to the next blank line.
-internal/api/trash.go TrashHandler.WaitBackground
-# A path ending in "/" matches every file below it; the symbol "*" matches any.
-internal/format/formattest/ *
-```
-
-Keep the baseline small: every entry is a standing exception, so prefer deleting or moving code.
+To see why a function is live or dead run `go tool -modfile=tools/go.mod deadcode -tags integration -whylive=<pkg>.<Func> ./...`.
 
 ## CI
 

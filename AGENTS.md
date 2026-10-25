@@ -87,6 +87,7 @@ Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck, deadcode and act
 - **Config:** every key settable by YAML must have an env override in `internal/config`, and be documented in `.env.example` and `openartifact.example.yaml`. Server read/write timeouts default to 0 (large uploads).
 - Errors: use `writeError` with the shared codes; never leak `err.Error()` from DB/upstream to clients.
 - Tests: assert behavior, not mock round-trips; no fixed sleeps — poll with deadlines.
+- **No dead code:** `make deadcode` (CI `go` job) must report nothing, and there is no allowlist. Code only tests call goes in a `_test.go` file or a `*test` support package (`databasetest`, `formattest`, ...), never in a production file; don't export hooks for tests. Details: `docs/development/README.md#dead-code-gate`.
 - **Timestamps:** DB upserts must not persist zero `time.Time`; default `created_at`/`updated_at` to now when the caller leaves them unset.
 - **Client auth:** format routes accept API tokens (Bearer, or Basic with the token as password); account passwords work only for the UI login. Use tokens in examples and smoke tests.
 
