@@ -149,12 +149,24 @@ func TestSecurityFindings_ListOrderAndContent(t *testing.T) {
 		byID[fd.ID] = fd
 	}
 
+	checkFindingDetails(t, f, byID)
+}
+
+func checkFindingDetails(t *testing.T, f *securityFixture, byID map[string]*models.Finding) {
+	t.Helper()
+
 	lodash := byID[f.ids["lodash"]]
 	if lodash.Type != "vuln" || lodash.Repository != "npm-main" || lodash.Format != "npm" ||
 		lodash.PackageName != "lodash" || lodash.PackageVersion != "4.0.0" || lodash.Severity() != "critical" ||
 		lodash.Critical != 1 || lodash.High != 1 || lodash.Status != "open" || lodash.Title != "CVE-9" || lodash.Scanner != "osv" {
 		t.Fatalf("lodash finding = %+v", lodash)
 	}
+
+	checkOtherFindingDetails(t, f, byID)
+}
+
+func checkOtherFindingDetails(t *testing.T, f *securityFixture, byID map[string]*models.Finding) {
+	t.Helper()
 
 	if lic := byID[f.ids["license"]]; lic.Status != "quarantined" || !lic.Quarantined || lic.Title != "GPL-3.0-only" || lic.Severity() != "high" {
 		t.Fatalf("license finding = %+v", lic)
@@ -189,8 +201,8 @@ func TestSecurityFindings_Filters(t *testing.T) {
 		{"status suppressed", models.FindingListParams{Status: "suppressed"}, []string{"requests"}},
 		{"status quarantined", models.FindingListParams{Status: "quarantined"}, []string{"license"}},
 		{"status open", models.FindingListParams{Status: "open"}, []string{"lodash", "secret", "ai"}},
-		{"repo", models.FindingListParams{FindingFilter: models.FindingFilter{Repo: "pypi-main"}}, []string{"requests"}},
-		{"project", models.FindingListParams{FindingFilter: models.FindingFilter{Project: "p-pypi-main"}}, []string{"requests"}},
+		{"repo", models.FindingListParams{Repo: "pypi-main"}, []string{"requests"}},
+		{"project", models.FindingListParams{Project: "p-pypi-main"}, []string{"requests"}},
 		{"q package", models.FindingListParams{Q: "LODASH@4"}, []string{"lodash"}},
 		{"q repository", models.FindingListParams{Q: "pypi"}, []string{"requests"}},
 		{"q wildcard is literal", models.FindingListParams{Q: "%"}, nil},
@@ -219,19 +231,18 @@ func TestSecurityFindings_Filters(t *testing.T) {
 func TestSecurityFindings_Scope(t *testing.T) {
 	f := newSecurityFixture(t)
 
-	got := findingIDs(listAll(t, f, models.FindingListParams{FindingFilter: models.FindingFilter{Scope: models.FindingScope{ProjectIDs: []string{f.projectB}}}}))
+	got := findingIDs(listAll(t, f, models.FindingListParams{Scope: models.FindingScope{ProjectIDs: []string{f.projectB}}}))
 	if !slices.Equal(got, []string{f.ids["requests"]}) {
 		t.Fatalf("project B scope = %v", got)
 	}
 
-	empty := listAll(t, f, models.FindingListParams{FindingFilter: models.FindingFilter{Scope: models.FindingScope{ProjectIDs: []string{}}}})
+	empty := listAll(t, f, models.FindingListParams{Scope: models.FindingScope{ProjectIDs: []string{}}})
 	if len(empty.Findings) != 0 {
 		t.Fatalf("an empty scope must see nothing, got %v", findingIDs(empty))
 	}
 
 	// a repo filter outside the scope matches nothing
-	out := listAll(t, f, models.FindingListParams{FindingFilter: models.FindingFilter{
-		Scope: models.FindingScope{ProjectIDs: []string{f.projectA}}, Repo: "pypi-main"}})
+	out := listAll(t, f, models.FindingListParams{Scope: models.FindingScope{ProjectIDs: []string{f.projectA}}, Repo: "pypi-main"})
 	if len(out.Findings) != 0 {
 		t.Fatalf("repo outside the scope = %v", findingIDs(out))
 	}

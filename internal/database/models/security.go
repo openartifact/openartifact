@@ -57,6 +57,7 @@ type FindingFilter struct {
 // everything.
 type FindingListParams struct {
 	FindingFilter
+
 	// Types are the finding types to include (never empty: FindingTypes()).
 	Types []string
 	// Severity is the highest severity of the finding: critical, high, medium or low.

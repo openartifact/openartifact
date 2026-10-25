@@ -57,6 +57,8 @@ type projectCaller struct {
 	scopes []string
 	admin  bool
 	role   string // role in acme, "" = non-member
+	// anonymous sends no credentials at all.
+	anonymous bool
 }
 
 // projectStatus runs one request through RBACMiddleware as caller and returns
@@ -88,7 +90,9 @@ func projectStatus(t *testing.T, caller projectCaller, selfCreate, method, path 
 
 	req := httptest.NewRequestWithContext(t.Context(), method, path, http.NoBody)
 
-	if caller.kind == "" {
+	switch {
+	case caller.anonymous:
+	case caller.kind == "":
 		value, sess, err := auth.CreateSession(t.Context(), db, "user-1", "", "")
 		if err != nil {
 			t.Fatal(err)
@@ -96,7 +100,7 @@ func projectStatus(t *testing.T, caller projectCaller, selfCreate, method, path 
 
 		db.sessions[sess.TokenHash] = sess
 		req.AddCookie(&http.Cookie{Name: auth.SessionCookieName, Value: value})
-	} else {
+	default:
 		raw, tok, err := auth.CreateToken(t.Context(), db, caller.kind, "ci", "user-1", caller.scopes, nil)
 		if err != nil {
 			t.Fatal(err)
@@ -375,6 +379,69 @@ func TestRBACBundleAndPropertyRoutes(t *testing.T) {
 	for _, tc := range tests {
 		t.Run(tc.caller.kind+" "+tc.method+" "+tc.path, func(t *testing.T) {
 			if got := projectStatus(t, tc.caller, "", tc.method, tc.path); got != tc.want {
+				t.Fatalf("status = %d, want %d", got, tc.want)
+			}
+		})
+	}
+}
+
+// TestRBACSecurityRoutes drives the security routes through the real
+// RBACMiddleware. The findings routes let every authenticated principal that is
+// not a repository credential through (their handlers scope the result to the
+// projects the caller maintains, or answer 403); health is global manage; the
+// counts-only repository summary needs read on the repository.
+func TestRBACSecurityRoutes(t *testing.T) {
+	const (
+		findings = "/api/v1/security/findings"
+		summary  = "/api/v1/security/findings/summary"
+		export   = "/api/v1/security/findings/export"
+		health   = "/api/v1/security/health"
+		repoSum  = "/api/v1/repositories/app/security/summary"
+	)
+
+	admin := projectCaller{admin: true}
+	maintainer := projectCaller{role: models.ProjectRoleMaintainer}
+	developer := projectCaller{role: models.ProjectRoleDeveloper}
+	user := projectCaller{}
+	access := projectCaller{kind: auth.TokenKindAccess}
+	deploy := projectCaller{kind: auth.TokenKindDeploy}
+	adminDeploy := projectCaller{admin: true, kind: auth.TokenKindDeploy}
+	anon := projectCaller{anonymous: true}
+
+	tests := []struct {
+		name   string
+		caller projectCaller
+		path   string
+		want   int
+	}{
+		{"admin lists findings", admin, findings, http.StatusOK},
+		{"admin summary", admin, summary, http.StatusOK},
+		{"admin export", admin, export, http.StatusOK},
+		{"admin health", admin, health, http.StatusOK},
+		{"maintainer lists findings", maintainer, findings, http.StatusOK},
+		{"maintainer summary", maintainer, summary, http.StatusOK},
+		{"maintainer export", maintainer, export, http.StatusOK},
+		{"maintainer has no health", maintainer, health, http.StatusForbidden},
+		{"developer reaches the findings handler, which answers 403", developer, findings, http.StatusOK},
+		{"member-less user reaches the findings handler", user, findings, http.StatusOK},
+		{"developer has no health", developer, health, http.StatusForbidden},
+		{"user token reaches the findings handler", access, findings, http.StatusOK},
+		// A deploy token passes the coarse check like any authenticated caller;
+		// the handler gives it no scope and answers 403 (see the handler tests).
+		{"deploy token reaches the findings handler, which answers 403", deploy, findings, http.StatusOK},
+		{"admin deploy token reaches the findings handler, which answers 403", adminDeploy, findings, http.StatusOK},
+		{"deploy token has no health", deploy, health, http.StatusForbidden},
+		{"anonymous is refused on findings", anon, findings, http.StatusUnauthorized},
+		{"anonymous is refused on export", anon, export, http.StatusUnauthorized},
+		{"anonymous is refused on health", anon, health, http.StatusUnauthorized},
+		{"developer reads the repository summary", developer, repoSum, http.StatusOK},
+		{"user reads the repository summary", user, repoSum, http.StatusOK},
+		{"admin reads the repository summary", admin, repoSum, http.StatusOK},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			if got := projectStatus(t, tc.caller, "", http.MethodGet, tc.path); got != tc.want {
 				t.Fatalf("status = %d, want %d", got, tc.want)
 			}
 		})
