@@ -16,7 +16,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `cmd/oa` | CLI client |
 | `cmd/resetpw` | Admin password reset tool |
 | `internal/api` | REST handlers (`/api/v1/*`), upload handlers (`upload_{deb,rpm,npm,maven}.go`), `openapi.json` |
-| `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{name}/...`, `/v2/...`); `base` holds the shared handler plumbing, `formattest` test helpers |
+| `internal/format/<fmt>` | Native protocol handlers per package format (`/repos/{name}/...`, `/v2/...`); `base` holds the shared handler plumbing, `filerepo` the one handler behind ivy and sbt, `formattest` test helpers |
 | `internal/middleware` | Security headers, recovery, request ID, tracing, metrics, logging, CORS, IP allowlist, rate limit, RBAC, CSRF, audit |
 | `internal/auth` | Sessions, tokens, permission evaluation, OIDC/SAML, SSO provisioning, bootstrap |
 | `internal/database` | `Database` interface (`interfaces.go`), Postgres implementation (`postgres*.go`), sqlc code in `dbsqlc/`, queries in `queries/*.sql` |
