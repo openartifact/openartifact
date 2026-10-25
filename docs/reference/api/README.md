@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # REST API reference
 
-Enterprise-grade artifact repository manager with support for multiple package formats
+REST API of the OpenArtifact artifact repository manager.
 
 This reference is generated from the embedded OpenAPI document `internal/api/openapi.json` and lists 269 endpoints in 28 tags. Authentication, token kinds, CSRF handling and worked examples are in the [REST API guide](../../integrations/api.md).
 
@@ -19,7 +19,7 @@ Unless an endpoint says otherwise, a request must satisfy one of: `bearerAuth` o
 | Scheme | Type | Details | Description |
 |---|---|---|---|
 | `bearerAuth` | http | scheme `bearer` | Bearer token authentication |
-| `cookieAuth` | apiKey | `session` in cookie | Session cookie authentication |
+| `cookieAuth` | apiKey | `oa_session` in cookie | Session cookie set by POST /api/v1/auth/login. State-changing requests (POST, PUT, PATCH, DELETE) must also send the value of the readable oa_csrf cookie in the X-CSRF-Token header. |
 
 ## Servers
 

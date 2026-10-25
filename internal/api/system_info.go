@@ -37,6 +37,7 @@ type SystemInfoHandler struct {
 	blobStore   storage.BlobStore
 	storageType string
 	docsURL     string
+	apiRefOn    bool
 
 	mu            sync.Mutex
 	checkedAt     time.Time
@@ -60,6 +61,15 @@ func NewSystemInfoHandler(version, commit, buildTime string, db database.Databas
 // advertises as docs_url, resolved against the server version.
 func (h *SystemInfoHandler) WithDocsBaseURL(base string) *SystemInfoHandler {
 	h.docsURL = docsURL(base, h.version)
+
+	return h
+}
+
+// WithAPIReference sets whether the public info endpoint advertises the
+// interactive API reference (api_reference_enabled), so the UI links it only
+// when it is served.
+func (h *SystemInfoHandler) WithAPIReference(enabled bool) *SystemInfoHandler {
+	h.apiRefOn = enabled
 
 	return h
 }
@@ -142,8 +152,9 @@ func (h *SystemInfoHandler) ServeHTTP(w http.ResponseWriter, _ *http.Request) {
 	}
 
 	body := map[string]any{
-		"version": h.version,
-		"status":  status,
+		"version":               h.version,
+		"status":                status,
+		"api_reference_enabled": h.apiRefOn,
 	}
 	if h.docsURL != "" {
 		body["docs_url"] = h.docsURL

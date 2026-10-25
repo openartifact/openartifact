@@ -141,6 +141,10 @@ export type PublicSystemInfo = {
      * Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled.
      */
     docs_url?: string;
+    /**
+     * Whether the interactive API reference is served at /api/reference.
+     */
+    api_reference_enabled?: boolean;
 };
 
 export type SystemInfo = {
@@ -7669,16 +7673,23 @@ export type GetApiV1OpenapiYamlResponses = {
 
 export type GetApiV1OpenapiYamlResponse = GetApiV1OpenapiYamlResponses[keyof GetApiV1OpenapiYamlResponses];
 
-export type GetSwaggerData = {
+export type GetApiReferenceData = {
     body?: never;
     path?: never;
     query?: never;
-    url: '/swagger/';
+    url: '/api/reference';
 };
 
-export type GetSwaggerResponses = {
+export type GetApiReferenceErrors = {
     /**
-     * Swagger UI HTML
+     * The API reference is disabled
+     */
+    404: unknown;
+};
+
+export type GetApiReferenceResponses = {
+    /**
+     * API reference HTML
      */
     200: unknown;
 };

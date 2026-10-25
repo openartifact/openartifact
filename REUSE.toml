@@ -99,3 +99,11 @@ path = [
 precedence = "override"
 SPDX-FileCopyrightText = "The OpenArtifact Authors"
 SPDX-License-Identifier = "CC-BY-SA-4.0"
+
+# Scalar API reference standalone bundle (@scalar/api-reference, vendored by
+# scripts/update-scalar.sh; embedded into the server binary, gzip-compressed).
+[[annotations]]
+path = "internal/api/apiref/scalar-*.js.gz"
+precedence = "override"
+SPDX-FileCopyrightText = "Scalar (https://github.com/scalar/scalar)"
+SPDX-License-Identifier = "MIT"

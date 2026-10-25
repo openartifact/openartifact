@@ -5,7 +5,7 @@
 import { describe, it, expect, spyOn, type Mock } from 'bun:test'
 import { ref } from 'vue'
 import { flushPromises } from '@vue/test-utils'
-import { formatVersion, useAppVersion, useDocsUrl } from '../useAppVersion'
+import { formatVersion, useApiReferenceEnabled, useAppVersion, useDocsUrl } from '../useAppVersion'
 import { useDocsLink } from '../useDocsLink'
 
 const json = (body: unknown, status = 200): Response =>
@@ -36,6 +36,20 @@ describe('system info composables', () => {
     const docs = useDocsUrl()
     await flushPromises()
     expect(docs.value).toBeNull()
+  })
+
+  it('exposes whether the API reference is served', async () => {
+    serve({ version: '0.9.0', api_reference_enabled: true })
+    const on = useApiReferenceEnabled()
+    await flushPromises()
+    expect(on.value).toBe(true)
+  })
+
+  it('treats a missing api_reference_enabled as off', async () => {
+    serve({ version: '0.9.0' })
+    const on = useApiReferenceEnabled()
+    await flushPromises()
+    expect(on.value).toBe(false)
   })
 
   it('drops a docs url that is not http(s)', async () => {

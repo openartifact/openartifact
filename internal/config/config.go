@@ -96,6 +96,8 @@ type Config struct {
 	Audit AuditConfig `yaml:"audit"`
 	// Docs configures the links from the web UI to the published documentation.
 	Docs DocsConfig `yaml:"docs"`
+	// API configures the REST API explorer (see docs/integrations/api.md).
+	API APIConfig `yaml:"api"`
 	// Branding white-labels the UI: product name, logos, favicon, colour, login
 	// message and support/source links (see docs/operations/branding.md).
 	// Administrators can override every value at runtime.
@@ -188,6 +190,22 @@ type WorkersConfig struct {
 	// failed) webhook delivery records are kept before the hourly purge deletes
 	// them. 0 keeps them forever. Pending deliveries are never purged.
 	WebhookDeliveryRetentionDays int `yaml:"webhookDeliveryRetentionDays"`
+}
+
+// APIConfig configures the REST API surface that is not the API itself.
+type APIConfig struct {
+	// Docs configures the interactive API reference.
+	Docs APIDocsConfig `yaml:"docs"`
+}
+
+// APIDocsConfig configures the interactive API reference served at
+// /api/reference.
+type APIDocsConfig struct {
+	// Enabled serves the interactive API reference at /api/reference (the old
+	// /swagger paths redirect to it) and links it from the About dialog. When
+	// false both answer 404. The OpenAPI spec at /api/v1/openapi.json and
+	// /api/v1/openapi.yaml is always served: the web client and tooling use it.
+	Enabled bool `yaml:"enabled"`
 }
 
 // DocsConfig configures the documentation links shown in the web UI.
@@ -654,6 +672,7 @@ func defaultConfig() *Config {
 		},
 		StorageReplica: defaultReplicaConfig(),
 		Docs:           DocsConfig{BaseURL: "https://openartifact.github.io/"},
+		API:            APIConfig{Docs: APIDocsConfig{Enabled: true}},
 		Trash: TrashConfig{
 			RetentionDays: 7,
 			PurgeInterval: 15 * time.Minute,
@@ -868,6 +887,7 @@ func applyEnvOverrides(cfg *Config) {
 	overrideString(&cfg.Workers.DockerUploadDir, "OPENARTIFACT_DOCKER_UPLOAD_DIR")
 	overrideInt(&cfg.Workers.WebhookDeliveryRetentionDays, "OPENARTIFACT_WEBHOOK_DELIVERY_RETENTION_DAYS")
 	overrideString(&cfg.Docs.BaseURL, "OPENARTIFACT_DOCS_BASE_URL")
+	overrideBool(&cfg.API.Docs.Enabled, "OPENARTIFACT_API_DOCS_ENABLED")
 	overrideInt(&cfg.Trash.RetentionDays, "OPENARTIFACT_TRASH_RETENTION")
 	overrideDuration(&cfg.Trash.PurgeInterval, "OPENARTIFACT_TRASH_PURGE_INTERVAL")
 	overrideInt(&cfg.Audit.RetentionDays, "OPENARTIFACT_AUDIT_RETENTION_DAYS")

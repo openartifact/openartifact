@@ -65,7 +65,7 @@ Client URLs and setup per format: [docs/formats](docs/formats/README.md).
 - Cleanup policies, storage quotas, artifact properties, release bundles with promotion pipelines
 - Blob storage on filesystem, S3, GCS, Azure, Garage, SeaweedFS or an OCI registry; backups
 - GPG-signed APT and RPM metadata; signed, attested release images
-- Webhooks, audit log, Prometheus metrics, REST API with OpenAPI spec and Swagger UI
+- Webhooks, audit log, Prometheus metrics, REST API with OpenAPI spec and a self-hosted interactive API reference
 - `oa` CLI with Nexus/Artifactory import; optional MCP server and AI analysis (both off by default)
 
 ## Quickstart

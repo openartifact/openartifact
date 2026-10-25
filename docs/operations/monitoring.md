@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 Health and readiness endpoints, Prometheus metrics, OpenTelemetry tracing, the audit log and server logs.
 
-The REST API, OpenAPI spec and Swagger UI are covered in [API](../integrations/api.md).
+The REST API, OpenAPI spec and interactive API reference are covered in [API](../integrations/api.md).
 
 ## Health and readiness
 

@@ -12,6 +12,21 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 ## Endpoints
 
+### `GET /api/reference`
+
+API reference
+
+Interactive API documentation (Scalar), served from the binary. The legacy /swagger and /swagger/ paths redirect here. Answers 404 when api.docs.enabled is false.
+
+**Authentication:** none (public endpoint).
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | API reference HTML | - |
+| `404` | The API reference is disabled | - |
+
 ### `GET /api/v1/openapi.json`
 
 OpenAPI specification
@@ -39,18 +54,4 @@ Returns the OpenAPI 3.0 specification in YAML format
 | Status | Description | Body |
 |---|---|---|
 | `200` | OpenAPI specification | `application/yaml`: object |
-
-### `GET /swagger/`
-
-Swagger UI
-
-Interactive API documentation
-
-**Authentication:** none (public endpoint).
-
-**Responses**
-
-| Status | Description | Body |
-|---|---|---|
-| `200` | Swagger UI HTML | - |
 

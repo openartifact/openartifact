@@ -101,7 +101,7 @@ func (a *app) registerPublicRoutes() error {
 	api.NewOIDCHandler(db, log, evaluator, hmacKey, cfg.BaseURL).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
 	api.NewSAMLHandler(db, log, evaluator, hmacKey, cfg.BaseURL, cfg).WithTrustedProxies(w.trustedProxies).RegisterPublic(router)
 
-	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).WithDocsBaseURL(cfg.Docs.BaseURL)
+	w.public.sysInfo = api.NewSystemInfoHandler(version, commit, buildTime, db, a.store.blobs, cfg.Storage.Type).WithDocsBaseURL(cfg.Docs.BaseURL).WithAPIReference(cfg.API.Docs.Enabled)
 	w.public.sysInfo.RegisterPublic(router)
 
 	// Public branding (no auth required: the login page and the app shell need
@@ -113,7 +113,7 @@ func (a *app) registerPublicRoutes() error {
 	api.NewAdminSSOHandler(db, log, evaluator, cfg.BaseURL, cfg).RegisterPublic(router)
 
 	// OpenAPI documentation
-	api.NewOpenAPIHandler().RegisterRoutes(router)
+	api.NewOpenAPIHandler(version, cfg.API.Docs.Enabled).RegisterRoutes(router)
 
 	// RFC 9728 protected-resource metadata of the MCP endpoint: public, outside
 	// the authenticated router so clients can discover how to authenticate.

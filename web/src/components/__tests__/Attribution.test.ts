@@ -19,7 +19,7 @@ const json = (body: unknown): Response => new Response(JSON.stringify(body), { s
 function serve(): void {
   spyOn(globalThis, 'fetch').mockImplementation((async (input: RequestInfo | URL) => {
     const path = new URL(String(input), 'http://localhost').pathname
-    if (path === '/api/v1/system/info') return json({ version: '1.2.3', docs_url: 'https://docs.example.com/v1.2/' })
+    if (path === '/api/v1/system/info') return json({ version: '1.2.3', docs_url: 'https://docs.example.com/v1.2/', api_reference_enabled: true })
     if (path === '/api/v1/admin/system/info') return json({ version: '1.2.3', commit: '0123456789abcdef' })
     if (path === '/api/v1/auth/sso/providers') return json({ providers: [] })
     return json({})
@@ -97,6 +97,7 @@ describe('About dialog attribution', () => {
       expect(source.getAttribute('rel')).toBe('noopener noreferrer')
       expect(body.querySelector('[data-testid="about-upstream"]')!.getAttribute('href')).toBe(UPSTREAM)
       expect(body.querySelector('[data-testid="about-docs"]')!.getAttribute('href')).toBe('https://docs.example.com/v1.2/')
+      expect(body.querySelector('[data-testid="about-api-reference"]')!.getAttribute('href')).toBe('/api/reference')
       const support = body.querySelector('[data-testid="about-support"]')
       expect(support?.getAttribute('href') ?? null).toBe((payload as { support_url?: string } | null)?.support_url === 'https://help.acme.test' ? 'https://help.acme.test' : null)
     })

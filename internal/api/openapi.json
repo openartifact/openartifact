@@ -2,14 +2,15 @@
   "openapi": "3.0.3",
   "info": {
     "title": "OpenArtifact API",
-    "description": "Enterprise-grade artifact repository manager with support for multiple package formats",
-    "version": "1.0.0",
+    "description": "REST API of the OpenArtifact artifact repository manager.",
+    "version": "dev",
     "contact": {
       "name": "OpenArtifact",
       "url": "https://github.com/openartifact/openartifact"
     },
     "license": {
-      "name": "Apache 2.0"
+      "name": "AGPL-3.0-or-later",
+      "url": "https://www.gnu.org/licenses/agpl-3.0.html"
     }
   },
   "servers": [
@@ -36,8 +37,8 @@
       "cookieAuth": {
         "type": "apiKey",
         "in": "cookie",
-        "name": "session",
-        "description": "Session cookie authentication"
+        "name": "oa_session",
+        "description": "Session cookie set by POST /api/v1/auth/login. State-changing requests (POST, PUT, PATCH, DELETE) must also send the value of the readable oa_csrf cookie in the X-CSRF-Token header."
       }
     },
     "schemas": {
@@ -451,6 +452,10 @@
           "docs_url": {
             "type": "string",
             "description": "Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled."
+          },
+          "api_reference_enabled": {
+            "type": "boolean",
+            "description": "Whether the interactive API reference is served at /api/reference."
           }
         }
       },
@@ -13382,17 +13387,20 @@
         }
       }
     },
-    "/swagger/": {
+    "/api/reference": {
       "get": {
-        "summary": "Swagger UI",
-        "description": "Interactive API documentation",
+        "summary": "API reference",
+        "description": "Interactive API documentation (Scalar), served from the binary. The legacy /swagger and /swagger/ paths redirect here. Answers 404 when api.docs.enabled is false.",
         "tags": [
           "Documentation"
         ],
         "security": [],
         "responses": {
           "200": {
-            "description": "Swagger UI HTML"
+            "description": "API reference HTML"
+          },
+          "404": {
+            "description": "The API reference is disabled"
           }
         }
       }

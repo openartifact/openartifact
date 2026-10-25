@@ -1008,6 +1008,7 @@ Partial update: omitted fields stay unchanged.
 
 | Field | Type | Required | Description |
 |---|---|---|---|
+| `api_reference_enabled` | boolean | no | Whether the interactive API reference is served at /api/reference. |
 | `docs_url` | string | no | Absolute URL, ending in a slash, of the published documentation matching this server version. Omitted when documentation links are disabled. |
 | `status` | string | no | - |
 | `version` | string | no | - |

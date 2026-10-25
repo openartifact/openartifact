@@ -267,6 +267,18 @@ This page lists every configuration key with its type, built-in default and the 
 |---|---|---|---|---|
 | `docs.baseUrl` | `OPENARTIFACT_DOCS_BASE_URL` | string | `https://openartifact.github.io/` | `baseUrl` is the root of the published documentation site; the web UI links to the version matching the server (release builds) or to the latest docs (development builds). Point it at an internal mirror for air-gapped installs; empty hides every documentation link. |
 
+## api
+
+`api` configures the REST API explorer (see [integrations/api.md](../integrations/api.md)).
+
+### `api.docs`
+
+`api.docs` configures the interactive API reference.
+
+| YAML key | Env | Type | Default | Description |
+|---|---|---|---|---|
+| `api.docs.enabled` | `OPENARTIFACT_API_DOCS_ENABLED` | bool | `true` | `enabled` serves the interactive API reference at /api/reference (the old /swagger paths redirect to it) and links it from the About dialog. When false both answer 404. The OpenAPI spec at /api/v1/openapi.json and /api/v1/openapi.yaml is always served: the web client and tooling use it. |
+
 ## branding
 
 `branding` white-labels the UI: product name, logos, favicon, colour, login message and support/source links (see [operations/branding.md](../operations/branding.md)). Administrators can override every value at runtime.

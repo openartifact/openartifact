@@ -274,6 +274,13 @@ trash:
 docs:
   baseUrl: https://openartifact.github.io/
 
+# Interactive API reference at /api/reference (/swagger redirects there). With
+# enabled: false both answer 404 and the About dialog drops the link; the
+# OpenAPI spec (/api/v1/openapi.json, .yaml) is always served.
+api:
+  docs:
+    enabled: true
+
 # White-label branding of the web UI (docs/operations/branding.md). All keys
 # are optional; administrators can override each of them at runtime in
 # Administration > Branding, and a runtime value wins over this file.

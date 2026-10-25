@@ -19,6 +19,7 @@ export const enBranding = {
   'about.title': 'About {product}',
   'about.upstream': 'OpenArtifact project',
   'about.docs': 'Documentation',
+  'about.apiReference': 'API reference',
   'about.support': 'Support',
   'about.sourceHint': 'The source code of the version running here is available under the AGPL.',
 

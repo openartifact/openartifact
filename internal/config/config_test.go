@@ -1194,3 +1194,30 @@ func TestLoad_BootstrapConfig(t *testing.T) {
 		t.Errorf("Bootstrap = %+v, want %+v", cfg.Bootstrap, want)
 	}
 }
+
+
+func TestLoad_APIDocsEnabled(t *testing.T) {
+	t.Run("default is on", func(t *testing.T) {
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if !cfg.API.Docs.Enabled {
+			t.Error("expected api.docs.enabled to default to true")
+		}
+	})
+
+	t.Run("env turns it off", func(t *testing.T) {
+		t.Setenv("OPENARTIFACT_API_DOCS_ENABLED", "false")
+
+		cfg, err := Load("")
+		if err != nil {
+			t.Fatalf("Load() failed: %v", err)
+		}
+
+		if cfg.API.Docs.Enabled {
+			t.Error("expected OPENARTIFACT_API_DOCS_ENABLED=false to disable the API reference")
+		}
+	})
+}

@@ -10,6 +10,7 @@ import { getSystemInfo } from '../api/admin'
 // by every consumer.
 const version = ref<string | null>(null)
 const docsUrl = ref<string | null>(null)
+const apiReferenceEnabled = ref(false)
 let inflight: Promise<void> | null = null
 
 function load(): Promise<void> {
@@ -17,6 +18,7 @@ function load(): Promise<void> {
     .then((info) => {
       version.value = info?.version || null
       // The value is rendered as an href: anything but http(s) is dropped.
+      apiReferenceEnabled.value = info?.api_reference_enabled === true
       docsUrl.value = info?.docs_url && /^https?:\/\//i.test(info.docs_url) ? info.docs_url : null
     })
     .catch(() => {
@@ -41,11 +43,18 @@ export function useDocsUrl(): Ref<string | null> {
   return docsUrl
 }
 
+/** Whether the server serves the interactive API reference at /api/reference. */
+export function useApiReferenceEnabled(): Ref<boolean> {
+  void load()
+  return apiReferenceEnabled
+}
+
 /** Forgets the shared info so the next consumer fetches it again. Tests only. */
 export function resetAppInfo(): void {
   inflight = null
   version.value = null
   docsUrl.value = null
+  apiReferenceEnabled.value = false
 }
 
 /** Display form of a server version: `v1.2.3`, or `dev` for development builds. */

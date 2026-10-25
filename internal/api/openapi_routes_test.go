@@ -54,7 +54,7 @@ func TestOpenAPISpecMatchesRoutes(t *testing.T) {
 	sso := NewAdminSSOHandler(nil, nil, nil, "", nil)
 	sso.RegisterPublic(r)
 	sso.RegisterAuthed(r)
-	NewOpenAPIHandler().RegisterRoutes(r)
+	NewOpenAPIHandler("", true).RegisterRoutes(r)
 	NewAdminUsersHandler(nil, nil, nil).Register(r)
 	NewAdminGroupsHandler(nil, nil, nil).Register(r)
 	NewAdminPermissionsHandler(nil, nil, nil).Register(r)

@@ -33,6 +33,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <BookOpenIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ t('about.docs') }}
           </a>
         </li>
+        <li v-if="apiReferenceEnabled">
+          <a href="/api/reference" target="_blank" rel="noopener noreferrer" data-testid="about-api-reference" class="inline-flex items-center gap-1.5 text-primary hover:underline">
+            <CommandLineIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ t('about.apiReference') }}
+          </a>
+        </li>
         <li v-if="supportHref">
           <a :href="supportHref" target="_blank" rel="noopener noreferrer" data-testid="about-support" class="inline-flex items-center gap-1.5 text-primary hover:underline">
             <LifebuoyIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ t('about.support') }}
@@ -48,13 +53,13 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import { ArrowTopRightOnSquareIcon, BookOpenIcon, CodeBracketIcon, LifebuoyIcon } from '@heroicons/vue/24/outline'
+import { ArrowTopRightOnSquareIcon, BookOpenIcon, CodeBracketIcon, CommandLineIcon, LifebuoyIcon } from '@heroicons/vue/24/outline'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import { getAdminSystemInfo } from '../api/admin'
 import { useBrandingStore } from '../stores/branding'
 import { useSessionStore } from '../stores/session'
-import { useAppVersion, useDocsUrl, formatVersion } from '../composables/useAppVersion'
+import { useAppVersion, useApiReferenceEnabled, useDocsUrl, formatVersion } from '../composables/useAppVersion'
 import { formatCommit } from '../lib/buildInfo'
 import { DEFAULT_SOURCE_URL, safeUrl } from '../lib/branding'
 import { t, tp } from '../i18n/en'
@@ -66,6 +71,7 @@ const store = useBrandingStore()
 const session = useSessionStore()
 const version = useAppVersion()
 const docsUrl = useDocsUrl()
+const apiReferenceEnabled = useApiReferenceEnabled()
 
 const commit = ref<string | null>(null)
 watch(

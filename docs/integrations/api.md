@@ -14,9 +14,21 @@ The management API lives under `/api/v1`; the web UI, the [CLI](cli.md) and the 
 |---|---|
 | `/api/v1/openapi.json` | OpenAPI 3 spec (embedded from [`internal/api/openapi.json`](../../internal/api/openapi.json)) |
 | `/api/v1/openapi.yaml` | same spec rendered as YAML |
-| `/swagger/` | Swagger UI (`/swagger` redirects here); it loads its JS/CSS from `unpkg.com`, so the browser needs internet access |
+| `/api/reference` | Interactive API reference ([Scalar](https://github.com/scalar/scalar)), also linked from the About dialog |
+| `/swagger`, `/swagger/` | `301` redirects to `/api/reference` (the old Swagger UI path) |
 
-These routes need no authentication. The spec is the reference for request and response schemas; a test (`TestOpenAPISpecMatchesRoutes`) fails when a registered route is missing from it or the spec documents a route nobody serves. `GET /health`, `GET /ready` and `GET /metrics` are also unauthenticated and are covered in [monitoring](../operations/monitoring.md).
+These routes need no authentication. `info.version` of the spec is the running server version, `info.license` is `AGPL-3.0-or-later`. The spec is the reference for request and response schemas; a test (`TestOpenAPISpecMatchesRoutes`) fails when a registered route is missing from it or the spec documents a route nobody serves. `GET /health`, `GET /ready` and `GET /metrics` are also unauthenticated and are covered in [monitoring](../operations/monitoring.md).
+
+### API reference
+
+The reference is served by the binary itself: the Scalar bundle (pinned version, MIT) is embedded, so it works on air-gapped hosts and makes no request to another origin. The page runs under `Content-Security-Policy: default-src 'self'; script-src 'self'; style-src 'self' 'unsafe-inline'; img-src 'self' data:; font-src 'self' data:; connect-src 'self'; frame-ancestors 'none'` with no inline script; telemetry, the hosted request proxy and external fonts are switched off.
+
+"Test request" sends the call to the same origin and works in two ways:
+
+- **Session:** sign in to the web UI first. The browser attaches the `oa_session` cookie and the page adds the `X-CSRF-Token` header (read from the `oa_csrf` cookie) to `POST`, `PUT`, `PATCH` and `DELETE`, so mutations are not rejected with `403 csrf_protection`.
+- **Token:** open the authentication panel, choose `bearerAuth` and paste an access token. Bearer calls need no CSRF header.
+
+To turn it off set `api.docs.enabled: false` (`OPENARTIFACT_API_DOCS_ENABLED=false`, see the [configuration reference](../reference/config.md#api)). `/api/reference` and the `/swagger` redirects then answer `404` and the About dialog drops the link. `/api/v1/openapi.json` and `/api/v1/openapi.yaml` are always served, because the web client and external tooling rely on them. The bundle is embedded as `internal/api/apiref/scalar-<version>.js.gz`; `scripts/update-scalar.sh <version>` vendors a new one.
 
 ## Authentication
 

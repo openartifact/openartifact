@@ -81,7 +81,7 @@ These pages are also published, one version per release, at <https://openartifac
 | [CI integration](integrations/ci.md) | Upload, bundle and promote from Jenkins, Drone, Woodpecker or any shell with `oa`; least-privilege CI tokens |
 | [Declarative configuration](integrations/declarative.md) | `oa apply`, `oa diff` and `oa export`: manage users, repositories, permissions and more from YAML manifests, GitOps usage |
 | [MCP server](integrations/mcp.md) | Tools, permissions and client configuration (Claude, Cursor, VS Code, Codex, omp) |
-| [REST API](integrations/api.md) | OpenAPI spec, Swagger UI, authentication, conventions |
+| [REST API](integrations/api.md) | OpenAPI spec, interactive API reference, authentication, conventions |
 | [AI analysis](integrations/ai-analysis.md) | Optional LLM analysis of package manifests |
 | [yap](integrations/yap.md) | Build deb/rpm packages with yap, publish them and install from clients |
 
