@@ -909,20 +909,23 @@ func isSPARepoPath(segments []string) bool {
 		return false
 	}
 
-	switch len(segments) {
-	case 2: // /repos/{name}, /repos/new
+	switch {
+	case len(segments) == 2: // /repos/{name}
 		return true
-	case 3: // /repos/{name}/edit|settings|browse|graph|trash
+	case len(segments) == 3: // legacy /repos/{name}/edit|settings|browse|graph|trash, redirected client-side
 		switch segments[2] {
 		case "edit", "settings", "browse", "graph", "trash":
 			return true
 		}
 
 		return false
-	case 5: // /repos/{name}/packages/{format}/{pkg}
-		return segments[2] == "packages"
 	default:
-		return false
+		// /repos/{name}/packages/{package...}[/versions/{version...}] and the
+		// legacy /repos/{name}/packages/{format}/{package}: package names may
+		// hold "/" (npm scope, docker image path, go module), so any depth
+		// under the literal "packages" segment is the artifact page. No format
+		// handler registers a route under that literal.
+		return segments[2] == "packages"
 	}
 }
 

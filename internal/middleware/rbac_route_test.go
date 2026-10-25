@@ -8,6 +8,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"os"
+	"path/filepath"
 	"regexp"
 	"strings"
 	"testing"
@@ -90,6 +91,10 @@ func TestIsSPARepoPathAndBypass(t *testing.T) {
 		{"package detail docker", "/repos/myrepo/packages/docker/org%2Fapp", true},
 		{"package detail raw path with extension", "/repos/myrepo/packages/raw/docs%2Fhello.txt", true},
 		{"package detail dotted name", "/repos/myrepo/packages/npm/lodash.debounce", true},
+		{"artifact page", "/repos/myrepo/packages/lodash", true},
+		{"artifact page scoped npm", "/repos/myrepo/packages/@scope/pkg", true},
+		{"artifact page version", "/repos/myrepo/packages/org/app/versions/1.2.3", true},
+		{"packages without a package", "/repos/myrepo/packages", false},
 
 		// Real format-handler endpoints that must NOT be treated as pages.
 		{"npm packument", "/repos/myrepo/lodash", false},
@@ -193,20 +198,31 @@ func TestMethodToActionDockerPaths(t *testing.T) {
 }
 
 // TestVueRepoRoutesAreServedAsSPA keeps the server's hand-written SPA matcher
-// in sync with web/src/router/index.ts: every /repos/... vue-router path must
+// in sync with web/src/router/routes: every /repos/... vue-router path must
 // deep-load as a page navigation.
 func TestVueRepoRoutesAreServedAsSPA(t *testing.T) {
-	src, err := os.ReadFile("../../web/src/router/index.ts")
-	if err != nil {
-		t.Fatalf("read router: %v", err)
+	files, err := filepath.Glob("../../web/src/router/routes/*.ts")
+	if err != nil || len(files) == 0 {
+		t.Fatalf("no route files found: %v", err)
 	}
 
-	paramRe := regexp.MustCompile(`:(\w+)`)
+	var src []byte
+
+	for _, f := range files {
+		b, err := os.ReadFile(f)
+		if err != nil {
+			t.Fatalf("read routes: %v", err)
+		}
+
+		src = append(src, b...)
+	}
+
+	paramRe := regexp.MustCompile(`:(\w+)(\(\.\+\))?`)
 	routeRe := regexp.MustCompile(`path:\s*'(/repos[^']*)'`)
 
 	matches := routeRe.FindAllStringSubmatch(string(src), -1)
 	if len(matches) == 0 {
-		t.Fatal("no /repos routes found in router/index.ts")
+		t.Fatal("no /repos routes found in router/routes")
 	}
 
 	for _, m := range matches {

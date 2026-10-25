@@ -212,6 +212,7 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 	// provider disabled, so it stays off the login page until it is enabled.
 	var in struct {
 		models.SSOProvider
+
 		Enabled *bool `json:"enabled"`
 	}
 
