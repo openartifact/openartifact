@@ -36,7 +36,7 @@ Guidance for coding agents working on OpenArtifact: a self-hosted, multi-format 
 | `tests/` | Go integration/handler tests; `tests/integration/` uses testcontainers |
 | `docker/` | Dockerfile (shell-less runtime: `RUNTIME=dhi` default, needs dhi.io login, or `distroless`; `-healthcheck` flag, no RUN in the final stage; optional `SCANNERS` build arg (none, trivy, grype or all) copies digest-pinned Trivy/Grype binaries in, default none; bumping a pinned scanner version also means `scripts/update-scanner-manifest.sh`, which refreshes the runtime-install checksums in `internal/vuln/scanners_manifest.json`), compose, `.env.example` (compose credentials; the full env reference is the root `.env.example`) |
 | `bench/` | Benchmark harness: `bench/run.sh` + `oabench` load generator (`make bench-load`) |
-| `tools/` | Separate Go module (`tools/go.mod`) pinning sqlc, govulncheck, actionlint |
+| `tools/` | Separate Go module (`tools/go.mod`) pinning sqlc, govulncheck, deadcode, actionlint |
 | `cmd/docgen` | Generator of `docs/reference/*` (config keys, metrics, `oa` CLI, REST API); `make docs-gen`, drift checked in CI (`make docs-check`) |
 | `docs/` | User and developer documentation (index: `docs/README.md`); assets in `docs/assets/`; `docs/reference/` is generated, never hand-edited. Published at <https://openartifact.github.io/> by the separate openartifact.github.io repo (VitePress, versioned) |
 
@@ -49,6 +49,7 @@ make test             # go test -short -race ./...
 make test-integration # -tags=integration tests (Postgres/S3 env or a container runtime)
 make lint             # golangci-lint v2
 make vet
+make deadcode         # unreachable-code gate (scripts/deadcode-check.sh); docs/development/README.md#dead-code-gate
 make generate         # go tool -modfile=tools/go.mod sqlc generate (after editing internal/database/queries/*.sql)
 make bench            # Go micro-benchmarks (-benchmem)
 make bench-load       # bench/run.sh: seed a running instance and run HTTP load scenarios (OA_URL, OA_USER, OA_PASS, OA_PID)
@@ -62,7 +63,7 @@ DB/S3-backed tests (behind `-tags=integration`) skip unless `TEST_DATABASE_URL` 
 
 Routing: every repo-scoped format handler registers relative routes on the single `/repos/{name}` subrouter in `cmd/server/main.go`. Never register an absolute `/repos/{name}/...` route on `authedAPI` — the mount shadows it (404) or it hijacks the subrouter. Shared catch-alls (`PUT /*`: npm publish + GOPROXY upload) are dispatched explicitly there.
 
-Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck and actionlint are `tool` directives in `tools/go.mod` (separate module so Dependabot bumps them without bloating the main module): run them as `go tool -modfile=tools/go.mod <sqlc|govulncheck|actionlint> …` (`make generate` runs sqlc). CI actions are pinned by commit SHA and container images by `@sha256` digest; Dependabot updates both.
+Toolchain: Go 1.27.x, golangci-lint v2, bun. sqlc, govulncheck, deadcode and actionlint are `tool` directives in `tools/go.mod` (separate module so Dependabot bumps them without bloating the main module): run them as `go tool -modfile=tools/go.mod <sqlc|govulncheck|deadcode|actionlint> …` (`make generate` runs sqlc, `make deadcode` the dead-code gate). CI actions are pinned by commit SHA and container images by `@sha256` digest; Dependabot updates both.
 
 ## Conventions and invariants
 
@@ -106,7 +107,7 @@ Area-specific rules live in `.agents/rules/*.md` (glob-scoped; each is pointed t
 
 ## CI and releases
 
-`.github/workflows/ci.yml` runs on PRs, `main` and tags; treat every job as a required check: `go` (build, vet, `go mod tidy -diff`, govulncheck, race tests), `integration` (Postgres + Garage + testcontainers), `lint` (golangci-lint), `reuse`, `sqlc` (generate drift), `web` (typecheck, generated API client drift, tests, build, bundle size), `security` (Trivy image/fs/config gates on HIGH/CRITICAL, SARIF uploaded), `docs` (generated reference drift, docs site build and dead-link check), `workflow-lint` (actionlint + zizmor, config in `.github/zizmor.yml`), `dependency-review` (PRs). `codeql.yml` (push, PRs, weekly), `scheduled-scan.yml` (weekly Trivy on the `latest` and newest stable image tags) and `scorecard.yml` run separately.
+`.github/workflows/ci.yml` runs on PRs, `main` and tags; treat every job as a required check: `go` (build, vet, `go mod tidy -diff`, govulncheck, deadcode gate, race tests), `integration` (Postgres + Garage + testcontainers), `lint` (golangci-lint), `reuse`, `sqlc` (generate drift), `web` (typecheck, generated API client drift, tests, build, bundle size), `security` (Trivy image/fs/config gates on HIGH/CRITICAL, SARIF uploaded), `docs` (generated reference drift, docs site build and dead-link check), `workflow-lint` (actionlint + zizmor, config in `.github/zizmor.yml`), `dependency-review` (PRs). `codeql.yml` (push, PRs, weekly), `scheduled-scan.yml` (weekly Trivy on the `latest` and newest stable image tags) and `scorecard.yml` run separately.
 
 `release.yml` runs on `v*.*.*` tags: checks `VERSION` matches the tag, tests, then GoReleaser binaries (provenance attested) and a multi-arch image to `ghcr.io/openartifact/openartifact`. The image is Trivy-gated before push, carries `org.opencontainers.image.{title,description,vendor,authors,licenses,documentation}` labels/annotations, has SBOM and `provenance: mode=max` attached, is signed with cosign (keyless) and gets a build-provenance attestation. Verification commands: `docs/security/signing.md`.
 

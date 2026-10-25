@@ -22,7 +22,7 @@ env:
   # Dependabot does not track the version inputs below (bun-version,
   # golangci-lint version, Trivy binary version used by trivy-action); bump
   # them by hand (TRIVY_VERSION also in release.yml and scheduled-scan.yml).
-  # sqlc, govulncheck and actionlint live in tools/go.mod and are bumped by
+  # sqlc, govulncheck, deadcode and actionlint live in tools/go.mod and are bumped by
   # Dependabot (gomod, /tools).
   BUN_VERSION: "1.4.4"
   GOLANGCI_LINT_VERSION: "v2.15.0"
@@ -60,6 +60,9 @@ jobs:
 
       - name: govulncheck
         run: go tool -modfile=tools/go.mod govulncheck ./...
+
+      - name: deadcode (unreachable code outside scripts/deadcode-baseline.txt)
+        run: scripts/deadcode-check.sh
 
       - name: go test (race, unit packages)
         run: go test -race -timeout 10m ./...

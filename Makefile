@@ -3,7 +3,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 .PHONY: help build run test test-integration test-coverage test-race clean lint fmt vet sec check deps \
-        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate docs-gen docs-check bench bench-load
+        docker-build docker-run docker-stop docker-up migrate web-build web-dev build-cli generate docs-gen docs-check deadcode bench bench-load
 
 # Variables
 BINARY_NAME=openartifact
@@ -48,6 +48,7 @@ help:
 	@echo "  generate        - Run sqlc generate (DB codegen)"
 	@echo "  docs-gen        - Regenerate docs/reference (config, metrics, CLI, REST API)"
 	@echo "  docs-check      - Fail when docs/reference is out of date"
+	@echo "  deadcode        - Fail on unreachable Go code not in scripts/deadcode-baseline.txt"
 	@echo "  deps            - Download and tidy dependencies"
 	@echo "  docker-build    - Build Docker image"
 	@echo "  docker-run      - Run Docker container"
@@ -134,6 +135,9 @@ docs-gen:
 
 docs-check:
 	$(GO) run ./cmd/docgen -check
+
+deadcode:
+	scripts/deadcode-check.sh
 
 bench:
 	@echo "Running benchmarks..."
