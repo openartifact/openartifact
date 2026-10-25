@@ -5,85 +5,54 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 -->
 
 <template>
-  <div class="space-y-5">
-    <!-- PageHead -->
+  <div class="space-y-4">
     <SectionActions>
-        <div class="flex items-center gap-2">
-          <AppButton variant="primary" size="sm" @click="openGrant">
-            {{ t('adm.permissions.create') }}
-          </AppButton>
-        </div>
-      </SectionActions>
+      <AppButton size="sm" class="max-md:h-11" @click="openGrant">
+        <PlusIcon class="h-4 w-4" aria-hidden="true" />
+        {{ t('adm.permissions.create') }}
+      </AppButton>
+    </SectionActions>
 
-    <!-- TableCard -->
-    <div class="bg-surface rounded-xl border border-border overflow-hidden">
-      <div class="px-4 py-3 border-b border-border flex items-center justify-between">
-        <h3 class="text-sm font-semibold tracking-tight">{{ t('adm.permissions.listTitle') }}</h3>
-        <span class="text-caption font-mono text-muted">{{ permissions.length }} {{ t('adm.common.total') }}</span>
-      </div>
-      <div v-if="loading" class="px-4 py-8 text-center text-muted">{{ t('common.loading') }}</div>
-      <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
-      <EmptyState
-        v-else-if="permissions.length === 0"
-        :title="t('adm.permissions.empty')"
-        :description="t('adm.permissions.emptyHint')"
-        :docs-url="docsUrl"
-        :docs-label="t('docs.rbac')"
-      />
-      <div v-else class="overflow-x-auto">
-        <table class="w-full text-sm">
-          <thead>
-            <tr class="text-caption font-semibold text-muted bg-surface-hover/30">
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.permissions.column.name') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.permissions.column.repositories') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.permissions.column.paths') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('adm.permissions.column.actions') }}</th>
-              <th scope="col" class="text-left px-4 py-2.5 font-medium">{{ t('common.actions') }}</th>
-            </tr>
-          </thead>
-          <tbody class="divide-y divide-border">
-            <tr v-for="perm in permissions" :key="perm.id" class="hover:bg-surface-hover/40 transition-colors">
-              <td class="px-4 py-3">
-                <span class="font-mono text-ui font-medium">{{ perm.name || '—' }}</span>
-              </td>
-              <td class="px-4 py-3">
-                <span class="font-mono text-xs px-2 py-0.5 rounded bg-surface-hover text-foreground/80">
-                  {{ perm.repository_filter || '—' }}
-                </span>
-              </td>
-              <td class="px-4 py-3">
-                <span class="font-mono text-xs px-2 py-0.5 rounded bg-surface-hover text-foreground/80">
-                  {{ perm.path_pattern || '—' }}
-                </span>
-              </td>
-              <td class="px-4 py-3">
-                <div class="flex flex-wrap gap-1.5">
-                  <span v-for="action in perm.actions ?? []" :key="action" :class="getActionPillClasses(action)">
-                    {{ action }}
-                  </span>
-                </div>
-              </td>
-              <td class="px-4 py-3">
-                <button
-                  type="button"
-                  @click="revoke(perm)"
-                  :title="t('admin.permissions.revoke')"
-                  :aria-label="`${t('admin.permissions.revoke')}: ${perm.name}`"
-                  class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors"
-                >
-                  <TrashIcon class="w-4 h-4" aria-hidden="true" />
-                </button>
-              </td>
-            </tr>
-          </tbody>
-        </table>
-      </div>
-    </div>
+    <FilterBar
+      :search="list.text.q"
+      :search-label="t('settings.permissions.search')"
+      :placeholder="t('settings.permissions.search')"
+      :active="list.filtered.value"
+      @update:search="list.setFilter('q', $event)"
+      @clear="list.clear()"
+    />
+
+    <ListTable :columns="columns" :caption="t('adm.permissions.listTitle')" :query="list" :empty-title="t('adm.permissions.empty')" :empty-hint="t('adm.permissions.emptyHint')">
+      <template #empty-action><DocsLink :url="docsUrl">{{ t('docs.rbac') }}</DocsLink></template>
+      <template #cell-name="{ row }"><span class="font-mono text-ui font-medium">{{ row.name || '—' }}</span></template>
+      <template #cell-repository_filter="{ row }">
+        <span class="rounded bg-surface-hover px-2 py-0.5 font-mono text-xs text-foreground/80">{{ row.repository_filter || '—' }}</span>
+      </template>
+      <template #cell-path_pattern="{ row }">
+        <span class="rounded bg-surface-hover px-2 py-0.5 font-mono text-xs text-foreground/80">{{ row.path_pattern || '—' }}</span>
+      </template>
+      <template #cell-actions_list="{ row }">
+        <div class="flex flex-wrap gap-1.5">
+          <span v-for="action in row.actions ?? []" :key="action" :class="getActionPillClasses(action)">{{ action }}</span>
+        </div>
+      </template>
+      <template #cell-actions="{ row }">
+        <button
+          type="button"
+          :title="t('admin.permissions.revoke')"
+          :aria-label="`${t('admin.permissions.revoke')}: ${row.name}`"
+          class="inline-flex h-8 w-8 items-center justify-center rounded-md text-muted hover:bg-danger/10 hover:text-danger max-md:h-11 max-md:w-11"
+          @click="revokeTarget = row"
+        >
+          <TrashIcon class="h-4 w-4" aria-hidden="true" />
+        </button>
+      </template>
+    </ListTable>
 
     <!-- Create target drawer -->
-    <AdminDialog
+    <Drawer
       :open="grantDrawerOpen"
-      drawer
+      :busy="saving"
       :eyebrow="t('adm.permissions.eyebrow')"
       :title="t('adm.permissions.createTitle')"
       @close="closeGrant"
@@ -162,7 +131,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ t('common.create') }}
         </AppButton>
       </template>
-    </AdminDialog>
+    </Drawer>
 
     <ConfirmDialog
       :open="revokeTarget !== null"
@@ -180,7 +149,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import AppButton from '../../../components/AppButton.vue'
 import ConfirmDialog from '../../../components/ConfirmDialog.vue'
 import SectionActions from '../../../components/SectionActions.vue'
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import {
   listPermissions,
   createPermissionTarget,
@@ -194,23 +163,51 @@ import {
   type UserItem,
   type GroupItem,
 } from '../../../api/admin'
-import AdminDialog from '../../../components/AdminDialog.vue'
-import EmptyState from '../../../components/EmptyState.vue'
+import DocsLink from '../../../components/DocsLink.vue'
+import Drawer from '../../../components/ui/Drawer.vue'
+import FilterBar from '../../../components/ui/FilterBar.vue'
+import ListTable, { type ListColumn } from '../../../components/ui/ListTable.vue'
+import { useLocalList } from '../../../composables/useLocalList'
+import { useUrlFlag } from '../../../composables/useUrlFlag'
+import { strParam } from '../../../composables/useUrlState'
 import { useDocsLink } from '../../../composables/useDocsLink'
 import { useToastStore } from '../../../stores/toast'
 import { t } from '../../../i18n/en'
-import { TrashIcon } from '@heroicons/vue/24/outline'
+import { PlusIcon, TrashIcon } from '@heroicons/vue/24/outline'
 
 const toasts = useToastStore()
 const docsUrl = useDocsLink('settings-permissions')
 
-const permissions = ref<PermissionItem[]>([])
 const users = ref<UserItem[]>([])
 const groups = ref<GroupItem[]>([])
-const loading = ref(false)
-const loadError = ref('')
 const saving = ref(false)
-const grantDrawerOpen = ref(false)
+
+const columns: ListColumn[] = [
+  { key: 'name', label: t('adm.permissions.column.name'), sortable: true },
+  { key: 'repository_filter', label: t('adm.permissions.column.repositories') },
+  { key: 'path_pattern', label: t('adm.permissions.column.paths') },
+  { key: 'actions_list', label: t('adm.permissions.column.actions') },
+  { key: 'actions', label: t('common.actions'), actions: true },
+]
+
+// /permission-targets returns every target at once; users and groups feed the assign-to select.
+const { list, refresh: load } = useLocalList({
+  filters: { q: strParam() },
+  debounce: ['q'],
+  sorts: ['name'],
+  limit: 25,
+  async load() {
+    const [res, usersRes, groupsRes] = await Promise.all([listPermissions(), listAllUsers(), listGroups()])
+    users.value = usersRes.items
+    groups.value = groupsRes.items
+    return res.items
+  },
+  match: (p, f) => {
+    const q = f.q.trim().toLowerCase()
+    return !q || [p.name, p.repository_filter, p.path_pattern].some((v) => v?.toLowerCase().includes(q))
+  },
+  compare: (a, b) => (a.name ?? '').localeCompare(b.name ?? ''),
+})
 
 const formData = ref({
   name: '',
@@ -235,23 +232,16 @@ function getActionPillClasses(action: string): string {
   return `${base} bg-surface-hover text-foreground`
 }
 
-async function load(): Promise<void> {
-  loading.value = true
-  loadError.value = ''
-  try {
-    const [res, usersRes, groupsRes] = await Promise.all([listPermissions(), listAllUsers(), listGroups()])
-    permissions.value = res.items
-    users.value = usersRes.items
-    groups.value = groupsRes.items
-  } catch (err) {
-    loadError.value = err instanceof Error ? err.message : t('adm.permissions.loadFailed')
-    toasts.error(loadError.value)
-  } finally {
-    loading.value = false
-  }
-}
+// `?new=1` opens the create drawer (palette link, reload; Back closes it).
+const newFlag = useUrlFlag('new')
+const grantDrawerOpen = computed(() => newFlag.on.value)
+watch(newFlag.on, (on) => { if (on) resetForm() }, { immediate: true })
 
 function openGrant(): void {
+  void newFlag.set(true)
+}
+
+function resetForm(): void {
   formData.value = {
     name: '',
     repository_filter: '.*',
@@ -260,11 +250,10 @@ function openGrant(): void {
     principal_type: 'user',
     principal_id: '',
   }
-  grantDrawerOpen.value = true
 }
 
 function closeGrant(): void {
-  grantDrawerOpen.value = false
+  void newFlag.set(false)
 }
 
 // Creating a permission target and binding it to a principal are separate
@@ -303,11 +292,6 @@ async function submitGrant(): Promise<void> {
 const revokeTarget = ref<PermissionItem | null>(null)
 const revoking = ref(false)
 
-function revoke(perm: PermissionItem): void {
-  if (!perm.id) return
-  revokeTarget.value = perm
-}
-
 async function confirmRevoke(): Promise<void> {
   const perm = revokeTarget.value
   if (!perm?.id) return
@@ -323,6 +307,4 @@ async function confirmRevoke(): Promise<void> {
     revoking.value = false
   }
 }
-
-onMounted(load)
 </script>

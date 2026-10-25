@@ -47,4 +47,7 @@ export const enSettings = {
   'settings.groups.search': 'Search groups',
   'settings.groups.counts': '{groups} groups, {memberships} memberships',
   'settings.groups.emptyHint': 'Create a group to grant access to several people at once.',
+
+  // Permissions
+  'settings.permissions.search': 'Search permission targets',
 } as const
