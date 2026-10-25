@@ -15,6 +15,13 @@ import { enTiering } from './en.tiering'
 import { enBundles } from './en.bundles'
 import { enFederation } from './en.federation'
 import { enBranding } from './en.branding'
+import { enUI } from './en.ui'
+import { enShell } from './en.shell'
+import { enDashboard } from './en.dashboard'
+import { enSettings } from './en.settings'
+import { enArtifact } from './en.artifact'
+import { enSecurity } from './en.security'
+import { enSearch } from './en.search'
 
 const base = {
   // App / shell
@@ -324,7 +331,7 @@ const base = {
   'docs.trash': 'How the trash and retention work',
 } as const
 
-const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation, ...enBranding } satisfies Record<string, string>
+const catalog = { ...base, ...enRepos, ...enAdmin, ...enAuth, ...enProjects, ...enTiering, ...enBundles, ...enFederation, ...enBranding, ...enUI, ...enShell, ...enDashboard, ...enSettings, ...enArtifact, ...enSecurity, ...enSearch } satisfies Record<string, string>
 
 export type TranslationKey = keyof typeof catalog
 
