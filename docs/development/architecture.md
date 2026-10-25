@@ -88,7 +88,7 @@ Every repo-scoped format handler registers **relative** routes on the single `/r
 
 ## Workers
 
-Started in `cmd/server/main.go` and stopped in order on shutdown (HTTP first, then workers, then the audit flush, DB last):
+Started by the `app` in `cmd/server` (`app.go` is the startup/shutdown sequence, the `app_*.go` files hold its steps) and stopped in order on shutdown: HTTP first, then the fire-and-forget background tasks (async backups, restores and scans, startup metadata regeneration; they run on `internal/bgtask`, get a context cancelled at shutdown and are waited for at most 15 s), then the workers, then the audit flush, DB last:
 
 | Worker | Role |
 |---|---|

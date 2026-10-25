@@ -5,6 +5,7 @@
 package middleware
 
 import (
+	"context"
 	"encoding/json"
 	"log"
 	"net/http"
@@ -25,7 +26,9 @@ type tokenBucket struct {
 // window: time window duration
 // trusted: which reverse proxies' X-Forwarded-For/X-Real-IP are honored
 // when resolving the client IP — see ClientIP.
-func RateLimitMiddleware(limit int, window time.Duration, trusted *TrustedProxies) func(http.Handler) http.Handler {
+//
+// The janitor goroutine that drops idle buckets runs until ctx is cancelled.
+func RateLimitMiddleware(ctx context.Context, limit int, window time.Duration, trusted *TrustedProxies) func(http.Handler) http.Handler {
 	buckets := make(map[string]*tokenBucket)
 
 	var mu sync.Mutex
@@ -40,7 +43,13 @@ func RateLimitMiddleware(limit int, window time.Duration, trusted *TrustedProxie
 		ticker := time.NewTicker(window * 2)
 		defer ticker.Stop()
 
-		for range ticker.C {
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+
 			mu.Lock()
 
 			now := time.Now()

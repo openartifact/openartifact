@@ -165,7 +165,7 @@ func (x *exporter) exportOneBlob(ctx context.Context, tw *tar.Writer, b database
 
 	h := sha256.New()
 
-	n, err := io.Copy(io.MultiWriter(tw, h), reader)
+	n, err := io.Copy(io.MultiWriter(tw, h), ctxReader{ctx: ctx, r: reader})
 	if errors.Is(err, tar.ErrWriteTooLong) {
 		return fmt.Errorf("%w: %s (more than the recorded %d bytes)", ErrBlobCorrupt, b.SHA256, b.SizeBytes)
 	}

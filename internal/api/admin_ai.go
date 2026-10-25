@@ -271,7 +271,7 @@ func (h *AdminAIHandler) patchedTestConfig(ctx context.Context, body *aiConfigPa
 	// A client-supplied endpoint must not let an admin session probe or
 	// send credentials to internal addresses.
 	if cfg.BaseURL != "" {
-		if err := netutil.ValidateOutboundURL(cfg.BaseURL); err != nil {
+		if err := netutil.ValidateOutboundURLContext(ctx, cfg.BaseURL); err != nil {
 			return ai.Config{}, "base_url is not allowed: " + err.Error()
 		}
 	}

@@ -6,6 +6,7 @@ package api
 
 import (
 	"cmp"
+	"context"
 	"errors"
 	"net/http"
 	"strings"
@@ -137,12 +138,12 @@ func decodeWebhookBody(w http.ResponseWriter, r *http.Request, dst any) bool {
 }
 
 // validateWebhookURL requires an http(s) URL whose host is not an internal address.
-func validateWebhookURL(raw string) error {
+func validateWebhookURL(ctx context.Context, raw string) error {
 	if len(raw) > maxWebhookURLLen {
 		return validationError("url is too long")
 	}
 
-	return netutil.ValidateOutboundURL(raw)
+	return netutil.ValidateOutboundURLContext(ctx, raw)
 }
 
 // normalizeWebhookEvents validates event names against the dispatcher's event
@@ -338,7 +339,7 @@ func (h *WebhooksHandler) createWebhook(w http.ResponseWriter, r *http.Request, 
 		return
 	}
 
-	if err := validateWebhookURL(req.URL); err != nil {
+	if err := validateWebhookURL(r.Context(), req.URL); err != nil {
 		writeError(w, http.StatusBadRequest, "validation_failed", "invalid url: "+err.Error())
 		return
 	}
@@ -474,7 +475,7 @@ func (h *WebhooksHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if req.URL != nil {
-		if err := validateWebhookURL(*req.URL); err != nil {
+		if err := validateWebhookURL(r.Context(), *req.URL); err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", "invalid url: "+err.Error())
 			return
 		}

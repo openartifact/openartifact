@@ -162,7 +162,7 @@ func TestValidateSAMLConfig_RefreshSeconds(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
 
-			err := validateSAMLConfig(&models.SAMLConfig{IDPMetadataXML: xmlDoc, IDPMetadataRefreshSeconds: tt.seconds})
+			err := validateSAMLConfig(t.Context(), &models.SAMLConfig{IDPMetadataXML: xmlDoc, IDPMetadataRefreshSeconds: tt.seconds})
 			if (err != nil) != tt.wantErr {
 				t.Fatalf("validateSAMLConfig(%d) error = %v, wantErr %v", tt.seconds, err, tt.wantErr)
 			}
@@ -188,7 +188,7 @@ func TestMergeSAMLPatch_NewFields(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	merged, err := mergeSAMLPatch(stored, json.RawMessage(`{"allow_idp_initiated":true,"idp_metadata_refresh_seconds":120}`))
+	merged, err := mergeSAMLPatch(t.Context(), stored, json.RawMessage(`{"allow_idp_initiated":true,"idp_metadata_refresh_seconds":120}`))
 	if err != nil {
 		t.Fatalf("merge: %v", err)
 	}
@@ -207,7 +207,7 @@ func TestMergeSAMLPatch_NewFields(t *testing.T) {
 	}
 
 	// Omitting the flag keeps it; setting it false turns it back off.
-	merged, err = mergeSAMLPatch(merged, json.RawMessage(`{"groups_attribute":"roles"}`))
+	merged, err = mergeSAMLPatch(t.Context(), merged, json.RawMessage(`{"groups_attribute":"roles"}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,7 +219,7 @@ func TestMergeSAMLPatch_NewFields(t *testing.T) {
 		t.Error("a patch that omits allow_idp_initiated must keep it")
 	}
 
-	merged, err = mergeSAMLPatch(merged, json.RawMessage(`{"allow_idp_initiated":false}`))
+	merged, err = mergeSAMLPatch(t.Context(), merged, json.RawMessage(`{"allow_idp_initiated":false}`))
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -231,7 +231,7 @@ func TestMergeSAMLPatch_NewFields(t *testing.T) {
 		t.Error("allow_idp_initiated=false must turn the flag off")
 	}
 
-	if _, err := mergeSAMLPatch(merged, json.RawMessage(`{"idp_metadata_refresh_seconds":5}`)); err == nil {
+	if _, err := mergeSAMLPatch(t.Context(), merged, json.RawMessage(`{"idp_metadata_refresh_seconds":5}`)); err == nil {
 		t.Error("an out-of-range refresh interval must be rejected")
 	}
 }

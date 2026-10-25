@@ -15,6 +15,7 @@ import (
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -39,6 +40,16 @@ type VulnHandler struct {
 
 	// onScanned, when set, is told about every scan that produced results.
 	onScanned func(repoID, artifactID string)
+
+	// tasks runs the background scans; they are cancelled at server shutdown.
+	tasks *bgtask.Runner
+}
+
+// WithTasks runs the background scans under the server lifecycle: they are
+// cancelled and awaited when the runner shuts down.
+func (h *VulnHandler) WithTasks(tasks *bgtask.Runner) *VulnHandler {
+	h.tasks = tasks
+	return h
 }
 
 // WithScanHook sets a function called after each completed (or partial) scan
@@ -110,6 +121,7 @@ func NewVulnHandler(db database.Database, log *logger.Logger, evaluator *auth.Ev
 		scanSem:    make(chan struct{}, maxConcurrentVulnScans),
 		scanners:   scanners,
 		newBackend: scanners.Backend,
+		tasks:      bgtask.New(context.Background()),
 	}
 }
 
@@ -274,20 +286,21 @@ func (h *VulnHandler) handleScan(w http.ResponseWriter, r *http.Request) {
 	job := *scanResult
 
 	// Run scan asynchronously
-	go func() {
+	h.tasks.Go(func(ctx context.Context) {
 		defer func() { <-h.scanSem }()
 
-		h.performScan(&job, pkg)
-	}()
+		h.performScan(ctx, &job, pkg)
+	})
 
 	writeJSON(w, http.StatusOK, vulnScanResultToMap(scanResult))
 }
 
 // performScan performs the actual vulnerability scan of pkg with the scanners
 // the result names.
-func (h *VulnHandler) performScan(scanResult *models.VulnScanResult, pkg vuln.Package) {
-	// Use background context for async operation
-	ctx, cancel := context.WithTimeout(context.Background(), vulnScanTimeout)
+func (h *VulnHandler) performScan(ctx context.Context, scanResult *models.VulnScanResult, pkg vuln.Package) {
+	// ctx is the server lifecycle context: the scan ends with the server, and
+	// the result below is still stored as failed.
+	ctx, cancel := context.WithTimeout(ctx, vulnScanTimeout)
 	defer cancel()
 
 	// The scanner field holds one name or several joined by ",".
@@ -326,7 +339,8 @@ func (h *VulnHandler) performScan(scanResult *models.VulnScanResult, pkg vuln.Pa
 	scanResult.UpdatedAt = now
 
 	// Persist with a fresh context: the scan context may already have expired
-	// (scanner timeout), which would otherwise leave the row stuck "scanning".
+	// (scanner timeout) or been cancelled (shutdown), which would otherwise
+	// leave the row stuck "scanning".
 	persistCtx, persistCancel := context.WithTimeout(context.Background(), vulnPersistTimeout)
 	defer persistCancel()
 

@@ -394,8 +394,8 @@ func (h *RepositoriesHandler) resolveProject(ctx context.Context, w http.Respons
 }
 
 // validateUpstreamURL rejects non-http(s) schemes and private/metadata hosts.
-func validateUpstreamURL(raw string) error {
-	if err := netutil.ValidateOutboundURL(raw); err != nil {
+func validateUpstreamURL(ctx context.Context, raw string) error {
+	if err := netutil.ValidateOutboundURLContext(ctx, raw); err != nil {
 		return fmt.Errorf("upstream_url is not allowed: %w", err)
 	}
 
@@ -752,7 +752,7 @@ func (h *RepositoriesHandler) createRepository(w http.ResponseWriter, r *http.Re
 			return
 		}
 
-		if err := validateUpstreamURL(body.UpstreamURL); err != nil {
+		if err := validateUpstreamURL(r.Context(), body.UpstreamURL); err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return
 		}
@@ -1014,7 +1014,7 @@ func (h *RepositoriesHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 			return
 		}
 
-		if err := validateUpstreamURL(*body.UpstreamURL); err != nil {
+		if err := validateUpstreamURL(r.Context(), *body.UpstreamURL); err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return
 		}

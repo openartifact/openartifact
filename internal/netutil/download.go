@@ -28,7 +28,7 @@ var errRedirectNotHTTPS = errors.New("redirect to a non-https URL")
 // the rest of an enterprise network expects. A redirect is a different
 // matter: the server, not the operator, picks its target, so a redirect must
 // stay on https, go to at most 3 hops, and either return to trustedHost or
-// reach only addresses ValidateOutboundURL allows (no private, loopback,
+// reach only addresses ValidateOutboundURLContext allows (no private, loopback,
 // link-local or metadata ranges). That is enforced where the connection is
 // made, so a DNS answer that changes between a check and the dial cannot get
 // around it. When a proxy serves a request the proxy, not this process,

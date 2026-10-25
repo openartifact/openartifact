@@ -262,7 +262,7 @@ A peer token is a separate credential type, *not* an API token:
 
 ### SSRF
 
-Peer URLs are user-supplied outbound targets. They are validated on write with `netutil.ValidateOutboundURL`, and every request is made through the `internal/netutil` SSRF-safe client (address checked at dial time, so DNS rebinding and redirects to private addresses are blocked; redirects are not followed with credentials). Private and loopback targets need `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`, like webhooks and proxies.
+Peer URLs are user-supplied outbound targets. They are validated on write with `netutil.ValidateOutboundURLContext`, and every request is made through the `internal/netutil` SSRF-safe client (address checked at dial time, so DNS rebinding and redirects to private addresses are blocked; redirects are not followed with credentials). Private and loopback targets need `OPENARTIFACT_ALLOW_PRIVATE_UPSTREAMS=true`, like webhooks and proxies.
 
 ### RBAC
 

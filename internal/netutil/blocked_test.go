@@ -90,13 +90,13 @@ func TestValidateOutboundURLLiteralRanges(t *testing.T) {
 		"http://[64:ff9b::7f00:1]/", "http://[64:ff9b::a9fe:a9fe]/", "http://[2002:7f00:1::]/",
 		"http://[2001::1]/", "http://[::7f00:1]/", "http://[fe80::1]/", "http://[fc00::1]/", "http://[100::1]/", "http://[ff02::1]/",
 	} {
-		if err := ValidateOutboundURL(bad); err == nil {
+		if err := ValidateOutboundURLContext(t.Context(), bad); err == nil {
 			t.Errorf("%s should be rejected", bad)
 		}
 	}
 
 	for _, ok := range []string{"http://192.0.2.1/", "http://198.51.100.1/", "http://203.0.113.1/", "http://[2001:db8::1]/"} {
-		if err := ValidateOutboundURL(ok); err != nil {
+		if err := ValidateOutboundURLContext(t.Context(), ok); err != nil {
 			t.Errorf("%s should be allowed: %v", ok, err)
 		}
 	}

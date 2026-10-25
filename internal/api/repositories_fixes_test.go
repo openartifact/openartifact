@@ -170,7 +170,7 @@ func TestStorageBackendResponseRedactsSecrets(t *testing.T) {
 func TestPrepareStorageConfigKeepsOmittedSecrets(t *testing.T) {
 	existing := []byte(`{"bucket":"b","access_key":"AK","secret_key":"SK"}`)
 
-	out, err := prepareStorageConfig("s3", []byte(`{"bucket":"b2","access_key":"","secret_key":""}`), existing)
+	out, err := prepareStorageConfig(t.Context(), "s3", []byte(`{"bucket":"b2","access_key":"","secret_key":""}`), existing)
 	if err != nil {
 		t.Fatalf("prepare: %v", err)
 	}
@@ -190,11 +190,11 @@ func TestPrepareStorageConfigKeepsOmittedSecrets(t *testing.T) {
 		}
 	}
 
-	if _, err := prepareStorageConfig("filesystem", []byte(`{"path":"../etc"}`), nil); err == nil {
+	if _, err := prepareStorageConfig(t.Context(), "filesystem", []byte(`{"path":"../etc"}`), nil); err == nil {
 		t.Error("path traversal accepted")
 	}
 
-	if _, err := prepareStorageConfig("garage", []byte(`{"bucket":"b"}`), nil); err == nil {
+	if _, err := prepareStorageConfig(t.Context(), "garage", []byte(`{"bucket":"b"}`), nil); err == nil {
 		t.Error("garage without endpoint accepted")
 	}
 }

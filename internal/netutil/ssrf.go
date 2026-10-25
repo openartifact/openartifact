@@ -192,12 +192,6 @@ var (
 	errRedirectScheme   = errors.New("redirect to unsupported scheme")
 )
 
-// ValidateOutboundURL checks scheme, host and (resolved) addresses of raw.
-// It is ValidateOutboundURLContext with a background context.
-func ValidateOutboundURL(raw string) error {
-	return ValidateOutboundURLContext(context.Background(), raw)
-}
-
 // ValidateOutboundURLContext checks scheme, host and (resolved) addresses of
 // raw, resolving the host under ctx.
 func ValidateOutboundURLContext(ctx context.Context, raw string) error {

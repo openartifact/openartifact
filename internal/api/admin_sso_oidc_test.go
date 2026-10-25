@@ -80,7 +80,7 @@ func TestValidateOIDCConfig(t *testing.T) {
 
 	for _, tc := range tests {
 		t.Run(tc.name, func(t *testing.T) {
-			err := validateOIDCConfig(&tc.cfg)
+			err := validateOIDCConfig(t.Context(), &tc.cfg)
 			switch {
 			case tc.wantErr == "" && err != nil:
 				t.Fatalf("unexpected error: %v", err)
@@ -124,7 +124,7 @@ func TestMergeOIDCPatch(t *testing.T) {
 	stored := json.RawMessage(`{"issuer":"` + testIssuer + `","client_id":"id","client_secret":"old-secret","scopes":["openid"]}`)
 
 	t.Run("untouched fields and the secret survive", func(t *testing.T) {
-		merged, err := mergeOIDCPatch(stored, json.RawMessage(`{"hosted_domain":"example.com","require_email_verified":true}`))
+		merged, err := mergeOIDCPatch(t.Context(), stored, json.RawMessage(`{"hosted_domain":"example.com","require_email_verified":true}`))
 		if err != nil {
 			t.Fatalf("merge: %v", err)
 		}
@@ -140,11 +140,11 @@ func TestMergeOIDCPatch(t *testing.T) {
 	})
 
 	t.Run("switching to github enforces its rules on the merged result", func(t *testing.T) {
-		if _, err := mergeOIDCPatch(stored, json.RawMessage(`{"type":"github"}`)); err == nil || !strings.Contains(err.Error(), "allowed_orgs") {
+		if _, err := mergeOIDCPatch(t.Context(), stored, json.RawMessage(`{"type":"github"}`)); err == nil || !strings.Contains(err.Error(), "allowed_orgs") {
 			t.Fatalf("expected an allowed_orgs error, got %v", err)
 		}
 
-		if _, err := mergeOIDCPatch(stored, json.RawMessage(`{"type":"github","allowed_orgs":["acme"]}`)); err != nil {
+		if _, err := mergeOIDCPatch(t.Context(), stored, json.RawMessage(`{"type":"github","allowed_orgs":["acme"]}`)); err != nil {
 			t.Fatalf("unexpected error: %v", err)
 		}
 	})
@@ -152,7 +152,7 @@ func TestMergeOIDCPatch(t *testing.T) {
 	t.Run("clearing hosted_domain with an empty string works", func(t *testing.T) {
 		withHD := json.RawMessage(`{"issuer":"` + testIssuer + `","client_id":"id","client_secret":"s","hosted_domain":"example.com"}`)
 
-		merged, err := mergeOIDCPatch(withHD, json.RawMessage(`{"hosted_domain":""}`))
+		merged, err := mergeOIDCPatch(t.Context(), withHD, json.RawMessage(`{"hosted_domain":""}`))
 		if err != nil {
 			t.Fatalf("merge: %v", err)
 		}
@@ -163,7 +163,7 @@ func TestMergeOIDCPatch(t *testing.T) {
 	})
 
 	t.Run("a non-object patch is rejected", func(t *testing.T) {
-		if _, err := mergeOIDCPatch(stored, json.RawMessage(`[]`)); err == nil {
+		if _, err := mergeOIDCPatch(t.Context(), stored, json.RawMessage(`[]`)); err == nil {
 			t.Fatal("expected an error")
 		}
 	})

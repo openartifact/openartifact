@@ -19,6 +19,7 @@ import (
 	"github.com/openartifact/openartifact/internal/api/responses"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/backup"
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/urlparams"
@@ -30,6 +31,7 @@ type BackupHandler struct {
 	log          *logger.Logger
 	evaluator    *auth.Evaluator
 	backupEngine *backup.Engine
+	tasks        *bgtask.Runner
 }
 
 func NewBackupHandler(db database.Database, log *logger.Logger, evaluator *auth.Evaluator, backupEngine *backup.Engine) *BackupHandler {
@@ -38,7 +40,15 @@ func NewBackupHandler(db database.Database, log *logger.Logger, evaluator *auth.
 		log:          log,
 		evaluator:    evaluator,
 		backupEngine: backupEngine,
+		tasks:        bgtask.New(context.Background()),
 	}
+}
+
+// WithTasks runs the async backups and restores under the server lifecycle:
+// they are cancelled and awaited when the runner shuts down.
+func (h *BackupHandler) WithTasks(tasks *bgtask.Runner) *BackupHandler {
+	h.tasks = tasks
+	return h
 }
 
 func (h *BackupHandler) RegisterAuthed(r chi.Router) {
@@ -88,20 +98,21 @@ func (h *BackupHandler) handleCreateBackup(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	// Start backup asynchronously
-	//nolint:gosec // G118: goroutine outlives request by design for async backup operations
-	go func() {
+	// Start backup asynchronously: it outlives the request but not the server.
+	h.tasks.Go(func(ctx context.Context) {
 		defer func() {
 			if r := recover(); r != nil {
 				h.log.Errorw("panic in goroutine", "panic", r)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
+
+		ctx, cancel := context.WithTimeout(ctx, 24*time.Hour)
 		defer cancel()
+
 		if err := h.backupEngine.RunBackup(ctx, job.ID, body.Type); err != nil {
 			h.log.Errorw("backup failed", "job_id", job.ID, "error", err)
 		}
-	}()
+	})
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"id":         job.ID,
@@ -298,22 +309,23 @@ func (h *BackupHandler) handleRestore(w http.ResponseWriter, r *http.Request) {
 
 	_ = tempFile.Close()
 
-	// Start restore asynchronously; the goroutine owns (and removes) the
-	// temp file once the restore finishes.
-	//nolint:gosec // G118: goroutine outlives request by design for async backup operations
-	go func() {
+	// Start restore asynchronously; the task owns (and removes) the temp file
+	// once the restore finishes, and ends with the server.
+	h.tasks.Go(func(ctx context.Context) {
 		defer func() { _ = os.Remove(tempPath) }()
 		defer func() {
 			if r := recover(); r != nil {
 				h.log.Errorw("panic in goroutine", "panic", r)
 			}
 		}()
-		ctx, cancel := context.WithTimeout(context.Background(), 24*time.Hour)
+
+		ctx, cancel := context.WithTimeout(ctx, 24*time.Hour)
 		defer cancel()
+
 		if err := h.backupEngine.RunRestore(ctx, tempPath); err != nil {
 			h.log.Errorw("restore failed", "filename", filename, "error", err)
 		}
-	}()
+	})
 
 	writeJSON(w, http.StatusAccepted, map[string]any{
 		"message":  "restore started",

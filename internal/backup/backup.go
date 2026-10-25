@@ -197,6 +197,19 @@ var ErrRestoreInProgress = errors.New("a restore is already in progress")
 // RestoreInProgress reports whether a restore is running right now.
 func (e *Engine) RestoreInProgress() bool { return e.restoring.Load() }
 
+// jobPersistTimeout bounds a backup job status write.
+const jobPersistTimeout = 30 * time.Second
+
+// persistJob stores the job's state under a context detached from ctx's
+// cancellation: a backup cancelled at shutdown still records itself as failed
+// instead of staying "running" forever.
+func (e *Engine) persistJob(ctx context.Context, job *models.BackupJob) error {
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), jobPersistTimeout)
+	defer cancel()
+
+	return e.db.UpdateBackupJob(ctx, job)
+}
+
 // RunBackup executes a backup job. It fails the job with ErrRestoreInProgress
 // while a restore is running: the archive would capture a half-restored state.
 func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error {
@@ -214,7 +227,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	if !e.opMu.TryRLock() {
 		job.Status = "failed"
 		job.ErrorMessage = ErrRestoreInProgress.Error()
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 
 		return ErrRestoreInProgress
 	}
@@ -225,7 +238,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	job.Status = "running"
 
 	job.StartedAt = &now
-	if err := e.db.UpdateBackupJob(ctx, job); err != nil {
+	if err := e.persistJob(ctx, job); err != nil {
 		e.log.Errorw("failed to update backup job status", "job_id", jobID, "error", err)
 		return err
 	}
@@ -236,7 +249,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to create backup directory: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 
 		return err
 	}
@@ -250,7 +263,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to create backup file: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 
 		return err
 	}
@@ -281,7 +294,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = err.Error()
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
@@ -294,7 +307,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to marshal manifest: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
@@ -310,7 +323,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to write manifest: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
@@ -321,7 +334,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to write manifest: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
@@ -336,7 +349,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to finalize backup archive: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
@@ -349,7 +362,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to stat backup file: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
@@ -362,7 +375,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 
 		job.Status = "failed"
 		job.ErrorMessage = fmt.Sprintf("failed to rename backup file: %v", err)
-		_ = e.db.UpdateBackupJob(ctx, job)
+		_ = e.persistJob(ctx, job)
 		_ = os.Remove(tempFile)
 
 		return err
@@ -376,7 +389,7 @@ func (e *Engine) RunBackup(ctx context.Context, jobID, backupType string) error 
 	job.CompletedAt = &completedAt
 
 	job.ErrorMessage = ""
-	if err := e.db.UpdateBackupJob(ctx, job); err != nil {
+	if err := e.persistJob(ctx, job); err != nil {
 		e.log.Errorw("failed to update backup job on completion", "job_id", jobID, "error", err)
 		return err
 	}
@@ -1226,7 +1239,7 @@ func (e *Engine) restoreBlob(ctx context.Context, r io.Reader, header *tar.Heade
 	}()
 
 	hasher := sha256.New()
-	if _, err := io.Copy(io.MultiWriter(spool, hasher), io.LimitReader(r, header.Size)); err != nil {
+	if _, err := io.Copy(io.MultiWriter(spool, hasher), io.LimitReader(ctxReader{ctx: ctx, r: r}, header.Size)); err != nil {
 		return fmt.Errorf("failed to read blob %s: %w", blobID, err)
 	}
 

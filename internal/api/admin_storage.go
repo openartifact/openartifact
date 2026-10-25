@@ -115,7 +115,7 @@ func (h *AdminStorageHandler) writeStorageWriteError(w http.ResponseWriter, err 
 // prepareStorageConfig validates raw for kind, encrypts secret fields and
 // carries over secrets from existing (the stored config) that raw omits. It
 // returns the JSON to store, or a validation error message.
-func prepareStorageConfig(kind string, raw, existing []byte) ([]byte, error) {
+func prepareStorageConfig(ctx context.Context, kind string, raw, existing []byte) ([]byte, error) {
 	cfg := map[string]any{}
 
 	if len(raw) > 0 && string(raw) != "null" {
@@ -161,7 +161,7 @@ func prepareStorageConfig(kind string, raw, existing []byte) ([]byte, error) {
 		}
 	}
 
-	if err := validateStorageConfig(kind, cfg); err != nil {
+	if err := validateStorageConfig(ctx, kind, cfg); err != nil {
 		return nil, err
 	}
 
@@ -211,7 +211,7 @@ func ociEndpoint(cfg map[string]any) string {
 	return "https://" + endpoint
 }
 
-func validateStorageConfig(kind string, cfg map[string]any) error {
+func validateStorageConfig(ctx context.Context, kind string, cfg map[string]any) error {
 	switch kind {
 	case "filesystem":
 		path := cfgString(cfg, "path")
@@ -233,7 +233,7 @@ func validateStorageConfig(kind string, cfg map[string]any) error {
 		}
 
 		if endpoint != "" {
-			if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+			if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
 				return fmt.Errorf("config.endpoint is not allowed: %w", err)
 			}
 		}
@@ -250,7 +250,7 @@ func validateStorageConfig(kind string, cfg map[string]any) error {
 			return validationError("config.endpoint is required for oci backends")
 		}
 
-		if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+		if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
 			return fmt.Errorf("config.endpoint is not allowed: %w", err)
 		}
 	case "gcs":
@@ -317,7 +317,7 @@ func (h *AdminStorageHandler) handleCreate(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
-	config, err := prepareStorageConfig(body.Kind, body.Config, nil)
+	config, err := prepareStorageConfig(r.Context(), body.Kind, body.Config, nil)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
@@ -431,7 +431,7 @@ func (h *AdminStorageHandler) handleUpdate(w http.ResponseWriter, r *http.Reques
 		raw = backend.Config
 	}
 
-	config, err := prepareStorageConfig(backend.Kind, raw, backend.Config)
+	config, err := prepareStorageConfig(r.Context(), backend.Kind, raw, backend.Config)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 		return
@@ -676,7 +676,7 @@ func (h *AdminStorageHandler) testS3Backend(ctx context.Context, name string, cf
 	}
 
 	if endpoint != "" {
-		if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+		if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
 			return storageTestResult{false, "invalid_config", "endpoint is not allowed"}
 		}
 	}
@@ -777,7 +777,7 @@ func (h *AdminStorageHandler) testOCIBackend(ctx context.Context, name string, c
 		return storageTestResult{false, "invalid_config", "endpoint is required in config"}
 	}
 
-	if err := netutil.ValidateOutboundURL(endpoint); err != nil {
+	if err := netutil.ValidateOutboundURLContext(ctx, endpoint); err != nil {
 		return storageTestResult{false, "invalid_config", "endpoint is not allowed"}
 	}
 

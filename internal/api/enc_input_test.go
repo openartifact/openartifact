@@ -39,7 +39,7 @@ func TestSealedLookingCredentialsAreRejected(t *testing.T) {
 	})
 
 	t.Run("storage backend secret", func(t *testing.T) {
-		_, err := prepareStorageConfig("s3", []byte(`{"secret_key":"`+sealed+`"}`), nil)
+		_, err := prepareStorageConfig(t.Context(), "s3", []byte(`{"secret_key":"`+sealed+`"}`), nil)
 		if !errors.As(err, new(validationError)) {
 			t.Fatalf("prepareStorageConfig(sealed secret_key) = %v, want a validation error", err)
 		}

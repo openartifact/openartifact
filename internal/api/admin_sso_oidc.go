@@ -5,6 +5,7 @@
 package api
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"strings"
@@ -18,7 +19,7 @@ import (
 // validateOIDCConfig applies the create/patch rules to a (plaintext-secret)
 // oidc_config: provider type, required fields per type, outbound-URL safety,
 // tenant and organization gates, and sane claim names.
-func validateOIDCConfig(cfg *models.OIDCConfig) error {
+func validateOIDCConfig(ctx context.Context, cfg *models.OIDCConfig) error {
 	switch cfg.Type {
 	case models.OIDCTypeOIDC:
 		if cfg.Issuer == "" || cfg.ClientID == "" || cfg.ClientSecret == "" {
@@ -36,7 +37,7 @@ func validateOIDCConfig(cfg *models.OIDCConfig) error {
 		return errors.New("oidc_config.client_secret must be the plaintext secret") //nolint:err113 // validation message surfaced to the admin
 	}
 
-	if err := validateOIDCURLs(cfg); err != nil {
+	if err := validateOIDCURLs(ctx, cfg); err != nil {
 		return err
 	}
 
@@ -66,7 +67,7 @@ func validateOIDCConfig(cfg *models.OIDCConfig) error {
 // validateOIDCURLs requires every configured URL to be https (http only for
 // loopback) and to pass the outbound SSRF validation; the issuer is mandatory
 // for a standards-compliant provider and url fields mandatory for "oauth2".
-func validateOIDCURLs(cfg *models.OIDCConfig) error {
+func validateOIDCURLs(ctx context.Context, cfg *models.OIDCConfig) error {
 	urls := []struct{ field, value string }{
 		{"issuer", cfg.Issuer},
 		{"authorization_url", cfg.AuthorizationURL},
@@ -94,7 +95,7 @@ func validateOIDCURLs(cfg *models.OIDCConfig) error {
 			return fmt.Errorf("oidc_config.%s: %w", u.field, err)
 		}
 
-		if err := netutil.ValidateOutboundURL(u.value); err != nil {
+		if err := netutil.ValidateOutboundURLContext(ctx, u.value); err != nil {
 			return fmt.Errorf("oidc_config.%s: %w", u.field, err)
 		}
 	}

@@ -6,6 +6,7 @@ package api
 
 import (
 	"bytes"
+	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -106,7 +107,7 @@ func requireHTTPSIdentityURL(raw string) error {
 }
 
 // validateSAMLConfig applies the create-time rules to a SAML config.
-func validateSAMLConfig(cfg *models.SAMLConfig) error {
+func validateSAMLConfig(ctx context.Context, cfg *models.SAMLConfig) error {
 	if cfg.IDPMetadataURL == "" && cfg.IDPMetadataXML == "" {
 		return errors.New("saml_config requires idp_metadata_url or idp_metadata_xml") //nolint:err113 // validation message surfaced to the admin
 	}
@@ -116,7 +117,7 @@ func validateSAMLConfig(cfg *models.SAMLConfig) error {
 			return fmt.Errorf("saml_config.idp_metadata_url: %w", err)
 		}
 
-		if err := netutil.ValidateOutboundURL(cfg.IDPMetadataURL); err != nil {
+		if err := netutil.ValidateOutboundURLContext(ctx, cfg.IDPMetadataURL); err != nil {
 			return fmt.Errorf("saml_config.idp_metadata_url: %w", err)
 		}
 	}
@@ -251,7 +252,7 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := validateOIDCConfig(&cfg); err != nil {
+		if err := validateOIDCConfig(r.Context(), &cfg); err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return
 		}
@@ -273,7 +274,7 @@ func (h *AdminSSOHandler) handleCreate(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 
-		if err := validateSAMLConfig(&cfg); err != nil {
+		if err := validateSAMLConfig(r.Context(), &cfg); err != nil {
 			writeError(w, http.StatusBadRequest, "validation_failed", err.Error())
 			return
 		}
@@ -382,7 +383,7 @@ func isJSONObject(raw json.RawMessage) bool {
 // mergeOIDCPatch overlays the patch onto the stored config: fields absent from
 // the patch keep their stored values, and an absent or empty client_secret
 // keeps the stored (encrypted) secret. A newly supplied secret is encrypted.
-func mergeOIDCPatch(stored json.RawMessage, patch json.RawMessage) (json.RawMessage, error) {
+func mergeOIDCPatch(ctx context.Context, stored json.RawMessage, patch json.RawMessage) (json.RawMessage, error) {
 	if !isJSONObject(patch) {
 		return nil, errors.New("oidc_config must be a JSON object") //nolint:err113 // validation message surfaced to the admin
 	}
@@ -411,7 +412,7 @@ func mergeOIDCPatch(stored json.RawMessage, patch json.RawMessage) (json.RawMess
 		probe := merged
 		probe.ClientSecret = "placeholder"
 
-		if err := validateOIDCConfig(&probe); err != nil {
+		if err := validateOIDCConfig(ctx, &probe); err != nil {
 			return nil, err
 		}
 
@@ -424,14 +425,14 @@ func mergeOIDCPatch(stored json.RawMessage, patch json.RawMessage) (json.RawMess
 	}
 
 	// New secret, or a legacy plaintext one that is sealed on this write.
-	if err := validateOIDCConfig(&merged); err != nil {
+	if err := validateOIDCConfig(ctx, &merged); err != nil {
 		return nil, err
 	}
 
 	return sealOIDCConfig(merged)
 }
 
-func mergeSAMLPatch(stored json.RawMessage, patch json.RawMessage) (json.RawMessage, error) {
+func mergeSAMLPatch(ctx context.Context, stored json.RawMessage, patch json.RawMessage) (json.RawMessage, error) {
 	if !isJSONObject(patch) {
 		return nil, errors.New("saml_config must be a JSON object") //nolint:err113 // validation message surfaced to the admin
 	}
@@ -447,7 +448,7 @@ func mergeSAMLPatch(stored json.RawMessage, patch json.RawMessage) (json.RawMess
 		return nil, errors.New("saml_config has invalid field types") //nolint:err113 // validation message surfaced to the admin
 	}
 
-	if err := validateSAMLConfig(&merged); err != nil {
+	if err := validateSAMLConfig(ctx, &merged); err != nil {
 		return nil, err
 	}
 
@@ -486,7 +487,7 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if status, code, msg := applySSOPatch(existing, patch); status != 0 {
+	if status, code, msg := applySSOPatch(ctx, existing, patch); status != 0 {
 		writeError(w, status, code, msg)
 		return
 	}
@@ -508,7 +509,7 @@ func (h *AdminSSOHandler) handleUpdate(w http.ResponseWriter, r *http.Request) {
 // applySSOPatch merges patch into existing, validating exactly what create
 // validates. On failure it returns the HTTP status, error code and message
 // (status 0 means success).
-func applySSOPatch(existing *models.SSOProvider, patch map[string]json.RawMessage) (int, string, string) {
+func applySSOPatch(ctx context.Context, existing *models.SSOProvider, patch map[string]json.RawMessage) (int, string, string) {
 	invalid := func(msg string) (int, string, string) {
 		return http.StatusBadRequest, "validation_failed", msg
 	}
@@ -542,7 +543,7 @@ func applySSOPatch(existing *models.SSOProvider, patch map[string]json.RawMessag
 			return invalid("oidc_config is only valid for oidc providers")
 		}
 
-		merged, err := mergeOIDCPatch(existing.OIDCConfig, v)
+		merged, err := mergeOIDCPatch(ctx, existing.OIDCConfig, v)
 		if err != nil {
 			return invalid(err.Error())
 		}
@@ -555,7 +556,7 @@ func applySSOPatch(existing *models.SSOProvider, patch map[string]json.RawMessag
 			return invalid("saml_config is only valid for saml providers")
 		}
 
-		merged, err := mergeSAMLPatch(existing.SAMLConfig, v)
+		merged, err := mergeSAMLPatch(ctx, existing.SAMLConfig, v)
 		if err != nil {
 			return invalid(err.Error())
 		}

@@ -19,6 +19,7 @@ import (
 
 	"github.com/go-chi/chi/v5"
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/bgtask"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
@@ -599,5 +600,49 @@ func TestProperties_QuarantineSurvivesLicenseEdit(t *testing.T) {
 
 	if !db.licenses["leftpad@1.0.0"].Quarantined {
 		t.Fatal("editing the license property released the quarantine; only an admin approval may do that")
+	}
+}
+
+// ctxScanner blocks until the scan context ends, like a scanner process that
+// is killed with it.
+type ctxScanner struct {
+	started chan struct{}
+}
+
+func (ctxScanner) Name() string { return "osv" }
+
+func (s ctxScanner) Scan(ctx context.Context, _ vuln.Package) ([]models.Vulnerability, error) {
+	close(s.started)
+	<-ctx.Done()
+
+	return nil, ctx.Err()
+}
+
+func TestVulnScan_ShutdownCancelsScanAndStoresFailure(t *testing.T) {
+	db := newScanPolicyDB()
+	started := make(chan struct{})
+	h := newScanPolicyVulnHandler(t, db, map[string]vuln.ScannerBackend{"osv": ctxScanner{started: started}})
+
+	tasks := bgtask.New(t.Context())
+	h.WithTasks(tasks)
+
+	register := func(r chi.Router) { h.RegisterRoutes(r, "/api/v1/repositories/{name}") }
+
+	rw := serveAs(register, http.MethodPost, "/api/v1/repositories/repo/vuln/scan",
+		`{"artifact_id":"left-pad@1.0.0","package_name":"left-pad","package_version":"1.0.0","ecosystem":"npm"}`)
+	if rw.Code != http.StatusOK {
+		t.Fatalf("status = %d (%s)", rw.Code, rw.Body.String())
+	}
+
+	<-started
+
+	// Buffered by the stub database: Shutdown must not wait on the test reading it.
+	if !tasks.Shutdown(10 * time.Second) {
+		t.Fatal("the running scan did not end with the server")
+	}
+
+	stored := waitVulnUpdate(t, db)
+	if stored.ScanStatus != "failed" {
+		t.Errorf("an interrupted scan must be stored as failed, got %q", stored.ScanStatus)
 	}
 }
