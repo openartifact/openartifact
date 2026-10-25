@@ -228,9 +228,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import PageHeader from '../../components/PageHeader.vue'
-import { formatDate } from '../../lib/datetime'
+import { formatDate, timeAgo } from '../../lib/datetime'
+import { formatBytes } from '../../lib/quota'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { request } from '../../api/client'
+import { request, JSON_HEADERS } from '../../api/client'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import AppButton from '../../components/AppButton.vue'
@@ -349,23 +350,8 @@ function statusDotClass(s: string): string {
   return map[s] ?? 'bg-muted'
 }
 
-function formatBytes(bytes: number): string {
-  if (bytes === 0) return '0 B'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  const i = Math.min(Math.floor(Math.log(bytes) / Math.log(1024)), units.length - 1)
-  return `${(bytes / Math.pow(1024, i)).toFixed(1)} ${units[i]}`
-}
 
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return t('adm.backup.justNow')
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
-}
 
 // Loads the job list. Overlapping calls (slow response vs. the 5s poll) are
 // dropped, and failures surface a toast instead of an unhandled rejection.
@@ -420,7 +406,7 @@ async function confirmCreate(): Promise<void> {
   try {
     await request('/api/v1/admin/backup', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: JSON_HEADERS,
       body: JSON.stringify({ type: createForm.value.type }),
     })
     toasts.success(t('adm.backup.started'))

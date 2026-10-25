@@ -16,7 +16,7 @@ export type InlineNode =
   | { type: 'code'; text: string }
   | { type: 'link'; href: string; children: InlineNode[] }
 
-export interface Paragraph {
+interface Paragraph {
   type: 'paragraph'
   children: InlineNode[]
 }

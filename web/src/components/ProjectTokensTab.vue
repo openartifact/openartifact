@@ -46,7 +46,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <td class="px-4 py-3 text-sm text-muted">
               {{ token.last_used_at ? formatDateTime(token.last_used_at) : t('projects.tokens.never') }}
             </td>
-            <td class="px-4 py-3 text-sm" :class="isExpired(token) ? 'text-danger' : 'text-muted'">
+            <td class="px-4 py-3 text-sm" :class="isExpired(token.expires_at) ? 'text-danger' : 'text-muted'">
               {{ token.expires_at ? formatDateTime(token.expires_at) : t('projects.tokens.never') }}
             </td>
             <td class="px-4 py-3 text-right">
@@ -145,7 +145,7 @@ import {
   type ProjectToken,
   type ProjectTokenRole,
 } from '../api/projects'
-import { formatDateTime } from '../lib/datetime'
+import { formatDateTime, isExpired } from '../lib/datetime'
 import { atLeast } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
@@ -171,9 +171,6 @@ const grantable = computed<readonly string[]>(() =>
   atLeast(props.project.my_role, 'developer') ? PROJECT_TOKEN_ROLES : ['viewer'],
 )
 
-function isExpired(token: ProjectToken): boolean {
-  return !!(token.expires_at && new Date(token.expires_at) < new Date())
-}
 
 async function load(): Promise<void> {
   loading.value = true

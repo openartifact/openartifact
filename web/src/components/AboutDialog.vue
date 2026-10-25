@@ -24,7 +24,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </a>
         </li>
         <li>
-          <a :href="UPSTREAM_URL" target="_blank" rel="noopener noreferrer" data-testid="about-upstream" class="inline-flex items-center gap-1.5 text-primary hover:underline">
+          <a :href="DEFAULT_SOURCE_URL" target="_blank" rel="noopener noreferrer" data-testid="about-upstream" class="inline-flex items-center gap-1.5 text-primary hover:underline">
             <ArrowTopRightOnSquareIcon class="h-4 w-4 shrink-0" aria-hidden="true" />{{ t('about.upstream') }}
           </a>
         </li>
@@ -56,7 +56,7 @@ import { useBrandingStore } from '../stores/branding'
 import { useSessionStore } from '../stores/session'
 import { useAppVersion, useDocsUrl, formatVersion } from '../composables/useAppVersion'
 import { formatCommit } from '../lib/buildInfo'
-import { DEFAULT_SOURCE_URL, UPSTREAM_URL, safeUrl } from '../lib/branding'
+import { DEFAULT_SOURCE_URL, safeUrl } from '../lib/branding'
 import { t, tp } from '../i18n/en'
 
 const props = defineProps<{ open: boolean }>()

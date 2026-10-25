@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, downloadAttachment } from './client'
+import { request, downloadAttachment, JSON_HEADERS } from './client'
 import type { PutApiV1RepositoriesByNameVexStatementsData, VexStatement as GeneratedVexStatement } from './generated/types.gen'
 
 // VEX decisions are admin-only and keyed by repository name. A decision is the
@@ -47,7 +47,7 @@ export async function listVexStatements(repo: string, artifactId?: string): Prom
 export function putVexStatement(repo: string, decision: VexDecision): Promise<VexRecord> {
   return request<VexRecord>(`${repoBase(repo)}/vex/statements`, {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(decision),
   })
 }
@@ -61,7 +61,7 @@ export type VexDocumentFormat = 'openvex' | 'cyclonedx'
 
 export const VEX_DOCUMENT_FORMATS: readonly VexDocumentFormat[] = ['openvex', 'cyclonedx']
 
-export interface VexDocumentOptions {
+interface VexDocumentOptions {
   /** Restricts the document to one artifact; otherwise every scanned artifact of the repository is included. */
   artifactId?: string
   /** CycloneDX only: 1.4, 1.5 or 1.6 (server default 1.5). */

@@ -64,7 +64,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 {{ testResults[provider.slug].ok ? t('adm.sso.testOkAt') : t('adm.sso.testFailedAt') }}
                 {{ testResults[provider.slug].at }}
               </template>
-              <template v-else>{{ t('adm.sso.updated') }} {{ formatRelativeDate(provider.updated_at) }}</template>
+              <template v-else>{{ t('adm.sso.updated') }} {{ timeAgo(provider.updated_at, { maxDays: 7 }) }}</template>
             </p>
           </div>
 
@@ -289,7 +289,7 @@ import {
   PlusIcon,
   ShieldCheckIcon,
 } from '@heroicons/vue/24/outline'
-import { request, ApiError } from '../../api/client'
+import { request, ApiError, JSON_HEADERS } from '../../api/client'
 import { saveSSOProvider, testSSOProvider, type OIDCConfigInput, type SSOConfigInput } from '../../api/admin'
 import {
   buildOIDCPayload, oidcFormFrom, emptyOIDCForm, type OIDCTextKey,
@@ -302,7 +302,7 @@ import AdminDialog from '../../components/AdminDialog.vue'
 import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
-import { formatDate, formatTime } from '../../lib/datetime'
+import { formatTime, timeAgo } from '../../lib/datetime'
 
 // Response shape of the admin SSO API: the client secret is never returned,
 // so `oidc_config.client_secret` is always absent.
@@ -485,7 +485,7 @@ async function saveProvider(): Promise<void> {
         `/api/v1/admin/sso-providers/${encodeURIComponent(editingProvider.value.slug)}`,
         {
           method: 'PATCH',
-          headers: { 'Content-Type': 'application/json' },
+          headers: JSON_HEADERS,
           body: JSON.stringify({ display_name: form.value.display_name, ...config }),
         },
       )
@@ -530,7 +530,7 @@ async function toggleEnabled(provider: SSOProvider): Promise<void> {
   try {
     await request<SSOProvider>(`/api/v1/admin/sso-providers/${encodeURIComponent(provider.slug)}`, {
       method: 'PATCH',
-      headers: { 'Content-Type': 'application/json' },
+      headers: JSON_HEADERS,
       body: JSON.stringify({ enabled: next }),
     })
     provider.enabled = next
@@ -556,21 +556,6 @@ async function deleteProvider(): Promise<void> {
   }
 }
 
-function formatRelativeDate(dateString: string): string {
-  if (!dateString) return '—'
-  const date = new Date(dateString)
-  const diffMs = Date.now() - date.getTime()
-  const diffMins = Math.floor(diffMs / 60000)
-  const diffHours = Math.floor(diffMs / 3600000)
-  const diffDays = Math.floor(diffMs / 86400000)
-
-  if (diffMins < 1) return t('adm.sso.justNow')
-  if (diffMins < 60) return `${diffMins}m`
-  if (diffHours < 24) return `${diffHours}h`
-  if (diffDays < 7) return `${diffDays}d`
-
-  return formatDate(date)
-}
 
 onMounted(loadProviders)
 </script>

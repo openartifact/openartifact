@@ -10,7 +10,6 @@ import {
   emptyPolicyForm,
   formFromPolicy,
   formToInput,
-  formatDuration,
   hasCondition,
   policyConditions,
   policyFormError,
@@ -58,16 +57,6 @@ describe('size units', () => {
     expect(sharePercent(500, 100)).toBe(100)
     expect(sharePercent(10, 0)).toBe(0)
     expect(sharePercent(undefined, 100)).toBe(0)
-  })
-})
-
-describe('formatDuration', () => {
-  it('uses the largest unit that divides exactly', () => {
-    expect(formatDuration(SECONDS_PER_DAY)).toBe('1 day')
-    expect(formatDuration(30 * SECONDS_PER_DAY)).toBe('30 days')
-    expect(formatDuration(7200)).toBe('2 hours')
-    expect(formatDuration(90)).toBe('90 seconds')
-    expect(formatDuration(120)).toBe('2 minutes')
   })
 })
 

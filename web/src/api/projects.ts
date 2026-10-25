@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { downloadAttachment, request } from './client'
+import { downloadAttachment, request, JSON_HEADERS } from './client'
 import type { ExportFormat } from './audit'
 import type { Repository } from './repositories'
 import type { ProjectCleanupPreview } from './generated'
@@ -59,13 +59,13 @@ export interface ProjectMembership {
   role: ProjectMemberRole
 }
 
-export interface ProjectList {
+interface ProjectList {
   projects: Project[]
   /** The caller may create projects (global admin, or self-service creation is enabled). */
   can_create: boolean
 }
 
-export interface ProjectRepositoryPage {
+interface ProjectRepositoryPage {
   repositories: Repository[]
   total: number
   page: number
@@ -73,22 +73,21 @@ export interface ProjectRepositoryPage {
 }
 
 /** Add by `user_id` or `username`; the role defaults to viewer server-side. */
-export interface ProjectMemberCreateRequest {
+interface ProjectMemberCreateRequest {
   user_id?: string
   username?: string
   role?: ProjectMemberRole
 }
 
-export interface ProjectMemberUpdateRequest {
+interface ProjectMemberUpdateRequest {
   role: ProjectMemberRole
 }
 
-export interface ProjectSettings {
+interface ProjectSettings {
   /** Any user may create projects, not only global admins. */
   self_create: boolean
 }
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const enc = encodeURIComponent
 const base = (project: string): string => `/api/v1/projects/${enc(project)}`
 
@@ -121,10 +120,6 @@ export const deleteProject = (project: string) => request<void>(base(project), {
  */
 export const createProjectRepository = (project: string, body: Partial<Repository> & { upstream_password?: string }) =>
   send<Repository>(`${base(project)}/repositories`, 'POST', body)
-
-/** Moves a repository to another project; the caller must own both. */
-export const transferProjectRepository = (project: string, name: string, toProject: string) =>
-  send<Repository>(`${base(project)}/repositories/${enc(name)}/transfer`, 'POST', { to_project: toProject })
 
 /** Live repositories of the project, newest first. */
 export async function listProjectRepositories(
@@ -185,8 +180,8 @@ export const PROJECT_TOKEN_ROLES = ['viewer', 'developer'] as const
 export type ProjectTokenRole = (typeof PROJECT_TOKEN_ROLES)[number]
 
 export type ProjectToken = GeneratedProjectToken
-export type ProjectTokenCreateRequest = GeneratedProjectTokenCreateRequest
-export type ProjectTokenCreated = GeneratedProjectTokenCreateResponse
+type ProjectTokenCreateRequest = GeneratedProjectTokenCreateRequest
+type ProjectTokenCreated = GeneratedProjectTokenCreateResponse
 
 /** Maintainers and owners see every token of the project, other members only their own. */
 export async function listProjectTokens(project: string): Promise<ProjectToken[]> {
@@ -206,7 +201,7 @@ export type ProjectUsage = GeneratedProjectUsage
 /** One repository row of {@link ProjectUsage}. */
 export type ProjectUsageRepository = NonNullable<GeneratedProjectUsage['repositories']>[number]
 /** Limits accepted by {@link setProjectQuota}; 0 means unlimited. */
-export type ProjectQuotaUpdate = QuotaLimits
+type ProjectQuotaUpdate = QuotaLimits
 
 /** Totals, the project quota and the per-repository breakdown; any member. */
 export const getProjectUsage = (project: string) => request<ProjectUsage>(`${base(project)}/usage`)
@@ -219,7 +214,7 @@ export const setProjectQuota = (project: string, body: ProjectQuotaUpdate) =>
   send<ProjectQuota>(`${base(project)}/quota`, 'PUT', body)
 
 /** Rule fields of a project default cleanup policy; same shape as a repository policy. */
-export interface ProjectCleanupPolicyRequest {
+interface ProjectCleanupPolicyRequest {
   name?: string
   enabled?: boolean
   keep_last_n?: number
@@ -251,7 +246,7 @@ export const dryRunProjectCleanupPolicy = (project: string, id: string) =>
   send<ProjectCleanupPreview>(`${base(project)}/cleanup-policies/${enc(id)}/dry-run`, 'POST', {})
 
 /** One page of project activity, newest first. */
-export interface ProjectActivity {
+interface ProjectActivity {
   items: ProjectActivityEntry[]
   hasMore: boolean
   /** Pass as `cursor` to load the following page; null on the last page. */

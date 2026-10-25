@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 
 export interface AIConfig {
   enabled: boolean
@@ -33,7 +33,7 @@ export function getAIConfig(): Promise<AIConfig> {
 export function saveAIConfig(cfg: AIConfig): Promise<AIConfig> {
   return request<AIConfig>('/api/v1/admin/ai/config', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(cfg),
   })
 }
@@ -41,11 +41,7 @@ export function saveAIConfig(cfg: AIConfig): Promise<AIConfig> {
 export function testAIConfig(cfg: AIConfig): Promise<TestResult> {
   return request<TestResult>('/api/v1/admin/ai/test', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(cfg),
   })
-}
-
-export function listAIModels(): Promise<TestResult> {
-  return request<TestResult>('/api/v1/admin/ai/models')
 }

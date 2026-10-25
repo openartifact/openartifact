@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { t, tDynamic } from '../i18n/en'
-import { FORMAT_LOCALE } from './datetime'
+import { formatDuration } from './duration'
 import { isFederationFormat } from './repoTypes'
 import type { Repository } from '../api/repositories'
 import type {
@@ -13,7 +13,7 @@ import type {
   UpdateFederationPeerRequest,
 } from '../api/federation'
 
-export type StateVariant = 'success' | 'warning' | 'neutral' | 'danger'
+type StateVariant = 'success' | 'warning' | 'neutral' | 'danger'
 
 /** Poll period of the status endpoint while the tab is visible. */
 export const FEDERATION_POLL_MS = 10_000
@@ -34,29 +34,14 @@ export function peerStateLabel(state: FederationPeerState): string {
   return tDynamic(`federation.state.${state}`)
 }
 
-const LAG_UNITS: ReadonlyArray<{ unit: 'day' | 'hour' | 'minute' | 'second'; seconds: number }> = [
-  { unit: 'day', seconds: 86_400 },
-  { unit: 'hour', seconds: 3_600 },
-  { unit: 'minute', seconds: 60 },
-  { unit: 'second', seconds: 1 },
-]
-
 /** Lag as a short duration with at most two units ("1 hr 5 min"); "Caught up" when below one second. */
 export function formatLag(seconds: number | null | undefined): string {
-  let rest = Math.floor(seconds ?? 0)
+  const rest = Math.floor(seconds ?? 0)
   if (!Number.isFinite(rest) || rest < 1) return t('federation.lag.none')
-  const parts: string[] = []
-  for (const { unit, seconds: size } of LAG_UNITS) {
-    const n = Math.floor(rest / size)
-    if (n === 0) continue
-    rest -= n * size
-    parts.push(new Intl.NumberFormat(FORMAT_LOCALE, { style: 'unit', unit, unitDisplay: 'short' }).format(n))
-    if (parts.length === 2) break
-  }
-  return parts.join(' ')
+  return formatDuration(rest, { display: 'short', maxUnits: 2 })
 }
 
-export const ERROR_PREVIEW_CHARS = 80
+const ERROR_PREVIEW_CHARS = 80
 
 /** Cuts `text` to `max` characters with an ellipsis; `truncated` says whether anything was dropped. */
 export function previewError(text: string | null | undefined, max = ERROR_PREVIEW_CHARS): { text: string; truncated: boolean } {

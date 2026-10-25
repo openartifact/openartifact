@@ -5,7 +5,7 @@
 import { formatDateTime } from './datetime'
 
 /** Short-SHA length used by every build path (Makefile, Dockerfile, goreleaser). */
-export const SHORT_SHA_LENGTH = 7
+const SHORT_SHA_LENGTH = 7
 
 const HEX_SHA = /^[0-9a-f]{7,40}$/i
 

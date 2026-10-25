@@ -258,7 +258,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
-import { request } from '../../api/client'
+import { request, JSON_HEADERS } from '../../api/client'
 import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t, tDynamic } from '../../i18n/en'
@@ -392,7 +392,7 @@ async function submitCreate(): Promise<void> {
 
     const created = await request<Webhook>('/api/v1/webhooks', {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: JSON_HEADERS,
       body: JSON.stringify(payload),
     })
 
@@ -401,7 +401,7 @@ async function submitCreate(): Promise<void> {
     if (created?.id && (!form.value.enabled || !form.value.ssl_verify)) {
       await request<Webhook>(`/api/v1/webhooks/${encodeURIComponent(created.id)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ enabled: form.value.enabled, ssl_verify: form.value.ssl_verify }),
       })
     }

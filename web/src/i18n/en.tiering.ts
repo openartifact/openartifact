@@ -9,16 +9,6 @@ export const enTiering = {
     'Place blobs on hot or cold storage backends and move them automatically with lifecycle policies.',
   'tiering.loadFailed': 'Could not load the storage tiers.',
 
-  // Durations ({n} is replaced)
-  'tiering.duration.day': '{n} day',
-  'tiering.duration.days': '{n} days',
-  'tiering.duration.hour': '{n} hour',
-  'tiering.duration.hours': '{n} hours',
-  'tiering.duration.minute': '{n} minute',
-  'tiering.duration.minutes': '{n} minutes',
-  'tiering.duration.second': '{n} second',
-  'tiering.duration.seconds': '{n} seconds',
-
   // Placement
   'tiering.placement.title': 'Placement',
   'tiering.placement.description': 'Tiers from hottest to coldest, with the blobs each one holds.',

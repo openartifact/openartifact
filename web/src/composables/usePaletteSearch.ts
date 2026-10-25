@@ -14,9 +14,9 @@ import type { SearchPackageHit, SearchRepoHit } from '../api/search'
  * - `tooBroad`: the server refused the query as matching too much.
  * - `error`: the request failed; `retry()` repeats it.
  */
-export type PaletteSearchStatus = 'idle' | 'loading' | 'ready' | 'tooBroad' | 'error'
+type PaletteSearchStatus = 'idle' | 'loading' | 'ready' | 'tooBroad' | 'error'
 
-export interface PaletteSearchOptions {
+interface PaletteSearchOptions {
   debounceMs?: number
   /** Hits per group. */
   limit?: number

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 import type { Branding, BrandingAdmin, BrandingUpdate } from './generated/types.gen'
 
 export type { Branding, BrandingAdmin, BrandingUpdate }
@@ -18,7 +18,7 @@ export const getAdminBranding = () => request<BrandingAdmin>('/api/v1/admin/bran
 export const updateBranding = (body: BrandingUpdate) =>
   request<BrandingAdmin>('/api/v1/admin/branding', {
     method: 'PUT',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(body),
   })
 

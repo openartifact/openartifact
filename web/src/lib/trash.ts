@@ -47,7 +47,7 @@ export function emptyTrashResultText(purged: number, remaining: number): string 
 /** Per-repository capabilities of the current user (`Repository.permissions`). */
 export type RepoPermissions = NonNullable<Repository['permissions']>
 
-export interface TrashCapabilities {
+interface TrashCapabilities {
   restore: boolean
   empty: boolean
   purge: boolean

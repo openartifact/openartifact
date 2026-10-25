@@ -9,7 +9,7 @@ import { VULN_SCANNERS } from '../api/security'
 export type BadgeVariant = 'success' | 'warning' | 'neutral' | 'danger'
 
 /** Vulnerability scan statuses the server can report. */
-export const VULN_SCAN_STATUSES = ['pending', 'scanning', 'completed', 'partial', 'failed'] as const
+const VULN_SCAN_STATUSES = ['pending', 'scanning', 'completed', 'partial', 'failed'] as const
 
 /**
  * Badge colour for a vulnerability scan status: failed is red, partial and
@@ -77,7 +77,7 @@ export function normalizeScannerSelection(selected: readonly string[]): VulnScan
   return picked.length ? picked : ['osv']
 }
 
-export type LicenseQuarantineState = 'quarantined' | 'approved' | 'none'
+type LicenseQuarantineState = 'quarantined' | 'approved' | 'none'
 
 /**
  * Quarantine state of a license scan: `quarantined` blocks downloads;

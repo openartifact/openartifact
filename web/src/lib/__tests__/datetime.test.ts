@@ -3,8 +3,8 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, expect, it } from 'bun:test'
-import { formatDate, formatDateTime, formatTimestamp } from '../datetime'
-import { formatTtl } from '../repoTypes'
+import { formatDate, formatDateTime, formatTimestamp, isExpired, timeAgo } from '../datetime'
+import { formatDuration } from '../duration'
 
 describe('datetime', () => {
   it('returns fallback for nullish/invalid', () => {
@@ -28,8 +28,8 @@ describe('formatting locale', () => {
     Object.defineProperty(globalThis, 'navigator', { value: { language: 'it-IT', languages: ['it-IT'] }, configurable: true })
     try {
       expect(formatDate('2026-10-21T13:45:00Z')).toBe('Oct 21, 2026')
-      expect(formatTtl(3600)).toBe('1 hour')
-      expect(formatTtl(60)).toBe('1 minute')
+      expect(formatDuration(3600)).toBe('1 hour')
+      expect(formatDuration(60)).toBe('1 minute')
     } finally {
       if (orig) Object.defineProperty(globalThis, 'navigator', orig)
       else delete (globalThis as { navigator?: unknown }).navigator
@@ -43,5 +43,35 @@ describe('formatTimestamp', () => {
     expect(formatTimestamp(iso)).toBe(new Date(iso).toLocaleString('en', { dateStyle: 'medium', timeStyle: 'medium' }))
     expect(formatTimestamp(null)).toBe('—')
     expect(formatTimestamp('garbage', 'x')).toBe('x')
+  })
+})
+
+describe('timeAgo', () => {
+  const ago = (ms: number) => new Date(Date.now() - ms).toISOString()
+
+  it('renders compact units', () => {
+    expect(timeAgo(ago(10_000))).toBe('just now')
+    expect(timeAgo(ago(5 * 60_000))).toBe('5m')
+    expect(timeAgo(ago(3 * 3_600_000))).toBe('3h')
+    expect(timeAgo(ago(2 * 86_400_000))).toBe('2d')
+  })
+  it('falls back for a missing or invalid value', () => {
+    expect(timeAgo(undefined)).toBe('—')
+    expect(timeAgo('garbage', { fallback: 'n/a' })).toBe('n/a')
+  })
+  it('switches to a date past maxDays', () => {
+    const old = ago(10 * 86_400_000)
+    expect(timeAgo(old, { maxDays: 7 })).toBe(formatDate(old))
+    expect(timeAgo(ago(3 * 86_400_000), { maxDays: 7 })).toBe('3d')
+  })
+})
+
+describe('isExpired', () => {
+  it('is true only for a valid past timestamp', () => {
+    expect(isExpired(new Date(Date.now() - 1000).toISOString())).toBe(true)
+    expect(isExpired(new Date(Date.now() + 60_000).toISOString())).toBe(false)
+    expect(isExpired(undefined)).toBe(false)
+    expect(isExpired('')).toBe(false)
+    expect(isExpired('garbage')).toBe(false)
   })
 })

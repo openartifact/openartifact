@@ -12,7 +12,7 @@ import {
   siOllama,
 } from 'simple-icons'
 
-export interface BrandIcon {
+interface BrandIcon {
   path: string
   viewBox: string
 }

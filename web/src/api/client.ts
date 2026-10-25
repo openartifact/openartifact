@@ -107,6 +107,9 @@ async function apiError(res: Response): Promise<ApiError> {
   return new ApiError(message, res.status, code)
 }
 
+/** Headers of a request whose body is `JSON.stringify(...)`. */
+export const JSON_HEADERS = { 'Content-Type': 'application/json' }
+
 export async function request<T>(path: string, init: RequestInit = {}): Promise<T> {
   const res = await send(path, init)
 
@@ -154,6 +157,29 @@ export async function preflight(path: string): Promise<{ filename?: string }> {
     return { filename: attachmentFilename(res.headers.get('content-disposition')) }
   } finally {
     controller.abort()
+  }
+}
+
+/**
+ * Fetches a same-origin GET through the shared request path (CSRF, 401
+ * handling, ApiError on failure) and saves the body as `filename`. For small
+ * payloads: the body is held in memory; use {@link downloadAttachment} to
+ * stream large files.
+ */
+export async function downloadBlob(path: string, filename: string): Promise<void> {
+  const res = await send(path, {})
+  if (!res.ok) throw await apiError(res)
+
+  const url = URL.createObjectURL(await res.blob())
+  try {
+    const link = document.createElement('a')
+    link.href = url
+    link.download = filename
+    document.body.appendChild(link)
+    link.click()
+    link.remove()
+  } finally {
+    URL.revokeObjectURL(url)
   }
 }
 

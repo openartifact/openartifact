@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 import type {
   CreateFederationPeerRequest,
   FederationDeferredUnit,
@@ -25,8 +25,6 @@ export type {
 export type FederationPeerState = FederationPeer['state']
 
 const enc = encodeURIComponent
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
-
 function base(repo: string): string {
   return `/api/v1/repositories/${enc(repo)}/federation`
 }

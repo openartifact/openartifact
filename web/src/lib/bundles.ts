@@ -42,7 +42,7 @@ export function promotionLabel(status: PromotionStatus): string {
 
 export type StageStatus = 'done' | 'current' | 'pending'
 
-export interface StageStep {
+interface StageStep {
   name: string
   repoId?: string
   status: StageStatus

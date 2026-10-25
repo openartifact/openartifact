@@ -9,7 +9,7 @@ export type OIDCTextKey =
   | 'scopes' | 'allowed_tenants' | 'allowed_orgs' | 'hosted_domain' | 'graph_endpoint'
   | 'authorization_url' | 'token_url' | 'userinfo_url' | 'auth_base_url' | 'api_base_url'
 
-export interface OIDCForm extends Record<OIDCTextKey, string> {
+interface OIDCForm extends Record<OIDCTextKey, string> {
   type: OIDCType
   issuer: string
   client_id: string

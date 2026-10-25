@@ -1,0 +1,444 @@
+[
+  {
+    "format": "npm",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "npm",
+        "configure": "npm config set registry https://artifacts.example.com:8443/repos/repo1/\nnpm config set //artifacts.example.com:8443/repos/repo1/:_authToken \u003cTOKEN\u003e",
+        "publish": "npm publish --registry https://artifacts.example.com:8443/repos/repo1/"
+      },
+      {
+        "client": "pnpm",
+        "configure": "pnpm config set registry https://artifacts.example.com:8443/repos/repo1/\npnpm config set //artifacts.example.com:8443/repos/repo1/:_authToken \u003cTOKEN\u003e",
+        "publish": "pnpm publish --registry https://artifacts.example.com:8443/repos/repo1/"
+      },
+      {
+        "client": "yarn",
+        "configure": "yarn config set npmRegistryServer https://artifacts.example.com:8443/repos/repo1/\nyarn config set npmAuthToken \u003cTOKEN\u003e",
+        "publish": "yarn npm publish"
+      }
+    ]
+  },
+  {
+    "format": "npm",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "npm",
+        "configure": "npm config set registry https://artifacts.example.com:8443/repos/my%20repo/\nnpm config set //artifacts.example.com:8443/repos/my%20repo/:_authToken \u003cTOKEN\u003e",
+        "publish": "npm publish --registry https://artifacts.example.com:8443/repos/my%20repo/"
+      },
+      {
+        "client": "pnpm",
+        "configure": "pnpm config set registry https://artifacts.example.com:8443/repos/my%20repo/\npnpm config set //artifacts.example.com:8443/repos/my%20repo/:_authToken \u003cTOKEN\u003e",
+        "publish": "pnpm publish --registry https://artifacts.example.com:8443/repos/my%20repo/"
+      },
+      {
+        "client": "yarn",
+        "configure": "yarn config set npmRegistryServer https://artifacts.example.com:8443/repos/my%20repo/\nyarn config set npmAuthToken \u003cTOKEN\u003e",
+        "publish": "yarn npm publish"
+      }
+    ]
+  },
+  {
+    "format": "docker",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443",
+    "snippets": [
+      {
+        "client": "docker",
+        "configure": "docker login artifacts.example.com:8443 -u \u003cUSERNAME\u003e -p \u003cTOKEN\u003e",
+        "publish": "docker tag my-image:latest artifacts.example.com:8443/repo1:latest\ndocker push artifacts.example.com:8443/repo1:latest"
+      }
+    ]
+  },
+  {
+    "format": "docker",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443",
+    "snippets": [
+      {
+        "client": "docker",
+        "configure": "docker login artifacts.example.com:8443 -u \u003cUSERNAME\u003e -p \u003cTOKEN\u003e",
+        "publish": "docker tag my-image:latest artifacts.example.com:8443/my repo:latest\ndocker push artifacts.example.com:8443/my repo:latest"
+      }
+    ]
+  },
+  {
+    "format": "pypi",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "pip",
+        "configure": "pip config set global.index-url https://artifacts.example.com:8443/repos/repo1/simple/"
+      },
+      {
+        "client": "twine",
+        "configure": "# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = https://artifacts.example.com:8443/repos/repo1/\nusername = \u003cUSERNAME\u003e\npassword = \u003cTOKEN\u003e",
+        "publish": "twine upload --repository openartifact dist/*"
+      }
+    ]
+  },
+  {
+    "format": "pypi",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "pip",
+        "configure": "pip config set global.index-url https://artifacts.example.com:8443/repos/my%20repo/simple/"
+      },
+      {
+        "client": "twine",
+        "configure": "# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = https://artifacts.example.com:8443/repos/my%20repo/\nusername = \u003cUSERNAME\u003e\npassword = \u003cTOKEN\u003e",
+        "publish": "twine upload --repository openartifact dist/*"
+      }
+    ]
+  },
+  {
+    "format": "maven",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/maven/repo1",
+    "snippets": [
+      {
+        "client": "Maven",
+        "configure": "\u003c!-- ~/.m2/settings.xml --\u003e\n\u003csettings\u003e\n  \u003cservers\u003e\n    \u003cserver\u003e\n      \u003cid\u003erepo1\u003c/id\u003e\n      \u003cusername\u003e\u003cUSERNAME\u003e\u003c/username\u003e\n      \u003cpassword\u003e\u003cTOKEN\u003e\u003c/password\u003e\n    \u003c/server\u003e\n  \u003c/servers\u003e\n\u003c/settings\u003e",
+        "publish": "mvn deploy -DaltDeploymentRepository=repo1::default::https://artifacts.example.com:8443/repos/maven/repo1"
+      }
+    ]
+  },
+  {
+    "format": "maven",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/maven/my%20repo",
+    "snippets": [
+      {
+        "client": "Maven",
+        "configure": "\u003c!-- ~/.m2/settings.xml --\u003e\n\u003csettings\u003e\n  \u003cservers\u003e\n    \u003cserver\u003e\n      \u003cid\u003emy repo\u003c/id\u003e\n      \u003cusername\u003e\u003cUSERNAME\u003e\u003c/username\u003e\n      \u003cpassword\u003e\u003cTOKEN\u003e\u003c/password\u003e\n    \u003c/server\u003e\n  \u003c/servers\u003e\n\u003c/settings\u003e",
+        "publish": "mvn deploy -DaltDeploymentRepository=my repo::default::https://artifacts.example.com:8443/repos/maven/my%20repo"
+      }
+    ]
+  },
+  {
+    "format": "helm",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "helm",
+        "configure": "helm repo add repo1 https://artifacts.example.com:8443/repos/repo1 --username \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nhelm repo update",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e --data-binary @my-chart-0.1.0.tgz https://artifacts.example.com:8443/repos/repo1/charts"
+      }
+    ]
+  },
+  {
+    "format": "helm",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "helm",
+        "configure": "helm repo add my repo https://artifacts.example.com:8443/repos/my%20repo --username \u003cUSERNAME\u003e --password \u003cTOKEN\u003e\nhelm repo update",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e --data-binary @my-chart-0.1.0.tgz https://artifacts.example.com:8443/repos/my%20repo/charts"
+      }
+    ]
+  },
+  {
+    "format": "deb",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "apt",
+        "configure": "curl -fsSL https://artifacts.example.com:8443/repos/repo1/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/repo1.gpg\necho \"deb [signed-by=/etc/apt/keyrings/repo1.gpg] https://artifacts.example.com:8443/repos/repo1 stable main\" | sudo tee /etc/apt/sources.list.d/repo1.list\nsudo apt update",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -F file=@my-package_1.0_amd64.deb -F distribution=stable -F component=main https://artifacts.example.com:8443/api/v1/repositories/repo1/debs"
+      }
+    ]
+  },
+  {
+    "format": "deb",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "apt",
+        "configure": "curl -fsSL https://artifacts.example.com:8443/repos/my%20repo/public.key | sudo gpg --dearmor -o /etc/apt/keyrings/my repo.gpg\necho \"deb [signed-by=/etc/apt/keyrings/my repo.gpg] https://artifacts.example.com:8443/repos/my%20repo stable main\" | sudo tee /etc/apt/sources.list.d/my repo.list\nsudo apt update",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -F file=@my-package_1.0_amd64.deb -F distribution=stable -F component=main https://artifacts.example.com:8443/api/v1/repositories/my%20repo/debs"
+      }
+    ]
+  },
+  {
+    "format": "rpm",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "dnf / yum",
+        "configure": "# /etc/yum.repos.d/repo1.repo\n[repo1]\nname=repo1\nbaseurl=https://artifacts.example.com:8443/repos/repo1\nenabled=1\nrepo_gpgcheck=1\ngpgkey=https://artifacts.example.com:8443/repos/repo1/public.key",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -F file=@my-package-1.0.x86_64.rpm https://artifacts.example.com:8443/api/v1/repositories/repo1/packages"
+      }
+    ]
+  },
+  {
+    "format": "rpm",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "dnf / yum",
+        "configure": "# /etc/yum.repos.d/my repo.repo\n[my repo]\nname=my repo\nbaseurl=https://artifacts.example.com:8443/repos/my%20repo\nenabled=1\nrepo_gpgcheck=1\ngpgkey=https://artifacts.example.com:8443/repos/my%20repo/public.key",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -F file=@my-package-1.0.x86_64.rpm https://artifacts.example.com:8443/api/v1/repositories/my%20repo/packages"
+      }
+    ]
+  },
+  {
+    "format": "cargo",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "cargo",
+        "configure": "# ~/.cargo/config.toml\n[registries.repo1]\nindex = \"sparse+https://artifacts.example.com:8443/repos/repo1/index/\"\ntoken = \"\u003cTOKEN\u003e\"",
+        "publish": "cargo publish --registry repo1"
+      }
+    ]
+  },
+  {
+    "format": "cargo",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "cargo",
+        "configure": "# ~/.cargo/config.toml\n[registries.my repo]\nindex = \"sparse+https://artifacts.example.com:8443/repos/my%20repo/index/\"\ntoken = \"\u003cTOKEN\u003e\"",
+        "publish": "cargo publish --registry my repo"
+      }
+    ]
+  },
+  {
+    "format": "go",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "go",
+        "configure": "go env -w GOPROXY=https://artifacts.example.com:8443/repos/repo1,direct\ngo env -w GONOSUMDB=*"
+      }
+    ]
+  },
+  {
+    "format": "go",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "go",
+        "configure": "go env -w GOPROXY=https://artifacts.example.com:8443/repos/my%20repo,direct\ngo env -w GONOSUMDB=*"
+      }
+    ]
+  },
+  {
+    "format": "nuget",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "dotnet",
+        "configure": "dotnet nuget add source https://artifacts.example.com:8443/repos/repo1/v3/index.json --name repo1 --username \u003cUSERNAME\u003e --password \u003cTOKEN\u003e --store-password-in-clear-text",
+        "publish": "dotnet nuget push my-package.1.0.0.nupkg --source repo1 --api-key \u003cTOKEN\u003e"
+      }
+    ]
+  },
+  {
+    "format": "nuget",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "dotnet",
+        "configure": "dotnet nuget add source https://artifacts.example.com:8443/repos/my%20repo/v3/index.json --name my repo --username \u003cUSERNAME\u003e --password \u003cTOKEN\u003e --store-password-in-clear-text",
+        "publish": "dotnet nuget push my-package.1.0.0.nupkg --source my repo --api-key \u003cTOKEN\u003e"
+      }
+    ]
+  },
+  {
+    "format": "rubygems",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "gem",
+        "configure": "gem sources --add https://artifacts.example.com:8443/repos/repo1/",
+        "publish": "GEM_HOST_API_KEY=\u003cTOKEN\u003e gem push my-gem-1.0.0.gem --host https://artifacts.example.com:8443/repos/repo1"
+      }
+    ]
+  },
+  {
+    "format": "rubygems",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "gem",
+        "configure": "gem sources --add https://artifacts.example.com:8443/repos/my%20repo/",
+        "publish": "GEM_HOST_API_KEY=\u003cTOKEN\u003e gem push my-gem-1.0.0.gem --host https://artifacts.example.com:8443/repos/my%20repo"
+      }
+    ]
+  },
+  {
+    "format": "raw",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/raw/repo1",
+    "snippets": [
+      {
+        "client": "curl",
+        "configure": "curl -fO https://artifacts.example.com:8443/repos/raw/repo1/path/to/file.bin",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -T file.bin https://artifacts.example.com:8443/repos/raw/repo1/path/to/file.bin"
+      }
+    ]
+  },
+  {
+    "format": "raw",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/raw/my%20repo",
+    "snippets": [
+      {
+        "client": "curl",
+        "configure": "curl -fO https://artifacts.example.com:8443/repos/raw/my%20repo/path/to/file.bin",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -T file.bin https://artifacts.example.com:8443/repos/raw/my%20repo/path/to/file.bin"
+      }
+    ]
+  },
+  {
+    "format": "conda",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "conda",
+        "configure": "conda config --add channels https://artifacts.example.com:8443/repos/repo1",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -H \"X-Filename: my-package-1.0-0.conda\" --data-binary @my-package-1.0-0.conda https://artifacts.example.com:8443/repos/repo1/linux-64"
+      }
+    ]
+  },
+  {
+    "format": "conda",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "conda",
+        "configure": "conda config --add channels https://artifacts.example.com:8443/repos/my%20repo",
+        "publish": "curl -u \u003cUSERNAME\u003e:\u003cTOKEN\u003e -H \"X-Filename: my-package-1.0-0.conda\" --data-binary @my-package-1.0-0.conda https://artifacts.example.com:8443/repos/my%20repo/linux-64"
+      }
+    ]
+  },
+  {
+    "format": "conan",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/repo1",
+    "snippets": [
+      {
+        "client": "conan",
+        "configure": "conan remote add repo1 https://artifacts.example.com:8443/repos/repo1\nconan remote login repo1 \u003cUSERNAME\u003e -p \u003cTOKEN\u003e",
+        "publish": "conan upload \"my-lib/1.0\" -r repo1 --confirm"
+      }
+    ]
+  },
+  {
+    "format": "conan",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/my%20repo",
+    "snippets": [
+      {
+        "client": "conan",
+        "configure": "conan remote add my repo https://artifacts.example.com:8443/repos/my%20repo\nconan remote login my repo \u003cUSERNAME\u003e -p \u003cTOKEN\u003e",
+        "publish": "conan upload \"my-lib/1.0\" -r my repo --confirm"
+      }
+    ]
+  },
+  {
+    "format": "sbt",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/sbt/repo1",
+    "snippets": [
+      {
+        "client": "sbt",
+        "configure": "// build.sbt\nresolvers += \"repo1\" at \"https://artifacts.example.com:8443/repos/sbt/repo1\"\ncredentials += Credentials(\"OpenArtifact\", \"artifacts.example.com:8443\", \"\u003cUSERNAME\u003e\", \"\u003cTOKEN\u003e\")",
+        "publish": "ThisBuild / publishTo := Some(\"repo1\" at \"https://artifacts.example.com:8443/repos/sbt/repo1\")\n// then: sbt publish"
+      }
+    ]
+  },
+  {
+    "format": "sbt",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/sbt/my%20repo",
+    "snippets": [
+      {
+        "client": "sbt",
+        "configure": "// build.sbt\nresolvers += \"my repo\" at \"https://artifacts.example.com:8443/repos/sbt/my%20repo\"\ncredentials += Credentials(\"OpenArtifact\", \"artifacts.example.com:8443\", \"\u003cUSERNAME\u003e\", \"\u003cTOKEN\u003e\")",
+        "publish": "ThisBuild / publishTo := Some(\"my repo\" at \"https://artifacts.example.com:8443/repos/sbt/my%20repo\")\n// then: sbt publish"
+      }
+    ]
+  },
+  {
+    "format": "ivy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "repo1",
+    "base_url": "https://artifacts.example.com:8443/repos/ivy/repo1",
+    "snippets": [
+      {
+        "client": "Ivy",
+        "configure": "\u003cibiblio name=\"repo1\" m2compatible=\"true\" root=\"https://artifacts.example.com:8443/repos/ivy/repo1\"/\u003e",
+        "publish": "\u003civy:publish resolver=\"repo1\" pubrevision=\"1.0\" overwrite=\"true\"\u003e\n  \u003cartifacts pattern=\"dist/[artifact]-[revision].[ext]\"/\u003e\n\u003c/ivy:publish\u003e"
+      }
+    ]
+  },
+  {
+    "format": "ivy",
+    "origin": "https://artifacts.example.com:8443",
+    "repo": "my repo",
+    "base_url": "https://artifacts.example.com:8443/repos/ivy/my%20repo",
+    "snippets": [
+      {
+        "client": "Ivy",
+        "configure": "\u003cibiblio name=\"my repo\" m2compatible=\"true\" root=\"https://artifacts.example.com:8443/repos/ivy/my%20repo\"/\u003e",
+        "publish": "\u003civy:publish resolver=\"my repo\" pubrevision=\"1.0\" overwrite=\"true\"\u003e\n  \u003cartifacts pattern=\"dist/[artifact]-[revision].[ext]\"/\u003e\n\u003c/ivy:publish\u003e"
+      }
+    ]
+  }
+]

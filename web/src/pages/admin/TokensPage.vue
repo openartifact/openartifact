@@ -104,7 +104,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import PageHeader from '../../components/PageHeader.vue'
-import { formatDate } from '../../lib/datetime'
+import { formatDate, isExpired } from '../../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
 import AppButton from '../../components/AppButton.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
@@ -150,11 +150,6 @@ function ownerName(userId?: string): string {
 }
 
 
-function isExpired(date?: string): boolean {
-  if (!date) return false
-  const d = new Date(date)
-  return !Number.isNaN(d.getTime()) && d < new Date()
-}
 
 let loadSeq = 0
 

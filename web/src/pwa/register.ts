@@ -8,7 +8,7 @@ import { t } from '../i18n/en'
 const SW_URL = '/sw.js'
 const UPDATE_CHECK_MS = 60 * 60 * 1000
 
-export interface ServiceWorkerOptions {
+interface ServiceWorkerOptions {
   container?: ServiceWorkerContainer
   reload?: () => void
   /** Notified once per waiting worker; `apply` activates it and reloads the page. */

@@ -8,14 +8,14 @@ import type { TrashEmpty, TrashItem } from './generated/types.gen'
 export type { TrashEmpty, TrashItem }
 export type TrashKind = TrashItem['kind']
 
-export interface TrashPage {
+interface TrashPage {
   items: TrashItem[]
   total: number
   page: number
   limit: number
 }
 
-export interface TrashQuery {
+interface TrashQuery {
   page?: number
   limit?: number
   kind?: string

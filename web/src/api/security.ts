@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, preflight } from './client'
+import { request, preflight, JSON_HEADERS } from './client'
 import type {
   LicensePolicyViolation,
   LicenseScanResult,
@@ -20,7 +20,7 @@ const repoBase = (repo: string): string => `/api/v1/repositories/${encodeURIComp
 
 const jsonPost = (body: unknown): RequestInit => ({
   method: 'POST',
-  headers: { 'Content-Type': 'application/json' },
+  headers: JSON_HEADERS,
   body: JSON.stringify(body),
 })
 
@@ -81,13 +81,13 @@ export interface VulnScanFilters {
   quarantined?: boolean
 }
 
-export interface VulnScanListParams extends VulnScanFilters {
+interface VulnScanListParams extends VulnScanFilters {
   limit?: number
   /** Opaque `next_cursor` of the previous page. */
   cursor?: string
 }
 
-export interface VulnScanPage {
+interface VulnScanPage {
   scans: VulnScanRow[]
   has_more: boolean
   next_cursor?: string
@@ -130,7 +130,7 @@ export function getVulnScan(repo: string, scanId: string): Promise<VulnScan> {
 }
 
 /** One finding of a scan, as stored by the scanners. */
-export interface VulnFinding {
+interface VulnFinding {
   id: string
   summary: string
   severity: string

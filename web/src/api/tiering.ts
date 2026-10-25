@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 import { pagedResponse, type PagedResult } from './transform'
 import type {
   PatchApiV1AdminTieringTiersByNameData,
@@ -18,12 +18,11 @@ import type {
 
 export type { StoragePolicy, StoragePolicyInput, StorageTier, TierDryRun, TierMoverStatus }
 
-export type TierCreateInput = PostApiV1AdminTieringTiersData['body']
-export type TierUpdateInput = PatchApiV1AdminTieringTiersByNameData['body']
-export type DryRunInput = PostApiV1AdminTieringDryRunData['body']
+type TierCreateInput = PostApiV1AdminTieringTiersData['body']
+type TierUpdateInput = PatchApiV1AdminTieringTiersByNameData['body']
+type DryRunInput = PostApiV1AdminTieringDryRunData['body']
 
 const BASE = '/api/v1/admin/tiering'
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
 const enc = encodeURIComponent
 
 export async function listTiers(): Promise<PagedResult<StorageTier>> {

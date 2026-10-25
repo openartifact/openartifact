@@ -48,5 +48,3 @@ export const ErrorCodes = {
   LOAD_FAILED: 'load_failed',
   UNAUTHENTICATED: 'unauthenticated',
 } as const
-
-export type ErrorCode = typeof ErrorCodes[keyof typeof ErrorCodes]

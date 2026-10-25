@@ -92,7 +92,7 @@ export function pullCommand(
   }
 }
 
-export interface ClientSetup {
+interface ClientSetup {
   client: string
   configure: string
   publish?: string

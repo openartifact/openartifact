@@ -2,27 +2,25 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { ApiError, request } from './client'
+import { downloadBlob, request, JSON_HEADERS } from './client'
 import type { GpgKey } from './generated/types.gen'
 
 export type { GpgKey }
 
 export type GpgAlgorithm = 'ed25519' | 'rsa4096'
 
-export interface GpgKeyList {
+interface GpgKeyList {
   keys: GpgKey[]
   can_store_keys: boolean
 }
 
 const BASE = '/api/v1/admin/gpg/keys'
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
-
 export async function listGpgKeys(): Promise<GpgKeyList> {
   const raw = await request<Partial<GpgKeyList> | undefined>(BASE)
   return { keys: raw?.keys ?? [], can_store_keys: raw?.can_store_keys ?? false }
 }
 
-export interface ImportKeyInput {
+interface ImportKeyInput {
   name?: string
   private_key: string
   passphrase?: string
@@ -33,7 +31,7 @@ export function importGpgKey(body: ImportKeyInput): Promise<GpgKey> {
   return request<GpgKey>(BASE, { method: 'POST', headers: JSON_HEADERS, body: JSON.stringify(body) })
 }
 
-export interface GenerateKeyInput {
+interface GenerateKeyInput {
   name?: string
   algorithm?: GpgAlgorithm
   user_name?: string
@@ -67,33 +65,6 @@ export function deactivateGpgKey(id: string, repository?: string): Promise<void>
 }
 
 /** Fetches the armored public key and saves it as `<name>.pub.asc`. */
-export async function exportGpgKey(key: Pick<GpgKey, 'id' | 'name'>): Promise<void> {
-  const res = await fetch(`${BASE}/${encodeURIComponent(key.id ?? '')}/export`, {
-    credentials: 'include',
-    headers: { 'X-Requested-With': 'XMLHttpRequest' },
-  })
-  if (!res.ok) {
-    let message = `HTTP ${res.status}`
-    let code: string | undefined
-    try {
-      const body = (await res.json()) as { error?: string; code?: string }
-      if (body.error) message = body.error
-      code = body.code
-    } catch {
-      // non-JSON error body: keep the HTTP status message
-    }
-    throw new ApiError(message, res.status, code)
-  }
-
-  const url = URL.createObjectURL(await res.blob())
-  try {
-    const link = document.createElement('a')
-    link.href = url
-    link.download = `${key.name || key.id}.pub.asc`
-    document.body.appendChild(link)
-    link.click()
-    link.remove()
-  } finally {
-    URL.revokeObjectURL(url)
-  }
+export function exportGpgKey(key: Pick<GpgKey, 'id' | 'name'>): Promise<void> {
+  return downloadBlob(`${BASE}/${encodeURIComponent(key.id ?? '')}/export`, `${key.name || key.id}.pub.asc`)
 }

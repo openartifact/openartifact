@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 import type {
   DependencyTrackSettings,
   DependencyTrackRepository,
@@ -13,7 +13,7 @@ import type {
 export type { DependencyTrackSettings, DependencyTrackRepository, DependencyTrackPush, DependencyTrackTest }
 
 /** Settings body: `api_key` omitted keeps the stored key, `""` clears it. */
-export interface DependencyTrackSettingsInput {
+interface DependencyTrackSettingsInput {
   enabled: boolean
   base_url: string
   api_key?: string
@@ -24,7 +24,7 @@ export interface DependencyTrackSettingsInput {
 }
 
 /** Override body: empty strings and `null` inherit the global value. */
-export interface DependencyTrackOverrideInput {
+interface DependencyTrackOverrideInput {
   enabled: boolean
   base_url: string
   api_key?: string
@@ -33,8 +33,6 @@ export interface DependencyTrackOverrideInput {
   auto_push: boolean | null
   push_vex: boolean | null
 }
-
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
 
 function repoPath(repo: string): string {
   return `/api/v1/repositories/${encodeURIComponent(repo)}/dependency-track`

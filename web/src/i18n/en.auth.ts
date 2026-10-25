@@ -21,7 +21,7 @@ export const enAuth = {
   'auth.passwordNotApplied': 'Password changed, but the session could not be refreshed. Please sign in again.',
 
   // Shell
-  'shell.versionUnknown': 'version unknown',
+  'shell.unexpectedError': 'Unexpected error',
   'shell.openPalette': 'Open command palette',
   'shell.paletteHotkey.apple': '⌘K',
   'shell.paletteHotkey.other': 'Ctrl K',

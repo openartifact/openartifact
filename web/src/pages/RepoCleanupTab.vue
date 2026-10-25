@@ -243,7 +243,7 @@ import {
   type ApiCleanupPolicy,
   type CleanupPolicyView as CleanupPolicy,
 } from '../lib/cleanupPolicy'
-import { request } from '../api/client'
+import { request, JSON_HEADERS } from '../api/client'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import {
@@ -315,7 +315,7 @@ async function toggleEnabled(policy: CleanupPolicy): Promise<void> {
   try {
     await request(`${baseUrl()}/${encodeURIComponent(policy.id)}`, {
       method: 'PUT',
-      headers: { 'Content-Type': 'application/json' },
+      headers: JSON_HEADERS,
       body: JSON.stringify({ enabled: !policy.enabled }),
     })
     policy.enabled = !policy.enabled
@@ -383,14 +383,14 @@ async function saveDrawer(): Promise<void> {
     if (drawerMode.value === 'create') {
       await request(baseUrl(), {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
+        headers: JSON_HEADERS,
         body: JSON.stringify(payload),
       })
       toasts.success(t('cleanup.created').replace('{name}', form.name))
     } else if (editingPolicy.value) {
       await request(`${baseUrl()}/${encodeURIComponent(editingPolicy.value.id)}`, {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: JSON_HEADERS,
         body: JSON.stringify(payload),
       })
       toasts.success(t('cleanup.updated').replace('{name}', form.name))

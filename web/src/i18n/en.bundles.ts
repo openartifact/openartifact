@@ -56,7 +56,6 @@ export const enBundles = {
   'bundles.pipeline.anyRepo': 'Any repository',
   'bundles.pipeline.addStage': 'Add stage',
   'bundles.pipeline.removeStage': 'Remove stage',
-  'bundles.pipeline.needStage': 'Add at least one stage.',
   'bundles.pipeline.done': 'Pipeline created',
   'bundles.pipeline.failed': 'Could not create the pipeline.',
   'bundles.pipeline.trail': 'Pipeline stages',
@@ -67,8 +66,6 @@ export const enBundles = {
   'bundles.pipeline.stage.pending': 'Pending',
 
   // Detail
-  'bundles.detail.description': 'Description',
-  'bundles.detail.noDescription': 'No description',
   'bundles.detail.createdBy': 'Created by',
   'bundles.detail.sealedBy': 'Sealed by',
   'bundles.detail.archivedBy': 'Archived by',
@@ -116,7 +113,6 @@ export const enBundles = {
   'bundles.items.errSize': 'Enter a non-negative whole number.',
   'bundles.items.added': 'Item added',
   'bundles.items.addFailed': 'Could not add the item.',
-  'bundles.items.reposFailed': 'Could not load the repositories.',
 
   // Seal
   'bundles.seal.title': 'Seal this bundle?',
@@ -171,7 +167,6 @@ export const enBundles = {
   'bundles.scans.total': 'Scans',
   'bundles.scans.critical': 'Critical',
   'bundles.scans.high': 'High or worse',
-  'bundles.scans.open': 'Open scans',
   'bundles.scans.failed': 'Could not load the scans of this repository.',
   'bundles.scans.none': 'Not scanned',
 } as const

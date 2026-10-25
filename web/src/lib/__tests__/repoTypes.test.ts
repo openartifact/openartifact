@@ -8,7 +8,6 @@ import {
   allowedFormats,
   coerceFormat,
   federationAvailable,
-  formatTtl,
   isFormatAllowed,
   upstreamUrlPlaceholder,
   upstreamUrlRequired,
@@ -61,29 +60,6 @@ describe('upstream URL', () => {
     expect(upstreamUrlPlaceholder('pypi')).toBe('https://pypi.org/simple')
     expect(upstreamUrlPlaceholder('cargo')).toBe('https://index.crates.io')
     expect(upstreamUrlPlaceholder('nuget')).toBe('https://api.nuget.org/v3/index.json')
-  })
-})
-
-describe('formatTtl', () => {
-  const unit = (n: number, u: string) =>
-    new Intl.NumberFormat('en', { style: 'unit', unit: u, unitDisplay: 'long' }).format(n)
-
-  it('renders single units', () => {
-    expect(formatTtl(60)).toBe(unit(1, 'minute'))
-    expect(formatTtl(3600)).toBe(unit(1, 'hour'))
-    expect(formatTtl(86400)).toBe(unit(1, 'day'))
-    expect(formatTtl(45)).toBe(unit(45, 'second'))
-  })
-  it('combines units', () => {
-    expect(formatTtl(5400)).toBe(`${unit(1, 'hour')} ${unit(30, 'minute')}`)
-    expect(formatTtl(90061)).toBe(
-      [unit(1, 'day'), unit(1, 'hour'), unit(1, 'minute'), unit(1, 'second')].join(' '),
-    )
-  })
-  it('renders zero and missing values as zero seconds', () => {
-    expect(formatTtl(0)).toBe(unit(0, 'second'))
-    expect(formatTtl(undefined)).toBe(unit(0, 'second'))
-    expect(formatTtl(-5)).toBe(unit(0, 'second'))
   })
 })
 

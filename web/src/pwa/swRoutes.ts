@@ -13,7 +13,7 @@
  * Requests to them go straight to the network without respondWith(), so no response can ever be stored or replayed.
  * Matched on whole path segments: `/api` and `/api/x` match, `/apiary` does not.
  */
-export const BYPASS_PREFIXES = [
+const BYPASS_PREFIXES = [
   '/api',
   '/repos',
   '/v2',
@@ -31,7 +31,7 @@ export function isBypassPath(pathname: string): boolean {
 }
 
 /** What a fetch event for a request is answered with. */
-export type RequestKind =
+type RequestKind =
   /** A precached build asset or shell file: served from the precache. */
   | 'precache'
   /** A page navigation to a SPA route: network, with the offline page as fallback. */

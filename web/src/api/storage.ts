@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 import { pagedResponse, type PagedResult } from './transform'
 
 /**
@@ -25,7 +25,7 @@ export interface StorageBackend {
   updated_at?: string
 }
 
-export interface StorageTestResult {
+interface StorageTestResult {
   ok: boolean
   error?: string
   message?: string
@@ -44,7 +44,7 @@ export async function createStorageBackend(body: {
 }): Promise<StorageBackend> {
   return request<StorageBackend>('/api/v1/admin/storage', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(body),
   })
 }
@@ -55,7 +55,7 @@ export async function updateStorageBackend(
 ): Promise<StorageBackend> {
   return request<StorageBackend>(`/api/v1/admin/storage/${encodeURIComponent(name)}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(body),
   })
 }

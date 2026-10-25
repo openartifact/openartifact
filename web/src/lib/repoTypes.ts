@@ -6,7 +6,6 @@
 // server policy in internal/repotype; the server stays authoritative and
 // rejects anything else with validation_failed.
 
-import { FORMAT_LOCALE } from './datetime'
 import { ALL_FORMATS, type FormatId } from './formats'
 
 export type RepoType = 'hosted' | 'proxy' | 'group'
@@ -64,23 +63,3 @@ export function coerceFormat(type: RepoType, format: FormatId): FormatId {
   return isFormatAllowed(type, format) ? format : allowedFormats(type)[0]
 }
 
-const TTL_UNITS: ReadonlyArray<{ unit: 'day' | 'hour' | 'minute' | 'second'; seconds: number }> = [
-  { unit: 'day', seconds: 86400 },
-  { unit: 'hour', seconds: 3600 },
-  { unit: 'minute', seconds: 60 },
-  { unit: 'second', seconds: 1 },
-]
-
-/** Renders a TTL in seconds as a locale-aware duration, e.g. 5400 -> "1 hour 30 minutes". */
-export function formatTtl(seconds: number | null | undefined): string {
-  const total = Math.floor(seconds ?? 0)
-  const parts: string[] = []
-  let rest = Math.max(0, Number.isFinite(total) ? total : 0)
-  for (const { unit, seconds: size } of TTL_UNITS) {
-    const n = Math.floor(rest / size)
-    if (n === 0 && !(unit === 'second' && parts.length === 0)) continue
-    rest -= n * size
-    parts.push(new Intl.NumberFormat(FORMAT_LOCALE, { style: 'unit', unit, unitDisplay: 'long' }).format(n))
-  }
-  return parts.join(' ')
-}

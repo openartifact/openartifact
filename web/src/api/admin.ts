@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, ApiError } from './client'
+import { request, ApiError, JSON_HEADERS } from './client'
 import { pagedResponse, type PagedResult } from './transform'
 import type { User, Group, PermissionTarget, PublicSystemInfo, SystemInfo } from './generated/types.gen'
 
@@ -15,15 +15,13 @@ export type { PublicSystemInfo, SystemInfo }
 export const PERMISSION_ACTIONS = ['read', 'write', 'delete', 'manage', 'annotate'] as const
 export type PermissionAction = (typeof PERMISSION_ACTIONS)[number]
 
-const JSON_HEADERS = { 'Content-Type': 'application/json' }
-
 async function paged<T>(qs: URLSearchParams, path: string): Promise<PagedResult<T>> {
   const query = qs.toString() ? `?${qs}` : ''
   const raw = await request<Record<string, unknown>>(`${path}${query}`)
   return pagedResponse<T>(raw ?? {})
 }
 
-export interface ListParams {
+interface ListParams {
   page?: number
   limit?: number
   q?: string
@@ -42,7 +40,7 @@ function buildQs(p?: ListParams): URLSearchParams {
 /** Server-side maximum page size for GET /users. */
 const USERS_PAGE_MAX = 200
 
-export const listUsers = (p?: ListParams) => paged<UserItem>(buildQs(p), '/api/v1/users')
+const listUsers = (p?: ListParams) => paged<UserItem>(buildQs(p), '/api/v1/users')
 
 /**
  * Fetch every user by walking the paginated endpoint. The server clamps
@@ -94,12 +92,6 @@ export const createGroup = (body: { name: string; description?: string }) =>
     method: 'POST',
     headers: JSON_HEADERS,
     body: JSON.stringify(body),
-  })
-export const renameGroup = (id: string | number, name: string) =>
-  request<GroupItem>(`/api/v1/groups/${encodeURIComponent(String(id))}`, {
-    method: 'PATCH',
-    headers: JSON_HEADERS,
-    body: JSON.stringify({ name }),
   })
 export const deleteGroup = (id: string | number) =>
   request<void>(`/api/v1/groups/${encodeURIComponent(String(id))}`, { method: 'DELETE' })
@@ -217,7 +209,7 @@ export async function saveSSOProvider(body: SSOConfigInput): Promise<void> {
   })
 }
 
-export interface SSOTestResult {
+interface SSOTestResult {
   ok: boolean
   message?: string
   error?: string

@@ -9,6 +9,7 @@
 import type { StoragePolicy, StoragePolicyInput } from '../api/tiering'
 import { t, type TranslationKey } from '../i18n/en'
 import { FORMAT_LOCALE } from './datetime'
+import { formatExactDuration } from './duration'
 import { formatBytes } from './quota'
 
 export const SECONDS_PER_DAY = 86_400
@@ -20,7 +21,7 @@ export const TIER_SIZE_UNITS = [
   { label: 'TB', bytes: 1024 ** 4 },
 ] as const
 
-export type TierSizeUnit = (typeof TIER_SIZE_UNITS)[number]['label']
+type TierSizeUnit = (typeof TIER_SIZE_UNITS)[number]['label']
 
 /** What a number input yields: `v-model.number` gives '' for an empty field. */
 export type NumInput = number | string | null | undefined
@@ -69,22 +70,6 @@ export function bytesToSize(bytes: number | null | undefined): SizeField {
 export function sharePercent(bytes: number | undefined, total: number): number {
   if (!bytes || total <= 0) return 0
   return Math.min(100, (bytes / total) * 100)
-}
-
-/** "1 day", "30 days", "12 hours"…: the largest unit that divides the duration exactly. */
-export function formatDuration(seconds: number): string {
-  const steps: Array<[number, TranslationKey, TranslationKey]> = [
-    [SECONDS_PER_DAY, 'tiering.duration.day', 'tiering.duration.days'],
-    [3600, 'tiering.duration.hour', 'tiering.duration.hours'],
-    [60, 'tiering.duration.minute', 'tiering.duration.minutes'],
-  ]
-  for (const [size, one, many] of steps) {
-    if (seconds >= size && seconds % size === 0) {
-      const n = seconds / size
-      return t(n === 1 ? one : many).replace('{n}', String(n))
-    }
-  }
-  return t(seconds === 1 ? 'tiering.duration.second' : 'tiering.duration.seconds').replace('{n}', String(seconds))
 }
 
 /** Editable draft of a policy; numbers stay in the units the admin types. */
@@ -210,8 +195,8 @@ export function policyFormError(f: PolicyForm): TranslationKey | null {
 /** Plain-words conditions of a saved policy (formats are rendered as badges by the caller). */
 export function policyConditions(p: StoragePolicy): string[] {
   const out: string[] = []
-  if (p.min_age_seconds) out.push(t('tiering.cond.age').replace('{d}', formatDuration(p.min_age_seconds)))
-  if (p.min_idle_seconds) out.push(t('tiering.cond.idle').replace('{d}', formatDuration(p.min_idle_seconds)))
+  if (p.min_age_seconds) out.push(t('tiering.cond.age').replace('{d}', formatExactDuration(p.min_age_seconds)))
+  if (p.min_idle_seconds) out.push(t('tiering.cond.idle').replace('{d}', formatExactDuration(p.min_idle_seconds)))
   const min = p.min_size_bytes ? formatBytes(p.min_size_bytes) : null
   const max = p.max_size_bytes ? formatBytes(p.max_size_bytes) : null
   if (min && max) out.push(t('tiering.cond.sizeRange').replace('{min}', min).replace('{max}', max))

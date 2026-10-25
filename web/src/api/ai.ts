@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 
 export interface AIAnalysis {
   id: string
@@ -26,7 +26,7 @@ export interface AIAnalysis {
   updated_at: string
 }
 
-export interface ListAIAnalysesResult {
+interface ListAIAnalysesResult {
   analyses: AIAnalysis[]
   total: number
 }
@@ -46,13 +46,7 @@ export function listAIAnalyses(
   )
 }
 
-export function getAIAnalysis(repoName: string, artifactID: string): Promise<AIAnalysis> {
-  return request<AIAnalysis>(
-    `/api/v1/repositories/${encodeURIComponent(repoName)}/ai-analysis/${encodeURIComponent(artifactID)}`,
-  )
-}
-
-export interface TriggerAIAnalysisOptions {
+interface TriggerAIAnalysisOptions {
   manifest_text?: string
   artifact_format?: string
   artifact_name?: string
@@ -69,7 +63,7 @@ export function triggerAIAnalysis(
     `/api/v1/repositories/${encodeURIComponent(repoName)}/ai-analysis/${encodeURIComponent(artifactID)}/trigger`,
     {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
+      headers: JSON_HEADERS,
       body: JSON.stringify(options),
     },
   )

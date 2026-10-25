@@ -4,7 +4,7 @@
 
 import { describe, it, expect, beforeEach, spyOn } from 'bun:test'
 import { createPinia, setActivePinia, type StoreGeneric } from 'pinia'
-import { request, preflight, isSessionExpired, ApiError, SESSION_EXPIRED } from '../client'
+import { request, preflight, downloadBlob, isSessionExpired, ApiError, SESSION_EXPIRED } from '../client'
 import router from '../../router'
 import { useSessionStore, type User } from '../../stores/session'
 
@@ -224,6 +224,41 @@ describe('API client', () => {
 
       expect(err).toBeInstanceOf(ApiError)
       expect((err as ApiError).code).toBe('ARTIFACT_QUARANTINED')
+    })
+  })
+
+  describe('downloadBlob', () => {
+    it('saves the body under the given name', async () => {
+      spyOn(globalThis, 'fetch').mockResolvedValue(new Response('KEY', { status: 200 }))
+      let saved = ''
+      spyOn(URL, 'createObjectURL').mockReturnValue('blob:test')
+      spyOn(URL, 'revokeObjectURL').mockImplementation(() => undefined)
+      const click = spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (this: HTMLAnchorElement) {
+        saved = this.download
+      })
+
+      await downloadBlob('/api/v1/x/export', 'k.pub.asc')
+
+      expect(saved).toBe('k.pub.asc')
+      expect(click).toHaveBeenCalledTimes(1)
+    })
+
+    it('throws the server error and clears an expired session on 401', async () => {
+      spyOn(globalThis, 'fetch').mockResolvedValue(new Response('{}', { status: 401 }))
+      spyOn(router, 'push').mockResolvedValue(undefined)
+
+      const err = await downloadBlob('/api/v1/x/export', 'k.pub.asc').catch((e: unknown) => e)
+
+      expect(isSessionExpired(err)).toBe(true)
+    })
+
+    it('throws the server error for a refusal', async () => {
+      spyOn(globalThis, 'fetch').mockResolvedValue(new Response(JSON.stringify({ error: 'nope' }), { status: 403 }))
+
+      const err = await downloadBlob('/api/v1/x/export', 'k.pub.asc').catch((e: unknown) => e)
+
+      expect(err).toBeInstanceOf(ApiError)
+      expect((err as ApiError).message).toBe('nope')
     })
   })
 })

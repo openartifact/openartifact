@@ -6,7 +6,7 @@ import { defineStore } from 'pinia'
 import { computed, watchEffect } from 'vue'
 import { usePreferredDark, useStorage } from '@vueuse/core'
 
-export type ThemeMode = 'auto' | 'light' | 'dark'
+type ThemeMode = 'auto' | 'light' | 'dark'
 export type ResolvedTheme = 'light' | 'dark'
 
 const STORAGE_KEY = 'oa.theme'

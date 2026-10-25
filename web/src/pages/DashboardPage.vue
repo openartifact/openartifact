@@ -140,7 +140,7 @@ import { useSessionStore } from '../stores/session'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
 import { chartColor } from '../lib/formats'
-import { formatDate } from '../lib/datetime'
+import { formatDate, timeAgo } from '../lib/datetime'
 import { t } from '../i18n/en'
 
 const toasts = useToastStore()
@@ -178,16 +178,6 @@ const recentRepos = computed(() =>
     .slice(0, 8),
 )
 
-function timeAgo(iso?: string): string {
-  if (!iso) return '—'
-  const diff = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return t('dashboard.justNow')
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
-}
 
 function actionLabel(action?: string): string {
   return (action ?? '').replace(/[._]/g, ' ')

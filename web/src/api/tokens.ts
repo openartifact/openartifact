@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, ApiError } from './client'
+import { request, ApiError, JSON_HEADERS } from './client'
 import { pagedResponse, emptyPaged, type PagedResult } from './transform'
 import type { AdminToken, Token, TokenCreateResponse } from './generated/types.gen'
 
@@ -29,7 +29,7 @@ export async function listMyTokens(): Promise<PagedResult<ApiToken>> {
 export async function createMyToken(body: { name: string; kind: 'access' | 'deploy'; expires_at?: string }): Promise<CreatedToken> {
   return request<CreatedToken>('/api/v1/auth/tokens', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(body),
   })
 }

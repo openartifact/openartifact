@@ -5,7 +5,7 @@
 import { VEX_STATEMENT_MAX_LENGTH, type VexDecision, type VexJustification, type VexRecord, type VexStatus } from '../api/vex'
 import { tDynamic } from '../i18n/en'
 
-export type VexBadgeVariant = 'success' | 'warning' | 'neutral' | 'danger'
+type VexBadgeVariant = 'success' | 'warning' | 'neutral' | 'danger'
 
 /** Badge colour of a decision: exploitable is danger, resolved is success, undecided is warning. */
 export function vexStatusVariant(status: VexStatus): VexBadgeVariant {
@@ -33,7 +33,7 @@ export function vexByVulnId(records: readonly VexRecord[]): Map<string, VexRecor
   return new Map(records.map((r) => [r.vuln_id, r]))
 }
 
-export interface VexFormState {
+interface VexFormState {
   status: VexStatus
   justification: VexJustification | ''
   impact: string

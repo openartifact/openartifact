@@ -160,7 +160,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
           <!-- Size -->
           <div class="font-mono text-xs tabular-nums text-muted text-right">
-            {{ formatBytes(item.size) }}
+            {{ formatBytesOrDash(item.size) }}
           </div>
 
           <!-- Pushed -->
@@ -215,7 +215,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           {{ item.version || '—' }}
         </div>
         <div class="mt-3 flex items-center justify-between text-xs text-muted">
-          <span class="font-mono tabular-nums">{{ formatBytes(item.size) }}</span>
+          <span class="font-mono tabular-nums">{{ formatBytesOrDash(item.size) }}</span>
           <span>{{ formatDate(item.created_at) }}</span>
         </div>
       </div>
@@ -245,6 +245,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 <script setup lang="ts">
 import RepoHeader from '../components/RepoHeader.vue'
 import { formatDate } from '../lib/datetime'
+import { formatBytesOrDash } from '../lib/quota'
 import { ref, computed, watch, onBeforeUnmount } from 'vue'
 import { useRoute } from 'vue-router'
 import { listPackages, getRepository } from '../api/repositories'
@@ -361,13 +362,6 @@ function onBulkError(msg: string): void {
 
 // ─────────────────────────────────────────────────────────────────────────
 
-function formatBytes(bytes?: number): string {
-  if (bytes == null || bytes === 0) return '—'
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  if (bytes < 1024 * 1024 * 1024) return `${(bytes / 1024 / 1024).toFixed(1)} MB`
-  return `${(bytes / 1024 / 1024 / 1024).toFixed(2)} GB`
-}
 
 
 let loadGeneration = 0

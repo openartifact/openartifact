@@ -11,16 +11,16 @@
 const cssVar = (name: string): string => `rgb(var(--color-${name}))`
 
 /** Fallback for unknown kinds/providers. */
-export const FALLBACK_COLOR = cssVar('muted')
+const FALLBACK_COLOR = cssVar('muted')
 /** Fallback for SSO providers without a known brand. */
-export const SSO_FALLBACK_COLOR = cssVar('primary')
+const SSO_FALLBACK_COLOR = cssVar('primary')
 
 /** Translucent tint of any CSS colour (hex or `rgb(var(--...))`). */
 export function tint(color: string, percent: number): string {
   return `color-mix(in srgb, ${color} ${percent}%, transparent)`
 }
 
-export const STORAGE_BACKEND_COLORS: Record<string, string> = {
+const STORAGE_BACKEND_COLORS: Record<string, string> = {
   filesystem: cssVar('muted'),
   s3: cssVar('severity-medium'),
   gcs: '#4285f4',
@@ -30,7 +30,7 @@ export const STORAGE_BACKEND_COLORS: Record<string, string> = {
   oci: cssVar('danger'),
 }
 
-export const AI_PROVIDER_COLORS: Record<string, string> = {
+const AI_PROVIDER_COLORS: Record<string, string> = {
   openai: '#10a37f',
   azure: '#0078d4',
   ollama: cssVar('warning'),
@@ -38,7 +38,7 @@ export const AI_PROVIDER_COLORS: Record<string, string> = {
 }
 
 /** Matched by substring against the lower-cased provider slug. */
-export const SSO_PROVIDER_COLORS: Record<string, string> = {
+const SSO_PROVIDER_COLORS: Record<string, string> = {
   google: '#4285f4',
   github: '#24292f',
   gitlab: '#fc6d26',

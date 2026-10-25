@@ -544,6 +544,7 @@ import AppButton from '../../components/AppButton.vue'
 import AppToggle from '../../components/AppToggle.vue'
 import ConfirmDialog from '../../components/ConfirmDialog.vue'
 import { storageBackendColor, tint } from '../../lib/brandColors'
+import { timeAgo } from '../../lib/datetime'
 import AdminDialog from '../../components/AdminDialog.vue'
 import { t } from '../../i18n/en'
 import {
@@ -1046,15 +1047,6 @@ function statusDotClass(s: string): string {
   return map[s] ?? 'bg-muted'
 }
 
-function timeAgo(iso: string): string {
-  const diff = Date.now() - new Date(iso).getTime()
-  const minutes = Math.floor(diff / 60_000)
-  if (minutes < 1) return t('adm.backup.justNow')
-  if (minutes < 60) return `${minutes}m`
-  const hours = Math.floor(minutes / 60)
-  if (hours < 24) return `${hours}h`
-  return `${Math.floor(hours / 24)}d`
-}
 
 // ─── Data Loading ──────────────────────────────────────────────────────────────
 

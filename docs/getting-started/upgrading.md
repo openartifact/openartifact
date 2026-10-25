@@ -88,6 +88,7 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 ### Unreleased
 
 - Ivy and sbt paths with a `.` or `..` segment or a backslash are now rejected with 404 on upload, download and delete (before, they were stored under those literal coordinates). `oa import` skips such source paths the same way. Clients never publish them; no action required.
+- Web UI: revoking an API token and deleting a package property now ask for confirmation in the app's dialog instead of the browser's native prompt; downloading a GPG public key signs you out cleanly when the session has expired. No action required.
 
 ### 0.10.0
 

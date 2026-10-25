@@ -81,7 +81,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </td>
               <td class="px-4 py-3 font-mono text-xs text-muted">{{ item.version || '—' }}</td>
               <td v-if="!repo" class="px-4 py-3 font-mono text-xs">{{ item.repository }}</td>
-              <td class="px-4 py-3 text-xs text-muted">{{ item.kind === 'repository' ? '—' : formatSize(item.size_bytes) }}</td>
+              <td class="px-4 py-3 text-xs text-muted">{{ item.kind === 'repository' ? '—' : formatBytesOrDash(item.size_bytes) }}</td>
               <td class="px-4 py-3 text-xs text-muted">
                 <div class="font-mono">{{ formatDateTime(item.deleted_at) }}</div>
                 <div v-if="item.deleted_by">{{ item.deleted_by }}</div>
@@ -158,6 +158,7 @@ import { getRepository, type Repository } from '../api/repositories'
 import { emptyRepoTrash, listTrash, purgeTrash, restoreTrash, type TrashItem, type TrashKind } from '../api/trash'
 import { formatDateTime } from '../lib/datetime'
 import { emptyTrashResultText, purgeInText, trashCapabilities, type RepoPermissions } from '../lib/trash'
+import { formatBytesOrDash } from '../lib/quota'
 import { useSessionStore } from '../stores/session'
 import { useDocsLink } from '../composables/useDocsLink'
 import { useToastStore } from '../stores/toast'
@@ -232,17 +233,6 @@ const kindOptions = computed(() => (repo.value ? ALL_KINDS.filter((k) => k !== '
 const keyOf = (item: TrashItem): string => `${item.kind}:${item.id}`
 const kindLabel = (k: string): string => tDynamic(`trash.kind.${k}`)
 
-function formatSize(bytes?: number): string {
-  if (!bytes) return '—'
-  const units = ['B', 'KB', 'MB', 'GB', 'TB']
-  let size = bytes
-  let i = 0
-  while (size >= 1024 && i < units.length - 1) {
-    size /= 1024
-    i++
-  }
-  return i === 0 ? `${size} B` : `${size.toFixed(1)} ${units[i]}`
-}
 
 // Guards against an older, slower response overwriting a newer one.
 let loadSeq = 0

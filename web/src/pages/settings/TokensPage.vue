@@ -59,7 +59,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <td class="px-6 py-4 text-sm text-muted">
                 {{ token.last_used_at ? formatDate(token.last_used_at) : t('settings.tokens.never') }}
               </td>
-              <td class="px-6 py-4 text-sm" :class="isExpired(token) ? 'text-danger' : 'text-muted'">
+              <td class="px-6 py-4 text-sm" :class="isExpired(token.expires_at) ? 'text-danger' : 'text-muted'">
                 {{ token.expires_at ? formatDate(token.expires_at) : t('settings.tokens.never') }}
               </td>
               <td class="px-6 py-4 text-right">
@@ -68,7 +68,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger-soft/40 transition-colors"
                   :aria-label="t('settings.tokens.revoke')"
                   :title="t('settings.tokens.revoke')"
-                  @click="revoke(token.id)"
+                  @click="revokeTarget = token.id ?? null"
                 >
                   <TrashIcon class="w-4 h-4" aria-hidden="true" />
                 </button>
@@ -123,12 +123,23 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       :token="revealed?.token ?? null"
       @close="revealed = null"
     />
+
+    <ConfirmDialog
+      :open="revokeTarget !== null"
+      :title="t('settings.tokens.revoke')"
+      :description="t('settings.tokens.revokeConfirm')"
+      :confirm-label="t('settings.tokens.revoke')"
+      :busy="revoking"
+      @confirm="revoke"
+      @close="revokeTarget = null"
+    />
   </div>
 </template>
 
 <script setup lang="ts">
 import AppButton from '../../components/AppButton.vue'
-import { formatDate } from '../../lib/datetime'
+import ConfirmDialog from '../../components/ConfirmDialog.vue'
+import { formatDate, isExpired } from '../../lib/datetime'
 import { ref, onMounted } from 'vue'
 import AdminDialog from '../../components/AdminDialog.vue'
 import { listMyTokens, createMyToken, revokeMyToken, type ApiToken, type CreatedToken } from '../../api/tokens'
@@ -148,9 +159,6 @@ const revealed = ref<CreatedToken | null>(null)
 const toasts = useToastStore()
 const docsUrl = useDocsLink('settings-tokens')
 
-function isExpired(token: ApiToken): boolean {
-  return !!(token.expires_at && new Date(token.expires_at) < new Date())
-}
 
 async function load(): Promise<void> {
   loading.value = true
@@ -183,15 +191,22 @@ async function submitCreate(): Promise<void> {
   }
 }
 
-async function revoke(id: string | undefined): Promise<void> {
+const revokeTarget = ref<string | null>(null)
+const revoking = ref(false)
+
+async function revoke(): Promise<void> {
+  const id = revokeTarget.value
   if (!id) return
-  if (!window.confirm(t('settings.tokens.revokeConfirm'))) return
+  revoking.value = true
   try {
     await revokeMyToken(id)
     toasts.success(t('settings.tokens.revoked'))
+    revokeTarget.value = null
     await load()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('settings.tokens.revokeFailed'))
+  } finally {
+    revoking.value = false
   }
 }
 

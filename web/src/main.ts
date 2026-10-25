@@ -11,6 +11,7 @@ import { useThemeStore } from './stores/theme'
 import { useToastStore } from './stores/toast'
 import { useBrandingStore } from './stores/branding'
 import { isSessionExpired } from './api/client'
+import { t } from './i18n/en'
 import { captureInstallPrompt } from './composables/useInstallPrompt'
 import { startServiceWorker } from './pwa/register'
 
@@ -38,7 +39,7 @@ app.config.errorHandler = (err, _instance, info) => {
   if (isSessionExpired(err)) return
   const toast = useToastStore()
   const message = err instanceof Error ? err.message : String(err)
-  toast.error('Unexpected error', message)
+  toast.error(t('shell.unexpectedError'), message)
   console.error('[vue error]', info, err)
 }
 
@@ -47,7 +48,7 @@ window.addEventListener('unhandledrejection', (event) => {
   if (isSessionExpired(event.reason)) return
   const toast = useToastStore()
   const message = event.reason instanceof Error ? event.reason.message : String(event.reason)
-  toast.error('Unexpected error', message)
+  toast.error(t('shell.unexpectedError'), message)
   console.error('[unhandledrejection]', event.reason)
 })
 

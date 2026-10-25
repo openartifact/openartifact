@@ -75,12 +75,12 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </span>
             </dd>
             <dt class="text-muted">{{ t('repoDetail.proxy.cacheTtl') }}</dt>
-            <dd class="text-foreground">{{ formatTtl(repo.cache_ttl_seconds) }}</dd>
+            <dd class="text-foreground">{{ formatDuration(repo.cache_ttl_seconds) }}</dd>
             <dt class="text-muted">{{ t('repoDetail.proxy.negativeCacheTtl') }}</dt>
-            <dd class="text-foreground">{{ formatTtl(repo.negative_cache_ttl_seconds) }}</dd>
+            <dd class="text-foreground">{{ formatDuration(repo.negative_cache_ttl_seconds) }}</dd>
             <dt class="text-muted" :title="t('repoDetail.proxy.maxStaleHint')">{{ t('repoDetail.proxy.maxStale') }}</dt>
             <dd class="text-foreground">
-              {{ repo.max_stale_seconds ? formatTtl(repo.max_stale_seconds) : t('repoDetail.proxy.maxStaleOff') }}
+              {{ repo.max_stale_seconds ? formatDuration(repo.max_stale_seconds) : t('repoDetail.proxy.maxStaleOff') }}
             </dd>
           </dl>
         </div>
@@ -202,7 +202,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                   >{{ pkg.name }}</router-link>
                 </td>
                 <td class="px-4 py-2.5 text-xs font-mono text-muted">{{ pkg.version || '—' }}</td>
-                <td class="px-4 py-2.5 text-xs font-mono tabular-nums text-muted text-right">{{ formatSize(pkg.size) }}</td>
+                <td class="px-4 py-2.5 text-xs font-mono tabular-nums text-muted text-right">{{ formatBytesOrDash(pkg.size) }}</td>
                 <td class="px-4 py-2.5 text-xs text-muted">{{ formatDate(pkg.created_at) }}</td>
                 <td class="px-4 py-2.5 text-right">
                   <div class="flex items-center justify-end gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
@@ -304,8 +304,9 @@ import { useToastStore } from '../stores/toast'
 import { repoBaseUrl } from '../lib/installCommands'
 import { formatDate } from '../lib/datetime'
 import { showsFederation } from '../lib/federation'
-import { formatTtl } from '../lib/repoTypes'
+import { formatDuration } from '../lib/duration'
 import { supportsPackageDelete } from '../lib/formats'
+import { formatBytesOrDash } from '../lib/quota'
 import {
   ArrowDownTrayIcon,
   ArrowUpTrayIcon,
@@ -333,7 +334,6 @@ const members = ref<RepositoryMember[]>([])
 const membersError = ref('')
 
 const repoName = computed(() => route.params.name as string)
-const isProxy = computed(() => repo.value?.repo_type === 'proxy')
 // Global admins and maintainers/owners of the repository's project (repo.admin).
 const repoAdmin = computed(() => session.isAdmin || repo.value?.permissions?.admin === true)
 const canDelete = computed(() => repoAdmin.value)
@@ -446,17 +446,6 @@ const crumbs = computed<Crumb[]>(() => {
   return [...base, { label: tab.label }]
 })
 
-function formatSize(bytes?: number): string {
-  if (!bytes) return '-'
-  const units = ['B', 'KB', 'MB', 'GB']
-  let size = bytes
-  let unitIndex = 0
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024
-    unitIndex++
-  }
-  return unitIndex === 0 ? `${size} B` : `${size.toFixed(1)} ${units[unitIndex]}`
-}
 
 const repoUrl = computed(() =>
   repo.value ? `${repoBaseUrl(repo.value.format, window.location.origin, repo.value.name)}/` : '',

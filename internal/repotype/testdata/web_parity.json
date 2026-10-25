@@ -1,0 +1,114 @@
+[
+  {
+    "format": "docker",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": "https://registry-1.docker.io"
+  },
+  {
+    "format": "npm",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": ""
+  },
+  {
+    "format": "pypi",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": "https://pypi.org/simple"
+  },
+  {
+    "format": "maven",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": ""
+  },
+  {
+    "format": "helm",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": ""
+  },
+  {
+    "format": "cargo",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": "https://index.crates.io"
+  },
+  {
+    "format": "rubygems",
+    "proxy": false,
+    "group": false,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
+    "format": "deb",
+    "proxy": true,
+    "group": true,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
+    "format": "rpm",
+    "proxy": true,
+    "group": true,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
+    "format": "nuget",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": "https://api.nuget.org/v3/index.json"
+  },
+  {
+    "format": "go",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": "https://proxy.golang.org"
+  },
+  {
+    "format": "raw",
+    "proxy": true,
+    "group": true,
+    "federation": true,
+    "default_upstream": ""
+  },
+  {
+    "format": "conda",
+    "proxy": false,
+    "group": false,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
+    "format": "conan",
+    "proxy": false,
+    "group": false,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
+    "format": "ivy",
+    "proxy": false,
+    "group": false,
+    "federation": false,
+    "default_upstream": ""
+  },
+  {
+    "format": "sbt",
+    "proxy": false,
+    "group": false,
+    "federation": false,
+    "default_upstream": ""
+  }
+]

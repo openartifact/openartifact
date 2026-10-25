@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, ApiError } from './client'
+import { request, ApiError, JSON_HEADERS } from './client'
 import type { User } from '../stores/session'
 import type { EndSessionResponse } from './generated/types.gen'
 
@@ -16,7 +16,7 @@ export interface SSOProvider {
 export function login(credentials: { username: string; password: string }): Promise<User> {
   return request<User>('/api/v1/auth/login', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(credentials),
   })
 }
@@ -46,14 +46,10 @@ export async function logout(): Promise<string | undefined> {
   return safeEndSessionURL(res?.end_session_url)
 }
 
-export function me(): Promise<User> {
-  return request<User>('/api/v1/auth/me')
-}
-
 export function changePassword(body: { current_password: string; new_password: string }): Promise<void> {
   return request<void>('/api/v1/auth/change-password', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(body),
   })
 }

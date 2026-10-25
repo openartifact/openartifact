@@ -45,7 +45,7 @@ export type FormatId =
   | 'ivy'
   | 'sbt'
 
-export interface FormatMeta {
+interface FormatMeta {
   label: string
   /** Brand accent color, used for the fallback dot and to tint the icon. */
   color: string
@@ -129,7 +129,7 @@ export function formatColorLowOnDark(id: string): boolean {
 // Categorical palette for charts: brand colors collide (deb, maven, npm and
 // rpm are all red) and some vanish on dark. These stay distinct and readable
 // on both themes.
-export const CHART_PALETTE = [
+const CHART_PALETTE = [
   '#60A5FA', '#F59E0B', '#34D399', '#F472B6', '#A78BFA', '#F87171',
   '#2DD4BF', '#FBBF24', '#818CF8', '#FB923C', '#4ADE80', '#E879F9',
 ]

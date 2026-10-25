@@ -43,7 +43,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         />
         <StatusBadge v-if="status.running" :label="t('tiering.mover.running')" variant="warning" />
         <span v-if="status.enabled && status.interval_seconds" class="text-caption text-muted">
-          {{ t('tiering.mover.interval').replace('{d}', formatDuration(status.interval_seconds)) }}
+          {{ t('tiering.mover.interval').replace('{d}', formatExactDuration(status.interval_seconds)) }}
         </span>
       </div>
       <p v-if="!status.enabled" class="text-xs text-muted">{{ t('tiering.mover.disabledHint') }}</p>
@@ -116,7 +116,8 @@ import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 import { formatDateTime } from '../lib/datetime'
 import { formatBytes } from '../lib/quota'
-import { formatCount, formatDuration } from '../lib/tiering'
+import { formatExactDuration } from '../lib/duration'
+import { formatCount } from '../lib/tiering'
 
 const props = withDefaults(defineProps<{ pollIntervalMs?: number; maxPolls?: number; maxFailures?: number }>(), {
   pollIntervalMs: 3000,

@@ -235,7 +235,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { request, ApiError } from '../api/client'
+import { request, ApiError, JSON_HEADERS } from '../api/client'
 import { t } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import {
@@ -246,6 +246,7 @@ import {
 } from '@heroicons/vue/24/outline'
 import AppButton from '../components/AppButton.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
+import { formatBytes } from '../lib/quota'
 
 // ─── Props ─────────────────────────────────────────────────────────────────────
 
@@ -312,13 +313,6 @@ function barColor(pct: number): string {
 
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
-function formatBytes(bytes: number): string {
-  if (bytes >= 1024 * 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024 * 1024)).toFixed(1)} TB`
-  if (bytes >= 1024 * 1024 * 1024) return `${(bytes / (1024 * 1024 * 1024)).toFixed(1)} GB`
-  if (bytes >= 1024 * 1024) return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-  if (bytes >= 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${bytes} B`
-}
 
 function bytesFromForm(): number {
   const unit = SIZE_UNITS.find((u) => u.label === formUnit.value)
@@ -369,7 +363,7 @@ async function saveQuota(): Promise<void> {
       `/api/v1/repositories/${encodeURIComponent(props.repoName)}/quota`,
       {
         method: 'PUT',
-        headers: { 'Content-Type': 'application/json' },
+        headers: JSON_HEADERS,
         body: JSON.stringify({
           max_size_bytes: bytesFromForm(),
         }),

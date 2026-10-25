@@ -11,7 +11,7 @@ import type { BrandingPalette } from './branding'
 import { IMAGE_MIME_TYPES, MAX_IMAGE_BYTES, hexToTriple, isHexColor, safeUrl } from './branding'
 import type { TranslationKey } from '../i18n/en'
 
-export const PRODUCT_NAME_MAX = 64
+const PRODUCT_NAME_MAX = 64
 export const LOGIN_MESSAGE_MAX = 2000
 
 export interface BrandingForm {
@@ -121,7 +121,7 @@ export function previewVars(hex: string, theme: 'light' | 'dark'): Record<string
 export const BUILTIN_PRIMARY = { light: '#4f46e5', dark: '#818cf8' } as const
 
 /** CSS variables of a server-computed palette. */
-export function paletteVars(p: BrandingPalette): Record<string, string> {
+function paletteVars(p: BrandingPalette): Record<string, string> {
   return {
     '--color-primary': hexToTriple(p.primary) ?? '',
     '--color-primary-contrast': hexToTriple(p.primary_contrast) ?? '',

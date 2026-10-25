@@ -4,6 +4,8 @@
   "exclude": ["src/pwa/sw.ts", "src/**/__tests__", "src/**/*.spec.ts", "src/**/*.test.ts"],
   "compilerOptions": {
     "strict": true,
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "paths": {
       "@/*": ["./src/*"]
     }

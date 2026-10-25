@@ -12,14 +12,14 @@ export type { AuditEntry }
  * `per_page`, which the server clamps to 100. `cursor` is the `nextCursor` of
  * the previous page; leave it out for the newest entries.
  */
-export interface AuditFilters {
+interface AuditFilters {
   limit?: number
   cursor?: string
   actor?: string
   action?: string
 }
 
-export interface AuditPage {
+interface AuditPage {
   items: AuditEntry[]
   hasMore: boolean
   /** Pass as `cursor` to load the following page; null on the last page. */

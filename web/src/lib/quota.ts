@@ -22,6 +22,11 @@ export function formatBytes(bytes: number): string {
   return `${bytes} B`
 }
 
+/** {@link formatBytes}, or an em dash for a missing or zero size. */
+export function formatBytesOrDash(bytes: number | null | undefined): string {
+  return bytes ? formatBytes(bytes) : '—'
+}
+
 /** Splits a byte limit into the largest unit that keeps the value >= 1; 0 (unlimited) gives an empty value. */
 export function splitBytes(bytes: number): { value: number; unit: SizeUnit } {
   if (!(bytes > 0)) return { value: 0, unit: 'GB' }
@@ -36,7 +41,7 @@ export function toBytes(value: number | null | undefined, unit: SizeUnit): numbe
   return Math.round(value * u.bytes)
 }
 
-export type UsageLevel = 'ok' | 'warn' | 'full'
+type UsageLevel = 'ok' | 'warn' | 'full'
 
 /**
  * Level of a usage bar: `full` at 100 % or more, `warn` from the warn

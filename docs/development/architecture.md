@@ -28,7 +28,7 @@ OpenArtifact is one Go binary (`cmd/server`) that serves the REST API, the nativ
 | `internal/repotype` | Which formats may be proxy or group repositories (shared by repo creation and dispatch) |
 | `internal/ocipath` | Parses `/v2/<name>/...` paths; shared by RBAC and the docker handler so both agree on the repository |
 | `internal/importmeta` | Admin-only `X-OA-Import-Created-At` header that preserves origin timestamps during migrations |
-| `internal/clientsetup` | Native client URLs and configure/publish snippets per format (Go port of `web/src/lib/installCommands.ts`; keep both in sync) |
+| `internal/clientsetup` | Native client URLs and configure/publish snippets per format (Go port of `web/src/lib/installCommands.ts`; keep both in sync; a shared golden file in `testdata/` makes either side's tests fail on drift) |
 | `internal/quarantine` | Blocks downloads of artifacts flagged by vulnerability/secret scans |
 | `internal/quota` | Reserves/releases repository storage quota on upload, delete and cleanup-policy deletes (the database's `ReconcileStorageUsage` recounts the counters from the package rows) |
 | `internal/netutil` | SSRF-safe outbound HTTP helpers (webhooks, proxy upstreams) |

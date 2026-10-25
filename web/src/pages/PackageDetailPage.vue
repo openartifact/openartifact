@@ -60,7 +60,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <div class="flex items-center gap-5 flex-wrap mt-3.5">
               <div v-if="currentPkg.size" class="leading-tight">
                 <div class="text-micro text-muted font-semibold">{{ t('packages.column.size') }}</div>
-                <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ formatSize(currentPkg.size) }}</div>
+                <div class="mt-0.5 text-sm font-medium tabular-nums font-mono">{{ formatBytes(currentPkg.size) }}</div>
               </div>
               <div v-if="currentPkg.created_at" class="leading-tight">
                 <div class="text-micro text-muted font-semibold">{{ t('packages.column.uploaded') }}</div>
@@ -165,7 +165,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     >{{ t('pkg.latest') }}</span>
                   </div>
                 </td>
-                <td class="px-4 py-3 text-foreground font-mono text-xs tabular-nums">{{ pkg.size ? formatSize(pkg.size) : '—' }}</td>
+                <td class="px-4 py-3 text-foreground font-mono text-xs tabular-nums">{{ pkg.size ? formatBytes(pkg.size) : '—' }}</td>
                 <td class="px-4 py-3 text-foreground text-xs">{{ pkg.created_at ? formatDate(pkg.created_at) : '—' }}</td>
                 <td class="px-4 py-3 text-foreground font-mono text-xs">{{ pkg.sha256 ? pkg.sha256.slice(0, 12) : '—' }}</td>
               </tr>
@@ -323,7 +323,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                     type="button"
                     :title="t('pkg.props.delete')" :aria-label="t('pkg.props.delete')"
                     class="p-1.5 rounded-md text-muted hover:text-danger hover:bg-danger/10 transition-colors opacity-0 group-hover:opacity-100"
-                    @click="deleteProp(String(key))"
+                    @click="deletePropKey = String(key)"
                   >
                     <TrashIcon class="w-4 h-4" />
                   </button>
@@ -365,6 +365,16 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         </div>
       </div>
     </div>
+
+    <ConfirmDialog
+      :open="deletePropKey !== null"
+      :title="t('pkg.props.delete')"
+      :description="deletePropKey === null ? '' : tp('pkg.props.confirmDelete', { key: deletePropKey })"
+      :confirm-label="t('common.delete')"
+      :busy="deletingProp"
+      @confirm="deleteProp"
+      @close="deletePropKey = null"
+    />
   </div>
 </template>
 
@@ -387,14 +397,16 @@ import { getRepository, listPackageVersions } from '../api/repositories'
 import type { Repository, PackageItem } from '../api/repositories'
 import { pullCommand as buildPullCommand, repoBaseUrl } from '../lib/installCommands'
 import { useSessionStore } from '../stores/session'
-import { t } from '../i18n/en'
-import { request, ApiError } from '../api/client'
+import { t, tp } from '../i18n/en'
+import { request, ApiError, JSON_HEADERS } from '../api/client'
 import { useToastStore } from '../stores/toast'
 import { listVulnScans, type VulnScan } from '../api/security'
 import { vulnCountsState } from '../lib/scanStatus'
+import { formatBytes } from '../lib/quota'
 import AppButton from '../components/AppButton.vue'
 import FormatBadge from '../components/FormatBadge.vue'
 import EmptyState from '../components/EmptyState.vue'
+import ConfirmDialog from '../components/ConfirmDialog.vue'
 import VulnScanStatus from '../components/VulnScanStatus.vue'
 
 const tabs = [
@@ -471,7 +483,7 @@ async function saveNewProp(): Promise<void> {
       `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties`,
       {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ properties: { [key]: newPropValue.value } }),
       },
     )
@@ -502,7 +514,7 @@ async function saveEditProp(key: string): Promise<void> {
       `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties`,
       {
         method: 'PATCH',
-        headers: { 'Content-Type': 'application/json' },
+        headers: JSON_HEADERS,
         body: JSON.stringify({ properties: { [key]: editingValue.value } }),
       },
     )
@@ -514,9 +526,13 @@ async function saveEditProp(key: string): Promise<void> {
   }
 }
 
-async function deleteProp(key: string): Promise<void> {
-  if (!artifactId.value) return
-  if (!window.confirm(t('pkg.props.confirmDelete').replace('{key}', key))) return
+const deletePropKey = ref<string | null>(null)
+const deletingProp = ref(false)
+
+async function deleteProp(): Promise<void> {
+  const key = deletePropKey.value
+  if (key === null || !artifactId.value) return
+  deletingProp.value = true
   try {
     await request<void>(
       `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties/${encodeURIComponent(key)}`,
@@ -525,9 +541,12 @@ async function deleteProp(key: string): Promise<void> {
     const next = { ...properties.value }
     delete next[key]
     properties.value = next
+    deletePropKey.value = null
     toasts.success(t('pkg.props.deleted'))
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('pkg.props.deleteFailed'))
+  } finally {
+    deletingProp.value = false
   }
 }
 
@@ -602,11 +621,6 @@ const pullCommand = computed(() =>
     : '',
 )
 
-function formatSize(bytes: number): string {
-  if (bytes < 1024) return `${bytes} B`
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`
-}
 
 async function copyUrl(): Promise<void> {
   try {

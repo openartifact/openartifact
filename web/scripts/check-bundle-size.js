@@ -54,7 +54,9 @@ for (const file of initial) {
 const kb = (totalGzip / 1024).toFixed(1)
 console.log(`Bundle size: ${kb} KB gzipped`)
 
-if (totalGzip > 512000) {
-  console.error(`Bundle size ${kb} KB exceeds limit of 500 KB`)
+// Limit is about 1.3x the current initial bundle (159 KB); raise it only with a reason.
+const LIMIT_KB = 208
+if (totalGzip > LIMIT_KB * 1024) {
+  console.error(`Bundle size ${kb} KB exceeds limit of ${LIMIT_KB} KB`)
   process.exit(1)
 }

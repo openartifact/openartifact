@@ -12,11 +12,7 @@ export type { Branding, BrandingPalette, BrandingTheme }
 export const DEFAULT_PRODUCT_NAME = 'OpenArtifact'
 
 /** The upstream project; also the source offered when a payload carries no usable source_url. */
-export const UPSTREAM_URL = 'https://github.com/openartifact/openartifact'
-export const DEFAULT_SOURCE_URL = UPSTREAM_URL
-
-/** Licence the software is offered under; shown by the attribution, never configurable. */
-export const LICENSE_NAME = 'GNU AGPL-3.0-or-later'
+export const DEFAULT_SOURCE_URL = 'https://github.com/openartifact/openartifact'
 
 /** Largest image the server accepts for a logo or favicon. */
 export const MAX_IMAGE_BYTES = 512 * 1024
@@ -30,7 +26,7 @@ export const BRAND_STYLE_ID = 'oa-brand-style'
 
 /** Brand usage rules: minimum rendered sizes in px (the lockup SVGs carry their own clear space). */
 export const LOGO_MIN_PX = { mark: 16, horizontal: 120, stacked: 64 } as const
-export const LOGO_DEFAULT_PX = { mark: 32, horizontal: 144, stacked: 176 } as const
+const LOGO_DEFAULT_PX = { mark: 32, horizontal: 144, stacked: 176 } as const
 export type LogoVariant = keyof typeof LOGO_MIN_PX
 
 /** Rendered width of a logo in px, never below the brand minimum. */
@@ -165,7 +161,7 @@ export function isDefaultName(name: string): boolean {
 }
 
 /** The value offline-brand.js needs: the name and the contrast-adjusted colours of both themes. */
-export interface OfflineBrand {
+interface OfflineBrand {
   product_name: string
   primary_color: string
   light?: { primary: string; primary_contrast: string }

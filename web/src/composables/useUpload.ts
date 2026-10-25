@@ -32,7 +32,7 @@ export interface UploadEntry {
   xhr?: XMLHttpRequest
 }
 
-export interface UploadStartOptions {
+interface UploadStartOptions {
   url: string
   field?: string
   headers?: Record<string, string>

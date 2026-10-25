@@ -12,7 +12,7 @@
  * or a directory with a trailing slash (`formats/` is `formats/README.md`);
  * `null` is an explicit "no page": the route shows no help link.
  */
-export type DocsPath = string | null
+type DocsPath = string | null
 
 export const ROUTE_DOCS: Readonly<Record<string, DocsPath>> = {
   // Overview and auth screens: no page explains them (the dashboard is the

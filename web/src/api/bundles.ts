@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request } from './client'
+import { request, JSON_HEADERS } from './client'
 
 // Release bundles and promotion pipelines. Every route is admin only and
 // keyed by (name, version) / pipeline name.
@@ -31,21 +31,21 @@ export interface BundleItemInput {
   component_id?: string
 }
 
-export interface BundleList {
+interface BundleList {
   total: number
   page: number
   limit: number
   bundles: Bundle[]
 }
 
-export interface BundleListQuery {
+interface BundleListQuery {
   name?: string
   state?: BundleState | ''
   page?: number
   limit?: number
 }
 
-export interface PromoteInput {
+interface PromoteInput {
   to_stage: string
   target_repo: string
   notes?: string
@@ -55,12 +55,12 @@ const enc = encodeURIComponent
 
 const json = (method: string, body: unknown): RequestInit => ({
   method,
-  headers: { 'Content-Type': 'application/json' },
+  headers: JSON_HEADERS,
   body: JSON.stringify(body),
 })
 
 /** `/api/v1/bundles/{name}/{version}` with both segments escaped. */
-export function bundlePath(name: string, version: string): string {
+function bundlePath(name: string, version: string): string {
   return `/api/v1/bundles/${enc(name)}/${enc(version)}`
 }
 

@@ -2,7 +2,7 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { request, preflight } from './client'
+import { request, preflight, JSON_HEADERS } from './client'
 import type { Repository, RepositoryMember } from './generated/types.gen'
 
 export type { Repository, RepositoryMember }
@@ -27,7 +27,7 @@ interface ListPackagesResult {
   packages: PackageItem[]
 }
 
-export function listRepositories(params?: { page?: number; limit?: number; format?: string; packageName?: string }): Promise<ListRepositoriesResult> {
+function listRepositories(params?: { page?: number; limit?: number; format?: string; packageName?: string }): Promise<ListRepositoriesResult> {
   const qs = new URLSearchParams()
   if (params?.page != null) qs.set('page', String(params.page))
   if (params?.limit != null) qs.set('limit', String(params.limit))
@@ -62,7 +62,7 @@ export async function listRepoMembers(name: string): Promise<RepositoryMember[]>
 export function createRepository(body: Partial<Repository> & { upstream_password?: string }): Promise<Repository> {
   return request<Repository>('/api/v1/repositories', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(body),
   })
 }
@@ -86,7 +86,7 @@ export function presignValueOf(mode: PresignMode): boolean | null {
 export function updateRepository(name: string, body: Partial<Repository>): Promise<Repository> {
   return request<Repository>(`/api/v1/repository/${encodeURIComponent(name)}`, {
     method: 'PATCH',
-    headers: { 'Content-Type': 'application/json' },
+    headers: JSON_HEADERS,
     body: JSON.stringify(body),
   })
 }
@@ -100,7 +100,7 @@ export function deleteRepository(name: string): Promise<void> {
 
 export type PackageSort = 'created' | 'name'
 
-export interface ListPackagesParams {
+interface ListPackagesParams {
   page?: number
   limit?: number
   format?: string
@@ -125,7 +125,7 @@ export function listPackages(name: string, params?: ListPackagesParams): Promise
 }
 
 /** Path of the streaming download route of a listed package (any format). */
-export function packageDownloadUrl(repoName: string, packageId: string): string {
+function packageDownloadUrl(repoName: string, packageId: string): string {
   return `/api/v1/repositories/${encodeURIComponent(repoName)}/packages/${encodeURIComponent(packageId)}/download`
 }
 
@@ -147,50 +147,6 @@ export async function downloadPackage(repoName: string, pkg: Pick<PackageItem, '
   document.body.appendChild(link)
   link.click()
   link.remove()
-}
-
-// ── SBOM ──────────────────────────────────────────────────────────────────────
-
-export interface SbomListItem {
-  id: string
-  artifact_name?: string
-  artifact_version?: string
-  created_at?: string
-  format?: string
-}
-
-export interface SbomComponent {
-  'bom-ref'?: string
-  type?: string
-  name: string
-  version?: string
-  purl?: string
-  licenses?: Array<{ license?: { id?: string; name?: string } }>
-  hashes?: Array<{ alg?: string; content?: string }>
-}
-
-export interface SbomData {
-  id?: string
-  bomFormat?: string
-  specVersion?: string
-  metadata?: {
-    component?: {
-      'bom-ref'?: string
-      name: string
-      version?: string
-      type?: string
-    }
-  }
-  components?: SbomComponent[]
-  dependencies?: Array<{ ref: string; dependsOn?: string[] }>
-}
-
-export function listSboms(repoName: string): Promise<SbomListItem[]> {
-  return request<SbomListItem[]>(`/api/v1/repositories/${encodeURIComponent(repoName)}/sbom`)
-}
-
-export function getSbom(repoName: string, id: string): Promise<SbomData> {
-  return request<SbomData>(`/api/v1/repositories/${encodeURIComponent(repoName)}/sbom/${encodeURIComponent(id)}`)
 }
 
 // Deletes a package by its component id (the backend route is
