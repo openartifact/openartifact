@@ -130,7 +130,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               :checked="selectedIds.has(itemKey(item))"
               class="w-4 h-4 rounded border-border-strong accent-[rgb(var(--color-primary))] focus:ring-primary cursor-pointer opacity-0 group-hover:opacity-100 transition-opacity"
               :class="{ 'opacity-100': selectedIds.has(itemKey(item)) }"
-              :aria-label="t('browser.selectItem').replace('{name}', item.name)"
+              :aria-label="tp('browser.selectItem', { name: item.name })"
               @change="toggleItem(item)"
             />
           </div>
@@ -264,7 +264,7 @@ import {
   Squares2X2Icon,
   ArrowsUpDownIcon,
 } from '@heroicons/vue/24/outline'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 const route = useRoute()
 const repoName = computed(() => route.params.name as string)
@@ -352,7 +352,7 @@ function fileTypeClasses(name: string): string {
 function onDeleted(ids: string[]): void {
   clearSelection()
   // Nothing was deleted (every request failed): the error toast says so.
-  if (ids.length > 0) toasts.success(t('bulk.deleteSuccess').replace('{n}', String(ids.length)))
+  if (ids.length > 0) toasts.success(tp('bulk.deleteSuccess', { n: String(ids.length) }))
   void load()
 }
 

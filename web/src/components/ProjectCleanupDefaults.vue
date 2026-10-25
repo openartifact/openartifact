@@ -166,7 +166,7 @@ import {
 } from '../lib/cleanupPolicy'
 import { errorStatus } from '../lib/projectAccess'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 const props = defineProps<{ project: string; canEdit: boolean }>()
 
@@ -225,10 +225,10 @@ async function save(): Promise<void> {
     const payload = cleanupPayload(form.value)
     if (editing.value) {
       await updateProjectCleanupPolicy(props.project, editing.value.id, payload)
-      toasts.success(t('cleanup.updated').replace('{name}', form.value.name))
+      toasts.success(tp('cleanup.updated', { name: form.value.name }))
     } else {
       await createProjectCleanupPolicy(props.project, payload)
-      toasts.success(t('cleanup.created').replace('{name}', form.value.name))
+      toasts.success(tp('cleanup.created', { name: form.value.name }))
     }
     closeDrawer()
     await load()
@@ -269,7 +269,7 @@ async function confirmDelete(): Promise<void> {
   deleting.value = true
   try {
     await deleteProjectCleanupPolicy(props.project, target.id)
-    toasts.success(t('cleanup.deleted').replace('{name}', target.name))
+    toasts.success(tp('cleanup.deleted', { name: target.name }))
     deleteTarget.value = null
     await load()
   } catch (err) {

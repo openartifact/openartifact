@@ -398,7 +398,8 @@ import type { Repository, PackageItem } from '../api/repositories'
 import { pullCommand as buildPullCommand, repoBaseUrl } from '../lib/installCommands'
 import { useSessionStore } from '../stores/session'
 import { t, tp } from '../i18n/en'
-import { request, ApiError, JSON_HEADERS } from '../api/client'
+import { ApiError } from '../api/client'
+import { deleteArtifactProperty, getArtifactProperties, setArtifactProperties } from '../api/artifactProperties'
 import { useToastStore } from '../stores/toast'
 import { listVulnScans, type VulnScan } from '../api/security'
 import { vulnCountsState } from '../lib/scanStatus'
@@ -451,9 +452,7 @@ async function loadProperties(): Promise<void> {
   const generation = ++propsGeneration
   propsLoading.value = true
   try {
-    const res = await request<Record<string, string>>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(id)}/properties`,
-    )
+    const res = await getArtifactProperties(repoName.value, id)
     if (generation !== propsGeneration) return
     properties.value = res ?? {}
   } catch (err) {
@@ -479,14 +478,7 @@ async function saveNewProp(): Promise<void> {
   propsSaving.value = true
   try {
     const updated = { ...properties.value, [key]: newPropValue.value }
-    await request<void>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties`,
-      {
-        method: 'PATCH',
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ properties: { [key]: newPropValue.value } }),
-      },
-    )
+    await setArtifactProperties(repoName.value, artifactId.value, { [key]: newPropValue.value })
     properties.value = updated
     cancelAddProp()
     toasts.success(t('pkg.props.added'))
@@ -510,14 +502,7 @@ function cancelEditProp(): void {
 async function saveEditProp(key: string): Promise<void> {
   if (!artifactId.value) return
   try {
-    await request<void>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties`,
-      {
-        method: 'PATCH',
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ properties: { [key]: editingValue.value } }),
-      },
-    )
+    await setArtifactProperties(repoName.value, artifactId.value, { [key]: editingValue.value })
     properties.value = { ...properties.value, [key]: editingValue.value }
     cancelEditProp()
     toasts.success(t('pkg.props.updated'))
@@ -534,10 +519,7 @@ async function deleteProp(): Promise<void> {
   if (key === null || !artifactId.value) return
   deletingProp.value = true
   try {
-    await request<void>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/artifacts/${encodeURIComponent(artifactId.value)}/properties/${encodeURIComponent(key)}`,
-      { method: 'DELETE' },
-    )
+    await deleteArtifactProperty(repoName.value, artifactId.value, key)
     const next = { ...properties.value }
     delete next[key]
     properties.value = next

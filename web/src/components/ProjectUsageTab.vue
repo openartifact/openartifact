@@ -27,7 +27,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <p class="text-xl font-bold tabular-nums text-foreground" data-testid="usage-size">
               {{ formatBytes(usage.size_bytes ?? 0) }}
               <span v-if="sizeLimited" class="text-sm font-normal text-muted">
-                {{ t('projects.usage.sizeOfLimit').replace('{limit}', formatBytes(quota?.max_size_bytes ?? 0)) }}
+                {{ tp('projects.usage.sizeOfLimit', { limit: formatBytes(quota?.max_size_bytes ?? 0) }) }}
               </span>
             </p>
             <template v-if="sizeLimited">
@@ -41,7 +41,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 <div class="absolute left-0 top-0 bottom-0 rounded-full" :class="usageBarClass(sizePercent, warn)" :style="{ width: `${Math.min(sizePercent, 100)}%` }" data-testid="size-bar" />
               </div>
-              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ t('projects.usage.percentUsed').replace('{n}', sizePercent.toFixed(1)) }}</p>
+              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ tp('projects.usage.percentUsed', { n: sizePercent.toFixed(1) }) }}</p>
             </template>
           </div>
 
@@ -50,7 +50,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <p class="text-xl font-bold tabular-nums text-foreground" data-testid="usage-count">
               {{ usage.artifact_count ?? 0 }}
               <span v-if="countLimited" class="text-sm font-normal text-muted">
-                {{ t('projects.usage.countOfLimit').replace('{limit}', String(quota?.max_artifact_count)) }}
+                {{ tp('projects.usage.countOfLimit', { limit: String(quota?.max_artifact_count) }) }}
               </span>
             </p>
             <template v-if="countLimited">
@@ -64,7 +64,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 <div class="absolute left-0 top-0 bottom-0 rounded-full" :class="usageBarClass(countPercent, warn)" :style="{ width: `${Math.min(countPercent, 100)}%` }" data-testid="count-bar" />
               </div>
-              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ t('projects.usage.percentUsed').replace('{n}', countPercent.toFixed(1)) }}</p>
+              <p class="mt-1.5 text-caption text-muted font-mono tabular-nums">{{ tp('projects.usage.percentUsed', { n: countPercent.toFixed(1) }) }}</p>
             </template>
           </div>
         </div>
@@ -72,7 +72,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <p v-if="!sizeLimited && !countLimited" class="text-xs text-muted" data-testid="usage-no-limit">
           {{ t('projects.usage.noLimit') }}
         </p>
-        <p v-else-if="warn > 0" class="text-xs text-muted">{{ t('projects.usage.warnAt').replace('{n}', String(warn)) }}</p>
+        <p v-else-if="warn > 0" class="text-xs text-muted">{{ tp('projects.usage.warnAt', { n: String(warn) }) }}</p>
       </section>
 
       <section class="rounded-xl border border-border bg-surface overflow-hidden" :aria-label="t('projects.usage.repositories')">
@@ -121,7 +121,7 @@ import AppButton from './AppButton.vue'
 import FormatBadge from './FormatBadge.vue'
 import { getProjectUsage, type ProjectUsage, type ProjectUsageRepository } from '../api/projects'
 import { formatBytes, percentOf, usageBarClass } from '../lib/quota'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 const props = defineProps<{ project: string }>()
 
@@ -140,7 +140,7 @@ const rows = computed(() => usage.value?.repositories ?? [])
 function limitLabel(r: ProjectUsageRepository): string {
   const parts: string[] = []
   if ((r.max_size_bytes ?? 0) > 0) parts.push(formatBytes(r.max_size_bytes ?? 0))
-  if ((r.max_artifact_count ?? 0) > 0) parts.push(t('projects.usage.countLimit').replace('{n}', String(r.max_artifact_count)))
+  if ((r.max_artifact_count ?? 0) > 0) parts.push(tp('projects.usage.countLimit', { n: String(r.max_artifact_count) }))
   return parts.length > 0 ? parts.join(' · ') : t('projects.usage.noRepoLimit')
 }
 

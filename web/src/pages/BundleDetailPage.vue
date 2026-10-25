@@ -113,7 +113,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <section class="bg-surface rounded-xl border border-border overflow-hidden" :aria-label="t('bundles.items.title')">
         <div class="px-4 py-3 border-b border-border flex items-center justify-between">
           <h2 class="text-sm font-semibold text-foreground">{{ t('bundles.items.title') }}</h2>
-          <span class="text-xs text-muted">{{ t('bundles.items.count').replace('{n}', String(items.length)) }}</span>
+          <span class="text-xs text-muted">{{ tp('bundles.items.count', { n: String(items.length) }) }}</span>
         </div>
         <EmptyState v-if="items.length === 0" :title="t('bundles.items.empty')" :description="t('bundles.items.emptyHint')" />
         <DataTable v-else :columns="itemColumns" :rows="items as unknown as Record<string, unknown>[]">
@@ -264,7 +264,7 @@ import { formatDateTime } from '../lib/datetime'
 import { formatBytes } from '../lib/quota'
 import { useToastStore } from '../stores/toast'
 import { ApiError } from '../api/client'
-import { t, type TranslationKey } from '../i18n/en'
+import { t, tp, type TranslationKey } from '../i18n/en'
 
 const STEP_CLASS: Record<StageStatus, string> = {
   done: 'border-success/30 bg-success-soft text-success',

@@ -117,7 +117,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <div class="flex items-center gap-0.5 justify-end">
                 <a
                   v-if="job.status === 'completed'"
-                  :href="`/api/v1/admin/backup/${encodeURIComponent(job.id)}/download`"
+                  :href="backupDownloadUrl(job.id)"
                   :title="t('adm.backup.download')"
                   :aria-label="t('adm.backup.download')"
                   class="p-1.5 rounded-md text-muted hover:text-primary hover:bg-primary/10 transition-colors"
@@ -231,7 +231,7 @@ import PageHeader from '../../components/PageHeader.vue'
 import { formatDate, timeAgo } from '../../lib/datetime'
 import { formatBytes } from '../../lib/quota'
 import { ref, computed, onMounted, onUnmounted } from 'vue'
-import { request, JSON_HEADERS } from '../../api/client'
+import { backupDownloadUrl, createBackup, listBackups, restoreBackup, type BackupJob, type BackupType } from '../../api/backup'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import AppButton from '../../components/AppButton.vue'
@@ -247,18 +247,6 @@ import {
   CircleStackIcon,
   ExclamationCircleIcon,
 } from '@heroicons/vue/24/outline'
-
-interface BackupJob {
-  id: string
-  status: 'pending' | 'running' | 'completed' | 'failed'
-  type: 'full' | 'metadata-only'
-  size_bytes?: number
-  created_at: string
-  completed_at?: string | null
-  error_message?: string | null
-}
-
-type BackupType = 'full' | 'metadata-only'
 
 const RESTORE_PHRASE = 'RESTORE'
 const POLL_INTERVAL_MS = 5000
@@ -359,8 +347,7 @@ async function load(): Promise<void> {
   if (inFlight) return
   inFlight = true
   try {
-    const res = await request<{ backups?: BackupJob[] }>('/api/v1/admin/backup')
-    items.value = [...(res?.backups ?? [])].sort(
+    items.value = [...(await listBackups())].sort(
       (a, b) => new Date(b.created_at).getTime() - new Date(a.created_at).getTime(),
     )
     loadError.value = ''
@@ -404,11 +391,7 @@ async function confirmCreate(): Promise<void> {
   if (creating.value) return
   creating.value = true
   try {
-    await request('/api/v1/admin/backup', {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ type: createForm.value.type }),
-    })
+    await createBackup(createForm.value.type)
     toasts.success(t('adm.backup.started'))
     closeCreateModal()
     await load()
@@ -440,9 +423,7 @@ async function confirmRestore(): Promise<void> {
   if (!restoreFile.value || restoreConfirmInput.value !== RESTORE_PHRASE || restoring.value) return
   restoring.value = true
   try {
-    const body = new FormData()
-    body.append('file', restoreFile.value)
-    await request('/api/v1/admin/restore', { method: 'POST', body })
+    await restoreBackup(restoreFile.value)
     toasts.success(t('adm.backup.restoreStarted'))
     cancelRestore()
   } catch (err) {

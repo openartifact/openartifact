@@ -232,7 +232,15 @@ import AppToggle from '../components/AppToggle.vue'
 import CleanupPolicyForm from '../components/CleanupPolicyForm.vue'
 import ConfirmDialog from '../components/ConfirmDialog.vue'
 import CleanupDryRunDialog from '../components/CleanupDryRunDialog.vue'
-import type { CleanupPreview } from '../api/generated'
+import {
+  createCleanupPolicy,
+  deleteCleanupPolicy,
+  dryRunCleanupPolicy,
+  listCleanupPolicies,
+  runCleanupPolicy,
+  updateCleanupPolicy,
+  type CleanupPreview,
+} from '../api/cleanup'
 import { formatDateTime } from '../lib/datetime'
 import {
   cleanupFormFrom,
@@ -240,11 +248,9 @@ import {
   cleanupPayload,
   cleanupPolicyFromApi,
   emptyCleanupForm,
-  type ApiCleanupPolicy,
   type CleanupPolicyView as CleanupPolicy,
 } from '../lib/cleanupPolicy'
-import { request, JSON_HEADERS } from '../api/client'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import {
   PlusIcon,
@@ -286,12 +292,6 @@ const deleting = ref(false)
 
 const formValid = computed(() => cleanupFormValid(form))
 
-// ─── Base URL helper ───────────────────────────────────────────────────────────
-
-function baseUrl(): string {
-  return `/api/v1/repositories/${encodeURIComponent(props.repoName)}/cleanup-policies`
-}
-
 // ─── Helpers ───────────────────────────────────────────────────────────────────
 
 // ─── Data Loading ──────────────────────────────────────────────────────────────
@@ -299,8 +299,7 @@ function baseUrl(): string {
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const res = await request<{ policies: ApiCleanupPolicy[] }>(baseUrl())
-    items.value = (res?.policies ?? []).map(cleanupPolicyFromApi)
+    items.value = (await listCleanupPolicies(props.repoName)).map(cleanupPolicyFromApi)
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('cleanup.loadFailed'))
   } finally {
@@ -313,11 +312,7 @@ async function load(): Promise<void> {
 async function toggleEnabled(policy: CleanupPolicy): Promise<void> {
   togglingId.value = policy.id
   try {
-    await request(`${baseUrl()}/${encodeURIComponent(policy.id)}`, {
-      method: 'PUT',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ enabled: !policy.enabled }),
-    })
+    await updateCleanupPolicy(props.repoName, policy.id, { enabled: !policy.enabled })
     policy.enabled = !policy.enabled
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('cleanup.updateFailed'))
@@ -331,8 +326,8 @@ async function toggleEnabled(policy: CleanupPolicy): Promise<void> {
 async function runPolicy(policy: CleanupPolicy): Promise<void> {
   runningId.value = policy.id
   try {
-    await request(`${baseUrl()}/${encodeURIComponent(policy.id)}/run`, { method: 'POST' })
-    toasts.success(t('cleanup.runTriggered').replace('{name}', policy.name))
+    await runCleanupPolicy(props.repoName, policy.id)
+    toasts.success(tp('cleanup.runTriggered', { name: policy.name }))
     await load()
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('cleanup.runFailed'))
@@ -344,7 +339,7 @@ async function runPolicy(policy: CleanupPolicy): Promise<void> {
 async function previewPolicy(policy: CleanupPolicy): Promise<void> {
   previewingId.value = policy.id
   try {
-    const res = await request<CleanupPreview>(`${baseUrl()}/${encodeURIComponent(policy.id)}/dry-run`, { method: 'POST' })
+    const res = await dryRunCleanupPolicy(props.repoName, policy.id)
     preview.value = { name: policy.name, repositories: [res] }
   } catch (err) {
     toasts.error(err instanceof Error ? err.message : t('cleanup.dryRun.failed'))
@@ -381,19 +376,11 @@ async function saveDrawer(): Promise<void> {
     const payload = cleanupPayload(form)
 
     if (drawerMode.value === 'create') {
-      await request(baseUrl(), {
-        method: 'POST',
-        headers: JSON_HEADERS,
-        body: JSON.stringify(payload),
-      })
-      toasts.success(t('cleanup.created').replace('{name}', form.name))
+      await createCleanupPolicy(props.repoName, payload)
+      toasts.success(tp('cleanup.created', { name: form.name }))
     } else if (editingPolicy.value) {
-      await request(`${baseUrl()}/${encodeURIComponent(editingPolicy.value.id)}`, {
-        method: 'PUT',
-        headers: JSON_HEADERS,
-        body: JSON.stringify(payload),
-      })
-      toasts.success(t('cleanup.updated').replace('{name}', form.name))
+      await updateCleanupPolicy(props.repoName, editingPolicy.value.id, payload)
+      toasts.success(tp('cleanup.updated', { name: form.name }))
     }
 
     closeDrawer()
@@ -419,8 +406,8 @@ async function confirmDelete(): Promise<void> {
   if (!deleteTarget.value) return
   deleting.value = true
   try {
-    await request(`${baseUrl()}/${encodeURIComponent(deleteTarget.value.id)}`, { method: 'DELETE' })
-    toasts.success(t('cleanup.deleted').replace('{name}', deleteTarget.value.name))
+    await deleteCleanupPolicy(props.repoName, deleteTarget.value.id)
+    toasts.success(tp('cleanup.deleted', { name: deleteTarget.value.name }))
     deleteTarget.value = null
     await load()
   } catch (err) {

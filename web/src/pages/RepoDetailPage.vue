@@ -71,7 +71,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <dd class="min-w-0 font-mono text-foreground break-all">
               {{ repo.upstream_url || '-' }}
               <span v-if="repo.upstream_username" class="font-sans text-muted">
-                · {{ t('repoDetail.proxy.authenticatedAs').replace('{user}', repo.upstream_username) }}
+                · {{ tp('repoDetail.proxy.authenticatedAs', { user: repo.upstream_username }) }}
               </span>
             </dd>
             <dt class="text-muted">{{ t('repoDetail.proxy.cacheTtl') }}</dt>
@@ -95,10 +95,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
         <RepoCleanupTab :repo-name="repoName" />
       </div>
       <div v-else-if="activeTab === 'federation' && repoAdmin">
-        <RepoFederationTab :repo="repo" @toggled="(enabled) => (repo = { ...repo!, federated: enabled })" />
+        <RepoFederationTab :repo="repo" @toggled="onFederationToggled" />
       </div>
       <div v-else-if="activeTab === 'configuration' && repoAdmin">
-        <RepoSettingsTab :repo="repo" @saved="(r) => (repo = r)" />
+        <RepoSettingsTab :repo="repo" @saved="onSettingsSaved" />
       </div>
       <div v-else-if="activeTab === 'members'">
         <p v-if="membersError" class="text-sm text-danger">{{ membersError }}</p>
@@ -254,7 +254,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ConfirmDialog
       :open="!!pendingDeletePkg"
       :title="t('common.delete')"
-      :description="t('repoDetail.confirmDeletePkg').replace('{name}', pendingDeletePkg?.name ?? '')"
+      :description="tp('repoDetail.confirmDeletePkg', { name: pendingDeletePkg?.name ?? '' })"
       :confirm-label="t('common.delete')"
       :busy="deletingPkg"
       @confirm="pendingDeletePkg && deletePkg(pendingDeletePkg)"
@@ -294,12 +294,10 @@ import ConnectClientPanel from '../components/ConnectClientPanel.vue'
 import PackageUploadZone from '../components/PackageUploadZone.vue'
 import Pagination from '../components/Pagination.vue'
 import RepoDeleteDialog from '../components/RepoDeleteDialog.vue'
-import RepoCleanupTab from './RepoCleanupTab.vue'
-import RepoFederationTab from './RepoFederationTab.vue'
-import RepoSettingsTab from './RepoSettingsTab.vue'
+import { asyncTab } from '../lib/asyncTab'
 import { useSessionStore } from '../stores/session'
 import { useDocsLink } from '../composables/useDocsLink'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import { repoBaseUrl } from '../lib/installCommands'
 import { formatDate } from '../lib/datetime'
@@ -314,6 +312,11 @@ import {
   Cog6ToothIcon,
   TrashIcon,
 } from '@heroicons/vue/24/outline'
+
+// Tab panels other than the default one load on first use, not with the page.
+const RepoCleanupTab = asyncTab(() => import('./RepoCleanupTab.vue'))
+const RepoFederationTab = asyncTab(() => import('./RepoFederationTab.vue'))
+const RepoSettingsTab = asyncTab(() => import('./RepoSettingsTab.vue'))
 
 const route = useRoute()
 const router = useRouter()
@@ -334,6 +337,14 @@ const members = ref<RepositoryMember[]>([])
 const membersError = ref('')
 
 const repoName = computed(() => route.params.name as string)
+
+function onFederationToggled(enabled: boolean): void {
+  if (repo.value) repo.value = { ...repo.value, federated: enabled }
+}
+
+function onSettingsSaved(updated: Repository): void {
+  repo.value = updated
+}
 // Global admins and maintainers/owners of the repository's project (repo.admin).
 const repoAdmin = computed(() => session.isAdmin || repo.value?.permissions?.admin === true)
 const canDelete = computed(() => repoAdmin.value)
@@ -496,7 +507,7 @@ async function deletePkg(pkg: PackageItem): Promise<void> {
     packages.value = packages.value.filter((p) => p.id !== pkg.id)
     totalPackages.value = Math.max(0, totalPackages.value - 1)
     pendingDeletePkg.value = null
-    toasts.success(t('repoDetail.movedToTrash').replace('{name}', pkg.name))
+    toasts.success(tp('repoDetail.movedToTrash', { name: pkg.name }))
   } catch (err) {
     toasts.error(t('repoDetail.deletePkgFailed'), err instanceof Error ? err.message : undefined)
   } finally {

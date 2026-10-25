@@ -71,10 +71,10 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
             <div class="flex items-center justify-between mt-1.5">
               <span class="text-caption text-muted font-mono tabular-nums">
-                {{ t('quota.percentUsed').replace('{n}', usagePercent.toFixed(1)) }}
+                {{ tp('quota.percentUsed', { n: usagePercent.toFixed(1) }) }}
               </span>
               <span class="text-caption text-muted font-mono tabular-nums">
-                {{ t('quota.free').replace('{size}', formatBytes(Math.max(quota.max_size_bytes - quota.current_size_bytes, 0))) }}
+                {{ tp('quota.free', { size: formatBytes(Math.max(quota.max_size_bytes - quota.current_size_bytes, 0)) }) }}
               </span>
             </div>
           </template>
@@ -103,7 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           </div>
           <div class="mt-1.5">
             <span class="text-caption text-muted font-mono tabular-nums">
-              {{ t('quota.percentUsed').replace('{n}', countPercent.toFixed(1)) }}
+              {{ tp('quota.percentUsed', { n: countPercent.toFixed(1) }) }}
             </span>
           </div>
         </div>
@@ -235,8 +235,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { ref, computed, onMounted } from 'vue'
-import { request, ApiError, JSON_HEADERS } from '../api/client'
-import { t } from '../i18n/en'
+import { ApiError } from '../api/client'
+import { getRepoQuota, removeRepoQuota, setRepoQuota, type RepoQuota } from '../api/quota'
+import { t, tp } from '../i18n/en'
 import { useToastStore } from '../stores/toast'
 import {
   CircleStackIcon,
@@ -252,20 +253,6 @@ import { formatBytes } from '../lib/quota'
 
 const props = defineProps<{ repoName: string }>()
 
-// ─── Types ─────────────────────────────────────────────────────────────────────
-
-interface Quota {
-  id?: string
-  repo_id?: string
-  max_size_bytes: number
-  max_artifact_count?: number
-  current_size_bytes: number
-  current_artifact_count?: number
-  is_exceeded?: boolean
-  created_at?: string
-  updated_at?: string
-}
-
 // ─── Constants ─────────────────────────────────────────────────────────────────
 
 const SIZE_UNITS = [
@@ -277,7 +264,7 @@ const SIZE_UNITS = [
 // ─── State ─────────────────────────────────────────────────────────────────────
 
 const toasts = useToastStore()
-const quota = ref<Quota | null>(null)
+const quota = ref<RepoQuota | null>(null)
 const loading = ref(true)
 const saving = ref(false)
 const removing = ref(false)
@@ -319,7 +306,7 @@ function bytesFromForm(): number {
   return (formSize.value || 0) * (unit?.bytes ?? 1024 * 1024 * 1024)
 }
 
-function populateForm(q: Quota): void {
+function populateForm(q: RepoQuota): void {
   const bytes = q.max_size_bytes
   if (bytes <= 0) return
   if (bytes >= 1024 * 1024 * 1024 * 1024) {
@@ -339,9 +326,7 @@ function populateForm(q: Quota): void {
 async function load(): Promise<void> {
   loading.value = true
   try {
-    const res = await request<Quota>(
-      `/api/v1/repositories/${encodeURIComponent(props.repoName)}/quota`,
-    )
+    const res = await getRepoQuota(props.repoName)
     quota.value = res ?? null
     if (res) populateForm(res)
   } catch (err) {
@@ -359,16 +344,7 @@ async function saveQuota(): Promise<void> {
   if (!formSize.value) return
   saving.value = true
   try {
-    const res = await request<Quota>(
-      `/api/v1/repositories/${encodeURIComponent(props.repoName)}/quota`,
-      {
-        method: 'PUT',
-        headers: JSON_HEADERS,
-        body: JSON.stringify({
-          max_size_bytes: bytesFromForm(),
-        }),
-      },
-    )
+    const res = await setRepoQuota(props.repoName, bytesFromForm())
     quota.value = res ?? null
     showForm.value = false
     toasts.success(t('quota.saved'))
@@ -382,10 +358,7 @@ async function saveQuota(): Promise<void> {
 async function removeQuota(): Promise<void> {
   removing.value = true
   try {
-    await request<void>(
-      `/api/v1/repositories/${encodeURIComponent(props.repoName)}/quota`,
-      { method: 'DELETE' },
-    )
+    await removeRepoQuota(props.repoName)
     quota.value = null
     removeModal.value = false
     showForm.value = false

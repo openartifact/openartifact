@@ -19,7 +19,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <div class="space-y-3 text-sm">
       <p class="text-muted">{{ t('repoDelete.trashHint') }}</p>
       <label for="repo-delete-confirm" class="block text-foreground">
-        {{ t('repoDelete.typeName').replace('{name}', name) }}
+        {{ tp('repoDelete.typeName', { name: name }) }}
       </label>
       <input
         id="repo-delete-confirm"
@@ -37,14 +37,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import { computed, ref, watch } from 'vue'
 import ConfirmDialog from './ConfirmDialog.vue'
 import { confirmNameMatches } from '../lib/trash'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 const props = defineProps<{ open: boolean; name: string; busy?: boolean }>()
 const emit = defineEmits<{ (e: 'close'): void; (e: 'confirm'): void }>()
 
 const typed = ref('')
 const matches = computed(() => confirmNameMatches(typed.value, props.name))
-const bodyText = computed(() => t('repoDelete.body').replace('{name}', props.name))
+const bodyText = computed(() => tp('repoDelete.body', { name: props.name }))
 
 watch(
   () => props.open,

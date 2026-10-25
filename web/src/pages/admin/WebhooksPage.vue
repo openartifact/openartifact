@@ -258,7 +258,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 import PageHeader from '../../components/PageHeader.vue'
 import { formatDate } from '../../lib/datetime'
 import { ref, computed, onMounted } from 'vue'
-import { request, JSON_HEADERS } from '../../api/client'
+import {
+  createWebhook,
+  deleteWebhook,
+  listWebhooks,
+  updateWebhook,
+  type Webhook,
+  type WebhookCreateInput,
+} from '../../api/webhooks'
 import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t, tDynamic } from '../../i18n/en'
@@ -279,27 +286,6 @@ import {
   type WebhookEvent,
   type WebhookPayloadFormat,
 } from '../../lib/webhookEvents'
-
-interface Webhook {
-  id: string
-  repository_id?: string
-  name: string
-  url: string
-  has_secret?: boolean
-  events: string[]
-  content_type?: string
-  payload_format?: string
-  ssl_verify?: boolean
-  enabled: boolean
-  max_retries?: number
-  timeout_seconds?: number
-  created_at?: string
-  updated_at?: string
-}
-
-interface WebhookListResponse {
-  webhooks?: Webhook[]
-}
 
 const toasts = useToastStore()
 const docsUrl = useDocsLink('admin-webhooks')
@@ -350,8 +336,7 @@ async function load(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    const res = await request<WebhookListResponse>('/api/v1/webhooks')
-    webhooks.value = res?.webhooks ?? []
+    webhooks.value = await listWebhooks()
   } catch (err) {
     loadError.value = err instanceof Error ? err.message : t('adm.webhooks.loadFailed')
     toasts.error(loadError.value)
@@ -381,7 +366,7 @@ async function submitCreate(): Promise<void> {
   if (!canSave.value) return
   saving.value = true
   try {
-    const payload: Record<string, unknown> = {
+    const payload: WebhookCreateInput = {
       name: form.value.name.trim(),
       url: form.value.url.trim(),
       events: form.value.events,
@@ -390,20 +375,12 @@ async function submitCreate(): Promise<void> {
     }
     if (form.value.secret.trim()) payload.secret = form.value.secret.trim()
 
-    const created = await request<Webhook>('/api/v1/webhooks', {
-      method: 'POST',
-      headers: JSON_HEADERS,
-      body: JSON.stringify(payload),
-    })
+    const created = await createWebhook(payload)
 
     // The create endpoint always enables the hook with TLS verification on;
     // apply the requested non-default flags with a follow-up update.
     if (created?.id && (!form.value.enabled || !form.value.ssl_verify)) {
-      await request<Webhook>(`/api/v1/webhooks/${encodeURIComponent(created.id)}`, {
-        method: 'PUT',
-        headers: JSON_HEADERS,
-        body: JSON.stringify({ enabled: form.value.enabled, ssl_verify: form.value.ssl_verify }),
-      })
+      await updateWebhook(created.id, { enabled: form.value.enabled, ssl_verify: form.value.ssl_verify })
     }
     toasts.success(t('adm.webhooks.created'))
     closeDrawer()
@@ -420,7 +397,7 @@ async function deleteOne(): Promise<void> {
   if (!hook?.id) return
   deleting.value = true
   try {
-    await request(`/api/v1/webhooks/${encodeURIComponent(hook.id)}`, { method: 'DELETE' })
+    await deleteWebhook(hook.id)
     toasts.success(t('adm.webhooks.deleted'))
     await load()
   } catch (err) {

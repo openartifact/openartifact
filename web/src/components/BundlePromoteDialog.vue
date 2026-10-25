@@ -59,13 +59,10 @@ import { promoteBundle, type Bundle, type PipelineStage, type PromoteResult } fr
 import type { Repository } from '../api/repositories'
 import { INPUT_CLASS } from '../lib/formClasses'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 function promoteSummary(r: PromoteResult): string {
-  return t('bundles.promote.summary')
-    .replace('{copied}', String(r.copied ?? 0))
-    .replace('{existing}', String(r.existing ?? 0))
-    .replace('{replaced}', String(r.replaced ?? 0))
+  return tp('bundles.promote.summary', { copied: String(r.copied ?? 0), existing: String(r.existing ?? 0), replaced: String(r.replaced ?? 0) })
 }
 
 const props = defineProps<{

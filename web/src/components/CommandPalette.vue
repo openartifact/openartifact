@@ -197,7 +197,7 @@ import { listCommands, type CommandEntry } from '../composables/useCommands'
 import { usePaletteSearch } from '../composables/usePaletteSearch'
 import type { SearchPackageHit } from '../api/search'
 import FormatBadge from './FormatBadge.vue'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 const ui = useUIStore()
 const router = useRouter()
@@ -224,7 +224,7 @@ const hasAny = computed(() => resultCount.value > 0)
 // The "view all" row is an option too, so the list exists whenever there is a query.
 const hasOptions = computed(() => hasAny.value || hasQuery.value)
 
-const viewAllLabel = computed(() => t('palette.viewAll').replace('{q}', query.value.trim()))
+const viewAllLabel = computed(() => tp('palette.viewAll', { q: query.value.trim() }))
 
 // What the polite live region says: progress, the refusal of a too broad
 // query, else how many entries are listed. Errors have their own alert.
@@ -240,7 +240,7 @@ const announcement = computed(() => {
       if (resultCount.value === 0) return t('palette.noResults')
       return resultCount.value === 1
         ? t('palette.count.one')
-        : t('palette.count.other').replace('{n}', String(resultCount.value))
+        : tp('palette.count.other', { n: String(resultCount.value) })
   }
 })
 

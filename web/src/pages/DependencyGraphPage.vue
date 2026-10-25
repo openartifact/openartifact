@@ -9,7 +9,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <RepoHeader :name="repoName" :repo="repoInfo" active="graph" />
 
     <div class="!mt-0 flex flex-wrap items-center justify-between gap-3">
-      <p class="text-sm text-muted">{{ t('graph.subtitle').replace('{repo}', repoName) }}</p>
+      <p class="text-sm text-muted">{{ tp('graph.subtitle', { repo: repoName }) }}</p>
       <div class="flex flex-wrap items-center gap-2">
         <!-- SBOM selector -->
         <div class="relative">
@@ -252,9 +252,9 @@ import { getRepository, type Repository } from '../api/repositories'
 import { formatDate } from '../lib/datetime'
 import { ref, computed, onMounted, watch } from 'vue'
 import { useRoute } from 'vue-router'
-import { request } from '../api/client'
+import { getSbomDocument, listSboms, type CycloneDxDocument, type SbomItem } from '../api/sbom'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 import {
   ChevronDownIcon,
   ShareIcon,
@@ -264,26 +264,11 @@ import {
 
 // ─── Types ─────────────────────────────────────────────────────────────────────
 
-interface SbomItem {
-  id: string
-  format: string
-  spec_version?: string
-  component_count?: number
-  created_at?: string
-}
-
 interface SbomPackage {
   name: string
   version: string
   vulnerable?: boolean
   dependencies?: Array<{ name: string; version: string }>
-}
-
-// Subset of a CycloneDX JSON document, as streamed by the /download route.
-interface CycloneDxDocument {
-  components?: Array<{ 'bom-ref'?: string; name: string; version?: string }>
-  dependencies?: Array<{ ref: string; dependsOn?: string[] }>
-  vulnerabilities?: Array<{ affects?: Array<{ ref: string }> }>
 }
 
 function packagesFromCycloneDx(doc: CycloneDxDocument): SbomPackage[] {
@@ -485,11 +470,9 @@ async function loadSboms(): Promise<void> {
   loadingSboms.value = true
   loadError.value = ''
   try {
-    const res = await request<{ reports?: SbomItem[] }>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/sbom`,
-    )
+    const reports = await listSboms(repoName.value)
     if (generation !== sbomsGeneration) return
-    sboms.value = res?.reports ?? []
+    sboms.value = reports
   } catch (err) {
     if (generation !== sbomsGeneration) return
     sboms.value = []
@@ -507,9 +490,7 @@ async function loadSbomDetail(id: string): Promise<void> {
   loadError.value = ''
   const generation = ++detailGeneration
   try {
-    const doc = await request<CycloneDxDocument>(
-      `/api/v1/repositories/${encodeURIComponent(repoName.value)}/sbom/${encodeURIComponent(id)}/download`,
-    )
+    const doc = await getSbomDocument(repoName.value, id)
     if (generation !== detailGeneration) return
     allPackages.value = packagesFromCycloneDx(doc ?? {})
   } catch (err) {

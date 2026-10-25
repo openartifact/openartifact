@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               {{ selectedItems.length > 99 ? '99+' : selectedItems.length }}
             </span>
             <span class="text-sm font-medium text-foreground whitespace-nowrap">
-              {{ selectedItems.length === 1 ? t('bulk.selectedOne') : t('bulk.selectedMany').replace('{n}', String(selectedItems.length)) }}
+              {{ selectedItems.length === 1 ? t('bulk.selectedOne') : tp('bulk.selectedMany', { n: String(selectedItems.length) }) }}
             </span>
           </div>
 
@@ -75,7 +75,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
     <ConfirmDialog
       :open="confirmDelete"
-      :title="t('bulk.confirmDelete').replace('{n}', String(selectedItems.length))"
+      :title="tp('bulk.confirmDelete', { n: String(selectedItems.length) })"
       :description="t('bulk.confirmDeleteHint')"
       :confirm-label="t('common.delete')"
       :busy-label="t('bulk.deleting')"
@@ -91,7 +91,7 @@ import { ref } from 'vue'
 import { TrashIcon, XMarkIcon } from '@heroicons/vue/24/outline'
 import AppButton from './AppButton.vue'
 import ConfirmDialog from './ConfirmDialog.vue'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 import { deletePackage } from '../api/repositories'
 import { ApiError } from '../api/client'
 

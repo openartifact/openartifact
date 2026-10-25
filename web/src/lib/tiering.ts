@@ -7,7 +7,7 @@
 // bytes), the policy form model and the plain-words condition summary.
 
 import type { StoragePolicy, StoragePolicyInput } from '../api/tiering'
-import { t, type TranslationKey } from '../i18n/en'
+import { tp, type TranslationKey } from '../i18n/en'
 import { FORMAT_LOCALE } from './datetime'
 import { formatExactDuration } from './duration'
 import { formatBytes } from './quota'
@@ -195,15 +195,15 @@ export function policyFormError(f: PolicyForm): TranslationKey | null {
 /** Plain-words conditions of a saved policy (formats are rendered as badges by the caller). */
 export function policyConditions(p: StoragePolicy): string[] {
   const out: string[] = []
-  if (p.min_age_seconds) out.push(t('tiering.cond.age').replace('{d}', formatExactDuration(p.min_age_seconds)))
-  if (p.min_idle_seconds) out.push(t('tiering.cond.idle').replace('{d}', formatExactDuration(p.min_idle_seconds)))
+  if (p.min_age_seconds) out.push(tp('tiering.cond.age', { d: formatExactDuration(p.min_age_seconds) }))
+  if (p.min_idle_seconds) out.push(tp('tiering.cond.idle', { d: formatExactDuration(p.min_idle_seconds) }))
   const min = p.min_size_bytes ? formatBytes(p.min_size_bytes) : null
   const max = p.max_size_bytes ? formatBytes(p.max_size_bytes) : null
-  if (min && max) out.push(t('tiering.cond.sizeRange').replace('{min}', min).replace('{max}', max))
-  else if (min) out.push(t('tiering.cond.sizeMin').replace('{min}', min))
-  else if (max) out.push(t('tiering.cond.sizeMax').replace('{max}', max))
-  if (p.repo_glob) out.push(t('tiering.cond.repo').replace('{glob}', p.repo_glob))
-  if (p.path_glob) out.push(t('tiering.cond.path').replace('{glob}', p.path_glob))
+  if (min && max) out.push(tp('tiering.cond.sizeRange', { min: min, max: max }))
+  else if (min) out.push(tp('tiering.cond.sizeMin', { min: min }))
+  else if (max) out.push(tp('tiering.cond.sizeMax', { max: max }))
+  if (p.repo_glob) out.push(tp('tiering.cond.repo', { glob: p.repo_glob }))
+  if (p.path_glob) out.push(tp('tiering.cond.path', { glob: p.path_glob }))
   return out
 }
 

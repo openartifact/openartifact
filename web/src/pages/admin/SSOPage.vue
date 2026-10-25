@@ -289,8 +289,16 @@ import {
   PlusIcon,
   ShieldCheckIcon,
 } from '@heroicons/vue/24/outline'
-import { request, ApiError, JSON_HEADERS } from '../../api/client'
-import { saveSSOProvider, testSSOProvider, type OIDCConfigInput, type SSOConfigInput } from '../../api/admin'
+import { ApiError } from '../../api/client'
+import {
+  deleteSSOProvider,
+  listAdminSSOProviders,
+  saveSSOProvider,
+  testSSOProvider,
+  updateSSOProvider,
+  type SSOConfigInput,
+  type SSOProvider,
+} from '../../api/sso'
 import {
   buildOIDCPayload, oidcFormFrom, emptyOIDCForm, type OIDCTextKey,
 } from '../../lib/ssoOidcForm'
@@ -303,25 +311,6 @@ import { useDocsLink } from '../../composables/useDocsLink'
 import { useToastStore } from '../../stores/toast'
 import { t } from '../../i18n/en'
 import { formatTime, timeAgo } from '../../lib/datetime'
-
-// Response shape of the admin SSO API: the client secret is never returned,
-// so `oidc_config.client_secret` is always absent.
-interface SSOProvider {
-  id: string
-  slug: string
-  kind: 'oidc' | 'saml'
-  display_name: string
-  enabled: boolean
-  oidc_config?: OIDCConfigInput & { has_secret?: boolean }
-  saml_config?: {
-    idp_metadata_url?: string
-    idp_metadata_xml?: string
-  }
-  auto_provision_users: boolean
-  link_by_email: boolean
-  created_at: string
-  updated_at: string
-}
 
 interface TestOutcome {
   ok: boolean
@@ -405,8 +394,7 @@ async function loadProviders(): Promise<void> {
   loading.value = true
   loadError.value = ''
   try {
-    const response = await request<{ providers?: SSOProvider[] }>('/api/v1/admin/sso-providers')
-    providers.value = response?.providers ?? []
+    providers.value = await listAdminSSOProviders()
   } catch (err) {
     loadError.value = errMessage(err, t('adm.sso.loadFailed'))
     toasts.error(loadError.value)
@@ -481,14 +469,7 @@ async function saveProvider(): Promise<void> {
   saving.value = true
   try {
     if (editingProvider.value) {
-      await request<SSOProvider>(
-        `/api/v1/admin/sso-providers/${encodeURIComponent(editingProvider.value.slug)}`,
-        {
-          method: 'PATCH',
-          headers: JSON_HEADERS,
-          body: JSON.stringify({ display_name: form.value.display_name, ...config }),
-        },
-      )
+      await updateSSOProvider(editingProvider.value.slug, { display_name: form.value.display_name, ...config })
       toasts.success(t('adm.sso.updatedToast'))
     } else {
       await saveSSOProvider({
@@ -528,11 +509,7 @@ async function testProvider(slug: string): Promise<void> {
 async function toggleEnabled(provider: SSOProvider): Promise<void> {
   const next = !provider.enabled
   try {
-    await request<SSOProvider>(`/api/v1/admin/sso-providers/${encodeURIComponent(provider.slug)}`, {
-      method: 'PATCH',
-      headers: JSON_HEADERS,
-      body: JSON.stringify({ enabled: next }),
-    })
+    await updateSSOProvider(provider.slug, { enabled: next })
     provider.enabled = next
     toasts.success(next ? t('adm.sso.providerEnabled') : t('adm.sso.providerDisabled'))
   } catch (err) {
@@ -545,7 +522,7 @@ async function deleteProvider(): Promise<void> {
   if (!provider) return
   deleting.value = true
   try {
-    await request<void>(`/api/v1/admin/sso-providers/${encodeURIComponent(provider.slug)}`, { method: 'DELETE' })
+    await deleteSSOProvider(provider.slug)
     toasts.success(t('adm.sso.deleted'))
     await loadProviders()
   } catch (err) {

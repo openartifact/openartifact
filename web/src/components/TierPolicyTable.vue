@@ -73,7 +73,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ConfirmDialog
       :open="!!deleteTarget"
       :title="t('tiering.policy.deleteTitle')"
-      :description="t('tiering.policy.deleteHint').replace('{name}', deleteTarget?.name ?? '')"
+      :description="tp('tiering.policy.deleteHint', { name: deleteTarget?.name ?? '' })"
       :confirm-label="t('common.delete')"
       :cancel-label="t('common.cancel')"
       :busy="deleting"
@@ -93,7 +93,7 @@ import FormatBadge from './FormatBadge.vue'
 import TierPolicyDialog from './TierPolicyDialog.vue'
 import { deletePolicy, updatePolicy, type StoragePolicy, type StorageTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 import { formFromPolicy, formToInput, policyConditions } from '../lib/tiering'
 
 defineProps<{ policies: StoragePolicy[]; tiers: StorageTier[] }>()

@@ -243,7 +243,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 {{ selectedIds.size > 99 ? '99+' : selectedIds.size }}
               </span>
               <span class="text-sm font-medium text-foreground whitespace-nowrap">
-                {{ t('repos.selected').replace('{n}', String(selectedIds.size)) }}
+                {{ tp('repos.selected', { n: String(selectedIds.size) }) }}
               </span>
             </div>
 
@@ -270,7 +270,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Delete confirmation -->
     <ConfirmDialog
       :open="confirmBulkDelete"
-      :title="t('repos.confirmDeleteTitle').replace('{n}', String(selectedIds.size))"
+      :title="tp('repos.confirmDeleteTitle', { n: String(selectedIds.size) })"
       :description="t('repos.confirmDeleteBody')"
       :confirm-label="t('common.delete')"
       :busy-label="t('repoDetail.deleting')"
@@ -304,7 +304,7 @@ import EmptyState from '../components/EmptyState.vue'
 import NewRepoModal from '../components/NewRepoModal.vue'
 import { useToastStore } from '../stores/toast'
 import { useSessionStore } from '../stores/session'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 const toasts = useToastStore()
 const session = useSessionStore()
@@ -379,7 +379,7 @@ async function doBulkDelete(): Promise<void> {
     bulkProgress.value = 0
   }
 
-  if (succeeded > 0) toasts.success(t('repos.deletedCount').replace('{n}', String(succeeded)))
+  if (succeeded > 0) toasts.success(tp('repos.deletedCount', { n: String(succeeded) }))
   if (succeeded < toDelete.length) toasts.error(t('repos.deleteSomeFailed'))
 }
 

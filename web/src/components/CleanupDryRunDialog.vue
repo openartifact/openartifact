@@ -17,7 +17,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     @close="emit('close')"
   >
     <p class="text-sm text-muted" data-testid="dryrun-total">
-      {{ total === 0 ? t('cleanup.dryRun.none') : t('cleanup.dryRun.total').replace('{n}', String(total)) }}
+      {{ total === 0 ? t('cleanup.dryRun.none') : tp('cleanup.dryRun.total', { n: String(total) }) }}
     </p>
     <div class="mt-4 space-y-4 max-h-96 overflow-y-auto">
       <section v-for="repo in repositories" :key="repo.repository" data-testid="dryrun-repo">
@@ -44,7 +44,7 @@ import { computed } from 'vue'
 import AdminDialog from './AdminDialog.vue'
 import AppButton from './AppButton.vue'
 import type { CleanupPreview } from '../api/generated'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 
 const props = defineProps<{ open: boolean; title: string; repositories: CleanupPreview[] }>()
 const emit = defineEmits<{ (e: 'close'): void }>()

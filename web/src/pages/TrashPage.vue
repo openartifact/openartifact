@@ -44,7 +44,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-else-if="loadError" class="px-4 py-8 text-center text-danger" role="alert">{{ loadError }}</div>
       <div v-else-if="items.length === 0 && kind !== '' && repoTotal > 0" class="px-4 py-10 text-center">
         <p class="text-foreground font-medium">{{ t('trash.emptyFiltered') }}</p>
-        <p class="mt-1 text-sm text-muted">{{ t('trash.emptyFilteredHint').replace('{n}', String(repoTotal)) }}</p>
+        <p class="mt-1 text-sm text-muted">{{ tp('trash.emptyFilteredHint', { n: String(repoTotal) }) }}</p>
       </div>
       <div v-else-if="items.length === 0" class="px-4 py-10 text-center">
         <p class="text-foreground font-medium">{{ t('trash.empty') }}</p>
@@ -133,7 +133,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ConfirmDialog
       :open="emptyOpen"
       :title="t('trash.emptyTitle')"
-      :description="t('trash.emptyBody').replace('{n}', String(repoTotal)).replace('{name}', repo)"
+      :description="tp('trash.emptyBody', { n: String(repoTotal), name: repo })"
       :confirm-label="t('trash.emptyTrash')"
       :busy="busyKey === 'empty'"
       @confirm="doEmpty"
@@ -162,7 +162,7 @@ import { formatBytesOrDash } from '../lib/quota'
 import { useSessionStore } from '../stores/session'
 import { useDocsLink } from '../composables/useDocsLink'
 import { useToastStore } from '../stores/toast'
-import { t, tDynamic } from '../i18n/en'
+import { t, tp, tDynamic } from '../i18n/en'
 
 const PAGE_SIZE = 50
 
@@ -195,7 +195,7 @@ const restoreAllowed = (item: TrashItem): boolean => (item.kind === 'repository'
 const purgeDescription = computed(() => {
   const target = purgeTarget.value
   if (!target) return ''
-  return (target.kind === 'repository' ? t('trash.purgeRepoBody') : t('trash.purgeBody')).replace('{name}', target.name)
+  return tp(target.kind === 'repository' ? 'trash.purgeRepoBody' : 'trash.purgeBody', { name: target.name })
 })
 
 async function copyName(name: string): Promise<void> {
@@ -271,7 +271,7 @@ async function restore(item: TrashItem): Promise<void> {
   try {
     // Repositories are only restorable through the global admin endpoint.
     await restoreTrash(item, item.kind === 'repository' ? undefined : repo.value || undefined)
-    toasts.success(t('trash.restored').replace('{name}', item.name))
+    toasts.success(tp('trash.restored', { name: item.name }))
     await load()
   } catch (err) {
     toasts.error(t('trash.restoreFailed'), err instanceof Error ? err.message : undefined)
@@ -286,7 +286,7 @@ async function doPurge(): Promise<void> {
   busyKey.value = keyOf(item)
   try {
     await purgeTrash(item)
-    toasts.success(t('trash.purged').replace('{name}', item.name))
+    toasts.success(tp('trash.purged', { name: item.name }))
     purgeTarget.value = null
     await load()
   } catch (err) {

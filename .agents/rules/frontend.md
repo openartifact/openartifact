@@ -13,6 +13,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 # Frontend (web/)
 
 - **Frontend:** all API calls go through `web/src/api/client.ts` `request()` (handles CSRF header `X-CSRF-Token` from `oa_csrf` cookie and 401). No raw `fetch` for mutations. Strings go through `t()` / `web/src/i18n/en.ts`. Format icons come from `simple-icons` via `web/src/lib/formats.ts`; display formats with `FormatBadge`.
+  - Layering: pages and components never hold `/api/v1/...` URLs; requests live in typed `web/src/api/*.ts` functions. Placeholders in catalog strings are filled with `tp(key, { name })`, never `.replace('{name}', ...)`. Keep pages and components under about 400 lines: static data goes to `web/src/lib/`, state and actions to `web/src/composables/`.
+  - Tabs: a tab panel other than the default one is loaded with `asyncTab(() => import('./XTab.vue'))` (`web/src/lib/asyncTab.ts`, skeleton fallback) so the page chunk carries only what is visible. The i18n catalog stays eager (`t()` is synchronous and there is one locale; a lazy catalog would flash keys).
   - Dates: `formatDate`/`formatDateTime` from `web/src/lib/datetime.ts`; no per-page `toLocaleDateString` helpers.
   - Format colours: `formatColor`/`formatColorLowOnDark` for badges, `chartColor` (`CHART_PALETTE`) for charts; never hardcode hex per format.
   - Repo URLs and client snippets: `repoBaseUrl` / `clientSetup` in `web/src/lib/installCommands.ts`. Snippets must match real server routes (check `cmd/server/main.go` and the format handler), not another product's conventions.

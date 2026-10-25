@@ -166,7 +166,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               >
                 {{ provider.display_name.charAt(0).toUpperCase() }}
               </span>
-              <span class="font-medium text-foreground">{{ t('login.continueWith').replace('{name}', provider.display_name) }}</span>
+              <span class="font-medium text-foreground">{{ tp('login.continueWith', { name: provider.display_name }) }}</span>
               <span class="ml-auto text-micro font-mono text-muted">{{ provider.kind.toUpperCase() }}</span>
             </a>
           </div>

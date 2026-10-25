@@ -140,7 +140,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <ProjectSettingsTab
         v-else-if="activeTab === 'settings'"
         :project="project"
-        @saved="(p) => (project = { ...project, ...p })"
+        @saved="onSaved"
         @deleted="onDeleted"
       />
     </template>
@@ -153,14 +153,9 @@ import { useRoute, useRouter } from 'vue-router'
 import AppButton from '../components/AppButton.vue'
 import EmptyState from '../components/EmptyState.vue'
 import FormatBadge from '../components/FormatBadge.vue'
-import MemberTable from '../components/MemberTable.vue'
 import Pagination from '../components/Pagination.vue'
-import ProjectActivityTab from '../components/ProjectActivityTab.vue'
 import ProjectHeader from '../components/ProjectHeader.vue'
 import ProjectRoleBadge from '../components/ProjectRoleBadge.vue'
-import ProjectSettingsTab from '../components/ProjectSettingsTab.vue'
-import ProjectTokensTab from '../components/ProjectTokensTab.vue'
-import ProjectUsageTab from '../components/ProjectUsageTab.vue'
 import {
   getProject,
   listProjectGroups,
@@ -171,10 +166,18 @@ import {
   type ProjectMember,
 } from '../api/projects'
 import type { Repository } from '../api/repositories'
+import { asyncTab } from '../lib/asyncTab'
 import { resolveCrumbs, type Crumb } from '../lib/crumbs'
 import { formatDate } from '../lib/datetime'
 import { atLeast, errorStatus, visibleProjectTabs, type ProjectTab } from '../lib/projectAccess'
 import { t } from '../i18n/en'
+
+// Overview and Repositories render inline; every other panel loads on first use.
+const MemberTable = asyncTab(() => import('../components/MemberTable.vue'))
+const ProjectActivityTab = asyncTab(() => import('../components/ProjectActivityTab.vue'))
+const ProjectSettingsTab = asyncTab(() => import('../components/ProjectSettingsTab.vue'))
+const ProjectTokensTab = asyncTab(() => import('../components/ProjectTokensTab.vue'))
+const ProjectUsageTab = asyncTab(() => import('../components/ProjectUsageTab.vue'))
 
 const PAGE_SIZE = 20
 const RECENT_LIMIT = 5
@@ -263,6 +266,10 @@ async function load(): Promise<void> {
 async function onRepoPage(next: number): Promise<void> {
   repoPage.value = next
   await loadRepos()
+}
+
+function onSaved(saved: Project): void {
+  if (project.value) project.value = { ...project.value, ...saved }
 }
 
 async function onDeleted(): Promise<void> {

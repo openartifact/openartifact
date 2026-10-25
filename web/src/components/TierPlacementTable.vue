@@ -94,7 +94,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <ConfirmDialog
       :open="!!deleteTarget"
       :title="t('tiering.tier.deleteTitle')"
-      :description="t('tiering.tier.deleteHint').replace('{name}', deleteTarget?.name ?? '')"
+      :description="tp('tiering.tier.deleteHint', { name: deleteTarget?.name ?? '' })"
       :confirm-label="t('common.delete')"
       :cancel-label="t('common.cancel')"
       :busy="deleting"
@@ -114,7 +114,7 @@ import StatusBadge from './StatusBadge.vue'
 import TierAddDialog from './TierAddDialog.vue'
 import { deleteTier, updateTier, type StorageTier } from '../api/tiering'
 import { useToastStore } from '../stores/toast'
-import { t } from '../i18n/en'
+import { t, tp } from '../i18n/en'
 import { formatBytes } from '../lib/quota'
 import { formatCount, sharePercent } from '../lib/tiering'
 
