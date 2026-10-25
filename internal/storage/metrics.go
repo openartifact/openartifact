@@ -82,6 +82,19 @@ func (m *MetricsBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, e
 	return &countingReadCloser{ReadCloser: rc, reg: m.reg}, nil
 }
 
+// GetFrom forwards a ranged read (see OpenAt), counted and timed like Get.
+func (m *MetricsBlobStore) GetFrom(ctx context.Context, id string, offset int64) (io.ReadCloser, error) {
+	ctx, done := m.observe(ctx, "get")
+	rc, err := OpenAt(ctx, m.inner, id, offset)
+	done(err)
+
+	if err != nil {
+		return nil, err
+	}
+
+	return &countingReadCloser{ReadCloser: rc, reg: m.reg}, nil
+}
+
 func (m *MetricsBlobStore) Delete(ctx context.Context, id string) error {
 	ctx, done := m.observe(ctx, "delete")
 	err := m.inner.Delete(ctx, id)

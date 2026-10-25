@@ -300,6 +300,9 @@ docs:
 #  maxBackoff: 15m
 #  requestTimeout: 30s
 #  tombstoneRetention: 720h
+#  spoolDir: ""                # downloads of peer blobs, resumed after an interruption (empty: under the OS temp dir)
+#  maxPartialBytes: 10737418240 # cap on the interrupted downloads kept for resuming
+#  maxPartialAge: 24h          # drop an interrupted download not written to for this long
 
 # Storage tiers and lifecycle policies. Tiers (named storage backends) and the
 # policies that move blobs between them are managed in the admin UI/API; this

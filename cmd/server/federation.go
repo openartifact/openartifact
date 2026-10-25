@@ -67,7 +67,8 @@ func setupFederation(ctx context.Context, cfg *config.Config, db *database.Postg
 		PollInterval: cfg.Federation.PollInterval, BatchSize: cfg.Federation.BatchSize,
 		MaxBackoff: cfg.Federation.MaxBackoff, RequestTimeout: cfg.Federation.RequestTimeout,
 		TombstoneRetention: cfg.Federation.TombstoneRetention,
-		TrashDefaultDays:   cfg.Trash.RetentionDays,
+		SpoolDir:           cfg.Federation.SpoolDir, MaxPartialBytes: cfg.Federation.MaxPartialBytes, MaxPartialAge: cfg.Federation.MaxPartialAge,
+		TrashDefaultDays: cfg.Trash.RetentionDays,
 	})
 	if err != nil {
 		return nil, fmt.Errorf("start federation: %w", err)

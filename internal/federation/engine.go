@@ -6,12 +6,9 @@ package federation
 
 import (
 	"context"
-	"crypto/sha256"
 	"database/sql"
-	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 	"os"
 	"slices"
 	"sync"
@@ -52,6 +49,16 @@ type Options struct {
 	// TrashDefaultDays is the server-wide trash retention applied to
 	// repositories without their own (0: applied deletes are permanent).
 	TrashDefaultDays int
+	// SpoolDir is where blobs of peers are downloaded to, and where an
+	// interrupted download waits to be resumed by the next pull (empty: a
+	// directory under the OS temp dir). Give every instance its own.
+	SpoolDir string
+	// MaxPartialBytes caps the total size of the partial downloads kept in
+	// the spool (0: DefaultMaxPartialBytes); the least recently written go first.
+	MaxPartialBytes int64
+	// MaxPartialAge discards a partial download untouched for this long
+	// (0: DefaultMaxPartialAge).
+	MaxPartialAge time.Duration
 }
 
 // Engine applies the changes pulled from peers and runs the pull workers.
@@ -60,6 +67,10 @@ type Engine struct {
 
 	instance uuid.UUID
 	wake     chan struct{}
+	spool    *spool
+	// resumeBackoff is the pause before the first retry of an interrupted
+	// blob transfer (0: defaultResumeBackoff).
+	resumeBackoff time.Duration
 
 	mu sync.Mutex
 	// failures counts, per peer and unit, the pulls that failed on the unit
@@ -82,7 +93,17 @@ func NewEngine(ctx context.Context, o Options) (*Engine, error) {
 		return nil, errEngineNoLogger
 	}
 
-	return &Engine{Options: o, instance: id, wake: make(chan struct{}, 1)}, nil
+	e := &Engine{
+		Options: o, instance: id, wake: make(chan struct{}, 1),
+		spool: newSpool(o.SpoolDir, o.MaxPartialBytes, o.MaxPartialAge),
+	}
+
+	if o.Metrics != nil {
+		fn := e.spool.partialBytes
+		o.Metrics.partialBytes.Store(&fn)
+	}
+
+	return e, nil
 }
 
 // Kick asks the worker to look for due peers now (after a peer was added or a
@@ -373,11 +394,15 @@ func (e *Engine) stageBlobs(ctx context.Context, pc *pullCtx, key string, blobs 
 			continue
 		}
 
-		path, err := e.download(ctx, pc.client, key, ref)
+		path, err := e.download(ctx, pc, key, ref)
 		if err != nil {
 			cleanupStaged(staged)
 
 			return nil, err
+		}
+
+		if path == "" { // another pull stored it meanwhile
+			continue
 		}
 
 		staged = append(staged, stagedBlob{ref: ref, path: path})
@@ -390,43 +415,6 @@ func cleanupStaged(staged []stagedBlob) {
 	for _, s := range staged {
 		_ = os.Remove(s.path)
 	}
-}
-
-// download copies a blob of the peer to a temp file; the file name is returned.
-func (e *Engine) download(ctx context.Context, c *Client, key string, ref BlobRef) (string, error) {
-	body, err := c.Blob(ctx, key, ref.SHA256)
-	if errors.Is(err, ErrNotFound) {
-		return "", deferred("blob_missing", fmt.Errorf("blob %s is not available at the peer: %w", ref.SHA256, err))
-	}
-
-	if err != nil {
-		return "", err
-	}
-	defer body.Close()
-
-	f, err := os.CreateTemp("", "federation-blob-*.tmp")
-	if err != nil {
-		return "", fmt.Errorf("stage blob: %w", err)
-	}
-
-	sum, err := copyHashed(f, body)
-	if cerr := f.Close(); err == nil {
-		err = cerr
-	}
-
-	if err != nil {
-		_ = os.Remove(f.Name())
-
-		return "", fmt.Errorf("download blob %s: %w", ref.SHA256, err)
-	}
-
-	if sum != ref.SHA256 {
-		_ = os.Remove(f.Name())
-
-		return "", deferred("digest_mismatch", fmt.Errorf("%w: %s hashes to %s", errBlobDigestMismatch, ref.SHA256, sum))
-	}
-
-	return f.Name(), nil
 }
 
 // applyLive applies a live unit: dependencies first, then the blobs, then the
@@ -753,15 +741,4 @@ func (e *Engine) markConflict(ctx context.Context, pc *pullCtx, incoming Entry) 
 	if incoming.Tombstone || local.ContentRef != incoming.ContentRef {
 		pc.markConflict(incoming.UnitKey)
 	}
-}
-
-// copyHashed copies r to w and returns the sha256 of the bytes in hex.
-func copyHashed(w io.Writer, r io.Reader) (string, error) {
-	h := sha256.New()
-
-	if _, err := io.Copy(io.MultiWriter(w, h), r); err != nil {
-		return "", err //nolint:wrapcheck // wrapped by the caller
-	}
-
-	return hex.EncodeToString(h.Sum(nil)), nil
 }

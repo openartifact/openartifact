@@ -434,6 +434,46 @@ func (a *AzureBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, err
 	return resp.Body, nil
 }
 
+// GetFrom implements RangeReader with a ranged Get Blob (x-ms-range).
+func (a *AzureBlobStore) GetFrom(ctx context.Context, id string, offset int64) (io.ReadCloser, error) {
+	if offset == 0 {
+		return a.Get(ctx, id)
+	}
+
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
+	if offset < 0 {
+		return nil, ErrOffsetOutOfRange
+	}
+
+	resp, err := a.do(ctx, azureCall{method: http.MethodGet, blob: azureBlobKey(id), header: map[string]string{"x-ms-range": rangeHeader(offset)}})
+	if err != nil {
+		return nil, err
+	}
+
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		_ = resp.Body.Close()
+
+		return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
+	case http.StatusRequestedRangeNotSatisfiable:
+		_ = resp.Body.Close()
+
+		return nil, fmt.Errorf("%w: %d", ErrOffsetOutOfRange, offset)
+	case http.StatusPartialContent:
+		return resp.Body, nil
+	case http.StatusOK:
+		// The service ignored the range: skip the prefix ourselves.
+		return skipTo(resp.Body, offset)
+	}
+
+	defer func() { _ = resp.Body.Close() }()
+
+	return nil, azureStatusError("get", resp)
+}
+
 // Delete removes a blob by its SHA-256 identifier.
 func (a *AzureBlobStore) Delete(ctx context.Context, id string) error {
 	if err := ValidateBlobID(id); err != nil {

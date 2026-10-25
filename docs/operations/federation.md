@@ -123,8 +123,21 @@ Conflicts exist only on unit rows (which blob a path or tag points to, plus its 
 - **Backoff.** A failing peer (network, `5xx`, rejected token) is retried with exponential backoff from 5 s up to `federation.maxBackoff` with jitter, and never given up. The first success resets it.
 - **Poison units.** A unit that cannot be applied (quarantined at the origin, quota exceeded, blob missing at the origin, validation error) does not block the feed. A unit that is known to be unappliable for now (quarantined, quota, missing blob) is parked as *deferred* at once with the reason; one that fails for an unknown reason is parked after 3 failed pulls. The cursor moves on and the unit is retried with its own backoff (cap 1 h). List them with `GET .../peers/{id}/deferred` or in the UI.
 - **No dropped events.** The cursor advances only after a unit is committed; a crash replays the entry and the stamp comparison makes it a no-op.
-- **Large blobs.** Blob transfers use an idle timeout, so big files on slow links complete.
+- **Large blobs.** Blob transfers use an idle timeout, so big files on slow links complete. A transfer that is cut midway is [resumed](#resuming-interrupted-transfers), not restarted.
 - **Several replicas of one instance.** One replica pulls from a given peer at a time.
+
+## Resuming interrupted transfers
+
+Blobs are downloaded into a spool directory as a *partial file* named after the blob's sha256. When the connection drops, the partial stays. The retry asks the peer for the rest with `Range: bytes=<partial size>-` and appends it; a 10 GiB image layer cut at 9 GiB costs 1 GiB more, not 10.
+
+- **Retries.** A dropped body is retried immediately, with backoff from 500 ms to 8 s. After four attempts in a row that move no bytes the unit stops for this pull and the peer backs off as usual (see [fault tolerance](#fault-tolerance)); the partial is kept and the next pull resumes it. Attempts that make progress do not count against the limit.
+- **Verification.** The sha256 is computed over the whole blob, the kept prefix included (it is re-read and hashed on every resume, so a damaged partial cannot slip through). Only a blob with the digest the unit declares is stored. A mismatch deletes the partial and defers the unit as `digest_mismatch`.
+- **Peers that cannot resume.** A peer that answers `200` to a range request (an older version, or a proxy that strips `Range`) restarts the transfer from 0. A peer that answers `416` for a partial the blob no longer fits (it was replaced) also restarts from 0.
+- **Limits.** `federation.maxPartialBytes` (default 10 GiB) caps the spool; when it is exceeded the partial written longest ago is removed first, except ones being downloaded. `federation.maxPartialAge` (default 24 h) removes partials not written for that long. Both run at startup and every 10 minutes.
+- **Where.** `federation.spoolDir` (`OPENARTIFACT_FEDERATION_SPOOL_DIR`). Empty uses a directory under the OS temp dir, which is gone after a container restart; point it at a persistent volume to resume across restarts. Give each instance its own directory: instances sharing one would sweep each other's files. It also needs room for the largest blob in flight plus the partials you allow.
+- **Nothing is pushed.** Resuming is still the receiver asking for bytes of a blob that a unit it already fetched lists; the peer authorises each range request with the same unit-membership check as a full download.
+
+Watch `openartifact_federation_resumed_total` (resumed transfers per repository and peer) and `openartifact_federation_partial_bytes` (size of the spool). A steadily growing partial size with no resumes means partials accumulate for units that never complete; check the deferred list.
 
 ## Resync, rebuild and restore
 
@@ -134,7 +147,7 @@ Conflicts exist only on unit rows (which blob a path or tag points to, plus its 
 
 ## Monitoring
 
-Metrics, all with the labels `repo` and `peer` (except `_applied_total`, which also has `result`):
+Metrics, all with the labels `repo` and `peer` (except `_applied_total`, which also has `result`, and `openartifact_federation_partial_bytes`, the size in bytes of the spool directory's partial files, which has no labels):
 
 | Metric | Meaning |
 |---|---|
@@ -144,6 +157,7 @@ Metrics, all with the labels `repo` and `peer` (except `_applied_total`, which a
 | `openartifact_federation_conflicts_total` | Concurrent writes decided by last-writer-wins |
 | `openartifact_federation_pull_errors_total` | Failed pull attempts |
 | `openartifact_federation_last_success_timestamp_seconds` | Unix time of the last successful pull |
+| `openartifact_federation_resumed_total` | Blob transfers continued with a `Range` request after an interruption |
 
 Example alert rules:
 
@@ -195,6 +209,7 @@ Every instance generates an id when its database is first migrated, and a peer t
 
 - No Debian, RPM, RubyGems, Conda, Conan, Ivy or sbt; proxy and group repositories cannot be federated.
 - Eventual consistency only; replication latency is about the poll interval.
+- Resume needs the spool to survive: with the default (under the OS temp dir) partials do not outlive a container restart.
 - Quotas apply on each side. A unit that exceeds the receiver's quota is deferred, not forced in. Trashed bytes keep counting as for local deletes.
 - Applied deletes follow the receiver's [trash](trash.md) settings.
 - A repository that is `blocked` refuses applies.
@@ -226,7 +241,7 @@ Used between instances, authenticated with `Authorization: Bearer oafed_...`. Th
 | `GET /federation/v1/info` | Handshake: protocol, instance id, log id, head sequence, repository name and format |
 | `GET /federation/v1/log?after=&limit=` | Change feed: units changed after a sequence number |
 | `GET /federation/v1/unit?key=` | Current state of one unit |
-| `GET /federation/v1/blob?unit=&sha256=` | One blob of that unit |
+| `GET /federation/v1/blob?unit=&sha256=` | One blob of that unit; honours `Range: bytes=N-` (`206`, or `416` for an unsatisfiable or unsupported range) |
 
 ## Troubleshooting
 

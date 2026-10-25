@@ -58,7 +58,9 @@ Buckets of `openartifact_blob_operation_duration_seconds`: 0.0005, 0.001, 0.0025
 | `openartifact_federation_conflicts_total` | counter | `repo`, `peer` | Local changes superseded by a different state of the same unit from a peer (last writer wins). |
 | `openartifact_federation_lag_seconds` | gauge | `repo`, `peer` | Age of the oldest change of a peer that has not been applied yet (0 when caught up). |
 | `openartifact_federation_last_success_timestamp_seconds` | gauge | `repo`, `peer` | Unix time of the last successful pull of a peer (0 when it never succeeded). |
+| `openartifact_federation_partial_bytes` | gauge | none | Bytes of interrupted blob downloads kept in the federation spool for resuming. |
 | `openartifact_federation_pull_errors_total` | counter | `repo`, `peer` | Pull attempts of a peer that ended in an error. |
+| `openartifact_federation_resumed_total` | counter | `repo`, `peer` | Blob transfers from a peer resumed with a Range request after the connection dropped (or from a partial download of an earlier pull). |
 
 ## HTTP
 

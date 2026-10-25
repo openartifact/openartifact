@@ -155,6 +155,9 @@ White-label name, logos, colour and links; administrators can override each valu
 | `OPENARTIFACT_FEDERATION_BATCH_SIZE` | `federation.batchSize` | `200` | Log entries requested per `/log` call |
 | `OPENARTIFACT_FEDERATION_MAX_BACKOFF` | `federation.maxBackoff` | `15m` | Ceiling of the retry backoff for a failing peer |
 | `OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT` | `federation.requestTimeout` | `30s` | Timeout of one peer request (blob transfers use an idle timeout instead) |
+| `OPENARTIFACT_FEDERATION_SPOOL_DIR` | `federation.spoolDir` | empty | Directory where blobs pulled from peers are downloaded; an interrupted download stays and is resumed with a `Range` request. Empty uses a directory under the OS temp dir; set a persistent volume to resume across restarts, one per instance |
+| `OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES` | `federation.maxPartialBytes` | `10737418240` | Cap on the total size of kept interrupted downloads; the oldest are removed first |
+| `OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE` | `federation.maxPartialAge` | `24h` | An interrupted download not written to for this long is removed |
 | `OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION` | `federation.tombstoneRetention` | `720h` | How long delete tombstones are kept; set it above the longest partition a member must survive |
 
 ### Storage tiers (`tiering`)

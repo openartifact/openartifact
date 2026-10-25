@@ -285,6 +285,19 @@ func (s *Store) Get(ctx context.Context, id string) (io.ReadCloser, error) {
 	return rc, nil
 }
 
+// GetFrom implements storage.RangeReader.
+func (s *Store) GetFrom(ctx context.Context, id string, offset int64) (io.ReadCloser, error) {
+	rc, t, err := onTiers(ctx, s, id, func(st storage.BlobStore) (io.ReadCloser, error) { return storage.OpenAt(ctx, st, id, offset) })
+	if err != nil {
+		return nil, err
+	}
+
+	s.countRead(t)
+	s.touch(ctx, id)
+
+	return rc, nil
+}
+
 // GetSize implements storage.BlobStore.
 func (s *Store) GetSize(ctx context.Context, id string) (int64, error) {
 	n, _, err := onTiers(ctx, s, id, func(st storage.BlobStore) (int64, error) { return st.GetSize(ctx, id) })

@@ -137,6 +137,12 @@ func peerTLS(caPEM, clientCert, clientKey string) (*tls.Config, error) {
 }
 
 func (c *Client) get(ctx context.Context, path string, query url.Values) (*http.Response, error) {
+	return c.fetch(ctx, path, query, 0)
+}
+
+// fetch performs a GET; from > 0 asks for the bytes of the body from that
+// offset on, and then a 206 is accepted next to the 200.
+func (c *Client) fetch(ctx context.Context, path string, query url.Values, from int64) (*http.Response, error) {
 	u := *c.base
 	u.Path += "/federation/v1/" + path
 	u.RawQuery = query.Encode()
@@ -149,12 +155,16 @@ func (c *Client) get(ctx context.Context, path string, query url.Values) (*http.
 	req.Header.Set("Authorization", "Bearer "+c.token)
 	req.Header.Set("Accept", "application/json")
 
+	if from > 0 {
+		req.Header.Set("Range", "bytes="+strconv.FormatInt(from, 10)+"-")
+	}
+
 	resp, err := c.http.Do(req)
 	if err != nil {
 		return nil, fmt.Errorf("peer request %s: %w", path, err)
 	}
 
-	if resp.StatusCode == http.StatusOK {
+	if resp.StatusCode == http.StatusOK || (from > 0 && resp.StatusCode == http.StatusPartialContent) {
 		return resp, nil
 	}
 
@@ -167,6 +177,8 @@ func (c *Client) get(ctx context.Context, path string, query url.Values) (*http.
 		return nil, fmt.Errorf("%w: %s", ErrNotFound, strings.TrimSpace(string(body)))
 	case http.StatusLocked:
 		return nil, ErrQuarantined
+	case http.StatusRequestedRangeNotSatisfiable:
+		return nil, errRangeUnsatisfiable
 	}
 
 	return nil, &HTTPError{Status: resp.StatusCode, Body: strings.TrimSpace(string(body))}
@@ -220,12 +232,39 @@ func (c *Client) Unit(ctx context.Context, key string) (*UnitResponse, error) {
 	return &out, nil
 }
 
-// Blob opens the content of a blob of a unit; the caller closes it.
-func (c *Client) Blob(ctx context.Context, unitKey, sha256 string) (io.ReadCloser, error) {
-	resp, err := c.get(ctx, "blob", url.Values{"unit": {unitKey}, "sha256": {sha256}})
+// BlobStream is an open blob response.
+type BlobStream struct {
+	// Body streams the blob from Offset to its end; the caller closes it.
+	Body io.ReadCloser
+	// Offset is the position in the blob of the first byte of Body: the
+	// offset that was asked for when the peer honoured the range, 0 when it
+	// answered with the whole blob.
+	Offset int64
+}
+
+// Blob opens the content of a blob of a unit, from byte offset from on when the
+// peer supports ranges (from <= 0 reads it whole). A peer that ignores the
+// range answers with the full blob and Offset 0 tells the caller so.
+func (c *Client) Blob(ctx context.Context, unitKey, sha256 string, from int64) (*BlobStream, error) {
+	resp, err := c.fetch(ctx, "blob", url.Values{"unit": {unitKey}, "sha256": {sha256}}, from)
 	if err != nil {
 		return nil, err
 	}
 
-	return resp.Body, nil
+	if resp.StatusCode != http.StatusPartialContent {
+		return &BlobStream{Body: resp.Body}, nil
+	}
+
+	cr, err := parseContentRange(resp.Header.Get("Content-Range"))
+	if err == nil && cr.start != from {
+		err = fmt.Errorf("%w: asked for %d, got %d", errRangeMismatch, from, cr.start)
+	}
+
+	if err != nil {
+		_ = resp.Body.Close()
+
+		return nil, err
+	}
+
+	return &BlobStream{Body: resp.Body, Offset: from}, nil
 }

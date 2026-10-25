@@ -8,6 +8,8 @@ import (
 	"context"
 	"crypto/subtle"
 	"errors"
+	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -341,11 +343,33 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
+	s.serveBlob(w, r, ref)
+}
+
+// serveBlob streams the bytes of ref, honouring a single Range request so a
+// peer can resume an interrupted pull. The caller has already established
+// that ref belongs to the authenticated unit.
+func (s *Server) serveBlob(w http.ResponseWriter, r *http.Request, ref *BlobRef) {
+	span, err := parseRange(r.Header.Get("Range"), ref.Size)
+	if err != nil {
+		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(ref.Size, 10))
+		httpx.WriteError(w, http.StatusRequestedRangeNotSatisfiable, codeInvalid, "range not satisfiable")
+
+		return
+	}
+
 	// ref.SHA256 is the unit's own blob id from the database (equal to the
 	// validated request value), never the request string itself.
-	body, err := s.blobs.Get(r.Context(), ref.SHA256)
+	body, err := storage.OpenAt(r.Context(), s.blobs, ref.SHA256, span.start)
 	if errors.Is(err, storage.ErrBlobNotFound) {
 		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "blob bytes are missing at the origin")
+
+		return
+	}
+
+	if errors.Is(err, storage.ErrOffsetOutOfRange) {
+		w.Header().Set("Content-Range", "bytes */"+strconv.FormatInt(ref.Size, 10))
+		httpx.WriteError(w, http.StatusRequestedRangeNotSatisfiable, codeInvalid, "range not satisfiable")
 
 		return
 	}
@@ -357,13 +381,30 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 	}
 	defer body.Close()
 
-	w.Header().Set("Content-Type", "application/octet-stream")
+	h := w.Header()
+	h.Set("Content-Type", "application/octet-stream")
+	h.Set("Accept-Ranges", "bytes")
 
-	if ref.Size > 0 {
-		w.Header().Set("Content-Length", strconv.FormatInt(ref.Size, 10))
+	status := http.StatusOK
+
+	switch {
+	case span.partial:
+		status = http.StatusPartialContent
+
+		h.Set("Content-Range", fmt.Sprintf("bytes %d-%d/%d", span.start, span.end, ref.Size))
+		h.Set("Content-Length", strconv.FormatInt(span.end-span.start+1, 10))
+	case ref.Size > 0:
+		h.Set("Content-Length", strconv.FormatInt(ref.Size, 10))
 	}
 
-	_, _ = iocopy.Copy(w, body) // a peer that hangs up mid-transfer retries
+	w.WriteHeader(status)
+
+	var src io.Reader = body
+	if span.partial {
+		src = io.LimitReader(body, span.end-span.start+1)
+	}
+
+	_, _ = iocopy.Copy(w, src) // a peer that hangs up mid-transfer retries
 }
 
 func (s *Server) fail(w http.ResponseWriter, what string, err error) {

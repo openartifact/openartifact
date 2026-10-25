@@ -41,7 +41,7 @@ var (
 	errNegativeWebhookRetention = errors.New("workers.webhookDeliveryRetentionDays must not be negative")
 	errNegativeTrashRetention   = errors.New("trash.retentionDays must not be negative")
 	errAuditRetention           = errors.New("audit.retentionDays must not be negative; audit.purgeInterval and audit.purgeBatchSize must be positive")
-	errFederationSettings       = errors.New("federation.pollInterval, batchSize, maxBackoff and requestTimeout must be positive, tombstoneRetention must not be negative")
+	errFederationSettings       = errors.New("federation.pollInterval, batchSize, maxBackoff, requestTimeout, maxPartialBytes and maxPartialAge must be positive, tombstoneRetention must not be negative")
 	errBlobDeletionBatch        = errors.New("blobDeletion.sweepBatch must be at least 1")
 	errBlobDeletionNegative     = errors.New("blobDeletion.grace must not be negative")
 	errBackupLeaseTTL           = errors.New("backup.leaseTtl must be positive")
@@ -253,6 +253,18 @@ type FederationConfig struct {
 	// TombstoneRetention is how long the tombstone of a deleted unit is kept
 	// in the log; a member that stays offline longer must be resynced.
 	TombstoneRetention time.Duration `yaml:"tombstoneRetention"`
+	// SpoolDir is where blobs pulled from peers are downloaded to. An
+	// interrupted download stays there and the next pull resumes it with a
+	// Range request. Empty uses a directory under the OS temp dir; set it to a
+	// persistent volume to resume across restarts, and give every instance
+	// its own.
+	SpoolDir string `yaml:"spoolDir"`
+	// MaxPartialBytes caps the total size of the interrupted downloads kept in
+	// the spool; the least recently written are removed first.
+	MaxPartialBytes int64 `yaml:"maxPartialBytes"`
+	// MaxPartialAge removes an interrupted download that was not written to for
+	// this long.
+	MaxPartialAge time.Duration `yaml:"maxPartialAge"`
 }
 
 // TieringConfig tunes the storage tier mover (see docs/operations/storage-tiering.md).
@@ -659,6 +671,8 @@ func defaultConfig() *Config {
 			MaxBackoff:         15 * time.Minute,
 			RequestTimeout:     30 * time.Second,
 			TombstoneRetention: 720 * time.Hour,
+			MaxPartialBytes:    10 << 30,
+			MaxPartialAge:      24 * time.Hour,
 		},
 		Tiering: TieringConfig{
 			Enabled:             true,
@@ -867,6 +881,9 @@ func applyEnvOverrides(cfg *Config) {
 	overrideDuration(&cfg.Federation.MaxBackoff, "OPENARTIFACT_FEDERATION_MAX_BACKOFF")
 	overrideDuration(&cfg.Federation.RequestTimeout, "OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT")
 	overrideDuration(&cfg.Federation.TombstoneRetention, "OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION")
+	overrideString(&cfg.Federation.SpoolDir, "OPENARTIFACT_FEDERATION_SPOOL_DIR")
+	overrideInt64(&cfg.Federation.MaxPartialBytes, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES")
+	overrideDuration(&cfg.Federation.MaxPartialAge, "OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE")
 
 	// Storage replica
 	applyReplicaEnvOverrides(cfg)
@@ -1036,7 +1053,8 @@ func (c *Config) validateTiering() error {
 // validateFederation checks the federation settings.
 func (c *Config) validateFederation() error {
 	f := c.Federation
-	if f.PollInterval <= 0 || f.BatchSize < 1 || f.MaxBackoff <= 0 || f.RequestTimeout <= 0 || f.TombstoneRetention < 0 {
+	if f.PollInterval <= 0 || f.BatchSize < 1 || f.MaxBackoff <= 0 || f.RequestTimeout <= 0 || f.TombstoneRetention < 0 ||
+		f.MaxPartialBytes <= 0 || f.MaxPartialAge <= 0 {
 		return errFederationSettings
 	}
 

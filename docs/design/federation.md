@@ -6,7 +6,15 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Design: federated repositories
 
-Status: proposed (issue [#33](https://github.com/openartifact/openartifact/issues/33)). This document precedes the implementation; the implementation PRs follow it and will update it if reality forces a change.
+Status: implemented (issue [#33](https://github.com/openartifact/openartifact/issues/33)). Hosted repositories of nine formats federate with pull replication, last-writer-wins conflicts, tombstones, resync and rebuild, peer tokens, health views, metrics and resumable blob transfers. The operator guide is [Federation](../operations/federation.md). What is still open is listed under [Future work](#future-work-not-v1); where the shipped behaviour differs from the first proposal the text below says so.
+
+Shipped:
+
+- Everything in [Replication](#replication), [Security](#security), [Formats](#formats) (the nine formats of the table), [Observability](#observability) and [Configuration](#configuration), including the web UI Federation tab and the admin API.
+- Resumable blob pulls, see [Resumable blob transfers](#resumable-blob-transfers).
+- Integration tests with two real server instances and, in CI, with three instances federated in a triangle (raw, npm and Docker) with a fault-injection proxy that cuts a 64 MiB blob mid-transfer, see [Test plan](#test-plan).
+
+Still open: Debian, RPM, RubyGems, Conda, Conan, Ivy and sbt; push-assisted wakeups and scheduled anti-entropy; a designated signing member for Debian/RPM; per-member read-only mode; native inbound mTLS; edge distribution (legal review first).
 
 A **federated repository** is a set of *member* repositories, one per OpenArtifact instance, that converge to the same content. Any member accepts writes; changes flow in both directions. The goal is multi-site replication that survives network partitions and the loss of a whole member, without a coordinator and without a single point of failure.
 
@@ -164,6 +172,8 @@ All endpoints live under `/federation/v1/` and authenticate with a **peer token*
 | `GET /federation/v1/unit?key=<unit_key>` | The unit's *current* state: `{unit_key, stamp, tombstone, data, blobs: [{sha256, size}], deps: [unit_key]}` |
 | `GET /federation/v1/blob?unit=<unit_key>&sha256=<hex>` | Stream one blob of that unit. Only blobs listed in the unit's `blobs` are served |
 
+`/blob` honours a single `Range: bytes=N-` (or `bytes=N-M`) request: `206` with `Content-Range`, `416` with `Content-Range: bytes */size` for anything else (start at or past the end, suffix or multiple ranges, a unit other than `bytes`), and `Accept-Ranges: bytes` on every answer. The blob is streamed from the BlobStore at the offset, so a resume does not re-read the prefix. The membership check below runs before any range is looked at.
+
 `data` is the Codec's JSON for the unit: the row's replicated columns with local ids and blob ids replaced by sha256 values. The server never serves a blob that is not part of a live unit of the token's repository, so the token cannot be used to read other repositories or arbitrary storage keys.
 
 ### Pull loop (per peer)
@@ -197,6 +207,18 @@ The cursor advances only after the unit is applied and committed. A crash betwee
 - A failed pull (network, `5xx`, token rejected) records `last_error`, `last_error_at`, increments `consecutive_failures` and sets `next_attempt_at = now + min(maxBackoff, 5 s · 2^n) ± 20 % jitter`. The worker skips the peer until then. The first success resets the counters. Backoff never gives up: a peer that is down for a week is retried every `maxBackoff` (default 15 min) and catches up when it returns.
 - A **unit** that cannot be applied (quarantined at the origin, quota exceeded, blob missing on the origin, validation error) must not block the rest of the feed. After 3 immediate attempts the entry is parked in `federation_deferred` with the reason, the cursor moves on, and the unit is retried with its own exponential backoff (cap 1 h) on every cycle. Deferred units are listed in the health view with reason and attempt count. A manual resync retries them at once.
 - Blob transfers use a per-transfer idle timeout, not a total one, so very large blobs on slow links still complete.
+
+### Resumable blob transfers
+
+A blob is downloaded into a **partial file** named after its sha256 in the spool directory (`federation.spoolDir`), never straight into the store. If the connection drops or the pull is interrupted, the partial stays and the next attempt asks the peer for `Range: bytes=<size of the partial>-`:
+
+- Within one pull a dropped body is retried right away with exponential backoff (500 ms doubling up to 8 s). Four consecutive attempts that make no progress end the pull of that unit with the transport error (the peer then backs off as usual); an attempt that made progress resets the count, so a flaky link that keeps moving still finishes a large blob (at most 32 attempts per pull). The partial survives, so a later pull, or a restart when the spool is on a persistent volume, continues from it.
+- The sha256 is always computed over the complete bytes: the existing partial is re-hashed on resume (nothing is trusted from a previous run), then the new bytes are hashed as they arrive. Only a blob whose full digest equals the unit's declared hash is stored. A mismatch deletes the partial and defers the unit as `digest_mismatch`; a body that ends cleanly short of, or runs past, the declared size is treated the same way.
+- A peer that ignores `Range` (answers `200`) makes the transfer restart from byte 0; a `206` whose `Content-Range` does not start at the requested offset is an error; a `416` on a non-empty partial (the blob changed or the partial is bad) restarts from 0.
+- The spool keeps at most `federation.maxPartialBytes` in total (oldest write evicted first) and drops partials not written for `federation.maxPartialAge`. The sweep runs on the first pass after startup and every 10 minutes.
+- Metrics: `openartifact_federation_resumed_total{repo,peer}` counts resumed transfers, `openartifact_federation_partial_bytes` is the size of the spool.
+
+Resuming stays receiver-driven: the peer does not learn of, or authorise, a transfer beforehand; the receiver asks for bytes of a blob a unit it already fetched lists, exactly as for a first attempt, and verifies the digest after receipt (see [Legal constraint](#legal-constraint)).
 
 ### Conflicts
 
@@ -305,7 +327,7 @@ Excluded in v1, with reasons:
 
 Per peer, in the API and the repository settings page: `enabled`, `last_success_at`, `last_error` / `last_error_at`, `consecutive_failures`, `cursor_seq` vs `remote_head_seq` (**backlog** in units), **lag** (age of the oldest unapplied entry, 0 when caught up; derived from `oldest_pending_at`), `deferred` units with reasons, `conflicts_total`, `applied_total`.
 
-Prometheus metrics (labels `repo`, `peer`): `openartifact_federation_lag_seconds`, `openartifact_federation_backlog_units`, `openartifact_federation_applied_total{result}`, `openartifact_federation_conflicts_total`, `openartifact_federation_pull_errors_total`, `openartifact_federation_last_success_timestamp_seconds`.
+Prometheus metrics (labels `repo`, `peer`): `openartifact_federation_lag_seconds`, `openartifact_federation_backlog_units`, `openartifact_federation_applied_total{result}`, `openartifact_federation_conflicts_total`, `openartifact_federation_pull_errors_total`, `openartifact_federation_last_success_timestamp_seconds`, `openartifact_federation_resumed_total`, `openartifact_federation_partial_bytes`.
 
 ## Configuration
 
@@ -317,6 +339,9 @@ Prometheus metrics (labels `repo`, `peer`): `openartifact_federation_lag_seconds
 | `federation.maxBackoff` | `OPENARTIFACT_FEDERATION_MAX_BACKOFF` | `15m` |
 | `federation.requestTimeout` | `OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT` | `30s` (API calls) |
 | `federation.tombstoneRetention` | `OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION` | `720h` |
+| `federation.spoolDir` | `OPENARTIFACT_FEDERATION_SPOOL_DIR` | empty: a directory under the OS temp dir (use a persistent volume to resume across restarts; one directory per instance) |
+| `federation.maxPartialBytes` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES` | `10737418240` (10 GiB) |
+| `federation.maxPartialAge` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE` | `24h` |
 
 ## Test plan
 
@@ -331,8 +356,12 @@ Integration tests (Postgres, two real server instances in one process with two d
 5. A deleted member is rebuilt from scratch by a full resync and holds every unit and blob.
 6. Federation endpoints reject user tokens, other repositories' peer tokens and anonymous callers; SSRF rejects loopback peers by default.
 
-A smoke test with two real binaries and real clients is recorded in the implementation PR.
+7. A blob transfer cut mid-body resumes with a `Range` request: unit tests cover range parsing and serving, a truncated body, a peer that ignores `Range`, and a digest mismatch; an integration test checks the membership check before a range.
+
+In CI the integration job also starts three real server binaries, each with its own database and filesystem storage, federates raw, npm and Docker repositories in a triangle and asserts: content published on each node reaches the others; a delete converges as a tombstone and survives a resync; the same key written on all three while partitioned resolves to the last writer on every node; and a 64 MiB blob whose transfer a proxy aborts twice mid-body arrives intact with `openartifact_federation_resumed_total` above zero and fewer than twice the blob size crossing the link.
+
+A smoke test with two real binaries and real clients is recorded in the implementation PRs.
 
 ## Future work (not v1)
 
-Push-assisted wakeups (a peer nudges the other when its head moves, reducing latency while keeping pull as the source of truth), scheduled anti-entropy, Debian/RPM with a designated signing member, per-member read-only mode, native inbound mTLS, edge distribution only after the legal review described above.
+Not implemented yet: Push-assisted wakeups (a peer nudges the other when its head moves, reducing latency while keeping pull as the source of truth), scheduled anti-entropy, Debian/RPM with a designated signing member, per-member read-only mode, native inbound mTLS, edge distribution only after the legal review described above.

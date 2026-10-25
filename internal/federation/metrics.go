@@ -6,6 +6,7 @@ package federation
 
 import (
 	"context"
+	"sync/atomic"
 	"time"
 
 	"github.com/prometheus/client_golang/prometheus"
@@ -18,11 +19,17 @@ import (
 // scrape time from the peers' stored state, so they are right on every
 // replica and after a restart.
 type Metrics struct {
-	Applied     *prometheus.CounterVec
-	Conflicts   *prometheus.CounterVec
-	PullErrors  *prometheus.CounterVec
-	collector   *peerCollector
-	registerers []prometheus.Collector
+	Applied    *prometheus.CounterVec
+	Conflicts  *prometheus.CounterVec
+	PullErrors *prometheus.CounterVec
+	// Resumed counts blob transfers continued with a Range request from a
+	// partial download instead of restarted.
+	Resumed *prometheus.CounterVec
+	// partialBytes reads the size of the engine's partial downloads at scrape
+	// time; it is bound when the engine is built.
+	partialBytes atomic.Pointer[func() int64]
+	collector    *peerCollector
+	registerers  []prometheus.Collector
 }
 
 // peerGaugeQueryTimeout bounds the database read a scrape performs.
@@ -46,6 +53,22 @@ func NewMetrics(reg prometheus.Registerer, store *Store) (*Metrics, error) {
 		}, []string{"repo", "peer"}),
 	}
 
+	m.Resumed = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "openartifact_federation_resumed_total",
+		Help: "Blob transfers from a peer resumed with a Range request after the connection dropped (or from a partial download of an earlier pull).",
+	}, []string{"repo", "peer"})
+
+	partial := prometheus.NewGaugeFunc(prometheus.GaugeOpts{
+		Name: "openartifact_federation_partial_bytes",
+		Help: "Bytes of interrupted blob downloads kept in the federation spool for resuming.",
+	}, func() float64 {
+		if fn := m.partialBytes.Load(); fn != nil {
+			return float64((*fn)())
+		}
+
+		return 0
+	})
+
 	m.collector = &peerCollector{
 		store: store,
 		lag: prometheus.NewDesc("openartifact_federation_lag_seconds",
@@ -56,7 +79,7 @@ func NewMetrics(reg prometheus.Registerer, store *Store) (*Metrics, error) {
 			"Unix time of the last successful pull of a peer (0 when it never succeeded).", []string{"repo", "peer"}, nil),
 	}
 
-	m.registerers = []prometheus.Collector{m.Applied, m.Conflicts, m.PullErrors, m.collector}
+	m.registerers = []prometheus.Collector{m.Applied, m.Conflicts, m.PullErrors, m.Resumed, partial, m.collector}
 
 	for _, c := range m.registerers {
 		if err := reg.Register(c); err != nil {

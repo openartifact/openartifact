@@ -20,6 +20,7 @@ import (
 	"github.com/aws/aws-sdk-go-v2/feature/s3/transfermanager"
 	"github.com/aws/aws-sdk-go-v2/service/s3"
 	"github.com/aws/aws-sdk-go-v2/service/s3/types"
+	"github.com/aws/smithy-go"
 
 	"github.com/openartifact/openartifact/internal/telemetry"
 )
@@ -246,6 +247,42 @@ func (s *S3BlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error)
 		}
 
 		return nil, fmt.Errorf("s3: get %s: %w", key, err)
+	}
+
+	return out.Body, nil
+}
+
+// GetFrom implements RangeReader with a ranged GetObject.
+func (s *S3BlobStore) GetFrom(ctx context.Context, id string, offset int64) (io.ReadCloser, error) {
+	if offset == 0 {
+		return s.Get(ctx, id)
+	}
+
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
+	if offset < 0 {
+		return nil, ErrOffsetOutOfRange
+	}
+
+	key := objectKey(id)
+
+	out, err := s.client.GetObject(ctx, &s3.GetObjectInput{
+		Bucket: aws.String(s.bucket),
+		Key:    aws.String(key),
+		Range:  aws.String(rangeHeader(offset)),
+	})
+	if err != nil {
+		if isNotFound(err) {
+			return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
+		}
+
+		if apiErr, ok := errors.AsType[smithy.APIError](err); ok && apiErr.ErrorCode() == "InvalidRange" {
+			return nil, fmt.Errorf("%w: %d", ErrOffsetOutOfRange, offset)
+		}
+
+		return nil, fmt.Errorf("s3: get %s from %d: %w", key, offset, err)
 	}
 
 	return out.Body, nil

@@ -38,6 +38,8 @@ const (
 	fedRawRepo = "fed-raw"
 	fedNPMRepo = "fed-npm"
 	fedWait    = 60 * time.Second
+	// fedMetricsToken guards /metrics of the test nodes.
+	fedMetricsToken = "fed-test-metrics-token"
 )
 
 // fedNode is one real server process with its own database and storage.
@@ -48,6 +50,7 @@ type fedNode struct {
 	url     string
 	dbName  string
 	storage string
+	spool   string
 	admin   *sql.DB
 	dsn     *url.URL
 
@@ -64,7 +67,7 @@ func newFedNode(t *testing.T, admin *sql.DB, bin, name string) *fedNode {
 		t.Fatalf("parse TEST_DATABASE_URL: %v", err)
 	}
 
-	n := &fedNode{name: name, bin: bin, admin: admin, dsn: dsn, port: freePort(t)}
+	n := &fedNode{name: name, bin: bin, admin: admin, dsn: dsn, port: freePort(t), spool: t.TempDir()}
 	n.url = "http://127.0.0.1:" + strconv.Itoa(n.port)
 
 	t.Cleanup(func() {
@@ -115,6 +118,8 @@ func (n *fedNode) start(t *testing.T) {
 		"OPENARTIFACT_FEDERATION_ENABLED=true",
 		"OPENARTIFACT_FEDERATION_POLL_INTERVAL=200ms",
 		"OPENARTIFACT_FEDERATION_MAX_BACKOFF=2s",
+		"OPENARTIFACT_FEDERATION_SPOOL_DIR="+n.spool,
+		"METRICS_AUTH_TOKEN="+fedMetricsToken,
 	)
 
 	if err := cmd.Start(); err != nil {

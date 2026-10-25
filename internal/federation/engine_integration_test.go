@@ -22,6 +22,7 @@ import (
 	"net/url"
 	"reflect"
 	"slices"
+	"strconv"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -30,6 +31,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/prometheus/client_golang/prometheus"
+	"github.com/prometheus/client_golang/prometheus/testutil"
 
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/httpx"
@@ -183,6 +185,7 @@ func newEngSite(t *testing.T, name, format string) *engSite {
 		Store: s.store, SQL: s.db, DB: pg, Blobs: blobs, Log: engLogger(t), Webhooks: s.events, Notify: s.notes, Metrics: metrics,
 		PollInterval: time.Second, BatchSize: 100, MaxBackoff: time.Minute, RequestTimeout: 30 * time.Second,
 		TombstoneRetention: 30 * 24 * time.Hour, TrashDefaultDays: 7,
+		SpoolDir: t.TempDir(),
 	}
 	s.newEngine(t)
 
@@ -1206,6 +1209,147 @@ func TestEngineBlobEndpointServesOnlyUnitOwnedBlobs(t *testing.T) {
 			}
 
 			if status != http.StatusOK && strings.Contains(string(body), "other-repo-secret") {
+				t.Errorf("error body leaks content: %s", body)
+			}
+		})
+	}
+}
+
+// TestEngineResumesAnInterruptedBlobPull: the connection drops halfway through
+// a blob; the pull continues with a Range request, stores verified bytes and
+// counts the resume.
+func TestEngineResumesAnInterruptedBlobPull(t *testing.T) {
+	a, b := newEngSite(t, "site-a", "raw"), newEngSite(t, "site-b", "raw")
+	b.eng.resumeBackoff = time.Millisecond
+
+	payload := strings.Repeat("resumable payload ", 30000) // ~540 KB
+	a.put(t, "big", payload)
+
+	var (
+		mu     sync.Mutex
+		ranges []string
+	)
+
+	a.setIntercept(func(w http.ResponseWriter, r *http.Request, next http.Handler) {
+		if r.URL.Path != engBlobPath {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		mu.Lock()
+		ranges = append(ranges, r.Header.Get("Range"))
+		first := len(ranges) == 1
+		mu.Unlock()
+
+		if !first {
+			next.ServeHTTP(w, r)
+
+			return
+		}
+
+		rec := httptest.NewRecorder()
+		next.ServeHTTP(rec, r)
+
+		w.Header().Set("Content-Length", strconv.Itoa(rec.Body.Len()))
+		w.WriteHeader(rec.Code)
+		_, _ = w.Write(rec.Body.Bytes()[:rec.Body.Len()/2])
+
+		if f, ok := w.(http.Flusher); ok {
+			f.Flush()
+		}
+
+		panic(http.ErrAbortHandler)
+	})
+
+	peer := b.addPeer(t, a)
+	b.mustPull(t, peer)
+	b.mustRead(t, "big", payload)
+
+	mu.Lock()
+	defer mu.Unlock()
+
+	if len(ranges) != 2 || ranges[0] != "" || !strings.HasPrefix(ranges[1], "bytes=") {
+		t.Fatalf("blob requests carried Range %q, want none then a resume", ranges)
+	}
+
+	if got := testutil.ToFloat64(b.opts.Metrics.Resumed.WithLabelValues("site-b", "site-a")); got != 1 {
+		t.Errorf("resumed_total = %v, want 1", got)
+	}
+}
+
+// TestEngineBlobEndpointRanges: a Range request is served from the BlobStore at
+// the offset, and the unit membership check still comes first.
+func TestEngineBlobEndpointRanges(t *testing.T) {
+	a := newEngSite(t, "site-a", "raw")
+	otherID, otherToken := a.addRepo(t, "site-a-other")
+
+	a.put(t, "one", "0123456789")
+	a.putIn(t, otherID, "theirs", "other-repo-secret")
+
+	blobURL := func(unit, content string) string {
+		return a.srv.URL + engBlobPath + "?unit=" + url.QueryEscape(unit) + "&sha256=" + engSHA(content)
+	}
+
+	tests := []struct {
+		name       string
+		url        string
+		token      string
+		rng        string
+		status     int
+		body       string
+		wantRange  string
+		wantLength string
+	}{
+		{"open ended", blobURL("one", "0123456789"), a.token, "bytes=4-", http.StatusPartialContent, "456789", "bytes 4-9/10", "6"},
+		{"bounded", blobURL("one", "0123456789"), a.token, "bytes=1-2", http.StatusPartialContent, "12", "bytes 1-2/10", "2"},
+		{"past the end", blobURL("one", "0123456789"), a.token, "bytes=10-", http.StatusRequestedRangeNotSatisfiable, "", "bytes */10", ""},
+		{"malformed", blobURL("one", "0123456789"), a.token, "bytes=x-", http.StatusRequestedRangeNotSatisfiable, "", "bytes */10", ""},
+		{"no range", blobURL("one", "0123456789"), a.token, "", http.StatusOK, "0123456789", "", "10"},
+		{"range on a blob of another unit", blobURL("one", "other-repo-secret"), a.token, "bytes=3-", http.StatusNotFound, "", "", ""},
+		{"range under another repository's key", blobURL("theirs", "other-repo-secret"), a.token, "bytes=3-", http.StatusNotFound, "", "", ""},
+		{"range with the other repository's token", blobURL("theirs", "other-repo-secret"), otherToken, "bytes=3-", http.StatusPartialContent, "er-repo-secret", "bytes 3-16/17", "14"},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			req, err := http.NewRequestWithContext(context.Background(), http.MethodGet, tc.url, http.NoBody)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			req.Header.Set("Authorization", engBearer(tc.token))
+
+			if tc.rng != "" {
+				req.Header.Set("Range", tc.rng)
+			}
+
+			resp, err := http.DefaultClient.Do(req)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer resp.Body.Close()
+
+			body, _ := io.ReadAll(resp.Body)
+
+			if resp.StatusCode != tc.status {
+				t.Fatalf("status = %d (%s), want %d", resp.StatusCode, body, tc.status)
+			}
+
+			if tc.body != "" && string(body) != tc.body {
+				t.Errorf("body = %q, want %q", body, tc.body)
+			}
+
+			if got := resp.Header.Get("Content-Range"); got != tc.wantRange {
+				t.Errorf("Content-Range = %q, want %q", got, tc.wantRange)
+			}
+
+			if tc.wantLength != "" && resp.Header.Get("Content-Length") != tc.wantLength {
+				t.Errorf("Content-Length = %q, want %q", resp.Header.Get("Content-Length"), tc.wantLength)
+			}
+
+			if strings.Contains(string(body), "other-repo-secret") && tc.status != http.StatusPartialContent {
 				t.Errorf("error body leaks content: %s", body)
 			}
 		})

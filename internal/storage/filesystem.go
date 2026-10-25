@@ -259,6 +259,46 @@ func (fs *FilesystemStore) Get(ctx context.Context, id string) (io.ReadCloser, e
 	return f, nil
 }
 
+// GetFrom implements RangeReader: the file is opened and seeked to offset.
+func (fs *FilesystemStore) GetFrom(ctx context.Context, id string, offset int64) (io.ReadCloser, error) {
+	rc, err := fs.Get(ctx, id)
+	if err != nil || offset == 0 {
+		return rc, err
+	}
+
+	f, ok := rc.(*os.File)
+	if !ok {
+		return skipTo(rc, offset)
+	}
+
+	if offset < 0 {
+		_ = f.Close()
+
+		return nil, ErrOffsetOutOfRange
+	}
+
+	st, err := f.Stat()
+	if err != nil {
+		_ = f.Close()
+
+		return nil, fmt.Errorf("stat blob: %w", err)
+	}
+
+	if offset > st.Size() {
+		_ = f.Close()
+
+		return nil, fmt.Errorf("%w: %d of %d", ErrOffsetOutOfRange, offset, st.Size())
+	}
+
+	if _, err := f.Seek(offset, io.SeekStart); err != nil {
+		_ = f.Close()
+
+		return nil, fmt.Errorf("seek blob: %w", err)
+	}
+
+	return f, nil
+}
+
 // Delete removes a blob by its identifier.
 func (fs *FilesystemStore) Delete(ctx context.Context, id string) error {
 	if err := ValidateBlobID(id); err != nil {

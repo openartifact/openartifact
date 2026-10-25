@@ -15,6 +15,9 @@ const (
 	maxConcurrentPulls = 8
 	// gcInterval is how often expired tombstones are purged.
 	gcInterval = time.Hour
+	// sweepInterval is how often the download spool is trimmed to its caps
+	// (the first pass of a worker, at startup, included).
+	sweepInterval = 10 * time.Minute
 	// schedulerTick is the longest wait between looks for due peers.
 	schedulerTick = time.Second
 )
@@ -56,8 +59,9 @@ type scheduler struct {
 	mu       sync.Mutex
 	inflight map[string]bool
 	// sem bounds the pulls in flight (maxConcurrentPulls).
-	sem    chan struct{}
-	lastGC time.Time
+	sem       chan struct{}
+	lastGC    time.Time
+	lastSweep time.Time
 }
 
 func (e *Engine) run(ctx context.Context) {
@@ -122,6 +126,14 @@ func (s *scheduler) pass(ctx context.Context) {
 		s.lastGC = time.Now()
 
 		e.purgeTombstones(ctx)
+	}
+
+	if time.Since(s.lastSweep) >= sweepInterval {
+		s.lastSweep = time.Now()
+
+		if n := e.spool.sweep(time.Now()); n > 0 {
+			e.Log.Infow("federation: removed expired partial downloads", "count", n)
+		}
 	}
 }
 

@@ -249,6 +249,55 @@ func (o *OCIBlobStore) Get(ctx context.Context, id string) (io.ReadCloser, error
 	return resp.Body, nil
 }
 
+// GetFrom implements RangeReader with a Range request; a registry that
+// ignores the header answers 200 and the prefix is skipped locally.
+func (o *OCIBlobStore) GetFrom(ctx context.Context, id string, offset int64) (io.ReadCloser, error) {
+	if offset == 0 {
+		return o.Get(ctx, id)
+	}
+
+	if err := ValidateBlobID(id); err != nil {
+		return nil, err
+	}
+
+	if offset < 0 {
+		return nil, ErrOffsetOutOfRange
+	}
+
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, o.blobURL(id), http.NoBody)
+	if err != nil {
+		return nil, fmt.Errorf("oci: get %s: %w", id, err)
+	}
+
+	req.Header.Set("Range", rangeHeader(offset))
+
+	resp, err := o.do(req)
+	if err != nil {
+		return nil, fmt.Errorf("oci: get %s: %w", id, err)
+	}
+
+	switch resp.StatusCode {
+	case http.StatusNotFound:
+		_ = resp.Body.Close()
+
+		return nil, fmt.Errorf("%w: %s", ErrBlobNotFound, id)
+	case http.StatusRequestedRangeNotSatisfiable:
+		_ = resp.Body.Close()
+
+		return nil, fmt.Errorf("%w: %d", ErrOffsetOutOfRange, offset)
+	case http.StatusPartialContent:
+		return resp.Body, nil
+	case http.StatusOK:
+		return skipTo(resp.Body, offset)
+	}
+
+	body, _ := io.ReadAll(resp.Body)
+	_ = resp.Body.Close()
+
+	//nolint:err113 // dynamic error with runtime context
+	return nil, fmt.Errorf("oci: get %s: status %d: %s", id, resp.StatusCode, body)
+}
+
 // Delete removes a blob by its SHA-256 identifier.
 func (o *OCIBlobStore) Delete(ctx context.Context, id string) error {
 	if err := ValidateBlobID(id); err != nil {

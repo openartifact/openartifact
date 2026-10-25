@@ -162,6 +162,31 @@ func (s *Store) Get(ctx context.Context, id string) (io.ReadCloser, error) {
 	return rrc, nil
 }
 
+// GetFrom is Get from a byte offset (storage.RangeReader), with the same
+// replica fallback.
+func (s *Store) GetFrom(ctx context.Context, id string, offset int64) (io.ReadCloser, error) {
+	rc, err := storage.OpenAt(ctx, s.inner, id, offset)
+	if err == nil || !s.canFallBack(ctx, err) {
+		return rc, err //nolint:wrapcheck // transparent wrapper
+	}
+
+	serve, repair := s.fallbackOK(ctx, id)
+	if !serve {
+		return nil, err //nolint:wrapcheck // transparent wrapper
+	}
+
+	rrc, rerr := storage.OpenAt(ctx, s.replica, id, offset)
+	if rerr != nil {
+		s.logReplicaMiss("get", id, rerr)
+
+		return nil, err //nolint:wrapcheck // the primary's error is the informative one
+	}
+
+	s.served("get", id, repair, err)
+
+	return rrc, nil
+}
+
 // GetSize returns the blob's size from the primary store or the replica.
 func (s *Store) GetSize(ctx context.Context, id string) (int64, error) {
 	n, err := s.inner.GetSize(ctx, id)

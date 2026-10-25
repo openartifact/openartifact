@@ -343,6 +343,9 @@ This page lists every configuration key with its type, built-in default and the 
 | `federation.maxBackoff` | `OPENARTIFACT_FEDERATION_MAX_BACKOFF` | duration | `15m` | `maxBackoff` caps the retry delay of an unreachable or failing peer. |
 | `federation.requestTimeout` | `OPENARTIFACT_FEDERATION_REQUEST_TIMEOUT` | duration | `30s` | `requestTimeout` bounds one request to a peer (blob transfers are bounded by it per request, not in total). |
 | `federation.tombstoneRetention` | `OPENARTIFACT_FEDERATION_TOMBSTONE_RETENTION` | duration | `720h` | `tombstoneRetention` is how long the tombstone of a deleted unit is kept in the log; a member that stays offline longer must be resynced. |
+| `federation.spoolDir` | `OPENARTIFACT_FEDERATION_SPOOL_DIR` | string | `empty` | `spoolDir` is where blobs pulled from peers are downloaded to. An interrupted download stays there and the next pull resumes it with a Range request. Empty uses a directory under the OS temp dir; set it to a persistent volume to resume across restarts, and give every instance its own. |
+| `federation.maxPartialBytes` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_BYTES` | int | `10737418240` | `maxPartialBytes` caps the total size of the interrupted downloads kept in the spool; the least recently written are removed first. |
+| `federation.maxPartialAge` | `OPENARTIFACT_FEDERATION_MAX_PARTIAL_AGE` | duration | `24h` | `maxPartialAge` removes an interrupted download that was not written to for this long. |
 
 ## telemetry
 
