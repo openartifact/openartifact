@@ -701,6 +701,19 @@ type Database interface {
 	ListVulnScanOverview(ctx context.Context, params models.VulnScanListParams) (*models.VulnScanOverviewPage, error)
 	// VulnScanOverviewSummary counts the overview's scans, optionally of one repository (by name).
 	VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error)
+	// ListSecurityFindings returns one keyset page of the vuln, license, secret and AI findings
+	// within a scope, worst first (ErrInvalidFindingFilter for an unknown type, severity or status
+	// or a page size below 1).
+	ListSecurityFindings(ctx context.Context, params models.FindingListParams) (*models.FindingPage, error)
+	// SecurityFindingsSummary counts findings per type and the scanned repositories of a scope.
+	SecurityFindingsSummary(ctx context.Context, filter models.FindingFilter) (*models.FindingsSummary, error)
+	// SecurityHealthStats returns the instance-wide scan queue and coverage numbers.
+	SecurityHealthStats(ctx context.Context) (*models.SecurityHealthStats, error)
+	// LatestFinishedDependencyTrackPush returns the outcome of the latest finished push, nil when none.
+	LatestFinishedDependencyTrackPush(ctx context.Context) (*models.DependencyTrackLastPush, error)
+	// RepoSecuritySummary returns the counts-only security state of a repository, narrowed to a
+	// package and version when they are not empty.
+	RepoSecuritySummary(ctx context.Context, repoID, packageName, version string) (*models.RepoSecuritySummary, error)
 	SetVulnScanQuarantine(ctx context.Context, repoID, id string, quarantined bool) error
 	GetLicenseScanResultByID(ctx context.Context, repoID, id string) (*models.LicenseScanResult, error)
 	// SetLicenseScanQuarantine quarantines (true) or approves (false) the artifact of one license scan result.

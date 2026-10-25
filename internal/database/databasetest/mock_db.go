@@ -1119,6 +1119,21 @@ func (m *BaseMockDB) ListVulnScanOverview(ctx context.Context, params models.Vul
 func (m *BaseMockDB) VulnScanOverviewSummary(ctx context.Context, repoName string) (*models.VulnScanSummary, error) {
 	return nil, errNotImpl("VulnScanOverviewSummary")
 }
+func (m *BaseMockDB) ListSecurityFindings(ctx context.Context, params models.FindingListParams) (*models.FindingPage, error) {
+	return nil, errNotImpl("ListSecurityFindings")
+}
+func (m *BaseMockDB) SecurityFindingsSummary(ctx context.Context, filter models.FindingFilter) (*models.FindingsSummary, error) {
+	return nil, errNotImpl("SecurityFindingsSummary")
+}
+func (m *BaseMockDB) SecurityHealthStats(ctx context.Context) (*models.SecurityHealthStats, error) {
+	return nil, errNotImpl("SecurityHealthStats")
+}
+func (m *BaseMockDB) LatestFinishedDependencyTrackPush(ctx context.Context) (*models.DependencyTrackLastPush, error) {
+	return nil, errNotImpl("LatestFinishedDependencyTrackPush")
+}
+func (m *BaseMockDB) RepoSecuritySummary(ctx context.Context, repoID, packageName, version string) (*models.RepoSecuritySummary, error) {
+	return nil, errNotImpl("RepoSecuritySummary")
+}
 func (m *BaseMockDB) GetVulnScanResultByID(ctx context.Context, repoID, id string) (*models.VulnScanResult, error) {
 	return nil, errNotImpl("GetVulnScanResultByID")
 }

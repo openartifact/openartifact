@@ -1281,6 +1281,29 @@ type SecretResult struct {
 	Quarantined  bool            `db:"quarantined" json:"quarantined"`
 }
 
+// Every vuln/license/secret/AI result in one shape (counts, quarantine, VEX state); is_finding marks the ones that report something. Read by the security findings list, summary and per-package summary.
+type SecurityResult struct {
+	Kind           string    `db:"kind" json:"kind"`
+	ID             string    `db:"id" json:"id"`
+	RepositoryID   string    `db:"repository_id" json:"repository_id"`
+	ArtifactID     string    `db:"artifact_id" json:"artifact_id"`
+	PackageName    string    `db:"package_name" json:"package_name"`
+	PackageVersion string    `db:"package_version" json:"package_version"`
+	Scanner        string    `db:"scanner" json:"scanner"`
+	ScanStatus     string    `db:"scan_status" json:"scan_status"`
+	Critical       int32     `db:"critical" json:"critical"`
+	High           int32     `db:"high" json:"high"`
+	Medium         int32     `db:"medium" json:"medium"`
+	Low            int32     `db:"low" json:"low"`
+	Quarantined    bool      `db:"quarantined" json:"quarantined"`
+	Suppressed     *bool     `db:"suppressed" json:"suppressed"`
+	VexRank        int32     `db:"vex_rank" json:"vex_rank"`
+	IsFinding      bool      `db:"is_finding" json:"is_finding"`
+	ScannedAt      time.Time `db:"scanned_at" json:"scanned_at"`
+	SeverityRank   int32     `db:"severity_rank" json:"severity_rank"`
+	Status         string    `db:"status" json:"status"`
+}
+
 // Configured storage backends for artifact persistence
 type StorageBackend struct {
 	ID            string          `db:"id" json:"id"`
