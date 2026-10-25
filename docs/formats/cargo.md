@@ -21,14 +21,14 @@ Cargo registry (hosted, proxy or group) with a sparse index, `config.json`, crat
 # ~/.cargo/config.toml
 [registries.REPO]
 index = "sparse+HOST/repos/REPO/index/"
-token = "<TOKEN>"
+token = "Bearer <TOKEN>"
 ```
 
 ```sh
 cargo publish --registry REPO
 ```
 
-The server accepts `Authorization: Bearer <TOKEN>` or Basic with the token as password; there is no bare-token form. Cargo sends `token` verbatim as the header value, so if publish answers `401` set `token = "Bearer <TOKEN>"`. See [authentication](../security/authentication.md).
+The server accepts `Authorization: Bearer <TOKEN>` or Basic with the token as password; there is no bare-token form. Cargo sends `token` verbatim as the header value, so it carries the `Bearer ` prefix. See [authentication](../security/authentication.md).
 
 ## Proxy and group repositories
 

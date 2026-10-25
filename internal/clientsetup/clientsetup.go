@@ -186,7 +186,7 @@ func pypiSnippets(c target) []Snippet {
 		},
 		{
 			Client: "twine",
-			Configure: fmt.Sprintf("# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = %s/\nusername = <USERNAME>\npassword = <TOKEN>",
+			Configure: fmt.Sprintf("# ~/.pypirc\n[distutils]\nindex-servers = openartifact\n\n[openartifact]\nrepository = %s/legacy/\nusername = <USERNAME>\npassword = <TOKEN>",
 				c.base),
 			Publish: "twine upload --repository openartifact dist/*",
 		},
@@ -233,7 +233,7 @@ func rpmSnippets(c target) []Snippet {
 func cargoSnippets(c target) []Snippet {
 	return []Snippet{{
 		Client: "cargo",
-		Configure: fmt.Sprintf("# ~/.cargo/config.toml\n[registries.%s]\nindex = \"sparse+%s/index/\"\ntoken = \"<TOKEN>\"",
+		Configure: fmt.Sprintf("# ~/.cargo/config.toml\n[registries.%s]\nindex = \"sparse+%s/index/\"\ntoken = \"Bearer <TOKEN>\"",
 			c.repo, c.base),
 		Publish: "cargo publish --registry " + c.repo,
 	}}
@@ -259,7 +259,7 @@ func rubygemsSnippets(c target) []Snippet {
 	return []Snippet{{
 		Client:    "gem",
 		Configure: fmt.Sprintf("gem sources --add %s/", c.base),
-		Publish:   "GEM_HOST_API_KEY=<TOKEN> gem push my-gem-1.0.0.gem --host " + c.base,
+		Publish:   "GEM_HOST_API_KEY=\"Bearer <TOKEN>\" gem push my-gem-1.0.0.gem --host " + c.base,
 	}}
 }
 

@@ -4,7 +4,7 @@
 
 import { describe, it, expect } from 'bun:test'
 import { ALL_FORMATS } from '../formats'
-import { clientSetup, pullCommand, repoBaseUrl, shellQuote } from '../installCommands'
+import { clientSetup, dockerDigestPull, pullCommand, repoBaseUrl, shellQuote } from '../installCommands'
 
 describe('installCommands', () => {
   it('produces a base URL and a command for every format', () => {
@@ -29,6 +29,37 @@ describe('pullCommand docker', () => {
 
   it('pulls the default image from the bare repository name', () => {
     expect(pullCommand('docker', 'https://oa.example', 'r1', 'r1', '1.0')).toBe('docker pull oa.example/r1:1.0')
+  })
+})
+
+describe('dockerDigestPull', () => {
+  const hex = 'a'.repeat(64)
+
+  it('pins the image path to the manifest digest', () => {
+    expect(dockerDigestPull('https://oa.example:8080', 'r1/base/alpine', `sha256:${hex}`)).toBe(
+      `docker pull oa.example:8080/r1/base/alpine@sha256:${hex}`,
+    )
+    expect(dockerDigestPull('https://oa.example', 'r1', hex)).toBe(`docker pull oa.example/r1@sha256:${hex}`)
+  })
+
+  it('offers no digest variant for anything but a sha256 digest', () => {
+    expect(dockerDigestPull('https://oa.example', 'r1', '')).toBeNull()
+    expect(dockerDigestPull('https://oa.example', 'r1', 'sha512:abc')).toBeNull()
+    expect(dockerDigestPull('https://oa.example', 'r1', 'sha256:xyz')).toBeNull()
+  })
+})
+
+describe('publish snippets match the server routes and credential forms', () => {
+  const origin = 'https://oa.example'
+
+  it('uploads PyPI packages to the /legacy/ route', () => {
+    const twine = clientSetup('pypi', origin, 'r1').find((c) => c.client === 'twine')
+    expect(twine!.configure).toContain('repository = https://oa.example/repos/r1/legacy/\n')
+  })
+
+  it('sends cargo and gem credentials as a Bearer header value', () => {
+    expect(clientSetup('cargo', origin, 'r1')[0]!.configure).toContain('token = "Bearer <TOKEN>"')
+    expect(clientSetup('rubygems', origin, 'r1')[0]!.publish).toContain('GEM_HOST_API_KEY="Bearer <TOKEN>" gem push')
   })
 })
 
