@@ -37,10 +37,10 @@ type ArtifactPath struct {
 // three segments and the rest. Rows published that way live under those
 // coordinates, so read and delete fall back to them; it equals the current
 // reading when there is nothing to fall back to. The path is invalid when it has
-// fewer than four segments or an empty one.
+// fewer than four segments or one that ValidArtifactSegments rejects.
 func SplitArtifactPath(p string) (ArtifactPath, ArtifactPath, bool) {
 	parts := strings.Split(p, "/")
-	if len(parts) < 4 || slices.Contains(parts, "") {
+	if len(parts) < 4 || !ValidArtifactSegments(parts) {
 		return ArtifactPath{}, ArtifactPath{}, false
 	}
 
@@ -57,6 +57,16 @@ func SplitArtifactPath(p string) (ArtifactPath, ArtifactPath, bool) {
 	}
 
 	return cur, legacy, true
+}
+
+// ValidArtifactSegments reports whether every path segment is a plain name: not
+// empty, not "." or "..", and without a backslash. Such segments would make
+// stored coordinates and file names traversal-shaped even though blobs are
+// addressed by digest.
+func ValidArtifactSegments(parts []string) bool {
+	return !slices.ContainsFunc(parts, func(s string) bool {
+		return s == "" || s == "." || s == ".." || strings.ContainsRune(s, '\\')
+	})
 }
 
 // isMavenFile reports whether filename is a file of the Maven version

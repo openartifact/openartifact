@@ -58,6 +58,11 @@ func TestSplitArtifactPath(t *testing.T) {
 		{name: "empty segment", path: "a//c/d.jar"},
 		{name: "trailing slash", path: "a/b/c/"},
 		{name: "empty", path: ""},
+		{name: "dot-dot segment", path: "org/../mod/1.0/mod-1.0.jar"},
+		{name: "dot-dot file name", path: "org/mod/1.0/.."},
+		{name: "dot segment", path: "org/mod/./1.0/mod-1.0.jar"},
+		{name: "dot-dot in Ivy subdirectory", path: "org/mod/1.0/jars/../../x.jar"},
+		{name: "backslash", path: `org/mod/1.0/..\x.jar`},
 	}
 
 	for _, tc := range tests {

@@ -36,7 +36,10 @@ func FuzzSplitArtifactPath(f *testing.F) {
 		cur, legacy, ok := SplitArtifactPath(p)
 		parts := strings.Split(p, "/")
 
-		if want := len(parts) >= 4 && !slices.Contains(parts, ""); ok != want {
+		plain := !slices.ContainsFunc(parts, func(s string) bool {
+			return s == "" || s == "." || s == ".." || strings.Contains(s, `\`)
+		})
+		if want := len(parts) >= 4 && plain; ok != want {
 			t.Fatalf("SplitArtifactPath(%q) ok = %v, want %v", p, ok, want)
 		}
 

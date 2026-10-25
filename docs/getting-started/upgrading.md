@@ -85,6 +85,10 @@ Docker Compose only passes `AUTH_HMAC_KEY` through; see [installation](installat
 
 ## Version notes
 
+### Unreleased
+
+- Ivy and sbt paths with a `.` or `..` segment or a backslash are now rejected with 404 on upload, download and delete (before, they were stored under those literal coordinates). `oa import` skips such source paths the same way. Clients never publish them; no action required.
+
 ### 0.10.0
 
 No migrations.
