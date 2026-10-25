@@ -66,7 +66,6 @@ type Database interface {
 	CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) error
 	MarkRepoStale(ctx context.Context, repositoryID string) error
 
-	CreateComponent(ctx context.Context, component *models.Component) error
 	CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string) error
 	CreateRpmPackage(ctx context.Context, pkg *models.Component) error
 	UpsertBlob(ctx context.Context, sha256, blobKey string, sizeBytes int64) (string, error)
@@ -85,7 +84,6 @@ type Database interface {
 	UpsertRepoMetadata(ctx context.Context, meta *models.RepoMetadata) error
 
 	CreateDebianDistribution(ctx context.Context, dist *models.DebianDistribution) error
-	GetDebianDistribution(ctx context.Context, repoID string, name string) (*models.DebianDistribution, error)
 	GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error)
 	CreateDebianComponent(ctx context.Context, comp *models.DebianComponent) error
 	GetDebianComponentsByDist(ctx context.Context, distID string) ([]models.DebianComponent, error)
@@ -102,7 +100,6 @@ type Database interface {
 	GetDebBlobInfo(ctx context.Context, blobID string) (string, int64, error)
 	ListDebPackageEntries(ctx context.Context, repoID, dist, comp, arch string) ([]models.DebPackageEntry, error)
 	GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error)
-	ListRpmPackagesByRepo(ctx context.Context, repoID string) ([]*models.RpmPackage, error)
 	// RpmPackageExists reports whether the repo already has a package with the given NEVRA.
 	RpmPackageExists(ctx context.Context, repoID, name, version, release string, epoch int, arch string) (bool, error)
 	// ListRpmPackagesForMetadata returns every rpm package of a repo with
@@ -192,7 +189,6 @@ type Database interface {
 
 	// Proxy/Group repository methods
 	AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error
-	RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error
 	ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error)
 	// ListGroupMemberRepositories returns the live member repositories of a
 	// group in priority order (the order of ListGroupMembers) in one query.
@@ -234,11 +230,8 @@ type Database interface {
 	// HelmIndexStamp is a cheap validator of a repository's index.yaml: it
 	// changes exactly when a live chart is added or removed.
 	HelmIndexStamp(ctx context.Context, repoID string) (string, error)
-	ListHelmChartVersions(ctx context.Context, repoID, name string) ([]*models.HelmChart, error)
-
 	// PyPI methods
 	CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error
-	GetPyPIPackage(ctx context.Context, repoID, name, version, filename string) (*models.PyPIPackage, error)
 	// GetPyPIPackageByFilename returns the live file with this filename, nil
 	// when there is none and ErrAmbiguousPyPIFilename when several packages of
 	// the repository hold a file of that name.
@@ -341,7 +334,6 @@ type Database interface {
 	DeletePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error
 	GetPermissionTargetsForPrincipal(ctx context.Context, userID string, groupIDs []string) ([]*models.PermissionTarget, error)
 	GetOrCreatePermissionAssignment(ctx context.Context, targetID, principalType, principalID string) error
-	SyncSSOPermissionsForGroup(ctx context.Context, groupID string, targetIDs []string) error
 	// ListPermissionAssignmentsForTarget returns the assignments of one target
 	// with principal names, ordered by type then name.
 	ListPermissionAssignmentsForTarget(ctx context.Context, targetID string) ([]models.PermissionAssignmentView, error)
@@ -356,7 +348,6 @@ type Database interface {
 
 	CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
 	GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error)
-	GetSSOProviderByID(ctx context.Context, id string) (*models.SSOProvider, error)
 	UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error
 	DeleteSSOProvider(ctx context.Context, id string) error
 	ListEnabledSSOProviders(ctx context.Context) ([]*models.SSOProvider, error)
@@ -369,12 +360,6 @@ type Database interface {
 	GetOrCreateGroup(ctx context.Context, name string) (*models.Group, error)
 
 	ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error)
-
-	// ArtifactExistsBySHA256 checks whether a blob with the given SHA-256 hash exists
-	// in ANY repository. Returns the repository ID of the first match and true if found.
-	// Use this for cross-repository deduplication: if the blob is already stored,
-	// the upload pipeline can skip re-uploading it to the blob store.
-	ArtifactExistsBySHA256(ctx context.Context, sha256 string) (repositoryID string, exists bool, err error)
 
 	// BlobReferenceCount returns the number of package-table rows referencing
 	// the blob identified by sha256, across every format table that stores a
@@ -393,7 +378,6 @@ type Database interface {
 	// Go Module Proxy methods
 	CreateGoModule(ctx context.Context, mod *models.GoModule) error
 	GetGoModule(ctx context.Context, repoID, modulePath, version string) (*models.GoModule, error)
-	DeleteGoModule(ctx context.Context, repoID, modulePath, version string) error
 	ListGoModuleVersions(ctx context.Context, repoID, modulePath string) ([]*models.GoModule, error)
 
 	// ListGoModulesByRepo is a bulk-list-by-repo method used only by backup
@@ -441,7 +425,6 @@ type Database interface {
 	// Cargo methods
 	CreateCargoCrate(ctx context.Context, crate *models.CargoCrate) error
 	GetCargoCrate(ctx context.Context, repoID, name, version string) (*models.CargoCrate, error)
-	DeleteCargoCrate(ctx context.Context, id string) error
 	ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error)
 	// CargoIndexStamp is a cheap validator of one crate's sparse index entry:
 	// it changes when a live version is added, removed or (un)yanked.
@@ -461,7 +444,6 @@ type Database interface {
 	// RubyGems methods
 	CreateRubyGem(ctx context.Context, gem *models.RubyGem) error
 	GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error)
-	DeleteRubyGem(ctx context.Context, id string) error
 	ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error)
 	// RubyGemsSpecsStamp is a cheap validator of every specs index of a
 	// repository: it changes when a listed gem is added, removed or yanked.
@@ -512,14 +494,10 @@ type Database interface {
 
 	// SBOM methods
 	CreateSBOMReport(ctx context.Context, report *models.SBOMReport) error
-	GetSBOMReport(ctx context.Context, repoID, artifactID, format, specVersion string) (*models.SBOMReport, error)
 	ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error)
-	DeleteSBOMReport(ctx context.Context, id string) error
-
 	// License compliance methods
 	CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
 	GetLicenseScanResult(ctx context.Context, repoID, artifactID string) (*models.LicenseScanResult, error)
-	UpdateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error
 	ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error)
 	CreateLicensePolicy(ctx context.Context, policy *models.LicensePolicy) error
 	GetLicensePolicy(ctx context.Context, id string) (*models.LicensePolicy, error)
@@ -530,7 +508,6 @@ type Database interface {
 	// Secret detection methods
 	CreateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error
 	GetSecretScanResult(ctx context.Context, repoID, artifactID string) (*models.SecretScanResult, error)
-	UpdateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error
 	ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error)
 	QuarantineArtifact(ctx context.Context, repoID, artifactID string, quarantined bool) error
 
@@ -553,7 +530,6 @@ type Database interface {
 	UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error
 	// ListStorageQuotas returns the limits of every repository quota row (backup export).
 	ListStorageQuotas(ctx context.Context) ([]*models.StorageQuota, error)
-	IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error
 	// ReserveStorageUsage atomically adds usage if it fits the quota; false,nil when exceeded.
 	// A non-zero reservation leaves a pending entry (quota_pending) until the
@@ -583,9 +559,6 @@ type Database interface {
 	StorageBackendBusyReason(ctx context.Context, backendID string) (string, error)
 	UpdateStorageBackendStatus(ctx context.Context, id, status string, message *string) error
 
-	// Artifact properties methods
-	SetArtifactProperty(ctx context.Context, repoID, artifactID, key, value string) error
-	GetArtifactProperty(ctx context.Context, repoID, artifactID, key string) (string, error)
 	DeleteArtifactProperty(ctx context.Context, repoID, artifactID, key string) error
 	ListArtifactProperties(ctx context.Context, repoID, artifactID string) (map[string]string, error)
 	SearchByProperty(ctx context.Context, repoID, key, value string) ([]string, error)
@@ -594,8 +567,6 @@ type Database interface {
 	CreatePackageDelta(ctx context.Context, delta *models.PackageDelta) error
 	GetPackageDelta(ctx context.Context, repoID, fromSHA256, toSHA256 string) (*models.PackageDelta, error)
 	ListPackageDeltas(ctx context.Context, repoID, toSHA256 string) ([]*models.PackageDelta, error)
-	DeletePackageDelta(ctx context.Context, id string) error
-
 	// Project methods
 	CreateProject(ctx context.Context, project *models.Project) error
 	GetProject(ctx context.Context, id string) (*models.Project, error)
@@ -709,7 +680,6 @@ type Database interface {
 	GetBundleItem(ctx context.Context, bundleID, sha256 string) (*models.ReleaseBundleItem, error)
 
 	CreateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error
-	UpdateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error
 	ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error)
 	// AddBundleItems atomically adds items to a draft bundle (ErrBundleNotDraft otherwise).
 	AddBundleItems(ctx context.Context, bundleID string, items []*models.ReleaseBundleItem) error
@@ -797,8 +767,6 @@ type Database interface {
 	UpsertAIAnalysis(ctx context.Context, analysis *models.AIAnalysis) error
 	GetAIAnalysis(ctx context.Context, repoID, artifactID string) (*models.AIAnalysis, error)
 	ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error)
-	DeleteAIAnalysis(ctx context.Context, repoID, artifactID string) error
-	ListPendingAIAnalyses(ctx context.Context, limit int) ([]*models.AIAnalysis, error)
 }
 
 // Transaction defines the interface for database transactions.

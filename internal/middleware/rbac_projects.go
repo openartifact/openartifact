@@ -9,6 +9,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -139,7 +140,7 @@ func authorizeProjectRoute(w http.ResponseWriter, r *http.Request, cfg RBACConfi
 	decision, err := evaluator.DecideProject(r.Context(), *principal, scope.project, scope.projectAction)
 	if err != nil {
 		log.Errorw("project auth evaluation error", "error", err, "path", r.URL.Path, "method", r.Method)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
+		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
 
 		return false
 	}
@@ -148,7 +149,7 @@ func authorizeProjectRoute(w http.ResponseWriter, r *http.Request, cfg RBACConfi
 	case auth.ProjectAllow:
 		return true
 	case auth.ProjectHidden:
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "code": "not_found"})
+		httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "code": "not_found"})
 	case auth.ProjectForbidden:
 		writeAccessDenied(w, r, cfg, db, log, principal, credential, scope)
 	}
@@ -167,7 +168,7 @@ func authorizeProjectsRoot(w http.ResponseWriter, r *http.Request, cfg RBACConfi
 	admin, err := evaluator.Evaluate(ctx, *principal, "", "", "manage")
 	if err != nil {
 		log.Errorw("project create auth evaluation error", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
+		httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
 
 		return false
 	}
@@ -182,7 +183,7 @@ func authorizeProjectsRoot(w http.ResponseWriter, r *http.Request, cfg RBACConfi
 		on, err := cfg.ProjectSettings.SelfCreate(ctx)
 		if err != nil {
 			log.Errorw("project self-create setting lookup failed", "error", err)
-			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
+			httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
 
 			return false
 		}

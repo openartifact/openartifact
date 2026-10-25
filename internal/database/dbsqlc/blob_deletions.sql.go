@@ -135,17 +135,6 @@ func (q *Queries) CountBlobs(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const countLiveBackupLeases = `-- name: CountLiveBackupLeases :one
-SELECT count(*) FROM backup_leases WHERE expires_at > now()
-`
-
-func (q *Queries) CountLiveBackupLeases(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countLiveBackupLeases)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createBackupLease = `-- name: CreateBackupLease :one
 INSERT INTO backup_leases (expires_at)
 VALUES (now() + make_interval(secs => $1::float8))

@@ -10,7 +10,6 @@ import (
 	"compress/gzip"
 	"context"
 	"encoding/json"
-	"strings"
 	"testing"
 
 	"github.com/openartifact/openartifact/pkg/rubymarshal"
@@ -41,35 +40,6 @@ func createGemFile(t *testing.T, metadata map[string]any) []byte {
 	_ = tw.Close()
 
 	return buf.Bytes()
-}
-
-func TestRubyGemsHandler_Meta(t *testing.T) {
-	h := NewRubyGemsHandler()
-	if h.Name() != "rubygems" {
-		t.Errorf("Name() = %q, want rubygems", h.Name())
-	}
-
-	if h.GetFileExtension() != ".gem" {
-		t.Errorf("GetFileExtension() = %q, want .gem", h.GetFileExtension())
-	}
-}
-
-func TestRubyGemsHandler_Validate(t *testing.T) {
-	h := NewRubyGemsHandler()
-	ctx := context.Background()
-
-	t.Run("valid gem with JSON metadata", func(t *testing.T) {
-		data := createGemFile(t, map[string]any{"name": "rails", "version": "7.0.0"})
-		if err := h.Validate(ctx, bytes.NewReader(data)); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("invalid: not a tar", func(t *testing.T) {
-		if err := h.Validate(ctx, strings.NewReader("garbage")); err == nil {
-			t.Error("expected error for non-tar")
-		}
-	})
 }
 
 func TestRubyGemsHandler_Parse(t *testing.T) {

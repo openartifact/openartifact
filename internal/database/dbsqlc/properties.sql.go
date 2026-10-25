@@ -26,25 +26,6 @@ func (q *Queries) DeleteArtifactProperty(ctx context.Context, arg DeleteArtifact
 	return err
 }
 
-const getArtifactProperty = `-- name: GetArtifactProperty :one
-SELECT ap.value FROM artifact_properties ap
-JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
-WHERE ap.repository_id = $1 AND ar.artifact_path = $2 AND ap.key = $3
-`
-
-type GetArtifactPropertyParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	ArtifactPath string `db:"artifact_path" json:"artifact_path"`
-	Key          string `db:"key" json:"key"`
-}
-
-func (q *Queries) GetArtifactProperty(ctx context.Context, arg GetArtifactPropertyParams) (string, error) {
-	row := q.db.QueryRow(ctx, getArtifactProperty, arg.RepositoryID, arg.ArtifactPath, arg.Key)
-	var value string
-	err := row.Scan(&value)
-	return value, err
-}
-
 const listArtifactProperties = `-- name: ListArtifactProperties :many
 SELECT ap.key, ap.value FROM artifact_properties ap
 JOIN artifact_refs ar ON ar.id = ap.artifact_ref_id
@@ -111,39 +92,4 @@ func (q *Queries) SearchByProperty(ctx context.Context, arg SearchByPropertyPara
 		return nil, err
 	}
 	return items, nil
-}
-
-const setArtifactProperty = `-- name: SetArtifactProperty :exec
-WITH ref AS (
-    INSERT INTO artifact_refs (repository_id, artifact_path, format)
-    VALUES ($1, $2, COALESCE((SELECT format FROM repositories WHERE id = $1), 'unknown'))
-    ON CONFLICT (repository_id, artifact_path) DO UPDATE SET artifact_path = EXCLUDED.artifact_path
-    RETURNING id
-), upd AS (
-    UPDATE artifact_properties ap
-    SET value = $4, updated_at = now()
-    FROM ref
-    WHERE ap.repository_id = $1 AND ap.artifact_ref_id = ref.id AND ap.key = $3
-    RETURNING ap.id
-)
-INSERT INTO artifact_properties (repository_id, artifact_ref_id, key, value)
-SELECT $1, ref.id, $3, $4 FROM ref
-WHERE NOT EXISTS (SELECT 1 FROM upd)
-`
-
-type SetArtifactPropertyParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	ArtifactPath string `db:"artifact_path" json:"artifact_path"`
-	Key          string `db:"key" json:"key"`
-	Value        string `db:"value" json:"value"`
-}
-
-func (q *Queries) SetArtifactProperty(ctx context.Context, arg SetArtifactPropertyParams) error {
-	_, err := q.db.Exec(ctx, setArtifactProperty,
-		arg.RepositoryID,
-		arg.ArtifactPath,
-		arg.Key,
-		arg.Value,
-	)
-	return err
 }

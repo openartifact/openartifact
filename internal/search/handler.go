@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/middleware"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -85,7 +86,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 	q := r.URL.Query().Get("q")
 	if q == "" {
-		writeJSONError(w, http.StatusBadRequest, "missing_q", "query parameter 'q' is required")
+		httpx.WriteError(w, http.StatusBadRequest, "missing_q", "query parameter 'q' is required")
 		return
 	}
 
@@ -94,12 +95,12 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 1 {
-			writeJSONError(w, http.StatusBadRequest, "invalid_limit", "limit must be a positive integer")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must be a positive integer")
 			return
 		}
 
 		if n > 100 {
-			writeJSONError(w, http.StatusBadRequest, "invalid_limit", "limit must not exceed 100")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_limit", "limit must not exceed 100")
 			return
 		}
 
@@ -111,7 +112,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if v := r.URL.Query().Get("offset"); v != "" {
 		n, err := strconv.Atoi(v)
 		if err != nil || n < 0 {
-			writeJSONError(w, http.StatusBadRequest, "invalid_offset", "offset must be a non-negative integer")
+			httpx.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset must be a non-negative integer")
 			return
 		}
 
@@ -119,7 +120,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if offset > MaxSearchResults {
-		writeJSONError(w, http.StatusBadRequest, "invalid_offset", "offset too large")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_offset", "offset too large")
 		return
 	}
 
@@ -128,13 +129,13 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	filter.Repos = append(filter.Repos, r.URL.Query()["repo"]...)
 
 	if len(filter.Formats) > maxFilterValues || len(filter.Repos) > maxFilterValues {
-		writeJSONError(w, http.StatusBadRequest, "invalid_filter", "too many format or repo filters")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_filter", "too many format or repo filters")
 		return
 	}
 
 	opts, ok := parsePageOptions(r)
 	if !ok {
-		writeJSONError(w, http.StatusBadRequest, "invalid_group", "group must be 'package'")
+		httpx.WriteError(w, http.StatusBadRequest, "invalid_group", "group must be 'package'")
 		return
 	}
 
@@ -143,7 +144,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	readableRepos, err := h.resolveReadableRepos(ctx, principal)
 	if err != nil {
 		h.log.Errorw("resolve readable repos failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal_error", "permission resolution failed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "permission resolution failed")
 
 		return
 	}
@@ -151,20 +152,20 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	results, count, err := h.searcher.SearchPage(ctx, filter, opts, limit, offset, readableRepos)
 	if err != nil {
 		h.log.Errorw("search failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal_error", "search failed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "search failed")
 
 		return
 	}
 
 	if count > MaxSearchResults {
-		writeJSONError(w, http.StatusBadRequest, "query_too_broad", "query too broad; add more filters")
+		httpx.WriteError(w, http.StatusBadRequest, "query_too_broad", "query too broad; add more filters")
 		return
 	}
 
 	repositories, err := h.searcher.SearchRepositories(ctx, filter, limit, offset, readableRepos)
 	if err != nil {
 		h.log.Errorw("repository search failed", "error", err)
-		writeJSONError(w, http.StatusInternalServerError, "internal_error", "search failed")
+		httpx.WriteError(w, http.StatusInternalServerError, "internal_error", "search failed")
 
 		return
 	}
@@ -263,13 +264,4 @@ func (h *Handler) loadReadableRepos(ctx context.Context, principal *auth.Princip
 	}
 
 	return readable, nil
-}
-
-func writeJSONError(w http.ResponseWriter, status int, code, msg string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if encErr := json.NewEncoder(w).Encode(map[string]string{"error": msg, "code": code}); encErr != nil {
-		_ = encErr // response header already written
-	}
 }

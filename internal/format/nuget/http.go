@@ -27,6 +27,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensemeta"
@@ -146,15 +147,6 @@ func (h *HTTPHandler) repoBaseURL(r *http.Request) string {
 	return fmt.Sprintf("%s/repos/%s", h.BaseURL, urlparams.Vars(r)["name"])
 }
 
-func writeJSON(w http.ResponseWriter, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(http.StatusOK)
-
-	if encErr := json.NewEncoder(w).Encode(v); encErr != nil {
-		_ = encErr // response header already written
-	}
-}
-
 func registrationIndexURL(baseURL, id string) string {
 	return baseURL + "/v3/registration/" + url.PathEscape(id) + "/index.json"
 }
@@ -202,7 +194,7 @@ func (h *HTTPHandler) handleServiceIndex(w http.ResponseWriter, r *http.Request)
 		},
 	}
 
-	writeJSON(w, index)
+	httpx.WriteJSON(w, http.StatusOK, index)
 }
 
 // readPushedPackage reads the "package" part of a push request, hashed with
@@ -600,7 +592,7 @@ func (h *HTTPHandler) handleVersionIndex(w http.ResponseWriter, r *http.Request)
 		versions = append(versions, p.Version)
 	}
 
-	writeJSON(w, map[string]any{"versions": versions})
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{"versions": versions})
 }
 
 type packageFile int
@@ -900,7 +892,7 @@ func (h *HTTPHandler) handleRegistrationLeaf(w http.ResponseWriter, r *http.Requ
 	baseURL := h.repoBaseURL(r)
 	leaf := registrationLeafURL(baseURL, packageID, pkg.Version)
 
-	writeJSON(w, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"@id":            leaf,
 		"@type":          "Package",
 		"catalogEntry":   leaf,
@@ -993,7 +985,7 @@ func (h *HTTPHandler) handleSearch(w http.ResponseWriter, r *http.Request) {
 		data[i] = searchEntry(baseURL, versions)
 	}
 
-	writeJSON(w, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"totalHits": total,
 		"data":      data,
 	})
@@ -1023,7 +1015,7 @@ func (h *HTTPHandler) handleAutocomplete(w http.ResponseWriter, r *http.Request)
 		data[i] = versions[0].PackageID
 	}
 
-	writeJSON(w, map[string]any{
+	httpx.WriteJSON(w, http.StatusOK, map[string]any{
 		"totalHits": total,
 		"data":      data,
 	})

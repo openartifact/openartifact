@@ -32,29 +32,6 @@ func (q *Queries) GetStorageQuota(ctx context.Context, repositoryID string) (Sto
 	return i, err
 }
 
-const incrementStorageUsage = `-- name: IncrementStorageUsage :exec
-UPDATE storage_quotas
-SET current_size_bytes = current_size_bytes + $1, current_artifact_count = current_artifact_count + $2, updated_at = $3
-WHERE repository_id = $4
-`
-
-type IncrementStorageUsageParams struct {
-	CurrentSizeBytes     int64     `db:"current_size_bytes" json:"current_size_bytes"`
-	CurrentArtifactCount int64     `db:"current_artifact_count" json:"current_artifact_count"`
-	UpdatedAt            time.Time `db:"updated_at" json:"updated_at"`
-	RepositoryID         string    `db:"repository_id" json:"repository_id"`
-}
-
-func (q *Queries) IncrementStorageUsage(ctx context.Context, arg IncrementStorageUsageParams) error {
-	_, err := q.db.Exec(ctx, incrementStorageUsage,
-		arg.CurrentSizeBytes,
-		arg.CurrentArtifactCount,
-		arg.UpdatedAt,
-		arg.RepositoryID,
-	)
-	return err
-}
-
 const insertStorageQuotaIfNotExists = `-- name: InsertStorageQuotaIfNotExists :exec
 INSERT INTO storage_quotas (repository_id, max_size_bytes, max_artifact_count, warn_threshold_percent, current_size_bytes, current_artifact_count)
 VALUES ($1, 0, 0, 80, 0, 0)

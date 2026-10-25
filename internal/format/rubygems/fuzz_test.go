@@ -178,11 +178,10 @@ func FuzzParseGem(f *testing.F) {
 		h := NewRubyGemsHandler()
 
 		meta, err := h.Parse(ctx, bytes.NewReader(data))
-		verr := h.Validate(ctx, bytes.NewReader(data))
 		licenses, lerr := ParseLicenses(ctx, bytes.NewReader(data))
 
-		if (err == nil) != (verr == nil) || (err == nil) != (lerr == nil) {
-			t.Fatalf("entry points disagree: Parse=%v Validate=%v ParseLicenses=%v", err, verr, lerr)
+		if (err == nil) != (lerr == nil) {
+			t.Fatalf("entry points disagree: Parse=%v ParseLicenses=%v", err, lerr)
 		}
 
 		if err != nil {

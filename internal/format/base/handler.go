@@ -142,10 +142,3 @@ func WriteJSON(w http.ResponseWriter, status int, data []byte) {
 	w.WriteHeader(status)
 	_, _ = w.Write(data)
 }
-
-// WriteError writes a JSON error response.
-func WriteError(w http.ResponseWriter, status int, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-	_, _ = w.Write([]byte(`{"error":"` + message + `"}`))
-}

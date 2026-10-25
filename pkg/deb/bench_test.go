@@ -134,59 +134,11 @@ func BenchmarkControlParsePackage(b *testing.B) {
 	}
 }
 
-func BenchmarkParseDependencies(b *testing.B) {
-	const deps = "libc6 (>= 2.34), libexample1 (= 1:2.4.6-1~bpo12+1), zlib1g-dev | libz-dev, libssl-dev (>= 3.0), python3:any (>= 3.9~), debconf (>= 0.5) | debconf-2.0"
-
-	b.ReportAllocs()
-
-	for b.Loop() {
-		if _, err := ParseDependencies(deps); err != nil {
-			b.Fatal(err)
-		}
-	}
-}
-
-func BenchmarkCompareVersions(b *testing.B) {
-	b.ReportAllocs()
-
-	for b.Loop() {
-		_ = compareVersions("1:2.4.6-1~bpo12+1", "1:2.4.10-3ubuntu1.2")
-	}
-}
-
-func BenchmarkReadARArchive(b *testing.B) {
-	for _, size := range []int{1 << 10, 1 << 20} {
-		data := benchDeb(b, size)
-
-		b.Run(fmt.Sprintf("payload=%dB", size), func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(len(data)))
-
-			for b.Loop() {
-				if _, err := ReadARArchive(bytes.NewReader(data), int64(len(data))); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
 func BenchmarkParseDebFile(b *testing.B) {
 	for _, size := range []int{1 << 10, 1 << 20} {
 		data := benchDeb(b, size)
 
-		b.Run(fmt.Sprintf("payload=%dB/Reader", size), func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(len(data)))
-
-			for b.Loop() {
-				if _, err := ParseDebFile(bytes.NewReader(data)); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-
-		b.Run(fmt.Sprintf("payload=%dB/ReaderAt", size), func(b *testing.B) {
+		b.Run(fmt.Sprintf("payload=%dB", size), func(b *testing.B) {
 			b.ReportAllocs()
 			b.SetBytes(int64(len(data)))
 

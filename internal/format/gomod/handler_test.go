@@ -7,9 +7,7 @@ package gomod
 import (
 	"archive/zip"
 	"bytes"
-	"context"
 	"errors"
-	"strings"
 	"testing"
 )
 
@@ -42,80 +40,8 @@ require (
 )
 `
 
-func TestGoModHandler_Meta(t *testing.T) {
-	h := NewGoModHandler()
-	if h.Name() != "go" {
-		t.Errorf("Name() = %q, want go", h.Name())
-	}
-
-	if h.GetContentType() != "application/zip" {
-		t.Errorf("GetContentType() = %q, want application/zip", h.GetContentType())
-	}
-
-	if h.GetFileExtension() != ".zip" {
-		t.Errorf("GetFileExtension() = %q, want .zip", h.GetFileExtension())
-	}
-}
-
-func TestGoModHandler_Validate(t *testing.T) {
-	h := NewGoModHandler()
-	ctx := context.Background()
-
-	t.Run("valid zip with go.mod", func(t *testing.T) {
-		data := createGoModZip(t, map[string]string{"github.com/example/mymodule@v1.0.0/go.mod": sampleGoMod})
-		if err := h.Validate(ctx, bytes.NewReader(data)); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("invalid: only a file ending in go.mod", func(t *testing.T) {
-		data := createGoModZip(t, map[string]string{"github.com/example/mymodule@v1.0.0/foo-go.mod": sampleGoMod})
-		if err := h.Validate(ctx, bytes.NewReader(data)); err == nil {
-			t.Error("foo-go.mod must not pass for go.mod")
-		}
-	})
-
-	t.Run("invalid: not a zip", func(t *testing.T) {
-		if err := h.Validate(ctx, strings.NewReader("not a zip")); err == nil {
-			t.Error("expected error for non-zip")
-		}
-	})
-
-	t.Run("invalid: zip without go.mod", func(t *testing.T) {
-		data := createGoModZip(t, map[string]string{"somefile.txt": "hello"})
-		if err := h.Validate(ctx, bytes.NewReader(data)); err == nil {
-			t.Error("expected error for zip without go.mod")
-		}
-	})
-}
-
-func TestGoModHandler_Parse(t *testing.T) {
-	h := NewGoModHandler()
-	ctx := context.Background()
-
-	t.Run("valid module", func(t *testing.T) {
-		data := createGoModZip(t, map[string]string{"github.com/example/mymodule@v1.0.0/go.mod": sampleGoMod})
-
-		result, err := h.Parse(ctx, bytes.NewReader(data))
-		if err != nil {
-			t.Fatalf("unexpected error: %v", err)
-		}
-
-		if result["module_path"] != "github.com/example/mymodule" {
-			t.Errorf("module_path = %v, want github.com/example/mymodule", result["module_path"])
-		}
-
-		if _, ok := result["go_mod"]; !ok {
-			t.Error("missing go_mod in result")
-		}
-	})
-
-	t.Run("invalid: not a zip", func(t *testing.T) {
-		_, err := h.Parse(ctx, strings.NewReader("garbage"))
-		if err == nil {
-			t.Error("expected error")
-		}
-	})
+func parseModuleZip(data []byte) (*moduleFile, error) {
+	return parseModuleZipAt(bytes.NewReader(data), int64(len(data)))
 }
 
 func TestParseModuleZip(t *testing.T) {

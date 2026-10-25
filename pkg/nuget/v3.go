@@ -452,24 +452,6 @@ func ParseVersionList(doc []byte) ([]string, error) {
 	return in.Versions, nil
 }
 
-// MergeVersionLists unites flat-container version lists ({"versions":[...]}):
-// one entry per version, ordered by version. A list that cannot be read fails
-// the merge; MergeVersions merges the ones that were.
-func MergeVersionLists(docs ...[]byte) ([]byte, error) {
-	lists := make([][]string, len(docs))
-
-	for i, doc := range docs {
-		list, err := ParseVersionList(doc)
-		if err != nil {
-			return nil, err
-		}
-
-		lists[i] = list
-	}
-
-	return MergeVersions(lists...)
-}
-
 // MergeVersions unites lists of versions into a flat-container version list:
 // one normalized entry per version, ordered by version.
 func MergeVersions(lists ...[]string) ([]byte, error) {

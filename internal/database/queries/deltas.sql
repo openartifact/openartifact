@@ -7,6 +7,3 @@ ON CONFLICT (repository_id, from_sha256, to_sha256) DO NOTHING;
 SELECT id, repository_id, from_sha256, from_filename, to_sha256, to_filename, delta_sha256, delta_size, format, created_at
 FROM package_deltas
 WHERE repository_id = $1 AND from_sha256 = $2 AND to_sha256 = $3;
-
--- name: DeletePackageDelta :exec
-DELETE FROM package_deltas WHERE id = $1;

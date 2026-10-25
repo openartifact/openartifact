@@ -235,21 +235,6 @@ func TestMergeRegistrationItems(t *testing.T) {
 	}
 }
 
-func TestMergeVersionLists(t *testing.T) {
-	out, err := MergeVersionLists([]byte(`{"versions":["1.0.0","2.0.0"]}`), []byte(`{"versions":["1.0","1.5.0","2.0.0-beta"]}`))
-	if err != nil {
-		t.Fatal(err)
-	}
-
-	if string(out) != `{"versions":["1.0.0","1.5.0","2.0.0-beta","2.0.0"]}` {
-		t.Errorf("merged = %s", out)
-	}
-
-	if _, err := MergeVersionLists([]byte(`nope`)); err == nil {
-		t.Error("garbage merged")
-	}
-}
-
 func TestCatalogEntryURL(t *testing.T) {
 	for in, want := range map[string]string{
 		`{"catalogEntry":"https://c/x.json"}`:               "https://c/x.json",

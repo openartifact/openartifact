@@ -197,60 +197,20 @@ func (h *HTTPHandler) handleReleaseGPG(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *HTTPHandler) handlePackages(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	dist := vars["dist"]
-	comp := vars["comp"]
-	arch := vars["arch"]
-	name := vars["name"]
-
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
-		http.NotFound(w, r)
-
-		return
-	}
-
-	if h.tryServeRepoBlob(w, r, repo, GetPackagesPath(dist, comp, arch), "text/plain") {
-		return
-	}
-
-	w.Header().Set("Content-Type", "text/plain")
-	w.Header().Set("Cache-Control", "no-cache")
-
-	if _, err := StreamPackages(r.Context(), h.db, repo.ID, dist, comp, arch, CompressionNone, w); err != nil {
-		h.log.Errorw("failed to stream Packages", "dist", dist, "comp", comp, "arch", arch, "error", err)
-	}
+	h.servePackages(w, r, "text/plain", "Packages", CompressionNone, GetPackagesPath)
 }
 
 func (h *HTTPHandler) handlePackagesGz(w http.ResponseWriter, r *http.Request) {
-	vars := urlparams.Vars(r)
-	dist := vars["dist"]
-	comp := vars["comp"]
-	arch := vars["arch"]
-	name := vars["name"]
-
-	repo, err := h.resolveRepo(r.Context(), name)
-	if err != nil {
-		h.log.Warnw("failed to resolve repository", "name", name, "error", err)
-		http.NotFound(w, r)
-
-		return
-	}
-
-	if h.tryServeRepoBlob(w, r, repo, GetPackagesGzPath(dist, comp, arch), "application/gzip") {
-		return
-	}
-
-	w.Header().Set("Content-Type", "application/gzip")
-	w.Header().Set("Cache-Control", "no-cache")
-
-	if _, err := StreamPackages(r.Context(), h.db, repo.ID, dist, comp, arch, CompressionGzip, w); err != nil {
-		h.log.Errorw("failed to stream Packages.gz", "dist", dist, "comp", comp, "arch", arch, "error", err)
-	}
+	h.servePackages(w, r, "application/gzip", "Packages.gz", CompressionGzip, GetPackagesGzPath)
 }
 
 func (h *HTTPHandler) handlePackagesXz(w http.ResponseWriter, r *http.Request) {
+	h.servePackages(w, r, "application/x-xz", "Packages.xz", CompressionXZ, GetPackagesXzPath)
+}
+
+// servePackages serves a binary-<arch> Packages index in one compression: the
+// stored blob when the repository has one, otherwise streamed from the database.
+func (h *HTTPHandler) servePackages(w http.ResponseWriter, r *http.Request, contentType, label string, compression Compression, blobPath func(dist, comp, arch string) string) {
 	vars := urlparams.Vars(r)
 	dist := vars["dist"]
 	comp := vars["comp"]
@@ -265,15 +225,15 @@ func (h *HTTPHandler) handlePackagesXz(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	if h.tryServeRepoBlob(w, r, repo, GetPackagesXzPath(dist, comp, arch), "application/x-xz") {
+	if h.tryServeRepoBlob(w, r, repo, blobPath(dist, comp, arch), contentType) {
 		return
 	}
 
-	w.Header().Set("Content-Type", "application/x-xz")
+	w.Header().Set("Content-Type", contentType)
 	w.Header().Set("Cache-Control", "no-cache")
 
-	if _, err := StreamPackages(r.Context(), h.db, repo.ID, dist, comp, arch, CompressionXZ, w); err != nil {
-		h.log.Errorw("failed to stream Packages.xz", "dist", dist, "comp", comp, "arch", arch, "error", err)
+	if _, err := StreamPackages(r.Context(), h.db, repo.ID, dist, comp, arch, compression, w); err != nil {
+		h.log.Errorw("failed to stream "+label, "dist", dist, "comp", comp, "arch", arch, "error", err)
 	}
 }
 

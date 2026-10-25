@@ -148,20 +148,6 @@ func (q *Queries) ListGroupMembers(ctx context.Context, groupRepoID string) ([]R
 	return items, nil
 }
 
-const removeGroupMember = `-- name: RemoveGroupMember :exec
-DELETE FROM repository_group_members WHERE group_repo_id = $1 AND member_repo_id = $2
-`
-
-type RemoveGroupMemberParams struct {
-	GroupRepoID  string `db:"group_repo_id" json:"group_repo_id"`
-	MemberRepoID string `db:"member_repo_id" json:"member_repo_id"`
-}
-
-func (q *Queries) RemoveGroupMember(ctx context.Context, arg RemoveGroupMemberParams) error {
-	_, err := q.db.Exec(ctx, removeGroupMember, arg.GroupRepoID, arg.MemberRepoID)
-	return err
-}
-
 const upsertNegativeProxyCacheEntry = `-- name: UpsertNegativeProxyCacheEntry :exec
 INSERT INTO proxy_cache_entries (repository_id, cache_key, status_code, size_bytes, hit_count, last_hit_at, expires_at)
 SELECT $1, $2, 404, 0, 0, now(), $3

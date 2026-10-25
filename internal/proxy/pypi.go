@@ -233,7 +233,7 @@ func (s *Service) servePyPIPage(w http.ResponseWriter, r *http.Request, repo *mo
 	res, body, release, err := s.readPage(r.Context(), repo, pr.key, pr.target, res)
 	if err != nil {
 		if r.Context().Err() == nil {
-			s.failPyPIPage(w, r, err)
+			s.failWithoutValidators(w, r, err)
 		}
 
 		return
@@ -255,7 +255,7 @@ func (s *Service) servePyPIPage(w http.ResponseWriter, r *http.Request, repo *mo
 			s.log.Errorw("failed to render simple page", "repo", repo.Name, "path", pr.key, "error", err)
 		}
 
-		s.failPyPIPage(w, r, err)
+		s.failWithoutValidators(w, r, err)
 
 		return
 	}
@@ -267,17 +267,6 @@ func (s *Service) servePyPIPage(w http.ResponseWriter, r *http.Request, repo *mo
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(out)
 	}
-}
-
-// failPyPIPage answers an error after validators were set: they must not
-// describe the error response.
-func (s *Service) failPyPIPage(w http.ResponseWriter, r *http.Request, err error) {
-	h := w.Header()
-	h.Del("ETag")
-	h.Set("Cache-Control", "no-store")
-	h.Del("Warning")
-
-	s.writeResolveError(w, r, err)
 }
 
 // pypiProjectPage is a parsed upstream project page.

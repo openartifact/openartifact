@@ -45,12 +45,3 @@ func generateTraceID() string {
 
 	return hex.EncodeToString(b)
 }
-
-// TraceIDFromContext retrieves the trace ID from the request context.
-func TraceIDFromContext(ctx context.Context) string {
-	if id, ok := ctx.Value(TraceIDKey).(string); ok {
-		return id
-	}
-
-	return ""
-}

@@ -11,8 +11,3 @@ FROM storage_quotas WHERE repository_id = $1;
 UPDATE storage_quotas
 SET max_size_bytes = $1, max_artifact_count = $2, warn_threshold_percent = $3, updated_at = $4
 WHERE repository_id = $5;
-
--- name: IncrementStorageUsage :exec
-UPDATE storage_quotas
-SET current_size_bytes = current_size_bytes + $1, current_artifact_count = current_artifact_count + $2, updated_at = $3
-WHERE repository_id = $4;

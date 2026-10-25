@@ -3,14 +3,6 @@ INSERT INTO debian_distributions (repository_id, name, codename, description)
 VALUES ($1, $2, $3, $4)
 RETURNING id, created_at, updated_at;
 
--- name: GetDebianDistribution :one
-SELECT id, repository_id, name,
-       COALESCE(codename, '') AS codename,
-       COALESCE(description, '') AS description,
-       created_at, updated_at
-FROM debian_distributions
-WHERE repository_id = $1 AND name = $2;
-
 -- name: GetDebianDistributionsByRepo :many
 SELECT id, repository_id, name,
        COALESCE(codename, '') AS codename,

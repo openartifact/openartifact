@@ -81,9 +81,6 @@ DELETE FROM backup_leases WHERE id = @id;
 -- name: DeleteExpiredBackupLeases :execrows
 DELETE FROM backup_leases WHERE expires_at <= now();
 
--- name: CountLiveBackupLeases :one
-SELECT count(*) FROM backup_leases WHERE expires_at > now();
-
 -- name: ListBlobsAfter :many
 -- One keyset page of the stored objects, ordered by sha256 (a full backup reads
 -- it through its snapshot): the blobs table plus the generated metadata and

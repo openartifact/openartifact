@@ -559,3 +559,15 @@ func TestImmutable(t *testing.T) {
 		}
 	}
 }
+
+// waiting reports how many callers are blocked on the in-flight fetch of key.
+func (g *flightGroup) waiting(key string) int {
+	g.mu.Lock()
+	defer g.mu.Unlock()
+
+	if f, ok := g.calls[key]; ok {
+		return f.waiters
+	}
+
+	return 0
+}

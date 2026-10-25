@@ -485,53 +485,6 @@ func fuzzCheckSortedUnique(t *testing.T, versions []string) {
 	}
 }
 
-// FuzzMergeVersionLists feeds arbitrary flat-container version lists to the
-// merge.
-func FuzzMergeVersionLists(f *testing.F) {
-	f.Add([]byte(`{"versions":["1.0.0","2.0.0-Beta","1.0"]}`), []byte(`{"versions":["1.0.0.0","0.1"]}`))
-	f.Add([]byte(`{"versions":["x","X"," y "]}`), []byte(`{"versions":null}`))
-	f.Add([]byte(`{"versions":[1]}`), []byte(`{}`))
-	f.Add([]byte(`null`), []byte(``))
-
-	f.Fuzz(func(t *testing.T, a, b []byte) {
-		out, err := MergeVersionLists(a, b)
-		if err != nil {
-			return
-		}
-
-		var got struct {
-			Versions []string `json:"versions"`
-		}
-
-		if err := json.Unmarshal(out, &got); err != nil || got.Versions == nil {
-			t.Fatalf("merged list %s: %v", out, err)
-		}
-
-		fuzzCheckSortedUnique(t, got.Versions)
-
-		// Every version of the inputs is in the result in normalized form.
-		for _, doc := range [][]byte{a, b} {
-			var in struct {
-				Versions []string `json:"versions"`
-			}
-
-			_ = json.Unmarshal(doc, &in)
-
-			for _, v := range in.Versions {
-				if n, _ := Normalize(v); !slices.Contains(got.Versions, n) {
-					t.Fatalf("version %q (%q) vanished from %q", v, n, got.Versions)
-				}
-			}
-		}
-
-		for _, v := range got.Versions {
-			if n, ok := Normalize(v); ok && n != v {
-				t.Fatalf("listed version %q is not normalized (%q)", v, n)
-			}
-		}
-	})
-}
-
 // FuzzCatalogDigest feeds arbitrary catalog entries and package bytes to the
 // digest parsing and verification.
 func FuzzCatalogDigest(f *testing.F) {

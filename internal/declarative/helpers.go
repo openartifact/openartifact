@@ -105,34 +105,6 @@ func canonNumber(v any) (any, bool) {
 	return nil, false
 }
 
-// FromJSON decodes raw JSON into canonical form.
-func FromJSON(raw []byte) (any, error) {
-	var v any
-	if err := json.Unmarshal(raw, &v); err != nil {
-		return nil, fmt.Errorf("decode JSON: %w", err)
-	}
-
-	return Canon(v), nil
-}
-
-// ToMap re-encodes any JSON-serializable value (typically an API response
-// struct or a decoded object) into a canonical map[string]any.
-func ToMap(v any) (map[string]any, error) {
-	raw, err := json.Marshal(v)
-	if err != nil {
-		return nil, fmt.Errorf("encode: %w", err)
-	}
-
-	out, err := FromJSON(raw)
-	if err != nil {
-		return nil, err
-	}
-
-	m, _ := out.(map[string]any)
-
-	return m, nil
-}
-
 // PatchBody builds the request body of a PATCH/PUT from changes: dotted paths
 // become nested objects, so {oidc_config.issuer, public} yields
 // {"oidc_config": {"issuer": ...}, "public": ...}. Top-level fields not in

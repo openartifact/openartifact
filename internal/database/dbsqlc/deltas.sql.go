@@ -40,15 +40,6 @@ func (q *Queries) CreatePackageDelta(ctx context.Context, arg CreatePackageDelta
 	return err
 }
 
-const deletePackageDelta = `-- name: DeletePackageDelta :exec
-DELETE FROM package_deltas WHERE id = $1
-`
-
-func (q *Queries) DeletePackageDelta(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deletePackageDelta, id)
-	return err
-}
-
 const getPackageDelta = `-- name: GetPackageDelta :one
 SELECT id, repository_id, from_sha256, from_filename, to_sha256, to_filename, delta_sha256, delta_size, format, created_at
 FROM package_deltas

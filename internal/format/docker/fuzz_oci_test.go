@@ -157,39 +157,6 @@ func FuzzReferrerManifest(f *testing.F) {
 	})
 }
 
-// FuzzDockerManifestHandler feeds arbitrary bodies to the docker format handler:
-// a manifest that validates parses, and a parsed manifest is a JSON object.
-func FuzzDockerManifestHandler(f *testing.F) {
-	for _, s := range []string{
-		`{"schemaVersion":2,"mediaType":"application/vnd.docker.distribution.manifest.v2+json"}`,
-		`{"schemaVersion":2}`, `{"mediaType":"x"}`, `{}`, `[]`, `null`, `"x"`, `{`, ``,
-	} {
-		f.Add([]byte(s))
-	}
-
-	h := NewDockerHandler()
-
-	f.Fuzz(func(t *testing.T, body []byte) {
-		ctx := context.Background()
-
-		parsed, parseErr := h.Parse(ctx, bytes.NewReader(body))
-		validateErr := h.Validate(ctx, bytes.NewReader(body))
-
-		if validateErr == nil && parseErr != nil {
-			t.Fatalf("Validate accepted %q but Parse failed: %v", body, parseErr)
-		}
-
-		if validateErr == nil {
-			_, hasMediaType := parsed["mediaType"]
-			_, hasSchema := parsed["schemaVersion"]
-
-			if !hasMediaType && !hasSchema {
-				t.Fatalf("Validate accepted %q without mediaType or schemaVersion", body)
-			}
-		}
-	})
-}
-
 // fuzzCatalog serves the names "img00000", "img00001", ... in bytewise order,
 // the contract of database.DockerCatalog.
 type fuzzCatalog struct {

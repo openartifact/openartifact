@@ -599,3 +599,12 @@ func TestFilesystem_PutWritesSidecarAtomically(t *testing.T) {
 		t.Fatalf("temp files left behind: %v", tmps)
 	}
 }
+
+func (a *aliasIndex) add(digest, id string) {
+	a.mu.Lock()
+	defer a.mu.Unlock()
+
+	if a.built {
+		a.byDig[digest] = id
+	}
+}

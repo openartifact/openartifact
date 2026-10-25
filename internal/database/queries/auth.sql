@@ -74,12 +74,6 @@ JOIN auth_user_groups ug ON ug.user_id = u.id
 WHERE ug.group_id = $1
 ORDER BY u.username ASC;
 
--- name: DeleteSSOGroupMemberships :exec
-DELETE FROM auth_user_groups WHERE user_id = $1 AND is_sso_managed = TRUE;
-
--- name: AddSSOGroupMembership :exec
-INSERT INTO auth_user_groups (user_id, group_id, is_sso_managed) VALUES ($1, $2, TRUE) ON CONFLICT DO NOTHING;
-
 -- name: CreateSession :one
 INSERT INTO auth_sessions (user_id, token_hash, ip_address, user_agent, expires_at)
 VALUES ($1, $2, $3, $4, $5)
@@ -118,13 +112,6 @@ WHERE id = $1 AND (last_used_at IS NULL OR last_used_at < now() - interval '60 s
 -- name: ListTokensByUser :many
 SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
 FROM auth_tokens WHERE user_id = $1 ORDER BY created_at DESC;
-
--- name: CountActiveTokens :one
-SELECT COUNT(*) FROM auth_tokens WHERE revoked_at IS NULL;
-
--- name: ListAllActiveTokens :many
-SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
-FROM auth_tokens WHERE revoked_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2;
 
 -- name: CreatePermissionTarget :one
 INSERT INTO permission_targets (name, repository_filter, path_pattern, actions)
@@ -165,7 +152,3 @@ JOIN permission_assignments pa ON pa.permission_target_id = pt.id
 WHERE (pa.principal_type = 'user' AND pa.principal_id = sqlc.arg(principal_id)::uuid)
    OR (pa.principal_type = 'group' AND pa.principal_id = ANY(sqlc.arg(group_ids)::uuid[]))
 ORDER BY pt.name ASC;
-
--- name: DeleteGroupPermissionAssignmentsNotIn :exec
-DELETE FROM permission_assignments
-WHERE principal_type = 'group' AND principal_id = sqlc.arg(principal_id)::uuid AND permission_target_id != ALL(sqlc.arg(exclude_target_ids)::uuid[]);

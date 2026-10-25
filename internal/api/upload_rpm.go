@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -21,6 +20,7 @@ import (
 	"github.com/openartifact/openartifact/internal/database/models"
 	"github.com/openartifact/openartifact/internal/format/base"
 	formatrpm "github.com/openartifact/openartifact/internal/format/rpm"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/importmeta"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/licensepolicy"
@@ -862,6 +862,12 @@ func (h *RPMUploadHandler) handleCompsUpload(w http.ResponseWriter, r *http.Requ
 }
 
 // compsStoreError carries the response of a failed comps store out of the blob lock.
+func writeJSON(w http.ResponseWriter, status int, v any) { httpx.WriteJSON(w, status, v) }
+
+func writeError(w http.ResponseWriter, status int, code, message string) {
+	httpx.WriteError(w, status, code, message)
+}
+
 type compsStoreError struct {
 	status    int
 	code, msg string
@@ -870,24 +876,3 @@ type compsStoreError struct {
 
 func (e *compsStoreError) Error() string { return e.msg + ": " + e.err.Error() }
 func (e *compsStoreError) Unwrap() error { return e.err }
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if encErr := json.NewEncoder(w).Encode(v); encErr != nil {
-		_ = encErr // response header already written
-	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if encErr := json.NewEncoder(w).Encode(ErrorResponse{
-		Error: message,
-		Code:  code,
-	}); encErr != nil {
-		_ = encErr // response header already written
-	}
-}

@@ -213,7 +213,7 @@ func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *m
 
 	loaded, body, release, err := s.loadHelmIndex(r.Context(), repo, res)
 	if err != nil {
-		s.failHelmIndex(w, r, err)
+		s.failWithoutValidators(w, r, err)
 		return
 	}
 
@@ -240,7 +240,7 @@ func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *m
 			s.log.Errorw("failed to render helm index", "repo", repo.Name, "error", err)
 		}
 
-		s.failHelmIndex(w, r, err)
+		s.failWithoutValidators(w, r, err)
 
 		return
 	}
@@ -252,17 +252,6 @@ func (s *Service) serveHelmIndex(w http.ResponseWriter, r *http.Request, repo *m
 	if r.Method != http.MethodHead {
 		_, _ = w.Write(out)
 	}
-}
-
-// failHelmIndex answers an error after validators were set: they must not
-// describe the error response.
-func (s *Service) failHelmIndex(w http.ResponseWriter, r *http.Request, err error) {
-	h := w.Header()
-	h.Del("ETag")
-	h.Set("Cache-Control", "no-store")
-	h.Del("Warning")
-
-	s.writeResolveError(w, r, err)
 }
 
 // helmUpstreamBase is the upstream repository URL with a trailing slash:

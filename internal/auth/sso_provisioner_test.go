@@ -240,10 +240,6 @@ func (m *provMockDB) ListReleaseBundles(ctx context.Context, nameFilter, stateFi
 	return nil, 0, nil
 }
 
-func (m *provMockDB) UpdateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error {
-	return nil
-}
-
 func (m *provMockDB) SyncSSOGroups(_ context.Context, userID string, groupIDs []string) error {
 	if m.syncGroupsErr != nil {
 		return m.syncGroupsErr
@@ -282,9 +278,8 @@ func (m *provMockDB) ListComponentsByRepo(_ context.Context, _, _ string, _, _ i
 func (m *provMockDB) GetRPMRepo(_ context.Context, _ string) (*models.RPMRepo, error) {
 	return nil, nil
 }
-func (m *provMockDB) CreateRPMRepo(_ context.Context, _ *models.RPMRepo) error     { return nil }
-func (m *provMockDB) MarkRepoStale(_ context.Context, _ string) error              { return nil }
-func (m *provMockDB) CreateComponent(_ context.Context, _ *models.Component) error { return nil }
+func (m *provMockDB) CreateRPMRepo(_ context.Context, _ *models.RPMRepo) error { return nil }
+func (m *provMockDB) MarkRepoStale(_ context.Context, _ string) error          { return nil }
 func (m *provMockDB) GetComponentByID(_ context.Context, _ string) (*models.Component, error) {
 	return nil, nil
 }
@@ -306,9 +301,6 @@ func (m *provMockDB) UpsertRepoMetadata(_ context.Context, _ *models.RepoMetadat
 }
 func (m *provMockDB) CreateDebianDistribution(_ context.Context, _ *models.DebianDistribution) error {
 	return nil
-}
-func (m *provMockDB) GetDebianDistribution(_ context.Context, _, _ string) (*models.DebianDistribution, error) {
-	return nil, nil
 }
 func (m *provMockDB) GetDebianDistributionsByRepo(_ context.Context, _ string) ([]models.DebianDistribution, error) {
 	return nil, nil
@@ -462,14 +454,8 @@ func (m *provMockDB) GetOrCreatePermissionAssignment(_ context.Context, targetID
 	m.assignments = append(m.assignments, targetID+"|"+principalType+"|"+principalID)
 	return nil
 }
-func (m *provMockDB) SyncSSOPermissionsForGroup(_ context.Context, _ string, _ []string) error {
-	return nil
-}
 func (m *provMockDB) CreateSSOProvider(_ context.Context, _ *models.SSOProvider) error { return nil }
 func (m *provMockDB) GetSSOProviderBySlug(_ context.Context, _ string) (*models.SSOProvider, error) {
-	return nil, nil
-}
-func (m *provMockDB) GetSSOProviderByID(_ context.Context, _ string) (*models.SSOProvider, error) {
 	return nil, nil
 }
 func (m *provMockDB) UpdateSSOProvider(_ context.Context, _ *models.SSOProvider) error { return nil }
@@ -485,10 +471,6 @@ func (m *provMockDB) ArtifactExists(_ context.Context, _, _ string) (bool, error
 	return false, nil
 }
 
-func (m *provMockDB) ArtifactExistsBySHA256(_ context.Context, _ string) (string, bool, error) {
-	return "", false, nil
-}
-
 func (m *provMockDB) CreatePackageDelta(_ context.Context, _ *models.PackageDelta) error {
 	return nil
 }
@@ -499,10 +481,6 @@ func (m *provMockDB) GetPackageDelta(_ context.Context, _, _, _ string) (*models
 
 func (m *provMockDB) ListPackageDeltas(_ context.Context, _, _ string) ([]*models.PackageDelta, error) {
 	return nil, nil
-}
-
-func (m *provMockDB) DeletePackageDelta(_ context.Context, _ string) error {
-	return nil
 }
 
 func (m *provMockDB) InsertAuditLog(_ context.Context, _ *models.AuditLog) error {
@@ -559,7 +537,6 @@ func (m *provMockDB) ListDockerTags(_ context.Context, _, _, _ string, _ int) ([
 
 // Proxy/Group repository methods
 func (m *provMockDB) AddGroupMember(_ context.Context, _, _ string, _ int) error { return nil }
-func (m *provMockDB) RemoveGroupMember(_ context.Context, _, _ string) error     { return nil }
 func (m *provMockDB) ListGroupMembers(_ context.Context, _ string) ([]*models.RepositoryGroupMember, error) {
 	return nil, nil
 }
@@ -583,16 +560,10 @@ func (m *provMockDB) DeleteHelmChart(_ context.Context, _, _, _ string) error { 
 func (m *provMockDB) ListHelmCharts(_ context.Context, _ string) ([]*models.HelmChart, error) {
 	return nil, nil
 }
-func (m *provMockDB) ListHelmChartVersions(_ context.Context, _, _ string) ([]*models.HelmChart, error) {
-	return nil, nil
-}
 
 // PyPI methods
 func (m *provMockDB) CreatePyPIPackage(_ context.Context, _ *models.PyPIPackage) error { return nil }
-func (m *provMockDB) GetPyPIPackage(_ context.Context, _, _, _, _ string) (*models.PyPIPackage, error) {
-	return nil, nil
-}
-func (m *provMockDB) DeletePyPIPackage(_ context.Context, _, _, _, _ string) error { return nil }
+func (m *provMockDB) DeletePyPIPackage(_ context.Context, _, _, _, _ string) error     { return nil }
 func (m *provMockDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPackage, error) {
 	return nil, nil
 }
@@ -622,7 +593,6 @@ func (m *provMockDB) CreateGoModule(_ context.Context, _ *models.GoModule) error
 func (m *provMockDB) GetGoModule(_ context.Context, _, _, _ string) (*models.GoModule, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteGoModule(_ context.Context, _, _, _ string) error { return nil }
 func (m *provMockDB) ListGoModuleVersions(_ context.Context, _, _ string) ([]*models.GoModule, error) {
 	return nil, nil
 }
@@ -686,7 +656,6 @@ func (m *provMockDB) CreateCargoCrate(_ context.Context, _ *models.CargoCrate) e
 func (m *provMockDB) GetCargoCrate(_ context.Context, _, _, _ string) (*models.CargoCrate, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteCargoCrate(_ context.Context, _ string) error { return nil }
 func (m *provMockDB) ListCargoCrateVersions(_ context.Context, _, _ string) ([]*models.CargoCrate, error) {
 	return nil, nil
 }
@@ -701,7 +670,6 @@ func (m *provMockDB) CreateRubyGem(_ context.Context, _ *models.RubyGem) error {
 func (m *provMockDB) GetRubyGem(_ context.Context, _, _, _, _ string) (*models.RubyGem, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteRubyGem(_ context.Context, _ string) error { return nil }
 func (m *provMockDB) ListRubyGems(_ context.Context, _ string) ([]*models.RubyGem, error) {
 	return nil, nil
 }
@@ -725,13 +693,9 @@ func (m *provMockDB) ListRawArtifacts(_ context.Context, _, _ string) ([]*models
 
 // SBOM methods
 func (m *provMockDB) CreateSBOMReport(_ context.Context, _ *models.SBOMReport) error { return nil }
-func (m *provMockDB) GetSBOMReport(_ context.Context, _, _, _, _ string) (*models.SBOMReport, error) {
-	return nil, nil
-}
 func (m *provMockDB) ListSBOMReports(_ context.Context, _ string) ([]*models.SBOMReport, error) {
 	return nil, nil
 }
-func (m *provMockDB) DeleteSBOMReport(_ context.Context, _ string) error { return nil }
 
 // License compliance methods
 func (m *provMockDB) CreateLicenseScanResult(_ context.Context, _ *models.LicenseScanResult) error {
@@ -739,9 +703,6 @@ func (m *provMockDB) CreateLicenseScanResult(_ context.Context, _ *models.Licens
 }
 func (m *provMockDB) GetLicenseScanResult(_ context.Context, _, _ string) (*models.LicenseScanResult, error) {
 	return nil, nil
-}
-func (m *provMockDB) UpdateLicenseScanResult(_ context.Context, _ *models.LicenseScanResult) error {
-	return nil
 }
 func (m *provMockDB) ListLicenseScanResults(_ context.Context, _ string) ([]*models.LicenseScanResult, error) {
 	return nil, nil
@@ -766,9 +727,6 @@ func (m *provMockDB) CreateSecretScanResult(_ context.Context, _ *models.SecretS
 }
 func (m *provMockDB) GetSecretScanResult(_ context.Context, _, _ string) (*models.SecretScanResult, error) {
 	return nil, nil
-}
-func (m *provMockDB) UpdateSecretScanResult(_ context.Context, _ *models.SecretScanResult) error {
-	return nil
 }
 func (m *provMockDB) ListSecretScanResults(_ context.Context, _ string, _ bool) ([]*models.SecretScanResult, error) {
 	return nil, nil
@@ -795,18 +753,10 @@ func (m *provMockDB) GetOrCreateStorageQuota(_ context.Context, _ string) (*mode
 	return nil, nil
 }
 func (m *provMockDB) UpdateStorageQuota(_ context.Context, _ *models.StorageQuota) error { return nil }
-func (m *provMockDB) IncrementStorageUsage(_ context.Context, _ string, _ int64, _ int) error {
-	return nil
-}
 func (m *provMockDB) DecrementStorageUsage(_ context.Context, _ string, _ int64, _ int) error {
 	return nil
 }
 
-// Artifact properties methods
-func (m *provMockDB) SetArtifactProperty(_ context.Context, _, _, _, _ string) error { return nil }
-func (m *provMockDB) GetArtifactProperty(_ context.Context, _, _, _ string) (string, error) {
-	return "", nil
-}
 func (m *provMockDB) DeleteArtifactProperty(_ context.Context, _, _, _ string) error { return nil }
 func (m *provMockDB) ListArtifactProperties(_ context.Context, _, _ string) (map[string]string, error) {
 	return nil, nil
@@ -1260,11 +1210,6 @@ func (m *provMockDB) GetAIAnalysis(_ context.Context, _, _ string) (*models.AIAn
 func (m *provMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
 }
-func (m *provMockDB) DeleteAIAnalysis(_ context.Context, _, _ string) error { return nil }
-func (m *provMockDB) ListPendingAIAnalyses(_ context.Context, _ int) ([]*models.AIAnalysis, error) {
-	return nil, nil
-}
-
 func TestProvisioner_LinkByEmail_UnverifiedEmailNotLinked(t *testing.T) {
 	db := newProvMockDB()
 	email := "admin@example.com"

@@ -19,16 +19,6 @@ WITH ref AS (
 )
 SELECT ins.id, job.created_at, job.updated_at FROM ins JOIN job ON job.id = ins.scan_job_id;
 
--- name: GetSBOMReport :one
-SELECT sr.id, ref.repository_id, ref.artifact_path, sr.sbom_format, sr.spec_version,
-       sr.component_count, b.sha256 AS blob_sha256, sj.completed_at, sj.created_at, sj.updated_at
-FROM sbom_results sr
-JOIN scan_jobs sj ON sj.id = sr.scan_job_id
-JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-LEFT JOIN blobs b ON b.id = sr.blob_id
-WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1 AND ref.artifact_path = $2
-  AND sr.sbom_format = $3 AND sr.spec_version = $4;
-
 -- name: ListSBOMReports :many
 SELECT sr.id, ref.repository_id, ref.artifact_path, sr.sbom_format, sr.spec_version,
        sr.component_count, b.sha256 AS blob_sha256, sj.completed_at, sj.created_at, sj.updated_at
@@ -37,9 +27,6 @@ JOIN scan_jobs sj ON sj.id = sr.scan_job_id
 JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 LEFT JOIN blobs b ON b.id = sr.blob_id
 WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1 ORDER BY sj.created_at DESC;
-
--- name: DeleteSBOMReport :execrows
-DELETE FROM sbom_results WHERE id = $1;
 
 -- name: CreateLicenseScanResult :one
 WITH ref AS (
@@ -68,15 +55,6 @@ FROM license_results lr
 JOIN scan_jobs sj ON sj.id = lr.scan_job_id
 JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 WHERE sj.scan_type = 'license' AND ref.repository_id = $1 AND ref.artifact_path = $2;
-
--- name: UpdateLicenseScanResult :exec
-WITH res AS (
-    UPDATE license_results AS lr SET licenses = $1, spdx_expressions = $2
-    WHERE lr.id = $6
-    RETURNING scan_job_id
-)
-UPDATE scan_jobs sj SET status = $3, error_message = NULLIF($4, ''), completed_at = $5, updated_at = now()
-FROM res WHERE sj.id = res.scan_job_id;
 
 -- name: ListLicenseScanResults :many
 SELECT lr.id, ref.repository_id, ref.artifact_path, lr.licenses, lr.spdx_expressions,
@@ -135,15 +113,6 @@ JOIN scan_jobs sj ON sj.id = sr.scan_job_id
 JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 WHERE sj.scan_type = 'secret' AND ref.repository_id = $1 AND ref.artifact_path = $2;
 
--- name: UpdateSecretScanResult :exec
-WITH res AS (
-    UPDATE secret_results AS sr SET findings = $1, finding_count = $2, quarantined = $3
-    WHERE sr.id = $7
-    RETURNING scan_job_id
-)
-UPDATE scan_jobs sj SET status = $4, error_message = NULLIF($5, ''), completed_at = $6, updated_at = now()
-FROM res WHERE sj.id = res.scan_job_id;
-
 -- name: ListSecretScanResults :many
 SELECT sr.id, ref.repository_id, ref.artifact_path, sj.status, sr.findings, sr.finding_count, sr.quarantined,
        sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
@@ -151,14 +120,6 @@ FROM secret_results sr
 JOIN scan_jobs sj ON sj.id = sr.scan_job_id
 JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 WHERE sj.scan_type = 'secret' AND ref.repository_id = $1 ORDER BY sj.created_at DESC;
-
--- name: ListFlaggedSecretScanResults :many
-SELECT sr.id, ref.repository_id, ref.artifact_path, sj.status, sr.findings, sr.finding_count, sr.quarantined,
-       sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
-FROM secret_results sr
-JOIN scan_jobs sj ON sj.id = sr.scan_job_id
-JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-WHERE sj.scan_type = 'secret' AND ref.repository_id = $1 AND sr.quarantined = true ORDER BY sj.created_at DESC;
 
 -- name: QuarantineArtifact :exec
 WITH target AS (
@@ -227,15 +188,6 @@ FROM vuln_results vr
 JOIN scan_jobs sj ON sj.id = vr.scan_job_id
 JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
 WHERE sj.scan_type = 'vuln' AND ref.repository_id = $1 ORDER BY sj.created_at DESC;
-
--- name: ListVulnerableVulnScanResults :many
-SELECT vr.id, ref.repository_id, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
-       sj.scanner, sj.status, vr.vulnerabilities, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
-       vr.quarantined, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
-FROM vuln_results vr
-JOIN scan_jobs sj ON sj.id = vr.scan_job_id
-JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-WHERE sj.scan_type = 'vuln' AND ref.repository_id = $1 AND vr.vuln_count > 0 ORDER BY sj.created_at DESC;
 
 -- name: QuarantineVulnArtifact :exec
 WITH target AS (

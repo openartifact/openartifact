@@ -14,6 +14,7 @@ import (
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
 	"github.com/openartifact/openartifact/internal/database/models"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
 
@@ -106,7 +107,7 @@ func gateMCP(w http.ResponseWriter, r *http.Request, cfg RBACConfig, log *logger
 
 		log.Warnw("access denied", "event", "auth_deny", "principal", "anonymous", "credential", credential, "path", r.URL.Path, "action", "mcp")
 		w.Header().Set("WWW-Authenticate", challenge)
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 
 		return false
 	}
@@ -114,7 +115,7 @@ func gateMCP(w http.ResponseWriter, r *http.Request, cfg RBACConfig, log *logger
 	// A project token's service account is a repository credential only.
 	if principal.ServiceProjectID != "" {
 		log.Warnw("access denied", "event", "auth_deny", "principal", principal.Username, "credential", credential, "path", r.URL.Path, "action", "mcp")
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
+		httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "forbidden"})
 
 		return false
 	}
@@ -131,7 +132,7 @@ func serveMCP(w http.ResponseWriter, r *http.Request, next http.Handler, cfg RBA
 	r = r.WithContext(WithPrincipal(r.Context(), principal))
 
 	if passwordChangeBlocked(r, principal) {
-		writeJSON(w, http.StatusForbidden, map[string]string{"error": "password_change_required"})
+		httpx.WriteJSON(w, http.StatusForbidden, map[string]string{"error": "password_change_required"})
 
 		return
 	}

@@ -47,21 +47,6 @@ func (q *Queries) CreateGoModule(ctx context.Context, arg CreateGoModuleParams) 
 	return i, err
 }
 
-const deleteGoModule = `-- name: DeleteGoModule :exec
-DELETE FROM gomod_modules WHERE repository_id = $1 AND module_path = $2 AND version = $3 AND deleted_at IS NULL
-`
-
-type DeleteGoModuleParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	ModulePath   string `db:"module_path" json:"module_path"`
-	Version      string `db:"version" json:"version"`
-}
-
-func (q *Queries) DeleteGoModule(ctx context.Context, arg DeleteGoModuleParams) error {
-	_, err := q.db.Exec(ctx, deleteGoModule, arg.RepositoryID, arg.ModulePath, arg.Version)
-	return err
-}
-
 const getGoModule = `-- name: GetGoModule :one
 SELECT gm.id, gm.repository_id, gm.module_path, gm.version, gm.go_mod_content,
        COALESCE(zb.blob_key, '') AS zip_blob_key, COALESCE(mb.blob_key, '') AS mod_blob_key,
@@ -141,9 +126,6 @@ type ListGoModuleVersionsRow struct {
 	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
 }
 
-// Versions are ordered by semantic-version precedence in Go (SQL can only sort
-// them as strings: v1.9.0 > v1.10.0, v1.0.0-rc1 > v1.0.0), so the order here
-// is only a stable one.
 func (q *Queries) ListGoModuleVersions(ctx context.Context, arg ListGoModuleVersionsParams) ([]ListGoModuleVersionsRow, error) {
 	rows, err := q.db.Query(ctx, listGoModuleVersions, arg.RepositoryID, arg.ModulePath)
 	if err != nil {

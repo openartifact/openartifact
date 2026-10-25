@@ -89,15 +89,6 @@ func (q *Queries) CreateCargoCrate(ctx context.Context, arg CreateCargoCratePara
 	return i, err
 }
 
-const deleteCargoCrate = `-- name: DeleteCargoCrate :exec
-DELETE FROM cargo_crates WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) DeleteCargoCrate(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteCargoCrate, id)
-	return err
-}
-
 const getCargoCrate = `-- name: GetCargoCrate :one
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, b.size_bytes, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc

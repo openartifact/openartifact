@@ -48,51 +48,6 @@ func TestCreateDebianDistribution(t *testing.T) {
 	}
 }
 
-func TestGetDebianDistribution_Found(t *testing.T) {
-	ctx := context.Background()
-	mockDB := newMockDatabase()
-
-	dist := &models.DebianDistribution{
-		ID:           "dist-1",
-		RepositoryID: "repo-1",
-		Name:         "bookworm",
-		Description:  "Debian 12",
-		Codename:     "12",
-	}
-	mockDB.debianDistributions["dist-1"] = dist
-
-	result, err := mockDB.GetDebianDistribution(ctx, "repo-1", "bookworm")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result == nil {
-		t.Fatal("expected non-nil result")
-	}
-
-	if result.ID != "dist-1" {
-		t.Errorf("expected ID 'dist-1', got %s", result.ID)
-	}
-
-	if result.Name != "bookworm" {
-		t.Errorf("expected Name 'bookworm', got %s", result.Name)
-	}
-}
-
-func TestGetDebianDistribution_NotFound(t *testing.T) {
-	ctx := context.Background()
-	mockDB := newMockDatabase()
-
-	result, err := mockDB.GetDebianDistribution(ctx, "repo-1", "nonexistent")
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if result != nil {
-		t.Fatal("expected nil result")
-	}
-}
-
 func TestGetDebianDistributionsByRepo(t *testing.T) {
 	ctx := context.Background()
 	mockDB := newMockDatabase()

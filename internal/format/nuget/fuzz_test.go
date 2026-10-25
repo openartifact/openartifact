@@ -100,11 +100,6 @@ func FuzzParseNupkg(f *testing.F) {
 		handler := NewNuGetHandler()
 
 		meta, parseErr := handler.Parse(t.Context(), bytes.NewReader(data))
-		validErr := handler.Validate(t.Context(), bytes.NewReader(data))
-
-		if (parseErr == nil) != (validErr == nil) {
-			t.Fatalf("Parse err = %v but Validate err = %v", parseErr, validErr)
-		}
 
 		raw, readErr := readNuspec(bytes.NewReader(data))
 		if readErr == nil && len(raw) > maxNuGetNuspecBytes {

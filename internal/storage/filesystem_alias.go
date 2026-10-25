@@ -31,15 +31,6 @@ type aliasIndex struct {
 	byDig map[string]string
 }
 
-func (a *aliasIndex) add(digest, id string) {
-	a.mu.Lock()
-	defer a.mu.Unlock()
-
-	if a.built {
-		a.byDig[digest] = id
-	}
-}
-
 func (a *aliasIndex) remove(id string) {
 	a.mu.Lock()
 	defer a.mu.Unlock()

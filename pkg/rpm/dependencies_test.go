@@ -120,13 +120,3 @@ func TestExtractVersionEpoch(t *testing.T) {
 		}
 	}
 }
-
-func TestFormatEVR(t *testing.T) {
-	if got := formatEVR(0, "1.0", "1"); got != "1.0-1" {
-		t.Errorf("formatEVR(0) = %q, want %q", got, "1.0-1")
-	}
-
-	if got := formatEVR(2, "3.0", "1.el9"); got != "2:3.0-1.el9" {
-		t.Errorf("formatEVR(2) = %q, want %q", got, "2:3.0-1.el9")
-	}
-}

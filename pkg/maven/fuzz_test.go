@@ -19,14 +19,13 @@ func FuzzParseRepositoryPath(f *testing.F) {
 	f.Add("")
 
 	f.Fuzz(func(_ *testing.T, p string) {
-		group, artifact, version, filename, err := ParseRepositoryPath(p)
+		_, _, version, filename, err := ParseRepositoryPath(p)
 		if err != nil {
 			return
 		}
 
 		_ = IsSnapshot(version)
 		_, _, _, _ = ParseSnapshotTimestamp(filename)
-		_, _ = ParseCoordinate(group, artifact, version, "", "jar")
 	})
 }
 

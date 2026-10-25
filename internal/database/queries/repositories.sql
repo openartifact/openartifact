@@ -45,28 +45,8 @@ WHERE deleted_at IS NULL
 ORDER BY created_at DESC, id
 LIMIT $1 OFFSET $2;
 
--- name: ListRepositoriesByFormat :many
-SELECT id, name, format, description,
-       COALESCE(public, false) AS public,
-       COALESCE(allow_full_unpublish, false) AS allow_full_unpublish,
-       COALESCE(repo_type, 'hosted') AS repo_type,
-       COALESCE(upstream_url, '') AS upstream_url,
-       COALESCE(upstream_username, '') AS upstream_username,
-       COALESCE(upstream_password_enc, '') AS upstream_password_enc,
-       COALESCE(cache_ttl_seconds, 3600) AS cache_ttl_seconds,
-       COALESCE(negative_cache_ttl_seconds, 60) AS negative_cache_ttl_seconds,
-       COALESCE(blocked, false) AS blocked,
-       project_id, created_at, updated_at
-FROM repositories
-WHERE format = $1 AND deleted_at IS NULL
-ORDER BY created_at DESC, id
-LIMIT $2 OFFSET $3;
-
 -- name: CountRepositories :one
 SELECT COUNT(*) FROM repositories WHERE deleted_at IS NULL;
-
--- name: CountRepositoriesByFormat :one
-SELECT COUNT(*) FROM repositories WHERE format = $1 AND deleted_at IS NULL;
 
 -- name: CreateRepository :one
 INSERT INTO repositories (id, name, format, description, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, blocked, project_id)

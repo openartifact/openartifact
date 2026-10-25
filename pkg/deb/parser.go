@@ -60,18 +60,6 @@ type DebFile struct {
 	ControlTarGz []byte
 }
 
-// ParseDebFile parses a .deb file from a sequential reader. The input is
-// buffered (bounded by maxDebFileSize); callers that already hold the data
-// in a file should use ParseDebFileAt to avoid the copy.
-func ParseDebFile(r io.Reader) (*DebFile, error) {
-	data, err := readAllLimited(r, maxDebFileSize, ErrDebFileTooLarge)
-	if err != nil {
-		return nil, fmt.Errorf("failed to read deb file: %w", err)
-	}
-
-	return ParseDebFileAt(bytes.NewReader(data), int64(len(data)))
-}
-
 // ParseDebFileAt parses a .deb file by walking the AR headers with ReadAt and
 // reading only the control archive, so memory use is independent of the
 // package size.
@@ -251,78 +239,4 @@ func extractFileFromTar(tarData []byte, filename string) ([]byte, error) {
 	}
 
 	return nil, fmt.Errorf("%w: '%s'", ErrFileNotFoundInTar, filename)
-}
-
-// GetMetadata returns package metadata as a map.
-func (df *DebFile) GetMetadata() map[string]any {
-	if df.Package == nil {
-		return make(map[string]any)
-	}
-
-	pkg := df.Package
-	metadata := map[string]any{
-		"package":      pkg.Package,
-		"version":      pkg.Version,
-		"architecture": pkg.Architecture,
-		"maintainer":   pkg.Maintainer,
-		"description":  pkg.Description,
-		"section":      pkg.Section,
-		"priority":     pkg.Priority,
-		"homepage":     pkg.Homepage,
-		"essential":    pkg.Essential,
-		"multi_arch":   pkg.MultiArch,
-	}
-
-	// Add dependency information
-	if pkg.Depends != "" {
-		metadata["depends"] = pkg.Depends
-	}
-
-	if pkg.PreDepends != "" {
-		metadata["pre_depends"] = pkg.PreDepends
-	}
-
-	if pkg.Recommends != "" {
-		metadata["recommends"] = pkg.Recommends
-	}
-
-	if pkg.Suggests != "" {
-		metadata["suggests"] = pkg.Suggests
-	}
-
-	if pkg.Conflicts != "" {
-		metadata["conflicts"] = pkg.Conflicts
-	}
-
-	if pkg.Breaks != "" {
-		metadata["breaks"] = pkg.Breaks
-	}
-
-	if pkg.Replaces != "" {
-		metadata["replaces"] = pkg.Replaces
-	}
-
-	if pkg.Provides != "" {
-		metadata["provides"] = pkg.Provides
-	}
-
-	// Add checksums
-	if pkg.MD5sum != "" {
-		metadata["md5sum"] = pkg.MD5sum
-	}
-
-	if pkg.SHA1 != "" {
-		metadata["sha1"] = pkg.SHA1
-	}
-
-	if pkg.SHA256 != "" {
-		metadata["sha256"] = pkg.SHA256
-	}
-
-	// Add custom fields
-	for k, v := range pkg.Custom {
-		metadata["custom_"+k] = v
-	}
-
-	return metadata
 }

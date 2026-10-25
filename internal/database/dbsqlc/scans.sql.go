@@ -273,18 +273,6 @@ func (q *Queries) DeleteLicensePolicy(ctx context.Context, id string) (int64, er
 	return result.RowsAffected(), nil
 }
 
-const deleteSBOMReport = `-- name: DeleteSBOMReport :execrows
-DELETE FROM sbom_results WHERE id = $1
-`
-
-func (q *Queries) DeleteSBOMReport(ctx context.Context, id string) (int64, error) {
-	result, err := q.db.Exec(ctx, deleteSBOMReport, id)
-	if err != nil {
-		return 0, err
-	}
-	return result.RowsAffected(), nil
-}
-
 const getLicensePolicy = `-- name: GetLicensePolicy :one
 SELECT id, repository_id, name, description, action, allowed_licenses, denied_licenses, enabled, created_at, updated_at
 FROM license_policies WHERE id = $1
@@ -346,60 +334,6 @@ func (q *Queries) GetLicenseScanResult(ctx context.Context, arg GetLicenseScanRe
 		&i.SpdxExpressions,
 		&i.Status,
 		&i.ErrorMessage,
-		&i.CompletedAt,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
-const getSBOMReport = `-- name: GetSBOMReport :one
-SELECT sr.id, ref.repository_id, ref.artifact_path, sr.sbom_format, sr.spec_version,
-       sr.component_count, b.sha256 AS blob_sha256, sj.completed_at, sj.created_at, sj.updated_at
-FROM sbom_results sr
-JOIN scan_jobs sj ON sj.id = sr.scan_job_id
-JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-LEFT JOIN blobs b ON b.id = sr.blob_id
-WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1 AND ref.artifact_path = $2
-  AND sr.sbom_format = $3 AND sr.spec_version = $4
-`
-
-type GetSBOMReportParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	ArtifactPath string `db:"artifact_path" json:"artifact_path"`
-	SbomFormat   string `db:"sbom_format" json:"sbom_format"`
-	SpecVersion  string `db:"spec_version" json:"spec_version"`
-}
-
-type GetSBOMReportRow struct {
-	ID             string     `db:"id" json:"id"`
-	RepositoryID   string     `db:"repository_id" json:"repository_id"`
-	ArtifactPath   string     `db:"artifact_path" json:"artifact_path"`
-	SbomFormat     string     `db:"sbom_format" json:"sbom_format"`
-	SpecVersion    string     `db:"spec_version" json:"spec_version"`
-	ComponentCount int32      `db:"component_count" json:"component_count"`
-	BlobSha256     *string    `db:"blob_sha256" json:"blob_sha256"`
-	CompletedAt    *time.Time `db:"completed_at" json:"completed_at"`
-	CreatedAt      time.Time  `db:"created_at" json:"created_at"`
-	UpdatedAt      time.Time  `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetSBOMReport(ctx context.Context, arg GetSBOMReportParams) (GetSBOMReportRow, error) {
-	row := q.db.QueryRow(ctx, getSBOMReport,
-		arg.RepositoryID,
-		arg.ArtifactPath,
-		arg.SbomFormat,
-		arg.SpecVersion,
-	)
-	var i GetSBOMReportRow
-	err := row.Scan(
-		&i.ID,
-		&i.RepositoryID,
-		&i.ArtifactPath,
-		&i.SbomFormat,
-		&i.SpecVersion,
-		&i.ComponentCount,
-		&i.BlobSha256,
 		&i.CompletedAt,
 		&i.CreatedAt,
 		&i.UpdatedAt,
@@ -518,61 +452,6 @@ func (q *Queries) GetVulnScanResult(ctx context.Context, arg GetVulnScanResultPa
 		&i.UpdatedAt,
 	)
 	return i, err
-}
-
-const listFlaggedSecretScanResults = `-- name: ListFlaggedSecretScanResults :many
-SELECT sr.id, ref.repository_id, ref.artifact_path, sj.status, sr.findings, sr.finding_count, sr.quarantined,
-       sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
-FROM secret_results sr
-JOIN scan_jobs sj ON sj.id = sr.scan_job_id
-JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-WHERE sj.scan_type = 'secret' AND ref.repository_id = $1 AND sr.quarantined = true ORDER BY sj.created_at DESC
-`
-
-type ListFlaggedSecretScanResultsRow struct {
-	ID           string          `db:"id" json:"id"`
-	RepositoryID string          `db:"repository_id" json:"repository_id"`
-	ArtifactPath string          `db:"artifact_path" json:"artifact_path"`
-	Status       string          `db:"status" json:"status"`
-	Findings     json.RawMessage `db:"findings" json:"findings"`
-	FindingCount int32           `db:"finding_count" json:"finding_count"`
-	Quarantined  bool            `db:"quarantined" json:"quarantined"`
-	ErrorMessage *string         `db:"error_message" json:"error_message"`
-	CompletedAt  *time.Time      `db:"completed_at" json:"completed_at"`
-	CreatedAt    time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListFlaggedSecretScanResults(ctx context.Context, repositoryID string) ([]ListFlaggedSecretScanResultsRow, error) {
-	rows, err := q.db.Query(ctx, listFlaggedSecretScanResults, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListFlaggedSecretScanResultsRow{}
-	for rows.Next() {
-		var i ListFlaggedSecretScanResultsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.ArtifactPath,
-			&i.Status,
-			&i.Findings,
-			&i.FindingCount,
-			&i.Quarantined,
-			&i.ErrorMessage,
-			&i.CompletedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listLicensePolicies = `-- name: ListLicensePolicies :many
@@ -845,78 +724,6 @@ func (q *Queries) ListVulnScanResults(ctx context.Context, repositoryID string) 
 	return items, nil
 }
 
-const listVulnerableVulnScanResults = `-- name: ListVulnerableVulnScanResults :many
-SELECT vr.id, ref.repository_id, ref.artifact_path, vr.package_name, vr.package_version, vr.ecosystem,
-       sj.scanner, sj.status, vr.vulnerabilities, vr.vuln_count, vr.critical_count, vr.high_count, vr.medium_count, vr.low_count,
-       vr.quarantined, sj.error_message, sj.completed_at, sj.created_at, sj.updated_at
-FROM vuln_results vr
-JOIN scan_jobs sj ON sj.id = vr.scan_job_id
-JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-WHERE sj.scan_type = 'vuln' AND ref.repository_id = $1 AND vr.vuln_count > 0 ORDER BY sj.created_at DESC
-`
-
-type ListVulnerableVulnScanResultsRow struct {
-	ID              string          `db:"id" json:"id"`
-	RepositoryID    string          `db:"repository_id" json:"repository_id"`
-	ArtifactPath    string          `db:"artifact_path" json:"artifact_path"`
-	PackageName     *string         `db:"package_name" json:"package_name"`
-	PackageVersion  *string         `db:"package_version" json:"package_version"`
-	Ecosystem       *string         `db:"ecosystem" json:"ecosystem"`
-	Scanner         *string         `db:"scanner" json:"scanner"`
-	Status          string          `db:"status" json:"status"`
-	Vulnerabilities json.RawMessage `db:"vulnerabilities" json:"vulnerabilities"`
-	VulnCount       int32           `db:"vuln_count" json:"vuln_count"`
-	CriticalCount   int32           `db:"critical_count" json:"critical_count"`
-	HighCount       int32           `db:"high_count" json:"high_count"`
-	MediumCount     int32           `db:"medium_count" json:"medium_count"`
-	LowCount        int32           `db:"low_count" json:"low_count"`
-	Quarantined     bool            `db:"quarantined" json:"quarantined"`
-	ErrorMessage    *string         `db:"error_message" json:"error_message"`
-	CompletedAt     *time.Time      `db:"completed_at" json:"completed_at"`
-	CreatedAt       time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt       time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListVulnerableVulnScanResults(ctx context.Context, repositoryID string) ([]ListVulnerableVulnScanResultsRow, error) {
-	rows, err := q.db.Query(ctx, listVulnerableVulnScanResults, repositoryID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListVulnerableVulnScanResultsRow{}
-	for rows.Next() {
-		var i ListVulnerableVulnScanResultsRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.RepositoryID,
-			&i.ArtifactPath,
-			&i.PackageName,
-			&i.PackageVersion,
-			&i.Ecosystem,
-			&i.Scanner,
-			&i.Status,
-			&i.Vulnerabilities,
-			&i.VulnCount,
-			&i.CriticalCount,
-			&i.HighCount,
-			&i.MediumCount,
-			&i.LowCount,
-			&i.Quarantined,
-			&i.ErrorMessage,
-			&i.CompletedAt,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
 const quarantineArtifact = `-- name: QuarantineArtifact :exec
 WITH target AS (
     SELECT sr.id AS result_id, sj.id AS job_id
@@ -1007,70 +814,6 @@ func (q *Queries) UpdateLicensePolicy(ctx context.Context, arg UpdateLicensePoli
 		arg.DeniedLicenses,
 		arg.Enabled,
 		arg.UpdatedAt,
-		arg.ID,
-	)
-	return err
-}
-
-const updateLicenseScanResult = `-- name: UpdateLicenseScanResult :exec
-WITH res AS (
-    UPDATE license_results AS lr SET licenses = $1, spdx_expressions = $2
-    WHERE lr.id = $6
-    RETURNING scan_job_id
-)
-UPDATE scan_jobs sj SET status = $3, error_message = NULLIF($4, ''), completed_at = $5, updated_at = now()
-FROM res WHERE sj.id = res.scan_job_id
-`
-
-type UpdateLicenseScanResultParams struct {
-	Licenses        []string    `db:"licenses" json:"licenses"`
-	SpdxExpressions []string    `db:"spdx_expressions" json:"spdx_expressions"`
-	Status          string      `db:"status" json:"status"`
-	Column4         interface{} `db:"column_4" json:"column_4"`
-	CompletedAt     *time.Time  `db:"completed_at" json:"completed_at"`
-	ID              string      `db:"id" json:"id"`
-}
-
-func (q *Queries) UpdateLicenseScanResult(ctx context.Context, arg UpdateLicenseScanResultParams) error {
-	_, err := q.db.Exec(ctx, updateLicenseScanResult,
-		arg.Licenses,
-		arg.SpdxExpressions,
-		arg.Status,
-		arg.Column4,
-		arg.CompletedAt,
-		arg.ID,
-	)
-	return err
-}
-
-const updateSecretScanResult = `-- name: UpdateSecretScanResult :exec
-WITH res AS (
-    UPDATE secret_results AS sr SET findings = $1, finding_count = $2, quarantined = $3
-    WHERE sr.id = $7
-    RETURNING scan_job_id
-)
-UPDATE scan_jobs sj SET status = $4, error_message = NULLIF($5, ''), completed_at = $6, updated_at = now()
-FROM res WHERE sj.id = res.scan_job_id
-`
-
-type UpdateSecretScanResultParams struct {
-	Findings     json.RawMessage `db:"findings" json:"findings"`
-	FindingCount int32           `db:"finding_count" json:"finding_count"`
-	Quarantined  bool            `db:"quarantined" json:"quarantined"`
-	Status       string          `db:"status" json:"status"`
-	Column5      interface{}     `db:"column_5" json:"column_5"`
-	CompletedAt  *time.Time      `db:"completed_at" json:"completed_at"`
-	ID           string          `db:"id" json:"id"`
-}
-
-func (q *Queries) UpdateSecretScanResult(ctx context.Context, arg UpdateSecretScanResultParams) error {
-	_, err := q.db.Exec(ctx, updateSecretScanResult,
-		arg.Findings,
-		arg.FindingCount,
-		arg.Quarantined,
-		arg.Status,
-		arg.Column5,
-		arg.CompletedAt,
 		arg.ID,
 	)
 	return err

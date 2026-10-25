@@ -32,6 +32,7 @@ import (
 	"github.com/prometheus/client_golang/prometheus"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/netutil"
 	"github.com/openartifact/openartifact/internal/storage"
 	"github.com/openartifact/openartifact/internal/webhook"
@@ -644,7 +645,7 @@ func engBearer(token string) string { return "Bearer " + token }
 func engErrCode(t *testing.T, body []byte) string {
 	t.Helper()
 
-	var e errorBody
+	var e httpx.ErrorBody
 	if err := json.Unmarshal(body, &e); err != nil {
 		t.Fatalf("error body %q is not JSON: %v", body, err)
 	}

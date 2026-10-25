@@ -14,7 +14,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/openartifact/openartifact/internal/format"
 	"github.com/openartifact/openartifact/pkg/rubymarshal"
 	"go.yaml.in/yaml/v3"
 )
@@ -25,29 +24,6 @@ func NewRubyGemsHandler() *RubyGemsHandler {
 	return &RubyGemsHandler{}
 }
 
-func (h *RubyGemsHandler) Name() string {
-	return "rubygems"
-}
-
-func (h *RubyGemsHandler) GetContentType() string {
-	return "application/octet-stream"
-}
-
-func (h *RubyGemsHandler) GetFileExtension() string {
-	return ".gem"
-}
-
-// Validate checks if the artifact is a valid .gem file (tar.gz format).
-func (h *RubyGemsHandler) Validate(ctx context.Context, r io.Reader) error {
-	_, err := h.parseGemMetadata(r)
-	if err != nil {
-		return fmt.Errorf("invalid gem file: %w", err)
-	}
-
-	return nil
-}
-
-// Parse extracts metadata from the .gem file.
 func (h *RubyGemsHandler) Parse(ctx context.Context, r io.Reader) (map[string]any, error) {
 	metadata, err := h.parseGemMetadata(r)
 	if err != nil {
@@ -160,8 +136,6 @@ func gemspecToMetadata(spec *rubymarshal.Specification) map[string]any {
 		"dependencies": deps,
 	}
 }
-
-var _ format.FormatHandler = (*RubyGemsHandler)(nil)
 
 const maxMetadataBytes = 4 << 20
 

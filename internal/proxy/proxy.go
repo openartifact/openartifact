@@ -312,6 +312,17 @@ func (s *Service) writeResolveError(w http.ResponseWriter, r *http.Request, err 
 	}
 }
 
+// failWithoutValidators answers an error after validators were set: they must
+// not describe the error response.
+func (s *Service) failWithoutValidators(w http.ResponseWriter, r *http.Request, err error) {
+	h := w.Header()
+	h.Del("ETag")
+	h.Set("Cache-Control", "no-store")
+	h.Del("Warning")
+
+	s.writeResolveError(w, r, err)
+}
+
 func writeEntry(w http.ResponseWriter, r *http.Request, entry *models.ProxyCacheEntry, body io.Reader) {
 	etag := `"` + entry.BlobKey + `"`
 	h := w.Header()
@@ -1001,16 +1012,4 @@ func (g *flightGroup) do(ctx context.Context, key string, fn func() (*resolution
 	f.res, f.err = fn()
 
 	return f.res, f.err
-}
-
-// waiting reports how many callers are blocked on the in-flight fetch of key.
-func (g *flightGroup) waiting(key string) int {
-	g.mu.Lock()
-	defer g.mu.Unlock()
-
-	if f, ok := g.calls[key]; ok {
-		return f.waiters
-	}
-
-	return 0
 }

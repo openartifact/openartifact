@@ -19,13 +19,6 @@ JOIN blobs b ON b.id = hc.blob_id
 WHERE hc.repository_id = $1 AND hc.deleted_at IS NULL
 ORDER BY hc.name, hc.version DESC;
 
--- name: ListHelmChartVersions :many
-SELECT hc.id, hc.repository_id, hc.name, hc.version, hc.app_version, hc.description, hc.keywords, hc.home, hc.sources, hc.maintainers, hc.icon, hc.api_version, hc.type, b.blob_key, b.sha256 AS digest, b.size_bytes, hc.created_at, hc.updated_at
-FROM helm_charts hc
-JOIN blobs b ON b.id = hc.blob_id
-WHERE hc.repository_id = $1 AND hc.name = $2 AND hc.deleted_at IS NULL
-ORDER BY hc.version DESC;
-
 -- name: HelmIndexStamp :one
 -- Fingerprint of the live charts of a repository: their count and an
 -- order-independent hash of their IDs. Chart rows are immutable (a republish

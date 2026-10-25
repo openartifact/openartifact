@@ -556,27 +556,6 @@ func (q *Queries) RemoveBundleItem(ctx context.Context, arg RemoveBundleItemPara
 	return err
 }
 
-const updateBundlePromotion = `-- name: UpdateBundlePromotion :exec
-UPDATE bundle_promotions SET status = $1, error_message = $2, completed_at = $3 WHERE id = $4
-`
-
-type UpdateBundlePromotionParams struct {
-	Status       string     `db:"status" json:"status"`
-	ErrorMessage *string    `db:"error_message" json:"error_message"`
-	CompletedAt  *time.Time `db:"completed_at" json:"completed_at"`
-	ID           string     `db:"id" json:"id"`
-}
-
-func (q *Queries) UpdateBundlePromotion(ctx context.Context, arg UpdateBundlePromotionParams) error {
-	_, err := q.db.Exec(ctx, updateBundlePromotion,
-		arg.Status,
-		arg.ErrorMessage,
-		arg.CompletedAt,
-		arg.ID,
-	)
-	return err
-}
-
 const updatePromotionPipeline = `-- name: UpdatePromotionPipeline :exec
 UPDATE promotion_pipelines SET name = $1, description = $2, stages = $3, updated_at = now() WHERE id = $4
 `

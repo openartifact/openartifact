@@ -65,50 +65,6 @@ func (q *Queries) DeleteSSOProvider(ctx context.Context, id string) error {
 	return err
 }
 
-const getSSOProviderByID = `-- name: GetSSOProviderByID :one
-SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
-FROM auth_sso_providers WHERE id = $1
-`
-
-type GetSSOProviderByIDRow struct {
-	ID                 string          `db:"id" json:"id"`
-	Slug               string          `db:"slug" json:"slug"`
-	Kind               string          `db:"kind" json:"kind"`
-	DisplayName        string          `db:"display_name" json:"display_name"`
-	Enabled            bool            `db:"enabled" json:"enabled"`
-	OidcConfig         []byte          `db:"oidc_config" json:"oidc_config"`
-	SamlConfig         []byte          `db:"saml_config" json:"saml_config"`
-	ClaimMapping       []byte          `db:"claim_mapping" json:"claim_mapping"`
-	GroupMapping       json.RawMessage `db:"group_mapping" json:"group_mapping"`
-	PermissionMapping  json.RawMessage `db:"permission_mapping" json:"permission_mapping"`
-	AutoProvisionUsers bool            `db:"auto_provision_users" json:"auto_provision_users"`
-	LinkByEmail        bool            `db:"link_by_email" json:"link_by_email"`
-	CreatedAt          time.Time       `db:"created_at" json:"created_at"`
-	UpdatedAt          time.Time       `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetSSOProviderByID(ctx context.Context, id string) (GetSSOProviderByIDRow, error) {
-	row := q.db.QueryRow(ctx, getSSOProviderByID, id)
-	var i GetSSOProviderByIDRow
-	err := row.Scan(
-		&i.ID,
-		&i.Slug,
-		&i.Kind,
-		&i.DisplayName,
-		&i.Enabled,
-		&i.OidcConfig,
-		&i.SamlConfig,
-		&i.ClaimMapping,
-		&i.GroupMapping,
-		&i.PermissionMapping,
-		&i.AutoProvisionUsers,
-		&i.LinkByEmail,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getSSOProviderBySlug = `-- name: GetSSOProviderBySlug :one
 SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
 FROM auth_sso_providers WHERE slug = $1

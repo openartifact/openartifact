@@ -8,14 +8,12 @@ import (
 	"archive/tar"
 	"bytes"
 	"compress/gzip"
-	"context"
 	"crypto/sha256"
 	"encoding/binary"
 	"encoding/hex"
 	"encoding/json"
 	"net/http"
 	"os"
-	"runtime"
 	"strings"
 	"testing"
 
@@ -263,55 +261,6 @@ func fuzzCheckRepublish(t *testing.T, h *HTTPHandler, name, version string, crat
 			t.Fatalf("republishing %s %s as %s %s answered %d, want 409: %s", name, version, c.name, c.version, w.Code, w.Body.String())
 		}
 	}
-}
-
-// FuzzCargoHandlerParse feeds an arbitrary body to the format handler's
-// validator and parser: they agree, and the memory they use follows the data
-// they are given, not the length the first four bytes declare.
-func FuzzCargoHandlerParse(f *testing.F) {
-	f.Add(fuzzFrame(`{"name":"demo","vers":"0.1.0"}`, nil))
-	f.Add(fuzzFrame(`{"name":"demo"}`, nil))
-	f.Add(fuzzFrame(`null`, nil))
-	f.Add([]byte{3, 0, 0, 0, '{', '}'})
-	f.Add([]byte{})
-
-	const budget = 64 << 20
-
-	f.Fuzz(func(t *testing.T, data []byte) {
-		h := NewCargoHandler()
-
-		var before, after runtime.MemStats
-
-		runtime.ReadMemStats(&before)
-
-		verr := h.Validate(context.Background(), bytes.NewReader(data))
-		meta, perr := h.Parse(context.Background(), bytes.NewReader(data))
-
-		runtime.ReadMemStats(&after)
-
-		if used := after.TotalAlloc - before.TotalAlloc; used > budget+uint64(len(data))*64 {
-			t.Fatalf("validating and parsing %d bytes allocated %d bytes", len(data), used)
-		}
-
-		if perr != nil && meta != nil {
-			t.Fatalf("Parse returned metadata with error %v", perr)
-		}
-
-		// The publish endpoint refuses metadata over the cap; so do they.
-		if len(data) >= 4 && binary.LittleEndian.Uint32(data) > maxPublishMetadataBytes && (verr == nil || perr == nil) {
-			t.Fatalf("a frame declaring %d metadata bytes was accepted (%v, %v)", binary.LittleEndian.Uint32(data), verr, perr)
-		}
-
-		// Whatever Validate accepts has the two fields Parse hands back.
-		if verr == nil {
-			_, hasName := meta["name"]
-			_, hasVers := meta["vers"]
-
-			if perr != nil || !hasName || !hasVers {
-				t.Fatalf("Validate accepted a body Parse reads as %v (%v)", meta, perr)
-			}
-		}
-	})
 }
 
 // FuzzCrateValidators checks the publish name and version grammars against the

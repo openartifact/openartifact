@@ -14,7 +14,6 @@ import (
 
 	"github.com/google/uuid"
 
-	"github.com/openartifact/openartifact/internal/database/dbsqlc"
 	"github.com/openartifact/openartifact/internal/database/models"
 )
 
@@ -96,25 +95,6 @@ func (p *PostgresDB) GetSSOProviderBySlug(ctx context.Context, slug string) (*mo
 
 	if err != nil {
 		return nil, fmt.Errorf("failed to get sso provider by slug: %w", err)
-	}
-
-	return provider, nil
-}
-
-func (p *PostgresDB) GetSSOProviderByID(ctx context.Context, id string) (*models.SSOProvider, error) {
-	row := p.db.QueryRowContext(ctx,
-		`SELECT id, slug, kind, display_name, enabled, oidc_config, saml_config, claim_mapping, group_mapping, permission_mapping, auto_provision_users, link_by_email, created_at, updated_at
-		FROM auth_sso_providers WHERE id = $1`,
-		id,
-	)
-
-	provider, err := scanSSOProvider(row)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get sso provider by id: %w", err)
 	}
 
 	return provider, nil
@@ -408,34 +388,6 @@ func (p *PostgresDB) GetOrCreatePermissionAssignment(ctx context.Context, target
 	)
 	if err != nil {
 		return fmt.Errorf("failed to get or create permission assignment: %w", err)
-	}
-
-	return nil
-}
-
-func (p *PostgresDB) SyncSSOPermissionsForGroup(ctx context.Context, groupID string, targetIDs []string) error {
-	// Cached auth lookups must not outlive this write.
-	defer p.authCache.invalidate()
-
-	// Delete all existing group assignments not in targetIDs
-	err := p.q.DeleteGroupPermissionAssignmentsNotIn(ctx, dbsqlc.DeleteGroupPermissionAssignmentsNotInParams{
-		PrincipalID:      groupID,
-		ExcludeTargetIds: targetIDs,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to delete old permission assignments: %w", err)
-	}
-
-	// For each targetID, upsert
-	for _, targetID := range targetIDs {
-		err := p.q.CreatePermissionAssignment(ctx, dbsqlc.CreatePermissionAssignmentParams{
-			PermissionTargetID: targetID,
-			PrincipalType:      "group",
-			PrincipalID:        groupID,
-		})
-		if err != nil {
-			return fmt.Errorf("failed to create permission assignment: %w", err)
-		}
 	}
 
 	return nil

@@ -8,7 +8,6 @@ import (
 	"archive/zip"
 	"bytes"
 	"context"
-	"strings"
 	"testing"
 )
 
@@ -39,42 +38,6 @@ func createNupkg(t *testing.T, nuspecName, nuspecContent string) []byte {
 	_ = zw.Close()
 
 	return buf.Bytes()
-}
-
-func TestNuGetHandler_Meta(t *testing.T) {
-	h := NewNuGetHandler()
-	if h.Name() != "nuget" {
-		t.Errorf("Name() = %q, want nuget", h.Name())
-	}
-
-	if h.GetFileExtension() != ".nupkg" {
-		t.Errorf("GetFileExtension() = %q, want .nupkg", h.GetFileExtension())
-	}
-}
-
-func TestNuGetHandler_Validate(t *testing.T) {
-	h := NewNuGetHandler()
-	ctx := context.Background()
-
-	t.Run("valid nupkg", func(t *testing.T) {
-		data := createNupkg(t, "Newtonsoft.Json.nuspec", sampleNuspec)
-		if err := h.Validate(ctx, bytes.NewReader(data)); err != nil {
-			t.Errorf("unexpected error: %v", err)
-		}
-	})
-
-	t.Run("invalid: not a zip", func(t *testing.T) {
-		if err := h.Validate(ctx, strings.NewReader("garbage")); err == nil {
-			t.Error("expected error for non-zip")
-		}
-	})
-
-	t.Run("invalid: zip without nuspec", func(t *testing.T) {
-		data := createNupkg(t, "somefile.txt", "hello")
-		if err := h.Validate(ctx, bytes.NewReader(data)); err == nil {
-			t.Error("expected error for missing nuspec")
-		}
-	})
 }
 
 func TestNuGetHandler_Parse(t *testing.T) {

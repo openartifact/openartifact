@@ -66,15 +66,6 @@ func (q *Queries) CreateRubyGem(ctx context.Context, arg CreateRubyGemParams) (C
 	return i, err
 }
 
-const deleteRubyGem = `-- name: DeleteRubyGem :exec
-DELETE FROM rubygems_gems WHERE id = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) DeleteRubyGem(ctx context.Context, id string) error {
-	_, err := q.db.Exec(ctx, deleteRubyGem, id)
-	return err
-}
-
 const getRubyGem = `-- name: GetRubyGem :one
 SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
 FROM rubygems_gems rg

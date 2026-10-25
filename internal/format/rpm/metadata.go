@@ -254,14 +254,6 @@ func newRequiresFilter() *requiresFilter {
 	}
 }
 
-// filterRequires mirrors createrepo_c: duplicates are dropped, requirements the
-// package satisfies itself (own provides or packaged files) are dropped unless
-// they are script-time requirements, and versioned GLIBC symbol requirements
-// collapse to the highest version per library.
-func filterRequires(pkg *rpm.Package) []rpm.Dependency {
-	return newRequiresFilter().filter(pkg)
-}
-
 func (f *requiresFilter) filter(pkg *rpm.Package) []rpm.Dependency {
 	clear(f.provides)
 	clear(f.provided)

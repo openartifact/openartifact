@@ -100,9 +100,6 @@ INSERT INTO bundle_promotions (bundle_id, from_stage, to_stage, target_repo_id, 
 VALUES ($1, $2, $3, $4, $5, (SELECT id FROM auth_users WHERE username = $6), $7, $8, $9)
 RETURNING id;
 
--- name: UpdateBundlePromotion :exec
-UPDATE bundle_promotions SET status = $1, error_message = $2, completed_at = $3 WHERE id = $4;
-
 -- name: ListBundlePromotions :many
 SELECT bp.id, bp.bundle_id, bp.from_stage, bp.to_stage, bp.target_repo_id, bp.status,
        COALESCE(u.username, '') AS promoted_by,

@@ -7,7 +7,6 @@ package federation
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"errors"
 	"net/http"
 	"net/url"
@@ -17,6 +16,7 @@ import (
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/iocopy"
 	"github.com/openartifact/openartifact/internal/quarantine"
 	"github.com/openartifact/openartifact/internal/storage"
@@ -68,22 +68,6 @@ func (s *Server) Handler() http.Handler {
 	return r
 }
 
-type errorBody struct {
-	Error string `json:"error"`
-	Code  string `json:"code"`
-}
-
-func writeJSON(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	_ = json.NewEncoder(w).Encode(v) //nolint:errchkjson // generic helper; the header is out; a broken peer connection is its own problem
-}
-
-func writeErr(w http.ResponseWriter, status int, code, msg string) {
-	writeJSON(w, status, errorBody{Error: msg, Code: code})
-}
-
 func bearer(r *http.Request) string {
 	h := r.Header.Get("Authorization")
 
@@ -104,28 +88,28 @@ func (s *Server) authenticate(next http.Handler) http.Handler {
 
 		token := bearer(r)
 		if token == "" {
-			writeErr(w, http.StatusUnauthorized, codeUnauthorized, "peer token required")
+			httpx.WriteError(w, http.StatusUnauthorized, codeUnauthorized, "peer token required")
 
 			return
 		}
 
 		repoID, err := s.store.AuthenticateToken(r.Context(), token)
 		if errors.Is(err, ErrNotFound) {
-			writeErr(w, http.StatusUnauthorized, codeUnauthorized, "peer token refused")
+			httpx.WriteError(w, http.StatusUnauthorized, codeUnauthorized, "peer token refused")
 
 			return
 		}
 
 		if err != nil {
 			s.log.Errorw("federation: authenticate peer token", "error", err)
-			writeErr(w, http.StatusInternalServerError, codeInternal, "internal error")
+			httpx.WriteError(w, http.StatusInternalServerError, codeInternal, "internal error")
 
 			return
 		}
 
 		repo, err := s.store.RepoByID(r.Context(), repoID)
 		if err != nil {
-			writeErr(w, http.StatusUnauthorized, codeUnauthorized, "peer token refused")
+			httpx.WriteError(w, http.StatusUnauthorized, codeUnauthorized, "peer token refused")
 
 			return
 		}
@@ -145,7 +129,7 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 
 	st, err := s.store.RepoState(r.Context(), repo.ID)
 	if errors.Is(err, ErrNotFederated) {
-		writeErr(w, http.StatusNotFound, codeNotFound, "repository is not federated")
+		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "repository is not federated")
 
 		return
 	}
@@ -163,7 +147,7 @@ func (s *Server) info(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, InfoResponse{
+	httpx.WriteJSON(w, http.StatusOK, InfoResponse{
 		Instance: instance, LogID: st.LogID, HeadSeq: st.HeadSeq,
 		Repository: repo.Name, Format: repo.Format, Version: ProtocolVersion,
 	})
@@ -179,7 +163,7 @@ func (s *Server) logPage(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if err != nil || after < 0 {
-		writeErr(w, http.StatusBadRequest, codeInvalid, "after must be a non-negative integer")
+		httpx.WriteError(w, http.StatusBadRequest, codeInvalid, "after must be a non-negative integer")
 
 		return
 	}
@@ -189,7 +173,7 @@ func (s *Server) logPage(w http.ResponseWriter, r *http.Request) {
 	if v := q.Get("limit"); v != "" {
 		limit, err = strconv.Atoi(v)
 		if err != nil || limit < 1 {
-			writeErr(w, http.StatusBadRequest, codeInvalid, "limit must be a positive integer")
+			httpx.WriteError(w, http.StatusBadRequest, codeInvalid, "limit must be a positive integer")
 
 			return
 		}
@@ -199,7 +183,7 @@ func (s *Server) logPage(w http.ResponseWriter, r *http.Request) {
 
 	st, err := s.store.RepoState(r.Context(), repo.ID)
 	if errors.Is(err, ErrNotFederated) {
-		writeErr(w, http.StatusNotFound, codeNotFound, "repository is not federated")
+		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "repository is not federated")
 
 		return
 	}
@@ -226,14 +210,14 @@ func (s *Server) logPage(w http.ResponseWriter, r *http.Request) {
 		entries = []Entry{}
 	}
 
-	writeJSON(w, http.StatusOK, LogResponse{LogID: st.LogID, HeadSeq: st.HeadSeq, Entries: entries, More: more})
+	httpx.WriteJSON(w, http.StatusOK, LogResponse{LogID: st.LogID, HeadSeq: st.HeadSeq, Entries: entries, More: more})
 }
 
 // unitKey reads and bounds the unit key of a request.
 func unitKey(w http.ResponseWriter, r *http.Request, param string) (string, bool) {
 	key := r.URL.Query().Get(param)
 	if key == "" || len(key) > maxKeyLength {
-		writeErr(w, http.StatusBadRequest, codeInvalid, param+" is required")
+		httpx.WriteError(w, http.StatusBadRequest, codeInvalid, param+" is required")
 
 		return "", false
 	}
@@ -255,7 +239,7 @@ func (s *Server) unit(w http.ResponseWriter, r *http.Request) {
 
 	entry, err := s.store.GetEntry(r.Context(), s.store.db, repo.ID, key)
 	if errors.Is(err, ErrNotFound) {
-		writeErr(w, http.StatusNotFound, codeNotFound, "unit not found")
+		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "unit not found")
 
 		return
 	}
@@ -267,7 +251,7 @@ func (s *Server) unit(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if entry.Tombstone {
-		writeJSON(w, http.StatusOK, UnitResponse{Entry: *entry})
+		httpx.WriteJSON(w, http.StatusOK, UnitResponse{Entry: *entry})
 
 		return
 	}
@@ -277,7 +261,7 @@ func (s *Server) unit(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 
-	writeJSON(w, http.StatusOK, UnitResponse{Entry: *entry, Content: content})
+	httpx.WriteJSON(w, http.StatusOK, UnitResponse{Entry: *entry, Content: content})
 }
 
 // export reads a live unit and refuses a quarantined one; it writes the error
@@ -285,7 +269,7 @@ func (s *Server) unit(w http.ResponseWriter, r *http.Request) {
 func (s *Server) export(w http.ResponseWriter, r *http.Request, repo *RepoInfo, key string) (*Content, bool) {
 	codec, err := CodecFor(repo.Format)
 	if err != nil {
-		writeErr(w, http.StatusNotFound, codeNotFound, "format is not federated")
+		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "format is not federated")
 
 		return nil, false
 	}
@@ -298,7 +282,7 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request, repo *RepoInfo, 
 	}
 
 	if blocked {
-		writeErr(w, http.StatusLocked, codeQuarantined, "unit is quarantined")
+		httpx.WriteError(w, http.StatusLocked, codeQuarantined, "unit is quarantined")
 
 		return nil, false
 	}
@@ -311,7 +295,7 @@ func (s *Server) export(w http.ResponseWriter, r *http.Request, repo *RepoInfo, 
 	}
 
 	if content == nil {
-		writeErr(w, http.StatusNotFound, codeNotFound, "unit has no live state")
+		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "unit has no live state")
 
 		return nil, false
 	}
@@ -331,7 +315,7 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 
 	sha := r.URL.Query().Get("sha256")
 	if storage.ValidateBlobID(sha) != nil {
-		writeErr(w, http.StatusBadRequest, codeInvalid, "sha256 is required")
+		httpx.WriteError(w, http.StatusBadRequest, codeInvalid, "sha256 is required")
 
 		return
 	}
@@ -352,7 +336,7 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if ref == nil {
-		writeErr(w, http.StatusNotFound, codeNotFound, "blob is not part of the unit")
+		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "blob is not part of the unit")
 
 		return
 	}
@@ -361,7 +345,7 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 	// validated request value), never the request string itself.
 	body, err := s.blobs.Get(r.Context(), ref.SHA256)
 	if errors.Is(err, storage.ErrBlobNotFound) {
-		writeErr(w, http.StatusNotFound, codeNotFound, "blob bytes are missing at the origin")
+		httpx.WriteError(w, http.StatusNotFound, codeNotFound, "blob bytes are missing at the origin")
 
 		return
 	}
@@ -384,7 +368,7 @@ func (s *Server) blob(w http.ResponseWriter, r *http.Request) {
 
 func (s *Server) fail(w http.ResponseWriter, what string, err error) {
 	s.log.Errorw("federation: "+what, "error", err)
-	writeErr(w, http.StatusInternalServerError, codeInternal, "internal error")
+	httpx.WriteError(w, http.StatusInternalServerError, codeInternal, "internal error")
 }
 
 // quarantineKeys lists the artifact paths under which a scan of the unit may

@@ -39,11 +39,6 @@ func ConfigureSessionDuration(d time.Duration) {
 	SessionDuration = d
 }
 
-// ConfigureSessionAbsoluteLifetime sets the hard cap on a session's total life.
-func ConfigureSessionAbsoluteLifetime(d time.Duration) {
-	sessionAbsoluteLifetime = d
-}
-
 // SessionAbsoluteLifetime is the hard cap on a session's total lifetime. It is
 // never shorter than the idle duration.
 func SessionAbsoluteLifetime() time.Duration {

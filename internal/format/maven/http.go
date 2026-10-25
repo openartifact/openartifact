@@ -443,3 +443,15 @@ func splitSnapshotFilename(filename, artifactID, version string) (string, string
 func (h *HTTPHandler) handleMKCOL(w http.ResponseWriter) {
 	w.WriteHeader(http.StatusOK)
 }
+
+// ContentTypeForFile returns the media type served for a Maven repository file.
+func ContentTypeForFile(filename string) string {
+	switch filepath.Ext(filename) {
+	case ".jar", ".war":
+		return "application/java-archive"
+	case ".pom":
+		return "application/xml"
+	default:
+		return "application/octet-stream"
+	}
+}

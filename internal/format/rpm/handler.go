@@ -10,53 +10,8 @@ import (
 	"fmt"
 	"io"
 
-	"github.com/openartifact/openartifact/internal/format"
 	rpm "github.com/openartifact/openartifact/pkg/rpm"
 )
-
-type RPMHandler struct {
-	name string
-}
-
-func NewRPMHandler() *RPMHandler {
-	return &RPMHandler{
-		name: "rpm",
-	}
-}
-
-func (h *RPMHandler) Name() string {
-	return h.name
-}
-
-func (h *RPMHandler) Validate(ctx context.Context, data io.Reader) error {
-	_, err := rpm.ParseRPM(data)
-	if err != nil {
-		return fmt.Errorf("invalid rpm file: %w", err)
-	}
-
-	return nil
-}
-
-func (h *RPMHandler) Parse(ctx context.Context, data io.Reader) (map[string]any, error) {
-	pkg, err := rpm.ParseRPM(data)
-	if err != nil {
-		return nil, fmt.Errorf("failed to parse rpm file: %w", err)
-	}
-
-	metadata := pkg.GetMetadata()
-	metadata["format"] = h.Name()
-	metadata["file_type"] = "rpm"
-
-	return metadata, nil
-}
-
-func (h *RPMHandler) GetContentType() string {
-	return "application/x-rpm"
-}
-
-func (h *RPMHandler) GetFileExtension() string {
-	return ".rpm"
-}
 
 type UploadResult struct {
 	ID        string `json:"id"`
@@ -70,16 +25,10 @@ type UploadResult struct {
 	Duplicate bool   `json:"duplicate"`
 }
 
-var _ format.FormatHandler = (*RPMHandler)(nil)
-
-type RepositoryHandler struct {
-	handler *RPMHandler
-}
+type RepositoryHandler struct{}
 
 func NewRepositoryHandler() *RepositoryHandler {
-	return &RepositoryHandler{
-		handler: NewRPMHandler(),
-	}
+	return &RepositoryHandler{}
 }
 
 func (rh *RepositoryHandler) ValidatePackage(ctx context.Context, data io.Reader) (*rpm.Package, error) {

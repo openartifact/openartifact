@@ -14,21 +14,17 @@
 package delta
 
 import (
-	"bytes"
-	"context"
 	"crypto/sha256"
 	"encoding/hex"
 	"errors"
 	"fmt"
-	"io"
 
 	"github.com/totallygamerjet/bsdiff"
 )
 
 // Sentinel errors for delta operations.
 var (
-	ErrSHA256Mismatch = errors.New("sha256 mismatch")
-	ErrInputTooLarge  = errors.New("input too large for delta generation")
+	ErrInputTooLarge = errors.New("input too large for delta generation")
 )
 
 // MaxInputSize is the largest old/new input (bytes) Generate accepts. bsdiff
@@ -51,76 +47,4 @@ func Generate(oldData, newData []byte) ([]byte, string, error) {
 	sum := sha256.Sum256(patch)
 
 	return patch, hex.EncodeToString(sum[:]), nil
-}
-
-// Apply reconstructs newData by applying patch to oldData.
-// Returns an error if the patch is invalid or incompatible with oldData.
-func Apply(oldData, patch []byte) ([]byte, error) {
-	newData, err := bsdiff.Patch(oldData, patch)
-	if err != nil {
-		return nil, fmt.Errorf("delta: apply: %w", err)
-	}
-
-	return newData, nil
-}
-
-// GenerateFromReaders is a streaming variant of Generate that reads old and new
-// package data from io.Reader instances. Both readers are fully consumed.
-func GenerateFromReaders(ctx context.Context, oldReader, newReader io.Reader) ([]byte, string, error) {
-	oldData, err := readAll(ctx, oldReader)
-	if err != nil {
-		return nil, "", fmt.Errorf("delta: read old: %w", err)
-	}
-
-	newData, err := readAll(ctx, newReader)
-	if err != nil {
-		return nil, "", fmt.Errorf("delta: read new: %w", err)
-	}
-
-	return Generate(oldData, newData)
-}
-
-// Verify checks that applying patch to oldData produces data with the expected
-// SHA-256 digest. Use this to validate a delta before serving it to clients.
-func Verify(oldData, patch []byte, expectedSHA256 string) error {
-	newData, err := Apply(oldData, patch)
-	if err != nil {
-		return fmt.Errorf("delta: verify apply: %w", err)
-	}
-
-	sum := sha256.Sum256(newData)
-
-	got := hex.EncodeToString(sum[:])
-	if got != expectedSHA256 {
-		return fmt.Errorf("delta: verify: %w: got %s, want %s", ErrSHA256Mismatch, got, expectedSHA256)
-	}
-
-	return nil
-}
-
-// readAll reads all bytes from r, respecting context cancellation.
-func readAll(ctx context.Context, r io.Reader) ([]byte, error) {
-	var buf bytes.Buffer
-
-	done := make(chan error, 1)
-
-	go func() {
-		n, err := io.Copy(&buf, io.LimitReader(r, MaxInputSize+1))
-		if err == nil && n > MaxInputSize {
-			err = ErrInputTooLarge
-		}
-
-		done <- err
-	}()
-
-	select {
-	case <-ctx.Done():
-		return nil, ctx.Err()
-	case err := <-done:
-		if err != nil {
-			return nil, err
-		}
-
-		return buf.Bytes(), nil
-	}
 }

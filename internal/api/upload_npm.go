@@ -275,15 +275,6 @@ func (h *NPMUploadHandler) npmLicenses(w http.ResponseWriter, r *http.Request, r
 	return declared, true
 }
 
-func writeJSONStatus(w http.ResponseWriter, status int, v any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if encErr := json.NewEncoder(w).Encode(v); encErr != nil {
-		_ = encErr // response header already written
-	}
-}
-
 //nolint:gocyclo,cyclop // protocol handler: branching mirrors spec state machine
 func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request) {
 	if !requireAuth(w, r) {
@@ -472,7 +463,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 			if existing != nil {
 				uploadResult = "error"
 
-				writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "version already exists"})
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "version already exists"})
 
 				return
 			}
@@ -547,7 +538,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 			uploadResult = "error"
 
 			if isUniqueViolation(err) {
-				writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "package already exists"})
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "package already exists"})
 				return
 			}
 
@@ -582,7 +573,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 				uploadResult = "error"
 
 				rollback()
-				writeJSONStatus(w, http.StatusConflict, map[string]string{"error": "version already exists"})
+				writeJSON(w, http.StatusConflict, map[string]string{"error": "version already exists"})
 			default:
 				fail("failed to store npm version", err)
 			}
@@ -629,7 +620,7 @@ func (h *NPMUploadHandler) handlePublish(w http.ResponseWriter, r *http.Request)
 		}))
 	}
 
-	writeJSONStatus(w, http.StatusCreated, map[string]any{
+	writeJSON(w, http.StatusCreated, map[string]any{
 		"ok":  true,
 		"id":  pub.Name,
 		"rev": "1-" + time.Now().UTC().Format("20060102150405"),
@@ -765,9 +756,9 @@ func guardNPMReleases(r *http.Request, repo *models.Repository, versions []*mode
 func (h *NPMUploadHandler) writeNPMRemoveError(w http.ResponseWriter, pkgName string, err error) {
 	switch {
 	case errors.Is(err, trash.ErrImmutableRelease):
-		writeJSONStatus(w, http.StatusConflict, map[string]string{"error": errNPMImmutableRelease})
+		writeJSON(w, http.StatusConflict, map[string]string{"error": errNPMImmutableRelease})
 	case errors.Is(err, database.ErrTrashNotFound):
-		writeJSONStatus(w, http.StatusNotFound, map[string]string{"error": "version not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "version not found"})
 	default:
 		h.log.Errorw("failed to delete npm versions", "pkg", pkgName, "error", err)
 		http.Error(w, "internal error", http.StatusInternalServerError)
@@ -910,7 +901,7 @@ func (h *NPMUploadHandler) handleRevPut(w http.ResponseWriter, r *http.Request, 
 		}
 
 		if !canUnpublish(repo, v) {
-			writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
 			return
 		}
 
@@ -971,7 +962,7 @@ func (h *NPMUploadHandler) handleRevPut(w http.ResponseWriter, r *http.Request, 
 		h.npmWorker.NotifyStale(pkg.ID)
 	}
 
-	writeJSONStatus(w, http.StatusOK, map[string]any{"ok": true, "id": pub.Name, "rev": "2-" + time.Now().UTC().Format("20060102150405")})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true, "id": pub.Name, "rev": "2-" + time.Now().UTC().Format("20060102150405")})
 }
 
 // handleUnpublish serves two DELETE forms:
@@ -1041,7 +1032,7 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 			}
 
 			if !canUnpublish(repo, v) {
-				writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
 				return
 			}
 
@@ -1062,7 +1053,7 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 	} else {
 		for _, v := range versions {
 			if !canUnpublish(repo, v) {
-				writeJSONStatus(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "cannot unpublish after 72h, use npm deprecate instead"})
 				return
 			}
 		}
@@ -1090,7 +1081,7 @@ func (h *NPMUploadHandler) handleUnpublish(w http.ResponseWriter, r *http.Reques
 		h.npmWorker.NotifyStale(pkg.ID)
 	}
 
-	writeJSONStatus(w, http.StatusOK, map[string]any{"ok": true})
+	writeJSON(w, http.StatusOK, map[string]any{"ok": true})
 }
 
 func (h *NPMUploadHandler) handlePutDistTag(w http.ResponseWriter, r *http.Request) {

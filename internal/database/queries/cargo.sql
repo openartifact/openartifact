@@ -14,9 +14,6 @@ WHERE cc.repository_id = sqlc.arg(repository_id) AND cc.deleted_at IS NULL AND l
 ORDER BY (cc.name = sqlc.arg(name)::text) DESC
 LIMIT 1;
 
--- name: DeleteCargoCrate :exec
-DELETE FROM cargo_crates WHERE id = $1 AND deleted_at IS NULL;
-
 -- name: ListCargoCrateVersions :many
 SELECT cc.id, cc.repository_id, cc.name, cc.version, cc.description, cc.homepage, cc.documentation, cc.repository, cc.license, cc.keywords, cc.categories, cc.authors, cc.readme, cc.metadata_json, b.blob_key, b.sha256 AS checksum, cc.yanked, cc.download_count, cc.created_at, cc.updated_at
 FROM cargo_crates cc

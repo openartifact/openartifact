@@ -276,27 +276,6 @@ func (m *MockDatabase) MarkRepoStale(ctx context.Context, repositoryID string) e
 	return nil
 }
 
-func (m *MockDatabase) CreateComponent(ctx context.Context, component *models.Component) error {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-
-	if component.SHA256 != "" {
-		for _, c := range m.components {
-			if c.SHA256 == component.SHA256 && c.RepositoryID == component.RepositoryID {
-				return nil
-			}
-		}
-	}
-
-	if component.ID == "" {
-		component.ID = fmt.Sprintf("mock-%d", time.Now().UnixNano())
-	}
-
-	m.components[component.ID] = component
-
-	return nil
-}
-
 func (m *MockDatabase) ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -310,10 +289,6 @@ func (m *MockDatabase) ArtifactExists(ctx context.Context, sha256 string, reposi
 	return false, nil
 }
 
-func (m *MockDatabase) ArtifactExistsBySHA256(_ context.Context, _ string) (string, bool, error) {
-	return "", false, nil
-}
-
 func (m *MockDatabase) CreatePackageDelta(_ context.Context, _ *models.PackageDelta) error {
 	return nil
 }
@@ -324,10 +299,6 @@ func (m *MockDatabase) GetPackageDelta(_ context.Context, _, _, _ string) (*mode
 
 func (m *MockDatabase) ListPackageDeltas(_ context.Context, _, _ string) ([]*models.PackageDelta, error) {
 	return nil, nil
-}
-
-func (m *MockDatabase) DeletePackageDelta(_ context.Context, _ string) error {
-	return nil
 }
 
 func (m *MockDatabase) GetComponentByID(ctx context.Context, id string) (*models.Component, error) {
@@ -417,16 +388,6 @@ func (m *MockDatabase) CreateDebianDistribution(ctx context.Context, dist *model
 	m.debianDistributions[dist.ID] = dist
 
 	return nil
-}
-
-func (m *MockDatabase) GetDebianDistribution(ctx context.Context, repoID string, name string) (*models.DebianDistribution, error) {
-	for _, dist := range m.debianDistributions {
-		if dist.RepositoryID == repoID && dist.Name == name {
-			return dist, nil
-		}
-	}
-
-	return nil, nil
 }
 
 func (m *MockDatabase) GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error) {
@@ -1093,10 +1054,6 @@ func (m *MockDatabase) GetOrCreatePermissionAssignment(ctx context.Context, targ
 	return nil
 }
 
-func (m *MockDatabase) SyncSSOPermissionsForGroup(ctx context.Context, groupID string, targetIDs []string) error {
-	return nil
-}
-
 func (m *MockDatabase) CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
 	if provider.ID == "" {
 		provider.ID = fmt.Sprintf("sso-%d", len(m.ssoProviders)+1)
@@ -1118,10 +1075,6 @@ func (m *MockDatabase) CreateSSOProvider(ctx context.Context, provider *models.S
 
 func (m *MockDatabase) GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error) {
 	return m.ssoProvidersBySlug[slug], nil
-}
-
-func (m *MockDatabase) GetSSOProviderByID(ctx context.Context, id string) (*models.SSOProvider, error) {
-	return m.ssoProviders[id], nil
 }
 
 func (m *MockDatabase) UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
@@ -1306,10 +1259,6 @@ func (m *MockDatabase) ListReleaseBundles(ctx context.Context, nameFilter, state
 	return nil, 0, nil
 }
 
-func (m *MockDatabase) UpdateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error {
-	return nil
-}
-
 func (m *MockDatabase) InsertAuditLog(ctx context.Context, event *models.AuditLog) error {
 	m.mu.Lock()
 	defer m.mu.Unlock()
@@ -1441,9 +1390,6 @@ func (m *MockDatabase) ListDockerTags(ctx context.Context, repoID, image, last s
 func (m *MockDatabase) AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error {
 	return nil
 }
-func (m *MockDatabase) RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error {
-	return nil
-}
 func (m *MockDatabase) ListGroupMembers(ctx context.Context, groupRepoID string) ([]*models.RepositoryGroupMember, error) {
 	return nil, nil
 }
@@ -1473,16 +1419,10 @@ func (m *MockDatabase) DeleteHelmChart(ctx context.Context, repoID, name, versio
 func (m *MockDatabase) ListHelmCharts(ctx context.Context, repoID string) ([]*models.HelmChart, error) {
 	return nil, nil
 }
-func (m *MockDatabase) ListHelmChartVersions(ctx context.Context, repoID, name string) ([]*models.HelmChart, error) {
-	return nil, nil
-}
 
 // PyPI methods
 func (m *MockDatabase) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error {
 	return nil
-}
-func (m *MockDatabase) GetPyPIPackage(ctx context.Context, repoID, name, version, filename string) (*models.PyPIPackage, error) {
-	return nil, nil
 }
 func (m *MockDatabase) DeletePyPIPackage(ctx context.Context, repoID, name, version, filename string) error {
 	return nil
@@ -1521,9 +1461,6 @@ func (m *MockDatabase) IncrementNuGetDownloadCount(ctx context.Context, repoID, 
 func (m *MockDatabase) CreateGoModule(ctx context.Context, mod *models.GoModule) error { return nil }
 func (m *MockDatabase) GetGoModule(ctx context.Context, repoID, modulePath, version string) (*models.GoModule, error) {
 	return nil, nil
-}
-func (m *MockDatabase) DeleteGoModule(ctx context.Context, repoID, modulePath, version string) error {
-	return nil
 }
 func (m *MockDatabase) ListGoModuleVersions(ctx context.Context, repoID, modulePath string) ([]*models.GoModule, error) {
 	return nil, nil
@@ -1593,7 +1530,6 @@ func (m *MockDatabase) CreateCargoCrate(ctx context.Context, crate *models.Cargo
 func (m *MockDatabase) GetCargoCrate(ctx context.Context, repoID, name, version string) (*models.CargoCrate, error) {
 	return nil, nil
 }
-func (m *MockDatabase) DeleteCargoCrate(ctx context.Context, id string) error { return nil }
 func (m *MockDatabase) ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
 	return nil, nil
 }
@@ -1612,7 +1548,6 @@ func (m *MockDatabase) CreateRubyGem(ctx context.Context, gem *models.RubyGem) e
 func (m *MockDatabase) GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error) {
 	return nil, nil
 }
-func (m *MockDatabase) DeleteRubyGem(ctx context.Context, id string) error { return nil }
 func (m *MockDatabase) ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error) {
 	return nil, nil
 }
@@ -1642,13 +1577,9 @@ func (m *MockDatabase) ListRawArtifacts(ctx context.Context, repoID, prefix stri
 func (m *MockDatabase) CreateSBOMReport(ctx context.Context, report *models.SBOMReport) error {
 	return nil
 }
-func (m *MockDatabase) GetSBOMReport(ctx context.Context, repoID, artifactID, format, specVersion string) (*models.SBOMReport, error) {
-	return nil, nil
-}
 func (m *MockDatabase) ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error) {
 	return nil, nil
 }
-func (m *MockDatabase) DeleteSBOMReport(ctx context.Context, id string) error { return nil }
 
 // License compliance methods
 func (m *MockDatabase) CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error {
@@ -1656,9 +1587,6 @@ func (m *MockDatabase) CreateLicenseScanResult(ctx context.Context, result *mode
 }
 func (m *MockDatabase) GetLicenseScanResult(ctx context.Context, repoID, artifactID string) (*models.LicenseScanResult, error) {
 	return nil, nil
-}
-func (m *MockDatabase) UpdateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error {
-	return nil
 }
 func (m *MockDatabase) ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error) {
 	return nil, nil
@@ -1683,9 +1611,6 @@ func (m *MockDatabase) CreateSecretScanResult(ctx context.Context, result *model
 }
 func (m *MockDatabase) GetSecretScanResult(ctx context.Context, repoID, artifactID string) (*models.SecretScanResult, error) {
 	return nil, nil
-}
-func (m *MockDatabase) UpdateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error {
-	return nil
 }
 func (m *MockDatabase) ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error) {
 	return nil, nil
@@ -1716,9 +1641,6 @@ func (m *MockDatabase) GetOrCreateStorageQuota(ctx context.Context, repoID strin
 	return nil, nil
 }
 func (m *MockDatabase) UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error {
-	return nil
-}
-func (m *MockDatabase) IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	return nil
 }
 func (m *MockDatabase) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
@@ -1764,13 +1686,6 @@ func (m *MockDatabase) quotaState() (int64, int, int, int) {
 	return m.quotaReserved, m.quotaArtifacts, m.quotaReserveCalls, m.quotaReleaseCalls
 }
 
-// Artifact properties methods
-func (m *MockDatabase) SetArtifactProperty(ctx context.Context, repoID, artifactID, key, value string) error {
-	return nil
-}
-func (m *MockDatabase) GetArtifactProperty(ctx context.Context, repoID, artifactID, key string) (string, error) {
-	return "", nil
-}
 func (m *MockDatabase) DeleteArtifactProperty(ctx context.Context, repoID, artifactID, key string) error {
 	return nil
 }
@@ -2165,34 +2080,6 @@ func TestMarkRepoStale(t *testing.T) {
 	}
 }
 
-func TestCreateComponent(t *testing.T) {
-	ctx := context.Background()
-	mockDB := newMockDatabase()
-
-	component := &models.Component{
-		RepositoryID: "repo-1",
-		ArtifactID:   "artifact-1",
-		Name:         "test-package",
-		Version:      "1.0.0",
-		Release:      "1",
-		Arch:         "x86_64",
-		Filename:     "test-package-1.0.0-1.x86_64.rpm",
-	}
-
-	err := mockDB.CreateComponent(ctx, component)
-	if err != nil {
-		t.Fatalf("unexpected error: %v", err)
-	}
-
-	if component.ID == "" {
-		t.Fatal("expected ID to be generated")
-	}
-
-	if _, ok := mockDB.components[component.ID]; !ok {
-		t.Fatal("expected component to be stored")
-	}
-}
-
 func TestGetComponentByFilename_Found(t *testing.T) {
 	ctx := context.Background()
 	mockDB := newMockDatabase()
@@ -2569,12 +2456,4 @@ func (m *MockDatabase) GetAIAnalysis(_ context.Context, _, _ string) (*models.AI
 
 func (m *MockDatabase) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
-}
-
-func (m *MockDatabase) DeleteAIAnalysis(_ context.Context, _, _ string) error {
-	return nil
-}
-
-func (m *MockDatabase) ListPendingAIAnalyses(_ context.Context, _ int) ([]*models.AIAnalysis, error) {
-	return nil, nil
 }

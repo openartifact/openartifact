@@ -18,11 +18,11 @@ package importmeta
 
 import (
 	"context"
-	"encoding/json"
 	"net/http"
 	"time"
 
 	"github.com/openartifact/openartifact/internal/auth"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/middleware"
 )
 
@@ -85,7 +85,7 @@ func Middleware(authz Authorizer) func(http.Handler) http.Handler {
 
 			manage, err := authz.Evaluate(r.Context(), *p, "", "", "manage")
 			if err != nil {
-				writeError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "auth evaluation failed")
+				httpx.WriteError(w, http.StatusInternalServerError, "INTERNAL_ERROR", "auth evaluation failed")
 				return
 			}
 
@@ -96,23 +96,11 @@ func Middleware(authz Authorizer) func(http.Handler) http.Handler {
 
 			t, ok := parse(value, time.Now())
 			if !ok {
-				writeError(w, http.StatusBadRequest, "INVALID_INPUT", HeaderCreatedAt+" must be an RFC 3339 timestamp that is not in the future")
+				httpx.WriteError(w, http.StatusBadRequest, "INVALID_INPUT", HeaderCreatedAt+" must be an RFC 3339 timestamp that is not in the future")
 				return
 			}
 
 			next.ServeHTTP(w, r.WithContext(WithCreatedAt(r.Context(), t)))
 		})
 	}
-}
-
-func writeError(w http.ResponseWriter, status int, code, message string) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	body, err := json.Marshal(map[string]string{"error": message, "code": code})
-	if err != nil {
-		return
-	}
-
-	_, _ = w.Write(body)
 }

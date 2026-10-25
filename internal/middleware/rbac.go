@@ -7,7 +7,6 @@ package middleware
 import (
 	"context"
 	"crypto/subtle"
-	"encoding/json"
 	"net/http"
 	"net/url"
 	"slices"
@@ -15,6 +14,7 @@ import (
 
 	"github.com/openartifact/openartifact/internal/auth"
 	"github.com/openartifact/openartifact/internal/database"
+	"github.com/openartifact/openartifact/internal/httpx"
 	"github.com/openartifact/openartifact/internal/ocipath"
 	"github.com/openartifact/openartifact/pkg/logger"
 )
@@ -94,7 +94,7 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 			// and handler will serve: refuse dot-dot segments and encoded
 			// separators in the segments that select it.
 			if hasAmbiguousPath(r.URL) {
-				writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_path"})
+				httpx.WriteJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid_path"})
 
 				return
 			}
@@ -113,7 +113,7 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 			}
 
 			if passwordChangeBlocked(r, principal) {
-				writeJSON(w, http.StatusForbidden, map[string]string{
+				httpx.WriteJSON(w, http.StatusForbidden, map[string]string{
 					"error":      "password_change_required",
 					"change_url": "/api/v1/auth/change-password",
 				})
@@ -156,7 +156,7 @@ func RBACMiddleware(cfg RBACConfig, db database.Database, evaluator *auth.Evalua
 					"path", r.URL.Path,
 					"method", r.Method,
 				)
-				writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
+				httpx.WriteJSON(w, http.StatusInternalServerError, map[string]string{"error": "auth_evaluation_failed"})
 
 				return
 			}
@@ -219,7 +219,7 @@ func writeDelegatedHidden(w http.ResponseWriter, r *http.Request, evaluator *aut
 		return false
 	}
 
-	writeJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "code": "not_found"})
+	httpx.WriteJSON(w, http.StatusNotFound, map[string]string{"error": "not_found", "code": "not_found"})
 
 	return true
 }
@@ -361,12 +361,12 @@ func writeAccessDenied(w http.ResponseWriter, r *http.Request, cfg RBACConfig, d
 			}
 		}
 
-		writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+		httpx.WriteJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
 
 		return
 	}
 
-	writeJSON(w, http.StatusForbidden, map[string]any{
+	httpx.WriteJSON(w, http.StatusForbidden, map[string]any{
 		"error":  "forbidden",
 		"action": scope.action,
 		"path":   scope.artifactPath,
@@ -946,13 +946,4 @@ func extractRepoAndPath(urlPath string) (string, string) {
 	}
 
 	return before, sub
-}
-
-func writeJSON(w http.ResponseWriter, status int, body any) {
-	w.Header().Set("Content-Type", "application/json")
-	w.WriteHeader(status)
-
-	if encErr := json.NewEncoder(w).Encode(body); encErr != nil {
-		_ = encErr // response header already written
-	}
 }

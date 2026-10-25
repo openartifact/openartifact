@@ -5,7 +5,9 @@
 package helm
 
 import (
+	"archive/tar"
 	"bytes"
+	"compress/gzip"
 	"net/http"
 	"testing"
 
@@ -13,6 +15,28 @@ import (
 	"github.com/openartifact/openartifact/internal/format/formattest"
 	"github.com/openartifact/openartifact/internal/licensepolicy/policytest"
 )
+
+func createHelmChart(t *testing.T, chartYAML string) []byte {
+	t.Helper()
+
+	var buf bytes.Buffer
+
+	gw := gzip.NewWriter(&buf)
+	tw := tar.NewWriter(gw)
+	data := []byte(chartYAML)
+	_ = tw.WriteHeader(&tar.Header{Name: "mychart/Chart.yaml", Mode: 0644, Size: int64(len(data))})
+	_, _ = tw.Write(data)
+	_ = tw.Close()
+	_ = gw.Close()
+
+	return buf.Bytes()
+}
+
+const sampleChartYAML = `apiVersion: v2
+name: mychart
+version: 1.0.0
+description: A test chart
+`
 
 const gplChartYAML = sampleChartYAML + `annotations:
   artifacthub.io/license: GPL-3.0

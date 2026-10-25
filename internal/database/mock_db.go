@@ -74,9 +74,6 @@ func (m *BaseMockDB) CreateRPMRepo(ctx context.Context, repo *models.RPMRepo) er
 func (m *BaseMockDB) MarkRepoStale(ctx context.Context, repositoryID string) error {
 	return errNotImpl("MarkRepoStale")
 }
-func (m *BaseMockDB) CreateComponent(ctx context.Context, component *models.Component) error {
-	return errNotImpl("CreateComponent")
-}
 func (m *BaseMockDB) CreateDebPackage(ctx context.Context, pkg *models.Component, distID, compID string) error {
 	return errNotImpl("CreateDebPackage")
 }
@@ -116,9 +113,6 @@ func (m *BaseMockDB) UpsertRepoMetadata(ctx context.Context, meta *models.RepoMe
 }
 func (m *BaseMockDB) CreateDebianDistribution(ctx context.Context, dist *models.DebianDistribution) error {
 	return errNotImpl("CreateDebianDistribution")
-}
-func (m *BaseMockDB) GetDebianDistribution(ctx context.Context, repoID string, name string) (*models.DebianDistribution, error) {
-	return nil, errNotImpl("GetDebianDistribution")
 }
 func (m *BaseMockDB) GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error) {
 	return nil, errNotImpl("GetDebianDistributionsByRepo")
@@ -176,9 +170,6 @@ func (m *BaseMockDB) UpdateRpmPackageExtra(ctx context.Context, repoID, sha256 s
 }
 func (m *BaseMockDB) GetRpmPackageByID(ctx context.Context, id string) (*models.RpmPackage, error) {
 	return nil, errNotImpl("GetRpmPackageByID")
-}
-func (m *BaseMockDB) ListRpmPackagesByRepo(ctx context.Context, repoID string) ([]*models.RpmPackage, error) {
-	return nil, errNotImpl("ListRpmPackagesByRepo")
 }
 func (m *BaseMockDB) CreateMavenArtifact(ctx context.Context, a *models.MavenArtifact) error {
 	return errNotImpl("CreateMavenArtifact")
@@ -315,9 +306,6 @@ func (m *BaseMockDB) ListDockerManifestsBySubject(ctx context.Context, repoID, i
 func (m *BaseMockDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error {
 	return errNotImpl("AddGroupMember")
 }
-func (m *BaseMockDB) RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error {
-	return errNotImpl("RemoveGroupMember")
-}
 func (m *BaseMockDB) ListGroupsOfMember(ctx context.Context, memberRepoID string) ([]*models.Repository, error) {
 	return nil, errNotImpl("ListGroupsOfMember")
 }
@@ -351,14 +339,8 @@ func (m *BaseMockDB) DeleteHelmChart(ctx context.Context, repoID, name, version 
 func (m *BaseMockDB) ListHelmCharts(ctx context.Context, repoID string) ([]*models.HelmChart, error) {
 	return nil, errNotImpl("ListHelmCharts")
 }
-func (m *BaseMockDB) ListHelmChartVersions(ctx context.Context, repoID, name string) ([]*models.HelmChart, error) {
-	return nil, errNotImpl("ListHelmChartVersions")
-}
 func (m *BaseMockDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error {
 	return errNotImpl("CreatePyPIPackage")
-}
-func (m *BaseMockDB) GetPyPIPackage(ctx context.Context, repoID, name, version, filename string) (*models.PyPIPackage, error) {
-	return nil, errNotImpl("GetPyPIPackage")
 }
 func (m *BaseMockDB) GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error) {
 	return nil, errNotImpl("GetPyPIPackageByFilename")
@@ -558,17 +540,11 @@ func (m *BaseMockDB) UpsertDeclarativeObjects(ctx context.Context, items []model
 func (m *BaseMockDB) DeleteDeclarativeObject(ctx context.Context, kind, name string) (bool, error) {
 	return false, errNotImpl("DeleteDeclarativeObject")
 }
-func (m *BaseMockDB) SyncSSOPermissionsForGroup(ctx context.Context, groupID string, targetIDs []string) error {
-	return errNotImpl("SyncSSOPermissionsForGroup")
-}
 func (m *BaseMockDB) CreateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
 	return errNotImpl("CreateSSOProvider")
 }
 func (m *BaseMockDB) GetSSOProviderBySlug(ctx context.Context, slug string) (*models.SSOProvider, error) {
 	return nil, errNotImpl("GetSSOProviderBySlug")
-}
-func (m *BaseMockDB) GetSSOProviderByID(ctx context.Context, id string) (*models.SSOProvider, error) {
-	return nil, errNotImpl("GetSSOProviderByID")
 }
 func (m *BaseMockDB) UpdateSSOProvider(ctx context.Context, provider *models.SSOProvider) error {
 	return errNotImpl("UpdateSSOProvider")
@@ -603,9 +579,6 @@ func (m *BaseMockDB) GetOrCreateGroup(ctx context.Context, name string) (*models
 func (m *BaseMockDB) ArtifactExists(ctx context.Context, sha256 string, repositoryID string) (bool, error) {
 	return false, errNotImpl("ArtifactExists")
 }
-func (m *BaseMockDB) ArtifactExistsBySHA256(ctx context.Context, sha256 string) (string, bool, error) {
-	return "", false, errNotImpl("ArtifactExistsBySHA256")
-}
 func (m *BaseMockDB) BlobReferenceCount(ctx context.Context, sha256 string) (int, error) {
 	return 0, nil
 }
@@ -617,9 +590,6 @@ func (m *BaseMockDB) CreateGoModule(ctx context.Context, mod *models.GoModule) e
 }
 func (m *BaseMockDB) GetGoModule(ctx context.Context, repoID, modulePath, version string) (*models.GoModule, error) {
 	return nil, errNotImpl("GetGoModule")
-}
-func (m *BaseMockDB) DeleteGoModule(ctx context.Context, repoID, modulePath, version string) error {
-	return errNotImpl("DeleteGoModule")
 }
 func (m *BaseMockDB) ListGoModuleVersions(ctx context.Context, repoID, modulePath string) ([]*models.GoModule, error) {
 	return nil, errNotImpl("ListGoModuleVersions")
@@ -711,9 +681,6 @@ func (m *BaseMockDB) CreateCargoCrate(ctx context.Context, crate *models.CargoCr
 func (m *BaseMockDB) GetCargoCrate(ctx context.Context, repoID, name, version string) (*models.CargoCrate, error) {
 	return nil, errNotImpl("GetCargoCrate")
 }
-func (m *BaseMockDB) DeleteCargoCrate(ctx context.Context, id string) error {
-	return errNotImpl("DeleteCargoCrate")
-}
 func (m *BaseMockDB) ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
 	return nil, errNotImpl("ListCargoCrateVersions")
 }
@@ -734,9 +701,6 @@ func (m *BaseMockDB) CreateRubyGem(ctx context.Context, gem *models.RubyGem) err
 }
 func (m *BaseMockDB) GetRubyGem(ctx context.Context, repoID, name, version, platform string) (*models.RubyGem, error) {
 	return nil, errNotImpl("GetRubyGem")
-}
-func (m *BaseMockDB) DeleteRubyGem(ctx context.Context, id string) error {
-	return errNotImpl("DeleteRubyGem")
 }
 func (m *BaseMockDB) ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error) {
 	return nil, errNotImpl("ListRubyGems")
@@ -798,23 +762,14 @@ func (m *BaseMockDB) ListRawArtifacts(ctx context.Context, repoID, prefix string
 func (m *BaseMockDB) CreateSBOMReport(ctx context.Context, report *models.SBOMReport) error {
 	return errNotImpl("CreateSBOMReport")
 }
-func (m *BaseMockDB) GetSBOMReport(ctx context.Context, repoID, artifactID, format, specVersion string) (*models.SBOMReport, error) {
-	return nil, errNotImpl("GetSBOMReport")
-}
 func (m *BaseMockDB) ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error) {
 	return nil, errNotImpl("ListSBOMReports")
-}
-func (m *BaseMockDB) DeleteSBOMReport(ctx context.Context, id string) error {
-	return errNotImpl("DeleteSBOMReport")
 }
 func (m *BaseMockDB) CreateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error {
 	return errNotImpl("CreateLicenseScanResult")
 }
 func (m *BaseMockDB) GetLicenseScanResult(ctx context.Context, repoID, artifactID string) (*models.LicenseScanResult, error) {
 	return nil, errNotImpl("GetLicenseScanResult")
-}
-func (m *BaseMockDB) UpdateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error {
-	return errNotImpl("UpdateLicenseScanResult")
 }
 func (m *BaseMockDB) ListLicenseScanResults(ctx context.Context, repoID string) ([]*models.LicenseScanResult, error) {
 	return nil, errNotImpl("ListLicenseScanResults")
@@ -844,9 +799,6 @@ func (m *BaseMockDB) CreateSecretScanResult(ctx context.Context, result *models.
 func (m *BaseMockDB) GetSecretScanResult(ctx context.Context, repoID, artifactID string) (*models.SecretScanResult, error) {
 	return nil, errNotImpl("GetSecretScanResult")
 }
-func (m *BaseMockDB) UpdateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error {
-	return errNotImpl("UpdateSecretScanResult")
-}
 func (m *BaseMockDB) ListSecretScanResults(ctx context.Context, repoID string, flaggedOnly bool) ([]*models.SecretScanResult, error) {
 	return nil, errNotImpl("ListSecretScanResults")
 }
@@ -873,9 +825,6 @@ func (m *BaseMockDB) GetOrCreateStorageQuota(ctx context.Context, repoID string)
 }
 func (m *BaseMockDB) UpdateStorageQuota(ctx context.Context, quota *models.StorageQuota) error {
 	return errNotImpl("UpdateStorageQuota")
-}
-func (m *BaseMockDB) IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
-	return errNotImpl("IncrementStorageUsage")
 }
 func (m *BaseMockDB) DecrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
 	return errNotImpl("DecrementStorageUsage")
@@ -943,12 +892,6 @@ func (m *BaseMockDB) DeleteStorageBackend(ctx context.Context, id string) error 
 func (m *BaseMockDB) UpdateStorageBackendStatus(ctx context.Context, id, status string, message *string) error {
 	return errNotImpl("UpdateStorageBackendStatus")
 }
-func (m *BaseMockDB) SetArtifactProperty(ctx context.Context, repoID, artifactID, key, value string) error {
-	return errNotImpl("SetArtifactProperty")
-}
-func (m *BaseMockDB) GetArtifactProperty(ctx context.Context, repoID, artifactID, key string) (string, error) {
-	return "", errNotImpl("GetArtifactProperty")
-}
 func (m *BaseMockDB) DeleteArtifactProperty(ctx context.Context, repoID, artifactID, key string) error {
 	return errNotImpl("DeleteArtifactProperty")
 }
@@ -966,9 +909,6 @@ func (m *BaseMockDB) GetPackageDelta(ctx context.Context, repoID, fromSHA256, to
 }
 func (m *BaseMockDB) ListPackageDeltas(ctx context.Context, repoID, toSHA256 string) ([]*models.PackageDelta, error) {
 	return nil, errNotImpl("ListPackageDeltas")
-}
-func (m *BaseMockDB) DeletePackageDelta(ctx context.Context, id string) error {
-	return errNotImpl("DeletePackageDelta")
 }
 func (m *BaseMockDB) CreateProject(ctx context.Context, project *models.Project) error {
 	return errNotImpl("CreateProject")
@@ -1159,9 +1099,6 @@ func (m *BaseMockDB) GetBundleItem(ctx context.Context, bundleID, sha256 string)
 func (m *BaseMockDB) CreateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error {
 	return errNotImpl("CreateBundlePromotion")
 }
-func (m *BaseMockDB) UpdateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error {
-	return errNotImpl("UpdateBundlePromotion")
-}
 func (m *BaseMockDB) ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error) {
 	return nil, errNotImpl("ListBundlePromotions")
 }
@@ -1249,13 +1186,6 @@ func (m *BaseMockDB) GetAIAnalysis(ctx context.Context, repoID, artifactID strin
 func (m *BaseMockDB) ListAIAnalyses(ctx context.Context, repoID string, status string, licenseReviewOnly bool, limit, offset int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, errNotImpl("ListAIAnalyses")
 }
-func (m *BaseMockDB) DeleteAIAnalysis(ctx context.Context, repoID, artifactID string) error {
-	return errNotImpl("DeleteAIAnalysis")
-}
-func (m *BaseMockDB) ListPendingAIAnalyses(ctx context.Context, limit int) ([]*models.AIAnalysis, error) {
-	return nil, errNotImpl("ListPendingAIAnalyses")
-}
-
 func (m *BaseMockDB) GetProjectQuota(ctx context.Context, projectID string) (*models.ProjectQuota, error) {
 	return nil, errNotImpl("GetProjectQuota")
 }

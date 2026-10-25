@@ -21,17 +21,6 @@ func (q *Queries) CountRepositories(ctx context.Context) (int64, error) {
 	return count, err
 }
 
-const countRepositoriesByFormat = `-- name: CountRepositoriesByFormat :one
-SELECT COUNT(*) FROM repositories WHERE format = $1 AND deleted_at IS NULL
-`
-
-func (q *Queries) CountRepositoriesByFormat(ctx context.Context, format string) (int64, error) {
-	row := q.db.QueryRow(ctx, countRepositoriesByFormat, format)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
-}
-
 const createRepository = `-- name: CreateRepository :one
 INSERT INTO repositories (id, name, format, description, repo_type, upstream_url, upstream_username, upstream_password_enc, cache_ttl_seconds, negative_cache_ttl_seconds, blocked, project_id)
 VALUES (gen_random_uuid(), $1, $2, $3, $4, NULLIF($5, ''), NULLIF($6, ''), NULLIF($7, ''), $8, $9, $10, $11)
@@ -255,86 +244,6 @@ func (q *Queries) ListRepositories(ctx context.Context, arg ListRepositoriesPara
 	items := []ListRepositoriesRow{}
 	for rows.Next() {
 		var i ListRepositoriesRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.Name,
-			&i.Format,
-			&i.Description,
-			&i.Public,
-			&i.AllowFullUnpublish,
-			&i.RepoType,
-			&i.UpstreamUrl,
-			&i.UpstreamUsername,
-			&i.UpstreamPasswordEnc,
-			&i.CacheTtlSeconds,
-			&i.NegativeCacheTtlSeconds,
-			&i.Blocked,
-			&i.ProjectID,
-			&i.CreatedAt,
-			&i.UpdatedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
-}
-
-const listRepositoriesByFormat = `-- name: ListRepositoriesByFormat :many
-SELECT id, name, format, description,
-       COALESCE(public, false) AS public,
-       COALESCE(allow_full_unpublish, false) AS allow_full_unpublish,
-       COALESCE(repo_type, 'hosted') AS repo_type,
-       COALESCE(upstream_url, '') AS upstream_url,
-       COALESCE(upstream_username, '') AS upstream_username,
-       COALESCE(upstream_password_enc, '') AS upstream_password_enc,
-       COALESCE(cache_ttl_seconds, 3600) AS cache_ttl_seconds,
-       COALESCE(negative_cache_ttl_seconds, 60) AS negative_cache_ttl_seconds,
-       COALESCE(blocked, false) AS blocked,
-       project_id, created_at, updated_at
-FROM repositories
-WHERE format = $1 AND deleted_at IS NULL
-ORDER BY created_at DESC, id
-LIMIT $2 OFFSET $3
-`
-
-type ListRepositoriesByFormatParams struct {
-	Format string `db:"format" json:"format"`
-	Limit  int32  `db:"limit" json:"limit"`
-	Offset int32  `db:"offset" json:"offset"`
-}
-
-type ListRepositoriesByFormatRow struct {
-	ID                      string    `db:"id" json:"id"`
-	Name                    string    `db:"name" json:"name"`
-	Format                  string    `db:"format" json:"format"`
-	Description             *string   `db:"description" json:"description"`
-	Public                  bool      `db:"public" json:"public"`
-	AllowFullUnpublish      bool      `db:"allow_full_unpublish" json:"allow_full_unpublish"`
-	RepoType                string    `db:"repo_type" json:"repo_type"`
-	UpstreamUrl             string    `db:"upstream_url" json:"upstream_url"`
-	UpstreamUsername        string    `db:"upstream_username" json:"upstream_username"`
-	UpstreamPasswordEnc     string    `db:"upstream_password_enc" json:"upstream_password_enc"`
-	CacheTtlSeconds         int32     `db:"cache_ttl_seconds" json:"cache_ttl_seconds"`
-	NegativeCacheTtlSeconds int32     `db:"negative_cache_ttl_seconds" json:"negative_cache_ttl_seconds"`
-	Blocked                 bool      `db:"blocked" json:"blocked"`
-	ProjectID               string    `db:"project_id" json:"project_id"`
-	CreatedAt               time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt               time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) ListRepositoriesByFormat(ctx context.Context, arg ListRepositoriesByFormatParams) ([]ListRepositoriesByFormatRow, error) {
-	rows, err := q.db.Query(ctx, listRepositoriesByFormat, arg.Format, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListRepositoriesByFormatRow{}
-	for rows.Next() {
-		var i ListRepositoriesByFormatRow
 		if err := rows.Scan(
 			&i.ID,
 			&i.Name,

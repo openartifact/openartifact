@@ -102,8 +102,7 @@ func isGoModEntry(name string) bool {
 }
 
 // FuzzParseModuleZip feeds arbitrary bytes to the module zip parser behind
-// upload, GoModHandler.Validate/Parse and the repair scan. It checks that the
-// three entry points agree and that whatever is accepted is a root go.mod
+// upload and the repair scan. It checks that whatever is accepted is a root go.mod
 // within the decompression cap whose module line is what was reported.
 func FuzzParseModuleZip(f *testing.F) {
 	const goMod = "module example.com/m\n\ngo 1.21\n"
@@ -136,21 +135,7 @@ func FuzzParseModuleZip(f *testing.F) {
 			return
 		}
 
-		ctx := context.Background()
-		h := NewGoModHandler()
-
-		verr := h.Validate(ctx, bytes.NewReader(data))
-
-		meta, perr := h.Parse(ctx, bytes.NewReader(data))
-		if (err == nil) != (verr == nil) || (err == nil) != (perr == nil) {
-			t.Fatalf("entry points disagree: parseModuleZip=%v Validate=%v Parse=%v", err, verr, perr)
-		}
-
 		checkRepairAnalysis(t, data, mf)
-
-		if err == nil && (meta["module_path"] != mf.modulePath || meta["go_mod"] != mf.content || meta["go_mod_path"] != mf.entry) {
-			t.Fatalf("Parse metadata %v differs from the parsed file %+v", meta, mf)
-		}
 	})
 }
 

@@ -9,9 +9,6 @@ FROM rubygems_gems rg
 JOIN blobs b ON b.id = rg.blob_id
 WHERE rg.repository_id = $1 AND rg.deleted_at IS NULL AND rg.name = $2 AND rg.version = $3 AND rg.platform = $4;
 
--- name: DeleteRubyGem :exec
-DELETE FROM rubygems_gems WHERE id = $1 AND deleted_at IS NULL;
-
 -- name: ListRubyGems :many
 SELECT rg.id, rg.repository_id, rg.name, rg.version, rg.platform, rg.description, rg.summary, rg.homepage, rg.authors, rg.licenses, rg.dependencies, rg.metadata_json, b.blob_key, b.sha256 AS checksum_sha256, rg.yanked, rg.download_count, rg.size, rg.created_at, rg.updated_at
 FROM rubygems_gems rg

@@ -98,3 +98,8 @@ func TestFilterRequiresMatchesCreaterepoC(t *testing.T) {
 		t.Errorf("filterRequires = %v, want %v", got, want)
 	}
 }
+
+// filterRequires runs a fresh requiresFilter over pkg.
+func filterRequires(pkg *pkgrpm.Package) []pkgrpm.Dependency {
+	return newRequiresFilter().filter(pkg)
+}

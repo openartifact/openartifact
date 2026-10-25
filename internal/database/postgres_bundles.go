@@ -404,15 +404,6 @@ func (p *PostgresDB) CreateBundlePromotion(ctx context.Context, pr *models.Bundl
 	).Scan(&pr.ID)
 }
 
-func (p *PostgresDB) UpdateBundlePromotion(ctx context.Context, pr *models.BundlePromotion) error {
-	_, err := p.db.ExecContext(ctx,
-		`UPDATE bundle_promotions SET status=$1, error_message=$2, completed_at=$3 WHERE id=$4`,
-		pr.Status, pr.ErrorMessage, pr.CompletedAt, pr.ID,
-	)
-
-	return err
-}
-
 func (p *PostgresDB) ListBundlePromotions(ctx context.Context, bundleID string) ([]*models.BundlePromotion, error) {
 	rows, err := p.db.QueryContext(ctx,
 		`SELECT bp.id, bp.bundle_id, bp.from_stage, bp.to_stage, bp.target_repo_id, bp.status, COALESCE(u.username,''),

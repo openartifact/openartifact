@@ -3,12 +3,6 @@ INSERT INTO pypi_packages (repository_id, name, version, filename, package_type,
 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, COALESCE(sqlc.narg(created_at)::timestamptz, NOW()))
 RETURNING id, created_at, updated_at;
 
--- name: GetPyPIPackage :one
-SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at
-FROM pypi_packages pp
-JOIN blobs b ON b.id = pp.blob_id
-WHERE pp.repository_id = $1 AND pp.deleted_at IS NULL AND pp.name = $2 AND pp.version = $3 AND pp.filename = $4;
-
 -- name: GetPyPIPackagesByFilename :many
 -- At most two rows: enough to tell a unique file from an ambiguous filename.
 SELECT pp.id, pp.repository_id, pp.name, pp.version, pp.filename, pp.package_type, pp.python_version, pp.requires_python, pp.summary, pp.author, pp.author_email, pp.license, pp.keywords, pp.classifiers, b.blob_key, b.sha256 AS sha256_digest, b.size_bytes, pp.created_at, pp.updated_at

@@ -69,42 +69,6 @@ func benchNPMTarball(b *testing.B, size int) []byte {
 	return buf.Bytes()
 }
 
-func BenchmarkParseTarball(b *testing.B) {
-	for _, size := range []int{4 << 10, 1 << 20, 16 << 20} {
-		data := benchNPMTarball(b, size)
-
-		b.Run(fmt.Sprintf("payload=%dKiB", size>>10), func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(len(data)))
-
-			for b.Loop() {
-				if _, _, _, err := ParseTarball(bytes.NewReader(data)); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
-// BenchmarkParseTarballBuffered runs the previous buffer-everything
-// implementation (test reference) for comparison with BenchmarkParseTarball.
-func BenchmarkParseTarballBuffered(b *testing.B) {
-	for _, size := range []int{4 << 10, 1 << 20, 16 << 20} {
-		data := benchNPMTarball(b, size)
-
-		b.Run(fmt.Sprintf("payload=%dKiB", size>>10), func(b *testing.B) {
-			b.ReportAllocs()
-			b.SetBytes(int64(len(data)))
-
-			for b.Loop() {
-				if _, _, _, err := parseTarballBuffered(bytes.NewReader(data)); err != nil {
-					b.Fatal(err)
-				}
-			}
-		})
-	}
-}
-
 func BenchmarkComputeIntegrity(b *testing.B) {
 	for _, size := range []int{4 << 10, 1 << 20, 16 << 20} {
 		data := benchNPMTarball(b, size)

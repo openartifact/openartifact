@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
-	"sort"
 	"strings"
 )
 
@@ -371,12 +370,4 @@ func Failed(outcomes []Outcome) []Outcome {
 	}
 
 	return f
-}
-
-// SortedChangePaths is a small helper for stable report output.
-func SortedChangePaths(changes []Change) []Change {
-	out := append([]Change(nil), changes...)
-	sort.SliceStable(out, func(i, j int) bool { return out[i].Path < out[j].Path })
-
-	return out
 }

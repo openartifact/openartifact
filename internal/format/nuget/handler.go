@@ -13,7 +13,6 @@ import (
 	"io"
 	"strings"
 
-	"github.com/openartifact/openartifact/internal/format"
 	"github.com/openartifact/openartifact/internal/format/base"
 )
 
@@ -26,27 +25,6 @@ type NuGetHandler struct{}
 
 func NewNuGetHandler() *NuGetHandler {
 	return &NuGetHandler{}
-}
-
-func (h *NuGetHandler) Name() string {
-	return "nuget"
-}
-
-func (h *NuGetHandler) GetContentType() string {
-	return "application/zip"
-}
-
-func (h *NuGetHandler) GetFileExtension() string {
-	return ".nupkg"
-}
-
-func (h *NuGetHandler) Validate(ctx context.Context, r io.Reader) error {
-	_, err := parseNuspec(r)
-	if err != nil {
-		return fmt.Errorf("invalid nuget package: %w", err)
-	}
-
-	return nil
 }
 
 func (h *NuGetHandler) Parse(ctx context.Context, r io.Reader) (map[string]any, error) {
@@ -242,5 +220,3 @@ func readNuspec(r io.Reader) ([]byte, error) {
 
 	return nuspecData, nil
 }
-
-var _ format.FormatHandler = (*NuGetHandler)(nil)

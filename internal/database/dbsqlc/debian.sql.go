@@ -166,45 +166,6 @@ func (q *Queries) GetDebianComponentsByDist(ctx context.Context, distributionID 
 	return items, nil
 }
 
-const getDebianDistribution = `-- name: GetDebianDistribution :one
-SELECT id, repository_id, name,
-       COALESCE(codename, '') AS codename,
-       COALESCE(description, '') AS description,
-       created_at, updated_at
-FROM debian_distributions
-WHERE repository_id = $1 AND name = $2
-`
-
-type GetDebianDistributionParams struct {
-	RepositoryID string `db:"repository_id" json:"repository_id"`
-	Name         string `db:"name" json:"name"`
-}
-
-type GetDebianDistributionRow struct {
-	ID           string    `db:"id" json:"id"`
-	RepositoryID string    `db:"repository_id" json:"repository_id"`
-	Name         string    `db:"name" json:"name"`
-	Codename     string    `db:"codename" json:"codename"`
-	Description  string    `db:"description" json:"description"`
-	CreatedAt    time.Time `db:"created_at" json:"created_at"`
-	UpdatedAt    time.Time `db:"updated_at" json:"updated_at"`
-}
-
-func (q *Queries) GetDebianDistribution(ctx context.Context, arg GetDebianDistributionParams) (GetDebianDistributionRow, error) {
-	row := q.db.QueryRow(ctx, getDebianDistribution, arg.RepositoryID, arg.Name)
-	var i GetDebianDistributionRow
-	err := row.Scan(
-		&i.ID,
-		&i.RepositoryID,
-		&i.Name,
-		&i.Codename,
-		&i.Description,
-		&i.CreatedAt,
-		&i.UpdatedAt,
-	)
-	return i, err
-}
-
 const getDebianDistributionsByRepo = `-- name: GetDebianDistributionsByRepo :many
 SELECT id, repository_id, name,
        COALESCE(codename, '') AS codename,

@@ -12,20 +12,6 @@ import (
 	"time"
 )
 
-const addSSOGroupMembership = `-- name: AddSSOGroupMembership :exec
-INSERT INTO auth_user_groups (user_id, group_id, is_sso_managed) VALUES ($1, $2, TRUE) ON CONFLICT DO NOTHING
-`
-
-type AddSSOGroupMembershipParams struct {
-	UserID  string `db:"user_id" json:"user_id"`
-	GroupID string `db:"group_id" json:"group_id"`
-}
-
-func (q *Queries) AddSSOGroupMembership(ctx context.Context, arg AddSSOGroupMembershipParams) error {
-	_, err := q.db.Exec(ctx, addSSOGroupMembership, arg.UserID, arg.GroupID)
-	return err
-}
-
 const addUserToGroup = `-- name: AddUserToGroup :exec
 INSERT INTO auth_user_groups (user_id, group_id) VALUES ($1, $2) ON CONFLICT DO NOTHING
 `
@@ -38,17 +24,6 @@ type AddUserToGroupParams struct {
 func (q *Queries) AddUserToGroup(ctx context.Context, arg AddUserToGroupParams) error {
 	_, err := q.db.Exec(ctx, addUserToGroup, arg.UserID, arg.GroupID)
 	return err
-}
-
-const countActiveTokens = `-- name: CountActiveTokens :one
-SELECT COUNT(*) FROM auth_tokens WHERE revoked_at IS NULL
-`
-
-func (q *Queries) CountActiveTokens(ctx context.Context) (int64, error) {
-	row := q.db.QueryRow(ctx, countActiveTokens)
-	var count int64
-	err := row.Scan(&count)
-	return count, err
 }
 
 const countUsers = `-- name: CountUsers :one
@@ -251,21 +226,6 @@ func (q *Queries) DeleteGroup(ctx context.Context, id string) error {
 	return err
 }
 
-const deleteGroupPermissionAssignmentsNotIn = `-- name: DeleteGroupPermissionAssignmentsNotIn :exec
-DELETE FROM permission_assignments
-WHERE principal_type = 'group' AND principal_id = $1::uuid AND permission_target_id != ALL($2::uuid[])
-`
-
-type DeleteGroupPermissionAssignmentsNotInParams struct {
-	PrincipalID      string   `db:"principal_id" json:"principal_id"`
-	ExcludeTargetIds []string `db:"exclude_target_ids" json:"exclude_target_ids"`
-}
-
-func (q *Queries) DeleteGroupPermissionAssignmentsNotIn(ctx context.Context, arg DeleteGroupPermissionAssignmentsNotInParams) error {
-	_, err := q.db.Exec(ctx, deleteGroupPermissionAssignmentsNotIn, arg.PrincipalID, arg.ExcludeTargetIds)
-	return err
-}
-
 const deletePermissionAssignment = `-- name: DeletePermissionAssignment :exec
 DELETE FROM permission_assignments
 WHERE permission_target_id = $1::uuid AND principal_type = $2 AND principal_id = $3::uuid
@@ -288,15 +248,6 @@ DELETE FROM permission_targets WHERE id = $1
 
 func (q *Queries) DeletePermissionTarget(ctx context.Context, id string) error {
 	_, err := q.db.Exec(ctx, deletePermissionTarget, id)
-	return err
-}
-
-const deleteSSOGroupMemberships = `-- name: DeleteSSOGroupMemberships :exec
-DELETE FROM auth_user_groups WHERE user_id = $1 AND is_sso_managed = TRUE
-`
-
-func (q *Queries) DeleteSSOGroupMemberships(ctx context.Context, userID string) error {
-	_, err := q.db.Exec(ctx, deleteSSOGroupMemberships, userID)
 	return err
 }
 
@@ -735,60 +686,6 @@ func (q *Queries) GetUserByUsername(ctx context.Context, username string) (GetUs
 		&i.SsoManagedGroups,
 	)
 	return i, err
-}
-
-const listAllActiveTokens = `-- name: ListAllActiveTokens :many
-SELECT id, user_id, name, kind, token_hash, scopes, expires_at, last_used_at, created_at, revoked_at
-FROM auth_tokens WHERE revoked_at IS NULL ORDER BY created_at DESC LIMIT $1 OFFSET $2
-`
-
-type ListAllActiveTokensParams struct {
-	Limit  int32 `db:"limit" json:"limit"`
-	Offset int32 `db:"offset" json:"offset"`
-}
-
-type ListAllActiveTokensRow struct {
-	ID         string          `db:"id" json:"id"`
-	UserID     string          `db:"user_id" json:"user_id"`
-	Name       string          `db:"name" json:"name"`
-	Kind       string          `db:"kind" json:"kind"`
-	TokenHash  string          `db:"token_hash" json:"token_hash"`
-	Scopes     json.RawMessage `db:"scopes" json:"scopes"`
-	ExpiresAt  *time.Time      `db:"expires_at" json:"expires_at"`
-	LastUsedAt *time.Time      `db:"last_used_at" json:"last_used_at"`
-	CreatedAt  time.Time       `db:"created_at" json:"created_at"`
-	RevokedAt  *time.Time      `db:"revoked_at" json:"revoked_at"`
-}
-
-func (q *Queries) ListAllActiveTokens(ctx context.Context, arg ListAllActiveTokensParams) ([]ListAllActiveTokensRow, error) {
-	rows, err := q.db.Query(ctx, listAllActiveTokens, arg.Limit, arg.Offset)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	items := []ListAllActiveTokensRow{}
-	for rows.Next() {
-		var i ListAllActiveTokensRow
-		if err := rows.Scan(
-			&i.ID,
-			&i.UserID,
-			&i.Name,
-			&i.Kind,
-			&i.TokenHash,
-			&i.Scopes,
-			&i.ExpiresAt,
-			&i.LastUsedAt,
-			&i.CreatedAt,
-			&i.RevokedAt,
-		); err != nil {
-			return nil, err
-		}
-		items = append(items, i)
-	}
-	if err := rows.Err(); err != nil {
-		return nil, err
-	}
-	return items, nil
 }
 
 const listGroups = `-- name: ListGroups :many

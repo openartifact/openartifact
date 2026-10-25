@@ -3,9 +3,6 @@ INSERT INTO repository_group_members (group_repo_id, member_repo_id, priority)
 VALUES ($1, $2, $3)
 ON CONFLICT (group_repo_id, member_repo_id) DO UPDATE SET priority = $3;
 
--- name: RemoveGroupMember :exec
-DELETE FROM repository_group_members WHERE group_repo_id = $1 AND member_repo_id = $2;
-
 -- name: ListGroupMembers :many
 SELECT m.group_repo_id, m.member_repo_id, m.priority, m.created_at
 FROM repository_group_members m

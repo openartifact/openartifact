@@ -21,38 +21,12 @@ func FuzzParseControlFile(f *testing.F) {
 	})
 }
 
-// FuzzParseDependencies feeds arbitrary relationship strings.
-func FuzzParseDependencies(f *testing.F) {
-	f.Add("libc6 (>= 2.3), foo | bar [amd64], baz:any")
-	f.Add("a (<< 1), (")
-	f.Add("")
-
-	f.Fuzz(func(_ *testing.T, in string) {
-		_, _ = ParseDependencies(in)
-	})
-}
-
-// FuzzReadARArchive feeds arbitrary bytes to the ar container reader.
-func FuzzReadARArchive(f *testing.F) {
-	ar := append([]byte("!<arch>\n"), buildARMemberHeader("debian-binary", "4")...)
-	ar = append(ar, []byte("2.0\n")...)
-
-	f.Add(ar)
-	f.Add([]byte("!<arch>\n"))
-	f.Add(append([]byte("!<arch>\n"), buildARMemberHeader("x", "-1")...))
-	f.Add([]byte{})
-
-	f.Fuzz(func(_ *testing.T, data []byte) {
-		_, _ = ReadARArchive(bytes.NewReader(data), 1<<20)
-	})
-}
-
-// FuzzParseDebFile feeds arbitrary bytes to the .deb parser.
-func FuzzParseDebFile(f *testing.F) {
+// FuzzParseDebFileAt feeds arbitrary bytes to the .deb parser.
+func FuzzParseDebFileAt(f *testing.F) {
 	f.Add([]byte("!<arch>\n"))
 	f.Add([]byte{})
 
 	f.Fuzz(func(_ *testing.T, data []byte) {
-		_, _ = ParseDebFile(bytes.NewReader(data))
+		_, _ = ParseDebFileAt(bytes.NewReader(data), int64(len(data)))
 	})
 }

@@ -77,9 +77,8 @@ func (m *sessionMockDB) ListComponentsByRepo(_ context.Context, _, _ string, _, 
 func (m *sessionMockDB) GetRPMRepo(_ context.Context, _ string) (*models.RPMRepo, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) CreateRPMRepo(_ context.Context, _ *models.RPMRepo) error     { return nil }
-func (m *sessionMockDB) MarkRepoStale(_ context.Context, _ string) error              { return nil }
-func (m *sessionMockDB) CreateComponent(_ context.Context, _ *models.Component) error { return nil }
+func (m *sessionMockDB) CreateRPMRepo(_ context.Context, _ *models.RPMRepo) error { return nil }
+func (m *sessionMockDB) MarkRepoStale(_ context.Context, _ string) error          { return nil }
 func (m *sessionMockDB) GetComponentByID(_ context.Context, _ string) (*models.Component, error) {
 	return nil, nil
 }
@@ -101,9 +100,6 @@ func (m *sessionMockDB) UpsertRepoMetadata(_ context.Context, _ *models.RepoMeta
 }
 func (m *sessionMockDB) CreateDebianDistribution(_ context.Context, _ *models.DebianDistribution) error {
 	return nil
-}
-func (m *sessionMockDB) GetDebianDistribution(_ context.Context, _, _ string) (*models.DebianDistribution, error) {
-	return nil, nil
 }
 func (m *sessionMockDB) GetDebianDistributionsByRepo(_ context.Context, _ string) ([]models.DebianDistribution, error) {
 	return nil, nil
@@ -246,10 +242,6 @@ func (m *sessionMockDB) GetOrCreatePermissionAssignment(_ context.Context, _, _,
 	return nil
 }
 
-func (m *sessionMockDB) SyncSSOPermissionsForGroup(_ context.Context, _ string, _ []string) error {
-	return nil
-}
-
 // Docker Registry methods
 func (m *sessionMockDB) CreateDockerBlob(_ context.Context, _ *models.DockerBlob) error { return nil }
 func (m *sessionMockDB) GetDockerBlob(_ context.Context, _, _ string) (*models.DockerBlob, error) {
@@ -294,7 +286,6 @@ func (m *sessionMockDB) ListDockerTags(_ context.Context, _, _, _ string, _ int)
 
 // Proxy/Group repository methods
 func (m *sessionMockDB) AddGroupMember(_ context.Context, _, _ string, _ int) error { return nil }
-func (m *sessionMockDB) RemoveGroupMember(_ context.Context, _, _ string) error     { return nil }
 func (m *sessionMockDB) ListGroupMembers(_ context.Context, _ string) ([]*models.RepositoryGroupMember, error) {
 	return nil, nil
 }
@@ -318,16 +309,10 @@ func (m *sessionMockDB) DeleteHelmChart(_ context.Context, _, _, _ string) error
 func (m *sessionMockDB) ListHelmCharts(_ context.Context, _ string) ([]*models.HelmChart, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) ListHelmChartVersions(_ context.Context, _, _ string) ([]*models.HelmChart, error) {
-	return nil, nil
-}
 
 // PyPI methods
 func (m *sessionMockDB) CreatePyPIPackage(_ context.Context, _ *models.PyPIPackage) error { return nil }
-func (m *sessionMockDB) GetPyPIPackage(_ context.Context, _, _, _, _ string) (*models.PyPIPackage, error) {
-	return nil, nil
-}
-func (m *sessionMockDB) DeletePyPIPackage(_ context.Context, _, _, _, _ string) error { return nil }
+func (m *sessionMockDB) DeletePyPIPackage(_ context.Context, _, _, _, _ string) error     { return nil }
 func (m *sessionMockDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPackage, error) {
 	return nil, nil
 }
@@ -361,7 +346,6 @@ func (m *sessionMockDB) CreateGoModule(_ context.Context, _ *models.GoModule) er
 func (m *sessionMockDB) GetGoModule(_ context.Context, _, _, _ string) (*models.GoModule, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) DeleteGoModule(_ context.Context, _, _, _ string) error { return nil }
 func (m *sessionMockDB) ListGoModuleVersions(_ context.Context, _, _ string) ([]*models.GoModule, error) {
 	return nil, nil
 }
@@ -425,7 +409,6 @@ func (m *sessionMockDB) CreateCargoCrate(_ context.Context, _ *models.CargoCrate
 func (m *sessionMockDB) GetCargoCrate(_ context.Context, _, _, _ string) (*models.CargoCrate, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) DeleteCargoCrate(_ context.Context, _ string) error { return nil }
 func (m *sessionMockDB) ListCargoCrateVersions(_ context.Context, _, _ string) ([]*models.CargoCrate, error) {
 	return nil, nil
 }
@@ -442,7 +425,6 @@ func (m *sessionMockDB) CreateRubyGem(_ context.Context, _ *models.RubyGem) erro
 func (m *sessionMockDB) GetRubyGem(_ context.Context, _, _, _, _ string) (*models.RubyGem, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) DeleteRubyGem(_ context.Context, _ string) error { return nil }
 func (m *sessionMockDB) ListRubyGems(_ context.Context, _ string) ([]*models.RubyGem, error) {
 	return nil, nil
 }
@@ -466,13 +448,9 @@ func (m *sessionMockDB) ListRawArtifacts(_ context.Context, _, _ string) ([]*mod
 
 // SBOM methods
 func (m *sessionMockDB) CreateSBOMReport(_ context.Context, _ *models.SBOMReport) error { return nil }
-func (m *sessionMockDB) GetSBOMReport(_ context.Context, _, _, _, _ string) (*models.SBOMReport, error) {
-	return nil, nil
-}
 func (m *sessionMockDB) ListSBOMReports(_ context.Context, _ string) ([]*models.SBOMReport, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) DeleteSBOMReport(_ context.Context, _ string) error { return nil }
 
 // License compliance methods
 func (m *sessionMockDB) CreateLicenseScanResult(_ context.Context, _ *models.LicenseScanResult) error {
@@ -480,9 +458,6 @@ func (m *sessionMockDB) CreateLicenseScanResult(_ context.Context, _ *models.Lic
 }
 func (m *sessionMockDB) GetLicenseScanResult(_ context.Context, _, _ string) (*models.LicenseScanResult, error) {
 	return nil, nil
-}
-func (m *sessionMockDB) UpdateLicenseScanResult(_ context.Context, _ *models.LicenseScanResult) error {
-	return nil
 }
 func (m *sessionMockDB) ListLicenseScanResults(_ context.Context, _ string) ([]*models.LicenseScanResult, error) {
 	return nil, nil
@@ -507,9 +482,6 @@ func (m *sessionMockDB) CreateSecretScanResult(_ context.Context, _ *models.Secr
 }
 func (m *sessionMockDB) GetSecretScanResult(_ context.Context, _, _ string) (*models.SecretScanResult, error) {
 	return nil, nil
-}
-func (m *sessionMockDB) UpdateSecretScanResult(_ context.Context, _ *models.SecretScanResult) error {
-	return nil
 }
 func (m *sessionMockDB) ListSecretScanResults(_ context.Context, _ string, _ bool) ([]*models.SecretScanResult, error) {
 	return nil, nil
@@ -540,18 +512,10 @@ func (m *sessionMockDB) GetOrCreateStorageQuota(_ context.Context, _ string) (*m
 func (m *sessionMockDB) UpdateStorageQuota(_ context.Context, _ *models.StorageQuota) error {
 	return nil
 }
-func (m *sessionMockDB) IncrementStorageUsage(_ context.Context, _ string, _ int64, _ int) error {
-	return nil
-}
 func (m *sessionMockDB) DecrementStorageUsage(_ context.Context, _ string, _ int64, _ int) error {
 	return nil
 }
 
-// Artifact properties methods
-func (m *sessionMockDB) SetArtifactProperty(_ context.Context, _, _, _, _ string) error { return nil }
-func (m *sessionMockDB) GetArtifactProperty(_ context.Context, _, _, _ string) (string, error) {
-	return "", nil
-}
 func (m *sessionMockDB) DeleteArtifactProperty(_ context.Context, _, _, _ string) error { return nil }
 func (m *sessionMockDB) ListArtifactProperties(_ context.Context, _, _ string) (map[string]string, error) {
 	return nil, nil
@@ -663,9 +627,6 @@ func (m *sessionMockDB) CreateSSOProvider(_ context.Context, _ *models.SSOProvid
 func (m *sessionMockDB) GetSSOProviderBySlug(_ context.Context, _ string) (*models.SSOProvider, error) {
 	return nil, nil
 }
-func (m *sessionMockDB) GetSSOProviderByID(_ context.Context, _ string) (*models.SSOProvider, error) {
-	return nil, nil
-}
 func (m *sessionMockDB) UpdateSSOProvider(_ context.Context, _ *models.SSOProvider) error { return nil }
 func (m *sessionMockDB) DeleteSSOProvider(_ context.Context, _ string) error              { return nil }
 func (m *sessionMockDB) ListEnabledSSOProviders(_ context.Context) ([]*models.SSOProvider, error) {
@@ -764,16 +725,8 @@ func (m *sessionMockDB) ListReleaseBundles(ctx context.Context, nameFilter, stat
 	return nil, 0, nil
 }
 
-func (m *sessionMockDB) UpdateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error {
-	return nil
-}
-
 func (m *sessionMockDB) ArtifactExists(_ context.Context, _, _ string) (bool, error) {
 	return false, nil
-}
-
-func (m *sessionMockDB) ArtifactExistsBySHA256(_ context.Context, _ string) (string, bool, error) {
-	return "", false, nil
 }
 
 func (m *sessionMockDB) CreatePackageDelta(_ context.Context, _ *models.PackageDelta) error {
@@ -786,10 +739,6 @@ func (m *sessionMockDB) GetPackageDelta(_ context.Context, _, _, _ string) (*mod
 
 func (m *sessionMockDB) ListPackageDeltas(_ context.Context, _, _ string) ([]*models.PackageDelta, error) {
 	return nil, nil
-}
-
-func (m *sessionMockDB) DeletePackageDelta(_ context.Context, _ string) error {
-	return nil
 }
 
 func (m *sessionMockDB) InsertAuditLog(_ context.Context, _ *models.AuditLog) error {
@@ -926,12 +875,4 @@ func (m *sessionMockDB) GetAIAnalysis(_ context.Context, _, _ string) (*models.A
 
 func (m *sessionMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
-}
-
-func (m *sessionMockDB) DeleteAIAnalysis(_ context.Context, _, _ string) error {
-	return nil
-}
-
-func (m *sessionMockDB) ListPendingAIAnalyses(_ context.Context, _ int) ([]*models.AIAnalysis, error) {
-	return nil, nil
 }

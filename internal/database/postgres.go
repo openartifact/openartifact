@@ -30,9 +30,6 @@ import (
 var (
 	ErrSBOMReportNotFound    = errors.New("SBOM report not found")
 	ErrLicensePolicyNotFound = errors.New("license policy not found")
-	// ErrCreateComponentDeprecated is returned by CreateComponent, which was
-	// split into CreateDebPackage and CreateRpmPackage.
-	ErrCreateComponentDeprecated = errors.New("CreateComponent is deprecated: use CreateDebPackage or CreateRpmPackage, passing distribution_id and component_id for DEB")
 )
 
 // toInt32 converts n to int32, saturating at the int32 bounds so out-of-range
@@ -559,10 +556,6 @@ func (p *PostgresDB) MarkRepoStale(ctx context.Context, repositoryID string) err
 	return p.q.MarkRepoStale(ctx, repositoryID)
 }
 
-func (p *PostgresDB) CreateComponent(ctx context.Context, component *models.Component) error {
-	return ErrCreateComponentDeprecated
-}
-
 // createdAtOrNil maps an unset (zero) timestamp to SQL NULL so the INSERT's
 // COALESCE(..., now()) applies; callers that carry an origin timestamp (the
 // admin-only import path) keep it.
@@ -865,40 +858,6 @@ func (p *PostgresDB) GetRpmPackageByID(ctx context.Context, id string) (*models.
 	return pkg, nil
 }
 
-// ListRpmPackagesByRepo lists all RPM packages in a repository.
-func (p *PostgresDB) ListRpmPackagesByRepo(ctx context.Context, repoID string) ([]*models.RpmPackage, error) {
-	rows, err := p.db.QueryContext(ctx,
-		`SELECT id, repository_id, blob_id,
-		        name, version, COALESCE(release,''), epoch, COALESCE(arch,''),
-		        COALESCE(summary,''), COALESCE(description,''), COALESCE(license,''),
-		        COALESCE(url,''), COALESCE(vendor,''), COALESCE(group_name,''),
-		        COALESCE(packager,''), COALESCE(source_rpm,''), COALESCE(build_host,''),
-		        build_time,
-		        COALESCE(filename,''), COALESCE(package_size,0), COALESCE(installed_size,0), COALESCE(archive_size,0),
-		        created_at, updated_at
-		 FROM rpm_packages WHERE repository_id = $1 AND deleted_at IS NULL`, repoID)
-	if err != nil {
-		return nil, fmt.Errorf("list rpm packages: %w", err)
-	}
-	defer func() { _ = rows.Close() }()
-	var pkgs []*models.RpmPackage
-	for rows.Next() {
-		pkg := &models.RpmPackage{}
-		if err := rows.Scan(&pkg.ID, &pkg.RepositoryID, &pkg.BlobID,
-			&pkg.Name, &pkg.Version, &pkg.Release, &pkg.Epoch, &pkg.Arch,
-			&pkg.Summary, &pkg.Description, &pkg.License,
-			&pkg.URL, &pkg.Vendor, &pkg.GroupName,
-			&pkg.Packager, &pkg.SourceRPM, &pkg.BuildHost,
-			&pkg.BuildTime,
-			&pkg.Filename, &pkg.PackageSize, &pkg.InstalledSize, &pkg.ArchiveSize,
-			&pkg.CreatedAt, &pkg.UpdatedAt); err != nil {
-			return nil, fmt.Errorf("scan rpm package: %w", err)
-		}
-		pkgs = append(pkgs, pkg)
-	}
-	return pkgs, rows.Err()
-}
-
 func (p *PostgresDB) GetRepoMetadataByPath(ctx context.Context, repositoryID string, path string) (*models.RepoMetadata, error) {
 	m := &models.RepoMetadata{}
 
@@ -1013,30 +972,6 @@ func (p *PostgresDB) CreateDebianDistribution(ctx context.Context, dist *models.
 	dist.UpdatedAt = row.UpdatedAt
 
 	return nil
-}
-
-func (p *PostgresDB) GetDebianDistribution(ctx context.Context, repoID string, name string) (*models.DebianDistribution, error) {
-	row, err := p.q.GetDebianDistribution(ctx, dbsqlc.GetDebianDistributionParams{
-		RepositoryID: repoID,
-		Name:         name,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // nil, nil is the standard Go "not found" pattern
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get debian distribution: %w", err)
-	}
-
-	return &models.DebianDistribution{
-		ID:           row.ID,
-		RepositoryID: row.RepositoryID,
-		Name:         row.Name,
-		Codename:     row.Codename,
-		Description:  row.Description,
-		CreatedAt:    row.CreatedAt,
-		UpdatedAt:    row.UpdatedAt,
-	}, nil
 }
 
 func (p *PostgresDB) GetDebianDistributionsByRepo(ctx context.Context, repoID string) ([]models.DebianDistribution, error) {
@@ -1785,26 +1720,6 @@ func (p *PostgresDB) ArtifactExists(ctx context.Context, sha256 string, reposito
 	return exists, nil
 }
 
-// ArtifactExistsBySHA256 checks whether a blob with the given SHA-256 hash exists
-// in any repository. Returns the repository ID of the first match.
-func (p *PostgresDB) ArtifactExistsBySHA256(ctx context.Context, sha256 string) (string, bool, error) {
-	var repoID string
-
-	err := p.db.QueryRowContext(ctx,
-		`SELECT dp.repository_id FROM deb_packages dp JOIN blobs b ON b.id = dp.blob_id WHERE b.sha256 = $1 AND dp.deleted_at IS NULL UNION ALL SELECT rp.repository_id FROM rpm_packages rp JOIN blobs b ON b.id = rp.blob_id WHERE b.sha256 = $1 AND rp.deleted_at IS NULL LIMIT 1`,
-		sha256,
-	).Scan(&repoID)
-	if err != nil {
-		if errors.Is(err, sql.ErrNoRows) {
-			return "", false, nil
-		}
-
-		return "", false, fmt.Errorf("failed to check artifact existence by sha256: %w", err)
-	}
-
-	return repoID, true, nil
-}
-
 // BlobReferenceCount returns the number of rows, across every package table
 // that stores a blob_id FK into the global blobs table, referencing the blob
 // identified by sha256. A count of 0 means the blob is safe to delete from
@@ -2015,15 +1930,6 @@ func (p *PostgresDB) PruneRepoDeltas(ctx context.Context, repoID string, maxCoun
 	return shas, rows.Err()
 }
 
-func (p *PostgresDB) DeletePackageDelta(ctx context.Context, id string) error {
-	_, err := p.db.ExecContext(ctx, `DELETE FROM package_deltas WHERE id = $1`, id)
-	if err != nil {
-		return fmt.Errorf("delete package delta: %w", err)
-	}
-
-	return nil
-}
-
 // Proxy/Group repository methods
 
 func (p *PostgresDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepoID string, priority int) error {
@@ -2033,17 +1939,6 @@ func (p *PostgresDB) AddGroupMember(ctx context.Context, groupRepoID, memberRepo
 		Priority:     int32(priority), //nolint:gosec // G115: priority is bounded
 	}); err != nil {
 		return fmt.Errorf("failed to add group member: %w", err)
-	}
-
-	return nil
-}
-
-func (p *PostgresDB) RemoveGroupMember(ctx context.Context, groupRepoID, memberRepoID string) error {
-	if err := p.q.RemoveGroupMember(ctx, dbsqlc.RemoveGroupMemberParams{
-		GroupRepoID:  groupRepoID,
-		MemberRepoID: memberRepoID,
-	}); err != nil {
-		return fmt.Errorf("failed to remove group member: %w", err)
 	}
 
 	return nil
@@ -2379,48 +2274,6 @@ func (p *PostgresDB) ListHelmCharts(ctx context.Context, repoID string) ([]*mode
 	return charts, nil
 }
 
-func (p *PostgresDB) ListHelmChartVersions(ctx context.Context, repoID, name string) ([]*models.HelmChart, error) {
-	rows, err := p.q.ListHelmChartVersions(ctx, dbsqlc.ListHelmChartVersionsParams{
-		RepositoryID: repoID,
-		Name:         name,
-	})
-	if err != nil {
-		return nil, fmt.Errorf("failed to list helm chart versions: %w", err)
-	}
-
-	var versions []*models.HelmChart
-
-	for _, row := range rows {
-		chart := &models.HelmChart{
-			ID:           row.ID,
-			RepositoryID: row.RepositoryID,
-			Name:         row.Name,
-			Version:      row.Version,
-			AppVersion:   derefStr(row.AppVersion),
-			Description:  derefStr(row.Description),
-			Keywords:     row.Keywords,
-			Home:         derefStr(row.Home),
-			Sources:      row.Sources,
-			Icon:         derefStr(row.Icon),
-			APIVersion:   row.ApiVersion,
-			Type:         row.Type,
-			BlobKey:      row.BlobKey,
-			Digest:       row.Digest,
-			SizeBytes:    row.SizeBytes,
-			CreatedAt:    row.CreatedAt,
-			UpdatedAt:    row.UpdatedAt,
-		}
-
-		if len(row.Maintainers) > 0 {
-			_ = json.Unmarshal(row.Maintainers, &chart.Maintainers)
-		}
-
-		versions = append(versions, chart)
-	}
-
-	return versions, nil
-}
-
 func (p *PostgresDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPackage) error {
 	// pypi_packages has no md5_digest column and the blobs table only tracks
 	// sha256, so pkg.MD5Digest does not round-trip.
@@ -2455,44 +2308,6 @@ func (p *PostgresDB) CreatePyPIPackage(ctx context.Context, pkg *models.PyPIPack
 	pkg.UpdatedAt = row.UpdatedAt
 
 	return nil
-}
-
-func (p *PostgresDB) GetPyPIPackage(ctx context.Context, repoID, name, version, filename string) (*models.PyPIPackage, error) {
-	row, err := p.q.GetPyPIPackage(ctx, dbsqlc.GetPyPIPackageParams{
-		RepositoryID: repoID,
-		Name:         name,
-		Version:      version,
-		Filename:     filename,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get pypi package: %w", err)
-	}
-
-	return &models.PyPIPackage{
-		ID:             row.ID,
-		RepositoryID:   row.RepositoryID,
-		Name:           row.Name,
-		Version:        row.Version,
-		Filename:       row.Filename,
-		PackageType:    row.PackageType,
-		PythonVersion:  derefStr(row.PythonVersion),
-		RequiresPython: derefStr(row.RequiresPython),
-		Summary:        derefStr(row.Summary),
-		Author:         derefStr(row.Author),
-		AuthorEmail:    derefStr(row.AuthorEmail),
-		License:        derefStr(row.License),
-		Keywords:       derefStr(row.Keywords),
-		Classifiers:    row.Classifiers,
-		BlobKey:        row.BlobKey,
-		SHA256Digest:   row.Sha256Digest,
-		SizeBytes:      row.SizeBytes,
-		CreatedAt:      row.CreatedAt,
-		UpdatedAt:      row.UpdatedAt,
-	}, nil
 }
 
 func (p *PostgresDB) GetPyPIPackageByFilename(ctx context.Context, repoID, filename string) (*models.PyPIPackage, error) {
@@ -3122,19 +2937,6 @@ func (p *PostgresDB) GetGoModule(ctx context.Context, repoID, modulePath, versio
 		CreatedAt:    row.CreatedAt,
 		UpdatedAt:    row.UpdatedAt,
 	}, nil
-}
-
-// DeleteGoModule deletes a Go module.
-func (p *PostgresDB) DeleteGoModule(ctx context.Context, repoID, modulePath, version string) error {
-	if err := p.q.DeleteGoModule(ctx, dbsqlc.DeleteGoModuleParams{
-		RepositoryID: repoID,
-		ModulePath:   modulePath,
-		Version:      version,
-	}); err != nil {
-		return fmt.Errorf("failed to delete go module: %w", err)
-	}
-
-	return nil
 }
 
 // ListGoModuleVersions lists all versions of a module.
@@ -3976,15 +3778,6 @@ func (p *PostgresDB) GetCargoCrate(ctx context.Context, repoID, name, version st
 	}, nil
 }
 
-func (p *PostgresDB) DeleteCargoCrate(ctx context.Context, id string) error {
-	err := p.q.DeleteCargoCrate(ctx, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete cargo crate: %w", err)
-	}
-
-	return nil
-}
-
 func (p *PostgresDB) ListCargoCrateVersions(ctx context.Context, repoID, name string) ([]*models.CargoCrate, error) {
 	rows, err := p.q.ListCargoCrateVersions(ctx, dbsqlc.ListCargoCrateVersionsParams{
 		RepositoryID: repoID,
@@ -4251,15 +4044,6 @@ func (p *PostgresDB) GetRubyGem(ctx context.Context, repoID, name, version, plat
 		CreatedAt:      row.CreatedAt,
 		UpdatedAt:      row.UpdatedAt,
 	}, nil
-}
-
-func (p *PostgresDB) DeleteRubyGem(ctx context.Context, id string) error {
-	err := p.q.DeleteRubyGem(ctx, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete ruby gem: %w", err)
-	}
-
-	return nil
 }
 
 func (p *PostgresDB) ListRubyGems(ctx context.Context, repoID string) ([]*models.RubyGem, error) {
@@ -4607,39 +4391,6 @@ func (p *PostgresDB) CreateSBOMReport(ctx context.Context, report *models.SBOMRe
 	return nil
 }
 
-// GetSBOMReport retrieves an SBOM report by repo, artifact, format, and spec
-// version. BlobSHA256 is resolved via a LEFT JOIN with blobs and is empty
-// for reports that predate blob_id or were created with no content.
-func (p *PostgresDB) GetSBOMReport(ctx context.Context, repoID, artifactID, format, specVersion string) (*models.SBOMReport, error) {
-	report := &models.SBOMReport{}
-
-	var blobSHA256 sql.NullString
-
-	err := p.db.QueryRowContext(ctx, `
-		SELECT sr.id, ref.repository_id, ref.artifact_path, sr.sbom_format, sr.spec_version,
-		       sr.component_count, b.sha256, sj.completed_at, sj.created_at, sj.updated_at
-		FROM sbom_results sr
-		JOIN scan_jobs sj ON sj.id = sr.scan_job_id
-		JOIN artifact_refs ref ON ref.id = sj.artifact_ref_id
-		LEFT JOIN blobs b ON b.id = sr.blob_id
-		WHERE sj.scan_type = 'sbom' AND ref.repository_id = $1 AND ref.artifact_path = $2
-		  AND sr.sbom_format = $3 AND sr.spec_version = $4`,
-		repoID, artifactID, format, specVersion,
-	).Scan(&report.ID, &report.RepositoryID, &report.ArtifactID, &report.Format, &report.SpecVersion,
-		&report.ComponentCount, &blobSHA256, &report.GeneratedAt, &report.CreatedAt, &report.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil //nolint:nilnil // standard Go not-found pattern: nil pointer with nil error
-	}
-
-	if err != nil {
-		return nil, fmt.Errorf("failed to get SBOM report: %w", err)
-	}
-
-	report.BlobSHA256 = blobSHA256.String
-
-	return report, nil
-}
-
 // ListSBOMReports lists all SBOM reports for a repository.
 func (p *PostgresDB) ListSBOMReports(ctx context.Context, repoID string) ([]*models.SBOMReport, error) {
 	rows, err := p.db.QueryContext(ctx, `
@@ -4674,25 +4425,6 @@ func (p *PostgresDB) ListSBOMReports(ctx context.Context, repoID string) ([]*mod
 	}
 
 	return reports, rows.Err()
-}
-
-// DeleteSBOMReport deletes an SBOM report by ID.
-func (p *PostgresDB) DeleteSBOMReport(ctx context.Context, id string) error {
-	res, err := p.db.ExecContext(ctx, `DELETE FROM sbom_results WHERE id = $1`, id)
-	if err != nil {
-		return fmt.Errorf("failed to delete SBOM report: %w", err)
-	}
-
-	rowsAffected, err := res.RowsAffected()
-	if err != nil {
-		return fmt.Errorf("failed to delete SBOM report: %w", err)
-	}
-
-	if rowsAffected == 0 {
-		return ErrSBOMReportNotFound
-	}
-
-	return nil
 }
 
 // secretScanStatusToJob maps SecretScanResult.ScanStatus's "clean"/"flagged"
@@ -4824,33 +4556,6 @@ func (p *PostgresDB) GetLicenseScanResult(ctx context.Context, repoID, artifactI
 	}
 
 	return result, nil
-}
-
-// UpdateLicenseScanResult updates a license scan result.
-func (p *PostgresDB) UpdateLicenseScanResult(ctx context.Context, result *models.LicenseScanResult) error {
-	var scannedAt time.Time
-	if result.ScannedAt != nil {
-		scannedAt = *result.ScannedAt
-	}
-
-	_, err := p.db.ExecContext(ctx, `
-		WITH res AS (
-			UPDATE license_results SET licenses = $1, spdx_expressions = $2, quarantined = $7, quarantine_approved = $8,
-				unresolved_licenses = $9, license_source = $10
-			WHERE id = $6
-			RETURNING scan_job_id
-		)
-		UPDATE scan_jobs sj SET status = $3, error_message = NULLIF($4, ''), completed_at = $5, updated_at = now()
-		FROM res WHERE sj.id = res.scan_job_id`,
-		result.Licenses, result.SPDXExpressions, result.ScanStatus, result.ScanError, scannedAt, result.ID,
-		result.Quarantined, result.QuarantineApproved, nonNilStrings(result.UnresolvedLicenses),
-		licenseSourceOrDefault(result.LicenseSource),
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update license scan result: %w", err)
-	}
-
-	return nil
 }
 
 // ListLicenseScanResults lists all license scan results for a repository.
@@ -5073,36 +4778,6 @@ func (p *PostgresDB) GetSecretScanResult(ctx context.Context, repoID, artifactID
 	}
 
 	return result, nil
-}
-
-// UpdateSecretScanResult updates a secret scan result.
-func (p *PostgresDB) UpdateSecretScanResult(ctx context.Context, result *models.SecretScanResult) error {
-	findingsJSON, err := json.Marshal(result.Findings)
-	if err != nil {
-		return fmt.Errorf("failed to marshal findings: %w", err)
-	}
-
-	var scannedAt time.Time
-	if result.ScannedAt != nil {
-		scannedAt = *result.ScannedAt
-	}
-
-	_, err = p.db.ExecContext(ctx, `
-		WITH res AS (
-			UPDATE secret_results SET findings = $1, finding_count = $2, quarantined = $3
-			WHERE id = $7
-			RETURNING scan_job_id
-		)
-		UPDATE scan_jobs sj SET status = $4, error_message = NULLIF($5, ''), completed_at = $6, updated_at = now()
-		FROM res WHERE sj.id = res.scan_job_id`,
-		findingsJSON, result.FindingCount, result.Quarantined,
-		secretScanStatusToJob(result.ScanStatus), result.ScanError, scannedAt, result.ID,
-	)
-	if err != nil {
-		return fmt.Errorf("failed to update secret scan result: %w", err)
-	}
-
-	return nil
 }
 
 // ListSecretScanResults lists all secret scan results for a repository.
@@ -5391,21 +5066,6 @@ func (p *PostgresDB) UpdateStorageQuota(ctx context.Context, quota *models.Stora
 	return nil
 }
 
-// IncrementStorageUsage increments the storage usage for a repository.
-func (p *PostgresDB) IncrementStorageUsage(ctx context.Context, repoID string, sizeBytes int64, artifactCount int) error {
-	err := p.q.IncrementStorageUsage(ctx, dbsqlc.IncrementStorageUsageParams{
-		CurrentSizeBytes:     sizeBytes,
-		CurrentArtifactCount: int64(artifactCount),
-		UpdatedAt:            time.Now(),
-		RepositoryID:         repoID,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to increment storage usage: %w", err)
-	}
-
-	return nil
-}
-
 // CreateStorageBackend creates a new storage backend configuration.
 func (p *PostgresDB) CreateStorageBackend(ctx context.Context, backend *models.StorageBackend) error {
 	return p.q.CreateStorageBackend(ctx, dbsqlc.CreateStorageBackendParams{
@@ -5497,39 +5157,6 @@ func (p *PostgresDB) UpdateStorageBackendStatus(ctx context.Context, id, status 
 		StatusMessage: message,
 		ID:            id,
 	})
-}
-
-// SetArtifactProperty sets or updates an artifact property (UPSERT).
-func (p *PostgresDB) SetArtifactProperty(ctx context.Context, repoID, artifactID, key, value string) error {
-	err := p.q.SetArtifactProperty(ctx, dbsqlc.SetArtifactPropertyParams{
-		RepositoryID: repoID,
-		ArtifactPath: artifactID,
-		Key:          key,
-		Value:        value,
-	})
-	if err != nil {
-		return fmt.Errorf("failed to set artifact property: %w", err)
-	}
-
-	return nil
-}
-
-// GetArtifactProperty gets a single artifact property.
-func (p *PostgresDB) GetArtifactProperty(ctx context.Context, repoID, artifactID, key string) (string, error) {
-	value, err := p.q.GetArtifactProperty(ctx, dbsqlc.GetArtifactPropertyParams{
-		RepositoryID: repoID,
-		ArtifactPath: artifactID,
-		Key:          key,
-	})
-	if errors.Is(err, sql.ErrNoRows) {
-		return "", nil
-	}
-
-	if err != nil {
-		return "", fmt.Errorf("failed to get artifact property: %w", err)
-	}
-
-	return value, nil
 }
 
 // DeleteArtifactProperty deletes an artifact property.
@@ -6511,43 +6138,6 @@ func (p *PostgresDB) ListAIAnalyses(ctx context.Context, repoID string, status s
 	}
 
 	return results, total, rows.Err()
-}
-
-// DeleteAIAnalysis removes an AI analysis record.
-func (p *PostgresDB) DeleteAIAnalysis(ctx context.Context, repoID, artifactID string) error {
-	_, err := p.db.ExecContext(ctx, `
-		DELETE FROM ai_results air
-		USING scan_jobs sj, artifact_refs ref
-		WHERE air.scan_job_id = sj.id AND sj.artifact_ref_id = ref.id
-		  AND sj.scan_type = 'ai' AND ref.repository_id = $1 AND ref.artifact_path = $2`,
-		repoID, artifactID)
-
-	return err
-}
-
-// ListPendingAIAnalyses returns analyses in "pending" status up to limit.
-func (p *PostgresDB) ListPendingAIAnalyses(ctx context.Context, limit int) ([]*models.AIAnalysis, error) {
-	rows, err := p.db.QueryContext(ctx,
-		aiAnalysisSelect+` WHERE sj.scan_type = 'ai' AND sj.status = 'pending' ORDER BY sj.created_at ASC LIMIT $1`,
-		limit)
-	if err != nil {
-		return nil, err
-	}
-
-	defer rows.Close()
-
-	var results []*models.AIAnalysis
-
-	for rows.Next() {
-		a, err := scanAIAnalysisRow(rows)
-		if err != nil {
-			return nil, err
-		}
-
-		results = append(results, a)
-	}
-
-	return results, rows.Err()
 }
 
 type aiAnalysisScanner interface {

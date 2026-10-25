@@ -58,9 +58,8 @@ func (m *tokenMockDB) ListComponentsByRepo(_ context.Context, _, _ string, _, _ 
 func (m *tokenMockDB) GetRPMRepo(_ context.Context, _ string) (*models.RPMRepo, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) CreateRPMRepo(_ context.Context, _ *models.RPMRepo) error     { return nil }
-func (m *tokenMockDB) MarkRepoStale(_ context.Context, _ string) error              { return nil }
-func (m *tokenMockDB) CreateComponent(_ context.Context, _ *models.Component) error { return nil }
+func (m *tokenMockDB) CreateRPMRepo(_ context.Context, _ *models.RPMRepo) error { return nil }
+func (m *tokenMockDB) MarkRepoStale(_ context.Context, _ string) error          { return nil }
 func (m *tokenMockDB) GetComponentByID(_ context.Context, _ string) (*models.Component, error) {
 	return nil, nil
 }
@@ -82,9 +81,6 @@ func (m *tokenMockDB) UpsertRepoMetadata(_ context.Context, _ *models.RepoMetada
 }
 func (m *tokenMockDB) CreateDebianDistribution(_ context.Context, _ *models.DebianDistribution) error {
 	return nil
-}
-func (m *tokenMockDB) GetDebianDistribution(_ context.Context, _, _ string) (*models.DebianDistribution, error) {
-	return nil, nil
 }
 func (m *tokenMockDB) GetDebianDistributionsByRepo(_ context.Context, _ string) ([]models.DebianDistribution, error) {
 	return nil, nil
@@ -267,17 +263,10 @@ func (m *tokenMockDB) GetOrCreatePermissionAssignment(_ context.Context, _, _, _
 	return nil
 }
 
-func (m *tokenMockDB) SyncSSOPermissionsForGroup(_ context.Context, _ string, _ []string) error {
-	return nil
-}
-
 func (m *tokenMockDB) CreateSSOProvider(_ context.Context, _ *models.SSOProvider) error {
 	return nil
 }
 func (m *tokenMockDB) GetSSOProviderBySlug(_ context.Context, _ string) (*models.SSOProvider, error) {
-	return nil, nil
-}
-func (m *tokenMockDB) GetSSOProviderByID(_ context.Context, _ string) (*models.SSOProvider, error) {
 	return nil, nil
 }
 func (m *tokenMockDB) UpdateSSOProvider(_ context.Context, _ *models.SSOProvider) error { return nil }
@@ -378,16 +367,8 @@ func (m *tokenMockDB) ListReleaseBundles(ctx context.Context, nameFilter, stateF
 	return nil, 0, nil
 }
 
-func (m *tokenMockDB) UpdateBundlePromotion(ctx context.Context, p *models.BundlePromotion) error {
-	return nil
-}
-
 func (m *tokenMockDB) ArtifactExists(_ context.Context, _, _ string) (bool, error) {
 	return false, nil
-}
-
-func (m *tokenMockDB) ArtifactExistsBySHA256(_ context.Context, _ string) (string, bool, error) {
-	return "", false, nil
 }
 
 func (m *tokenMockDB) CreatePackageDelta(_ context.Context, _ *models.PackageDelta) error {
@@ -400,10 +381,6 @@ func (m *tokenMockDB) GetPackageDelta(_ context.Context, _, _, _ string) (*model
 
 func (m *tokenMockDB) ListPackageDeltas(_ context.Context, _, _ string) ([]*models.PackageDelta, error) {
 	return nil, nil
-}
-
-func (m *tokenMockDB) DeletePackageDelta(_ context.Context, _ string) error {
-	return nil
 }
 
 func (m *tokenMockDB) InsertAuditLog(_ context.Context, _ *models.AuditLog) error {
@@ -460,7 +437,6 @@ func (m *tokenMockDB) ListDockerTags(_ context.Context, _, _, _ string, _ int) (
 
 // Proxy/Group repository methods
 func (m *tokenMockDB) AddGroupMember(_ context.Context, _, _ string, _ int) error { return nil }
-func (m *tokenMockDB) RemoveGroupMember(_ context.Context, _, _ string) error     { return nil }
 func (m *tokenMockDB) ListGroupMembers(_ context.Context, _ string) ([]*models.RepositoryGroupMember, error) {
 	return nil, nil
 }
@@ -484,16 +460,10 @@ func (m *tokenMockDB) DeleteHelmChart(_ context.Context, _, _, _ string) error {
 func (m *tokenMockDB) ListHelmCharts(_ context.Context, _ string) ([]*models.HelmChart, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) ListHelmChartVersions(_ context.Context, _, _ string) ([]*models.HelmChart, error) {
-	return nil, nil
-}
 
 // PyPI methods
 func (m *tokenMockDB) CreatePyPIPackage(_ context.Context, _ *models.PyPIPackage) error { return nil }
-func (m *tokenMockDB) GetPyPIPackage(_ context.Context, _, _, _, _ string) (*models.PyPIPackage, error) {
-	return nil, nil
-}
-func (m *tokenMockDB) DeletePyPIPackage(_ context.Context, _, _, _, _ string) error { return nil }
+func (m *tokenMockDB) DeletePyPIPackage(_ context.Context, _, _, _, _ string) error     { return nil }
 func (m *tokenMockDB) ListPyPIPackages(_ context.Context, _ string) ([]*models.PyPIPackage, error) {
 	return nil, nil
 }
@@ -525,7 +495,6 @@ func (m *tokenMockDB) CreateGoModule(_ context.Context, _ *models.GoModule) erro
 func (m *tokenMockDB) GetGoModule(_ context.Context, _, _, _ string) (*models.GoModule, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteGoModule(_ context.Context, _, _, _ string) error { return nil }
 func (m *tokenMockDB) ListGoModuleVersions(_ context.Context, _, _ string) ([]*models.GoModule, error) {
 	return nil, nil
 }
@@ -589,7 +558,6 @@ func (m *tokenMockDB) CreateCargoCrate(_ context.Context, _ *models.CargoCrate) 
 func (m *tokenMockDB) GetCargoCrate(_ context.Context, _, _, _ string) (*models.CargoCrate, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteCargoCrate(_ context.Context, _ string) error { return nil }
 func (m *tokenMockDB) ListCargoCrateVersions(_ context.Context, _, _ string) ([]*models.CargoCrate, error) {
 	return nil, nil
 }
@@ -606,7 +574,6 @@ func (m *tokenMockDB) CreateRubyGem(_ context.Context, _ *models.RubyGem) error 
 func (m *tokenMockDB) GetRubyGem(_ context.Context, _, _, _, _ string) (*models.RubyGem, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteRubyGem(_ context.Context, _ string) error { return nil }
 func (m *tokenMockDB) ListRubyGems(_ context.Context, _ string) ([]*models.RubyGem, error) {
 	return nil, nil
 }
@@ -630,13 +597,9 @@ func (m *tokenMockDB) ListRawArtifacts(_ context.Context, _, _ string) ([]*model
 
 // SBOM methods
 func (m *tokenMockDB) CreateSBOMReport(_ context.Context, _ *models.SBOMReport) error { return nil }
-func (m *tokenMockDB) GetSBOMReport(_ context.Context, _, _, _, _ string) (*models.SBOMReport, error) {
-	return nil, nil
-}
 func (m *tokenMockDB) ListSBOMReports(_ context.Context, _ string) ([]*models.SBOMReport, error) {
 	return nil, nil
 }
-func (m *tokenMockDB) DeleteSBOMReport(_ context.Context, _ string) error { return nil }
 
 // License compliance methods
 func (m *tokenMockDB) CreateLicenseScanResult(_ context.Context, _ *models.LicenseScanResult) error {
@@ -644,9 +607,6 @@ func (m *tokenMockDB) CreateLicenseScanResult(_ context.Context, _ *models.Licen
 }
 func (m *tokenMockDB) GetLicenseScanResult(_ context.Context, _, _ string) (*models.LicenseScanResult, error) {
 	return nil, nil
-}
-func (m *tokenMockDB) UpdateLicenseScanResult(_ context.Context, _ *models.LicenseScanResult) error {
-	return nil
 }
 func (m *tokenMockDB) ListLicenseScanResults(_ context.Context, _ string) ([]*models.LicenseScanResult, error) {
 	return nil, nil
@@ -671,9 +631,6 @@ func (m *tokenMockDB) CreateSecretScanResult(_ context.Context, _ *models.Secret
 }
 func (m *tokenMockDB) GetSecretScanResult(_ context.Context, _, _ string) (*models.SecretScanResult, error) {
 	return nil, nil
-}
-func (m *tokenMockDB) UpdateSecretScanResult(_ context.Context, _ *models.SecretScanResult) error {
-	return nil
 }
 func (m *tokenMockDB) ListSecretScanResults(_ context.Context, _ string, _ bool) ([]*models.SecretScanResult, error) {
 	return nil, nil
@@ -702,18 +659,10 @@ func (m *tokenMockDB) GetOrCreateStorageQuota(_ context.Context, _ string) (*mod
 	return nil, nil
 }
 func (m *tokenMockDB) UpdateStorageQuota(_ context.Context, _ *models.StorageQuota) error { return nil }
-func (m *tokenMockDB) IncrementStorageUsage(_ context.Context, _ string, _ int64, _ int) error {
-	return nil
-}
 func (m *tokenMockDB) DecrementStorageUsage(_ context.Context, _ string, _ int64, _ int) error {
 	return nil
 }
 
-// Artifact properties methods
-func (m *tokenMockDB) SetArtifactProperty(_ context.Context, _, _, _, _ string) error { return nil }
-func (m *tokenMockDB) GetArtifactProperty(_ context.Context, _, _, _ string) (string, error) {
-	return "", nil
-}
 func (m *tokenMockDB) DeleteArtifactProperty(_ context.Context, _, _, _ string) error { return nil }
 func (m *tokenMockDB) ListArtifactProperties(_ context.Context, _, _ string) (map[string]string, error) {
 	return nil, nil
@@ -817,8 +766,4 @@ func (m *tokenMockDB) GetAIAnalysis(_ context.Context, _, _ string) (*models.AIA
 }
 func (m *tokenMockDB) ListAIAnalyses(_ context.Context, _ string, _ string, _ bool, _, _ int) ([]*models.AIAnalysis, int, error) {
 	return nil, 0, nil
-}
-func (m *tokenMockDB) DeleteAIAnalysis(_ context.Context, _, _ string) error { return nil }
-func (m *tokenMockDB) ListPendingAIAnalyses(_ context.Context, _ int) ([]*models.AIAnalysis, error) {
-	return nil, nil
 }

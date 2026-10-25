@@ -5,7 +5,6 @@
 package rpm
 
 import (
-	"fmt"
 	"strconv"
 	"strings"
 )
@@ -121,14 +120,6 @@ func extractVersionEpoch(ver string) (uint32, string) {
 	}
 
 	return 0, ver
-}
-
-func formatEVR(epoch uint32, version, release string) string {
-	if epoch > 0 {
-		return fmt.Sprintf("%d:%s-%s", epoch, version, release)
-	}
-
-	return fmt.Sprintf("%s-%s", version, release)
 }
 
 // Versioned reports whether the dependency carries a version comparison.
