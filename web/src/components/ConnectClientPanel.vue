@@ -45,11 +45,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div>
         <div class="flex items-center justify-between mb-1.5">
           <h3 class="text-xs font-medium text-muted">{{ t('repoDetail.connect.configure') }}</h3>
-          <AppButton variant="secondary" size="xs"
-            @click="copy(current.configure)"
-          >
-            {{ t('repoDetail.copy') }}
-          </AppButton>
+          <CopyButton :text="current.configure" :label="`${t('repoDetail.copy')}: ${t('repoDetail.connect.configure')}`" />
         </div>
         <pre class="rounded-md border border-border bg-surface-hover p-3 text-xs font-mono text-foreground whitespace-pre-wrap break-all">{{ current.configure }}</pre>
       </div>
@@ -57,11 +53,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <div v-if="current.publish">
         <div class="flex items-center justify-between mb-1.5">
           <h3 class="text-xs font-medium text-muted">{{ t('repoDetail.connect.publish') }}</h3>
-          <AppButton variant="secondary" size="xs"
-            @click="copy(current.publish)"
-          >
-            {{ t('repoDetail.copy') }}
-          </AppButton>
+          <CopyButton :text="current.publish" :label="`${t('repoDetail.copy')}: ${t('repoDetail.connect.publish')}`" />
         </div>
         <pre class="rounded-md border border-border bg-surface-hover p-3 text-xs font-mono text-foreground whitespace-pre-wrap break-all">{{ current.publish }}</pre>
       </div>
@@ -71,10 +63,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 <script setup lang="ts">
 import { computed, ref, watch } from 'vue'
-import AppButton from './AppButton.vue'
+import CopyButton from './ui/CopyButton.vue'
 import { clientSetup } from '../lib/installCommands'
 import { useDocsLink } from '../composables/useDocsLink'
-import { useToastStore } from '../stores/toast'
 import { t } from '../i18n/en'
 
 const props = defineProps<{ format: string; repo: string }>()
@@ -82,7 +73,6 @@ const props = defineProps<{ format: string; repo: string }>()
 // The client-setup page lists the configure and publish commands of every client.
 const docsUrl = useDocsLink('repo-detail')
 
-const toasts = useToastStore()
 const active = ref(0)
 const setups = computed(() => clientSetup(props.format, window.location.origin, props.repo))
 const current = computed(() => setups.value[active.value])
@@ -90,11 +80,4 @@ const current = computed(() => setups.value[active.value])
 watch(setups, () => {
   active.value = 0
 })
-
-function copy(text: string): void {
-  navigator.clipboard
-    .writeText(text)
-    .then(() => toasts.success(t('repoDetail.copied')))
-    .catch(() => toasts.error(t('repoDetail.urlCopyFailed')))
-}
 </script>
