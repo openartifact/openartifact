@@ -16,11 +16,16 @@ import (
 	promBridge "go.opentelemetry.io/contrib/bridges/prometheus"
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploggrpc"
+	"go.opentelemetry.io/otel/exporters/otlp/otlplog/otlploghttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetricgrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlpmetric/otlpmetrichttp"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracegrpc"
 	"go.opentelemetry.io/otel/exporters/otlp/otlptrace/otlptracehttp"
+	lognoop "go.opentelemetry.io/otel/log/noop"
+	metricnoop "go.opentelemetry.io/otel/metric/noop"
 	"go.opentelemetry.io/otel/propagation"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
 	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	"go.opentelemetry.io/otel/sdk/resource"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
@@ -71,17 +76,32 @@ func Install(tp trace.TracerProvider) func() {
 	}
 }
 
-// Setup starts the exporters described by cfg and installs the provider. With
-// cfg.OTLP.Enabled false it does nothing and the returned shutdown is a no-op.
-// gatherer feeds the optional metrics bridge (nil disables it).
+// Setup starts one provider per signal switched on in cfg and installs it as
+// the process-wide provider: the tracer provider (with Install, so Enabled and
+// HTTPMiddleware follow it) for traces, the meter provider for metrics, and a
+// single log provider (otel.SetLoggerProvider) when logs or audit is on. With
+// cfg.OTLP.Enabled false, or every signal off, it installs nothing and the
+// returned shutdown is a no-op. gatherer feeds the metrics bridge (nil
+// disables it). The shutdown flushes every provider and restores the no-op
+// ones.
 func Setup(ctx context.Context, cfg Config, build Build, gatherer prometheus.Gatherer, log Logger) (func(context.Context) error, error) {
+	noopShutdown := func(context.Context) error { return nil }
+
 	o := cfg.OTLP
 	if !o.Enabled {
-		return func(context.Context) error { return nil }, nil
+		return noopShutdown, nil
 	}
 
 	if err := cfg.Validate(); err != nil {
 		return nil, err
+	}
+
+	if !o.anySignal() {
+		if log != nil {
+			log.Warnw("telemetry.otlp.enabled is set but every signal (traces, metrics, logs, audit) is off: nothing is exported")
+		}
+
+		return noopShutdown, nil
 	}
 
 	res, err := newResource(ctx, o, build)
@@ -89,46 +109,86 @@ func Setup(ctx context.Context, cfg Config, build Build, gatherer prometheus.Gat
 		return nil, fmt.Errorf("telemetry resource: %w", err)
 	}
 
-	exp, err := newTraceExporter(ctx, o)
-	if err != nil {
-		return nil, fmt.Errorf("telemetry trace exporter: %w", err)
-	}
-
-	tp := sdktrace.NewTracerProvider(
-		sdktrace.WithBatcher(exp),
-		sdktrace.WithResource(res),
-		sdktrace.WithSampler(sampler(o.SampleRatio)),
-	)
-
-	shutdowns := []func(context.Context) error{tp.Shutdown}
-
-	if o.Metrics && gatherer != nil {
-		mp, err := newMeterProvider(ctx, o, res, gatherer)
-		if err != nil {
-			_ = tp.Shutdown(ctx)
-
-			return nil, fmt.Errorf("telemetry metric exporter: %w", err)
-		}
-
-		otel.SetMeterProvider(mp)
-
-		shutdowns = append(shutdowns, mp.Shutdown)
-	}
-
 	otel.SetErrorHandler(newErrorHandler(log))
 
-	uninstall := Install(tp)
-
-	return func(ctx context.Context) error {
-		uninstall()
-
+	stops, err := startProviders(ctx, o, res, gatherer)
+	shutdown := func(ctx context.Context) error {
 		var errs []error
-		for _, s := range shutdowns {
+		for _, s := range stops {
 			errs = append(errs, s(ctx))
 		}
 
 		return errors.Join(errs...)
-	}, nil
+	}
+
+	if err != nil {
+		_ = shutdown(ctx)
+
+		return nil, err
+	}
+
+	return shutdown, nil
+}
+
+// startProviders creates and installs the provider of every enabled signal.
+// It returns the stop function of each one installed so far, also on error.
+func startProviders(ctx context.Context, o OTLPConfig, res *resource.Resource, gatherer prometheus.Gatherer) ([]func(context.Context) error, error) {
+	var stops []func(context.Context) error
+
+	if o.Traces {
+		exp, err := newTraceExporter(ctx, o)
+		if err != nil {
+			return stops, fmt.Errorf("telemetry trace exporter: %w", err)
+		}
+
+		tp := sdktrace.NewTracerProvider(
+			sdktrace.WithBatcher(exp),
+			sdktrace.WithResource(res),
+			sdktrace.WithSampler(sampler(o.SampleRatio)),
+		)
+		uninstall := Install(tp)
+
+		stops = append(stops, func(ctx context.Context) error {
+			uninstall()
+
+			return tp.Shutdown(ctx)
+		})
+	}
+
+	if o.Metrics && gatherer != nil {
+		mp, err := newMeterProvider(ctx, o, res, gatherer)
+		if err != nil {
+			return stops, fmt.Errorf("telemetry metric exporter: %w", err)
+		}
+
+		otel.SetMeterProvider(mp)
+
+		stops = append(stops, func(ctx context.Context) error {
+			otel.SetMeterProvider(metricnoop.NewMeterProvider())
+
+			return mp.Shutdown(ctx)
+		})
+	}
+
+	// One log provider serves both the application (logs) and the
+	// openartifact.audit (audit) scopes; which scopes write to it is up to
+	// their emitters, according to the two switches.
+	if o.Logs || o.Audit {
+		lp, err := newLoggerProvider(ctx, o, res)
+		if err != nil {
+			return stops, fmt.Errorf("telemetry log exporter: %w", err)
+		}
+
+		otel.SetLoggerProvider(lp)
+
+		stops = append(stops, func(ctx context.Context) error {
+			otel.SetLoggerProvider(lognoop.NewLoggerProvider())
+
+			return lp.Shutdown(ctx)
+		})
+	}
+
+	return stops, nil
 }
 
 func sampler(ratio float64) sdktrace.Sampler {
@@ -260,6 +320,58 @@ func newMeterProvider(ctx context.Context, o OTLPConfig, res *resource.Resource,
 	return sdkmetric.NewMeterProvider(
 		sdkmetric.WithResource(res),
 		sdkmetric.WithReader(sdkmetric.NewPeriodicReader(exp, sdkmetric.WithProducer(producer))),
+	), nil
+}
+
+func newLoggerProvider(ctx context.Context, o OTLPConfig, res *resource.Resource) (*sdklog.LoggerProvider, error) {
+	ep, err := endpointFor(o)
+	if err != nil {
+		return nil, err
+	}
+
+	var exp sdklog.Exporter
+
+	proto, _ := o.NormalizedProtocol()
+
+	if proto == ProtocolHTTP {
+		opts := []otlploghttp.Option{}
+		if ep.hostPort != "" {
+			opts = append(opts, otlploghttp.WithEndpoint(ep.hostPort), otlploghttp.WithURLPath(ep.path+"/v1/logs"))
+		}
+
+		if o.Insecure || ep.plaintext {
+			opts = append(opts, otlploghttp.WithInsecure())
+		}
+
+		if len(o.Headers) > 0 {
+			opts = append(opts, otlploghttp.WithHeaders(o.Headers))
+		}
+
+		exp, err = otlploghttp.New(ctx, opts...)
+	} else {
+		opts := []otlploggrpc.Option{}
+		if ep.hostPort != "" {
+			opts = append(opts, otlploggrpc.WithEndpoint(ep.hostPort))
+		}
+
+		if o.Insecure || ep.plaintext {
+			opts = append(opts, otlploggrpc.WithInsecure())
+		}
+
+		if len(o.Headers) > 0 {
+			opts = append(opts, otlploggrpc.WithHeaders(o.Headers))
+		}
+
+		exp, err = otlploggrpc.New(ctx, opts...)
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return sdklog.NewLoggerProvider(
+		sdklog.WithResource(res),
+		sdklog.WithProcessor(sdklog.NewBatchProcessor(exp)),
 	), nil
 }
 

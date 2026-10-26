@@ -20,25 +20,22 @@ import (
 //	OTEL_EXPORTER_OTLP_ENDPOINT, OTEL_EXPORTER_OTLP_PROTOCOL,
 //	OTEL_EXPORTER_OTLP_HEADERS (percent-decoded values),
 //	OTEL_EXPORTER_OTLP_INSECURE, OTEL_SERVICE_NAME,
-//	OTEL_TRACES_SAMPLER_ARG (the ratio), OTEL_METRICS_EXPORTER (otlp|none)
+//	OTEL_TRACES_SAMPLER_ARG (the ratio), and the per-signal switches
+//	OTEL_TRACES_EXPORTER, OTEL_METRICS_EXPORTER, OTEL_LOGS_EXPORTER (otlp|none)
 //
-// OTEL_SDK_DISABLED=true wins over everything and turns telemetry off.
+// OPENARTIFACT_OTLP_AUDIT switches the audit signal. OTEL_SDK_DISABLED=true
+// wins over everything and turns telemetry off.
 func applyTelemetryEnv(o *telemetry.OTLPConfig) {
 	overrideBool(&o.Enabled, "OPENARTIFACT_OTLP_ENABLED")
+	overrideExporter(&o.Traces, "OTEL_TRACES_EXPORTER")
+	overrideExporter(&o.Metrics, "OTEL_METRICS_EXPORTER")
+	overrideExporter(&o.Logs, "OTEL_LOGS_EXPORTER")
+	overrideBool(&o.Audit, "OPENARTIFACT_OTLP_AUDIT")
 	overrideString(&o.Endpoint, "OTEL_EXPORTER_OTLP_ENDPOINT")
 	overrideString(&o.Protocol, "OTEL_EXPORTER_OTLP_PROTOCOL")
 	overrideBool(&o.Insecure, "OTEL_EXPORTER_OTLP_INSECURE")
 	overrideString(&o.ServiceName, "OTEL_SERVICE_NAME")
 	overrideFloat(&o.SampleRatio, "OTEL_TRACES_SAMPLER_ARG")
-
-	if v, ok := os.LookupEnv("OTEL_METRICS_EXPORTER"); ok {
-		switch strings.ToLower(strings.TrimSpace(v)) {
-		case "otlp":
-			o.Metrics = true
-		case "none":
-			o.Metrics = false
-		}
-	}
 
 	// The standard format percent-encodes header values.
 	env := map[string]string{}
@@ -62,6 +59,23 @@ func applyTelemetryEnv(o *telemetry.OTLPConfig) {
 
 	if disabled {
 		o.Enabled = false
+	}
+}
+
+// overrideExporter reads a standard OTEL_*_EXPORTER variable: otlp switches the
+// signal on, none switches it off; any other value leaves the setting
+// unchanged.
+func overrideExporter(cfg *bool, key string) {
+	v, ok := os.LookupEnv(key)
+	if !ok {
+		return
+	}
+
+	switch strings.ToLower(strings.TrimSpace(v)) {
+	case "otlp":
+		*cfg = true
+	case "none":
+		*cfg = false
 	}
 }
 

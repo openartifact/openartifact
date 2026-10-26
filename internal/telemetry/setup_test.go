@@ -14,6 +14,10 @@ import (
 
 	"github.com/prometheus/client_golang/prometheus"
 	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	otellog "go.opentelemetry.io/otel/log"
+	sdklog "go.opentelemetry.io/otel/sdk/log"
+	sdkmetric "go.opentelemetry.io/otel/sdk/metric"
 	sdktrace "go.opentelemetry.io/otel/sdk/trace"
 	"go.opentelemetry.io/otel/trace"
 )
@@ -71,6 +75,7 @@ func TestSetupExportsTracesAndMetricsOverOTLPHTTP(t *testing.T) {
 	cfg.OTLP.Headers = map[string]string{"Authorization": "Bearer collector-token"}
 	cfg.OTLP.ServiceName = "oa-under-test"
 	cfg.OTLP.Metrics = true
+	cfg.OTLP.Logs = true
 
 	shutdown, err := Setup(t.Context(), cfg, Build{Version: "9.9.9", InstanceID: "node-1"}, reg, nil)
 	if err != nil {
@@ -84,7 +89,12 @@ func TestSetupExportsTracesAndMetricsOverOTLPHTTP(t *testing.T) {
 	_, span := otel.Tracer(scope).Start(t.Context(), "GET /repos/{name}")
 	span.End()
 
-	// Shutdown flushes the batch span processor and the periodic metric reader.
+	var rec otellog.Record
+	rec.SetBody(attribute.StringValue("log-under-test"))
+	otel.Logger("openartifact.audit").Emit(t.Context(), rec)
+
+	// Shutdown flushes the batch span and log processors and the periodic
+	// metric reader.
 	if err := shutdown(t.Context()); err != nil {
 		t.Fatal(err)
 	}
@@ -115,6 +125,120 @@ func TestSetupExportsTracesAndMetricsOverOTLPHTTP(t *testing.T) {
 
 	if !strings.Contains(string(m.body), "openartifact_test_total") {
 		t.Error("metric payload lacks the Prometheus family bridged from the registry")
+	}
+
+	l, ok := col.find("/collector/v1/logs")
+	if !ok {
+		t.Fatal("no log export at <endpoint path>/v1/logs")
+	}
+
+	if l.auth != "Bearer collector-token" {
+		t.Errorf("log export auth = %q", l.auth)
+	}
+
+	for _, want := range []string{"log-under-test", "openartifact.audit", "oa-under-test"} {
+		if !strings.Contains(string(l.body), want) {
+			t.Errorf("log payload lacks %q", want)
+		}
+	}
+}
+
+type warnings struct {
+	mu   sync.Mutex
+	msgs []string
+}
+
+func (w *warnings) Warnw(msg string, _ ...any) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.msgs = append(w.msgs, msg)
+}
+
+// passthrough is a comparable handler, so the test can tell whether
+// HTTPMiddleware returned it unwrapped.
+type passthrough struct{}
+
+func (*passthrough) ServeHTTP(http.ResponseWriter, *http.Request) {}
+
+// TestSetupSignalMatrix checks that each switch installs its own provider and
+// nothing else, and that the HTTP middleware follows the traces switch.
+func TestSetupSignalMatrix(t *testing.T) {
+	srv := httptest.NewServer(&collector{})
+	defer srv.Close()
+
+	tests := []struct {
+		name                         string
+		enabled                      bool
+		traces, metrics, logs, audit bool
+		wantWarning                  bool
+	}{
+		{name: "traces only", enabled: true, traces: true},
+		{name: "metrics only", enabled: true, metrics: true},
+		{name: "logs only", enabled: true, logs: true},
+		{name: "audit only", enabled: true, audit: true},
+		{name: "all signals off", enabled: true, wantWarning: true},
+		{name: "master switch off", traces: true, metrics: true, logs: true, audit: true},
+	}
+
+	for _, tc := range tests {
+		t.Run(tc.name, func(t *testing.T) {
+			cfg := DefaultConfig()
+			cfg.OTLP.Enabled = tc.enabled
+			cfg.OTLP.Protocol = ProtocolHTTP
+			cfg.OTLP.Endpoint = srv.URL
+			cfg.OTLP.Traces, cfg.OTLP.Metrics, cfg.OTLP.Logs, cfg.OTLP.Audit = tc.traces, tc.metrics, tc.logs, tc.audit
+
+			warn := &warnings{}
+
+			shutdown, err := Setup(t.Context(), cfg, Build{}, prometheus.NewRegistry(), warn)
+			if err != nil {
+				t.Fatal(err)
+			}
+
+			defer func() {
+				if err := shutdown(t.Context()); err != nil {
+					t.Error(err)
+				}
+			}()
+
+			_, tracer := otel.GetTracerProvider().(*sdktrace.TracerProvider)
+			_, meter := otel.GetMeterProvider().(*sdkmetric.MeterProvider)
+			_, logger := otel.GetLoggerProvider().(*sdklog.LoggerProvider)
+			next := &passthrough{}
+
+			got := map[string]bool{
+				"tracer provider": tracer,
+				"Enabled()":       Enabled(),
+				"HTTP middleware": HTTPMiddleware()(next) != http.Handler(next),
+				"meter provider":  meter,
+				"logger provider": logger,
+				"all-off warning": len(warn.msgs) > 0,
+			}
+			want := map[string]bool{
+				"tracer provider": tc.enabled && tc.traces,
+				"Enabled()":       tc.enabled && tc.traces,
+				"HTTP middleware": tc.enabled && tc.traces,
+				"meter provider":  tc.enabled && tc.metrics,
+				"logger provider": tc.enabled && (tc.logs || tc.audit),
+				"all-off warning": tc.wantWarning,
+			}
+
+			for k, w := range want {
+				if got[k] != w {
+					t.Errorf("%s = %v, want %v", k, got[k], w)
+				}
+			}
+		})
+	}
+
+	// Shutdown restores the no-op providers.
+	if _, ok := otel.GetMeterProvider().(*sdkmetric.MeterProvider); ok {
+		t.Error("meter provider still installed after shutdown")
+	}
+
+	if _, ok := otel.GetLoggerProvider().(*sdklog.LoggerProvider); ok {
+		t.Error("logger provider still installed after shutdown")
 	}
 }
 
