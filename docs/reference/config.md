@@ -365,7 +365,7 @@ This page lists every configuration key with its type, built-in default and the 
 
 ### `telemetry.otlp`
 
-`telemetry.otlp` configures the OTLP exporters. The endpoint, protocol, headers and TLS settings are shared by every signal. The standard `OTEL_*` environment variables override the file; signal specific `OTEL_EXPORTER_OTLP_TRACES_*` variables only apply while endpoint is empty.
+`telemetry.otlp` configures the OTLP exporters. The endpoint, protocol, headers and TLS settings are shared by every signal. The standard `OTEL_*` environment variables override the file; the signal specific `OTEL_EXPORTER_OTLP_TRACES_*`, `OTEL_EXPORTER_OTLP_METRICS_*` and `OTEL_EXPORTER_OTLP_LOGS_*` variables only apply while endpoint is empty.
 
 | YAML key | Env | Type | Default | Description |
 |---|---|---|---|---|

@@ -49,8 +49,9 @@ type Config struct {
 
 // OTLPConfig configures the OTLP exporters. The endpoint, protocol, headers
 // and TLS settings are shared by every signal. The standard OTEL_* environment
-// variables override the file; signal specific OTEL_EXPORTER_OTLP_TRACES_*
-// variables only apply while endpoint is empty.
+// variables override the file; the signal specific OTEL_EXPORTER_OTLP_TRACES_*,
+// OTEL_EXPORTER_OTLP_METRICS_* and OTEL_EXPORTER_OTLP_LOGS_* variables only
+// apply while endpoint is empty.
 type OTLPConfig struct {
 	// Enabled is the master switch: nothing is exported without it, whatever
 	// the per-signal switches say. Off by default; OTEL_SDK_DISABLED=true
