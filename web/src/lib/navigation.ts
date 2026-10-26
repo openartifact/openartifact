@@ -106,3 +106,4 @@ export function sectionPath(id: string, isAdmin: boolean): string {
 /** The user menu's "Access tokens" entry: always the caller's own tokens. */
 export const PERSONAL_TOKENS_PATH = '/settings/tokens?type=personal'
 export const PROFILE_PATH = '/settings/profile'
+export const PASSWORD_PATH = '/settings/password'

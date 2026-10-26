@@ -329,7 +329,15 @@ describe('RepoFederationTab', () => {
     expect(document.body.querySelector('[data-testid="token-secret"]')!.textContent).toBe('fed_secret_value')
     expect(w.get('[data-testid="federation-tokens"]').text()).toContain('site-b')
 
-    dialogButton('Close')!.click()
+    // The secret cannot be shown again: the dialog closes only once it is acknowledged.
+    dialogButton('Done')!.click()
+    await flushPromises()
+    expect(document.body.textContent).toContain('fed_secret_value')
+    const stored = document.body.querySelector<HTMLInputElement>('[data-testid="token-stored"]')!
+    stored.checked = true
+    stored.dispatchEvent(new Event('change'))
+    await flushPromises()
+    dialogButton('Done')!.click()
     await flushPromises()
     expect(document.body.textContent).not.toContain('fed_secret_value')
   })

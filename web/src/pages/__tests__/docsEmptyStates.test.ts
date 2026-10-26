@@ -9,9 +9,8 @@ import { createMemoryHistory, createRouter } from 'vue-router'
 import type { Component } from 'vue'
 import SSOPage from '../settings/sections/SSOPage.vue'
 import PermissionsPage from '../settings/sections/PermissionsPage.vue'
-import AdminTokensPage from '../admin/TokensPage.vue'
 import WebhooksPage from '../settings/sections/WebhooksPage.vue'
-import SettingsTokensPage from '../settings/TokensPage.vue'
+import TokensSection from '../settings/sections/TokensSection.vue'
 import ProjectListPage from '../ProjectListPage.vue'
 import { useSessionStore, type User } from '../../stores/session'
 
@@ -44,8 +43,7 @@ async function mountEmpty(page: Component, routeName: string, path: string) {
 const CASES: { name: string; page: Component; route: string; path: string; docs: string; label: string }[] = [
   { name: 'no SSO providers', page: SSOPage, route: 'admin-sso', path: '/admin/sso', docs: 'security/sso', label: 'Set up single sign-on' },
   { name: 'no permission targets', page: PermissionsPage, route: 'admin-permissions', path: '/admin/permissions', docs: 'security/rbac', label: 'How permission targets work' },
-  { name: 'no API tokens (admin)', page: AdminTokensPage, route: 'admin-tokens', path: '/admin/tokens', docs: 'security/authentication', label: 'About API tokens' },
-  { name: 'no API tokens (settings)', page: SettingsTokensPage, route: 'settings-tokens', path: '/settings/tokens', docs: 'security/authentication', label: 'About API tokens' },
+  { name: 'no API tokens (settings)', page: TokensSection, route: 'settings-tokens', path: '/settings/tokens', docs: 'security/authentication', label: 'About API tokens' },
   { name: 'no projects', page: ProjectListPage, route: 'projects', path: '/projects', docs: 'security/projects', label: 'About projects' },
   { name: 'no webhooks', page: WebhooksPage, route: 'admin-webhooks', path: '/admin/webhooks', docs: 'operations/webhooks', label: 'Webhook events and signatures' },
 ]
