@@ -64,8 +64,17 @@ jobs:
       - name: deadcode (no unreachable Go code)
         run: scripts/deadcode-check.sh
 
+      # -coverpkg=./... attributes coverage to every package, not just the one a
+      # test lives in; the coverage job merges this with the integration profile.
       - name: go test (race, unit packages)
-        run: go test -race -timeout 10m ./...
+        run: go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage-unit.out -timeout 10m ./...
+
+      - name: upload unit coverage profile
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-go-unit
+          path: coverage-unit.out
+          retention-days: 14
 
   integration:
     name: integration (postgres + garage + testcontainers)
@@ -151,7 +160,15 @@ jobs:
             | xargs -n1 dirname | sort -u | sed 's#^#./#')
           echo "$pkgs"
           # shellcheck disable=SC2086
-          go test -race -tags integration -count=1 -timeout 25m $pkgs
+          go test -race -covermode=atomic -coverpkg=./... -coverprofile=coverage-integration.out \
+            -tags integration -count=1 -timeout 25m $pkgs
+
+      - name: upload integration coverage profile
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-go-integration
+          path: coverage-integration.out
+          retention-days: 14
 
   lint:
     name: golangci-lint
@@ -242,11 +259,94 @@ jobs:
       - name: translation catalogs are consistent
         run: bun run i18n:check
 
-      - run: bun test
+      - name: bun test (with coverage)
+        run: bun test --coverage --coverage-reporter=lcov --coverage-dir=coverage
+
+      - name: upload web coverage (lcov)
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-web
+          path: web/coverage/lcov.info
+          retention-days: 14
 
       - run: bun run build
       - run: bun run web/scripts/check-bundle-size.js
         working-directory: .
+
+  # Merges the unit and integration Go profiles, reports totals and per-area
+  # numbers (job summary, HTML artifact) and compares them with the latest run
+  # on main. A total that drops by more than 1 point fails the job; see
+  # docs/development/testing.md. Fork pull requests get the same report: the
+  # sticky comment is posted by coverage-comment.yml (workflow_run) because a
+  # fork token cannot write.
+  coverage:
+    name: coverage report
+    needs: [go, integration, web]
+    if: ${{ !cancelled() && needs.go.result == 'success' && needs.integration.result == 'success' && needs.web.result == 'success' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: false
+
+      - uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          pattern: coverage-*
+          path: cov/in
+
+      - name: merge and summarize
+        run: |
+          scripts/coverage/merge-go.sh cov/unit.out cov/in/coverage-go-unit/coverage-unit.out
+          scripts/coverage/merge-go.sh cov/integration.out cov/in/coverage-go-integration/coverage-integration.out
+          scripts/coverage/merge-go.sh cov/merged.out cov/in/coverage-go-unit/coverage-unit.out cov/in/coverage-go-integration/coverage-integration.out
+          scripts/coverage/summarize.sh --out cov/report \
+            --go-merged cov/merged.out --go-unit cov/unit.out --go-integration cov/integration.out \
+            --web-lcov cov/in/coverage-web/lcov.info
+
+      # Pull requests compare against the numbers main stored on its last run.
+      # Restoring a cache is allowed for fork pull requests; only main saves one.
+      - name: restore baseline from main
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/cache/restore@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: cov/base
+          key: coverage-base-none
+          restore-keys: coverage-base-
+
+      - name: report
+        run: |
+          base=cov/base/coverage.json
+          [ -s "$base" ] && cp "$base" cov/report/base.json
+          scripts/coverage/render.sh cov/report/coverage.json "$base" | tee cov/report/summary.md >> "$GITHUB_STEP_SUMMARY"
+          cp cov/merged.out cov/report/go-merged.out
+
+      - name: upload coverage report
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: coverage-report
+          path: cov/report
+          retention-days: 30
+
+      - name: store baseline for pull requests
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        run: mkdir -p cov/save && cp cov/report/coverage.json cov/save/coverage.json
+
+      - name: save baseline cache
+        if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' }}
+        uses: actions/cache/save@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        with:
+          path: cov/save
+          key: coverage-base-${{ github.sha }}
+
+      - name: coverage gate (total must not drop more than 1 point vs main)
+        if: ${{ github.event_name == 'pull_request' }}
+        run: scripts/coverage/gate.sh cov/report/coverage.json cov/base/coverage.json
 
   security:
     name: security (trivy image + repo)
