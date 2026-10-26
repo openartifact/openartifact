@@ -8,7 +8,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Repositories API
 
-59 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
+60 endpoints. Request and response schemas are described on the [schemas page](schemas.md); the other tags are listed in the [API index](README.md).
 
 ## Endpoints
 
@@ -25,6 +25,14 @@ List all repositories with optional filtering
 | `format` | query | string | no | Filter by package format. One of: `deb`, `rpm`, `maven`, `npm`, `docker`, `helm`, `pypi`, `nuget`, `go`, `cargo`, `rubygems`, `raw`, `conda`, `conan`, `ivy`, `sbt`. |
 | `page` | query | integer | no | Page number (default: 1). Minimum: 1. |
 | `limit` | query | integer | no | Items per page (default: 25, max: 100). Minimum: 1. Maximum: 100. |
+| `q` | query | string | no | Only repositories whose name contains this text (case-insensitive, at most 200 characters). Maximum length: 200. |
+| `type` | query | string | no | Only repositories of this type. One of: `hosted`, `proxy`, `group`. |
+| `project` | query | string | no | Only repositories of the project with this name; an unknown project matches nothing |
+| `flagged` | query | boolean | no | true keeps the repositories holding a critical or high vulnerability, a secret finding or a quarantined scan result (each artifact's latest scan counts) |
+| `near_quota` | query | boolean | no | true keeps the repositories that have a size quota and have used at least quota_threshold of it |
+| `quota_threshold` | query | number | no | Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8). Minimum: 0. Maximum: 1. |
+| `unscanned` | query | boolean | no | true keeps the repositories that were never scanned (no completed scan of any of their artifacts) |
+| `sort` | query | string | no | Order: name, updated (last change of the repository), last_published (newest package first, empty repositories last) or size (largest first). Without it, the newest repository first. Ties are ordered by name. One of: `name`, `updated`, `last_published`, `size`. |
 
 **Responses**
 
@@ -531,19 +539,24 @@ List all packages in a specific repository
 | `sort` | query | string | no | Row order: newest first (created, the default) or by name and version (name). One of: `created`, `name`. |
 | `format` | query | string | no | Only list packages of this format |
 | `package_name` | query | string | no | Only list rows whose listed package name equals this value exactly (all versions of one package) |
+| `group` | query | string | no | package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped. One of: `package`. |
+| `flagged` | query | boolean | no | With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package. |
 
 **Responses**
 
 | Status | Description | Body |
 |---|---|---|
-| `200` | List of packages | `application/json`: object |
+| `200` | List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package | `application/json`: object |
+| `400` | Invalid sort, group, flagged or q | - |
 | `404` | Repository not found | - |
 
 Fields of the `200` response (`application/json`):
 
 | Field | Type | Required | Description |
 |---|---|---|---|
-| `packages` | array of object | no | - |
+| `limit` | integer | no | - |
+| `packages` | array of any | no | - |
+| `page` | integer | no | - |
 | `total` | integer | no | - |
 
 ### `POST /api/v1/repositories/{name}/packages`
@@ -576,6 +589,27 @@ Upload a package into a hosted rpm repository (multipart/form-data). Requires wr
 | `405` | Proxy and group repositories are read-only | `application/json`: [Error](schemas.md#error) |
 | `409` | Package already exists | `application/json`: [Error](schemas.md#error) |
 | `413` | File too large | `application/json`: [Error](schemas.md#error) |
+
+### `GET /api/v1/repositories/{name}/packages/{id}`
+
+Get a package version
+
+One package version, by the row id of the package listing: the metadata its format stores, its declared dependencies and the files of the version. Requires read access to the repository. Dependencies are returned for npm (dependencies, devDependencies, peerDependencies, optionalDependencies), cargo, nuget (kind is the target framework), rubygems, conda, deb (Depends, Pre-Depends), rpm (requires) and go (go.mod require directives); the other formats do not store them server-side and return an empty list. Metadata holds only what the format's table stores: for pypi, helm, maven, docker and conan there are no declared dependencies, and docker layers or the image config are not part of the response.
+
+**Parameters**
+
+| Name | In | Type | Required | Description |
+|---|---|---|---|---|
+| `name` | path | string | yes | Repository name |
+| `id` | path | string (uuid) | yes | Row id from the package listing |
+
+**Responses**
+
+| Status | Description | Body |
+|---|---|---|
+| `200` | The package version | `application/json`: [PackageDetail](schemas.md#packagedetail) |
+| `403` | No read access to the repository | - |
+| `404` | Repository or package not found (a package of another repository is not found either) | - |
 
 ### `DELETE /api/v1/repositories/{name}/packages/{id}`
 

@@ -183,6 +183,25 @@ Partial update: an absent field is left alone, a string sets the runtime overrid
 | `target_repo_id` | string | yes | - |
 | `to_stage` | string | yes | - |
 
+### ChecksumHit
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `algorithm` | string | yes | One of: `sha256`, `sha1`, `md5`. |
+| `checksum` | string | yes | The checksum searched for, lowercase. |
+| `filename` | string | yes | File within the package; empty for the formats with no file name of their own (conda, conan, docker, go). |
+| `format` | string | yes | - |
+| `name` | string | yes | - |
+| `repository` | string | yes | - |
+| `version` | string | yes | - |
+
+### ChecksumResult
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `packages` | array of [ChecksumHit](#checksumhit) | yes | - |
+| `total` | integer | yes | Number of files carrying the checksum. |
+
 ### CleanupPolicy
 
 | Field | Type | Required | Description |
@@ -686,6 +705,90 @@ OIDC/OAuth 2.0 provider settings. client_secret is write-only: responses carry h
 | `error` | string | no | - |
 | `success` | boolean | yes | - |
 
+### PackageDetail
+
+One package version with the metadata and dependencies its format stores. Formats store different things: metadata lists what the format's table holds, dependencies what it declares (see the endpoint description for the formats that store none).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `arch` | string | yes | - |
+| `created_at` | string (date-time) | yes | - |
+| `dependencies` | array of object | yes | - |
+| `dependencies[].kind` | string | no | Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it. |
+| `dependencies[].name` | string | yes | - |
+| `dependencies[].version` | string | no | Version requirement as the format writes it. |
+| `description` | string | no | - |
+| `filename` | string | yes | - |
+| `files` | array of object | yes | All the files of this version (one per architecture, classifier or distribution), this one included; at most 200. |
+| `files[].arch` | string | yes | - |
+| `files[].filename` | string | yes | - |
+| `files[].id` | string (uuid) | yes | - |
+| `files[].sha256` | string | yes | - |
+| `files[].size` | integer (int64) | yes | - |
+| `format` | string | yes | - |
+| `homepage` | string | no | - |
+| `id` | string (uuid) | yes | - |
+| `latest_version` | string | yes | - |
+| `license` | string | no | - |
+| `md5` | string | no | Only for the formats that record it. |
+| `metadata` | array of object | yes | Format-specific fields, ordered by key; empty values are left out. |
+| `metadata[].key` | string | yes | - |
+| `metadata[].value` | string | yes | - |
+| `name` | string | yes | - |
+| `sha1` | string | no | Only for the formats that record it. |
+| `sha256` | string | yes | - |
+| `size` | integer (int64) | yes | - |
+| `summary` | string | no | - |
+| `updated_at` | string (date-time) | yes | - |
+| `version` | string | yes | - |
+| `version_count` | integer | yes | Versions of the package this one belongs to. |
+
+### PackageFile
+
+One row (file) of a repository's package listing.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `arch` | string | yes | - |
+| `created_at` | string (date-time) | yes | - |
+| `filename` | string | yes | - |
+| `flagged` | boolean | yes | A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type). |
+| `format` | string | yes | - |
+| `id` | string (uuid) | yes | Row id; the key of the package detail, download and scan endpoints. |
+| `name` | string | yes | - |
+| `scanned_at` | string (date-time) | no | Latest completed scan; absent when never scanned (security is then all zero). |
+| `security` | [PackageSecurity](#packagesecurity) | yes | - |
+| `sha256` | string | yes | - |
+| `size` | integer (int64) | yes | - |
+| `version` | string | yes | - |
+
+### PackageGroup
+
+One package (format and name) across its versions, from GET /api/v1/repositories/{name}/packages?group=package.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `flagged` | boolean | yes | - |
+| `format` | string | yes | - |
+| `latest_version` | string | yes | The most recently published version. |
+| `name` | string | yes | - |
+| `scanned_at` | string (date-time) | no | Latest completed scan of the latest version; absent when never scanned. |
+| `security` | [PackageSecurity](#packagesecurity) | yes | - |
+| `size_bytes` | integer (int64) | yes | Size of the latest version, all its files summed. |
+| `updated_at` | string (date-time) | yes | Latest modification of any version. |
+| `version_count` | integer | yes | - |
+
+### PackageSecurity
+
+Vulnerability counts by severity.
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `critical` | integer (int64) | yes | - |
+| `high` | integer (int64) | yes | - |
+| `low` | integer (int64) | yes | - |
+| `medium` | integer (int64) | yes | - |
+
 ### PackageUploadResult
 
 | Field | Type | Required | Description |
@@ -1029,6 +1132,17 @@ Partial update: omitted fields stay unchanged.
 | `reason` | string | no | - |
 | `status` | string | no | One of: `ready`, `not ready`. |
 
+### RecentPackage
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `created_at` | string (date-time) | yes | - |
+| `created_by_name` | string | no | Never set: the server does not record who published a package. |
+| `format` | string | yes | - |
+| `name` | string | yes | - |
+| `repository` | string | yes | - |
+| `version` | string | yes | - |
+
 ### RecoveryStatus
 
 | Field | Type | Required | Description |
@@ -1170,6 +1284,7 @@ Counts only; no finding ids, titles or other details.
 | `public` | boolean | no | Whether repository is publicly accessible |
 | `repo_type` | string | no | Repository type. One of: `hosted`, `proxy`, `group`. |
 | `sign_packages` | boolean | no | Hosted rpm repositories only (400 otherwise when true). When true, uploaded RPMs are signed with the active GPG key; existing packages are not re-signed. |
+| `stats` | [RepositoryStats](#repositorystats) | no | - |
 | `trash_retention_days` | integer | no | Days a deleted item (or the repository itself) stays restorable in the trash before the retention purge removes it. null = the server default (TRASH_RETENTION_DAYS); 0 = no trash, deletes are immediate and permanent. Nullable. Minimum: 0. Maximum: 36500. |
 | `updated_at` | string (date-time) | no | Last update timestamp |
 | `upstream_url` | string | no | Upstream repository URL (for proxy repos) |
@@ -1184,6 +1299,27 @@ Counts only; no finding ids, titles or other details.
 | `name` | string | yes | Member repository name |
 | `priority` | integer | yes | Resolution order within the group (lowest first) |
 | `repo_type` | string | yes | Member repository type. One of: `hosted`, `proxy`. |
+
+### RepositoryStats
+
+Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `last_published_at` | string (date-time) | no | Time of the newest package; absent for an empty repository. |
+| `package_count` | integer (int64) | yes | Number of distinct package names, counted as the package listing names them. |
+| `quota` | object | yes | - |
+| `quota.limit_bytes` | integer (int64) | no | Size quota; absent when unlimited. |
+| `quota.used_bytes` | integer (int64) | yes | - |
+| `security` | object | yes | Sum over the artifacts of the repository of their latest scan results. Counts are raw: VEX statements and ignore rules do not suppress any. |
+| `security.critical` | integer (int64) | yes | - |
+| `security.high` | integer (int64) | yes | - |
+| `security.license_violations` | integer (int64) | yes | Artifacts whose license scan is quarantined (the server stores no other license violation count). |
+| `security.low` | integer (int64) | yes | - |
+| `security.medium` | integer (int64) | yes | - |
+| `security.scanned_at` | string (date-time) | no | Latest completed scan; absent when never scanned. |
+| `security.secrets` | integer (int64) | yes | Secret findings. |
+| `size_bytes` | integer (int64) | yes | Stored size, from the repository's quota counter (equals quota.used_bytes). |
 
 ### SBOMReport
 
@@ -1249,6 +1385,7 @@ Counts only; no finding ids, titles or other details.
 | `sha256` | string | no | - |
 | `size` | integer (int64) | no | - |
 | `version` | string | no | - |
+| `version_count` | integer | no | Only with group=package: the number of versions of the package that match the search |
 
 ### SearchRepositoryHit
 

@@ -295,6 +295,214 @@ export type Repository = {
      * True when federation is enabled: the repository keeps a change log that peer instances pull to stay in sync. Hosted repositories of the formats raw, maven, npm, docker, helm, pypi, cargo, go and nuget only. Peers and tokens are managed under /api/v1/repositories/{name}/federation.
      */
     federated?: boolean;
+    stats?: RepositoryStats;
+};
+
+/**
+ * Catalog figures of a repository. Only present in the repository list (GET /api/v1/repositories).
+ */
+export type RepositoryStats = {
+    /**
+     * Number of distinct package names, counted as the package listing names them.
+     */
+    package_count: number;
+    /**
+     * Stored size, from the repository's quota counter (equals quota.used_bytes).
+     */
+    size_bytes: number;
+    /**
+     * Time of the newest package; absent for an empty repository.
+     */
+    last_published_at?: string;
+    /**
+     * Sum over the artifacts of the repository of their latest scan results. Counts are raw: VEX statements and ignore rules do not suppress any.
+     */
+    security: {
+        critical: number;
+        high: number;
+        medium: number;
+        low: number;
+        /**
+         * Secret findings.
+         */
+        secrets: number;
+        /**
+         * Artifacts whose license scan is quarantined (the server stores no other license violation count).
+         */
+        license_violations: number;
+        /**
+         * Latest completed scan; absent when never scanned.
+         */
+        scanned_at?: string;
+    };
+    quota: {
+        /**
+         * Size quota; absent when unlimited.
+         */
+        limit_bytes?: number;
+        used_bytes: number;
+    };
+};
+
+/**
+ * Vulnerability counts by severity.
+ */
+export type PackageSecurity = {
+    critical: number;
+    high: number;
+    medium: number;
+    low: number;
+};
+
+/**
+ * One row (file) of a repository's package listing.
+ */
+export type PackageFile = {
+    /**
+     * Row id; the key of the package detail, download and scan endpoints.
+     */
+    id: string;
+    name: string;
+    version: string;
+    format: string;
+    arch: string;
+    size: number;
+    sha256: string;
+    filename: string;
+    created_at: string;
+    security: PackageSecurity;
+    /**
+     * A critical or high vulnerability, a secret finding or a quarantined scan result (latest scan of each type).
+     */
+    flagged: boolean;
+    /**
+     * Latest completed scan; absent when never scanned (security is then all zero).
+     */
+    scanned_at?: string;
+};
+
+/**
+ * One package (format and name) across its versions, from GET /api/v1/repositories/{name}/packages?group=package.
+ */
+export type PackageGroup = {
+    name: string;
+    format: string;
+    /**
+     * The most recently published version.
+     */
+    latest_version: string;
+    version_count: number;
+    /**
+     * Size of the latest version, all its files summed.
+     */
+    size_bytes: number;
+    /**
+     * Latest modification of any version.
+     */
+    updated_at: string;
+    security: PackageSecurity;
+    flagged: boolean;
+    /**
+     * Latest completed scan of the latest version; absent when never scanned.
+     */
+    scanned_at?: string;
+};
+
+export type RecentPackage = {
+    repository: string;
+    format: string;
+    name: string;
+    version: string;
+    created_at: string;
+    /**
+     * Never set: the server does not record who published a package.
+     */
+    created_by_name?: string;
+};
+
+/**
+ * One package version with the metadata and dependencies its format stores. Formats store different things: metadata lists what the format's table holds, dependencies what it declares (see the endpoint description for the formats that store none).
+ */
+export type PackageDetail = {
+    id: string;
+    name: string;
+    version: string;
+    format: string;
+    arch: string;
+    filename: string;
+    size: number;
+    sha256: string;
+    /**
+     * Only for the formats that record it.
+     */
+    md5?: string;
+    /**
+     * Only for the formats that record it.
+     */
+    sha1?: string;
+    created_at: string;
+    updated_at: string;
+    summary?: string;
+    description?: string;
+    license?: string;
+    homepage?: string;
+    /**
+     * Format-specific fields, ordered by key; empty values are left out.
+     */
+    metadata: Array<{
+        key: string;
+        value: string;
+    }>;
+    dependencies: Array<{
+        name: string;
+        /**
+         * Version requirement as the format writes it.
+         */
+        version?: string;
+        /**
+         * Role (runtime, dev, peer, optional, build, ...) or, for nuget, the target framework; as the format names it.
+         */
+        kind?: string;
+    }>;
+    /**
+     * All the files of this version (one per architecture, classifier or distribution), this one included; at most 200.
+     */
+    files: Array<{
+        id: string;
+        filename: string;
+        arch: string;
+        size: number;
+        sha256: string;
+    }>;
+    /**
+     * Versions of the package this one belongs to.
+     */
+    version_count: number;
+    latest_version: string;
+};
+
+export type ChecksumResult = {
+    /**
+     * Number of files carrying the checksum.
+     */
+    total: number;
+    packages: Array<ChecksumHit>;
+};
+
+export type ChecksumHit = {
+    repository: string;
+    format: string;
+    name: string;
+    version: string;
+    /**
+     * File within the package; empty for the formats with no file name of their own (conda, conan, docker, go).
+     */
+    filename: string;
+    /**
+     * The checksum searched for, lowercase.
+     */
+    checksum: string;
+    algorithm: 'sha256' | 'sha1' | 'md5';
 };
 
 export type RepositoryMember = {
@@ -448,6 +656,10 @@ export type SearchPackageHit = {
     metadata?: {
         [key: string]: string;
     };
+    /**
+     * Only with group=package: the number of versions of the package that match the search
+     */
+    version_count?: number;
 };
 
 export type SearchRepositoryHit = {
@@ -2845,6 +3057,38 @@ export type GetApiV1RepositoriesData = {
          * Items per page (default: 25, max: 100)
          */
         limit?: number;
+        /**
+         * Only repositories whose name contains this text (case-insensitive, at most 200 characters)
+         */
+        q?: string;
+        /**
+         * Only repositories of this type
+         */
+        type?: 'hosted' | 'proxy' | 'group';
+        /**
+         * Only repositories of the project with this name; an unknown project matches nothing
+         */
+        project?: string;
+        /**
+         * true keeps the repositories holding a critical or high vulnerability, a secret finding or a quarantined scan result (each artifact's latest scan counts)
+         */
+        flagged?: boolean;
+        /**
+         * true keeps the repositories that have a size quota and have used at least quota_threshold of it
+         */
+        near_quota?: boolean;
+        /**
+         * Used fraction of the quota from which near_quota matches, above 0 and at most 1 (default 0.8)
+         */
+        quota_threshold?: number;
+        /**
+         * true keeps the repositories that were never scanned (no completed scan of any of their artifacts)
+         */
+        unscanned?: boolean;
+        /**
+         * Order: name, updated (last change of the repository), last_published (newest package first, empty repositories last) or size (largest first). Without it, the newest repository first. Ties are ordered by name.
+         */
+        sort?: 'name' | 'updated' | 'last_published' | 'size';
     };
     url: '/api/v1/repositories';
 };
@@ -2977,11 +3221,23 @@ export type GetApiV1RepositoriesByNamePackagesData = {
          * Only list rows whose listed package name equals this value exactly (all versions of one package)
          */
         package_name?: string;
+        /**
+         * package returns one entry per package (format and name) instead of one per file: its latest version, version count, latest size and the scan state of the latest version. total then counts packages. The q, format and package_name filters apply to the rows before they are grouped.
+         */
+        group?: 'package';
+        /**
+         * With group=package, true keeps the packages whose latest version has a critical or high vulnerability, a secret finding or a quarantined scan result. Rejected without group=package.
+         */
+        flagged?: boolean;
     };
     url: '/api/v1/repositories/{name}/packages';
 };
 
 export type GetApiV1RepositoriesByNamePackagesErrors = {
+    /**
+     * Invalid sort, group, flagged or q
+     */
+    400: unknown;
     /**
      * Repository not found
      */
@@ -2990,13 +3246,13 @@ export type GetApiV1RepositoriesByNamePackagesErrors = {
 
 export type GetApiV1RepositoriesByNamePackagesResponses = {
     /**
-     * List of packages
+     * List of packages: one entry per file (PackageFile), or one per package (PackageGroup) with group=package
      */
     200: {
         total?: number;
-        packages?: Array<{
-            [key: string]: unknown;
-        }>;
+        page?: number;
+        limit?: number;
+        packages?: Array<PackageFile | PackageGroup>;
     };
 };
 
@@ -4687,11 +4943,11 @@ export type GetApiV1RepositoriesByNameArtifactsSearchResponses = {
 export type GetApiV1SearchData = {
     body?: never;
     path?: never;
-    query: {
+    query?: {
         /**
-         * Search query: free text plus optional name:, format:, repo: and sha256: qualifiers
+         * Search query: free text plus optional name:, format:, repo: and sha256: qualifiers. Required unless checksum is given or flagged=true.
          */
-        q: string;
+        q?: string;
         /**
          * Filter by format
          */
@@ -4712,22 +4968,30 @@ export type GetApiV1SearchData = {
          * Offset for pagination
          */
         offset?: number;
+        /**
+         * true keeps the packages whose scans found a critical or high vulnerability or a secret, or that are quarantined (the latest scan of each type counts). Repositories are not returned.
+         */
+        flagged?: boolean;
+        /**
+         * Find the files whose stored checksum equals this value: a full lowercase-hex SHA-256 (64 characters), SHA-1 (40) or MD5 (32), exact match only. SHA-256 matches every format; SHA-1 matches maven, npm and conan, MD5 maven, conan and conda (the other formats store no such digest). Replaces the search: q, format, repo, group and flagged are ignored, limit and offset page the hits, and the response is the ChecksumResult shape.
+         */
+        checksum?: string;
     };
     url: '/api/v1/search';
 };
 
 export type GetApiV1SearchErrors = {
     /**
-     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, or query_too_broad (more than 10000 matching packages; add filters)
+     * Invalid request: missing_q, invalid_limit, invalid_offset, invalid_filter, invalid_group, invalid_flagged, invalid_checksum, or query_too_broad (more than 10000 matching packages, or a checksum shared by more than 500 files; add filters)
      */
     400: unknown;
 };
 
 export type GetApiV1SearchResponses = {
     /**
-     * Search results
+     * Search results (SearchResult), or with checksum the files that carry it
      */
-    200: SearchResult;
+    200: SearchResult | ChecksumResult;
 };
 
 export type GetApiV1SearchResponse = GetApiV1SearchResponses[keyof GetApiV1SearchResponses];
@@ -8150,6 +8414,40 @@ export type GetApiV1AdminSystemInfoResponses = {
 
 export type GetApiV1AdminSystemInfoResponse = GetApiV1AdminSystemInfoResponses[keyof GetApiV1AdminSystemInfoResponses];
 
+export type GetApiV1PackagesRecentData = {
+    body?: never;
+    path?: never;
+    query?: {
+        /**
+         * true keeps the repositories the caller has write permission on
+         */
+        mine?: boolean;
+        /**
+         * Maximum entries (default 10, at most 50)
+         */
+        limit?: number;
+    };
+    url: '/api/v1/packages/recent';
+};
+
+export type GetApiV1PackagesRecentErrors = {
+    /**
+     * Invalid mine
+     */
+    400: unknown;
+};
+
+export type GetApiV1PackagesRecentResponses = {
+    /**
+     * Recent package versions
+     */
+    200: {
+        packages: Array<RecentPackage>;
+    };
+};
+
+export type GetApiV1PackagesRecentResponse = GetApiV1PackagesRecentResponses[keyof GetApiV1PackagesRecentResponses];
+
 export type GetApiV1RepositoriesByNamePackagesByIdDownloadData = {
     body?: never;
     path: {
@@ -10417,6 +10715,42 @@ export type DeleteApiV1RepositoriesByNamePackagesByIdResponses = {
 };
 
 export type DeleteApiV1RepositoriesByNamePackagesByIdResponse = DeleteApiV1RepositoriesByNamePackagesByIdResponses[keyof DeleteApiV1RepositoriesByNamePackagesByIdResponses];
+
+export type GetApiV1RepositoriesByNamePackagesByIdData = {
+    body?: never;
+    path: {
+        /**
+         * Repository name
+         */
+        name: string;
+        /**
+         * Row id from the package listing
+         */
+        id: string;
+    };
+    query?: never;
+    url: '/api/v1/repositories/{name}/packages/{id}';
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdErrors = {
+    /**
+     * No read access to the repository
+     */
+    403: unknown;
+    /**
+     * Repository or package not found (a package of another repository is not found either)
+     */
+    404: unknown;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdResponses = {
+    /**
+     * The package version
+     */
+    200: PackageDetail;
+};
+
+export type GetApiV1RepositoriesByNamePackagesByIdResponse = GetApiV1RepositoriesByNamePackagesByIdResponses[keyof GetApiV1RepositoriesByNamePackagesByIdResponses];
 
 export type PutApiV1RepositoriesByNameCompsData = {
     body: string;
