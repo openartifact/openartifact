@@ -5584,6 +5584,10 @@ export type GetApiV1RepositoriesByNameArtifactsByArtifactIdPropertiesErrors = {
      */
     400: Error;
     /**
+     * Forbidden
+     */
+    403: Error;
+    /**
      * Repository or addressed resource not found
      */
     404: Error;

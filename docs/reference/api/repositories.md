@@ -190,6 +190,7 @@ List properties for a specific artifact
 |---|---|---|
 | `200` | Artifact properties | `application/json`: map of string |
 | `400` | Invalid request | `application/json`: [Error](schemas.md#error) |
+| `403` | Forbidden | `application/json`: [Error](schemas.md#error) |
 | `404` | Repository or addressed resource not found | `application/json`: [Error](schemas.md#error) |
 
 ### `PUT /api/v1/repositories/{name}/artifacts/{artifact_id}/properties`
