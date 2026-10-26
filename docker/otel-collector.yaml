@@ -1,0 +1,51 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Baseline otelcol-contrib configuration for a local Collector next to
+# OpenArtifact (compose profile "otel-collector", or a sidecar). The server
+# exports OTLP to localhost; only the Collector needs egress. Batching, retries
+# and queueing happen here, not in the server.
+#
+#   OTELCOL_EXPORT_ENDPOINT       OTLP/HTTP base URL of the backend (required),
+#                                 e.g. https://otlp.example.com
+#   OTELCOL_EXPORT_AUTHORIZATION  Authorization header value sent to it,
+#                                 e.g. "Bearer <token>"
+#
+# See docs/operations/monitoring.md#local-collector.
+
+receivers:
+  otlp:
+    protocols:
+      grpc:
+        endpoint: localhost:4317
+      http:
+        endpoint: localhost:4318
+
+processors:
+  memory_limiter:
+    check_interval: 1s
+    limit_percentage: 80
+    spike_limit_percentage: 20
+  batch: {}
+
+exporters:
+  otlp_http:
+    endpoint: ${env:OTELCOL_EXPORT_ENDPOINT}
+    headers:
+      authorization: ${env:OTELCOL_EXPORT_AUTHORIZATION}
+
+service:
+  pipelines:
+    traces:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http]
+    metrics:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http]
+    logs:
+      receivers: [otlp]
+      processors: [memory_limiter, batch]
+      exporters: [otlp_http]

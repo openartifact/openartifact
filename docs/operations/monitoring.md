@@ -260,6 +260,26 @@ OPENARTIFACT_OTLP_ENABLED=true OTEL_EXPORTER_OTLP_ENDPOINT=http://localhost:4317
 # browse http://localhost:16686, service "openartifact"
 ```
 
+### Local Collector
+
+The server only speaks OTLP. Batching, retries, queueing, redaction and routing to one or more backends belong in an [OpenTelemetry Collector](https://opentelemetry.io/docs/collector/) (the `otelcol-contrib` distribution) running next to it, so only the Collector needs egress.
+
+[`docker/otel-collector.yaml`](../../docker/otel-collector.yaml) is a baseline configuration: OTLP in on `localhost` (gRPC `4317`, HTTP `4318`), the `memory_limiter` and `batch` processors, and OTLP/HTTP out to `OTELCOL_EXPORT_ENDPOINT` with the `Authorization` header taken from `OTELCOL_EXPORT_AUTHORIZATION`. It has a pipeline for traces, metrics and logs.
+
+The compose file runs it as the opt-in `otel-collector` profile. The Collector joins the `openartifact` container's network namespace, like a pod sidecar, so the server's default endpoint `http://localhost:4317` reaches it. In `docker/.env`:
+
+```sh
+OPENARTIFACT_OTLP_ENABLED=true
+OTELCOL_EXPORT_ENDPOINT=https://otlp.example.com
+OTELCOL_EXPORT_AUTHORIZATION=Bearer <token>
+```
+
+```sh
+docker compose -f docker/docker-compose.yml --env-file docker/.env --profile otel-collector up -d
+```
+
+The per-signal variables (`OTEL_TRACES_EXPORTER`, `OTEL_METRICS_EXPORTER`, `OTEL_LOGS_EXPORTER`, `OPENARTIFACT_OTLP_AUDIT`) and `OTEL_EXPORTER_OTLP_ENDPOINT` are passed through from `docker/.env` as well. Outside compose, run the same configuration with `otelcol-contrib --config docker/otel-collector.yaml` on the host or as a sidecar.
+
 ## Audit log
 
 The server records who changed what. Events are stored in the `audit_logs` table and shown under **Settings > Audit log** (`/settings/audit`) in the UI.
