@@ -9,11 +9,11 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     <!-- Page Header -->
     <SectionActions>
         <div class="flex items-center gap-2 shrink-0">
-          <AppButton variant="secondary" size="sm" :loading="testing" :disabled="loading" @click="testConnection">
+          <AppButton variant="secondary" size="sm" :loading="testing" :disabled="loading || !!loadError" @click="testConnection">
             <ArrowPathIcon v-if="!testing" class="w-4 h-4" aria-hidden="true" />
             {{ t('adm.ai.testConnection') }}
           </AppButton>
-          <AppButton size="sm" :loading="saving" :disabled="loading" @click="save">
+          <AppButton size="sm" :loading="saving" :disabled="loading || !!loadError" @click="save">
             <CheckIcon v-if="!saving" class="w-4 h-4" aria-hidden="true" />
             {{ saving ? t('common.saving') : t('adm.ai.saveChanges') }}
           </AppButton>
