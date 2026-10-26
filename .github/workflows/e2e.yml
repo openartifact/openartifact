@@ -3,9 +3,10 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 
 # Black-box UI suites against a real server (built with the SPA embedded) and
-# Postgres, driven through Lightpanda over CDP; there is no Playwright-managed
-# browser. See docs/development/testing.md.
-#   e2e     pull requests and main: the Playwright e2e suite
+# Postgres, driven through Lightpanda over CDP by puppeteer-core under `bun test`
+# (the specs are *.e2e.ts, so the plain unit-test run never picks them up).
+# See docs/development/testing.md.
+#   e2e     pull requests and main: the browser e2e suite
 #   monkey  nightly and on demand: a seeded random walk over the UI
 
 name: e2e
@@ -93,12 +94,20 @@ jobs:
           echo "${LP_SHA256}  $RUNNER_TEMP/lightpanda" | sha256sum --check --strict -
           chmod +x "$RUNNER_TEMP/lightpanda"
 
+      # --load-resources: iframes are skipped by default without a word, and a page
+      #   without its stylesheets has no computed styles to judge visibility by.
+      # --timezone/--locale: the same output on every runner.
+      # --watchdog-ms: a script that stalls is a failed step, not a hung job.
       # --cdp-max-message-size: axe-core (~1.5 MB) is injected through one CDP message.
       - name: Start Lightpanda
         env:
           LIGHTPANDA_DISABLE_TELEMETRY: "true"
         run: |
-          setsid nohup "$RUNNER_TEMP/lightpanda" serve --host 127.0.0.1 --port 9222 --cdp-max-message-size 8388608 \
+          setsid nohup "$RUNNER_TEMP/lightpanda" serve --host 127.0.0.1 --port 9222 \
+            --load-resources iframe --load-resources stylesheet \
+            --timezone UTC --locale en-US \
+            --watchdog-ms 30000 --http-timeout 15000 \
+            --cdp-max-message-size 8388608 \
             >"$RUNNER_TEMP/lightpanda.log" 2>&1 &
           for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1 && exit 0
@@ -133,7 +142,7 @@ jobs:
             echo "OA_TESTENV_DIR=$OA_TESTENV_DIR"
           } >>"$GITHUB_ENV"
 
-      - name: Playwright e2e
+      - name: Browser e2e suite
         working-directory: web
         run: bun run e2e
 
@@ -144,14 +153,14 @@ jobs:
           cp "$OA_TESTENV_DIR/server.log" "$RUNNER_TEMP/logs/server.log" || true
           cp "$RUNNER_TEMP/lightpanda.log" "$RUNNER_TEMP/logs/lightpanda.log" || true
 
-      - name: Upload traces, report and logs
+      # test-results: per failed test, the error, URL, LP.getPageStatus, console and the page HTML.
+      - name: Upload failure reports and logs
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
           name: e2e-failure
           path: |
             web/test-results
-            web/playwright-report
             ${{ runner.temp }}/logs
           if-no-files-found: ignore
           retention-days: 14
@@ -206,12 +215,20 @@ jobs:
           echo "${LP_SHA256}  $RUNNER_TEMP/lightpanda" | sha256sum --check --strict -
           chmod +x "$RUNNER_TEMP/lightpanda"
 
+      # --load-resources: iframes are skipped by default without a word, and a page
+      #   without its stylesheets has no computed styles to judge visibility by.
+      # --timezone/--locale: the same output on every runner.
+      # --watchdog-ms: a script that stalls is a failed step, not a hung job.
       # --cdp-max-message-size: axe-core (~1.5 MB) is injected through one CDP message.
       - name: Start Lightpanda
         env:
           LIGHTPANDA_DISABLE_TELEMETRY: "true"
         run: |
-          setsid nohup "$RUNNER_TEMP/lightpanda" serve --host 127.0.0.1 --port 9222 --cdp-max-message-size 8388608 \
+          setsid nohup "$RUNNER_TEMP/lightpanda" serve --host 127.0.0.1 --port 9222 \
+            --load-resources iframe --load-resources stylesheet \
+            --timezone UTC --locale en-US \
+            --watchdog-ms 30000 --http-timeout 15000 \
+            --cdp-max-message-size 8388608 \
             >"$RUNNER_TEMP/lightpanda.log" 2>&1 &
           for _ in $(seq 1 30); do
             curl -fsS http://127.0.0.1:9222/json/version >/dev/null 2>&1 && exit 0
@@ -270,7 +287,8 @@ jobs:
           cp "$OA_TESTENV_DIR/server.log" "$RUNNER_TEMP/logs/server.log" || true
           cp "$RUNNER_TEMP/lightpanda.log" "$RUNNER_TEMP/logs/lightpanda.log" || true
 
-      - name: Upload seed, traces and logs
+      # test-results holds the step log of each walk and the report of a failed one.
+      - name: Upload seed, walk logs and failure reports
         if: failure()
         uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
@@ -278,7 +296,6 @@ jobs:
           path: |
             web/monkey-seed.txt
             web/test-results
-            web/playwright-report
             ${{ runner.temp }}/logs
           if-no-files-found: ignore
           retention-days: 30
