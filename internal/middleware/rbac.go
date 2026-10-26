@@ -777,12 +777,12 @@ func isRepoSecuritySummaryRoute(method string, segs []string) bool {
 
 // isDelegatedRepoReadOrQuota reports whether {name}/{leaf} is a delegated
 // route of a repository: any quota route but the reconcile POST (a different
-// path depth), and the GET usage and activity feeds.
+// path depth), and the GET usage, activity and members reads.
 func isDelegatedRepoReadOrQuota(method, leaf string) bool {
 	switch leaf {
 	case "quota":
 		return method != http.MethodPost
-	case "usage", "activity":
+	case "usage", "activity", "members":
 		return method == http.MethodGet
 	default:
 		return false
@@ -792,7 +792,7 @@ func isDelegatedRepoReadOrQuota(method, leaf string) bool {
 // delegatedRepoName returns the repository of a route whose administration is
 // delegated to project maintainers and owners (global manage still passes):
 // PATCH/DELETE repository/{name}, the cleanup-policy routes, the quota routes
-// and the GET usage and activity routes of the repository, or "" for any other route. The one exception in the
+// and the GET usage, activity and members routes of the repository, or "" for any other route. The one exception in the
 // quota family, POST .../quota/reconcile, stays administrative.
 func delegatedRepoName(method string, segs []string) string {
 	switch {

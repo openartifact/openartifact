@@ -75,6 +75,8 @@ func TestClassifyAPIRoute(t *testing.T) {
 		{http.MethodDelete, "/api/v1/repositories/app/packages/9", routeScope{action: "delete", repoName: "app"}, "rpm delete"},
 		{http.MethodPatch, "/api/v1/repositories/app/packages/9", routeScope{action: "manage"}, "unknown method on data route"},
 		{http.MethodPut, "/api/v1/repositories/app/members", routeScope{action: "manage"}, "members stay administrative"},
+		{http.MethodGet, "/api/v1/repositories/app/members", routeScope{action: "manage", delegateRepo: "app"}, "the member list is delegated"},
+		{http.MethodGet, "/api/v1/repositories/a%2Fb/members", routeScope{action: "manage"}, "escaped name never delegated for members"},
 		{http.MethodPost, "/api/v1/repositories/app/webhooks", routeScope{action: "manage"}, "webhooks stay administrative"},
 		{http.MethodGet, "/api/v1/repositories/app/trash", routeScope{action: "delete", repoName: "app"}, "repo trash list needs repo delete"},
 		{http.MethodPost, "/api/v1/repositories/app/trash/maven_artifact/0b1c2d3e-0000-4000-8000-000000000001/restore", routeScope{action: "delete", repoName: "app"}, "repo trash restore needs repo delete"},

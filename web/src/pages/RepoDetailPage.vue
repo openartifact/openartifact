@@ -128,7 +128,7 @@ const canUpload = computed(
 const tabs = computed<TabDef[]>(() => {
   const type = repo.value?.repo_type ?? 'hosted'
   return [
-    { id: 'members', label: t('repoDetail.tab.members'), hidden: type !== 'group' },
+    { id: 'members', label: t('repoDetail.tab.members'), hidden: type !== 'group' || !repoAdmin.value },
     { id: 'packages', label: type === 'proxy' ? t('repoDetail.tab.cached') : t('repoDetail.tab.packages'), hidden: type === 'group' },
     { id: 'activity', label: t('rl.tab.activity'), hidden: !repoAdmin.value },
     { id: 'security', label: t('rl.tab.security') },

@@ -20,6 +20,7 @@ async function mountPage(repo: Record<string, unknown> | number, user: Partial<U
     if (/\/repository\/libs$/.test(url)) return typeof repo === 'number' ? json({ error: 'not found' }, repo) : json(repo)
     if (url.includes('/packages')) return json({ total: 0, packages: [] })
     if (url.includes('/members')) return json({ members: [] })
+    if (url.includes('/security/summary')) return json({ scanned_at: null })
     return json({})
   }) as never)
   const router = createRouter({ history: createMemoryHistory(), routes: [{ path: '/repos/:repo', component: RepoDetailPage }, { path: '/:rest(.*)*', component: { template: '<div />' } }] })
@@ -53,11 +54,18 @@ describe('RepoDetailPage', () => {
     w.unmount()
   })
 
-  it('shows members instead of packages for a group', async () => {
-    const w = await mountPage({ ...repo, repo_type: 'group', permissions: {} }, { id: 'u', username: 'ann' })
+  it('shows members instead of packages for a group to people who administer it', async () => {
+    const w = await mountPage({ ...repo, repo_type: 'group', permissions: { admin: true } }, { id: 'u', username: 'ann' })
     const names = tabNames(w)
     expect(names.some((n) => n.startsWith('Members'))).toBe(true)
     expect(names.some((n) => n.startsWith('Packages'))).toBe(false)
+    w.unmount()
+  })
+
+  it('does not request the member list of a group for a plain reader, whom the server refuses', async () => {
+    const w = await mountPage({ ...repo, repo_type: 'group', permissions: {} }, { id: 'u', username: 'ann' })
+    expect(tabNames(w).some((n) => n.startsWith('Members'))).toBe(false)
+    expect((globalThis.fetch as unknown as { mock: { calls: unknown[][] } }).mock.calls.some((c) => String(c[0]).includes('/members'))).toBe(false)
     w.unmount()
   })
 
