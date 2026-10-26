@@ -21,7 +21,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       target="_blank"
       rel="noopener noreferrer"
       data-testid="source-link"
-      class="underline underline-offset-2 hover:text-foreground"
+      class="underline underline-offset-2 hover:text-foreground max-md:inline-flex max-md:min-h-11 max-md:items-center"
     >{{ t('brand.sourceCode') }}</a>
   </p>
 </template>

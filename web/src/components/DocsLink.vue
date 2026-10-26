@@ -15,7 +15,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     target="_blank"
     rel="noopener"
     data-testid="docs-link"
-    class="inline-flex items-center gap-1 text-sm text-muted underline-offset-2 hover:text-foreground hover:underline"
+    class="inline-flex items-center gap-1 text-sm max-md:min-h-11 text-muted underline-offset-2 hover:text-foreground hover:underline"
   >
     <BookOpenIcon class="h-4 w-4 shrink-0" aria-hidden="true" />
     <slot>{{ t('docs.readMore') }}</slot>

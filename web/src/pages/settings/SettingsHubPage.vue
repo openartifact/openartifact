@@ -82,8 +82,9 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <section v-for="g in groups" :key="g.id" class="mb-6" :aria-labelledby="`hub-g-${g.id}`" :data-testid="`hub-group-${g.id}`">
         <h2 :id="`hub-g-${g.id}`" class="text-sm font-semibold text-foreground">{{ t(g.titleKey) }}</h2>
         <p class="mb-2 text-xs text-muted">{{ t(g.descKey) }}</p>
-        <ul class="grid gap-px overflow-hidden rounded-lg border border-border bg-border md:grid-cols-2">
-          <li v-for="s in g.available" :key="s.id" class="bg-surface">
+        <div class="overflow-hidden rounded-lg border border-border bg-surface">
+        <ul class="-mb-px -mr-px grid md:grid-cols-2">
+          <li v-for="s in g.available" :key="s.id" class="border-b border-r border-border">
             <router-link :to="sectionPath(s.id, isAdmin)" class="flex h-full min-h-11 items-start gap-3 px-4 py-3 hover:bg-surface-hover focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-primary">
               <component :is="settingsIcon(s.id)" class="mt-0.5 h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
               <span class="min-w-0">
@@ -92,7 +93,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               </span>
             </router-link>
           </li>
-          <li v-for="s in g.locked" :key="s.id" class="bg-surface" data-testid="hub-locked">
+          <li v-for="s in g.locked" :key="s.id" class="border-b border-r border-border" data-testid="hub-locked">
             <div class="flex h-full min-h-11 items-start gap-3 px-4 py-3 opacity-70" aria-disabled="true">
               <LockClosedIcon class="mt-0.5 h-5 w-5 shrink-0 text-muted" aria-hidden="true" />
               <span class="min-w-0">
@@ -102,6 +103,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             </div>
           </li>
         </ul>
+        </div>
       </section>
       <p v-if="!isAdmin" class="flex items-start gap-2 rounded-lg border border-border bg-surface px-4 py-3 text-sm text-muted" data-testid="hub-managed-note">
         <InformationCircleIcon class="mt-0.5 h-4 w-4 shrink-0" aria-hidden="true" />

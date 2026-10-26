@@ -32,7 +32,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     >
       <router-link
         to="/"
-        class="min-w-0 flex-1 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+        class="flex min-h-11 min-w-0 flex-1 items-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         :class="collapsed && 'flex-none'"
         :aria-label="brand.productName"
       >

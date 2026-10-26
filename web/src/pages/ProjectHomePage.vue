@@ -61,14 +61,14 @@ SPDX-License-Identifier: AGPL-3.0-or-later
               <router-link
                 v-if="repoTotal > 0"
                 :to="{ path: base, query: { tab: 'repositories' } }"
-                class="text-xs text-primary hover:underline"
+                class="inline-flex items-center text-xs text-primary hover:underline max-md:min-h-11"
               >{{ t('projects.overview.viewAll') }}</router-link>
             </div>
             <p v-if="reposError" class="px-4 py-6 text-sm text-danger">{{ reposError }}</p>
             <p v-else-if="repos.length === 0" class="px-4 py-6 text-sm text-muted">{{ t('projects.overview.noRepos') }}</p>
             <ul v-else class="divide-y divide-border">
               <li v-for="r in repos.slice(0, RECENT_LIMIT)" :key="r.id" class="flex items-center justify-between gap-3 px-4 py-2.5">
-                <router-link :to="`/repos/${encodeURIComponent(r.name)}`" class="truncate font-mono text-sm font-medium text-foreground hover:text-primary">{{ r.name }}</router-link>
+                <router-link :to="`/repos/${encodeURIComponent(r.name)}`" class="truncate font-mono text-sm font-medium text-foreground hover:text-primary max-md:inline-flex max-md:min-h-11 max-md:items-center">{{ r.name }}</router-link>
                 <FormatBadge :format="r.format" size="sm" />
               </li>
             </ul>

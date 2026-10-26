@@ -20,7 +20,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
     </button>
 
     <!-- Mobile: the sidebar (and its lockup) is off-canvas, so the mark keeps the brand visible -->
-    <router-link to="/" class="shrink-0 rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:hidden" :aria-label="branding.productName">
+    <router-link to="/" class="flex h-11 w-11 shrink-0 items-center justify-center rounded-md focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary md:hidden" :aria-label="branding.productName">
       <BrandLogo variant="mark" :size="24" />
     </router-link>
 

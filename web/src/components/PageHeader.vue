@@ -23,7 +23,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
             <router-link
               v-else-if="crumb.to"
               :to="crumb.to"
-              class="max-w-[20ch] truncate hover:text-foreground hover:underline sm:max-w-none"
+              class="max-w-[20ch] truncate hover:text-foreground hover:underline max-md:inline-flex max-md:min-h-11 max-md:items-center sm:max-w-none"
             >{{ crumb.label }}</router-link>
             <span v-else class="truncate">{{ crumb.label }}</span>
           </li>
@@ -40,7 +40,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
           :aria-label="t('docs.helpPage')"
           :title="t('docs.helpPage')"
           data-testid="page-help"
-          class="inline-flex h-6 w-6 shrink-0 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
+          class="inline-flex h-6 w-6 shrink-0 max-md:h-11 max-md:w-11 items-center justify-center rounded-full text-muted transition-colors hover:bg-surface-hover hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary"
         >
           <QuestionMarkCircleIcon class="h-5 w-5" aria-hidden="true" />
         </a>

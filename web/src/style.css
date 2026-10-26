@@ -102,6 +102,34 @@ input[type='radio'] {
   accent-color: rgb(var(--color-primary));
 }
 
+/* Touch targets: every control is at least 44px tall below the md breakpoint (WCAG 2.5.8 AAA / platform guidance).
+   Switches keep their look and get an invisible larger hit area instead. */
+@media (max-width: 767px) {
+  button:not([role='switch']),
+  select,
+  input:not([type='checkbox'], [type='radio'], [type='range'], [type='hidden']) {
+    min-height: 44px;
+  }
+  button:not([role='switch']) {
+    min-width: 44px;
+  }
+  td a,
+  [role='cell'] a {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    min-width: 44px;
+  }
+  [role='switch'] {
+    position: relative;
+  }
+  [role='switch']::after {
+    content: '';
+    position: absolute;
+    inset: -12px -4px;
+  }
+}
+
 *:focus-visible {
   outline: 2px solid rgb(var(--color-primary));
   outline-offset: 2px;
@@ -131,16 +159,15 @@ input[type='radio'] {
     width 0.25s cubic-bezier(0.4, 0, 0.2, 1);
 }
 
-/* Skeleton shimmer */
+/* Skeleton: a flat fill that pulses (the design system has no gradients). */
 .skel {
-  background: linear-gradient(
-    90deg,
-    rgb(var(--color-surface-hover)) 25%,
-    rgb(var(--color-border) / 0.3) 50%,
-    rgb(var(--color-surface-hover)) 75%
-  );
-  background-size: 200% 100%;
-  animation: shimmer 1.5s infinite;
+  background: rgb(var(--color-surface-hover));
+  animation: skelPulse 1.5s ease-in-out infinite;
+}
+@media (prefers-reduced-motion: reduce) {
+  .skel {
+    animation: none;
+  }
 }
 
 /* Bar fill animation */
@@ -182,12 +209,9 @@ input[type='radio'] {
   }
 }
 
-@keyframes shimmer {
-  0% {
-    background-position: 200% 0;
-  }
-  100% {
-    background-position: -200% 0;
+@keyframes skelPulse {
+  50% {
+    opacity: 0.55;
   }
 }
 

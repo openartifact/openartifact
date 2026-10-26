@@ -61,6 +61,7 @@ const classes = computed(() => [
   'disabled:opacity-50 disabled:cursor-not-allowed',
   props.block ? 'w-full' : 'shrink-0',
   SIZES[props.size],
+  'max-md:min-h-11',
   VARIANTS[props.variant],
 ])
 </script>
