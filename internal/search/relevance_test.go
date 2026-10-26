@@ -181,7 +181,7 @@ func TestSearchPageGroupsByPackage(t *testing.T) {
 	repoID := uuid.New()
 	mock.ExpectQuery(`(?s)latest AS \(\s*SELECT DISTINCT ON \(repository_id, format, name\).*ORDER BY repository_id, format, name, created_at DESC, id`).
 		WillReturnRows(sqlmock.NewRows(pageCols()).
-			AddRow(repoID.String(), "repo", "npm", "lodash", "4.17.21", "", "", int64(0), time.Now(), nil, nil, nil, int64(3)))
+			AddRow(repoID.String(), "repo", "npm", "lodash", "4.17.21", "", "", int64(0), time.Now(), nil, nil, nil, int64(3), int64(0)))
 
 	results, total, err := NewExecutor(db).SearchPage(context.Background(), SearchFilter{FreeText: "lodash"}, PageOptions{GroupByPackage: true}, 8, 0, map[uuid.UUID]struct{}{repoID: {}})
 	if err != nil {
@@ -243,5 +243,5 @@ func TestSearchRepositoriesRanksExactThenPrefixThenName(t *testing.T) {
 }
 
 func pageCols() []string {
-	return []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total"}
+	return []string{"repository_id", "repository", "format", "name", "version", "path", "sha256", "size", "created_at", "group_id", "artifact_id_coord", "scope", "total", "version_count"}
 }

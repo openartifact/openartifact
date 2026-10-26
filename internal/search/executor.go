@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/google/uuid"
+	"github.com/openartifact/openartifact/internal/database"
 )
 
 // MaxSearchResults is the largest match count a search may have; broader
@@ -29,6 +30,9 @@ type SearchResult struct {
 	Size       int64             `json:"size"`
 	CreatedAt  time.Time         `json:"created_at"`
 	Metadata   map[string]string `json:"metadata,omitempty"`
+	// VersionCount is the number of matching versions of the package; only set
+	// by a group=package search.
+	VersionCount int `json:"version_count,omitempty"`
 }
 
 // RepositoryResult is a repository whose own name matched the query (as
@@ -318,6 +322,9 @@ func buildSearchQuery(
 
 	var pageCTE, totalExpr string
 
+	// Only the grouped page counts the versions of a package.
+	versionCountExpr := "0::bigint"
+
 	switch {
 	case capped && opts.GroupByPackage:
 		// One row per package, its latest version; the window count then counts
@@ -334,18 +341,23 @@ func buildSearchQuery(
 		FROM matched
 		WHERE matched_total <= %[7]d
 		ORDER BY repository_id, format, name, created_at DESC, id
+	), counts AS (
+		SELECT repository_id, format, name, count(DISTINCT version) AS version_count
+		FROM matched
+		WHERE matched_total <= %[7]d
+		GROUP BY repository_id, format, name
 	), page AS (
-		(SELECT %[1]s, %[8]s AS relevance, count(*) OVER () AS total
-		FROM latest
+		(SELECT %[1]s, %[8]s AS relevance, count(*) OVER () AS total, version_count
+		FROM latest JOIN counts USING (repository_id, format, name)
 		ORDER BY relevance, created_at DESC, id
 		LIMIT $%[5]d OFFSET $%[6]d)
 		UNION ALL
-		(SELECT %[1]s, 0::int AS relevance, matched_total AS total
+		(SELECT %[1]s, 0::int AS relevance, matched_total AS total, 0::bigint AS version_count
 		FROM matched
 		WHERE matched_total > %[7]d
 		LIMIT $%[5]d)
 	)`, matchColumns, sourceColumns, matches, MaxSearchResults+1, limitN, offsetN, MaxSearchResults, rank.expr, rank.cols, rank.names)
-		totalExpr = "p.total"
+		totalExpr, versionCountExpr = "p.total", "p.version_count"
 	case capped:
 		// The window count is evaluated before ORDER BY/LIMIT, over the capped
 		// set; above the cap the rows are not ranked, as above.
@@ -393,7 +405,8 @@ func buildSearchQuery(
 		p.group_id,
 		p.artifact_id_coord,
 		p.scope,
-		%s AS total
+		%s AS total,
+		%s AS version_count
 	FROM page AS p
 	JOIN repositories r ON r.id = p.repository_id AND r.deleted_at IS NULL
 	%s
@@ -402,6 +415,7 @@ func buildSearchQuery(
 		searchSHA256Expr,
 		searchSizeExpr,
 		totalExpr,
+		versionCountExpr,
 		fmt.Sprintf(searchBlobJoins, "p"),
 	)
 
@@ -447,7 +461,7 @@ func (e *Executor) runSearch(
 		)
 
 		if err := rows.Scan(&repoIDRaw, &sr.Repository, &sr.Format, &sr.Name, &sr.Version,
-			&sr.Path, &sr.SHA256, &sr.Size, &sr.CreatedAt, &groupID, &artifactID, &scope, &total); err != nil {
+			&sr.Path, &sr.SHA256, &sr.Size, &sr.CreatedAt, &groupID, &artifactID, &scope, &total, &sr.VersionCount); err != nil {
 			return nil, 0, fmt.Errorf("scan search result: %w", err)
 		}
 
@@ -485,7 +499,7 @@ func (e *Executor) runSearch(
 // relevanceExpr), then by name. The package-oriented terms of the filter
 // apply to repositories as follows: name:/free text match the repository name,
 // format: matches the repository format, repo: the repository name exactly.
-// sha256: identifies artifacts, never a repository, so it yields no repositories.
+// sha256: and flagged identify artifacts, never a repository, so they yield no repositories.
 // Like Search, the result is scoped to readableRepos in SQL and again in Go.
 func (e *Executor) SearchRepositories(
 	ctx context.Context,
@@ -493,7 +507,7 @@ func (e *Executor) SearchRepositories(
 	limit, offset int,
 	readableRepos map[uuid.UUID]struct{},
 ) ([]RepositoryResult, error) {
-	if len(readableRepos) == 0 || filter.SHA256Prefix != "" {
+	if len(readableRepos) == 0 || filter.SHA256Prefix != "" || filter.Flagged {
 		return nil, nil
 	}
 
@@ -767,6 +781,11 @@ func buildWhereClause(filter SearchFilter, readableRepos map[uuid.UUID]struct{})
 	}
 
 	b.addReadable("s.repository_id", readableRepos)
+
+	// Last: it probes the scan tables per remaining row.
+	if filter.Flagged {
+		b.clauses = append(b.clauses, database.FlaggedArtifactPredicate("s.repository_id", "s.id"))
+	}
 
 	return b.String(), b.join, b.args
 }
