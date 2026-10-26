@@ -6,6 +6,8 @@ package docker
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
@@ -89,6 +91,31 @@ func TestRegistry_TagsListPaginates(t *testing.T) {
 	// An absurd n is capped, not honoured.
 	if tags, _ = list("?n=999999"); len(tags) != 5 {
 		t.Fatalf("n=999999 = %v", tags)
+	}
+}
+
+// An image without a manifest is unknown to the registry (404 NAME_UNKNOWN on
+// its tag listing); an image that has manifests but no tag still lists as
+// empty. Groups tell an empty hosted member from one holding the image by it.
+func TestRegistry_TagsListUnknownImage(t *testing.T) {
+	g := newRegistry(t, newRegFakeDB("reg"))
+
+	rec := g.do(http.MethodGet, "/v2/reg/ghost/tags/list", "")
+	if rec.Code != http.StatusNotFound || !strings.Contains(rec.Body.String(), "NAME_UNKNOWN") {
+		t.Fatalf("unknown image tags/list = %d %s, want 404 NAME_UNKNOWN", rec.Code, rec.Body.String())
+	}
+
+	// Pushed by digest only: the image exists, it just has no tag.
+	body := `{"schemaVersion":2,"mediaType":"` + ociManifestType + `"}`
+	sum := sha256.Sum256([]byte(body))
+
+	if rec := g.putManifest("reg/app", "sha256:"+hex.EncodeToString(sum[:]), body); rec.Code != http.StatusCreated {
+		t.Fatalf("PUT by digest = %d; %s", rec.Code, rec.Body.String())
+	}
+
+	rec = g.do(http.MethodGet, "/v2/reg/app/tags/list", "")
+	if rec.Code != http.StatusOK || !strings.Contains(rec.Body.String(), `"tags":[]`) {
+		t.Fatalf("untagged image tags/list = %d %s, want 200 with empty tags", rec.Code, rec.Body.String())
 	}
 }
 

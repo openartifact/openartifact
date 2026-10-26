@@ -186,6 +186,16 @@ func (d *regFakeDB) GetDockerManifest(_ context.Context, repoID, image, digest s
 	return d.manifests[scoped(repoID, scoped(image, digest))], nil
 }
 
+func (d *regFakeDB) DockerImageExists(_ context.Context, repoID, image string) (bool, error) {
+	for _, m := range d.manifests {
+		if m.RepositoryID == repoID && m.Image == image {
+			return true, nil
+		}
+	}
+
+	return false, nil
+}
+
 func (d *regFakeDB) DeleteDockerManifest(_ context.Context, repoID, image, digest string) error {
 	k := scoped(repoID, scoped(image, digest))
 	if _, ok := d.manifests[k]; !ok {

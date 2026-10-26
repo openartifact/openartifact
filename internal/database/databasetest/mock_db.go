@@ -300,6 +300,9 @@ func (m *BaseMockDB) CreateDockerManifest(ctx context.Context, mf *models.Docker
 func (m *BaseMockDB) GetDockerManifest(ctx context.Context, repoID, image, digest string) (*models.DockerManifest, error) {
 	return nil, errNotImpl("GetDockerManifest")
 }
+func (m *BaseMockDB) DockerImageExists(ctx context.Context, repoID, image string) (bool, error) {
+	return false, errNotImpl("DockerImageExists")
+}
 func (m *BaseMockDB) DeleteDockerManifest(ctx context.Context, repoID, image, digest string) error {
 	return errNotImpl("DeleteDockerManifest")
 }

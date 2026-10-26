@@ -481,6 +481,27 @@ func (q *Queries) DockerBlobVisibleToImage(ctx context.Context, arg DockerBlobVi
 	return visible, err
 }
 
+const dockerImageExists = `-- name: DockerImageExists :one
+SELECT EXISTS (
+    SELECT 1 FROM docker_manifests
+    WHERE repository_id = $1 AND image = $2 AND deleted_at IS NULL
+)
+`
+
+type DockerImageExistsParams struct {
+	RepositoryID string `db:"repository_id" json:"repository_id"`
+	Image        string `db:"image" json:"image"`
+}
+
+// Whether the image holds at least one live manifest: the registry knows the
+// image (a tag listing of an unknown one is NAME_UNKNOWN).
+func (q *Queries) DockerImageExists(ctx context.Context, arg DockerImageExistsParams) (bool, error) {
+	row := q.db.QueryRow(ctx, dockerImageExists, arg.RepositoryID, arg.Image)
+	var exists bool
+	err := row.Scan(&exists)
+	return exists, err
+}
+
 const getDockerBlob = `-- name: GetDockerBlob :one
 SELECT dbb.id, dbb.repository_id, dbb.digest, b.media_type, COALESCE(dbb.size_bytes, b.size_bytes)::bigint AS size, b.sha256 AS blob_sha256, dbb.created_at
 FROM docker_blobs dbb

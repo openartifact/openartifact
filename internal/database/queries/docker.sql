@@ -67,6 +67,14 @@ SELECT id, repository_id, image, digest, media_type, blob_id, size,
 FROM docker_manifests
 WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL;
 
+-- name: DockerImageExists :one
+-- Whether the image holds at least one live manifest: the registry knows the
+-- image (a tag listing of an unknown one is NAME_UNKNOWN).
+SELECT EXISTS (
+    SELECT 1 FROM docker_manifests
+    WHERE repository_id = $1 AND image = $2 AND deleted_at IS NULL
+);
+
 -- name: DeleteDockerManifest :execrows
 -- Permanent delete of a live manifest (retention 0 path); trashed rows are left to purge.
 DELETE FROM docker_manifests WHERE repository_id = $1 AND image = $2 AND digest = $3 AND deleted_at IS NULL;
