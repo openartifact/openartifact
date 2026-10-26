@@ -4,7 +4,7 @@
 # SPDX-License-Identifier: AGPL-3.0-or-later
 #
 # Start (and seed) a throwaway OpenArtifact server for the black-box suites:
-# Schemathesis API fuzzing, Playwright e2e and the monkey test. Needs a
+# Schemathesis API fuzzing, the browser e2e suite and the monkey test. Needs a
 # reachable Postgres and a built server binary (the e2e suites need one built
 # after `bun run build` so the SPA is embedded).
 #

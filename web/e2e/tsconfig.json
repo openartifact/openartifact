@@ -2,15 +2,15 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-// Type-checks the Playwright suites (they run in Node, not in the SPA bundle).
-// Not included by the root tsconfig.json, which only covers src/.
+// Type-checks the browser suites (they run under `bun test`, not in the SPA
+// bundle). Not included by the root tsconfig.json, which only covers src/.
 {
   "compilerOptions": {
     "target": "ES2022",
     "module": "ESNext",
     "moduleResolution": "bundler",
-    "lib": ["ES2022", "DOM"],
-    "types": ["node"],
+    "lib": ["ES2023", "DOM"],
+    "types": ["bun"],
     "strict": true,
     "noUnusedLocals": true,
     "noUnusedParameters": true,
@@ -19,5 +19,5 @@
     "isolatedModules": true,
     "allowImportingTsExtensions": true
   },
-  "include": ["./**/*.ts", "../playwright.config.ts", "../playwright.monkey.config.ts"]
+  "include": ["./**/*.ts"]
 }

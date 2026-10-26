@@ -56,8 +56,6 @@ web/coverage/
 web/dist/*
 !web/dist/.gitkeep
 
-# Playwright e2e output and the sessions written by its global setup
+# Browser e2e output (failure reports, monkey walk logs) and the last monkey seed
 /web/test-results/
-/web/playwright-report/
-/web/e2e/.auth/
 /web/monkey-seed.txt

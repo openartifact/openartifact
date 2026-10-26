@@ -4,14 +4,15 @@
 
 import { readFileSync } from 'node:fs'
 import { createRequire } from 'node:module'
-import type { Page } from '@playwright/test'
+import type { Ui } from './ui'
 
 const require = createRequire(import.meta.url)
 const AXE_SOURCE = readFileSync(require.resolve('axe-core/axe.min.js'), 'utf8')
 
 /**
- * Rules that need a rendering engine. Lightpanda computes no layout and no
- * styles, so contrast, target size and scroll geometry cannot be judged:
+ * Rules that need a rendering engine. Lightpanda computes no layout (boxes are
+ * approximations, nothing is painted), so contrast, target size and scroll
+ * geometry cannot be judged:
  * these rules are switched off, not guessed. Colour contrast of both themes
  * is therefore NOT covered by the e2e suite.
  */
@@ -31,15 +32,14 @@ export interface AxeViolation {
 }
 
 /**
- * Runs axe-core (injected into the page; @axe-core/playwright needs a second
- * page, which Lightpanda does not allow) with the layout-independent rules of
+ * Runs axe-core (injected into the page as a script) with the layout-independent rules of
  * WCAG 2.x A/AA and the best-practice set, and returns the violations of
  * impact `serious` or `critical`.
  */
-export async function seriousViolations(page: Page, exclude: string[] = []): Promise<AxeViolation[]> {
-  await page.evaluate(AXE_SOURCE)
+export async function seriousViolations(ui: Ui, exclude: string[] = []): Promise<AxeViolation[]> {
+  await ui.page.evaluate(AXE_SOURCE)
   const rules = Object.fromEntries(LAYOUT_DEPENDENT_RULES.map((id) => [id, { enabled: false }]))
-  const found = await page.evaluate(
+  const found = await ui.page.evaluate(
     async ({ rules, exclude }) => {
       const axe = (globalThis as unknown as { axe: { run(ctx: unknown, opts: unknown): Promise<{ violations: Array<{ id: string; impact: string | null; help: string; nodes: Array<{ target: unknown[] }> }> }> } }).axe
       const context = exclude.length > 0 ? { include: [document], exclude: exclude.map((s) => [s]) } : document

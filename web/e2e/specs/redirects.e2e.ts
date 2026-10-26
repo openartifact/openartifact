@@ -2,8 +2,9 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { expect, test } from '../fixtures'
-import { shellReady, t } from '../lib/ui'
+import { describe, expect } from 'bun:test'
+import { testAs } from '../lib/browser'
+import { expectLoc, shellReady, t } from '../lib/ui'
 
 // Old URLs keep working (web/src/router/redirects.ts). The table is a sample
 // with one entry per redirect family, including the query/hash carry-over.
@@ -38,48 +39,43 @@ const LEGACY: ReadonlyArray<readonly [from: string, to: string]> = [
   ['/repos/seed-npm/packages/left-pad?version=1.3.0', '/repos/seed-npm/packages/left-pad/versions/1.3.0'],
 ]
 
-test.describe('legacy URLs', () => {
-  test.use({ role: 'admin' })
+describe('legacy URLs', () => {
+  const it = testAs('admin')
 
   for (const [from, to] of LEGACY) {
-    test(`${from} lands on ${to}`, async ({ page }) => {
-      await page.goto(from)
-      await shellReady(page)
-      await expect
-        .poll(() => {
-          const u = new URL(page.url())
-          return decodeURIComponent(u.pathname) + u.search
-        })
-        .toBe(decodeURIComponent(to))
+    it(`${from} lands on ${to}`, async (ui) => {
+      await ui.goto(from)
+      await shellReady(ui)
+      await ui.expectUrl((u) => decodeURIComponent(u.pathname) + u.search === decodeURIComponent(to))
       // The destination is a real page, not the not-found screen.
-      await expect(page.getByText(t('shell.notFoundTitle'))).toHaveCount(0)
+      await expectLoc(ui.getByText(t('shell.notFoundTitle'))).toHaveCount(0)
     })
   }
 
-  test('the hash survives the redirect', async ({ page }) => {
-    await page.goto('/admin/users#top')
-    await shellReady(page)
-    await expect.poll(() => new URL(page.url()).hash).toBe('#top')
-    expect(new URL(page.url()).pathname).toBe('/settings/users')
+  it('the hash survives the redirect', async (ui) => {
+    await ui.goto('/admin/users#top')
+    await shellReady(ui)
+    await ui.expectUrl((u) => u.hash === '#top')
+    expect(ui.url().pathname).toBe('/settings/users')
   })
 
-  test('/repos/new opens the create drawer', async ({ page }) => {
-    await page.goto('/repos/new')
-    await expect(page.getByRole('dialog', { name: t('rl.create.title') })).toBeVisible()
+  it('/repos/new opens the create drawer', async (ui) => {
+    await ui.goto('/repos/new')
+    await expectLoc(ui.getByRole('dialog', { name: t('rl.create.title') })).toBeVisible()
   })
 
-  test('an unknown path is the not-found page', async ({ page }) => {
-    await page.goto('/no/such/page')
-    await expect(page.getByText(t('shell.notFoundTitle'))).toBeVisible()
+  it('an unknown path is the not-found page', async (ui) => {
+    await ui.goto('/no/such/page')
+    await expectLoc(ui.getByText(t('shell.notFoundTitle'))).toBeVisible()
   })
 })
 
-test.describe('legacy URLs of a developer', () => {
-  test.use({ role: 'dev' })
+describe('legacy URLs of a developer', () => {
+  const it = testAs('dev')
 
-  test('an admin section keeps being refused after the redirect', async ({ page }) => {
-    await page.goto('/admin/users')
-    await expect(page.getByText(t('shell.denied.admin'))).toBeVisible()
-    await expect.poll(() => new URL(page.url()).pathname).toBe('/')
+  it('an admin section keeps being refused after the redirect', async (ui) => {
+    await ui.goto('/admin/users')
+    await expectLoc(ui.getByText(t('shell.denied.admin'))).toBeVisible()
+    await ui.expectUrl((u) => u.pathname === '/')
   })
 })

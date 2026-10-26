@@ -1,0 +1,9 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Config of the browser suites (`bun run e2e`, `bun run monkey`). The unit-test
+# config in ../bunfig.toml preloads a DOM emulation and stubs fetch, which a
+# suite that drives a real server must not inherit.
+[test]
+root = "."

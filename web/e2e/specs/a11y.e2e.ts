@@ -2,9 +2,10 @@
 //
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
-import { expect, test, type Role } from '../fixtures'
+import { describe, expect } from 'bun:test'
 import { seriousViolations } from '../lib/a11y'
-import { chooseTheme, shellReady } from '../lib/ui'
+import { testAs, type Role } from '../lib/browser'
+import { chooseTheme, expectLoc, shellReady } from '../lib/ui'
 
 /**
  * Axe scan of every page the suite visits, once in the light and once in the
@@ -48,42 +49,43 @@ const TARGETS: Target[] = [
 ]
 
 for (const theme of ['light', 'dark'] as const) {
-  test.describe(`axe, ${theme} theme`, () => {
+  describe(`axe, ${theme} theme`, () => {
     for (const target of TARGETS) {
-      test.describe(target.name, () => {
-        test.use({ role: target.role })
+      const it = testAs(target.role)
 
-        test(`${target.role} ${target.path} has no serious or critical violations`, async ({ page }) => {
-          await page.goto(target.path)
-          await expect(page.locator(target.ready).first()).toBeVisible()
-          if (target.role === 'anon') {
-            // No user menu before sign-in: the theme comes from the stored preference, as on a return visit.
-            await page.evaluate((mode) => localStorage.setItem('oa.theme', JSON.stringify(mode)), theme)
-            await page.reload()
-            await expect(page.locator(target.ready).first()).toBeVisible()
-          } else {
-            await shellReady(page)
-            await chooseTheme(page, theme)
-          }
-          const dark = page.locator('html')
-          if (theme === 'dark') await expect(dark).toHaveClass(/(^|\s)dark(\s|$)/)
-          // Content that loads after the heading must be in place before the scan.
-          await page.waitForLoadState('networkidle')
+      it(`${target.name}: ${target.role} ${target.path} has no serious or critical violations`, async (ui) => {
+        await ui.goto(target.path)
+        await expectLoc(ui.locator(target.ready).first()).toBeVisible()
+        if (target.role === 'anon') {
+          // No user menu before sign-in: the theme comes from the stored preference, as on a return visit.
+          await ui.page.evaluate((mode) => localStorage.setItem('oa.theme', JSON.stringify(mode)), theme)
+          await ui.reload()
+          await expectLoc(ui.locator(target.ready).first()).toBeVisible()
+        } else {
+          await shellReady(ui)
+          await chooseTheme(ui, theme)
+        }
+        if (theme === 'dark') await expectLoc(ui.locator('html')).toHaveClass(/(^|\s)dark(\s|$)/)
+        // Content that loads after the heading must be in place before the scan.
+        await ui.settled()
 
-          const violations = await seriousViolations(page)
-          expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
-        })
+        const violations = await seriousViolations(ui)
+        expect(violations, JSON.stringify(violations, null, 2)).toEqual([])
       })
     }
   })
 }
 
-test('the scan reports a violation when there is one (guards against a scan that silently runs nothing)', async ({ page }) => {
-  await page.goto('/login')
-  await expect(page.locator('#username')).toBeVisible()
-  await page.evaluate(() => {
-    document.body.insertAdjacentHTML('beforeend', '<img src="/x.png"><button type="button"></button>')
+describe('the scan itself', () => {
+  const it = testAs('anon')
+
+  it('reports a violation when there is one (guards against a scan that silently runs nothing)', async (ui) => {
+    await ui.goto('/login')
+    await expectLoc(ui.locator('#username')).toBeVisible()
+    await ui.page.evaluate(() => {
+      document.body.insertAdjacentHTML('beforeend', '<img src="/x.png"><button type="button"></button>')
+    })
+    const ids = (await seriousViolations(ui)).map((v) => v.id)
+    expect(ids).toEqual(expect.arrayContaining(['image-alt', 'button-name']))
   })
-  const ids = (await seriousViolations(page)).map((v) => v.id)
-  expect(ids).toEqual(expect.arrayContaining(['image-alt', 'button-name']))
 })
