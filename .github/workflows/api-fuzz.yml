@@ -1,0 +1,102 @@
+# SPDX-FileCopyrightText: The OpenArtifact Authors
+#
+# SPDX-License-Identifier: AGPL-3.0-or-later
+
+# Black-box fuzzing of the REST API: Schemathesis generates requests from
+# internal/api/openapi.json against a real server (built without the SPA) and
+# Postgres, as admin, as the seeded developer and anonymously. See
+# scripts/api-fuzz.sh and tests/apifuzz/ and docs/development/testing.md.
+#   pull requests   small fixed-seed budget (deterministic)
+#   nightly         bigger budget, random seed (printed; replay with the seed input)
+
+name: api-fuzz
+
+on:
+  pull_request:
+  schedule:
+    - cron: "43 2 * * *"
+  workflow_dispatch:
+    inputs:
+      seed:
+        description: "Seed to replay (empty: a random one, printed in the log)"
+        required: false
+        default: ""
+
+concurrency:
+  group: api-fuzz-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+env:
+  GO_VERSION: "1.27.3"
+
+jobs:
+  api-fuzz:
+    name: api-fuzz
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # pr: small fixed-seed budget; everything else: the nightly budget.
+      FUZZ_MODE: ${{ github.event_name == 'pull_request' && 'pr' || 'nightly' }}
+      OA_FUZZ_SEED: ${{ inputs.seed }}
+    services:
+      postgres:
+        image: docker.io/postgres:18-alpine@sha256:898c60cb390d1085bc97bdd6a1ae968757421df394b071848b52b1c09c89d6a5
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: openartifact_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U postgres"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+        with:
+          go-version: ${{ env.GO_VERSION }}
+          cache: true
+          cache-dependency-path: go.sum
+
+      # The SPA is not needed for the API: web/dist only holds its .gitkeep.
+      - name: Build the server
+        env:
+          OA_BIN: ${{ runner.temp }}/oa-server
+        run: go build -o "$OA_BIN" ./cmd/server
+
+      - name: Start and seed the server
+        env:
+          OA_BIN: ${{ runner.temp }}/oa-server
+          OA_TESTENV_DIR: ${{ runner.temp }}/oa-testenv
+        run: scripts/testenv.sh start
+
+      - name: Fuzz the API
+        env:
+          OA_TESTENV_DIR: ${{ runner.temp }}/oa-testenv
+          OA_FUZZ_REPORT_DIR: ${{ runner.temp }}/schemathesis-report
+        run: |
+          . "$OA_TESTENV_DIR/env"
+          scripts/api-fuzz.sh "$FUZZ_MODE"
+
+      - name: Stop the server
+        if: always()
+        env:
+          OA_TESTENV_DIR: ${{ runner.temp }}/oa-testenv
+        run: scripts/testenv.sh stop
+
+      # Reports and cassettes (replay with `st replay`) plus the server log; never
+      # the testenv env file, which holds the credentials of the throwaway server.
+      - name: Upload the reports
+        if: failure()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+        with:
+          name: api-fuzz-report
+          path: |
+            ${{ runner.temp }}/schemathesis-report
+            ${{ runner.temp }}/oa-testenv/server.log
+          retention-days: 14
+          if-no-files-found: ignore
