@@ -37,7 +37,7 @@ func (h *AdminTokensHandler) Register(r chi.Router) {
 	r.With(requireUUIDParams("id", "tokenId")).Delete("/api/v1/users/{id}/tokens/{tokenId}", h.handleRevoke)
 	r.Get("/api/v1/tokens", h.handleUnifiedList)
 	r.Get("/api/v1/admin/tokens", h.handleAdminList)
-	r.Delete("/api/v1/admin/tokens/{tokenId}", h.handleAdminRevoke)
+	r.With(requireUUIDParams("tokenId")).Delete("/api/v1/admin/tokens/{tokenId}", h.handleAdminRevoke)
 }
 
 // checkOwnerOrAdmin reports whether the caller may manage tokens owned by
