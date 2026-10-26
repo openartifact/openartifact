@@ -71,8 +71,8 @@ SPDX-License-Identifier: AGPL-3.0-or-later
       <template #cell-type="{ row }">{{ t(`repos.new.type.${row.repo_type ?? 'hosted'}` as 'repos.new.type.hosted') }}</template>
       <template #cell-visibility="{ row }">{{ row.public ? t('repos.public') : t('repos.private') }}</template>
       <template #cell-packages="{ row }"><span class="tabular-nums">{{ row.stats ? row.stats.package_count : '—' }}</span></template>
-      <template #cell-size="{ row }"><span class="tabular-nums">{{ formatBytesOrDash(row.stats?.size_bytes) }}</span></template>
-      <template #cell-last_published="{ row }"><RelativeTime :value="row.stats?.last_published_at" class="text-xs text-muted" /></template>
+      <template #cell-size="{ row }"><span class="whitespace-nowrap tabular-nums">{{ formatBytesOrDash(row.stats?.size_bytes) }}</span></template>
+      <template #cell-last_published="{ row }"><RelativeTime :value="row.stats?.last_published_at" class="whitespace-nowrap text-xs text-muted" /></template>
       <template #cell-security="{ row }">
         <router-link
           v-if="session.isAdmin && securityState(row).kind === 'findings'"

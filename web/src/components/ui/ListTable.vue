@@ -107,7 +107,7 @@ SPDX-License-Identifier: AGPL-3.0-or-later
                 :class="[
                   col.align === 'end' ? 'text-right max-md:text-left' : '',
                   ci === 0 ? 'max-md:font-medium' : '',
-                  col.actions ? 'max-md:justify-start' : '',
+                  ci === 0 || col.actions ? 'max-md:justify-start max-md:before:hidden' : '',
                 ]"
               >
                 <slot :name="`cell-${col.key}`" :row="row" :value="row[col.key]" :index="index">

@@ -81,6 +81,7 @@ export const enRepoList = {
   'rl.security.clean': 'Clean',
   'rl.security.secrets': '{n} secrets',
   'rl.security.secrets.one': '1 secret',
+  'rl.security.more': '+{n} more',
   'rl.security.licenses': '{n} license issues',
   'rl.security.licenses.one': '1 license issue',
   'rl.security.open': 'Open findings of {name}',
