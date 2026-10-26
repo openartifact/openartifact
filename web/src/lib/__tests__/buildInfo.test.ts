@@ -3,7 +3,7 @@
 // SPDX-License-Identifier: AGPL-3.0-or-later
 
 import { describe, it, expect } from 'bun:test'
-import { formatBuildTime, formatCommit, isStamped } from '../buildInfo'
+import { formatBuildTime, formatCommit, isStamped, isUnstampedBuild, LDFLAGS_EXAMPLE } from '../buildInfo'
 import { formatDateTime } from '../datetime'
 
 describe('build info formatting', () => {
@@ -26,5 +26,24 @@ describe('build info formatting', () => {
     expect(formatBuildTime('Tuesday')).toBe('Tuesday')
     expect(formatBuildTime('unknown')).toBeNull()
     expect(formatBuildTime('')).toBeNull()
+  })
+})
+
+describe('isUnstampedBuild', () => {
+  it('flags a dev or unknown version and an unknown commit', () => {
+    expect(isUnstampedBuild({ version: 'dev', commit: 'd6fdb07' })).toBe(true)
+    expect(isUnstampedBuild({ version: 'unknown', commit: 'unknown' })).toBe(true)
+    expect(isUnstampedBuild({ version: '', commit: 'd6fdb07' })).toBe(true)
+    expect(isUnstampedBuild({ version: 'v1.2.3', commit: 'unknown' })).toBe(true)
+  })
+
+  it('accepts a stamped release', () => {
+    expect(isUnstampedBuild({ version: 'v1.2.3', commit: 'd6fdb07abcdef' })).toBe(false)
+  })
+
+  it('offers the flags the build files use', () => {
+    expect(LDFLAGS_EXAMPLE).toContain('-X main.version=')
+    expect(LDFLAGS_EXAMPLE).toContain('-X main.commit=')
+    expect(LDFLAGS_EXAMPLE).toContain('-X main.buildTime=')
   })
 })
