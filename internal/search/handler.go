@@ -73,7 +73,7 @@ const (
 )
 
 // parseFlagged reads the optional flagged parameter; false means a bad value.
-func parseFlagged(v string) (flagged, ok bool) {
+func parseFlagged(v string) (bool, bool) {
 	switch v {
 	case "", "false":
 		return false, true
@@ -116,7 +116,7 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 
 	if checksum != "" {
-		h.serveChecksum(ctx, w, r, checksum, limit, offset)
+		h.serveChecksum(ctx, w, checksum, limit, offset)
 		return
 	}
 
@@ -196,8 +196,8 @@ func (h *Handler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 
 // parsePaging reads limit (default 25, at most 100) and offset; on a bad value
 // it writes the 400 and returns false.
-func parsePaging(w http.ResponseWriter, r *http.Request) (limit, offset int, ok bool) {
-	limit = 25
+func parsePaging(w http.ResponseWriter, r *http.Request) (int, int, bool) {
+	limit, offset := 25, 0
 
 	if v := r.URL.Query().Get("limit"); v != "" {
 		n, err := strconv.Atoi(v)
@@ -235,7 +235,7 @@ func parsePaging(w http.ResponseWriter, r *http.Request) (limit, offset int, ok 
 // serveChecksum answers a checksum lookup: the files whose stored SHA-256,
 // SHA-1 or MD5 equals the value, in the repositories the caller can read. The
 // other query parameters (q, format, repo, group, flagged) do not apply to it.
-func (h *Handler) serveChecksum(ctx context.Context, w http.ResponseWriter, r *http.Request, checksum string, limit, offset int) {
+func (h *Handler) serveChecksum(ctx context.Context, w http.ResponseWriter, checksum string, limit, offset int) {
 	digest, algorithm, ok := ParseChecksum(checksum)
 	if !ok {
 		httpx.WriteError(w, http.StatusBadRequest, "invalid_checksum",
