@@ -14,10 +14,9 @@ describe('auditSubject', () => {
     )
   })
 
-  it('reads the request path out of an object message', () => {
-    expect(auditSubject({ details: { message: { method: 'POST', path: '/api/v1/repositories', status: 201 } } })).toBe(
-      '/api/v1/repositories',
-    )
+  it('does not show an API route pattern as the subject', () => {
+    expect(auditSubject({ details: { message: { method: 'POST', path: '/api/v1/repositories', status: 201 } } })).toBe('')
+    expect(auditSubject({ details: { method: 'PUT', path: '/api/v1/repositories/{name}/debs', status: 201 } })).toBe('')
   })
 
   it('never shows a bare UUID target', () => {
